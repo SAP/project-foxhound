@@ -59,8 +59,6 @@ class ChromiumCDMProxy : public CDMProxy {
 
   void Terminated() override;
 
-  const nsCString& GetNodeId() const override;
-
   void OnSetSessionId(uint32_t aCreateSessionToken,
                       const nsAString& aSessionId) override;
 
@@ -97,10 +95,6 @@ class ChromiumCDMProxy : public CDMProxy {
 
   void ResolvePromise(PromiseId aId) override;
 
-  const nsString& KeySystem() const override;
-
-  DataMutex<CDMCaps>& Capabilites() override;
-
   void OnKeyStatusesChange(const nsAString& aSessionId) override;
 
   void GetStatusForPolicy(PromiseId aPromiseId,
@@ -131,7 +125,7 @@ class ChromiumCDMProxy : public CDMProxy {
 
   RefPtr<GMPCrashHelper> mCrashHelper;
 
-  Mutex mCDMMutex;
+  Mutex mCDMMutex MOZ_UNANNOTATED;
   RefPtr<gmp::ChromiumCDMParent> mCDM;
   nsCOMPtr<nsISerialEventTarget> mGMPThread;
   UniquePtr<ChromiumCDMCallbackProxy> mCallback;

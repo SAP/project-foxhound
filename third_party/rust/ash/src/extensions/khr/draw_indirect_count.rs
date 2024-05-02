@@ -16,7 +16,8 @@ impl DrawIndirectCount {
         Self { fp }
     }
 
-    #[doc = "<https://www.khronos.org/registry/vulkan/specs/1.1-extensions/man/html/vkCmdDrawIndexedIndirectCountKHR.html>"]
+    /// <https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/vkCmdDrawIndexedIndirectCountKHR.html>
+    #[inline]
     pub unsafe fn cmd_draw_indexed_indirect_count(
         &self,
         command_buffer: vk::CommandBuffer,
@@ -27,7 +28,7 @@ impl DrawIndirectCount {
         max_draw_count: u32,
         stride: u32,
     ) {
-        self.fp.cmd_draw_indexed_indirect_count_khr(
+        (self.fp.cmd_draw_indexed_indirect_count_khr)(
             command_buffer,
             buffer,
             offset,
@@ -38,7 +39,8 @@ impl DrawIndirectCount {
         );
     }
 
-    #[doc = "<https://www.khronos.org/registry/vulkan/specs/1.1-extensions/man/html/vkCmdDrawIndirectCountKHR.html>"]
+    /// <https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/vkCmdDrawIndirectCountKHR.html>
+    #[inline]
     pub unsafe fn cmd_draw_indirect_count(
         &self,
         command_buffer: vk::CommandBuffer,
@@ -49,7 +51,7 @@ impl DrawIndirectCount {
         max_draw_count: u32,
         stride: u32,
     ) {
-        self.fp.cmd_draw_indexed_indirect_count_khr(
+        (self.fp.cmd_draw_indirect_count_khr)(
             command_buffer,
             buffer,
             offset,
@@ -60,10 +62,12 @@ impl DrawIndirectCount {
         );
     }
 
-    pub fn name() -> &'static CStr {
+    #[inline]
+    pub const fn name() -> &'static CStr {
         vk::KhrDrawIndirectCountFn::name()
     }
 
+    #[inline]
     pub fn fp(&self) -> &vk::KhrDrawIndirectCountFn {
         &self.fp
     }

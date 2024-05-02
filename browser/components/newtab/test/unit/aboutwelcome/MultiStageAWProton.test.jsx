@@ -1,5 +1,6 @@
 import { AboutWelcomeDefaults } from "aboutwelcome/lib/AboutWelcomeDefaults.jsm";
 import { MultiStageProtonScreen } from "content-src/aboutwelcome/components/MultiStageProtonScreen";
+import { AWScreenUtils } from "lib/AWScreenUtils.jsm";
 import React from "react";
 import { mount } from "enzyme";
 
@@ -27,10 +28,10 @@ describe("MultiStageAboutWelcomeProton module", () => {
       assert.ok(wrapper.exists());
     });
 
-    it("should render section left on first screen", () => {
+    it("should render secondary section for split positioned screens", () => {
       const SCREEN_PROPS = {
-        order: 0,
         content: {
+          position: "split",
           title: "test title",
           hero_text: "test subtitle",
         },
@@ -38,94 +39,384 @@ describe("MultiStageAboutWelcomeProton module", () => {
       const wrapper = mount(<MultiStageProtonScreen {...SCREEN_PROPS} />);
       assert.ok(wrapper.exists());
       assert.equal(wrapper.find(".welcome-text h1").text(), "test title");
-      assert.equal(wrapper.find(".section-left h1").text(), "test subtitle");
+      assert.equal(
+        wrapper.find(".section-secondary h1").text(),
+        "test subtitle"
+      );
+      assert.equal(wrapper.find("main").prop("pos"), "split");
     });
 
-    it("should autoClose on last screen", () => {
-      const fakeWindow = {
-        location: {
-          href: "test",
-        },
-        document: {
-          querySelector: () => {
-            return { className: "dialog-last" };
-          },
-        },
-      };
+    it("should render secondary section with content background for split positioned screens", () => {
+      const BACKGROUND_URL =
+        "chrome://activity-stream/content/data/content/assets/confetti.svg";
       const SCREEN_PROPS = {
-        order: 1,
-        autoClose: true,
-        totalNumberOfScreens: 1,
         content: {
+          position: "split",
+          background: `url(${BACKGROUND_URL}) var(--mr-secondary-position) no-repeat`,
+          split_narrow_bkg_position: "10px",
           title: "test title",
-          subtitle: "test subtitle",
         },
-        windowObj: fakeWindow,
       };
       const wrapper = mount(<MultiStageProtonScreen {...SCREEN_PROPS} />);
       assert.ok(wrapper.exists());
-      assert.equal(fakeWindow.location.href, "test");
+      assert.ok(
+        wrapper
+          .find("div.section-secondary")
+          .prop("style")
+          .background.includes("--mr-secondary-position")
+      );
+      assert.ok(
+        wrapper.find("div.section-secondary").prop("style")[
+          "--mr-secondary-background-position-y"
+        ],
+        "10px"
+      );
+    });
 
-      clock.tick(20001);
-      assert.equal(fakeWindow.location.href, "about:home");
+    it("should render with secondary section for split positioned screens", () => {
+      const SCREEN_PROPS = {
+        content: {
+          position: "split",
+          title: "test title",
+          hero_text: "test subtitle",
+        },
+      };
+      const wrapper = mount(<MultiStageProtonScreen {...SCREEN_PROPS} />);
+      assert.ok(wrapper.exists());
+      assert.equal(wrapper.find(".welcome-text h1").text(), "test title");
+      assert.equal(
+        wrapper.find(".section-secondary h1").text(),
+        "test subtitle"
+      );
+      assert.equal(wrapper.find("main").prop("pos"), "split");
+    });
+
+    it("should render with no secondary section for center positioned screens", () => {
+      const SCREEN_PROPS = {
+        content: {
+          position: "center",
+          title: "test title",
+        },
+      };
+      const wrapper = mount(<MultiStageProtonScreen {...SCREEN_PROPS} />);
+      assert.ok(wrapper.exists());
+      assert.equal(wrapper.find(".section-secondary").exists(), false);
+      assert.equal(wrapper.find(".welcome-text h1").text(), "test title");
+      assert.equal(wrapper.find("main").prop("pos"), "center");
+    });
+
+    it("should not render multiple action buttons if an additional button does not exist", () => {
+      const SCREEN_PROPS = {
+        content: {
+          title: "test title",
+          primary_button: {
+            label: "test primary button",
+          },
+        },
+      };
+      const wrapper = mount(<MultiStageProtonScreen {...SCREEN_PROPS} />);
+      assert.ok(wrapper.exists());
+      assert.isFalse(wrapper.find(".additional-cta").exists());
+    });
+
+    it("should render an additional action button with primary styling if no style has been specified", () => {
+      const SCREEN_PROPS = {
+        content: {
+          title: "test title",
+          primary_button: {
+            label: "test primary button",
+          },
+          additional_button: {
+            label: "test additional button",
+          },
+        },
+      };
+      const wrapper = mount(<MultiStageProtonScreen {...SCREEN_PROPS} />);
+      assert.ok(wrapper.exists());
+      assert.isTrue(wrapper.find(".additional-cta.primary").exists());
+    });
+
+    it("should render an additional action button with secondary styling", () => {
+      const SCREEN_PROPS = {
+        content: {
+          title: "test title",
+          primary_button: {
+            label: "test primary button",
+          },
+          additional_button: {
+            label: "test additional button",
+            style: "secondary",
+          },
+        },
+      };
+      const wrapper = mount(<MultiStageProtonScreen {...SCREEN_PROPS} />);
+      assert.ok(wrapper.exists());
+      assert.equal(wrapper.find(".additional-cta.secondary").exists(), true);
+    });
+
+    it("should render an additional action button with primary styling", () => {
+      const SCREEN_PROPS = {
+        content: {
+          title: "test title",
+          primary_button: {
+            label: "test primary button",
+          },
+          additional_button: {
+            label: "test additional button",
+            style: "primary",
+          },
+        },
+      };
+      const wrapper = mount(<MultiStageProtonScreen {...SCREEN_PROPS} />);
+      assert.ok(wrapper.exists());
+      assert.equal(wrapper.find(".additional-cta.primary").exists(), true);
+    });
+
+    it("should render an additional action with link styling", () => {
+      const SCREEN_PROPS = {
+        content: {
+          position: "split",
+          title: "test title",
+          primary_button: {
+            label: "test primary button",
+          },
+          additional_button: {
+            label: "test additional button",
+            style: "link",
+          },
+        },
+      };
+      const wrapper = mount(<MultiStageProtonScreen {...SCREEN_PROPS} />);
+      assert.ok(wrapper.exists());
+      assert.equal(wrapper.find(".additional-cta.cta-link").exists(), true);
+    });
+
+    it("should render an additional button with vertical orientation", () => {
+      const SCREEN_PROPS = {
+        content: {
+          position: "center",
+          title: "test title",
+          primary_button: {
+            label: "test primary button",
+          },
+          additional_button: {
+            label: "test additional button",
+            style: "secondary",
+            flow: "column",
+          },
+        },
+      };
+      const wrapper = mount(<MultiStageProtonScreen {...SCREEN_PROPS} />);
+      assert.ok(wrapper.exists());
+      assert.equal(
+        wrapper.find(".additional-cta-container[flow='column']").exists(),
+        true
+      );
+    });
+
+    it("should render disabled primary button if activeMultiSelect is in disabled property", () => {
+      const SCREEN_PROPS = {
+        content: {
+          title: "test title",
+          primary_button: {
+            label: "test primary button",
+            disabled: "activeMultiSelect",
+          },
+        },
+      };
+      const wrapper = mount(<MultiStageProtonScreen {...SCREEN_PROPS} />);
+      assert.ok(wrapper.exists());
+      assert.isTrue(wrapper.find("button.primary[disabled]").exists());
+    });
+
+    it("should not render a progress bar if there is 1 step", () => {
+      const SCREEN_PROPS = {
+        content: {
+          title: "test title",
+          progress_bar: true,
+        },
+        isSingleScreen: true,
+      };
+      const wrapper = mount(<MultiStageProtonScreen {...SCREEN_PROPS} />);
+      assert.ok(wrapper.exists());
+      assert.equal(wrapper.find(".steps.progress-bar").exists(), false);
+    });
+
+    it("should not render a steps indicator if steps indicator is force hidden", () => {
+      const SCREEN_PROPS = {
+        content: {
+          title: "test title",
+        },
+        forceHideStepsIndicator: true,
+      };
+      const wrapper = mount(<MultiStageProtonScreen {...SCREEN_PROPS} />);
+      assert.ok(wrapper.exists());
+      assert.equal(wrapper.find(".steps").exists(), false);
+    });
+
+    it("should render a steps indicator above action buttons", () => {
+      const SCREEN_PROPS = {
+        content: {
+          title: "test title",
+          progress_bar: true,
+          primary_button: {},
+        },
+        aboveButtonStepsIndicator: true,
+        totalNumberOfScreens: 2,
+      };
+      const wrapper = mount(<MultiStageProtonScreen {...SCREEN_PROPS} />);
+      assert.ok(wrapper.exists());
+
+      const stepsIndicator = wrapper.find(".steps");
+      assert.ok(stepsIndicator, true);
+
+      const stepsDOMNode = stepsIndicator.getDOMNode();
+      const siblingElement = stepsDOMNode.nextElementSibling;
+      assert.equal(siblingElement.classList.contains("action-buttons"), true);
+    });
+
+    it("should render a progress bar if there are 2 steps", () => {
+      const SCREEN_PROPS = {
+        content: {
+          title: "test title",
+          progress_bar: true,
+        },
+        totalNumberOfScreens: 2,
+      };
+      const wrapper = mount(<MultiStageProtonScreen {...SCREEN_PROPS} />);
+      assert.ok(wrapper.exists());
+      assert.equal(wrapper.find(".steps.progress-bar").exists(), true);
+    });
+
+    it("should render confirmation-screen if layout property is set to inline", () => {
+      const SCREEN_PROPS = {
+        content: {
+          title: "test title",
+          layout: "inline",
+        },
+      };
+      const wrapper = mount(<MultiStageProtonScreen {...SCREEN_PROPS} />);
+      assert.ok(wrapper.exists());
+      assert.equal(wrapper.find("[layout='inline']").exists(), true);
+    });
+
+    it("should render an inline image with alt text and height property", async () => {
+      const SCREEN_PROPS = {
+        content: {
+          above_button_content: [
+            {
+              type: "image",
+              url: "https://example.com/test.svg",
+              height: "auto",
+              alt_text: "test alt text",
+            },
+          ],
+        },
+      };
+      const wrapper = mount(<MultiStageProtonScreen {...SCREEN_PROPS} />);
+      assert.ok(wrapper.exists());
+      const imageEl = wrapper.find(".inline-image img");
+      assert.equal(imageEl.exists(), true);
+      assert.propertyVal(imageEl.prop("style"), "height", "auto");
+      const altTextCointainer = wrapper.find(".sr-only");
+      assert.equal(altTextCointainer.contains("test alt text"), true);
+    });
+
+    it("should render multiple inline elements in correct order", async () => {
+      const SCREEN_PROPS = {
+        content: {
+          above_button_content: [
+            {
+              type: "image",
+              url: "https://example.com/test.svg",
+              height: "auto",
+              alt_text: "test alt text",
+            },
+            {
+              type: "text",
+              text: {
+                string_id: "test-string-id",
+              },
+              link_keys: ["privacy_policy", "terms_of_use"],
+            },
+            {
+              type: "image",
+              url: "https://example.com/test_2.svg",
+              height: "auto",
+              alt_text: "test alt text 2",
+            },
+            {
+              type: "text",
+              text: {
+                string_id: "test-string-id-2",
+              },
+              link_keys: ["privacy_policy", "terms_of_use"],
+            },
+          ],
+        },
+      };
+
+      const wrapper = mount(<MultiStageProtonScreen {...SCREEN_PROPS} />);
+      assert.ok(wrapper.exists());
+      const imageEl = wrapper.find(".inline-image img");
+      const textEl = wrapper.find(".link-paragraph");
+
+      assert.equal(imageEl.length, 2);
+      assert.equal(textEl.length, 2);
+
+      assert.equal(imageEl.at(0).prop("src"), "https://example.com/test.svg");
+      assert.equal(imageEl.at(1).prop("src"), "https://example.com/test_2.svg");
+
+      assert.equal(textEl.at(0).prop("data-l10n-id"), "test-string-id");
+      assert.equal(textEl.at(1).prop("data-l10n-id"), "test-string-id-2");
     });
   });
 
   describe("AboutWelcomeDefaults for proton", () => {
     const getData = () => AboutWelcomeDefaults.getDefaults();
-    async function prepConfig(config) {
+
+    async function prepConfig(config, evalFalseScreenIds) {
+      let data = await getData();
+
+      if (evalFalseScreenIds?.length) {
+        data.screens.forEach(async screen => {
+          if (evalFalseScreenIds.includes(screen.id)) {
+            screen.targeting = false;
+          }
+        });
+        data.screens = await AWScreenUtils.evaluateTargetingAndRemoveScreens(
+          data.screens
+        );
+      }
+
       return AboutWelcomeDefaults.prepareContentForReact({
-        ...(await getData()),
+        ...data,
         ...config,
       });
     }
     beforeEach(() => {
       sandbox.stub(global.Services.prefs, "getBoolPref").returns(true);
+      sandbox.stub(AWScreenUtils, "evaluateScreenTargeting").returnsArg(0);
+      // This is necessary because there are still screens being removed with
+      // `removeScreens` in `prepareContentForReact()`. Once we've migrated
+      // to using screen targeting instead of manually removing screens,
+      // we can remove this stub.
+      sandbox
+        .stub(global.AWScreenUtils, "removeScreens")
+        .callsFake((screens, callback) =>
+          AWScreenUtils.removeScreens(screens, callback)
+        );
     });
-    it("should have 'pin' button by default", async () => {
-      const data = await getData();
-
+    it("should have a multi action primary button by default", async () => {
+      const data = await prepConfig({ needPin: true }, ["AW_WELCOME_BACK"]);
       assert.propertyVal(
-        data.screens[0].content.primary_button.label,
-        "string_id",
-        "mr1-onboarding-pin-primary-button-label"
+        data.screens[0].content.primary_button.action,
+        "type",
+        "MULTI_ACTION"
       );
-    });
-    it("should have 'pin' button if we need default and pin", async () => {
-      const data = await prepConfig({ needDefault: true, needPin: true });
-
-      assert.propertyVal(
-        data.screens[0].content.primary_button.label,
-        "string_id",
-        "mr1-onboarding-pin-primary-button-label"
-      );
-      assert.propertyVal(data.screens[0], "id", "AW_PIN_FIREFOX");
-      assert.propertyVal(data.screens[1], "id", "AW_SET_DEFAULT");
-      assert.lengthOf(data.screens, getData().screens.length);
-    });
-    it("should keep 'pin' and remove 'default' if already default", async () => {
-      const data = await prepConfig({ needPin: true });
-
-      assert.propertyVal(data.screens[0], "id", "AW_PIN_FIREFOX");
-      assert.propertyVal(data.screens[1], "id", "AW_IMPORT_SETTINGS");
-      assert.lengthOf(data.screens, getData().screens.length - 1);
-    });
-    it("should switch to 'default' if already pinned", async () => {
-      const data = await prepConfig({ needDefault: true });
-
-      assert.propertyVal(data.screens[0], "id", "AW_ONLY_DEFAULT");
-      assert.propertyVal(data.screens[1], "id", "AW_IMPORT_SETTINGS");
-      assert.lengthOf(data.screens, getData().screens.length - 1);
-    });
-    it("should switch to 'start' if already pinned and default", async () => {
-      const data = await prepConfig();
-
-      assert.propertyVal(data.screens[0], "id", "AW_GET_STARTED");
-      assert.propertyVal(data.screens[1], "id", "AW_IMPORT_SETTINGS");
-      assert.lengthOf(data.screens, getData().screens.length - 1);
     });
     it("should have a FxA button", async () => {
-      const data = await prepConfig();
+      const data = await prepConfig({}, ["AW_WELCOME_BACK"]);
 
       assert.notProperty(data, "skipFxA");
       assert.property(data.screens[0].content, "secondary_button_top");
@@ -138,38 +429,67 @@ describe("MultiStageAboutWelcomeProton module", () => {
       assert.property(data, "skipFxA", true);
       assert.notProperty(data.screens[0].content, "secondary_button_top");
     });
-    it("should have an image caption", async () => {
-      const data = await prepConfig();
+  });
 
-      assert.property(data.screens[0].content, "help_text");
+  describe("AboutWelcomeDefaults for MR split template proton", () => {
+    const getData = () => AboutWelcomeDefaults.getDefaults(true);
+    beforeEach(() => {
+      sandbox.stub(global.Services.prefs, "getBoolPref").returns(true);
     });
-    it("should remove the caption if deleteIfNotEn is true", async () => {
-      sandbox.stub(global.Services.locale, "appLocaleAsBCP47").value("de");
 
-      const data = await prepConfig({
-        id: "DEFAULT_ABOUTWELCOME_PROTON",
-        template: "multistage",
-        transitions: true,
-        background_url: `chrome://activity-stream/content/data/content/assets/proton-bkg.avif`,
-        screens: [
-          {
-            id: "AW_PIN_FIREFOX",
-            order: 0,
-            content: {
-              help_text: {
-                deleteIfNotEn: true,
-                text: {
-                  string_id: "mr1-onboarding-welcome-image-caption",
-                },
-              },
-            },
-          },
-        ],
-      });
+    it("should use 'split' position template by default", async () => {
+      const data = await getData();
+      assert.propertyVal(data.screens[0].content, "position", "split");
+    });
 
-      assert.notProperty(data.screens[0].content.help_text, "text");
+    it("should not include noodles by default", async () => {
+      const data = await getData();
+      assert.notProperty(data.screens[0].content, "has_noodles");
     });
   });
+
+  describe("AboutWelcomeDefaults prepareMobileDownload", () => {
+    const TEST_CONTENT = {
+      screens: [
+        {
+          id: "AW_MOBILE_DOWNLOAD",
+          content: {
+            title: "test",
+            hero_image: {
+              url: "https://example.com/test.svg",
+            },
+            cta_paragraph: {
+              text: {},
+              action: {},
+            },
+          },
+        },
+      ],
+    };
+    it("should not set url for default qrcode svg", async () => {
+      sandbox.stub(global.AppConstants, "isChinaRepack").returns(false);
+      const data = await AboutWelcomeDefaults.prepareContentForReact(
+        TEST_CONTENT
+      );
+      assert.propertyVal(
+        data.screens[0].content.hero_image,
+        "url",
+        "https://example.com/test.svg"
+      );
+    });
+    it("should set url for cn qrcode svg", async () => {
+      sandbox.stub(global.AppConstants, "isChinaRepack").returns(true);
+      const data = await AboutWelcomeDefaults.prepareContentForReact(
+        TEST_CONTENT
+      );
+      assert.propertyVal(
+        data.screens[0].content.hero_image,
+        "url",
+        "https://example.com/test-cn.svg"
+      );
+    });
+  });
+
   describe("AboutWelcomeDefaults prepareContentForReact", () => {
     it("should not set action without screens", async () => {
       const data = await AboutWelcomeDefaults.prepareContentForReact({
@@ -231,66 +551,6 @@ describe("MultiStageAboutWelcomeProton module", () => {
         "source",
         "test"
       );
-    });
-    it("should remove theme screens on win7", async () => {
-      sandbox.stub(AppConstants, "isPlatformAndVersionAtMost").returns(true);
-
-      const { screens } = await AboutWelcomeDefaults.prepareContentForReact({
-        screens: [
-          {
-            order: 0,
-            content: {
-              tiles: { type: "theme" },
-            },
-          },
-          { id: "hello", order: 1 },
-          {
-            order: 2,
-            content: {
-              tiles: { type: "theme" },
-            },
-          },
-          { id: "world", order: 3 },
-        ],
-      });
-
-      assert.deepEqual(screens, [
-        { id: "hello", order: 0 },
-        { id: "world", order: 1 },
-      ]);
-    });
-    it("shouldn't remove colorway screens on win7", async () => {
-      sandbox.stub(AppConstants, "isPlatformAndVersionAtMost").returns(true);
-
-      const { screens } = await AboutWelcomeDefaults.prepareContentForReact({
-        screens: [
-          {
-            order: 0,
-            content: {
-              tiles: { type: "colorway" },
-            },
-          },
-          { id: "hello", order: 1 },
-          {
-            order: 2,
-            content: {
-              tiles: { type: "theme" },
-            },
-          },
-          { id: "world", order: 3 },
-        ],
-      });
-
-      assert.deepEqual(screens, [
-        {
-          order: 0,
-          content: {
-            tiles: { type: "colorway" },
-          },
-        },
-        { id: "hello", order: 1 },
-        { id: "world", order: 2 },
-      ]);
     });
   });
 });

@@ -3,13 +3,11 @@
 const WARNING_PATTERN = [
   {
     key: "INSECURE_FORM_ACTION",
-    msg:
-      'JavaScript Warning: "Password fields present in a form with an insecure (http://) form action. This is a security risk that allows user login credentials to be stolen."',
+    msg: 'JavaScript Warning: "Password fields present in a form with an insecure (http://) form action. This is a security risk that allows user login credentials to be stolen."',
   },
   {
     key: "INSECURE_PAGE",
-    msg:
-      'JavaScript Warning: "Password fields present on an insecure (http://) page. This is a security risk that allows user login credentials to be stolen."',
+    msg: 'JavaScript Warning: "Password fields present on an insecure (http://) page. This is a security risk that allows user login credentials to be stolen."',
   },
 ];
 
@@ -33,12 +31,15 @@ add_task(async function testInsecurePasswordWarning() {
     if (warning) {
       // Prevent any unexpected or redundant matched warning message coming after
       // the test case is ended.
-      ok(warningPatternHandler, "Invoke a valid warning message handler");
+      Assert.ok(
+        warningPatternHandler,
+        "Invoke a valid warning message handler"
+      );
       warningPatternHandler(warning, msgObj.message);
     }
   }
   Services.console.registerListener(messageHandler);
-  registerCleanupFunction(function() {
+  registerCleanupFunction(function () {
     Services.console.unregisterListener(messageHandler);
   });
 
@@ -83,10 +84,14 @@ add_task(async function testInsecurePasswordWarning() {
   ]) {
     let testURL = origin + DIRECTORY_PATH + testFile;
     let promiseConsoleMessages = new Promise(resolve => {
-      warningPatternHandler = function(warning, originMessage) {
-        ok(warning, "Handling a warning pattern");
+      warningPatternHandler = function (warning, originMessage) {
+        Assert.ok(warning, "Handling a warning pattern");
         let fullMessage = `[${warning.msg} {file: "${testURL}" line: 0 column: 0 source: "0"}]`;
-        is(originMessage, fullMessage, "Message full matched:" + originMessage);
+        Assert.equal(
+          originMessage,
+          fullMessage,
+          "Message full matched:" + originMessage
+        );
 
         let index = expectWarnings.indexOf(warning.key);
         isnot(
@@ -110,7 +115,7 @@ add_task(async function testInsecurePasswordWarning() {
         gBrowser,
         url: testURL,
       },
-      function() {
+      function () {
         if (expectWarnings.length === 0) {
           info("All warnings are shown for URL:" + testURL);
           return Promise.resolve();

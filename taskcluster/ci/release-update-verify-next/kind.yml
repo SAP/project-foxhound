@@ -20,9 +20,9 @@ transforms:
 job-defaults:
     name: update-verify-next
     run-on-projects: []  # to make sure this never runs as part of CI
-    run-on-releases: [esr91]
+    run-on-releases: [esr115]
     shipping-phase: promote
-    worker-type: b-linux
+    worker-type: b-linux-gcp
     worker:
         artifacts:
             - name: 'public/build/diff-summary.log'
@@ -36,7 +36,7 @@ job-defaults:
         env:
             CHANNEL: "esr-localtest-next"
     treeherder:
-        symbol: UV(UVnext)
+        symbol: UVnext()
         kind: test
     extra:
         chunks: 12

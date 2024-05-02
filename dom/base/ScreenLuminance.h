@@ -13,14 +13,13 @@
 
 class nsScreen;
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class ScreenLuminance final : public nsWrapperCache {
  public:
   // Ref counting and cycle collection
   NS_INLINE_DECL_CYCLE_COLLECTING_NATIVE_REFCOUNTING(ScreenLuminance)
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_NATIVE_CLASS(ScreenLuminance)
+  NS_DECL_CYCLE_COLLECTION_NATIVE_WRAPPERCACHE_CLASS(ScreenLuminance)
 
   // WebIDL methods
   double Min() const { return mMin; }
@@ -45,7 +44,6 @@ class ScreenLuminance final : public nsWrapperCache {
   double mMaxAverage;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_ScreenLuminance_h

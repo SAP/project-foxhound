@@ -5,8 +5,8 @@
 /*
  * Test Permission Popup for Sideloaded Extensions.
  */
-const { AddonTestUtils } = ChromeUtils.import(
-  "resource://testing-common/AddonTestUtils.jsm"
+const { AddonTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/AddonTestUtils.sys.mjs"
 );
 const ADDON_ID = "addon1@test.mozilla.org";
 const CUSTOM_THEME_ID = "theme1@test.mozilla.org";
@@ -57,7 +57,7 @@ add_task(async function test_theme_enable() {
 
   let theme = {
     manifest: {
-      applications: { gecko: { id: CUSTOM_THEME_ID } },
+      browser_specific_settings: { gecko: { id: CUSTOM_THEME_ID } },
       name: "Theme 1",
       theme: {
         colors: {
@@ -103,10 +103,10 @@ add_task(async function test_sideloaded_extension_permissions_prompt() {
 
   let options = {
     manifest: {
-      applications: { gecko: { id: ADDON_ID } },
+      browser_specific_settings: { gecko: { id: ADDON_ID } },
       name: "Test 1",
       permissions: ["history", "https://*/*"],
-      icons: { "64": "foo-icon.png" },
+      icons: { 64: "foo-icon.png" },
     },
   };
 

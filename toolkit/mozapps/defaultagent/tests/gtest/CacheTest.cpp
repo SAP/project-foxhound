@@ -10,29 +10,13 @@
 #include "Cache.h"
 #include "common.h"
 #include "Registry.h"
+#include "UtfConvert.h"
 
 #include "mozilla/Result.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/WinHeaderOnlyUtils.h"
 
-FilePathResult ToWideString(const char* narrowString) {
-  int wideLen = MultiByteToWideChar(CP_UTF8, 0, narrowString, -1, nullptr, 0);
-  if (wideLen == 0) {
-    HRESULT hr = HRESULT_FROM_WIN32(GetLastError());
-    LOG_ERROR(hr);
-    return mozilla::Err(mozilla::WindowsError::FromHResult(hr));
-  }
-  mozilla::UniquePtr<wchar_t[]> wideValue =
-      mozilla::MakeUnique<wchar_t[]>(wideLen);
-  int charsWritten = MultiByteToWideChar(CP_UTF8, 0, narrowString, -1,
-                                         wideValue.get(), wideLen);
-  if (charsWritten == 0) {
-    HRESULT hr = HRESULT_FROM_WIN32(GetLastError());
-    LOG_ERROR(hr);
-    return mozilla::Err(mozilla::WindowsError::FromHResult(hr));
-  }
-  return std::wstring(wideValue.get());
-}
+using namespace mozilla::default_agent;
 
 class WDBACacheTest : public ::testing::Test {
  protected:
@@ -42,11 +26,11 @@ class WDBACacheTest : public ::testing::Test {
     // Create a unique registry key to put the cache in for each test.
     const ::testing::TestInfo* const testInfo =
         ::testing::UnitTest::GetInstance()->current_test_info();
-    FilePathResult testCaseResult = ToWideString(testInfo->test_case_name());
+    Utf8ToUtf16Result testCaseResult = Utf8ToUtf16(testInfo->test_case_name());
     ASSERT_TRUE(testCaseResult.isOk());
     mCacheRegKey = testCaseResult.unwrap();
 
-    FilePathResult testNameResult = ToWideString(testInfo->name());
+    Utf8ToUtf16Result testNameResult = Utf8ToUtf16(testInfo->name());
     ASSERT_TRUE(testNameResult.isOk());
     mCacheRegKey += L'.';
     mCacheRegKey += testNameResult.unwrap();
@@ -82,7 +66,7 @@ TEST_F(WDBACacheTest, BasicFunctionality) {
   ASSERT_TRUE(entry.isNothing());
 
   // Test that the cache stops accepting items when it is full.
-  ASSERT_EQ(Cache::kDefaultCapacity, 2);
+  ASSERT_EQ(Cache::kDefaultCapacity, 2U);
   Cache::Entry toWrite = Cache::Entry{
       .notificationType = "string1",
       .notificationShown = "string2",
@@ -114,7 +98,7 @@ TEST_F(WDBACacheTest, BasicFunctionality) {
   ASSERT_TRUE(entryResult.isOk());
   entry = entryResult.unwrap();
   ASSERT_TRUE(entry.isSome());
-  ASSERT_EQ(entry.value().entryVersion, 2);
+  ASSERT_EQ(entry.value().entryVersion, 2U);
   ASSERT_EQ(entry.value().notificationType, "string1");
   ASSERT_EQ(entry.value().notificationShown, "string2");
   ASSERT_EQ(entry.value().notificationAction, "string3");
@@ -125,7 +109,7 @@ TEST_F(WDBACacheTest, BasicFunctionality) {
   ASSERT_TRUE(entryResult.isOk());
   entry = entryResult.unwrap();
   ASSERT_TRUE(entry.isSome());
-  ASSERT_EQ(entry.value().entryVersion, 2);
+  ASSERT_EQ(entry.value().entryVersion, 2U);
   ASSERT_EQ(entry.value().notificationType, "string5");
   ASSERT_EQ(entry.value().notificationShown, "string6");
   ASSERT_EQ(entry.value().notificationAction, "string7");
@@ -167,7 +151,7 @@ TEST_F(WDBACacheTest, Version1Migration) {
   ASSERT_TRUE(entryResult.isOk());
   Cache::MaybeEntry entry = entryResult.unwrap();
   ASSERT_TRUE(entry.isSome());
-  ASSERT_EQ(entry.value().entryVersion, 1);
+  ASSERT_EQ(entry.value().entryVersion, 1U);
   ASSERT_EQ(entry.value().notificationType, "string1");
   ASSERT_EQ(entry.value().notificationShown, "string2");
   ASSERT_EQ(entry.value().notificationAction, "string3");
@@ -187,7 +171,7 @@ TEST_F(WDBACacheTest, Version1Migration) {
   ASSERT_TRUE(entryResult.isOk());
   entry = entryResult.unwrap();
   ASSERT_TRUE(entry.isSome());
-  ASSERT_EQ(entry.value().entryVersion, 1);
+  ASSERT_EQ(entry.value().entryVersion, 1U);
   ASSERT_EQ(entry.value().notificationType, "string4");
   ASSERT_EQ(entry.value().notificationShown, "string5");
   ASSERT_EQ(entry.value().notificationAction, "string6");
@@ -197,7 +181,7 @@ TEST_F(WDBACacheTest, Version1Migration) {
   ASSERT_TRUE(entryResult.isOk());
   entry = entryResult.unwrap();
   ASSERT_TRUE(entry.isSome());
-  ASSERT_EQ(entry.value().entryVersion, 2);
+  ASSERT_EQ(entry.value().entryVersion, 2U);
   ASSERT_EQ(entry.value().notificationType, "string7");
   ASSERT_EQ(entry.value().notificationShown, "string8");
   ASSERT_EQ(entry.value().notificationAction, "string9");
@@ -281,7 +265,7 @@ TEST_F(WDBACacheTest, ForwardsCompatibility) {
   ASSERT_TRUE(entryResult.isOk());
   Cache::MaybeEntry entry = entryResult.unwrap();
   ASSERT_TRUE(entry.isSome());
-  ASSERT_EQ(entry.value().entryVersion, 9999);
+  ASSERT_EQ(entry.value().entryVersion, 9999U);
   ASSERT_EQ(entry.value().notificationType, "string1");
   ASSERT_EQ(entry.value().notificationShown, "string2");
   ASSERT_EQ(entry.value().notificationAction, "string3");
@@ -292,7 +276,7 @@ TEST_F(WDBACacheTest, ForwardsCompatibility) {
   ASSERT_TRUE(entryResult.isOk());
   entry = entryResult.unwrap();
   ASSERT_TRUE(entry.isSome());
-  ASSERT_EQ(entry.value().entryVersion, 2);
+  ASSERT_EQ(entry.value().entryVersion, 2U);
   ASSERT_EQ(entry.value().notificationType, "string6");
   ASSERT_EQ(entry.value().notificationShown, "string7");
   ASSERT_EQ(entry.value().notificationAction, "string8");
@@ -303,7 +287,7 @@ TEST_F(WDBACacheTest, ForwardsCompatibility) {
   ASSERT_TRUE(entryResult.isOk());
   entry = entryResult.unwrap();
   ASSERT_TRUE(entry.isSome());
-  ASSERT_EQ(entry.value().entryVersion, 2);
+  ASSERT_EQ(entry.value().entryVersion, 2U);
   ASSERT_EQ(entry.value().notificationType, "string10");
   ASSERT_EQ(entry.value().notificationShown, "string11");
   ASSERT_EQ(entry.value().notificationAction, "string12");

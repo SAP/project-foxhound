@@ -10,22 +10,22 @@ const { JSDOM } = require("jsdom");
 const {
   REPS,
   getRep,
-} = require("devtools/client/shared/components/reps/reps/rep");
+} = require("resource://devtools/client/shared/components/reps/reps/rep.js");
 const {
   MODE,
-} = require("devtools/client/shared/components/reps/reps/constants");
+} = require("resource://devtools/client/shared/components/reps/reps/constants.js");
 const {
   MAX_ATTRIBUTE_LENGTH,
-} = require("devtools/client/shared/components/reps/reps/element-node");
+} = require("resource://devtools/client/shared/components/reps/reps/element-node.js");
 const { ElementNode } = REPS;
 const {
   expectActorAttribute,
   getSelectableInInspectorGrips,
-} = require("devtools/client/shared/components/test/node/components/reps/test-helpers");
+} = require("resource://devtools/client/shared/components/test/node/components/reps/test-helpers.js");
 const {
   ELLIPSIS,
-} = require("devtools/client/shared/components/reps/reps/rep-utils");
-const stubs = require("devtools/client/shared/components/test/node/stubs/reps/element-node");
+} = require("resource://devtools/client/shared/components/reps/reps/rep-utils.js");
+const stubs = require("resource://devtools/client/shared/components/test/node/stubs/reps/element-node.js");
 
 describe("ElementNode - BodyNode", () => {
   const stub = stubs.get("BodyNode");
@@ -38,6 +38,20 @@ describe("ElementNode - BodyNode", () => {
     const renderedComponent = shallow(
       ElementNode.rep({
         object: stub,
+      })
+    );
+
+    expect(renderedComponent.text()).toEqual(
+      '<body id="body-id" class="body-class">'
+    );
+    expectActorAttribute(renderedComponent, stub.actor);
+  });
+
+  it("renders with expected text content in HEADER mode", () => {
+    const renderedComponent = shallow(
+      ElementNode.rep({
+        object: stub,
+        mode: MODE.HEADER,
       })
     );
 
@@ -431,12 +445,9 @@ describe("ElementNode - Element attribute cropping", () => {
         shouldRenderTooltip: true,
       })
     );
-    expect(
-      renderedComponent
-        .first()
-        .find("span.attrValue")
-        .prop("title")
-    ).toBe(undefined);
+    expect(renderedComponent.first().find("span.attrValue").prop("title")).toBe(
+      undefined
+    );
   });
 
   it("renders partial value for long attribute", () => {
@@ -451,12 +462,9 @@ describe("ElementNode - Element attribute cropping", () => {
     expect(renderedComponent.text()).toEqual(
       '<p data-test="aaaaaaaaaaaaaaaaaaaaaaaa…aaaaaaaaaaaaaaaaaaaaaaa">'
     );
-    expect(
-      renderedComponent
-        .first()
-        .find("span.attrValue")
-        .prop("title")
-    ).toBe("a".repeat(100));
+    expect(renderedComponent.first().find("span.attrValue").prop("title")).toBe(
+      "a".repeat(100)
+    );
   });
 
   it("renders partial attribute for LongString", () => {
@@ -472,12 +480,9 @@ describe("ElementNode - Element attribute cropping", () => {
     expect(renderedComponent.text()).toEqual(
       '<div data-test="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa…">'
     );
-    expect(
-      renderedComponent
-        .first()
-        .find("span.attrValue")
-        .prop("title")
-    ).toBe("a".repeat(1000));
+    expect(renderedComponent.first().find("span.attrValue").prop("title")).toBe(
+      "a".repeat(1000)
+    );
   });
 });
 

@@ -9,6 +9,7 @@
 #include "mozilla/MathAlgorithms.h"
 #include "mozilla/MemoryReporting.h"
 #include "xpcprivate.h"
+#include "XPCMaps.h"
 
 #include "js/HashTable.h"
 
@@ -26,15 +27,15 @@ void JSObject2WrappedJSMap::UpdateWeakPointersAfterGC(JSTracer* trc) {
     nsXPCWrappedJS* wrapper = iter.get().value();
     MOZ_ASSERT(wrapper, "found a null JS wrapper!");
 
-    // Walk the wrapper chain and update all JSObjects.
-    while (wrapper) {
-      if (wrapper->IsSubjectToFinalization()) {
-        wrapper->UpdateObjectPointerAfterGC(trc);
-        if (!wrapper->GetJSObjectPreserveColor()) {
-          dying.AppendElement(dont_AddRef(wrapper));
-        }
+    // There's no need to walk the entire chain, because only the root can be
+    // subject to finalization due to the double release behavior in Release.
+    // See the comment at the top of XPCWrappedJS.cpp about nsXPCWrappedJS
+    // lifetime.
+    if (wrapper && wrapper->IsSubjectToFinalization()) {
+      wrapper->UpdateObjectPointerAfterGC(trc);
+      if (!wrapper->GetJSObjectPreserveColor()) {
+        dying.AppendElement(dont_AddRef(wrapper));
       }
-      wrapper = wrapper->GetNextWrapper();
     }
 
     // Remove or update the JSObject key in the table if necessary.

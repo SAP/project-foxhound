@@ -7,8 +7,8 @@ Services.scriptloader.loadSubScript(CHROME_URL_ROOT + "helper-addons.js", this);
 
 // There are shutdown issues for which multiple rejections are left uncaught.
 // See bug 1018184 for resolving these issues.
-const { PromiseTestUtils } = ChromeUtils.import(
-  "resource://testing-common/PromiseTestUtils.jsm"
+const { PromiseTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/PromiseTestUtils.sys.mjs"
 );
 PromiseTestUtils.allowMatchingRejectionsGlobally(/File closed/);
 
@@ -57,12 +57,13 @@ add_task(async function testWebExtensionsToolboxWebConsole() {
   );
 
   info("Open a toolbox to debug the addon");
-  const { devtoolsTab, devtoolsWindow } = await openAboutDevtoolsToolbox(
+  const { devtoolsWindow } = await openAboutDevtoolsToolbox(
     document,
     tab,
     aboutDebuggingWindow,
     ADDON_NAME
   );
+
   const toolbox = getToolbox(devtoolsWindow);
   const webconsole = await toolbox.selectTool("webconsole");
 
@@ -99,9 +100,8 @@ add_task(async function testWebExtensionsToolboxWebConsole() {
   info(
     "Click on the extension popup frame and wait for a `dom-complete` resource"
   );
-  const {
-    onDomCompleteResource,
-  } = await waitForNextTopLevelDomCompleteResource(toolbox.commands);
+  const { onDomCompleteResource } =
+    await waitForNextTopLevelDomCompleteResource(toolbox.commands);
   popupFrameBtn.click();
   await onDomCompleteResource;
 
@@ -117,7 +117,7 @@ add_task(async function testWebExtensionsToolboxWebConsole() {
     "Got the expected manifest from WebExtension API"
   );
 
-  await closeAboutDevtoolsToolbox(document, devtoolsTab, aboutDebuggingWindow);
+  await closeWebExtAboutDevtoolsToolbox(devtoolsWindow, aboutDebuggingWindow);
 
   is(
     Services.prefs.getBoolPref("ui.popup.disable_autohide"),
@@ -160,9 +160,9 @@ async function installTestAddon(doc) {
   // Install the extension.
   await installTemporaryExtensionFromXPI(
     {
-      background: function() {
+      background() {
         const { browser } = this;
-        window.backgroundFunction = function() {
+        window.backgroundFunction = function () {
           browser.test.sendMessage("onBackgroundFunctionCalled");
         };
       },
@@ -184,9 +184,9 @@ async function installTestAddon(doc) {
           </body>
         </html>
       `,
-        "popup.js": function() {
+        "popup.js": function () {
           const { browser } = this;
-          window.popupPageFunction = function() {
+          window.popupPageFunction = function () {
             browser.test.sendMessage(
               "onPopupPageFunctionCalled",
               browser.runtime.getManifest()
@@ -208,9 +208,8 @@ async function installTestAddon(doc) {
  * Helper to retrieve the Extension instance.
  */
 async function waitForExtension(addonName) {
-  const { Management } = ChromeUtils.import(
-    "resource://gre/modules/Extension.jsm",
-    null
+  const { Management } = ChromeUtils.importESModule(
+    "resource://gre/modules/Extension.sys.mjs"
   );
 
   return new Promise(resolve => {
@@ -231,7 +230,6 @@ async function waitForExtension(addonName) {
  */
 function disablePopupAutohide(toolbox) {
   return new Promise(resolve => {
-    toolbox.doc.getElementById("toolbox-meatball-menu-button").click();
     toolbox.doc.addEventListener(
       "popupshown",
       () => {
@@ -243,5 +241,6 @@ function disablePopupAutohide(toolbox) {
       },
       { once: true }
     );
+    toolbox.doc.getElementById("toolbox-meatball-menu-button").click();
   });
 }

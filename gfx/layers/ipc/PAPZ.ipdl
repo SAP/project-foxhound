@@ -7,10 +7,11 @@
 
 include "mozilla/GfxMessageUtils.h";
 include "mozilla/layers/LayersMessageUtils.h";
+include "mozilla/layers/RemoteContentController.h";
 
 include protocol PCompositorBridge;
 
-using CSSRect from "Units.h";
+using mozilla::CSSRect from "Units.h";
 using struct mozilla::layers::RepaintRequest from "mozilla/layers/RepaintRequest.h";
 using struct mozilla::layers::ScrollableLayerGuid from "mozilla/layers/ScrollableLayerGuid.h";
 using mozilla::layers::ScrollableLayerGuid::ViewID from "mozilla/layers/ScrollableLayerGuid.h";
@@ -41,6 +42,7 @@ namespace layers {
  * are implemented. If a new method is needed then PAPZ, APZChild, and RemoteContentController
  * must be updated to handle it.
  */
+[ManualDealloc, ParentImpl="RemoteContentController"]
 sync protocol PAPZ
 {
   manager PCompositorBridge;
@@ -60,7 +62,7 @@ child:
 
   async NotifyMozMouseScrollEvent(ViewID aScrollId, nsString aEvent);
 
-  async NotifyAPZStateChange(ScrollableLayerGuid aGuid, GeckoContentController_APZStateChange aChange, int aArg);
+  async NotifyAPZStateChange(ScrollableLayerGuid aGuid, GeckoContentController_APZStateChange aChange, int aArg, uint64_t? aInputBlockId);
 
   [Priority=control]
   async NotifyFlushComplete();

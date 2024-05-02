@@ -149,7 +149,9 @@
 #endif /* BEFOREUNLOAD_EVENT */
 
 EVENT(abort, eImageAbort, EventNameType_All, eBasicEventClass)
+EVENT(beforetoggle, eBeforeToggle, EventNameType_HTMLXUL, eBasicEventClass)
 EVENT(bounce, eMarqueeBounce, EventNameType_HTMLMarqueeOnly, eBasicEventClass)
+EVENT(cancel, eCancel, EventNameType_HTMLXUL, eBasicEventClass)
 EVENT(canplay, eCanPlay, EventNameType_HTML, eBasicEventClass)
 EVENT(canplaythrough, eCanPlayThrough, EventNameType_HTML, eBasicEventClass)
 EVENT(change, eFormChange, EventNameType_HTMLXUL, eBasicEventClass)
@@ -160,7 +162,8 @@ EVENT(RadioStateChange, eFormRadioStateChange, EventNameType_None,
 EVENT(auxclick, eMouseAuxClick, EventNameType_All, eMouseEventClass)
 EVENT(click, eMouseClick, EventNameType_All, eMouseEventClass)
 EVENT(close, eClose, EventNameType_HTMLXUL, eBasicEventClass)
-EVENT(contextmenu, eContextMenu, EventNameType_HTMLXUL, eMouseEventClass)
+EVENT(contextmenu, eContextMenu,
+      EventNameType_HTMLXUL | EventNameType_SVGGraphic, eMouseEventClass)
 NON_IDL_EVENT(mouselongtap, eMouseLongTap, EventNameType_HTMLXUL,
               eMouseEventClass)
 EVENT(cuechange, eCueChange, EventNameType_All, eBasicEventClass)
@@ -238,7 +241,6 @@ EVENT(securitypolicyviolation, eSecurityPolicyViolation, EventNameType_All,
 EVENT(seeked, eSeeked, EventNameType_HTML, eBasicEventClass)
 EVENT(seeking, eSeeking, EventNameType_HTML, eBasicEventClass)
 EVENT(select, eFormSelect, EventNameType_HTMLXUL, eBasicEventClass)
-EVENT(show, eShow, EventNameType_HTML, eBasicEventClass)
 EVENT(slotchange, eSlotChange, EventNameType_All, eBasicEventClass)
 EVENT(stalled, eStalled, EventNameType_HTML, eBasicEventClass)
 EVENT(start, eMarqueeStart, EventNameType_HTMLMarqueeOnly, eBasicEventClass)
@@ -293,6 +295,7 @@ WINDOW_EVENT(languagechange, eLanguageChange,
 // need a different macro to flag things like that (IDL, but not content
 // attributes on body/frameset), or is just using EventNameType_None enough?
 WINDOW_EVENT(message, eMessage, EventNameType_None, eBasicEventClass)
+WINDOW_EVENT(rtctransform, eRTCTransform, EventNameType_None, eBasicEventClass)
 WINDOW_EVENT(messageerror, eMessageError, EventNameType_HTMLBodyOrFramesetOnly,
              eBasicEventClass)
 WINDOW_EVENT(offline, eOffline,
@@ -327,7 +330,7 @@ WINDOW_ONLY_EVENT(devicemotion, eDeviceMotion, EventNameType_None,
                   eBasicEventClass)
 WINDOW_ONLY_EVENT(deviceorientation, eDeviceOrientation, EventNameType_None,
                   eBasicEventClass)
-WINDOW_ONLY_EVENT(absolutedeviceorientation, eAbsoluteDeviceOrientation,
+WINDOW_ONLY_EVENT(deviceorientationabsolute, eDeviceOrientationAbsolute,
                   EventNameType_None, eBasicEventClass)
 WINDOW_ONLY_EVENT(userproximity, eUserProximity, EventNameType_None,
                   eBasicEventClass)
@@ -432,23 +435,30 @@ NON_IDL_EVENT(systemstatusbarclick, eXULSystemStatusBarClick, EventNameType_XUL,
 NON_IDL_EVENT(SVGLoad, eSVGLoad, EventNameType_None, eBasicEventClass)
 NON_IDL_EVENT(SVGScroll, eSVGScroll, EventNameType_None, eBasicEventClass)
 
-// Only map the ID to the real event name when MESSAGE_TO_EVENT is defined.
-#ifndef MESSAGE_TO_EVENT
-EVENT(begin, eSMILBeginEvent, EventNameType_SMIL, eBasicEventClass)
-#endif
+// The three SMIL animation events. We mark these as NON_IDL_EVENT even though
+// there exist IDL properties for them, because the IDL properties have
+// different names (onbegin/onend/onrepeat rather than
+// onbeginEvent/onendEvent/onrepeatEvent).
+// And we use EventNameType_None because we don't want IsEventAttributeName to
+// return true for onbeginEvent etc.
 NON_IDL_EVENT(beginEvent, eSMILBeginEvent, EventNameType_None,
               eSMILTimeEventClass)
-// Only map the ID to the real event name when MESSAGE_TO_EVENT is defined.
-#ifndef MESSAGE_TO_EVENT
-EVENT(end, eSMILEndEvent, EventNameType_SMIL, eBasicEventClass)
-#endif
 NON_IDL_EVENT(endEvent, eSMILEndEvent, EventNameType_None, eSMILTimeEventClass)
-// Only map the ID to the real event name when MESSAGE_TO_EVENT is defined.
-#ifndef MESSAGE_TO_EVENT
-EVENT(repeat, eSMILRepeatEvent, EventNameType_SMIL, eBasicEventClass)
-#endif
 NON_IDL_EVENT(repeatEvent, eSMILRepeatEvent, EventNameType_None,
               eSMILTimeEventClass)
+
+#ifndef MESSAGE_TO_EVENT
+// Repeat the SMIL animation events once more without the Event suffix,
+// so that IsEventAttributeName() will return the right thing for these events.
+// We use eUnidentifiedEvent here so that we don't accidentally treat these
+// as alternate event names for the actual events.
+// See bug 1845422 for cleaning this up.
+NON_IDL_EVENT(begin, eUnidentifiedEvent, EventNameType_SMIL,
+              eSMILTimeEventClass)
+NON_IDL_EVENT(end, eUnidentifiedEvent, EventNameType_SMIL, eSMILTimeEventClass)
+NON_IDL_EVENT(repeat, eUnidentifiedEvent, EventNameType_SMIL,
+              eSMILTimeEventClass)
+#endif
 
 NON_IDL_EVENT(MozAfterPaint, eAfterPaint, EventNameType_None, eBasicEventClass)
 
@@ -527,7 +537,7 @@ EVENT(webkitTransitionEnd, eWebkitTransitionEnd, EventNameType_All,
 // These are only here so that IsEventAttributeName() will return the right
 // thing for these events.  We could probably remove them if we used
 // Element::GetEventNameForAttr on the input to IsEventAttributeName before
-// looking it up in the hashtable...
+// looking it up in the hashtable... see bug 1845422.
 EVENT(webkitanimationend, eUnidentifiedEvent, EventNameType_All,
       eAnimationEventClass)
 EVENT(webkitanimationiteration, eUnidentifiedEvent, EventNameType_All,
@@ -541,6 +551,8 @@ EVENT(webkittransitionend, eUnidentifiedEvent, EventNameType_All,
 NON_IDL_EVENT(audioprocess, eAudioProcess, EventNameType_None, eBasicEventClass)
 
 NON_IDL_EVENT(complete, eAudioComplete, EventNameType_None, eBasicEventClass)
+
+EVENT(scrollend, eScrollend, EventNameType_All, eBasicEventClass)
 
 #ifdef DEFINED_FORWARDED_EVENT
 #  undef DEFINED_FORWARDED_EVENT

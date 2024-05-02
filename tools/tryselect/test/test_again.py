@@ -2,15 +2,11 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, print_function, unicode_literals
-
 import os
 
 import mozunit
 import pytest
-
 from six.moves import reload_module as reload
-
 from tryselect import push
 from tryselect.selectors import again
 
@@ -67,7 +63,7 @@ def test_no_push_does_not_generate_history(tmpdir):
             ["foo", "bar"],
             {"use-artifact-builds": True},
         ),
-        push=False,
+        dry_run=True,
     )
     assert not os.path.isfile(push.history_path)
     assert again.run() == 1

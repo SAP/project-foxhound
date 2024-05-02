@@ -21,10 +21,14 @@
 #ifndef AVCODEC_AV1_PARSE_H
 #define AVCODEC_AV1_PARSE_H
 
+#include <limits.h>
 #include <stdint.h>
 
+#include "libavutil/error.h"
+#include "libavutil/intmath.h"
+#include "libavutil/macros.h"
+
 #include "av1.h"
-#include "avcodec.h"
 #include "get_bits.h"
 
 // OBU header fields + max leb128 length
@@ -44,9 +48,6 @@ typedef struct AV1OBU {
     /** Size of entire OBU, including header */
     int raw_size;
     const uint8_t *raw_data;
-
-    /** GetBitContext initialized to the start of the payload */
-    GetBitContext gb;
 
     int type;
 
@@ -176,5 +177,8 @@ static inline int get_obu_bit_length(const uint8_t *buf, int size, int type)
 
     return size;
 }
+
+AVRational ff_av1_framerate(int64_t ticks_per_frame, int64_t units_per_tick,
+                            int64_t time_scale);
 
 #endif /* AVCODEC_AV1_PARSE_H */

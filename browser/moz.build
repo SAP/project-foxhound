@@ -22,6 +22,7 @@ DIRS += [
     "modules",
     "themes",
     "extensions",
+    "branding",
 ]
 
 DIRS += [
@@ -47,11 +48,11 @@ for cdm in CONFIG["MOZ_EME_MODULES"]:
 if CONFIG["MOZ_GPSD"]:
     DEFINES["MOZ_GPSD"] = True
 
-if CONFIG["MOZ_BACKGROUNDTASKS"]:
-    DEFINES["MOZ_BACKGROUNDTASKS"] = True
-
 if CONFIG["MOZ_UPDATE_AGENT"]:
     DEFINES["MOZ_UPDATE_AGENT"] = True
+
+if CONFIG["MOZ_ARTIFACT_BUILDS"]:
+    DEFINES["MOZ_ARTIFACT_BUILDS"] = True
 
 # These files are specified in this moz.build to pick up DIST_SUBDIR as set in
 # this directory, which is un-set in browser/app.

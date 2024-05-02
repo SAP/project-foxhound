@@ -23,12 +23,19 @@
 #define DOM_INSTANCE_RESERVED_SLOTS 1
 
 // Interface objects store a number of reserved slots equal to
-// DOM_INTERFACE_SLOTS_BASE + number of named constructors.
+// DOM_INTERFACE_SLOTS_BASE + number of legacy factory functions.
 #define DOM_INTERFACE_SLOTS_BASE 0
 
 // Interface prototype objects store a number of reserved slots equal to
 // DOM_INTERFACE_PROTO_SLOTS_BASE or DOM_INTERFACE_PROTO_SLOTS_BASE + 1 if a
 // slot for the unforgeable holder is needed.
 #define DOM_INTERFACE_PROTO_SLOTS_BASE 0
+
+// The slot index of raw pointer of dom object stored in observable array exotic
+// object. We need this in order to call the OnSet* and OnDelete* callbacks.
+#define OBSERVABLE_ARRAY_DOM_INTERFACE_SLOT 0
+
+// The slot index of backing list stored in observable array exotic object.
+#define OBSERVABLE_ARRAY_BACKING_LIST_OBJECT_SLOT 1
 
 #endif /* mozilla_dom_DOMSlots_h */

@@ -4,12 +4,15 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-# This file exposes three lists:
-# ALL_PROCESSES, BROWSER_PROCESS, and CHILD_PROCESSES
+# This file exposes these lists:
+# ALL_PROCESSES, BROWSER_PROCESS, CHILD_PROCESSES, GMPLUGIN_PROCESSES,
+# GPU_PROCESSES, UTILITY_PROCESSES, and SOCKET_PROCESSES
 #
 # In addition, each of those lists supports a special variant for test-only
 # entries:
-# ALL_PROCESSES_TESTS, BROWSER_PROCESS_TESTS, and CHILD_PROCESSES_TESTS
+# ALL_PROCESSES_TESTS, BROWSER_PROCESS_TESTS, CHILD_PROCESSES_TESTS,
+# GMPLUGIN_PROCESSES_TESTS, GPU_PROCESSES_TESTS, UTILITY_PROCESSES_TESTS, and
+# SOCKET_PROCESSES_TESTS
 #
 # Choose the list that is applicable to the applicable process type(s) for your
 # DLL block.
@@ -46,7 +49,13 @@ ALL_PROCESSES += [
 
     # GoogleDesktopNetwork3.dll - Extremely old, unversioned instances
     # of this DLL cause crashes
-    DllBlocklistEntry("googledesktopnetwork3.dll", UNVERSIONED),
+    # GoogleDesktopNetwork3.dll - Discontinued product but seems to crash at
+    # least on Win7 32-bits
+    #
+    # Since it was already blocked for all processes but unversioned DLLs, it
+    # looks like one cannot have this and a second block declaration for
+    # utility processes but limiting versions / windows targets
+    DllBlocklistEntry("googledesktopnetwork3.dll", ALL_VERSIONS),
 
     # rdolib.dll - Suspected malware
     DllBlocklistEntry("rdolib.dll", (6,0,88,4)),
@@ -143,9 +152,6 @@ ALL_PROCESSES += [
     DllBlocklistEntry("grabdll.dll", (2, 6, 1, 0)),
     DllBlocklistEntry("grabkernel.dll", (1, 0, 0, 1)),
 
-    # ESET, bug 1229252
-    DllBlocklistEntry("eoppmonitor.dll", ALL_VERSIONS),
-
     # SS2OSD, bug 1262348
     DllBlocklistEntry("ss2osd.dll", ALL_VERSIONS),
     DllBlocklistEntry("ss2devprops.dll", ALL_VERSIONS),
@@ -192,10 +198,6 @@ ALL_PROCESSES += [
     DllBlocklistEntry("nahimic2osd.dll", (2, 5, 19, 0xffff)),
     DllBlocklistEntry("nahimicmsidevprops.dll", UNVERSIONED),
 
-    # Bug 1268470 - crashes with Kaspersky Lab on Windows 8
-    DllBlocklistEntry("klsihk64.dll", (14, 0, 456, 0xffff),
-                      BLOCK_WIN8_AND_OLDER),
-
     # Bug 1579758, crashes with OpenSC nightly version 0.19.0.448 and lower
     DllBlocklistEntry("onepin-opensc-pkcs11.dll", (0, 19, 0, 448)),
 
@@ -234,10 +236,6 @@ ALL_PROCESSES += [
     # Old version of COMODO Firewall, bug 1407712 and bug 1624336
     DllBlocklistEntry("guard64.dll", (8, 4, 0, 65535)),
 
-    # Old version of Panda Security, bug 1637984 and bug 1705125
-    DllBlocklistEntry("PavLspHook64.dll", (9, 2, 2, 1), BLOCK_WIN7_AND_OLDER),
-    DllBlocklistEntry("PavSHook64.dll", (9, 2, 2, 1), BLOCK_WIN7_AND_OLDER),
-
     # Webroot SecureAnywhere causes crashes, bug 1700281
     DllBlocklistEntry("WRDll.x64.dll", (1, 1, 0, 227)),
     DllBlocklistEntry("WRDll.x86.dll", (1, 1, 0, 227)),
@@ -248,6 +246,13 @@ ALL_PROCESSES += [
     # InfoWatch Device Monitor causes crashes, bug 1704276
     DllBlocklistEntry("iwprn.dll", (6, 9, 11, 360)),
     DllBlocklistEntry("iwprn_x86.dll", (6, 9, 11, 360)),
+
+    # Forcepoint DLLs causing crashes, bug 1767993
+    DllBlocklistEntry("qipcap.dll", (7, 7, 819, 1)),
+    DllBlocklistEntry("qipcap64.dll", (7, 7, 819, 1)),
+
+    # Cylance, bug 1756190 and bug 1799562
+    DllBlocklistEntry("CylanceMemDef64.dll", ALL_VERSIONS),
 ]
 
 ALL_PROCESSES_TESTS += [
@@ -257,6 +262,26 @@ ALL_PROCESSES_TESTS += [
     DllBlocklistEntry("testdllblocklist_allowbyversion.dll", (5, 5, 5, 5)),
     RedirectToNoOpEntryPoint("testdllblocklist_noopentrypoint.dll",
                              (5, 5, 5, 5)),
+    DllBlocklistEntry("testdllblocklist_singlenotification1.dll", ALL_VERSIONS),
+    DllBlocklistEntry("testdllblocklist_singlenotification2.dll", (5, 5, 5, 5)),
+    DllBlocklistEntry("testdllblocklist_multipleentries_differentprocesses.dll", UNVERSIONED),
+    # Multiple entries so that search is required to account for each one
+    DllBlocklistEntry("testdllblocklist_multipleentries_sameprocessbackward.dll", (5, 5, 5, 5)),
+    DllBlocklistEntry("testdllblocklist_multipleentries_sameprocessbackward.dll", (1, 1, 1, 1)),
+    DllBlocklistEntry("testdllblocklist_multipleentries_sameprocessbackward.dll", (1, 1, 1, 1)),
+    DllBlocklistEntry("testdllblocklist_multipleentries_sameprocessbackward.dll", (1, 1, 1, 1)),
+    DllBlocklistEntry("testdllblocklist_multipleentries_sameprocessbackward.dll", (1, 1, 1, 1)),
+    DllBlocklistEntry("testdllblocklist_multipleentries_sameprocessbackward.dll", (1, 1, 1, 1)),
+    DllBlocklistEntry("testdllblocklist_multipleentries_sameprocessbackward.dll", (1, 1, 1, 1)),
+    # Multiple entries so that search is required to account for each one
+    DllBlocklistEntry("testdllblocklist_multipleentries_sameprocessforward.dll", (1, 1, 1, 1)),
+    DllBlocklistEntry("testdllblocklist_multipleentries_sameprocessforward.dll", (1, 1, 1, 1)),
+    DllBlocklistEntry("testdllblocklist_multipleentries_sameprocessforward.dll", (1, 1, 1, 1)),
+    DllBlocklistEntry("testdllblocklist_multipleentries_sameprocessforward.dll", (1, 1, 1, 1)),
+    DllBlocklistEntry("testdllblocklist_multipleentries_sameprocessforward.dll", (1, 1, 1, 1)),
+    DllBlocklistEntry("testdllblocklist_multipleentries_sameprocessforward.dll", (1, 1, 1, 1)),
+    DllBlocklistEntry("testdllblocklist_multipleentries_sameprocessforward.dll", (1, 1, 1, 1)),
+    DllBlocklistEntry("testdllblocklist_multipleentries_sameprocessforward.dll", (5, 5, 5, 5)),
 ]
 
 BROWSER_PROCESS += [
@@ -290,10 +315,103 @@ BROWSER_PROCESS += [
 
     # AVerMedia's virtual camera module causes crashes (bug 1692908)
     DllBlocklistEntry("avmvirtualsource.ax", (1, 0, 0, 3)),
+
+    # Avast (bug 1794064)
+    DllBlocklistEntry("aswJsFlt.dll", (18, 0, 1473, 0)),
+
+    # ASUS Web Storage (bug 1714940)
+    DllBlocklistEntry("asuswsshellext64.dll", (1, 1, 0, 27)),
+
+    # ExplorerPatcher (bug 1798707)
+    DllBlocklistEntry("explorerpatcher.amd64.dll", ALL_VERSIONS),
+
+    # Sonic Studio 3 (bug 1540883)
+    DllBlocklistEntry("ss3devprops.dll", ALL_VERSIONS),
+
+    # Nahimic audio driver (bug 1540883)
+    DllBlocklistEntry("audiodevprops2.dll", (2, 6, 14, 0)),
+
+    # Kingsoft internet security (bug 1837242)
+    DllBlocklistEntry("kisfdpro64.dll", ALL_VERSIONS),
+
+    # Kingsoft internet security (bug 1837246)
+    DllBlocklistEntry("dghmpg64.dll", ALL_VERSIONS),
+
+    # Legacy DLL for digital signatures with ID cards from Spain (bug 1709082),
+    # up-to-date setups use DNIe_P11_x64.dll instead
+    DllBlocklistEntry("UsrDNIeCertStore.dll", ALL_VERSIONS),
 ]
 
 CHILD_PROCESSES += [
     # Causes crashes in the GPU process with WebRender enabled, bug 1544435
     DllBlocklistEntry("wbload.dll", ALL_VERSIONS),
+
+    # Causes crashes in the content process with win32k lockdown, bug 1766022
+    DllBlocklistEntry("videocapturer.dll", ALL_VERSIONS),
+    DllBlocklistEntry("videocapturerhk32.dll", ALL_VERSIONS),
+    DllBlocklistEntry("videocapturerhk64.dll", ALL_VERSIONS),
+
+    # Causes crashes in the content process with win32k lockdown, bug 1766029
+    # The crash seems to be in the *_m module which has been unloaded.
+    DllBlocklistEntry("safaweb.dll", (3, 0, 21, 3181)),
+    DllBlocklistEntry("safaweb_m.dll", (3, 0, 21, 3181)),
+    DllBlocklistEntry("safaweb64.dll", (3, 0, 21, 3181)),
+    DllBlocklistEntry("safaweb64_m.dll", (3, 0, 21, 3181)),
+
+    # Causes crashes in the content process with win32k lockdown, bug 1769309
+    DllBlocklistEntry("hmpalert.dll", (3, 8, 8, 889)),
 ]
 
+GPU_PROCESSES += [
+    # MSI Nahimic audio driver causes crashes in the GPU process, bug 1804023
+    DllBlocklistEntry("nahimicosd.dll", (2, 2, 25, 0)),
+]
+
+GPU_PROCESSES_TESTS += [
+    # DLLs used by TestDllBlocklist* gTests
+    DllBlocklistEntry("testdllblocklist_gpuprocessonly.dll", ALL_VERSIONS),
+    DllBlocklistEntry("testdllblocklist_multipleentries_differentprocesses.dll", ALL_VERSIONS)
+]
+
+SOCKET_PROCESSES += [
+    # Causes crashes in the socket process, bug 1760668
+    DllBlocklistEntry("ipseng64.dll", (17, 2, 6, 25)),
+    DllBlocklistEntry("ipseng32.dll", (17, 2, 6, 25)),
+
+    # Causes crashes in the socket process, bug 1807038 and bug 1845111
+    DllBlocklistEntry("kwsui64.dll", ALL_VERSIONS),
+]
+
+SOCKET_PROCESSES_TESTS += [
+    # DLLs used by TestDllBlocklist* gTests
+    DllBlocklistEntry("testdllblocklist_socketprocessonly.dll", ALL_VERSIONS),
+]
+
+UTILITY_PROCESSES += [
+    # Generated dynamic code that we block
+    DllBlocklistEntry("cyinjct.dll", ALL_VERSIONS),
+
+    # Causes crashes in the utility process, bug 1826393
+    DllBlocklistEntry("ipseng64.dll", ALL_VERSIONS),
+    DllBlocklistEntry("ipseng32.dll", ALL_VERSIONS),
+    DllBlocklistEntry("ks3rdhmpg.dll", ALL_VERSIONS),
+    DllBlocklistEntry("kwsui64.dll", ALL_VERSIONS),
+]
+
+UTILITY_PROCESSES_TESTS += [
+    # DLLs used by TestDllBlocklist* gTests
+    DllBlocklistEntry("testdllblocklist_utilityprocessonly.dll", ALL_VERSIONS),
+]
+
+GMPLUGIN_PROCESSES += [
+    # Causes crashes in the plugin process, bug 1830950
+    DllBlocklistEntry("ipseng64.dll", ALL_VERSIONS),
+    DllBlocklistEntry("ipseng32.dll", ALL_VERSIONS),
+    DllBlocklistEntry("ks3rdhmpg.dll", ALL_VERSIONS),
+    DllBlocklistEntry("kwsui64.dll", ALL_VERSIONS),
+]
+
+GMPLUGIN_PROCESSES_TESTS += [
+    # DLLs used by TestDllBlocklist* gTests
+    DllBlocklistEntry("testdllblocklist_gmpluginprocessonly.dll", ALL_VERSIONS),
+]

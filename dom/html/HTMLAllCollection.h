@@ -18,8 +18,7 @@
 class nsContentList;
 class nsINode;
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class Document;
 class Element;
@@ -36,7 +35,7 @@ class HTMLAllCollection final : public nsISupports, public nsWrapperCache {
   explicit HTMLAllCollection(mozilla::dom::Document* aDocument);
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(HTMLAllCollection)
+  NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(HTMLAllCollection)
 
   virtual JSObject* WrapObject(JSContext* aCx,
                                JS::Handle<JSObject*> aGivenProto) override;
@@ -86,7 +85,6 @@ class HTMLAllCollection final : public nsISupports, public nsWrapperCache {
   nsRefPtrHashtable<nsStringHashKey, nsContentList> mNamedMap;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_HTMLAllCollection_h

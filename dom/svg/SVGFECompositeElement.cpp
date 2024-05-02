@@ -13,8 +13,7 @@ NS_IMPL_NS_NEW_SVG_ELEMENT(FEComposite)
 
 using namespace mozilla::gfx;
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 JSObject* SVGFECompositeElement::WrapNode(JSContext* aCx,
                                           JS::Handle<JSObject*> aGivenProto) {
@@ -22,10 +21,10 @@ JSObject* SVGFECompositeElement::WrapNode(JSContext* aCx,
 }
 
 SVGElement::NumberInfo SVGFECompositeElement::sNumberInfo[4] = {
-    {nsGkAtoms::k1, 0, false},
-    {nsGkAtoms::k2, 0, false},
-    {nsGkAtoms::k3, 0, false},
-    {nsGkAtoms::k4, 0, false}};
+    {nsGkAtoms::k1, 0},
+    {nsGkAtoms::k2, 0},
+    {nsGkAtoms::k3, 0},
+    {nsGkAtoms::k4, 0}};
 
 SVGEnumMapping SVGFECompositeElement::sOperatorMap[] = {
     {nsGkAtoms::over, SVG_FECOMPOSITE_OPERATOR_OVER},
@@ -125,7 +124,7 @@ nsresult SVGFECompositeElement::BindToTree(BindContext& aCtx,
     aCtx.OwnerDoc().SetUseCounter(eUseCounter_custom_feComposite);
   }
 
-  return SVGFE::BindToTree(aCtx, aParent);
+  return SVGFECompositeElementBase::BindToTree(aCtx, aParent);
 }
 
 //----------------------------------------------------------------------
@@ -145,5 +144,4 @@ SVGElement::StringAttributesInfo SVGFECompositeElement::GetStringInfo() {
                               ArrayLength(sStringInfo));
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

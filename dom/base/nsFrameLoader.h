@@ -24,6 +24,7 @@
 #include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/Nullable.h"
 #include "mozilla/dom/Promise.h"
+#include "mozilla/dom/ReferrerPolicyBinding.h"
 #include "mozilla/dom/WindowProxyHolder.h"
 #include "mozilla/dom/ipc/IdType.h"
 #include "mozilla/layers/LayersTypes.h"
@@ -63,7 +64,6 @@ class ChromeMessageSender;
 class ContentParent;
 class Document;
 class Element;
-class TabListener;
 class InProcessBrowserChildMessageManager;
 class MessageSender;
 class ProcessMessageManager;
@@ -73,7 +73,18 @@ class BrowserBridgeChild;
 class RemoteBrowser;
 struct RemotenessOptions;
 struct NavigationIsolationOptions;
-class SessionStoreChangeListener;
+class SessionStoreChild;
+class SessionStoreParent;
+
+struct LazyLoadFrameResumptionState {
+  RefPtr<nsIURI> mBaseURI;
+  ReferrerPolicy mReferrerPolicy = ReferrerPolicy::_empty;
+
+  void Clear() {
+    mBaseURI = nullptr;
+    mReferrerPolicy = ReferrerPolicy::_empty;
+  }
+};
 
 namespace ipc {
 class StructuredCloneData;
@@ -129,7 +140,7 @@ class nsFrameLoader final : public nsStubMutationObserver,
   NS_DECLARE_STATIC_IID_ACCESSOR(NS_FRAMELOADER_IID)
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(nsFrameLoader)
+  NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(nsFrameLoader)
 
   NS_DECL_NSIMUTATIONOBSERVER_ATTRIBUTECHANGED
   nsresult CheckForRecursiveLoad(nsIURI* aURI);
@@ -143,9 +154,10 @@ class nsFrameLoader final : public nsStubMutationObserver,
     return mChildMessageManager;
   }
   nsresult UpdatePositionAndSize(nsSubDocumentFrame* aIFrame);
-  void SendIsUnderHiddenEmbedderElement(bool aIsUnderHiddenEmbedderElement);
   void PropagateIsUnderHiddenEmbedderElement(
       bool aIsUnderHiddenEmbedderElement);
+
+  void UpdateRemoteStyle(mozilla::StyleImageRendering aImageRendering);
 
   // When creating a nsFrameLoaderOwner which is a static clone, a
   // `nsFrameLoader` is not immediately attached to it. Instead, it is added to
@@ -167,7 +179,7 @@ class nsFrameLoader final : public nsStubMutationObserver,
 
   already_AddRefed<nsIRemoteTab> GetRemoteTab();
 
-  already_AddRefed<nsILoadContext> LoadContext();
+  already_AddRefed<nsILoadContext> GetLoadContext();
 
   mozilla::dom::BrowsingContext* GetBrowsingContext();
   mozilla::dom::BrowsingContext* GetExtantBrowsingContext();
@@ -211,8 +223,10 @@ class nsFrameLoader final : public nsStubMutationObserver,
    */
   void Destroy(bool aForProcessSwitch = false);
 
-  void ActivateFrameEvent(const nsAString& aType, bool aCapture,
-                          mozilla::ErrorResult& aRv);
+  void AsyncDestroy() {
+    mNeedsAsyncDestroy = true;
+    Destroy();
+  }
 
   void RequestUpdatePosition(mozilla::ErrorResult& aRv);
 
@@ -222,9 +236,9 @@ class nsFrameLoader final : public nsStubMutationObserver,
 
   void RequestSHistoryUpdate();
 
-  already_AddRefed<Promise> PrintPreview(nsIPrintSettings* aPrintSettings,
-                                         BrowsingContext* aSourceBC,
-                                         mozilla::ErrorResult& aRv);
+  MOZ_CAN_RUN_SCRIPT already_AddRefed<Promise> PrintPreview(
+      nsIPrintSettings* aPrintSettings, BrowsingContext* aSourceBC,
+      mozilla::ErrorResult& aRv);
 
   void ExitPrintPreview();
 
@@ -355,19 +369,14 @@ class nsFrameLoader final : public nsStubMutationObserver,
    * destroying the nsSubDocumentFrame. If the nsSubdocumentFrame is
    * being reframed we'll restore the detached nsIFrame when it's recreated,
    * otherwise we'll discard the old presentation and set the detached
-   * subdoc nsIFrame to null. aContainerDoc is the document containing the
-   * the subdoc frame. This enables us to detect when the containing
-   * document has changed during reframe, so we can discard the presentation
-   * in that case.
+   * subdoc nsIFrame to null.
    */
-  void SetDetachedSubdocFrame(nsIFrame* aDetachedFrame,
-                              Document* aContainerDoc);
+  void SetDetachedSubdocFrame(nsIFrame* aDetachedFrame);
 
   /**
-   * Retrieves the detached nsIFrame and the document containing the nsIFrame,
-   * as set by SetDetachedSubdocFrame().
+   * Retrieves the detached nsIFrame as set by SetDetachedSubdocFrame().
    */
-  nsIFrame* GetDetachedSubdocFrame(Document** aContainerDoc) const;
+  nsIFrame* GetDetachedSubdocFrame(bool* aOutIsSet = nullptr) const;
 
   /**
    * Applies a new set of sandbox flags. These are merged with the sandbox
@@ -410,6 +419,12 @@ class nsFrameLoader final : public nsStubMutationObserver,
       mozilla::ipc::MessageChannel* aChannel);
 
   void FireErrorEvent();
+
+  mozilla::dom::SessionStoreChild* GetSessionStoreChild() {
+    return mSessionStoreChild;
+  }
+
+  mozilla::dom::SessionStoreParent* GetSessionStoreParent();
 
  private:
   nsFrameLoader(mozilla::dom::Element* aOwner,
@@ -486,6 +501,9 @@ class nsFrameLoader final : public nsStubMutationObserver,
 
   void RequestFinalTabStateFlush();
 
+  const mozilla::dom::LazyLoadFrameResumptionState&
+  GetLazyLoadFrameResumptionState();
+
   RefPtr<mozilla::dom::BrowsingContext> mPendingBrowsingContext;
   nsCOMPtr<nsIURI> mURIToLoad;
   nsCOMPtr<nsIPrincipal> mTriggeringPrincipal;
@@ -501,12 +519,6 @@ class nsFrameLoader final : public nsStubMutationObserver,
   // Stores the root frame of the subdocument while the subdocument is being
   // reframed. Used to restore the presentation after reframing.
   WeakFrame mDetachedSubdocFrame;
-  // Stores the containing document of the frame corresponding to this
-  // frame loader. This is reference is kept valid while the subframe's
-  // presentation is detached and stored in mDetachedSubdocFrame. This
-  // enables us to detect whether the frame has moved documents during
-  // a reframe, so that we know not to restore the presentation.
-  RefPtr<Document> mContainerDocWhileDetached;
 
   // When performing a process switch, this value is used rather than mURIToLoad
   // to identify the process-switching load which should be resumed in the
@@ -520,9 +532,10 @@ class nsFrameLoader final : public nsStubMutationObserver,
   // Holds the last known size of the frame.
   mozilla::ScreenIntSize mLazySize;
 
-  RefPtr<mozilla::dom::TabListener> mSessionStoreListener;
-
-  RefPtr<mozilla::dom::SessionStoreChangeListener> mSessionStoreChangeListener;
+  // Actor for collecting session store data from content children. This will be
+  // cleared and set to null eagerly when taking down the frameloader to break
+  // refcounted cycles early.
+  RefPtr<mozilla::dom::SessionStoreChild> mSessionStoreChild;
 
   nsCString mRemoteType;
 
@@ -549,6 +562,8 @@ class nsFrameLoader final : public nsStubMutationObserver,
   // but for a different process, after it is destroyed.
   bool mWillChangeProcess : 1;
   bool mObservingOwnerContent : 1;
+  // Whether we had a (possibly dead now) mDetachedSubdocFrame.
+  bool mHadDetachedFrame : 1;
 
   // When an out-of-process nsFrameLoader crashes, an event is fired on the
   // frame. To ensure this is only fired once, this bit is checked.

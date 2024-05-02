@@ -34,8 +34,7 @@
 
 using namespace mozilla::gfx;
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 SVGElement::LengthInfo SVGViewportElement::sLengthInfo[4] = {
     {nsGkAtoms::x, 0, SVGLength_Binding::SVG_LENGTHTYPE_NUMBER,
@@ -69,10 +68,6 @@ SVGViewportElement::PreserveAspectRatio() {
   return mPreserveAspectRatio.ToDOMAnimatedPreserveAspectRatio(this);
 }
 
-bool SVGViewportElement::IsNodeOfType(uint32_t aFlags) const {
-  return !(aFlags & ~eUSE_TARGET);
-}
-
 //----------------------------------------------------------------------
 // nsIContent methods
 
@@ -92,20 +87,7 @@ SVGViewportElement::IsAttributeMapped(const nsAtom* name) const {
     return true;
   }
 
-  static const MappedAttributeEntry* const map[] = {sColorMap,
-                                                    sFEFloodMap,
-                                                    sFillStrokeMap,
-                                                    sFiltersMap,
-                                                    sFontSpecificationMap,
-                                                    sGradientStopMap,
-                                                    sGraphicsMap,
-                                                    sLightingEffectsMap,
-                                                    sMarkersMap,
-                                                    sTextContentElementsMap,
-                                                    sViewportsMap};
-
-  return FindAttributeDependence(name, map) ||
-         SVGGraphicsElement::IsAttributeMapped(name);
+  return SVGGraphicsElement::IsAttributeMapped(name);
 }
 
 //----------------------------------------------------------------------
@@ -125,7 +107,7 @@ inline float ComputeSynthesizedViewBoxDimension(
     return aViewportLength * aLength.GetAnimValInSpecifiedUnits() / 100.0f;
   }
 
-  return aLength.GetAnimValue(const_cast<SVGViewportElement*>(aSelf));
+  return aLength.GetAnimValue(aSelf);
 }
 
 //----------------------------------------------------------------------
@@ -141,7 +123,7 @@ void SVGViewportElement::UpdateHasChildrenOnlyTransform() {
 
 void SVGViewportElement::ChildrenOnlyTransformChanged(uint32_t aFlags) {
   // Avoid wasteful calls:
-  MOZ_ASSERT(!(GetPrimaryFrame()->GetStateBits() & NS_FRAME_IS_NONDISPLAY),
+  MOZ_ASSERT(!GetPrimaryFrame()->HasAnyStateBits(NS_FRAME_IS_NONDISPLAY),
              "Non-display SVG frames don't maintain overflow rects");
 
   nsChangeHint changeHint;
@@ -174,23 +156,23 @@ void SVGViewportElement::ChildrenOnlyTransformChanged(uint32_t aFlags) {
 gfx::Matrix SVGViewportElement::GetViewBoxTransform() const {
   float viewportWidth, viewportHeight;
   if (IsInner()) {
-    SVGElement* self = const_cast<SVGViewportElement*>(this);
-    viewportWidth = mLengthAttributes[ATTR_WIDTH].GetAnimValue(self);
-    viewportHeight = mLengthAttributes[ATTR_HEIGHT].GetAnimValue(self);
+    SVGElementMetrics metrics(this);
+    viewportWidth = mLengthAttributes[ATTR_WIDTH].GetAnimValue(metrics);
+    viewportHeight = mLengthAttributes[ATTR_HEIGHT].GetAnimValue(metrics);
   } else {
     viewportWidth = mViewportWidth;
     viewportHeight = mViewportHeight;
   }
 
-  if (!IsFinite(viewportWidth) || viewportWidth <= 0.0f ||
-      !IsFinite(viewportHeight) || viewportHeight <= 0.0f) {
+  if (!std::isfinite(viewportWidth) || viewportWidth <= 0.0f ||
+      !std::isfinite(viewportHeight) || viewportHeight <= 0.0f) {
     return gfx::Matrix(0.0, 0.0, 0.0, 0.0, 0.0, 0.0);  // singular
   }
 
   SVGViewBox viewBox = GetViewBoxWithSynthesis(viewportWidth, viewportHeight);
 
-  if (!IsFinite(viewBox.width) || viewBox.width <= 0.0f ||
-      !IsFinite(viewBox.height) || viewBox.height <= 0.0f) {
+  if (!std::isfinite(viewBox.width) || viewBox.width <= 0.0f ||
+      !std::isfinite(viewBox.height) || viewBox.height <= 0.0f) {
     return gfx::Matrix(0.0, 0.0, 0.0, 0.0, 0.0, 0.0);  // singular
   }
 
@@ -201,7 +183,7 @@ gfx::Matrix SVGViewportElement::GetViewBoxTransform() const {
 //----------------------------------------------------------------------
 // SVGViewportElement
 
-float SVGViewportElement::GetLength(uint8_t aCtxType) {
+float SVGViewportElement::GetLength(uint8_t aCtxType) const {
   const SVGViewBox* viewbox = GetViewBoxInternal().HasRect()
                                   ? &GetViewBoxInternal().GetAnimValue()
                                   : nullptr;
@@ -219,12 +201,12 @@ float SVGViewportElement::GetLength(uint8_t aCtxType) {
     // Resolving length for inner <svg> is exactly the same as other
     // ordinary element. We shouldn't use the SVGViewportElement overload
     // of GetAnimValue().
-    SVGElement* self = this;
+    SVGElementMetrics metrics(this);
     if (shouldComputeWidth) {
-      w = mLengthAttributes[ATTR_WIDTH].GetAnimValue(self);
+      w = mLengthAttributes[ATTR_WIDTH].GetAnimValue(metrics);
     }
     if (shouldComputeHeight) {
-      h = mLengthAttributes[ATTR_HEIGHT].GetAnimValue(self);
+      h = mLengthAttributes[ATTR_HEIGHT].GetAnimValue(metrics);
     }
   } else if (ShouldSynthesizeViewBox()) {
     if (shouldComputeWidth) {
@@ -361,5 +343,4 @@ SVGElement::LengthAttributesInfo SVGViewportElement::GetLengthInfo() {
                               ArrayLength(sLengthInfo));
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

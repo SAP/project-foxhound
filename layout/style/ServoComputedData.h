@@ -15,34 +15,15 @@ class nsWindowSizes;
  * ServoComputedData and its related types.
  */
 
-#define STYLE_STRUCT(name_) struct nsStyle##name_;
-#include "nsStyleStructList.h"
-#undef STYLE_STRUCT
-
 namespace mozilla {
-
-template <typename T>
-struct ServoRawOffsetArc {
-  // This is a pointer to a T that lives inside a servo_arc::Arc<T>, and
-  // which already has had its reference count incremented.
-  T* mPtr;
-};
-
-// A wrapper that gets replaced by ManuallyDrop<T> by bindgen.
-//
-// NOTE(emilio): All this file is a bit gross, and most of this we make cleaner
-// using cbindgen and such.
-template <typename T>
-struct ServoManuallyDrop {
-  T mInner;
-};
 
 struct ServoWritingMode {
   uint8_t mBits;
 };
 
-struct ServoCustomPropertiesMap {
-  uintptr_t mPtr;
+struct ServoComputedCustomProperties {
+  uintptr_t mInherited;
+  uintptr_t mNonInherited;
 };
 
 struct ServoRuleNode {
@@ -51,18 +32,11 @@ struct ServoRuleNode {
 
 class ComputedStyle;
 
-struct ServoVisitedStyle {
-  // This is actually a strong reference but ServoComputedData's
-  // destructor is managed by the Rust code so we just use a regular
-  // pointer
-  ComputedStyle* mPtr;
-};
+}  // namespace mozilla
 
-#define STYLE_STRUCT(name_) struct Gecko##name_;
+#define STYLE_STRUCT(name_) struct nsStyle##name_;
 #include "nsStyleStructList.h"
 #undef STYLE_STRUCT
-
-}  // namespace mozilla
 
 class ServoComputedData;
 
@@ -86,9 +60,11 @@ class ServoComputedData {
   // Constructs via memcpy.  Will not move out of aValue.
   explicit ServoComputedData(const ServoComputedDataForgotten aValue);
 
-#define STYLE_STRUCT(name_)                                \
-  mozilla::ServoRawOffsetArc<mozilla::Gecko##name_> name_; \
-  inline const nsStyle##name_* GetStyle##name_() const;
+#define STYLE_STRUCT(name_)                                       \
+  const nsStyle##name_* name_;                                    \
+  const nsStyle##name_* Style##name_() const MOZ_NONNULL_RETURN { \
+    return name_;                                                 \
+  }
 #include "nsStyleStructList.h"
 #undef STYLE_STRUCT
 
@@ -97,8 +73,18 @@ class ServoComputedData {
   mozilla::ServoWritingMode WritingMode() const { return writing_mode; }
 
  private:
-  mozilla::ServoCustomPropertiesMap custom_properties;
+  mozilla::ServoComputedCustomProperties custom_properties;
   mozilla::ServoWritingMode writing_mode;
+  /// The effective zoom (as in, the CSS zoom property) of this style.
+  ///
+  /// zoom is a non-inherited property, yet changes to it propagate through in
+  /// an inherited fashion, and all length resolution code need to access it.
+  /// This could, in theory, be stored in any other inherited struct, but it's
+  /// weird to have an inherited struct field depend on a non inherited
+  /// property.
+  ///
+  /// So the style object itself is probably a reasonable place to store it.
+  mozilla::StyleZoom effective_zoom;
   mozilla::StyleComputedValueFlags flags;
   /// The rule node representing the ordered list of rules matched for this
   /// node.  Can be None for default values and text nodes.  This is
@@ -107,7 +93,7 @@ class ServoComputedData {
   /// The element's computed values if visited, only computed if there's a
   /// relevant link for this element. A element's "relevant link" is the
   /// element being matched if it is a link or the nearest ancestor link.
-  mozilla::ServoVisitedStyle visited_style;
+  const mozilla::ComputedStyle* visited_style;
 
   // C++ just sees this struct as a bucket of bits, and will
   // do the wrong thing if we let it use the default copy ctor/assignment

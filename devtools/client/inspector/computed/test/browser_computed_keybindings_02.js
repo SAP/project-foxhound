@@ -31,7 +31,7 @@ const TEST_URI = `
   </div>
 `;
 
-add_task(async function() {
+add_task(async function () {
   await addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
   const { inspector, view } = await openComputedView();
   await selectNode("span", inspector);
@@ -51,9 +51,9 @@ add_task(async function() {
 
   info("Verify the 2nd style has been expanded");
   const secondStyleSelectors = view.styleDocument.querySelectorAll(
-    ".computed-property-content .matchedselectors"
+    ".computed-property-view .matchedselectors"
   )[1];
-  ok(secondStyleSelectors.childNodes.length > 0, "Matched selectors expanded");
+  ok(!!secondStyleSelectors.childNodes.length, "Matched selectors expanded");
 
   info("Tab back up and test the same thing, with space");
   onExpanded = inspector.once("computed-view-property-expanded");
@@ -63,7 +63,7 @@ add_task(async function() {
 
   info("Verify the 1st style has been expanded too");
   const firstStyleSelectors = view.styleDocument.querySelectorAll(
-    ".computed-property-content .matchedselectors"
+    ".computed-property-view .matchedselectors"
   )[0];
-  ok(firstStyleSelectors.childNodes.length > 0, "Matched selectors expanded");
+  ok(!!firstStyleSelectors.childNodes.length, "Matched selectors expanded");
 });

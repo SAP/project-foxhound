@@ -8,6 +8,8 @@
 user_pref("browser.newtabpage.enabled", false);
 // Don't restore the last open set of tabs if the browser has crashed
 user_pref("browser.sessionstore.resume_from_crash", false);
+//  Disable session restore infobar.
+user_pref("browser.startup.couldRestoreSession.count", -1);
 // Don't show the Bookmarks Toolbar on any tab (the above pref that
 // disables the New Tab Page ends up showing the toolbar on about:blank).
 user_pref("browser.toolbars.bookmarks.visibility", "never");
@@ -25,8 +27,6 @@ user_pref("focusmanager.testmode", true);
 user_pref("media.navigator.streams.fake", true);
 // Disable permission prompt for getUserMedia
 user_pref("media.navigator.permission.disabled", true);
-// Enable pre-fetching of resources
-user_pref("network.preload", true);
 // Enable direct connection
 user_pref("network.proxy.type", 0);
 // Web-platform-tests load a lot of URLs very quickly. This puts avoidable and
@@ -37,7 +37,6 @@ user_pref("places.history.enabled", false);
 user_pref("toolkit.startup.max_resumed_crashes", -1);
 // Run the font loader task eagerly for more predictable behavior
 user_pref("gfx.font_loader.delay", 0);
-user_pref("gfx.font_loader.interval", 0);
 // Disable antialiasing for the Ahem font.
 user_pref("gfx.font_rendering.ahem_antialias_none", true);
 // Disable antiphishing popup
@@ -45,16 +44,15 @@ user_pref("network.http.phishy-userpass-length", 255);
 // Disable safebrowsing components
 user_pref("browser.safebrowsing.blockedURIs.enabled", false);
 user_pref("browser.safebrowsing.downloads.enabled", false);
-user_pref("browser.safebrowsing.passwords.enabled", false);
 user_pref("browser.safebrowsing.malware.enabled", false);
 user_pref("browser.safebrowsing.phishing.enabled", false);
+user_pref("browser.safebrowsing.update.enabled", false);
 // Automatically unload beforeunload alerts
 user_pref("dom.disable_beforeunload", true);
-// Enable implicit keyframes since the common animation interpolation test
-// function assumes this is available.
-user_pref("dom.animations-api.implicit-keyframes.enabled", true);
 // Disable high DPI
-user_pref("layout.css.devPixelsPerPx", "1.0")
+user_pref("layout.css.devPixelsPerPx", "1.0");
+// Enable the parallel styling code.
+user_pref("layout.css.stylo-threads", 4);
 // sometime wpt runs test even before the document becomes visible, which would
 // delay video.play() and cause play() running in wrong order.
 user_pref("media.block-autoplay-until-in-foreground", false);
@@ -66,13 +64,29 @@ user_pref("widget.disable-dark-scrollbar", true);
 // be confusing for tests that send click events before the first paint.
 user_pref("nglayout.initialpaint.unsuppress_with_no_background", true);
 user_pref("media.block-autoplay-until-in-foreground", false);
-// Enable AppCache globally for now whilst it's being removed in Bug 1584984
-user_pref("browser.cache.offline.enable", true);
-// Enable blocking access to storage from tracking resources by default.
-// We don't want to run WPT using BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN (5 - aka Dynamic First Party Isolation) yet.
-user_pref("network.cookie.cookieBehavior", 4);
 // Force a light color scheme unless explicitly overriden by pref.
 user_pref("layout.css.prefers-color-scheme.content-override", 1);
 // Force OffscreenCanvas support
 user_pref("gfx.offscreencanvas.enabled", true);
-user_pref("dom.workers.requestAnimationFrame", true);
+// A lot of tests use the Reporting API for observing things
+user_pref("dom.reporting.enabled", true);
+// Enable WebDriver BiDi experimental commands and events during tests.
+user_pref("remote.experimental.enabled", true);
+// Disable always partitioning storage with the Storage Access API
+user_pref("privacy.partition.always_partition_third_party_non_cookie_storage", false);
+// Disable OCSP checks in WPT (webtransport triggers these occasionally)
+user_pref("security.OCSP.enabled", 0);
+// Disable download of intermediate certificates.
+user_pref("security.remote_settings.intermediates.enabled", false);
+// Disable prefers-reduced-motion to ensure that smooth scrolls can be tested.
+user_pref("general.smoothScroll", true);
+// Prevent default handlers being added, since these can cause network fetches
+user_pref("gecko.handlerService.defaultHandlersVersion", 100);
+// Enable virtual WebAuthn authenticators.
+user_pref("security.webauth.webauthn_enable_softtoken", true);
+// Disable hardware WebAuthn authenticators.
+user_pref("security.webauth.webauthn_enable_usbtoken", false);
+// Disable the WebAuthn direct attestation consent prompt.
+user_pref("security.webauth.webauthn_testing_allow_direct_attestation", true);
+// Disable captive portal service
+user_pref("network.captive-portal-service.enabled", false);

@@ -13,13 +13,13 @@
             "name": "oldPrefs",
             "type": "object",
             "properties": {},
-            "additionalProperties": {"type": "any"}
+            "additionalProperties": { "type": "any" }
           },
           {
             "name": "newPrefs",
             "type": "object",
             "properties": {},
-            "additionalProperties": {"type": "any"}
+            "additionalProperties": { "type": "any" }
           }
         ]
       },
@@ -153,14 +153,14 @@
         ]
       },
       {
-        "name":  "getAllBrowserPids",
+        "name": "getAllBrowserPids",
         "type": "function",
         "async": true,
         "description": "Gets the list of pids of the running browser processes",
         "parameters": []
       },
       {
-        "name":  "getProfilePath",
+        "name": "getProfilePath",
         "type": "function",
         "async": true,
         "description": "Gets the path of the current profile",
@@ -224,6 +224,72 @@
         "async": true,
         "description": "Causes the GPU process to crash.",
         "parameters": []
+      },
+
+      {
+        "name": "clearHSTSState",
+        "type": "function",
+        "async": true,
+        "description": "Clears the sites on the HSTS list.",
+        "parameters": []
+      },
+
+      {
+        "name": "triggerCookieBannerDetected",
+        "type": "function",
+        "async": true,
+        "description": "Simulates a cookie banner detection",
+        "parameters": [
+          {
+            "type": "number",
+            "name": "tabId"
+          }
+        ]
+      },
+
+      {
+        "name": "triggerCookieBannerHandled",
+        "type": "function",
+        "async": true,
+        "description": "Simulates a cookie banner handling",
+        "parameters": [
+          {
+            "type": "number",
+            "name": "tabId"
+          }
+        ]
+      },
+
+      {
+        "name": "triggerTranslationsOffer",
+        "type": "function",
+        "async": true,
+        "description": "Simulates offering a translation.",
+        "parameters": [
+          {
+            "type": "number",
+            "name": "tabId"
+          }
+        ]
+      },
+
+      {
+        "name": "triggerLanguageStateChange",
+        "type": "function",
+        "async": true,
+        "description": "Simulates expecting a translation.",
+        "parameters": [
+          {
+            "type": "number",
+            "name": "tabId"
+          },
+          {
+            "name": "languageState",
+            "type": "object",
+            "properties": {},
+            "additionalProperties": { "type": "any" }
+          }
+        ]
       }
     ]
   }

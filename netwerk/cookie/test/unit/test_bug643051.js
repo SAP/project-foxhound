@@ -1,7 +1,8 @@
-const { NetUtil } = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { CookieXPCShellUtils } = ChromeUtils.import(
-  "resource://testing-common/CookieXPCShellUtils.jsm"
+const { NetUtil } = ChromeUtils.importESModule(
+  "resource://gre/modules/NetUtil.sys.mjs"
+);
+const { CookieXPCShellUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/CookieXPCShellUtils.sys.mjs"
 );
 
 CookieXPCShellUtils.init(this);
@@ -17,8 +18,6 @@ add_task(async () => {
     true
   );
 
-  let cs = Cc["@mozilla.org/cookieService;1"].getService(Ci.nsICookieService);
-
   let uri = NetUtil.newURI("http://example.org/");
   let channel = NetUtil.newChannel({
     uri,
@@ -28,9 +27,9 @@ add_task(async () => {
 
   let set = "foo=bar\nbaz=foo";
   let expected = "foo=bar; baz=foo";
-  cs.setCookieStringFromHttp(uri, set, channel);
+  Services.cookies.setCookieStringFromHttp(uri, set, channel);
 
-  let actual = cs.getCookieStringFromHttp(uri, channel);
+  let actual = Services.cookies.getCookieStringFromHttp(uri, channel);
   Assert.equal(actual, expected);
 
   await CookieXPCShellUtils.setCookieToDocument("http://example.net/", set);

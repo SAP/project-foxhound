@@ -8,14 +8,19 @@
  */
 
 // The order of these tests matters!
+const IS_UPGRADING_SCHEMELESS = SpecialPowers.getBoolPref(
+  "dom.security.https_first_schemeless"
+);
+// eslint-disable-next-line @microsoft/sdl/no-insecure-url
+const DEFAULT_URL_SCHEME = IS_UPGRADING_SCHEMELESS ? "https://" : "http://";
 
-add_task(async function setup() {
+add_setup(async function () {
   let bm = await PlacesUtils.bookmarks.insert({
     parentGuid: PlacesUtils.bookmarks.unfiledGuid,
-    url: "http://example.com/?q=%s",
+    url: DEFAULT_URL_SCHEME + "/example.com/?q=%s",
     title: "test",
   });
-  registerCleanupFunction(async function() {
+  registerCleanupFunction(async function () {
     await PlacesUtils.bookmarks.remove(bm);
     await PlacesUtils.history.clear();
   });
@@ -39,7 +44,7 @@ add_task(
     await BrowserTestUtils.browserLoaded(
       gBrowser.selectedTab.linkedBrowser,
       false,
-      "http://example.com/"
+      DEFAULT_URL_SCHEME + "example.com/"
     );
     await SpecialPowers.popPrefEnv();
   })
@@ -66,7 +71,7 @@ add_task(
     await BrowserTestUtils.browserLoaded(
       gBrowser.selectedTab.linkedBrowser,
       false,
-      "http://example.com/"
+      DEFAULT_URL_SCHEME + "example.com/"
     );
   })
 );
@@ -86,7 +91,7 @@ add_task(
     await BrowserTestUtils.browserLoaded(
       gBrowser.selectedTab.linkedBrowser,
       false,
-      "http://example.com/"
+      DEFAULT_URL_SCHEME + "example.com/"
     );
   })
 );
@@ -105,14 +110,20 @@ add_task(
 
     let engine = Services.search.getEngineByName("Example");
     let originalEngine = await Services.search.getDefault();
-    await Services.search.setDefault(engine);
+    await Services.search.setDefault(
+      engine,
+      Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+    );
 
     async function cleanup() {
       Preferences.set("browser.urlbar.suggest.history", suggestHistory);
       Preferences.set("browser.urlbar.suggest.bookmark", suggestBookmarks);
       Preferences.set("browser.urlbar.suggest.openpage", suggestOpenPages);
 
-      await Services.search.setDefault(originalEngine);
+      await Services.search.setDefault(
+        originalEngine,
+        Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+      );
     }
     registerCleanupFunction(cleanup);
 
@@ -147,7 +158,7 @@ add_task(
     const TIMEOUT = 3000;
     let delay = UrlbarPrefs.get("delay");
     UrlbarPrefs.set("delay", TIMEOUT);
-    registerCleanupFunction(function() {
+    registerCleanupFunction(function () {
       UrlbarPrefs.set("delay", delay);
     });
 
@@ -181,7 +192,7 @@ add_task(
 // The main reason for running each test task in a new tab that's closed when
 // the task finishes is to avoid switch-to-tab results.
 function taskWithNewTab(fn) {
-  return async function() {
+  return async function () {
     await BrowserTestUtils.withNewTab("about:blank", fn);
   };
 }

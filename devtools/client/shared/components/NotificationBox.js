@@ -7,17 +7,19 @@
 const {
   Component,
   createFactory,
-} = require("devtools/client/shared/vendor/react");
-const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
-const dom = require("devtools/client/shared/vendor/react-dom-factories");
-const { LocalizationHelper } = require("devtools/shared/l10n");
+} = require("resource://devtools/client/shared/vendor/react.js");
+const PropTypes = require("resource://devtools/client/shared/vendor/react-prop-types.js");
+const dom = require("resource://devtools/client/shared/vendor/react-dom-factories.js");
+const { LocalizationHelper } = require("resource://devtools/shared/l10n.js");
 
 const l10n = new LocalizationHelper(
   "devtools/client/locales/components.properties"
 );
 const { div, span, button } = dom;
-loader.lazyGetter(this, "MDNLink", function() {
-  return createFactory(require("devtools/client/shared/components/MdnLink"));
+loader.lazyGetter(this, "MDNLink", function () {
+  return createFactory(
+    require("resource://devtools/client/shared/components/MdnLink.js")
+  );
 });
 
 // Priority Levels
@@ -233,7 +235,7 @@ class NotificationBox extends Component {
         key: props.label,
         className: "notificationButton",
         accesskey: props.accesskey,
-        onClick: onClick,
+        onClick,
       },
       props.label
     );

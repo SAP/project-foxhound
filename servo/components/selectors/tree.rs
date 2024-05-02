@@ -6,6 +6,7 @@
 //! between layout and style.
 
 use crate::attr::{AttrSelectorOperation, CaseSensitivity, NamespaceConstraint};
+use crate::bloom::BloomFilter;
 use crate::matching::{ElementSelectorFlags, MatchingContext};
 use crate::parser::SelectorImpl;
 use std::fmt::Debug;
@@ -60,6 +61,9 @@ pub trait Element: Sized + Clone + Debug {
     /// Skips non-element nodes
     fn next_sibling_element(&self) -> Option<Self>;
 
+    /// Skips non-element nodes
+    fn first_element_child(&self) -> Option<Self>;
+
     fn is_html_element_in_html_document(&self) -> bool;
 
     fn has_local_name(&self, local_name: &<Self::Impl as SelectorImpl>::BorrowedLocalName) -> bool;
@@ -77,20 +81,33 @@ pub trait Element: Sized + Clone + Debug {
         operation: &AttrSelectorOperation<&<Self::Impl as SelectorImpl>::AttrValue>,
     ) -> bool;
 
-    fn match_non_ts_pseudo_class<F>(
+    fn has_attr_in_no_namespace(
+        &self,
+        local_name: &<Self::Impl as SelectorImpl>::LocalName,
+    ) -> bool {
+        self.attr_matches(
+            &NamespaceConstraint::Specific(&crate::parser::namespace_empty_string::<Self::Impl>()),
+            local_name,
+            &AttrSelectorOperation::Exists,
+        )
+    }
+
+    fn match_non_ts_pseudo_class(
         &self,
         pc: &<Self::Impl as SelectorImpl>::NonTSPseudoClass,
         context: &mut MatchingContext<Self::Impl>,
-        flags_setter: &mut F,
-    ) -> bool
-    where
-        F: FnMut(&Self, ElementSelectorFlags);
+    ) -> bool;
 
     fn match_pseudo_element(
         &self,
         pe: &<Self::Impl as SelectorImpl>::PseudoElement,
         context: &mut MatchingContext<Self::Impl>,
     ) -> bool;
+
+    /// Sets selector flags on the elemnt itself or the parent, depending on the
+    /// flags, which indicate what kind of work may need to be performed when
+    /// DOM state changes.
+    fn apply_selector_flags(&self, flags: ElementSelectorFlags);
 
     /// Whether this element is a `link`.
     fn is_link(&self) -> bool;
@@ -144,4 +161,8 @@ pub trait Element: Sized + Clone + Debug {
     fn ignores_nth_child_selectors(&self) -> bool {
         false
     }
+
+    /// Add hashes unique to this element to the given filter, returning true
+    /// if any got added.
+    fn add_element_unique_hashes(&self, filter: &mut BloomFilter) -> bool;
 }

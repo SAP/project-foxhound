@@ -63,6 +63,69 @@ bool PathOps::StreamToSink(PathSink& aPathSink) const {
   return true;
 }
 
+#define CHECKED_NEXT_PARAMS(_type)      \
+  if (nextByte + sizeof(_type) > end) { \
+    return false;                       \
+  }                                     \
+  NEXT_PARAMS(_type)
+
+bool PathOps::CheckedStreamToSink(PathSink& aPathSink) const {
+  if (mPathData.empty()) {
+    return true;
+  }
+
+  const uint8_t* nextByte = mPathData.data();
+  const uint8_t* end = nextByte + mPathData.size();
+  while (true) {
+    if (nextByte == end) {
+      break;
+    }
+
+    if (nextByte + sizeof(OpType) > end) {
+      return false;
+    }
+
+    const OpType opType = *reinterpret_cast<const OpType*>(nextByte);
+    nextByte += sizeof(OpType);
+    switch (opType) {
+      case OpType::OP_MOVETO: {
+        CHECKED_NEXT_PARAMS(Point)
+        aPathSink.MoveTo(params);
+        break;
+      }
+      case OpType::OP_LINETO: {
+        CHECKED_NEXT_PARAMS(Point)
+        aPathSink.LineTo(params);
+        break;
+      }
+      case OpType::OP_BEZIERTO: {
+        CHECKED_NEXT_PARAMS(ThreePoints)
+        aPathSink.BezierTo(params.p1, params.p2, params.p3);
+        break;
+      }
+      case OpType::OP_QUADRATICBEZIERTO: {
+        CHECKED_NEXT_PARAMS(TwoPoints)
+        aPathSink.QuadraticBezierTo(params.p1, params.p2);
+        break;
+      }
+      case OpType::OP_ARC: {
+        CHECKED_NEXT_PARAMS(ArcParams)
+        aPathSink.Arc(params.origin, params.radius, params.startAngle,
+                      params.endAngle, params.antiClockwise);
+        break;
+      }
+      case OpType::OP_CLOSE:
+        aPathSink.Close();
+        break;
+      default:
+        return false;
+    }
+  }
+
+  return true;
+}
+#undef CHECKED_NEXT_PARAMS
+
 PathOps PathOps::TransformedCopy(const Matrix& aTransform) const {
   PathOps newPathOps;
   const uint8_t* nextByte = mPathData.data();
@@ -112,6 +175,78 @@ PathOps PathOps::TransformedCopy(const Matrix& aTransform) const {
   return newPathOps;
 }
 
+Maybe<Circle> PathOps::AsCircle() const {
+  if (mPathData.empty()) {
+    return Nothing();
+  }
+
+  const uint8_t* nextByte = mPathData.data();
+  const uint8_t* end = nextByte + mPathData.size();
+  const OpType opType = *reinterpret_cast<const OpType*>(nextByte);
+  nextByte += sizeof(OpType);
+  if (opType == OpType::OP_ARC) {
+    NEXT_PARAMS(ArcParams)
+    if (fabs(fabs(params.startAngle - params.endAngle) - 2 * M_PI) < 1e-6) {
+      // we have a full circle
+      if (nextByte < end) {
+        const OpType nextOpType = *reinterpret_cast<const OpType*>(nextByte);
+        nextByte += sizeof(OpType);
+        if (nextOpType == OpType::OP_CLOSE) {
+          if (nextByte == end) {
+            return Some(Circle{params.origin, params.radius, true});
+          }
+        }
+      } else {
+        // the circle wasn't closed
+        return Some(Circle{params.origin, params.radius, false});
+      }
+    }
+  }
+
+  return Nothing();
+}
+
+Maybe<Line> PathOps::AsLine() const {
+  if (mPathData.empty()) {
+    return Nothing();
+  }
+
+  Line retval;
+
+  const uint8_t* nextByte = mPathData.data();
+  const uint8_t* end = nextByte + mPathData.size();
+  OpType opType = *reinterpret_cast<const OpType*>(nextByte);
+  nextByte += sizeof(OpType);
+
+  if (opType == OpType::OP_MOVETO) {
+    MOZ_ASSERT(nextByte != end);
+
+    NEXT_PARAMS(Point)
+    retval.origin = params;
+  } else {
+    return Nothing();
+  }
+
+  if (nextByte >= end) {
+    return Nothing();
+  }
+
+  opType = *reinterpret_cast<const OpType*>(nextByte);
+  nextByte += sizeof(OpType);
+
+  if (opType == OpType::OP_LINETO) {
+    MOZ_ASSERT(nextByte != end);
+
+    NEXT_PARAMS(Point)
+
+    if (nextByte == end) {
+      retval.destination = params;
+      return Some(retval);
+    }
+  }
+
+  return Nothing();
+}
 #undef NEXT_PARAMS
 
 size_t PathOps::NumberOfOps() const {
@@ -148,54 +283,70 @@ size_t PathOps::NumberOfOps() const {
   return size;
 }
 
+bool PathOps::IsEmpty() const {
+  const uint8_t* nextByte = mPathData.data();
+  const uint8_t* end = nextByte + mPathData.size();
+  while (nextByte < end) {
+    const OpType opType = *reinterpret_cast<const OpType*>(nextByte);
+    nextByte += sizeof(OpType);
+    switch (opType) {
+      case OpType::OP_MOVETO:
+        nextByte += sizeof(Point);
+        break;
+      case OpType::OP_CLOSE:
+        break;
+      default:
+        return false;
+    }
+  }
+  return true;
+}
+
 void PathBuilderRecording::MoveTo(const Point& aPoint) {
   mPathOps.MoveTo(aPoint);
-  mPathBuilder->MoveTo(aPoint);
+  mBeginPoint = aPoint;
+  mCurrentPoint = aPoint;
 }
 
 void PathBuilderRecording::LineTo(const Point& aPoint) {
   mPathOps.LineTo(aPoint);
-  mPathBuilder->LineTo(aPoint);
+  mCurrentPoint = aPoint;
 }
 
 void PathBuilderRecording::BezierTo(const Point& aCP1, const Point& aCP2,
                                     const Point& aCP3) {
   mPathOps.BezierTo(aCP1, aCP2, aCP3);
-  mPathBuilder->BezierTo(aCP1, aCP2, aCP3);
+  mCurrentPoint = aCP3;
 }
 
 void PathBuilderRecording::QuadraticBezierTo(const Point& aCP1,
                                              const Point& aCP2) {
   mPathOps.QuadraticBezierTo(aCP1, aCP2);
-  mPathBuilder->QuadraticBezierTo(aCP1, aCP2);
+  mCurrentPoint = aCP2;
 }
 
 void PathBuilderRecording::Close() {
   mPathOps.Close();
-  mPathBuilder->Close();
+  mCurrentPoint = mBeginPoint;
 }
 
 void PathBuilderRecording::Arc(const Point& aOrigin, float aRadius,
                                float aStartAngle, float aEndAngle,
                                bool aAntiClockwise) {
   mPathOps.Arc(aOrigin, aRadius, aStartAngle, aEndAngle, aAntiClockwise);
-  mPathBuilder->Arc(aOrigin, aRadius, aStartAngle, aEndAngle, aAntiClockwise);
+
+  mCurrentPoint = aOrigin + Point(cosf(aEndAngle), sinf(aEndAngle)) * aRadius;
 }
 
 already_AddRefed<Path> PathBuilderRecording::Finish() {
-  // We rely on mPathBuilder to track begin and current point, but that stops
-  // when we call Finish, so we need to store them first.
-  Point beginPoint = BeginPoint();
-  Point currentPoint = CurrentPoint();
-  RefPtr<Path> path = mPathBuilder->Finish();
-  return MakeAndAddRef<PathRecording>(path, std::move(mPathOps), mFillRule,
-                                      currentPoint, beginPoint);
+  return MakeAndAddRef<PathRecording>(mBackendType, std::move(mPathOps),
+                                      mFillRule, mCurrentPoint, mBeginPoint);
 }
 
-PathRecording::PathRecording(Path* aPath, PathOps&& aOps, FillRule aFillRule,
-                             const Point& aCurrentPoint,
+PathRecording::PathRecording(BackendType aBackend, PathOps&& aOps,
+                             FillRule aFillRule, const Point& aCurrentPoint,
                              const Point& aBeginPoint)
-    : mPath(aPath),
+    : mBackendType(aBackend),
       mPathOps(std::move(aOps)),
       mFillRule(aFillRule),
       mCurrentPoint(aCurrentPoint),
@@ -208,11 +359,27 @@ PathRecording::~PathRecording() {
   }
 }
 
+void PathRecording::EnsurePath() const {
+  if (mPath) {
+    return;
+  }
+  if (RefPtr<PathBuilder> pathBuilder =
+          Factory::CreatePathBuilder(mBackendType, mFillRule)) {
+    if (!mPathOps.StreamToSink(*pathBuilder)) {
+      MOZ_ASSERT(false, "Failed to stream PathOps to PathBuilder");
+    } else {
+      mPath = pathBuilder->Finish();
+      MOZ_ASSERT(!!mPath, "Failed finishing Path from PathBuilder");
+    }
+  } else {
+    MOZ_ASSERT(false, "Failed to create PathBuilder for PathRecording");
+  }
+}
+
 already_AddRefed<PathBuilder> PathRecording::CopyToBuilder(
     FillRule aFillRule) const {
-  RefPtr<PathBuilder> pathBuilder = mPath->CopyToBuilder(aFillRule);
   RefPtr<PathBuilderRecording> recording =
-      new PathBuilderRecording(pathBuilder, mPathOps, aFillRule);
+      new PathBuilderRecording(mBackendType, PathOps(mPathOps), aFillRule);
   recording->SetCurrentPoint(mCurrentPoint);
   recording->SetBeginPoint(mBeginPoint);
   return recording.forget();
@@ -220,14 +387,10 @@ already_AddRefed<PathBuilder> PathRecording::CopyToBuilder(
 
 already_AddRefed<PathBuilder> PathRecording::TransformedCopyToBuilder(
     const Matrix& aTransform, FillRule aFillRule) const {
-  RefPtr<PathBuilder> pathBuilder =
-      mPath->TransformedCopyToBuilder(aTransform, aFillRule);
   RefPtr<PathBuilderRecording> recording = new PathBuilderRecording(
-      pathBuilder, mPathOps.TransformedCopy(aTransform), aFillRule);
-
+      mBackendType, mPathOps.TransformedCopy(aTransform), aFillRule);
   recording->SetCurrentPoint(aTransform.TransformPoint(mCurrentPoint));
   recording->SetBeginPoint(aTransform.TransformPoint(mBeginPoint));
-
   return recording.forget();
 }
 

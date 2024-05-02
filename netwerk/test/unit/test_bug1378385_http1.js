@@ -27,7 +27,9 @@
 
 "use strict";
 
-const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
+const { HttpServer } = ChromeUtils.importESModule(
+  "resource://testing-common/httpd.sys.mjs"
+);
 
 var server = new HttpServer();
 server.start(-1);
@@ -62,10 +64,10 @@ function serverStopListener() {
   server.stop();
 }
 
-function createHttpRequest(windowId, requestId, priority) {
+function createHttpRequest(browserId, requestId, priority) {
   let uri = baseURL;
   var chan = make_channel(uri);
-  chan.topBrowsingContextId = windowId;
+  chan.browserId = browserId;
   chan.QueryInterface(Ci.nsISupportsPriority).priority = priority;
   var listner = new HttpResponseListener(requestId);
   chan.setRequestHeader("X-ID", requestId, false);
@@ -121,11 +123,11 @@ HttpResponseListener.prototype = {
   },
 };
 
-function check_response_id(responses, windowId) {
+function check_response_id(responses, browserId) {
   for (var i = 0; i < responses.length; i++) {
     var id = responses[i].getHeader("X-ID");
-    log("response id=" + id + " windowId=" + windowId);
-    Assert.equal(id, windowId);
+    log("response id=" + id + " browserId=" + browserId);
+    Assert.equal(id, browserId);
   }
 }
 
@@ -142,7 +144,7 @@ function setup_http_server() {
 
   var allDummyHttpRequestReceived = false;
   // Start server; will be stopped at test cleanup time.
-  server.registerPathHandler("/", function(metadata, response) {
+  server.registerPathHandler("/", function (metadata, response) {
     var id = metadata.getHeader("X-ID");
     log("Server recived the response id=" + id);
 
@@ -174,7 +176,7 @@ function setup_http_server() {
     }
   });
 
-  registerCleanupFunction(function() {
+  registerCleanupFunction(function () {
     server.stop(serverStopListener);
   });
 }

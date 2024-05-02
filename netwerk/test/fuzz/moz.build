@@ -7,6 +7,7 @@
 UNIFIED_SOURCES += [
     "FuzzingStreamListener.cpp",
     "TestHttpFuzzing.cpp",
+    "TestJARFuzzing.cpp",
     "TestURIFuzzing.cpp",
     "TestWebsocketFuzzing.cpp",
 ]
@@ -16,6 +17,10 @@ LOCAL_INCLUDES += [
     "/netwerk/base",
     "/netwerk/protocol/http",
     "/xpcom/tests/gtest",
+]
+
+EXPORTS.mozilla.fuzzing += [
+    "FuzzingStreamListener.h",
 ]
 
 include("/ipc/chromium/chromium-config.mozbuild")

@@ -4,11 +4,35 @@
 @namespace html "http://www.w3.org/1999/xhtml";
 
 #aboutDialog {
-  width: 620px;
   /* Set an explicit line-height to avoid discrepancies in 'auto' spacing
      across screens with different device DPI, which may cause font metrics
      to round differently. */
   line-height: 1.5;
+}
+
+#aboutDialogContainer {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+#leftBox {
+  background-image: url("chrome://branding/content/about-logo.png");
+  background-repeat: no-repeat;
+  background-size: 192px auto;
+  background-position: center 40px;
+  /* min-width and min-height create room for the logo; logo is 192px tall w/
+     40px above it, this leaves 8px on the bottom at the minimum height */
+  min-width: 210px;
+  min-height: 240px;
+  margin-top: 20px;
+  margin-inline-start: 30px;
+}
+
+@media (min-resolution: 2dppx) {
+  #leftBox {
+    background-image: url("chrome://branding/content/about-logo@2x.png");
+  }
 }
 
 #rightBox {
@@ -24,9 +48,14 @@
   background-position: 100% 0;
 }
 
+#clientBox {
+  flex: 1 0 auto;
+  padding: 10px 0 15px;
+}
+
 #bottomBox {
   padding: 15px 10px 0;
-  height: 52px;
+  min-height: 52px;
 }
 
 #release {
@@ -60,34 +89,48 @@
   padding-inline-start: 0;
 }
 
-#updateDeck > *:not(.selected) {
-  visibility: hidden;
+#updateInfo {
+  display: grid;
+  grid-row-start: 1;
+  grid-row-end: 4;
+  grid-column-start: 2;
+  grid-column-end: 3;
+  grid-template-rows: subgrid;
+  grid-template-columns: subgrid;
 }
 
-#updateButton,
-#updateDeck > hbox > label {
+#updateDeck {
+  align-items: center;
+}
+
+#updateButton {
   margin-inline-start: 0;
   padding-inline-start: 0;
+}
+
+#updateDeck description {
+  margin: 0;
+}
+
+#rightBox {
+  /* We don't want this box to contribute arbitrarily to the intrinsic size of
+   * the dialog, so set the width to a reasonable size, but let it flex to take
+   * all available space. */
+  width: 430px;
+  flex: 1 auto;
 }
 
 .update-throbber {
   width: 16px;
   min-height: 16px;
   margin-inline-end: 3px;
-}
-
-html|img.update-throbber {
   vertical-align: middle;
+  content: image-set(url("chrome://global/skin/icons/loading.png"), url("chrome://global/skin/icons/loading@2x.png") 2x);
 }
 
-image.update-throbber {
-  list-style-image: url("chrome://global/skin/icons/loading.png");
-}
-
-@media (min-resolution: 1.1dppx) {
-  .update-throbber {
-    list-style-image: url("chrome://global/skin/icons/loading@2x.png");
-  }
+.text-link {
+  color: #fff !important;
+  text-decoration: underline;
 }
 
 description > .text-link {
@@ -112,11 +155,21 @@ description > .text-link {
 
 #updateBox {
   line-height: normal;
+  display: grid;
+}
+
+#icons {
+  align-self: center;
+  grid-row-start: 1;
+  grid-row-end: 2;
+  grid-column-start: 1;
+  grid-column-end: 2;
 }
 
 #icons > .icon {
+  vertical-align: middle;
   -moz-context-properties: fill;
-  margin: 5px;
+  margin: 0px 5px;
   width: 16px;
   height: 16px;
 }

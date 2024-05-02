@@ -16,7 +16,7 @@ def test_lint_exclusions(lint, paths):
 
 def test_lint_single_file(lint, paths):
     results = lint(paths("bad.ftl"))
-    assert len(results) == 11
+    assert len(results) == 13
     assert results[0].rule == "ID01"
     assert results[0].lineno == 1
     assert results[0].column == 1
@@ -50,6 +50,10 @@ def test_lint_single_file(lint, paths):
     assert results[10].rule == "ID02"
     assert results[10].lineno == 32
     assert results[10].column == 1
+    assert results[11].rule == "VC01"
+    assert "$tabCount" in results[11].message
+    assert results[12].rule == "VC01"
+    assert "$url" in results[12].message
 
 
 def test_comment_group(lint, paths):
@@ -111,6 +115,49 @@ def test_comment_resource(lint, paths):
 
     results = lint(paths("comment-resource6.ftl"))
     assert len(results) == 0
+
+
+def test_brand_names(lint, paths):
+    results = lint(paths("brand-names.ftl"), {"brand-files": ["test-brands.ftl"]})
+    assert len(results) == 11
+    assert results[0].rule == "CO01"
+    assert results[0].lineno == 1
+    assert results[0].column == 16
+    assert "Firefox" in results[0].message
+    assert "Mozilla" not in results[0].message
+    assert "Thunderbird" not in results[0].message
+    assert results[1].rule == "CO01"
+    assert results[1].lineno == 4
+    assert results[1].column == 16
+
+    results = lint(paths("brand-names-excluded.ftl"))
+    assert len(results) == 0
+
+
+def test_comment_variables(lint, paths):
+    results = lint(paths("comment-variables1.ftl"))
+    assert len(results) == 4
+    assert results[0].rule == "VC01"
+    assert "$var" in results[0].message
+    assert results[1].rule == "VC01"
+    assert "$select1" in results[1].message
+    assert results[2].rule == "VC01"
+    assert "$select2" in results[2].message
+    assert results[3].rule == "VC01"
+    assert "$attr" in results[3].message
+
+    results = lint(paths("comment-variables2.ftl"))
+    assert len(results) == 1
+    assert results[0].rule == "VC01"
+    assert "$term-message" in results[0].message
+
+
+def test_valid_attributes(lint, paths):
+    results = lint(paths("valid-attributes.ftl"))
+    print(results)
+    assert len(results) == 1
+    assert results[0].rule == "VA01"
+    assert ".extralabel" in results[0].message
 
 
 if __name__ == "__main__":

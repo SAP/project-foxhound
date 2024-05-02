@@ -10,7 +10,7 @@ NSS 3.36.4 release notes
 
    Network Security Services (NSS) 3.36.4 is a patch release for NSS 3.36.
 
-.. _distribution_information:
+
 
 `Distribution Information <#distribution_information>`__
 --------------------------------------------------------
@@ -28,8 +28,6 @@ NSS 3.36.4 release notes
 
 `New in NSS 3.36.4 <#new_in_nss_3.36.4>`__
 ------------------------------------------
-
-.. container::
 
 .. _new_functionality:
 

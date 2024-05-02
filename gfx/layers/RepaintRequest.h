@@ -10,14 +10,15 @@
 #include <iosfwd>
 #include <stdint.h>  // for uint8_t, uint32_t, uint64_t
 
-#include "FrameMetrics.h"             // for FrameMetrics
-#include "mozilla/DefineEnum.h"       // for MOZ_DEFINE_ENUM
-#include "mozilla/gfx/BasePoint.h"    // for BasePoint
-#include "mozilla/gfx/Rect.h"         // for RoundedIn
-#include "mozilla/gfx/ScaleFactor.h"  // for ScaleFactor
-#include "mozilla/TimeStamp.h"        // for TimeStamp
-#include "Units.h"                    // for CSSRect, CSSPixel, etc
-#include "UnitTransforms.h"           // for ViewAs
+#include "FrameMetrics.h"                // for FrameMetrics
+#include "mozilla/DefineEnum.h"          // for MOZ_DEFINE_ENUM
+#include "mozilla/gfx/BasePoint.h"       // for BasePoint
+#include "mozilla/gfx/Rect.h"            // for RoundedIn
+#include "mozilla/gfx/ScaleFactor.h"     // for ScaleFactor
+#include "mozilla/ScrollSnapTargetId.h"  // for ScrollSnapTargetIds
+#include "mozilla/TimeStamp.h"           // for TimeStamp
+#include "Units.h"                       // for CSSRect, CSSPixel, etc
+#include "UnitTransforms.h"              // for ViewAs
 
 namespace IPC {
 template <typename T>
@@ -47,25 +48,24 @@ struct RepaintRequest {
       : mScrollId(ScrollableLayerGuid::NULL_SCROLL_ID),
         mPresShellResolution(1),
         mCompositionBounds(0, 0, 0, 0),
-        mCumulativeResolution(),
         mDevPixelsPerCSSPixel(1),
         mScrollOffset(0, 0),
-        mZoom(),
         mDisplayPortMargins(0, 0, 0, 0),
         mPresShellId(-1),
         mLayoutViewport(0, 0, 0, 0),
-        mTransformToAncestorScale(),
-        mPaintRequestTime(),
         mScrollUpdateType(eNone),
         mScrollAnimationType(APZScrollAnimationType::No),
         mIsRootContent(false),
-        mIsScrollInfoLayer(false) {}
+        mIsScrollInfoLayer(false),
+        mIsInScrollingGesture(false) {}
 
   RepaintRequest(const FrameMetrics& aOther,
                  const ScreenMargin& aDisplayportMargins,
                  const ScrollOffsetUpdateType aScrollUpdateType,
                  APZScrollAnimationType aScrollAnimationType,
-                 const APZScrollGeneration& aScrollGenerationOnApz)
+                 const APZScrollGeneration& aScrollGenerationOnApz,
+                 const ScrollSnapTargetIds& aLastSnapTargetIds,
+                 bool aIsInScrollingGesture)
       : mScrollId(aOther.GetScrollId()),
         mPresShellResolution(aOther.GetPresShellResolution()),
         mCompositionBounds(aOther.GetCompositionBounds()),
@@ -82,8 +82,10 @@ struct RepaintRequest {
         mPaintRequestTime(aOther.GetPaintRequestTime()),
         mScrollUpdateType(aScrollUpdateType),
         mScrollAnimationType(aScrollAnimationType),
+        mLastSnapTargetIds(aLastSnapTargetIds),
         mIsRootContent(aOther.IsRootContent()),
-        mIsScrollInfoLayer(aOther.IsScrollInfoLayer()) {}
+        mIsScrollInfoLayer(aOther.IsScrollInfoLayer()),
+        mIsInScrollingGesture(aIsInScrollingGesture) {}
 
   // Default copy ctor and operator= are fine
 
@@ -104,8 +106,10 @@ struct RepaintRequest {
            mPaintRequestTime == aOther.mPaintRequestTime &&
            mScrollUpdateType == aOther.mScrollUpdateType &&
            mScrollAnimationType == aOther.mScrollAnimationType &&
+           mLastSnapTargetIds == aOther.mLastSnapTargetIds &&
            mIsRootContent == aOther.mIsRootContent &&
-           mIsScrollInfoLayer == aOther.mIsScrollInfoLayer;
+           mIsScrollInfoLayer == aOther.mIsScrollInfoLayer &&
+           mIsInScrollingGesture == aOther.mIsInScrollingGesture;
   }
 
   bool operator!=(const RepaintRequest& aOther) const {
@@ -194,8 +198,14 @@ struct RepaintRequest {
 
   bool IsScrollInfoLayer() const { return mIsScrollInfoLayer; }
 
+  bool IsInScrollingGesture() const { return mIsInScrollingGesture; }
+
   APZScrollAnimationType GetScrollAnimationType() const {
     return mScrollAnimationType;
+  }
+
+  const ScrollSnapTargetIds& GetLastSnapTargetIds() const {
+    return mLastSnapTargetIds;
   }
 
  protected:
@@ -205,6 +215,10 @@ struct RepaintRequest {
 
   void SetIsScrollInfoLayer(bool aIsScrollInfoLayer) {
     mIsScrollInfoLayer = aIsScrollInfoLayer;
+  }
+
+  void SetIsInScrollingGesture(bool aIsInScrollingGesture) {
+    mIsInScrollingGesture = aIsInScrollingGesture;
   }
 
  private:
@@ -298,6 +312,8 @@ struct RepaintRequest {
 
   APZScrollAnimationType mScrollAnimationType;
 
+  ScrollSnapTargetIds mLastSnapTargetIds;
+
   // Whether or not this is the root scroll frame for the root content document.
   bool mIsRootContent : 1;
 
@@ -306,6 +322,9 @@ struct RepaintRequest {
   // metrics are still sent to and updated by the compositor, with the updates
   // being reflected on the next paint rather than the next composite.
   bool mIsScrollInfoLayer : 1;
+
+  // Whether the APZC is in the middle of processing a gesture.
+  bool mIsInScrollingGesture : 1;
 };
 
 }  // namespace layers

@@ -9,14 +9,13 @@ List mozbase package dependencies or generate changelogs
 from commit messages.
 """
 
-from __future__ import absolute_import, print_function
-
-from collections.abc import Iterable
-from distutils.version import StrictVersion
 import argparse
 import os
 import subprocess
 import sys
+from collections.abc import Iterable
+
+from packaging.version import Version
 
 here = os.path.abspath(os.path.dirname(__file__))
 sys.path.insert(0, here)
@@ -48,12 +47,12 @@ def changelog(args):
             for line in diff.splitlines():
                 if line.startswith("-PACKAGE_VERSION"):
                     try:
-                        minus_version = StrictVersion(line.split()[-1].strip("\"'"))
+                        minus_version = Version(line.split()[-1].strip("\"'"))
                     except ValueError:
                         pass
                 elif line.startswith("+PACKAGE_VERSION"):
                     try:
-                        plus_version = StrictVersion(line.split()[-1].strip("\"'"))
+                        plus_version = Version(line.split()[-1].strip("\"'"))
                     except ValueError:
                         break
 
@@ -62,7 +61,7 @@ def changelog(args):
                         if not v:
                             return rev
 
-                        if StrictVersion(v) == plus_version:
+                        if Version(v) == plus_version:
                             return rev
 
         print(

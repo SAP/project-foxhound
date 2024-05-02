@@ -56,6 +56,8 @@ def check_cmd_output(*args, **kwargs):
     with log.queue_debug():
         retcode, stdout, stderr = get_cmd_output(*args, **kwargs)
         if retcode == 0:
+            with LineIO(lambda l: log.debug("| %s", l)) as o:
+                o.write(stderr)
             return stdout
 
         log.debug("The command returned non-zero exit status %d.", retcode)
@@ -167,7 +169,15 @@ normalize_path = normalize_path()
 @imports(_from="os", _import="pathsep")
 @imports(_from="os", _import="environ")
 @imports(_from="mozfile", _import="which")
-def find_program(file, paths=None):
+def find_program(file, paths=None, allow_spaces=False):
+    def which_normalize(file, path, exts):
+        path = which(file, path=path, exts=exts)
+        if not path:
+            return None
+        if not allow_spaces:
+            return normalize_path(path)
+        return normsep(path)
+
     # The following snippet comes from `which` itself, with a slight
     # modification to use lowercase extensions, because it's confusing rustup
     # (on top of making results not really appealing to the eye).
@@ -183,8 +193,9 @@ def find_program(file, paths=None):
         exts = None
 
     if is_absolute_or_relative(file):
-        path = which(os.path.basename(file), path=os.path.dirname(file), exts=exts)
-        return normalize_path(path) if path else None
+        return which_normalize(
+            os.path.basename(file), path=os.path.dirname(file), exts=exts
+        )
 
     if paths:
         if not isinstance(paths, (list, tuple)):
@@ -194,15 +205,48 @@ def find_program(file, paths=None):
             )
         paths = pathsep.join(paths)
 
-    path = which(file, path=paths, exts=exts)
-    return normalize_path(path) if path else None
+    return which_normalize(file, path=paths, exts=exts)
 
 
 @imports("os")
 @imports(_from="mozbuild.configure.util", _import="LineIO")
 @imports(_from="tempfile", _import="mkstemp")
-def try_invoke_compiler(compiler, language, source, flags=None, onerror=None):
+@imports(_import="subprocess")
+def try_invoke_compiler(
+    configure_cache, compiler, language, source, flags=None, onerror=None, wrapper=[]
+):
+    compiler_path = compiler[0]
+    compiler = wrapper + compiler
+    use_cache = configure_cache is not None
+
+    if use_cache and compiler_path not in configure_cache.version_checked_compilers:
+        try:
+            version_info = subprocess.check_output(
+                [compiler_path, "--version"],
+                encoding="UTF-8",
+            ).strip()
+        except subprocess.CalledProcessError:
+            # There's no sane way to use the cache without the version details, so
+            # we need to avoid both reads from and writes to the cache.
+            use_cache = False
+            pass
+
+        if use_cache:
+            if version_info != configure_cache.setdefault(compiler_path, {}).get(
+                "version"
+            ):
+                configure_cache[compiler_path].clear()
+
+            configure_cache[compiler_path]["version"] = version_info
+            configure_cache.version_checked_compilers.add(compiler_path)
+
     flags = flags or []
+
+    if use_cache:
+        key = " ".join(compiler) + language + source + (" ".join(flags) or "")
+
+        if key in configure_cache[compiler_path]:
+            return configure_cache[compiler_path][key]
 
     if not isinstance(flags, (list, tuple)):
         die("Flags provided to try_compile must be a list of strings, " "not %r", flags)
@@ -224,7 +268,10 @@ def try_invoke_compiler(compiler, language, source, flags=None, onerror=None):
         os.close(fd)
         cmd = compiler + [path] + list(flags)
         kwargs = {"onerror": onerror}
-        return check_cmd_output(*cmd, **kwargs)
+        val = check_cmd_output(*cmd, **kwargs)
+        if use_cache:
+            configure_cache[compiler_path][key] = val
+        return val
     finally:
         os.remove(path)
 
@@ -396,16 +443,11 @@ def deprecated_option(*args, **kwargs):
 # The given object can be a literal value, a function that takes no argument,
 # or, for convenience, a @depends function.
 @template
-@imports(_from="inspect", _import="isfunction")
 @imports(_from="mozbuild.configure", _import="SandboxDependsFunction")
 def dependable(obj):
     if isinstance(obj, SandboxDependsFunction):
         return obj
-    if isfunction(obj):
-        return depends(when=True)(obj)
-    # Depend on --help to make lint happy if the dependable is used as an input
-    # to an option().
-    return depends("--help", when=True)(lambda _: obj)
+    return depends(when=True)(obj)
 
 
 always = dependable(True)
@@ -446,6 +488,31 @@ def depends_if(*args, **kwargs):
 @template
 def depends_all(*args, **kwargs):
     return depends_tmpl(all, *args, **kwargs)
+
+
+# A template providing a shorthand for setting a variable. The created
+# option will only be settable with imply_option.
+# It is expected that a project-specific moz.configure will call imply_option
+# to set a value other than the default.
+# If required, the set_as_define argument will additionally cause the variable
+# to be set using set_define.
+@template
+def project_flag(env=None, set_as_define=False, **kwargs):
+    if not env:
+        configure_error("A project_flag must be passed a variable name to set.")
+
+    opt = option(env=env, possible_origins=("implied",), **kwargs)
+
+    @depends(opt.option)
+    def option_implementation(value):
+        if value:
+            if len(value):
+                return value
+            return bool(value)
+
+    set_config(env, option_implementation)
+    if set_as_define:
+        set_define(env, option_implementation)
 
 
 # Hacks related to old-configure

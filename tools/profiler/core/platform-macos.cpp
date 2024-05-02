@@ -60,6 +60,21 @@ uint64_t RunningTimes::ConvertRawToJson(uint64_t aRawValue) {
   return aRawValue;
 }
 
+namespace mozilla::profiler {
+bool GetCpuTimeSinceThreadStartInNs(
+    uint64_t* aResult, const mozilla::profiler::PlatformData& aPlatformData) {
+  thread_extended_info_data_t threadInfoData;
+  mach_msg_type_number_t count = THREAD_EXTENDED_INFO_COUNT;
+  if (thread_info(aPlatformData.ProfiledThread(), THREAD_EXTENDED_INFO,
+                  (thread_info_t)&threadInfoData, &count) != KERN_SUCCESS) {
+    return false;
+  }
+
+  *aResult = threadInfoData.pth_user_time + threadInfoData.pth_system_time;
+  return true;
+}
+}  // namespace mozilla::profiler
+
 static RunningTimes GetProcessRunningTimesDiff(
     PSLockRef aLock, RunningTimes& aPreviousRunningTimesToBeUpdated) {
   AUTO_PROFILER_STATS(GetProcessRunningTimes);
@@ -190,14 +205,17 @@ void Sampler::SuspendAndSampleAndResumeThread(
     regs.mPC = reinterpret_cast<Address>(state.REGISTER_FIELD(ip));
     regs.mSP = reinterpret_cast<Address>(state.REGISTER_FIELD(sp));
     regs.mFP = reinterpret_cast<Address>(state.REGISTER_FIELD(bp));
+    regs.mR10 = reinterpret_cast<Address>(state.REGISTER_FIELD(10));
+    regs.mR12 = reinterpret_cast<Address>(state.REGISTER_FIELD(12));
 #elif defined(__aarch64__)
     regs.mPC = reinterpret_cast<Address>(state.REGISTER_FIELD(pc));
     regs.mSP = reinterpret_cast<Address>(state.REGISTER_FIELD(sp));
     regs.mFP = reinterpret_cast<Address>(state.REGISTER_FIELD(fp));
+    regs.mLR = reinterpret_cast<Address>(state.REGISTER_FIELD(lr));
+    regs.mR11 = reinterpret_cast<Address>(state.REGISTER_FIELD(x[11]));
 #else
 #  error "unknown architecture"
 #endif
-    regs.mLR = 0;
 
     aProcessRegs(regs, aNow);
   }
@@ -262,19 +280,19 @@ void SamplerThread::Stop(PSLockRef aLock) { mSampler.Disable(aLock); }
 
 static void PlatformInit(PSLockRef aLock) {}
 
+// clang-format off
 #if defined(HAVE_NATIVE_UNWIND)
-void Registers::SyncPopulate() {
-  // Derive the stack pointer from the frame pointer. The 0x10 offset is
-  // 8 bytes for the previous frame pointer and 8 bytes for the return
-  // address both stored on the stack after at the beginning of the current
-  // frame.
-  mSP = reinterpret_cast<Address>(__builtin_frame_address(0)) + 0x10;
-#  pragma GCC diagnostic push
-#  pragma GCC diagnostic ignored "-Wframe-address"
-  mFP = reinterpret_cast<Address>(__builtin_frame_address(1));
-#  pragma GCC diagnostic pop
-  mPC = reinterpret_cast<Address>(
-      __builtin_extract_return_addr(__builtin_return_address(0)));
-  mLR = 0;
-}
+// Derive the stack pointer from the frame pointer. The 0x10 offset is
+// 8 bytes for the previous frame pointer and 8 bytes for the return
+// address both stored on the stack after at the beginning of the current
+// frame.
+#  define REGISTERS_SYNC_POPULATE(regs)                                       \
+    regs.mSP = reinterpret_cast<Address>(__builtin_frame_address(0)) + 0x10;  \
+    _Pragma("GCC diagnostic push")                                            \
+    _Pragma("GCC diagnostic ignored \"-Wframe-address\"")                     \
+    regs.mFP = reinterpret_cast<Address>(__builtin_frame_address(1));         \
+    _Pragma("GCC diagnostic pop")                                             \
+    regs.mPC = reinterpret_cast<Address>(                                     \
+        __builtin_extract_return_addr(__builtin_return_address(0)));
 #endif
+// clang-format on

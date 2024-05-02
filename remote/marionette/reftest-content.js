@@ -2,10 +2,12 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+/* eslint-env mozilla/frame-script */
+
 "use strict";
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 
 XPCOMUtils.defineLazyScriptGetter(
@@ -23,9 +25,7 @@ BrowserDOMWindow.prototype = {
 
   _maybeOpen(aOpenWindowInfo, aWhere) {
     if (aWhere == Ci.nsIBrowserDOMWindow.OPEN_PRINT_BROWSER) {
-      return PrintUtils.startPrintWindow(aOpenWindowInfo.parent, {
-        openWindowInfo: aOpenWindowInfo,
-      });
+      return PrintUtils.handleStaticCloneCreatedForPrint(aOpenWindowInfo);
     }
     return null;
   },

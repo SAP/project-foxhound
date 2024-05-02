@@ -105,7 +105,7 @@ const TEST_DATA = [
     expected: [
       {
         type: "click",
-        filename: TEST_URL + ":80:29",
+        filename: TEST_URL + ":81:29",
         attributes: ["Bubbling"],
         handler:
           "function(event) {\n" +
@@ -119,6 +119,6 @@ const TEST_DATA = [
   },
 ];
 
-add_task(async function() {
+add_task(async function () {
   await runEventPopupTests(TEST_URL, TEST_DATA);
 });

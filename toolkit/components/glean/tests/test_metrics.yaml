@@ -2,10 +2,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-# This file defines the metrics that are recorded by the Glean SDK. They are
-# automatically converted to platform-specific code at build time using the
-# `glean_parser` PyPI package.
-
 # This file is for Internal FOG Test Use Only.
 
 ---
@@ -164,6 +160,7 @@ test_only:
       - glean-team@mozilla.com
     send_in_pings:
       - test-ping
+    telemetry_mirror: TELEMETRY_TEST_MIRROR_FOR_TIMING
 
   mabels_kitchen_counters:
     type: labeled_counter
@@ -181,6 +178,27 @@ test_only:
       - glean-team@mozilla.com
     send_in_pings:
       - test-ping
+
+  mabels_labeled_counters:
+    type: labeled_counter
+    description: |
+      Counts Mabels labeled by their kitchen counters.
+      Now with static labels.
+      This is a test-only metric.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1672273
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1672273
+    data_sensitivity:
+      - technical
+    expires: never
+    notification_emails:
+      - glean-team@mozilla.com
+    send_in_pings:
+      - test-ping
+    labels:
+      - next_to_the_fridge
+      - clean
 
   mabels_bathroom_counters:
     type: labeled_counter
@@ -216,6 +234,26 @@ test_only:
     send_in_pings:
       - test-ping
 
+  mabels_like_labeled_balloons:
+    type: labeled_boolean
+    description: |
+      Does the labeled Mabel like balloons?
+      This is a test-only metric.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1672273
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1672273
+    data_sensitivity:
+      - technical
+    expires: never
+    notification_emails:
+      - glean-team@mozilla.com
+    send_in_pings:
+      - test-ping
+    labels:
+      - water
+      - birthday_party
+
   mabels_balloon_strings:
     type: labeled_string
     description: |
@@ -225,6 +263,44 @@ test_only:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1675277
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1675277#c1
+    data_sensitivity:
+      - technical
+    expires: never
+    notification_emails:
+      - glean-team@mozilla.com
+    send_in_pings:
+      - test-ping
+
+  mabels_balloon_labels:
+    type: labeled_string
+    description: |
+      How does Mabel label her balloons?
+      This is a test-only metric.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1672273
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1672273
+    data_sensitivity:
+      - technical
+    expires: never
+    notification_emails:
+      - glean-team@mozilla.com
+    send_in_pings:
+      - test-ping
+    labels:
+      - celebratory
+      - celebratory_and_snarky
+
+  mabels_label_maker:
+    type: labeled_string
+    description: |
+      Mabel just got a label maker and wants to party like it's
+      1999.
+      This is a test-only metric.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1696388
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1696388
     data_sensitivity:
       - technical
     expires: never
@@ -348,7 +424,7 @@ test_only.ipc:
       - store1
     no_lint:
       - COMMON_PREFIX
-    telemetry_mirror: TELEMETRY_TEST_UNSIGNED_INT_KIND
+    telemetry_mirror: TELEMETRY_TEST_MIRROR_FOR_COUNTER
   a_bool:
     type: boolean
     description: |
@@ -410,6 +486,24 @@ test_only.ipc:
     no_lint:
       - COMMON_PREFIX
     telemetry_mirror: TELEMETRY_TEST_MULTIPLE_STORES_STRING
+  a_text:
+    type: text
+    description: |
+      This is a test-only metric.
+      For holding Text data.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1828528
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1688281#c1
+    data_sensitivity:
+      - web_activity
+    notification_emails:
+      - glean-team@mozilla.com
+    expires: never
+    send_in_pings:
+      - store1
+    no_lint:
+      - COMMON_PREFIX
   a_memory_dist:
     type: memory_distribution
     memory_unit: kilobyte
@@ -607,7 +701,28 @@ test_only.ipc:
       - store1
     no_lint:
       - COMMON_PREFIX
-    telemetry_mirror: TELEMETRY_TEST_KEYED_UNSIGNED_INT
+    telemetry_mirror: TELEMETRY_TEST_ANOTHER_MIRROR_FOR_LABELED_COUNTER
+  another_labeled_counter:
+    type: labeled_counter
+    description: |
+      This is a test-only metric.
+      Just another metric counting labeled things.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1688281
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1685406
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1758795
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1688281#c1
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - glean-team@mozilla.com
+    expires: never
+    send_in_pings:
+      - store1
+    no_lint:
+      - COMMON_PREFIX
+    telemetry_mirror: TELEMETRY_TEST_MIRROR_FOR_LABELED_COUNTER
   a_quantity:
     type: quantity
     unit: squad
@@ -679,3 +794,66 @@ test_only.ipc:
       - store1
     no_lint:
       - COMMON_PREFIX
+  a_url:
+    type: url
+    description: |
+      This is a test-only metric.
+      Just setting some Urls.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1766980
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1646165#c1
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - glean-team@mozilla.com
+    expires: never
+    send_in_pings:
+      - store1
+    no_lint:
+      - COMMON_PREFIX
+    telemetry_mirror: TELEMETRY_TEST_MIRROR_FOR_URL
+
+test_only.jog:
+  a_counter:
+    type: counter
+    description: |
+      This is a test-only metric.
+      Just counting things.
+      Tied closely to test_jog_name_collision.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1767039
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1767039
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - glean-team@mozilla.com
+    expires: never
+    send_in_pings:
+      - store1
+
+  an_event:
+    type: event
+    extra_keys:
+      extra1:
+        type: string
+        description: "Some extra data"
+      extra2:
+        type: string
+        description: "Some extra data again"
+    description: |
+      This is a test-only metric.
+      Just recording some events.
+      Tied closely to test_jog_name_collision.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1767039
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1767039
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - glean-team@mozilla.com
+    expires: never
+    send_in_pings:
+      - store1

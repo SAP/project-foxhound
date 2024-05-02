@@ -7,12 +7,12 @@
 const TEST_URI =
   "data:text/html,<!DOCTYPE html>Test copy to clipboard on the console output";
 
-add_task(async function() {
+add_task(async function () {
   const hud = await openNewTabAndConsole(TEST_URI);
 
   const smokeMessage = "Hello world!";
-  const onMessage = waitForMessage(hud, smokeMessage);
-  SpecialPowers.spawn(gBrowser.selectedBrowser, [smokeMessage], function(msg) {
+  const onMessage = waitForMessageByType(hud, smokeMessage, ".console-api");
+  SpecialPowers.spawn(gBrowser.selectedBrowser, [smokeMessage], function (msg) {
     content.wrappedJSObject.console.log(msg);
   });
   const { node } = await onMessage;

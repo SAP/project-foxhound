@@ -7,12 +7,12 @@
 if CONFIG["MOZ_BUILD_APP"] == "browser":
     DEFINES["MOZ_BUILD_APP_IS_BROWSER"] = True
 
-MOCHITEST_MANIFESTS += ["test/mochitest/mochitest.ini"]
-BROWSER_CHROME_MANIFESTS += ["test/browser/browser.ini"]
+MOCHITEST_MANIFESTS += ["test/mochitest/mochitest.toml"]
+BROWSER_CHROME_MANIFESTS += ["test/browser/browser.toml"]
 XPCSHELL_TESTS_MANIFESTS += ["test/unit/xpcshell.ini"]
 
 TESTING_JS_MODULES += [
-    "test/LoginTestUtils.jsm",
+    "test/LoginTestUtils.sys.mjs",
 ]
 
 XPIDL_SOURCES += [
@@ -22,7 +22,6 @@ XPIDL_SOURCES += [
     "nsILoginManagerAuthPrompter.idl",
     "nsILoginManagerCrypto.idl",
     "nsILoginManagerPrompter.idl",
-    "nsILoginManagerStorage.idl",
     "nsILoginMetaInfo.idl",
     "nsIPromptInstance.idl",
 ]
@@ -30,46 +29,44 @@ XPIDL_SOURCES += [
 XPIDL_MODULE = "loginmgr"
 
 EXTRA_JS_MODULES += [
-    "crypto-SDR.js",
-    "InsecurePasswordUtils.jsm",
-    "LoginAutoComplete.jsm",
-    "LoginFormFactory.jsm",
-    "LoginHelper.jsm",
-    "LoginInfo.jsm",
-    "LoginManager.jsm",
-    "LoginManagerAuthPrompter.jsm",
-    "LoginManagerChild.jsm",
-    "LoginManagerParent.jsm",
-    "LoginManagerPrompter.jsm",
-    "LoginRecipes.jsm",
-    "LoginRelatedRealms.jsm",
-    "NewPasswordModel.jsm",
-    "OSCrypto.jsm",
-    "PasswordGenerator.jsm",
-    "PasswordRulesManager.jsm",
-    "PasswordRulesParser.jsm",
-    "storage-json.js",
+    "crypto-SDR.sys.mjs",
+    "InsecurePasswordUtils.sys.mjs",
+    "LoginAutoComplete.sys.mjs",
+    "LoginFormFactory.sys.mjs",
+    "LoginHelper.sys.mjs",
+    "LoginInfo.sys.mjs",
+    "LoginManager.shared.mjs",
+    "LoginManager.sys.mjs",
+    "LoginManagerAuthPrompter.sys.mjs",
+    "LoginManagerChild.sys.mjs",
+    "LoginManagerParent.sys.mjs",
+    "LoginManagerPrompter.sys.mjs",
+    "LoginManagerTelemetry.sys.mjs",
+    "LoginRecipes.sys.mjs",
+    "LoginRelatedRealms.sys.mjs",
+    "NewPasswordModel.sys.mjs",
+    "PasswordGenerator.sys.mjs",
+    "PasswordRulesManager.sys.mjs",
+    "PasswordRulesParser.sys.mjs",
+    "storage-json.sys.mjs",
 ]
 
-if CONFIG["OS_TARGET"] == "Android":
+if CONFIG["OS_TARGET"] != "Android":
     EXTRA_JS_MODULES += [
-        "storage-geckoview.js",
-    ]
-else:
-    EXTRA_JS_MODULES += [
-        "LoginCSVImport.jsm",
-        "LoginExport.jsm",
-        "LoginStore.jsm",
+        "CSV.sys.mjs",
+        "LoginCSVImport.sys.mjs",
+        "LoginExport.sys.mjs",
+        "LoginStore.sys.mjs",
     ]
 
 if CONFIG["OS_TARGET"] == "WINNT":
     EXTRA_JS_MODULES += [
-        "OSCrypto_win.js",
+        "OSCrypto_win.sys.mjs",
     ]
 
 if CONFIG["MOZ_BUILD_APP"] == "browser" or CONFIG["MOZ_SUITE"]:
     EXTRA_JS_MODULES += [
-        "LoginManagerContextMenu.jsm",
+        "LoginManagerContextMenu.sys.mjs",
     ]
 
 XPCOM_MANIFESTS += [

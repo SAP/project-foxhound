@@ -13,7 +13,7 @@
 
 Bump allocation is a fast, but limited approach to allocation. We have a chunk
 of memory, and we maintain a pointer within that memory. Whenever we allocate an
-object, we do a quick test that we have enough capacity left in our chunk to
+object, we do a quick check that we have enough capacity left in our chunk to
 allocate the object and then update the pointer by the object's size. *That's
 it!*
 
@@ -25,11 +25,11 @@ These trade offs make bump allocation well-suited for *phase-oriented*
 allocations. That is, a group of objects that will all be allocated during the
 same program phase, used, and then can all be deallocated together as a group.
 
-### Deallocation en Masse, but No `Drop`
+### Deallocation en Masse, but no `Drop`
 
 To deallocate all the objects in the arena at once, we can simply reset the bump
 pointer back to the start of the arena's memory chunk. This makes mass
-deallocation *extremely* fast, but allocated objects' `Drop` implementations are
+deallocation *extremely* fast, but allocated objects' [`Drop`] implementations are
 not invoked.
 
 > **However:** [`bumpalo::boxed::Box<T>`][box] can be used to wrap
@@ -37,6 +37,7 @@ not invoked.
 > implementation when the `Box<T>` wrapper goes out of scope. This is similar to
 > how [`std::boxed::Box`] works, except without deallocating its backing memory.
 
+[`Drop`]: https://doc.rust-lang.org/std/ops/trait.Drop.html
 [box]: https://docs.rs/bumpalo/latest/bumpalo/boxed/struct.Box.html
 [`std::boxed::Box`]: https://doc.rust-lang.org/std/boxed/struct.Box.html
 
@@ -75,9 +76,11 @@ scooter.age += 1;
 ### Collections
 
 When the `"collections"` cargo feature is enabled, a fork of some of the `std`
-library's collections are available in the `collections` module. These
+library's collections are available in the [`collections`] module. These
 collection types are modified to allocate their space inside `bumpalo::Bump`
 arenas.
+
+[`collections`]: https://docs.rs/bumpalo/latest/bumpalo/collections/index.html
 
 ```rust
 #[cfg(feature = "collections")]
@@ -108,7 +111,7 @@ For unstable, nightly-only support for custom allocators in `std`, see the
 
 ### `bumpalo::boxed::Box`
 
-When the `"boxed"` cargo feature is enabled, a fork of `std::boxed::Box` library
+When the `"boxed"` cargo feature is enabled, a fork of `std::boxed::Box`
 is available in the `boxed` module. This `Box` type is modified to allocate its
 space inside `bumpalo::Bump` arenas.
 
@@ -144,7 +147,8 @@ in its space itself.
     // Drop our `Box<CountDrops>`.
     drop(c);
 
-    // Its `Drop` implementation was run, and so `NUM_DROPS` has been incremented.
+    // Its `Drop` implementation was run, and so `NUM_DROPS` has been
+    // incremented.
     assert_eq!(NUM_DROPPED.load(Ordering::SeqCst), 1);
 }
 ```
@@ -155,15 +159,15 @@ Bumpalo is a `no_std` crate. It depends only on the `alloc` and `core` crates.
 
 ### Thread support
 
-The `Bump` is `!Sync`, which makes it hard to use in certain situations around threads ‒ for
-example in `rayon`.
+The `Bump` is `!Sync`, which makes it hard to use in certain situations around
+threads ‒ for example in `rayon`.
 
-The [`bumpalo-herd`](https://crates.io/crates/bumpalo-herd) crate provides a pool of `Bump`
-allocators for use in such situations.
+The [`bumpalo-herd`](https://crates.io/crates/bumpalo-herd) crate provides a
+pool of `Bump` allocators for use in such situations.
 
-### Nightly Rust `feature(allocator_api)` Support
+### Nightly Rust `allocator_api` Support
 
-The unstable, nightly-only Rust `allocator_api` feature defines an `Allocator`
+The unstable, nightly-only Rust `allocator_api` feature defines an [`Allocator`]
 trait and exposes custom allocators for `std` types. Bumpalo has a matching
 `allocator_api` cargo feature to enable implementing `Allocator` and using
 `Bump` with `std` collections. Note that, as `feature(allocator_api)` is
@@ -175,10 +179,11 @@ First, enable the `allocator_api` feature in your `Cargo.toml`:
 
 ```toml
 [dependencies]
-bumpalo = { version = "3.4.0", features = ["allocator_api"] }
+bumpalo = { version = "3.9", features = ["allocator_api"] }
 ```
 
-Next, enable the `allocator_api` nightly Rust feature in your `src/lib.rs` or `src/main.rs`:
+Next, enable the `allocator_api` nightly Rust feature in your `src/lib.rs` or
+`src/main.rs`:
 
 ```rust,ignore
 #![feature(allocator_api)]
@@ -188,7 +193,6 @@ Finally, use `std` collections with `Bump`, so that their internal heap
 allocations are made within the given bump arena:
 
 ```rust,ignore
-#![feature(allocator_api)]
 use bumpalo::Bump;
 
 // Create a new bump arena.
@@ -201,10 +205,12 @@ v.push(1);
 v.push(2);
 ```
 
+[`Allocator`]: https://doc.rust-lang.org/std/alloc/trait.Allocator.html
+
 #### Minimum Supported Rust Version (MSRV)
 
-This crate is guaranteed to compile on stable Rust **1.54** and up. It might
+This crate is guaranteed to compile on stable Rust **1.56** and up. It might
 compile with older versions but that may change in any new patch release.
 
-We reserve the right to increment the MSRV on minor releases, however we will strive
-to only do it deliberately and for good reasons.
+We reserve the right to increment the MSRV on minor releases, however we will
+strive to only do it deliberately and for good reasons.

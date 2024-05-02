@@ -27,13 +27,20 @@ static FFmpegLibWrapper sLibAV;
 static const char* sLibs[] = {
 // clang-format off
 #if defined(XP_DARWIN)
+  "libavcodec.60.dylib",
+  "libavcodec.59.dylib",
   "libavcodec.58.dylib",
   "libavcodec.57.dylib",
   "libavcodec.56.dylib",
   "libavcodec.55.dylib",
   "libavcodec.54.dylib",
   "libavcodec.53.dylib",
+#elif defined(XP_OPENBSD)
+  "libavcodec.so", // OpenBSD hardly controls the major/minor library version
+                   // of ffmpeg and update it regulary on ABI/API changes
 #else
+  "libavcodec.so.60",
+  "libavcodec.so.59",
   "libavcodec.so.58",
   "libavcodec-ffmpeg.so.58",
   "libavcodec-ffmpeg.so.57",
@@ -53,7 +60,7 @@ bool FFmpegRuntimeLinker::Init() {
     return sLinkStatus == LinkStatus_SUCCEEDED;
   }
 
-#ifdef MOZ_WAYLAND
+#ifdef MOZ_WIDGET_GTK
   sLibAV.LinkVAAPILibs();
 #endif
 
@@ -120,11 +127,11 @@ bool FFmpegRuntimeLinker::Init() {
     }
   }
 
-  FFMPEG_LOG("H264/AAC codecs unsupported without [");
+  FFMPEGV_LOG("H264/AAC codecs unsupported without [");
   for (size_t i = 0; i < ArrayLength(sLibs); i++) {
-    FFMPEG_LOG("%s %s", i ? "," : " ", sLibs[i]);
+    FFMPEGV_LOG("%s %s", i ? "," : " ", sLibs[i]);
   }
-  FFMPEG_LOG(" ]\n");
+  FFMPEGV_LOG(" ]\n");
 
   return false;
 }
@@ -151,6 +158,12 @@ already_AddRefed<PlatformDecoderModule> FFmpegRuntimeLinker::Create() {
       break;
     case 58:
       module = FFmpegDecoderModule<58>::Create(&sLibAV);
+      break;
+    case 59:
+      module = FFmpegDecoderModule<59>::Create(&sLibAV);
+      break;
+    case 60:
+      module = FFmpegDecoderModule<60>::Create(&sLibAV);
       break;
     default:
       module = nullptr;

@@ -10,9 +10,9 @@
 #include <ostream>
 
 #include "mozilla/Attributes.h"
+#include "mozilla/MathAlgorithms.h"
 
-namespace mozilla {
-namespace gfx {
+namespace mozilla::gfx {
 
 /**
  * Do not use this class directly. Subclass it, pass that subclass as the
@@ -29,6 +29,8 @@ struct BaseCoord {
 
   // Note that '=' isn't defined so we'll get the
   // compiler generated default assignment operator
+
+  friend constexpr Sub Abs(BaseCoord aCoord) { return Abs(aCoord.value); }
 
   constexpr operator T() const { return value; }
 
@@ -94,7 +96,6 @@ struct BaseCoord {
   }
 };
 
-}  // namespace gfx
-}  // namespace mozilla
+}  // namespace mozilla::gfx
 
 #endif /* MOZILLA_GFX_BASECOORD_H_ */

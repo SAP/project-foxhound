@@ -35,28 +35,11 @@ void nsFrameList::Delete(mozilla::PresShell* aPresShell) {
   aPresShell->FreeByObjectID(eArenaObjectID_nsFrameList, this);
 }
 
-void nsFrameList::DestroyFrames() {
+void nsFrameList::DestroyFrames(FrameDestroyContext& aContext) {
   while (nsIFrame* frame = RemoveFirstChild()) {
-    frame->Destroy();
+    frame->Destroy(aContext);
   }
   mLastChild = nullptr;
-}
-
-void nsFrameList::DestroyFramesFrom(
-    nsIFrame* aDestructRoot, layout::PostFrameDestroyData& aPostDestroyData) {
-  MOZ_ASSERT(aDestructRoot, "Missing destruct root");
-
-  while (nsIFrame* frame = RemoveFirstChild()) {
-    frame->DestroyFrom(aDestructRoot, aPostDestroyData);
-  }
-  mLastChild = nullptr;
-}
-
-void nsFrameList::SetFrames(nsIFrame* aFrameList) {
-  MOZ_ASSERT(!mFirstChild, "Losing frames");
-
-  mFirstChild = aFrameList;
-  mLastChild = nsLayoutUtils::GetLastSibling(mFirstChild);
 }
 
 void nsFrameList::RemoveFrame(nsIFrame* aFrame) {
@@ -85,24 +68,22 @@ void nsFrameList::RemoveFrame(nsIFrame* aFrame) {
   }
 }
 
-nsFrameList nsFrameList::RemoveFramesAfter(nsIFrame* aAfterFrame) {
-  if (!aAfterFrame) {
-    nsFrameList result;
-    result.InsertFrames(nullptr, nullptr, *this);
-    return result;
+nsFrameList nsFrameList::TakeFramesAfter(nsIFrame* aFrame) {
+  if (!aFrame) {
+    return std::move(*this);
   }
 
-  MOZ_ASSERT(NotEmpty(), "illegal operation on empty list");
-#ifdef DEBUG_FRAME_LIST
-  MOZ_ASSERT(ContainsFrame(aAfterFrame), "wrong list");
-#endif
+  MOZ_ASSERT(ContainsFrame(aFrame), "aFrame is not on this list!");
 
-  nsIFrame* tail = aAfterFrame->GetNextSibling();
-  // if (!tail) return EmptyList();  -- worth optimizing this case?
-  nsIFrame* oldLastChild = mLastChild;
-  mLastChild = aAfterFrame;
-  aAfterFrame->SetNextSibling(nullptr);
-  return nsFrameList(tail, tail ? oldLastChild : nullptr);
+  nsIFrame* newFirstChild = aFrame->GetNextSibling();
+  if (!newFirstChild) {
+    return nsFrameList();
+  }
+
+  nsIFrame* newLastChild = mLastChild;
+  mLastChild = aFrame;
+  mLastChild->SetNextSibling(nullptr);
+  return nsFrameList(newFirstChild, newLastChild);
 }
 
 nsIFrame* nsFrameList::RemoveFirstChild() {
@@ -114,15 +95,16 @@ nsIFrame* nsFrameList::RemoveFirstChild() {
   return nullptr;
 }
 
-void nsFrameList::DestroyFrame(nsIFrame* aFrame) {
+void nsFrameList::DestroyFrame(FrameDestroyContext& aContext,
+                               nsIFrame* aFrame) {
   MOZ_ASSERT(aFrame, "null ptr");
   RemoveFrame(aFrame);
-  aFrame->Destroy();
+  aFrame->Destroy(aContext);
 }
 
 nsFrameList::Slice nsFrameList::InsertFrames(nsContainerFrame* aParent,
                                              nsIFrame* aPrevSibling,
-                                             nsFrameList& aFrameList) {
+                                             nsFrameList&& aFrameList) {
   MOZ_ASSERT(aFrameList.NotEmpty(), "Unexpected empty list");
 
   if (aParent) {
@@ -160,74 +142,31 @@ nsFrameList::Slice nsFrameList::InsertFrames(nsContainerFrame* aParent,
   VerifyList();
 
   aFrameList.Clear();
-  return Slice(*this, firstNewFrame, nextSibling);
+  return Slice(firstNewFrame, nextSibling);
 }
 
-nsFrameList nsFrameList::ExtractHead(FrameLinkEnumerator& aLink) {
-  MOZ_ASSERT(&aLink.List() == this, "Unexpected list");
-  MOZ_ASSERT(!aLink.PrevFrame() ||
-                 aLink.PrevFrame()->GetNextSibling() == aLink.NextFrame(),
-             "Unexpected PrevFrame()");
-  MOZ_ASSERT(aLink.PrevFrame() || aLink.NextFrame() == FirstChild(),
-             "Unexpected NextFrame()");
-  MOZ_ASSERT(!aLink.PrevFrame() || aLink.NextFrame() != FirstChild(),
-             "Unexpected NextFrame()");
-  MOZ_ASSERT(aLink.mEnd == nullptr,
-             "Unexpected mEnd for frame link enumerator");
-
-  nsIFrame* prev = aLink.PrevFrame();
-  nsIFrame* newFirstFrame = nullptr;
-  if (prev) {
-    // Truncate the list after |prev| and hand the first part to our new list.
-    prev->SetNextSibling(nullptr);
-    newFirstFrame = mFirstChild;
-    mFirstChild = aLink.NextFrame();
-    if (!mFirstChild) {  // we handed over the whole list
-      mLastChild = nullptr;
-    }
-
-    // Now make sure aLink doesn't point to a frame we no longer have.
-    aLink.mPrev = nullptr;
-  }
-  // else aLink is pointing to before our first frame.  Nothing to do.
-
-  return nsFrameList(newFirstFrame, prev);
-}
-
-nsFrameList nsFrameList::ExtractTail(FrameLinkEnumerator& aLink) {
-  MOZ_ASSERT(&aLink.List() == this, "Unexpected list");
-  MOZ_ASSERT(!aLink.PrevFrame() ||
-                 aLink.PrevFrame()->GetNextSibling() == aLink.NextFrame(),
-             "Unexpected PrevFrame()");
-  MOZ_ASSERT(aLink.PrevFrame() || aLink.NextFrame() == FirstChild(),
-             "Unexpected NextFrame()");
-  MOZ_ASSERT(!aLink.PrevFrame() || aLink.NextFrame() != FirstChild(),
-             "Unexpected NextFrame()");
-  MOZ_ASSERT(aLink.mEnd == nullptr,
-             "Unexpected mEnd for frame link enumerator");
-
-  nsIFrame* prev = aLink.PrevFrame();
-  nsIFrame* newFirstFrame;
-  nsIFrame* newLastFrame;
-  if (prev) {
-    // Truncate the list after |prev| and hand the second part to our new list
-    prev->SetNextSibling(nullptr);
-    newFirstFrame = aLink.NextFrame();
-    newLastFrame = newFirstFrame ? mLastChild : nullptr;
-    mLastChild = prev;
-  } else {
-    // Hand the whole list over to our new list
-    newFirstFrame = mFirstChild;
-    newLastFrame = mLastChild;
-    Clear();
+nsFrameList nsFrameList::TakeFramesBefore(nsIFrame* aFrame) {
+  if (!aFrame) {
+    // We handed over the whole list.
+    return std::move(*this);
   }
 
-  // Now make sure aLink doesn't point to a frame we no longer have.
-  aLink.mFrame = nullptr;
+  MOZ_ASSERT(ContainsFrame(aFrame), "aFrame is not on this list!");
 
-  MOZ_ASSERT(aLink.AtEnd(), "What's going on here?");
+  if (aFrame == mFirstChild) {
+    // aFrame is our first child. Nothing to extract.
+    return nsFrameList();
+  }
 
-  return nsFrameList(newFirstFrame, newLastFrame);
+  // Extract all previous siblings of aFrame as a new list.
+  nsIFrame* prev = aFrame->GetPrevSibling();
+  nsIFrame* newFirstChild = mFirstChild;
+  nsIFrame* newLastChild = prev;
+
+  prev->SetNextSibling(nullptr);
+  mFirstChild = aFrame;
+
+  return nsFrameList(newFirstChild, newLastChild);
 }
 
 nsIFrame* nsFrameList::FrameAt(int32_t aIndex) const {
@@ -309,7 +248,8 @@ nsIFrame* nsFrameList::GetPrevVisualFor(nsIFrame* aFrame) const {
   mozilla::intl::BidiDirection paraDir =
       nsBidiPresUtils::ParagraphDirection(mFirstChild);
 
-  nsAutoLineIterator iter = parent->GetLineIterator();
+  AutoAssertNoDomMutations guard;
+  nsILineIterator* iter = parent->GetLineIterator();
   if (!iter) {
     // Parent is not a block Frame
     if (parent->IsLineFrame()) {
@@ -380,7 +320,8 @@ nsIFrame* nsFrameList::GetNextVisualFor(nsIFrame* aFrame) const {
   mozilla::intl::BidiDirection paraDir =
       nsBidiPresUtils::ParagraphDirection(mFirstChild);
 
-  nsAutoLineIterator iter = parent->GetLineIterator();
+  AutoAssertNoDomMutations guard;
+  nsILineIterator* iter = parent->GetLineIterator();
   if (!iter) {
     // Parent is not a block Frame
     if (parent->IsLineFrame()) {
@@ -487,6 +428,46 @@ void nsFrameList::VerifyList() const {
 #endif
 
 namespace mozilla {
+
+#ifdef DEBUG_FRAME_DUMP
+const char* ChildListName(FrameChildListID aListID) {
+  switch (aListID) {
+    case FrameChildListID::Principal:
+      return "";
+    case FrameChildListID::Popup:
+      return "PopupList";
+    case FrameChildListID::Caption:
+      return "CaptionList";
+    case FrameChildListID::ColGroup:
+      return "ColGroupList";
+    case FrameChildListID::Absolute:
+      return "AbsoluteList";
+    case FrameChildListID::Fixed:
+      return "FixedList";
+    case FrameChildListID::Overflow:
+      return "OverflowList";
+    case FrameChildListID::OverflowContainers:
+      return "OverflowContainersList";
+    case FrameChildListID::ExcessOverflowContainers:
+      return "ExcessOverflowContainersList";
+    case FrameChildListID::OverflowOutOfFlow:
+      return "OverflowOutOfFlowList";
+    case FrameChildListID::Float:
+      return "FloatList";
+    case FrameChildListID::Bullet:
+      return "BulletList";
+    case FrameChildListID::PushedFloats:
+      return "PushedFloatsList";
+    case FrameChildListID::Backdrop:
+      return "BackdropList";
+    case FrameChildListID::NoReflowPrincipal:
+      return "NoReflowPrincipalList";
+  }
+
+  MOZ_ASSERT_UNREACHABLE("unknown list");
+  return "UNKNOWN_FRAME_CHILD_LIST";
+}
+#endif
 
 AutoFrameListPtr::~AutoFrameListPtr() {
   if (mFrameList) {

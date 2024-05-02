@@ -45,19 +45,23 @@ class ColumnSetWrapperFrame final : public nsBlockFrame {
   nsresult GetFrameName(nsAString& aResult) const override;
 #endif
 
-  void AppendFrames(ChildListID aListID, nsFrameList& aFrameList) override;
+  void AppendFrames(ChildListID aListID, nsFrameList&& aFrameList) override;
 
   void InsertFrames(ChildListID aListID, nsIFrame* aPrevFrame,
                     const nsLineList::iterator* aPrevFrameLine,
-                    nsFrameList& aFrameList) override;
+                    nsFrameList&& aFrameList) override;
 
-  void RemoveFrame(ChildListID aListID, nsIFrame* aOldFrame) override;
+  void RemoveFrame(DestroyContext&, ChildListID, nsIFrame*) override;
 
   void MarkIntrinsicISizesDirty() override;
 
   nscoord GetMinISize(gfxContext* aRenderingContext) override;
 
   nscoord GetPrefISize(gfxContext* aRenderingContext) override;
+
+  Maybe<nscoord> GetNaturalBaselineBOffset(
+      WritingMode aWM, BaselineSharingGroup aBaselineGroup,
+      BaselineExportContext aExportContext) const override;
 
  private:
   explicit ColumnSetWrapperFrame(ComputedStyle* aStyle,
@@ -71,6 +75,12 @@ class ColumnSetWrapperFrame final : public nsBlockFrame {
   // its descendants.
   bool mFinishedBuildingColumns = false;
 #endif
+
+  template <typename Iterator>
+  Maybe<nscoord> GetBaselineBOffset(Iterator aStart, Iterator aEnd,
+                                    WritingMode aWM,
+                                    BaselineSharingGroup aBaselineGroup,
+                                    BaselineExportContext aExportContext) const;
 };
 
 }  // namespace mozilla

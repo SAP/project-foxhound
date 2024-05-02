@@ -40,8 +40,6 @@ class APZCTreeManagerParent : public PAPZCTreeManagerParent {
   mozilla::ipc::IPCResult RecvContentReceivedInputBlock(
       const uint64_t& aInputBlockId, const bool& aPreventDefault);
 
-  mozilla::ipc::IPCResult RecvAddInputBlockCallback(uint64_t aInputBlockId);
-
   mozilla::ipc::IPCResult RecvSetTargetAPZC(
       const uint64_t& aInputBlockId, nsTArray<ScrollableLayerGuid>&& aTargets);
 
@@ -53,6 +51,9 @@ class APZCTreeManagerParent : public PAPZCTreeManagerParent {
 
   mozilla::ipc::IPCResult RecvSetAllowedTouchBehavior(
       const uint64_t& aInputBlockId, nsTArray<TouchBehaviorFlags>&& aValues);
+
+  mozilla::ipc::IPCResult RecvSetBrowserGestureResponse(
+      const uint64_t& aInputBlockId, const BrowserGestureResponse& aResponse);
 
   mozilla::ipc::IPCResult RecvStartScrollbarDrag(
       const ScrollableLayerGuid& aGuid, const AsyncDragMetrics& aDragMetrics);
@@ -68,8 +69,6 @@ class APZCTreeManagerParent : public PAPZCTreeManagerParent {
 
  private:
   bool IsGuidValid(const ScrollableLayerGuid& aGuid);
-  static void CallInputBlockCallback(LayersId aLayersId, uint64_t aInputBlockId,
-                                     const APZHandledResult& aHandledResult);
 
   LayersId mLayersId;
   RefPtr<APZCTreeManager> mTreeManager;

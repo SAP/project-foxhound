@@ -14,7 +14,9 @@
 #include "mozilla/Maybe.h"
 #include "mozilla/TimeStamp.h"
 
+#include "gc/Cell.h"
 #include "gc/GC.h"
+#include "gc/GCContext.h"
 #include "vm/GeckoProfiler.h"
 #include "vm/HelperThreads.h"
 #include "vm/JSContext.h"
@@ -168,8 +170,8 @@ class MOZ_RAII AutoRunParallelTask : public GCParallelTask {
 
  public:
   AutoRunParallelTask(GCRuntime* gc, TaskFunc func, gcstats::PhaseKind phase,
-                      AutoLockHelperThreadState& lock)
-      : GCParallelTask(gc, phase), func_(func), lock_(lock) {
+                      GCUse use, AutoLockHelperThreadState& lock)
+      : GCParallelTask(gc, phase, use), func_(func), lock_(lock) {
     gc->startTask(*this, lock_);
   }
 
@@ -231,6 +233,70 @@ struct MOZ_RAII AutoStopVerifyingBarriers {
 };
 #endif /* JS_GC_ZEAL */
 
+class MOZ_RAII AutoPoisonFreedJitCode {
+  JS::GCContext* const gcx;
+
+ public:
+  explicit AutoPoisonFreedJitCode(JS::GCContext* gcx) : gcx(gcx) {}
+  ~AutoPoisonFreedJitCode() { gcx->poisonJitCode(); }
+};
+
+// Set/restore the GCContext GC use flag for the current thread.
+
+class MOZ_RAII AutoSetThreadGCUse {
+ public:
+  AutoSetThreadGCUse(JS::GCContext* gcx, GCUse use)
+      : gcx(gcx), prevUse(gcx->gcUse_) {
+    gcx->gcUse_ = use;
+  }
+  explicit AutoSetThreadGCUse(GCUse use)
+      : AutoSetThreadGCUse(TlsGCContext.get(), use) {}
+
+  ~AutoSetThreadGCUse() { gcx->gcUse_ = prevUse; }
+
+ protected:
+  JS::GCContext* gcx;
+  GCUse prevUse;
+};
+
+template <GCUse Use>
+class AutoSetThreadGCUseT : public AutoSetThreadGCUse {
+ public:
+  explicit AutoSetThreadGCUseT(JS::GCContext* gcx)
+      : AutoSetThreadGCUse(gcx, Use) {}
+  AutoSetThreadGCUseT() : AutoSetThreadGCUseT(TlsGCContext.get()) {}
+};
+
+using AutoSetThreadIsPerformingGC = AutoSetThreadGCUseT<GCUse::Unspecified>;
+using AutoSetThreadIsMarking = AutoSetThreadGCUseT<GCUse::Marking>;
+using AutoSetThreadIsFinalizing = AutoSetThreadGCUseT<GCUse::Finalizing>;
+
+class AutoSetThreadIsSweeping : public AutoSetThreadGCUseT<GCUse::Sweeping> {
+ public:
+  explicit AutoSetThreadIsSweeping(JS::GCContext* gcx,
+                                   JS::Zone* sweepZone = nullptr)
+      : AutoSetThreadGCUseT(gcx) {
+#ifdef DEBUG
+    prevZone = gcx->gcSweepZone_;
+    gcx->gcSweepZone_ = sweepZone;
+#endif
+  }
+  explicit AutoSetThreadIsSweeping(JS::Zone* sweepZone = nullptr)
+      : AutoSetThreadIsSweeping(TlsGCContext.get(), sweepZone) {}
+
+  ~AutoSetThreadIsSweeping() {
+#ifdef DEBUG
+    MOZ_ASSERT_IF(prevUse == GCUse::None, !prevZone);
+    gcx->gcSweepZone_ = prevZone;
+#endif
+  }
+
+ private:
+#ifdef DEBUG
+  JS::Zone* prevZone;
+#endif
+};
+
 #ifdef JSGC_HASH_TABLE_CHECKS
 void CheckHashTablesAfterMovingGC(JSRuntime* rt);
 void CheckHeapAfterGC(JSRuntime* rt);
@@ -241,7 +307,7 @@ struct MovingTracer final : public GenericTracerImpl<MovingTracer> {
 
  private:
   template <typename T>
-  T* onEdge(T* thingp);
+  void onEdge(T** thingp, const char* name);
   friend class GenericTracerImpl<MovingTracer>;
 };
 
@@ -251,25 +317,19 @@ struct MinorSweepingTracer final
 
  private:
   template <typename T>
-  T* onEdge(T* thingp);
+  void onEdge(T** thingp, const char* name);
   friend class GenericTracerImpl<MinorSweepingTracer>;
 };
 
-extern void DelayCrossCompartmentGrayMarking(JSObject* src);
+extern void DelayCrossCompartmentGrayMarking(GCMarker* maybeMarker,
+                                             JSObject* src);
 
 inline bool IsOOMReason(JS::GCReason reason) {
   return reason == JS::GCReason::LAST_DITCH ||
          reason == JS::GCReason::MEM_PRESSURE;
 }
 
-// TODO: Bug 1650075. Adding XPCONNECT_SHUTDOWN seems to cause crash.
-inline bool IsShutdownReason(JS::GCReason reason) {
-  return reason == JS::GCReason::WORKER_SHUTDOWN ||
-         reason == JS::GCReason::SHUTDOWN_CC ||
-         reason == JS::GCReason::DESTROY_RUNTIME;
-}
-
-TenuredCell* AllocateCellInGC(JS::Zone* zone, AllocKind thingKind);
+void* AllocateCellInGC(JS::Zone* zone, AllocKind thingKind);
 
 void ReadProfileEnv(const char* envName, const char* helpText, bool* enableOut,
                     bool* workersOut, mozilla::TimeDuration* thresholdOut);

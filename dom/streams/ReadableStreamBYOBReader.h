@@ -12,34 +12,30 @@
 #include "mozilla/ErrorResult.h"
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/ReadableStreamGenericReader.h"
-#include "mozilla/dom/ReadIntoRequest.h"
 #include "mozilla/dom/TypedArray.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsWrapperCache.h"
 #include "mozilla/LinkedList.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class Promise;
+struct ReadIntoRequest;
 class ReadableStream;
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class ReadableStreamBYOBReader final : public ReadableStreamGenericReader,
                                        public nsWrapperCache {
  public:
   NS_DECL_ISUPPORTS_INHERITED
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS_INHERITED(
+  NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS_INHERITED(
       ReadableStreamBYOBReader, ReadableStreamGenericReader)
 
  public:
-  explicit ReadableStreamBYOBReader(nsISupports* aGlobal)
-      : ReadableStreamGenericReader(do_QueryInterface(aGlobal)) {}
+  explicit ReadableStreamBYOBReader(nsISupports* aGlobal);
 
   bool IsDefault() override { return false; };
   bool IsBYOB() override { return true; }
@@ -65,17 +61,20 @@ class ReadableStreamBYOBReader final : public ReadableStreamGenericReader,
   }
 
  private:
-  virtual ~ReadableStreamBYOBReader() = default;
+  ~ReadableStreamBYOBReader() override = default;
 
-  LinkedList<RefPtr<ReadIntoRequest>> mReadIntoRequests = {};
+  LinkedList<RefPtr<ReadIntoRequest>> mReadIntoRequests;
 };
 
+namespace streams_abstract {
+
 already_AddRefed<ReadableStreamBYOBReader> AcquireReadableStreamBYOBReader(
-    JSContext* aCx, ReadableStream* aStream, ErrorResult& aRv);
+    ReadableStream* aStream, ErrorResult& aRv);
 
 MOZ_CAN_RUN_SCRIPT void ReadableStreamBYOBReaderRead(
-    JSContext* aCx, ReadableStreamBYOBReader* aReader, JS::HandleObject aView,
-    ReadIntoRequest* aReadIntoRequest, ErrorResult& aRv);
+    JSContext* aCx, ReadableStreamBYOBReader* aReader,
+    JS::Handle<JSObject*> aView, ReadIntoRequest* aReadIntoRequest,
+    ErrorResult& aRv);
 
 void ReadableStreamBYOBReaderErrorReadIntoRequests(
     JSContext* aCx, ReadableStreamBYOBReader* aReader,
@@ -85,7 +84,8 @@ void ReadableStreamBYOBReaderRelease(JSContext* aCx,
                                      ReadableStreamBYOBReader* aReader,
                                      ErrorResult& aRv);
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace streams_abstract
+
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_ReadableStreamBYOBReader_h

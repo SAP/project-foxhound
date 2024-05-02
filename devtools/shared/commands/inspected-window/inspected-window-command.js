@@ -7,8 +7,7 @@
 const {
   getAdHocFrontOrPrimitiveGrip,
   // eslint-disable-next-line mozilla/reject-some-requires
-} = require("devtools/client/fronts/object");
-const { Cu } = require("chrome");
+} = require("resource://devtools/client/fronts/object.js");
 
 /**
  * For now, this class is mostly a wrapper around webExtInspectedWindow actor.
@@ -122,13 +121,11 @@ class InspectedWindowCommand {
     this._reloadPending = true;
 
     try {
-      // If this is called with a `userAgent` property, we need to update the target configuration
-      // so the custom user agent will be set on the parent process.
-      if (typeof options.userAgent !== undefined) {
-        await this.commands.targetConfigurationCommand.updateConfiguration({
-          customUserAgent: options.userAgent,
-        });
-      }
+      // We always want to update the target configuration to set the user agent if one is
+      // passed, or to reset a potential existing override if userAgent isn't defined.
+      await this.commands.targetConfigurationCommand.updateConfiguration({
+        customUserAgent: options.userAgent,
+      });
 
       const front = await this.getFront();
       const result = await front.reload(callerInfo, options);
@@ -137,7 +134,7 @@ class InspectedWindowCommand {
       return result;
     } catch (e) {
       this._reloadPending = false;
-      Cu.reportError(e);
+      console.error(e);
       return Promise.reject({
         message: "An unexpected error occurred",
       });

@@ -11,15 +11,10 @@ import React from "react";
 const ANIMATION_DURATION = 3000;
 
 export const DSMessageLabel = props => {
-  const {
-    context,
-    context_type,
-    display_engagement_labels,
-    engagement,
-  } = props;
+  const { context, context_type } = props;
   const { icon, fluentID } = cardContextTypes[context_type] || {};
 
-  if (!context && (context_type || (display_engagement_labels && engagement))) {
+  if (!context && context_type) {
     return (
       <TransitionGroup component={null}>
         <CSSTransition
@@ -27,11 +22,7 @@ export const DSMessageLabel = props => {
           timeout={ANIMATION_DURATION}
           classNames="story-animate"
         >
-          {engagement && !context_type ? (
-            <div className="story-view-count">{engagement}</div>
-          ) : (
-            <StatusMessage icon={icon} fluentID={fluentID} />
-          )}
+          <StatusMessage icon={icon} fluentID={fluentID} />
         </CSSTransition>
       </TransitionGroup>
     );
@@ -84,15 +75,8 @@ export const SponsorLabel = ({
 
 export class DSContextFooter extends React.PureComponent {
   render() {
-    // display_engagement_labels is based on pref `browser.newtabpage.activity-stream.discoverystream.engagementLabelEnabled`
-    const {
-      context,
-      context_type,
-      engagement,
-      display_engagement_labels,
-      sponsor,
-      sponsored_by_override,
-    } = this.props;
+    const { context, context_type, sponsor, sponsored_by_override } =
+      this.props;
 
     const sponsorLabel = SponsorLabel({
       sponsored_by_override,
@@ -102,8 +86,6 @@ export class DSContextFooter extends React.PureComponent {
     const dsMessageLabel = DSMessageLabel({
       context,
       context_type,
-      display_engagement_labels,
-      engagement,
     });
 
     if (sponsorLabel || dsMessageLabel) {
@@ -120,19 +102,11 @@ export class DSContextFooter extends React.PureComponent {
 }
 
 export const DSMessageFooter = props => {
-  const {
-    context,
-    context_type,
-    engagement,
-    display_engagement_labels,
-    saveToPocketCard,
-  } = props;
+  const { context, context_type, saveToPocketCard } = props;
 
   const dsMessageLabel = DSMessageLabel({
     context,
     context_type,
-    engagement,
-    display_engagement_labels,
   });
 
   // This case is specific and already displayed to the user elsewhere.

@@ -1,15 +1,8 @@
-ChromeUtils.defineModuleGetter(
-  this,
-  "PlacesTestUtils",
-  "resource://testing-common/PlacesTestUtils.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "TestUtils",
-  "resource://testing-common/TestUtils.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  PlacesTestUtils: "resource://testing-common/PlacesTestUtils.sys.mjs",
+});
 
-XPCOMUtils.defineLazyGetter(this, "gFluentStrings", function() {
+ChromeUtils.defineLazyGetter(this, "gFluentStrings", function () {
   return new Localization(["branding/brand.ftl", "browser/browser.ftl"], true);
 });
 
@@ -20,7 +13,7 @@ function openLibrary(callback, aLeftPaneRoot) {
     "chrome,toolbar=yes,dialog=no,resizable",
     aLeftPaneRoot
   );
-  waitForFocus(function() {
+  waitForFocus(function () {
     checkLibraryPaneVisibility(library, aLeftPaneRoot);
     callback(library);
   }, library);
@@ -63,7 +56,7 @@ function promiseLibraryClosed(organizer) {
     // Wait for the Organizer window to actually be closed
     organizer.addEventListener(
       "unload",
-      function() {
+      function () {
         executeSoon(resolve);
       },
       { once: true }
@@ -105,7 +98,7 @@ function checkLibraryPaneVisibility(library, selectedPane) {
  *
  * @see waitForClipboard
  *
- * @param {function} aPopulateClipboardFn
+ * @param {Function} aPopulateClipboardFn
  *        Function to populate the clipboard.
  * @param {string} aFlavor
  *        Data flavor to expect.
@@ -162,14 +155,11 @@ function synthesizeClickOnSelectedTreeCell(aTree, aOptions) {
  *        The toolbar to update.
  * @param {boolean} aVisible
  *        True to make the toolbar visible, false to make it hidden.
- * @param {function} aCallback
  *
- * @returns {Promise}
- * @resolves Any animation associated with updating the toolbar's visibility has
- *           finished.
- * @rejects Never.
+ * @returns {Promise} Any animation associated with updating the toolbar's
+ *                    visibility has finished.
  */
-function promiseSetToolbarVisibility(aToolbar, aVisible, aCallback) {
+function promiseSetToolbarVisibility(aToolbar, aVisible) {
   if (isToolbarVisible(aToolbar) != aVisible) {
     let visibilityChanged = TestUtils.waitForCondition(
       () => aToolbar.collapsed != aVisible
@@ -202,26 +192,18 @@ function isToolbarVisible(aToolbar) {
  *
  * @param {boolean} autoCancel
  *        whether to automatically cancel the dialog at the end of the task
- * @param {function} openFn
+ * @param {Function} openFn
  *        generator function causing the dialog to open
- * @param {function} taskFn
+ * @param {Function} taskFn
  *        the task to execute once the dialog is open
- * @param {function} closeFn
+ * @param {Function} closeFn
  *        A function to be used to wait for pending work when the dialog is
  *        closing. It is passed the dialog window handle and should return a promise.
- * @param {string} [dialogUrl]
- *        The URL of the dialog.
- * @param {boolean} [skipOverlayWait]
- *        Avoid waiting for the overlay.
+ * @returns {string} guid
+ *          Bookmark guid
  */
-var withBookmarksDialog = async function(
-  autoCancel,
-  openFn,
-  taskFn,
-  closeFn,
-  dialogUrl = "chrome://browser/content/places/bookmarkProperties",
-  skipOverlayWait = false
-) {
+var withBookmarksDialog = async function (autoCancel, openFn, taskFn, closeFn) {
+  let dialogUrl = "chrome://browser/content/places/bookmarkProperties.xhtml";
   let closed = false;
   // We can't show the in-window prompt for windows which don't have
   // gDialogBox, like the library (Places:Organizer) window.
@@ -268,17 +250,12 @@ var withBookmarksDialog = async function(
   let dialogWin = await dialogPromise;
 
   // Ensure overlay is loaded
-  if (!skipOverlayWait) {
-    info("waiting for the overlay to be loaded");
-    await TestUtils.waitForCondition(
-      () => dialogWin.gEditItemOverlay.initialized,
-      "EditItemOverlay should be initialized"
-    );
-  }
+  info("waiting for the overlay to be loaded");
+  await dialogWin.document.mozSubdialogReady;
 
   // Check the first input is focused.
   let doc = dialogWin.document;
-  let elt = doc.querySelector("vbox:not([collapsed=true]) > input");
+  let elt = doc.querySelector('input:not([hidden="true"])');
   ok(elt, "There should be an input to focus.");
 
   if (elt) {
@@ -295,7 +272,7 @@ var withBookmarksDialog = async function(
   if (closeFn) {
     closePromise = closeFn(dialogWin);
   }
-
+  let guid;
   try {
     await taskFn(dialogWin);
   } finally {
@@ -304,9 +281,11 @@ var withBookmarksDialog = async function(
       doc.getElementById("bookmarkpropertiesdialog").cancelDialog();
       await closePromise;
     }
+    guid = await PlacesUIUtils.lastBookmarkDialogDeferred.promise;
     // Give the dialog a little time to close itself.
     await dialogClosePromise;
   }
+  return guid;
 };
 
 /**
@@ -320,13 +299,13 @@ var withBookmarksDialog = async function(
  *         Returns a Promise that resolves once the context menu has been
  *         opened.
  */
-var openContextMenuForContentSelector = async function(browser, selector) {
+var openContextMenuForContentSelector = async function (browser, selector) {
   info("wait for the context menu");
   let contextPromise = BrowserTestUtils.waitForEvent(
     document.getElementById("contentAreaContextMenu"),
     "popupshown"
   );
-  await SpecialPowers.spawn(browser, [{ selector }], async function(args) {
+  await SpecialPowers.spawn(browser, [{ selector }], async function (args) {
     let doc = content.document;
     let elt = doc.querySelector(args.selector);
     dump(`openContextMenuForContentSelector: found ${elt}\n`);
@@ -386,17 +365,17 @@ function fillBookmarkTextField(id, text, win, blur = true) {
  *
  * @param {string} type
  *        either "bookmarks" or "history".
- * @param {function} taskFn
+ * @param {Function} taskFn
  *        The task to execute once the sidebar is ready. Will get the Places
  *        tree view as input.
  */
-var withSidebarTree = async function(type, taskFn) {
+var withSidebarTree = async function (type, taskFn) {
   let sidebar = document.getElementById("sidebar");
   info("withSidebarTree: waiting sidebar load");
   let sidebarLoadedPromise = new Promise(resolve => {
     sidebar.addEventListener(
       "load",
-      function() {
+      function () {
         executeSoon(resolve);
       },
       { capture: true, once: true }
@@ -425,11 +404,11 @@ var withSidebarTree = async function(type, taskFn) {
  *
  * @param {string} hierarchy
  *        The left pane hierarchy to open.
- * @param {function} taskFn
+ * @param {Function} taskFn
  *        The task to execute once the Library is ready.
  *        Will get { left, right } trees as argument.
  */
-var withLibraryWindow = async function(hierarchy, taskFn) {
+var withLibraryWindow = async function (hierarchy, taskFn) {
   let library = await promiseLibrary(hierarchy);
   let left = library.document.getElementById("placesList");
   let right = library.document.getElementById("placeContent");
@@ -548,6 +527,7 @@ async function createAndRemoveDefaultFolder() {
   await PlacesUtils.bookmarks.remove(tempFolder);
 }
 
-registerCleanupFunction(() => {
+registerCleanupFunction(async () => {
   Services.prefs.clearUserPref("browser.bookmarks.defaultLocation");
+  await PlacesTransactions.clearTransactionsHistory(true, true);
 });

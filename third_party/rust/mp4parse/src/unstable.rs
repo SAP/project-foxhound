@@ -106,7 +106,7 @@ impl<T: std::cmp::PartialEq> PartialEq<T> for CheckedInteger<T> {
 /// sample data offset (start and end), composition time in microseconds
 /// (start and end) and whether it is a sync sample
 #[repr(C)]
-#[derive(Default, Debug, PartialEq)]
+#[derive(Default, Debug, PartialEq, Eq)]
 pub struct Indice {
     /// The byte offset in the file where the indexed sample begins.
     pub start_offset: CheckedInteger<u64>,
@@ -115,14 +115,14 @@ pub struct Indice {
     /// sample. Typically this will be the `start_offset` of the next sample
     /// in the file.
     pub end_offset: CheckedInteger<u64>,
-    /// The time in microseconds when the indexed sample should be displayed.
+    /// The time in ticks when the indexed sample should be displayed.
     /// Analogous to the concept of presentation time stamp (pts).
     pub start_composition: CheckedInteger<i64>,
-    /// The time in microseconds when the indexed sample should stop being
+    /// The time in ticks when the indexed sample should stop being
     /// displayed. Typically this would be the `start_composition` time of the
     /// next sample if samples were ordered by composition time.
     pub end_composition: CheckedInteger<i64>,
-    /// The time in microseconds that the indexed sample should be decoded at.
+    /// The time in ticks that the indexed sample should be decoded at.
     /// Analogous to the concept of decode time stamp (dts).
     pub start_decode: CheckedInteger<i64>,
     /// Set if the indexed sample is a sync sample. The meaning of sync is
@@ -140,18 +140,13 @@ pub fn create_sample_table(
     track: &Track,
     track_offset_time: CheckedInteger<i64>,
 ) -> Option<TryVec<Indice>> {
-    let timescale = match track.timescale {
-        Some(ref t) => TrackTimeScale::<i64>(t.0 as i64, t.1),
-        _ => return None,
-    };
-
     let (stsc, stco, stsz, stts) = match (&track.stsc, &track.stco, &track.stsz, &track.stts) {
-        (&Some(ref a), &Some(ref b), &Some(ref c), &Some(ref d)) => (a, b, c, d),
+        (Some(a), Some(b), Some(c), Some(d)) => (a, b, c, d),
         _ => return None,
     };
 
     // According to spec, no sync table means every sample is sync sample.
-    let has_sync_table = matches!(track.stss, Some(_));
+    let has_sync_table = track.stss.is_some();
 
     let mut sample_size_iter = stsz.sample_sizes.iter();
 
@@ -238,15 +233,15 @@ pub fn create_sample_table(
         // ctts_offset is the current sample offset time.
         let ctts_offset = ctts_offset_iter.next_offset_time();
 
-        let start_composition = track_time_to_us((decode_time + ctts_offset)?, timescale)?.0;
+        let start_composition = decode_time + ctts_offset;
 
-        let end_composition = track_time_to_us((sum_delta + ctts_offset)?, timescale)?.0;
+        let end_composition = sum_delta + ctts_offset;
 
-        let start_decode = track_time_to_us(decode_time, timescale)?.0;
+        let start_decode = decode_time;
 
-        sample.start_composition = (track_offset_time + start_composition)?;
-        sample.end_composition = (track_offset_time + end_composition)?;
-        sample.start_decode = start_decode.into();
+        sample.start_composition = CheckedInteger(track_offset_time.0 + start_composition?.0);
+        sample.end_composition = CheckedInteger(track_offset_time.0 + end_composition?.0);
+        sample.start_decode = CheckedInteger(start_decode.0);
     }
 
     // Correct composition end time due to 'ctts' causes composition time re-ordering.
@@ -328,7 +323,7 @@ impl<'a> Iterator for TimeOffsetIterator<'a> {
 impl<'a> TimeOffsetIterator<'a> {
     fn next_offset_time(&mut self) -> TrackScaledTime<i64> {
         match self.next() {
-            Some(v) => TrackScaledTime::<i64>(v as i64, self.track_id),
+            Some(v) => TrackScaledTime::<i64>(v, self.track_id),
             _ => TrackScaledTime::<i64>(0, self.track_id),
         }
     }
@@ -470,7 +465,7 @@ impl<'a> SampleToChunkIterator<'a> {
 /// (n * s) / d is split into floor(n / d) * s + (n % d) * s / d.
 ///
 /// Return None on overflow or if the denominator is zero.
-fn rational_scale<T, S>(numerator: T, denominator: T, scale2: S) -> Option<T>
+pub fn rational_scale<T, S>(numerator: T, denominator: T, scale2: S) -> Option<T>
 where
     T: PrimInt + Zero,
     S: PrimInt,
@@ -489,7 +484,7 @@ where
     })
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Microseconds<T>(pub T);
 
 /// Convert `time` in media's global (mvhd) timescale to microseconds,

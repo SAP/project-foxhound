@@ -8,12 +8,15 @@
 
 #include "mozilla/Attributes.h"
 #include "imgINotificationObserver.h"
-#include "MediaDocument.h"
+#include "mozilla/dom/MediaDocument.h"
 #include "nsIDOMEventListener.h"
 
 namespace mozilla {
-namespace dom {
+enum class StyleImageRendering : uint8_t;
+struct IntrinsicSize;
+}  // namespace mozilla
 
+namespace mozilla::dom {
 class HTMLImageElement;
 
 class ImageDocument final : public MediaDocument,
@@ -28,7 +31,8 @@ class ImageDocument final : public MediaDocument,
     return MediaDocumentKind::Image;
   }
 
-  nsresult Init() override;
+  nsresult Init(nsIPrincipal* aPrincipal,
+                nsIPrincipal* aPartitionedPrincipal) override;
 
   nsresult StartDocumentLoad(const char* aCommand, nsIChannel* aChannel,
                              nsILoadGroup* aLoadGroup, nsISupports* aContainer,
@@ -74,6 +78,8 @@ class ImageDocument final : public MediaDocument,
 
   void NotifyPossibleTitleChange(bool aBoundTitleElement) override;
 
+  void UpdateRemoteStyle(StyleImageRendering aImageRendering);
+
  protected:
   virtual ~ImageDocument();
 
@@ -85,12 +91,15 @@ class ImageDocument final : public MediaDocument,
 
   void ScrollImageTo(int32_t aX, int32_t aY);
 
-  float GetRatio() {
+  float GetRatio() const {
     return std::min(mVisibleWidth / mImageWidth, mVisibleHeight / mImageHeight);
   }
 
+  bool IsSiteSpecific();
+
   void ResetZoomLevel();
   float GetZoomLevel();
+  void CheckFullZoom();
   float GetResolution();
 
   void UpdateSizeFromLayout();
@@ -99,13 +108,16 @@ class ImageDocument final : public MediaDocument,
     eNone,
     eShrinkToFit,
     eOverflowingVertical,  // And maybe horizontal too.
-    eOverflowingHorizontalOnly
+    eOverflowingHorizontalOnly,
+    eIsInObjectOrEmbed
   };
   void SetModeClass(eModeClasses mode);
 
   void OnSizeAvailable(imgIRequest* aRequest, imgIContainer* aImage);
   void OnLoadComplete(imgIRequest* aRequest, nsresult aStatus);
   void OnHasTransparency();
+
+  void MaybeSendResultToEmbedder(nsresult aResult);
 
   RefPtr<HTMLImageElement> mImageContent;
 
@@ -126,11 +138,23 @@ class ImageDocument final : public MediaDocument,
   bool mTitleUpdateInProgress;
   bool mHasCustomTitle;
 
+  // True iff embedder is either <object> or <embed>.
+  bool mIsInObjectOrEmbed;
+
   float mOriginalZoomLevel;
   float mOriginalResolution;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+inline ImageDocument* Document::AsImageDocument() {
+  MOZ_ASSERT(IsImageDocument());
+  return static_cast<ImageDocument*>(this);
+}
+
+inline const ImageDocument* Document::AsImageDocument() const {
+  MOZ_ASSERT(IsImageDocument());
+  return static_cast<const ImageDocument*>(this);
+}
+
+}  // namespace mozilla::dom
 
 #endif /* mozilla_dom_ImageDocument_h */

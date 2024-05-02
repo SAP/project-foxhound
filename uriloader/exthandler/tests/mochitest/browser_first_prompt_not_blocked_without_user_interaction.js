@@ -26,7 +26,7 @@ add_task(async function test_open_without_user_interaction() {
     true
   );
 
-  BrowserTestUtils.loadURI(
+  BrowserTestUtils.startLoadingURIString(
     tab.linkedBrowser,
     TEST_PATH + "file_external_protocol_iframe.html"
   );
@@ -56,7 +56,7 @@ add_task(async function test_open_without_user_interaction() {
 
   info("Adding another frame without user interaction");
 
-  await SpecialPowers.spawn(tab.linkedBrowser, [], async function() {
+  await SpecialPowers.spawn(tab.linkedBrowser, [], async function () {
     let frame = content.document.createElement("iframe");
     frame.src = "mailto:foo@baz.com";
     content.document.body.appendChild(frame);

@@ -5,43 +5,28 @@
 
 const EXPORTED_SYMBOLS = ["Screenshots"];
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 
-XPCOMUtils.defineLazyGlobalGetters(this, ["fetch"]);
+const lazy = {};
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "BackgroundPageThumbs",
-  "resource://gre/modules/BackgroundPageThumbs.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "PageThumbs",
-  "resource://gre/modules/PageThumbs.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "PrivateBrowsingUtils",
-  "resource://gre/modules/PrivateBrowsingUtils.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "Services",
-  "resource://gre/modules/Services.jsm"
-);
+ChromeUtils.defineESModuleGetters(lazy, {
+  BackgroundPageThumbs: "resource://gre/modules/BackgroundPageThumbs.sys.mjs",
+  PageThumbs: "resource://gre/modules/PageThumbs.sys.mjs",
+  PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
+});
 
 const GREY_10 = "#F9F9FA";
 
 XPCOMUtils.defineLazyPreferenceGetter(
-  this,
+  lazy,
   "gPrivilegedAboutProcessEnabled",
   "browser.tabs.remote.separatePrivilegedContentProcess",
   false
 );
 
-this.Screenshots = {
+const Screenshots = {
   /**
    * Get a screenshot / thumbnail for a url. Either returns the disk cached
    * image or initiates a background request for the url.
@@ -51,19 +36,19 @@ this.Screenshots = {
    */
   async getScreenshotForURL(url) {
     try {
-      await BackgroundPageThumbs.captureIfMissing(url, {
+      await lazy.BackgroundPageThumbs.captureIfMissing(url, {
         backgroundColor: GREY_10,
       });
 
       // The privileged about content process is able to use the moz-page-thumb
       // protocol, so if it's enabled, send that down.
-      if (gPrivilegedAboutProcessEnabled) {
-        return PageThumbs.getThumbnailURL(url);
+      if (lazy.gPrivilegedAboutProcessEnabled) {
+        return lazy.PageThumbs.getThumbnailURL(url);
       }
 
       // Otherwise, for normal content processes, we fallback to using
       // Blob URIs for the screenshots.
-      const imgPath = PageThumbs.getThumbnailPath(url);
+      const imgPath = lazy.PageThumbs.getThumbnailPath(url);
 
       const filePathResponse = await fetch(`file://${imgPath}`);
       const fileContents = await filePathResponse.blob();
@@ -76,7 +61,7 @@ this.Screenshots = {
 
       return { path: imgPath, data: fileContents };
     } catch (err) {
-      Cu.reportError(`getScreenshot(${url}) failed: ${err}`);
+      console.error(`getScreenshot(${url}) failed:`, err);
     }
 
     // We must have failed to get the screenshot, so persist the failure by
@@ -85,7 +70,7 @@ this.Screenshots = {
     // the usual filtering process to avoid repeated background requests, which
     // can cause unwanted high CPU, network and memory usage - Bug 1384094
     try {
-      await PageThumbs._store(url, url, null, true);
+      await lazy.PageThumbs._store(url, url, null, true);
     } catch (err) {
       // Probably failed to create the empty file, but not much more we can do.
     }
@@ -99,7 +84,7 @@ this.Screenshots = {
    */
   _shouldGetScreenshots() {
     for (let win of Services.wm.getEnumerator("navigator:browser")) {
-      if (!PrivateBrowsingUtils.isWindowPrivate(win)) {
+      if (!lazy.PrivateBrowsingUtils.isWindowPrivate(win)) {
         // As soon as we encounter 1 non-private window, screenshots are fair game.
         return true;
       }

@@ -5,14 +5,15 @@
 
 #include "TextServicesDocument.h"
 
+#include "EditorBase.h"               // for EditorBase
+#include "EditorUtils.h"              // for AutoTransactionBatchExternal
 #include "FilteredContentIterator.h"  // for FilteredContentIterator
-#include "mozilla/Assertions.h"       // for MOZ_ASSERT, etc
-#include "mozilla/EditorBase.h"       // for EditorBase
-#include "mozilla/EditorUtils.h"      // for AutoTransactionBatchExternal
-#include "mozilla/HTMLEditHelpers.h"  // for JoinNodesDirection
-#include "mozilla/HTMLEditUtils.h"    // for HTMLEditUtils
-#include "mozilla/IntegerRange.h"     // for IntegerRange
-#include "mozilla/mozalloc.h"         // for operator new, etc
+#include "HTMLEditHelpers.h"          // for BlockInlineCheck
+#include "HTMLEditUtils.h"            // for HTMLEditUtils
+
+#include "mozilla/Assertions.h"    // for MOZ_ASSERT, etc
+#include "mozilla/IntegerRange.h"  // for IntegerRange
+#include "mozilla/mozalloc.h"      // for operator new, etc
 #include "mozilla/OwningNonNull.h"
 #include "mozilla/UniquePtr.h"          // for UniquePtr
 #include "mozilla/dom/AbstractRange.h"  // for AbstractRange
@@ -21,8 +22,9 @@
 #include "mozilla/dom/StaticRange.h"  // for StaticRange
 #include "mozilla/dom/Text.h"
 #include "mozilla/intl/WordBreaker.h"  // for WordRange, WordBreaker
-#include "nsAString.h"                 // for nsAString::Length, etc
-#include "nsContentUtils.h"            // for nsContentUtils
+
+#include "nsAString.h"       // for nsAString::Length, etc
+#include "nsContentUtils.h"  // for nsContentUtils
 #include "nsComposeTxtSrvFilter.h"
 #include "nsDebug.h"                 // for NS_ENSURE_TRUE, etc
 #include "nsDependentSubstring.h"    // for Substring
@@ -34,7 +36,7 @@
 #include "nsIEditorSpellCheck.h"     // for nsIEditorSpellCheck, etc
 #include "nsINode.h"                 // for nsINode
 #include "nsISelectionController.h"  // for nsISelectionController, etc
-#include "nsISupportsBase.h"         // for nsISupports
+#include "nsISupports.h"             // for nsISupports
 #include "nsISupportsUtils.h"        // for NS_IF_ADDREF, NS_ADDREF, etc
 #include "nsRange.h"                 // for nsRange
 #include "nsString.h"                // for nsString, nsAutoString
@@ -344,7 +346,7 @@ nsresult TextServicesDocument::ExpandRangeToWordBoundaries(
         "TextServicesDocument::OffsetEntryArray::FindWordRange() failed");
     return maybeWordRange.unwrapErr();
   }
-  rngStartNode = maybeWordRange.inspect().StartRef().GetContainerAsText();
+  rngStartNode = maybeWordRange.inspect().StartRef().GetContainerAs<Text>();
   rngStartOffset = maybeWordRange.inspect().StartRef().Offset();
 
   // Grab all the text in the block containing our
@@ -374,10 +376,11 @@ nsresult TextServicesDocument::ExpandRangeToWordBoundaries(
   // rngEndNode and rngEndOffset if it isn't already at the start of the
   // word and isn't equivalent to rngStartNode and rngStartOffset.
 
-  if (rngEndNode != maybeWordRange.inspect().StartRef().GetContainerAsText() ||
+  if (rngEndNode !=
+          maybeWordRange.inspect().StartRef().GetContainerAs<Text>() ||
       rngEndOffset != maybeWordRange.inspect().StartRef().Offset() ||
       (rngEndNode == rngStartNode && rngEndOffset == rngStartOffset)) {
-    rngEndNode = maybeWordRange.inspect().EndRef().GetContainerAsText();
+    rngEndNode = maybeWordRange.inspect().EndRef().GetContainerAs<Text>();
     rngEndOffset = maybeWordRange.inspect().EndRef().Offset();
   }
 
@@ -1334,8 +1337,7 @@ void TextServicesDocument::DidDeleteContent(const nsIContent& aChildContent) {
 }
 
 void TextServicesDocument::DidJoinContents(
-    const EditorRawDOMPoint& aJoinedPoint, const nsIContent& aRemovedContent,
-    JoinNodesDirection aJoinNodesDirection) {
+    const EditorRawDOMPoint& aJoinedPoint, const nsIContent& aRemovedContent) {
   // Make sure that both nodes are text nodes -- otherwise we don't care.
   if (!aJoinedPoint.IsInTextNode() || !aRemovedContent.IsText()) {
     return;
@@ -1353,7 +1355,7 @@ void TextServicesDocument::DidJoinContents(
   }
 
   Maybe<size_t> maybeJoinedIndex =
-      mOffsetTable.FirstIndexOf(*aJoinedPoint.ContainerAsText());
+      mOffsetTable.FirstIndexOf(*aJoinedPoint.ContainerAs<Text>());
   if (maybeJoinedIndex.isNothing()) {
     // It's okay if the node isn't in the offset table, the
     // editor could be cleaning house.
@@ -1363,30 +1365,19 @@ void TextServicesDocument::DidJoinContents(
   const size_t removedIndex = *maybeRemovedIndex;
   const size_t joinedIndex = *maybeJoinedIndex;
 
-  if (aJoinNodesDirection == JoinNodesDirection::LeftNodeIntoRightNode) {
-    if (MOZ_UNLIKELY(removedIndex > joinedIndex)) {
-      NS_ASSERTION(removedIndex < joinedIndex, "Indexes out of order.");
-      return;
-    }
-    NS_ASSERTION(mOffsetTable[joinedIndex]->mOffsetInTextNode == 0,
-                 "Unexpected offset value for joinedIndex.");
-  } else {
-    if (MOZ_UNLIKELY(joinedIndex > removedIndex)) {
-      NS_ASSERTION(joinedIndex < removedIndex, "Indexes out of order.");
-      return;
-    }
-    NS_ASSERTION(mOffsetTable[removedIndex]->mOffsetInTextNode == 0,
-                 "Unexpected offset value for rightIndex.");
+  if (MOZ_UNLIKELY(joinedIndex > removedIndex)) {
+    NS_ASSERTION(joinedIndex < removedIndex, "Indexes out of order.");
+    return;
   }
+  NS_ASSERTION(mOffsetTable[removedIndex]->mOffsetInTextNode == 0,
+               "Unexpected offset value for rightIndex.");
 
   // Run through the table and change all entries referring to
   // the removed node so that they now refer to the joined node,
   // and adjust offsets if necessary.
   const uint32_t movedTextDataLength =
-      aJoinNodesDirection == JoinNodesDirection::LeftNodeIntoRightNode
-          ? aJoinedPoint.Offset()
-          : aJoinedPoint.ContainerAsText()->TextDataLength() -
-                aJoinedPoint.Offset();
+      aJoinedPoint.ContainerAs<Text>()->TextDataLength() -
+      aJoinedPoint.Offset();
   for (uint32_t i = removedIndex; i < mOffsetTable.Length(); i++) {
     const UniquePtr<OffsetEntry>& entry = mOffsetTable[i];
     LockOffsetEntryArrayLengthInDebugBuild(observer, mOffsetTable);
@@ -1394,34 +1385,17 @@ void TextServicesDocument::DidJoinContents(
       break;
     }
     if (entry->mIsValid) {
-      entry->mTextNode = aJoinedPoint.ContainerAsText();
-      if (aJoinNodesDirection == JoinNodesDirection::RightNodeIntoLeftNode) {
-        // The text was moved from aRemovedContent to end of the container of
-        // aJoinedPoint.
-        entry->mOffsetInTextNode += movedTextDataLength;
-      }
-    }
-  }
-
-  if (aJoinNodesDirection == JoinNodesDirection::LeftNodeIntoRightNode) {
-    // The text was moved from aRemovedContent to start of the container of
-    // aJoinedPoint.
-    for (uint32_t i = joinedIndex; i < mOffsetTable.Length(); i++) {
-      const UniquePtr<OffsetEntry>& entry = mOffsetTable[i];
-      LockOffsetEntryArrayLengthInDebugBuild(observer, mOffsetTable);
-      if (entry->mTextNode != aJoinedPoint.ContainerAsText()) {
-        break;
-      }
-      if (entry->mIsValid) {
-        entry->mOffsetInTextNode += movedTextDataLength;
-      }
+      entry->mTextNode = aJoinedPoint.ContainerAs<Text>();
+      // The text was moved from aRemovedContent to end of the container of
+      // aJoinedPoint.
+      entry->mOffsetInTextNode += movedTextDataLength;
     }
   }
 
   // Now check to see if the iterator is pointing to the
   // left node. If it is, make it point to the joined node!
   if (mFilteredIter->GetCurrentNode() == aRemovedContent.AsText()) {
-    mFilteredIter->PositionAt(aJoinedPoint.ContainerAsText());
+    mFilteredIter->PositionAt(aJoinedPoint.ContainerAs<Text>());
   }
 }
 
@@ -1650,11 +1624,13 @@ bool TextServicesDocument::HasSameBlockNodeParent(Text& aTextNode1,
   const Element* editableBlockElementOrInlineEditingHost1 =
       HTMLEditUtils::GetAncestorElement(
           aTextNode1,
-          HTMLEditUtils::ClosestEditableBlockElementOrInlineEditingHost);
+          HTMLEditUtils::ClosestEditableBlockElementOrInlineEditingHost,
+          BlockInlineCheck::UseHTMLDefaultStyle);
   const Element* editableBlockElementOrInlineEditingHost2 =
       HTMLEditUtils::GetAncestorElement(
           aTextNode2,
-          HTMLEditUtils::ClosestEditableBlockElementOrInlineEditingHost);
+          HTMLEditUtils::ClosestEditableBlockElementOrInlineEditingHost,
+          BlockInlineCheck::UseHTMLDefaultStyle);
   return editableBlockElementOrInlineEditingHost1 &&
          editableBlockElementOrInlineEditingHost1 ==
              editableBlockElementOrInlineEditingHost2;
@@ -2304,8 +2280,11 @@ nsresult TextServicesDocument::FirstTextNodeInCurrentBlock(
         aFilteredIter->GetCurrentNode()->IsContent()
             ? aFilteredIter->GetCurrentNode()->AsContent()
             : nullptr;
+    // We don't observe layout updates, therefore, we should consider whether
+    // block or inline only with the default definition of the element.
     if (lastTextNode && content &&
-        (HTMLEditUtils::IsBlockElement(*content) ||
+        (HTMLEditUtils::IsBlockElement(*content,
+                                       BlockInlineCheck::UseHTMLDefaultStyle) ||
          content->IsHTMLElement(nsGkAtoms::br))) {
       break;
     }
@@ -2384,9 +2363,13 @@ nsresult TextServicesDocument::FirstTextNodeInNextBlock(
           break;
         }
         previousTextNode = content->AsText();
-      } else if (!crossedBlockBoundary &&
-                 (HTMLEditUtils::IsBlockElement(*content) ||
-                  content->IsHTMLElement(nsGkAtoms::br))) {
+      }
+      // We don't observe layout updates, therefore, we should consider whether
+      // block or inline only with the default definition of the element.
+      else if (!crossedBlockBoundary &&
+               (HTMLEditUtils::IsBlockElement(
+                    *content, BlockInlineCheck::UseHTMLDefaultStyle) ||
+                content->IsHTMLElement(nsGkAtoms::br))) {
         crossedBlockBoundary = true;
       }
     }
@@ -2514,7 +2497,10 @@ TextServicesDocument::OffsetEntryArray::Init(
             aFilteredIter.GetCurrentNode()->IsContent()
                 ? aFilteredIter.GetCurrentNode()->AsContent()
                 : nullptr) {
-      if (HTMLEditUtils::IsBlockElement(*content) ||
+      // We don't observe layout updates, therefore, we should consider whether
+      // block or inline only with the default definition of the element.
+      if (HTMLEditUtils::IsBlockElement(
+              *content, BlockInlineCheck::UseHTMLDefaultStyle) ||
           content->IsHTMLElement(nsGkAtoms::br)) {
         break;
       }
@@ -2671,7 +2657,7 @@ TextServicesDocument::OffsetEntryArray::FindWordRange(
   // we do is get its index in the offset table so we can
   // calculate the dom point's string offset.
   Maybe<size_t> maybeEntryIndex =
-      FirstIndexOf(*aStartPointToScan.ContainerAsText());
+      FirstIndexOf(*aStartPointToScan.ContainerAs<Text>());
   if (NS_WARN_IF(maybeEntryIndex.isNothing())) {
     NS_WARNING(
         "TextServicesDocument::OffsetEntryArray::FirstIndexOf() didn't find "
@@ -2690,12 +2676,10 @@ TextServicesDocument::OffsetEntryArray::FindWordRange(
   // of the word from our calculated string offset.
 
   const char16_t* str = aAllTextInBlock.BeginReading();
-  uint32_t strLen = aAllTextInBlock.Length();
+  MOZ_ASSERT(strOffset <= aAllTextInBlock.Length(),
+             "The string offset shouldn't be greater than the string length!");
 
-  intl::WordRange res = intl::WordBreaker::FindWord(str, strLen, strOffset);
-  if (res.mBegin == res.mEnd) {
-    return Err(str ? NS_ERROR_ILLEGAL_VALUE : NS_ERROR_NULL_POINTER);
-  }
+  intl::WordRange res = intl::WordBreaker::FindWord(aAllTextInBlock, strOffset);
 
   // Strip out the NBSPs at the ends
   while (res.mBegin <= res.mEnd && IS_NBSP_CHAR(str[res.mBegin])) {
@@ -2770,16 +2754,12 @@ TextServicesDocument::DidDeleteNode(nsINode* aChild, nsresult aResult) {
 }
 
 NS_IMETHODIMP TextServicesDocument::DidJoinContents(
-    const EditorRawDOMPoint& aJoinedPoint, const nsINode* aRemovedNode,
-    bool aLeftNodeWasRemoved) {
+    const EditorRawDOMPoint& aJoinedPoint, const nsINode* aRemovedNode) {
   if (MOZ_UNLIKELY(NS_WARN_IF(!aJoinedPoint.IsSetAndValid()) ||
                    NS_WARN_IF(!aRemovedNode->IsContent()))) {
     return NS_OK;
   }
-  DidJoinContents(aJoinedPoint, *aRemovedNode->AsContent(),
-                  aLeftNodeWasRemoved
-                      ? JoinNodesDirection::LeftNodeIntoRightNode
-                      : JoinNodesDirection::RightNodeIntoLeftNode);
+  DidJoinContents(aJoinedPoint, *aRemovedNode->AsContent());
   return NS_OK;
 }
 

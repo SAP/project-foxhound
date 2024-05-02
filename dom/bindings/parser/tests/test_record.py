@@ -6,7 +6,7 @@ def WebIDLTest(parser, harness):
         """
         dictionary Dict {};
         interface RecordArg {
-          void foo(record<DOMString, Dict> arg);
+          undefined foo(record<DOMString, Dict> arg);
         };
     """
     )
@@ -31,17 +31,17 @@ def WebIDLTest(parser, harness):
     try:
         parser.parse(
             """
-            interface RecordVoidArg {
-              void foo(record<DOMString, void> arg);
+            interface RecordUndefinedArg {
+              undefined foo(record<DOMString, undefined> arg);
             };
         """
         )
 
         results = parser.finish()
-    except Exception as x:
+    except Exception:
         threw = True
     harness.ok(
-        threw, "Should have thrown because record can't have void as value type."
+        threw, "Should have thrown because record can't have undefined as value type."
     )
 
     parser = parser.reset()
@@ -56,6 +56,6 @@ def WebIDLTest(parser, harness):
         )
 
         results = parser.finish()
-    except Exception as x:
+    except Exception:
         threw = True
     harness.ok(threw, "Should have thrown on dictionary containing itself via record.")

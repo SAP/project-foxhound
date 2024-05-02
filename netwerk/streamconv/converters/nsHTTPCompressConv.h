@@ -41,8 +41,7 @@ namespace net {
 class BrotliWrapper;
 
 class nsHTTPCompressConv : public nsIStreamConverter,
-                           public nsICompressConvStats,
-                           public nsIThreadRetargetableStreamListener {
+                           public nsICompressConvStats {
  public:
   // nsISupports methods
   NS_DECL_THREADSAFE_ISUPPORTS
@@ -101,7 +100,7 @@ class nsHTTPCompressConv : public nsIStreamConverter,
 
   Atomic<uint32_t, Relaxed> mDecodedDataLength{0};
 
-  mutable mozilla::Mutex mMutex{"nsHTTPCompressConv"};
+  mutable mozilla::Mutex mMutex MOZ_UNANNOTATED{"nsHTTPCompressConv"};
 };
 
 }  // namespace net

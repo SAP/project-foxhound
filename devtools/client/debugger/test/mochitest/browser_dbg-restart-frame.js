@@ -4,7 +4,9 @@
 
 // This test checks the 'Restart frame' context menu item in the Call stack.
 
-add_task(async function() {
+"use strict";
+
+add_task(async function () {
   const dbg = await initDebugger("doc-scripts.html", "simple3.js");
   await selectSource(dbg, "simple3.js");
 

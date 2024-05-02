@@ -23,8 +23,11 @@ class XPathGenerator {
 
   /**
    * Generate an approximate XPath query to an (X)HTML node
+   *
+   * Modified to pass an argument to retrieve tainted Element Ids
+   *
    * */
-  static void Generate(const nsINode* aNode, nsAString& aResult);
+  static void Generate(const nsINode* aNode, nsAString& aResult, bool doTainting = true);
 };
 
 #endif

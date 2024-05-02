@@ -5,12 +5,12 @@
 "use strict";
 
 var PhoneNumber, PhoneNumberNormalizer;
-add_task(async function setup() {
-  ({ PhoneNumber } = ChromeUtils.import(
-    "resource://autofill/phonenumberutils/PhoneNumber.jsm"
+add_setup(async () => {
+  ({ PhoneNumber } = ChromeUtils.importESModule(
+    "resource://autofill/phonenumberutils/PhoneNumber.sys.mjs"
   ));
-  ({ PhoneNumberNormalizer } = ChromeUtils.import(
-    "resource://autofill/phonenumberutils/PhoneNumberNormalizer.jsm"
+  ({ PhoneNumberNormalizer } = ChromeUtils.importESModule(
+    "resource://autofill/phonenumberutils/PhoneNumberNormalizer.sys.mjs"
   ));
 });
 

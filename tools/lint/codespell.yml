@@ -6,6 +6,9 @@ codespell:
         - browser/branding/
         - browser/components/newtab/docs/
         - browser/components/newtab/content-src/asrouter/docs/
+        - browser/components/places/docs/
+        - browser/components/search/docs/
+        - browser/components/search/schema/
         - browser/components/touchbar/docs/
         - browser/components/urlbar/docs/
         - browser/extensions/formautofill/locales/en-US/
@@ -23,26 +26,30 @@ codespell:
         - gfx/docs/
         - intl/docs/
         - intl/locales/en-US/
+        - ipc/docs/
         - js/src/doc/
-        - layout/tools/layout-debug/ui/locale/en-US/
+        - layout/tools/layout-debug/ui/content/layoutdebug.ftl
         - mobile/android/branding/
         - mobile/android/docs/
         - mobile/android/locales/en-US/
-        - mobile/locales/en-US/
         - netwerk/locales/en-US/
         - netwerk/docs/
         - python/docs/
         - python/mach/docs/
         - python/mozlint/
+        - python/mozperftest/perfdocs/
         - remote/doc/
         - security/manager/locales/en-US/
-        - services/sync/locales/en-US/
+        - services/settings/docs/
         - taskcluster/docs/
+        - testing/docs/xpcshell/
         - testing/geckodriver/doc/
         - testing/mozbase/docs/
+        - testing/raptor/raptor/perfdocs/
         - toolkit/components/extensions/docs/
         - toolkit/components/normandy/docs/
         - toolkit/components/search/docs/
+        - toolkit/components/search/schema/
         - toolkit/components/telemetry/docs/
         - toolkit/crashreporter/docs/
         - toolkit/docs/
@@ -50,11 +57,13 @@ codespell:
         - toolkit/modules/docs/
         - tools/code-coverage/docs/
         - tools/fuzzing/docs/
-        - tools/moztreedocs/
         - tools/lint/
+        - tools/moztreedocs/
+        - tools/profiler/docs/
         - tools/sanitizer/docs/
         - tools/tryselect/
         - uriloader/docs/
+        - xpcom/docs/
     exclude:
         - devtools/docs/contributor/tools/storage/
         - tools/lint/cpp/mingw-headers.txt
@@ -69,6 +78,7 @@ codespell:
         - js
         - jsm
         - jxs
+        - mjs
         - xml
         - html
         - xhtml

@@ -42,7 +42,6 @@ nsresult NS_NewSVGElement(mozilla::dom::Element** aResult,
 class mozAutoDocUpdate;
 
 namespace mozilla {
-class DeclarationBlock;
 
 class SVGAnimatedBoolean;
 class SVGAnimatedEnumeration;
@@ -84,8 +83,8 @@ class SVGElement : public SVGElementBase  // nsIContent
   virtual ~SVGElement();
 
  public:
-  virtual nsresult Clone(mozilla::dom::NodeInfo*,
-                         nsINode** aResult) const MOZ_MUST_OVERRIDE override;
+  nsresult Clone(mozilla::dom::NodeInfo*,
+                 nsINode** aResult) const MOZ_MUST_OVERRIDE override;
 
   // From Element
   nsresult CopyInnerTo(mozilla::dom::Element* aDest);
@@ -102,7 +101,7 @@ class SVGElement : public SVGElementBase  // nsIContent
 
   void SetNonce(const nsAString& aNonce) {
     SetProperty(nsGkAtoms::nonce, new nsString(aNonce),
-                nsINode::DeleteProperty<nsString>);
+                nsINode::DeleteProperty<nsString>, /* aTransfer = */ true);
   }
   void RemoveNonce() { RemoveProperty(nsGkAtoms::nonce); }
   void GetNonce(nsAString& aNonce) const {
@@ -114,33 +113,19 @@ class SVGElement : public SVGElementBase  // nsIContent
 
   // nsIContent interface methods
 
-  virtual nsresult BindToTree(BindContext&, nsINode& aParent) override;
+  nsresult BindToTree(BindContext&, nsINode& aParent) override;
 
-  virtual nsChangeHint GetAttributeChangeHint(const nsAtom* aAttribute,
-                                              int32_t aModType) const override;
-
-  virtual bool IsNodeOfType(uint32_t aFlags) const override;
+  nsChangeHint GetAttributeChangeHint(const nsAtom* aAttribute,
+                                      int32_t aModType) const override;
 
   /**
    * We override the default to unschedule computation of Servo declaration
    * blocks when adopted across documents.
    */
-  virtual void NodeInfoChanged(Document* aOldDoc) override;
+  void NodeInfoChanged(Document* aOldDoc) override;
 
   NS_IMETHOD_(bool) IsAttributeMapped(const nsAtom* aAttribute) const override;
-
-  static const MappedAttributeEntry sFillStrokeMap[];
-  static const MappedAttributeEntry sGraphicsMap[];
-  static const MappedAttributeEntry sTextContentElementsMap[];
-  static const MappedAttributeEntry sFontSpecificationMap[];
-  static const MappedAttributeEntry sGradientStopMap[];
-  static const MappedAttributeEntry sViewportsMap[];
-  static const MappedAttributeEntry sMarkersMap[];
-  static const MappedAttributeEntry sColorMap[];
-  static const MappedAttributeEntry sFiltersMap[];
-  static const MappedAttributeEntry sFEFloodMap[];
-  static const MappedAttributeEntry sLightingEffectsMap[];
-  static const MappedAttributeEntry sMaskMap[];
+  void UpdateMappedDeclarationBlock();
 
   NS_IMPL_FROMNODE(SVGElement, kNameSpaceID_SVG)
 
@@ -190,18 +175,18 @@ class SVGElement : public SVGElementBase  // nsIContent
     return GetStringInfo().mInfos[aAttrEnum].mIsAnimatable;
   }
   bool NumberAttrAllowsPercentage(uint8_t aAttrEnum) {
-    return GetNumberInfo().mInfos[aAttrEnum].mPercentagesAllowed;
+    return IsSVGElement(nsGkAtoms::stop) &&
+           GetNumberInfo().mInfos[aAttrEnum].mName == nsGkAtoms::offset;
   }
   virtual bool HasValidDimensions() const { return true; }
   void SetLength(nsAtom* aName, const SVGAnimatedLength& aLength);
 
   enum class ValToUse { Base, Anim };
-  static bool UpdateDeclarationBlockFromLength(DeclarationBlock& aBlock,
-                                               nsCSSPropertyID aPropId,
-                                               const SVGAnimatedLength& aLength,
-                                               ValToUse aValToUse);
+  static bool UpdateDeclarationBlockFromLength(
+      StyleLockedDeclarationBlock& aBlock, nsCSSPropertyID aPropId,
+      const SVGAnimatedLength& aLength, ValToUse aValToUse);
   static bool UpdateDeclarationBlockFromPath(
-      DeclarationBlock& aBlock, const SVGAnimatedPathSegList& aPath,
+      StyleLockedDeclarationBlock& aBlock, const SVGAnimatedPathSegList& aPath,
       ValToUse aValToUse);
 
   nsAttrValue WillChangeLength(uint8_t aAttrEnum,
@@ -260,21 +245,55 @@ class SVGElement : public SVGElementBase  // nsIContent
                            const mozAutoDocUpdate& aProofOfUpdate);
 
   void DidAnimateLength(uint8_t aAttrEnum);
-  void DidAnimateNumber(uint8_t aAttrEnum);
-  void DidAnimateNumberPair(uint8_t aAttrEnum);
-  void DidAnimateInteger(uint8_t aAttrEnum);
-  void DidAnimateIntegerPair(uint8_t aAttrEnum);
-  void DidAnimateBoolean(uint8_t aAttrEnum);
-  void DidAnimateEnum(uint8_t aAttrEnum);
-  void DidAnimateOrient();
-  void DidAnimateViewBox();
-  void DidAnimatePreserveAspectRatio();
-  void DidAnimateNumberList(uint8_t aAttrEnum);
-  void DidAnimateLengthList(uint8_t aAttrEnum);
+  void DidAnimateNumber(uint8_t aAttrEnum) {
+    auto info = GetNumberInfo();
+    DidAnimateAttribute(kNameSpaceID_None, info.mInfos[aAttrEnum].mName);
+  }
+  void DidAnimateNumberPair(uint8_t aAttrEnum) {
+    auto info = GetNumberPairInfo();
+    DidAnimateAttribute(kNameSpaceID_None, info.mInfos[aAttrEnum].mName);
+  }
+  void DidAnimateInteger(uint8_t aAttrEnum) {
+    auto info = GetIntegerInfo();
+    DidAnimateAttribute(kNameSpaceID_None, info.mInfos[aAttrEnum].mName);
+  }
+  void DidAnimateIntegerPair(uint8_t aAttrEnum) {
+    auto info = GetIntegerPairInfo();
+    DidAnimateAttribute(kNameSpaceID_None, info.mInfos[aAttrEnum].mName);
+  }
+  void DidAnimateBoolean(uint8_t aAttrEnum) {
+    auto info = GetBooleanInfo();
+    DidAnimateAttribute(kNameSpaceID_None, info.mInfos[aAttrEnum].mName);
+  }
+  void DidAnimateEnum(uint8_t aAttrEnum) {
+    auto info = GetEnumInfo();
+    DidAnimateAttribute(kNameSpaceID_None, info.mInfos[aAttrEnum].mName);
+  }
+  void DidAnimateOrient() {
+    DidAnimateAttribute(kNameSpaceID_None, nsGkAtoms::orient);
+  }
+  void DidAnimateViewBox() {
+    DidAnimateAttribute(kNameSpaceID_None, nsGkAtoms::viewBox);
+  }
+  void DidAnimatePreserveAspectRatio() {
+    DidAnimateAttribute(kNameSpaceID_None, nsGkAtoms::preserveAspectRatio);
+  }
+  void DidAnimateNumberList(uint8_t aAttrEnum) {
+    auto info = GetNumberListInfo();
+    DidAnimateAttribute(kNameSpaceID_None, info.mInfos[aAttrEnum].mName);
+  }
+  void DidAnimateLengthList(uint8_t aAttrEnum) {
+    auto info = GetLengthListInfo();
+    DidAnimateAttribute(kNameSpaceID_None, info.mInfos[aAttrEnum].mName);
+  }
   void DidAnimatePointList();
   void DidAnimatePathSegList();
   void DidAnimateTransformList(int32_t aModType);
-  void DidAnimateString(uint8_t aAttrEnum);
+  void DidAnimateString(uint8_t aAttrEnum) {
+    auto info = GetStringInfo();
+    DidAnimateAttribute(info.mInfos[aAttrEnum].mNamespaceID,
+                        info.mInfos[aAttrEnum].mName);
+  }
 
   enum {
     /**
@@ -346,29 +365,32 @@ class SVGElement : public SVGElementBase  // nsIContent
   SVGElement* GetViewportElement();
   already_AddRefed<mozilla::dom::DOMSVGAnimatedString> ClassName();
 
-  void UpdateContentDeclarationBlock();
-  const mozilla::DeclarationBlock* GetContentDeclarationBlock() const;
+  bool Autofocus() const { return GetBoolAttr(nsGkAtoms::autofocus); }
+  void SetAutofocus(bool aAutofocus, ErrorResult& aRv) {
+    if (aAutofocus) {
+      SetAttr(nsGkAtoms::autofocus, u""_ns, aRv);
+    } else {
+      UnsetAttr(nsGkAtoms::autofocus, aRv);
+    }
+  }
 
  protected:
-  virtual JSObject* WrapNode(JSContext* cx,
-                             JS::Handle<JSObject*> aGivenProto) override;
+  JSObject* WrapNode(JSContext* cx, JS::Handle<JSObject*> aGivenProto) override;
 
   // We define BeforeSetAttr here and mark it final to ensure it is NOT used
   // by SVG elements.
   // This is because we're not currently passing the correct value for aValue to
   // BeforeSetAttr since it would involve allocating extra SVG value types.
   // See the comment in SVGElement::WillChangeValue.
-  nsresult BeforeSetAttr(int32_t aNamespaceID, nsAtom* aName,
-                         const nsAttrValueOrString* aValue, bool aNotify) final;
-  virtual nsresult AfterSetAttr(int32_t aNamespaceID, nsAtom* aName,
-                                const nsAttrValue* aValue,
-                                const nsAttrValue* aOldValue,
-                                nsIPrincipal* aSubjectPrincipal,
-                                bool aNotify) override;
-  virtual bool ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
-                              const nsAString& aValue,
-                              nsIPrincipal* aMaybeScriptedPrincipal,
-                              nsAttrValue& aResult) override;
+  void BeforeSetAttr(int32_t aNamespaceID, nsAtom* aName,
+                     const nsAttrValue* aValue, bool aNotify) final;
+  void AfterSetAttr(int32_t aNamespaceID, nsAtom* aName,
+                    const nsAttrValue* aValue, const nsAttrValue* aOldValue,
+                    nsIPrincipal* aSubjectPrincipal, bool aNotify) override;
+  bool ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
+                      const nsAString& aValue,
+                      nsIPrincipal* aMaybeScriptedPrincipal,
+                      nsAttrValue& aResult) override;
   static nsresult ReportAttributeParseFailure(Document* aDocument,
                                               nsAtom* aAttribute,
                                               const nsAString& aValue);
@@ -410,7 +432,6 @@ class SVGElement : public SVGElementBase  // nsIContent
   struct NumberInfo {
     nsStaticAtom* const mName;
     const float mDefaultValue;
-    const bool mPercentagesAllowed;
   };
 
   using NumberAttributesInfo = AttributesInfo<SVGAnimatedNumber, NumberInfo>;
@@ -518,11 +539,12 @@ class SVGElement : public SVGElementBase  // nsIContent
   static SVGEnumMapping sSVGUnitTypesMap[];
 
  private:
+  void DidAnimateAttribute(int32_t aNameSpaceID, nsAtom* aAttribute);
+
   void UnsetAttrInternal(int32_t aNameSpaceID, nsAtom* aName, bool aNotify);
 
   SVGAnimatedClass mClassAttribute;
   UniquePtr<nsAttrValue> mClassAnimAttr;
-  RefPtr<mozilla::DeclarationBlock> mContentDeclarationBlock;
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(SVGElement, MOZILLA_SVGELEMENT_IID)

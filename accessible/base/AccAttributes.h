@@ -10,8 +10,8 @@
 #include "mozilla/a11y/AccGroupInfo.h"
 #include "mozilla/Variant.h"
 #include "nsTHashMap.h"
-#include "nsAtom.h"
 #include "nsStringFwd.h"
+#include "mozilla/gfx/Matrix.h"
 
 class nsVariant;
 
@@ -68,56 +68,59 @@ class AccAttributes {
   using AttrValueType =
       Variant<bool, float, double, int32_t, RefPtr<nsAtom>, nsTArray<int32_t>,
               CSSCoord, FontSize, Color, DeleteEntry, UniquePtr<nsString>,
-              RefPtr<AccAttributes>, uint64_t, UniquePtr<AccGroupInfo>>;
+              RefPtr<AccAttributes>, uint64_t, UniquePtr<AccGroupInfo>,
+              UniquePtr<gfx::Matrix4x4>, nsTArray<uint64_t>>;
   static_assert(sizeof(AttrValueType) <= 16);
-  using AtomVariantMap = nsTHashMap<nsRefPtrHashKey<nsAtom>, AttrValueType>;
+  using AtomVariantMap = nsTHashMap<RefPtr<nsAtom>, AttrValueType>;
 
  protected:
   ~AccAttributes() = default;
 
  public:
   AccAttributes() = default;
-  AccAttributes(AccAttributes&&) = delete;
-  AccAttributes& operator=(AccAttributes&&) = delete;
   AccAttributes(const AccAttributes&) = delete;
   AccAttributes& operator=(const AccAttributes&) = delete;
 
   NS_INLINE_DECL_REFCOUNTING(mozilla::a11y::AccAttributes)
 
-  template <typename T, typename std::enable_if<
-                            !std::is_convertible_v<T, nsString> &&
-                                !std::is_convertible_v<T, AccGroupInfo*> &&
-                                !std::is_convertible_v<T, nsAtom*>,
-                            bool>::type = true>
+  template <typename T>
   void SetAttribute(nsAtom* aAttrName, T&& aAttrValue) {
-    mData.InsertOrUpdate(aAttrName, AsVariant(std::forward<T>(aAttrValue)));
-  }
-
-  void SetAttribute(nsAtom* aAttrName, nsString&& aAttrValue) {
-    UniquePtr<nsString> value = MakeUnique<nsString>();
-    *value = std::forward<nsString>(aAttrValue);
-    mData.InsertOrUpdate(aAttrName, AsVariant(std::move(value)));
-  }
-
-  void SetAttribute(nsAtom* aAttrName, AccGroupInfo* aAttrValue) {
-    UniquePtr<AccGroupInfo> value(aAttrValue);
-    mData.InsertOrUpdate(aAttrName, AsVariant(std::move(value)));
+    using ValType =
+        std::remove_const_t<std::remove_reference_t<decltype(aAttrValue)>>;
+    if constexpr (std::is_convertible_v<ValType, nsString>) {
+      static_assert(std::is_rvalue_reference_v<decltype(aAttrValue)>,
+                    "Please only move strings into this function. To make a "
+                    "copy, use SetAttributeStringCopy.");
+      UniquePtr<nsString> value = MakeUnique<nsString>(std::move(aAttrValue));
+      mData.InsertOrUpdate(aAttrName, AsVariant(std::move(value)));
+    } else if constexpr (std::is_same_v<ValType, gfx::Matrix4x4>) {
+      UniquePtr<gfx::Matrix4x4> value = MakeUnique<gfx::Matrix4x4>(aAttrValue);
+      mData.InsertOrUpdate(aAttrName, AsVariant(std::move(value)));
+    } else if constexpr (std::is_same_v<ValType, AccGroupInfo*>) {
+      UniquePtr<AccGroupInfo> value(aAttrValue);
+      mData.InsertOrUpdate(aAttrName, AsVariant(std::move(value)));
+    } else if constexpr (std::is_convertible_v<ValType, nsAtom*>) {
+      mData.InsertOrUpdate(aAttrName, AsVariant(RefPtr<nsAtom>(aAttrValue)));
+    } else {
+      mData.InsertOrUpdate(aAttrName, AsVariant(std::forward<T>(aAttrValue)));
+    }
   }
 
   void SetAttributeStringCopy(nsAtom* aAttrName, nsString aAttrValue) {
     SetAttribute(aAttrName, std::move(aAttrValue));
   }
 
-  void SetAttribute(nsAtom* aAttrName, nsAtom* aAttrValue) {
-    mData.InsertOrUpdate(aAttrName, AsVariant(RefPtr<nsAtom>(aAttrValue)));
-  }
-
   template <typename T>
-  Maybe<const T&> GetAttribute(nsAtom* aAttrName) {
+  Maybe<const T&> GetAttribute(nsAtom* aAttrName) const {
     if (auto value = mData.Lookup(aAttrName)) {
       if constexpr (std::is_same_v<nsString, T>) {
         if (value->is<UniquePtr<nsString>>()) {
           const T& val = *(value->as<UniquePtr<nsString>>().get());
+          return SomeRef(val);
+        }
+      } else if constexpr (std::is_same_v<gfx::Matrix4x4, T>) {
+        if (value->is<UniquePtr<gfx::Matrix4x4>>()) {
+          const T& val = *(value->as<UniquePtr<gfx::Matrix4x4>>());
           return SomeRef(val);
         }
       } else {
@@ -131,7 +134,7 @@ class AccAttributes {
   }
 
   template <typename T>
-  RefPtr<const T> GetAttributeRefPtr(nsAtom* aAttrName) {
+  RefPtr<const T> GetAttributeRefPtr(nsAtom* aAttrName) const {
     if (auto value = mData.Lookup(aAttrName)) {
       if (value->is<RefPtr<T>>()) {
         RefPtr<const T> ref = value->as<RefPtr<T>>();
@@ -141,10 +144,26 @@ class AccAttributes {
     return nullptr;
   }
 
-  // Get stringified value
-  bool GetAttribute(nsAtom* aAttrName, nsAString& aAttrValue);
+  template <typename T>
+  Maybe<T&> GetMutableAttribute(nsAtom* aAttrName) const {
+    static_assert(std::is_same_v<nsTArray<int32_t>, T> ||
+                      std::is_same_v<nsTArray<uint64_t>, T>,
+                  "Only arrays should be mutable attributes");
+    if (auto value = mData.Lookup(aAttrName)) {
+      if (value->is<T>()) {
+        T& val = value->as<T>();
+        return SomeRef(val);
+      }
+    }
+    return Nothing();
+  }
 
-  bool HasAttribute(nsAtom* aAttrName) { return mData.Contains(aAttrName); }
+  // Get stringified value
+  bool GetAttribute(nsAtom* aAttrName, nsAString& aAttrValue) const;
+
+  bool HasAttribute(nsAtom* aAttrName) const {
+    return mData.Contains(aAttrName);
+  }
 
   bool Remove(nsAtom* aAttrName) { return mData.Remove(aAttrName); }
 
@@ -175,13 +194,18 @@ class AccAttributes {
     Entry(nsAtom* aAttrName, const AttrValueType* aAttrValue)
         : mName(aAttrName), mValue(aAttrValue) {}
 
-    nsAtom* Name() { return mName; }
+    nsAtom* Name() const { return mName; }
 
     template <typename T>
-    Maybe<const T&> Value() {
+    Maybe<const T&> Value() const {
       if constexpr (std::is_same_v<nsString, T>) {
         if (mValue->is<UniquePtr<nsString>>()) {
           const T& val = *(mValue->as<UniquePtr<nsString>>().get());
+          return SomeRef(val);
+        }
+      } else if constexpr (std::is_same_v<gfx::Matrix4x4, T>) {
+        if (mValue->is<UniquePtr<gfx::Matrix4x4>>()) {
+          const T& val = *(mValue->as<UniquePtr<gfx::Matrix4x4>>());
           return SomeRef(val);
         }
       } else {
@@ -193,17 +217,20 @@ class AccAttributes {
       return Nothing();
     }
 
-    void NameAsString(nsString& aName) {
+    void NameAsString(nsString& aName) const {
       mName->ToString(aName);
-      if (aName.Find("aria-", false, 0, 1) == 0) {
+      if (StringBeginsWith(aName, u"aria-"_ns)) {
         // Found 'aria-'
         aName.ReplaceLiteral(0, 5, u"");
       }
     }
 
-    void ValueAsString(nsAString& aValueString) {
+    void ValueAsString(nsAString& aValueString) const {
       StringFromValueAndName(mName, *mValue, aValueString);
     }
+
+    // Size of the pair in the hash table.
+    size_t SizeOfExcludingThis(MallocSizeOf aMallocSizeOf);
 
    private:
     nsAtom* mName;
@@ -214,13 +241,12 @@ class AccAttributes {
 
   class Iterator {
    public:
-    explicit Iterator(AtomVariantMap::iterator aIter) : mHashIterator(aIter) {}
+    explicit Iterator(AtomVariantMap::const_iterator aIter)
+        : mHashIterator(aIter) {}
 
     Iterator() = delete;
     Iterator(const Iterator&) = delete;
-    Iterator(Iterator&&) = delete;
     Iterator& operator=(const Iterator&) = delete;
-    Iterator& operator=(Iterator&&) = delete;
 
     bool operator!=(const Iterator& aOther) const {
       return mHashIterator != aOther.mHashIterator;
@@ -231,19 +257,25 @@ class AccAttributes {
       return *this;
     }
 
-    Entry operator*() {
+    Entry operator*() const {
       auto& entry = *mHashIterator;
       return Entry(entry.GetKey(), &entry.GetData());
     }
 
    private:
-    AtomVariantMap::iterator mHashIterator;
+    AtomVariantMap::const_iterator mHashIterator;
   };
 
   friend class Iterator;
 
-  Iterator begin() { return Iterator(mData.begin()); }
-  Iterator end() { return Iterator(mData.end()); }
+  Iterator begin() const { return Iterator(mData.begin()); }
+  Iterator end() const { return Iterator(mData.end()); }
+
+#ifdef A11Y_LOG
+  static void DebugPrint(const char* aPrefix, const AccAttributes& aAttributes);
+#endif
+
+  size_t SizeOfIncludingThis(MallocSizeOf aMallocSizeOf);
 
  private:
   static void StringFromValueAndName(nsAtom* aAttrName,

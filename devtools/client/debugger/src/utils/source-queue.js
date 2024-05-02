@@ -11,6 +11,9 @@ let currentWork;
 
 async function dispatchNewSources() {
   const sources = queuedOriginalSources;
+  if (!sources.length) {
+    return;
+  }
   queuedOriginalSources = [];
   currentWork = await newOriginalQueuedSources(sources);
 }
@@ -23,8 +26,8 @@ export default {
     queuedOriginalSources = [];
   },
   queueOriginalSources: sources => {
-    if (sources.length > 0) {
-      queuedOriginalSources = queuedOriginalSources.concat(sources);
+    if (sources.length) {
+      queuedOriginalSources.push(...sources);
       queue();
     }
   },

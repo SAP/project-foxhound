@@ -4,10 +4,7 @@
 
 "use strict";
 
-add_task(async function() {
-  // Making sure that the e10s is enabled on Windows for testing.
-  await setE10sPrefs();
-
+add_task(async function () {
   await BrowserTestUtils.withNewTab(
     {
       gBrowser,
@@ -20,18 +17,20 @@ add_task(async function() {
         <body></body>
       </html>`,
     },
-    async function(browser) {
+    async function (browser) {
       info(
         "Creating a service in parent and waiting for service to be created " +
           "in content"
       );
-      await loadContentScripts(browser, "Common.jsm");
+      await loadContentScripts(browser, {
+        script: "Common.sys.mjs",
+        symbol: "CommonUtils",
+      });
       // Create a11y service in the main process. This will trigger creating of
       // the a11y service in parent as well.
       const [parentA11yInitObserver, parentA11yInit] = initAccService();
-      const [contentA11yInitObserver, contentA11yInit] = initAccService(
-        browser
-      );
+      const [contentA11yInitObserver, contentA11yInit] =
+        initAccService(browser);
 
       await Promise.all([parentA11yInitObserver, contentA11yInitObserver]);
 
@@ -58,10 +57,8 @@ add_task(async function() {
       // This promise will resolve only if contentCanShutdown flag is set to true.
       // If 'a11y-init-or-shutdown' event with '0' flag (in content) comes before
       // it can be shut down, the promise will reject.
-      const [
-        contentA11yShutdownObserver,
-        contentA11yShutdownPromise,
-      ] = shutdownAccService(browser);
+      const [contentA11yShutdownObserver, contentA11yShutdownPromise] =
+        shutdownAccService(browser);
       await contentA11yShutdownObserver;
       const contentA11yShutdown = new Promise((resolve, reject) =>
         contentA11yShutdownPromise.then(flag =>
@@ -84,10 +81,8 @@ add_task(async function() {
       // Now allow a11y service to shutdown in content.
       contentCanShutdown = true;
       // Remove the a11y service reference in the main process.
-      const [
-        parentA11yShutdownObserver,
-        parentA11yShutdown,
-      ] = shutdownAccService();
+      const [parentA11yShutdownObserver, parentA11yShutdown] =
+        shutdownAccService();
       await parentA11yShutdownObserver;
 
       accService = null;
@@ -96,9 +91,6 @@ add_task(async function() {
       // content.
       forceGC();
       await Promise.all([parentA11yShutdown, contentA11yShutdown]);
-
-      // Unsetting e10s related preferences.
-      await unsetE10sPrefs();
     }
   );
 });

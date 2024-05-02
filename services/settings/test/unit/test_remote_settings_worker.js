@@ -1,24 +1,21 @@
 /* import-globals-from ../../../common/tests/unit/head_helpers.js */
 
-const { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { TestUtils } = ChromeUtils.import(
-  "resource://testing-common/TestUtils.jsm"
-);
-
-const { RemoteSettingsWorker } = ChromeUtils.import(
-  "resource://services-settings/RemoteSettingsWorker.jsm"
-);
-const { RemoteSettingsClient } = ChromeUtils.import(
-  "resource://services-settings/RemoteSettingsClient.jsm"
-);
-const { Database } = ChromeUtils.import(
-  "resource://services-settings/Database.jsm"
+const { TestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/TestUtils.sys.mjs"
 );
 
-XPCOMUtils.defineLazyGlobalGetters(this, ["indexedDB"]);
+const { RemoteSettingsWorker } = ChromeUtils.importESModule(
+  "resource://services-settings/RemoteSettingsWorker.sys.mjs"
+);
+const { RemoteSettingsClient } = ChromeUtils.importESModule(
+  "resource://services-settings/RemoteSettingsClient.sys.mjs"
+);
+const { Database } = ChromeUtils.importESModule(
+  "resource://services-settings/Database.sys.mjs"
+);
 
 const IS_ANDROID = AppConstants.platform == "android";
 
@@ -45,16 +42,14 @@ add_task(async function test_import_json_dump_into_idb() {
     // Skip test: we don't ship remote settings dumps on Android (see package-manifest).
     return;
   }
-  const client = new RemoteSettingsClient("language-dictionaries", {
-    bucketNamePref: "services.settings.default_bucket",
-  });
+  const client = new RemoteSettingsClient("language-dictionaries");
   const before = await client.get({ syncIfEmpty: false });
   Assert.equal(before.length, 0);
 
   await RemoteSettingsWorker.importJSONDump("main", "language-dictionaries");
 
   const after = await client.get({ syncIfEmpty: false });
-  Assert.ok(after.length > 0);
+  Assert.ok(!!after.length);
   let lastModifiedStamp = await client.getLastModified();
 
   Assert.equal(

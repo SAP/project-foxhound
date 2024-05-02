@@ -14,6 +14,7 @@
 
 #include "api/video_codecs/video_codec.h"
 #include "modules/rtp_rtcp/source/byte_io.h"
+#include "modules/video_coding/utility/ivf_defines.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
 
@@ -22,7 +23,11 @@
 
 namespace webrtc {
 
-const size_t kIvfHeaderSize = 32;
+namespace {
+
+constexpr int kDefaultWidth = 1280;
+constexpr int kDefaultHeight = 720;
+}  // namespace
 
 IvfFileWriter::IvfFileWriter(FileWrapper file, size_t byte_limit)
     : codec_type_(kVideoCodecGeneric),
@@ -34,7 +39,7 @@ IvfFileWriter::IvfFileWriter(FileWrapper file, size_t byte_limit)
       last_timestamp_(-1),
       using_capture_timestamps_(false),
       file_(std::move(file)) {
-  RTC_DCHECK(byte_limit == 0 || webrtc::kIvfHeaderSize <= byte_limit)
+  RTC_DCHECK(byte_limit == 0 || kIvfHeaderSize <= byte_limit)
       << "The byte_limit is too low, not even the header will fit.";
 }
 
@@ -54,7 +59,7 @@ bool IvfFileWriter::WriteHeader() {
     return false;
   }
 
-  uint8_t ivf_header[webrtc::kIvfHeaderSize] = {0};
+  uint8_t ivf_header[kIvfHeaderSize] = {0};
   ivf_header[0] = 'D';
   ivf_header[1] = 'K';
   ivf_header[2] = 'I';
@@ -88,8 +93,13 @@ bool IvfFileWriter::WriteHeader() {
       ivf_header[11] = '4';
       break;
     default:
-      RTC_LOG(LS_ERROR) << "Unknown CODEC type: " << codec_type_;
-      return false;
+      // For unknown codec type use **** code. You can specify actual payload
+      // format when playing the video with ffplay: ffplay -f H263 file.ivf
+      ivf_header[8] = '*';
+      ivf_header[9] = '*';
+      ivf_header[10] = '*';
+      ivf_header[11] = '*';
+      break;
   }
 
   ByteWriter<uint16_t>::WriteLittleEndian(&ivf_header[12], width_);
@@ -103,13 +113,13 @@ bool IvfFileWriter::WriteHeader() {
                                           static_cast<uint32_t>(num_frames_));
   ByteWriter<uint32_t>::WriteLittleEndian(&ivf_header[28], 0);  // Reserved.
 
-  if (!file_.Write(ivf_header, webrtc::kIvfHeaderSize)) {
+  if (!file_.Write(ivf_header, kIvfHeaderSize)) {
     RTC_LOG(LS_ERROR) << "Unable to write IVF header for ivf output file.";
     return false;
   }
 
-  if (bytes_written_ < webrtc::kIvfHeaderSize) {
-    bytes_written_ = webrtc::kIvfHeaderSize;
+  if (bytes_written_ < kIvfHeaderSize) {
+    bytes_written_ = kIvfHeaderSize;
   }
 
   return true;
@@ -117,10 +127,14 @@ bool IvfFileWriter::WriteHeader() {
 
 bool IvfFileWriter::InitFromFirstFrame(const EncodedImage& encoded_image,
                                        VideoCodecType codec_type) {
-  width_ = encoded_image._encodedWidth;
-  height_ = encoded_image._encodedHeight;
-  RTC_CHECK_GT(width_, 0);
-  RTC_CHECK_GT(height_, 0);
+  if (encoded_image._encodedWidth == 0 || encoded_image._encodedHeight == 0) {
+    width_ = kDefaultWidth;
+    height_ = kDefaultHeight;
+  } else {
+    width_ = encoded_image._encodedWidth;
+    height_ = encoded_image._encodedHeight;
+  }
+
   using_capture_timestamps_ = encoded_image.Timestamp() == 0;
 
   codec_type_ = codec_type;
@@ -145,15 +159,6 @@ bool IvfFileWriter::WriteFrame(const EncodedImage& encoded_image,
   if (num_frames_ == 0 && !InitFromFirstFrame(encoded_image, codec_type))
     return false;
   RTC_DCHECK_EQ(codec_type_, codec_type);
-
-  if ((encoded_image._encodedWidth > 0 || encoded_image._encodedHeight > 0) &&
-      (encoded_image._encodedHeight != height_ ||
-       encoded_image._encodedWidth != width_)) {
-    RTC_LOG(LS_WARNING)
-        << "Incoming frame has resolution different from previous: (" << width_
-        << "x" << height_ << ") -> (" << encoded_image._encodedWidth << "x"
-        << encoded_image._encodedHeight << ")";
-  }
 
   int64_t timestamp = using_capture_timestamps_
                           ? encoded_image.capture_time_ms_

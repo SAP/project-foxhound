@@ -8,18 +8,22 @@
 // This is especially important for allocation sites. We need to catch the global the
 // earliest possible in order to ensure that all allocation objects come with a stack.
 //
-// If we want to track DevTools module loader we should ensure loading Loader.jsm within
+// If we want to track DevTools module loader we should ensure loading Loader.sys.mjs within
 // the `testScript` Function. i.e. after having calling startRecordingAllocations.
-let tracker;
+let tracker, releaseTrackerLoader;
 {
-  const { DevToolsLoader } = ChromeUtils.import(
-    "resource://devtools/shared/loader/Loader.jsm"
+  const {
+    useDistinctSystemPrincipalLoader,
+    releaseDistinctSystemPrincipalLoader,
+  } = ChromeUtils.importESModule(
+    "resource://devtools/shared/loader/DistinctSystemPrincipalLoader.sys.mjs"
   );
-  const loader = new DevToolsLoader({
-    invisibleToDebugger: true,
-  });
+
+  const requester = {};
+  const loader = useDistinctSystemPrincipalLoader(requester);
+  releaseTrackerLoader = () => releaseDistinctSystemPrincipalLoader(requester);
   const { allocationTracker } = loader.require(
-    "chrome://mochitests/content/browser/devtools/shared/test-helpers/allocation-tracker"
+    "chrome://mochitests/content/browser/devtools/shared/test-helpers/allocation-tracker.js"
   );
   tracker = allocationTracker({ watchDevToolsGlobals: true });
 }
@@ -34,12 +38,9 @@ let tracker;
 // => Avoid loading devtools module as much as possible
 // => If you really have to, lazy load them
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
-);
-XPCOMUtils.defineLazyGetter(this, "TrackedObjects", () => {
-  return ChromeUtils.import(
-    "resource://devtools/shared/test-helpers/tracked-objects.jsm"
+ChromeUtils.defineLazyGetter(this, "TrackedObjects", () => {
+  return ChromeUtils.importESModule(
+    "resource://devtools/shared/test-helpers/tracked-objects.sys.mjs"
   );
 });
 
@@ -53,10 +54,7 @@ SpecialPowers.pushPrefEnv({
 });
 
 // Set DEBUG_DEVTOOLS_ALLOCATIONS=allocations|leaks in order print debug informations.
-const env = Cc["@mozilla.org/process/environment;1"].getService(
-  Ci.nsIEnvironment
-);
-const DEBUG_ALLOCATIONS = env.get("DEBUG_DEVTOOLS_ALLOCATIONS");
+const DEBUG_ALLOCATIONS = Services.env.get("DEBUG_DEVTOOLS_ALLOCATIONS");
 
 async function addTab(url) {
   const tab = BrowserTestUtils.addTab(gBrowser, url);
@@ -86,22 +84,31 @@ async function startRecordingAllocations({
       gBrowser.selectedBrowser,
       [DEBUG_ALLOCATIONS],
       async debug_allocations => {
-        const { DevToolsLoader } = ChromeUtils.import(
-          "resource://devtools/shared/loader/Loader.jsm"
+        const { DevToolsLoader } = ChromeUtils.importESModule(
+          "resource://devtools/shared/loader/Loader.sys.mjs"
         );
-        const loader = new DevToolsLoader({
-          invisibleToDebugger: true,
-        });
+
+        const {
+          useDistinctSystemPrincipalLoader,
+          releaseDistinctSystemPrincipalLoader,
+        } = ChromeUtils.importESModule(
+          "resource://devtools/shared/loader/DistinctSystemPrincipalLoader.sys.mjs"
+        );
+
+        const requester = {};
+        const loader = useDistinctSystemPrincipalLoader(requester);
         const { allocationTracker } = loader.require(
-          "chrome://mochitests/content/browser/devtools/shared/test-helpers/allocation-tracker"
+          "chrome://mochitests/content/browser/devtools/shared/test-helpers/allocation-tracker.js"
         );
         // We watch all globals in the content process, (instead of only DevTools global in parent process)
         // because we may easily leak web page objects, which aren't in DevTools global.
         const tracker = allocationTracker({ watchAllGlobals: true });
 
-        // /!\ HACK: save tracker and doGC on DevToolsLoader in order to be able to reuse
-        // them in a following call to SpecialPowers.spawn
+        // /!\ HACK: store tracker and releaseTrackerLoader on DevToolsLoader in order
+        // to be able to reuse them in a following call to SpecialPowers.spawn
         DevToolsLoader.tracker = tracker;
+        DevToolsLoader.releaseTrackerLoader = () =>
+          releaseDistinctSystemPrincipalLoader(requester);
 
         await tracker.startRecordingAllocations(debug_allocations);
       }
@@ -130,7 +137,7 @@ async function stopRecordingAllocations(
   );
 
   const objectNodeIds = TrackedObjects.getAllNodeIds();
-  if (objectNodeIds.length > 0) {
+  if (objectNodeIds.length) {
     tracker.traceObjects(objectNodeIds);
   }
 
@@ -140,8 +147,8 @@ async function stopRecordingAllocations(
       gBrowser.selectedBrowser,
       [DEBUG_ALLOCATIONS],
       debug_allocations => {
-        const { DevToolsLoader } = ChromeUtils.import(
-          "resource://devtools/shared/loader/Loader.jsm"
+        const { DevToolsLoader } = ChromeUtils.importESModule(
+          "resource://devtools/shared/loader/Loader.sys.mjs"
         );
         const { tracker } = DevToolsLoader;
         ok(
@@ -157,13 +164,13 @@ async function stopRecordingAllocations(
     gBrowser.selectedBrowser,
     [],
     () => {
-      const TrackedObjects = ChromeUtils.import(
-        "resource://devtools/shared/test-helpers/tracked-objects.jsm"
+      const TrackedObjects = ChromeUtils.importESModule(
+        "resource://devtools/shared/test-helpers/tracked-objects.sys.mjs"
       );
       const objectNodeIds = TrackedObjects.getAllNodeIds();
-      if (objectNodeIds.length > 0) {
-        const { DevToolsLoader } = ChromeUtils.import(
-          "resource://devtools/shared/loader/Loader.jsm"
+      if (objectNodeIds.length) {
+        const { DevToolsLoader } = ChromeUtils.importESModule(
+          "resource://devtools/shared/loader/Loader.sys.mjs"
         );
         const { tracker } = DevToolsLoader;
         // Record the heap snapshot from the content process,
@@ -196,10 +203,6 @@ async function stopRecordingAllocations(
         name: recordName + ":parent-process",
         subtests: [
           {
-            name: "objects-with-no-stacks",
-            value: parentProcessData.objectsWithoutStack,
-          },
-          {
             name: "objects-with-stacks",
             value: parentProcessData.objectsWithStack,
           },
@@ -219,10 +222,6 @@ async function stopRecordingAllocations(
       name: recordName + ":content-process",
       subtests: [
         {
-          name: "objects-with-no-stacks",
-          value: contentProcessData.objectsWithoutStack,
-        },
-        {
           name: "objects-with-stacks",
           value: contentProcessData.objectsWithStack,
         },
@@ -232,7 +231,19 @@ async function stopRecordingAllocations(
         },
       ],
     });
+
+    // Finally release the tracker loader in content process.
+    await SpecialPowers.spawn(gBrowser.selectedBrowser, [], () => {
+      const { DevToolsLoader } = ChromeUtils.importESModule(
+        "resource://devtools/shared/loader/Loader.sys.mjs"
+      );
+      DevToolsLoader.releaseTrackerLoader();
+    });
   }
+
+  // And release the tracker loader in the parent process
+  releaseTrackerLoader();
+
   // Log it to stdout so that perfherder can collect this data.
   // This only works if we called `SimpleTest.requestCompleteLog()`!
   info("PERFHERDER_DATA: " + JSON.stringify(PERFHERDER_DATA));

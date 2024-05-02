@@ -3,13 +3,11 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-const { Cu } = require("chrome");
-
-const EventEmitter = require("devtools/shared/event-emitter");
+const EventEmitter = require("resource://devtools/shared/event-emitter.js");
 loader.lazyRequireGetter(
   this,
   "openContentLink",
-  "devtools/client/shared/link",
+  "resource://devtools/client/shared/link.js",
   true
 );
 
@@ -117,7 +115,7 @@ DomPanel.prototype = {
 
   // Events
 
-  refresh: function() {
+  refresh() {
     // Do not refresh if the panel isn't visible.
     if (!this.isPanelVisible()) {
       return;
@@ -142,18 +140,18 @@ DomPanel.prototype = {
    * The panel is refreshed immediately if it's currently selected or lazily when the user
    * actually selects it.
    */
-  forceRefresh: function() {
+  forceRefresh() {
     this.shouldRefresh = true;
     // This will end up calling scriptCommand execute method to retrieve the `window` grip
     // on targetCommand.selectedTargetFront.
     this.refresh();
   },
 
-  _onTargetSelected: function({ targetFront }) {
+  _onTargetSelected({ targetFront }) {
     this.forceRefresh();
   },
 
-  onResourceAvailable: function(resources) {
+  onResourceAvailable(resources) {
     for (const resource of resources) {
       // Only consider top level document, and ignore remote iframes top document
       if (
@@ -170,7 +168,7 @@ DomPanel.prototype = {
   /**
    * Make sure the panel is refreshed (if needed) when it's selected.
    */
-  onPanelVisibilityChange: function() {
+  onPanelVisibilityChange() {
     this.refresh();
   },
 
@@ -179,11 +177,11 @@ DomPanel.prototype = {
   /**
    * Return true if the DOM panel is currently selected.
    */
-  isPanelVisible: function() {
+  isPanelVisible() {
     return this._toolbox.currentToolId === "dom";
   },
 
-  getPrototypeAndProperties: async function(objectFront) {
+  async getPrototypeAndProperties(objectFront) {
     if (!objectFront.actorID) {
       console.error("No actor!", objectFront);
       throw new Error("Failed to get object front.");
@@ -214,33 +212,36 @@ DomPanel.prototype = {
     return response;
   },
 
-  openLink: function(url) {
+  openLink(url) {
     openContentLink(url);
   },
 
-  getRootGrip: async function() {
+  async getRootGrip() {
     const { result } = await this._toolbox.commands.scriptCommand.execute(
-      "window"
+      "window",
+      {
+        disableBreaks: true,
+      }
     );
     return result;
   },
 
-  postContentMessage: function(type, args) {
+  postContentMessage(type, args) {
     const data = {
-      type: type,
-      args: args,
+      type,
+      args,
     };
 
     const event = new this.panelWin.MessageEvent("devtools/chrome/message", {
       bubbles: true,
       cancelable: true,
-      data: data,
+      data,
     });
 
     this.panelWin.dispatchEvent(event);
   },
 
-  onContentMessage: function(event) {
+  onContentMessage(event) {
     const data = event.data;
     const method = data.type;
     if (typeof this[method] == "function") {
@@ -248,7 +249,7 @@ DomPanel.prototype = {
     }
   },
 
-  getToolbox: function() {
+  getToolbox() {
     return this._toolbox;
   },
 
@@ -261,7 +262,7 @@ DomPanel.prototype = {
 
 function exportIntoContentScope(win, obj, defineAs) {
   const clone = Cu.createObjectIn(win, {
-    defineAs: defineAs,
+    defineAs,
   });
 
   const props = Object.getOwnPropertyNames(obj);

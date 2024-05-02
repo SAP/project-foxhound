@@ -5,28 +5,35 @@
 const URL_HOST = "http://localhost";
 const PR_USEC_PER_MSEC = 1000;
 
-const { GMPExtractor, GMPInstallManager } = ChromeUtils.import(
-  "resource://gre/modules/GMPInstallManager.jsm"
+const { GMPExtractor, GMPInstallManager } = ChromeUtils.importESModule(
+  "resource://gre/modules/GMPInstallManager.sys.mjs"
 );
-const { setTimeout } = ChromeUtils.import("resource://gre/modules/Timer.jsm");
-const { FileUtils } = ChromeUtils.import(
-  "resource://gre/modules/FileUtils.jsm"
+const { setTimeout } = ChromeUtils.importESModule(
+  "resource://gre/modules/Timer.sys.mjs"
 );
-const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
-const { Preferences } = ChromeUtils.import(
-  "resource://gre/modules/Preferences.jsm"
+const { FileUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/FileUtils.sys.mjs"
 );
-const { TelemetryTestUtils } = ChromeUtils.import(
-  "resource://testing-common/TelemetryTestUtils.jsm"
+const { HttpServer } = ChromeUtils.importESModule(
+  "resource://testing-common/httpd.sys.mjs"
 );
-const { UpdateUtils } = ChromeUtils.import(
-  "resource://gre/modules/UpdateUtils.jsm"
+const { Preferences } = ChromeUtils.importESModule(
+  "resource://gre/modules/Preferences.sys.mjs"
 );
-const { GMPPrefs, OPEN_H264_ID } = ChromeUtils.import(
-  "resource://gre/modules/GMPUtils.jsm"
+const { TelemetryTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/TelemetryTestUtils.sys.mjs"
 );
-const { ProductAddonCheckerTestUtils } = ChromeUtils.import(
-  "resource://gre/modules/addons/ProductAddonChecker.jsm"
+const { UpdateUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/UpdateUtils.sys.mjs"
+);
+const { GMPPrefs, OPEN_H264_ID } = ChromeUtils.importESModule(
+  "resource://gre/modules/GMPUtils.sys.mjs"
+);
+const { ProductAddonCheckerTestUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/addons/ProductAddonChecker.sys.mjs"
+);
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
 
 Services.prefs.setBoolPref("security.allow_eval_with_system_principal", true);
@@ -49,6 +56,12 @@ Preferences.set("media.gmp-manager.checkContentSignature", false);
 
 do_get_profile();
 
+add_task(function test_setup() {
+  // We should already have a profile from `do_get_profile`, but also need
+  // FOG to be setup for tests that touch it/Glean.
+  Services.fog.initializeFOG();
+});
+
 function run_test() {
   Preferences.set("media.gmp.log.dump", true);
   Preferences.set("media.gmp.log.level", 0);
@@ -70,6 +83,7 @@ add_task(async function test_prefs() {
   GMPPrefs.setInt(GMPPrefs.KEY_PLUGIN_VERSION, 4, addon2);
   GMPPrefs.setBool(GMPPrefs.KEY_PLUGIN_AUTOUPDATE, false, addon2);
   GMPPrefs.setBool(GMPPrefs.KEY_CERT_CHECKATTRS, true);
+  GMPPrefs.setString(GMPPrefs.KEY_PLUGIN_HASHVALUE, "5", addon1);
 
   Assert.equal(GMPPrefs.getString(GMPPrefs.KEY_URL), "http://not-really-used");
   Assert.equal(
@@ -89,6 +103,10 @@ add_task(async function test_prefs() {
   );
   Assert.ok(GMPPrefs.getBool(GMPPrefs.KEY_CERT_CHECKATTRS));
   GMPPrefs.setBool(GMPPrefs.KEY_PLUGIN_AUTOUPDATE, true, addon2);
+  Assert.equal(
+    GMPPrefs.getString(GMPPrefs.KEY_PLUGIN_HASHVALUE, "", addon1),
+    "5"
+  );
 });
 
 /**
@@ -110,7 +128,10 @@ add_test(function test_checkForAddons_uninitWithoutInstall() {
     () => installManager.checkForAddons()
   );
   promise.then(res => {
-    Assert.ok(res.usedFallback);
+    Assert.equal(res.addons.length, 2);
+    for (let addon of res.addons) {
+      Assert.ok(addon.usedFallback);
+    }
     installManager.uninit();
     run_next_test();
   });
@@ -127,7 +148,10 @@ add_test(function test_checkForAddons_noResponse() {
     () => installManager.checkForAddons()
   );
   promise.then(res => {
-    Assert.ok(res.usedFallback);
+    Assert.equal(res.addons.length, 2);
+    for (let addon of res.addons) {
+      Assert.ok(addon.usedFallback);
+    }
     installManager.uninit();
     run_next_test();
   });
@@ -175,7 +199,10 @@ add_test(function test_checkForAddons_wrongResponseXML() {
     () => installManager.checkForAddons()
   );
   promise.then(res => {
-    Assert.ok(res.usedFallback);
+    Assert.equal(res.addons.length, 2);
+    for (let addon of res.addons) {
+      Assert.ok(addon.usedFallback);
+    }
     installManager.uninit();
     run_next_test();
   });
@@ -192,7 +219,10 @@ add_test(function test_checkForAddons_404Error() {
     () => installManager.checkForAddons()
   );
   promise.then(res => {
-    Assert.ok(res.usedFallback);
+    Assert.equal(res.addons.length, 2);
+    for (let addon of res.addons) {
+      Assert.ok(addon.usedFallback);
+    }
     installManager.uninit();
     run_next_test();
   });
@@ -221,7 +251,10 @@ add_test(function test_checkForAddons_abort() {
   }, 100);
 
   promise.then(res => {
-    Assert.ok(res.usedFallback);
+    Assert.equal(res.addons.length, 2);
+    for (let addon of res.addons) {
+      Assert.ok(addon.usedFallback);
+    }
     installManager.uninit();
     run_next_test();
   });
@@ -241,7 +274,10 @@ add_test(function test_checkForAddons_timeout() {
     () => installManager.checkForAddons()
   );
   promise.then(res => {
-    Assert.ok(res.usedFallback);
+    Assert.equal(res.addons.length, 2);
+    for (let addon of res.addons) {
+      Assert.ok(addon.usedFallback);
+    }
     installManager.uninit();
     run_next_test();
   });
@@ -274,7 +310,10 @@ add_test(function test_checkForAddons_bad_ssl() {
     () => installManager.checkForAddons()
   );
   promise.then(res => {
-    Assert.ok(res.usedFallback);
+    Assert.equal(res.addons.length, 2);
+    for (let addon of res.addons) {
+      Assert.ok(addon.usedFallback);
+    }
     installManager.uninit();
     if (PREF_KEY_URL_OVERRIDE_BACKUP) {
       Preferences.set(GMPPrefs.KEY_URL_OVERRIDE, PREF_KEY_URL_OVERRIDE_BACKUP);
@@ -298,7 +337,10 @@ add_test(function test_checkForAddons_notXML() {
   );
 
   promise.then(res => {
-    Assert.ok(res.usedFallback);
+    Assert.equal(res.addons.length, 2);
+    for (let addon of res.addons) {
+      Assert.ok(addon.usedFallback);
+    }
     installManager.uninit();
     run_next_test();
   });
@@ -520,60 +562,12 @@ add_task(async function test_checkForAddons_updatesWithAddons() {
  * checking is enabled and the signature check passes.
  */
 add_task(async function test_checkForAddons_contentSignatureSuccess() {
-  Preferences.set("media.gmp-manager.checkContentSignature", true);
+  const previousUrlOverride = setupContentSigTestPrefs();
 
-  // Store the old pref so we can restore it and avoid messing with other tests.
-  let PREF_KEY_URL_OVERRIDE_BACKUP = Preferences.get(
-    GMPPrefs.KEY_URL_OVERRIDE,
-    ""
-  );
+  const xmlFetchResultHistogram = resetGmpTelemetryAndGetHistogram();
 
-  const testServer = new HttpServer();
-  // Start the server so we can grab the identity. We need to know this so the
-  // server can reference itself in the handlers that will be set up.
-  testServer.start();
-  const baseUri =
-    testServer.identity.primaryScheme +
-    "://" +
-    testServer.identity.primaryHost +
-    ":" +
-    testServer.identity.primaryPort;
-
-  let goodXml = readStringFromFile(do_get_file("good.xml"));
-  // This sig is generated using the following command at mozilla-central root
-  // `cat toolkit/mozapps/extensions/test/xpcshell/data/productaddons/good.xml | ./mach python security/manager/ssl/tests/unit/test_content_signing/pysign.py`
-  // If test certificates are regenerated, this signature must also be.
-  const goodXmlContentSignature =
-    "7QYnPqFoOlS02BpDdIRIljzmPr6BFwPs1z1y8KJUBlnU7EVG6FbnXmVVt5Op9wDzgvhXX7th8qFJvpPOZs_B_tHRDNJ8SK0HN95BAN15z3ZW2r95SSHmU-fP2JgoNOR3";
-
-  // Setup endpoint to handle x5u lookups correctly.
-  const validX5uPath = "/valid_x5u";
-  const validCertChain = [
-    readStringFromFile(do_get_file("content_signing_aus_ee.pem")),
-    readStringFromFile(do_get_file("content_signing_int.pem")),
-    readStringFromFile(do_get_file("content_signing_root.pem")),
-  ];
-  testServer.registerPathHandler(validX5uPath, (req, res) => {
-    res.write(validCertChain.join("\n"));
-  });
-  const validX5uUrl = baseUri + validX5uPath;
-
-  // Handler for path that serves valid xml with valid signature.
-  const validContentSignatureHeader = `x5u=${validX5uUrl}; p384ecdsa=${goodXmlContentSignature}`;
-  const updatePath = "/valid_update.xml";
-  testServer.registerPathHandler(updatePath, (req, res) => {
-    res.setHeader("content-signature", validContentSignatureHeader);
-    res.write(goodXml);
-  });
-
-  // Override our root so that test cert chains will be valid.
-  setCertRoot("content_signing_root.pem");
-
-  Preferences.set(GMPPrefs.KEY_URL_OVERRIDE, baseUri + updatePath);
-
-  const xmlFetchResultHistogram = TelemetryTestUtils.getAndClearHistogram(
-    "MEDIA_GMP_UPDATE_XML_FETCH_RESULT"
-  );
+  const testServerInfo = getTestServerForContentSignatureTests();
+  Preferences.set(GMPPrefs.KEY_URL_OVERRIDE, testServerInfo.validUpdateUri);
 
   let installManager = new GMPInstallManager();
   try {
@@ -583,12 +577,15 @@ add_task(async function test_checkForAddons_contentSignatureSuccess() {
     // Smoke test the results are as expected.
     // If the checkForAddons fails we'll get a fallback config,
     // so we'll get incorrect addons and these asserts will fail.
-    Assert.equal(res.usedFallback, false);
     Assert.equal(res.addons.length, 5);
     Assert.equal(res.addons[0].id, "test1");
+    Assert.equal(res.addons[0].usedFallback, false);
     Assert.equal(res.addons[1].id, "test2");
+    Assert.equal(res.addons[1].usedFallback, false);
     Assert.equal(res.addons[2].id, "test3");
+    Assert.equal(res.addons[2].usedFallback, false);
     Assert.equal(res.addons[3].id, "test4");
+    Assert.equal(res.addons[3].usedFallback, false);
     Assert.equal(res.addons[4].id, undefined);
   } catch (e) {
     Assert.ok(false, "checkForAddons should succeed");
@@ -596,52 +593,43 @@ add_task(async function test_checkForAddons_contentSignatureSuccess() {
 
   // # Ok content sig fetches should be 1, all others should be 0.
   TelemetryTestUtils.assertHistogram(xmlFetchResultHistogram, 2, 1);
+  // Test that glean has 1 success for content sig and no other metrics.
+  const expectedGleanValues = {
+    cert_pin_success: 0,
+    cert_pin_net_request_error: 0,
+    cert_pin_net_timeout: 0,
+    cert_pin_abort: 0,
+    cert_pin_missing_data: 0,
+    cert_pin_failed: 0,
+    cert_pin_invalid: 0,
+    cert_pin_unknown_error: 0,
+    content_sig_success: 1,
+    content_sig_net_request_error: 0,
+    content_sig_net_timeout: 0,
+    content_sig_abort: 0,
+    content_sig_missing_data: 0,
+    content_sig_failed: 0,
+    content_sig_invalid: 0,
+    content_sig_unknown_error: 0,
+  };
+  checkGleanMetricCounts(expectedGleanValues);
 
-  // Tidy up afterwards.
-  if (PREF_KEY_URL_OVERRIDE_BACKUP) {
-    Preferences.set(GMPPrefs.KEY_URL_OVERRIDE, PREF_KEY_URL_OVERRIDE_BACKUP);
-  } else {
-    Preferences.reset(GMPPrefs.KEY_URL_OVERRIDE);
-  }
-  Preferences.set("media.gmp-manager.checkContentSignature", false);
+  revertContentSigTestPrefs(previousUrlOverride);
 });
 
 /**
  * Tests that checkForAddons() works as expected when content signature
- * checking is enabled and the signature check fails.
+ * checking is enabled and the check fails.
  */
 add_task(async function test_checkForAddons_contentSignatureFailure() {
-  Preferences.set("media.gmp-manager.checkContentSignature", true);
+  const previousUrlOverride = setupContentSigTestPrefs();
 
-  // Store the old pref so we can restore it and avoid messing with other tests.
-  let PREF_KEY_URL_OVERRIDE_BACKUP = Preferences.get(
+  const xmlFetchResultHistogram = resetGmpTelemetryAndGetHistogram();
+
+  const testServerInfo = getTestServerForContentSignatureTests();
+  Preferences.set(
     GMPPrefs.KEY_URL_OVERRIDE,
-    ""
-  );
-
-  const testServer = new HttpServer();
-  // Start the server so we can grab the identity. We need to know this so the
-  // server can reference itself in the handlers that will be set up.
-  testServer.start();
-  const baseUri =
-    testServer.identity.primaryScheme +
-    "://" +
-    testServer.identity.primaryHost +
-    ":" +
-    testServer.identity.primaryPort;
-
-  let goodXml = readStringFromFile(do_get_file("good.xml"));
-
-  const updatePath = "/invalid_update.xml";
-  testServer.registerPathHandler(updatePath, (req, res) => {
-    // Content signature header omitted.
-    res.write(goodXml);
-  });
-
-  Preferences.set(GMPPrefs.KEY_URL_OVERRIDE, baseUri + updatePath);
-
-  const xmlFetchResultHistogram = TelemetryTestUtils.getAndClearHistogram(
-    "MEDIA_GMP_UPDATE_XML_FETCH_RESULT"
+    testServerInfo.missingContentSigUri
   );
 
   let installManager = new GMPInstallManager();
@@ -652,15 +640,21 @@ add_task(async function test_checkForAddons_contentSignatureFailure() {
     // Smoke test the results are as expected.
     // Check addons will succeed above, but it will have fallen back to local
     // config. So the results will not be those from the HTTP server.
-    Assert.equal(res.usedFallback, true);
     // Some platforms don't have fallback config for all GMPs, but we should
     // always get at least 1.
     Assert.greaterOrEqual(res.addons.length, 1);
     if (res.addons.length == 1) {
       Assert.equal(res.addons[0].id, "gmp-widevinecdm");
+      Assert.equal(res.addons[0].usedFallback, true);
     } else {
       Assert.equal(res.addons[0].id, "gmp-gmpopenh264");
+      Assert.equal(res.addons[0].usedFallback, true);
       Assert.equal(res.addons[1].id, "gmp-widevinecdm");
+      Assert.equal(res.addons[1].usedFallback, true);
+      if (res.addons.length >= 3) {
+        Assert.equal(res.addons[2].id, "gmp-widevinecdm-l1");
+        Assert.equal(res.addons[2].usedFallback, true);
+      }
     }
   } catch (e) {
     Assert.ok(false, "checkForAddons should succeed");
@@ -668,14 +662,302 @@ add_task(async function test_checkForAddons_contentSignatureFailure() {
 
   // # Failed content sig fetches should be 1, all others should be 0.
   TelemetryTestUtils.assertHistogram(xmlFetchResultHistogram, 3, 1);
+  // Glean values should reflect the content sig algo failed.
+  Assert.equal(
+    Glean.gmp.updateXmlFetchResult.content_sig_missing_data.testGetValue(),
+    1
+  );
 
-  // Tidy up afterwards.
-  if (PREF_KEY_URL_OVERRIDE_BACKUP) {
-    Preferences.set(GMPPrefs.KEY_URL_OVERRIDE, PREF_KEY_URL_OVERRIDE_BACKUP);
+  // Check further failure cases. We've already smoke tested the results above,
+  // don't bother doing so again.
+
+  // Fail due to bad content signature.
+  Preferences.set(GMPPrefs.KEY_URL_OVERRIDE, testServerInfo.badContentSigUri);
+  await installManager.checkForAddons();
+  // Should have another failure...
+  TelemetryTestUtils.assertHistogram(xmlFetchResultHistogram, 3, 2);
+  // ... and it should be due to the signature being bad, which causes
+  // verification to fail.
+  Assert.equal(
+    Glean.gmp.updateXmlFetchResult.content_sig_failed.testGetValue(),
+    1
+  );
+
+  // Fail due to bad invalid content signature.
+  Preferences.set(
+    GMPPrefs.KEY_URL_OVERRIDE,
+    testServerInfo.invalidContentSigUri
+  );
+  await installManager.checkForAddons();
+  // Should have another failure...
+  TelemetryTestUtils.assertHistogram(xmlFetchResultHistogram, 3, 3);
+  // ... and it should be due to the signature being invalid.
+  Assert.equal(
+    Glean.gmp.updateXmlFetchResult.content_sig_invalid.testGetValue(),
+    1
+  );
+
+  // Fail by pointing to a bad URL.
+  Preferences.set(
+    GMPPrefs.KEY_URL_OVERRIDE,
+    "https://this.url.doesnt/go/anywhere"
+  );
+  await installManager.checkForAddons();
+  // Should have another failure...
+  TelemetryTestUtils.assertHistogram(xmlFetchResultHistogram, 3, 4);
+  // ... and it should be due to a bad request.
+  Assert.equal(
+    Glean.gmp.updateXmlFetchResult.content_sig_net_request_error.testGetValue(),
+    1
+  );
+
+  // Fail via timeout. This case uses our mock machinery in order to abort the
+  // request, as I (:bryce) couldn't figure out a nice way to do it with the
+  // HttpServer.
+  let overriddenServiceRequest = new mockRequest(200, "", {
+    dropRequest: true,
+    timeout: true,
+  });
+  await ProductAddonCheckerTestUtils.overrideServiceRequest(
+    overriddenServiceRequest,
+    () => installManager.checkForAddons()
+  );
+  TelemetryTestUtils.assertHistogram(xmlFetchResultHistogram, 3, 5);
+  // ... and it should be due to a timeout.
+  Assert.equal(
+    Glean.gmp.updateXmlFetchResult.content_sig_net_timeout.testGetValue(),
+    1
+  );
+
+  // Fail via abort. This case uses our mock machinery in order to abort the
+  // request, as I (:bryce) couldn't figure out a nice way to do it with the
+  // HttpServer.
+  overriddenServiceRequest = new mockRequest(200, "", {
+    dropRequest: true,
+  });
+  let promise = ProductAddonCheckerTestUtils.overrideServiceRequest(
+    overriddenServiceRequest,
+    () => installManager.checkForAddons()
+  );
+  setTimeout(() => {
+    overriddenServiceRequest.abort();
+  }, 100);
+  await promise;
+  // Should have another failure...
+  TelemetryTestUtils.assertHistogram(xmlFetchResultHistogram, 3, 6);
+  // ... and it should be due to an abort.
+  Assert.equal(
+    Glean.gmp.updateXmlFetchResult.content_sig_abort.testGetValue(),
+    1
+  );
+
+  Preferences.set(GMPPrefs.KEY_URL_OVERRIDE, testServerInfo.badXmlUri);
+  await installManager.checkForAddons();
+  // Should have another failure...
+  TelemetryTestUtils.assertHistogram(xmlFetchResultHistogram, 3, 7);
+  // ... and it should be due to the xml response being unrecognized.
+  Assert.equal(
+    Glean.gmp.updateXmlFetchResult.content_sig_xml_parse_error.testGetValue(),
+    1
+  );
+
+  // Fail via bad request during the x5u look up.
+  Preferences.set(GMPPrefs.KEY_URL_OVERRIDE, testServerInfo.badX5uRequestUri);
+  await installManager.checkForAddons();
+  // Should have another failure...
+  TelemetryTestUtils.assertHistogram(xmlFetchResultHistogram, 3, 8);
+  // ... and it should be due to a bad request.
+  Assert.equal(
+    Glean.gmp.updateXmlFetchResult.content_sig_net_request_error.testGetValue(),
+    2
+  );
+
+  // Fail by timing out during the x5u look up.
+  Preferences.set(GMPPrefs.KEY_URL_OVERRIDE, testServerInfo.x5uTimeoutUri);
+  // We need to expose this promise back to the server so it can handle
+  // setting up a mock request in the middle of checking for addons.
+  testServerInfo.promiseHolder.installPromise = installManager.checkForAddons();
+  await testServerInfo.promiseHolder.installPromise;
+  // We wait sequentially because serverPromise won't be set until the server
+  // receives our request.
+  await testServerInfo.promiseHolder.serverPromise;
+  delete testServerInfo.promiseHolder.installPromise;
+  delete testServerInfo.promiseHolder.serverPromise;
+  // Should have another failure...
+  TelemetryTestUtils.assertHistogram(xmlFetchResultHistogram, 3, 9);
+  // ... and it should be due to a timeout.
+  Assert.equal(
+    Glean.gmp.updateXmlFetchResult.content_sig_net_timeout.testGetValue(),
+    2
+  );
+
+  // Fail by aborting during the x5u look up.
+  Preferences.set(GMPPrefs.KEY_URL_OVERRIDE, testServerInfo.x5uAbortUri);
+  // We need to expose this promise back to the server so it can handle
+  // setting up a mock request in the middle of checking for addons.
+  testServerInfo.promiseHolder.installPromise = installManager.checkForAddons();
+  await testServerInfo.promiseHolder.installPromise;
+  // We wait sequentially because serverPromise won't be set until the server
+  // receives our request.
+  await testServerInfo.promiseHolder.serverPromise;
+  delete testServerInfo.promiseHolder.installPromise;
+  delete testServerInfo.promiseHolder.serverPromise;
+  // Should have another failure...
+  TelemetryTestUtils.assertHistogram(xmlFetchResultHistogram, 3, 10);
+  // ... and it should be due to an abort.
+  Assert.equal(
+    Glean.gmp.updateXmlFetchResult.content_sig_abort.testGetValue(),
+    2
+  );
+
+  // Check all glean metrics have expected values at test end.
+  const expectedGleanValues = {
+    cert_pin_success: 0,
+    cert_pin_net_request_error: 0,
+    cert_pin_net_timeout: 0,
+    cert_pin_abort: 0,
+    cert_pin_missing_data: 0,
+    cert_pin_failed: 0,
+    cert_pin_invalid: 0,
+    cert_pin_xml_parse_error: 0,
+    cert_pin_unknown_error: 0,
+    content_sig_success: 0,
+    content_sig_net_request_error: 2,
+    content_sig_net_timeout: 2,
+    content_sig_abort: 2,
+    content_sig_missing_data: 1,
+    content_sig_failed: 1,
+    content_sig_invalid: 1,
+    content_sig_xml_parse_error: 1,
+    content_sig_unknown_error: 0,
+  };
+  checkGleanMetricCounts(expectedGleanValues);
+
+  revertContentSigTestPrefs(previousUrlOverride);
+});
+
+/**
+ * Tests that checkForAddons() works as expected when certificate pinning
+ * checking is enabled. We plan to move away from cert pinning in favor of
+ * content signature checks, but part of doing this is comparing the telemetry
+ * from both methods. We want test coverage to ensure the telemetry is being
+ * gathered for cert pinning failures correctly before we remove the code.
+ */
+add_task(async function test_checkForAddons_telemetry_certPinning() {
+  // Grab state so we can restore it at the end of the test.
+  const previousUrlOverride = Preferences.get(GMPPrefs.KEY_URL_OVERRIDE, "");
+
+  let xmlFetchResultHistogram = resetGmpTelemetryAndGetHistogram();
+
+  // Re-use the content-sig test server config. We're not going to need any of
+  // the content signature specific config but this gives us a server to get
+  // update.xml files from, and also tests that cert pinning doesn't break even
+  // if we're getting content sig headers sent.
+  const testServerInfo = getTestServerForContentSignatureTests();
+
+  Preferences.set(GMPPrefs.KEY_URL_OVERRIDE, testServerInfo.validUpdateUri);
+
+  let installManager = new GMPInstallManager();
+  try {
+    // This should work because once we override the GMP URL, no cert pin
+    // checks are actually done. I.e. we don't need to do any pinning in
+    // the test, just use a valid URL.
+    await installManager.checkForAddons();
+    Assert.ok(true, "checkForAddons should succeed");
+  } catch (e) {
+    Assert.ok(false, "checkForAddons should succeed");
+  }
+
+  // # Ok cert pin fetches should be 1, all others should be 0.
+  TelemetryTestUtils.assertHistogram(xmlFetchResultHistogram, 0, 1);
+  // Glean values should reflect the same.
+  Assert.equal(
+    Glean.gmp.updateXmlFetchResult.cert_pin_success.testGetValue(),
+    1
+  );
+
+  // Reset the histogram because we want to check a different index.
+  xmlFetchResultHistogram = TelemetryTestUtils.getAndClearHistogram(
+    "MEDIA_GMP_UPDATE_XML_FETCH_RESULT"
+  );
+  // Fail by pointing to a bad URL.
+  Preferences.set(
+    GMPPrefs.KEY_URL_OVERRIDE,
+    "https://this.url.doesnt/go/anywhere"
+  );
+  await installManager.checkForAddons();
+  // Should have another failure...
+  TelemetryTestUtils.assertHistogram(xmlFetchResultHistogram, 1, 1);
+  // ... and it should be due to a bad request.
+  Assert.equal(
+    Glean.gmp.updateXmlFetchResult.cert_pin_net_request_error.testGetValue(),
+    1
+  );
+
+  // Fail via timeout. This case uses our mock machinery in order to abort the
+  // request, as I (:bryce) couldn't figure out a nice way to do it with the
+  // HttpServer.
+  let overriddenServiceRequest = new mockRequest(200, "", {
+    dropRequest: true,
+    timeout: true,
+  });
+  await ProductAddonCheckerTestUtils.overrideServiceRequest(
+    overriddenServiceRequest,
+    () => installManager.checkForAddons()
+  );
+  TelemetryTestUtils.assertHistogram(xmlFetchResultHistogram, 1, 2);
+  // ... and it should be due to a timeout.
+  Assert.equal(
+    Glean.gmp.updateXmlFetchResult.cert_pin_net_timeout.testGetValue(),
+    1
+  );
+
+  // Fail via abort. This case uses our mock machinery in order to abort the
+  // request, as I (:bryce) couldn't figure out a nice way to do it with the
+  // HttpServer.
+  overriddenServiceRequest = new mockRequest(200, "", {
+    dropRequest: true,
+  });
+  let promise = ProductAddonCheckerTestUtils.overrideServiceRequest(
+    overriddenServiceRequest,
+    () => installManager.checkForAddons()
+  );
+  setTimeout(() => {
+    overriddenServiceRequest.abort();
+  }, 100);
+  await promise;
+  // Should have another failure...
+  TelemetryTestUtils.assertHistogram(xmlFetchResultHistogram, 1, 3);
+  // ... and it should be due to an abort.
+  Assert.equal(Glean.gmp.updateXmlFetchResult.cert_pin_abort.testGetValue(), 1);
+
+  // Check all glean metrics have expected values at test end.
+  const expectedGleanValues = {
+    cert_pin_success: 1,
+    cert_pin_net_request_error: 1,
+    cert_pin_net_timeout: 1,
+    cert_pin_abort: 1,
+    cert_pin_missing_data: 0,
+    cert_pin_failed: 0,
+    cert_pin_invalid: 0,
+    cert_pin_unknown_error: 0,
+    content_sig_success: 0,
+    content_sig_net_request_error: 0,
+    content_sig_net_timeout: 0,
+    content_sig_abort: 0,
+    content_sig_missing_data: 0,
+    content_sig_failed: 0,
+    content_sig_invalid: 0,
+    content_sig_unknown_error: 0,
+  };
+  checkGleanMetricCounts(expectedGleanValues);
+
+  // Restore the URL override now that we're done.
+  if (previousUrlOverride) {
+    Preferences.set(GMPPrefs.KEY_URL_OVERRIDE, previousUrlOverride);
   } else {
     Preferences.reset(GMPPrefs.KEY_URL_OVERRIDE);
   }
-  Preferences.set("media.gmp-manager.checkContentSignature", false);
 });
 
 /**
@@ -695,7 +977,7 @@ async function test_checkForAddons_installAddon(
       wantInstallReject
   );
   let httpServer = new HttpServer();
-  let dir = FileUtils.getDir("TmpD", [], true);
+  let dir = FileUtils.getDir("TmpD", []);
   httpServer.registerDirectory("/", dir);
   httpServer.start(-1);
   let testserverPort = httpServer.identity.primaryPort;
@@ -707,10 +989,7 @@ async function test_checkForAddons_installAddon(
   let data = "e~=0.5772156649";
   let zipFile = createNewZipFile(zipFileName, data);
   let hashFunc = "sha256";
-  let expectedDigest = await ProductAddonCheckerTestUtils.computeHash(
-    hashFunc,
-    zipFile.path
-  );
+  let expectedDigest = await IOUtils.computeHexDigest(zipFile.path, hashFunc);
   let fileSize = zipFile.fileSize;
   if (wantInstallReject) {
     fileSize = 1;
@@ -771,6 +1050,10 @@ async function test_checkForAddons_installAddon(
       !!GMPPrefs.getInt(GMPPrefs.KEY_PLUGIN_LAST_UPDATE, "", gmpAddon.id)
     );
     Assert.equal(
+      GMPPrefs.getString(GMPPrefs.KEY_PLUGIN_HASHVALUE, "", gmpAddon.id),
+      expectedDigest
+    );
+    Assert.equal(
       GMPPrefs.getString(GMPPrefs.KEY_PLUGIN_VERSION, "", gmpAddon.id),
       "1.1"
     );
@@ -784,7 +1067,7 @@ async function test_checkForAddons_installAddon(
     // Cleanup
     extractedFile.parent.remove(true);
     zipFile.remove(false);
-    httpServer.stop(function() {});
+    httpServer.stop(function () {});
     installManager.uninit();
   } catch (ex) {
     zipFile.remove(false);
@@ -911,10 +1194,13 @@ add_test(function test_installAddon_noServer() {
 /***
  * Tests GMPExtractor (an internal component of GMPInstallManager) to ensure
  * it handles paths with certain characters.
+ *
+ * On Mac, test that the com.apple.quarantine extended attribute is removed
+ * from installed plugin files.
  */
 
 add_task(async function test_GMPExtractor_paths() {
-  registerCleanupFunction(async function() {
+  registerCleanupFunction(async function () {
     // Must stop holding on to the zip file using the JAR cache:
     let zipFile = new FileUtils.File(
       PathUtils.join(tempDir.path, "dummy_gmp.zip")
@@ -933,7 +1219,8 @@ add_task(async function test_GMPExtractor_paths() {
     "dummy_gmp.zip"
   );
   let tempDirName = "TmpDir#猫";
-  let tempDir = FileUtils.getDir("TmpD", [tempDirName], true);
+  let tempDir = FileUtils.getDir("TmpD", [tempDirName]);
+  tempDir.create(Ci.nsIFile.DIRECTORY_TYPE, FileUtils.PERMS_DIRECTORY);
   let zipPath = PathUtils.join(tempDir.path, "dummy_gmp.zip");
   await IOUtils.copy(srcPath, zipPath);
   // The path inside the profile dir we'll extract to. Make sure we handle
@@ -953,16 +1240,13 @@ add_task(async function test_GMPExtractor_paths() {
     !extractedPaths[0].includes("verified_contents.json"),
     "verified_contents.json should not be on extracted path"
   );
-  let extractedDir = PathUtils.join(
-    await PathUtils.getProfileDir(),
-    relativeExtractPath
-  );
+  let extractedDir = PathUtils.join(PathUtils.profileDir, relativeExtractPath);
   Assert.ok(
     await IOUtils.exists(extractedDir),
     "Extraction should have created a directory"
   );
   let extractedFile = PathUtils.join(
-    await PathUtils.getProfileDir(),
+    PathUtils.profileDir,
     relativeExtractPath,
     "dummy_file.txt"
   );
@@ -970,8 +1254,15 @@ add_task(async function test_GMPExtractor_paths() {
     await IOUtils.exists(extractedFile),
     "Extraction should have created dummy_file.txt"
   );
+  if (AppConstants.platform == "macosx") {
+    await Assert.rejects(
+      IOUtils.getMacXAttr(extractedFile, "com.apple.quarantine"),
+      /NotFoundError: The file `.+' does not have an extended attribute `com.apple.quarantine'/,
+      "The 'com.apple.quarantine' attribute should not be present"
+    );
+  }
   let unextractedFile = PathUtils.join(
-    await PathUtils.getProfileDir(),
+    PathUtils.profileDir,
     relativeExtractPath,
     "verified_contents.json"
   );
@@ -1010,52 +1301,6 @@ function readStringFromFile(file) {
   return readStringFromInputStream(fis);
 }
 
-/**
- * Set the root certificate used by Firefox. Used to allow test certificate
- * chains to be valid.
- * @param {string} filename the name of the file containing the root cert.
- */
-function setCertRoot(filename) {
-  // Commonly certificates are represented as PEM. The format is roughly as
-  // follows:
-  //
-  // -----BEGIN CERTIFICATE-----
-  // [some lines of base64, each typically 64 characters long]
-  // -----END CERTIFICATE-----
-  //
-  // However, nsIX509CertDB.constructX509FromBase64 and related functions do not
-  // handle input of this form. Instead, they require a single string of base64
-  // with no newlines or BEGIN/END headers. This is a helper function to convert
-  // PEM to the format that nsIX509CertDB requires.
-  function pemToBase64(pem) {
-    return pem
-      .replace(/-----BEGIN CERTIFICATE-----/, "")
-      .replace(/-----END CERTIFICATE-----/, "")
-      .replace(/[\r\n]/g, "");
-  }
-
-  let certBytes = readStringFromFile(do_get_file(filename));
-  let certdb = Cc["@mozilla.org/security/x509certdb;1"].getService(
-    Ci.nsIX509CertDB
-  );
-  // Certs should always be in .pem format, don't bother with .dem handling.
-  let cert = certdb.constructX509FromBase64(pemToBase64(certBytes));
-  Services.prefs.setCharPref(
-    "security.content.signature.root_hash",
-    cert.sha256Fingerprint
-  );
-}
-
-/**
- * Bare bones XMLHttpRequest implementation for testing onprogress, onerror,
- * and onload nsIDomEventListener handleEvent.
- */
-function makeHandler(aVal) {
-  if (typeof aVal == "function") {
-    return { handleEvent: aVal };
-  }
-  return aVal;
-}
 /**
  * Constructs a mock xhr/ServiceRequest which is used for testing different
  * aspects of responses.
@@ -1125,37 +1370,37 @@ mockRequest.prototype = {
     });
   },
   set onabort(aValue) {
-    this._onabort = makeHandler(aValue);
+    this._onabort = aValue;
   },
   get onabort() {
     return this._onabort;
   },
   set onprogress(aValue) {
-    this._onprogress = makeHandler(aValue);
+    this._onprogress = aValue;
   },
   get onprogress() {
     return this._onprogress;
   },
   set onerror(aValue) {
-    this._onerror = makeHandler(aValue);
+    this._onerror = aValue;
   },
   get onerror() {
     return this._onerror;
   },
   set onload(aValue) {
-    this._onload = makeHandler(aValue);
+    this._onload = aValue;
   },
   get onload() {
     return this._onload;
   },
   set onloadend(aValue) {
-    this._onloadend = makeHandler(aValue);
+    this._onloadend = aValue;
   },
   get onloadend() {
     return this._onloadend;
   },
   set ontimeout(aValue) {
-    this._ontimeout = makeHandler(aValue);
+    this._ontimeout = aValue;
   },
   get ontimeout() {
     return this._ontimeout;
@@ -1205,7 +1450,7 @@ function createNewZipFile(zipName, data) {
   let zipWriter = Cc["@mozilla.org/zipwriter;1"].createInstance(
     Ci.nsIZipWriter
   );
-  let zipFile = FileUtils.getFile("TmpD", [zipName]);
+  let zipFile = new FileUtils.File(PathUtils.join(PathUtils.tempDir, zipName));
   if (zipFile.exists()) {
     zipFile.remove(false);
   }
@@ -1225,4 +1470,239 @@ function createNewZipFile(zipName, data) {
   stream.close();
   info("zip file created on disk at: " + zipFile.path);
   return zipFile;
+}
+
+/***
+ * Set up pref(s) as appropriate for content sig tests. Return the value of our
+ * current GMP url override so it can be restored at test teardown.
+ */
+
+function setupContentSigTestPrefs() {
+  Preferences.set("media.gmp-manager.checkContentSignature", true);
+
+  // Return the URL override so tests can restore it to its previous value
+  // once they're done.
+  return Preferences.get(GMPPrefs.KEY_URL_OVERRIDE, "");
+}
+
+/***
+ * Revert prefs used for content signature tests.
+ *
+ * @param previousUrlOverride - The GMP URL override value prior to test being
+ * run. The function will revert the URL back to this, or reset the URL if no
+ * value is passed.
+ */
+function revertContentSigTestPrefs(previousUrlOverride) {
+  if (previousUrlOverride) {
+    Preferences.set(GMPPrefs.KEY_URL_OVERRIDE, previousUrlOverride);
+  } else {
+    Preferences.reset(GMPPrefs.KEY_URL_OVERRIDE);
+  }
+  Preferences.set("media.gmp-manager.checkContentSignature", false);
+}
+
+/***
+ * Reset telemetry data related to gmp updates, and get the histogram
+ * associated with MEDIA_GMP_UPDATE_XML_FETCH_RESULT.
+ *
+ * @returns The freshly cleared MEDIA_GMP_UPDATE_XML_FETCH_RESULT histogram.
+ */
+function resetGmpTelemetryAndGetHistogram() {
+  Services.fog.testResetFOG();
+  return TelemetryTestUtils.getAndClearHistogram(
+    "MEDIA_GMP_UPDATE_XML_FETCH_RESULT"
+  );
+}
+
+/***
+ * A helper to check that glean metrics have expected counts.
+ * @param expectedGleanValues a object that has properties with names set to glean metrics to be checked
+ * and the values are the expected count. Eg { cert_pin_success: 1 }.
+ */
+function checkGleanMetricCounts(expectedGleanValues) {
+  for (const property in expectedGleanValues) {
+    if (Glean.gmp.updateXmlFetchResult[property].testGetValue()) {
+      Assert.equal(
+        Glean.gmp.updateXmlFetchResult[property].testGetValue(),
+        expectedGleanValues[property],
+        `${property} should have been recorded ${expectedGleanValues[property]} times`
+      );
+    } else {
+      Assert.equal(
+        expectedGleanValues[property],
+        0,
+        "testGetValue() being undefined should mean we expect a metric to not have been gathered"
+      );
+    }
+  }
+}
+
+/***
+ * Sets up a `HttpServer` for use in content singature checking tests. This
+ * server will expose different endpoints that can be used to simulate different
+ * pass and failure scenarios when fetching an update.xml file.
+ *
+ * @returns An object that has the following properties
+ * - testServer - the HttpServer itself.
+ * - promiseHolder - an object used to hold promises as properties. More complex test cases need this to sync different steps.
+ * - validUpdateUri - a URI that should return a valid update xml + content sig.
+ * - missingContentSigUri - a URI that returns a valid update xml, but misses the content sig header.
+ * - badContentSigUri - a URI that returns a valid update xml, but provides data that is not a content sig in the header.
+ * - invalidContentSigUri - a URI that returns a valid update xml, but provides an incorrect content sig.
+ * - badXmlUri - a URI that returns an invalid update xml, but provides a correct content sig.
+ * - x5uAbortUri - a URI that returns a valid update xml, but timesout the x5u request. Requires the caller to set
+ *   `promiseHolder.installPromise` to the `checkForAddons()` promise` before hitting the endpoint. The server will set
+ *   `promiseHolder.serverPromise` once it has started servicing the initial update request, and the caller should
+ *   await that promise to ensure the server has restored state.
+ * - x5uAbortUri - a URI that returns a valid update xml, but aborts the x5u request. Requires the caller to set
+ *   `promiseHolder.installPromise` to the `checkForAddons()` promise` before hitting the endpoint. The server will set
+ *   `promiseHolder.serverPromise` once it has started servicing the initial update request, and the caller should
+ *   await that promise to ensure the server has restored state.
+ */
+function getTestServerForContentSignatureTests() {
+  const testServer = new HttpServer();
+  // Start the server so we can grab the identity. We need to know this so the
+  // server can reference itself in the handlers that will be set up.
+  testServer.start();
+  const baseUri =
+    testServer.identity.primaryScheme +
+    "://" +
+    testServer.identity.primaryHost +
+    ":" +
+    testServer.identity.primaryPort;
+
+  // The promise holder has no properties by default. Different endpoints and
+  // tests will set its properties as needed.
+  let promiseHolder = {};
+
+  const goodXml = readStringFromFile(do_get_file("good.xml"));
+  // This sig is generated using the following command at mozilla-central root
+  // `cat toolkit/mozapps/extensions/test/xpcshell/data/productaddons/good.xml | ./mach python security/manager/ssl/tests/unit/test_content_signing/pysign.py`
+  // If test certificates are regenerated, this signature must also be.
+  const goodXmlContentSignature =
+    "7QYnPqFoOlS02BpDdIRIljzmPr6BFwPs1z1y8KJUBlnU7EVG6FbnXmVVt5Op9wDzgvhXX7th8qFJvpPOZs_B_tHRDNJ8SK0HN95BAN15z3ZW2r95SSHmU-fP2JgoNOR3";
+
+  // Setup endpoint to handle x5u lookups correctly.
+  const validX5uPath = "/valid_x5u";
+  const validCertChain = [
+    readStringFromFile(do_get_file("content_signing_aus_ee.pem")),
+    readStringFromFile(do_get_file("content_signing_int.pem")),
+  ];
+  testServer.registerPathHandler(validX5uPath, (req, res) => {
+    res.write(validCertChain.join("\n"));
+  });
+  const validX5uUrl = baseUri + validX5uPath;
+
+  // Handler for path that serves valid xml with valid signature.
+  const validUpdatePath = "/valid_update.xml";
+  testServer.registerPathHandler(validUpdatePath, (req, res) => {
+    const validContentSignatureHeader = `x5u=${validX5uUrl}; p384ecdsa=${goodXmlContentSignature}`;
+    res.setHeader("content-signature", validContentSignatureHeader);
+    res.write(goodXml);
+  });
+
+  const missingContentSigPath = "/update_missing_content_sig.xml";
+  testServer.registerPathHandler(missingContentSigPath, (req, res) => {
+    // Content signature header omitted.
+    res.write(goodXml);
+  });
+
+  const badContentSigPath = "/update_bad_content_sig.xml";
+  testServer.registerPathHandler(badContentSigPath, (req, res) => {
+    res.setHeader(
+      "content-signature",
+      `x5u=${validX5uUrl}; p384ecdsa=I'm a bad content signature`
+    );
+    res.write(goodXml);
+  });
+
+  // Make an invalid signature by change first char.
+  const invalidXmlContentSignature = "Z" + goodXmlContentSignature.slice(1);
+  const invalidContentSigPath = "/update_invalid_content_sig.xml";
+  testServer.registerPathHandler(invalidContentSigPath, (req, res) => {
+    res.setHeader(
+      "content-signature",
+      `x5u=${validX5uUrl}; p384ecdsa=${invalidXmlContentSignature}`
+    );
+    res.write(goodXml);
+  });
+
+  const badXml = readStringFromFile(do_get_file("bad.xml"));
+  // This sig is generated using the following command at mozilla-central root
+  // `cat toolkit/mozapps/extensions/test/xpcshell/data/productaddons/bad.xml | ./mach python security/manager/ssl/tests/unit/test_content_signing/pysign.py`
+  // If test certificates are regenerated, this signature must also be.
+  const badXmlContentSignature =
+    "7QYnPqFoOlS02BpDdIRIljzmPr6BFwPs1z1y8KJUBlnU7EVG6FbnXmVVt5Op9wDz8YoQ_b-3i9rWpj40s8QZsMgo2eImx83LW9JE0d0z6sSAnwRb4lHFPpJXC_hv7wi7";
+  const badXmlPath = "/bad.xml";
+  testServer.registerPathHandler(badXmlPath, (req, res) => {
+    const validContentSignatureHeader = `x5u=${validX5uUrl}; p384ecdsa=${badXmlContentSignature}`;
+    res.setHeader("content-signature", validContentSignatureHeader);
+    res.write(badXml);
+  });
+
+  const badX5uRequestPath = "/bad_x5u_request.xml";
+  testServer.registerPathHandler(badX5uRequestPath, (req, res) => {
+    const badX5uUrlHeader = `x5u=https://this.is.a/bad/url; p384ecdsa=${goodXmlContentSignature}`;
+    res.setHeader("content-signature", badX5uUrlHeader);
+    res.write(badXml);
+  });
+
+  const x5uTimeoutPath = "/x5u_timeout.xml";
+  testServer.registerPathHandler(x5uTimeoutPath, (req, res) => {
+    const validContentSignatureHeader = `x5u=${validX5uUrl}; p384ecdsa=${goodXmlContentSignature}`;
+    // Write the correct header and xml, but setup the next request to timeout.
+    // This should cause the request for the x5u URL to fail via timeout.
+    let overriddenServiceRequest = new mockRequest(200, "", {
+      dropRequest: true,
+      timeout: true,
+    });
+    // We expose this promise so that tests can wait until the server has
+    // reverted the overridden request (to avoid double overrides).
+    promiseHolder.serverPromise =
+      ProductAddonCheckerTestUtils.overrideServiceRequest(
+        overriddenServiceRequest,
+        () => {
+          res.setHeader("content-signature", validContentSignatureHeader);
+          res.write(goodXml);
+          return promiseHolder.installPromise;
+        }
+      );
+  });
+
+  const x5uAbortPath = "/x5u_abort.xml";
+  testServer.registerPathHandler(x5uAbortPath, (req, res) => {
+    const validContentSignatureHeader = `x5u=${validX5uUrl}; p384ecdsa=${goodXmlContentSignature}`;
+    // Write the correct header and xml, but setup the next request to fail.
+    // This should cause the request for the x5u URL to fail via abort.
+    let overriddenServiceRequest = new mockRequest(200, "", {
+      dropRequest: true,
+    });
+    // We expose this promise so that tests can wait until the server has
+    // reverted the overridden request (to avoid double overrides).
+    promiseHolder.serverPromise =
+      ProductAddonCheckerTestUtils.overrideServiceRequest(
+        overriddenServiceRequest,
+        () => {
+          res.setHeader("content-signature", validContentSignatureHeader);
+          res.write(goodXml);
+          return promiseHolder.installPromise;
+        }
+      );
+    setTimeout(() => {
+      overriddenServiceRequest.abort();
+    }, 100);
+  });
+
+  return {
+    testServer,
+    promiseHolder,
+    validUpdateUri: baseUri + validUpdatePath,
+    missingContentSigUri: baseUri + missingContentSigPath,
+    badContentSigUri: baseUri + badContentSigPath,
+    invalidContentSigUri: baseUri + invalidContentSigPath,
+    badXmlUri: baseUri + badXmlPath,
+    badX5uRequestUri: baseUri + badX5uRequestPath,
+    x5uTimeoutUri: baseUri + x5uTimeoutPath,
+    x5uAbortUri: baseUri + x5uAbortPath,
+  };
 }

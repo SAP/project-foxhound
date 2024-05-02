@@ -4,13 +4,14 @@
 
 "use strict";
 
-const { PermissionTestUtils } = ChromeUtils.import(
-  "resource://testing-common/PermissionTestUtils.jsm"
+const { PermissionTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/PermissionTestUtils.sys.mjs"
 );
 
 var tab;
 var notification;
 var notificationURL =
+  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
   "http://example.org/browser/browser/base/content/test/alerts/file_dom_notifications.html";
 var newWindowOpenedFromTab;
 
@@ -34,18 +35,22 @@ add_task(async function test_notificationPreventDefaultAndSwitchTabs() {
 
       // First, show a notification that will be have the tab-switching prevented.
       function promiseNotificationEvent(evt) {
-        return SpecialPowers.spawn(aBrowser, [evt], async function(contentEvt) {
-          return new Promise(resolve => {
-            let contentNotification = content.wrappedJSObject._notification;
-            contentNotification.addEventListener(
-              contentEvt,
-              function(event) {
-                resolve({ defaultPrevented: event.defaultPrevented });
-              },
-              { once: true }
-            );
-          });
-        });
+        return SpecialPowers.spawn(
+          aBrowser,
+          [evt],
+          async function (contentEvt) {
+            return new Promise(resolve => {
+              let contentNotification = content.wrappedJSObject._notification;
+              contentNotification.addEventListener(
+                contentEvt,
+                function (event) {
+                  resolve({ defaultPrevented: event.defaultPrevented });
+                },
+                { once: true }
+              );
+            });
+          }
+        );
       }
       await openNotification(aBrowser, "showNotification1");
       info("Notification alert showing");

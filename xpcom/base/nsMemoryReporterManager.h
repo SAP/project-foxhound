@@ -18,6 +18,11 @@
 #  include <windows.h>
 #endif  // XP_WIN
 
+#if defined(MOZ_MEMORY)
+#  define HAVE_JEMALLOC_STATS 1
+#  include "mozmemory.h"
+#endif  // MOZ_MEMORY
+
 namespace mozilla {
 class MemoryReportingProcess;
 namespace dom {
@@ -179,10 +184,17 @@ class nsMemoryReporterManager final : public nsIMemoryReporterManager,
 #ifdef XP_WIN
   static int64_t ResidentUnique(HANDLE aProcess = nullptr);
 #elif XP_MACOSX
+  // On MacOS this can sometimes be significantly slow. It should not be used
+  // except in debugging or at the request of a user (eg about:memory).
   static int64_t ResidentUnique(mach_port_t aPort = 0);
 #else
   static int64_t ResidentUnique(pid_t aPid = 0);
 #endif  // XP_{WIN, MACOSX, LINUX, *}
+
+#ifdef XP_MACOSX
+  // Retrive the "phys_footprint" memory statistic on MacOS.
+  static int64_t PhysicalFootprint(mach_port_t aPort = 0);
+#endif
 
   // Functions that measure per-tab memory consumption.
   struct SizeOfTabFns {
@@ -191,7 +203,19 @@ class nsMemoryReporterManager final : public nsIMemoryReporterManager,
   };
   SizeOfTabFns mSizeOfTabFns;
 
+#ifdef HAVE_JEMALLOC_STATS
+  // These C++ only versions of HeapAllocated and HeapOverheadFraction avoid
+  // extra calls to jemalloc_stats;
+  static size_t HeapAllocated(const jemalloc_stats_t& stats);
+  static int64_t HeapOverheadFraction(const jemalloc_stats_t& stats);
+#endif
+
  private:
+  bool IsRegistrationBlocked() MOZ_EXCLUDES(mMutex) {
+    mozilla::MutexAutoLock lock(mMutex);
+    return mIsRegistrationBlocked;
+  }
+
   [[nodiscard]] nsresult RegisterReporterHelper(nsIMemoryReporter* aReporter,
                                                 bool aForce, bool aStrongRef,
                                                 bool aIsAsync);
@@ -210,16 +234,16 @@ class nsMemoryReporterManager final : public nsIMemoryReporterManager,
   static const uint32_t kTimeoutLengthMS = 180000;
 
   mozilla::Mutex mMutex;
-  bool mIsRegistrationBlocked;
+  bool mIsRegistrationBlocked MOZ_GUARDED_BY(mMutex);
 
-  StrongReportersTable* mStrongReporters;
-  WeakReportersTable* mWeakReporters;
+  StrongReportersTable* mStrongReporters MOZ_GUARDED_BY(mMutex);
+  WeakReportersTable* mWeakReporters MOZ_GUARDED_BY(mMutex);
 
   // These two are only used for testing purposes.
-  StrongReportersTable* mSavedStrongReporters;
-  WeakReportersTable* mSavedWeakReporters;
+  StrongReportersTable* mSavedStrongReporters MOZ_GUARDED_BY(mMutex);
+  WeakReportersTable* mSavedWeakReporters MOZ_GUARDED_BY(mMutex);
 
-  uint32_t mNextGeneration;
+  uint32_t mNextGeneration;  // MainThread only
 
   // Used to keep track of state of which processes are currently running and
   // waiting to run memory reports. Holds references to parameters needed when
@@ -273,13 +297,13 @@ class nsMemoryReporterManager final : public nsIMemoryReporterManager,
   // When this is non-null, a request is in flight.  Note: We use manual
   // new/delete for this because its lifetime doesn't match block scope or
   // anything like that.
-  PendingProcessesState* mPendingProcessesState;
+  PendingProcessesState* mPendingProcessesState;  // MainThread only
 
   // This is reinitialized each time a call to GetReports is initiated.
-  PendingReportersState* mPendingReportersState;
+  PendingReportersState* mPendingReportersState;  // MainThread only
 
   // Used in GetHeapAllocatedAsync() to run jemalloc_stats async.
-  nsCOMPtr<nsIEventTarget> mThreadPool;
+  nsCOMPtr<nsIEventTarget> mThreadPool MOZ_GUARDED_BY(mMutex);
 
   PendingProcessesState* GetStateForGeneration(uint32_t aGeneration);
   [[nodiscard]] static bool StartChildReport(

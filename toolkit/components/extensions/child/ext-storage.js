@@ -4,21 +4,11 @@
 
 "use strict";
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "ExtensionStorage",
-  "resource://gre/modules/ExtensionStorage.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "ExtensionStorageIDB",
-  "resource://gre/modules/ExtensionStorageIDB.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "ExtensionTelemetry",
-  "resource://gre/modules/ExtensionTelemetry.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  ExtensionStorage: "resource://gre/modules/ExtensionStorage.sys.mjs",
+  ExtensionStorageIDB: "resource://gre/modules/ExtensionStorageIDB.sys.mjs",
+  ExtensionTelemetry: "resource://gre/modules/ExtensionTelemetry.sys.mjs",
+});
 
 // Wrap a storage operation in a TelemetryStopWatch.
 async function measureOp(telemetryMetric, extension, fn) {
@@ -39,7 +29,7 @@ this.storage = class extends ExtensionAPI {
     return {
       get(keys) {
         return measureOp(
-          ExtensionTelemetry.storageLocalGetJSON,
+          ExtensionTelemetry.storageLocalGetJson,
           context.extension,
           () => {
             return context.childManager
@@ -52,7 +42,7 @@ this.storage = class extends ExtensionAPI {
       },
       set(items) {
         return measureOp(
-          ExtensionTelemetry.storageLocalSetJSON,
+          ExtensionTelemetry.storageLocalSetJson,
           context.extension,
           () => {
             return context.childManager.callParentAsyncFunction(
@@ -100,7 +90,7 @@ this.storage = class extends ExtensionAPI {
     return {
       get(keys) {
         return measureOp(
-          ExtensionTelemetry.storageLocalGetIDB,
+          ExtensionTelemetry.storageLocalGetIdb,
           context.extension,
           async () => {
             const db = await getDB();
@@ -109,13 +99,21 @@ this.storage = class extends ExtensionAPI {
         );
       },
       set(items) {
+        function serialize(name, anonymizedName, value) {
+          return ExtensionStorage.serialize(
+            `set/${context.extension.id}/${name}`,
+            `set/${context.extension.id}/${anonymizedName}`,
+            value
+          );
+        }
+
         return measureOp(
-          ExtensionTelemetry.storageLocalSetIDB,
+          ExtensionTelemetry.storageLocalSetIdb,
           context.extension,
           async () => {
             const db = await getDB();
             const changes = await db.set(items, {
-              serialize: ExtensionStorage.serialize,
+              serialize,
             });
 
             if (changes) {
@@ -150,6 +148,35 @@ this.storage = class extends ExtensionAPI {
       null,
       context
     );
+
+    // onChangedName is "storage.onChanged", "storage.sync.onChanged", etc.
+    function makeOnChangedEventTarget(onChangedName) {
+      return new EventManager({
+        context,
+        name: onChangedName,
+        register: fire => {
+          let onChanged = (data, area) => {
+            let changes = new context.cloneScope.Object();
+            for (let [key, value] of Object.entries(data)) {
+              changes[key] = deserialize(value);
+            }
+            if (area) {
+              // storage.onChanged includes the area.
+              fire.raw(changes, area);
+            } else {
+              // StorageArea.onChanged doesn't include the area.
+              fire.raw(changes);
+            }
+          };
+
+          let parent = context.childManager.getParentEvent(onChangedName);
+          parent.addListener(onChanged);
+          return () => {
+            parent.removeListener(onChanged);
+          };
+        },
+      }).api();
+    }
 
     function sanitize(items) {
       // The schema validator already takes care of arrays (which are only allowed
@@ -186,10 +213,8 @@ this.storage = class extends ExtensionAPI {
     // by asking to the main process (as soon as the storage.local API has been accessed for
     // the first time).
     const getStorageLocalBackend = async () => {
-      const {
-        backendEnabled,
-        storagePrincipal,
-      } = await ExtensionStorageIDB.selectBackend(context);
+      const { backendEnabled, storagePrincipal } =
+        await ExtensionStorageIDB.selectBackend(context);
 
       if (!backendEnabled) {
         return this.getLocalFileBackend(context, { deserialize, serialize });
@@ -222,9 +247,11 @@ this.storage = class extends ExtensionAPI {
     let promiseStorageLocalBackend;
 
     // Generate the backend-agnostic local API wrapped methods.
-    const local = {};
+    const local = {
+      onChanged: makeOnChangedEventTarget("storage.local.onChanged"),
+    };
     for (let method of ["get", "set", "remove", "clear"]) {
-      local[method] = async function(...args) {
+      local[method] = async function (...args) {
         try {
           // Discover the selected backend if it is not known yet.
           if (!selectedBackend) {
@@ -244,10 +271,11 @@ this.storage = class extends ExtensionAPI {
             if (method !== "get") {
               // Let the outer try to catch rejections returned by the backend methods.
               try {
-                const result = await context.childManager.callParentAsyncFunction(
-                  "storage.local.callMethodInParentProcess",
-                  [method, args]
-                );
+                const result =
+                  await context.childManager.callParentAsyncFunction(
+                    "storage.local.callMethodInParentProcess",
+                    [method, args]
+                  );
                 return result;
               } catch (err) {
                 // Just return the rejection as is, the error has been normalized in the
@@ -278,6 +306,24 @@ this.storage = class extends ExtensionAPI {
       storage: {
         local,
 
+        session: {
+          async get(keys) {
+            return deserialize(
+              await context.childManager.callParentAsyncFunction(
+                "storage.session.get",
+                [serialize(keys)]
+              )
+            );
+          },
+          set(items) {
+            return context.childManager.callParentAsyncFunction(
+              "storage.session.set",
+              [serialize(items)]
+            );
+          },
+          onChanged: makeOnChangedEventTarget("storage.session.onChanged"),
+        },
+
         sync: {
           get(keys) {
             keys = sanitize(keys);
@@ -293,6 +339,7 @@ this.storage = class extends ExtensionAPI {
               [items]
             );
           },
+          onChanged: makeOnChangedEventTarget("storage.sync.onChanged"),
         },
 
         managed: {
@@ -310,29 +357,11 @@ this.storage = class extends ExtensionAPI {
           clear() {
             return Promise.reject({ message: "storage.managed is read-only" });
           },
+
+          onChanged: makeOnChangedEventTarget("storage.managed.onChanged"),
         },
 
-        onChanged: new EventManager({
-          context,
-          name: "storage.onChanged",
-          register: fire => {
-            let onChanged = (data, area) => {
-              let changes = new context.cloneScope.Object();
-              for (let [key, value] of Object.entries(data)) {
-                changes[key] = deserialize(value);
-              }
-              fire.raw(changes, area);
-            };
-
-            let parent = context.childManager.getParentEvent(
-              "storage.onChanged"
-            );
-            parent.addListener(onChanged);
-            return () => {
-              parent.removeListener(onChanged);
-            };
-          },
-        }).api(),
+        onChanged: makeOnChangedEventTarget("storage.onChanged"),
       },
     };
   }

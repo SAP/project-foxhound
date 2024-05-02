@@ -8,7 +8,6 @@
 #define _RSDPARSA_SDP_H_
 
 #include "mozilla/UniquePtr.h"
-#include "mozilla/Attributes.h"
 
 #include "sdp/Sdp.h"
 
@@ -27,6 +26,8 @@ class RsdparsaSdp final : public Sdp {
 
  public:
   explicit RsdparsaSdp(RsdparsaSessionHandle session, const SdpOrigin& origin);
+
+  Sdp* Clone() const override;
 
   const SdpOrigin& GetOrigin() const override;
 
@@ -58,6 +59,7 @@ class RsdparsaSdp final : public Sdp {
 
  private:
   RsdparsaSdp() : mOrigin("", 0, 0, sdp::kIPv4, "") {}
+  RsdparsaSdp(const RsdparsaSdp& aOrig);
 
   RsdparsaSessionHandle mSession;
   SdpOrigin mOrigin;

@@ -7,12 +7,12 @@
 const {
   Component,
   createFactory,
-} = require("devtools/client/shared/vendor/react");
-const dom = require("devtools/client/shared/vendor/react-dom-factories");
-const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
+} = require("resource://devtools/client/shared/vendor/react.js");
+const dom = require("resource://devtools/client/shared/vendor/react-dom-factories.js");
+const PropTypes = require("resource://devtools/client/shared/vendor/react-prop-types.js");
 
 const AnimatedPropertyItem = createFactory(
-  require("devtools/client/inspector/animation/components/AnimatedPropertyItem")
+  require("resource://devtools/client/inspector/animation/components/AnimatedPropertyItem.js")
 );
 
 class AnimatedPropertyList extends Component {
@@ -44,7 +44,8 @@ class AnimatedPropertyList extends Component {
     this.updateState(this.props.animation);
   }
 
-  componentWillReceiveProps(nextProps) {
+  // FIXME: https://bugzilla.mozilla.org/show_bug.cgi?id=1774507
+  UNSAFE_componentWillReceiveProps(nextProps) {
     this.setState({ isStateUpdating: true });
     this.updateState(nextProps.animation);
   }

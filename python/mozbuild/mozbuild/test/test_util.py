@@ -3,24 +3,31 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, print_function, unicode_literals
-
 import copy
 import hashlib
-import io
 import itertools
 import os
-import unittest
-import six
 import string
 import sys
-import textwrap
+import unittest
 
 import pytest
+import six
 from mozfile.mozfile import NamedTemporaryFile
 from mozunit import main
 
 from mozbuild.util import (
+    EnumString,
+    EnumStringComparisonError,
+    HierarchicalStringList,
+    MozbuildDeletionError,
+    ReadOnlyDict,
+    StrictOrderingOnAppendList,
+    StrictOrderingOnAppendListWithAction,
+    StrictOrderingOnAppendListWithFlagsFactory,
+    TypedList,
+    TypedNamedTuple,
+    UnsortedError,
     expand_variables,
     group_unified_files,
     hash_file,
@@ -29,18 +36,6 @@ from mozbuild.util import (
     memoized_property,
     pair,
     resolve_target_to_make,
-    write_indented_repr,
-    MozbuildDeletionError,
-    HierarchicalStringList,
-    EnumString,
-    EnumStringComparisonError,
-    ReadOnlyDict,
-    StrictOrderingOnAppendList,
-    StrictOrderingOnAppendListWithAction,
-    StrictOrderingOnAppendListWithFlagsFactory,
-    TypedList,
-    TypedNamedTuple,
-    UnsortedError,
 )
 
 if sys.version_info[0] == 3:
@@ -757,11 +752,11 @@ class TestTypedNamedTuple(unittest.TestCase):
         FooBar = TypedNamedTuple("FooBar", [("foo", six.text_type), ("bar", int)])
 
         t = FooBar(foo="foo", bar=2)
-        self.assertEquals(type(t), FooBar)
-        self.assertEquals(t.foo, "foo")
-        self.assertEquals(t.bar, 2)
-        self.assertEquals(t[0], "foo")
-        self.assertEquals(t[1], 2)
+        self.assertEqual(type(t), FooBar)
+        self.assertEqual(t.foo, "foo")
+        self.assertEqual(t.bar, 2)
+        self.assertEqual(t[0], "foo")
+        self.assertEqual(t[1], 2)
 
         FooBar("foo", 2)
 
@@ -774,7 +769,7 @@ class TestTypedNamedTuple(unittest.TestCase):
         # arguments.
         t1 = ("foo", 3)
         t2 = FooBar(t1)
-        self.assertEquals(type(t2), FooBar)
+        self.assertEqual(type(t2), FooBar)
         self.assertEqual(FooBar(t1), FooBar("foo", 3))
 
 
@@ -797,15 +792,6 @@ class TestGroupUnifiedFiles(unittest.TestCase):
         expected_amounts = [5, 5, 5, 5, 5, 1]
         for i, amount in enumerate(expected_amounts):
             check_mapping(i, amount)
-
-    def test_unsorted_files(self):
-        unsorted_files = ["a%d.cpp" % i for i in range(11)]
-        sorted_files = sorted(unsorted_files)
-        mapping = list(group_unified_files(unsorted_files, "Unified", "cpp", 5))
-
-        self.assertEqual(mapping[0][1], sorted_files[0:5])
-        self.assertEqual(mapping[1][1], sorted_files[5:10])
-        self.assertEqual(mapping[2][1], sorted_files[10:])
 
 
 class TestMisc(unittest.TestCase):
@@ -838,84 +824,27 @@ class TestMisc(unittest.TestCase):
 
 class TestEnumString(unittest.TestCase):
     def test_string(self):
-        CompilerType = EnumString.subclass("gcc", "clang", "clang-cl")
+        class CompilerType(EnumString):
+            POSSIBLE_VALUES = ("gcc", "clang", "clang-cl")
 
         type = CompilerType("gcc")
-        self.assertEquals(type, "gcc")
-        self.assertNotEquals(type, "clang")
-        self.assertNotEquals(type, "clang-cl")
+        self.assertEqual(type, "gcc")
+        self.assertNotEqual(type, "clang")
+        self.assertNotEqual(type, "clang-cl")
         self.assertIn(type, ("gcc", "clang-cl"))
         self.assertNotIn(type, ("clang", "clang-cl"))
 
         with self.assertRaises(EnumStringComparisonError):
-            self.assertEquals(type, "foo")
+            self.assertEqual(type, "foo")
 
         with self.assertRaises(EnumStringComparisonError):
-            self.assertNotEquals(type, "foo")
+            self.assertNotEqual(type, "foo")
 
         with self.assertRaises(EnumStringComparisonError):
             self.assertIn(type, ("foo", "gcc"))
 
         with self.assertRaises(ValueError):
             type = CompilerType("foo")
-
-
-class TestIndentedRepr(unittest.TestCase):
-    @unittest.skipUnless(six.PY2, "requires Python 2")
-    def test_write_indented_repr_py2(self):
-        data = textwrap.dedent(
-            r"""
-        {
-            'a': 1,
-            'b': b'abc',
-            b'c': 'xyz',
-            'd': False,
-            'e': {
-                'a': 1,
-                'b': b'2',
-                'c': '3',
-            },
-            'f': [
-                1,
-                b'2',
-                '3',
-            ],
-            'pile_of_bytes': b'\xf0\x9f\x92\xa9',
-            'pile_of_poo': '💩',
-            'special_chars': '\\\'"\x08\n\t',
-            'with_accents': 'éàñ',
-        }
-        """
-        ).lstrip()
-
-        obj = eval(data)
-        buf = io.StringIO()
-        write_indented_repr(buf, obj)
-
-        self.assertEqual(buf.getvalue(), data)
-
-    @unittest.skipUnless(six.PY3, "requires Python 3")
-    def test_write_indented_repr(self):
-        data = textwrap.dedent(
-            r"""
-        {   b'c': 'xyz',
-            'a': 1,
-            'b': b'abc',
-            'd': False,
-            'e': {'a': 1, 'b': b'2', 'c': '3'},
-            'f': [1, b'2', '3'],
-            'pile_of_bytes': b'\xf0\x9f\x92\xa9',
-            'pile_of_poo': '💩',
-            'special_chars': '\\\'"\x08\n\t',
-            'with_accents': 'éàñ'}
-        """
-        ).lstrip()
-
-        obj = eval(data)
-        buf = six.StringIO()
-        write_indented_repr(buf, obj)
-
-        self.assertEqual(buf.getvalue(), data)
 
 
 class TestHexDump(unittest.TestCase):

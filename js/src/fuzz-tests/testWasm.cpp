@@ -15,7 +15,7 @@
 #include "vm/TypedArrayObject.h"
 
 #include "wasm/WasmCompile.h"
-#include "wasm/WasmCraneliftCompile.h"
+#include "wasm/WasmFeatures.h"
 #include "wasm/WasmIonCompile.h"
 #include "wasm/WasmJS.h"
 #include "wasm/WasmTable.h"
@@ -36,9 +36,20 @@ size_t gluesmith(uint8_t* data, size_t size, uint8_t* out, size_t maxsize);
 }
 
 static int testWasmInit(int* argc, char*** argv) {
-  if (!wasm::HasSupport(gCx) ||
-      !GlobalObject::getOrCreateConstructor(gCx, JSProto_WebAssembly)) {
-    MOZ_CRASH("Failed to initialize wasm support");
+  if (!wasm::HasSupport(gCx)) {
+    MOZ_CRASH("Wasm is not supported");
+  }
+
+  JS::ContextOptionsRef(gCx)
+#define WASM_FEATURE(NAME, LOWER_NAME, STAGE, COMPILE_PRED, COMPILER_PRED, \
+                     FLAG_PRED, FLAG_FORCE_ON, FLAG_FUZZ_ON, SHELL, PREF)  \
+  .setWasm##NAME(FLAG_FUZZ_ON)
+      JS_FOR_WASM_FEATURES(WASM_FEATURE)
+#undef WASM_FEATURE
+          ;
+
+  if (!GlobalObject::getOrCreateConstructor(gCx, JSProto_WebAssembly)) {
+    MOZ_CRASH("Failed to initialize wasm engine");
   }
 
   return 0;
@@ -82,6 +93,10 @@ static bool assignImportKind(const Import& import, HandleObject obj,
                              JS::Handle<JS::IdVector> lastExportIds,
                              size_t* currentExportId, size_t exportsLength,
                              HandleValue defaultValue) {
+  RootedId fieldName(gCx);
+  if (!import.field.toPropertyKey(gCx, &fieldName)) {
+    return false;
+  }
   bool assigned = false;
   while (*currentExportId < exportsLength) {
     RootedValue propVal(gCx);
@@ -93,7 +108,7 @@ static bool assignImportKind(const Import& import, HandleObject obj,
     (*currentExportId)++;
 
     if (propVal.isObject() && propVal.toObject().is<T>()) {
-      if (!JS_SetProperty(gCx, obj, import.field.get(), propVal)) {
+      if (!JS_SetPropertyById(gCx, obj, fieldName, propVal)) {
         return false;
       }
 
@@ -102,11 +117,16 @@ static bool assignImportKind(const Import& import, HandleObject obj,
     }
   }
   if (!assigned) {
-    if (!JS_SetProperty(gCx, obj, import.field.get(), defaultValue)) {
+    if (!JS_SetPropertyById(gCx, obj, fieldName, defaultValue)) {
       return false;
     }
   }
   return true;
+}
+
+static bool FuzzerBuildId(JS::BuildIdCharVector* buildId) {
+  const char buildid[] = "testWasmFuzz";
+  return buildId->append(buildid, sizeof(buildid));
 }
 
 static int testWasmFuzz(const uint8_t* buf, size_t size) {
@@ -114,6 +134,8 @@ static int testWasmFuzz(const uint8_t* buf, size_t size) {
     JS::PrepareForFullGC(gCx);
     JS::NonIncrementalGC(gCx, JS::GCOptions::Normal, JS::GCReason::API);
   });
+
+  JS::SetProcessBuildIdOp(FuzzerBuildId);
 
   const size_t MINIMUM_MODULE_SIZE = 8;
 
@@ -170,32 +192,20 @@ static int testWasmFuzz(const uint8_t* buf, size_t size) {
         optByte = (uint8_t)buf[currentIndex];
       }
 
-      // Note that IonPlatformSupport() and CraneliftPlatformSupport() do not
-      // take into account whether those compilers support particular features
-      // that may have been enabled.
+      // Note that IonPlatformSupport() does not take into account whether
+      // the compiler supports particular features that may have been enabled.
       bool enableWasmBaseline = ((optByte & 0xF0) == (1 << 7));
-      bool enableWasmOptimizing = false;
-#ifdef ENABLE_WASM_CRANELIFT
-      // Cranelift->Ion transition
-      enableWasmOptimizing =
-          CraneliftPlatformSupport() && ((optByte & 0xF0) == (1 << 5));
-#else
-      enableWasmOptimizing =
+      bool enableWasmOptimizing =
           IonPlatformSupport() && ((optByte & 0xF0) == (1 << 6));
-#endif
-      bool enableWasmAwaitTier2 = (IonPlatformSupport()
-#ifdef ENABLE_WASM_CRANELIFT
-                                   || CraneliftPlatformSupport()
-#endif
-                                       ) &&
-                                  ((optByte & 0xF) == (1 << 3));
+      bool enableWasmAwaitTier2 =
+          (IonPlatformSupport()) && ((optByte & 0xF) == (1 << 3));
 
       if (!enableWasmBaseline && !enableWasmOptimizing) {
         // If nothing is selected explicitly, enable an optimizing compiler to
         // test more platform specific JIT code. However, on some platforms,
         // e.g. ARM64 on Windows, we do not have Ion available, so we need to
         // switch to baseline instead.
-        if (IonPlatformSupport() || CraneliftPlatformSupport()) {
+        if (IonPlatformSupport()) {
           enableWasmOptimizing = true;
         } else {
           enableWasmBaseline = true;
@@ -213,13 +223,7 @@ static int testWasmFuzz(const uint8_t* buf, size_t size) {
 
       JS::ContextOptionsRef(gCx)
           .setWasmBaseline(enableWasmBaseline)
-#ifdef ENABLE_WASM_CRANELIFT
-          .setWasmCranelift(enableWasmOptimizing)
-          .setWasmIon(false)
-#else
-          .setWasmCranelift(false)
           .setWasmIon(enableWasmOptimizing)
-#endif
           .setTestWasmAwaitTier2(enableWasmAwaitTier2);
     }
 
@@ -241,7 +245,7 @@ static int testWasmFuzz(const uint8_t* buf, size_t size) {
     currentIndex += 8;
     moduleLen -= 8;
 
-    RootedWasmInstanceObject instanceObj(gCx);
+    Rooted<WasmInstanceObject*> instanceObj(gCx);
 
     MutableBytes bytecode = gCx->new_<ShareableBytes>();
     if (!bytecode || !bytecode->append((uint8_t*)&magic_header, 4) ||
@@ -255,7 +259,7 @@ static int testWasmFuzz(const uint8_t* buf, size_t size) {
     ScriptedCaller scriptedCaller;
     FeatureOptions options;
     SharedCompileArgs compileArgs =
-        CompileArgs::build(gCx, std::move(scriptedCaller), options);
+        CompileArgs::buildAndReport(gCx, std::move(scriptedCaller), options);
     if (!compileArgs) {
       return 0;
     }
@@ -265,6 +269,9 @@ static int testWasmFuzz(const uint8_t* buf, size_t size) {
     SharedModule module =
         CompileBuffer(*compileArgs, *bytecode, &error, &warnings);
     if (!module) {
+      // We should always have a valid module if we are using wasm-smith. Check
+      // that no error is reported, signalling an OOM.
+      MOZ_RELEASE_ASSERT(!gIsWasmSmith || !error);
       continue;
     }
 
@@ -296,17 +303,24 @@ static int testWasmFuzz(const uint8_t* buf, size_t size) {
     size_t currentTableExportId = 0;
     size_t currentMemoryExportId = 0;
     size_t currentGlobalExportId = 0;
-#ifdef ENABLE_WASM_EXCEPTIONS
     size_t currentTagExportId = 0;
-#endif
 
     for (const Import& import : importVec) {
+      RootedId moduleName(gCx);
+      if (!import.module.toPropertyKey(gCx, &moduleName)) {
+        return false;
+      }
+      RootedId fieldName(gCx);
+      if (!import.field.toPropertyKey(gCx, &fieldName)) {
+        return false;
+      }
+
       // First try to get the namespace object, create one if this is the
       // first time.
       RootedValue v(gCx);
-      if (!JS_GetProperty(gCx, importObj, import.module.get(), &v) ||
+      if (!JS_GetPropertyById(gCx, importObj, moduleName, &v) ||
           !v.isObject()) {
-        // Insert empty object at importObj[import.module.get()]
+        // Insert empty object at importObj[moduleName]
         RootedObject plainObj(gCx, JS_NewPlainObject(gCx));
 
         if (!plainObj) {
@@ -314,13 +328,13 @@ static int testWasmFuzz(const uint8_t* buf, size_t size) {
         }
 
         RootedValue plainVal(gCx, ObjectValue(*plainObj));
-        if (!JS_SetProperty(gCx, importObj, import.module.get(), plainVal)) {
+        if (!JS_SetPropertyById(gCx, importObj, moduleName, plainVal)) {
           return 0;
         }
 
         // Get the object we just inserted, store in v, ensure it is an
         // object (no proxies or other magic at work).
-        if (!JS_GetProperty(gCx, importObj, import.module.get(), &v) ||
+        if (!JS_GetPropertyById(gCx, importObj, moduleName, &v) ||
             !v.isObject()) {
           return 0;
         }
@@ -328,9 +342,9 @@ static int testWasmFuzz(const uint8_t* buf, size_t size) {
 
       RootedObject obj(gCx, &v.toObject());
       bool found = false;
-      if (JS_HasProperty(gCx, obj, import.field.get(), &found) && !found) {
+      if (JS_HasPropertyById(gCx, obj, fieldName, &found) && !found) {
         // Insert i-th export object that fits the type requirement
-        // at `v[import.field.get()]`.
+        // at `v[fieldName]`.
 
         switch (import.kind) {
           case DefinitionKind::Function:
@@ -369,7 +383,6 @@ static int testWasmFuzz(const uint8_t* buf, size_t size) {
             }
             break;
 
-#ifdef ENABLE_WASM_EXCEPTIONS
           case DefinitionKind::Tag:
             // TODO: Pass a dummy defaultValue
             if (!assignImportKind<WasmTagObject>(
@@ -378,7 +391,6 @@ static int testWasmFuzz(const uint8_t* buf, size_t size) {
               return 0;
             }
             break;
-#endif
         }
       }
     }

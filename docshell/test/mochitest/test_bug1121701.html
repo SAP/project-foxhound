@@ -10,7 +10,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1121701
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
   <script type="application/javascript">
 
-  /** Test for Bug 1121701 **/
+  /** Test for Bug 1121701 */
   SimpleTest.waitForExplicitFinish();
 
   var testUrl1 = "file_bug1121701_1.html";
@@ -34,6 +34,9 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1121701
     // the iframe containing this page is isolated from first-party storage access,
     // which isolates BroadcastChannel communication.
     if (isXOrigin) {
+      await SpecialPowers.pushPrefEnv({
+        set: [["privacy.partition.always_partition_third_party_non_cookie_storage", false]],
+      });
       SpecialPowers.wrap(document).notifyUserGestureActivation();
       await SpecialPowers.addPermission("storageAccessAPI", true, window.location.href);
       await SpecialPowers.wrap(document).requestStorageAccess();

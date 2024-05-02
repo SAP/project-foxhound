@@ -9,13 +9,14 @@ add_task(async function testIncognitoPopup() {
       permissions: ["tabs"],
       browser_action: {
         default_popup: "popup.html",
+        default_area: "navbar",
       },
       page_action: {
         default_popup: "popup.html",
       },
     },
 
-    background: async function() {
+    background: async function () {
       let resolveMessage;
       browser.runtime.onMessage.addListener(msg => {
         if (resolveMessage && msg.message == "popup-details") {
@@ -115,7 +116,7 @@ add_task(async function testIncognitoPopup() {
       "popup.html":
         '<html><head><meta charset="utf-8"><script src="popup.js"></script></head></html>',
 
-      "popup.js": async function() {
+      "popup.js": async function () {
         let win = await browser.windows.getCurrent();
         browser.runtime.sendMessage({
           message: "popup-details",

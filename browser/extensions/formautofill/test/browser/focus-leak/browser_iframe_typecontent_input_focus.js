@@ -1,4 +1,3 @@
-/* eslint-disable mozilla/no-arbitrary-setTimeout */
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
@@ -15,7 +14,7 @@ const INNER_HTML_FRAME_URI =
  * Check that focusing an input in a frame with type=content embedded in a xul
  * document does not leak.
  */
-add_task(async function() {
+add_task(async function () {
   const doc = gBrowser.ownerDocument;
   const linkedBrowser = gBrowser.selectedTab.linkedBrowser;
   const browserContainer = gBrowser.getBrowserContainer(linkedBrowser);
@@ -40,8 +39,8 @@ add_task(async function() {
   info("Focus an input inside the iframe");
   const focusMeInput = panelFrame.contentDocument.querySelector(".focusme");
   const onFocus = BrowserTestUtils.waitForEvent(focusMeInput, "focus");
+  await SimpleTest.promiseFocus(panelFrame);
   focusMeInput.focus();
-  await new Promise(resolve => setTimeout(resolve, 1000));
   await onFocus;
 
   // This assert is not really meaningful, the main purpose of the test is

@@ -55,6 +55,8 @@ class RendererOGL {
  public:
   wr::WrExternalImageHandler GetExternalImageHandler();
 
+  void SetFramePublishId(FramePublishId aPublishId);
+
   /// This can be called on the render thread only.
   void Update();
 
@@ -86,8 +88,8 @@ class RendererOGL {
   void BeginRecording(const TimeStamp& aRecordingStart,
                       wr::PipelineId aPipelineId);
   void MaybeRecordFrame(const WebRenderPipelineInfo* aPipelineInfo);
-  void WriteCollectedFrames();
-  Maybe<layers::CollectedFrames> GetCollectedFrames();
+
+  Maybe<layers::FrameRecording> EndRecording();
 
   /// This can be called on the render thread only.
   ~RendererOGL();
@@ -113,7 +115,11 @@ class RendererOGL {
 
   layers::CompositorBridgeParent* GetCompositorBridge() { return mBridge; }
 
-  RefPtr<WebRenderPipelineInfo> FlushPipelineInfo();
+  void FlushPipelineInfo();
+
+  RefPtr<const WebRenderPipelineInfo> GetLastPipelineInfo() const {
+    return mLastPipelineInfo;
+  }
 
   RenderTextureHost* GetRenderTexture(wr::ExternalImageId aExternalImageId);
 
@@ -121,7 +127,7 @@ class RendererOGL {
 
   void AccumulateMemoryReport(MemoryReport* aReport);
 
-  void SetProfilerUI(const nsCString& aUI);
+  void SetProfilerUI(const nsACString& aUI);
 
   wr::Renderer* GetRenderer() { return mRenderer; }
 
@@ -160,6 +166,8 @@ class RendererOGL {
   // We need to use uint64_t here since wr::PipelineId is not default
   // constructable.
   std::unordered_map<uint64_t, wr::Epoch> mContentPipelineEpochs;
+
+  RefPtr<WebRenderPipelineInfo> mLastPipelineInfo;
 };
 
 }  // namespace wr

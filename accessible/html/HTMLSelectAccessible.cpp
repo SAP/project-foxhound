@@ -9,9 +9,7 @@
 #include "nsAccessibilityService.h"
 #include "nsAccUtils.h"
 #include "DocAccessible.h"
-#include "nsEventShell.h"
-#include "nsTextEquivUtils.h"
-#include "Role.h"
+#include "mozilla/a11y/Role.h"
 #include "States.h"
 
 #include "nsCOMPtr.h"
@@ -40,7 +38,7 @@ HTMLSelectListAccessible::HTMLSelectListAccessible(nsIContent* aContent,
 
 uint64_t HTMLSelectListAccessible::NativeState() const {
   uint64_t state = AccessibleWrap::NativeState();
-  if (mContent->AsElement()->HasAttr(kNameSpaceID_None, nsGkAtoms::multiple)) {
+  if (mContent->AsElement()->HasAttr(nsGkAtoms::multiple)) {
     state |= states::MULTISELECTABLE | states::EXTSELECTABLE;
   }
 
@@ -53,13 +51,13 @@ role HTMLSelectListAccessible::NativeRole() const { return roles::LISTBOX; }
 // HTMLSelectListAccessible: SelectAccessible
 
 bool HTMLSelectListAccessible::SelectAll() {
-  return mContent->AsElement()->HasAttr(kNameSpaceID_None, nsGkAtoms::multiple)
+  return mContent->AsElement()->HasAttr(nsGkAtoms::multiple)
              ? AccessibleWrap::SelectAll()
              : false;
 }
 
 bool HTMLSelectListAccessible::UnselectAll() {
-  return mContent->AsElement()->HasAttr(kNameSpaceID_None, nsGkAtoms::multiple)
+  return mContent->AsElement()->HasAttr(nsGkAtoms::multiple)
              ? AccessibleWrap::UnselectAll()
              : false;
 }
@@ -110,7 +108,7 @@ bool HTMLSelectListAccessible::AttributeChangesState(nsAtom* aAttribute) {
 
 HTMLSelectOptionAccessible::HTMLSelectOptionAccessible(nsIContent* aContent,
                                                        DocAccessible* aDoc)
-    : HyperTextAccessibleWrap(aContent, aDoc) {}
+    : HyperTextAccessible(aContent, aDoc) {}
 
 ////////////////////////////////////////////////////////////////////////////////
 // HTMLSelectOptionAccessible: LocalAccessible public
@@ -141,13 +139,13 @@ ENameValueFlag HTMLSelectOptionAccessible::NativeName(nsString& aName) const {
 void HTMLSelectOptionAccessible::DOMAttributeChanged(
     int32_t aNameSpaceID, nsAtom* aAttribute, int32_t aModType,
     const nsAttrValue* aOldValue, uint64_t aOldState) {
-  HyperTextAccessibleWrap::DOMAttributeChanged(aNameSpaceID, aAttribute,
-                                               aModType, aOldValue, aOldState);
+  HyperTextAccessible::DOMAttributeChanged(aNameSpaceID, aAttribute, aModType,
+                                           aOldValue, aOldState);
 
   if (aAttribute == nsGkAtoms::label) {
     dom::Element* elm = Elm();
-    if (!elm->HasAttr(kNameSpaceID_None, nsGkAtoms::aria_labelledby) &&
-        !elm->HasAttr(kNameSpaceID_None, nsGkAtoms::aria_label)) {
+    if (!nsAccUtils::HasARIAAttr(elm, nsGkAtoms::aria_labelledby) &&
+        !nsAccUtils::HasARIAAttr(elm, nsGkAtoms::aria_label)) {
       mDoc->FireDelayedEvent(nsIAccessibleEvent::EVENT_NAME_CHANGE, this);
     }
   }
@@ -218,24 +216,7 @@ nsRect HTMLSelectOptionAccessible::RelativeBounds(
     return combobox->RelativeBounds(aBoundingFrame);
   }
 
-  return HyperTextAccessibleWrap::RelativeBounds(aBoundingFrame);
-}
-
-nsresult HTMLSelectOptionAccessible::HandleAccEvent(AccEvent* aEvent) {
-  nsresult rv = HyperTextAccessibleWrap::HandleAccEvent(aEvent);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  AccStateChangeEvent* event = downcast_accEvent(aEvent);
-  if (event && (event->GetState() == states::SELECTED)) {
-    LocalAccessible* widget = ContainerWidget();
-    if (widget && !widget->AreItemsOperable()) {
-      // Collapsed options' ACTIVE state reflects their SELECT state.
-      nsEventShell::FireEvent(this, states::ACTIVE, event->IsStateEnabled(),
-                              true);
-    }
-  }
-
-  return NS_OK;
+  return HyperTextAccessible::RelativeBounds(aBoundingFrame);
 }
 
 void HTMLSelectOptionAccessible::ActionNameAt(uint8_t aIndex,
@@ -243,14 +224,7 @@ void HTMLSelectOptionAccessible::ActionNameAt(uint8_t aIndex,
   if (aIndex == eAction_Select) aName.AssignLiteral("select");
 }
 
-uint8_t HTMLSelectOptionAccessible::ActionCount() const { return 1; }
-
-bool HTMLSelectOptionAccessible::DoAction(uint8_t aIndex) const {
-  if (aIndex != eAction_Select) return false;
-
-  DoCommand();
-  return true;
-}
+bool HTMLSelectOptionAccessible::HasPrimaryAction() const { return true; }
 
 void HTMLSelectOptionAccessible::SetSelected(bool aSelect) {
   HTMLOptionElement* option = HTMLOptionElement::FromNode(mContent);
@@ -285,16 +259,7 @@ bool HTMLSelectOptGroupAccessible::IsAcceptableChild(nsIContent* aEl) const {
   return aEl->IsCharacterData() || aEl->IsHTMLElement(nsGkAtoms::option);
 }
 
-uint8_t HTMLSelectOptGroupAccessible::ActionCount() const { return 0; }
-
-void HTMLSelectOptGroupAccessible::ActionNameAt(uint8_t aIndex,
-                                                nsAString& aName) {
-  aName.Truncate();
-}
-
-bool HTMLSelectOptGroupAccessible::DoAction(uint8_t aIndex) const {
-  return false;
-}
+bool HTMLSelectOptGroupAccessible::HasPrimaryAction() const { return false; }
 
 ////////////////////////////////////////////////////////////////////////////////
 // HTMLComboboxAccessible
@@ -373,14 +338,7 @@ void HTMLComboboxAccessible::Value(nsString& aValue) const {
   if (option) option->Name(aValue);
 }
 
-uint8_t HTMLComboboxAccessible::ActionCount() const { return 1; }
-
-bool HTMLComboboxAccessible::DoAction(uint8_t aIndex) const {
-  if (aIndex != eAction_Click) return false;
-
-  DoCommand();
-  return true;
-}
+bool HTMLComboboxAccessible::HasPrimaryAction() const { return true; }
 
 void HTMLComboboxAccessible::ActionNameAt(uint8_t aIndex, nsAString& aName) {
   if (aIndex != HTMLComboboxAccessible::eAction_Click) return;

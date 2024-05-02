@@ -5,7 +5,7 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 if CONFIG["MOZ_WIDGET_TOOLKIT"] == "windows" and CONFIG["COMPILE_ENVIRONMENT"]:
-    DIRS += ["gecko", "msaa", "ia2"]
+    DIRS += ["msaa", "ia2"]
 
 if CONFIG["MOZ_WIDGET_TOOLKIT"] == "cocoa":
     XPIDL_SOURCES += ["nsIAccessibleMacInterface.idl"]
@@ -35,6 +35,7 @@ XPIDL_SOURCES += [
     "nsIAccessibleTableChangeEvent.idl",
     "nsIAccessibleText.idl",
     "nsIAccessibleTextChangeEvent.idl",
+    "nsIAccessibleTextLeafRange.idl",
     "nsIAccessibleTextRange.idl",
     "nsIAccessibleTextSelectionChangeEvent.idl",
     "nsIAccessibleTypes.idl",

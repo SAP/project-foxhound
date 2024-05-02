@@ -23,7 +23,9 @@ the window is set and we hit it.
 
 "use strict";
 
-const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
+const { HttpServer } = ChromeUtils.importESModule(
+  "resource://testing-common/httpd.sys.mjs"
+);
 
 let max_age;
 let version;
@@ -77,7 +79,7 @@ async function background_reval_promise() {
   });
 }
 
-add_task(async function() {
+add_task(async function () {
   let httpserver = new HttpServer();
   httpserver.registerPathHandler("/testdir", test_handler);
   httpserver.start(-1);

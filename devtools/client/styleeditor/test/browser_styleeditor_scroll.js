@@ -26,7 +26,7 @@ const DOCUMENT_WITH_LONG_SHEET =
   );
 const LINE_TO_SELECT = 201;
 
-add_task(async function() {
+add_task(async function () {
   const { ui } = await openStyleEditorForURL(DOCUMENT_WITH_LONG_SHEET);
 
   is(ui.editors.length, 2, "Two editors present.");
@@ -63,7 +63,7 @@ add_task(async function() {
   // Can't use ui.selectStyleSheet here as it will scroll the editor back to top
   // and we want to check that the previous scroll position is restored.
   const summary = await ui.getEditorSummary(longEditor);
-  ui._view.activeSummary = summary;
+  summary.click();
 
   info("Waiting for doc_long.css to be selected.");
   await selectEventPromise;
@@ -84,7 +84,7 @@ add_task(async function() {
  * @param {StyleEditorUI} ui
  *        The StyleEditorUI the editor belongs to.
  */
-var waitForEditorToBeSelected = async function(editor, ui) {
+var waitForEditorToBeSelected = async function (editor, ui) {
   info(`Waiting for ${editor.friendlyName} to be selected.`);
   let selected = await ui.once("editor-selected");
   while (selected != editor) {

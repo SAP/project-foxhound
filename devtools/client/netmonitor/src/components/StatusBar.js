@@ -4,26 +4,30 @@
 
 "use strict";
 
-const { Component } = require("devtools/client/shared/vendor/react");
-const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
-const dom = require("devtools/client/shared/vendor/react-dom-factories");
+const {
+  Component,
+} = require("resource://devtools/client/shared/vendor/react.js");
+const PropTypes = require("resource://devtools/client/shared/vendor/react-prop-types.js");
+const dom = require("resource://devtools/client/shared/vendor/react-dom-factories.js");
 const {
   connect,
-} = require("devtools/client/shared/redux/visibility-handler-connect");
-const { PluralForm } = require("devtools/shared/plural-form");
-const Actions = require("devtools/client/netmonitor/src/actions/index");
+} = require("resource://devtools/client/shared/redux/visibility-handler-connect.js");
+const { PluralForm } = require("resource://devtools/shared/plural-form.js");
+const Actions = require("resource://devtools/client/netmonitor/src/actions/index.js");
 const {
   getDisplayedRequestsSummary,
   getDisplayedTimingMarker,
-} = require("devtools/client/netmonitor/src/selectors/index");
+} = require("resource://devtools/client/netmonitor/src/selectors/index.js");
 const {
   getFormattedSize,
   getFormattedTime,
-} = require("devtools/client/netmonitor/src/utils/format-utils");
-const { L10N } = require("devtools/client/netmonitor/src/utils/l10n");
+} = require("resource://devtools/client/netmonitor/src/utils/format-utils.js");
+const {
+  L10N,
+} = require("resource://devtools/client/netmonitor/src/utils/l10n.js");
 const {
   propertiesEqual,
-} = require("devtools/client/netmonitor/src/utils/request-utils");
+} = require("resource://devtools/client/netmonitor/src/utils/request-utils.js");
 
 const { button, div } = dom;
 
@@ -75,10 +79,11 @@ class StatusBar extends Component {
   }
 
   render() {
-    const { openStatistics, summary, timingMarkers } = this.props;
+    const { openStatistics, summary, timingMarkers, connector } = this.props;
     const { count, contentSize, transferredSize, ms } = summary;
     const { DOMContentLoaded, load } = timingMarkers;
 
+    const toolbox = connector.getToolbox();
     const countText =
       count === 0
         ? REQUESTS_COUNT_EMPTY
@@ -98,14 +103,16 @@ class StatusBar extends Component {
 
     return div(
       { className: "devtools-toolbar devtools-toolbar-bottom" },
-      button(
-        {
-          className: "devtools-button requests-list-network-summary-button",
-          title: TOOLTIP_PERF,
-          onClick: openStatistics,
-        },
-        div({ className: "summary-info-icon" })
-      ),
+      !toolbox.isBrowserToolbox
+        ? button(
+            {
+              className: "devtools-button requests-list-network-summary-button",
+              title: TOOLTIP_PERF,
+              onClick: openStatistics,
+            },
+            div({ className: "summary-info-icon" })
+          )
+        : null,
       div(
         {
           className: "status-bar-label requests-list-network-summary-count",

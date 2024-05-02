@@ -29,6 +29,10 @@
 namespace mozilla {
 namespace a11y {
 
+/**
+ * Mac specific functionality for an accessibility tree node that originated in
+ * mDoc's content process.
+ */
 class AccessibleWrap : public LocalAccessible {
  public:  // construction, destruction
   AccessibleWrap(nsIContent* aContent, DocAccessible* aDoc);
@@ -49,9 +53,6 @@ class AccessibleWrap : public LocalAccessible {
   virtual void Shutdown() override;
 
   virtual nsresult HandleAccEvent(AccEvent* aEvent) override;
-
-  bool ApplyPostFilter(const EWhichPostFilter& aSearchKey,
-                       const nsString& aSearchText);
 
  protected:
   friend class xpcAccessibleMacInterface;

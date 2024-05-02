@@ -56,13 +56,11 @@ add_task(async function invalidFormat({ client }) {
   const { Page } = client;
   await loadURL(toDataURL("<div>Hello world"));
 
-  let errorThrown = false;
-  try {
-    await Page.captureScreenshot({ format: "foo" });
-  } catch (e) {
-    errorThrown = true;
-  }
-  ok(errorThrown, "captureScreenshot raised error for invalid image format");
+  await Assert.rejects(
+    Page.captureScreenshot({ format: "foo" }),
+    err => err.message.includes(`Unsupported MIME type: image`),
+    "captureScreenshot raised error for invalid image format"
+  );
 });
 
 add_task(async function asJPEGFormat({ client }) {
@@ -162,13 +160,11 @@ add_task(async function clipMissingProperties({ client }) {
     };
     clip[prop] = undefined;
 
-    let errorThrown = false;
-    try {
-      await Page.captureScreenshot({ clip });
-    } catch (e) {
-      errorThrown = true;
-    }
-    ok(errorThrown, `raised error for missing clip.${prop} property`);
+    await Assert.rejects(
+      Page.captureScreenshot({ clip }),
+      err => err.message.includes(`clip.${prop}: double value expected`),
+      `raised error for missing clip.${prop} property`
+    );
   }
 });
 
@@ -500,8 +496,8 @@ async function loadURLWithElement(options = {}) {
 }
 
 async function getDevicePixelRatio() {
-  return SpecialPowers.spawn(gBrowser.selectedBrowser, [], function() {
-    return content.devicePixelRatio;
+  return SpecialPowers.spawn(gBrowser.selectedBrowser, [], function () {
+    return content.browsingContext.overrideDPPX || content.devicePixelRatio;
   });
 }
 
@@ -515,7 +511,7 @@ async function getImageDetails(image) {
   return SpecialPowers.spawn(
     gBrowser.selectedBrowser,
     [{ mimeType, image }],
-    async function({ mimeType, image }) {
+    async function ({ mimeType, image }) {
       return new Promise(resolve => {
         const img = new content.Image();
         img.addEventListener(
@@ -542,10 +538,7 @@ function getMimeType(image) {
   const raw = atob(image).slice(0, 4);
   let magicBytes = "";
   for (let i = 0; i < raw.length; i++) {
-    magicBytes += raw
-      .charCodeAt(i)
-      .toString(16)
-      .toUpperCase();
+    magicBytes += raw.charCodeAt(i).toString(16).toUpperCase();
   }
 
   switch (magicBytes) {

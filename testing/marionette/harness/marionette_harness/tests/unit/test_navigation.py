@@ -2,8 +2,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, print_function
-
 import contextlib
 import os
 
@@ -78,15 +76,18 @@ class BaseNavigationTestCase(WindowManagerMixin, MarionetteTestCase):
             # TODO: DO NOT USE MOST RECENT WINDOW BUT CURRENT ONE
             return self.marionette.execute_script(
                 """
-              Components.utils.import("resource://gre/modules/AppConstants.jsm");
+              const { AppConstants } = ChromeUtils.importESModule(
+                "resource://gre/modules/AppConstants.sys.mjs"
+              );
 
               let win = null;
 
               if (AppConstants.MOZ_APP_NAME == "fennec") {
-                Components.utils.import("resource://gre/modules/Services.jsm");
                 win = Services.wm.getMostRecentWindow("navigator:browser");
               } else {
-                Components.utils.import("resource:///modules/BrowserWindowTracker.jsm");
+                const { BrowserWindowTracker } = ChromeUtils.importESModule(
+                  "resource:///modules/BrowserWindowTracker.sys.mjs"
+                );
                 win = BrowserWindowTracker.getTopWindow();
               }
 
@@ -288,27 +289,13 @@ class TestNavigate(BaseNavigationTestCase):
         self.marionette.navigate("about:robots")
         self.assertFalse(self.is_remote_tab)
 
-    def test_stale_element_after_remoteness_change(self):
+    def test_no_such_element_after_remoteness_change(self):
         self.marionette.navigate(self.test_page_file_url)
         self.assertTrue(self.is_remote_tab)
         elem = self.marionette.find_element(By.ID, "file-url")
 
         self.marionette.navigate("about:robots")
         self.assertFalse(self.is_remote_tab)
-
-        # Force a GC to get rid of the replaced browsing context.
-        with self.marionette.using_context("chrome"):
-            self.marionette.execute_async_script(
-                """
-                const resolve = arguments[0];
-
-                var memSrv = Cc["@mozilla.org/memory-reporter-manager;1"]
-                  .getService(Ci.nsIMemoryReporterManager);
-
-                Services.obs.notifyObservers(null, "child-mmu-request", null);
-                memSrv.minimizeMemoryUsage(resolve);
-            """
-            )
 
         with self.assertRaises(errors.StaleElementException):
             elem.click()
@@ -330,6 +317,18 @@ class TestNavigate(BaseNavigationTestCase):
         self.marionette.restart()
 
         self.marionette.navigate(inline("<input autofocus>"))
+
+        # Per spec, autofocus candidates will be
+        # flushed by next paint, so we use rAF here to
+        # ensure the candidates are flushed.
+        self.marionette.execute_async_script(
+            """
+        const callback = arguments[arguments.length - 1];
+        window.requestAnimationFrame(function() {
+            window.requestAnimationFrame(callback);
+        });
+        """
+        )
         focus_el = self.marionette.find_element(By.CSS_SELECTOR, ":focus")
         self.assertEqual(self.marionette.get_active_element(), focus_el)
 

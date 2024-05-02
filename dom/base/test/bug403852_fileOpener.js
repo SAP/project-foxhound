@@ -1,3 +1,6 @@
+/* eslint-env mozilla/chrome-script */
+
+// eslint-disable-next-line mozilla/reject-importGlobalProperties
 Cu.importGlobalProperties(["File"]);
 
 var testFile = Cc["@mozilla.org/file/directory_service;1"]
@@ -6,9 +9,9 @@ var testFile = Cc["@mozilla.org/file/directory_service;1"]
   .get("ProfD", Ci.nsIFile);
 testFile.append("prefs.js");
 
-addMessageListener("file.open", function() {
-  File.createFromNsIFile(testFile).then(function(file) {
-    File.createFromNsIFile(testFile, { lastModified: 123 }).then(function(
+addMessageListener("file.open", function () {
+  File.createFromNsIFile(testFile).then(function (file) {
+    File.createFromNsIFile(testFile, { lastModified: 123 }).then(function (
       fileWithDate
     ) {
       sendAsyncMessage("file.opened", {

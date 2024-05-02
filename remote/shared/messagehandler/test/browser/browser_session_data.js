@@ -3,14 +3,14 @@
 
 "use strict";
 
-const { MessageHandlerRegistry } = ChromeUtils.import(
-  "chrome://remote/content/shared/messagehandler/MessageHandlerRegistry.jsm"
+const { MessageHandlerRegistry } = ChromeUtils.importESModule(
+  "chrome://remote/content/shared/messagehandler/MessageHandlerRegistry.sys.mjs"
 );
-const { RootMessageHandler } = ChromeUtils.import(
-  "chrome://remote/content/shared/messagehandler/RootMessageHandler.jsm"
+const { RootMessageHandler } = ChromeUtils.importESModule(
+  "chrome://remote/content/shared/messagehandler/RootMessageHandler.sys.mjs"
 );
-const { SessionData } = ChromeUtils.import(
-  "chrome://remote/content/shared/messagehandler/sessiondata/SessionData.jsm"
+const { SessionData } = ChromeUtils.importESModule(
+  "chrome://remote/content/shared/messagehandler/sessiondata/SessionData.sys.mjs"
 );
 
 const TEST_PAGE = "http://example.com/document-builder.sjs?html=tab";
@@ -26,9 +26,8 @@ add_task(async function test_sessionData() {
     RootMessageHandler.type
   );
 
-  const rootMessageHandler = rootMessageHandlerRegistry.getOrCreateMessageHandler(
-    sessionId
-  );
+  const rootMessageHandler =
+    rootMessageHandlerRegistry.getOrCreateMessageHandler(sessionId);
   ok(rootMessageHandler, "Valid ROOT MessageHandler created");
 
   const sessionData = rootMessageHandler.sessionData;
@@ -41,12 +40,15 @@ add_task(async function test_sessionData() {
   is(sessionDataSnapshot.size, 0, "session data is empty");
 
   info("Store a string value in session data");
-  sessionData.addSessionData(
-    "fakemodule",
-    "testCategory",
-    contextDescriptorAll,
-    ["value-1"]
-  );
+  sessionData.updateSessionData([
+    {
+      method: "add",
+      moduleName: "fakemodule",
+      category: "testCategory",
+      contextDescriptor: contextDescriptorAll,
+      values: ["value-1"],
+    },
+  ]);
 
   sessionDataSnapshot = await getSessionDataFromContent();
   is(sessionDataSnapshot.size, 1, "session data contains 1 session");
@@ -60,17 +62,20 @@ add_task(async function test_sessionData() {
     stringDataItem,
     "fakemodule",
     "testCategory",
-    CONTEXT_DESCRIPTOR_TYPES.ALL,
+    ContextDescriptorType.All,
     "value-1"
   );
 
   info("Store a number value in session data");
-  sessionData.addSessionData(
-    "fakemodule",
-    "testCategory",
-    contextDescriptorAll,
-    [12]
-  );
+  sessionData.updateSessionData([
+    {
+      method: "add",
+      moduleName: "fakemodule",
+      category: "testCategory",
+      contextDescriptor: contextDescriptorAll,
+      values: [12],
+    },
+  ]);
   snapshot = (await getSessionDataFromContent()).get(sessionId);
   is(snapshot.length, 2);
 
@@ -79,17 +84,20 @@ add_task(async function test_sessionData() {
     numberDataItem,
     "fakemodule",
     "testCategory",
-    CONTEXT_DESCRIPTOR_TYPES.ALL,
+    ContextDescriptorType.All,
     12
   );
 
   info("Store a boolean value in session data");
-  sessionData.addSessionData(
-    "fakemodule",
-    "testCategory",
-    contextDescriptorAll,
-    [true]
-  );
+  sessionData.updateSessionData([
+    {
+      method: "add",
+      moduleName: "fakemodule",
+      category: "testCategory",
+      contextDescriptor: contextDescriptorAll,
+      values: [true],
+    },
+  ]);
   snapshot = (await getSessionDataFromContent()).get(sessionId);
   is(snapshot.length, 3);
 
@@ -98,58 +106,67 @@ add_task(async function test_sessionData() {
     boolDataItem,
     "fakemodule",
     "testCategory",
-    CONTEXT_DESCRIPTOR_TYPES.ALL,
+    ContextDescriptorType.All,
     true
   );
 
   info("Remove one value");
-  sessionData.removeSessionData(
-    "fakemodule",
-    "testCategory",
-    contextDescriptorAll,
-    [12]
-  );
+  sessionData.updateSessionData([
+    {
+      method: "remove",
+      moduleName: "fakemodule",
+      category: "testCategory",
+      contextDescriptor: contextDescriptorAll,
+      values: [12],
+    },
+  ]);
   snapshot = (await getSessionDataFromContent()).get(sessionId);
   is(snapshot.length, 2);
   checkSessionDataItem(
     snapshot[0],
     "fakemodule",
     "testCategory",
-    CONTEXT_DESCRIPTOR_TYPES.ALL,
+    ContextDescriptorType.All,
     "value-1"
   );
   checkSessionDataItem(
     snapshot[1],
     "fakemodule",
     "testCategory",
-    CONTEXT_DESCRIPTOR_TYPES.ALL,
+    ContextDescriptorType.All,
     true
   );
 
   info("Remove all values");
-  sessionData.removeSessionData(
-    "fakemodule",
-    "testCategory",
-    contextDescriptorAll,
-    ["value-1", true]
-  );
+  sessionData.updateSessionData([
+    {
+      method: "remove",
+      moduleName: "fakemodule",
+      category: "testCategory",
+      contextDescriptor: contextDescriptorAll,
+      values: ["value-1", true],
+    },
+  ]);
   snapshot = (await getSessionDataFromContent()).get(sessionId);
   is(snapshot.length, 0, "Session data is now empty");
 
   info("Add another value before destroy");
-  sessionData.addSessionData(
-    "fakemodule",
-    "testCategory",
-    contextDescriptorAll,
-    ["value-2"]
-  );
+  sessionData.updateSessionData([
+    {
+      method: "add",
+      moduleName: "fakemodule",
+      category: "testCategory",
+      contextDescriptor: contextDescriptorAll,
+      values: ["value-2"],
+    },
+  ]);
   snapshot = (await getSessionDataFromContent()).get(sessionId);
   is(snapshot.length, 1);
   checkSessionDataItem(
     snapshot[0],
     "fakemodule",
     "testCategory",
-    CONTEXT_DESCRIPTOR_TYPES.ALL,
+    ContextDescriptorType.All,
     "value-2"
   );
 
@@ -164,26 +181,73 @@ add_task(async function test_sessionDataRootOnlyModule() {
   const rootMessageHandler = createRootMessageHandler(sessionId);
   ok(rootMessageHandler, "Valid ROOT MessageHandler created");
 
-  await BrowserTestUtils.loadURI(
-    gBrowser,
+  BrowserTestUtils.startLoadingURIString(
+    gBrowser.selectedBrowser,
     "https://example.com/document-builder.sjs?html=tab"
   );
 
-  const windowGlobalCreated = rootMessageHandler.once("message-handler-event");
+  const windowGlobalCreated = rootMessageHandler.once(
+    "window-global-handler-created"
+  );
 
+  info("Test that adding SessionData items works the root module");
   // Updating the session data on the root message handler should not cause
   // failures for other message handlers if the module only exists for root.
-  await rootMessageHandler.addSessionData({
+  await rootMessageHandler.addSessionDataItem({
     moduleName: "rootOnly",
     category: "session_data_root_only",
     contextDescriptor: {
-      type: CONTEXT_DESCRIPTOR_TYPES.ALL,
+      type: ContextDescriptorType.All,
     },
     values: [true],
   });
 
   await windowGlobalCreated;
   ok(true, "Window global has been initialized");
+
+  let sessionDataReceivedByRoot = await rootMessageHandler.handleCommand({
+    moduleName: "rootOnly",
+    commandName: "getSessionDataReceived",
+    destination: {
+      type: RootMessageHandler.type,
+    },
+  });
+
+  is(sessionDataReceivedByRoot.length, 1);
+  is(sessionDataReceivedByRoot[0].category, "session_data_root_only");
+  is(sessionDataReceivedByRoot[0].added.length, 1);
+  is(sessionDataReceivedByRoot[0].added[0], true);
+  is(
+    sessionDataReceivedByRoot[0].contextDescriptor.type,
+    ContextDescriptorType.All
+  );
+
+  info("Now test that removing items also works on the root module");
+  await rootMessageHandler.removeSessionDataItem({
+    moduleName: "rootOnly",
+    category: "session_data_root_only",
+    contextDescriptor: {
+      type: ContextDescriptorType.All,
+    },
+    values: [true],
+  });
+
+  sessionDataReceivedByRoot = await rootMessageHandler.handleCommand({
+    moduleName: "rootOnly",
+    commandName: "getSessionDataReceived",
+    destination: {
+      type: RootMessageHandler.type,
+    },
+  });
+
+  is(sessionDataReceivedByRoot.length, 2);
+  is(sessionDataReceivedByRoot[1].category, "session_data_root_only");
+  is(sessionDataReceivedByRoot[1].removed.length, 1);
+  is(sessionDataReceivedByRoot[1].removed[0], true);
+  is(
+    sessionDataReceivedByRoot[1].contextDescriptor.type,
+    ContextDescriptorType.All
+  );
 
   rootMessageHandler.destroy();
 });
@@ -201,8 +265,8 @@ function checkSessionDataItem(item, moduleName, category, contextType, value) {
 
 function getSessionDataFromContent() {
   return SpecialPowers.spawn(gBrowser.selectedBrowser, [], () => {
-    const { readSessionData } = ChromeUtils.import(
-      "chrome://remote/content/shared/messagehandler/sessiondata/SessionDataReader.jsm"
+    const { readSessionData } = ChromeUtils.importESModule(
+      "chrome://remote/content/shared/messagehandler/sessiondata/SessionDataReader.sys.mjs"
     );
     return readSessionData();
   });

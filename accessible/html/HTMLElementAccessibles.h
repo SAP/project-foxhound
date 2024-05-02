@@ -46,21 +46,19 @@ class HTMLBRAccessible : public LeafAccessible {
 /**
  * Used for HTML label element.
  */
-class HTMLLabelAccessible : public HyperTextAccessibleWrap {
+class HTMLLabelAccessible : public HyperTextAccessible {
  public:
   HTMLLabelAccessible(nsIContent* aContent, DocAccessible* aDoc)
-      : HyperTextAccessibleWrap(aContent, aDoc) {}
+      : HyperTextAccessible(aContent, aDoc) {}
 
-  NS_INLINE_DECL_REFCOUNTING_INHERITED(HTMLLabelAccessible,
-                                       HyperTextAccessibleWrap)
+  NS_INLINE_DECL_REFCOUNTING_INHERITED(HTMLLabelAccessible, HyperTextAccessible)
 
   // LocalAccessible
   virtual Relation RelationByType(RelationType aType) const override;
 
   // ActionAccessible
-  virtual uint8_t ActionCount() const override;
   virtual void ActionNameAt(uint8_t aIndex, nsAString& aName) override;
-  virtual bool DoAction(uint8_t aIndex) const override;
+  virtual bool HasPrimaryAction() const override;
 
  protected:
   virtual ~HTMLLabelAccessible() {}
@@ -74,16 +72,21 @@ class HTMLLabelAccessible : public HyperTextAccessibleWrap {
 /**
  * Used for HTML output element.
  */
-class HTMLOutputAccessible : public HyperTextAccessibleWrap {
+class HTMLOutputAccessible : public HyperTextAccessible {
  public:
   HTMLOutputAccessible(nsIContent* aContent, DocAccessible* aDoc)
-      : HyperTextAccessibleWrap(aContent, aDoc) {}
+      : HyperTextAccessible(aContent, aDoc) {}
 
   NS_INLINE_DECL_REFCOUNTING_INHERITED(HTMLOutputAccessible,
-                                       HyperTextAccessibleWrap)
+                                       HyperTextAccessible)
 
   // LocalAccessible
   virtual Relation RelationByType(RelationType aType) const override;
+
+  virtual void DOMAttributeChanged(int32_t aNameSpaceID, nsAtom* aAttribute,
+                                   int32_t aModType,
+                                   const nsAttrValue* aOldValue,
+                                   uint64_t aOldState) override;
 
  protected:
   virtual ~HTMLOutputAccessible() {}
@@ -92,7 +95,7 @@ class HTMLOutputAccessible : public HyperTextAccessibleWrap {
 /**
  * Accessible for the HTML summary element.
  */
-class HTMLSummaryAccessible : public HyperTextAccessibleWrap {
+class HTMLSummaryAccessible : public HyperTextAccessible {
  public:
   enum { eAction_Click = 0 };
 
@@ -107,9 +110,8 @@ class HTMLSummaryAccessible : public HyperTextAccessibleWrap {
   virtual uint64_t NativeState() const override;
 
   // ActionAccessible
-  virtual uint8_t ActionCount() const override;
   virtual void ActionNameAt(uint8_t aIndex, nsAString& aName) override;
-  virtual bool DoAction(uint8_t aIndex) const override;
+  virtual bool HasPrimaryAction() const override;
 
   // Widgets
   virtual bool IsWidget() const override;
@@ -118,16 +120,15 @@ class HTMLSummaryAccessible : public HyperTextAccessibleWrap {
 /**
  * Used for HTML header and footer elements.
  */
-class HTMLHeaderOrFooterAccessible : public HyperTextAccessibleWrap {
+class HTMLHeaderOrFooterAccessible : public HyperTextAccessible {
  public:
   HTMLHeaderOrFooterAccessible(nsIContent* aContent, DocAccessible* aDoc)
-      : HyperTextAccessibleWrap(aContent, aDoc) {}
+      : HyperTextAccessible(aContent, aDoc) {}
 
   NS_INLINE_DECL_REFCOUNTING_INHERITED(HTMLHeaderOrFooterAccessible,
-                                       HyperTextAccessibleWrap)
+                                       HyperTextAccessible)
 
   // LocalAccessible
-  virtual nsAtom* LandmarkRole() const override;
   virtual a11y::role NativeRole() const override;
 
  protected:
@@ -137,16 +138,15 @@ class HTMLHeaderOrFooterAccessible : public HyperTextAccessibleWrap {
 /**
  * Used for HTML section element.
  */
-class HTMLSectionAccessible : public HyperTextAccessibleWrap {
+class HTMLSectionAccessible : public HyperTextAccessible {
  public:
   HTMLSectionAccessible(nsIContent* aContent, DocAccessible* aDoc)
-      : HyperTextAccessibleWrap(aContent, aDoc) {}
+      : HyperTextAccessible(aContent, aDoc) {}
 
   NS_INLINE_DECL_REFCOUNTING_INHERITED(HTMLSectionAccessible,
-                                       HyperTextAccessibleWrap)
+                                       HyperTextAccessible)
 
   // LocalAccessible
-  virtual nsAtom* LandmarkRole() const override;
   virtual a11y::role NativeRole() const override;
 
  protected:

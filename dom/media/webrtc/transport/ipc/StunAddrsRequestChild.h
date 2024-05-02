@@ -9,8 +9,7 @@
 
 class nsISerialEventTarget;
 
-namespace mozilla {
-namespace net {
+namespace mozilla::net {
 
 class StunAddrsListener {
  public:
@@ -49,7 +48,7 @@ class StunAddrsRequestChild final : public PStunAddrsRequestChild {
   virtual ~StunAddrsRequestChild() = default;
 
   virtual mozilla::ipc::IPCResult RecvOnMDNSQueryComplete(
-      const nsCString& aHostname, const Maybe<nsCString>& aAddress) override;
+      const nsACString& aHostname, const Maybe<nsCString>& aAddress) override;
 
   virtual mozilla::ipc::IPCResult RecvOnStunAddrsAvailable(
       const NrIceStunAddrArray& addrs) override;
@@ -60,7 +59,6 @@ class StunAddrsRequestChild final : public PStunAddrsRequestChild {
   NS_DECL_OWNINGTHREAD
 };
 
-}  // namespace net
-}  // namespace mozilla
+}  // namespace mozilla::net
 
 #endif  // mozilla_net_StunAddrsRequestChild_h

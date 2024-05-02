@@ -4,12 +4,6 @@
 
 requestLongerTimeout(2);
 
-const EVENTUTILS_URL =
-  "chrome://mochikit/content/tests/SimpleTest/EventUtils.js";
-var EventUtils = {};
-
-Services.scriptloader.loadSubScript(EVENTUTILS_URL, EventUtils);
-
 /**
  * Tests that tabs from Private Browsing windows cannot be dragged
  * into non-private windows, and vice-versa.
@@ -385,6 +379,7 @@ add_task(async function test_dragging_zoom_handling() {
   let tab1 = await BrowserTestUtils.openNewForegroundTab(win1.gBrowser);
   let tab2 = await BrowserTestUtils.openNewForegroundTab(
     win2.gBrowser,
+    // eslint-disable-next-line @microsoft/sdl/no-insecure-url
     "http://example.com/"
   );
 

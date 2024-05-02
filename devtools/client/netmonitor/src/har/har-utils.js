@@ -4,12 +4,8 @@
 
 "use strict";
 
-const Services = require("Services");
-const { Ci, Cc, CC } = require("chrome");
-const { XPCOMUtils } = require("resource://gre/modules/XPCOMUtils.jsm");
-
-XPCOMUtils.defineLazyGetter(this, "ZipWriter", function() {
-  return CC("@mozilla.org/zipwriter;1", "nsIZipWriter");
+ChromeUtils.defineLazyGetter(this, "ZipWriter", function () {
+  return Components.Constructor("@mozilla.org/zipwriter;1", "nsIZipWriter");
 });
 
 const OPEN_FLAGS = {
@@ -36,7 +32,7 @@ function formatDate(date) {
  * Helper API for HAR export features.
  */
 var HarUtils = {
-  getHarFileName: function(defaultFileName, jsonp, compress, hostname) {
+  getHarFileName(defaultFileName, jsonp, compress, hostname) {
     const extension = jsonp ? ".harp" : ".har";
 
     const now = new Date();
@@ -64,7 +60,7 @@ var HarUtils = {
    * @param {String} jsonString HAR data (JSON or JSONP)
    * @param {Boolean} compress The result file is zipped if set to true.
    */
-  saveToFile: function(file, jsonString, compress) {
+  saveToFile(file, jsonString, compress) {
     const openFlags =
       OPEN_FLAGS.WRONLY | OPEN_FLAGS.CREATE_FILE | OPEN_FLAGS.TRUNCATE;
 
@@ -147,7 +143,7 @@ var HarUtils = {
     return false;
   },
 
-  getLocalDirectory: function(path) {
+  getLocalDirectory(path) {
     let dir;
 
     if (!path) {

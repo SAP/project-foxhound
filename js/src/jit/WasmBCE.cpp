@@ -45,7 +45,13 @@ bool jit::EliminateBoundsChecks(MIRGenerator* mir, MIRGraph& graph) {
           MWasmBoundsCheck* bc = def->toWasmBoundsCheck();
           MDefinition* addr = bc->index();
 
-          // Eliminate constant-address bounds checks to addresses below
+          // We only support bounds check elimination on wasm memory 0, not
+          // other memories or tables. See bug 1625891.
+          if (!bc->isMemory0()) {
+            continue;
+          }
+
+          // Eliminate constant-address memory bounds checks to addresses below
           // the heap minimum.
           //
           // The payload of the MConstant will be Double if the constant
@@ -54,10 +60,10 @@ bool jit::EliminateBoundsChecks(MIRGenerator* mir, MIRGraph& graph) {
           if (addr->isConstant() &&
               ((addr->toConstant()->type() == MIRType::Int32 &&
                 uint64_t(addr->toConstant()->toInt32()) <
-                    mir->minWasmHeapLength()) ||
+                    mir->minWasmMemory0Length()) ||
                (addr->toConstant()->type() == MIRType::Int64 &&
                 uint64_t(addr->toConstant()->toInt64()) <
-                    mir->minWasmHeapLength()))) {
+                    mir->minWasmMemory0Length()))) {
             bc->setRedundant();
             if (JitOptions.spectreIndexMasking) {
               bc->replaceAllUsesWith(addr);

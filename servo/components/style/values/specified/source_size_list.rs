@@ -4,10 +4,9 @@
 
 //! https://html.spec.whatwg.org/multipage/#source-size-list
 
-#[cfg(feature = "gecko")]
-use crate::gecko_bindings::sugar::ownership::{HasBoxFFI, HasFFI, HasSimpleFFI};
-use crate::media_queries::{Device, MediaCondition};
+use crate::media_queries::Device;
 use crate::parser::{Parse, ParserContext};
+use crate::queries::{FeatureType, QueryCondition};
 use crate::values::computed::{self, ToComputedValue};
 use crate::values::specified::{Length, NoCalcLength, ViewportPercentageLength};
 use app_units::Au;
@@ -20,7 +19,7 @@ use style_traits::ParseError;
 /// https://html.spec.whatwg.org/multipage/#source-size
 #[derive(Debug)]
 pub struct SourceSize {
-    condition: MediaCondition,
+    condition: QueryCondition,
     value: Length,
 }
 
@@ -29,9 +28,8 @@ impl Parse for SourceSize {
         context: &ParserContext,
         input: &mut Parser<'i, 't>,
     ) -> Result<Self, ParseError<'i>> {
-        let condition = MediaCondition::parse(context, input)?;
+        let condition = QueryCondition::parse(context, input, FeatureType::Media)?;
         let value = Length::parse_non_negative(context, input)?;
-
         Ok(Self { condition, value })
     }
 }
@@ -56,12 +54,14 @@ impl SourceSizeList {
 
     /// Evaluate this <source-size-list> to get the final viewport length.
     pub fn evaluate(&self, device: &Device, quirks_mode: QuirksMode) -> Au {
-        let matching_source_size = self
-            .source_sizes
-            .iter()
-            .find(|source_size| source_size.condition.matches(device, quirks_mode));
-
         computed::Context::for_media_query_evaluation(device, quirks_mode, |context| {
+            let matching_source_size = self.source_sizes.iter().find(|source_size| {
+                source_size
+                    .condition
+                    .matches(context)
+                    .to_bool(/* unknown = */ false)
+            });
+
             match matching_source_size {
                 Some(source_size) => source_size.value.to_computed_value(context),
                 None => match self.value {
@@ -134,12 +134,3 @@ impl SourceSizeList {
         }
     }
 }
-
-#[cfg(feature = "gecko")]
-unsafe impl HasFFI for SourceSizeList {
-    type FFIType = crate::gecko_bindings::structs::RawServoSourceSizeList;
-}
-#[cfg(feature = "gecko")]
-unsafe impl HasSimpleFFI for SourceSizeList {}
-#[cfg(feature = "gecko")]
-unsafe impl HasBoxFFI for SourceSizeList {}

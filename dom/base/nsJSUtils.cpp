@@ -43,6 +43,7 @@
 #include "nsString.h"
 #include "nsTPromiseFlatString.h"
 #include "nscore.h"
+#include "prenv.h"
 
 #if !defined(DEBUG) && !defined(MOZ_ENABLE_JS_DUMP)
 #  include "mozilla/StaticPrefs_browser.h"
@@ -54,8 +55,12 @@ using namespace mozilla::dom;
 bool nsJSUtils::GetCallingLocation(JSContext* aContext, nsACString& aFilename,
                                    uint32_t* aLineno, uint32_t* aColumn) {
   JS::AutoFilename filename;
-  if (!JS::DescribeScriptedCaller(aContext, &filename, aLineno, aColumn)) {
+  JS::ColumnNumberOneOrigin column;
+  if (!JS::DescribeScriptedCaller(aContext, &filename, aLineno, &column)) {
     return false;
+  }
+  if (aColumn) {
+    *aColumn = column.zeroOriginValue();
   }
 
   return aFilename.Assign(filename.get(), fallible);
@@ -64,8 +69,12 @@ bool nsJSUtils::GetCallingLocation(JSContext* aContext, nsACString& aFilename,
 bool nsJSUtils::GetCallingLocation(JSContext* aContext, nsAString& aFilename,
                                    uint32_t* aLineno, uint32_t* aColumn) {
   JS::AutoFilename filename;
-  if (!JS::DescribeScriptedCaller(aContext, &filename, aLineno, aColumn)) {
+  JS::ColumnNumberOneOrigin column;
+  if (!JS::DescribeScriptedCaller(aContext, &filename, aLineno, &column)) {
     return false;
+  }
+  if (aColumn) {
+    *aColumn = column.zeroOriginValue();
   }
 
   return aFilename.Assign(NS_ConvertUTF8toUTF16(filename.get()), fallible);
@@ -89,7 +98,7 @@ nsresult nsJSUtils::UpdateFunctionDebugMetadata(
     return NS_ERROR_FAILURE;
   }
 
-  JS::RootedScript script(cx, JS_GetFunctionScript(cx, fun));
+  JS::Rooted<JSScript*> script(cx, JS_GetFunctionScript(cx, fun));
   if (!script) {
     return NS_OK;
   }
@@ -140,89 +149,14 @@ nsresult nsJSUtils::CompileFunction(AutoJSAPI& jsapi,
   return NS_OK;
 }
 
-template <typename Unit>
-static nsresult CompileJSModule(JSContext* aCx, JS::SourceText<Unit>& aSrcBuf,
-                                JS::Handle<JSObject*> aEvaluationGlobal,
-                                JS::CompileOptions& aCompileOptions,
-                                JS::MutableHandle<JSObject*> aModule) {
-  AUTO_PROFILER_LABEL("nsJSUtils::CompileModule", JS);
-  MOZ_ASSERT(aCx == nsContentUtils::GetCurrentJSContext());
-  MOZ_ASSERT(aSrcBuf.get());
-  MOZ_ASSERT(JS_IsGlobalObject(aEvaluationGlobal));
-  MOZ_ASSERT(JS::CurrentGlobalOrNull(aCx) == aEvaluationGlobal);
-  MOZ_ASSERT(NS_IsMainThread());
-  MOZ_ASSERT(CycleCollectedJSContext::Get() &&
-             CycleCollectedJSContext::Get()->MicroTaskLevel());
-
-  NS_ENSURE_TRUE(xpc::Scriptability::Get(aEvaluationGlobal).Allowed(), NS_OK);
-
-  JSObject* module = JS::CompileModule(aCx, aCompileOptions, aSrcBuf);
-  if (!module) {
-    return NS_ERROR_FAILURE;
-  }
-
-  aModule.set(module);
-  return NS_OK;
-}
-
-nsresult nsJSUtils::CompileModule(JSContext* aCx,
-                                  JS::SourceText<char16_t>& aSrcBuf,
-                                  JS::Handle<JSObject*> aEvaluationGlobal,
-                                  JS::CompileOptions& aCompileOptions,
-                                  JS::MutableHandle<JSObject*> aModule) {
-  return CompileJSModule(aCx, aSrcBuf, aEvaluationGlobal, aCompileOptions,
-                         aModule);
-}
-
-nsresult nsJSUtils::CompileModule(JSContext* aCx,
-                                  JS::SourceText<Utf8Unit>& aSrcBuf,
-                                  JS::Handle<JSObject*> aEvaluationGlobal,
-                                  JS::CompileOptions& aCompileOptions,
-                                  JS::MutableHandle<JSObject*> aModule) {
-  return CompileJSModule(aCx, aSrcBuf, aEvaluationGlobal, aCompileOptions,
-                         aModule);
-}
-
-nsresult nsJSUtils::ModuleInstantiate(JSContext* aCx,
-                                      JS::Handle<JSObject*> aModule) {
-  AUTO_PROFILER_LABEL("nsJSUtils::ModuleInstantiate", JS);
-
-  MOZ_ASSERT(aCx == nsContentUtils::GetCurrentJSContext());
-  MOZ_ASSERT(NS_IsMainThread());
-  MOZ_ASSERT(CycleCollectedJSContext::Get() &&
-             CycleCollectedJSContext::Get()->MicroTaskLevel());
-
-  NS_ENSURE_TRUE(xpc::Scriptability::Get(aModule).Allowed(), NS_OK);
-
-  if (!JS::ModuleInstantiate(aCx, aModule)) {
-    return NS_ERROR_FAILURE;
-  }
-
-  return NS_OK;
-}
-
-nsresult nsJSUtils::ModuleEvaluate(JSContext* aCx,
-                                   JS::Handle<JSObject*> aModule,
-                                   JS::MutableHandle<JS::Value> aResult) {
-  AUTO_PROFILER_LABEL("nsJSUtils::ModuleEvaluate", JS);
-
-  MOZ_ASSERT(aCx == nsContentUtils::GetCurrentJSContext());
-  MOZ_ASSERT(NS_IsMainThread());
-  MOZ_ASSERT(CycleCollectedJSContext::Get() &&
-             CycleCollectedJSContext::Get()->MicroTaskLevel());
-
-  NS_ENSURE_TRUE(xpc::Scriptability::Get(aModule).Allowed(), NS_OK);
-
-  if (!JS::ModuleEvaluate(aCx, aModule, aResult)) {
-    return NS_ERROR_FAILURE;
-  }
-
-  return NS_OK;
+/* static */
+bool nsJSUtils::IsScriptable(JS::Handle<JSObject*> aEvaluationGlobal) {
+  return xpc::Scriptability::AllowedIfExists(aEvaluationGlobal);
 }
 
 static bool AddScopeChainItem(JSContext* aCx, nsINode* aNode,
                               JS::MutableHandleVector<JSObject*> aScopeChain) {
-  JS::RootedValue val(aCx);
+  JS::Rooted<JS::Value> val(aCx);
   if (!GetOrCreateDOMReflector(aCx, aNode, &val)) {
     return false;
   }
@@ -252,11 +186,29 @@ void nsJSUtils::ResetTimeZone() { JS::ResetTimeZone(); }
 
 /* static */
 bool nsJSUtils::DumpEnabled() {
+#ifdef FUZZING
+  static bool mozFuzzDebug = !!PR_GetEnv("MOZ_FUZZ_DEBUG");
+  return mozFuzzDebug;
+#endif
+
 #if defined(DEBUG) || defined(MOZ_ENABLE_JS_DUMP)
   return true;
 #else
   return StaticPrefs::browser_dom_window_dump_enabled();
 #endif
+}
+
+JSObject* nsJSUtils::MoveBufferAsUint8Array(
+    JSContext* aCx, size_t aSize,
+    UniquePtr<uint8_t[], JS::FreePolicy> aBuffer) {
+  JS::Rooted<JSObject*> arrayBuffer(
+      aCx, JS::NewArrayBufferWithContents(aCx, aSize, std::move(aBuffer)));
+  if (!arrayBuffer) {
+    return nullptr;
+  }
+
+  return JS_NewUint8ArrayWithBuffer(aCx, arrayBuffer, 0,
+                                    static_cast<int64_t>(aSize));
 }
 
 //
@@ -278,336 +230,3 @@ bool nsTAutoJSString<T>::init(const JS::Value& v) {
 
 template bool nsTAutoJSString<char16_t>::init(const JS::Value&);
 template bool nsTAutoJSString<char>::init(const JS::Value&);
-
-LazyLogModule gTaintLog("Taint");
-
-static TaintOperation GetTaintOperation(JSContext *cx, const char* name)
-{
-  if (cx) {
-    return JS_GetTaintOperation(cx, name);
-  }
-
-  return TaintOperation(name);
-}
-
-static TaintOperation GetTaintOperation(JSContext *cx, const char* name, const nsAString& arg)
-{
-  if (cx && JS::CurrentGlobalOrNull(cx)) {
-    JS::RootedValue argval(cx);
-    if (mozilla::dom::ToJSValue(cx, arg, &argval)) {
-      return JS_GetTaintOperation(cx, name, argval);
-    }
-  }
-
-  return TaintOperation(name);
-}
-
-static TaintOperation GetTaintOperation(JSContext *cx, const char* name, const nsTArray<nsString> &args)
-{
-  if (cx && JS::CurrentGlobalOrNull(cx)) {
-    JS::RootedValue argval(cx);
-
-    if (mozilla::dom::ToJSValue(cx, args, &argval)) {
-      return JS_GetTaintOperation(cx, name, argval);
-    }
-  }
-
-  return TaintOperation(name);
-}
-
-static TaintOperation GetTaintOperation(JSContext *cx, const char* name, const mozilla::dom::Element* element)
-{
-  if (element) {
-    nsTArray<nsString> args;
-    nsAutoString elementDesc;
-
-    element->Describe(elementDesc);
-    args.AppendElement(elementDesc);
-
-    return GetTaintOperation(cx, name, args);
-  }
-
-  return TaintOperation(name);
-}
-
-static TaintOperation GetTaintOperation(JSContext *cx, const char* name, const mozilla::dom::Element* element,
-                                        const nsAString &str, const nsAString &attr)
-{
-  if (element) {
-    nsTArray<nsString> args;
-
-    nsAutoString elementDesc;
-    element->Describe(elementDesc);
-    args.AppendElement(elementDesc);
-
-    nsAutoString attributeName;
-    attributeName.Append(attr);
-    attributeName.AppendLiteral("=\"");
-    nsAutoString value;
-    value.Append(str);
-    for (uint32_t i = value.Length(); i > 0; --i) {
-      if (value[i - 1] == char16_t('"')) value.Insert(char16_t('\\'), i - 1);
-    }
-    attributeName.Append(value);
-    attributeName.Append('"');
-    args.AppendElement(attributeName);
-
-    return GetTaintOperation(cx, name, args);
-  }
-
-  return TaintOperation(name);
-}
-
-TaintOperation GetTaintOperation(const char* name)
-{
-  return GetTaintOperation(nsContentUtils::GetCurrentJSContext(), name);
-}
-
-nsresult MarkTaintOperation(StringTaint& aTaint, const char* name) {
-  JSContext *cx = nsContentUtils::GetCurrentJSContext();
-  auto op = GetTaintOperation(cx, name);
-  op.set_native();
-  aTaint.extend(op);
-  return NS_OK;
-}
-
-static nsresult MarkTaintOperation(JSContext *cx, nsACString &str, const char* name)
-{
-  if (str.isTainted()) {
-    auto op = GetTaintOperation(cx, name);
-    op.set_native();
-    str.Taint().extend(op);
-  }
-  return NS_OK;
-}
-
-nsresult MarkTaintOperation(nsACString &str, const char* name)
-{
-  return MarkTaintOperation(nsContentUtils::GetCurrentJSContext(), str, name);
-}
-
-static nsresult MarkTaintOperation(JSContext *cx, nsAString &str, const char* name)
-{
-  if (str.isTainted()) {
-    auto op = GetTaintOperation(cx, name);
-    op.set_native();
-    str.Taint().extend(op);
-  }
-  return NS_OK;
-}
-
-nsresult MarkTaintOperation(nsAString &str, const char* name)
-{
-  return MarkTaintOperation(nsContentUtils::GetCurrentJSContext(), str, name);
-}
-
-static nsresult MarkTaintOperation(JSContext *cx, nsAString &str, const char* name, const nsTArray<nsString> &args)
-{
-  if (str.isTainted()) {
-    auto op = GetTaintOperation(cx, name, args);
-    op.set_native();
-    str.Taint().extend(op);
-  }
-  return NS_OK;
-}
-
-nsresult MarkTaintOperation(nsAString &str, const char* name, const nsTArray<nsString> &args)
-{
-  return MarkTaintOperation(nsContentUtils::GetCurrentJSContext(), str, name, args);
-}
-
-static nsresult MarkTaintSource(nsAString &str, TaintOperation operation) {
-  operation.setSource();
-  operation.set_native();
-  str.Taint().overlay(0, str.Length(), operation);
-  return NS_OK;
-}
-
-static nsresult MarkTaintSource(mozilla::dom::DOMString &str, TaintOperation operation) {
-  operation.setSource();
-  operation.set_native();
-  str.Taint().overlay(0, str.Length(), operation);
-  return NS_OK;
-}
-
-nsresult MarkTaintSource(JSContext* cx, JSString* str, const char* name)
-{
-  TaintOperation op = GetTaintOperation(cx, name);
-  op.setSource();
-  op.set_native();
-  JS_MarkTaintSource(cx, str, op);
-  return NS_OK;
-}
-
-nsresult MarkTaintSource(JSContext* cx, JS::MutableHandle<JS::Value> aValue, const char* name)
-{
-  TaintOperation op = GetTaintOperation(cx, name);
-  op.setSource();
-  op.set_native();
-  JS_MarkTaintSource(cx, aValue, op);
-  return NS_OK;
-}
-
-nsresult MarkTaintSource(JSContext* cx, JS::MutableHandle<JS::Value> aValue, const char* name, const nsAString &arg)
-{
-  TaintOperation op = GetTaintOperation(cx, name, arg);
-  op.setSource();
-  op.set_native();
-  JS_MarkTaintSource(cx, aValue, op);
-  return NS_OK;
-}
-
-nsresult MarkTaintSource(nsAString &str, const char* name)
-{
-  return MarkTaintSource(str, GetTaintOperation(nsContentUtils::GetCurrentJSContext(), name));
-}
-
-nsresult MarkTaintSource(nsAString &str, const char* name, const nsAString &arg)
-{
-  return MarkTaintSource(str, GetTaintOperation(nsContentUtils::GetCurrentJSContext(), name, arg));
-}
-
-nsresult MarkTaintSource(nsAString &str, const char* name, const nsTArray<nsString> &arg)
-{
-  return MarkTaintSource(str, GetTaintOperation(nsContentUtils::GetCurrentJSContext(), name, arg));
-}
-
-nsresult MarkTaintSourceElement(nsAString &str, const char* name, const mozilla::dom::Element* element)
-{
-  return MarkTaintSource(str, GetTaintOperation(nsContentUtils::GetCurrentJSContext(), name, element));
-}
-
-nsresult MarkTaintSourceAttribute(nsAString &str, const char* name, const mozilla::dom::Element* element,
-                                  const nsAString &attr)
-{
-  return MarkTaintSource(str, GetTaintOperation(nsContentUtils::GetCurrentJSContext(), name, element, str, attr));
-}
-
-nsresult MarkTaintSource(mozilla::dom::DOMString &str, const char* name)
-{
-  return MarkTaintSource(str, GetTaintOperation(nsContentUtils::GetCurrentJSContext(), name));
-}
-
-nsresult MarkTaintSource(mozilla::dom::DOMString &str, const char* name, const nsAString &arg)
-{
-  return MarkTaintSource(str, GetTaintOperation(nsContentUtils::GetCurrentJSContext(), name, arg));
-}
-
-nsresult MarkTaintSource(mozilla::dom::DOMString &str, const char* name, const nsTArray<nsString> &arg)
-{
-  return MarkTaintSource(str, GetTaintOperation(nsContentUtils::GetCurrentJSContext(), name, arg));
-}
-
-nsresult MarkTaintSourceElement(mozilla::dom::DOMString &str, const char* name, const mozilla::dom::Element* element)
-{
-  return MarkTaintSource(str, GetTaintOperation(nsContentUtils::GetCurrentJSContext(), name, element));
-}
-
-nsresult MarkTaintSourceAttribute(mozilla::dom::DOMString &str, const char* name, const mozilla::dom::Element* element,
-                                  const nsAString &attr)
-{
-  nsAutoString nsStr;
-  str.ToString(nsStr);
-  return MarkTaintSource(str, GetTaintOperation(nsContentUtils::GetCurrentJSContext(), name, element, nsStr, attr));
-}
-
-nsresult ReportTaintSink(JSContext *cx, const nsAString &str, const char* name, const nsAString &arg)
-{
-  if (!str.isTainted()) {
-    return NS_OK;
-  }
-
-  if (!cx) {
-    return NS_ERROR_FAILURE;
-  }
-
-  if (!nsContentUtils::IsSafeToRunScript() || !JS::CurrentGlobalOrNull(cx)) {
-    return NS_ERROR_FAILURE;
-  }
-
-  JS::RootedValue argval(cx);
-  if (!mozilla::dom::ToJSValue(cx, arg, &argval))
-    return NS_ERROR_FAILURE;
-
-  JS::RootedValue strval(cx);
-  if (!mozilla::dom::ToJSValue(cx, str, &strval))
-    return NS_ERROR_FAILURE;
-
-  JS_ReportTaintSink(cx, strval, name, argval);
-
-  return NS_OK;
-}
-
-nsresult ReportTaintSink(JSContext *cx, const nsAString &str, const char* name)
-{
-  if (!str.isTainted()) {
-    return NS_OK;
-  }
-
-  if (!cx) {
-    return NS_ERROR_FAILURE;
-  }
-
-  if (!nsContentUtils::IsSafeToRunScript() || !JS::CurrentGlobalOrNull(cx)) {
-    return NS_ERROR_FAILURE;
-  }
-
-  JS::RootedValue strval(cx);
-  if (!mozilla::dom::ToJSValue(cx, str, &strval)) {
-    return NS_ERROR_FAILURE;
-  }
-
-  JS_ReportTaintSink(cx, strval, name);
-
-  return NS_OK;
-}
-
-nsresult ReportTaintSink(JSContext *cx, const nsACString &str, const char* name)
-{
-  if (!str.isTainted()) {
-    return NS_OK;
-  }
-
-  if (!cx) {
-    return NS_ERROR_FAILURE;
-  }
-
-  if (!nsContentUtils::IsSafeToRunScript() || !JS::CurrentGlobalOrNull(cx)) {
-    return NS_ERROR_FAILURE;
-  }
-
-  JS::RootedValue strval(cx);
-  if (!mozilla::dom::ToJSValue(cx, str, &strval)) {
-    return NS_ERROR_FAILURE;
-  }
-
-  JS_ReportTaintSink(cx, strval, name);
-
-  return NS_OK;
-}
-
-nsresult ReportTaintSink(const nsAString &str, const char* name, const nsAString &arg)
-{
-  return ReportTaintSink(nsContentUtils::GetCurrentJSContext(), str, name, arg);
-}
-
-nsresult ReportTaintSink(const nsAString &str, const char* name)
-{
-  return ReportTaintSink(nsContentUtils::GetCurrentJSContext(), str, name);
-}
-
-nsresult ReportTaintSink(const nsACString &str, const char* name)
-{
-  return ReportTaintSink(nsContentUtils::GetCurrentJSContext(), str, name);
-}
-
-nsresult ReportTaintSink(JSContext* cx, JS::Handle<JS::Value> aValue, const char* name) {
-
-  if (!nsContentUtils::IsSafeToRunScript() || !JS::CurrentGlobalOrNull(cx)) {
-    return NS_ERROR_FAILURE;
-  }
-
-  JS_ReportTaintSink(cx, aValue, name);
-
-  return NS_OK;
-}

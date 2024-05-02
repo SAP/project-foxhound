@@ -1,101 +1,12 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
-// Test the privacy segmentation pref + telemetry and preferences UI.
+// Test the privacy segmentation pref and preferences UI.
 
 "use strict";
 
-const { TelemetryTestUtils } = ChromeUtils.import(
-  "resource://testing-common/TelemetryTestUtils.jsm"
-);
-
-const PREF = "browser.privacySegmentation.enabled";
-const SCALAR_KEY = "browser.privacySegmentation.enabled";
-
+const PREF = "browser.dataFeatureRecommendations.enabled";
 const PREF_VISIBILITY = "browser.privacySegmentation.preferences.show";
-const PREF_LEARN_MORE_SUFFIX =
-  "browser.privacySegmentation.preferences.learnMoreURLSuffix";
-
-add_task(async function test_telemetry() {
-  ok(
-    !Services.prefs.prefHasUserValue(PREF),
-    `Pref '${PREF}' should not have user value initially.'`
-  );
-  let prefValue = Services.prefs.getBoolPref(PREF);
-  ok(!prefValue, `'${PREF}' should be disabled initially.`);
-
-  TelemetryTestUtils.assertEvents([], {
-    category: "privacy_segmentation",
-    object: "pref",
-  });
-
-  info("Enable privacy segmentation");
-  Services.prefs.setBoolPref(PREF, true);
-  prefValue = Services.prefs.getBoolPref(PREF);
-  ok(prefValue, `'${PREF}' should be enabled.`);
-
-  TelemetryTestUtils.assertEvents(
-    [["privacy_segmentation", "enable", "pref"]],
-    {
-      category: "privacy_segmentation",
-      object: "pref",
-    },
-    {
-      clear: false,
-    }
-  );
-
-  info("Disable privacy segmentation");
-  Services.prefs.setBoolPref(PREF, false);
-  prefValue = Services.prefs.getBoolPref(PREF);
-  ok(!prefValue, `'${PREF}' should be disabled.`);
-
-  TelemetryTestUtils.assertEvents(
-    [
-      ["privacy_segmentation", "enable", "pref"],
-      ["privacy_segmentation", "disable", "pref"],
-    ],
-    {
-      category: "privacy_segmentation",
-      object: "pref",
-    },
-    {
-      clear: false,
-    }
-  );
-
-  info("Re-enable privacy segmentation");
-  Services.prefs.setBoolPref(PREF, true);
-  prefValue = Services.prefs.getBoolPref(PREF);
-  ok(prefValue, `'${PREF}' should be enabled.`);
-
-  TelemetryTestUtils.assertEvents(
-    [
-      ["privacy_segmentation", "enable", "pref"],
-      ["privacy_segmentation", "disable", "pref"],
-      ["privacy_segmentation", "enable", "pref"],
-    ],
-    {
-      category: "privacy_segmentation",
-      object: "pref",
-    },
-    {
-      clear: true,
-    }
-  );
-
-  Services.prefs.clearUserPref(PREF);
-  TelemetryTestUtils.assertEvents(
-    [["privacy_segmentation", "disable", "pref"]],
-    {
-      category: "privacy_segmentation",
-      object: "pref",
-    },
-    {
-      clear: true,
-    }
-  );
-});
 
 add_task(async function test_preferences_section() {
   if (!AppConstants.MOZ_DATA_REPORTING) {
@@ -107,8 +18,17 @@ add_task(async function test_preferences_section() {
 
   let doc = gBrowser.selectedBrowser.contentDocument;
   let section = doc.getElementById("privacySegmentationSection");
-  let checkbox = doc.getElementById("privacySegmentationCheck");
-  let learnMore = doc.getElementById("privacy-segmentation-learn-more-link");
+  let sectionHeader = section.querySelector("h2");
+  let sectionDescription = section.querySelector("label");
+  let radioGroup = section.querySelector(
+    "#privacyDataFeatureRecommendationRadioGroup"
+  );
+  let radioEnabled = radioGroup.querySelector(
+    "#privacyDataFeatureRecommendationEnabled"
+  );
+  let radioDisabled = radioGroup.querySelector(
+    "#privacyDataFeatureRecommendationDisabled"
+  );
 
   for (let show of [false, true]) {
     Services.prefs.setBoolPref(PREF_VISIBILITY, show);
@@ -120,91 +40,63 @@ add_task(async function test_preferences_section() {
       `Privacy Segmentation section should be ${showStr}.`
     );
     is(
-      BrowserTestUtils.is_visible(checkbox),
+      BrowserTestUtils.is_visible(sectionHeader),
       show,
-      `Privacy Segmentation checkbox should be ${showStr}.`
+      `Privacy Segmentation section header should be ${showStr}.`
     );
     is(
-      BrowserTestUtils.is_visible(learnMore),
+      BrowserTestUtils.is_visible(sectionDescription),
       show,
-      `Privacy Segmentation learn more label should be ${showStr}.`
+      `Privacy Segmentation section description should be ${showStr}.`
+    );
+    is(
+      BrowserTestUtils.is_visible(radioGroup),
+      show,
+      `Privacy Segmentation radio group should be ${showStr}.`
     );
 
-    // The section is visible, test checkbox and learn more label.
+    // The section is visible, test radio buttons.
     if (show) {
       Services.prefs.setBoolPref(PREF, false);
 
-      info("Checking checkbox");
-      checkbox.click();
+      is(
+        radioGroup.value,
+        "false",
+        "Radio group should reflect initial pref state of false."
+      );
+
+      info("Selecting radio on.");
+      radioEnabled.click();
       is(
         Services.prefs.getBoolPref(PREF),
         true,
         "Privacy Segmentation should be enabled."
       );
-      TelemetryTestUtils.assertEvents(
-        [["privacy_segmentation", "enable", "pref"]],
-        {
-          category: "privacy_segmentation",
-          object: "pref",
-        },
-        {
-          clear: false,
-        }
-      );
 
-      info("Unchecking checkbox");
-      checkbox.click();
+      info("Selecting radio off.");
+      radioDisabled.click();
       is(
         Services.prefs.getBoolPref(PREF),
         false,
         "Privacy Segmentation should be disabled."
       );
-      TelemetryTestUtils.assertEvents(
-        [
-          ["privacy_segmentation", "enable", "pref"],
-          ["privacy_segmentation", "disable", "pref"],
-        ],
-        {
-          category: "privacy_segmentation",
-          object: "pref",
-        },
-        {
-          clear: false,
-        }
-      );
 
       info("Updating pref externally");
-      ok(!checkbox.checked, "Checkbox unchecked initially.");
+      is(
+        radioGroup.value,
+        "false",
+        "Radio group should reflect initial pref state of false."
+      );
       Services.prefs.setBoolPref(PREF, true);
       await BrowserTestUtils.waitForMutationCondition(
-        checkbox,
-        { attributeFilter: ["checked"] },
-        () => checkbox.checked
+        radioGroup,
+        { attributeFilter: ["value"] },
+        () => radioGroup.value == "true"
       );
-      ok(
-        checkbox.checked,
-        "Updating Privacy Segmentation pref also updates checkbox."
-      );
-      TelemetryTestUtils.assertEvents(
-        [
-          ["privacy_segmentation", "enable", "pref"],
-          ["privacy_segmentation", "disable", "pref"],
-          ["privacy_segmentation", "enable", "pref"],
-        ],
-        {
-          category: "privacy_segmentation",
-          object: "pref",
-        },
-        {
-          clear: true,
-        }
-      );
-
-      ok(
-        learnMore.href.endsWith(
-          Services.prefs.getStringPref(PREF_LEARN_MORE_SUFFIX)
-        ),
-        "learnMore label has href with suffix from pref."
+      is(
+        radioGroup.value,
+        "true",
+        "Updating Privacy Segmentation pref also updates radio group."
       );
     }
   }
@@ -212,17 +104,6 @@ add_task(async function test_preferences_section() {
   BrowserTestUtils.removeTab(gBrowser.selectedTab);
   Services.prefs.clearUserPref(PREF_VISIBILITY);
   Services.prefs.clearUserPref(PREF);
-
-  TelemetryTestUtils.assertEvents(
-    [["privacy_segmentation", "disable", "pref"]],
-    {
-      category: "privacy_segmentation",
-      object: "pref",
-    },
-    {
-      clear: true,
-    }
-  );
 });
 
 add_task(async function test_preferences_section_data_reporting_disabled() {

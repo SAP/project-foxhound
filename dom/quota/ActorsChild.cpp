@@ -37,7 +37,7 @@ QuotaChild::QuotaChild(QuotaManagerService* aService)
     : mService(aService)
 #ifdef DEBUG
       ,
-      mOwningThread(GetCurrentEventTarget())
+      mOwningThread(GetCurrentSerialEventTarget())
 #endif
 {
   AssertIsOnOwningThread();
@@ -172,7 +172,7 @@ void QuotaUsageRequestChild::HandleResponse(
   MOZ_ASSERT(mRequest);
 
   RefPtr<OriginUsageResult> result =
-      new OriginUsageResult(aResponse.usage(), aResponse.fileUsage());
+      new OriginUsageResult(aResponse.usageInfo());
 
   RefPtr<nsVariant> variant = new nsVariant();
   variant->SetAsInterface(NS_GET_IID(nsIQuotaOriginUsageResult), result);
@@ -361,13 +361,8 @@ mozilla::ipc::IPCResult QuotaRequestChild::Recv__delete__(
           aResponse.get_TemporaryStorageInitializedResponse().initialized());
       break;
 
-    case RequestResponse::TInitResponse:
     case RequestResponse::TInitTemporaryStorageResponse:
-    case RequestResponse::TClearOriginResponse:
     case RequestResponse::TResetOriginResponse:
-    case RequestResponse::TClearDataResponse:
-    case RequestResponse::TClearAllResponse:
-    case RequestResponse::TResetAllResponse:
     case RequestResponse::TPersistResponse:
       HandleResponse();
       break;

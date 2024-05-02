@@ -42,13 +42,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <stdlib.h>
 #include <iostream>
 
-#include "sigslot.h"
-
-#include "logging.h"
-
-#include "nsThreadUtils.h"
-#include "nsXPCOM.h"
-
 #include "runnable_utils.h"
 
 #define GTEST_HAS_RTTI 0
@@ -60,10 +53,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 // nICEr includes
 extern "C" {
 #include "nr_api.h"
-#include "registry.h"
-#include "async_timer.h"
-#include "r_crc32.h"
-#include "ice_util.h"
 #include "transport_addr.h"
 #include "nr_crypto.h"
 #include "nr_socket.h"
@@ -73,7 +62,6 @@ extern "C" {
 #include "turn_client_ctx.h"
 }
 
-#include "nricemediastream.h"
 #include "nricectx.h"
 
 using namespace mozilla;
@@ -83,8 +71,7 @@ static std::string kDummyTurnServer("192.0.2.1");  // From RFC 5737
 class TurnClient : public MtransportTest {
  public:
   TurnClient()
-      : MtransportTest(),
-        real_socket_(nullptr),
+      : real_socket_(nullptr),
         net_socket_(nullptr),
         buffered_socket_(nullptr),
         net_fd_(nullptr),
@@ -147,9 +134,7 @@ class TurnClient : public MtransportTest {
   }
 
   void TearDown() {
-    RUN_ON_THREAD(test_utils_->sts_target(),
-                  WrapRunnable(this, &TurnClient::TearDown_s),
-                  NS_DISPATCH_SYNC);
+    test_utils_->SyncDispatchToSTS(WrapRunnable(this, &TurnClient::TearDown_s));
   }
 
   void Allocate_s() {
@@ -161,9 +146,7 @@ class TurnClient : public MtransportTest {
   }
 
   void Allocate(bool expect_success = true) {
-    RUN_ON_THREAD(test_utils_->sts_target(),
-                  WrapRunnable(this, &TurnClient::Allocate_s),
-                  NS_DISPATCH_SYNC);
+    test_utils_->SyncDispatchToSTS(WrapRunnable(this, &TurnClient::Allocate_s));
 
     if (expect_success) {
       ASSERT_TRUE_WAIT(allocated_, 5000);
@@ -200,9 +183,8 @@ class TurnClient : public MtransportTest {
   }
 
   void Deallocate() {
-    RUN_ON_THREAD(test_utils_->sts_target(),
-                  WrapRunnable(this, &TurnClient::Deallocate_s),
-                  NS_DISPATCH_SYNC);
+    test_utils_->SyncDispatchToSTS(
+        WrapRunnable(this, &TurnClient::Deallocate_s));
   }
 
   void RequestPermission_s(const std::string& target) {
@@ -227,9 +209,8 @@ class TurnClient : public MtransportTest {
   }
 
   void RequestPermission(const std::string& target) {
-    RUN_ON_THREAD(test_utils_->sts_target(),
-                  WrapRunnable(this, &TurnClient::RequestPermission_s, target),
-                  NS_DISPATCH_SYNC);
+    test_utils_->SyncDispatchToSTS(
+        WrapRunnable(this, &TurnClient::RequestPermission_s, target));
   }
 
   void Readable(NR_SOCKET s, int how, void* arg) {
@@ -317,10 +298,8 @@ class TurnClient : public MtransportTest {
   }
 
   void SendTo(const std::string& target, int expect_return = 0) {
-    RUN_ON_THREAD(
-        test_utils_->sts_target(),
-        WrapRunnable(this, &TurnClient::SendTo_s, target, expect_return),
-        NS_DISPATCH_SYNC);
+    test_utils_->SyncDispatchToSTS(
+        WrapRunnable(this, &TurnClient::SendTo_s, target, expect_return));
   }
 
   int received() const { return received_; }

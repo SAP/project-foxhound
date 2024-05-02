@@ -11,7 +11,6 @@
 #include "nsIObserver.h"
 #include "nsITimer.h"
 #include "nsWeakReference.h"
-#include "ODoHService.h"
 #include "TRRServiceBase.h"
 #include "nsICaptivePortalService.h"
 #include "nsTHashSet.h"
@@ -31,7 +30,8 @@ class TRRServiceParent;
 class TRRService : public TRRServiceBase,
                    public nsIObserver,
                    public nsSupportsWeakReference,
-                   public AHostResolver {
+                   public AHostResolver,
+                   public SingleWriterLockOwner {
  public:
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_NSIOBSERVER
@@ -40,17 +40,18 @@ class TRRService : public TRRServiceBase,
   TRRService();
   static TRRService* Get();
 
+  bool OnWritingThread() const override { return NS_IsMainThread(); }
+
   nsresult Init();
   nsresult Start();
   bool Enabled(nsIRequest::TRRMode aRequestMode = nsIRequest::TRR_DEFAULT_MODE);
   bool IsConfirmed() { return mConfirmation.State() == CONFIRM_OK; }
   uint32_t ConfirmationState() { return mConfirmation.State(); }
 
-  bool DisableIPv6() { return mDisableIPv6; }
   void GetURI(nsACString& result) override;
   nsresult GetCredentials(nsCString& result);
   uint32_t GetRequestTimeout();
-  void StrictModeConfirm();
+  void RetryTRRConfirm();
 
   LookupStatus CompleteLookup(nsHostRecord*, nsresult, mozilla::net::AddrInfo*,
                               bool pb, const nsACString& aOriginSuffix,
@@ -58,7 +59,8 @@ class TRRService : public TRRServiceBase,
                               TRR* aTrrRequest) override;
   LookupStatus CompleteLookupByType(nsHostRecord*, nsresult,
                                     mozilla::net::TypeRecordResultType&,
-                                    uint32_t, bool pb) override;
+                                    TRRSkippedReason, uint32_t,
+                                    bool pb) override;
   void AddToBlocklist(const nsACString& host, const nsACString& originSuffix,
                       bool privateBrowsing, bool aParentsToo);
   bool IsTemporarilyBlocked(const nsACString& aHost,
@@ -67,7 +69,7 @@ class TRRService : public TRRServiceBase,
   bool IsExcludedFromTRR(const nsACString& aHost);
 
   bool MaybeBootstrap(const nsACString& possible, nsACString& result);
-  void RecordTRRStatus(nsresult aChannelStatus);
+  void RecordTRRStatus(TRR* aTrrRequest);
   bool ParentalControlEnabled() const { return mParentalControlEnabled; }
 
   nsresult DispatchTRRRequest(TRR* aTrrRequest);
@@ -76,18 +78,36 @@ class TRRService : public TRRServiceBase,
 
   bool IsUsingAutoDetectedURL() { return mURISetByDetection; }
 
+  void SetHeuristicDetectionResult(TRRSkippedReason aValue) {
+    mHeuristicDetectionValue = aValue;
+  }
+  TRRSkippedReason GetHeuristicDetectionResult() {
+    return mHeuristicDetectionValue;
+  }
+
+  nsresult LastConfirmationStatus() {
+    return mConfirmation.LastConfirmationStatus();
+  }
+  TRRSkippedReason LastConfirmationSkipReason() {
+    return mConfirmation.LastConfirmationSkipReason();
+  }
+
   // Returns a reference to a static string identifying the current DoH server
   // If the DoH server is not one of the built-in ones it will return "(other)"
   static const nsCString& ProviderKey();
+  static void SetProviderDomain(const nsACString& aTRRDomain);
+  // Only called when TRR mode changed.
+  static void SetCurrentTRRMode(nsIDNSService::ResolverMode aMode);
 
   void InitTRRConnectionInfo() override;
+
+  void DontUseTRRThread() { mDontUseTRRThread = true; }
 
  private:
   virtual ~TRRService();
 
   friend class TRRServiceChild;
   friend class TRRServiceParent;
-  friend class ODoHService;
   static void AddObserver(nsIObserver* aObserver,
                           nsIObserverService* aObserverService = nullptr);
   static bool CheckCaptivePortalIsPassed();
@@ -119,15 +139,16 @@ class TRRService : public TRRServiceBase,
   void AddEtcHosts(const nsTArray<nsCString>&);
 
   bool mInitialized{false};
-  Mutex mLock{"TRRService"};
+  MutexSingleWriter mLock;
 
   nsCString mPrivateCred;  // main thread only
-  nsCString mConfirmationNS{"example.com"_ns};
-  nsCString mBootstrapAddr;
+  nsCString mConfirmationNS MOZ_GUARDED_BY(mLock){"example.com"_ns};
+  nsCString mBootstrapAddr MOZ_GUARDED_BY(mLock);
 
   Atomic<bool, Relaxed> mCaptiveIsPassed{
       false};  // set when captive portal check is passed
-  Atomic<bool, Relaxed> mDisableIPv6;  // don't even try
+  Atomic<bool, Relaxed> mShutdown{false};
+  Atomic<bool, Relaxed> mDontUseTRRThread{false};
 
   // TRR Blocklist storage
   // mTRRBLStorage is only modified on the main thread, but we query whether it
@@ -137,16 +158,19 @@ class TRRService : public TRRServiceBase,
       "DataMutex::TRRBlocklist"};
 
   // A set of domains that we should not use TRR for.
-  nsTHashSet<nsCString> mExcludedDomains;
-  nsTHashSet<nsCString> mDNSSuffixDomains;
-  nsTHashSet<nsCString> mEtcHostsDomains;
+  nsTHashSet<nsCString> mExcludedDomains MOZ_GUARDED_BY(mLock);
+  nsTHashSet<nsCString> mDNSSuffixDomains MOZ_GUARDED_BY(mLock);
+  nsTHashSet<nsCString> mEtcHostsDomains MOZ_GUARDED_BY(mLock);
+
+  // The result of the TRR heuristic detection
+  TRRSkippedReason mHeuristicDetectionValue = nsITRRSkipReason::TRR_UNSET;
 
   enum class ConfirmationEvent {
     Init,
     PrefChange,
-    Retry,
+    ConfirmationRetry,
     FailedLookups,
-    StrictMode,
+    RetryTRR,
     URIChange,
     CaptivePortalConnectivity,
     NetworkUp,
@@ -154,26 +178,26 @@ class TRRService : public TRRServiceBase,
     ConfirmFail,
   };
 
-  //                            (FailedLookups/StrictMode/URIChange/NetworkUp)
-  //                                    +-------------------------+
-  // +-----------+                      |                         |
-  // |   (Init)  |               +------v---------+             +-+--+
-  // |           | TRR turned on |                | (ConfirmOK) |    |
-  // |    OFF    +--------------->     TRY-OK     +-------------> OK |
-  // |           |  (PrefChange) |                |             |    |
-  // +-----^-----+               +^-^----+--------+             +-^--+
-  //       |    (PrefChange/CP)   | |    |                        |
-  //   TRR +   +------------------+ |    |                        |
-  //   off |   |               +----+    |(ConfirmFail)           |(ConfirmOK)
-  // (Pref)|   |               |         |                        |
-  // +---------+-+             |         |                        |
-  // |           |    (CPConn) | +-------v--------+         +-----+-----+
-  // | ANY-STATE |  (NetworkUp)| |                |  timer  |           |
-  // |           |  (URIChange)+-+      FAIL      +--------->  TRY-FAIL |
-  // +-----+-----+               |                | (Retry) |           |
-  //       |                     +------^---------+         +------+----+
-  //       | (PrefChange)               |                         |
-  //       | TRR_ONLY mode or           +-------------------------+
+  //                            (FailedLookups/RetryTRR/URIChange/NetworkUp)
+  //                                    +---------------------------+
+  // +-----------+                      |                           |
+  // |   (Init)  |               +------v---------+               +-+--+
+  // |           | TRR turned on |                | (ConfirmOK)   |    |
+  // |    OFF    +--------------->     TRY-OK     +---------------> OK |
+  // |           |  (PrefChange) |                |               |    |
+  // +-----^-----+               +^-^----+--------+               +-^--+
+  //       |    (PrefChange/CP)   | |    |                          |
+  //   TRR +   +------------------+ |    |                          |
+  //   off |   |               +----+    |(ConfirmFail)             |(ConfirmOK)
+  // (Pref)|   |               |         |                          |
+  // +---------+-+             |         |                          |
+  // |           |    (CPConn) | +-------v--------+               +-+---------+
+  // | ANY-STATE |  (NetworkUp)| |                |  timer        |           |
+  // |           |  (URIChange)+-+      FAIL      +--------------->  TRY-FAIL |
+  // +-----+-----+               |                | (Confirmation |           |
+  //       |                     +------^---------+  Retry)       +------+----+
+  //       | (PrefChange)               |                                |
+  //       | TRR_ONLY mode or           +--------------------------------+
   //       | confirmationNS = skip                (ConfirmFail)
   // +-----v-----+
   // |           |
@@ -233,12 +257,16 @@ class TRRService : public TRRServiceBase,
     // confirmation.
     nsCString mFailedLookups;
 
+    Atomic<TRRSkippedReason, Relaxed> mLastConfirmationSkipReason{
+        nsITRRSkipReason::TRR_UNSET};
+    Atomic<nsresult, Relaxed> mLastConfirmationStatus{NS_OK};
+
     void SetState(enum ConfirmationState aNewState);
 
    public:
     // Called when a confirmation completes successfully or when the
     // confirmation context changes.
-    void RecordEvent(const char* aReason);
+    void RecordEvent(const char* aReason, const MutexSingleWriterAutoLock&);
 
     // Called when a confirmation request is completed. The status is recorded
     // in the results.
@@ -248,14 +276,22 @@ class TRRService : public TRRServiceBase,
 
     void CompleteConfirmation(nsresult aStatus, TRR* aTrrRequest);
 
-    void RecordTRRStatus(nsresult aChannelStatus);
+    void RecordTRRStatus(TRR* aTrrRequest);
 
-    void HandleEvent(ConfirmationEvent aEvent);
-    void HandleEvent(ConfirmationEvent aEvent, const MutexAutoLock&);
+    // Returns true when handling the event caused a new confirmation task to be
+    // dispatched.
+    bool HandleEvent(ConfirmationEvent aEvent);
+    bool HandleEvent(ConfirmationEvent aEvent,
+                     const MutexSingleWriterAutoLock&);
 
     void SetCaptivePortalStatus(int32_t aStatus) {
       mCaptivePortalStatus = aStatus;
     }
+
+    TRRSkippedReason LastConfirmationSkipReason() {
+      return mLastConfirmationSkipReason;
+    }
+    nsresult LastConfirmationStatus() { return mLastConfirmationStatus; }
 
     uintptr_t TaskAddr() { return uintptr_t(mTask.get()); }
 
@@ -287,8 +323,9 @@ class TRRService : public TRRServiceBase,
    public:
     // Called when a confirmation completes successfully or when the
     // confirmation context changes.
-    void RecordEvent(const char* aReason) {
-      mConfirmation.RecordEvent(aReason);
+    void RecordEvent(const char* aReason,
+                     const MutexSingleWriterAutoLock& aLock) {
+      mConfirmation.RecordEvent(aReason, aLock);
     }
 
     // Called when a confirmation request is completed. The status is recorded
@@ -303,23 +340,29 @@ class TRRService : public TRRServiceBase,
       mConfirmation.CompleteConfirmation(aStatus, aTrrRequest);
     }
 
-    void RecordTRRStatus(nsresult aChannelStatus) {
-      mConfirmation.RecordTRRStatus(aChannelStatus);
+    void RecordTRRStatus(TRR* aTrrRequest) {
+      mConfirmation.RecordTRRStatus(aTrrRequest);
     }
 
-    void HandleEvent(ConfirmationEvent aEvent) {
-      mConfirmation.HandleEvent(aEvent);
+    bool HandleEvent(ConfirmationEvent aEvent) {
+      return mConfirmation.HandleEvent(aEvent);
     }
 
-    void HandleEvent(ConfirmationEvent aEvent, const MutexAutoLock& lock) {
-      mConfirmation.HandleEvent(aEvent, lock);
+    bool HandleEvent(ConfirmationEvent aEvent,
+                     const MutexSingleWriterAutoLock& lock) {
+      return mConfirmation.HandleEvent(aEvent, lock);
     }
 
     void SetCaptivePortalStatus(int32_t aStatus) {
       mConfirmation.SetCaptivePortalStatus(aStatus);
     }
 
-    uintptr_t TaskAddr() { return mConfirmation.TaskAddr(); }
+    TRRSkippedReason LastConfirmationSkipReason() {
+      return mConfirmation.LastConfirmationSkipReason();
+    }
+    nsresult LastConfirmationStatus() {
+      return mConfirmation.LastConfirmationStatus();
+    }
 
    private:
     friend TRRService* ConfirmationContext::OwningObject();
@@ -329,7 +372,9 @@ class TRRService : public TRRServiceBase,
   ConfirmationWrapper mConfirmation;
 
   bool mParentalControlEnabled{false};
-  RefPtr<ODoHService> mODoHService;
+  // This is used to track whether a confirmation was triggered by a URI change,
+  // so we don't trigger another one just because other prefs have changed.
+  bool mConfirmationTriggered{false};
   nsCOMPtr<nsINetworkLinkService> mLinkService;
 };
 

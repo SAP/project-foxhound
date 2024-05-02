@@ -14,6 +14,7 @@
 #include "nsCOMPtr.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/UniquePtr.h"
+#include "mozilla/gfx/Point.h"
 #include "mozilla/gfx/RecordedEvent.h"
 #include "mozilla/gfx/CrossProcessPaint.h"
 
@@ -34,19 +35,17 @@ class RemotePrintJobParent final : public PRemotePrintJobParent {
 
   void ActorDestroy(ActorDestroyReason aWhy) final;
 
-  mozilla::ipc::IPCResult RecvInitializePrint(const nsString& aDocumentTitle,
-                                              const nsString& aPrintToFile,
+  mozilla::ipc::IPCResult RecvInitializePrint(const nsAString& aDocumentTitle,
                                               const int32_t& aStartPage,
                                               const int32_t& aEndPage) final;
 
-  mozilla::ipc::IPCResult RecvProcessPage(nsTArray<uint64_t>&& aDeps) final;
+  mozilla::ipc::IPCResult RecvProcessPage(const int32_t& aWidthInPoints,
+                                          const int32_t& aHeightInPoints,
+                                          nsTArray<uint64_t>&& aDeps) final;
 
   mozilla::ipc::IPCResult RecvFinalizePrint() final;
 
   mozilla::ipc::IPCResult RecvAbortPrint(const nsresult& aRv) final;
-
-  mozilla::ipc::IPCResult RecvStateChange(const long& aStateFlags,
-                                          const nsresult& aStatus) final;
 
   mozilla::ipc::IPCResult RecvProgressChange(
       const long& aCurSelfProgress, const long& aMaxSelfProgress,
@@ -69,17 +68,17 @@ class RemotePrintJobParent final : public PRemotePrintJobParent {
  private:
   ~RemotePrintJobParent() final;
 
-  nsresult InitializePrintDevice(const nsString& aDocumentTitle,
-                                 const nsString& aPrintToFile,
+  nsresult InitializePrintDevice(const nsAString& aDocumentTitle,
                                  const int32_t& aStartPage,
                                  const int32_t& aEndPage);
 
   nsresult PrepareNextPageFD(FileDescriptor* aFd);
 
   nsresult PrintPage(
-      PRFileDescStream& aRecording,
+      const gfx::IntSize& aSizeInPoints, PRFileDescStream& aRecording,
       gfx::CrossProcessPaint::ResolvedFragmentMap* aFragments = nullptr);
   void FinishProcessingPage(
+      const gfx::IntSize& aSizeInPoints,
       gfx::CrossProcessPaint::ResolvedFragmentMap* aFragments = nullptr);
 
   /**
@@ -94,6 +93,7 @@ class RemotePrintJobParent final : public PRemotePrintJobParent {
   nsCOMArray<nsIWebProgressListener> mPrintProgressListeners;
   PRFileDescStream mCurrentPageStream;
   bool mIsDoingPrinting;
+  nsresult mStatus;
 };
 
 }  // namespace layout

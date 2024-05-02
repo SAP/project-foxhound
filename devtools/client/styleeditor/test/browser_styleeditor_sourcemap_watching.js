@@ -15,11 +15,7 @@ const TRANSITIONS_PREF = "devtools.styleeditor.transitions";
 
 const CSS_TEXT = "* { color: blue }";
 
-const { FileUtils } = ChromeUtils.import(
-  "resource://gre/modules/FileUtils.jsm"
-);
-
-add_task(async function() {
+add_task(async function () {
   await new Promise(resolve => {
     SpecialPowers.pushPrefEnv({ set: [[TRANSITIONS_PREF, false]] }, resolve);
   });
@@ -84,7 +80,7 @@ function editSCSS(editor) {
   return new Promise(resolve => {
     editor.sourceEditor.setText(CSS_TEXT);
 
-    editor.saveToFile(null, function(file) {
+    editor.saveToFile(null, function (file) {
       ok(file, "Scss file should be saved");
       resolve();
     });
@@ -117,7 +113,9 @@ function getStylesheetNameFor(editor) {
 }
 
 function copy(srcChromeURL, destFilePath) {
-  const destFile = FileUtils.getFile("ProfD", destFilePath);
+  const destFile = new FileUtils.File(
+    PathUtils.join(PathUtils.profileDir, ...destFilePath)
+  );
   return write(read(srcChromeURL), destFile);
 }
 
@@ -145,16 +143,10 @@ function read(srcChromeURL) {
 
 function write(data, file) {
   return new Promise(resolve => {
-    const converter = Cc[
-      "@mozilla.org/intl/scriptableunicodeconverter"
-    ].createInstance(Ci.nsIScriptableUnicodeConverter);
-
-    converter.charset = "UTF-8";
-
-    const istream = converter.convertToInputStream(data);
+    const istream = getInputStream(data);
     const ostream = FileUtils.openSafeFileOutputStream(file);
 
-    NetUtil.asyncCopy(istream, ostream, function(status) {
+    NetUtil.asyncCopy(istream, ostream, function (status) {
       if (!Components.isSuccessCode(status)) {
         info("Coudln't write to " + file.path);
         return;

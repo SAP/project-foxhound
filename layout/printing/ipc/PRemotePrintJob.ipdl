@@ -4,14 +4,15 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-include protocol PPrinting;
+include protocol PContent;
 
 namespace mozilla {
 namespace layout {
 
-[RefCounted] async protocol PRemotePrintJob
+[ChildImpl=virtual, ParentImpl=virtual]
+async protocol PRemotePrintJob
 {
-  manager PPrinting;
+  manager PContent;
 
 both:
   // Tell either side to abort printing and clean up.
@@ -19,20 +20,16 @@ both:
 
 parent:
   // Initialize the real print device with the given information.
-  async InitializePrint(nsString aDocumentTitle, nsString aPrintToFile,
+  async InitializePrint(nsString aDocumentTitle,
                         int32_t aStartPage, int32_t aEndPage);
 
   // Translate the page recording writen into |fd| and play back the events to
   // the real print device.
-  async ProcessPage(uint64_t[] deps);
+  async ProcessPage(int32_t aWidthInPoints, int32_t aHeightInPoints, uint64_t[] aDeps);
 
   // This informs the real print device that we've finished, so it can trigger
   // the actual print.
   async FinalizePrint();
-
-  // Report a state change to listeners in the parent process.
-  async StateChange(long aStateFlags,
-                    nsresult aStatus);
 
   // Report a progress change to listeners in the parent process.
   async ProgressChange(long aCurSelfProgress,

@@ -2,17 +2,18 @@
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
 "use strict";
-const { PermissionTestUtils } = ChromeUtils.import(
-  "resource://testing-common/PermissionTestUtils.jsm"
+const { PermissionTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/PermissionTestUtils.sys.mjs"
 );
 const testPath = getRootDirectory(gTestPath).replace(
   "chrome://mochitests/content",
+  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
   "http://example.com"
 );
 const CANONICAL_URI = Services.io.newURI(testPath);
 const PERMISSION_NAME = "https-only-load-insecure";
 
-add_task(async function setup() {
+add_setup(async function () {
   await SpecialPowers.pushPrefEnv({
     // That changes the canoncicalURL from "http://{server}/captive-detect/success.txt"
     // to http://example.com

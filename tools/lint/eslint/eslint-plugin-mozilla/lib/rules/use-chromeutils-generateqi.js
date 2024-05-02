@@ -9,10 +9,6 @@
 
 "use strict";
 
-// -----------------------------------------------------------------------------
-// Rule Definition
-// -----------------------------------------------------------------------------
-
 function isIdentifier(node, id) {
   return node && node.type === "Identifier" && node.name === id;
 }
@@ -24,13 +20,6 @@ function isMemberExpression(node, object, member) {
     isIdentifier(node.property, member)
   );
 }
-
-const MSG_NO_JS_QUERY_INTERFACE =
-  "Please use ChromeUtils.generateQI rather than manually creating " +
-  "JavaScript QueryInterface functions";
-
-const MSG_NO_XPCOMUTILS_GENERATEQI =
-  "Please use ChromeUtils.generateQI instead of XPCOMUtils.generateQI";
 
 function funcToGenerateQI(context, node) {
   const sourceCode = context.getSourceCode();
@@ -53,7 +42,19 @@ function funcToGenerateQI(context, node) {
 
 module.exports = {
   meta: {
+    docs: {
+      url: "https://firefox-source-docs.mozilla.org/code-quality/lint/linters/eslint-plugin-mozilla/rules/use-chromeutils-generateqi.html",
+    },
     fixable: "code",
+    messages: {
+      noJSQueryInterface:
+        "Please use ChromeUtils.generateQI rather than " +
+        "manually creating JavaScript QueryInterface functions",
+      noXpcomUtilsGenerateQI:
+        "Please use ChromeUtils.generateQI instead of XPCOMUtils.generateQI",
+    },
+    schema: [],
+    type: "suggestion",
   },
 
   create(context) {
@@ -63,7 +64,7 @@ module.exports = {
         if (isMemberExpression(callee, "XPCOMUtils", "generateQI")) {
           context.report({
             node,
-            message: MSG_NO_XPCOMUTILS_GENERATEQI,
+            messageId: "noXpcomUtilsGenerateQI",
             fix(fixer) {
               return fixer.replaceText(callee, "ChromeUtils.generateQI");
             },
@@ -71,33 +72,34 @@ module.exports = {
         }
       },
 
-      "AssignmentExpression > MemberExpression[property.name='QueryInterface']": function(
-        node
-      ) {
-        const { right } = node.parent;
-        if (right.type === "FunctionExpression") {
+      "AssignmentExpression > MemberExpression[property.name='QueryInterface']":
+        function (node) {
+          const { right } = node.parent;
+          if (right.type === "FunctionExpression") {
+            context.report({
+              node: node.parent,
+              messageId: "noJSQueryInterface",
+              fix(fixer) {
+                return fixer.replaceText(
+                  right,
+                  funcToGenerateQI(context, right)
+                );
+              },
+            });
+          }
+        },
+
+      "Property[key.name='QueryInterface'][value.type='FunctionExpression']":
+        function (node) {
           context.report({
-            node: node.parent,
-            message: MSG_NO_JS_QUERY_INTERFACE,
+            node,
+            messageId: "noJSQueryInterface",
             fix(fixer) {
-              return fixer.replaceText(right, funcToGenerateQI(context, right));
+              let generateQI = funcToGenerateQI(context, node.value);
+              return fixer.replaceText(node, `QueryInterface: ${generateQI}`);
             },
           });
-        }
-      },
-
-      "Property[key.name='QueryInterface'][value.type='FunctionExpression']": function(
-        node
-      ) {
-        context.report({
-          node,
-          message: MSG_NO_JS_QUERY_INTERFACE,
-          fix(fixer) {
-            let generateQI = funcToGenerateQI(context, node.value);
-            return fixer.replaceText(node, `QueryInterface: ${generateQI}`);
-          },
-        });
-      },
+        },
     };
   },
 };

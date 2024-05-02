@@ -42,7 +42,7 @@ const startupPhases = {
     {
       name: "PWebRenderBridge::Msg_EnsureConnected",
       condition: WIN && WEBRENDER,
-      maxCount: 2,
+      maxCount: 3,
     },
     {
       name: "PWebRenderBridge::Msg_EnsureConnected",
@@ -131,6 +131,15 @@ const startupPhases = {
       ignoreIfUnused: true,
       maxCount: 1,
     },
+    {
+      // bug 1784869
+      // We use Resume signal to propagate correct XWindow/wl_surface
+      // to EGL compositor.
+      name: "PCompositorBridge::Msg_Resume",
+      condition: LINUX,
+      ignoreIfUnused: true, // intermittently occurs in "before handling user events"
+      maxCount: 1,
+    },
   ],
 
   // We are at this phase once we are ready to handle user events.
@@ -139,9 +148,15 @@ const startupPhases = {
   "before handling user events": [
     {
       name: "PCompositorBridge::Msg_FlushRendering",
-      condition: !WIN,
+      condition: MAC,
       ignoreIfUnused: true,
       maxCount: 1,
+    },
+    {
+      name: "PCompositorBridge::Msg_FlushRendering",
+      condition: LINUX,
+      ignoreIfUnused: true, // intermittently occurs in "before becoming idle"
+      maxCount: 2,
     },
     {
       name: "PLayerTransaction::Msg_GetTextureFactoryIdentifier",
@@ -209,6 +224,15 @@ const startupPhases = {
       ignoreIfUnused: true, // Bug 1660590 - found while running test on windows hardware
       maxCount: 1,
     },
+    {
+      // bug 1784869
+      // We use Resume signal to propagate correct XWindow/wl_surface
+      // to EGL compositor.
+      name: "PCompositorBridge::Msg_Resume",
+      condition: LINUX,
+      ignoreIfUnused: true, // intermittently occurs in "before first paint"
+      maxCount: 1,
+    },
   ],
 
   // Things that are expected to be completely out of the startup path
@@ -266,8 +290,14 @@ const startupPhases = {
     },
     {
       name: "PCompositorBridge::Msg_FlushRendering",
-      condition: MAC || LINUX || SKELETONUI,
+      condition: MAC || SKELETONUI,
       ignoreIfUnused: true,
+      maxCount: 1,
+    },
+    {
+      name: "PCompositorBridge::Msg_FlushRendering",
+      condition: LINUX,
+      ignoreIfUnused: true, // intermittently occurs in "before handling user events"
       maxCount: 1,
     },
     {
@@ -298,7 +328,7 @@ const startupPhases = {
   ],
 };
 
-add_task(async function() {
+add_task(async function () {
   if (
     !AppConstants.NIGHTLY_BUILD &&
     !AppConstants.MOZ_DEV_EDITION &&
@@ -312,8 +342,8 @@ add_task(async function() {
     return;
   }
 
-  let startupRecorder = Cc["@mozilla.org/test/startuprecorder;1"].getService()
-    .wrappedJSObject;
+  let startupRecorder =
+    Cc["@mozilla.org/test/startuprecorder;1"].getService().wrappedJSObject;
   await startupRecorder.done;
 
   // Check for sync IPC markers in the startup profile.
@@ -329,9 +359,8 @@ add_task(async function() {
     for (let m of profile.markers.data) {
       let markerName = profile.stringTable[m[nameCol]];
       if (markerName.startsWith("startupRecorder:")) {
-        phases[
-          markerName.split("startupRecorder:")[1]
-        ] = markersForCurrentPhase;
+        phases[markerName.split("startupRecorder:")[1]] =
+          markersForCurrentPhase;
         markersForCurrentPhase = [];
         continue;
       }
@@ -408,9 +437,7 @@ add_task(async function() {
     ok(shouldPass, "No unexpected sync IPC during startup");
   } else {
     const filename = "profile_startup_syncIPC.json";
-    let path = Cc["@mozilla.org/process/environment;1"]
-      .getService(Ci.nsIEnvironment)
-      .get("MOZ_UPLOAD_DIR");
+    let path = Services.env.get("MOZ_UPLOAD_DIR");
     let profilePath = PathUtils.join(path, filename);
     await IOUtils.writeJSON(profilePath, startupRecorder.data.profile);
     ok(

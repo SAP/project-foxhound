@@ -1,6 +1,5 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:expandtab:shiftwidth=4:tabstop=4:
- */
+/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,21 +10,24 @@
 #include <errno.h>
 #include <gdk/gdk.h>
 #include "nsAppShell.h"
+#include "nsBaseAppShell.h"
 #include "nsWindow.h"
 #include "mozilla/Logging.h"
 #include "prenv.h"
 #include "mozilla/BackgroundHangMonitor.h"
 #include "mozilla/Hal.h"
+#include "mozilla/ProfilerLabels.h"
+#include "mozilla/ProfilerThreadSleep.h"
 #include "mozilla/Unused.h"
+#include "mozilla/GUniquePtr.h"
 #include "mozilla/WidgetUtils.h"
-#include "GeckoProfiler.h"
 #include "nsIPowerManagerService.h"
 #ifdef MOZ_ENABLE_DBUS
-#  include <dbus/dbus-glib-lowlevel.h>
 #  include <gio/gio.h>
-#  include "WakeLockListener.h"
 #  include "nsIObserverService.h"
+#  include "WidgetUtilsGtk.h"
 #endif
+#include "WakeLockListener.h"
 #include "gfxPlatform.h"
 #include "nsAppRunner.h"
 #include "mozilla/XREAppData.h"
@@ -36,8 +38,8 @@
 #  include "nsWaylandDisplay.h"
 #endif
 
-using mozilla::LazyLogModule;
-using mozilla::Unused;
+using namespace mozilla;
+using namespace mozilla::widget;
 using mozilla::widget::HeadlessScreenHelper;
 using mozilla::widget::ScreenHelperGTK;
 using mozilla::widget::ScreenManager;
@@ -55,13 +57,47 @@ LazyLogModule gClipboardLog("WidgetClipboard");
 static GPollFunc sPollFunc;
 
 // Wrapper function to disable hang monitoring while waiting in poll().
-static gint PollWrapper(GPollFD* ufds, guint nfsd, gint timeout_) {
+static gint PollWrapper(GPollFD* aUfds, guint aNfsd, gint aTimeout) {
+  if (aTimeout == 0) {
+    // When the timeout is 0, there is no wait, so no point in notifying
+    // the BackgroundHangMonitor and the profiler.
+    return (*sPollFunc)(aUfds, aNfsd, aTimeout);
+  }
+
   mozilla::BackgroundHangMonitor().NotifyWait();
   gint result;
   {
+    gint timeout = aTimeout;
+    gint64 begin = 0;
+    if (aTimeout != -1) {
+      begin = g_get_monotonic_time();
+    }
+
     AUTO_PROFILER_LABEL("PollWrapper", IDLE);
     AUTO_PROFILER_THREAD_SLEEP;
-    result = (*sPollFunc)(ufds, nfsd, timeout_);
+    do {
+      result = (*sPollFunc)(aUfds, aNfsd, timeout);
+
+      // The result will be -1 with the EINTR error if the poll was interrupted
+      // by a signal, typically the signal sent by the profiler to sample the
+      // process. We are only done waiting if we are not in that case.
+      if (result != -1 || errno != EINTR) {
+        break;
+      }
+
+      if (aTimeout != -1) {
+        // Adjust the timeout to account for the time already spent waiting.
+        gint elapsedSinceBegin = (g_get_monotonic_time() - begin) / 1000;
+        if (elapsedSinceBegin < aTimeout) {
+          timeout = aTimeout - elapsedSinceBegin;
+        } else {
+          // poll returns 0 to indicate the call timed out before any fd
+          // became ready.
+          result = 0;
+          break;
+        }
+      }
+    } while (true);
   }
   mozilla::BackgroundHangMonitor().NotifyActivity();
   return result;
@@ -124,15 +160,40 @@ nsAppShell::~nsAppShell() {
 }
 
 #ifdef MOZ_ENABLE_DBUS
-static void SessionSleepCallback(DBusGProxy* aProxy, gboolean aSuspend,
-                                 gpointer data) {
+void nsAppShell::DBusSessionSleepCallback(GDBusProxy* aProxy,
+                                          gchar* aSenderName,
+                                          gchar* aSignalName,
+                                          GVariant* aParameters,
+                                          gpointer aUserData) {
+  if (g_strcmp0(aSignalName, "PrepareForSleep")) {
+    return;
+  }
   nsCOMPtr<nsIObserverService> observerService =
       mozilla::services::GetObserverService();
   if (!observerService) {
     return;
   }
+  if (!g_variant_is_of_type(aParameters, G_VARIANT_TYPE_TUPLE) ||
+      g_variant_n_children(aParameters) != 1) {
+    NS_WARNING(
+        nsPrintfCString("Unexpected location updated signal params type: %s\n",
+                        g_variant_get_type_string(aParameters))
+            .get());
+    return;
+  }
 
-  if (aSuspend) {
+  RefPtr<GVariant> variant =
+      dont_AddRef(g_variant_get_child_value(aParameters, 0));
+  if (!g_variant_is_of_type(variant, G_VARIANT_TYPE_BOOLEAN)) {
+    NS_WARNING(
+        nsPrintfCString("Unexpected location updated signal params type: %s\n",
+                        g_variant_get_type_string(aParameters))
+            .get());
+    return;
+  }
+
+  gboolean suspend = g_variant_get_boolean(variant);
+  if (suspend) {
     // Post sleep_notification
     observerService->NotifyObservers(nullptr, NS_WIDGET_SLEEP_OBSERVER_TOPIC,
                                      nullptr);
@@ -143,86 +204,95 @@ static void SessionSleepCallback(DBusGProxy* aProxy, gboolean aSuspend,
   }
 }
 
-static DBusHandlerResult ConnectionSignalFilter(DBusConnection* aConnection,
-                                                DBusMessage* aMessage,
-                                                void* aData) {
-  if (dbus_message_is_signal(aMessage, DBUS_INTERFACE_LOCAL, "Disconnected")) {
-    auto* appShell = static_cast<nsAppShell*>(aData);
-    appShell->StopDBusListening();
-    // We do not return DBUS_HANDLER_RESULT_HANDLED here because the connection
-    // might be shared and some other filters might want to do something.
+void nsAppShell::DBusTimedatePropertiesChangedCallback(GDBusProxy* aProxy,
+                                                       gchar* aSenderName,
+                                                       gchar* aSignalName,
+                                                       GVariant* aParameters,
+                                                       gpointer aUserData) {
+  if (g_strcmp0(aSignalName, "PropertiesChanged")) {
+    return;
+  }
+  nsBaseAppShell::OnSystemTimezoneChange();
+}
+
+void nsAppShell::DBusConnectClientResponse(GObject* aObject,
+                                           GAsyncResult* aResult,
+                                           gpointer aUserData) {
+  GUniquePtr<GError> error;
+  RefPtr<GDBusProxy> proxyClient =
+      dont_AddRef(g_dbus_proxy_new_finish(aResult, getter_Transfers(error)));
+  if (!proxyClient) {
+    if (!IsCancelledGError(error.get())) {
+      NS_WARNING(
+          nsPrintfCString("Failed to connect to client: %s\n", error->message)
+              .get());
+    }
+    return;
   }
 
-  return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
+  RefPtr self = static_cast<nsAppShell*>(aUserData);
+  if (!strcmp(g_dbus_proxy_get_name(proxyClient), "org.freedesktop.login1")) {
+    self->mLogin1Proxy = std::move(proxyClient);
+    g_signal_connect(self->mLogin1Proxy, "g-signal",
+                     G_CALLBACK(DBusSessionSleepCallback), self);
+  } else {
+    self->mTimedate1Proxy = std::move(proxyClient);
+    g_signal_connect(self->mTimedate1Proxy, "g-signal",
+                     G_CALLBACK(DBusTimedatePropertiesChangedCallback), self);
+  }
 }
 
 // Based on
 // https://github.com/lcp/NetworkManager/blob/240f47c892b4e935a3e92fc09eb15163d1fa28d8/src/nm-sleep-monitor-systemd.c
 // Use login1 to signal sleep and wake notifications.
 void nsAppShell::StartDBusListening() {
-  GError* error = nullptr;
-  mDBusConnection = dbus_g_bus_get(DBUS_BUS_SYSTEM, &error);
-  if (!mDBusConnection) {
-    NS_WARNING(nsPrintfCString("gds: Failed to open connection to bus %s\n",
-                               error->message)
-                   .get());
-    g_error_free(error);
-    return;
-  }
+  MOZ_DIAGNOSTIC_ASSERT(!mLogin1Proxy, "Already configured?");
+  MOZ_DIAGNOSTIC_ASSERT(!mTimedate1Proxy, "Already configured?");
+  MOZ_DIAGNOSTIC_ASSERT(!mLogin1ProxyCancellable, "Already configured?");
+  MOZ_DIAGNOSTIC_ASSERT(!mTimedate1ProxyCancellable, "Already configured?");
 
-  DBusConnection* dbusConnection =
-      dbus_g_connection_get_connection(mDBusConnection);
+  mLogin1ProxyCancellable = dont_AddRef(g_cancellable_new());
+  mTimedate1ProxyCancellable = dont_AddRef(g_cancellable_new());
 
-  // Make sure we do not exit the entire program if DBus connection gets
-  // lost.
-  dbus_connection_set_exit_on_disconnect(dbusConnection, false);
+  g_dbus_proxy_new_for_bus(
+      G_BUS_TYPE_SYSTEM, G_DBUS_PROXY_FLAGS_NONE, nullptr,
+      "org.freedesktop.login1", "/org/freedesktop/login1",
+      "org.freedesktop.login1.Manager", mLogin1ProxyCancellable,
+      reinterpret_cast<GAsyncReadyCallback>(DBusConnectClientResponse), this);
 
-  // Listening to signals the DBus connection is going to get so we will
-  // know when it is lost and we will be able to disconnect cleanly.
-  dbus_connection_add_filter(dbusConnection, ConnectionSignalFilter, this,
-                             nullptr);
-
-  mLogin1Proxy = dbus_g_proxy_new_for_name(
-      mDBusConnection, "org.freedesktop.login1", "/org/freedesktop/login1",
-      "org.freedesktop.login1.Manager");
-
-  if (!mLogin1Proxy) {
-    NS_WARNING("gds: error-no dbus proxy\n");
-    return;
-  }
-
-  dbus_g_proxy_add_signal(mLogin1Proxy, "PrepareForSleep", G_TYPE_BOOLEAN,
-                          G_TYPE_INVALID);
-  dbus_g_proxy_connect_signal(mLogin1Proxy, "PrepareForSleep",
-                              G_CALLBACK(SessionSleepCallback), this, nullptr);
+  g_dbus_proxy_new_for_bus(
+      G_BUS_TYPE_SYSTEM, G_DBUS_PROXY_FLAGS_NONE, nullptr,
+      "org.freedesktop.timedate1", "/org/freedesktop/timedate1",
+      "org.freedesktop.DBus.Properties", mTimedate1ProxyCancellable,
+      reinterpret_cast<GAsyncReadyCallback>(DBusConnectClientResponse), this);
 }
 
 void nsAppShell::StopDBusListening() {
-  // If mDBusConnection isn't initialized, that means we are not really
-  // listening.
-  if (!mDBusConnection) {
-    return;
-  }
-  dbus_connection_remove_filter(
-      dbus_g_connection_get_connection(mDBusConnection), ConnectionSignalFilter,
-      this);
-
   if (mLogin1Proxy) {
-    dbus_g_proxy_disconnect_signal(mLogin1Proxy, "PrepareForSleep",
-                                   G_CALLBACK(SessionSleepCallback), this);
-    g_object_unref(mLogin1Proxy);
-    mLogin1Proxy = nullptr;
+    g_signal_handlers_disconnect_matched(mLogin1Proxy, G_SIGNAL_MATCH_DATA, 0,
+                                         0, nullptr, nullptr, this);
   }
-  dbus_g_connection_unref(mDBusConnection);
-  mDBusConnection = nullptr;
-}
+  if (mLogin1ProxyCancellable) {
+    g_cancellable_cancel(mLogin1ProxyCancellable);
+    mLogin1ProxyCancellable = nullptr;
+  }
+  mLogin1Proxy = nullptr;
 
+  if (mTimedate1Proxy) {
+    g_signal_handlers_disconnect_matched(mTimedate1Proxy, G_SIGNAL_MATCH_DATA,
+                                         0, 0, nullptr, nullptr, this);
+  }
+  if (mTimedate1ProxyCancellable) {
+    g_cancellable_cancel(mTimedate1ProxyCancellable);
+    mTimedate1ProxyCancellable = nullptr;
+  }
+  mTimedate1Proxy = nullptr;
+}
 #endif
 
 nsresult nsAppShell::Init() {
   mozilla::hal::Init();
 
-#ifdef MOZ_ENABLE_DBUS
   if (XRE_IsParentProcess()) {
     nsCOMPtr<nsIPowerManagerService> powerManagerService =
         do_GetService(POWERMANAGERSERVICE_CONTRACTID);
@@ -235,9 +305,10 @@ nsresult nsAppShell::Init() {
           "Failed to retrieve PowerManagerService, wakelocks will be broken!");
     }
 
+#ifdef MOZ_ENABLE_DBUS
     StartDBusListening();
-  }
 #endif
+  }
 
   if (!sPollFunc) {
     sPollFunc = g_main_context_get_poll_func(nullptr);
@@ -289,10 +360,6 @@ nsresult nsAppShell::Init() {
     unsetenv("GTK_CSD");
   }
 
-  if (PR_GetEnv("MOZ_DEBUG_PAINTS")) {
-    gdk_window_set_debug_updates(TRUE);
-  }
-
   // Whitelist of only common, stable formats - see bugs 1197059 and 1203078
   GSList* pixbufFormats = gdk_pixbuf_get_formats();
   for (GSList* iter = pixbufFormats; iter; iter = iter->next) {
@@ -300,7 +367,7 @@ nsresult nsAppShell::Init() {
     gchar* name = gdk_pixbuf_format_get_name(format);
     if (strcmp(name, "jpeg") && strcmp(name, "png") && strcmp(name, "gif") &&
         strcmp(name, "bmp") && strcmp(name, "ico") && strcmp(name, "xpm") &&
-        strcmp(name, "svg")) {
+        strcmp(name, "svg") && strcmp(name, "webp") && strcmp(name, "avif")) {
       gdk_pixbuf_format_set_disabled(format, TRUE);
     }
     g_free(name);
@@ -347,20 +414,9 @@ void nsAppShell::ScheduleNativeEventCallback() {
 }
 
 bool nsAppShell::ProcessNextNativeEvent(bool mayWait) {
-  bool didProcessEvent = false;
-  if (mayWait) {
-    // Block until we get an event. If g_main_context_iteration returns false,
-    // keep calling it until it returns true. It can return false if it is
-    // interrupted by a signal, for example during profiling, and we want to
-    // ignore such interruptions.
-    while (!didProcessEvent) {
-      didProcessEvent = g_main_context_iteration(nullptr, true);
-    }
-  } else {
-    didProcessEvent = g_main_context_iteration(nullptr, false);
+  if (mSuspendNativeCount) {
+    return false;
   }
-#ifdef MOZ_WAYLAND
-  mozilla::widget::WaylandDispatchDisplays();
-#endif
+  bool didProcessEvent = g_main_context_iteration(nullptr, mayWait);
   return didProcessEvent;
 }

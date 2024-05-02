@@ -5,37 +5,31 @@
 
 add_task(async function raisesWithoutArguments({ client, tab }) {
   const { Target } = client;
-  let errorThrown = false;
-  try {
-    await Target.activateTarget();
-  } catch (e) {
-    errorThrown = true;
-  }
-  ok(errorThrown, "activateTarget raised error without an argument");
+
+  await Assert.rejects(
+    Target.activateTarget(),
+    err => err.message.includes(`Unable to find target with id`),
+    "activateTarget raised error without an argument"
+  );
 });
 
 add_task(async function raisesWithUnknownTargetId({ client, tab }) {
   const { Target } = client;
-  let errorThrown = false;
-  try {
-    await Target.activateTarget({ targetId: "-1" });
-  } catch (e) {
-    errorThrown = true;
-  }
-  ok(errorThrown, "activateTarget raised error with unkown target id");
+
+  await Assert.rejects(
+    Target.activateTarget({ targetId: "-1" }),
+    err => err.message.includes(`Unable to find target with id`),
+    "activateTarget raised error with unkown target id"
+  );
 });
 
 add_task(async function selectTabInOtherWindow({ client, tab }) {
   const { Target, target } = client;
-  is(
-    target.browsingContextId,
-    tab.linkedBrowser.browsingContext.id,
-    "Current target has expected browsing context id"
-  );
+
   const currentTargetId = target.id;
   const targets = await getDiscoveredTargets(Target);
   const filtered_targets = targets.filter(target => {
-    return target.targetInfo.targetId == currentTargetId;
+    return target.targetId == currentTargetId;
   });
   is(filtered_targets.length, 1, "The current target has been found");
   const initialTarget = filtered_targets[0];
@@ -64,7 +58,7 @@ add_task(async function selectTabInOtherWindow({ client, tab }) {
   try {
     is(newWindow, getFocusedNavigator(), "The new window is focused");
     await Target.activateTarget({
-      targetId: initialTarget.targetInfo.targetId,
+      targetId: initialTarget.targetId,
     });
     is(
       tab.ownerGlobal,

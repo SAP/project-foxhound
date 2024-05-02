@@ -5,11 +5,11 @@
 # This module produces a JSON file that provides basic build info and
 # configuration metadata.
 
-from __future__ import absolute_import, print_function, unicode_literals
-
 import json
 import os
+import platform
 import re
+
 import six
 
 
@@ -30,6 +30,7 @@ def build_dict(config, env=os.environ):
 
     d = {}
     d["topsrcdir"] = config.topsrcdir
+    d["topobjdir"] = config.topobjdir
 
     if config.mozconfig:
         d["mozconfig"] = config.mozconfig
@@ -96,8 +97,10 @@ def build_dict(config, env=os.environ):
     d["artifact"] = substs.get("MOZ_ARTIFACT_BUILDS") == "1"
     d["ccov"] = substs.get("MOZ_CODE_COVERAGE") == "1"
     d["cc_type"] = substs.get("CC_TYPE")
-    d["non_native_theme"] = True
     d["domstreams"] = substs.get("MOZ_DOM_STREAMS") == "1"
+    d["isolated_process"] = (
+        substs.get("MOZ_ANDROID_CONTENT_SERVICE_ISOLATED_PROCESS") == "1"
+    )
 
     def guess_platform():
         if d["buildapp"] == "browser":
@@ -141,6 +144,8 @@ def build_dict(config, env=os.environ):
         and "MOZ_ANDROID_MIN_SDK_VERSION" in substs
     ):
         d["android_min_sdk"] = substs["MOZ_ANDROID_MIN_SDK_VERSION"]
+
+    d["is_ubuntu"] = "Ubuntu" in platform.version()
 
     return d
 

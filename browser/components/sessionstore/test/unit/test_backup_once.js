@@ -3,19 +3,20 @@
 
 "use strict";
 
-var { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
-);
-var { SessionWorker } = ChromeUtils.import(
-  "resource:///modules/sessionstore/SessionWorker.jsm"
+const { SessionWriter } = ChromeUtils.importESModule(
+  "resource:///modules/sessionstore/SessionWriter.sys.mjs"
 );
 
-var Paths;
-var SessionFile;
+// Make sure that we have a profile before initializing SessionFile.
+const profd = do_get_profile();
+const { SessionFile } = ChromeUtils.importESModule(
+  "resource:///modules/sessionstore/SessionFile.sys.mjs"
+);
+const Paths = SessionFile.Paths;
 
 // We need a XULAppInfo to initialize SessionFile
-const { updateAppInfo } = ChromeUtils.import(
-  "resource://testing-common/AppInfo.jsm"
+const { updateAppInfo } = ChromeUtils.importESModule(
+  "resource://testing-common/AppInfo.sys.mjs"
 );
 updateAppInfo({
   name: "SessionRestoreTest",
@@ -24,15 +25,7 @@ updateAppInfo({
   platformVersion: "",
 });
 
-add_task(async function init() {
-  // Make sure that we have a profile before initializing SessionFile
-  let profd = do_get_profile();
-  SessionFile = ChromeUtils.import(
-    "resource:///modules/sessionstore/SessionFile.jsm",
-    {}
-  ).SessionFile;
-  Paths = SessionFile.Paths;
-
+add_setup(async function () {
   let source = do_get_file("data/sessionstore_valid.js");
   source.copyTo(profd, "sessionstore.js");
   await writeCompressedFile(Paths.clean.replace("jsonlz4", "js"), Paths.clean);
@@ -41,12 +34,8 @@ add_task(async function init() {
   await SessionFile.read();
 });
 
-var pathStore;
-var pathBackup;
-var decoder;
-
 function promise_check_exist(path, shouldExist) {
-  return (async function() {
+  return (async function () {
     info(
       "Ensuring that " + path + (shouldExist ? " exists" : " does not exist")
     );
@@ -59,13 +48,13 @@ function promise_check_exist(path, shouldExist) {
 }
 
 function promise_check_contents(path, expect) {
-  return (async function() {
+  return (async function () {
     info("Checking whether " + path + " has the right contents");
-    let actual = await IOUtils.readUTF8(path, {
+    let actual = await IOUtils.readJSON(path, {
       decompress: true,
     });
     Assert.deepEqual(
-      JSON.parse(actual),
+      actual,
       expect,
       `File ${path} contains the expected data.`
     );
@@ -88,7 +77,7 @@ add_task(async function test_first_write_backup() {
   await promise_check_exist(Paths.backups, false);
 
   await IOUtils.makeDirectory(Paths.backups);
-  await IOUtils.writeUTF8(Paths.clean, JSON.stringify(initial_content), {
+  await IOUtils.writeJSON(Paths.clean, initial_content, {
     compress: true,
   });
   await SessionFile.write(new_content);
@@ -111,10 +100,9 @@ add_task(async function test_first_write_backup() {
 // - $Path.recoveryBackup contains the previous data
 add_task(async function test_second_write_no_backup() {
   let new_content = generateFileContents("test_2");
-  let previous_backup_content = await IOUtils.readUTF8(Paths.recovery, {
+  let previous_backup_content = await IOUtils.readJSON(Paths.recovery, {
     decompress: true,
   });
-  previous_backup_content = JSON.parse(previous_backup_content);
 
   await IOUtils.remove(Paths.cleanBackup);
 
@@ -138,12 +126,12 @@ add_task(async function test_shutdown() {
   await IOUtils.writeUTF8(Paths.recovery, "I should disappear");
   await IOUtils.writeUTF8(Paths.recoveryBackup, "I should also disappear");
 
-  await SessionWorker.post("write", [
-    output,
-    { isFinalWrite: true, performShutdownCleanup: true },
-  ]);
+  await SessionWriter.write(output, {
+    isFinalWrite: true,
+    performShutdownCleanup: true,
+  });
 
-  Assert.equal(false, await IOUtils.exists(Paths.recovery));
-  Assert.equal(false, await IOUtils.exists(Paths.recoveryBackup));
+  Assert.ok(!(await IOUtils.exists(Paths.recovery)));
+  Assert.ok(!(await IOUtils.exists(Paths.recoveryBackup)));
   await promise_check_contents(Paths.clean, output);
 });

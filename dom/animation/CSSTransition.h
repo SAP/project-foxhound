@@ -130,7 +130,7 @@ class CSSTransition final : public Animation {
     TimeDuration mStartTime;
     double mPlaybackRate;
     TimingParams mTiming;
-    Maybe<ComputedTimingFunction> mTimingFunction;
+    Maybe<StyleComputedTimingFunction> mTimingFunction;
     AnimationValue mFromValue, mToValue;
   };
   void SetReplacedTransition(
@@ -224,22 +224,6 @@ class CSSTransition final : public Animation {
 };
 
 }  // namespace dom
-
-template <>
-struct AnimationTypeTraits<dom::CSSTransition> {
-  static nsAtom* ElementPropertyAtom() {
-    return nsGkAtoms::transitionsProperty;
-  }
-  static nsAtom* BeforePropertyAtom() {
-    return nsGkAtoms::transitionsOfBeforeProperty;
-  }
-  static nsAtom* AfterPropertyAtom() {
-    return nsGkAtoms::transitionsOfAfterProperty;
-  }
-  static nsAtom* MarkerPropertyAtom() {
-    return nsGkAtoms::transitionsOfMarkerProperty;
-  }
-};
 
 }  // namespace mozilla
 

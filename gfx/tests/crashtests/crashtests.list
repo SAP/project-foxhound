@@ -168,7 +168,7 @@ load 1467847-1.html
 load 1468020.html
 load 1470437.html
 load 1470440.html
-load 1478035.html
+pref(widget.windows.window_occlusion_tracking.enabled,false) load 1478035.html # Bug 1819154
 load 1490704-1.html
 load 1501518.html
 load 1503986-1.html
@@ -180,7 +180,7 @@ load 1513133.html
 load 1496194.html
 load 1505934-1.html
 load 1509123.html
-load 1494062-blob-image-wraplist-clip.html
+pref(widget.windows.window_occlusion_tracking.enabled,false) load 1494062-blob-image-wraplist-clip.html # Bug 1819154
 load texture-allocator-zero-region.html
 load 1524418.html
 pref(layout.css.individual-transform.enabled,true) load 1529149.html
@@ -205,7 +205,27 @@ load 1694783-1.html
 load 1695782-1.html
 load 1699013.html
 load 1700232.html
+load 1701975-1.html
 load 1704321-1.html
 load 1702638.html
 load 1730695.html
 load 1745775.html
+load 1757002.html
+load 1758127-1.html
+load 1762973-1.html
+pref(layout.css.backdrop-filter.enabled,true) load 1765667.html
+load 1768096-1.html
+pref(layout.css.backdrop-filter.enabled,true) load 1771294.html
+pref(layout.css.backdrop-filter.enabled,true) load 1771293.html
+pref(layout.css.backdrop-filter.enabled,true) load 1771556.html
+pref(layout.css.backdrop-filter.enabled,true) load 1771561.html
+load 1780567.html
+load 1681955.html
+load 1797099-1.html
+load 1799495-1.html
+load 1802382-1.html
+load 1808830.html
+load 1825450.html
+load 1683679.html
+load 1843622.html
+

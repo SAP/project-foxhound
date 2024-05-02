@@ -18,6 +18,7 @@ struct RemoteVoice {
   bool queued;
 };
 
+[ManualDealloc]
 sync protocol PSpeechSynthesis
 {
   manager PContent;
@@ -35,6 +36,8 @@ child:
 
     async NotifyVoicesChanged();
 
+    async NotifyVoicesError(nsString aError);
+
     async InitialVoicesAndState(RemoteVoice[] aVoices, nsString[] aDefaults,
                                 bool aIsSpeaking);
 
@@ -42,7 +45,7 @@ parent:
     async __delete__();
 
     async PSpeechSynthesisRequest(nsString aText, nsString aUri, nsString aLang,
-                                  float aVolume, float aRate, float aPitch, bool aIsChrome);
+                                  float aVolume, float aRate, float aPitch, bool aShouldResistFingerprinting);
 };
 
 } // namespace dom

@@ -61,7 +61,7 @@ add_task(async function setup() {
 
   for (let addon of ADDONS) {
     let manifest = {
-      applications: { gecko: { id: addon.id } },
+      browser_specific_settings: { gecko: { id: addon.id } },
       permissions: addon.dependencies,
     };
 
@@ -69,7 +69,7 @@ add_task(async function setup() {
   }
 });
 
-add_task(async function() {
+add_task(async function () {
   deepEqual(events, [], "Should have no events");
 
   await promiseInstallFile(addonFiles[3]);

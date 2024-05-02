@@ -2,9 +2,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this file,
 # You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import
-
-import six
 import json
 import os
 import platform
@@ -12,11 +9,12 @@ import tempfile
 import time
 import uuid
 from abc import ABCMeta, abstractmethod, abstractproperty
-from shutil import copytree
 from io import open
+from shutil import copytree
 
 import mozfile
-from six import string_types, python_2_unicode_compatible
+import six
+from six import python_2_unicode_compatible, string_types
 
 if six.PY3:
 
@@ -152,7 +150,7 @@ class BaseProfile(object):
             tempdir = tempfile.mkdtemp()  # need an unused temp dir name
             mozfile.remove(tempdir)  # copytree requires that dest does not exist
             path_to = tempdir
-        copytree(path_from, path_to, ignore=ignore)
+        copytree(path_from, path_to, ignore=ignore, ignore_dangling_symlinks=True)
 
         c = cls(path_to, **kwargs)
         c.create_new = True  # deletes a cloned profile when restore is True
@@ -248,7 +246,7 @@ class Profile(BaseProfile):
         # Set additional preferences
         self.set_preferences(self._preferences)
 
-        self.permissions = Permissions(self.profile, self._locations)
+        self.permissions = Permissions(self._locations)
         prefs_js, user_js = self.permissions.network_prefs(self._proxy)
 
         if self._whitelistpaths:
@@ -293,8 +291,6 @@ class Profile(BaseProfile):
             self.clean_preferences()
             if getattr(self, "addons", None) is not None:
                 self.addons.clean()
-            if getattr(self, "permissions", None) is not None:
-                self.permissions.clean_db()
         super(Profile, self).cleanup()
 
     def clean_preferences(self):
@@ -414,7 +410,6 @@ class Profile(BaseProfile):
         for prefs_file in ("user.js", "prefs.js"):
             path = os.path.join(self.profile, prefs_file)
             if os.path.exists(path):
-
                 # prefs that get their own section
                 # This is currently only 'network.proxy.autoconfig_url'
                 # but could be expanded to include others

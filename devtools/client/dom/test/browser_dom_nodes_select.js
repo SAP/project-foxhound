@@ -8,12 +8,12 @@ const TEST_PAGE_URL = URL_ROOT + "page_dom_nodes.html";
 /**
  * Checks whether hovering nodes highlight them in the content page
  */
-add_task(async function() {
+add_task(async function () {
   info("Test DOM panel node highlight started");
 
   const { panel, tab } = await addTestTab(TEST_PAGE_URL);
-  const toolbox = await gDevTools.getToolboxForTab(tab);
-  const node = getRowByIndex(panel, 2);
+  const toolbox = gDevTools.getToolboxForTab(tab);
+  const node = getRowByIndex(panel, 0);
 
   // Loading the inspector panel at first, to make it possible to listen for
   // new node selections

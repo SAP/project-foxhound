@@ -9,13 +9,13 @@ fn name_annotations() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn assert_module_name(name: &str, wat: &str) -> anyhow::Result<()> {
+fn assert_module_name(expected_name: &str, wat: &str) -> anyhow::Result<()> {
     let wasm = wat::parse_str(wat)?;
     let mut found = false;
     for s in get_name_section(&wasm)? {
         match s? {
-            Name::Module(n) => {
-                assert_eq!(n.get_name()?, name);
+            Name::Module { name, .. } => {
+                assert_eq!(name, expected_name);
                 found = true;
             }
             _ => {}
@@ -40,8 +40,7 @@ fn assert_func_name(name: &str, wat: &str) -> anyhow::Result<()> {
     for s in get_name_section(&wasm)? {
         match s? {
             Name::Function(n) => {
-                let mut map = n.get_map()?;
-                let naming = map.read()?;
+                let naming = n.into_iter().next().unwrap()?;
                 assert_eq!(naming.index, 0);
                 assert_eq!(naming.name, name);
                 found = true;
@@ -78,10 +77,14 @@ fn assert_local_name(name: &str, wat: &str) -> anyhow::Result<()> {
     for s in get_name_section(&wasm)? {
         match s? {
             Name::Local(n) => {
-                let mut reader = n.get_indirect_map()?;
-                let section = reader.read()?;
-                let mut map = section.get_map()?;
-                let naming = map.read()?;
+                let naming = n
+                    .into_iter()
+                    .next()
+                    .unwrap()?
+                    .names
+                    .into_iter()
+                    .next()
+                    .unwrap()?;
                 assert_eq!(naming.index, 0);
                 assert_eq!(naming.name, name);
                 found = true;
@@ -95,14 +98,10 @@ fn assert_local_name(name: &str, wat: &str) -> anyhow::Result<()> {
 
 fn get_name_section(wasm: &[u8]) -> anyhow::Result<NameSectionReader<'_>> {
     for payload in Parser::new(0).parse_all(&wasm) {
-        if let Payload::CustomSection {
-            name: "name",
-            data,
-            data_offset,
-            range: _,
-        } = payload?
-        {
-            return Ok(NameSectionReader::new(data, data_offset)?);
+        if let Payload::CustomSection(c) = payload? {
+            if c.name() == "name" {
+                return Ok(NameSectionReader::new(c.data(), c.data_offset()));
+            }
         }
     }
     panic!("no name section found");
@@ -110,7 +109,7 @@ fn get_name_section(wasm: &[u8]) -> anyhow::Result<NameSectionReader<'_>> {
 
 #[test]
 fn custom_section_order() -> anyhow::Result<()> {
-    let wasm = wat::parse_str(
+    let bytes = wat::parse_str(
         r#"
             (module
               (@custom "A" "aaa")
@@ -131,33 +130,71 @@ fn custom_section_order() -> anyhow::Result<()> {
         "#,
     )?;
     macro_rules! assert_matches {
-        ($a:expr, $b:pat $(,)?) => {
+        ($a:expr, $b:pat $(if $cond:expr)? $(,)?) => {
             match &$a {
-                $b => {}
+                $b $(if $cond)? => {}
                 a => panic!("`{:?}` doesn't match `{}`", a, stringify!($b)),
             }
         };
     }
     let wasm = Parser::new(0)
-        .parse_all(&wasm)
+        .parse_all(&bytes)
         .collect::<Result<Vec<_>>>()?;
     assert_matches!(wasm[0], Payload::Version { .. });
-    assert_matches!(wasm[1], Payload::CustomSection { name: "K", .. });
-    assert_matches!(wasm[2], Payload::CustomSection { name: "F", .. });
+    assert_matches!(
+        wasm[1],
+        Payload::CustomSection(c) if c.name() == "K"
+    );
+    assert_matches!(
+        wasm[2],
+        Payload::CustomSection(c) if c.name() == "F"
+    );
     assert_matches!(wasm[3], Payload::TypeSection(_));
-    assert_matches!(wasm[4], Payload::CustomSection { name: "E", .. });
-    assert_matches!(wasm[5], Payload::CustomSection { name: "C", .. });
-    assert_matches!(wasm[6], Payload::CustomSection { name: "J", .. });
+    assert_matches!(
+        wasm[4],
+        Payload::CustomSection(c) if c.name() == "E"
+    );
+    assert_matches!(
+        wasm[5],
+        Payload::CustomSection(c) if c.name() == "C"
+    );
+    assert_matches!(
+        wasm[6],
+        Payload::CustomSection(c) if c.name() == "J"
+    );
     assert_matches!(wasm[7], Payload::FunctionSection(_));
-    assert_matches!(wasm[8], Payload::CustomSection { name: "B", .. });
-    assert_matches!(wasm[9], Payload::CustomSection { name: "I", .. });
+    assert_matches!(
+        wasm[8],
+        Payload::CustomSection(c) if c.name() == "B"
+    );
+    assert_matches!(
+        wasm[9],
+        Payload::CustomSection(c) if c.name() == "I"
+    );
     assert_matches!(wasm[10], Payload::TableSection(_));
     assert_matches!(wasm[11], Payload::CodeSectionStart { .. });
     assert_matches!(wasm[12], Payload::CodeSectionEntry { .. });
-    assert_matches!(wasm[13], Payload::CustomSection { name: "H", .. });
-    assert_matches!(wasm[14], Payload::CustomSection { name: "G", .. });
-    assert_matches!(wasm[15], Payload::CustomSection { name: "A", .. });
-    assert_matches!(wasm[16], Payload::CustomSection { name: "D", .. });
-    assert_matches!(wasm[17], Payload::End);
+    assert_matches!(
+        wasm[13],
+        Payload::CustomSection(c) if c.name() == "H"
+    );
+    assert_matches!(
+        wasm[14],
+        Payload::CustomSection(c) if c.name() == "G"
+    );
+    assert_matches!(
+        wasm[15],
+        Payload::CustomSection(c) if c.name() == "A"
+    );
+    assert_matches!(
+        wasm[16],
+        Payload::CustomSection(c) if c.name() == "D"
+    );
+
+    match &wasm[17] {
+        Payload::End(x) if *x == bytes.len() => {}
+        p => panic!("`{:?}` doesn't match expected length of {}", p, bytes.len()),
+    }
+
     Ok(())
 }

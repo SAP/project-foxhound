@@ -15,6 +15,18 @@ interface WrapperCachedNonISupportsTestInterface {
   [Pref="dom.webidl.test1"] constructor();
 };
 
+[Trial="TestTrial", Exposed=*]
+interface TestTrialInterface {
+  constructor();
+};
+
+[Pref="dom.expose_test_interfaces",
+ Exposed=Window]
+interface TestInterfaceLength {
+  [ChromeOnly]
+  constructor(boolean arg);
+};
+
 // The type of string C++ sees.
 enum StringType {
   "literal",      // A string with the LITERAL flag.
@@ -29,7 +41,7 @@ interface TestFunctions {
   constructor();
 
   [Throws]
-  static void throwUncatchableException();
+  static undefined throwUncatchableException();
 
   // Simply returns its argument.  Can be used to test Promise
   // argument processing behavior.
@@ -40,7 +52,7 @@ interface TestFunctions {
   static Promise<any> passThroughCallbackPromise(PromiseReturner callback);
 
   // Some basic tests for string binding round-tripping behavior.
-  void setStringData(DOMString arg);
+  undefined setStringData(DOMString arg);
 
   // Get the string data, using an nsAString argument on the C++ side.
   // This will just use Assign/operator=, whatever that does.
@@ -78,9 +90,9 @@ interface TestFunctions {
 
   // Functions that just punch through to mozITestInterfaceJS.idl
   [Throws]
-  void testThrowNsresult();
+  undefined testThrowNsresult();
   [Throws]
-  void testThrowNsresultFromNative();
+  undefined testThrowNsresultFromNative();
 
   // Throws an InvalidStateError to auto-create a rejected promise.
   [Throws]
@@ -121,14 +133,17 @@ interface TestFunctions {
   attribute sequence<ArrayBuffer> sequenceOfArrayBuffer;
   [Cached, Pure, GetterThrows]
   attribute sequence<[AllowShared] ArrayBuffer> sequenceOfAllowSharedArrayBuffer;
-  void testNotAllowShared(ArrayBufferView buffer);
-  void testNotAllowShared(ArrayBuffer buffer);
-  void testNotAllowShared(DOMString buffer);
-  void testAllowShared([AllowShared] ArrayBufferView buffer);
-  void testAllowShared([AllowShared] ArrayBuffer buffer);
-  void testDictWithAllowShared(optional DictWithAllowSharedBufferSource buffer = {});
-  void testUnionOfBuffferSource((ArrayBuffer or ArrayBufferView or DOMString) foo);
-  void testUnionOfAllowSharedBuffferSource(([AllowShared] ArrayBuffer or [AllowShared] ArrayBufferView) foo);
+  undefined testNotAllowShared(ArrayBufferView buffer);
+  undefined testNotAllowShared(ArrayBuffer buffer);
+  undefined testNotAllowShared(DOMString buffer);
+  undefined testAllowShared([AllowShared] ArrayBufferView buffer);
+  undefined testAllowShared([AllowShared] ArrayBuffer buffer);
+  undefined testDictWithAllowShared(optional DictWithAllowSharedBufferSource buffer = {});
+  undefined testUnionOfBuffferSource((ArrayBuffer or ArrayBufferView or DOMString) foo);
+  undefined testUnionOfAllowSharedBuffferSource(([AllowShared] ArrayBuffer or [AllowShared] ArrayBufferView) foo);
+
+  boolean staticAndNonStaticOverload();
+  static boolean staticAndNonStaticOverload(optional unsigned long foo);
 };
 
 dictionary DictWithAllowSharedBufferSource {

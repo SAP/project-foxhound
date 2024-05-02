@@ -3,9 +3,11 @@
  * http://creativecommons.org/publicdomain/zero/1.0/
  */
 
-const { AppConstants } = Cu.import("resource://gre/modules/AppConstants.jsm");
-const { TelemetryTestUtils } = Cu.import(
-  "resource://testing-common/TelemetryTestUtils.jsm"
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
+);
+const { TelemetryTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/TelemetryTestUtils.sys.mjs"
 );
 
 const storageDirName = "storage";
@@ -783,9 +785,8 @@ async function testSteps() {
 
     info(`Verifying ${histogramName} histogram for the main key ${mainKey}`);
 
-    const histogram = TelemetryTestUtils.getAndClearKeyedHistogram(
-      histogramName
-    );
+    const histogram =
+      TelemetryTestUtils.getAndClearKeyedHistogram(histogramName);
 
     for (const expectedInitResult of [false, true]) {
       info(

@@ -3,6 +3,7 @@
  * http://creativecommons.org/publicdomain/zero/1.0/
  */
 
+/* exported testGenerator */
 var testGenerator = testSteps();
 
 function* testSteps() {
@@ -81,7 +82,7 @@ function* testSteps() {
 
       let keyIndex = 0;
 
-      index.openCursor().onsuccess = function(event) {
+      index.openCursor().onsuccess = function (event) {
         let cursor = event.target.result;
         if (!cursor) {
           continueToNextStep();
@@ -101,7 +102,7 @@ function* testSteps() {
           let obj = cursor.value;
           obj.updated = true;
 
-          cursor.update(obj).onsuccess = function(event) {
+          cursor.update(obj).onsuccess = function (event) {
             ok(true, "Object updated");
             cursor.continue();
             keyIndex++;
@@ -109,7 +110,7 @@ function* testSteps() {
           return;
         }
 
-        cursor.delete().onsuccess = function(event) {
+        cursor.delete().onsuccess = function (event) {
           ok(true, "Object deleted");
           cursor.continue();
           keyIndex++;
@@ -124,7 +125,7 @@ function* testSteps() {
       db
         .transaction(objectStoreName)
         .objectStore(objectStoreName)
-        .openCursor().onsuccess = function(event) {
+        .openCursor().onsuccess = function (event) {
         let cursor = event.target.result;
         if (!cursor) {
           continueToNextStep();

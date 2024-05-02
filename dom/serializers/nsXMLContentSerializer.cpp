@@ -157,7 +157,7 @@ nsresult nsXMLContentSerializer::AppendTextData(nsIContent* aNode,
     const char16_t* strStart = frag->Get2b() + aStartOffset;
     if (aTranslateEntities) {
       // Taintfox: propagate taint
-      aStr.Taint().concat(frag->Taint().safeCopy().subtaint(aStartOffset, endoffset), aStr.Length());
+      aStr.Taint().concat(frag->Taint().safeSubTaint(aStartOffset, endoffset), aStr.Length());
       NS_ENSURE_TRUE(AppendAndTranslateEntities(
                          Substring(strStart, strStart + length), aStr),
                      NS_ERROR_OUT_OF_MEMORY);
@@ -177,7 +177,7 @@ nsresult nsXMLContentSerializer::AppendTextData(nsIContent* aNode,
                      NS_ERROR_OUT_OF_MEMORY);
     } else {
       // Taintfox: propagate taint
-      aStr.Taint().concat(frag->Taint().safeCopy().subtaint(aStartOffset, endoffset), aStr.Length());
+      aStr.Taint().concat(frag->Taint().safeSubTaint(aStartOffset, endoffset), aStr.Length());
       NS_ENSURE_TRUE(aStr.Append(utf16, mozilla::fallible),
                      NS_ERROR_OUT_OF_MEMORY);
     }
@@ -593,6 +593,13 @@ bool nsXMLContentSerializer::SerializeAttr(const nsAString& aPrefix,
                                            const nsAString& aValue,
                                            nsAString& aStr,
                                            bool aDoEscapeEntities) {
+  // Because this method can short-circuit AppendToString for raw output, we
+  // need to make sure that we're not inappropriately serializing attributes
+  // from outside the body
+  if (mBodyOnly && !mInBody) {
+    return true;
+  }
+
   nsAutoString attrString_;
   // For innerHTML we can do faster appending without
   // temporary strings.
@@ -669,12 +676,17 @@ bool nsXMLContentSerializer::SerializeAttr(const nsAString& aPrefix,
     NS_ENSURE_TRUE(attrString.Append(sValue, mozilla::fallible), false);
     NS_ENSURE_TRUE(attrString.Append(cDelimiter, mozilla::fallible), false);
   }
-  if (mDoRaw || PreLevel() > 0) {
-    NS_ENSURE_TRUE(AppendToStringConvertLF(attrString, aStr), false);
-  } else if (mDoFormat) {
-    NS_ENSURE_TRUE(AppendToStringFormatedWrapped(attrString, aStr), false);
-  } else if (mDoWrap) {
-    NS_ENSURE_TRUE(AppendToStringWrapped(attrString, aStr), false);
+
+  if (mDoWrap && mColPos + attrString.Length() > mMaxColumn) {
+    // Attr would cause us to overrun the max width, so begin a new line.
+    NS_ENSURE_TRUE(AppendNewLineToString(aStr), false);
+
+    // Chomp the leading space.
+    nsDependentSubstring chomped(attrString, 1);
+    if (mDoFormat && mIndent.Length() + chomped.Length() <= mMaxColumn) {
+      NS_ENSURE_TRUE(AppendIndentation(aStr), false);
+    }
+    NS_ENSURE_TRUE(AppendToStringConvertLF(chomped, aStr), false);
   } else {
     NS_ENSURE_TRUE(AppendToStringConvertLF(attrString, aStr), false);
   }
@@ -1245,7 +1257,7 @@ bool nsXMLContentSerializer::AppendAndTranslateEntities(
 
     // Taintfox: propagate taint for non replaced chars
     aOutputStr.Taint().concat(
-                              aStr.Taint().safeCopy().subtaint(chunkStart, chunkStart + advanceLength),
+                              aStr.Taint().safeSubTaint(chunkStart, chunkStart + advanceLength),
                               aOutputStr.Length());
 
     NS_ENSURE_TRUE(
@@ -1570,6 +1582,19 @@ bool nsXMLContentSerializer::AppendWrapped_NonWhitespaceSequence(
             MOZ_ASSERT(nextWrapPosition.isSome(),
                        "We should've exited the loop when reaching the end of "
                        "text in the previous iteration!");
+
+            // Trim space at the tail. UAX#14 doesn't have break opportunity
+            // for ASCII space at the tail.
+            const Maybe<uint32_t> originalNextWrapPosition = nextWrapPosition;
+            while (*nextWrapPosition > 0 &&
+                   subSeq.at(*nextWrapPosition - 1) == 0x20) {
+              nextWrapPosition = Some(*nextWrapPosition - 1);
+            }
+            if (*nextWrapPosition == 0) {
+              // Restore the original nextWrapPosition.
+              nextWrapPosition = originalNextWrapPosition;
+            }
+
             if (aSequenceStart + *nextWrapPosition > aPos) {
               break;
             }
@@ -1812,7 +1837,7 @@ bool nsXMLContentSerializer::MaybeSerializeIsValue(Element* aElement,
   CustomElementData* ceData = aElement->GetCustomElementData();
   if (ceData) {
     nsAtom* isAttr = ceData->GetIs(aElement);
-    if (isAttr && !aElement->HasAttr(kNameSpaceID_None, nsGkAtoms::is)) {
+    if (isAttr && !aElement->HasAttr(nsGkAtoms::is)) {
       NS_ENSURE_TRUE(aStr.AppendLiteral(" is=\"", mozilla::fallible), false);
       NS_ENSURE_TRUE(
           aStr.Append(nsDependentAtomString(isAttr), mozilla::fallible), false);

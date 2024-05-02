@@ -7,6 +7,7 @@
 #include "AccessCheck.h"
 #include "base/basictypes.h"
 #include "ipc/IPCMessageUtils.h"
+#include "ipc/IPCMessageUtilsSpecializations.h"
 #include "mozilla/EventDispatcher.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/ContentEvents.h"
@@ -27,6 +28,7 @@
 #include "mozilla/dom/DocumentInlines.h"
 #include "mozilla/dom/Event.h"
 #include "mozilla/dom/ShadowRoot.h"
+#include "mozilla/dom/WorkerScope.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/SVGUtils.h"
 #include "mozilla/SVGOuterSVGFrame.h"
@@ -34,7 +36,7 @@
 #include "nsCOMPtr.h"
 #include "nsDeviceContext.h"
 #include "nsError.h"
-#include "nsGlobalWindow.h"
+#include "nsGlobalWindowInner.h"
 #include "nsIFrame.h"
 #include "nsIContent.h"
 #include "nsIContentInlines.h"
@@ -59,6 +61,9 @@ void Event::ConstructorInit(EventTarget* aOwner, nsPresContext* aPresContext,
                             WidgetEvent* aEvent) {
   SetOwner(aOwner);
   mIsMainThreadEvent = NS_IsMainThread();
+  if (mIsMainThreadEvent) {
+    mRefCnt.SetIsOnMainThread();
+  }
 
   mPrivateDataDuplicated = false;
   mWantsPopupControlCheck = false;
@@ -93,7 +98,6 @@ void Event::ConstructorInit(EventTarget* aOwner, nsPresContext* aPresContext,
         }
      */
     mEvent = new WidgetEvent(false, eVoidEvent);
-    mEvent->mTime = PR_Now();
   }
 
   InitPresContextData(aPresContext);
@@ -104,8 +108,9 @@ void Event::InitPresContextData(nsPresContext* aPresContext) {
   // Get the explicit original target (if it's anonymous make it null)
   {
     nsCOMPtr<nsIContent> content = GetTargetFromFrame();
-    mExplicitOriginalTarget = content;
-    if (content && content->IsInNativeAnonymousSubtree()) {
+    if (content && !content->IsInNativeAnonymousSubtree()) {
+      mExplicitOriginalTarget = std::move(content);
+    } else {
       mExplicitOriginalTarget = nullptr;
     }
   }
@@ -128,11 +133,7 @@ NS_INTERFACE_MAP_END
 NS_IMPL_CYCLE_COLLECTING_ADDREF(Event)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(Event)
 
-NS_IMPL_CYCLE_COLLECTION_CLASS(Event)
-
-NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN(Event)
-  NS_IMPL_CYCLE_COLLECTION_TRACE_PRESERVED_WRAPPER
-NS_IMPL_CYCLE_COLLECTION_TRACE_END
+NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(Event)
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(Event)
   if (tmp->mEventIsInternal) {
@@ -238,9 +239,12 @@ already_AddRefed<Document> Event::GetDocument() const {
     return nullptr;
   }
 
-  nsCOMPtr<nsPIDOMWindowInner> win =
-      do_QueryInterface(eventTarget->GetOwnerGlobal());
+  nsIGlobalObject* global = eventTarget->GetOwnerGlobal();
+  if (!global) {
+    return nullptr;
+  }
 
+  nsPIDOMWindowInner* win = global->GetAsInnerWindow();
   if (!win) {
     return nullptr;
   }
@@ -292,7 +296,7 @@ EventTarget* Event::GetOriginalTarget() const {
 
 EventTarget* Event::GetComposedTarget() const {
   EventTarget* et = GetOriginalTarget();
-  nsCOMPtr<nsIContent> content = do_QueryInterface(et);
+  nsIContent* content = nsIContent::FromEventTargetOrNull(et);
   if (!content) {
     return et;
   }
@@ -320,7 +324,7 @@ bool Event::ShouldIgnoreChromeEventTargetListener() const {
   if (NS_WARN_IF(!global)) {
     return false;
   }
-  nsPIDOMWindowInner* win = global->AsInnerWindow();
+  nsPIDOMWindowInner* win = global->GetAsInnerWindow();
   if (NS_WARN_IF(!win)) {
     return false;
   }
@@ -338,14 +342,13 @@ bool Event::Init(mozilla::dom::EventTarget* aGlobal) {
     return IsCurrentThreadRunningChromeWorker();
   }
   bool trusted = false;
-  nsCOMPtr<nsPIDOMWindowInner> w = do_QueryInterface(aGlobal);
-  if (w) {
-    nsCOMPtr<Document> d = w->GetExtantDoc();
-    if (d) {
-      trusted = nsContentUtils::IsChromeDoc(d);
-      nsPresContext* presContext = d->GetPresContext();
-      if (presContext) {
-        InitPresContextData(presContext);
+  if (aGlobal) {
+    if (nsPIDOMWindowInner* w = aGlobal->GetAsInnerWindow()) {
+      if (Document* d = w->GetExtantDoc()) {
+        trusted = nsContentUtils::IsChromeDoc(d);
+        if (nsPresContext* presContext = d->GetPresContext()) {
+          InitPresContextData(presContext);
+        }
       }
     }
   }
@@ -374,10 +377,8 @@ already_AddRefed<Event> Event::Constructor(EventTarget* aEventTarget,
 }
 
 uint16_t Event::EventPhase() const {
-  // Note, remember to check that this works also
-  // if or when Bug 235441 is fixed.
   if ((mEvent->mCurrentTarget && mEvent->mCurrentTarget == mEvent->mTarget) ||
-      mEvent->mFlags.InTargetPhase()) {
+      mEvent->mFlags.mInTargetPhase) {
     return Event_Binding::AT_TARGET;
   }
   if (mEvent->mFlags.mInCapturePhase) {
@@ -420,13 +421,15 @@ void Event::PreventDefaultInternal(bool aCalledByDefaultHandler,
     return;
   }
   if (mEvent->mFlags.mInPassiveListener) {
-    nsCOMPtr<nsPIDOMWindowInner> win(do_QueryInterface(mOwner));
-    if (win) {
+    if (nsPIDOMWindowInner* win = mOwner->GetAsInnerWindow()) {
       if (Document* doc = win->GetExtantDoc()) {
-        AutoTArray<nsString, 1> params;
-        GetType(*params.AppendElement());
-        doc->WarnOnceAbout(Document::ePreventDefaultFromPassiveListener, false,
-                           params);
+        if (!doc->HasWarnedAbout(
+                Document::ePreventDefaultFromPassiveListener)) {
+          AutoTArray<nsString, 1> params;
+          GetType(*params.AppendElement());
+          doc->WarnOnceAbout(Document::ePreventDefaultFromPassiveListener,
+                             false, params);
+        }
       }
     }
     return;
@@ -438,19 +441,32 @@ void Event::PreventDefaultInternal(bool aCalledByDefaultHandler,
     return;
   }
 
+  if (mEvent->mClass == eDragEventClass) {
+    UpdateDefaultPreventedOnContentForDragEvent();
+  }
+}
+
+void Event::UpdateDefaultPreventedOnContentForDragEvent() {
   WidgetDragEvent* dragEvent = mEvent->AsDragEvent();
   if (!dragEvent) {
     return;
   }
 
   nsIPrincipal* principal = nullptr;
-  nsCOMPtr<nsINode> node =
-      nsINode::FromEventTargetOrNull(mEvent->mCurrentTarget);
+  // Since we now have HTMLEditorEventListener registered on nsWindowRoot,
+  // mCurrentTarget could be nsWindowRoot, so we need to use
+  // mTarget if that's the case.
+  MOZ_ASSERT_IF(dragEvent->mInHTMLEditorEventListener,
+                mEvent->mCurrentTarget->IsRootWindow());
+  EventTarget* target = dragEvent->mInHTMLEditorEventListener
+                            ? mEvent->mTarget
+                            : mEvent->mCurrentTarget;
+
+  nsINode* node = nsINode::FromEventTargetOrNull(target);
   if (node) {
     principal = node->NodePrincipal();
   } else {
-    nsCOMPtr<nsIScriptObjectPrincipal> sop =
-        do_QueryInterface(mEvent->mCurrentTarget);
+    nsCOMPtr<nsIScriptObjectPrincipal> sop = do_QueryInterface(target);
     if (sop) {
       principal = sop->GetPrincipal();
     }
@@ -545,11 +561,11 @@ bool Event::IsDispatchStopped() { return mEvent->PropagationStopped(); }
 WidgetEvent* Event::WidgetEventPtr() { return mEvent; }
 
 // static
-CSSIntPoint Event::GetScreenCoords(nsPresContext* aPresContext,
-                                   WidgetEvent* aEvent,
-                                   LayoutDeviceIntPoint aPoint) {
+Maybe<CSSIntPoint> Event::GetScreenCoords(nsPresContext* aPresContext,
+                                          WidgetEvent* aEvent,
+                                          LayoutDeviceIntPoint aPoint) {
   if (PointerLockManager::IsLocked()) {
-    return EventStateManager::sLastScreenPoint;
+    return Some(EventStateManager::sLastScreenPoint);
   }
 
   if (!aEvent || (aEvent->mClass != eMouseEventClass &&
@@ -559,14 +575,14 @@ CSSIntPoint Event::GetScreenCoords(nsPresContext* aPresContext,
                   aEvent->mClass != eTouchEventClass &&
                   aEvent->mClass != eDragEventClass &&
                   aEvent->mClass != eSimpleGestureEventClass)) {
-    return CSSIntPoint(0, 0);
+    return Nothing();
   }
 
   // Doing a straight conversion from LayoutDeviceIntPoint to CSSIntPoint
   // seem incorrect, but it is needed to maintain legacy functionality.
   WidgetGUIEvent* guiEvent = aEvent->AsGUIEvent();
   if (!aPresContext || !(guiEvent && guiEvent->mWidget)) {
-    return CSSIntPoint(aPoint.x, aPoint.y);
+    return Some(CSSIntPoint(aPoint.x, aPoint.y));
   }
 
   // (Potentially) transform the point from the coordinate space of an
@@ -581,14 +597,13 @@ CSSIntPoint Event::GetScreenCoords(nsPresContext* aPresContext,
   LayoutDeviceIntPoint rounded = RoundedToInt(topLevelPoint);
 
   nsPoint pt = LayoutDevicePixel::ToAppUnits(
-      rounded,
-      aPresContext->DeviceContext()->AppUnitsPerDevPixelAtUnitFullZoom());
+      rounded, aPresContext->DeviceContext()->AppUnitsPerDevPixel());
 
   pt += LayoutDevicePixel::ToAppUnits(
       guiEvent->mWidget->TopLevelWidgetToScreenOffset(),
-      aPresContext->DeviceContext()->AppUnitsPerDevPixelAtUnitFullZoom());
+      aPresContext->DeviceContext()->AppUnitsPerDevPixel());
 
-  return CSSPixel::FromAppUnitsRounded(pt);
+  return Some(CSSPixel::FromAppUnitsRounded(pt));
 }
 
 // static
@@ -750,7 +765,7 @@ double Event::TimeStamp() {
       return 0.0;
     }
 
-    nsCOMPtr<nsPIDOMWindowInner> win = do_QueryInterface(mOwner);
+    nsPIDOMWindowInner* win = mOwner->GetAsInnerWindow();
     if (NS_WARN_IF(!win)) {
       return 0.0;
     }
@@ -765,9 +780,7 @@ double Event::TimeStamp() {
     MOZ_ASSERT(mOwner->PrincipalOrNull());
 
     return nsRFPService::ReduceTimePrecisionAsMSecs(
-        ret, perf->GetRandomTimelineSeed(),
-        mOwner->PrincipalOrNull()->IsSystemPrincipal(),
-        mOwner->CrossOriginIsolated());
+        ret, perf->GetRandomTimelineSeed(), perf->GetRTPCallerType());
   }
 
   WorkerPrivate* workerPrivate = GetCurrentThreadWorkerPrivate();
@@ -777,42 +790,42 @@ double Event::TimeStamp() {
 
   return nsRFPService::ReduceTimePrecisionAsMSecs(
       ret, workerPrivate->GetRandomTimelineSeed(),
-      workerPrivate->UsesSystemPrincipal(),
-      workerPrivate->CrossOriginIsolated());
+      workerPrivate->GlobalScope()->GetRTPCallerType());
 }
 
-void Event::Serialize(IPC::Message* aMsg, bool aSerializeInterfaceType) {
+void Event::Serialize(IPC::MessageWriter* aWriter,
+                      bool aSerializeInterfaceType) {
   if (aSerializeInterfaceType) {
-    IPC::WriteParam(aMsg, u"event"_ns);
+    IPC::WriteParam(aWriter, u"event"_ns);
   }
 
   nsString type;
   GetType(type);
-  IPC::WriteParam(aMsg, type);
+  IPC::WriteParam(aWriter, type);
 
-  IPC::WriteParam(aMsg, Bubbles());
-  IPC::WriteParam(aMsg, Cancelable());
-  IPC::WriteParam(aMsg, IsTrusted());
-  IPC::WriteParam(aMsg, Composed());
+  IPC::WriteParam(aWriter, Bubbles());
+  IPC::WriteParam(aWriter, Cancelable());
+  IPC::WriteParam(aWriter, IsTrusted());
+  IPC::WriteParam(aWriter, Composed());
 
   // No timestamp serialization for now!
 }
 
-bool Event::Deserialize(const IPC::Message* aMsg, PickleIterator* aIter) {
+bool Event::Deserialize(IPC::MessageReader* aReader) {
   nsString type;
-  NS_ENSURE_TRUE(IPC::ReadParam(aMsg, aIter, &type), false);
+  NS_ENSURE_TRUE(IPC::ReadParam(aReader, &type), false);
 
   bool bubbles = false;
-  NS_ENSURE_TRUE(IPC::ReadParam(aMsg, aIter, &bubbles), false);
+  NS_ENSURE_TRUE(IPC::ReadParam(aReader, &bubbles), false);
 
   bool cancelable = false;
-  NS_ENSURE_TRUE(IPC::ReadParam(aMsg, aIter, &cancelable), false);
+  NS_ENSURE_TRUE(IPC::ReadParam(aReader, &cancelable), false);
 
   bool trusted = false;
-  NS_ENSURE_TRUE(IPC::ReadParam(aMsg, aIter, &trusted), false);
+  NS_ENSURE_TRUE(IPC::ReadParam(aReader, &trusted), false);
 
   bool composed = false;
-  NS_ENSURE_TRUE(IPC::ReadParam(aMsg, aIter, &composed), false);
+  NS_ENSURE_TRUE(IPC::ReadParam(aReader, &composed), false);
 
   InitEvent(type, bubbles, cancelable);
   SetTrusted(trusted);
@@ -828,15 +841,13 @@ void Event::SetOwner(EventTarget* aOwner) {
     return;
   }
 
-  nsCOMPtr<nsINode> n = do_QueryInterface(aOwner);
-  if (n) {
+  if (nsINode* n = aOwner->GetAsNode()) {
     mOwner = n->OwnerDoc()->GetScopeObject();
     return;
   }
 
-  nsCOMPtr<nsPIDOMWindowInner> w = do_QueryInterface(aOwner);
-  if (w) {
-    mOwner = do_QueryInterface(w);
+  if (nsPIDOMWindowInner* w = aOwner->GetAsInnerWindow()) {
+    mOwner = w->AsGlobal();
     return;
   }
 
@@ -861,7 +872,7 @@ void Event::GetWidgetEventType(WidgetEvent* aEvent, nsAString& aType) {
   const char16_t* name = GetEventName(aEvent->mMessage);
 
   if (name) {
-    aType.Assign(name);
+    aType.AssignLiteral(name, nsString::char_traits::length(name));
     return;
   } else if (aEvent->mMessage == eUnidentifiedEvent &&
              aEvent->mSpecifiedEventType) {

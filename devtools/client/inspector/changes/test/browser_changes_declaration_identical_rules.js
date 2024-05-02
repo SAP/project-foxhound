@@ -20,7 +20,7 @@ const TEST_URI = `
   <div></div>
 `;
 
-add_task(async function() {
+add_task(async function () {
   await addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
   const { inspector, view: ruleView } = await openRuleView();
   const { document: doc, store } = selectChangesView(inspector);
@@ -31,13 +31,13 @@ add_task(async function() {
 
   let onTrackChange;
 
-  onTrackChange = waitUntilAction(store, "TRACK_CHANGE");
+  onTrackChange = waitForDispatch(store, "TRACK_CHANGE");
   info("Disable the declaration in the first rule");
   await togglePropStatus(ruleView, prop1);
   info("Wait for change to be tracked");
   await onTrackChange;
 
-  onTrackChange = waitUntilAction(store, "TRACK_CHANGE");
+  onTrackChange = waitForDispatch(store, "TRACK_CHANGE");
   info("Disable the declaration in the second rule");
   await togglePropStatus(ruleView, prop2);
   info("Wait for change to be tracked");

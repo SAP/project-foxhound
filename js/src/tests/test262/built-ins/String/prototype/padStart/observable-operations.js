@@ -32,7 +32,8 @@ var result = String.prototype.padStart.call(receiver, maxLength, fillString);
 
 assert.sameValue(result, 'defdefdeabc');
 
-assert.sameValue(log, '|' + [
+// Taintfox: We change the semantics by calling toString/valueOf internally, so changed to startsWith
+assert.startsWith(log, '|' + [
   'toString:receiver',
   'valueOf:receiver',
   'valueOf:maxLength',

@@ -2,15 +2,15 @@
  * http://creativecommons.org/publicdomain/zero/1.0/
  */
 
-const { CookieXPCShellUtils } = ChromeUtils.import(
-  "resource://testing-common/CookieXPCShellUtils.jsm"
+const { CookieXPCShellUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/CookieXPCShellUtils.sys.mjs"
 );
 
 CookieXPCShellUtils.init(this);
 
 let gHits = 0;
 
-add_task(async function() {
+add_task(async function () {
   do_get_profile();
 
   info("Disable predictor and accept all");
@@ -27,8 +27,9 @@ add_task(async function() {
     response.setHeader("Cache-Control", "max-age=10000", false);
     response.setStatusLine(metadata.httpVersion, 200, "OK");
     response.setHeader("Content-Type", "image/png", false);
-    var body =
-      "iVBORw0KGgoAAAANSUhEUgAAAAMAAAADCAIAAADZSiLoAAAAEUlEQVQImWP4z8AAQTAamQkAhpcI+DeMzFcAAAAASUVORK5CYII=";
+    var body = atob(
+      "iVBORw0KGgoAAAANSUhEUgAAAAMAAAADCAIAAADZSiLoAAAAEUlEQVQImWP4z8AAQTAamQkAhpcI+DeMzFcAAAAASUVORK5CYII="
+    );
     response.bodyOutputStream.write(body, body.length);
   });
 

@@ -5,9 +5,10 @@
 
 const TEST_URI =
   "data:text/html,<!DOCTYPE html>Test <code>help()</code> jsterm helper";
-const HELP_URL = "https://developer.mozilla.org/docs/Tools/Web_Console/Helpers";
+const HELP_URL =
+  "https://firefox-source-docs.mozilla.org/devtools-user/web_console/helpers/";
 
-add_task(async function() {
+add_task(async function () {
   const hud = await openNewTabAndConsole(TEST_URI);
 
   let openedLinks = 0;
@@ -24,7 +25,7 @@ add_task(async function() {
   execute(hud, "?");
   // Wait for a simple message to be displayed so we know the different help commands
   // were processed.
-  await executeAndWaitForMessage(hud, "smoke", "", ".result");
+  await executeAndWaitForResultMessage(hud, "smoke", "");
 
   const messages = hud.ui.outputNode.querySelectorAll(".message");
   is(messages.length, 5, "There is the expected number of messages");

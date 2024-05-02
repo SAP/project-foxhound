@@ -41,6 +41,7 @@ class CompositorOptions {
   }
   bool AllowSoftwareWebRenderOGL() const { return mAllowSoftwareWebRenderOGL; }
   bool InitiallyPaused() const { return mInitiallyPaused; }
+  bool NeedFastSnaphot() const { return mNeedFastSnaphot; }
 
   void SetUseAPZ(bool aUseAPZ) { mUseAPZ = aUseAPZ; }
 
@@ -52,20 +53,25 @@ class CompositorOptions {
     mAllowSoftwareWebRenderOGL = aAllowSoftwareWebRenderOGL;
   }
 
-  bool UseWebGPU() const { return mUseWebGPU; }
-  void SetUseWebGPU(bool aUseWebGPU) { mUseWebGPU = aUseWebGPU; }
-
   void SetInitiallyPaused(bool aPauseAtStartup) {
     mInitiallyPaused = aPauseAtStartup;
   }
 
-  bool operator==(const CompositorOptions& aOther) const {
-    return mUseAPZ == aOther.mUseAPZ &&
-           mUseSoftwareWebRender == aOther.mUseSoftwareWebRender &&
+  void SetNeedFastSnaphot(bool aNeedFastSnaphot) {
+    mNeedFastSnaphot = aNeedFastSnaphot;
+  }
+
+  bool EqualsIgnoringApzEnablement(const CompositorOptions& aOther) const {
+    return mUseSoftwareWebRender == aOther.mUseSoftwareWebRender &&
            mAllowSoftwareWebRenderD3D11 ==
                aOther.mAllowSoftwareWebRenderD3D11 &&
            mAllowSoftwareWebRenderOGL == aOther.mAllowSoftwareWebRenderOGL &&
-           mUseWebGPU == aOther.mUseWebGPU;
+           mInitiallyPaused == aOther.mInitiallyPaused &&
+           mNeedFastSnaphot == aOther.mNeedFastSnaphot;
+  }
+
+  bool operator==(const CompositorOptions& aOther) const {
+    return mUseAPZ == aOther.mUseAPZ && EqualsIgnoringApzEnablement(aOther);
   }
 
   friend struct IPC::ParamTraits<CompositorOptions>;
@@ -75,8 +81,8 @@ class CompositorOptions {
   bool mUseSoftwareWebRender = false;
   bool mAllowSoftwareWebRenderD3D11 = false;
   bool mAllowSoftwareWebRenderOGL = false;
-  bool mUseWebGPU = false;
   bool mInitiallyPaused = false;
+  bool mNeedFastSnaphot = false;
 
   // Make sure to add new fields to the ParamTraits implementation
   // in LayersMessageUtils.h

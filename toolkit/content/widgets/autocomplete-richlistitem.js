@@ -7,11 +7,13 @@
 // This is loaded into all XUL windows. Wrap in a block to prevent
 // leaking to window scope.
 {
-  const { Services } = ChromeUtils.import(
-    "resource://gre/modules/Services.jsm"
+  const { LoginHelper } = ChromeUtils.importESModule(
+    "resource://gre/modules/LoginHelper.sys.mjs"
   );
 
-  MozElements.MozAutocompleteRichlistitem = class MozAutocompleteRichlistitem extends MozElements.MozRichlistitem {
+  MozElements.MozAutocompleteRichlistitem = class MozAutocompleteRichlistitem extends (
+    MozElements.MozRichlistitem
+  ) {
     constructor() {
       super();
 
@@ -590,41 +592,12 @@
     }
   }
 
-  class MozAutocompleteRichlistitemLoginsFooter extends MozElements.MozAutocompleteRichlistitem {
-    constructor() {
-      super();
-
-      function handleEvent(event) {
-        if (event.button != 0) {
-          return;
-        }
-
-        const { LoginHelper } = ChromeUtils.import(
-          "resource://gre/modules/LoginHelper.jsm"
-        );
-
-        LoginHelper.openPasswordManager(this.ownerGlobal, {
-          entryPoint: "autocomplete",
-        });
-      }
-
-      this.addEventListener("click", handleEvent);
-    }
-  }
+  class MozAutocompleteRichlistitemLoginsFooter extends MozElements.MozAutocompleteRichlistitem {}
 
   class MozAutocompleteImportableLearnMoreRichlistitem extends MozElements.MozAutocompleteRichlistitem {
     constructor() {
       super();
       MozXULElement.insertFTLIfNeeded("toolkit/main-window/autocomplete.ftl");
-
-      this.addEventListener("click", event => {
-        window.openTrustedLinkIn(
-          Services.urlFormatter.formatURLPref("app.support.baseURL") +
-            "password-import",
-          "tab",
-          { relatedToCurrent: true }
-        );
-      });
     }
 
     static get markup() {
@@ -661,7 +634,21 @@
       this.textContent = "";
       this.appendChild(this.constructor.fragment);
       this.initializeAttributeInheritance();
+      this.initializeSecondaryAction();
       this._adjustAcItem();
+    }
+
+    initializeSecondaryAction() {
+      const button = this.querySelector(".ac-secondary-action");
+
+      if (this.onSecondaryAction) {
+        button.addEventListener("mousedown", event => {
+          event.stopPropagation();
+          this.onSecondaryAction();
+        });
+      } else {
+        button?.remove();
+      }
     }
 
     static get inheritedAttributes() {
@@ -670,6 +657,7 @@
         ".line1-label": "text=ac-value",
         // getCommentAt:
         ".line2-label": "text=ac-label",
+        ".ac-site-icon": "src=ac-image",
       };
     }
 
@@ -683,22 +671,12 @@
           <div class="label-row line1-label"></div>
           <div class="label-row line2-label"></div>
         </div>
+        <button class="ac-secondary-action"></button>
       </div>
     `;
     }
 
-    _adjustAcItem() {
-      const popup = this.parentNode.parentNode;
-      const minWidth = getComputedStyle(popup).minWidth.replace("px", "");
-      // Make item fit in popup as XUL box could not constrain
-      // item's width
-      // --panel-width is equal to the input field's width from the content process
-      this.firstElementChild.style.width =
-        Math.max(
-          minWidth,
-          parseFloat(popup.style.getPropertyValue("--panel-width") || "0")
-        ) + "px";
-    }
+    _adjustAcItem() {}
 
     _onOverflow() {}
 
@@ -708,11 +686,24 @@
   }
 
   class MozAutocompleteLoginRichlistitem extends MozAutocompleteTwoLineRichlistitem {
+    connectedCallback() {
+      super.connectedCallback();
+      this.firstChild.classList.add("ac-login-item");
+    }
+
+    onSecondaryAction() {
+      const details = JSON.parse(this.getAttribute("ac-label"));
+      LoginHelper.openPasswordManager(window, {
+        loginGuid: details?.guid,
+      });
+    }
+
     static get inheritedAttributes() {
       return {
         // getLabelAt:
         ".line1-label": "text=ac-value",
         // Don't inherit ac-label with getCommentAt since the label is JSON.
+        ".ac-site-icon": "src=ac-image",
       };
     }
 
@@ -777,22 +768,14 @@
     constructor() {
       super();
       MozXULElement.insertFTLIfNeeded("toolkit/main-window/autocomplete.ftl");
+    }
 
-      this.addEventListener("click", event => {
-        if (event.button != 0) {
-          return;
-        }
-
-        // Let the login manager parent handle this importable browser click.
-        gBrowser.selectedBrowser.browsingContext.currentWindowGlobal
-          .getActor("LoginManager")
-          .receiveMessage({
-            name: "PasswordManager:HandleImportable",
-            data: {
-              browserId: this.getAttribute("ac-value"),
-            },
-          });
-      });
+    static get inheritedAttributes() {
+      return {
+        // getLabelAt:
+        ".line1-label": "text=ac-value",
+        // Don't inherit ac-label with getCommentAt since the label is JSON.
+      };
     }
 
     static get markup() {
@@ -810,14 +793,17 @@
     }
 
     _adjustAcItem() {
+      super._adjustAcItem();
       document.l10n.setAttributes(
         this.querySelector(".labels-wrapper"),
         `autocomplete-import-logins-${this.getAttribute("ac-value")}`,
         {
-          host: this.getAttribute("ac-label").replace(/^www\./, ""),
+          host: JSON.parse(this.getAttribute("ac-label")).hostname.replace(
+            /^www\./,
+            ""
+          ),
         }
       );
-      super._adjustAcItem();
     }
   }
 

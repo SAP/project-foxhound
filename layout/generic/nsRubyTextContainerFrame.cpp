@@ -57,33 +57,34 @@ bool nsRubyTextContainerFrame::IsFrameOfType(uint32_t aFlags) const {
 
 /* virtual */
 void nsRubyTextContainerFrame::SetInitialChildList(ChildListID aListID,
-                                                   nsFrameList& aChildList) {
-  nsContainerFrame::SetInitialChildList(aListID, aChildList);
-  if (aListID == kPrincipalList) {
+                                                   nsFrameList&& aChildList) {
+  nsContainerFrame::SetInitialChildList(aListID, std::move(aChildList));
+  if (aListID == FrameChildListID::Principal) {
     UpdateSpanFlag();
   }
 }
 
 /* virtual */
 void nsRubyTextContainerFrame::AppendFrames(ChildListID aListID,
-                                            nsFrameList& aFrameList) {
-  nsContainerFrame::AppendFrames(aListID, aFrameList);
+                                            nsFrameList&& aFrameList) {
+  nsContainerFrame::AppendFrames(aListID, std::move(aFrameList));
   UpdateSpanFlag();
 }
 
 /* virtual */
 void nsRubyTextContainerFrame::InsertFrames(
     ChildListID aListID, nsIFrame* aPrevFrame,
-    const nsLineList::iterator* aPrevFrameLine, nsFrameList& aFrameList) {
+    const nsLineList::iterator* aPrevFrameLine, nsFrameList&& aFrameList) {
   nsContainerFrame::InsertFrames(aListID, aPrevFrame, aPrevFrameLine,
-                                 aFrameList);
+                                 std::move(aFrameList));
   UpdateSpanFlag();
 }
 
 /* virtual */
-void nsRubyTextContainerFrame::RemoveFrame(ChildListID aListID,
+void nsRubyTextContainerFrame::RemoveFrame(DestroyContext& aContext,
+                                           ChildListID aListID,
                                            nsIFrame* aOldFrame) {
-  nsContainerFrame::RemoveFrame(aListID, aOldFrame);
+  nsContainerFrame::RemoveFrame(aContext, aListID, aOldFrame);
   UpdateSpanFlag();
 }
 
@@ -128,8 +129,7 @@ void nsRubyTextContainerFrame::Reflow(nsPresContext* aPresContext,
   // The block-dir position will be corrected below after containerSize
   // is finalized.
   const nsSize dummyContainerSize;
-  for (nsFrameList::Enumerator e(mFrames); !e.AtEnd(); e.Next()) {
-    nsIFrame* child = e.get();
+  for (nsIFrame* child : mFrames) {
     MOZ_ASSERT(child->IsRubyTextFrame());
     LogicalRect rect = child->GetLogicalRect(rtcWM, dummyContainerSize);
     LogicalMargin margin = child->GetLogicalUsedMargin(rtcWM);
@@ -147,8 +147,7 @@ void nsRubyTextContainerFrame::Reflow(nsPresContext* aPresContext,
     }
     LogicalSize size(rtcWM, mISize, maxBCoord - minBCoord);
     nsSize containerSize = size.GetPhysicalSize(rtcWM);
-    for (nsFrameList::Enumerator e(mFrames); !e.AtEnd(); e.Next()) {
-      nsIFrame* child = e.get();
+    for (nsIFrame* child : mFrames) {
       // We reflowed the child with a dummy container size, as the true size
       // was not yet known at that time.
       LogicalPoint pos = child->GetLogicalPosition(rtcWM, dummyContainerSize);

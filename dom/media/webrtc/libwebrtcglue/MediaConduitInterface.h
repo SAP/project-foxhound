@@ -15,19 +15,31 @@
 #include "MediaConduitErrors.h"
 #include "mozilla/media/MediaUtils.h"
 #include "mozilla/MozPromise.h"
-#include "VideoTypes.h"
 #include "WebrtcVideoCodecFactory.h"
 #include "nsTArray.h"
 #include "mozilla/dom/RTCRtpSourcesBinding.h"
+#include "PerformanceRecorder.h"
 #include "transport/mediapacket.h"
+#include "MediaConduitControl.h"
 
 // libwebrtc includes
+#include "api/audio/audio_frame.h"
+#include "api/call/transport.h"
+#include "api/rtp_headers.h"
+#include "api/rtp_parameters.h"
+#include "api/transport/rtp/rtp_source.h"
 #include "api/video/video_frame_buffer.h"
-#include "call/call.h"
+#include "call/audio_receive_stream.h"
+#include "call/audio_send_stream.h"
+#include "call/call_basic_stats.h"
+#include "call/video_receive_stream.h"
+#include "call/video_send_stream.h"
+#include "rtc_base/copy_on_write_buffer.h"
 
 namespace webrtc {
+class RtpPacketReceived;
 class VideoFrame;
-}
+}  // namespace webrtc
 
 namespace mozilla {
 namespace dom {
@@ -40,15 +52,10 @@ struct RTCRtpSourceEntry;
 
 enum class MediaSessionConduitLocalDirection : int { kSend, kRecv };
 
-class VideoConduitControlInterface;
-class AudioConduitControlInterface;
 class VideoSessionConduit;
 class AudioSessionConduit;
 class WebrtcCallWrapper;
-
-using RtpExtList = std::vector<webrtc::RtpExtension>;
-using Ssrc = uint32_t;
-using Ssrcs = std::vector<uint32_t>;
+class FrameTransformerProxy;
 
 /**
  * 1. Abstract renderer for video data
@@ -127,16 +134,10 @@ class MediaSessionConduit {
   virtual MediaEventSourceExc<MediaPacket>& SenderRtcpSendEvent() = 0;
   virtual MediaEventSourceExc<MediaPacket>& ReceiverRtcpSendEvent() = 0;
 
-  // Receiving packets...
-  // from an rtp-receiving pipeline
+  // Receiving RTP packets
   virtual void ConnectReceiverRtpEvent(
-      MediaEventSourceExc<MediaPacket, webrtc::RTPHeader>& aEvent) = 0;
-  // from an rtp-receiving pipeline
-  virtual void ConnectReceiverRtcpEvent(
-      MediaEventSourceExc<MediaPacket>& aEvent) = 0;
-  // from an rtp-transmitting pipeline
-  virtual void ConnectSenderRtcpEvent(
-      MediaEventSourceExc<MediaPacket>& aEvent) = 0;
+      MediaEventSourceExc<webrtc::RtpPacketReceived, webrtc::RTPHeader>&
+          aEvent) = 0;
 
   // Sts thread only.
   virtual Maybe<uint16_t> RtpSendBaseSeqFor(uint32_t aSsrc) const = 0;
@@ -149,10 +150,14 @@ class MediaSessionConduit {
   virtual Maybe<Ssrc> GetRemoteSSRC() const = 0;
   virtual void UnsetRemoteSSRC(Ssrc aSsrc) = 0;
 
+  virtual void DisableSsrcChanges() = 0;
+
   virtual bool HasCodecPluginID(uint64_t aPluginID) const = 0;
 
+  // Stuff for driving mute/unmute events
   virtual MediaEventSource<void>& RtcpByeEvent() = 0;
   virtual MediaEventSource<void>& RtcpTimeoutEvent() = 0;
+  virtual MediaEventSource<void>& RtpPacketEvent() = 0;
 
   virtual bool SendRtp(const uint8_t* aData, size_t aLength,
                        const webrtc::PacketOptions& aOptions) = 0;
@@ -167,11 +172,13 @@ class MediaSessionConduit {
   virtual Maybe<RefPtr<AudioSessionConduit>> AsAudioSessionConduit() = 0;
   virtual Maybe<RefPtr<VideoSessionConduit>> AsVideoSessionConduit() = 0;
 
-  virtual Maybe<webrtc::Call::Stats> GetCallStats() const = 0;
+  virtual Maybe<webrtc::CallBasicStats> GetCallStats() const = 0;
 
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(MediaSessionConduit)
 
   void GetRtpSources(nsTArray<dom::RTCRtpSourceEntry>& outSources) const;
+
+  virtual void SetJitterBufferTarget(DOMHighResTimeStamp aTargetMs) = 0;
 
   // test-only: inserts fake CSRCs and audio level data.
   // NB: fake data is only valid during the current main thread task.
@@ -318,7 +325,7 @@ class VideoSessionConduit : public MediaSessionConduit {
   static RefPtr<VideoSessionConduit> Create(
       RefPtr<WebrtcCallWrapper> aCall,
       nsCOMPtr<nsISerialEventTarget> aStsThread, Options aOptions,
-      std::string aPCHandle);
+      std::string aPCHandle, const TrackingId& aRecvTrackingId);
 
   enum FrameRequestType {
     FrameRequestNone,
@@ -361,8 +368,6 @@ class VideoSessionConduit : public MediaSessionConduit {
       RefPtr<mozilla::VideoRenderer> aRenderer) = 0;
   virtual void DetachRenderer() = 0;
 
-  virtual void DisableSsrcChanges() = 0;
-
   /**
    * Function to deliver a capture video frame for encoding and transport.
    * If the frame's timestamp is 0, it will be automatcally generated.
@@ -385,13 +390,26 @@ class VideoSessionConduit : public MediaSessionConduit {
 
   bool UsingFEC() const { return mUsingFEC; }
 
-  virtual Maybe<webrtc::VideoReceiveStream::Stats> GetReceiverStats() const = 0;
+  virtual Maybe<webrtc::VideoReceiveStreamInterface::Stats> GetReceiverStats()
+      const = 0;
   virtual Maybe<webrtc::VideoSendStream::Stats> GetSenderStats() const = 0;
 
   virtual void CollectTelemetryData() = 0;
 
   virtual bool AddFrameHistory(
       dom::Sequence<dom::RTCVideoFrameHistoryInternal>* outHistories) const = 0;
+
+  virtual Maybe<Ssrc> GetAssociatedLocalRtxSSRC(Ssrc aSsrc) const = 0;
+
+  struct Resolution {
+    size_t width;
+    size_t height;
+  };
+  virtual Maybe<Resolution> GetLastResolution() const = 0;
+
+  virtual void RequestKeyFrame(FrameTransformerProxy* aProxy) = 0;
+  virtual void GenerateKeyFrame(const Maybe<std::string>& aRid,
+                                FrameTransformerProxy* aProxy) = 0;
 
  protected:
   /* RTCP feedback settings, for unit testing purposes */
@@ -473,7 +491,8 @@ class AudioSessionConduit : public MediaSessionConduit {
    */
   virtual bool IsSamplingFreqSupported(int freq) const = 0;
 
-  virtual Maybe<webrtc::AudioReceiveStream::Stats> GetReceiverStats() const = 0;
+  virtual Maybe<webrtc::AudioReceiveStreamInterface::Stats> GetReceiverStats()
+      const = 0;
   virtual Maybe<webrtc::AudioSendStream::Stats> GetSenderStats() const = 0;
 };
 }  // namespace mozilla

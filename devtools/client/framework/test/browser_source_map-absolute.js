@@ -7,8 +7,8 @@
 
 // There are shutdown issues for which multiple rejections are left uncaught.
 // See bug 1018184 for resolving these issues.
-const { PromiseTestUtils } = ChromeUtils.import(
-  "resource://testing-common/PromiseTestUtils.jsm"
+const { PromiseTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/PromiseTestUtils.sys.mjs"
 );
 PromiseTestUtils.allowMatchingRejectionsGlobally(/this\.worker is null/);
 
@@ -17,7 +17,7 @@ const PAGE_URL = `${URL_ROOT_SSL}doc_empty-tab-01.html`;
 const JS_URL = `${URL_ROOT_SSL}code_binary_search_absolute.js`;
 const ORIGINAL_URL = `${URL_ROOT_SSL}code_binary_search.coffee`;
 
-add_task(async function() {
+add_task(async function () {
   const toolbox = await openNewTabAndToolbox(PAGE_URL, "jsdebugger");
   const service = toolbox.sourceMapURLService;
 

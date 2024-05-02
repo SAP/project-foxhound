@@ -17,6 +17,7 @@ async fn simultaneous_deadline_future_completion() {
     assert_ready_ok!(fut.poll());
 }
 
+#[cfg_attr(tokio_wasi, ignore = "FIXME: `fut.poll()` panics on Wasi")]
 #[tokio::test]
 async fn completed_future_past_deadline() {
     // Wrap it with a deadline
@@ -75,6 +76,33 @@ async fn future_and_timeout_in_future() {
 }
 
 #[tokio::test]
+async fn very_large_timeout() {
+    time::pause();
+
+    // Not yet complete
+    let (tx, rx) = oneshot::channel();
+
+    // copy-paste unstable `Duration::MAX`
+    let duration_max = Duration::from_secs(u64::MAX) + Duration::from_nanos(999_999_999);
+
+    // Wrap it with a deadline
+    let mut fut = task::spawn(timeout(duration_max, rx));
+
+    // Ready!
+    assert_pending!(fut.poll());
+
+    // Turn the timer, it runs for the elapsed time
+    time::advance(Duration::from_secs(86400 * 365 * 10)).await;
+
+    assert_pending!(fut.poll());
+
+    // Complete the future
+    tx.send(()).unwrap();
+
+    assert_ready_ok!(fut.poll()).unwrap();
+}
+
+#[tokio::test]
 async fn deadline_now_elapses() {
     use futures::future::pending;
 
@@ -107,4 +135,17 @@ async fn deadline_future_elapses() {
 
 fn ms(n: u64) -> Duration {
     Duration::from_millis(n)
+}
+
+#[tokio::test]
+async fn timeout_is_not_exhausted_by_future() {
+    let fut = timeout(ms(1), async {
+        let mut buffer = [0u8; 1];
+        loop {
+            use tokio::io::AsyncReadExt;
+            let _ = tokio::io::empty().read(&mut buffer).await;
+        }
+    });
+
+    assert!(fut.await.is_err());
 }

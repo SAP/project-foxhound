@@ -19,6 +19,7 @@
 
 #include <string>
 
+#include "absl/functional/any_invocable.h"
 #include "absl/types/optional.h"
 #include "api/priority.h"
 #include "api/rtc_error.h"
@@ -42,20 +43,22 @@ struct DataChannelInit {
   // The max period of time in milliseconds in which retransmissions will be
   // sent. After this time, no more retransmissions will be sent.
   //
-  // Cannot be set along with |maxRetransmits|.
-  // This is called |maxPacketLifeTime| in the WebRTC JS API.
+  // Cannot be set along with `maxRetransmits`.
+  // This is called `maxPacketLifeTime` in the WebRTC JS API.
+  // Negative values are ignored, and positive values are clamped to [0-65535]
   absl::optional<int> maxRetransmitTime;
 
   // The max number of retransmissions.
   //
-  // Cannot be set along with |maxRetransmitTime|.
+  // Cannot be set along with `maxRetransmitTime`.
+  // Negative values are ignored, and positive values are clamped to [0-65535]
   absl::optional<int> maxRetransmits;
 
   // This is set by the application and opaque to the WebRTC implementation.
   std::string protocol;
 
   // True if the channel has been externally negotiated and we do not send an
-  // in-band signalling in the form of an "open" message. If this is true, |id|
+  // in-band signalling in the form of an "open" message. If this is true, `id`
   // below must be set; otherwise it should be unset and will be negotiated
   // in-band.
   bool negotiated = false;
@@ -68,7 +71,7 @@ struct DataChannelInit {
 };
 
 // At the JavaScript level, data can be passed in as a string or a blob, so
-// this structure's |binary| flag tells whether the data should be interpreted
+// this structure's `binary` flag tells whether the data should be interpreted
 // as binary or text.
 struct DataBuffer {
   DataBuffer(const rtc::CopyOnWriteBuffer& data, bool binary)
@@ -97,6 +100,17 @@ class DataChannelObserver {
   virtual void OnMessage(const DataBuffer& buffer) = 0;
   // The data channel's buffered_amount has changed.
   virtual void OnBufferedAmountChange(uint64_t sent_data_size) {}
+
+  // Override this to get callbacks directly on the network thread.
+  // An implementation that does that must not block the network thread
+  // but rather only use the callback to trigger asynchronous processing
+  // elsewhere as a result of the notification.
+  // The default return value, `false`, means that notifications will be
+  // delivered on the signaling thread associated with the peerconnection
+  // instance.
+  // TODO(webrtc:11547): Eventually all DataChannelObserver implementations
+  // should be called on the network thread and this method removed.
+  virtual bool IsOkToCallOnTheNetworkThread() { return false; }
 
  protected:
   virtual ~DataChannelObserver() = default;
@@ -172,21 +186,37 @@ class RTC_EXPORT DataChannelInterface : public rtc::RefCountInterface {
   // Returns the number of bytes of application data (UTF-8 text and binary
   // data) that have been queued using Send but have not yet been processed at
   // the SCTP level. See comment above Send below.
+  // Values are less or equal to MaxSendQueueSize().
   virtual uint64_t buffered_amount() const = 0;
 
   // Begins the graceful data channel closing procedure. See:
   // https://tools.ietf.org/html/draft-ietf-rtcweb-data-channel-13#section-6.7
   virtual void Close() = 0;
 
-  // Sends |data| to the remote peer. If the data can't be sent at the SCTP
+  // Sends `data` to the remote peer. If the data can't be sent at the SCTP
   // level (due to congestion control), it's buffered at the data channel level,
-  // up to a maximum of 16MB. If Send is called while this buffer is full, the
-  // data channel will be closed abruptly.
-  //
-  // So, it's important to use buffered_amount() and OnBufferedAmountChange to
-  // ensure the data channel is used efficiently but without filling this
-  // buffer.
-  virtual bool Send(const DataBuffer& buffer) = 0;
+  // up to a maximum of MaxSendQueueSize().
+  // Returns false if the data channel is not in open state or if the send
+  // buffer is full.
+  // TODO(webrtc:13289): Return an RTCError with information about the failure.
+  // TODO(tommi): Remove this method once downstream implementations don't refer
+  // to it.
+  virtual bool Send(const DataBuffer& buffer);
+
+  // Queues up an asynchronus send operation to run on a network thread.
+  // Once the operation has completed the `on_complete` callback is invoked,
+  // on the thread the send operation was done on. It's important that
+  // `on_complete` implementations do not block the current thread but rather
+  // post any expensive operations to other worker threads.
+  // TODO(tommi): Make pure virtual after updating mock class in Chromium.
+  // Deprecate `Send` in favor of this variant since the return value of `Send`
+  // is limiting for a fully async implementation (yet in practice is ignored).
+  virtual void SendAsync(DataBuffer buffer,
+                         absl::AnyInvocable<void(RTCError) &&> on_complete);
+
+  // Amount of bytes that can be queued for sending on the data channel.
+  // Those are bytes that have not yet been processed at the SCTP level.
+  static uint64_t MaxSendQueueSize();
 
  protected:
   ~DataChannelInterface() override = default;

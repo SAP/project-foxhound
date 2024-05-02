@@ -40,20 +40,28 @@ class DecodedStream : public MediaSink {
                 CopyableTArray<RefPtr<ProcessedMediaTrack>> aOutputTracks,
                 double aVolume, double aPlaybackRate, bool aPreservesPitch,
                 MediaQueue<AudioData>& aAudioQueue,
-                MediaQueue<VideoData>& aVideoQueue);
+                MediaQueue<VideoData>& aVideoQueue,
+                RefPtr<AudioDeviceInfo> aAudioDevice);
 
   RefPtr<EndedPromise> OnEnded(TrackType aType) override;
   media::TimeUnit GetEndTime(TrackType aType) const override;
-  media::TimeUnit GetPosition(TimeStamp* aTimeStamp = nullptr) const override;
+  media::TimeUnit GetPosition(TimeStamp* aTimeStamp = nullptr) override;
   bool HasUnplayedFrames(TrackType aType) const override {
-    // TODO: implement this.
+    // TODO: bug 1755026
     return false;
+  }
+
+  media::TimeUnit UnplayedDuration(TrackType aType) const override {
+    // TODO: bug 1755026
+    return media::TimeUnit::Zero();
   }
 
   void SetVolume(double aVolume) override;
   void SetPlaybackRate(double aPlaybackRate) override;
   void SetPreservesPitch(bool aPreservesPitch) override;
   void SetPlaying(bool aPlaying) override;
+  RefPtr<GenericPromise> SetAudioDevice(
+      RefPtr<AudioDeviceInfo> aDevice) override;
 
   double PlaybackRate() const override;
 

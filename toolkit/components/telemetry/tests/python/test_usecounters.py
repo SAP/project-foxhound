@@ -2,10 +2,11 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-import mozunit
 import sys
 import unittest
 from os import path
+
+import mozunit
 from test_histogramtools_non_strict import load_histogram
 
 TELEMETRY_ROOT_PATH = path.abspath(
@@ -15,8 +16,8 @@ sys.path.append(TELEMETRY_ROOT_PATH)
 # The parsers live in a subdirectory of "build_scripts", account for that.
 # NOTE: if the parsers are moved, this logic will need to be updated.
 sys.path.append(path.join(TELEMETRY_ROOT_PATH, "build_scripts"))
-from mozparsers.shared_telemetry_utils import ParserError
 from mozparsers import parse_histograms
+from mozparsers.shared_telemetry_utils import ParserError
 
 
 class TestParser(unittest.TestCase):
@@ -38,8 +39,8 @@ class TestParser(unittest.TestCase):
         )
 
         ParserError.exit_func()
-        self.assertEquals(hist.dataset(), "nsITelemetry::DATASET_ALL_CHANNELS")
-        self.assertEquals(hist.products(), ["firefox", "fennec"])
+        self.assertEqual(hist.dataset(), "nsITelemetry::DATASET_ALL_CHANNELS")
+        self.assertEqual(hist.products(), ["firefox", "fennec"])
 
     def test_usecounter_histogram(self):
         SAMPLE_HISTOGRAM = {
@@ -59,10 +60,10 @@ class TestParser(unittest.TestCase):
         )
 
         ParserError.exit_func()
-        self.assertEquals(hist.expiration(), "never")
-        self.assertEquals(hist.kind(), "boolean")
-        self.assertEquals(hist.description(), "Whether a foo used bar")
-        self.assertEquals(hist.products(), ["firefox", "fennec"])
+        self.assertEqual(hist.expiration(), "never")
+        self.assertEqual(hist.kind(), "boolean")
+        self.assertEqual(hist.description(), "Whether a foo used bar")
+        self.assertEqual(hist.products(), ["firefox", "fennec"])
 
 
 if __name__ == "__main__":

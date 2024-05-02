@@ -7,11 +7,17 @@
 #ifndef mozilla_glean_GleanTimingDistribution_h
 #define mozilla_glean_GleanTimingDistribution_h
 
+#include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/glean/bindings/DistributionData.h"
+#include "mozilla/glean/bindings/GleanMetric.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/Result.h"
-#include "nsIGleanMetrics.h"
+#include "mozilla/TimeStamp.h"
 #include "nsTArray.h"
+
+namespace mozilla::dom {
+struct GleanDistributionData;
+}  // namespace mozilla::dom
 
 namespace mozilla::glean {
 
@@ -40,6 +46,22 @@ class TimingDistributionMetric {
    *            concurrent timing of events associated with different ids.
    */
   void StopAndAccumulate(const TimerId&& aId) const;
+
+  /*
+   * Adds a duration sample to a timing distribution metric.
+   *
+   * Adds a count to the corresponding bucket in the timing distribution.
+   * Prefer Start() and StopAndAccumulate() where possible.
+   * Users of this API are responsible for ensuring the timing source used
+   * to calculate the TimeDuration is monotonic and consistent accross
+   * platforms.
+   *
+   * NOTE: Negative durations are not handled and will saturate to INT64_MAX
+   *       nanoseconds.
+   *
+   * @param aDuration The duration of the sample to add to the distribution.
+   */
+  void AccumulateRawDuration(const TimeDuration& aDuration) const;
 
   /*
    * Aborts a previous `Start` call. No error is recorded if no `Start` was
@@ -74,12 +96,23 @@ class TimingDistributionMetric {
 };
 }  // namespace impl
 
-class GleanTimingDistribution final : public nsIGleanTimingDistribution {
+class GleanTimingDistribution final : public GleanMetric {
  public:
-  NS_DECL_ISUPPORTS
-  NS_DECL_NSIGLEANTIMINGDISTRIBUTION
+  explicit GleanTimingDistribution(uint64_t aId, nsISupports* aParent)
+      : GleanMetric(aParent), mTimingDist(aId) {}
 
-  explicit GleanTimingDistribution(uint64_t aId) : mTimingDist(aId){};
+  virtual JSObject* WrapObject(
+      JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override final;
+
+  uint64_t Start();
+  void StopAndAccumulate(uint64_t aId);
+  void Cancel(uint64_t aId);
+
+  void TestGetValue(const nsACString& aPingName,
+                    dom::Nullable<dom::GleanDistributionData>& aRetval,
+                    ErrorResult& aRv);
+
+  void TestAccumulateRawMillis(uint64_t aSample);
 
  private:
   virtual ~GleanTimingDistribution() = default;

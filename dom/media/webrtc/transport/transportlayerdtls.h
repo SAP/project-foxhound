@@ -18,11 +18,8 @@
 #  include <Security/CipherSuite.h>
 #endif
 
-#include "sigslot.h"
-
 #include "mozilla/RefPtr.h"
 #include "mozilla/UniquePtr.h"
-#include "mozilla/TimeStamp.h"
 #include "nsCOMPtr.h"
 #include "nsITimer.h"
 #include "ScopedNSSTypes.h"
@@ -46,7 +43,7 @@ struct Packet;
 class TransportLayerNSPRAdapter {
  public:
   explicit TransportLayerNSPRAdapter(TransportLayer* output)
-      : output_(output), input_(), enabled_(true) {}
+      : output_(output), enabled_(true) {}
 
   void PacketReceived(MediaPacket& packet);
   int32_t Recv(void* buf, int32_t buflen);

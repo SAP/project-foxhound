@@ -14,7 +14,7 @@ const TOP_LEVEL_URL = `https://example.com/document-builder.sjs?html=
     <h1>highlighter test</h1>
     <iframe src='${REMOTE_IFRAME_URL}'></iframe>`;
 
-add_task(async function() {
+add_task(async function () {
   const { ui } = await openStyleEditorForURL(TOP_LEVEL_URL);
 
   info(
@@ -32,9 +32,10 @@ add_task(async function() {
   await waitFor(() => topLevelStylesheetEditor.highlighter);
 
   info("Check that highlighting works on the top-level document");
-  const topLevelHighlighterTestFront = await topLevelStylesheetEditor._resource.targetFront.getFront(
-    "highlighterTest"
-  );
+  const topLevelHighlighterTestFront =
+    await topLevelStylesheetEditor._resource.targetFront.getFront(
+      "highlighterTest"
+    );
   topLevelHighlighterTestFront.highlighter =
     topLevelStylesheetEditor.highlighter;
 
@@ -53,7 +54,6 @@ add_task(async function() {
     selectorEl.ownerDocument.defaultView
   );
   await onHighlighted;
-
   ok(
     await topLevelHighlighterTestFront.isNodeRectHighlighted(
       await getElementNodeRectWithinTarget(["h1"])
@@ -74,13 +74,39 @@ add_task(async function() {
   let isVisible = await topLevelHighlighterTestFront.isHighlighting();
   is(isVisible, false, "The highlighter is now hidden");
 
+  // It looks like we need to show the same highlighter again to trigger Bug 1847747
+  info("Show and hide the highlighter again");
+  onHighlighted = topLevelStylesheetEditor.once("node-highlighted");
+  EventUtils.synthesizeMouseAtCenter(
+    selectorEl,
+    { type: "mousemove" },
+    selectorEl.ownerDocument.defaultView
+  );
+  await onHighlighted;
+  EventUtils.synthesizeMouseAtCenter(
+    querySelectorCodeMirrorCssPropertyNameToken(topLevelStylesheetEditor),
+    { type: "mousemove" },
+    selectorEl.ownerDocument.defaultView
+  );
+
+  await waitFor(async () => !topLevelStylesheetEditor.highlighter.isShown());
+  // wait for a bit so the style editor would have had the time to process
+  // any unwanted stylesheets
+  await wait(1000);
+  ok(
+    !ui.editors.find(e => e._resource.href?.includes("highlighters.css")),
+    "highlighters.css isn't displayed in StyleEditor"
+  );
+  is(ui.editors.length, 2, "No other stylesheet was displayed");
+
   info("Check that highlighting works on the iframe document");
   await ui.selectStyleSheet(iframeStylesheetEditor.styleSheet);
   await waitFor(() => iframeStylesheetEditor.highlighter);
 
-  const iframeHighlighterTestFront = await iframeStylesheetEditor._resource.targetFront.getFront(
-    "highlighterTest"
-  );
+  const iframeHighlighterTestFront =
+    await iframeStylesheetEditor._resource.targetFront.getFront(
+      "highlighterTest"
+    );
   iframeHighlighterTestFront.highlighter = iframeStylesheetEditor.highlighter;
 
   info("Expecting a node-highlighted event");
@@ -152,13 +178,12 @@ async function getElementNodeRectWithinTarget(selectors) {
   // Retrieve the browsing context in which the element is
   const inBCSelector = selectors.pop();
   const frameSelectors = selectors;
-  const bc =
-    frameSelectors.length > 0
-      ? await getBrowsingContextInFrames(
-          gBrowser.selectedBrowser.browsingContext,
-          frameSelectors
-        )
-      : gBrowser.selectedBrowser.browsingContext;
+  const bc = frameSelectors.length
+    ? await getBrowsingContextInFrames(
+        gBrowser.selectedBrowser.browsingContext,
+        frameSelectors
+      )
+    : gBrowser.selectedBrowser.browsingContext;
 
   // Get the element bounds within the Firefox window
   const elementBounds = await SpecialPowers.spawn(
@@ -166,12 +191,9 @@ async function getElementNodeRectWithinTarget(selectors) {
     [inBCSelector],
     _selector => {
       const el = content.document.querySelector(_selector);
-      const {
-        left,
-        top,
-        width,
-        height,
-      } = el.getBoxQuadsFromWindowOrigin()[0].getBounds();
+      const { left, top, width, height } = el
+        .getBoxQuadsFromWindowOrigin()[0]
+        .getBounds();
       return { left, top, width, height };
     }
   );

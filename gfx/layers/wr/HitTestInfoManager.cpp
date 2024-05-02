@@ -49,8 +49,7 @@ static void CreateWebRenderCommands(wr::DisplayListBuilder& aBuilder,
 }
 
 HitTestInfoManager::HitTestInfoManager()
-    : mArea(nsRect()),
-      mFlags(gfx::CompositorHitTestInvisibleToHit),
+    : mFlags(gfx::CompositorHitTestInvisibleToHit),
       mViewId(ScrollableLayerGuid::NULL_SCROLL_ID),
       mSpaceAndClipChain(wr::InvalidScrollNodeWithChain()) {}
 
@@ -63,7 +62,7 @@ void HitTestInfoManager::Reset() {
   HITTEST_INFO_LOG("* HitTestInfoManager::Reset\n");
 }
 
-void HitTestInfoManager::ProcessItem(
+bool HitTestInfoManager::ProcessItem(
     nsDisplayItem* aItem, wr::DisplayListBuilder& aBuilder,
     nsDisplayListBuilder* aDisplayListBuilder) {
   MOZ_ASSERT(aItem);
@@ -80,7 +79,7 @@ void HitTestInfoManager::ProcessItem(
   }
 
   if (!aItem->HasHitTestInfo()) {
-    return;
+    return false;
   }
 
   const HitTestInfo& hitTestInfo = aItem->GetHitTestInfo();
@@ -88,7 +87,7 @@ void HitTestInfoManager::ProcessItem(
   const gfx::CompositorHitTestInfo& flags = hitTestInfo.Info();
 
   if (flags == gfx::CompositorHitTestInvisibleToHit || area.IsEmpty()) {
-    return;
+    return false;
   }
 
   const auto viewId =
@@ -97,13 +96,15 @@ void HitTestInfoManager::ProcessItem(
 
   if (!Update(area, flags, viewId, spaceAndClipChain)) {
     // The previous hit test information is still valid.
-    return;
+    return false;
   }
 
   HITTEST_INFO_LOG("+ [%d, %d, %d, %d]: flags: 0x%x, viewId: %lu\n", area.x,
                    area.y, area.width, area.height, flags.serialize(), viewId);
 
   CreateWebRenderCommands(aBuilder, aItem, area, flags, viewId);
+
+  return true;
 }
 
 /**

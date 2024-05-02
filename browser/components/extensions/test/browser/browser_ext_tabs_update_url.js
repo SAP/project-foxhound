@@ -2,16 +2,10 @@
 /* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "SessionStore",
-  "resource:///modules/sessionstore/SessionStore.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "TabStateFlusher",
-  "resource:///modules/sessionstore/TabStateFlusher.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  SessionStore: "resource:///modules/sessionstore/SessionStore.sys.mjs",
+  TabStateFlusher: "resource:///modules/sessionstore/TabStateFlusher.sys.mjs",
+});
 
 async function testTabsUpdateURL(
   existentTabURL,
@@ -36,7 +30,7 @@ async function testTabsUpdateURL(
         </html>
       `.trim(),
     },
-    background: function() {
+    background: function () {
       browser.test.sendMessage("ready", browser.runtime.getURL("tab.html"));
 
       browser.test.onMessage.addListener(
@@ -95,7 +89,7 @@ async function testTabsUpdateURL(
   await extension.unload();
 }
 
-add_task(async function() {
+add_task(async function () {
   info("Start testing tabs.update on javascript URLs");
 
   let dataURLPage = `data:text/html,
@@ -171,7 +165,7 @@ add_task(async function test_update_reload() {
 
   let win = await BrowserTestUtils.openNewBrowserWindow();
   let tabBrowser = win.gBrowser.selectedBrowser;
-  BrowserTestUtils.loadURI(tabBrowser, URL);
+  BrowserTestUtils.startLoadingURIString(tabBrowser, URL);
   await BrowserTestUtils.browserLoaded(tabBrowser, false, URL);
   let tab = win.gBrowser.selectedTab;
 

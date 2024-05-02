@@ -13,8 +13,7 @@
 #include "nsWrapperCache.h"
 #include "mozilla/dom/PerformanceEntryBinding.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 struct PerformanceEntryFilterOptions;
 class PerformanceEntry;
@@ -36,7 +35,7 @@ class PerformanceObserverEntryList final : public nsISupports,
                                JS::Handle<JSObject*> aGivenProto) override;
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(PerformanceObserverEntryList)
+  NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(PerformanceObserverEntryList)
 
   void GetEntries(const PerformanceEntryFilterOptions& aFilter,
                   nsTArray<RefPtr<PerformanceEntry>>& aRetval);
@@ -51,7 +50,6 @@ class PerformanceObserverEntryList final : public nsISupports,
   nsTArray<RefPtr<PerformanceEntry>> mEntries;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif

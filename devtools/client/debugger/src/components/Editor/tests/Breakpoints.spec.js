@@ -5,13 +5,12 @@
 import React from "react";
 import { shallow } from "enzyme";
 import Breakpoints from "../Breakpoints";
-import * as I from "immutable";
 
 const BreakpointsComponent = Breakpoints.WrappedComponent;
 
 function generateDefaults(overrides) {
   const sourceId = "server1.conn1.child1/source1";
-  const matchingBreakpoints = { id1: { location: { sourceId } } };
+  const matchingBreakpoints = [{ location: { source: { id: sourceId } } }];
 
   return {
     selectedSource: { sourceId, get: () => false },
@@ -20,21 +19,24 @@ function generateDefaults(overrides) {
         setGutterMarker: jest.fn(),
       },
     },
-    breakpoints: I.Map(matchingBreakpoints),
+    blackboxedRanges: {},
+    breakpointActions: {},
+    editorActions: {},
+    breakpoints: matchingBreakpoints,
     ...overrides,
   };
 }
 
 function render(overrides = {}) {
   const props = generateDefaults(overrides);
-  const component = shallow(<BreakpointsComponent {...props} />);
+  const component = shallow(React.createElement(BreakpointsComponent, props));
   return { component, props };
 }
 
 describe("Breakpoints Component", () => {
   it("should render breakpoints without columns", async () => {
     const sourceId = "server1.conn1.child1/source1";
-    const breakpoints = [{ location: { sourceId } }];
+    const breakpoints = [{ location: { source: { id: sourceId } } }];
 
     const { component, props } = render({ breakpoints });
     expect(component.find("Breakpoint")).toHaveLength(props.breakpoints.length);
@@ -42,7 +44,7 @@ describe("Breakpoints Component", () => {
 
   it("should render breakpoints with columns", async () => {
     const sourceId = "server1.conn1.child1/source1";
-    const breakpoints = [{ location: { column: 2, sourceId } }];
+    const breakpoints = [{ location: { column: 2, source: { id: sourceId } } }];
 
     const { component, props } = render({ breakpoints });
     expect(component.find("Breakpoint")).toHaveLength(props.breakpoints.length);

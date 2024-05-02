@@ -5,7 +5,7 @@
 
 // Create a simple page for the iframe
 const httpServer = createTestHTTPServer();
-httpServer.registerPathHandler(`/`, function(request, response) {
+httpServer.registerPathHandler(`/`, function (request, response) {
   response.setStatusLine(request.httpVersion, 200, "OK");
   response.write(`
     <html>
@@ -26,16 +26,21 @@ httpServer.registerPathHandler(`/`, function(request, response) {
 
 const TEST_URI = `data:text/html,<!DOCTYPE html><meta charset=utf8>
   <style>
-    button {
-      cursor: unknownCursor;
+    main {
+      & button {
+        cursor: unknownCursor;
+      }
     }
   </style>
-  <button id=1>Button 1</button>
-  <button id=2>Button 2</button>
+  <main>
+    <button id=1>Button 1</button>
+    <button id=2>Button 2</button>
+  </main>
+  <button id=out>Button 3</button>
   <iframe src="http://localhost:${httpServer.identity.primaryPort}/"></iframe>
   `;
 
-add_task(async function() {
+add_task(async function () {
   // Enable CSS Warnings
   await pushPref("devtools.webconsole.filter.css", true);
 
@@ -48,21 +53,28 @@ add_task(async function() {
 
   info("Check the CSS warning message for the top level document");
   let messageNode = await waitFor(() =>
-    findMessage(hud, "Error in parsing value for ‘cursor’", ".message.css")
+    findWarningMessage(hud, "Error in parsing value for ‘cursor’", ".css")
   );
 
   info("Click on the expand arrow");
   messageNode.querySelector(".arrow").click();
 
-  await waitFor(
-    () => messageNode.querySelectorAll(".objectBox-node").length == 2
+  const impactedElementsLabel = await waitFor(() =>
+    messageNode.querySelector(".elements-label")
   );
-  ok(
-    messageNode.textContent.includes("NodeList [ button#1, button#2 ]"),
-    "The message was expanded and shows the impacted elements"
+  is(
+    impactedElementsLabel.innerText,
+    "Elements matching selector: :is(main) button",
+    "The message was expanded and shows the expected selector"
   );
 
-  let node = messageNode.querySelector(".objectBox-node");
+  const objectInspector = messageNode.querySelector(".object-inspector");
+  ok(
+    objectInspector.textContent.includes("NodeList [ button#1, button#2 ]"),
+    `The message shows the impacted elements (got "${objectInspector.textContent}")`
+  );
+
+  let node = objectInspector.querySelector(".objectBox-node");
   let openInInspectorIcon = node.querySelector(".open-inspector");
   ok(openInInspectorIcon !== null, "The is an open in inspector icon");
 
@@ -88,7 +100,7 @@ add_task(async function() {
 
   info("Check the CSS warning message for the third-party iframe");
   messageNode = await waitFor(() =>
-    findMessage(hud, "Error in parsing value for ‘color’", ".message.css")
+    findWarningMessage(hud, "Error in parsing value for ‘color’", ".css")
   );
 
   info("Click on the expand arrow");

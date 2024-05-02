@@ -6,12 +6,14 @@ _(
     "requests."
 );
 
-const { RESTRequest } = ChromeUtils.import(
-  "resource://services-common/rest.js"
+const { RESTRequest } = ChromeUtils.importESModule(
+  "resource://services-common/rest.sys.mjs"
 );
-const { Service } = ChromeUtils.import("resource://services-sync/service.js");
-const { PromiseUtils } = ChromeUtils.import(
-  "resource://gre/modules/PromiseUtils.jsm"
+const { Service } = ChromeUtils.importESModule(
+  "resource://services-sync/service.sys.mjs"
+);
+const { PromiseUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/PromiseUtils.sys.mjs"
 );
 
 add_task(async function setup() {
@@ -107,7 +109,7 @@ async function syncAndExpectNodeReassignment(
 
     // Make absolutely sure that any event listeners are done with their work
     // before we proceed.
-    waitForZeroTimer(function() {
+    waitForZeroTimer(function () {
       _("Second sync nextTick.");
       Assert.equal(getTokenCount, 1);
       Service.startOver().then(() => {
@@ -354,7 +356,7 @@ add_task(async function test_loop_avoidance_storage() {
 
     // Make absolutely sure that any event listeners are done with their work
     // before we proceed.
-    waitForZeroTimer(function() {
+    waitForZeroTimer(function () {
       _("Third sync nextTick.");
       Assert.ok(!getReassigned());
       Assert.equal(getTokenCount, 2);
@@ -491,7 +493,7 @@ add_task(async function test_loop_avoidance_engine() {
 
     // Make absolutely sure that any event listeners are done with their work
     // before we proceed.
-    waitForZeroTimer(function() {
+    waitForZeroTimer(function () {
       _("Third sync nextTick.");
       Assert.ok(!getReassigned());
       Assert.equal(getTokenCount, 2);

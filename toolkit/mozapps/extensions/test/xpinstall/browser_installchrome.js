@@ -1,6 +1,9 @@
 // ----------------------------------------------------------------------------
 // Tests that calling InstallTrigger.installChrome works
 function test() {
+  // This test depends on InstallTrigger.installChrome availability.
+  setInstallTriggerPrefs();
+
   Harness.installEndedCallback = install_ended;
   Harness.installsCompletedCallback = finish_test;
   Harness.setup();
@@ -12,7 +15,7 @@ function test() {
   );
 
   gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser);
-  BrowserTestUtils.loadURI(
+  BrowserTestUtils.startLoadingURIString(
     gBrowser,
     TESTROOT +
       "installchrome.html? " +

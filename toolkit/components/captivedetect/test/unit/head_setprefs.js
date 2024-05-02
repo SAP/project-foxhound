@@ -4,11 +4,9 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-var { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+var { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-const { sinon } = ChromeUtils.import("resource://testing-common/Sinon.jsm");
-var { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 var {
   HTTP_400,
   HTTP_401,
@@ -35,11 +33,14 @@ var {
   HTTP_505,
   HttpError,
   HttpServer,
-} = ChromeUtils.import("resource://testing-common/httpd.js");
+} = ChromeUtils.importESModule("resource://testing-common/httpd.sys.mjs");
 
-const fakeTelemetryService = {
-  recordEvent: sinon.spy(),
-};
+XPCOMUtils.defineLazyServiceGetter(
+  this,
+  "gCaptivePortalDetector",
+  "@mozilla.org/toolkit/captive-detector;1",
+  "nsICaptivePortalDetector"
+);
 
 const kCanonicalSitePath = "/canonicalSite.html";
 const kCanonicalSiteContent = "true";
@@ -61,7 +62,6 @@ function setupPrefs() {
   Services.prefs.setIntPref(kPrefsPollingTime, 1);
 }
 
-let gCaptivePortalDetector;
 function run_captivedetect_test(xhr_handler, fakeUIResponse, testfun) {
   gServer = new HttpServer();
   gServer.registerPathHandler(kCanonicalSitePath, xhr_handler);
@@ -69,14 +69,6 @@ function run_captivedetect_test(xhr_handler, fakeUIResponse, testfun) {
   gServerURL = "http://localhost:" + gServer.identity.primaryPort;
 
   setupPrefs();
-
-  // Instead of getting the XPCOM service, we need the real JS object, so that
-  // we can give it a stubbed out telemetry service.
-  const { CaptivePortalDetector } = ChromeUtils.import(
-    "resource:///modules/CaptiveDetect.jsm"
-  );
-  gCaptivePortalDetector = new CaptivePortalDetector();
-  gCaptivePortalDetector._telemetryService = fakeTelemetryService;
 
   fakeUIResponse();
 

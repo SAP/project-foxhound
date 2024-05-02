@@ -30,6 +30,7 @@
 #include "video/video_analyzer.h"
 #ifdef WEBRTC_WIN
 #include "modules/audio_device/win/core_audio_utility_win.h"
+#include "rtc_base/win/scoped_com_initializer.h"
 #endif
 
 namespace webrtc {
@@ -64,8 +65,6 @@ class VideoQualityTest : public test::CallTest,
   static std::vector<int> ParseCSV(const std::string& str);
 
  protected:
-  std::map<uint8_t, webrtc::MediaType> payload_type_map_;
-
   // No-op implementation to be able to instantiate this class from non-TEST_F
   // locations.
   void TestBody() override;
@@ -96,7 +95,7 @@ class VideoQualityTest : public test::CallTest,
                              bool use_real_adm);
   void SetupAudio(Transport* transport);
 
-  void StartEncodedFrameLogs(VideoReceiveStream* stream);
+  void StartEncodedFrameLogs(VideoReceiveStreamInterface* stream);
 
   virtual std::unique_ptr<test::LayerFilteringTransport> CreateSendTransport();
   virtual std::unique_ptr<test::DirectTransport> CreateReceiveTransport();
@@ -117,8 +116,8 @@ class VideoQualityTest : public test::CallTest,
   std::vector<VideoSendStream::Config> thumbnail_send_configs_;
   std::vector<VideoEncoderConfig> thumbnail_encoder_configs_;
   std::vector<VideoSendStream*> thumbnail_send_streams_;
-  std::vector<VideoReceiveStream::Config> thumbnail_receive_configs_;
-  std::vector<VideoReceiveStream*> thumbnail_receive_streams_;
+  std::vector<VideoReceiveStreamInterface::Config> thumbnail_receive_configs_;
+  std::vector<VideoReceiveStreamInterface*> thumbnail_receive_streams_;
 
   int receive_logs_;
   int send_logs_;
@@ -137,7 +136,7 @@ class VideoQualityTest : public test::CallTest,
 #ifdef WEBRTC_WIN
   // Windows Core Audio based ADM needs to run on a COM initialized thread.
   // Only referenced in combination with --audio --use_real_adm flags.
-  std::unique_ptr<webrtc_win::ScopedCOMInitializer> com_initializer_;
+  std::unique_ptr<ScopedCOMInitializer> com_initializer_;
 #endif
 };
 

@@ -1,17 +1,16 @@
 "use strict";
 
-const { TelemetryEnvironment } = ChromeUtils.import(
-  "resource://gre/modules/TelemetryEnvironment.jsm"
+const { BaseAction } = ChromeUtils.importESModule(
+  "resource://normandy/actions/BaseAction.sys.mjs"
 );
-const { BaseAction } = ChromeUtils.import(
-  "resource://normandy/actions/BaseAction.jsm"
+const { PreferenceRollbackAction } = ChromeUtils.importESModule(
+  "resource://normandy/actions/PreferenceRollbackAction.sys.mjs"
 );
-const { PreferenceRollbackAction } = ChromeUtils.import(
-  "resource://normandy/actions/PreferenceRollbackAction.jsm"
+const { Uptake } = ChromeUtils.importESModule(
+  "resource://normandy/lib/Uptake.sys.mjs"
 );
-const { Uptake } = ChromeUtils.import("resource://normandy/lib/Uptake.jsm");
-const { PreferenceRollouts } = ChromeUtils.import(
-  "resource://normandy/lib/PreferenceRollouts.jsm"
+const { PreferenceRollouts } = ChromeUtils.importESModule(
+  "resource://normandy/lib/PreferenceRollouts.sys.mjs"
 );
 
 // Test that a simple recipe rollsback as expected
@@ -38,7 +37,6 @@ decorate_task(
         },
         { preferenceName: "test.pref3", value: true, previousValue: false },
       ],
-      enrollmentId: "test-enrollment-id",
     });
 
     const recipe = { id: 1, arguments: { rolloutSlug: "test-rollout" } };
@@ -99,7 +97,6 @@ decorate_task(
             },
             { preferenceName: "test.pref3", value: true, previousValue: false },
           ],
-          enrollmentId: rollouts[0].enrollmentId,
         },
       ],
       "Rollout should be updated in db"
@@ -139,7 +136,6 @@ decorate_task(
       preferences: [
         { preferenceName: "test.pref", value: 1, previousValue: 1 },
       ],
-      enrollmentId: "test-enrollment-id",
     });
 
     let recipe = { id: 1, arguments: { rolloutSlug: "graduated-rollout" } };
@@ -166,7 +162,6 @@ decorate_task(
           preferences: [
             { preferenceName: "test.pref", value: 1, previousValue: 1 },
           ],
-          enrollmentId: "test-enrollment-id",
         },
       ],
       "Rollout should not change in db"
@@ -177,7 +172,7 @@ decorate_task(
         "unenrollFailed",
         "preference_rollback",
         "graduated-rollout",
-        { reason: "graduated", enrollmentId: "test-enrollment-id" },
+        { reason: "graduated" },
       ],
     ]);
 
@@ -226,7 +221,6 @@ decorate_task(
       preferences: [
         { preferenceName: "test.pref", value: 2, previousValue: 1 },
       ],
-      enrollmentId: "test-rollout-id",
     };
     await PreferenceRollouts.add(rollout);
 
@@ -281,7 +275,6 @@ decorate_task(
           previousValue: "builtin value",
         },
       ],
-      enrollmentId: "test-enrollment-id",
     });
 
     const recipe = { id: 1, arguments: { rolloutSlug: "test-rollout" } };
@@ -345,7 +338,6 @@ decorate_task(
         "graduated-rollout",
         {
           reason: "in-graduation-set",
-          enrollmentId: TelemetryEvents.NO_ENROLLMENT_ID,
         },
       ],
     ]);

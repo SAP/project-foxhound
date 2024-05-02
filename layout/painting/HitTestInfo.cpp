@@ -12,12 +12,14 @@
 #include "nsIFrame.h"
 #include "mozilla/layers/ScrollableLayerGuid.h"
 
+using namespace mozilla::gfx;
+
 namespace mozilla {
 
 static StaticAutoPtr<const HitTestInfo> gEmptyHitTestInfo;
 
 const HitTestInfo& HitTestInfo::Empty() {
-  if (gEmptyHitTestInfo) {
+  if (!gEmptyHitTestInfo) {
     gEmptyHitTestInfo = new HitTestInfo();
   }
 

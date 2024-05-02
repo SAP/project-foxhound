@@ -16,14 +16,14 @@ const TEST_URI =
   "https://example.com/browser/devtools/client/webconsole/test/browser/test-console-api.html";
 const STUB_FILE = "consoleApi.js";
 
-add_task(async function() {
-  const isStubsUpdate = env.get(STUBS_UPDATE_ENV) == "true";
+add_task(async function () {
+  const isStubsUpdate = Services.env.get(STUBS_UPDATE_ENV) == "true";
   info(`${isStubsUpdate ? "Update" : "Check"} ${STUB_FILE}`);
 
   const generatedStubs = await generateConsoleApiStubs();
 
   if (isStubsUpdate) {
-    await writeStubsToFile(env, STUB_FILE, generatedStubs);
+    await writeStubsToFile(STUB_FILE, generatedStubs);
     ok(true, `${STUB_FILE} was updated`);
     return;
   }
@@ -71,7 +71,7 @@ async function generateConsoleApiStubs() {
   // The resource-watcher only supports a single call to watch/unwatch per
   // instance, so we attach a unique watch callback, which will forward the
   // resource to `handleConsoleMessage`, dynamically updated for each command.
-  let handleConsoleMessage = function() {};
+  let handleConsoleMessage = function () {};
 
   const onConsoleMessage = resources => {
     for (const resource of resources) {
@@ -99,17 +99,21 @@ async function generateConsoleApiStubs() {
       };
     });
 
-    await SpecialPowers.spawn(gBrowser.selectedBrowser, [code], function(
-      subCode
-    ) {
-      const script = content.document.createElement("script");
-      script.append(
-        content.document.createTextNode(`function triggerPacket() {${subCode}}`)
-      );
-      content.document.body.append(script);
-      content.wrappedJSObject.triggerPacket();
-      script.remove();
-    });
+    await SpecialPowers.spawn(
+      gBrowser.selectedBrowser,
+      [code],
+      function (subCode) {
+        const script = content.document.createElement("script");
+        script.append(
+          content.document.createTextNode(
+            `function triggerPacket() {${subCode}}`
+          )
+        );
+        content.document.body.append(script);
+        content.wrappedJSObject.triggerPacket();
+        script.remove();
+      }
+    );
 
     await received;
   }
@@ -261,7 +265,7 @@ function getCommands() {
       code: `
   console.log(
     "%cfoo%cbar",
-    "color:blue; font-size:1.3em; background:url('https://example.com/test'); position:absolute; top:10px; ",
+    "color:blue; font-size:1.3em; background:url('data:image/png,base64,iVBORw0KGgoAAAAN'), url('https://example.com/test'); position:absolute; top:10px; ",
     "color:red; line-height: 1.5; background:\\165rl('https://example.com/test')"
   );
   `,

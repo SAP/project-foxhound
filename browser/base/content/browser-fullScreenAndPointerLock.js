@@ -62,9 +62,18 @@ var PointerlockFsWarning = {
       this._element = document.getElementById(elementId);
       // Setup event listeners
       this._element.addEventListener("transitionend", this);
+      this._element.addEventListener("transitioncancel", this);
       window.addEventListener("mousemove", this, true);
+      // If the user explicitly disables the prompt, there's no need to detect
+      // activation.
+      if (timeout > 0) {
+        window.addEventListener("activate", this);
+        window.addEventListener("deactivate", this);
+      }
       // The timeout to hide the warning box after a while.
       this._timeoutHide = new this.Timeout(() => {
+        window.removeEventListener("activate", this);
+        window.removeEventListener("deactivate", this);
         this._state = "hidden";
       }, timeout);
       // The timeout to show the warning box when the pointer is at the top
@@ -94,9 +103,10 @@ var PointerlockFsWarning = {
     } else {
       textElem.removeAttribute("hidden");
       // Document's principal's URI has a host. Display a warning including it.
-      let utils = {};
-      ChromeUtils.import("resource://gre/modules/DownloadUtils.jsm", utils);
-      let displayHost = utils.DownloadUtils.getURIHost(uri.spec)[0];
+      let { DownloadUtils } = ChromeUtils.importESModule(
+        "resource://gre/modules/DownloadUtils.sys.mjs"
+      );
+      let displayHost = DownloadUtils.getURIHost(uri.spec)[0];
       let l10nString = {
         "fullscreen-warning": "fullscreen-warning-domain",
         "pointerlock-warning": "pointerlock-warning-domain",
@@ -115,11 +125,10 @@ var PointerlockFsWarning = {
       return;
     }
 
-    // Explicitly set the last state to hidden to avoid the warning
-    // box being hidden immediately because of mousemove.
-    this._state = "onscreen";
-    this._lastState = "hidden";
-    this._timeoutHide.start();
+    if (Services.focus.activeWindow == window) {
+      this._state = "onscreen";
+      this._timeoutHide.start();
+    }
   },
 
   /**
@@ -147,7 +156,10 @@ var PointerlockFsWarning = {
     this._element.hidden = true;
     // Remove all event listeners
     this._element.removeEventListener("transitionend", this);
+    this._element.removeEventListener("transitioncancel", this);
     window.removeEventListener("mousemove", this, true);
+    window.removeEventListener("activate", this);
+    window.removeEventListener("deactivate", this);
     // Clear fields
     this._element = null;
     this._timeoutHide = null;
@@ -185,7 +197,7 @@ var PointerlockFsWarning = {
     }
     if (newState != "hidden") {
       if (currentState != "hidden") {
-        this._element.setAttribute(newState, true);
+        this._element.setAttribute(newState, "");
       } else {
         // When the previous state is hidden, the display was none,
         // thus no box was constructed. We need to wait for the new
@@ -196,7 +208,7 @@ var PointerlockFsWarning = {
         requestAnimationFrame(() => {
           requestAnimationFrame(() => {
             if (this._element) {
-              this._element.setAttribute(newState, true);
+              this._element.setAttribute(newState, "");
             }
           });
         });
@@ -216,7 +228,7 @@ var PointerlockFsWarning = {
           } else if (this._timeoutShow.delay >= 0) {
             this._timeoutShow.start();
           }
-        } else {
+        } else if (state != "onscreen") {
           let elemRect = this._element.getBoundingClientRect();
           if (state == "hiding" && this._lastState != "hidden") {
             // If we are on the hiding transition, and the pointer
@@ -238,10 +250,21 @@ var PointerlockFsWarning = {
         }
         break;
       }
-      case "transitionend": {
+      case "transitionend":
+      case "transitioncancel": {
         if (this._state == "hiding") {
           this._element.hidden = true;
         }
+        break;
+      }
+      case "activate": {
+        this._state = "onscreen";
+        this._timeoutHide.start();
+        break;
+      }
+      case "deactivate": {
+        this._state = "hidden";
+        this._timeoutHide.cancel();
         break;
       }
     }
@@ -294,6 +317,12 @@ var FullScreen = {
     }
   },
 
+  get fullScreenToggler() {
+    delete this.fullScreenToggler;
+    return (this.fullScreenToggler =
+      document.getElementById("fullscr-toggler"));
+  },
+
   toggle() {
     var enterFS = window.fullScreen;
 
@@ -313,14 +342,12 @@ var FullScreen = {
       this.shiftMacToolbarDown(0);
     }
 
-    if (!this._fullScrToggler) {
-      this._fullScrToggler = document.getElementById("fullscr-toggler");
-      this._fullScrToggler.addEventListener("mouseover", this._expandCallback);
-      this._fullScrToggler.addEventListener("dragenter", this._expandCallback);
-      this._fullScrToggler.addEventListener("touchmove", this._expandCallback, {
-        passive: true,
-      });
-    }
+    let fstoggler = this.fullScreenToggler;
+    fstoggler.addEventListener("mouseover", this._expandCallback);
+    fstoggler.addEventListener("dragenter", this._expandCallback);
+    fstoggler.addEventListener("touchmove", this._expandCallback, {
+      passive: true,
+    });
 
     if (enterFS) {
       gNavToolbox.setAttribute("inFullscreen", true);
@@ -360,6 +387,7 @@ var FullScreen = {
       this._isPopupOpen = false;
       this.cleanup();
     }
+    this._toggleShortcutKeys();
   },
 
   exitDomFullScreen() {
@@ -376,17 +404,24 @@ var FullScreen = {
    */
   shiftMacToolbarDown(shiftSize) {
     if (typeof shiftSize !== "number") {
-      Cu.reportError("Tried to shift the toolbar by a non-numeric distance.");
+      console.error("Tried to shift the toolbar by a non-numeric distance.");
       return;
     }
 
     // shiftSize is sent from Cocoa widget code as a very precise double. We
     // don't need that kind of precision in our CSS.
     shiftSize = shiftSize.toFixed(2);
-    let toolbox = document.getElementById("navigator-toolbox");
+    let toolbox = gNavToolbox;
     if (shiftSize > 0) {
       toolbox.style.setProperty("transform", `translateY(${shiftSize}px)`);
       toolbox.style.setProperty("z-index", "2");
+
+      // If the mouse tracking missed our fullScreenToggler, then the toolbox
+      // might not have been shown before the menubar is animated down. Make
+      // sure it is shown now.
+      if (!this.fullScreenToggler.hidden) {
+        this.showNavToolbox();
+      }
     } else {
       toolbox.style.removeProperty("transform");
       toolbox.style.removeProperty("z-index");
@@ -466,7 +501,12 @@ var FullScreen = {
     // before the check is fine since we also check the activeness of
     // the requesting document in content-side handling code.
     if (this._isRemoteBrowser(aBrowser)) {
-      let [targetActor, inProcessBC] = this._getNextMsgRecipientActor(aActor);
+      // The cached message recipient in actor is used for fullscreen state
+      // cleanup, we should not use it while entering fullscreen.
+      let [targetActor, inProcessBC] = this._getNextMsgRecipientActor(
+        aActor,
+        false /* aUseCache */
+      );
       if (!targetActor) {
         // If there is no appropriate actor to send the message we have
         // no way to complete the transition and should abort by exiting
@@ -474,14 +514,14 @@ var FullScreen = {
         this._abortEnterFullscreen();
         return;
       }
+      // Record that the actor is waiting for its child to enter
+      // fullscreen so that if it dies we can abort.
+      targetActor.waitingForChildEnterFullscreen = true;
       targetActor.sendAsyncMessage("DOMFullscreen:Entered", {
         remoteFrameBC: inProcessBC,
       });
 
       if (inProcessBC) {
-        // Record that the actor is waiting for its child to enter
-        // fullscreen so that if it dies we can abort.
-        targetActor.waitingForChildEnterFullscreen = true;
         // We aren't messaging the request origin yet, skip this time.
         return;
       }
@@ -513,6 +553,8 @@ var FullScreen = {
       }
     }
     document.documentElement.setAttribute("inDOMFullscreen", true);
+
+    XULBrowserWindow.onEnterDOMFullscreen();
 
     if (gFindBarInitialized) {
       gFindBar.close(true);
@@ -546,6 +588,25 @@ var FullScreen = {
     }
   },
 
+  _toggleShortcutKeys() {
+    const kEnterKeyIds = [
+      "key_enterFullScreen",
+      "key_enterFullScreen_old",
+      "key_enterFullScreen_compat",
+    ];
+    const kExitKeyIds = [
+      "key_exitFullScreen",
+      "key_exitFullScreen_old",
+      "key_exitFullScreen_compat",
+    ];
+    for (let id of window.fullScreen ? kEnterKeyIds : kExitKeyIds) {
+      document.getElementById(id)?.setAttribute("disabled", "true");
+    }
+    for (let id of window.fullScreen ? kExitKeyIds : kEnterKeyIds) {
+      document.getElementById(id)?.removeAttribute("disabled");
+    }
+  },
+
   /**
    * Clean up full screen, starting from the request origin's first ancestor
    * frame that is OOP.
@@ -558,17 +619,21 @@ var FullScreen = {
    */
   cleanupDomFullscreen(aActor) {
     let needToWaitForChildExit = false;
-    let [target, inProcessBC] = this._getNextMsgRecipientActor(aActor);
+    // Use the message recipient cached in the actor if possible, especially for
+    // the case that actor is destroyed, which we are unable to find it by
+    // walking up the browsing context tree.
+    let [target, inProcessBC] = this._getNextMsgRecipientActor(
+      aActor,
+      true /* aUseCache */
+    );
     if (target) {
       needToWaitForChildExit = true;
-      if (!target.waitingForChildExitFullscreen) {
-        // Record that the actor is waiting for its child to exit fullscreen so
-        // that if it dies we can continue cleanup.
-        target.waitingForChildExitFullscreen = true;
-        target.sendAsyncMessage("DOMFullscreen:CleanUp", {
-          remoteFrameBC: inProcessBC,
-        });
-      }
+      // Record that the actor is waiting for its child to exit fullscreen so
+      // that if it dies we can continue cleanup.
+      target.waitingForChildExitFullscreen = true;
+      target.sendAsyncMessage("DOMFullscreen:CleanUp", {
+        remoteFrameBC: inProcessBC,
+      });
       if (inProcessBC) {
         return needToWaitForChildExit;
       }
@@ -613,6 +678,8 @@ var FullScreen = {
    *
    * @param {JSWindowActorParent} aActor
    *        The actor that called this function.
+   * @param {bool} aUseCache
+   *        Use the recipient cached in the aActor if available.
    *
    * @return {[JSWindowActorParent, BrowsingContext]}
    *         The parent actor which should be sent the next msg and the
@@ -622,10 +689,10 @@ var FullScreen = {
    *         the calling actor has been destroyed or its associated
    *         WindowContext is in BFCache.
    */
-  _getNextMsgRecipientActor(aActor) {
+  _getNextMsgRecipientActor(aActor, aUseCache) {
     // Walk up the cached nextMsgRecipient to find the next available actor if
     // any.
-    if (aActor.nextMsgRecipient) {
+    if (aUseCache && aActor.nextMsgRecipient) {
       let nextMsgRecipient = aActor.nextMsgRecipient;
       while (nextMsgRecipient) {
         let [actor] = nextMsgRecipient;
@@ -757,7 +824,7 @@ var FullScreen = {
   },
 
   // Autohide helpers for the context menu item
-  getAutohide(aItem) {
+  updateAutohideMenuitem(aItem) {
     aItem.setAttribute(
       "checked",
       Services.prefs.getBoolPref("browser.fullscreen.autohide")
@@ -776,7 +843,7 @@ var FullScreen = {
     if (BrowserHandler.kiosk) {
       return;
     }
-    this._fullScrToggler.hidden = true;
+    this.fullScreenToggler.hidden = true;
     gNavToolbox.removeAttribute("fullscreenShouldAnimate");
     gNavToolbox.style.marginTop = "";
 
@@ -847,7 +914,7 @@ var FullScreen = {
     }
 
     if (!BrowserHandler.kiosk) {
-      this._fullScrToggler.hidden = false;
+      this.fullScreenToggler.hidden = false;
     }
 
     if (
@@ -883,14 +950,25 @@ var FullScreen = {
   },
 };
 
-XPCOMUtils.defineLazyGetter(FullScreen, "_permissionNotificationIDs", () => {
-  let { PermissionUI } = ChromeUtils.import(
-    "resource:///modules/PermissionUI.jsm",
-    {}
+ChromeUtils.defineLazyGetter(FullScreen, "_permissionNotificationIDs", () => {
+  let { PermissionUI } = ChromeUtils.importESModule(
+    "resource:///modules/PermissionUI.sys.mjs"
   );
   return (
     Object.values(PermissionUI)
-      .filter(value => value.prototype && value.prototype.notificationID)
+      .filter(value => {
+        let returnValue;
+        try {
+          returnValue = value.prototype.notificationID;
+        } catch (err) {
+          if (err.message === "Not implemented.") {
+            returnValue = false;
+          } else {
+            throw err;
+          }
+        }
+        return returnValue;
+      })
       .map(value => value.prototype.notificationID)
       // Additionally include webRTC permission prompt which does not use PermissionUI
       .concat(["webRTC-shareDevices"])

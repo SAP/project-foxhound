@@ -60,13 +60,20 @@ const tests = [
     expected: "another description",
   },
   {
-    desc:
-      "Description from @aria-describedby attribute when @title (used for " +
-      "name) and @aria-describedby are not the same",
+    desc: "No description change when @alt is dropped but @aria-describedby remains",
     attrs: [
       {
         attr: "alt",
       },
+    ],
+    waitFor: [[EVENT_NAME_CHANGE, "image"]],
+    expected: "another description",
+  },
+  {
+    desc:
+      "Description from @aria-describedby attribute when @title (used for " +
+      "name) and @aria-describedby are not the same",
+    attrs: [
       {
         attr: "title",
         value: "title",
@@ -187,7 +194,7 @@ addAccessibleTask(
   <p id="description">aria description</p>
   <p id="description2">another description</p>
   <img id="image" src="http://example.com/a11y/accessible/tests/mochitest/moz.png" />`,
-  async function(browser, accDoc) {
+  async function (browser, accDoc) {
     let imgAcc = findAccessibleChildByID(accDoc, "image");
 
     for (let { desc, waitFor, attrs, expected } of tests) {
@@ -211,4 +218,63 @@ addAccessibleTask(
     }
   },
   { iframe: true, remoteIframe: true }
+);
+
+/**
+ * Test that the description is updated when the content of a hidden aria-describedby
+ * subtree changes.
+ */
+addAccessibleTask(
+  `
+<button id="button" aria-describedby="desc">
+<div id="desc" hidden>a</div>
+  `,
+  async function (browser, docAcc) {
+    const button = findAccessibleChildByID(docAcc, "button");
+    testDescr(button, "a");
+    info("Changing desc textContent");
+    let descChanged = waitForEvent(EVENT_DESCRIPTION_CHANGE, button);
+    await invokeContentTask(browser, [], () => {
+      content.document.getElementById("desc").textContent = "c";
+    });
+    await descChanged;
+    testDescr(button, "c");
+    info("Prepending text node to desc");
+    descChanged = waitForEvent(EVENT_DESCRIPTION_CHANGE, button);
+    await invokeContentTask(browser, [], () => {
+      content.document
+        .getElementById("desc")
+        .prepend(content.document.createTextNode("b"));
+    });
+    await descChanged;
+    testDescr(button, "bc");
+  },
+  { chrome: true, topLevel: true, iframe: true, remoteIframe: true }
+);
+
+/**
+ * Test aria-description, including mutations.
+ */
+addAccessibleTask(
+  `<button id="button" aria-description="a">button</button>`,
+  async function (browser, docAcc) {
+    const button = findAccessibleChildByID(docAcc, "button");
+    testDescr(button, "a");
+    info("Changing aria-description");
+    let changed = waitForEvent(EVENT_DESCRIPTION_CHANGE, button);
+    await invokeSetAttribute(browser, "button", "aria-description", "b");
+    await changed;
+    testDescr(button, "b");
+    info("Removing aria-description");
+    changed = waitForEvent(EVENT_DESCRIPTION_CHANGE, button);
+    await invokeSetAttribute(browser, "button", "aria-description");
+    await changed;
+    testDescr(button, "");
+    info("Setting aria-description");
+    changed = waitForEvent(EVENT_DESCRIPTION_CHANGE, button);
+    await invokeSetAttribute(browser, "button", "aria-description", "c");
+    await changed;
+    testDescr(button, "c");
+  },
+  { chrome: true, topLevel: true, iframe: true, remoteIframe: true }
 );

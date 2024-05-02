@@ -4,57 +4,52 @@
 
 "use strict";
 
-const { Cu } = require("chrome");
-const Services = require("Services");
-const { Actor, ActorClassWithSpec } = require("devtools/shared/protocol");
+const { Actor } = require("resource://devtools/shared/protocol.js");
 const {
   flexboxSpec,
   flexItemSpec,
   gridSpec,
   layoutSpec,
-} = require("devtools/shared/specs/layout");
+} = require("resource://devtools/shared/specs/layout.js");
+
 const {
   getStringifiableFragments,
-} = require("devtools/server/actors/utils/css-grid-utils");
+} = require("resource://devtools/server/actors/utils/css-grid-utils.js");
 
 loader.lazyRequireGetter(
   this,
   "CssLogic",
-  "devtools/server/actors/inspector/css-logic",
+  "resource://devtools/server/actors/inspector/css-logic.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "findGridParentContainerForNode",
-  "devtools/server/actors/inspector/utils",
+  "resource://devtools/server/actors/inspector/utils.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "getCSSStyleRules",
-  "devtools/shared/inspector/css-logic",
+  "resource://devtools/shared/inspector/css-logic.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "isCssPropertyKnown",
-  "devtools/server/actors/css-properties",
+  "resource://devtools/server/actors/css-properties.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "parseDeclarations",
-  "devtools/shared/css/parsing-utils",
+  "resource://devtools/shared/css/parsing-utils.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "nodeConstants",
-  "devtools/shared/dom-node-constants"
-);
-
-const SUBGRID_ENABLED = Services.prefs.getBoolPref(
-  "layout.css.grid-template-subgrid-value.enabled"
+  "resource://devtools/shared/dom-node-constants.js"
 );
 
 /**
@@ -70,26 +65,26 @@ const SUBGRID_ENABLED = Services.prefs.getBoolPref(
  * The |Grid| actor provides the grid fragment information to inspect the grid container.
  */
 
-const FlexboxActor = ActorClassWithSpec(flexboxSpec, {
+class FlexboxActor extends Actor {
   /**
    * @param  {LayoutActor} layoutActor
    *         The LayoutActor instance.
    * @param  {DOMNode} containerEl
    *         The flex container element.
    */
-  initialize(layoutActor, containerEl) {
-    Actor.prototype.initialize.call(this, layoutActor.conn);
+  constructor(layoutActor, containerEl) {
+    super(layoutActor.conn, flexboxSpec);
 
     this.containerEl = containerEl;
     this.walker = layoutActor.walker;
-  },
+  }
 
   destroy() {
-    Actor.prototype.destroy.call(this);
+    super.destroy();
 
     this.containerEl = null;
     this.walker = null;
-  },
+  }
 
   form() {
     const styles = CssLogic.getComputedStyle(this.containerEl);
@@ -114,7 +109,7 @@ const FlexboxActor = ActorClassWithSpec(flexboxSpec, {
     }
 
     return form;
-  },
+  }
 
   /**
    * Returns an array of FlexItemActor objects for all the flex item elements contained
@@ -156,13 +151,13 @@ const FlexboxActor = ActorClassWithSpec(flexboxSpec, {
     }
 
     return flexItemActors;
-  },
-});
+  }
+}
 
 /**
  * The FlexItemActor provides information about a flex items' data.
  */
-const FlexItemActor = ActorClassWithSpec(flexItemSpec, {
+class FlexItemActor extends Actor {
   /**
    * @param  {FlexboxActor} flexboxActor
    *         The FlexboxActor instance.
@@ -171,23 +166,23 @@ const FlexItemActor = ActorClassWithSpec(flexItemSpec, {
    * @param  {Object} flexItemSizing
    *         The flex item sizing data.
    */
-  initialize(flexboxActor, element, flexItemSizing) {
-    Actor.prototype.initialize.call(this, flexboxActor.conn);
+  constructor(flexboxActor, element, flexItemSizing) {
+    super(flexboxActor.conn, flexItemSpec);
 
     this.containerEl = flexboxActor.containerEl;
     this.element = element;
     this.flexItemSizing = flexItemSizing;
     this.walker = flexboxActor.walker;
-  },
+  }
 
   destroy() {
-    Actor.prototype.destroy.call(this);
+    super.destroy();
 
     this.containerEl = null;
     this.element = null;
     this.flexItemSizing = null;
     this.walker = null;
-  },
+  }
 
   form() {
     const { mainAxisDirection } = this.flexItemSizing;
@@ -288,33 +283,33 @@ const FlexItemActor = ActorClassWithSpec(flexItemSpec, {
     }
 
     return form;
-  },
-});
+  }
+}
 
 /**
  * The GridActor provides information about a given grid's fragment data.
  */
-const GridActor = ActorClassWithSpec(gridSpec, {
+class GridActor extends Actor {
   /**
    * @param  {LayoutActor} layoutActor
    *         The LayoutActor instance.
    * @param  {DOMNode} containerEl
    *         The grid container element.
    */
-  initialize(layoutActor, containerEl) {
-    Actor.prototype.initialize.call(this, layoutActor.conn);
+  constructor(layoutActor, containerEl) {
+    super(layoutActor.conn, gridSpec);
 
     this.containerEl = containerEl;
     this.walker = layoutActor.walker;
-  },
+  }
 
   destroy() {
-    Actor.prototype.destroy.call(this);
+    super.destroy();
 
     this.containerEl = null;
     this.gridFragments = null;
     this.walker = null;
-  },
+  }
 
   form() {
     // Seralize the grid fragment data into JSON so protocol.js knows how to write
@@ -323,12 +318,8 @@ const GridActor = ActorClassWithSpec(gridSpec, {
     this.gridFragments = getStringifiableFragments(gridFragments);
 
     // Record writing mode and text direction for use by the grid outline.
-    const {
-      direction,
-      gridTemplateColumns,
-      gridTemplateRows,
-      writingMode,
-    } = CssLogic.getComputedStyle(this.containerEl);
+    const { direction, gridTemplateColumns, gridTemplateRows, writingMode } =
+      CssLogic.getComputedStyle(this.containerEl);
 
     const form = {
       actor: this.actorID,
@@ -344,33 +335,31 @@ const GridActor = ActorClassWithSpec(gridSpec, {
       form.containerNodeActorID = this.walker.getNode(this.containerEl).actorID;
     }
 
-    if (SUBGRID_ENABLED) {
-      form.isSubgrid =
-        gridTemplateRows.startsWith("subgrid") ||
-        gridTemplateColumns.startsWith("subgrid");
-    }
+    form.isSubgrid =
+      gridTemplateRows.startsWith("subgrid") ||
+      gridTemplateColumns.startsWith("subgrid");
 
     return form;
-  },
-});
+  }
+}
 
 /**
  * The CSS layout actor provides layout information for the given document.
  */
-const LayoutActor = ActorClassWithSpec(layoutSpec, {
-  initialize(conn, targetActor, walker) {
-    Actor.prototype.initialize.call(this, conn);
+class LayoutActor extends Actor {
+  constructor(conn, targetActor, walker) {
+    super(conn, layoutSpec);
 
     this.targetActor = targetActor;
     this.walker = walker;
-  },
+  }
 
   destroy() {
-    Actor.prototype.destroy.call(this);
+    super.destroy();
 
     this.targetActor = null;
     this.walker = null;
-  },
+  }
 
   /**
    * Helper function for getAsFlexItem, getCurrentGrid and getCurrentFlexbox. Returns the
@@ -440,7 +429,7 @@ const LayoutActor = ActorClassWithSpec(layoutSpec, {
     }
 
     return null;
-  },
+  }
 
   /**
    * Returns the grid container for a given selected node.
@@ -456,7 +445,7 @@ const LayoutActor = ActorClassWithSpec(layoutSpec, {
    */
   getCurrentGrid(node) {
     return this.getCurrentDisplay(node, "grid");
-  },
+  }
 
   /**
    * Returns the flex container for a given selected node.
@@ -474,7 +463,7 @@ const LayoutActor = ActorClassWithSpec(layoutSpec, {
    */
   getCurrentFlexbox(node, onlyLookAtParents) {
     return this.getCurrentDisplay(node, "flex", onlyLookAtParents);
-  },
+  }
 
   /**
    * Returns an array of GridActor objects for all the grid elements contained in the
@@ -516,8 +505,8 @@ const LayoutActor = ActorClassWithSpec(layoutSpec, {
     }
 
     return gridActors;
-  },
-});
+  }
+}
 
 function isNodeDead(node) {
   return !node || (node.rawNode && Cu.isDeadWrapper(node.rawNode));

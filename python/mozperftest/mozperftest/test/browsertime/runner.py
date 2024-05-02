@@ -5,15 +5,14 @@ import collections
 import json
 import os
 import pathlib
-import sys
 import re
 import shutil
+import sys
 from pathlib import Path
 
-from mozperftest.utils import install_package, get_output_dir
-from mozperftest.test.noderunner import NodeRunner
 from mozperftest.test.browsertime.visualtools import get_dependencies, xvfb
-
+from mozperftest.test.noderunner import NodeRunner
+from mozperftest.utils import ON_TRY, get_output_dir, install_package
 
 BROWSERTIME_SRC_ROOT = Path(__file__).parent
 
@@ -83,6 +82,11 @@ class BrowsertimeRunner(NodeRunner):
             "help": "Use the window recorder",
         },
         "viewport-size": {"type": str, "default": "1280x1024", "help": "Viewport size"},
+        "existing-results": {
+            "type": str,
+            "default": None,
+            "help": "Directory containing existing results to load.",
+        },
     }
 
     def __init__(self, env, mach_cmd):
@@ -137,22 +141,42 @@ class BrowsertimeRunner(NodeRunner):
             os.environ["VISUALMETRICS_PY"] = str(path)
         return path
 
+    def _get_browsertime_package(self):
+        with Path(
+            os.environ.get("BROWSERTIME", self.state_path),
+            "node_modules",
+            "browsertime",
+            "package.json",
+        ).open() as package:
+            return json.load(package)
+
+    def _get_browsertime_resolved(self):
+        try:
+            with Path(
+                os.environ.get("BROWSERTIME", self.state_path),
+                "node_modules",
+                ".package-lock.json",
+            ).open() as package_lock:
+                return json.load(package_lock)["packages"]["node_modules/browsertime"][
+                    "resolved"
+                ]
+
+        except FileNotFoundError:
+            # Older versions of node/npm add this metadata to package.json
+            return self._get_browsertime_package().get("_from")
+
     def _should_install(self):
         # If browsertime doesn't exist, install it
         if not self.visualmetrics_py.exists() or not self.browsertime_js.exists():
             return True
 
         # Browsertime exists, check if it's outdated
-        with Path(BROWSERTIME_SRC_ROOT, "package.json").open() as new, Path(
-            os.environ.get("BROWSERTIME", self.state_path),
-            "node_modules",
-            "browsertime",
-            "package.json",
-        ).open() as old:
-            old_pkg = json.load(old)
+        with Path(BROWSERTIME_SRC_ROOT, "package.json").open() as new:
             new_pkg = json.load(new)
 
-        return not old_pkg["_from"].endswith(new_pkg["devDependencies"]["browsertime"])
+        return not self._get_browsertime_resolved().endswith(
+            new_pkg["devDependencies"]["browsertime"]
+        )
 
     def setup(self):
         """Install browsertime and visualmetrics.py prerequisites and the Node.js package."""
@@ -226,9 +250,8 @@ class BrowsertimeRunner(NodeRunner):
         # os.environ[b"GECKODRIVER_BASE_URL"] = bytes(url)
         # to an endpoint with binaries named like
         # https://github.com/sitespeedio/geckodriver/blob/master/install.js#L31.
-        automation = "MOZ_AUTOMATION" in os.environ
 
-        if automation:
+        if ON_TRY:
             os.environ["CHROMEDRIVER_SKIP_DOWNLOAD"] = "true"
             os.environ["GECKODRIVER_SKIP_DOWNLOAD"] = "true"
 
@@ -243,7 +266,7 @@ class BrowsertimeRunner(NodeRunner):
             "browsertime",
             should_update=install_url is not None,
             should_clobber=should_clobber,
-            no_optional=install_url or automation,
+            no_optional=install_url or ON_TRY,
         )
 
     def extra_default_args(self, args=[]):
@@ -300,11 +323,6 @@ class BrowsertimeRunner(NodeRunner):
 
         args_list = [
             "--android",
-            # Work around a `selenium-webdriver` issue where Browsertime
-            # fails to find a Firefox binary even though we're going to
-            # actually do things on an Android device.
-            "--firefox.binaryPath",
-            self.node_path,
             "--firefox.android.package",
             app_name,
         ]
@@ -333,9 +351,16 @@ class BrowsertimeRunner(NodeRunner):
     def run(self, metadata):
         self._test_script = metadata.script
         self.setup()
+
+        existing = self.get_arg("browsertime-existing-results")
+        if existing:
+            metadata.add_result(
+                {"results": existing, "name": self._test_script["name"]}
+            )
+            return metadata
+
         cycles = self.get_arg("cycles", 1)
         for cycle in range(1, cycles + 1):
-
             # Build an output directory
             output = self.get_arg("output")
             if output is None:
@@ -356,6 +381,7 @@ class BrowsertimeRunner(NodeRunner):
 
     def _one_cycle(self, metadata, result_dir):
         profile = self.get_arg("profile-directory")
+        is_login_site = False
 
         args = [
             "--resultDir",
@@ -402,10 +428,28 @@ class BrowsertimeRunner(NodeRunner):
                     )
                     continue
                 name, value = option
+
+                # Check if we have a login site
+                if name == "browsertime.login" and value:
+                    is_login_site = True
+
+                self.info(f"Adding extra browsertime argument: --{name} {value}")
                 args += ["--" + name, value]
 
         if self.get_arg("android"):
             args.extend(self._android_args(metadata))
+
+        # Remove any possible verbose option if we are on Try and using logins
+        if is_login_site and ON_TRY:
+            self.info("Turning off verbose mode for login-logic")
+            self.info(
+                "Please contact the perftest team if you need verbose mode enabled."
+            )
+            for verbose_level in ("-v", "-vv", "-vvv", "-vvvv"):
+                try:
+                    args.remove(verbose_level)
+                except ValueError:
+                    pass
 
         extra = self.extra_default_args(args=args)
         command = [str(self.browsertime_js)] + extra + args

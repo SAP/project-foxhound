@@ -11,13 +11,14 @@ use std::sync::{
 use std::time::{Duration, Instant};
 
 use nserror::{nsresult, NS_ERROR_FAILURE, NS_OK};
-use xpcom::interfaces::nsISupports;
+use xpcom::{
+    interfaces::{nsIObserverService, nsISupports},
+    RefPtr,
+};
 
 // Partially cargo-culted from UploadPrefObserver.
-#[derive(xpcom)]
-#[xpimplements(nsIObserver)]
-#[refcnt = "atomic"]
-pub(crate) struct InitUserActivityObserver {
+#[xpcom(implement(nsIObserver), atomic)]
+pub(crate) struct UserActivityObserver {
     last_edge: RwLock<Instant>,
     was_active: AtomicBool,
 }
@@ -44,7 +45,8 @@ impl UserActivityObserver {
                 last_edge: RwLock::new(Instant::now()),
                 was_active: AtomicBool::new(false),
             });
-            let obs_service = xpcom::services::get_ObserverService().ok_or(NS_ERROR_FAILURE)?;
+            let obs_service: RefPtr<nsIObserverService> =
+                xpcom::components::Observer::service().map_err(|_| NS_ERROR_FAILURE)?;
             let rv = obs_service.AddObserver(
                 activity_obs.coerce(),
                 cstr!("user-interaction-active").as_ptr(),
@@ -69,7 +71,7 @@ impl UserActivityObserver {
         &self,
         _subject: *const nsISupports,
         topic: *const c_char,
-        _data: *const i16,
+        _data: *const u16,
     ) -> nserror::nsresult {
         match CStr::from_ptr(topic).to_str() {
             Ok("user-interaction-active") => self.handle_active(),

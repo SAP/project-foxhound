@@ -1,12 +1,9 @@
-from __future__ import absolute_import, unicode_literals
-
 import os
 import time
 
 import mozinfo
 import mozunit
-
-from mozlog.structuredlog import set_default_logger, StructuredLogger
+from mozlog.structuredlog import StructuredLogger, set_default_logger
 
 # need this so raptor imports work both from /raptor and via mach
 here = os.path.abspath(os.path.dirname(__file__))
@@ -31,7 +28,7 @@ def test_get_playback(get_binary):
         return
     config["obj_path"] = os.path.dirname(get_binary("firefox"))
     config["playback_tool"] = "mitmproxy"
-    config["playback_version"] = "7.0.4"
+    config["playback_version"] = "8.1.1"
     config["playback_files"] = [
         os.path.join(
             os.path.dirname(os.path.abspath(os.path.dirname(__file__))),

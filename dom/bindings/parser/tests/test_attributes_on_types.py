@@ -1,7 +1,3 @@
-# Import the WebIDL module, so we can do isinstance checks and whatnot
-import WebIDL
-
-
 def WebIDLTest(parser, harness):
     # Basic functionality
     threw = False
@@ -22,17 +18,17 @@ def WebIDLTest(parser, harness):
                 attribute [EnforceRange] long foo;
                 attribute [Clamp] long bar;
                 attribute [LegacyNullToEmptyString] DOMString baz;
-                void method([EnforceRange] long foo, [Clamp] long bar,
-                            [LegacyNullToEmptyString] DOMString baz);
-                void method2(optional [EnforceRange] long foo, optional [Clamp] long bar,
-                             optional [LegacyNullToEmptyString] DOMString baz);
-                void method3(optional [LegacyNullToEmptyString] UTF8String foo = "");
+                undefined method([EnforceRange] long foo, [Clamp] long bar,
+                                 [LegacyNullToEmptyString] DOMString baz);
+                undefined method2(optional [EnforceRange] long foo, optional [Clamp] long bar,
+                                  optional [LegacyNullToEmptyString] DOMString baz);
+                undefined method3(optional [LegacyNullToEmptyString] UTF8String foo = "");
             };
             interface C {
                 attribute [EnforceRange] long? foo;
                 attribute [Clamp] long? bar;
-                void method([EnforceRange] long? foo, [Clamp] long? bar);
-                void method2(optional [EnforceRange] long? foo, optional [Clamp] long? bar);
+                undefined method([EnforceRange] long? foo, [Clamp] long? bar);
+                undefined method2(optional [EnforceRange] long? foo, optional [Clamp] long? bar);
             };
             interface Setlike {
                 setlike<[Clamp] long>;
@@ -46,7 +42,7 @@ def WebIDLTest(parser, harness):
         """
         )
         results = parser.finish()
-    except:
+    except Exception:
         threw = True
 
     harness.ok(not threw, "Should not have thrown on parsing normal")
@@ -162,13 +158,13 @@ def WebIDLTest(parser, harness):
             interface B {
                 attribute Foo typedefFoo;
                 attribute [AllowShared] ArrayBufferView foo;
-                void method([AllowShared] ArrayBufferView foo);
-                void method2(optional [AllowShared] ArrayBufferView foo);
+                undefined method([AllowShared] ArrayBufferView foo);
+                undefined method2(optional [AllowShared] ArrayBufferView foo);
             };
             interface C {
                 attribute [AllowShared] ArrayBufferView? foo;
-                void method([AllowShared] ArrayBufferView? foo);
-                void method2(optional [AllowShared] ArrayBufferView? foo);
+                undefined method([AllowShared] ArrayBufferView? foo);
+                undefined method2(optional [AllowShared] ArrayBufferView? foo);
             };
             interface Setlike {
                 setlike<[AllowShared] ArrayBufferView>;
@@ -182,7 +178,7 @@ def WebIDLTest(parser, harness):
         """
         )
         results = parser.finish()
-    except:
+    except Exception:
         threw = True
 
     harness.ok(not threw, "Should not have thrown on parsing normal")
@@ -236,7 +232,7 @@ def WebIDLTest(parser, harness):
             "optional arguments",
             """
             interface Foo {
-                void foo(%s optional %s foo);
+                undefined foo(%s optional %s foo);
             };
         """,
         ),
@@ -292,7 +288,7 @@ def WebIDLTest(parser, harness):
             "partial interface",
             """
             interface Foo {
-              void foo();
+              undefined foo();
             };
             %s
             partial interface Foo {
@@ -322,7 +318,7 @@ def WebIDLTest(parser, harness):
             "partial namespace",
             """
             namespace Foo {
-              void foo();
+              undefined foo();
             };
             %s
             partial namespace Foo {
@@ -341,22 +337,22 @@ def WebIDLTest(parser, harness):
         ),
     ]
 
-    for (name, template) in TEMPLATES:
+    for name, template in TEMPLATES:
         parser = parser.reset()
         threw = False
         try:
             parser.parse(template % ("", "long"))
             parser.finish()
-        except:
+        except Exception:
             threw = True
         harness.ok(not threw, "Template for %s parses without attributes" % name)
-        for (attribute, type) in ATTRIBUTES:
+        for attribute, type in ATTRIBUTES:
             parser = parser.reset()
             threw = False
             try:
                 parser.parse(template % (attribute, type))
                 parser.finish()
-            except:
+            except Exception:
                 threw = True
             harness.ok(threw, "Should not allow %s on %s" % (attribute, name))
 
@@ -369,7 +365,7 @@ def WebIDLTest(parser, harness):
         """
         )
         parser.finish()
-    except:
+    except Exception:
         threw = True
 
     harness.ok(threw, "Should not allow mixing [Clamp] and [EnforceRange]")
@@ -383,7 +379,7 @@ def WebIDLTest(parser, harness):
         """
         )
         parser.finish()
-    except:
+    except Exception:
         threw = True
 
     harness.ok(threw, "Should not allow mixing [Clamp] and [EnforceRange]")
@@ -398,7 +394,7 @@ def WebIDLTest(parser, harness):
         """
         )
         parser.finish()
-    except:
+    except Exception:
         threw = True
 
     harness.ok(threw, "Should not allow mixing [Clamp] and [EnforceRange] via typedefs")
@@ -413,7 +409,7 @@ def WebIDLTest(parser, harness):
         """
         )
         parser.finish()
-    except:
+    except Exception:
         threw = True
 
     harness.ok(threw, "Should not allow mixing [Clamp] and [EnforceRange] via typedefs")
@@ -437,7 +433,7 @@ def WebIDLTest(parser, harness):
                 % type
             )
             parser.finish()
-        except:
+        except Exception:
             threw = True
 
         harness.ok(threw, "Should not allow [Clamp] on %s" % type)
@@ -452,7 +448,7 @@ def WebIDLTest(parser, harness):
                 % type
             )
             parser.finish()
-        except:
+        except Exception:
             threw = True
 
         harness.ok(threw, "Should not allow [EnforceRange] on %s" % type)
@@ -466,7 +462,7 @@ def WebIDLTest(parser, harness):
         """
         )
         parser.finish()
-    except:
+    except Exception:
         threw = True
 
     harness.ok(threw, "Should not allow [LegacyNullToEmptyString] on long")
@@ -480,7 +476,7 @@ def WebIDLTest(parser, harness):
         """
         )
         parser.finish()
-    except:
+    except Exception:
         threw = True
 
     harness.ok(threw, "Should not allow [LegacyNullToEmptyString] on JSString")
@@ -494,7 +490,7 @@ def WebIDLTest(parser, harness):
         """
         )
         parser.finish()
-    except:
+    except Exception:
         threw = True
 
     harness.ok(
@@ -510,7 +506,7 @@ def WebIDLTest(parser, harness):
         """
         )
         results = parser.finish()
-    except:
+    except Exception:
         threw = True
     harness.ok(threw, "[AllowShared] only allowed on buffer source types")
 
@@ -523,7 +519,7 @@ def WebIDLTest(parser, harness):
         """
         )
         results = parser.finish()
-    except:
+    except Exception:
         threw = True
     harness.ok(threw, "[AllowShared] must take no arguments")
 
@@ -533,13 +529,13 @@ def WebIDLTest(parser, harness):
         parser.parse(
             """
             interface Foo {
-               void foo([Clamp] Bar arg);
+               undefined foo([Clamp] Bar arg);
             };
             typedef long Bar;
         """
         )
         results = parser.finish()
-    except:
+    except Exception:
         threw = True
     harness.ok(not threw, "Should allow type attributes on unresolved types")
     harness.check(
@@ -554,17 +550,18 @@ def WebIDLTest(parser, harness):
         parser.parse(
             """
             interface Foo {
-               void foo(Bar arg);
+               undefined foo(Bar arg);
             };
             typedef [Clamp] long Bar;
         """
         )
         results = parser.finish()
-    except:
+    except Exception:
         threw = True
     harness.ok(not threw, "Should allow type attributes on typedefs")
     harness.check(
         results[0].members[0].signatures()[0][1][0].type.hasClamp(),
         True,
-        "Unresolved types that resolve to typedefs with attributes should correctly resolve with attributes",
+        "Unresolved types that resolve to typedefs with attributes should correctly resolve with "
+        "attributes",
     )

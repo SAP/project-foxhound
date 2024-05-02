@@ -30,6 +30,15 @@
 
 #ifndef _USER_ENVIRONMENT_H_
 #define _USER_ENVIRONMENT_H_
+
+#if defined(_WIN32)
+// Needed for unified build so that rand_s is available to all unified
+// sources.
+#if !defined(_CRT_RAND_S) && !defined(FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION)
+#define _CRT_RAND_S
+#endif
+#endif
+
 /* __Userspace__ */
 #include <sys/types.h>
 
@@ -68,7 +77,8 @@ extern int nmbclusters;
 #endif
 
 void init_random(void);
-int read_random(void *, int);
+void read_random(void *, size_t);
+void finish_random(void);
 
 /* errno's may differ per OS.  errno.h now included in sctp_os_userspace.h */
 /* Source: /usr/src/sys/sys/errno.h */
@@ -90,7 +100,11 @@ extern u_short ip_id;
 #if defined(INVARIANTS)
 #include <stdlib.h>
 
-static inline void
+#if defined(_WIN32)
+static inline void __declspec(noreturn)
+#else
+static inline void __attribute__((__noreturn__))
+#endif
 terminate_non_graceful(void) {
 	abort();
 }

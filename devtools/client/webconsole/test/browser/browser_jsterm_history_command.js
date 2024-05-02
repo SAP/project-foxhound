@@ -8,18 +8,18 @@
 const TEST_URI = "data:text/html;charset=UTF-8,<!DOCTYPE html>test";
 const COMMANDS = ["document", "window", "window.location"];
 
-add_task(async function() {
+add_task(async function () {
   const hud = await openNewTabAndConsole(TEST_URI);
   const { jsterm } = hud;
   jsterm.focus();
 
   for (const command of COMMANDS) {
     info(`Executing command ${command}`);
-    await executeAndWaitForMessage(hud, command, "", ".result");
+    await executeAndWaitForResultMessage(hud, command, "");
   }
 
   info(`Executing command :history`);
-  await executeAndWaitForMessage(hud, ":history", "", ".simpleTable");
+  await executeAndWaitForMessageByType(hud, ":history", "", ".simpleTable");
   const historyTableRows = hud.ui.outputNode.querySelectorAll(
     ".message.simpleTable tbody tr"
   );

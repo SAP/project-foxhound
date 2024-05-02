@@ -76,6 +76,9 @@ It's as simple as calling `testGetValue`.
 All migrated collections are expected to be tested.
 If you can't test them, then you'd better have an exceptionally good reason why not.
 
+For more details, please peruse the
+[instrumentation testing docs](instrumentation_tests).
+
 ## Which Glean Metric Type Should I Use?
 
 Glean uses higher-level metric types than Firefox Telemetry does.
@@ -481,8 +484,7 @@ urlbar:
     kind: uint
     keyed: true
     notification_emails:
-      - fx-search@mozilla.com
-      - tbrooks@mozilla.com
+      - email@example.com
     release_channel_collection: opt-out
     products:
       - 'firefox'
@@ -508,8 +510,7 @@ urlbar:
       - interaction
     expires: never
     notification_emails:
-      - fx-search@mozilla.com
-      - tbrooks@mozilla.com
+      - email@example.com
 ```
 
 Now, if your Keyed Scalar has a list of known keys,

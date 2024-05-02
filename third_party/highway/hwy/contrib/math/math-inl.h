@@ -1,4 +1,5 @@
 // Copyright 2020 Google LLC
+// SPDX-License-Identifier: Apache-2.0
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -115,6 +116,49 @@ HWY_INLINE V Atanh(const D d, V x);
 template <class D, class V>
 HWY_NOINLINE V CallAtanh(const D d, VecArg<V> x) {
   return Atanh(d, x);
+}
+
+// Atan2 was added later and some users may be implementing it themselves, so
+// notify them that this version of Highway defines it already.
+#ifndef HWY_HAVE_ATAN2
+#define HWY_HAVE_ATAN2 1
+#endif
+
+/**
+ * Highway SIMD version of std::atan2(x).
+ *
+ * Valid Lane Types: float32, float64
+ * Correctly handles negative zero, infinities, and NaN.
+ * @return atan2 of 'y', 'x'
+ */
+template <class D, class V = VFromD<D>, class M = MFromD<D>,
+          typename T = TFromD<D>>
+HWY_INLINE V Atan2(const D d, V y, V x) {
+  const V kPi = Set(d, static_cast<T>(+3.14159265358979323846264));
+  const V kPi2 = Set(d, static_cast<T>(+1.570796326794897));
+  const V kPi4 = Set(d, static_cast<T>(+0.785398163397448));
+  const V xs_pi4 = CopySignToAbs(kPi4, x);
+  const V xs_pi2 = Add(xs_pi4, xs_pi4);
+
+  const V k0 = Zero(d);
+  const M y_0 = Eq(y, k0);
+  const M x_0 = Eq(x, k0);
+  const M x_neg = Lt(x, k0);
+  const M y_inf = IsInf(y);
+  const M x_inf = IsInf(x);
+  const M nan = Or(IsNaN(y), IsNaN(x));
+
+  // Atan may return negative, so cannot use CopySignToAbs.
+  V t = CopySign(Atan(d, Abs(Div(y, x))), x);
+  t = IfThenElse(Or(x_inf, x_0), Sub(kPi2, IfThenElseZero(x_inf, xs_pi2)), t);
+  t = IfThenElse(y_inf, Sub(kPi2, IfThenElseZero(x_inf, xs_pi4)), t);
+  t = IfThenElse(y_0, IfThenElseZero(x_neg, kPi), t);
+  // Any input NaN => NaN, otherwise fix sign.
+  return IfThenElse(nan, NaN(d), CopySign(t, y));
+}
+template <class D, class V>
+HWY_NOINLINE V CallAtan2(const D d, VecArg<V> y, VecArg<V> x) {
+  return Atan2(d, y, x);
 }
 
 /**
@@ -486,7 +530,7 @@ struct AsinImpl<float> {
   }
 };
 
-#if HWY_CAP_FLOAT64 && HWY_CAP_INTEGER64
+#if HWY_HAVE_FLOAT64 && HWY_HAVE_INTEGER64
 
 template <>
 struct AsinImpl<double> {
@@ -531,7 +575,7 @@ struct AtanImpl<float> {
   }
 };
 
-#if HWY_CAP_FLOAT64 && HWY_CAP_INTEGER64
+#if HWY_HAVE_FLOAT64 && HWY_HAVE_INTEGER64
 
 template <>
 struct AtanImpl<double> {
@@ -635,7 +679,7 @@ struct CosSinImpl<float> {
   }
 };
 
-#if HWY_CAP_FLOAT64 && HWY_CAP_INTEGER64
+#if HWY_HAVE_FLOAT64 && HWY_HAVE_INTEGER64
 
 template <>
 struct CosSinImpl<double> {
@@ -787,7 +831,7 @@ struct LogImpl<float> {
   }
 };
 
-#if HWY_CAP_FLOAT64 && HWY_CAP_INTEGER64
+#if HWY_HAVE_FLOAT64 && HWY_HAVE_INTEGER64
 template <>
 struct ExpImpl<double> {
   // Rounds double toward zero and returns as int32_t.

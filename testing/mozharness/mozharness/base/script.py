@@ -9,8 +9,6 @@ script.py, along with config.py and log.py, represents the core of
 mozharness.
 """
 
-from __future__ import absolute_import, print_function
-
 import codecs
 import datetime
 import errno
@@ -27,22 +25,23 @@ import re
 import shutil
 import socket
 import ssl
+import stat
 import subprocess
 import sys
 import tarfile
+import threading
 import time
 import traceback
 import zipfile
 import zlib
 from contextlib import contextmanager
 from io import BytesIO
+from queue import Empty, Queue
 
+import mozinfo
 import six
 from six import binary_type
 
-from mozprocess import ProcessHandler
-
-import mozinfo
 from mozharness.base.config import BaseConfig
 from mozharness.base.log import (
     DEBUG,
@@ -66,9 +65,9 @@ try:
 except ImportError:
     import json
 try:
-    from urllib2 import quote, urlopen, Request
+    from urllib2 import Request, quote, urlopen
 except ImportError:
-    from urllib.request import quote, urlopen, Request
+    from urllib.request import Request, quote, urlopen
 try:
     import urlparse
 except ImportError:
@@ -77,8 +76,8 @@ if os.name == "nt":
     import locale
 
     try:
-        import win32file
         import win32api
+        import win32file
 
         PYWIN32 = True
     except ImportError:
@@ -92,6 +91,33 @@ except ImportError:
 
 class ContentLengthMismatch(Exception):
     pass
+
+
+def _validate_tar_member(member, path):
+    def _is_within_directory(directory, target):
+        real_directory = os.path.realpath(directory)
+        real_target = os.path.realpath(target)
+        prefix = os.path.commonprefix([real_directory, real_target])
+        return prefix == real_directory
+
+    member_path = os.path.join(path, member.name)
+    if not _is_within_directory(path, member_path):
+        raise Exception("Attempted path traversal in tar file: " + member.name)
+    if member.issym():
+        link_path = os.path.join(os.path.dirname(member_path), member.linkname)
+        if not _is_within_directory(path, link_path):
+            raise Exception("Attempted link path traversal in tar file: " + member.name)
+    if member.mode & (stat.S_ISUID | stat.S_ISGID):
+        raise Exception("Attempted setuid or setgid in tar file: " + member.name)
+
+
+def _safe_extract(tar, path=".", *, numeric_owner=False):
+    def _files(tar, path):
+        for member in tar:
+            _validate_tar_member(member, path)
+            yield member
+
+    tar.extractall(path, members=_files(tar, path), numeric_owner=numeric_owner)
 
 
 def platform_name():
@@ -176,7 +202,7 @@ class PlatformMixin(object):
         if self._is_darwin():
             # osx is a special snowflake and to ensure the arch, it is better to use the following
             return (
-                sys.maxsize > 2 ** 32
+                sys.maxsize > 2**32
             )  # context: https://docs.python.org/2/library/platform.html
         else:
             # Using machine() gives you the architecture of the host rather
@@ -553,7 +579,7 @@ class ScriptMixin(PlatformMixin):
             else:
                 local_file = open(file_name, "wb")
             while True:
-                block = f.read(1024 ** 2)
+                block = f.read(1024**2)
                 if not block:
                     if f_length is not None and got_length != f_length:
                         raise URLError(
@@ -624,7 +650,7 @@ class ScriptMixin(PlatformMixin):
             retry_exceptions=(
                 HTTPError,
                 URLError,
-                httplib.BadStatusLine,
+                httplib.HTTPException,
                 socket.timeout,
                 socket.error,
             ),
@@ -700,11 +726,12 @@ class ScriptMixin(PlatformMixin):
             mode (str): string of the form 'filemode[:compression]' (e.g. 'r:gz' or 'r:bz2')
             extract_to (str, optional): where to extract the compressed file.
         """
-        t = tarfile.open(fileobj=compressed_file, mode=mode)
-        t.extractall(path=extract_to)
+        with tarfile.open(fileobj=compressed_file, mode=mode) as t:
+            _safe_extract(t, path=extract_to)
 
     def download_unpack(self, url, extract_to=".", extract_dirs="*", verbose=False):
-        """Generic method to download and extract a compressed file without writing it to disk first.
+        """Generic method to download and extract a compressed file without writing it
+        to disk first.
 
         Args:
             url (str): URL where the file to be downloaded is located.
@@ -777,7 +804,7 @@ class ScriptMixin(PlatformMixin):
             retry_exceptions=(
                 HTTPError,
                 URLError,
-                httplib.BadStatusLine,
+                httplib.HTTPException,
                 socket.timeout,
                 socket.error,
                 ContentLengthMismatch,
@@ -1543,7 +1570,7 @@ class ScriptMixin(PlatformMixin):
                 return -1
             self.info("Running command: %s in %s" % (command, cwd))
         else:
-            self.info("Running command: %s" % command)
+            self.info("Running command: %s" % (command,))
         if isinstance(command, list) or isinstance(command, tuple):
             self.info("Copy/paste: %s" % subprocess.list2cmdline(command))
         shell = True
@@ -1568,58 +1595,47 @@ class ScriptMixin(PlatformMixin):
             parser = output_parser
 
         try:
+            p = subprocess.Popen(
+                command,
+                shell=shell,
+                stdout=subprocess.PIPE,
+                cwd=cwd,
+                stderr=subprocess.STDOUT,
+                env=env,
+                bufsize=0,
+            )
             if output_timeout:
-
-                def processOutput(line):
-                    parser.add_lines(line)
-
-                def onTimeout():
-                    self.info(
-                        "Automation Error: mozprocess timed out after "
-                        "%s seconds running %s" % (str(output_timeout), str(command))
-                    )
-
-                p = ProcessHandler(
-                    command,
-                    shell=shell,
-                    env=env,
-                    cwd=cwd,
-                    storeOutput=False,
-                    onTimeout=(onTimeout,),
-                    processOutputLine=[processOutput],
-                )
                 self.info(
                     "Calling %s with output_timeout %d" % (command, output_timeout)
                 )
-                p.run(outputTimeout=output_timeout)
-                p.wait()
-                if p.timedOut:
-                    self.log(
-                        "timed out after %s seconds of no output" % output_timeout,
-                        level=error_level,
-                    )
-                returncode = int(p.proc.returncode)
-            else:
-                p = subprocess.Popen(
-                    command,
-                    shell=shell,
-                    stdout=subprocess.PIPE,
-                    cwd=cwd,
-                    stderr=subprocess.STDOUT,
-                    env=env,
-                    bufsize=0,
-                )
-                loop = True
-                while loop:
-                    if p.poll() is not None:
-                        """Avoid losing the final lines of the log?"""
-                        loop = False
-                    while True:
-                        line = p.stdout.readline()
-                        if not line:
-                            break
+
+                def reader(fh, queue):
+                    for line in iter(fh.readline, b""):
+                        queue.put(line)
+                    # Give a chance to the reading loop to exit without a timeout.
+                    queue.put(b"")
+
+                queue = Queue()
+                threading.Thread(
+                    target=reader, args=(p.stdout, queue), daemon=True
+                ).start()
+
+                try:
+                    for line in iter(
+                        functools.partial(queue.get, timeout=output_timeout), b""
+                    ):
                         parser.add_lines(line)
-                returncode = p.returncode
+                except Empty:
+                    self.info(
+                        "Automation Error: mozharness timed out after "
+                        "%s seconds running %s" % (str(output_timeout), str(command))
+                    )
+                    p.kill()
+            else:
+                for line in iter(p.stdout.readline, b""):
+                    parser.add_lines(line)
+            p.wait()
+            returncode = p.returncode
         except KeyboardInterrupt:
             level = error_level
             if halt_on_failure:
@@ -1641,12 +1657,11 @@ class ScriptMixin(PlatformMixin):
             )
             return -1
 
-        return_level = INFO
         if returncode not in success_codes:
-            return_level = error_level
             if throw_exception:
                 raise subprocess.CalledProcessError(returncode, command)
-        self.log("Return code: %d" % returncode, level=return_level)
+        # Force level to be INFO as message is not necessary in Treeherder
+        self.log("Return code: %d" % returncode, level=INFO)
 
         if halt_on_failure:
             _fail = False
@@ -1662,7 +1677,7 @@ class ScriptMixin(PlatformMixin):
             if _fail:
                 self.return_code = fatal_exit_code
                 self.fatal(
-                    "Halting on failure while running %s" % command,
+                    "Halting on failure while running %s" % (command,),
                     exit_code=fatal_exit_code,
                 )
         if return_type == "num_errors":
@@ -1684,6 +1699,7 @@ class ScriptMixin(PlatformMixin):
         fatal_exit_code=2,
         ignore_errors=False,
         success_codes=None,
+        output_filter=None,
     ):
         """Similar to run_command, but where run_command is an
         os.system(command) analog, get_output_from_command is a `command`
@@ -1731,6 +1747,8 @@ class ScriptMixin(PlatformMixin):
               level to `ERROR` for the output of stderr. Defaults to False.
             success_codes (int, optional): numeric value to compare against
               the command return value.
+            output_filter (func, optional): provide a function to filter output
+              so that noise is reduced and lines are sanitized.  default: None
 
         Returns:
             None: if the cwd is not a directory.
@@ -1814,6 +1832,8 @@ class ScriptMixin(PlatformMixin):
                 tmp_stdout_filename
             ):
                 output = self.read_from_file(tmp_stdout_filename, verbose=False)
+                if output_filter:
+                    output = output_filter(output)
                 if not silent:
                     self.log("Output received:", level=log_level)
                     output_lines = output.rstrip().splitlines()
@@ -1825,16 +1845,19 @@ class ScriptMixin(PlatformMixin):
                         self.log(" %s" % line, level=log_level)
                     output = "\n".join(output_lines)
         if os.path.exists(tmp_stderr_filename) and os.path.getsize(tmp_stderr_filename):
-            if not ignore_errors:
-                return_level = ERROR
-            self.log("Errors received:", level=return_level)
             errors = self.read_from_file(tmp_stderr_filename, verbose=False)
-            for line in errors.rstrip().splitlines():
-                if not line or line.isspace():
-                    continue
-                if isinstance(line, binary_type):
-                    line = line.decode("utf-8")
-                self.log(" %s" % line, level=return_level)
+            if output_filter:
+                errors = output_filter(errors)
+            if errors:
+                if not ignore_errors:
+                    return_level = ERROR
+                self.log("Errors received:", level=return_level)
+                for line in errors.rstrip().splitlines():
+                    if not line or line.isspace():
+                        continue
+                    if isinstance(line, binary_type):
+                        line = line.decode("utf-8")
+                    self.log(" %s" % line, level=return_level)
         elif p.returncode not in success_codes and not ignore_errors:
             return_level = ERROR
         # Clean up.
@@ -1843,7 +1866,8 @@ class ScriptMixin(PlatformMixin):
             self.rmtree(tmp_stdout_filename, log_level=DEBUG)
         if p.returncode and throw_exception:
             raise subprocess.CalledProcessError(p.returncode, command)
-        self.log("Return code: %d" % p.returncode, level=return_level)
+        # Force level to be INFO as message is not necessary in Treeherder
+        self.log("Return code: %d" % p.returncode, level=INFO)
         if halt_on_failure and return_level == ERROR:
             self.return_code = fatal_exit_code
             self.fatal(
@@ -1943,6 +1967,7 @@ class ScriptMixin(PlatformMixin):
                 )
                 with tarfile.open(filename) as bundle:
                     for entry in self._filter_entries(bundle.getnames(), extract_dirs):
+                        _validate_tar_member(bundle.getmember(entry), extract_to)
                         if verbose:
                             self.info(" %s" % entry)
                         bundle.extract(entry, path=extract_to)
@@ -2082,8 +2107,9 @@ class BaseScript(ScriptMixin, LogMixin, object):
         if here.replace("\\", "/").endswith(srcreldir):
             topsrcdir = os.path.normpath(os.path.join(here, "..", "..", "..", ".."))
             hg_dir = os.path.join(topsrcdir, ".hg")
-            git_dir = os.path.join(topsrcdir, ".git")
-            if os.path.isdir(hg_dir) or os.path.isdir(git_dir):
+            # .git might be a directory or a file for a git worktree
+            git_path = os.path.join(topsrcdir, ".git")
+            if os.path.isdir(hg_dir) or os.path.exists(git_path):
                 self.topsrcdir = topsrcdir
 
         # Set self.config to read-only.

@@ -6,7 +6,6 @@
 
 #include "mozilla/net/UrlClassifierCommon.h"
 
-#include "ClassifierDummyChannel.h"
 #include "mozilla/AntiTrackingUtils.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/Components.h"
@@ -175,6 +174,10 @@ nsresult UrlClassifierCommon::SetBlockedContent(nsIChannel* channel,
     case NS_ERROR_SOCIALTRACKING_URI:
       NS_SetRequestBlockingReason(
           channel, nsILoadInfo::BLOCKING_REASON_CLASSIFY_SOCIALTRACKING_URI);
+      break;
+    case NS_ERROR_EMAILTRACKING_URI:
+      NS_SetRequestBlockingReason(
+          channel, nsILoadInfo::BLOCKING_REASON_CLASSIFY_EMAILTRACKING_URI);
       break;
     default:
       MOZ_CRASH(
@@ -402,7 +405,9 @@ nsresult UrlClassifierCommon::CreatePairwiseEntityListURI(nsIChannel* aChannel,
 
   nsCOMPtr<nsIURI> entitylistURI;
   rv = NS_NewURI(getter_AddRefs(entitylistURI), entitylistEntry);
-  NS_ENSURE_SUCCESS(rv, rv);
+  if (NS_FAILED(rv)) {
+    return rv;
+  }
 
   entitylistURI.forget(aURI);
   return NS_OK;
@@ -470,11 +475,6 @@ void UrlClassifierCommon::SetClassificationFlagsHelper(
   if (httpChannel) {
     httpChannel->AddClassificationFlags(aClassificationFlags, aIsThirdParty);
   }
-
-  RefPtr<ClassifierDummyChannel> dummyChannel = do_QueryObject(aChannel);
-  if (dummyChannel) {
-    dummyChannel->AddClassificationFlags(aClassificationFlags, aIsThirdParty);
-  }
 }
 
 // static
@@ -499,8 +499,10 @@ void UrlClassifierCommon::AnnotateChannel(nsIChannel* aChannel,
   // We consider valid tracking flags (based on the current strict vs basic list
   // prefs) and cryptomining (which is not considered as tracking).
   bool validClassificationFlags =
-      IsTrackingClassificationFlag(aClassificationFlags) ||
-      IsCryptominingClassificationFlag(aClassificationFlags);
+      IsTrackingClassificationFlag(aClassificationFlags,
+                                   NS_UsePrivateBrowsing(aChannel)) ||
+      IsCryptominingClassificationFlag(aClassificationFlags,
+                                       NS_UsePrivateBrowsing(aChannel));
 
   if (validClassificationFlags && isThirdPartyWithTopLevelWinURI) {
     ContentBlockingNotifier::OnEvent(aChannel, aLoadingState);
@@ -564,8 +566,14 @@ bool UrlClassifierCommon::IsAllowListed(nsIChannel* aChannel) {
 }
 
 // static
-bool UrlClassifierCommon::IsTrackingClassificationFlag(uint32_t aFlag) {
-  if (StaticPrefs::privacy_annotate_channels_strict_list_enabled() &&
+bool UrlClassifierCommon::IsTrackingClassificationFlag(uint32_t aFlag,
+                                                       bool aIsPrivate) {
+  bool isLevel2ListEnabled =
+      aIsPrivate
+          ? StaticPrefs::privacy_annotate_channels_strict_list_pbmode_enabled()
+          : StaticPrefs::privacy_annotate_channels_strict_list_enabled();
+
+  if (isLevel2ListEnabled &&
       (aFlag & nsIClassifiedChannel::ClassificationFlags::
                    CLASSIFIED_ANY_STRICT_TRACKING)) {
     return true;
@@ -588,13 +596,19 @@ bool UrlClassifierCommon::IsSocialTrackingClassificationFlag(uint32_t aFlag) {
 }
 
 // static
-bool UrlClassifierCommon::IsCryptominingClassificationFlag(uint32_t aFlag) {
+bool UrlClassifierCommon::IsCryptominingClassificationFlag(uint32_t aFlag,
+                                                           bool aIsPrivate) {
   if (aFlag &
       nsIClassifiedChannel::ClassificationFlags::CLASSIFIED_CRYPTOMINING) {
     return true;
   }
 
-  if (StaticPrefs::privacy_annotate_channels_strict_list_enabled() &&
+  bool isLevel2ListEnabled =
+      aIsPrivate
+          ? StaticPrefs::privacy_annotate_channels_strict_list_pbmode_enabled()
+          : StaticPrefs::privacy_annotate_channels_strict_list_enabled();
+
+  if (isLevel2ListEnabled &&
       (aFlag & nsIClassifiedChannel::ClassificationFlags::
                    CLASSIFIED_CRYPTOMINING_CONTENT)) {
     return true;

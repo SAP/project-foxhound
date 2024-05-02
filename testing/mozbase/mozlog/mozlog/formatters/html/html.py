@@ -3,17 +3,15 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import
-
 import base64
-from datetime import datetime
-import os
 import json
+import os
+from collections import defaultdict
+from datetime import datetime
+
+import six
 
 from .. import base
-
-from collections import defaultdict
-import six
 
 html = None
 raw = None
@@ -342,4 +340,4 @@ class HTMLFormatter(base.BaseFormatter):
                 ),
             )
 
-        return u"<!DOCTYPE html>\n" + doc.unicode(indent=2)
+        return "<!DOCTYPE html>\n" + doc.unicode(indent=2)

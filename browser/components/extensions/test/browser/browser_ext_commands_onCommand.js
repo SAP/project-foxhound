@@ -181,7 +181,10 @@ add_task(async function test_user_defined_commands() {
 
   // Create a window before the extension is loaded.
   let win1 = await BrowserTestUtils.openNewBrowserWindow();
-  BrowserTestUtils.loadURI(win1.gBrowser.selectedBrowser, "about:robots");
+  BrowserTestUtils.startLoadingURIString(
+    win1.gBrowser.selectedBrowser,
+    "about:robots"
+  );
   await BrowserTestUtils.browserLoaded(win1.gBrowser.selectedBrowser);
 
   // We would have previously focused the window's content area after the
@@ -239,7 +242,8 @@ add_task(async function test_user_defined_commands() {
   let waitForConsole = new Promise(resolve => {
     SimpleTest.monitorConsole(resolve, [
       {
-        message: /Reading manifest: Warning processing commands.*.unrecognized_property: An unexpected property was found/,
+        message:
+          /Reading manifest: Warning processing commands.*.unrecognized_property: An unexpected property was found/,
       },
     ]);
   });
@@ -265,7 +269,10 @@ add_task(async function test_user_defined_commands() {
 
   // Create another window after the extension is loaded.
   let win2 = await BrowserTestUtils.openNewBrowserWindow();
-  BrowserTestUtils.loadURI(win2.gBrowser.selectedBrowser, "about:robots");
+  BrowserTestUtils.startLoadingURIString(
+    win2.gBrowser.selectedBrowser,
+    "about:robots"
+  );
   await BrowserTestUtils.browserLoaded(win2.gBrowser.selectedBrowser);
 
   // See comment above.
@@ -305,7 +312,10 @@ add_task(async function test_user_defined_commands() {
   let privateWin = await BrowserTestUtils.openNewBrowserWindow({
     private: true,
   });
-  BrowserTestUtils.loadURI(privateWin.gBrowser.selectedBrowser, "about:robots");
+  BrowserTestUtils.startLoadingURIString(
+    privateWin.gBrowser.selectedBrowser,
+    "about:robots"
+  );
   await BrowserTestUtils.browserLoaded(privateWin.gBrowser.selectedBrowser);
 
   // See comment above.
@@ -377,4 +387,56 @@ add_task(async function test_user_defined_commands() {
 
   SimpleTest.endMonitorConsole();
   await waitForConsole;
+});
+
+add_task(async function test_commands_event_page() {
+  await SpecialPowers.pushPrefEnv({
+    set: [["extensions.eventPages.enabled", true]],
+  });
+
+  let extension = ExtensionTestUtils.loadExtension({
+    useAddonManager: "permanent",
+    manifest: {
+      browser_specific_settings: { gecko: { id: "eventpage@commands" } },
+      background: { persistent: false },
+      commands: {
+        "toggle-feature": {
+          suggested_key: {
+            default: "Alt+Shift+J",
+          },
+        },
+      },
+    },
+    background() {
+      browser.commands.onCommand.addListener(name => {
+        browser.test.assertEq(name, "toggle-feature", "command received");
+        browser.test.sendMessage("onCommand");
+      });
+      browser.test.sendMessage("ready");
+    },
+  });
+
+  await extension.startup();
+  await extension.awaitMessage("ready");
+  assertPersistentListeners(extension, "commands", "onCommand", {
+    primed: false,
+  });
+
+  // test events waken background
+  await extension.terminateBackground();
+  assertPersistentListeners(extension, "commands", "onCommand", {
+    primed: true,
+  });
+
+  EventUtils.synthesizeKey("j", { altKey: true, shiftKey: true });
+
+  await extension.awaitMessage("ready");
+  await extension.awaitMessage("onCommand");
+  ok(true, "persistent event woke background");
+  assertPersistentListeners(extension, "commands", "onCommand", {
+    primed: false,
+  });
+
+  await extension.unload();
+  await SpecialPowers.popPrefEnv();
 });

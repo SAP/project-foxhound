@@ -16,10 +16,7 @@ const mockUpdateManager = {
 
   QueryInterface: ChromeUtils.generateQI(["nsIUpdateManager"]),
 
-  createInstance(outer, iiD) {
-    if (outer) {
-      throw Components.Exception("", Cr.NS_ERROR_NO_AGGREGATION);
-    }
+  createInstance(iiD) {
     return this.QueryInterface(iiD);
   },
 
@@ -88,7 +85,7 @@ function formatInstallDate(sec) {
   return date.toLocaleString(undefined, dtOptions);
 }
 
-add_task(async function() {
+add_task(async function () {
   await openPreferencesViaOpenPreferencesAPI("general", { leaveOpen: true });
   let doc = gBrowser.selectedBrowser.contentDocument;
 

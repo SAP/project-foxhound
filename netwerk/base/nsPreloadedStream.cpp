@@ -12,11 +12,15 @@
 namespace mozilla {
 namespace net {
 
-NS_IMPL_ISUPPORTS(nsPreloadedStream, nsIInputStream, nsIAsyncInputStream)
+NS_IMPL_ISUPPORTS(nsPreloadedStream, nsIInputStream, nsIAsyncInputStream,
+                  nsIInputStreamCallback)
 
 nsPreloadedStream::nsPreloadedStream(nsIAsyncInputStream* aStream,
                                      const char* data, uint32_t datalen)
-    : mStream(aStream), mOffset(0), mLen(datalen) {
+    : mStream(aStream),
+      mOffset(0),
+      mLen(datalen),
+      mCallback("nsPreloadedStream") {
   mBuf = (char*)moz_xmalloc(datalen);
   memcpy(mBuf, data, datalen);
 }
@@ -38,6 +42,9 @@ nsPreloadedStream::Available(uint64_t* _retval) {
   *_retval = avail + mLen;
   return NS_OK;
 }
+
+NS_IMETHODIMP
+nsPreloadedStream::StreamStatus() { return mStream->StreamStatus(); }
 
 NS_IMETHODIMP
 nsPreloadedStream::Read(char* aBuf, uint32_t aCount, uint32_t* _retval) {
@@ -108,7 +115,12 @@ nsPreloadedStream::AsyncWait(nsIInputStreamCallback* aCallback, uint32_t aFlags,
                              uint32_t aRequestedCount,
                              nsIEventTarget* aEventTarget) {
   if (!mLen) {
-    return mStream->AsyncWait(aCallback, aFlags, aRequestedCount, aEventTarget);
+    {
+      auto lock = mCallback.Lock();
+      *lock = aCallback;
+    }
+    return mStream->AsyncWait(aCallback ? this : nullptr, aFlags,
+                              aRequestedCount, aEventTarget);
   }
 
   if (!aCallback) return NS_OK;
@@ -117,6 +129,19 @@ nsPreloadedStream::AsyncWait(nsIInputStreamCallback* aCallback, uint32_t aFlags,
 
   nsCOMPtr<nsIRunnable> event = new RunOnThread(this, aCallback);
   return aEventTarget->Dispatch(event, nsIEventTarget::DISPATCH_NORMAL);
+}
+
+NS_IMETHODIMP
+nsPreloadedStream::OnInputStreamReady(nsIAsyncInputStream* aStream) {
+  nsCOMPtr<nsIInputStreamCallback> callback;
+  {
+    auto lock = mCallback.Lock();
+    callback = lock->forget();
+  }
+  if (callback) {
+    return callback->OnInputStreamReady(this);
+  }
+  return NS_OK;
 }
 
 }  // namespace net

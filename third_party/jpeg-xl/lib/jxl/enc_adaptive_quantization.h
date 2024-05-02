@@ -9,10 +9,7 @@
 #include <stddef.h>
 
 #include "lib/jxl/ac_strategy.h"
-#include "lib/jxl/aux_out.h"
 #include "lib/jxl/base/data_parallel.h"
-#include "lib/jxl/chroma_from_luma.h"
-#include "lib/jxl/common.h"
 #include "lib/jxl/enc_cache.h"
 #include "lib/jxl/enc_params.h"
 #include "lib/jxl/frame_header.h"
@@ -31,11 +28,7 @@
 
 namespace jxl {
 
-// Computes the decoded image for a given set of compression parameters. Mainly
-// used in the FindBestQuantization loops and in some tests.
-// TODO(veluca): this doesn't seem the best possible file for this function.
-ImageBundle RoundtripImage(const Image3F& opsin, PassesEncoderState* enc_state,
-                           const JxlCmsInterface& cms, ThreadPool* pool);
+struct AuxOut;
 
 // Returns an image subsampled by kBlockDim in each direction. If the value
 // at pixel (x,y) in the returned image is greater than 1.0, it means that
@@ -45,12 +38,13 @@ ImageBundle RoundtripImage(const Image3F& opsin, PassesEncoderState* enc_state,
 // can later be used to make better decisions about ac strategy.
 ImageF InitialQuantField(float butteraugli_target, const Image3F& opsin,
                          const FrameDimensions& frame_dim, ThreadPool* pool,
-                         float rescale, ImageF* initial_quant_mask);
+                         float rescale, ImageF* initial_quant_mask,
+                         ImageF* initial_quant_mask1x1);
 
 float InitialQuantDC(float butteraugli_target);
 
 void AdjustQuantField(const AcStrategyImage& ac_strategy, const Rect& rect,
-                      ImageF* quant_field);
+                      float butteraugli_target, ImageF* quant_field);
 
 // Returns a quantizer that uses an adjusted version of the provided
 // quant_field. Also computes the dequant_map corresponding to the given

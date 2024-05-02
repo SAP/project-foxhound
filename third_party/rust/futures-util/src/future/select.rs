@@ -99,17 +99,27 @@ where
     type Output = Either<(A::Output, B), (B::Output, A)>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let (mut a, mut b) = self.inner.take().expect("cannot poll Select twice");
-        match a.poll_unpin(cx) {
-            Poll::Ready(x) => Poll::Ready(Either::Left((x, b))),
-            Poll::Pending => match b.poll_unpin(cx) {
-                Poll::Ready(x) => Poll::Ready(Either::Right((x, a))),
-                Poll::Pending => {
-                    self.inner = Some((a, b));
-                    Poll::Pending
-                }
-            },
+        /// When compiled with `-C opt-level=z`, this function will help the compiler eliminate the `None` branch, where
+        /// `Option::unwrap` does not.
+        #[inline(always)]
+        fn unwrap_option<T>(value: Option<T>) -> T {
+            match value {
+                None => unreachable!(),
+                Some(value) => value,
+            }
         }
+
+        let (a, b) = self.inner.as_mut().expect("cannot poll Select twice");
+
+        if let Poll::Ready(val) = a.poll_unpin(cx) {
+            return Poll::Ready(Either::Left((val, unwrap_option(self.inner.take()).1)));
+        }
+
+        if let Poll::Ready(val) = b.poll_unpin(cx) {
+            return Poll::Ready(Either::Right((val, unwrap_option(self.inner.take()).0)));
+        }
+
+        Poll::Pending
     }
 }
 

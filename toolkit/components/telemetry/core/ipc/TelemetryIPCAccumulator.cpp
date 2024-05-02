@@ -6,25 +6,24 @@
 
 #include "TelemetryIPCAccumulator.h"
 
-#include "core/TelemetryHistogram.h"
 #include "core/TelemetryScalar.h"
+#include "mozilla/TelemetryProcessEnums.h"
 #include "mozilla/dom/ContentChild.h"
 #include "mozilla/gfx/GPUParent.h"
-#include "mozilla/gfx/GPUProcessManager.h"
+#include "mozilla/RDDParent.h"
 #include "mozilla/net/SocketProcessChild.h"
+#include "mozilla/ipc/UtilityProcessChild.h"
 #include "mozilla/SchedulerGroup.h"
 #include "mozilla/StaticMutex.h"
 #include "mozilla/StaticPrefs_toolkit.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/Unused.h"
-#include "nsComponentManagerUtils.h"
 #include "nsITimer.h"
 #include "nsThreadUtils.h"
 
 using mozilla::StaticAutoPtr;
 using mozilla::StaticMutex;
 using mozilla::StaticMutexAutoLock;
-using mozilla::TaskCategory;
 using mozilla::Telemetry::ChildEventData;
 using mozilla::Telemetry::DiscardedData;
 using mozilla::Telemetry::HistogramAccumulation;
@@ -72,7 +71,7 @@ StaticAutoPtr<nsTArray<ChildEventData>> gChildEvents;
 // a normal Mutex would show up as a leak in BloatView.  StaticMutex
 // also has the "OffTheBooks" property, so it won't show as a leak
 // in BloatView.
-static StaticMutex gTelemetryIPCAccumulatorMutex;
+static StaticMutex gTelemetryIPCAccumulatorMutex MOZ_UNANNOTATED;
 
 namespace {
 
@@ -313,8 +312,15 @@ void TelemetryIPCAccumulator::IPCTimerFired(nsITimer* aTimer, void* aClosure) {
     case GeckoProcessType_GPU:
       SendAccumulatedData(mozilla::gfx::GPUParent::GetSingleton());
       break;
+    case GeckoProcessType_RDD:
+      SendAccumulatedData(mozilla::RDDParent::GetSingleton());
+      break;
     case GeckoProcessType_Socket:
       SendAccumulatedData(mozilla::net::SocketProcessChild::GetSingleton());
+      break;
+    case GeckoProcessType_Utility:
+      SendAccumulatedData(
+          mozilla::ipc::UtilityProcessChild::GetSingleton().get());
       break;
     default:
       MOZ_ASSERT_UNREACHABLE("Unsupported process type");
@@ -341,5 +347,5 @@ void TelemetryIPCAccumulator::DeInitializeGlobalState() {
 
 void TelemetryIPCAccumulator::DispatchToMainThread(
     already_AddRefed<nsIRunnable>&& aEvent) {
-  SchedulerGroup::Dispatch(TaskCategory::Other, std::move(aEvent));
+  SchedulerGroup::Dispatch(std::move(aEvent));
 }

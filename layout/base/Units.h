@@ -27,6 +27,7 @@ struct IsPixel : std::false_type {};
 
 // See struct declaration for a description of each unit type.
 struct CSSPixel;
+struct OuterCSSPixel;
 struct LayoutDevicePixel;
 struct LayerPixel;
 struct CSSTransformedLayerPixel;
@@ -39,6 +40,8 @@ struct ExternalPixel;
 
 template <>
 struct IsPixel<CSSPixel> : std::true_type {};
+template <>
+struct IsPixel<OuterCSSPixel> : std::true_type {};
 template <>
 struct IsPixel<LayoutDevicePixel> : std::true_type {};
 template <>
@@ -69,6 +72,18 @@ typedef gfx::IntRectTyped<CSSPixel> CSSIntRect;
 typedef gfx::MarginTyped<CSSPixel> CSSMargin;
 typedef gfx::IntMarginTyped<CSSPixel> CSSIntMargin;
 typedef gfx::IntRegionTyped<CSSPixel> CSSIntRegion;
+
+typedef gfx::CoordTyped<OuterCSSPixel> OuterCSSCoord;
+typedef gfx::IntCoordTyped<OuterCSSPixel> OuterCSSIntCoord;
+typedef gfx::PointTyped<OuterCSSPixel> OuterCSSPoint;
+typedef gfx::IntPointTyped<OuterCSSPixel> OuterCSSIntPoint;
+typedef gfx::SizeTyped<OuterCSSPixel> OuterCSSSize;
+typedef gfx::IntSizeTyped<OuterCSSPixel> OuterCSSIntSize;
+typedef gfx::RectTyped<OuterCSSPixel> OuterCSSRect;
+typedef gfx::IntRectTyped<OuterCSSPixel> OuterCSSIntRect;
+typedef gfx::MarginTyped<OuterCSSPixel> OuterCSSMargin;
+typedef gfx::IntMarginTyped<OuterCSSPixel> OuterCSSIntMargin;
+typedef gfx::IntRegionTyped<OuterCSSPixel> OuterCSSIntRegion;
 
 typedef gfx::CoordTyped<LayoutDevicePixel> LayoutDeviceCoord;
 typedef gfx::IntCoordTyped<LayoutDevicePixel> LayoutDeviceIntCoord;
@@ -121,6 +136,11 @@ typedef gfx::MarginTyped<RenderTargetPixel> RenderTargetMargin;
 typedef gfx::IntMarginTyped<RenderTargetPixel> RenderTargetIntMargin;
 typedef gfx::IntRegionTyped<RenderTargetPixel> RenderTargetIntRegion;
 
+typedef gfx::PointTyped<ImagePixel> ImagePoint;
+typedef gfx::IntPointTyped<ImagePixel> ImageIntPoint;
+typedef gfx::SizeTyped<ImagePixel> ImageSize;
+typedef gfx::IntSizeTyped<ImagePixel> ImageIntSize;
+typedef gfx::RectTyped<ImagePixel> ImageRect;
 typedef gfx::IntRectTyped<ImagePixel> ImageIntRect;
 
 typedef gfx::CoordTyped<ScreenPixel> ScreenCoord;
@@ -169,10 +189,14 @@ typedef gfx::IntMarginTyped<ExternalPixel> ExternalIntMargin;
 typedef gfx::IntRegionTyped<ExternalPixel> ExternalIntRegion;
 
 typedef gfx::ScaleFactor<CSSPixel, CSSPixel> CSSToCSSScale;
+typedef gfx::ScaleFactor<CSSPixel, OuterCSSPixel> CSSToOuterCSSScale;
 typedef gfx::ScaleFactor<CSSPixel, LayoutDevicePixel> CSSToLayoutDeviceScale;
 typedef gfx::ScaleFactor<CSSPixel, LayerPixel> CSSToLayerScale;
 typedef gfx::ScaleFactor<CSSPixel, ScreenPixel> CSSToScreenScale;
 typedef gfx::ScaleFactor<CSSPixel, ParentLayerPixel> CSSToParentLayerScale;
+typedef gfx::ScaleFactor<CSSPixel, DesktopPixel> CSSToDesktopScale;
+typedef gfx::ScaleFactor<OuterCSSPixel, LayoutDevicePixel>
+    OuterCSSToLayoutDeviceScale;
 typedef gfx::ScaleFactor<LayoutDevicePixel, CSSPixel> LayoutDeviceToCSSScale;
 typedef gfx::ScaleFactor<LayoutDevicePixel, LayerPixel>
     LayoutDeviceToLayerScale;
@@ -202,6 +226,8 @@ typedef gfx::ScaleFactor<ParentLayerPixel, ParentLayerPixel>
     ParentLayerToParentLayerScale;
 typedef gfx::ScaleFactor<DesktopPixel, LayoutDevicePixel>
     DesktopToLayoutDeviceScale;
+typedef gfx::ScaleFactor<LayoutDevicePixel, DesktopPixel>
+    LayoutDeviceToDesktopScale;
 
 typedef gfx::ScaleFactors2D<CSSPixel, LayoutDevicePixel>
     CSSToLayoutDeviceScale2D;
@@ -229,6 +255,7 @@ typedef gfx::ScaleFactors2D<RenderTargetPixel, ScreenPixel>
 typedef gfx::ScaleFactors2D<ScreenPixel, CSSPixel> ScreenToCSSScale2D;
 typedef gfx::ScaleFactors2D<ScreenPixel, LayoutDevicePixel>
     ScreenToLayoutDeviceScale2D;
+typedef gfx::ScaleFactors2D<ScreenPixel, ScreenPixel> ScreenToScreenScale2D;
 typedef gfx::ScaleFactors2D<ScreenPixel, LayerPixel> ScreenToLayerScale2D;
 typedef gfx::ScaleFactors2D<ScreenPixel, ParentLayerPixel>
     ScreenToParentLayerScale2D;
@@ -271,60 +298,49 @@ struct CSSPixel {
     return NSAppUnitsToFloatPixels(aCoord, float(AppUnitsPerCSSPixel()));
   }
 
+  static CSSIntCoord FromAppUnitsRounded(nscoord aCoord) {
+    return NSAppUnitsToIntPixels(aCoord, float(AppUnitsPerCSSPixel()));
+  }
+
   static CSSPoint FromAppUnits(const nsPoint& aPoint) {
-    return CSSPoint(
-        NSAppUnitsToFloatPixels(aPoint.x, float(AppUnitsPerCSSPixel())),
-        NSAppUnitsToFloatPixels(aPoint.y, float(AppUnitsPerCSSPixel())));
+    return CSSPoint(FromAppUnits(aPoint.x), FromAppUnits(aPoint.y));
   }
 
   static CSSSize FromAppUnits(const nsSize& aSize) {
-    return CSSSize(
-        NSAppUnitsToFloatPixels(aSize.width, float(AppUnitsPerCSSPixel())),
-        NSAppUnitsToFloatPixels(aSize.height, float(AppUnitsPerCSSPixel())));
+    return CSSSize(FromAppUnits(aSize.width), FromAppUnits(aSize.height));
   }
 
   static CSSRect FromAppUnits(const nsRect& aRect) {
-    return CSSRect(
-        NSAppUnitsToFloatPixels(aRect.x, float(AppUnitsPerCSSPixel())),
-        NSAppUnitsToFloatPixels(aRect.y, float(AppUnitsPerCSSPixel())),
-        NSAppUnitsToFloatPixels(aRect.Width(), float(AppUnitsPerCSSPixel())),
-        NSAppUnitsToFloatPixels(aRect.Height(), float(AppUnitsPerCSSPixel())));
+    return CSSRect(FromAppUnits(aRect.x), FromAppUnits(aRect.y),
+                   FromAppUnits(aRect.Width()), FromAppUnits(aRect.Height()));
   }
 
   static CSSMargin FromAppUnits(const nsMargin& aMargin) {
-    return CSSMargin(
-        NSAppUnitsToFloatPixels(aMargin.top, float(AppUnitsPerCSSPixel())),
-        NSAppUnitsToFloatPixels(aMargin.right, float(AppUnitsPerCSSPixel())),
-        NSAppUnitsToFloatPixels(aMargin.bottom, float(AppUnitsPerCSSPixel())),
-        NSAppUnitsToFloatPixels(aMargin.left, float(AppUnitsPerCSSPixel())));
+    return CSSMargin(FromAppUnits(aMargin.top), FromAppUnits(aMargin.right),
+                     FromAppUnits(aMargin.bottom), FromAppUnits(aMargin.left));
   }
 
   static CSSIntPoint FromAppUnitsRounded(const nsPoint& aPoint) {
-    return CSSIntPoint(
-        NSAppUnitsToIntPixels(aPoint.x, float(AppUnitsPerCSSPixel())),
-        NSAppUnitsToIntPixels(aPoint.y, float(AppUnitsPerCSSPixel())));
+    return CSSIntPoint(FromAppUnitsRounded(aPoint.x),
+                       FromAppUnitsRounded(aPoint.y));
   }
 
   static CSSIntSize FromAppUnitsRounded(const nsSize& aSize) {
-    return CSSIntSize(
-        NSAppUnitsToIntPixels(aSize.width, float(AppUnitsPerCSSPixel())),
-        NSAppUnitsToIntPixels(aSize.height, float(AppUnitsPerCSSPixel())));
+    return CSSIntSize(FromAppUnitsRounded(aSize.width),
+                      FromAppUnitsRounded(aSize.height));
   }
 
   static CSSIntRect FromAppUnitsRounded(const nsRect& aRect) {
-    return CSSIntRect(
-        NSAppUnitsToIntPixels(aRect.x, float(AppUnitsPerCSSPixel())),
-        NSAppUnitsToIntPixels(aRect.y, float(AppUnitsPerCSSPixel())),
-        NSAppUnitsToIntPixels(aRect.Width(), float(AppUnitsPerCSSPixel())),
-        NSAppUnitsToIntPixels(aRect.Height(), float(AppUnitsPerCSSPixel())));
+    return CSSIntRect(FromAppUnitsRounded(aRect.x),
+                      FromAppUnitsRounded(aRect.y),
+                      FromAppUnitsRounded(aRect.Width()),
+                      FromAppUnitsRounded(aRect.Height()));
   }
 
   static CSSIntMargin FromAppUnitsRounded(const nsMargin& aMargin) {
     return CSSIntMargin(
-        NSAppUnitsToIntPixels(aMargin.top, float(AppUnitsPerCSSPixel())),
-        NSAppUnitsToIntPixels(aMargin.right, float(AppUnitsPerCSSPixel())),
-        NSAppUnitsToIntPixels(aMargin.bottom, float(AppUnitsPerCSSPixel())),
-        NSAppUnitsToIntPixels(aMargin.left, float(AppUnitsPerCSSPixel())));
+        FromAppUnitsRounded(aMargin.top), FromAppUnitsRounded(aMargin.right),
+        FromAppUnitsRounded(aMargin.bottom), FromAppUnitsRounded(aMargin.left));
   }
 
   static CSSIntRect FromAppUnitsToNearest(const nsRect& aRect) {
@@ -332,60 +348,74 @@ struct CSSPixel {
         aRect.ToNearestPixels(AppUnitsPerCSSPixel()));
   }
 
+  static CSSIntRect FromAppUnitsToInside(const nsRect& aRect) {
+    return CSSIntRect::FromUnknownRect(
+        aRect.ToInsidePixels(AppUnitsPerCSSPixel()));
+  }
+
   // Conversions to app units
 
+  // TODO: We might want an int32_t/CSSIntCoord overload which doesn't do float
+  // math but we'd need to ensure stuff is clamped to nscoord_MIN/MAX range.
   static nscoord ToAppUnits(CSSCoord aCoord) {
-    return NSToCoordRoundWithClamp(aCoord * float(AppUnitsPerCSSPixel()));
+    return NSFloatPixelsToAppUnits(aCoord, AppUnitsPerCSSPixel());
   }
 
   static nsPoint ToAppUnits(const CSSPoint& aPoint) {
-    return nsPoint(
-        NSToCoordRoundWithClamp(aPoint.x * float(AppUnitsPerCSSPixel())),
-        NSToCoordRoundWithClamp(aPoint.y * float(AppUnitsPerCSSPixel())));
+    return nsPoint(ToAppUnits(aPoint.x), ToAppUnits(aPoint.y));
   }
 
   static nsPoint ToAppUnits(const CSSIntPoint& aPoint) {
-    return nsPoint(
-        NSToCoordRoundWithClamp(float(aPoint.x) * float(AppUnitsPerCSSPixel())),
-        NSToCoordRoundWithClamp(float(aPoint.y) *
-                                float(AppUnitsPerCSSPixel())));
+    return nsPoint(ToAppUnits(CSSCoord(aPoint.x)),
+                   ToAppUnits(CSSCoord(aPoint.y)));
   }
 
   static nsSize ToAppUnits(const CSSSize& aSize) {
-    return nsSize(
-        NSToCoordRoundWithClamp(aSize.width * float(AppUnitsPerCSSPixel())),
-        NSToCoordRoundWithClamp(aSize.height * float(AppUnitsPerCSSPixel())));
+    return nsSize(ToAppUnits(aSize.width), ToAppUnits(aSize.height));
   }
 
   static nsSize ToAppUnits(const CSSIntSize& aSize) {
-    return nsSize(NSToCoordRoundWithClamp(float(aSize.width) *
-                                          float(AppUnitsPerCSSPixel())),
-                  NSToCoordRoundWithClamp(float(aSize.height) *
-                                          float(AppUnitsPerCSSPixel())));
+    return nsSize(ToAppUnits(aSize.width), ToAppUnits(aSize.height));
   }
 
   static nsRect ToAppUnits(const CSSRect& aRect) {
-    return nsRect(
-        NSToCoordRoundWithClamp(aRect.x * float(AppUnitsPerCSSPixel())),
-        NSToCoordRoundWithClamp(aRect.y * float(AppUnitsPerCSSPixel())),
-        NSToCoordRoundWithClamp(aRect.Width() * float(AppUnitsPerCSSPixel())),
-        NSToCoordRoundWithClamp(aRect.Height() * float(AppUnitsPerCSSPixel())));
+    return nsRect(ToAppUnits(aRect.x), ToAppUnits(aRect.y),
+                  ToAppUnits(aRect.Width()), ToAppUnits(aRect.Height()));
   }
 
   static nsRect ToAppUnits(const CSSIntRect& aRect) {
-    return nsRect(
-        NSToCoordRoundWithClamp(float(aRect.x) * float(AppUnitsPerCSSPixel())),
-        NSToCoordRoundWithClamp(float(aRect.y) * float(AppUnitsPerCSSPixel())),
-        NSToCoordRoundWithClamp(float(aRect.Width()) *
-                                float(AppUnitsPerCSSPixel())),
-        NSToCoordRoundWithClamp(float(aRect.Height()) *
-                                float(AppUnitsPerCSSPixel())));
+    return nsRect(ToAppUnits(aRect.x), ToAppUnits(aRect.y),
+                  ToAppUnits(aRect.Width()), ToAppUnits(aRect.Height()));
+  }
+
+  static nsMargin ToAppUnits(const CSSMargin& aMargin) {
+    return nsMargin(ToAppUnits(aMargin.top), ToAppUnits(aMargin.right),
+                    ToAppUnits(aMargin.bottom), ToAppUnits(aMargin.left));
+  }
+
+  static nsMargin ToAppUnits(const CSSIntMargin& aMargin) {
+    return nsMargin(ToAppUnits(CSSCoord(aMargin.top)),
+                    ToAppUnits(CSSCoord(aMargin.right)),
+                    ToAppUnits(CSSCoord(aMargin.bottom)),
+                    ToAppUnits(CSSCoord(aMargin.left)));
   }
 
   // Conversion from a given CSS point value.
   static CSSCoord FromPoints(float aCoord) {
     // One inch / 72.
     return aCoord * 96.0f / 72.0f;
+  }
+};
+
+/*
+ * In the context of a scroll frame that is zoomable, OuterCSSPixel is
+ * used to disambiguate CSS pixels of the content outside of the scroll
+ * frame (which is not subject to the zoom) from CSS pixels of the content
+ * inside the scroll frame (which is, and for which CSSPixel is used).
+ */
+struct OuterCSSPixel {
+  static OuterCSSCoord FromAppUnits(nscoord aCoord) {
+    return NSAppUnitsToFloatPixels(aCoord, float(AppUnitsPerCSSPixel()));
   }
 };
 
@@ -398,43 +428,61 @@ struct CSSPixel {
  * 2) the "widget scale" (see nsIWidget::GetDefaultScale)
  */
 struct LayoutDevicePixel {
+  static LayoutDeviceCoord FromAppUnits(nscoord aCoord,
+                                        nscoord aAppUnitsPerDevPixel) {
+    return LayoutDeviceCoord(
+        NSAppUnitsToFloatPixels(aCoord, float(aAppUnitsPerDevPixel)));
+  }
+
+  static LayoutDeviceIntCoord FromAppUnitsRounded(
+      nscoord aCoord, nscoord aAppUnitsPerDevPixel) {
+    return LayoutDeviceIntCoord(
+        NSAppUnitsToIntPixels(aCoord, float(aAppUnitsPerDevPixel)));
+  }
+
   static LayoutDeviceRect FromAppUnits(const nsRect& aRect,
                                        nscoord aAppUnitsPerDevPixel) {
-    return LayoutDeviceRect(
-        NSAppUnitsToFloatPixels(aRect.x, float(aAppUnitsPerDevPixel)),
-        NSAppUnitsToFloatPixels(aRect.y, float(aAppUnitsPerDevPixel)),
-        NSAppUnitsToFloatPixels(aRect.Width(), float(aAppUnitsPerDevPixel)),
-        NSAppUnitsToFloatPixels(aRect.Height(), float(aAppUnitsPerDevPixel)));
+    return LayoutDeviceRect(FromAppUnits(aRect.x, aAppUnitsPerDevPixel),
+                            FromAppUnits(aRect.y, aAppUnitsPerDevPixel),
+                            FromAppUnits(aRect.Width(), aAppUnitsPerDevPixel),
+                            FromAppUnits(aRect.Height(), aAppUnitsPerDevPixel));
   }
 
   static LayoutDeviceSize FromAppUnits(const nsSize& aSize,
                                        nscoord aAppUnitsPerDevPixel) {
-    return LayoutDeviceSize(
-        NSAppUnitsToFloatPixels(aSize.width, aAppUnitsPerDevPixel),
-        NSAppUnitsToFloatPixels(aSize.height, aAppUnitsPerDevPixel));
+    return LayoutDeviceSize(FromAppUnits(aSize.width, aAppUnitsPerDevPixel),
+                            FromAppUnits(aSize.height, aAppUnitsPerDevPixel));
   }
 
   static LayoutDevicePoint FromAppUnits(const nsPoint& aPoint,
                                         nscoord aAppUnitsPerDevPixel) {
-    return LayoutDevicePoint(
-        NSAppUnitsToFloatPixels(aPoint.x, aAppUnitsPerDevPixel),
-        NSAppUnitsToFloatPixels(aPoint.y, aAppUnitsPerDevPixel));
+    return LayoutDevicePoint(FromAppUnits(aPoint.x, aAppUnitsPerDevPixel),
+                             FromAppUnits(aPoint.y, aAppUnitsPerDevPixel));
   }
 
   static LayoutDeviceMargin FromAppUnits(const nsMargin& aMargin,
                                          nscoord aAppUnitsPerDevPixel) {
     return LayoutDeviceMargin(
-        NSAppUnitsToFloatPixels(aMargin.top, aAppUnitsPerDevPixel),
-        NSAppUnitsToFloatPixels(aMargin.right, aAppUnitsPerDevPixel),
-        NSAppUnitsToFloatPixels(aMargin.bottom, aAppUnitsPerDevPixel),
-        NSAppUnitsToFloatPixels(aMargin.left, aAppUnitsPerDevPixel));
+        FromAppUnits(aMargin.top, aAppUnitsPerDevPixel),
+        FromAppUnits(aMargin.right, aAppUnitsPerDevPixel),
+        FromAppUnits(aMargin.bottom, aAppUnitsPerDevPixel),
+        FromAppUnits(aMargin.left, aAppUnitsPerDevPixel));
   }
 
   static LayoutDeviceIntPoint FromAppUnitsRounded(
       const nsPoint& aPoint, nscoord aAppUnitsPerDevPixel) {
     return LayoutDeviceIntPoint(
-        NSAppUnitsToIntPixels(aPoint.x, aAppUnitsPerDevPixel),
-        NSAppUnitsToIntPixels(aPoint.y, aAppUnitsPerDevPixel));
+        FromAppUnitsRounded(aPoint.x, aAppUnitsPerDevPixel),
+        FromAppUnitsRounded(aPoint.y, aAppUnitsPerDevPixel));
+  }
+
+  static LayoutDeviceIntRect FromAppUnitsRounded(const nsRect& aRect,
+                                                 nscoord aAppUnitsPerDevPixel) {
+    return LayoutDeviceIntRect(
+        FromAppUnitsRounded(aRect.x, aAppUnitsPerDevPixel),
+        FromAppUnitsRounded(aRect.y, aAppUnitsPerDevPixel),
+        FromAppUnitsRounded(aRect.Width(), aAppUnitsPerDevPixel),
+        FromAppUnitsRounded(aRect.Height(), aAppUnitsPerDevPixel));
   }
 
   static LayoutDeviceIntPoint FromAppUnitsToNearest(
@@ -464,60 +512,85 @@ struct LayoutDevicePixel {
   static LayoutDeviceIntSize FromAppUnitsRounded(const nsSize& aSize,
                                                  nscoord aAppUnitsPerDevPixel) {
     return LayoutDeviceIntSize(
-        NSAppUnitsToIntPixels(aSize.width, aAppUnitsPerDevPixel),
-        NSAppUnitsToIntPixels(aSize.height, aAppUnitsPerDevPixel));
+        FromAppUnitsRounded(aSize.width, aAppUnitsPerDevPixel),
+        FromAppUnitsRounded(aSize.height, aAppUnitsPerDevPixel));
   }
 
   static LayoutDeviceIntMargin FromAppUnitsRounded(
       const nsMargin& aMargin, nscoord aAppUnitsPerDevPixel) {
     return LayoutDeviceIntMargin(
-        NSAppUnitsToIntPixels(aMargin.top, aAppUnitsPerDevPixel),
-        NSAppUnitsToIntPixels(aMargin.right, aAppUnitsPerDevPixel),
-        NSAppUnitsToIntPixels(aMargin.bottom, aAppUnitsPerDevPixel),
-        NSAppUnitsToIntPixels(aMargin.left, aAppUnitsPerDevPixel));
+        FromAppUnitsRounded(aMargin.top, aAppUnitsPerDevPixel),
+        FromAppUnitsRounded(aMargin.right, aAppUnitsPerDevPixel),
+        FromAppUnitsRounded(aMargin.bottom, aAppUnitsPerDevPixel),
+        FromAppUnitsRounded(aMargin.left, aAppUnitsPerDevPixel));
+  }
+
+  static nscoord ToAppUnits(LayoutDeviceIntCoord aCoord,
+                            nscoord aAppUnitsPerDevPixel) {
+    return aCoord * aAppUnitsPerDevPixel;
+  }
+
+  static nscoord ToAppUnits(int32_t aCoord, nscoord aAppUnitsPerDevPixel) {
+    return ToAppUnits(LayoutDeviceIntCoord(aCoord), aAppUnitsPerDevPixel);
+  }
+
+  static nscoord ToAppUnits(LayoutDeviceCoord aCoord,
+                            nscoord aAppUnitsPerDevPixel) {
+    return NSFloatPixelsToAppUnits(aCoord, aAppUnitsPerDevPixel);
+  }
+
+  static nscoord ToAppUnits(float aCoord, nscoord aAppUnitsPerDevPixel) {
+    return ToAppUnits(LayoutDeviceCoord(aCoord), aAppUnitsPerDevPixel);
   }
 
   static nsPoint ToAppUnits(const LayoutDeviceIntPoint& aPoint,
                             nscoord aAppUnitsPerDevPixel) {
-    return nsPoint(aPoint.x * aAppUnitsPerDevPixel,
-                   aPoint.y * aAppUnitsPerDevPixel);
+    return nsPoint(ToAppUnits(aPoint.x, aAppUnitsPerDevPixel),
+                   ToAppUnits(aPoint.y, aAppUnitsPerDevPixel));
   }
 
   static nsSize ToAppUnits(const LayoutDeviceIntSize& aSize,
                            nscoord aAppUnitsPerDevPixel) {
-    return nsSize(aSize.width * aAppUnitsPerDevPixel,
-                  aSize.height * aAppUnitsPerDevPixel);
+    return nsSize(ToAppUnits(aSize.width, aAppUnitsPerDevPixel),
+                  ToAppUnits(aSize.height, aAppUnitsPerDevPixel));
   }
 
   static nsSize ToAppUnits(const LayoutDeviceSize& aSize,
                            nscoord aAppUnitsPerDevPixel) {
-    return nsSize(NSFloatPixelsToAppUnits(aSize.width, aAppUnitsPerDevPixel),
-                  NSFloatPixelsToAppUnits(aSize.height, aAppUnitsPerDevPixel));
+    return nsSize(ToAppUnits(aSize.width, aAppUnitsPerDevPixel),
+                  ToAppUnits(aSize.height, aAppUnitsPerDevPixel));
   }
 
   static nsRect ToAppUnits(const LayoutDeviceIntRect& aRect,
                            nscoord aAppUnitsPerDevPixel) {
-    return nsRect(aRect.x * aAppUnitsPerDevPixel,
-                  aRect.y * aAppUnitsPerDevPixel,
-                  aRect.Width() * aAppUnitsPerDevPixel,
-                  aRect.Height() * aAppUnitsPerDevPixel);
+    return nsRect(ToAppUnits(aRect.x, aAppUnitsPerDevPixel),
+                  ToAppUnits(aRect.y, aAppUnitsPerDevPixel),
+                  ToAppUnits(aRect.Width(), aAppUnitsPerDevPixel),
+                  ToAppUnits(aRect.Height(), aAppUnitsPerDevPixel));
   }
 
   static nsRect ToAppUnits(const LayoutDeviceRect& aRect,
                            nscoord aAppUnitsPerDevPixel) {
-    return nsRect(
-        NSFloatPixelsToAppUnits(aRect.x, aAppUnitsPerDevPixel),
-        NSFloatPixelsToAppUnits(aRect.y, aAppUnitsPerDevPixel),
-        NSFloatPixelsToAppUnits(aRect.Width(), aAppUnitsPerDevPixel),
-        NSFloatPixelsToAppUnits(aRect.Height(), aAppUnitsPerDevPixel));
+    return nsRect(ToAppUnits(aRect.x, aAppUnitsPerDevPixel),
+                  ToAppUnits(aRect.y, aAppUnitsPerDevPixel),
+                  ToAppUnits(aRect.Width(), aAppUnitsPerDevPixel),
+                  ToAppUnits(aRect.Height(), aAppUnitsPerDevPixel));
   }
 
   static nsMargin ToAppUnits(const LayoutDeviceIntMargin& aMargin,
                              nscoord aAppUnitsPerDevPixel) {
-    return nsMargin(aMargin.top * aAppUnitsPerDevPixel,
-                    aMargin.right * aAppUnitsPerDevPixel,
-                    aMargin.bottom * aAppUnitsPerDevPixel,
-                    aMargin.left * aAppUnitsPerDevPixel);
+    return nsMargin(ToAppUnits(aMargin.top, aAppUnitsPerDevPixel),
+                    ToAppUnits(aMargin.right, aAppUnitsPerDevPixel),
+                    ToAppUnits(aMargin.bottom, aAppUnitsPerDevPixel),
+                    ToAppUnits(aMargin.left, aAppUnitsPerDevPixel));
+  }
+
+  static nsMargin ToAppUnits(const LayoutDeviceMargin& aMargin,
+                             nscoord aAppUnitsPerDevPixel) {
+    return nsMargin(ToAppUnits(aMargin.top, aAppUnitsPerDevPixel),
+                    ToAppUnits(aMargin.right, aAppUnitsPerDevPixel),
+                    ToAppUnits(aMargin.bottom, aAppUnitsPerDevPixel),
+                    ToAppUnits(aMargin.left, aAppUnitsPerDevPixel));
   }
 };
 
@@ -602,248 +675,260 @@ struct ExternalPixel {};
 // Operators to apply ScaleFactors directly to Coords, Points, Rects, Sizes and
 // Margins
 
-template <class src, class dst>
-gfx::CoordTyped<dst> operator*(const gfx::CoordTyped<src>& aCoord,
-                               const gfx::ScaleFactor<src, dst>& aScale) {
-  return gfx::CoordTyped<dst>(aCoord.value * aScale.scale);
+template <class Src, class Dst>
+gfx::CoordTyped<Dst> operator*(const gfx::CoordTyped<Src>& aCoord,
+                               const gfx::ScaleFactor<Src, Dst>& aScale) {
+  return gfx::CoordTyped<Dst>(aCoord.value * aScale.scale);
 }
 
-template <class src, class dst>
-gfx::CoordTyped<dst> operator/(const gfx::CoordTyped<src>& aCoord,
-                               const gfx::ScaleFactor<dst, src>& aScale) {
-  return gfx::CoordTyped<dst>(aCoord.value / aScale.scale);
+template <class Src, class Dst>
+gfx::CoordTyped<Dst> operator/(const gfx::CoordTyped<Src>& aCoord,
+                               const gfx::ScaleFactor<Dst, Src>& aScale) {
+  return gfx::CoordTyped<Dst>(aCoord.value / aScale.scale);
 }
 
-template <class src, class dst>
-gfx::PointTyped<dst> operator*(const gfx::PointTyped<src>& aPoint,
-                               const gfx::ScaleFactor<src, dst>& aScale) {
-  return gfx::PointTyped<dst>(aPoint.x * aScale.scale, aPoint.y * aScale.scale);
+template <class Src, class Dst>
+gfx::PointTyped<Dst> operator*(const gfx::PointTyped<Src>& aPoint,
+                               const gfx::ScaleFactor<Src, Dst>& aScale) {
+  return gfx::PointTyped<Dst>(aPoint.x * aScale.scale, aPoint.y * aScale.scale);
 }
 
-template <class src, class dst>
-gfx::PointTyped<dst> operator/(const gfx::PointTyped<src>& aPoint,
-                               const gfx::ScaleFactor<dst, src>& aScale) {
-  return gfx::PointTyped<dst>(aPoint.x / aScale.scale, aPoint.y / aScale.scale);
+template <class Src, class Dst>
+gfx::PointTyped<Dst> operator/(const gfx::PointTyped<Src>& aPoint,
+                               const gfx::ScaleFactor<Dst, Src>& aScale) {
+  return gfx::PointTyped<Dst>(aPoint.x / aScale.scale, aPoint.y / aScale.scale);
 }
 
-template <class src, class dst>
-gfx::PointTyped<dst> operator*(const gfx::PointTyped<src>& aPoint,
-                               const gfx::ScaleFactors2D<src, dst>& aScale) {
-  return gfx::PointTyped<dst>(aPoint.x * aScale.xScale,
-                              aPoint.y * aScale.yScale);
+template <class Src, class Dst, class F>
+gfx::PointTyped<Dst, F> operator*(
+    const gfx::PointTyped<Src, F>& aPoint,
+    const gfx::BaseScaleFactors2D<Src, Dst, F>& aScale) {
+  return gfx::PointTyped<Dst, F>(aPoint.x * aScale.xScale,
+                                 aPoint.y * aScale.yScale);
 }
 
-template <class src, class dst>
-gfx::PointTyped<dst> operator/(const gfx::PointTyped<src>& aPoint,
-                               const gfx::ScaleFactors2D<dst, src>& aScale) {
-  return gfx::PointTyped<dst>(aPoint.x / aScale.xScale,
-                              aPoint.y / aScale.yScale);
+template <class Src, class Dst, class F>
+gfx::PointTyped<Dst, F> operator/(
+    const gfx::PointTyped<Src, F>& aPoint,
+    const gfx::BaseScaleFactors2D<Dst, Src, F>& aScale) {
+  return gfx::PointTyped<Dst, F>(aPoint.x / aScale.xScale,
+                                 aPoint.y / aScale.yScale);
 }
 
-template <class src, class dst>
-gfx::PointTyped<dst> operator*(const gfx::IntPointTyped<src>& aPoint,
-                               const gfx::ScaleFactor<src, dst>& aScale) {
-  return gfx::PointTyped<dst>(float(aPoint.x) * aScale.scale,
+template <class Src, class Dst>
+gfx::PointTyped<Dst> operator*(const gfx::IntPointTyped<Src>& aPoint,
+                               const gfx::ScaleFactor<Src, Dst>& aScale) {
+  return gfx::PointTyped<Dst>(float(aPoint.x) * aScale.scale,
                               float(aPoint.y) * aScale.scale);
 }
 
-template <class src, class dst>
-gfx::PointTyped<dst> operator/(const gfx::IntPointTyped<src>& aPoint,
-                               const gfx::ScaleFactor<dst, src>& aScale) {
-  return gfx::PointTyped<dst>(float(aPoint.x) / aScale.scale,
+template <class Src, class Dst>
+gfx::PointTyped<Dst> operator/(const gfx::IntPointTyped<Src>& aPoint,
+                               const gfx::ScaleFactor<Dst, Src>& aScale) {
+  return gfx::PointTyped<Dst>(float(aPoint.x) / aScale.scale,
                               float(aPoint.y) / aScale.scale);
 }
 
-template <class src, class dst>
-gfx::PointTyped<dst> operator*(const gfx::IntPointTyped<src>& aPoint,
-                               const gfx::ScaleFactors2D<src, dst>& aScale) {
-  return gfx::PointTyped<dst>(float(aPoint.x) * aScale.xScale,
-                              float(aPoint.y) * aScale.yScale);
+template <class Src, class Dst, class F>
+gfx::PointTyped<Dst, F> operator*(
+    const gfx::IntPointTyped<Src>& aPoint,
+    const gfx::BaseScaleFactors2D<Src, Dst, F>& aScale) {
+  return gfx::PointTyped<Dst, F>(F(aPoint.x) * aScale.xScale,
+                                 F(aPoint.y) * aScale.yScale);
 }
 
-template <class src, class dst>
-gfx::PointTyped<dst> operator/(const gfx::IntPointTyped<src>& aPoint,
-                               const gfx::ScaleFactors2D<dst, src>& aScale) {
-  return gfx::PointTyped<dst>(float(aPoint.x) / aScale.xScale,
-                              float(aPoint.y) / aScale.yScale);
+template <class Src, class Dst, class F>
+gfx::PointTyped<Dst, F> operator/(
+    const gfx::IntPointTyped<Src>& aPoint,
+    const gfx::BaseScaleFactors2D<Dst, Src, F>& aScale) {
+  return gfx::PointTyped<Dst, F>(F(aPoint.x) / aScale.xScale,
+                                 F(aPoint.y) / aScale.yScale);
 }
 
-template <class src, class dst>
-gfx::RectTyped<dst> operator*(const gfx::RectTyped<src>& aRect,
-                              const gfx::ScaleFactor<src, dst>& aScale) {
-  return gfx::RectTyped<dst>(aRect.x * aScale.scale, aRect.y * aScale.scale,
+template <class Src, class Dst>
+gfx::RectTyped<Dst> operator*(const gfx::RectTyped<Src>& aRect,
+                              const gfx::ScaleFactor<Src, Dst>& aScale) {
+  return gfx::RectTyped<Dst>(aRect.x * aScale.scale, aRect.y * aScale.scale,
                              aRect.Width() * aScale.scale,
                              aRect.Height() * aScale.scale);
 }
 
-template <class src, class dst>
-gfx::RectTyped<dst> operator/(const gfx::RectTyped<src>& aRect,
-                              const gfx::ScaleFactor<dst, src>& aScale) {
-  return gfx::RectTyped<dst>(aRect.x / aScale.scale, aRect.y / aScale.scale,
+template <class Src, class Dst>
+gfx::RectTyped<Dst> operator/(const gfx::RectTyped<Src>& aRect,
+                              const gfx::ScaleFactor<Dst, Src>& aScale) {
+  return gfx::RectTyped<Dst>(aRect.x / aScale.scale, aRect.y / aScale.scale,
                              aRect.Width() / aScale.scale,
                              aRect.Height() / aScale.scale);
 }
 
-template <class src, class dst>
-gfx::RectTyped<dst> operator*(const gfx::RectTyped<src>& aRect,
-                              const gfx::ScaleFactors2D<src, dst>& aScale) {
-  return gfx::RectTyped<dst>(aRect.x * aScale.xScale, aRect.y * aScale.yScale,
-                             aRect.Width() * aScale.xScale,
-                             aRect.Height() * aScale.yScale);
+template <class Src, class Dst, class F>
+gfx::RectTyped<Dst, F> operator*(
+    const gfx::RectTyped<Src, F>& aRect,
+    const gfx::BaseScaleFactors2D<Src, Dst, F>& aScale) {
+  return gfx::RectTyped<Dst, F>(
+      aRect.x * aScale.xScale, aRect.y * aScale.yScale,
+      aRect.Width() * aScale.xScale, aRect.Height() * aScale.yScale);
 }
 
-template <class src, class dst>
-gfx::RectTyped<dst> operator/(const gfx::RectTyped<src>& aRect,
-                              const gfx::ScaleFactors2D<dst, src>& aScale) {
-  return gfx::RectTyped<dst>(aRect.x / aScale.xScale, aRect.y / aScale.yScale,
-                             aRect.Width() / aScale.xScale,
-                             aRect.Height() / aScale.yScale);
+template <class Src, class Dst, class F>
+gfx::RectTyped<Dst, F> operator/(
+    const gfx::RectTyped<Src, F>& aRect,
+    const gfx::BaseScaleFactors2D<Dst, Src, F>& aScale) {
+  return gfx::RectTyped<Dst, F>(
+      aRect.x / aScale.xScale, aRect.y / aScale.yScale,
+      aRect.Width() / aScale.xScale, aRect.Height() / aScale.yScale);
 }
 
-template <class src, class dst>
-gfx::RectTyped<dst> operator*(const gfx::IntRectTyped<src>& aRect,
-                              const gfx::ScaleFactor<src, dst>& aScale) {
-  return gfx::RectTyped<dst>(float(aRect.x) * aScale.scale,
+template <class Src, class Dst>
+gfx::RectTyped<Dst> operator*(const gfx::IntRectTyped<Src>& aRect,
+                              const gfx::ScaleFactor<Src, Dst>& aScale) {
+  return gfx::RectTyped<Dst>(float(aRect.x) * aScale.scale,
                              float(aRect.y) * aScale.scale,
                              float(aRect.Width()) * aScale.scale,
                              float(aRect.Height()) * aScale.scale);
 }
 
-template <class src, class dst>
-gfx::RectTyped<dst> operator/(const gfx::IntRectTyped<src>& aRect,
-                              const gfx::ScaleFactor<dst, src>& aScale) {
-  return gfx::RectTyped<dst>(float(aRect.x) / aScale.scale,
+template <class Src, class Dst>
+gfx::RectTyped<Dst> operator/(const gfx::IntRectTyped<Src>& aRect,
+                              const gfx::ScaleFactor<Dst, Src>& aScale) {
+  return gfx::RectTyped<Dst>(float(aRect.x) / aScale.scale,
                              float(aRect.y) / aScale.scale,
                              float(aRect.Width()) / aScale.scale,
                              float(aRect.Height()) / aScale.scale);
 }
 
-template <class src, class dst>
-gfx::RectTyped<dst> operator*(const gfx::IntRectTyped<src>& aRect,
-                              const gfx::ScaleFactors2D<src, dst>& aScale) {
-  return gfx::RectTyped<dst>(float(aRect.x) * aScale.xScale,
-                             float(aRect.y) * aScale.yScale,
-                             float(aRect.Width()) * aScale.xScale,
-                             float(aRect.Height()) * aScale.yScale);
+template <class Src, class Dst, class F>
+gfx::RectTyped<Dst, F> operator*(
+    const gfx::IntRectTyped<Src>& aRect,
+    const gfx::BaseScaleFactors2D<Src, Dst, F>& aScale) {
+  return gfx::RectTyped<Dst, F>(
+      F(aRect.x) * aScale.xScale, F(aRect.y) * aScale.yScale,
+      F(aRect.Width()) * aScale.xScale, F(aRect.Height()) * aScale.yScale);
 }
 
-template <class src, class dst>
-gfx::RectTyped<dst> operator/(const gfx::IntRectTyped<src>& aRect,
-                              const gfx::ScaleFactors2D<dst, src>& aScale) {
-  return gfx::RectTyped<dst>(float(aRect.x) / aScale.xScale,
-                             float(aRect.y) / aScale.yScale,
-                             float(aRect.Width()) / aScale.xScale,
-                             float(aRect.Height()) / aScale.yScale);
+template <class Src, class Dst, class F>
+gfx::RectTyped<Dst, F> operator/(
+    const gfx::IntRectTyped<Src>& aRect,
+    const gfx::BaseScaleFactors2D<Dst, Src, F>& aScale) {
+  return gfx::RectTyped<Dst, F>(
+      F(aRect.x) / aScale.xScale, F(aRect.y) / aScale.yScale,
+      F(aRect.Width()) / aScale.xScale, F(aRect.Height()) / aScale.yScale);
 }
 
-template <class src, class dst>
-gfx::SizeTyped<dst> operator*(const gfx::SizeTyped<src>& aSize,
-                              const gfx::ScaleFactor<src, dst>& aScale) {
-  return gfx::SizeTyped<dst>(aSize.width * aScale.scale,
+template <class Src, class Dst>
+gfx::SizeTyped<Dst> operator*(const gfx::SizeTyped<Src>& aSize,
+                              const gfx::ScaleFactor<Src, Dst>& aScale) {
+  return gfx::SizeTyped<Dst>(aSize.width * aScale.scale,
                              aSize.height * aScale.scale);
 }
 
-template <class src, class dst>
-gfx::SizeTyped<dst> operator/(const gfx::SizeTyped<src>& aSize,
-                              const gfx::ScaleFactor<dst, src>& aScale) {
-  return gfx::SizeTyped<dst>(aSize.width / aScale.scale,
+template <class Src, class Dst>
+gfx::SizeTyped<Dst> operator/(const gfx::SizeTyped<Src>& aSize,
+                              const gfx::ScaleFactor<Dst, Src>& aScale) {
+  return gfx::SizeTyped<Dst>(aSize.width / aScale.scale,
                              aSize.height / aScale.scale);
 }
 
-template <class src, class dst>
-gfx::SizeTyped<dst> operator*(const gfx::SizeTyped<src>& aSize,
-                              const gfx::ScaleFactors2D<src, dst>& aScale) {
-  return gfx::SizeTyped<dst>(aSize.width * aScale.xScale,
-                             aSize.height * aScale.yScale);
+template <class Src, class Dst, class F>
+gfx::SizeTyped<Dst, F> operator*(
+    const gfx::SizeTyped<Src, F>& aSize,
+    const gfx::BaseScaleFactors2D<Src, Dst, F>& aScale) {
+  return gfx::SizeTyped<Dst, F>(aSize.width * aScale.xScale,
+                                aSize.height * aScale.yScale);
 }
 
-template <class src, class dst>
-gfx::SizeTyped<dst> operator/(const gfx::SizeTyped<src>& aSize,
-                              const gfx::ScaleFactors2D<dst, src>& aScale) {
-  return gfx::SizeTyped<dst>(aSize.width / aScale.xScale,
-                             aSize.height / aScale.yScale);
+template <class Src, class Dst, class F>
+gfx::SizeTyped<Dst, F> operator/(
+    const gfx::SizeTyped<Src, F>& aSize,
+    const gfx::BaseScaleFactors2D<Dst, Src, F>& aScale) {
+  return gfx::SizeTyped<Dst, F>(aSize.width / aScale.xScale,
+                                aSize.height / aScale.yScale);
 }
 
-template <class src, class dst>
-gfx::SizeTyped<dst> operator*(const gfx::IntSizeTyped<src>& aSize,
-                              const gfx::ScaleFactor<src, dst>& aScale) {
-  return gfx::SizeTyped<dst>(float(aSize.width) * aScale.scale,
+template <class Src, class Dst>
+gfx::SizeTyped<Dst> operator*(const gfx::IntSizeTyped<Src>& aSize,
+                              const gfx::ScaleFactor<Src, Dst>& aScale) {
+  return gfx::SizeTyped<Dst>(float(aSize.width) * aScale.scale,
                              float(aSize.height) * aScale.scale);
 }
 
-template <class src, class dst>
-gfx::SizeTyped<dst> operator/(const gfx::IntSizeTyped<src>& aSize,
-                              const gfx::ScaleFactor<dst, src>& aScale) {
-  return gfx::SizeTyped<dst>(float(aSize.width) / aScale.scale,
+template <class Src, class Dst>
+gfx::SizeTyped<Dst> operator/(const gfx::IntSizeTyped<Src>& aSize,
+                              const gfx::ScaleFactor<Dst, Src>& aScale) {
+  return gfx::SizeTyped<Dst>(float(aSize.width) / aScale.scale,
                              float(aSize.height) / aScale.scale);
 }
 
-template <class src, class dst>
-gfx::SizeTyped<dst> operator*(const gfx::IntSizeTyped<src>& aSize,
-                              const gfx::ScaleFactors2D<src, dst>& aScale) {
-  return gfx::SizeTyped<dst>(float(aSize.width) * aScale.xScale,
-                             float(aSize.height) * aScale.yScale);
+template <class Src, class Dst, class F>
+gfx::SizeTyped<Dst, F> operator*(
+    const gfx::IntSizeTyped<Src>& aSize,
+    const gfx::BaseScaleFactors2D<Src, Dst, F>& aScale) {
+  return gfx::SizeTyped<Dst, F>(F(aSize.width) * aScale.xScale,
+                                F(aSize.height) * aScale.yScale);
 }
 
-template <class src, class dst>
-gfx::SizeTyped<dst> operator/(const gfx::IntSizeTyped<src>& aSize,
-                              const gfx::ScaleFactors2D<dst, src>& aScale) {
-  return gfx::SizeTyped<dst>(float(aSize.width) / aScale.xScale,
-                             float(aSize.height) / aScale.yScale);
+template <class Src, class Dst, class F>
+gfx::SizeTyped<Dst, F> operator/(
+    const gfx::IntSizeTyped<Src>& aSize,
+    const gfx::BaseScaleFactors2D<Dst, Src, F>& aScale) {
+  return gfx::SizeTyped<Dst, F>(F(aSize.width) / aScale.xScale,
+                                F(aSize.height) / aScale.yScale);
 }
 
-template <class src, class dst>
-gfx::MarginTyped<dst> operator*(const gfx::MarginTyped<src>& aMargin,
-                                const gfx::ScaleFactor<src, dst>& aScale) {
-  return gfx::MarginTyped<dst>(
-      aMargin.top * aScale.scale, aMargin.right * aScale.scale,
-      aMargin.bottom * aScale.scale, aMargin.left * aScale.scale);
+template <class Src, class Dst>
+gfx::MarginTyped<Dst> operator*(const gfx::MarginTyped<Src>& aMargin,
+                                const gfx::ScaleFactor<Src, Dst>& aScale) {
+  return gfx::MarginTyped<Dst>(
+      aMargin.top.value * aScale.scale, aMargin.right.value * aScale.scale,
+      aMargin.bottom.value * aScale.scale, aMargin.left.value * aScale.scale);
 }
 
-template <class src, class dst>
-gfx::MarginTyped<dst> operator/(const gfx::MarginTyped<src>& aMargin,
-                                const gfx::ScaleFactor<dst, src>& aScale) {
-  return gfx::MarginTyped<dst>(
+template <class Src, class Dst>
+gfx::MarginTyped<Dst> operator/(const gfx::MarginTyped<Src>& aMargin,
+                                const gfx::ScaleFactor<Dst, Src>& aScale) {
+  return gfx::MarginTyped<Dst>(
       aMargin.top / aScale.scale, aMargin.right / aScale.scale,
       aMargin.bottom / aScale.scale, aMargin.left / aScale.scale);
 }
 
-template <class src, class dst>
-gfx::MarginTyped<dst> operator*(const gfx::MarginTyped<src>& aMargin,
-                                const gfx::ScaleFactors2D<src, dst>& aScale) {
-  return gfx::MarginTyped<dst>(
-      aMargin.top * aScale.yScale, aMargin.right * aScale.xScale,
-      aMargin.bottom * aScale.yScale, aMargin.left * aScale.xScale);
+template <class Src, class Dst, class F>
+gfx::MarginTyped<Dst, F> operator*(
+    const gfx::MarginTyped<Src, F>& aMargin,
+    const gfx::BaseScaleFactors2D<Src, Dst, F>& aScale) {
+  return gfx::MarginTyped<Dst, F>(
+      aMargin.top.value * aScale.yScale, aMargin.right.value * aScale.xScale,
+      aMargin.bottom.value * aScale.yScale, aMargin.left.value * aScale.xScale);
 }
 
-template <class src, class dst>
-gfx::MarginTyped<dst> operator/(const gfx::MarginTyped<src>& aMargin,
-                                const gfx::ScaleFactors2D<dst, src>& aScale) {
-  return gfx::MarginTyped<dst>(
-      aMargin.top / aScale.yScale, aMargin.right / aScale.xScale,
-      aMargin.bottom / aScale.yScale, aMargin.left / aScale.xScale);
+template <class Src, class Dst, class F>
+gfx::MarginTyped<Dst, F> operator/(
+    const gfx::MarginTyped<Src, F>& aMargin,
+    const gfx::BaseScaleFactors2D<Dst, Src, F>& aScale) {
+  return gfx::MarginTyped<Dst, F>(
+      aMargin.top.value / aScale.yScale, aMargin.right.value / aScale.xScale,
+      aMargin.bottom.value / aScale.yScale, aMargin.left.value / aScale.xScale);
 }
 
 // Calculate the max or min or the ratios of the widths and heights of two
 // sizes, returning a scale factor in the correct units.
 
-template <class src, class dst>
-gfx::ScaleFactor<src, dst> MaxScaleRatio(const gfx::SizeTyped<dst>& aDestSize,
-                                         const gfx::SizeTyped<src>& aSrcSize) {
+template <class Src, class Dst>
+gfx::ScaleFactor<Src, Dst> MaxScaleRatio(const gfx::SizeTyped<Dst>& aDestSize,
+                                         const gfx::SizeTyped<Src>& aSrcSize) {
   MOZ_ASSERT(aSrcSize.width != 0 && aSrcSize.height != 0,
              "Caller must verify aSrcSize has nonzero components, "
              "to avoid division by 0 here");
-  return gfx::ScaleFactor<src, dst>(std::max(
+  return gfx::ScaleFactor<Src, Dst>(std::max(
       aDestSize.width / aSrcSize.width, aDestSize.height / aSrcSize.height));
 }
 
-template <class src, class dst>
-gfx::ScaleFactor<src, dst> MinScaleRatio(const gfx::SizeTyped<dst>& aDestSize,
-                                         const gfx::SizeTyped<src>& aSrcSize) {
+template <class Src, class Dst>
+gfx::ScaleFactor<Src, Dst> MinScaleRatio(const gfx::SizeTyped<Dst>& aDestSize,
+                                         const gfx::SizeTyped<Src>& aSrcSize) {
   MOZ_ASSERT(aSrcSize.width != 0 && aSrcSize.height != 0,
              "Caller must verify aSrcSize has nonzero components, "
              "to avoid division by 0 here");
-  return gfx::ScaleFactor<src, dst>(std::min(
+  return gfx::ScaleFactor<Src, Dst>(std::min(
       aDestSize.width / aSrcSize.width, aDestSize.height / aSrcSize.height));
 }
 

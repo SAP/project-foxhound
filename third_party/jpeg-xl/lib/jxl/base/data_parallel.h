@@ -9,10 +9,10 @@
 // Portable, low-overhead C++11 ThreadPool alternative to OpenMP for
 // data-parallel computations.
 
+#include <jxl/parallel_runner.h>
 #include <stddef.h>
 #include <stdint.h>
 
-#include "jxl/parallel_runner.h"
 #include "lib/jxl/base/bits.h"
 #include "lib/jxl/base/status.h"
 #if JXL_COMPILER_MSVC
@@ -30,6 +30,9 @@ class ThreadPool {
 
   ThreadPool(const ThreadPool&) = delete;
   ThreadPool& operator&(const ThreadPool&) = delete;
+
+  JxlParallelRunner runner() const { return runner_; }
+  void* runner_opaque() const { return runner_opaque_; }
 
   // Runs init_func(num_threads) followed by data_func(task, thread) on worker
   // thread(s) for every task in [begin, end). init_func() must return a Status
@@ -56,7 +59,6 @@ class ThreadPool {
   static Status NoInit(size_t num_threads) { return true; }
 
  private:
-
   // class holding the state of a Run() call to pass to the runner_ as an
   // opaque_jpegxl pointer.
   template <class InitFunc, class DataFunc>

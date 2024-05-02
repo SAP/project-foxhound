@@ -8,7 +8,7 @@ import {
   MAIN_MESSAGE_TYPE,
   PRELOAD_MESSAGE_TYPE,
   UI_CODE,
-} from "common/Actions.jsm";
+} from "common/Actions.sys.mjs";
 
 describe("Actions", () => {
   it("should set globalImportContext to UI_CODE", () => {
@@ -18,12 +18,7 @@ describe("Actions", () => {
 
 describe("ActionTypes", () => {
   it("should be in alpha order", () => {
-    assert.equal(
-      Object.keys(at).join(", "),
-      Object.keys(at)
-        .sort()
-        .join(", ")
-    );
+    assert.equal(Object.keys(at).join(", "), Object.keys(at).sort().join(", "));
   });
 });
 

@@ -6,12 +6,12 @@
 #include "nsPrintDialogWin.h"
 
 #include "nsArray.h"
+#include "nsComponentManagerUtils.h"
 #include "nsCOMPtr.h"
 #include "nsIBaseWindow.h"
 #include "nsIBrowserChild.h"
 #include "nsIDialogParamBlock.h"
 #include "nsIDocShell.h"
-#include "nsIEmbeddingSiteWindow.h"
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsIPrintSettings.h"
 #include "nsIWebBrowserChrome.h"
@@ -19,8 +19,11 @@
 #include "nsPrintDialogUtil.h"
 #include "nsIPrintSettings.h"
 #include "nsIWebBrowserChrome.h"
+#include "nsServiceManagerUtils.h"
 #include "nsPIDOMWindow.h"
 #include "nsQueryObject.h"
+#include "WidgetUtils.h"
+#include "WinUtils.h"
 
 static const char* kPageSetupDialogURL =
     "chrome://global/content/printPageSetup.xhtml";
@@ -62,18 +65,22 @@ nsPrintDialogServiceWin::Init() {
 }
 
 NS_IMETHODIMP
-nsPrintDialogServiceWin::Show(nsPIDOMWindowOuter* aParent,
-                              nsIPrintSettings* aSettings) {
+nsPrintDialogServiceWin::ShowPrintDialog(mozIDOMWindowProxy* aParent,
+                                         bool aHaveSelection,
+                                         nsIPrintSettings* aSettings) {
   NS_ENSURE_ARG(aParent);
-  HWND hWnd = GetHWNDForDOMWindow(aParent);
-  NS_ASSERTION(hWnd, "Couldn't get native window for PRint Dialog!");
+  RefPtr<nsIWidget> parentWidget =
+      WidgetUtils::DOMWindowToWidget(nsPIDOMWindowOuter::From(aParent));
 
-  return NativeShowPrintDialog(hWnd, aSettings);
+  ScopedRtlShimWindow shim(parentWidget.get());
+  NS_ASSERTION(shim.get(), "Couldn't get native window for PRint Dialog!");
+
+  return NativeShowPrintDialog(shim.get(), aHaveSelection, aSettings);
 }
 
 NS_IMETHODIMP
-nsPrintDialogServiceWin::ShowPageSetup(nsPIDOMWindowOuter* aParent,
-                                       nsIPrintSettings* aNSSettings) {
+nsPrintDialogServiceWin::ShowPageSetupDialog(mozIDOMWindowProxy* aParent,
+                                             nsIPrintSettings* aNSSettings) {
   NS_ENSURE_ARG(aParent);
   NS_ENSURE_ARG(aNSSettings);
 
@@ -92,9 +99,9 @@ nsPrintDialogServiceWin::ShowPageSetup(nsPIDOMWindowOuter* aParent,
     return status == 0 ? NS_ERROR_ABORT : NS_OK;
   }
 
-  // We don't call nsPrintSettingsService::SavePrintSettingsToPrefs here since
-  // it's called for us in printPageSetup.js.  Maybe we should move that call
-  // here for consistency with the other platforms though?
+  // We don't call nsPrintSettingsService::MaybeSavePrintSettingsToPrefs here
+  // since it's called for us in printPageSetup.js.  Maybe we should move that
+  // call here for consistency with the other platforms though?
 
   return rv;
 }
@@ -137,44 +144,4 @@ nsresult nsPrintDialogServiceWin::DoDialog(mozIDOMWindowProxy* aParent,
       "centerscreen,chrome,modal,titlebar"_ns, array, getter_AddRefs(dialog));
 
   return rv;
-}
-
-HWND nsPrintDialogServiceWin::GetHWNDForDOMWindow(mozIDOMWindowProxy* aWindow) {
-  nsCOMPtr<nsIWebBrowserChrome> chrome;
-
-  // We might be embedded so check this path first
-  if (mWatcher) {
-    nsCOMPtr<mozIDOMWindowProxy> fosterParent;
-    // it will be a dependent window. try to find a foster parent.
-    if (!aWindow) {
-      mWatcher->GetActiveWindow(getter_AddRefs(fosterParent));
-      aWindow = fosterParent;
-    }
-    mWatcher->GetChromeForWindow(aWindow, getter_AddRefs(chrome));
-  }
-
-  if (chrome) {
-    nsCOMPtr<nsIEmbeddingSiteWindow> site(do_QueryInterface(chrome));
-    if (site) {
-      HWND w;
-      site->GetSiteWindow(reinterpret_cast<void**>(&w));
-      return w;
-    }
-  }
-
-  // Now we might be the Browser so check this path
-  nsCOMPtr<nsPIDOMWindowOuter> window = nsPIDOMWindowOuter::From(aWindow);
-
-  nsCOMPtr<nsIWebBrowserChrome> webBrowserChrome =
-      window->GetWebBrowserChrome();
-  if (!webBrowserChrome) return nullptr;
-
-  nsCOMPtr<nsIBaseWindow> baseWin(do_QueryInterface(webBrowserChrome));
-  if (!baseWin) return nullptr;
-
-  nsCOMPtr<nsIWidget> widget;
-  baseWin->GetMainWidget(getter_AddRefs(widget));
-  if (!widget) return nullptr;
-
-  return (HWND)widget->GetNativeData(NS_NATIVE_TMP_WINDOW);
 }

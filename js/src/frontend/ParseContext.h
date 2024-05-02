@@ -8,7 +8,6 @@
 #define frontend_ParseContext_h
 
 #include "ds/Nestable.h"
-#include "frontend/BytecodeCompiler.h"
 #include "frontend/ErrorReporter.h"
 #include "frontend/NameAnalysisTypes.h"  // DeclaredNameInfo, FunctionBoxVector
 #include "frontend/NameCollections.h"
@@ -17,7 +16,6 @@
 #include "frontend/SharedContext.h"
 #include "js/friend/ErrorMessages.h"  // JSMSG_*
 #include "vm/GeneratorAndAsyncKind.h"  // js::GeneratorKind, js::FunctionAsyncKind
-#include "vm/WellKnownAtom.h"          // js_*_str
 
 namespace js {
 
@@ -122,7 +120,7 @@ class ParseContext : public Nestable<ParseContext> {
 
     bool maybeReportOOM(ParseContext* pc, bool result) {
       if (!result) {
-        ReportOutOfMemory(pc->sc()->cx_);
+        ReportOutOfMemory(pc->sc()->fc_);
       }
       return result;
     }
@@ -134,7 +132,7 @@ class ParseContext : public Nestable<ParseContext> {
     using Nestable<Scope>::enclosing;
 
     explicit inline Scope(ParserBase* parser);
-    explicit inline Scope(JSContext* cx, ParseContext* pc,
+    explicit inline Scope(FrontendContext* fc, ParseContext* pc,
                           UsedNameTracker& usedNames);
 
     void dump(ParseContext* pc, ParserBase* parser);
@@ -143,11 +141,11 @@ class ParseContext : public Nestable<ParseContext> {
 
     [[nodiscard]] bool init(ParseContext* pc) {
       if (id_ == UINT32_MAX) {
-        pc->errorReporter_.errorNoOffset(JSMSG_NEED_DIET, js_script_str);
+        pc->errorReporter_.errorNoOffset(JSMSG_NEED_DIET, "script");
         return false;
       }
 
-      return declared_.acquire(pc->sc()->cx_);
+      return declared_.acquire(pc->sc()->fc_);
     }
 
     bool isEmpty() const { return declared_->all().empty(); }
@@ -316,14 +314,11 @@ class ParseContext : public Nestable<ParseContext> {
   class VarScope : public Scope {
    public:
     explicit inline VarScope(ParserBase* parser);
-    explicit inline VarScope(JSContext* cx, ParseContext* pc,
+    explicit inline VarScope(FrontendContext* fc, ParseContext* pc,
                              UsedNameTracker& usedNames);
   };
 
  private:
-  // Trace logging of parsing time.
-  AutoFrontendTraceLog traceLog_;
-
   // Context shared between parsing and bytecode generation.
   SharedContext* sc_;
 
@@ -395,7 +390,7 @@ class ParseContext : public Nestable<ParseContext> {
   bool superScopeNeedsHomeObject_;
 
  public:
-  ParseContext(JSContext* cx, ParseContext*& parent, SharedContext* sc,
+  ParseContext(FrontendContext* fc, ParseContext*& parent, SharedContext* sc,
                ErrorReporter& errorReporter, CompilationState& compilationState,
                Directives* newDirectives, bool isFull);
 
@@ -459,7 +454,7 @@ class ParseContext : public Nestable<ParseContext> {
     return *closedOverBindingsForLazy_;
   }
 
-  enum class BreakStatementError {
+  enum class BreakStatementError : uint8_t {
     // Unlabeled break must be inside loop or switch.
     ToughBreak,
     LabelNotFound,
@@ -470,7 +465,7 @@ class ParseContext : public Nestable<ParseContext> {
   [[nodiscard]] inline JS::Result<Ok, BreakStatementError> checkBreakStatement(
       TaggedParserAtomIndex label);
 
-  enum class ContinueStatementError {
+  enum class ContinueStatementError : uint8_t {
     NotInALoop,
     LabelNotFound,
   };
@@ -597,6 +592,8 @@ class ParseContext : public Nestable<ParseContext> {
                            bool canSkipLazyClosedOverBindings);
   bool declareFunctionArgumentsObject(const UsedNameTracker& usedNames,
                                       bool canSkipLazyClosedOverBindings);
+  bool declareNewTarget(const UsedNameTracker& usedNames,
+                        bool canSkipLazyClosedOverBindings);
   bool declareDotGeneratorName();
   bool declareTopLevelDotGeneratorName();
 

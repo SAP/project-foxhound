@@ -3,15 +3,16 @@
 
 "use strict";
 
-const {
-  AddonsReconciler,
-  CHANGE_INSTALLED,
-  CHANGE_UNINSTALLED,
-} = ChromeUtils.import("resource://services-sync/addonsreconciler.js");
-const { AddonsEngine } = ChromeUtils.import(
-  "resource://services-sync/engines/addons.js"
+const { AddonsReconciler, CHANGE_INSTALLED, CHANGE_UNINSTALLED } =
+  ChromeUtils.importESModule(
+    "resource://services-sync/addonsreconciler.sys.mjs"
+  );
+const { AddonsEngine } = ChromeUtils.importESModule(
+  "resource://services-sync/engines/addons.sys.mjs"
 );
-const { Service } = ChromeUtils.import("resource://services-sync/service.js");
+const { Service } = ChromeUtils.importESModule(
+  "resource://services-sync/service.sys.mjs"
+);
 
 AddonTestUtils.init(this);
 AddonTestUtils.createAppInfo(
@@ -27,7 +28,7 @@ const XPI = AddonTestUtils.createTempWebExtensionFile({
   manifest: {
     name: "Test 1",
     description: "Test Description",
-    applications: { gecko: { id: ADDON_ID } },
+    browser_specific_settings: { gecko: { id: ADDON_ID } },
   },
 });
 
@@ -39,7 +40,7 @@ function makeAddonsReconciler() {
 
 add_task(async function setup() {
   await AddonTestUtils.promiseStartupManager();
-  Svc.Prefs.set("engine.addons", true);
+  Svc.PrefBranch.setBoolPref("engine.addons", true);
   await Service.engineManager.register(AddonsEngine);
 });
 

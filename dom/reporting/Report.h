@@ -19,15 +19,14 @@
 
 class nsIGlobalObject;
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class ReportBody;
 
 class Report final : public nsISupports, public nsWrapperCache {
  public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(Report)
+  NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(Report)
 
   Report(nsIGlobalObject* aGlobal, const nsAString& aType,
          const nsAString& aURL, ReportBody* aBody);
@@ -55,7 +54,6 @@ class Report final : public nsISupports, public nsWrapperCache {
   RefPtr<ReportBody> mBody;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_Report_h

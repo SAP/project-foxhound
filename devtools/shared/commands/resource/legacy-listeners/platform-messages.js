@@ -4,9 +4,9 @@
 
 "use strict";
 
-const ResourceCommand = require("devtools/shared/commands/resource/resource-command");
+const ResourceCommand = require("resource://devtools/shared/commands/resource/resource-command.js");
 
-module.exports = async function({ targetCommand, targetFront, onAvailable }) {
+module.exports = async function ({ targetCommand, targetFront, onAvailable }) {
   // Only allow the top level target and processes.
   // Frames can be ignored as logMessage are never sent to them anyway.
   // Also ignore workers as they are not supported yet. (see bug 1592584)

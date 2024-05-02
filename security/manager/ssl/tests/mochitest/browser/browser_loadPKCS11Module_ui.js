@@ -4,8 +4,8 @@
 
 // Tests the dialog used for loading PKCS #11 modules.
 
-const { MockRegistrar } = ChromeUtils.import(
-  "resource://testing-common/MockRegistrar.jsm"
+const { MockRegistrar } = ChromeUtils.importESModule(
+  "resource://testing-common/MockRegistrar.sys.mjs"
 );
 
 const gMockPKCS11ModuleDB = {
@@ -97,7 +97,7 @@ var gMockPKCS11CID = MockRegistrar.register(
   gMockPKCS11ModuleDB
 );
 var gMockPromptServiceCID = MockRegistrar.register(
-  "@mozilla.org/embedcomp/prompt-service;1",
+  "@mozilla.org/prompter;1",
   gMockPromptService
 );
 
@@ -134,7 +134,7 @@ function openLoadModuleDialog() {
   return new Promise(resolve => {
     win.addEventListener(
       "load",
-      function() {
+      function () {
         executeSoon(() => resolve(win));
       },
       { once: true }
@@ -148,7 +148,7 @@ function openLoadModuleDialog() {
  *
  * @param {window} win
  *        The dialog window.
- * @param {Boolean} cancel
+ * @param {boolean} cancel
  *        If true, the file picker is canceled. If false, gTempFile is chosen in
  *        the file picker and the file picker is accepted.
  */

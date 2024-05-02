@@ -22,8 +22,6 @@ ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
 OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 """
 
-from __future__ import absolute_import, division
-
 import sys
 import time
 
@@ -208,7 +206,6 @@ def mill(it, label="", hide=None, expected_size=None, every=1):
             if (_i % every) == 0 or (  # True every "every" updates
                 _i == count
             ):  # And when we're done
-
                 STREAM.write(MILL_TEMPLATE % (label, _mill_char(_i), _i, count))
                 STREAM.flush()
 

@@ -2,10 +2,11 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-import mozunit
 import os
 import sys
 import unittest
+
+import mozunit
 
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 import gen_static_components
@@ -23,6 +24,10 @@ class TestGenStaticComponents(unittest.TestCase):
             "constructor": "DummyClassImpl",
             "categories": {
                 "dummy1": ["m-dummy1", "m-dummy2"],
+            },
+            "protocol_config": {
+                "scheme": "dummy",
+                "flags": [],
             },
         }
 
@@ -64,6 +69,10 @@ class TestGenStaticComponents(unittest.TestCase):
                     "name": ["m-dummy1", "m-dummy2"],
                 },
             },
+            "protocol_config": {
+                "scheme": "dummy",
+                "flags": [],
+            },
         }
 
         substs = gen_static_components.gen_substs([{"Classes": [clas]}])
@@ -104,6 +113,10 @@ class TestGenStaticComponents(unittest.TestCase):
                     "name": ["m-dummy1", "m-dummy2"],
                     "backgroundtasks": BackgroundTasksSelector.ALL_TASKS,
                 },
+            },
+            "protocol_config": {
+                "scheme": "dummy",
+                "flags": [],
             },
         }
 

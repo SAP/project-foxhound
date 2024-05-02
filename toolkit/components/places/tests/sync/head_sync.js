@@ -1,8 +1,6 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
-var { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-
 // Import common head.
 {
   /* import-globals-from ../head_common.js */
@@ -13,22 +11,22 @@ var { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 // Put any other stuff relative to this test folder below.
 
-var { CanonicalJSON } = ChromeUtils.import(
-  "resource://gre/modules/CanonicalJSON.jsm"
+var { CanonicalJSON } = ChromeUtils.importESModule(
+  "resource://gre/modules/CanonicalJSON.sys.mjs"
 );
-var { Log } = ChromeUtils.import("resource://gre/modules/Log.jsm");
-var { ObjectUtils } = ChromeUtils.import(
-  "resource://gre/modules/ObjectUtils.jsm"
+var { Log } = ChromeUtils.importESModule("resource://gre/modules/Log.sys.mjs");
+
+var { PlacesSyncUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/PlacesSyncUtils.sys.mjs"
 );
-var { PlacesSyncUtils } = ChromeUtils.import(
-  "resource://gre/modules/PlacesSyncUtils.jsm"
+var { SyncedBookmarksMirror } = ChromeUtils.importESModule(
+  "resource://gre/modules/SyncedBookmarksMirror.sys.mjs"
 );
-var { SyncedBookmarksMirror } = ChromeUtils.import(
-  "resource://gre/modules/SyncedBookmarksMirror.jsm"
+var { CommonUtils } = ChromeUtils.importESModule(
+  "resource://services-common/utils.sys.mjs"
 );
-var { CommonUtils } = ChromeUtils.import("resource://services-common/utils.js");
-var { FileTestUtils } = ChromeUtils.import(
-  "resource://testing-common/FileTestUtils.jsm"
+var { FileTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/FileTestUtils.sys.mjs"
 );
 var {
   HTTP_400,
@@ -56,7 +54,7 @@ var {
   HTTP_505,
   HttpError,
   HttpServer,
-} = ChromeUtils.import("resource://testing-common/httpd.js");
+} = ChromeUtils.importESModule("resource://testing-common/httpd.sys.mjs");
 
 // These titles are defined in Database::CreateBookmarkRoots
 const BookmarksMenuTitle = "menu";
@@ -86,12 +84,12 @@ function run_test() {
 // A test helper to insert local roots directly into Places, since the public
 // bookmarks APIs no longer support custom roots.
 async function insertLocalRoot({ guid, title }) {
-  await PlacesUtils.withConnectionWrapper("insertLocalRoot", async function(
-    db
-  ) {
-    let dateAdded = PlacesUtils.toPRTime(new Date());
-    await db.execute(
-      `
+  await PlacesUtils.withConnectionWrapper(
+    "insertLocalRoot",
+    async function (db) {
+      let dateAdded = PlacesUtils.toPRTime(new Date());
+      await db.execute(
+        `
         INSERT INTO moz_bookmarks(guid, type, parent, position, title,
                                   dateAdded, lastModified)
         VALUES(:guid, :type, (SELECT id FROM moz_bookmarks
@@ -100,15 +98,16 @@ async function insertLocalRoot({ guid, title }) {
                 WHERE parent = (SELECT id FROM moz_bookmarks
                                 WHERE guid = :parentGuid)),
                :title, :dateAdded, :dateAdded)`,
-      {
-        guid,
-        type: PlacesUtils.bookmarks.TYPE_FOLDER,
-        parentGuid: PlacesUtils.bookmarks.rootGuid,
-        title,
-        dateAdded,
-      }
-    );
-  });
+        {
+          guid,
+          type: PlacesUtils.bookmarks.TYPE_FOLDER,
+          parentGuid: PlacesUtils.bookmarks.rootGuid,
+          title,
+          dateAdded,
+        }
+      );
+    }
+  );
 }
 
 // Returns a `CryptoWrapper`-like object that wraps the Sync record cleartext.
@@ -311,9 +310,14 @@ BookmarkObserver.prototype = {
             guid: event.guid,
             parentGuid: event.parentGuid,
             source: event.source,
+            tags: event.tags,
+            frecency: event.frecency,
+            hidden: event.hidden,
+            visitCount: event.visitCount,
           };
           if (!this.ignoreDates) {
             params.dateAdded = event.dateAdded;
+            params.lastVisitDate = event.lastVisitDate;
           }
           this.notifications.push({ name: "bookmark-added", params });
           break;
@@ -337,6 +341,7 @@ BookmarkObserver.prototype = {
             index: event.index,
             type: event.itemType,
             urlHref: event.url || null,
+            title: event.title,
             guid: event.guid,
             parentGuid: event.parentGuid,
             source: event.source,
@@ -356,6 +361,12 @@ BookmarkObserver.prototype = {
             oldIndex: event.oldIndex,
             oldParentGuid: event.oldParentGuid,
             isTagging: event.isTagging,
+            title: event.title,
+            tags: event.tags,
+            frecency: event.frecency,
+            hidden: event.hidden,
+            visitCount: event.visitCount,
+            lastVisitDate: event.lastVisitDate,
           };
           this.notifications.push({ name: "bookmark-moved", params });
           break;
@@ -399,41 +410,8 @@ BookmarkObserver.prototype = {
       }
     }
   },
-  onItemChanged(
-    itemId,
-    property,
-    isAnnoProperty,
-    newValue,
-    lastModified,
-    type,
-    parentId,
-    guid,
-    parentGuid,
-    oldValue,
-    source
-  ) {
-    let params = {
-      itemId,
-      property,
-      isAnnoProperty,
-      newValue,
-      type,
-      parentId,
-      guid,
-      parentGuid,
-      oldValue,
-      source,
-    };
-    if (!this.ignoreDates) {
-      params.lastModified = lastModified;
-    }
-    this.notifications.push({ name: "onItemChanged", params });
-  },
-
-  QueryInterface: ChromeUtils.generateQI(["nsINavBookmarkObserver"]),
 
   check(expectedNotifications) {
-    PlacesUtils.bookmarks.removeObserver(this);
     PlacesUtils.observers.removeListener(
       [
         "bookmark-added",
@@ -458,7 +436,6 @@ BookmarkObserver.prototype = {
 
 function expectBookmarkChangeNotifications(options) {
   let observer = new BookmarkObserver(options);
-  PlacesUtils.bookmarks.addObserver(observer);
   PlacesUtils.observers.addListener(
     [
       "bookmark-added",

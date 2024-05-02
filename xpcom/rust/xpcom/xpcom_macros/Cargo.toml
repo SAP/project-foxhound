@@ -3,12 +3,13 @@ name = "xpcom_macros"
 version = "0.1.0"
 authors = ["Nika Layzell <nika@thelayzells.com>"]
 edition = "2018"
+license = "MPL-2.0"
 
 [lib]
 proc-macro = true
 
 [dependencies]
-syn = "1"
+syn = "2"
 quote = "1"
 proc-macro2 = "1"
 lazy_static = "1.0"

@@ -5,29 +5,32 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-/* exported Library, SubprocessConstants */
+/* exported ArrayBuffer_transfer, Library, SubprocessConstants */
 
-if (!ArrayBuffer.transfer) {
-  /**
-   * @see https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/ArrayBuffer/transfer
-   *
-   * @param {ArrayBuffer} buffer
-   * @param {integer} [size = buffer.byteLength]
-   * @returns {ArrayBuffer}
-   */
-  ArrayBuffer.transfer = function(buffer, size = buffer.byteLength) {
-    let u8out = new Uint8Array(size);
-    let u8buffer = new Uint8Array(buffer, 0, Math.min(size, buffer.byteLength));
+// ctypes is either already available in the chrome worker scope, or defined
+// in scope via loadSubScript.
+/* global ctypes */
 
-    u8out.set(u8buffer);
-
-    return u8out.buffer;
-  };
-}
+/**
+ * Returns a new ArrayBuffer whose contents have been taken from the `buffer`'s
+ * data and then is either truncated or zero-extended by `size`. If `size` is
+ * undefined, the `byteLength` of the `buffer` is used. This operation leaves
+ * `buffer` in a detached state.
+ *
+ * @param {ArrayBuffer} buffer
+ * @param {integer} [size = buffer.byteLength]
+ * @returns {ArrayBuffer}
+ */
+var ArrayBuffer_transfer = function (buffer, size = buffer.byteLength) {
+  let u8out = new Uint8Array(size);
+  let u8buffer = new Uint8Array(buffer, 0, Math.min(size, buffer.byteLength));
+  u8out.set(u8buffer);
+  return u8out.buffer;
+};
 
 var libraries = {};
 
-class Library {
+var Library = class Library {
   constructor(name, names, definitions) {
     if (name in libraries) {
       return libraries[name];
@@ -66,14 +69,15 @@ class Library {
       },
     });
   }
-}
+};
 
 /**
  * Holds constants which apply to various Subprocess operations.
+ *
  * @namespace
  * @lends Subprocess
  */
-const SubprocessConstants = {
+var SubprocessConstants = {
   /**
    * @property {integer} ERROR_END_OF_FILE
    *           The operation failed because the end of the file was reached.

@@ -16,7 +16,7 @@ var earlyhintspath = "/103_response";
 var hint1 = "</style.css>; rel=preload; as=style";
 var hint2 = "</img.png>; rel=preload; as=image";
 
-let EarlyHintsListener = function() {};
+let EarlyHintsListener = function () {};
 
 EarlyHintsListener.prototype = {
   _expected_hints: "",
@@ -57,10 +57,7 @@ let http2Port;
 
 add_task(async function setup() {
   Services.prefs.setCharPref("network.dns.localDomains", "foo.example.com");
-  let env = Cc["@mozilla.org/process/environment;1"].getService(
-    Ci.nsIEnvironment
-  );
-  http2Port = env.get("MOZHTTP2_PORT");
+  http2Port = Services.env.get("MOZHTTP2_PORT");
   Assert.notEqual(http2Port, null);
   Assert.notEqual(http2Port, "");
 

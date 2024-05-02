@@ -82,7 +82,7 @@ const EXPECTED_REQUESTS = [
   },
 ];
 
-add_task(async function() {
+add_task(async function () {
   // Load a different URL first to instantiate the network monitor before we
   // load the page we're really interested in.
   const { monitor } = await initNetMonitor(SIMPLE_URL, { requestCount: 1 });
@@ -113,7 +113,7 @@ add_task(async function() {
     )
   );
 
-  validateRequests(EXPECTED_REQUESTS, monitor);
+  validateRequests(EXPECTED_REQUESTS, monitor, { allowDifferentOrder: true });
 
   await teardown(monitor);
 });

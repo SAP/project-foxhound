@@ -16,7 +16,10 @@ using namespace mozilla;
 class NoCheckTestType
     : public SupportsCheckedUnsafePtr<DoNotCheckCheckedUnsafePtrs> {};
 
+#if __cplusplus < 202002L
 static_assert(std::is_literal_type_v<CheckedUnsafePtr<NoCheckTestType>>);
+#endif
+
 static_assert(
     std::is_trivially_copy_constructible_v<CheckedUnsafePtr<NoCheckTestType>>);
 static_assert(
@@ -60,7 +63,7 @@ TEST_F(CheckedUnsafePtrTest, PointeeWithNoCheckedUnsafePtrs) {
 template <typename PointerType>
 class TypedCheckedUnsafePtrTest : public CheckedUnsafePtrTest {};
 
-TYPED_TEST_CASE_P(TypedCheckedUnsafePtrTest);
+TYPED_TEST_SUITE_P(TypedCheckedUnsafePtrTest);
 
 TYPED_TEST_P(TypedCheckedUnsafePtrTest, PointeeWithOneCheckedUnsafePtr) {
   {
@@ -129,14 +132,14 @@ TYPED_TEST_P(TypedCheckedUnsafePtrTest,
   ASSERT_TRUE(dangling2);
 }
 
-REGISTER_TYPED_TEST_CASE_P(TypedCheckedUnsafePtrTest,
-                           PointeeWithOneCheckedUnsafePtr,
-                           CheckedUnsafePtrCopyConstructed,
-                           CheckedUnsafePtrCopyAssigned,
-                           PointeeWithOneDanglingCheckedUnsafePtr,
-                           PointeeWithOneCopiedDanglingCheckedUnsafePtr,
-                           PointeeWithOneCopyAssignedDanglingCheckedUnsafePtr);
+REGISTER_TYPED_TEST_SUITE_P(TypedCheckedUnsafePtrTest,
+                            PointeeWithOneCheckedUnsafePtr,
+                            CheckedUnsafePtrCopyConstructed,
+                            CheckedUnsafePtrCopyAssigned,
+                            PointeeWithOneDanglingCheckedUnsafePtr,
+                            PointeeWithOneCopiedDanglingCheckedUnsafePtr,
+                            PointeeWithOneCopyAssignedDanglingCheckedUnsafePtr);
 
 using BothTypes = ::testing::Types<BasePointee, DerivedPointee>;
-INSTANTIATE_TYPED_TEST_CASE_P(InstantiationOf, TypedCheckedUnsafePtrTest,
-                              BothTypes);
+INSTANTIATE_TYPED_TEST_SUITE_P(InstantiationOf, TypedCheckedUnsafePtrTest,
+                               BothTypes);

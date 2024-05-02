@@ -1,13 +1,11 @@
-from __future__ import absolute_import, print_function
-
 import gc
-from unittest import mock
 import os
 import re
 import shutil
 import tempfile
 import types
 import unittest
+from unittest import mock
 
 PYWIN32 = False
 if os.name == "nt":
@@ -21,10 +19,9 @@ if os.name == "nt":
 
 import mozharness.base.errors as errors
 import mozharness.base.log as log
-from mozharness.base.log import DEBUG, INFO, WARNING, ERROR, CRITICAL, FATAL, IGNORE
 import mozharness.base.script as script
 from mozharness.base.config import parse_config_file
-
+from mozharness.base.log import CRITICAL, DEBUG, ERROR, FATAL, IGNORE, INFO, WARNING
 
 here = os.path.dirname(os.path.abspath(__file__))
 
@@ -229,7 +226,7 @@ class TestScript(unittest.TestCase):
             env={"GARBLE": "FARG"},
             error_list=errors.PythonErrorList,
         )
-        error_logsize = os.path.getsize("test_logs/test_error.log")
+        error_logsize = os.path.getsize("test_logs/test_info.log")
         self.assertTrue(error_logsize > 0, msg="command not found error not hit")
 
     def test_run_command_in_bad_dir(self):
@@ -323,6 +320,19 @@ class TestScript(unittest.TestCase):
                     extract_to=self.tmpdir,
                 )
 
+        for archive in (
+            "archive-setuid.tar",
+            "archive-escape.tar",
+            "archive-link.tar",
+            "archive-link-abs.tar",
+            "archive-double-link.tar",
+        ):
+            with self.assertRaises(Exception):
+                self.s.download_unpack(
+                    url=os.path.join(archives_path, archive),
+                    extract_to=self.tmpdir,
+                )
+
     def test_unpack(self):
         self.s = get_debug_script_obj()
 
@@ -366,6 +376,16 @@ class TestScript(unittest.TestCase):
                     os.path.join(archives_path, "archive_invalid_filename.zip"),
                     self.tmpdir,
                 )
+
+        for archive in (
+            "archive-setuid.tar",
+            "archive-escape.tar",
+            "archive-link.tar",
+            "archive-link-abs.tar",
+            "archive-double-link.tar",
+        ):
+            with self.assertRaises(Exception):
+                self.s.unpack(os.path.join(archives_path, archive), self.tmpdir)
 
 
 # TestHelperFunctions {{{1
@@ -463,13 +483,13 @@ class TestHelperFunctions(unittest.TestCase):
         self.s = script.BaseScript(initial_config_file="test/test.json")
         # create a very long path that the command-prompt cannot delete
         # by using unicode format (max path length 32000)
-        path = u"\\\\?\\%s\\test_dir" % os.getcwd()
-        win32file.CreateDirectoryExW(u".", path)
+        path = "\\\\?\\%s\\test_dir" % os.getcwd()
+        win32file.CreateDirectoryExW(".", path)
 
         for x in range(0, 20):
             print("path=%s" % path)
-            path = path + u"\\%sxxxxxxxxxxxxxxxxxxxx" % x
-            win32file.CreateDirectoryExW(u".", path)
+            path = path + "\\%sxxxxxxxxxxxxxxxxxxxx" % x
+            win32file.CreateDirectoryExW(".", path)
         self.s.rmtree("test_dir")
         self.assertFalse(os.path.exists("test_dir"), msg="rmtree unsuccessful")
 
@@ -743,16 +763,16 @@ class TestRetry(unittest.TestCase):
         """Tests that retry() doesn't call the action again after success"""
         self.s.retry(self._alwaysPass, attempts=3, sleeptime=0)
         # self.ATTEMPT_N gets increased regardless of pass/fail
-        self.assertEquals(2, self.ATTEMPT_N)
+        self.assertEqual(2, self.ATTEMPT_N)
 
     def testRetryReturns(self):
         ret = self.s.retry(self._alwaysPass, sleeptime=0)
-        self.assertEquals(ret, True)
+        self.assertEqual(ret, True)
 
     def testRetryCleanupIsCalled(self):
         cleanup = mock.Mock()
         self.s.retry(self._succeedOnSecondAttempt, cleanup=cleanup, sleeptime=0)
-        self.assertEquals(cleanup.call_count, 1)
+        self.assertEqual(cleanup.call_count, 1)
 
     def testRetryArgsPassed(self):
         args = (1, "two", 3)

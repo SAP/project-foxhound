@@ -4,70 +4,23 @@
 
 
 import logging
-import re
 import os
+import re
 import sys
 
 import attr
+from taskgraph.util.treeherder import join_symbol
+from taskgraph.util.verify import VerificationSequence
 
-from .. import GECKO
-from .treeherder import join_symbol
-from gecko_taskgraph.util.attributes import match_run_on_projects, RELEASE_PROJECTS
-
-from gecko_taskgraph.util.attributes import ALL_PROJECTS, RUN_ON_PROJECT_ALIASES
+from gecko_taskgraph import GECKO
+from gecko_taskgraph.util.attributes import (
+    ALL_PROJECTS,
+    RELEASE_PROJECTS,
+    RUN_ON_PROJECT_ALIASES,
+)
 
 logger = logging.getLogger(__name__)
 doc_base_path = os.path.join(GECKO, "taskcluster", "docs")
-
-
-@attr.s(frozen=True)
-class Verification:
-    verify = attr.ib()
-    run_on_projects = attr.ib()
-
-
-@attr.s(frozen=True)
-class VerificationSequence:
-    """
-    Container for a sequence of verifications over a TaskGraph. Each
-    verification is represented as a callable taking (task, taskgraph,
-    scratch_pad), called for each task in the taskgraph, and one more
-    time with no task but with the taskgraph and the same scratch_pad
-    that was passed for each task.
-    """
-
-    _verifications = attr.ib(factory=dict)
-
-    def __call__(self, graph_name, graph, graph_config, parameters):
-        for verification in self._verifications.get(graph_name, []):
-            if not match_run_on_projects(
-                parameters["project"], verification.run_on_projects
-            ):
-                continue
-            scratch_pad = {}
-            graph.for_each_task(
-                verification.verify,
-                scratch_pad=scratch_pad,
-                graph_config=graph_config,
-                parameters=parameters,
-            )
-            verification.verify(
-                None,
-                graph,
-                scratch_pad=scratch_pad,
-                graph_config=graph_config,
-                parameters=parameters,
-            )
-        return graph_name, graph
-
-    def add(self, graph_name, run_on_projects={"all"}):
-        def wrap(func):
-            self._verifications.setdefault(graph_name, []).append(
-                Verification(func, run_on_projects)
-            )
-            return func
-
-        return wrap
 
 
 verifications = VerificationSequence()
@@ -135,6 +88,47 @@ def verify_docs(filename, identifiers, appearing_as):
                     appearing_as, identifier, filename
                 )
             )
+
+
+@verifications.add("initial")
+def verify_run_using():
+    from gecko_taskgraph.transforms.job import registry
+
+    verify_docs(
+        filename="transforms/job.rst",
+        identifiers=registry.keys(),
+        appearing_as="inline-literal",
+    )
+
+
+@verifications.add("parameters")
+def verify_parameters_docs(parameters):
+    if not parameters.strict:
+        return
+
+    parameters_dict = dict(**parameters)
+    verify_docs(
+        filename="parameters.rst",
+        identifiers=list(parameters_dict),
+        appearing_as="inline-literal",
+    )
+
+
+@verifications.add("kinds")
+def verify_kinds_docs(kinds):
+    verify_docs(filename="kinds.rst", identifiers=kinds.keys(), appearing_as="heading")
+
+
+@verifications.add("full_task_set")
+def verify_attributes(task, taskgraph, scratch_pad, graph_config, parameters):
+    if task is None:
+        verify_docs(
+            filename="attributes.rst",
+            identifiers=list(scratch_pad["attribute_set"]),
+            appearing_as="heading",
+        )
+        return
+    scratch_pad.setdefault("attribute_set", set()).update(task.attributes.keys())
 
 
 @verifications.add("full_task_graph")
@@ -281,10 +275,9 @@ def verify_required_signoffs(task, taskgraph, scratch_pad, graph_config, paramet
         def printable_signoff(signoffs):
             if len(signoffs) == 1:
                 return "required signoff {}".format(*signoffs)
-            elif signoffs:
+            if signoffs:
                 return "required signoffs {}".format(", ".join(signoffs))
-            else:
-                return "no required signoffs"
+            return "no required signoffs"
 
         for task in taskgraph.tasks.values():
             required_signoffs = all_required_signoffs[task.label]
@@ -301,31 +294,56 @@ def verify_required_signoffs(task, taskgraph, scratch_pad, graph_config, paramet
 
 
 @verifications.add("full_task_graph")
-def verify_toolchain_alias(task, taskgraph, scratch_pad, graph_config, parameters):
+def verify_aliases(task, taskgraph, scratch_pad, graph_config, parameters):
     """
-    This function verifies that toolchain aliases are not reused.
+    This function verifies that aliases are not reused.
     """
     if task is None:
         return
+    if task.kind not in ("toolchain", "fetch"):
+        return
+    for_kind = scratch_pad.setdefault(task.kind, {})
+    aliases = for_kind.setdefault("aliases", {})
+    alias_attribute = f"{task.kind}-alias"
+    if task.label in aliases:
+        raise Exception(
+            "Task `{}` has a {} of `{}`, masking a task of that name.".format(
+                aliases[task.label],
+                alias_attribute,
+                task.label[len(task.kind) + 1 :],
+            )
+        )
+    labels = for_kind.setdefault("labels", set())
+    labels.add(task.label)
     attributes = task.attributes
-    if "toolchain-alias" in attributes:
-        keys = attributes["toolchain-alias"]
+    if alias_attribute in attributes:
+        keys = attributes[alias_attribute]
         if not keys:
             keys = []
         elif isinstance(keys, str):
             keys = [keys]
         for key in keys:
-            if key in scratch_pad:
+            full_key = f"{task.kind}-{key}"
+            if full_key in labels:
                 raise Exception(
-                    "Duplicate toolchain-alias in tasks "
-                    "`{}`and `{}`: {}".format(
+                    "Task `{}` has a {} of `{}`,"
+                    " masking a task of that name.".format(
                         task.label,
-                        scratch_pad[key],
+                        alias_attribute,
+                        key,
+                    )
+                )
+            if full_key in aliases:
+                raise Exception(
+                    "Duplicate {} in tasks `{}`and `{}`: {}".format(
+                        alias_attribute,
+                        task.label,
+                        aliases[full_key],
                         key,
                     )
                 )
             else:
-                scratch_pad[key] = task.label
+                aliases[full_key] = task.label
 
 
 @verifications.add("optimized_task_graph")
@@ -354,7 +372,7 @@ def verify_test_packaging(task, taskgraph, scratch_pad, graph_config, parameters
         missing_tests_allowed = any(
             (
                 # user specified `--target-kind`
-                parameters.get("target-kind") is not None,
+                bool(parameters.get("target-kinds")),
                 # manifest scheduling is enabled
                 parameters["test_manifest_loader"] != "default",
             )
@@ -433,25 +451,4 @@ def verify_run_known_projects(task, taskgraph, scratch_pad, graph_config, parame
             raise Exception(
                 "Task '{}' has an invalid run-on-projects value: "
                 "{}".format(task.label, invalid_projects)
-            )
-
-
-@verifications.add("full_task_graph")
-def verify_local_toolchains(task, taskgraph, scratch_pad, graph_config, parameters):
-    """
-    Toolchains that are used for local development need to be built on a
-    level-3 branch to installable via `mach bootstrap`. We ensure here that all
-    such tasks run on at least trunk projects, even if they aren't pulled in as
-    a dependency of other tasks in the graph.
-
-    There is code in `mach artifact toolchain` that verifies that anything
-    installed via `mach bootstrap` has the attribute set.
-    """
-    if task and task.attributes.get("local-toolchain"):
-        run_on_projects = task.attributes.get("run_on_projects", [])
-        if not any(alias in run_on_projects for alias in ["all", "trunk"]):
-            raise Exception(
-                "Toolchain {} used for local development is not built on trunk. {}".format(
-                    task.label, run_on_projects
-                )
             )

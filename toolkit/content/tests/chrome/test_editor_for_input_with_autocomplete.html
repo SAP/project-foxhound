@@ -24,7 +24,10 @@ SimpleTest.waitForExplicitFinish();
 async function registerWord(aTarget, aAutoCompleteController) {
   // Register a word to the form history.
   let chromeScript = SpecialPowers.loadChromeScript(function addEntry() {
-    let {FormHistory} = ChromeUtils.import("resource://gre/modules/FormHistory.jsm");
+/* eslint-env mozilla/chrome-script */
+    let {FormHistory} = ChromeUtils.importESModule(
+      "resource://gre/modules/FormHistory.sys.mjs"
+    );
     FormHistory.update({ op: "add", fieldname: "test", value: "Mozilla" });
   });
   aTarget.focus();

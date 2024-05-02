@@ -1,8 +1,4 @@
-add_task(async function() {
-  const { Services } = ChromeUtils.import(
-    "resource://gre/modules/Services.jsm"
-  );
-
+add_task(async function () {
   do_get_profile();
 
   let existingFile = Services.dirsvc

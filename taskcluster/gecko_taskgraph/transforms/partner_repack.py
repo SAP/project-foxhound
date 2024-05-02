@@ -5,19 +5,18 @@
 Transform the partner repack task into an actual task description.
 """
 
+from taskgraph.transforms.base import TransformSequence
+from taskgraph.util.schema import resolve_keyed_by
 
-from gecko_taskgraph.transforms.base import TransformSequence
 from gecko_taskgraph.util.attributes import release_level
-from gecko_taskgraph.util.schema import resolve_keyed_by
-from gecko_taskgraph.util.scriptworker import get_release_config
 from gecko_taskgraph.util.partners import (
+    apply_partner_priority,
     check_if_partners_enabled,
     get_partner_config_by_kind,
     get_partner_url_config,
     get_repack_ids_by_platform,
-    apply_partner_priority,
 )
-
+from gecko_taskgraph.util.scriptworker import get_release_config
 
 transforms = TransformSequence()
 transforms.add(check_if_partners_enabled)
@@ -32,6 +31,23 @@ def skip_unnecessary_platforms(config, tasks):
             repack_ids = get_repack_ids_by_platform(config, platform)
             if not repack_ids:
                 continue
+        yield task
+
+
+@transforms.add
+def remove_mac_dependency(config, tasks):
+    """Remove mac dependency depending on current level
+    to accomodate for mac notarization not running on level 1
+    """
+    level = int(config.params.get("level", 0))
+    for task in tasks:
+        if "macosx" not in task["attributes"]["build_platform"]:
+            yield task
+            continue
+        skipped_kind = "mac-signing" if level == 3 else "mac-notarization"
+        for dep_label in list(task["dependencies"].keys()):
+            if skipped_kind in dep_label:
+                del task["dependencies"][dep_label]
         yield task
 
 

@@ -12,7 +12,7 @@ const breakdown = {
   other: { by: "count", count: true, bytes: true },
 };
 
-add_task(async function() {
+add_task(async function () {
   const client = new HeapAnalysesClient();
 
   const snapshotFilePath = saveNewHeapSnapshot();
@@ -28,7 +28,7 @@ add_task(async function() {
   let threw = false;
   try {
     await client.getDominatorTree({
-      dominatorTreeId: dominatorTreeId,
+      dominatorTreeId,
       breakdown,
     });
   } catch (_) {

@@ -6,17 +6,14 @@
 
 const {
   accessibility: { AUDIT_TYPE, ISSUE_TYPE, SCORES },
-} = require("devtools/shared/constants");
+} = require("resource://devtools/shared/constants.js");
 
 // Checks for the AccessibleWalkerActor audit.
-add_task(async function() {
-  const {
-    target,
-    a11yWalker,
-    parentAccessibility,
-  } = await initAccessibilityFrontsForUrl(
-    MAIN_DOMAIN + "doc_accessibility_audit.html"
-  );
+add_task(async function () {
+  const { target, a11yWalker, parentAccessibility } =
+    await initAccessibilityFrontsForUrl(
+      MAIN_DOMAIN + "doc_accessibility_audit.html"
+    );
 
   const accessibles = [
     {

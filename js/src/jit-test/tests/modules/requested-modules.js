@@ -50,7 +50,7 @@ testRequestedModules("import a from 'foo'; export {} from 'bar'; export * from '
     { specifier: 'baz', assertions: null }
 ]);
 
-if(getRealmConfiguration()['importAssertions']) {
+if (getRealmConfiguration("importAssertions")) {
     testRequestedModules("import a from 'foo' assert {}", [
         { specifier: 'foo', assertions: null },
     ]);
@@ -79,5 +79,15 @@ if(getRealmConfiguration()['importAssertions']) {
 
     testRequestedModules("export * from 'bar' assert { type: 'json'}",[
         { specifier: 'bar', assertions:  [ { type: 'json' } ] }
+    ]);
+
+    testRequestedModules("import a from 'foo'; import b from 'bar' assert { type: 'json' };", [
+        { specifier: 'foo', assertions: null },
+        { specifier: 'bar', assertions: [ { type: 'json' } ] },
+    ]);
+
+    testRequestedModules("import b from 'bar' assert { type: 'json' }; import a from 'foo';", [
+        { specifier: 'bar', assertions: [ { type: 'json' } ] },
+        { specifier: 'foo', assertions: null },
     ]);
 }

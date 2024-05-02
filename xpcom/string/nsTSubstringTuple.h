@@ -44,7 +44,7 @@ class MOZ_TEMPORARY_CLASS nsTSubstringTuple {
         mFragB(aStrB) {}
 
   // TaintFox: Computes the combined taint information.
-  StringTaint Taint() const;
+  SafeStringTaint Taint() const;
 
   /**
    * computes the aggregate string length

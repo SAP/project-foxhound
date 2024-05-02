@@ -21,7 +21,7 @@ job-defaults:
     run-on-projects: []  # to make sure this never runs as part of CI
     shipping-product: firefox
     shipping-phase: promote
-    worker-type: b-linux
+    worker-type: b-linux-gcp
     worker:
         docker-image:
             in-tree: "partner-repack"
@@ -29,7 +29,7 @@ job-defaults:
         max-run-time: 1800
     run:
         using: mach
-        mach: python python/mozrelease/mozrelease/partner_attribution.py
+        mach: python python/mozrelease/mozrelease/attribute_builds.py
 
 jobs:
     partner-attribution:

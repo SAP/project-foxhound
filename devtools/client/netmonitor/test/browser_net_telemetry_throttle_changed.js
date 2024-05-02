@@ -8,7 +8,7 @@ const ALL_CHANNELS = Ci.nsITelemetry.DATASET_ALL_CHANNELS;
 /**
  * Test the throttle_change telemetry event.
  */
-add_task(async function() {
+add_task(async function () {
   const { monitor, toolbox } = await initNetMonitor(SIMPLE_URL, {
     requestCount: 1,
   });
@@ -29,7 +29,11 @@ add_task(async function() {
   // Throttling menu items cannot be retrieved by id so we can't use getContextMenuItem
   // here. Instead use querySelector on the toolbox top document, where the context menu
   // will be rendered.
-  toolbox.topWindow.document.querySelector("menuitem[label='GPRS']").click();
+  const item = toolbox.topWindow.document.querySelector(
+    "menuitem[label='GPRS']"
+  );
+  await BrowserTestUtils.waitForPopupEvent(item.parentNode, "shown");
+  item.parentNode.activateItem(item);
   await monitor.panelWin.api.once(TEST_EVENTS.THROTTLING_CHANGED);
 
   // Verify existence of the telemetry event.

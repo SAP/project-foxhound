@@ -40,6 +40,7 @@ GMPVideoDecoderParent::GMPVideoDecoderParent(GMPContentParent* aPlugin)
       mCallback(nullptr),
       mVideoHost(this),
       mPluginId(aPlugin->GetPluginId()),
+      mPluginType(aPlugin->GetPluginType()),
       mFrameCount(0) {
   MOZ_ASSERT(mPlugin);
 }
@@ -213,13 +214,12 @@ nsresult GMPVideoDecoderParent::Drain() {
   return NS_OK;
 }
 
-const nsCString& GMPVideoDecoderParent::GetDisplayName() const {
-  if (!mIsOpen) {
-    NS_WARNING("Trying to use an dead GMP video decoder");
+nsCString GMPVideoDecoderParent::GetDisplayName() const {
+  if (NS_WARN_IF(!mIsOpen)) {
+    return ""_ns;
   }
 
   MOZ_ASSERT(mPlugin->GMPEventTarget()->IsOnCurrentThread());
-
   return mPlugin->GetDisplayName();
 }
 
@@ -283,9 +283,19 @@ void GMPVideoDecoderParent::ActorDestroy(ActorDestroyReason aWhy) {
 mozilla::ipc::IPCResult GMPVideoDecoderParent::RecvDecoded(
     const GMPVideoi420FrameData& aDecodedFrame) {
   --mFrameCount;
-  GMP_LOG_VERBOSE("GMPVideoDecoderParent[%p]::RecvDecoded() timestamp=%" PRId64
-                  " frameCount=%d",
-                  this, aDecodedFrame.mTimestamp(), mFrameCount);
+  if (aDecodedFrame.mUpdatedTimestamp() &&
+      aDecodedFrame.mUpdatedTimestamp().value() != aDecodedFrame.mTimestamp()) {
+    GMP_LOG_VERBOSE(
+        "GMPVideoDecoderParent[%p]::RecvDecoded() timestamp=[%" PRId64
+        " -> %" PRId64 "] frameCount=%d",
+        this, aDecodedFrame.mTimestamp(),
+        aDecodedFrame.mUpdatedTimestamp().value(), mFrameCount);
+  } else {
+    GMP_LOG_VERBOSE(
+        "GMPVideoDecoderParent[%p]::RecvDecoded() timestamp=%" PRId64
+        " frameCount=%d",
+        this, aDecodedFrame.mTimestamp(), mFrameCount);
+  }
 
   if (mCallback) {
     if (GMPVideoi420FrameImpl::CheckFrameData(aDecodedFrame)) {
@@ -402,9 +412,8 @@ mozilla::ipc::IPCResult GMPVideoDecoderParent::RecvNeedShmem(
     const uint32_t& aFrameBufferSize, Shmem* aMem) {
   ipc::Shmem mem;
 
-  if (!mVideoHost.SharedMemMgr()->MgrAllocShmem(
-          GMPSharedMem::kGMPFrameData, aFrameBufferSize,
-          ipc::SharedMemory::TYPE_BASIC, &mem)) {
+  if (!mVideoHost.SharedMemMgr()->MgrAllocShmem(GMPSharedMem::kGMPFrameData,
+                                                aFrameBufferSize, &mem)) {
     GMP_LOG_ERROR("%s: Failed to get a shared mem buffer for Child! size %u",
                   __FUNCTION__, aFrameBufferSize);
     return IPC_FAIL(this, "Failed to get a shared mem buffer for Child!");

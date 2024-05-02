@@ -31,8 +31,12 @@ add_task(async function test() {
       "form-basic-username",
       "form-basic-password"
     );
-    login = Services.logins.addLogin(login);
-    is(login.timesUsed, 1, "The timesUsed should be 1 after creation");
+    login = await Services.logins.addLoginAsync(login);
+    Assert.equal(
+      login.timesUsed,
+      1,
+      "The timesUsed should be 1 after creation"
+    );
 
     let tab = await BrowserTestUtils.openNewForegroundTab({
       gBrowser,
@@ -45,14 +49,14 @@ add_task(async function test() {
       tab.linkedBrowser,
       [{ login, usernameRequested }],
       async ({ login: addedLogin, usernameRequested: aUsernameRequested }) => {
-        const { LoginFormFactory } = ChromeUtils.import(
-          "resource://gre/modules/LoginFormFactory.jsm"
+        const { LoginFormFactory } = ChromeUtils.importESModule(
+          "resource://gre/modules/LoginFormFactory.sys.mjs"
         );
-        const { LoginManagerChild } = ChromeUtils.import(
-          "resource://gre/modules/LoginManagerChild.jsm"
+        const { LoginManagerChild } = ChromeUtils.importESModule(
+          "resource://gre/modules/LoginManagerChild.sys.mjs"
         );
-        const { LoginHelper } = ChromeUtils.import(
-          "resource://gre/modules/LoginHelper.jsm"
+        const { LoginHelper } = ChromeUtils.importESModule(
+          "resource://gre/modules/LoginHelper.sys.mjs"
         );
 
         let password = content.document.querySelector("#form-basic-password");
@@ -73,9 +77,13 @@ add_task(async function test() {
 
         if (aUsernameRequested) {
           let username = content.document.querySelector("#form-basic-username");
-          is(username.value, "bob", "Filled username should match");
+          Assert.equal(username.value, "bob", "Filled username should match");
         }
-        is(password.value, "mypassword", "Filled password should match");
+        Assert.equal(
+          password.value,
+          "mypassword",
+          "Filled password should match"
+        );
       }
     );
 
@@ -85,15 +93,15 @@ add_task(async function test() {
     });
     await processedPromise;
 
-    let logins = Services.logins.getAllLogins();
+    let logins = await Services.logins.getAllLogins();
 
-    is(logins.length, 1, "There should only be one login saved");
-    is(
+    Assert.equal(logins.length, 1, "There should only be one login saved");
+    Assert.equal(
       logins[0].guid,
       login.guid,
       "The saved login should match the one added and used above"
     );
-    checkOnlyLoginWasUsedTwice({ justChanged: false });
+    await checkOnlyLoginWasUsedTwice({ justChanged: false });
 
     BrowserTestUtils.removeTab(tab);
 

@@ -4,7 +4,7 @@
 
 "use strict";
 
-const { LocalizationHelper } = require("devtools/shared/l10n");
+const { LocalizationHelper } = require("resource://devtools/shared/l10n.js");
 
 const CONTAINER_FLASHING_DURATION = 500;
 const STRINGS_URI = "devtools/shared/locales/screenshot.properties";
@@ -188,16 +188,10 @@ function getFilename(defaultName) {
 
   const date = new Date();
   const monthString = (date.getMonth() + 1).toString().padStart(2, "0");
-  const dayString = date
-    .getDate()
-    .toString()
-    .padStart(2, "0");
+  const dayString = date.getDate().toString().padStart(2, "0");
   const dateString = `${date.getFullYear()}-${monthString}-${dayString}`;
 
-  const timeString = date
-    .toTimeString()
-    .replace(/:/g, ".")
-    .split(" ")[0];
+  const timeString = date.toTimeString().replace(/:/g, ".").split(" ")[0];
 
   return (
     L10N.getFormatStr("screenshotGeneratedFilename", dateString, timeString) +

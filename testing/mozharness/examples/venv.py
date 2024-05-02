@@ -8,7 +8,6 @@
 Test virtualenv creation. This installs talos in the local venv; that's it.
 """
 
-from __future__ import absolute_import
 import os
 import sys
 
@@ -17,6 +16,7 @@ sys.path.insert(1, os.path.dirname(sys.path[0]))
 from mozharness.base.errors import PythonErrorList
 from mozharness.base.python import virtualenv_config_options, VirtualenvMixin
 from mozharness.base.script import BaseScript
+
 
 # VirtualenvExample {{{1
 class VirtualenvExample(VirtualenvMixin, BaseScript):

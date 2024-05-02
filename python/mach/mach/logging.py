@@ -6,19 +6,51 @@
 # support for a structured logging framework built on top of Python's built-in
 # logging framework.
 
-from __future__ import absolute_import, unicode_literals
-
-try:
-    import blessings
-except ImportError:
-    blessings = None
-
 import codecs
 import json
 import logging
-import six
+import os
 import sys
 import time
+
+import blessed
+import six
+from mozbuild.util import mozilla_build_version
+from packaging.version import Version
+
+IS_WINDOWS = sys.platform.startswith("win")
+
+if IS_WINDOWS:
+    import msvcrt
+    from ctypes import byref, windll
+    from ctypes.wintypes import DWORD
+
+    ENABLE_VIRTUAL_TERMINAL_PROCESSING = 0x0004
+
+    def enable_virtual_terminal_processing(file_descriptor):
+        handle = msvcrt.get_osfhandle(file_descriptor)
+        try:
+            mode = DWORD()
+            windll.kernel32.GetConsoleMode(handle, byref(mode))
+            mode.value |= ENABLE_VIRTUAL_TERMINAL_PROCESSING
+            windll.kernel32.SetConsoleMode(handle, mode.value)
+        except Exception as e:
+            raise e
+
+
+def enable_blessed():
+    # Only Windows has issues with enabling blessed
+    # and interpreting ANSI escape sequences
+    if not IS_WINDOWS:
+        return True
+
+    if os.environ.get("NO_ANSI"):
+        return False
+
+    # MozillaBuild 4.0.2 is the first Release that supports
+    # ANSI escape sequences, so if we're greater than that
+    # version, we can enable them (via Blessed).
+    return mozilla_build_version() >= Version("4.0.2")
 
 
 # stdout and stderr may not necessarily be set up to write Unicode output, so
@@ -41,6 +73,25 @@ def format_seconds(total):
     minutes, seconds = divmod(total, 60)
 
     return "%2d:%05.2f" % (minutes, seconds)
+
+
+def format_level(level, terminal=None):
+    levels = {
+        logging.NOTSET: ("N", "bright_white"),
+        logging.DEBUG: ("D", "blue"),
+        logging.INFO: (None, None),
+        logging.WARNING: ("W", "yellow"),
+        logging.ERROR: ("E", "red"),
+        logging.CRITICAL: ("C", "black_on_red"),
+    }
+    try:
+        s, color = levels[level]
+    except KeyError:
+        raise ValueError(f"unsupported log level: {level}")
+    if s is None:
+        return ""
+    colorfunc = getattr(terminal, color) if terminal else lambda x: x
+    return colorfunc(s) + " "
 
 
 class ConvertToStructuredFilter(logging.Filter):
@@ -79,20 +130,26 @@ class StructuredHumanFormatter(logging.Formatter):
     unstructured record is passed or if the structured message is malformed.
     """
 
-    def __init__(self, start_time, write_interval=False, write_times=True):
+    def __init__(
+        self, start_time, write_interval=False, write_times=True, write_level=None
+    ):
         self.start_time = start_time
         self.write_interval = write_interval
         self.write_times = write_times
+        # Default to the same value as `write_times` if `write_level` is unset.
+        self.write_level = write_level if write_level is not None else write_times
         self.last_time = None
 
     def format(self, record):
-        formatted_msg = record.msg.format(**record.params)
+        formatted_msg = record.msg.format(**getattr(record, "params", {}))
 
         elapsed_time = (
             format_seconds(self._time(record)) + " " if self.write_times else ""
         )
 
-        rv = elapsed_time + formatted_msg
+        level = format_level(record.levelno) if self.write_level else ""
+
+        rv = elapsed_time + level + formatted_msg
         formatted_stack_trace_result = formatted_stack_trace(record, self)
 
         if formatted_stack_trace_result != "":
@@ -117,17 +174,19 @@ class StructuredTerminalFormatter(StructuredHumanFormatter):
 
     def set_terminal(self, terminal):
         self.terminal = terminal
-        self._sgr0 = terminal.normal if terminal and blessings else ""
+        self._sgr0 = terminal.normal if terminal else ""
 
     def format(self, record):
-        formatted_msg = record.msg.format(**record.params)
+        formatted_msg = record.msg.format(**getattr(record, "params", {}))
         elapsed_time = (
             self.terminal.blue(format_seconds(self._time(record))) + " "
             if self.write_times
             else ""
         )
 
-        rv = elapsed_time + self._colorize(formatted_msg) + self._sgr0
+        level = format_level(record.levelno, self.terminal) if self.write_level else ""
+
+        rv = elapsed_time + level + self._colorize(formatted_msg) + self._sgr0
         formatted_stack_trace_result = formatted_stack_trace(record, self)
 
         if formatted_stack_trace_result != "":
@@ -223,19 +282,19 @@ class LoggingManager(object):
 
         self._terminal = None
 
-    @property
-    def terminal(self):
-        if not self._terminal and blessings:
-            # Sometimes blessings fails to set up the terminal. In that case,
-            # silently fail.
+    def create_terminal(self):
+        if enable_blessed():
+            # Sometimes blessed fails to set up the terminal, in that case, silently fail.
             try:
-                terminal = blessings.Terminal(stream=_wrap_stdstream(sys.stdout))
+                terminal = blessed.Terminal(stream=_wrap_stdstream(sys.stdout))
 
                 if terminal.is_a_tty:
                     self._terminal = terminal
             except Exception:
                 pass
 
+    @property
+    def terminal(self):
         return self._terminal
 
     def add_json_handler(self, fh):
@@ -256,6 +315,16 @@ class LoggingManager(object):
         self, fh=sys.stdout, level=logging.INFO, write_interval=False, write_times=True
     ):
         """Enable logging to the terminal."""
+        self.create_terminal()
+
+        if IS_WINDOWS:
+            try:
+                # fileno() can raise in some cases, like unit tests.
+                # so we can try to enable this but if we fail it's fine
+                enable_virtual_terminal_processing(sys.stdout.fileno())
+                enable_virtual_terminal_processing(sys.stderr.fileno())
+            except Exception:
+                pass
 
         fh = _wrap_stdstream(fh)
         formatter = StructuredHumanFormatter(

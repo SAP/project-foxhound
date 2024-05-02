@@ -1,13 +1,16 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
+
+"use strict";
+
 requestLongerTimeout(2);
 
-add_task(async function() {
+add_task(async function () {
   // NOTE: the CORS call makes the test run times inconsistent
   const dbg = await initDebugger("doc-sourcemaps.html");
   const {
-    selectors: { getBreakpoint, getBreakpointCount }
+    selectors: { getBreakpoint, getBreakpointCount },
   } = dbg;
 
   await waitForSources(dbg, "entry.js", "output.js", "times2.js", "opts.js");
@@ -16,41 +19,38 @@ add_task(async function() {
 
   await selectSource(dbg, entrySrc);
   ok(
-    getCM(dbg)
-      .getValue()
-      .includes("window.keepMeAlive"),
+    getCM(dbg).getValue().includes("window.keepMeAlive"),
     "Original source text loaded correctly"
   );
 
   await addBreakpoint(dbg, entrySrc, 5);
-  await addBreakpoint(dbg, entrySrc, 15, 0);
-  await disableBreakpoint(dbg, entrySrc, 15, 0);
+  await addBreakpoint(dbg, entrySrc, 15, 1);
+  await disableBreakpoint(dbg, entrySrc, 15, 1);
 
   // Test reloading the debugger
-  await reload(dbg, "opts.js");
-  await waitForDispatch(dbg.store, "LOAD_SOURCE_TEXT");
+  const onReloaded = reload(dbg, "opts.js");
+  await waitForDispatch(dbg.store, "LOAD_ORIGINAL_SOURCE_TEXT");
 
-  await waitForPaused(dbg);
-  await waitForDispatch(dbg.store, "ADD_INLINE_PREVIEW");
-  assertPausedLocation(dbg);
+  await waitForPausedInOriginalFileAndToggleMapScopes(dbg, "entry.js");
+  assertPausedAtSourceAndLine(dbg, findSource(dbg, "entry.js").id, 5);
 
   await waitForBreakpointCount(dbg, 2);
-  is(getBreakpointCount(), 2, "Three breakpoints exist");
+  is(getBreakpointCount(), 2, "Two breakpoints exist");
 
-  ok(
-    getBreakpoint({ sourceId: entrySrc.id, line: 15, column: 0 }),
-    "Breakpoint has correct line"
-  );
-
-  ok(
-    getBreakpoint({
-      sourceId: entrySrc.id,
+  const bp = getBreakpoint(
+    createLocation({
+      source: entrySrc,
       line: 15,
       column: 0,
-      disabled: true
-    }),
-    "Breakpoint has correct line"
+    })
   );
+  ok(bp, "Breakpoint is on the correct line");
+  ok(bp.disabled, "Breakpoint is disabled");
+  await assertBreakpoint(dbg, 15);
+
+  await resume(dbg);
+  info("Wait for reload to complete after resume");
+  await onReloaded;
 });
 
 async function waitForBreakpointCount(dbg, count) {

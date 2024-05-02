@@ -1,12 +1,6 @@
 "use strict";
 
 Services.prefs.setBoolPref("extensions.manifestV3.enabled", true);
-// Since we're not using AOM, and MV3 forces event pages, bypass
-// delayed-startup for MV3 test.  These tests do not rely on startup events.
-Services.prefs.setBoolPref(
-  "extensions.webextensions.background-delayed-startup",
-  false
-);
 
 const server = createHttpServer({ hosts: ["example.com"] });
 
@@ -23,10 +17,11 @@ server.registerPathHandler("/worker.js", (request, response) => {
 });
 
 const baseCSP = [];
+// Keep in sync with extensions.webextensions.base-content-security-policy
 baseCSP[2] = {
-  "object-src": ["blob:", "filesystem:", "moz-extension:", "'self'"],
   "script-src": [
     "'unsafe-eval'",
+    "'wasm-unsafe-eval'",
     "'unsafe-inline'",
     "blob:",
     "filesystem:",
@@ -37,11 +32,18 @@ baseCSP[2] = {
     "'self'",
   ],
 };
+// Keep in sync with extensions.webextensions.base-content-security-policy.v3
 baseCSP[3] = {
-  "object-src": ["'self'"],
-  "script-src": ["http://localhost:*", "http://127.0.0.1:*", "'self'"],
-  "worker-src": ["http://localhost:*", "http://127.0.0.1:*", "'self'"],
+  "script-src": ["'self'", "'wasm-unsafe-eval'"],
 };
+
+/**
+ * @typedef TestPolicyExpects
+ * @type {object}
+ * @param {boolean} workerEvalAllowed
+ * @param {boolean} workerImportScriptsAllowed
+ * @param {boolean} workerWasmAllowed
+ */
 
 /**
  * Tests that content security policies for an add-on are actually applied to *
@@ -49,16 +51,32 @@ baseCSP[3] = {
  * specific policies, and ensures that the parsed policies applied to the
  * document's principal match what was specified in the policy string.
  *
- * @param {number} [manifest_version]
- * @param {object} [customCSP]
+ * @param {object} options
+ * @param {number} [options.manifest_version]
+ * @param {object} [options.customCSP]
+ * @param {TestPolicyExpects} options.expects
  */
-async function testPolicy(manifest_version = 2, customCSP = null) {
+async function testPolicy({
+  manifest_version = 2,
+  customCSP = null,
+  expects = {},
+}) {
+  info(
+    `Enter tests for extension CSP with ${JSON.stringify({
+      manifest_version,
+      customCSP,
+    })}`
+  );
+
   let baseURL;
 
   let addonCSP = {
-    "object-src": ["'self'"],
     "script-src": ["'self'"],
   };
+
+  if (manifest_version < 3) {
+    addonCSP["script-src"].push("'wasm-unsafe-eval'");
+  }
 
   let content_security_policy = null;
 
@@ -110,11 +128,11 @@ async function testPolicy(manifest_version = 2, customCSP = null) {
       browser.runtime.getURL("").replace(/\/$/, "")
     );
 
-    browser.test.sendMessage("background-csp", window.getCSP());
+    browser.test.sendMessage("background-csp", window.getCsp());
   }
 
   function tabScript() {
-    browser.test.sendMessage("tab-csp", window.getCSP());
+    browser.test.sendMessage("tab-csp", window.getCsp());
 
     const worker = new Worker("worker.js");
     worker.onmessage = event => {
@@ -126,13 +144,35 @@ async function testPolicy(manifest_version = 2, customCSP = null) {
 
   function testWorker(port) {
     this.onmessage = () => {
+      let importScriptsAllowed;
+      let evalAllowed;
+      let wasmAllowed;
+
+      try {
+        eval("let y = true;"); // eslint-disable-line no-eval
+        evalAllowed = true;
+      } catch (e) {
+        evalAllowed = false;
+      }
+
+      try {
+        new WebAssembly.Module(
+          new Uint8Array([0, 0x61, 0x73, 0x6d, 0x1, 0, 0, 0])
+        );
+        wasmAllowed = true;
+      } catch (e) {
+        wasmAllowed = false;
+      }
+
       try {
         // eslint-disable-next-line no-undef
         importScripts(`http://127.0.0.1:${port}/worker.js`);
-        postMessage({ loaded: true });
+        importScriptsAllowed = true;
       } catch (e) {
-        postMessage({ loaded: false });
+        importScriptsAllowed = false;
       }
+
+      postMessage({ evalAllowed, importScriptsAllowed, wasmAllowed });
     };
   }
 
@@ -174,11 +214,11 @@ async function testPolicy(manifest_version = 2, customCSP = null) {
       "DOMWindowCreated",
       event => {
         let win = event.target.ownerGlobal;
-        function getCSP() {
+        function getCsp() {
           let { cspJSON } = win.document;
           return win.wrappedJSObject.JSON.parse(cspJSON);
         }
-        Cu.exportFunction(getCSP, win, { defineAs: "getCSP" });
+        Cu.exportFunction(getCsp, win, { defineAs: "getCsp" });
       },
       true
     );
@@ -202,7 +242,7 @@ async function testPolicy(manifest_version = 2, customCSP = null) {
   );
 
   let contentCSP = await contentPage.spawn(
-    `${baseURL}/content.html`,
+    [`${baseURL}/content.html`],
     async src => {
       let doc = this.content.document;
 
@@ -214,7 +254,7 @@ async function testPolicy(manifest_version = 2, customCSP = null) {
         frame.onload = resolve;
       });
 
-      return frame.contentWindow.wrappedJSObject.getCSP();
+      return frame.contentWindow.wrappedJSObject.getCsp();
     }
   );
 
@@ -227,8 +267,13 @@ async function testPolicy(manifest_version = 2, customCSP = null) {
   checkCSP(contentCSP, "content frame");
 
   let workerCSP = await extension.awaitMessage("worker-csp");
-  // TODO BUG 1685627: This test should fail if localhost is not in the csp.
-  ok(workerCSP.loaded, "worker loaded");
+  equal(
+    workerCSP.importScriptsAllowed,
+    expects.workerImportAllowed,
+    "worker importScript"
+  );
+  equal(workerCSP.evalAllowed, expects.workerEvalAllowed, "worker eval");
+  equal(workerCSP.wasmAllowed, expects.workerWasmAllowed, "worker wasm");
 
   await contentPage.close();
   await tabPage.close();
@@ -239,30 +284,79 @@ async function testPolicy(manifest_version = 2, customCSP = null) {
 }
 
 add_task(async function testCSP() {
-  await testPolicy(2, null);
+  await testPolicy({
+    manifest_version: 2,
+    customCSP: null,
+    expects: {
+      workerEvalAllowed: false,
+      workerImportAllowed: false,
+      workerWasmAllowed: true,
+    },
+  });
 
   let hash =
     "'sha256-NjZhMDQ1YjQ1MjEwMmM1OWQ4NDBlYzA5N2Q1OWQ5NDY3ZTEzYTNmMzRmNjQ5NGU1MzlmZmQzMmMxYmIzNWYxOCAgLQo='";
 
-  await testPolicy(2, {
-    "object-src": "'self' https://*.example.com",
-    "script-src": `'self' https://*.example.com 'unsafe-eval' ${hash}`,
+  await testPolicy({
+    manifest_version: 2,
+    customCSP: {
+      "script-src": `'self' https://*.example.com 'unsafe-eval' ${hash}`,
+    },
+    expects: {
+      workerEvalAllowed: true,
+      workerImportAllowed: false,
+      workerWasmAllowed: true,
+    },
   });
 
-  await testPolicy(2, {
-    "object-src": "'none'",
-    "script-src": `'self'`,
+  await testPolicy({
+    manifest_version: 2,
+    customCSP: {
+      "script-src": `'self'`,
+    },
+    expects: {
+      workerEvalAllowed: false,
+      workerImportAllowed: false,
+      workerWasmAllowed: true,
+    },
   });
 
-  await testPolicy(3, {
-    "object-src": "'self' http://localhost",
-    "script-src": `'self' http://localhost:123 ${hash}`,
-    "worker-src": `'self' http://127.0.0.1:*`,
+  await testPolicy({
+    manifest_version: 3,
+    customCSP: {
+      "script-src": `'self' ${hash}`,
+      "worker-src": `'self'`,
+    },
+    expects: {
+      workerEvalAllowed: false,
+      workerImportAllowed: false,
+      workerWasmAllowed: false,
+    },
   });
 
-  await testPolicy(3, {
-    "object-src": "'none'",
-    "script-src": `'self'`,
-    "worker-src": `'self'`,
+  await testPolicy({
+    manifest_version: 3,
+    customCSP: {
+      "script-src": `'self'`,
+      "worker-src": `'self'`,
+    },
+    expects: {
+      workerEvalAllowed: false,
+      workerImportAllowed: false,
+      workerWasmAllowed: false,
+    },
+  });
+
+  await testPolicy({
+    manifest_version: 3,
+    customCSP: {
+      "script-src": `'self' 'wasm-unsafe-eval'`,
+      "worker-src": `'self' 'wasm-unsafe-eval'`,
+    },
+    expects: {
+      workerEvalAllowed: false,
+      workerImportAllowed: false,
+      workerWasmAllowed: true,
+    },
   });
 });

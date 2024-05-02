@@ -10,7 +10,7 @@ const TEST_URL = "http://example.com/";
 
 addRDMTask(
   null,
-  async function() {
+  async function () {
     info("Open two tabs");
     const tab1 = await addTab(TEST_URL);
     const tab2 = await addTab(TEST_URL);
@@ -19,7 +19,6 @@ addRDMTask(
 
     info("Open RDM for the non-selected tab");
     const { ui } = await openRDM(tab1);
-    await waitForRDMLoaded(ui, { waitForDeviceList: true });
 
     ok(!ResponsiveUIManager.isActiveForTab(tab2), "RDM is not opened on tab2");
 

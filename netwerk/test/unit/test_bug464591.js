@@ -26,10 +26,6 @@ let prefData = [
     name: "network.IDN_show_punycode",
     newVal: false,
   },
-  {
-    name: "network.IDN.whitelist.org",
-    newVal: true,
-  },
 ];
 
 let prefIdnBlackList = {
@@ -65,7 +61,7 @@ function run_test() {
     prefIdnBlackList.set = true;
   } catch (e) {}
 
-  registerCleanupFunction(function() {
+  registerCleanupFunction(function () {
     for (let pref of prefData) {
       prefs.clearUserPref(pref.name);
     }

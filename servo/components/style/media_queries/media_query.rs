@@ -6,8 +6,8 @@
 //!
 //! https://drafts.csswg.org/mediaqueries/#typedef-media-query
 
-use super::media_condition::MediaCondition;
 use crate::parser::ParserContext;
+use crate::queries::{FeatureFlags, FeatureType, QueryCondition};
 use crate::str::string_as_ascii_lowercase;
 use crate::values::CustomIdent;
 use crate::Atom;
@@ -44,12 +44,12 @@ impl MediaType {
     fn parse(name: &str) -> Result<Self, ()> {
         // From https://drafts.csswg.org/mediaqueries/#mq-syntax:
         //
-        //   The <media-type> production does not include the keywords not, or, and, and only.
+        //   The <media-type> production does not include the keywords only, not, and, or, and layer.
         //
         // Here we also perform the to-ascii-lowercase part of the serialization
         // algorithm: https://drafts.csswg.org/cssom/#serializing-media-queries
         match_ignore_ascii_case! { name,
-            "not" | "or" | "and" | "only" => Err(()),
+            "not" | "or" | "and" | "only" | "layer" => Err(()),
             _ => Ok(MediaType(CustomIdent(Atom::from(string_as_ascii_lowercase(name))))),
         }
     }
@@ -66,7 +66,7 @@ pub struct MediaQuery {
     pub media_type: MediaQueryType,
     /// The condition that this media query contains. This cannot have `or`
     /// in the first level.
-    pub condition: Option<MediaCondition>,
+    pub condition: Option<QueryCondition>,
 }
 
 impl ToCss for MediaQuery {
@@ -117,6 +117,15 @@ impl MediaQuery {
         }
     }
 
+    /// Returns whether this media query depends on the viewport.
+    pub fn is_viewport_dependent(&self) -> bool {
+        self.condition.as_ref().map_or(false, |c| {
+            return c
+                .cumulative_flags()
+                .contains(FeatureFlags::VIEWPORT_DEPENDENT);
+        })
+    }
+
     /// Parse a media query given css input.
     ///
     /// Returns an error if any of the expressions is unknown.
@@ -134,9 +143,13 @@ impl MediaQuery {
             .unwrap_or_default();
 
         let condition = if explicit_media_type.is_none() {
-            Some(MediaCondition::parse(context, input)?)
+            Some(QueryCondition::parse(context, input, FeatureType::Media)?)
         } else if input.try_parse(|i| i.expect_ident_matching("and")).is_ok() {
-            Some(MediaCondition::parse_disallow_or(context, input)?)
+            Some(QueryCondition::parse_disallow_or(
+                context,
+                input,
+                FeatureType::Media,
+            )?)
         } else {
             None
         };

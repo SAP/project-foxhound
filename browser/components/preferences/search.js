@@ -5,20 +5,33 @@
 /* import-globals-from extensionControlled.js */
 /* import-globals-from preferences.js */
 
+const lazy = {};
+
+ChromeUtils.defineESModuleGetters(lazy, {
+  SearchUIUtils: "resource:///modules/SearchUIUtils.sys.mjs",
+});
+
 Preferences.addAll([
   { id: "browser.search.suggest.enabled", type: "bool" },
   { id: "browser.urlbar.suggest.searches", type: "bool" },
   { id: "browser.search.suggest.enabled.private", type: "bool" },
-  { id: "browser.search.hiddenOneOffs", type: "unichar" },
   { id: "browser.search.widget.inNavBar", type: "bool" },
   { id: "browser.urlbar.showSearchSuggestionsFirst", type: "bool" },
+  { id: "browser.urlbar.showSearchTerms.enabled", type: "bool" },
   { id: "browser.search.separatePrivateDefault", type: "bool" },
   { id: "browser.search.separatePrivateDefault.ui.enabled", type: "bool" },
+  { id: "browser.urlbar.suggest.trending", type: "bool" },
+  { id: "browser.urlbar.trending.featureGate", type: "bool" },
+  { id: "browser.urlbar.recentsearches.featureGate", type: "bool" },
+  { id: "browser.urlbar.suggest.recentsearches", type: "bool" },
 ]);
 
 const ENGINE_FLAVOR = "text/x-moz-search-engine";
 const SEARCH_TYPE = "default_search";
 const SEARCH_KEY = "defaultSearch";
+
+// The name of in built engines that support trending results.
+const TRENDING_ENGINES = ["Google"];
 
 var gEngineView = null;
 
@@ -35,10 +48,7 @@ var gSearchPane = {
       document.getElementById("addEnginesBox").hidden = true;
     } else {
       let addEnginesLink = document.getElementById("addEngines");
-      let searchEnginesURL = Services.wm.getMostRecentWindow(
-        "navigator:browser"
-      ).BrowserSearch.searchEnginesURL;
-      addEnginesLink.setAttribute("href", searchEnginesURL);
+      addEnginesLink.setAttribute("href", lazy.SearchUIUtils.searchEnginesURL);
     }
 
     window.addEventListener("click", this);
@@ -49,8 +59,10 @@ var gSearchPane = {
     window.addEventListener("dblclick", this);
 
     Services.obs.addObserver(this, "browser-search-engine-modified");
+    Services.obs.addObserver(this, "intl:app-locales-changed");
     window.addEventListener("unload", () => {
       Services.obs.removeObserver(this, "browser-search-engine-modified");
+      Services.obs.removeObserver(this, "intl:app-locales-changed");
     });
 
     let suggestsPref = Preferences.get("browser.search.suggest.enabled");
@@ -58,9 +70,8 @@ var gSearchPane = {
     let privateSuggestsPref = Preferences.get(
       "browser.search.suggest.enabled.private"
     );
-    let updateSuggestionCheckboxes = this._updateSuggestionCheckboxes.bind(
-      this
-    );
+    let updateSuggestionCheckboxes =
+      this._updateSuggestionCheckboxes.bind(this);
     suggestsPref.on("change", updateSuggestionCheckboxes);
     urlbarSuggestsPref.on("change", updateSuggestionCheckboxes);
     let urlbarSuggests = document.getElementById("urlBarSuggestion");
@@ -79,17 +90,21 @@ var gSearchPane = {
       "command",
       this._onBrowserSeparateDefaultEngineChange.bind(this)
     );
-    setEventListener("openLocationBarPrivacyPreferences", "click", function(
-      event
-    ) {
-      if (event.button == 0) {
-        gotoPref("privacy-locationBar");
+    setEventListener(
+      "openLocationBarPrivacyPreferences",
+      "click",
+      function (event) {
+        if (event.button == 0) {
+          gotoPref("privacy-locationBar");
+        }
       }
-    });
+    );
 
     this._initDefaultEngines();
+    this._initShowSearchTermsCheckbox();
     this._updateSuggestionCheckboxes();
     this._showAddEngineButton();
+    this._initRecentSeachesCheckbox();
   },
 
   /**
@@ -119,11 +134,37 @@ var gSearchPane = {
     this._separatePrivateDefaultPref.on("change", listener);
   },
 
+  _initShowSearchTermsCheckbox() {
+    let checkbox = document.getElementById("searchShowSearchTermCheckbox");
+
+    // Add Nimbus event to show/hide checkbox.
+    let onNimbus = () => {
+      checkbox.hidden = !UrlbarPrefs.get("showSearchTermsFeatureGate");
+    };
+    NimbusFeatures.urlbar.onUpdate(onNimbus);
+
+    // Add observer of Search Bar preference as showSearchTerms
+    // can't be shown/hidden while Search Bar is enabled.
+    let searchBarPref = Preferences.get("browser.search.widget.inNavBar");
+    let updateCheckboxHidden = () => {
+      checkbox.hidden =
+        !UrlbarPrefs.get("showSearchTermsFeatureGate") || searchBarPref.value;
+    };
+    searchBarPref.on("change", updateCheckboxHidden);
+
+    // Fire once to initialize.
+    onNimbus();
+    updateCheckboxHidden();
+
+    window.addEventListener("unload", () => {
+      NimbusFeatures.urlbar.offUpdate(onNimbus);
+    });
+  },
+
   _updatePrivateEngineDisplayBoxes() {
     const separateEnabled = this._separatePrivateDefaultEnabledPref.value;
-    document.getElementById(
-      "browserSeparateDefaultEngine"
-    ).hidden = !separateEnabled;
+    document.getElementById("browserSeparateDefaultEngine").hidden =
+      !separateEnabled;
 
     const separateDefault = this._separatePrivateDefaultPref.value;
 
@@ -179,6 +220,8 @@ var gSearchPane = {
       "urlBarSuggestionPermanentPBLabel"
     );
     permanentPBLabel.hidden = urlbarSuggests.hidden || !permanentPB;
+
+    this._updateTrendingCheckbox(!suggestsPref.value || permanentPB);
   },
 
   _showAddEngineButton() {
@@ -192,6 +235,32 @@ var gSearchPane = {
     }
   },
 
+  _initRecentSeachesCheckbox() {
+    this._recentSearchesEnabledPref = Preferences.get(
+      "browser.urlbar.recentsearches.featureGate"
+    );
+    let recentSearchesCheckBox = document.getElementById(
+      "enableRecentSearches"
+    );
+    const listener = () => {
+      recentSearchesCheckBox.hidden = !this._recentSearchesEnabledPref.value;
+    };
+
+    this._recentSearchesEnabledPref.on("change", listener);
+    listener();
+  },
+
+  async _updateTrendingCheckbox(suggestDisabled) {
+    let trendingBox = document.getElementById("showTrendingSuggestionsBox");
+    let trendingCheckBox = document.getElementById("showTrendingSuggestions");
+    let trendingSupported = TRENDING_ENGINES.includes(
+      (await Services.search.getDefault()).name
+    );
+    trendingBox.hidden = !Preferences.get("browser.urlbar.trending.featureGate")
+      .value;
+    trendingCheckBox.disabled = suggestDisabled || !trendingSupported;
+  },
+
   /**
    * Builds the default and private engines drop down lists. This is called
    * each time something affects the list of engines.
@@ -199,14 +268,18 @@ var gSearchPane = {
   async buildDefaultEngineDropDowns() {
     await this._buildEngineDropDown(
       document.getElementById("defaultEngine"),
-      (await Services.search.getDefault()).name,
+      (
+        await Services.search.getDefault()
+      ).name,
       false
     );
 
     if (this._separatePrivateDefaultEnabledPref.value) {
       await this._buildEngineDropDown(
         document.getElementById("defaultPrivateEngine"),
-        (await Services.search.getDefaultPrivate()).name,
+        (
+          await Services.search.getDefaultPrivate()
+        ).name,
         true
       );
     }
@@ -277,7 +350,7 @@ var gSearchPane = {
           // away from.
           if (engineList.inputField.hidden && engineList.view) {
             let selection = engineList.view.selection;
-            if (selection.count > 0) {
+            if (selection?.count > 0) {
               selection.toggleSelect(selection.currentIndex);
             }
             engineList.blur();
@@ -335,65 +408,86 @@ var gSearchPane = {
   },
 
   /**
-   * nsIObserver implementation.  We observe the following:
-   *
-   * * browser-search-engine-modified: Update the default engine UI and engine
-   *   tree view as appropriate when engine changes occur.
+   * Handle when the app locale is changed.
    */
-  observe(subject, topic, data) {
-    if (topic == "browser-search-engine-modified") {
-      let engine = subject;
-      engine.QueryInterface(Ci.nsISearchEngine);
-      switch (data) {
-        case "engine-added":
-          gEngineView._engineStore.addEngine(engine);
-          gEngineView.rowCountChanged(gEngineView.lastEngineIndex, 1);
+  async appLocalesChanged() {
+    await document.l10n.ready;
+    await gEngineView.loadL10nNames();
+  },
+
+  /**
+   * Update the default engine UI and engine tree view as appropriate when engine changes
+   * or locale changes occur.
+   *
+   * @param {Object} engine
+   * @param {string} data
+   */
+  browserSearchEngineModified(engine, data) {
+    engine.QueryInterface(Ci.nsISearchEngine);
+    switch (data) {
+      case "engine-added":
+        gEngineView._engineStore.addEngine(engine);
+        gEngineView.rowCountChanged(gEngineView.lastEngineIndex, 1);
+        gSearchPane.buildDefaultEngineDropDowns();
+        break;
+      case "engine-changed":
+        gSearchPane.buildDefaultEngineDropDowns();
+        gEngineView._engineStore.updateEngine(engine);
+        gEngineView.invalidate();
+        break;
+      case "engine-removed":
+        gSearchPane.remove(engine);
+        break;
+      case "engine-default": {
+        // If the user is going through the drop down using up/down keys, the
+        // dropdown may still be open (eg. on Windows) when engine-default is
+        // fired, so rebuilding the list unconditionally would get in the way.
+        let selectedEngine =
+          document.getElementById("defaultEngine").selectedItem.engine;
+        if (selectedEngine.name != engine.name) {
           gSearchPane.buildDefaultEngineDropDowns();
-          break;
-        case "engine-changed":
-          gSearchPane.buildDefaultEngineDropDowns();
-          gEngineView._engineStore.updateEngine(engine);
-          gEngineView.invalidate();
-          break;
-        case "engine-removed":
-          gSearchPane.remove(engine);
-          break;
-        case "engine-default": {
+        }
+        gSearchPane._updateSuggestionCheckboxes();
+        break;
+      }
+      case "engine-default-private": {
+        if (
+          this._separatePrivateDefaultEnabledPref.value &&
+          this._separatePrivateDefaultPref.value
+        ) {
           // If the user is going through the drop down using up/down keys, the
           // dropdown may still be open (eg. on Windows) when engine-default is
           // fired, so rebuilding the list unconditionally would get in the way.
-          let selectedEngine = document.getElementById("defaultEngine")
+          const selectedEngine = document.getElementById("defaultPrivateEngine")
             .selectedItem.engine;
           if (selectedEngine.name != engine.name) {
             gSearchPane.buildDefaultEngineDropDowns();
           }
-          break;
         }
-        case "engine-default-private": {
-          if (
-            this._separatePrivateDefaultEnabledPref.value &&
-            this._separatePrivateDefaultPref.value
-          ) {
-            // If the user is going through the drop down using up/down keys, the
-            // dropdown may still be open (eg. on Windows) when engine-default is
-            // fired, so rebuilding the list unconditionally would get in the way.
-            const selectedEngine = document.getElementById(
-              "defaultPrivateEngine"
-            ).selectedItem.engine;
-            if (selectedEngine.name != engine.name) {
-              gSearchPane.buildDefaultEngineDropDowns();
-            }
-          }
-          break;
-        }
+        break;
+      }
+    }
+  },
+
+  /**
+   * nsIObserver implementation.
+   */
+  observe(subject, topic, data) {
+    switch (topic) {
+      case "intl:app-locales-changed": {
+        this.appLocalesChanged();
+        break;
+      }
+      case "browser-search-engine-modified": {
+        this.browserSearchEngineModified(subject, data);
+        break;
       }
     }
   },
 
   onTreeSelect() {
-    document.getElementById(
-      "removeEngineButton"
-    ).disabled = !gEngineView.isEngineSelectedAndRemovable();
+    document.getElementById("removeEngineButton").disabled =
+      !gEngineView.isEngineSelectedAndRemovable();
   },
 
   onTreeKeyPress(aEvent) {
@@ -461,10 +555,17 @@ var gSearchPane = {
 
   remove(aEngine) {
     let index = gEngineView._engineStore.removeEngine(aEngine);
+    if (!gEngineView.tree) {
+      // Only update the selection if it's visible in the UI.
+      return;
+    }
+
     gEngineView.rowCountChanged(index, -1);
     gEngineView.invalidate();
+
     gEngineView.selection.select(Math.min(index, gEngineView.rowCount - 1));
     gEngineView.ensureRowIsVisible(gEngineView.currentIndex);
+
     document.getElementById("engineList").focus();
   },
 
@@ -516,21 +617,10 @@ var gSearchPane = {
     return true;
   },
 
-  saveOneClickEnginesList() {
-    let hiddenList = [];
-    for (let engine of gEngineView._engineStore.engines) {
-      if (!engine.shown) {
-        hiddenList.push(engine.name);
-      }
-    }
-    Preferences.get("browser.search.hiddenOneOffs").value = hiddenList.join(
-      ","
-    );
-  },
-
   async setDefaultEngine() {
     await Services.search.setDefault(
-      document.getElementById("defaultEngine").selectedItem.engine
+      document.getElementById("defaultEngine").selectedItem.engine,
+      Ci.nsISearchService.CHANGE_REASON_USER
     );
     if (ExtensionSettingsStore.getSetting(SEARCH_TYPE, SEARCH_KEY) !== null) {
       ExtensionSettingsStore.select(
@@ -543,7 +633,8 @@ var gSearchPane = {
 
   async setDefaultPrivateEngine() {
     await Services.search.setDefaultPrivate(
-      document.getElementById("defaultPrivateEngine").selectedItem.engine
+      document.getElementById("defaultPrivateEngine").selectedItem.engine,
+      Ci.nsISearchService.CHANGE_REASON_USER
     );
   },
 };
@@ -566,9 +657,6 @@ function onDragEngineStart(event) {
 }
 
 function EngineStore() {
-  let pref = Preferences.get("browser.search.hiddenOneOffs").value;
-  this.hiddenList = pref ? pref.split(",") : [];
-
   this._engines = [];
   this._defaultEngines = [];
   Promise.all([
@@ -608,17 +696,16 @@ EngineStore.prototype = {
 
   _cloneEngine(aEngine) {
     var clonedObj = {};
-    for (let i of ["name", "alias", "iconURI", "hidden"]) {
+    for (let i of ["id", "name", "alias", "iconURI", "hidden"]) {
       clonedObj[i] = aEngine[i];
     }
     clonedObj.originalEngine = aEngine;
-    clonedObj.shown = !this.hiddenList.includes(clonedObj.name);
     return clonedObj;
   },
 
   // Callback for Array's some(). A thisObj must be passed to some()
   _isSameEngine(aEngineClone) {
-    return aEngineClone.originalEngine == this.originalEngine;
+    return aEngineClone.originalEngine.id == this.originalEngine.id;
   },
 
   addEngine(aEngine) {
@@ -627,14 +714,11 @@ EngineStore.prototype = {
 
   updateEngine(newEngine) {
     let engineToUpdate = this._engines.findIndex(
-      e => e.originalEngine == newEngine
+      e => e.originalEngine.id == newEngine.id
     );
-    if (engineToUpdate == -1) {
-      console.error("Could not find engine to update");
-      return;
+    if (engineToUpdate != -1) {
+      this.engines[engineToUpdate] = this._cloneEngine(newEngine);
     }
-
-    this.engines[engineToUpdate] = this._cloneEngine(newEngine);
   },
 
   moveEngine(aEngine, aNewIndex) {
@@ -701,7 +785,23 @@ EngineStore.prototype = {
         added++;
       }
     }
-    Services.search.resetToOriginalDefaultEngine();
+
+    // We can't do this as part of the loop above because the indices are
+    // used for moving engines.
+    let policyRemovedEngineNames =
+      Services.policies.getActivePolicies()?.SearchEngines?.Remove || [];
+    for (let engineName of policyRemovedEngineNames) {
+      let engine = Services.search.getEngineByName(engineName);
+      if (engine) {
+        try {
+          await Services.search.removeEngine(engine);
+        } catch (ex) {
+          // Engine might not exist
+        }
+      }
+    }
+
+    Services.search.resetToAppDefaultEngine();
     gSearchPane.showRestoreDefaults(false);
     gSearchPane.buildDefaultEngineDropDowns();
     return added;
@@ -718,7 +818,7 @@ EngineStore.prototype = {
   },
 
   reloadIcons() {
-    this._engines.forEach(function(e) {
+    this._engines.forEach(function (e) {
       e.iconURI = e.originalEngine.iconURI;
     });
   },
@@ -729,30 +829,34 @@ function EngineView(aEngineStore) {
 
   UrlbarPrefs.addObserver(this);
 
-  // This maps local shortcut sources to their l10n names.  The names are needed
-  // by getCellText.  Getting the names is async but getCellText is not, so we
-  // cache them here to retrieve them syncronously in getCellText.
-  this._localShortcutL10nNames = new Map();
-  document.l10n
-    .formatValues(
-      UrlbarUtils.LOCAL_SEARCH_MODES.map(mode => {
-        let name = UrlbarUtils.getResultSourceName(mode.source);
-        return { id: `urlbar-search-mode-${name}` };
-      })
-    )
-    .then(names => {
-      for (let { source } of UrlbarUtils.LOCAL_SEARCH_MODES) {
-        this._localShortcutL10nNames.set(source, names.shift());
-      }
-      // Invalidate the tree now that we have the names in case getCellText was
-      // called before name retrieval finished.
-      this.invalidate();
-    });
+  this.loadL10nNames();
 }
 
 EngineView.prototype = {
   _engineStore: null,
   tree: null,
+
+  loadL10nNames() {
+    // This maps local shortcut sources to their l10n names.  The names are needed
+    // by getCellText.  Getting the names is async but getCellText is not, so we
+    // cache them here to retrieve them syncronously in getCellText.
+    this._localShortcutL10nNames = new Map();
+    return document.l10n
+      .formatValues(
+        UrlbarUtils.LOCAL_SEARCH_MODES.map(mode => {
+          let name = UrlbarUtils.getResultSourceName(mode.source);
+          return { id: `urlbar-search-mode-${name}` };
+        })
+      )
+      .then(names => {
+        for (let { source } of UrlbarUtils.LOCAL_SEARCH_MODES) {
+          this._localShortcutL10nNames.set(source, names.shift());
+        }
+        // Invalidate the tree now that we have the names in case getCellText was
+        // called before name retrieval finished.
+        this.invalidate();
+      });
+  },
 
   get lastEngineIndex() {
     return this._engineStore.engines.length - 1;
@@ -796,12 +900,17 @@ EngineView.prototype = {
   },
 
   isEngineSelectedAndRemovable() {
+    let defaultEngine = Services.search.defaultEngine;
+    let defaultPrivateEngine = Services.search.defaultPrivateEngine;
     // We don't allow the last remaining engine to be removed, thus the
     // `this.lastEngineIndex != 0` check.
+    // We don't allow the default engine to be removed.
     return (
       this.selectedIndex != -1 &&
       this.lastEngineIndex != 0 &&
-      !this._getLocalShortcut(this.selectedIndex)
+      !this._getLocalShortcut(this.selectedIndex) &&
+      this.selectedEngine.name != defaultEngine.name &&
+      this.selectedEngine.name != defaultPrivateEngine.name
     );
   },
 
@@ -972,7 +1081,7 @@ EngineView.prototype = {
       if (shortcut) {
         return UrlbarPrefs.get(shortcut.pref);
       }
-      return this._engineStore.engines[index].shown;
+      return !this._engineStore.engines[index].originalEngine.hideOneOffButton;
     }
     return undefined;
   },
@@ -994,9 +1103,9 @@ EngineView.prototype = {
         this.invalidate();
         return;
       }
-      this._engineStore.engines[index].shown = value == "true";
+      this._engineStore.engines[index].originalEngine.hideOneOffButton =
+        value != "true";
       gEngineView.invalidate();
-      gSearchPane.saveOneClickEnginesList();
     }
   },
   setCellText(index, column, value) {

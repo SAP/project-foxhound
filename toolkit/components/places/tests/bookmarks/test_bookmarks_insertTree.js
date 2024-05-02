@@ -60,6 +60,11 @@ add_task(async function invalid_input_rejects() {
     () => PlacesUtils.bookmarks.insertTree(tree),
     /Invalid value for property 'dateAdded'/
   );
+  tree.children = [{ dateAdded: new Date(NaN) }];
+  await Assert.throws(
+    () => PlacesUtils.bookmarks.insertTree(tree),
+    /Invalid value for property 'dateAdded'/
+  );
 
   tree.children = [{ lastModified: -10 }];
   await Assert.throws(
@@ -77,7 +82,7 @@ add_task(async function invalid_input_rejects() {
     /Invalid value for property 'lastModified'/
   );
 
-  let time = new Date();
+  let time = Date.now();
   let future = new Date(time + 86400000);
   tree.children = [{ dateAdded: future, lastModified: time }];
   await Assert.throws(
@@ -389,7 +394,7 @@ add_task(async function create_hierarchy() {
     ],
     guid: PlacesUtils.bookmarks.unfiledGuid,
   });
-  await PlacesTestUtils.promiseAsyncUpdates();
+  await PlacesFrecencyRecalculator.recalculateAnyOutdatedFrecencies();
   PlacesUtils.observers.removeListener(["bookmark-added"], listener);
   let parentFolder = null,
     subFolder = null;
@@ -407,7 +412,9 @@ add_task(async function create_hierarchy() {
     prevBM = bm;
     if (bm.type == PlacesUtils.bookmarks.TYPE_BOOKMARK) {
       Assert.greater(
-        frecencyForUrl(bm.url),
+        await PlacesTestUtils.getDatabaseValue("moz_places", "frecency", {
+          url: bm.url,
+        }),
         0,
         "Check frecency has been updated for bookmark " + bm.url
       );
@@ -465,7 +472,7 @@ add_task(async function insert_many_non_nested() {
     ],
     guid: PlacesUtils.bookmarks.unfiledGuid,
   });
-  await PlacesTestUtils.promiseAsyncUpdates();
+  await PlacesFrecencyRecalculator.recalculateAnyOutdatedFrecencies();
   PlacesUtils.observers.removeListener(["bookmark-added"], listener);
   let startIndex = -1;
   for (let bm of bms) {
@@ -482,7 +489,9 @@ add_task(async function insert_many_non_nested() {
     );
     if (bm.type == PlacesUtils.bookmarks.TYPE_BOOKMARK) {
       Assert.greater(
-        frecencyForUrl(bm.url),
+        await PlacesTestUtils.getDatabaseValue("moz_places", "frecency", {
+          url: bm.url,
+        }),
         0,
         "Check frecency has been updated for bookmark " + bm.url
       );
@@ -542,11 +551,11 @@ add_task(async function create_in_folder() {
 
   PlacesUtils.observers.removeListener(["bookmark-added"], listener);
 
-  let mozFolderId = await PlacesUtils.promiseItemId(mozFolder.guid);
-  let commFolderId = await PlacesUtils.promiseItemId(bms[1].guid);
+  let mozFolderId = await PlacesTestUtils.promiseItemId(mozFolder.guid);
+  let commFolderId = await PlacesTestUtils.promiseItemId(bms[1].guid);
   deepEqual(notifications, [
     {
-      itemId: await PlacesUtils.promiseItemId(bms[0].guid),
+      itemId: await PlacesTestUtils.promiseItemId(bms[0].guid),
       parentId: mozFolderId,
       index: 0,
       title: "Get Firefox!",
@@ -562,7 +571,7 @@ add_task(async function create_in_folder() {
       parentGuid: mozFolder.guid,
     },
     {
-      itemId: await PlacesUtils.promiseItemId(bms[2].guid),
+      itemId: await PlacesTestUtils.promiseItemId(bms[2].guid),
       parentId: commFolderId,
       index: 0,
       title: "Get Thunderbird!",
@@ -570,7 +579,7 @@ add_task(async function create_in_folder() {
       parentGuid: bms[1].guid,
     },
     {
-      itemId: await PlacesUtils.promiseItemId(bms[3].guid),
+      itemId: await PlacesTestUtils.promiseItemId(bms[3].guid),
       parentId: commFolderId,
       index: 1,
       title: "SeaMonkey",

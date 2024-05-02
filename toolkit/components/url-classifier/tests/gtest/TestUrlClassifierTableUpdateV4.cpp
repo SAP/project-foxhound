@@ -11,6 +11,8 @@
 #include "nsIFile.h"
 #include "nsThreadUtils.h"
 #include "string.h"
+#include "LookupCacheV4.h"
+#include "nsUrlClassifierUtils.h"
 
 #include "Common.h"
 
@@ -169,7 +171,7 @@ static void Clear() {
 
 static void testUpdateFail(TableUpdateArray& tableUpdates) {
   nsresult rv = SyncApplyUpdates(tableUpdates);
-  ASSERT_TRUE(NS_FAILED(rv));
+  ASSERT_NS_FAILED(rv);
 }
 
 static void testUpdate(TableUpdateArray& tableUpdates,

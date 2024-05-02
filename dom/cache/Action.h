@@ -7,6 +7,7 @@
 #ifndef mozilla_dom_cache_Action_h
 #define mozilla_dom_cache_Action_h
 
+#include "CacheCipherKeyManager.h"
 #include "mozilla/Atomics.h"
 #include "mozilla/dom/cache/Types.h"
 #include "mozilla/dom/SafeRefPtr.h"
@@ -14,9 +15,7 @@
 
 class mozIStorageConnection;
 
-namespace mozilla {
-namespace dom {
-namespace cache {
+namespace mozilla::dom::cache {
 
 class Action : public SafeRefCounted<Action> {
  public:
@@ -58,7 +57,7 @@ class Action : public SafeRefCounted<Action> {
   virtual void RunOnTarget(
       SafeRefPtr<Resolver> aResolver,
       const Maybe<CacheDirectoryMetadata>& aDirectoryMetadata,
-      Data* aOptionalData) = 0;
+      Data* aOptionalData, const Maybe<CipherKey>& aMaybeCipherKey) = 0;
 
   // Called on initiating thread when the Action is canceled.  The Action is
   // responsible for calling Resolver::Resolve() as normal; either with a
@@ -99,8 +98,6 @@ class Action : public SafeRefCounted<Action> {
   Atomic<bool> mCanceled;
 };
 
-}  // namespace cache
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom::cache
 
 #endif  // mozilla_dom_cache_Action_h

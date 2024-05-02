@@ -10,13 +10,12 @@
 #include "nsPIDOMWindow.h"
 #include "nsWrapperCache.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class PaymentAddress final : public nsISupports, public nsWrapperCache {
  public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(PaymentAddress)
+  NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(PaymentAddress)
 
   PaymentAddress(nsPIDOMWindowInner* aWindow, const nsAString& aCountry,
                  const nsTArray<nsString>& aAddressLine,
@@ -72,7 +71,6 @@ class PaymentAddress final : public nsISupports, public nsWrapperCache {
   nsCOMPtr<nsPIDOMWindowInner> mOwner;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_PaymentAddress_h

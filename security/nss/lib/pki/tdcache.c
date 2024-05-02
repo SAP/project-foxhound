@@ -41,13 +41,13 @@ log_item_dump(const char *msg, NSSItem *it)
     char buf[33];
     int i, j;
     for (i = 0; i < 10 && i < it->size; i++) {
-        sprintf(&buf[2 * i], "%02X", ((PRUint8 *)it->data)[i]);
+        snprintf(&buf[2 * i], sizeof(buf) - 2 * i, "%02X", ((PRUint8 *)it->data)[i]);
     }
     if (it->size > 10) {
-        sprintf(&buf[2 * i], "..");
+        snprintf(&buf[2 * i], sizeof(buf) - 2 * i, "..");
         i += 1;
         for (j = it->size - 1; i <= 16 && j > 10; i++, j--) {
-            sprintf(&buf[2 * i], "%02X", ((PRUint8 *)it->data)[j]);
+            snprintf(&buf[2 * i], sizeof(buf) - 2 * i, "%02X", ((PRUint8 *)it->data)[j]);
         }
     }
     PR_LOG(s_log, PR_LOG_DEBUG, ("%s: %s", msg, buf));
@@ -58,8 +58,7 @@ log_item_dump(const char *msg, NSSItem *it)
 static void
 log_cert_ref(const char *msg, NSSCertificate *c)
 {
-    PR_LOG(s_log, PR_LOG_DEBUG, ("%s: %s", msg,
-                                 (c->nickname) ? c->nickname : c->email));
+    PR_LOG(s_log, PR_LOG_DEBUG, ("%s: %s", msg, (c->nickname) ? c->nickname : c->email));
     log_item_dump("\tserial", &c->serial);
     log_item_dump("\tsubject", &c->subject);
 }

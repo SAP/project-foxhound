@@ -26,7 +26,7 @@ impl Default for LogSink {
 
 impl LogSink {
     /// Creates a log sink that adapts the Rust `log` crate to the Sync
-    /// `Log.jsm` logger.
+    /// `Log.sys.mjs` logger.
     ///
     /// This is copied from `bookmark_sync::Logger`. It would be nice to share
     /// these, but, for now, we've just duplicated it to make prototyping
@@ -110,18 +110,14 @@ impl Log for LogSink {
         }
         if let Some(logger) = &self.logger {
             let mut message = nsString::new();
-            match write!(message, "{}", record.args()) {
-                Ok(_) => {
-                    let task = LogTask {
-                        logger: logger.clone(),
-                        level: record.metadata().level(),
-                        message,
-                    };
-                    let _ =
-                        TaskRunnable::new("extension_storage_sync::Logger::log", Box::new(task))
-                            .and_then(|r| TaskRunnable::dispatch(r, logger.owning_thread()));
-                }
-                Err(_) => {}
+            if write!(message, "{}", record.args()).is_ok() {
+                let task = LogTask {
+                    logger: logger.clone(),
+                    level: record.metadata().level(),
+                    message,
+                };
+                let _ = TaskRunnable::new("extension_storage_sync::Logger::log", Box::new(task))
+                    .and_then(|r| TaskRunnable::dispatch(r, logger.owning_thread()));
             }
         }
     }

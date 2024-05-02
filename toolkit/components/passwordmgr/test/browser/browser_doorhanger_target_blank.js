@@ -2,7 +2,7 @@
  * Test capture popup notifications when the login form uses target="_blank"
  */
 
-add_task(async function setup() {
+add_setup(async function () {
   await SimpleTest.promiseFocus(window);
 });
 
@@ -29,7 +29,7 @@ add_task(async function test_saveTargetBlank() {
       gBrowser,
       url: "http://mochi.test:8888" + DIRECTORY_PATH + url,
     },
-    async function() {
+    async function () {
       // For now the doorhanger appears in the previous tab but it should maybe
       // appear in the new tab from target="_blank"?
       BrowserTestUtils.removeTab(await submissionTabPromise);
@@ -43,7 +43,7 @@ add_task(async function test_saveTargetBlank() {
           ),
         "Waiting for doorhanger"
       );
-      ok(notif, "got notification popup");
+      Assert.ok(notif, "got notification popup");
 
       EventUtils.synthesizeMouseAtCenter(notif.anchorElement, {});
       await notifShownPromise;
@@ -60,12 +60,20 @@ add_task(async function test_saveTargetBlank() {
   );
 
   // Check result of clicking Remember
-  let logins = Services.logins.getAllLogins();
-  is(logins.length, 1, "Should only have 1 login now");
+  let logins = await Services.logins.getAllLogins();
+  Assert.equal(logins.length, 1, "Should only have 1 login now");
   let login = logins[0].QueryInterface(Ci.nsILoginMetaInfo);
-  is(login.username, "notifyu3", "Check the username used on the new entry");
-  is(login.password, "notifyp3", "Check the password used on the new entry");
-  is(login.timesUsed, 1, "Check times used on new entry");
+  Assert.equal(
+    login.username,
+    "notifyu3",
+    "Check the username used on the new entry"
+  );
+  Assert.equal(
+    login.password,
+    "notifyp3",
+    "Check the password used on the new entry"
+  );
+  Assert.equal(login.timesUsed, 1, "Check times used on new entry");
 
   // Check for stale values in the doorhanger <input> after closing.
   let usernameField = document.getElementById("password-notification-username");

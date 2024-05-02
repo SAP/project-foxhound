@@ -1,6 +1,8 @@
 var gTestPage =
+  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
   "http://example.org/browser/browser/base/content/test/zoom/zoom_test.html";
 var gTestImage =
+  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
   "http://example.org/browser/browser/base/content/test/general/moz.png";
 var gTab1, gTab2, gTab3;
 var gLevel;
@@ -15,7 +17,7 @@ function test() {
     });
   });
 
-  (async function() {
+  (async function () {
     gTab1 = BrowserTestUtils.addTab(gBrowser, gTestPage);
     gTab2 = BrowserTestUtils.addTab(gBrowser);
     gTab3 = BrowserTestUtils.addTab(gBrowser);
@@ -27,7 +29,7 @@ function test() {
 }
 
 function secondPageLoaded() {
-  (async function() {
+  (async function () {
     FullZoomHelper.zoomTest(gTab1, 1, "Initial zoom of tab 1 should be 1");
     FullZoomHelper.zoomTest(gTab2, 1, "Initial zoom of tab 2 should be 1");
     FullZoomHelper.zoomTest(gTab3, 1, "Initial zoom of tab 3 should be 1");
@@ -46,7 +48,7 @@ function secondPageLoaded() {
 }
 
 function thirdPageLoaded() {
-  (async function() {
+  (async function () {
     FullZoomHelper.zoomTest(gTab1, gLevel, "Tab 1 should still be zoomed");
     FullZoomHelper.zoomTest(gTab2, 1, "Tab 2 should still not be affected");
     FullZoomHelper.zoomTest(
@@ -66,7 +68,7 @@ function thirdPageLoaded() {
 }
 
 function imageLoaded() {
-  (async function() {
+  (async function () {
     FullZoomHelper.zoomTest(
       gTab1,
       1,
@@ -82,7 +84,7 @@ function imageLoaded() {
 }
 
 function imageZoomSwitch() {
-  (async function() {
+  (async function () {
     await FullZoomHelper.navigate(FullZoomHelper.BACK);
     await FullZoomHelper.navigate(FullZoomHelper.FORWARD);
     FullZoomHelper.zoomTest(
@@ -102,7 +104,7 @@ function imageZoomSwitch() {
 
 var finishTestStarted = false;
 function finishTest() {
-  (async function() {
+  (async function () {
     ok(!finishTestStarted, "finishTest called more than once");
     finishTestStarted = true;
     await FullZoomHelper.selectTabAndWaitForLocationChange(gTab1);

@@ -6,8 +6,6 @@
 
 #include "MediaChild.h"
 #include "MediaParent.h"
-
-#include "nsGlobalWindow.h"
 #include "mozilla/dom/ContentChild.h"
 #include "mozilla/MediaManager.h"
 #include "mozilla/Logging.h"
@@ -29,7 +27,7 @@ RefPtr<PrincipalKeyPromise> GetPrincipalKey(
 
     mgr->GetNonE10sParent()->RecvGetPrincipalKey(
         aPrincipalInfo, aPersist,
-        [p](const nsCString& aKey) { p->Resolve(aKey, __func__); });
+        [p](const nsACString& aKey) { p->Resolve(aKey, __func__); });
     return p;
   }
   return Child::Get()

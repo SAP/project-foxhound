@@ -30,11 +30,11 @@ interface MutationRecord {
   readonly attribute DOMString? attributeNamespace;
   [Constant]
   readonly attribute DOMString? oldValue;
-  [Constant,Cached,ChromeOnly]
+  [Constant, Cached, ChromeOnly]
   readonly attribute sequence<Animation> addedAnimations;
-  [Constant,Cached,ChromeOnly]
+  [Constant, Cached, ChromeOnly]
   readonly attribute sequence<Animation> changedAnimations;
-  [Constant,Cached,ChromeOnly]
+  [Constant, Cached, ChromeOnly]
   readonly attribute sequence<Animation> removedAnimations;
 };
 
@@ -44,8 +44,8 @@ interface MutationObserver {
   constructor(MutationCallback mutationCallback);
 
   [Throws, NeedsSubjectPrincipal]
-  void observe(Node target, optional MutationObserverInit options = {});
-  void disconnect();
+  undefined observe(Node target, optional MutationObserverInit options = {});
+  undefined disconnect();
   sequence<MutationRecord> takeRecords();
 
   [ChromeOnly, Throws]
@@ -56,7 +56,7 @@ interface MutationObserver {
   attribute boolean mergeAttributeRecords;
 };
 
-callback MutationCallback = void (sequence<MutationRecord> mutations, MutationObserver observer);
+callback MutationCallback = undefined (sequence<MutationRecord> mutations, MutationObserver observer);
 
 dictionary MutationObserverInit {
   boolean childList = false;
@@ -66,7 +66,7 @@ dictionary MutationObserverInit {
   boolean attributeOldValue;
   boolean characterDataOldValue;
   [ChromeOnly]
-  boolean nativeAnonymousChildList = false;
+  boolean chromeOnlyNodes = false;
   [ChromeOnly]
   boolean animations = false;
   sequence<DOMString> attributeFilter;

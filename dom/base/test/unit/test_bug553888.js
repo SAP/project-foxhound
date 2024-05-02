@@ -2,7 +2,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-var { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
+var { HttpServer } = ChromeUtils.importESModule(
+  "resource://testing-common/httpd.sys.mjs"
+);
 
 var server = new HttpServer();
 server.start(-1);
@@ -43,7 +45,7 @@ function run_test() {
   var request = new XMLHttpRequest();
   request.open("GET", redirectURL, true);
   request.setRequestHeader("X-Custom-Header", "present");
-  request.addEventListener("readystatechange", function() {
+  request.addEventListener("readystatechange", function () {
     if (request.readyState == 4) {
       Assert.equal(request.status, 200);
       server.stop(do_test_finished);

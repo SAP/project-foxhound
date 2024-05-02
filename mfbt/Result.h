@@ -48,6 +48,7 @@ enum class PackingStrategy {
   NullIsOk,
   LowBitTagIsError,
   PackedVariant,
+  ZeroIsEmptyError,
 };
 
 template <typename T>
@@ -138,11 +139,21 @@ class ResultImplementationNullIsOkBase {
 
   constexpr const V& inspect() const { return *mValue.first().addr(); }
   constexpr V unwrap() { return std::move(*mValue.first().addr()); }
+  constexpr void updateAfterTracing(V&& aValue) {
+    MOZ_ASSERT(isOk());
+    if (!std::is_empty_v<V>) {
+      mValue.first().addr()->~V();
+      new (mValue.first().addr()) V(std::move(aValue));
+    }
+  }
 
   constexpr decltype(auto) inspectErr() const {
     return UnusedZero<E>::Inspect(mValue.second());
   }
   constexpr E unwrapErr() { return UnusedZero<E>::Unwrap(mValue.second()); }
+  constexpr void updateErrorAfterTracing(E&& aErrorValue) {
+    mValue.second() = UnusedZero<E>::Store(std::move(aErrorValue));
+  }
 };
 
 template <typename V, typename E,
@@ -176,6 +187,42 @@ class ResultImplementationNullIsOk<V, E, false>
 };
 
 /**
+ * Specialization for when the success type is one of integral, pointer, or
+ * enum, where 0 is unused, and the error type is an empty struct.
+ */
+template <typename V, typename E>
+class ResultImplementation<V, E, PackingStrategy::ZeroIsEmptyError> {
+  static_assert(std::is_integral_v<V> || std::is_pointer_v<V> ||
+                std::is_enum_v<V>);
+  static_assert(std::is_empty_v<E>);
+
+  V mValue;
+
+ public:
+  static constexpr PackingStrategy Strategy = PackingStrategy::ZeroIsEmptyError;
+
+  explicit constexpr ResultImplementation(V aValue) : mValue(aValue) {}
+  explicit constexpr ResultImplementation(E aErrorValue) : mValue(V(0)) {}
+
+  constexpr bool isOk() const { return mValue != V(0); }
+
+  constexpr V inspect() const { return mValue; }
+  constexpr V unwrap() { return inspect(); }
+
+  constexpr E inspectErr() const { return E(); }
+  constexpr E unwrapErr() { return inspectErr(); }
+
+  constexpr void updateAfterTracing(V&& aValue) {
+    this->~ResultImplementation();
+    new (this) ResultImplementation(std::move(aValue));
+  }
+  constexpr void updateErrorAfterTracing(E&& aErrorValue) {
+    this->~ResultImplementation();
+    new (this) ResultImplementation(std::move(aErrorValue));
+  }
+};
+
+/**
  * Specialization for when the success type is default-constructible and the
  * error type is a value type which can never have the value 0 (as determined by
  * UnusedZero<>).
@@ -184,6 +231,7 @@ template <typename V, typename E>
 class ResultImplementation<V, E, PackingStrategy::NullIsOk>
     : public ResultImplementationNullIsOk<V, E> {
  public:
+  static constexpr PackingStrategy Strategy = PackingStrategy::NullIsOk;
   using ResultImplementationNullIsOk<V, E>::ResultImplementationNullIsOk;
 };
 
@@ -222,6 +270,8 @@ class ResultImplementation<V, E, PackingStrategy::LowBitTagIsError> {
 #endif
 
  public:
+  static constexpr PackingStrategy Strategy = PackingStrategy::LowBitTagIsError;
+
   explicit constexpr ResultImplementation(V aValue) : mBits(0) {
     if constexpr (!std::is_empty_v<V>) {
       std::memcpy(&mBits, &aValue, sizeof(V));
@@ -256,17 +306,32 @@ class ResultImplementation<V, E, PackingStrategy::LowBitTagIsError> {
     return res;
   }
   constexpr E unwrapErr() { return inspectErr(); }
+
+  constexpr void updateAfterTracing(V&& aValue) {
+    this->~ResultImplementation();
+    new (this) ResultImplementation(std::move(aValue));
+  }
+  constexpr void updateErrorAfterTracing(E&& aErrorValue) {
+    this->~ResultImplementation();
+    new (this) ResultImplementation(std::move(aErrorValue));
+  }
 };
 
 // Return true if any of the struct can fit in a word.
 template <typename V, typename E>
 struct IsPackableVariant {
   struct VEbool {
+    explicit constexpr VEbool(V&& aValue) : v(std::move(aValue)), ok(true) {}
+    explicit constexpr VEbool(E&& aErrorValue)
+        : e(std::move(aErrorValue)), ok(false) {}
     V v;
     E e;
     bool ok;
   };
   struct EVbool {
+    explicit constexpr EVbool(V&& aValue) : v(std::move(aValue)), ok(true) {}
+    explicit constexpr EVbool(E&& aErrorValue)
+        : e(std::move(aErrorValue)), ok(false) {}
     E e;
     V v;
     bool ok;
@@ -288,14 +353,11 @@ class ResultImplementation<V, E, PackingStrategy::PackedVariant> {
   Impl data;
 
  public:
-  explicit constexpr ResultImplementation(V aValue) {
-    data.v = std::move(aValue);
-    data.ok = true;
-  }
-  explicit constexpr ResultImplementation(E aErrorValue) {
-    data.e = std::move(aErrorValue);
-    data.ok = false;
-  }
+  static constexpr PackingStrategy Strategy = PackingStrategy::PackedVariant;
+
+  explicit constexpr ResultImplementation(V aValue) : data(std::move(aValue)) {}
+  explicit constexpr ResultImplementation(E aErrorValue)
+      : data(std::move(aErrorValue)) {}
 
   constexpr bool isOk() const { return data.ok; }
 
@@ -304,6 +366,17 @@ class ResultImplementation<V, E, PackingStrategy::PackedVariant> {
 
   constexpr const E& inspectErr() const { return data.e; }
   constexpr E unwrapErr() { return std::move(data.e); }
+
+  constexpr void updateAfterTracing(V&& aValue) {
+    MOZ_ASSERT(data.ok);
+    this->~ResultImplementation();
+    new (this) ResultImplementation(std::move(aValue));
+  }
+  constexpr void updateErrorAfterTracing(E&& aErrorValue) {
+    MOZ_ASSERT(!data.ok);
+    this->~ResultImplementation();
+    new (this) ResultImplementation(std::move(aErrorValue));
+  }
 };
 
 // To use nullptr as a special value, we need the counter part to exclude zero
@@ -371,7 +444,9 @@ struct HasFreeLSB<T*> {
 template <typename V, typename E>
 struct SelectResultImpl {
   static const PackingStrategy value =
-      (HasFreeLSB<V>::value && HasFreeLSB<E>::value)
+      (UnusedZero<V>::value && std::is_empty_v<E>)
+          ? PackingStrategy::ZeroIsEmptyError
+      : (HasFreeLSB<V>::value && HasFreeLSB<E>::value)
           ? PackingStrategy::LowBitTagIsError
       : (UnusedZero<E>::value && sizeof(E) <= sizeof(uintptr_t))
           ? PackingStrategy::NullIsOk
@@ -449,13 +524,19 @@ class [[nodiscard]] Result final {
   using Impl = typename detail::SelectResultImpl<V, E>::Type;
 
   Impl mImpl;
+  // Are you getting this error?
+  // > error: implicit instantiation of undefined template
+  // > 'mozilla::detail::ResultImplementation<$V,$E,
+  // >                      mozilla::detail::PackingStrategy::Variant>'
+  // You need to include "ResultVariant.h"!
 
  public:
+  static constexpr detail::PackingStrategy Strategy = Impl::Strategy;
   using ok_type = V;
   using err_type = E;
 
   /** Create a success result. */
-  MOZ_IMPLICIT constexpr Result(V&& aValue) : mImpl(std::forward<V>(aValue)) {
+  MOZ_IMPLICIT constexpr Result(V&& aValue) : mImpl(std::move(aValue)) {
     MOZ_ASSERT(isOk());
   }
 
@@ -472,16 +553,21 @@ class [[nodiscard]] Result final {
   }
 
   /** Create an error result. */
-  explicit constexpr Result(E aErrorValue) : mImpl(std::move(aErrorValue)) {
+  explicit constexpr Result(const E& aErrorValue) : mImpl(aErrorValue) {
+    MOZ_ASSERT(isErr());
+  }
+  explicit constexpr Result(E&& aErrorValue) : mImpl(std::move(aErrorValue)) {
     MOZ_ASSERT(isErr());
   }
 
   /**
-   * Create a (success/error) result from another (success/error) result with a
-   * different but convertible error type. */
-  template <typename E2,
-            typename = std::enable_if_t<std::is_convertible_v<E2, E>>>
-  MOZ_IMPLICIT constexpr Result(Result<V, E2>&& aOther)
+   * Create a (success/error) result from another (success/error) result with
+   * different but convertible value and error types.
+   */
+  template <typename V2, typename E2,
+            typename = std::enable_if_t<std::is_convertible_v<V2, V> &&
+                                        std::is_convertible_v<E2, E>>>
+  MOZ_IMPLICIT constexpr Result(Result<V2, E2>&& aOther)
       : mImpl(aOther.isOk() ? Impl{aOther.unwrap()}
                             : Impl{aOther.unwrapErr()}) {}
 
@@ -537,6 +623,18 @@ class [[nodiscard]] Result final {
   constexpr E unwrapErr() {
     MOZ_ASSERT(isErr());
     return mImpl.unwrapErr();
+  }
+
+  /** Used only for GC tracing. If used in Rooted<Result<...>>, V must have a
+   * GCPolicy for tracing it. */
+  constexpr void updateAfterTracing(V&& aValue) {
+    mImpl.updateAfterTracing(std::move(aValue));
+  }
+
+  /** Used only for GC tracing. If used in Rooted<Result<...>>, E must have a
+   * GCPolicy for tracing it. */
+  constexpr void updateErrorAfterTracing(E&& aErrorValue) {
+    mImpl.updateErrorAfterTracing(std::move(aErrorValue));
   }
 
   /** See the success value from this Result, which must be a success result. */
@@ -604,8 +702,8 @@ class [[nodiscard]] Result final {
    *     MOZ_ASSERT(res2.unwrapErr() == 5);
    */
   template <typename F>
-  constexpr auto map(F f) -> Result<std::result_of_t<F(V)>, E> {
-    using RetResult = Result<std::result_of_t<F(V)>, E>;
+  constexpr auto map(F f) -> Result<std::invoke_result_t<F, V>, E> {
+    using RetResult = Result<std::invoke_result_t<F, V>, E>;
     return MOZ_LIKELY(isOk()) ? RetResult(f(unwrap())) : RetResult(unwrapErr());
   }
 
@@ -638,7 +736,7 @@ class [[nodiscard]] Result final {
    */
   template <typename F>
   constexpr auto mapErr(F f) {
-    using RetResult = Result<V, std::result_of_t<F(E)>>;
+    using RetResult = Result<V, std::invoke_result_t<F, E>>;
     return MOZ_UNLIKELY(isErr()) ? RetResult(f(unwrapErr()))
                                  : RetResult(unwrap());
   }
@@ -699,7 +797,7 @@ class [[nodiscard]] Result final {
    *     MOZ_ASSERT(res2.unwrap() == 5);
    */
   template <typename F>
-  auto orElse(F f) -> Result<V, typename std::result_of_t<F(E)>::err_type> {
+  auto orElse(F f) -> Result<V, typename std::invoke_result_t<F, E>::err_type> {
     return MOZ_UNLIKELY(isErr()) ? f(unwrapErr()) : unwrap();
   }
 
@@ -771,34 +869,5 @@ inline constexpr auto Err(E&& aErrorValue) {
 }
 
 }  // namespace mozilla
-
-/**
- * MOZ_TRY(expr) is the C++ equivalent of Rust's `try!(expr);`. First, it
- * evaluates expr, which must produce a Result value. On success, it
- * discards the result altogether. On error, it immediately returns an error
- * Result from the enclosing function.
- */
-#define MOZ_TRY(expr)                                   \
-  do {                                                  \
-    auto mozTryTempResult_ = ::mozilla::ToResult(expr); \
-    if (MOZ_UNLIKELY(mozTryTempResult_.isErr())) {      \
-      return mozTryTempResult_.propagateErr();          \
-    }                                                   \
-  } while (0)
-
-/**
- * MOZ_TRY_VAR(target, expr) is the C++ equivalent of Rust's `target =
- * try!(expr);`. First, it evaluates expr, which must produce a Result value. On
- * success, the result's success value is assigned to target. On error,
- * immediately returns the error result. |target| must be an lvalue.
- */
-#define MOZ_TRY_VAR(target, expr)                     \
-  do {                                                \
-    auto mozTryVarTempResult_ = (expr);               \
-    if (MOZ_UNLIKELY(mozTryVarTempResult_.isErr())) { \
-      return mozTryVarTempResult_.propagateErr();     \
-    }                                                 \
-    (target) = mozTryVarTempResult_.unwrap();         \
-  } while (0)
 
 #endif  // mozilla_Result_h

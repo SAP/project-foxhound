@@ -2,26 +2,17 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, print_function, unicode_literals
-
 import argparse
 import os
 import sys
 import time
 
-from mozpack.copier import (
-    FileCopier,
-    FileRegistry,
-)
+from mozpack.copier import FileCopier, FileRegistry
 from mozpack.errors import errors
-from mozpack.files import (
-    BaseFile,
-    FileFinder,
-)
+from mozpack.files import BaseFile, FileFinder
 from mozpack.manifests import InstallManifest
-from mozbuild.util import DefinesAction
-from mozbuild.action.util import log_build_task
 
+from mozbuild.util import DefinesAction
 
 COMPLETE = (
     "Elapsed: {elapsed:.2f}s; From {dest}: Kept {existing} existing; "
@@ -31,7 +22,6 @@ COMPLETE = (
 
 
 def process_manifest(destdir, paths, track, no_symlinks=False, defines={}):
-
     if os.path.exists(track):
         # We use the same format as install manifests for the tracking
         # data.
@@ -105,7 +95,7 @@ def main(argv):
 
     args = parser.parse_args(argv)
 
-    start = time.time()
+    start = time.monotonic()
 
     result = process_manifest(
         args.destdir,
@@ -115,7 +105,7 @@ def main(argv):
         defines=args.defines,
     )
 
-    elapsed = time.time() - start
+    elapsed = time.monotonic() - start
 
     print(
         COMPLETE.format(
@@ -130,4 +120,4 @@ def main(argv):
 
 
 if __name__ == "__main__":
-    log_build_task(main, sys.argv[1:])
+    main(sys.argv[1:])

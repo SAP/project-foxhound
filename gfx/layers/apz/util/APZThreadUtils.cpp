@@ -19,7 +19,7 @@ namespace layers {
 
 static bool sThreadAssertionsEnabled = true;
 static StaticRefPtr<nsISerialEventTarget> sControllerThread;
-static StaticMutex sControllerThreadMutex;
+static StaticMutex sControllerThreadMutex MOZ_UNANNOTATED;
 
 /*static*/
 void APZThreadUtils::SetThreadAssertionsEnabled(bool aEnabled) {
@@ -114,8 +114,6 @@ void APZThreadUtils::DelayedDispatch(already_AddRefed<Runnable> aRunnable,
     thread->Dispatch(std::move(aRunnable));
   }
 }
-
-NS_IMPL_ISUPPORTS(GenericNamedTimerCallbackBase, nsITimerCallback, nsINamed)
 
 }  // namespace layers
 }  // namespace mozilla

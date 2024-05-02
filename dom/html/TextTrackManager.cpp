@@ -17,7 +17,7 @@
 #include "mozilla/dom/TextTrack.h"
 #include "mozilla/dom/TextTrackCue.h"
 #include "nsComponentManagerUtils.h"
-#include "nsGlobalWindow.h"
+#include "nsGlobalWindowInner.h"
 #include "nsIFrame.h"
 #include "nsIWebVTTParserWrapper.h"
 #include "nsVariant.h"
@@ -163,7 +163,6 @@ already_AddRefed<TextTrack> TextTrackManager::AddTextTrack(
              NS_ConvertUTF16toUTF8(aLabel).get(),
              NS_ConvertUTF16toUTF8(aLanguage).get());
   AddCues(track);
-  ReportTelemetryForTrack(track);
 
   if (aTextTrackSource == TextTrackSource::Track) {
     RefPtr<nsIRunnable> task = NewRunnableMethod(
@@ -182,7 +181,6 @@ void TextTrackManager::AddTextTrack(TextTrack* aTextTrack) {
   WEBVTT_LOG("AddTextTrack TextTrack %p", aTextTrack);
   mTextTracks->AddTextTrack(aTextTrack, CompareTextTracks(mMediaElement));
   AddCues(aTextTrack);
-  ReportTelemetryForTrack(aTextTrack);
 
   if (aTextTrack->GetTextTrackSource() == TextTrackSource::Track) {
     RefPtr<nsIRunnable> task = NewRunnableMethod(
@@ -260,7 +258,8 @@ void TextTrackManager::UpdateCueDisplay() {
     return;
   }
 
-  nsPIDOMWindowInner* window = mMediaElement->OwnerDoc()->GetInnerWindow();
+  RefPtr<nsPIDOMWindowInner> window =
+      mMediaElement->OwnerDoc()->GetInnerWindow();
   if (!window) {
     WEBVTT_LOG("Abort UpdateCueDisplay, because of no window.");
   }
@@ -275,7 +274,14 @@ void TextTrackManager::UpdateCueDisplay() {
                      showingCues.Length(),
                      static_cast<void*>(showingCues.Elements()));
   nsCOMPtr<nsIContent> controls = videoFrame->GetVideoControls();
-  sParserWrapper->ProcessCues(window, jsCues, overlay, controls);
+
+  nsContentUtils::AddScriptRunner(NS_NewRunnableFunction(
+      "TextTrackManager::UpdateCueDisplay",
+      [window, jsCues, overlay, controls]() {
+        if (sParserWrapper) {
+          sParserWrapper->ProcessCues(window, jsCues, overlay, controls);
+        }
+      }));
 }
 
 void TextTrackManager::NotifyCueAdded(TextTrackCue& aCue) {
@@ -457,7 +463,7 @@ class SimpleTextTrackEvent : public Runnable {
 
   void Dispatch() {
     if (nsCOMPtr<nsIGlobalObject> global = mCue->GetOwnerGlobal()) {
-      global->Dispatch(TaskCategory::Other, do_AddRef(this));
+      global->Dispatch(do_AddRef(this));
     } else {
       NS_DispatchToMainThread(do_AddRef(this));
     }
@@ -581,10 +587,8 @@ class TextTrackListInternal {
 void TextTrackManager::DispatchUpdateCueDisplay() {
   if (!mUpdateCueDisplayDispatched && !IsShutdown()) {
     WEBVTT_LOG("DispatchUpdateCueDisplay");
-    nsPIDOMWindowInner* win = mMediaElement->OwnerDoc()->GetInnerWindow();
-    if (win) {
+    if (nsPIDOMWindowInner* win = mMediaElement->OwnerDoc()->GetInnerWindow()) {
       nsGlobalWindowInner::Cast(win)->Dispatch(
-          TaskCategory::Other,
           NewRunnableMethod("dom::TextTrackManager::UpdateCueDisplay", this,
                             &TextTrackManager::UpdateCueDisplay));
       mUpdateCueDisplayDispatched = true;
@@ -599,10 +603,8 @@ void TextTrackManager::DispatchTimeMarchesOn() {
   // executing call upon completion will check queue for further 'work'.
   if (!mTimeMarchesOnDispatched && !IsShutdown()) {
     WEBVTT_LOG("DispatchTimeMarchesOn");
-    nsPIDOMWindowInner* win = mMediaElement->OwnerDoc()->GetInnerWindow();
-    if (win) {
+    if (nsPIDOMWindowInner* win = mMediaElement->OwnerDoc()->GetInnerWindow()) {
       nsGlobalWindowInner::Cast(win)->Dispatch(
-          TaskCategory::Other,
           NewRunnableMethod("dom::TextTrackManager::TimeMarchesOn", this,
                             &TextTrackManager::TimeMarchesOn));
       mTimeMarchesOnDispatched = true;
@@ -846,15 +848,6 @@ void TextTrackManager::NotifyReset() {
     (*mTextTracks)[idx]->SetCuesInactive();
   }
   UpdateCueDisplay();
-}
-
-void TextTrackManager::ReportTelemetryForTrack(TextTrack* aTextTrack) const {
-  MOZ_ASSERT(NS_IsMainThread());
-  MOZ_ASSERT(aTextTrack);
-  MOZ_ASSERT(mTextTracks->Length() > 0);
-
-  TextTrackKind kind = aTextTrack->Kind();
-  Telemetry::Accumulate(Telemetry::WEBVTT_TRACK_KINDS, uint32_t(kind));
 }
 
 bool TextTrackManager::IsLoaded() {

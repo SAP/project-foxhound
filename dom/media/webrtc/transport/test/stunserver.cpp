@@ -94,8 +94,6 @@ extern "C" {
 #include "nr_socket.h"
 #include "nr_socket_local.h"
 #include "transport_addr.h"
-#include "addrs.h"
-#include "local_addr.h"
 #include "stun_util.h"
 #include "registry.h"
 #include "nr_socket_buffered_stun.h"
@@ -388,7 +386,7 @@ void TestStunServer::ShutdownInstance() {
 struct DeferredStunOperation {
   DeferredStunOperation(TestStunServer* server, const char* data, size_t len,
                         nr_transport_addr* addr, nr_socket* sock)
-      : server_(server), buffer_(), sock_(sock) {
+      : server_(server), sock_(sock) {
     buffer_.Copy(reinterpret_cast<const uint8_t*>(data), len);
     nr_transport_addr_copy(&addr_, addr);
   }

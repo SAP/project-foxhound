@@ -14,12 +14,8 @@ const TEST_URL =
 
 const {
   gDevToolsBrowser,
-} = require("devtools/client/framework/devtools-browser");
-ChromeUtils.defineModuleGetter(
-  this,
-  "AppConstants",
-  "resource://gre/modules/AppConstants.jsm"
-);
+} = require("resource://devtools/client/framework/devtools-browser.js");
+
 const isMac = AppConstants.platform == "macosx";
 
 const allKeys = [];
@@ -35,7 +31,7 @@ function buildDevtoolsKeysetMap(keyset) {
     allKeys.push({
       toolId: key.id.split("_")[1],
       key: key.getAttribute("key"),
-      modifiers: modifiers,
+      modifiers,
       modifierOpt: {
         shiftKey: modifiers.match("shift"),
         ctrlKey: modifiers.match("ctrl"),
@@ -43,7 +39,7 @@ function buildDevtoolsKeysetMap(keyset) {
         metaKey: modifiers.match("meta"),
         accelKey: modifiers.match("accel"),
       },
-      synthesizeKey: function() {
+      synthesizeKey() {
         EventUtils.synthesizeKey(this.key, this.modifierOpt);
       },
     });
@@ -56,7 +52,7 @@ function setupKeyBindingsTest() {
   }
 }
 
-add_task(async function() {
+add_task(async function () {
   await addTab(TEST_URL);
   await new Promise(done => waitForFocus(done));
 

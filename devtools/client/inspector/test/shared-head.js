@@ -10,7 +10,7 @@
 
 var {
   getInplaceEditorForSpan: inplaceEditor,
-} = require("devtools/client/shared/inplace-editor");
+} = require("resource://devtools/client/shared/inplace-editor.js");
 
 // This file contains functions related to the inspector that are also of interest to
 // other test directores as well.
@@ -24,7 +24,7 @@ var {
  *           - inspector
  *           - highlighterTestFront
  */
-var openInspector = async function(hostType) {
+var openInspector = async function (hostType) {
   info("Opening the inspector");
 
   const toolbox = await openToolboxForTab(
@@ -52,7 +52,7 @@ var openInspector = async function(hostType) {
  *           - inspector
  *           - highlighterTestFront
  */
-var openInspectorSidebarTab = async function(id) {
+var openInspectorSidebarTab = async function (id) {
   const { toolbox, inspector, highlighterTestFront } = await openInspector();
 
   info("Selecting the " + id + " sidebar");
@@ -237,7 +237,7 @@ function getNodeFront(selector, { walker }) {
  *        Is the selection representing the slotted version the node.
  * @return {Promise} Resolves when the inspector is updated with the new node
  */
-var selectNode = async function(
+var selectNode = async function (
   selector,
   inspector,
   reason = "test",
@@ -247,7 +247,9 @@ var selectNode = async function(
   const nodeFront = await getNodeFront(selector, inspector);
   const updated = inspector.once("inspector-updated");
 
-  const { ELEMENT_NODE } = require("devtools/shared/dom-node-constants");
+  const {
+    ELEMENT_NODE,
+  } = require("resource://devtools/shared/dom-node-constants.js");
   const onSelectionCssSelectorsUpdated =
     nodeFront?.nodeType == ELEMENT_NODE
       ? inspector.once("selection-css-selectors-updated")
@@ -257,6 +259,48 @@ var selectNode = async function(
   await updated;
   await onSelectionCssSelectorsUpdated;
 };
+
+/**
+ * Using the markupview's _waitForChildren function, wait for all queued
+ * children updates to be handled.
+ * @param {InspectorPanel} inspector The instance of InspectorPanel currently
+ * loaded in the toolbox
+ * @return a promise that resolves when all queued children updates have been
+ * handled
+ */
+function waitForChildrenUpdated({ markup }) {
+  info("Waiting for queued children updates to be handled");
+  return new Promise(resolve => {
+    markup._waitForChildren().then(() => {
+      executeSoon(resolve);
+    });
+  });
+}
+
+// The expand all operation of the markup-view calls itself recursively and
+// there's not one event we can wait for to know when it's done, so use this
+// helper function to wait until all recursive children updates are done.
+async function waitForMultipleChildrenUpdates(inspector) {
+  // As long as child updates are queued up while we wait for an update already
+  // wait again
+  if (
+    inspector.markup._queuedChildUpdates &&
+    inspector.markup._queuedChildUpdates.size
+  ) {
+    await waitForChildrenUpdated(inspector);
+    return waitForMultipleChildrenUpdates(inspector);
+  }
+  return null;
+}
+
+/**
+ * Expand the provided markup container programmatically and  wait for all
+ * children to update.
+ */
+async function expandContainer(inspector, container) {
+  await inspector.markup.expandNode(container.node);
+  await waitForMultipleChildrenUpdates(inspector);
+}
 
 /**
  * Get the NodeFront for a node that matches a given css selector inside a
@@ -358,7 +402,7 @@ function manualDebounce() {
   let calls = [];
 
   function debounce(func, wait, scope) {
-    return function() {
+    return function () {
       const existingCall = calls.find(call => call.func === func);
       if (existingCall) {
         existingCall.args = arguments;
@@ -368,7 +412,7 @@ function manualDebounce() {
     };
   }
 
-  debounce.flush = function() {
+  debounce.flush = function () {
     calls.forEach(({ func, scope, args }) => func.apply(scope, args));
     calls = [];
   };
@@ -477,13 +521,14 @@ async function waitForComputedStyleProperty(
  *
  * @return a promise that resolves to the inplace-editor element when ready
  */
-var focusEditableField = async function(
+var focusEditableField = async function (
   ruleView,
   editable,
   xOffset = 1,
   yOffset = 1,
   options = {}
 ) {
+  editable.scrollIntoView();
   const onFocus = once(editable.parentNode, "focus", true);
   info("Clicking on editable field to turn to edit mode");
   if (options.type === undefined) {
@@ -544,7 +589,7 @@ function getRuleViewRule(view, selectorText, index = 0) {
   let pos = 0;
   for (const r of view.styleDocument.querySelectorAll(".ruleview-rule")) {
     const selector = r.querySelector(
-      ".ruleview-selectorcontainer, " + ".ruleview-selector-matched"
+      ".ruleview-selectors-container, .ruleview-selector.matched"
     );
     if (selector && selector.textContent === selectorText) {
       if (index == pos) {
@@ -560,7 +605,7 @@ function getRuleViewRule(view, selectorText, index = 0) {
 
 /**
  * Get references to the name and value span nodes corresponding to a given
- * selector and property name in the rule-view
+ * selector and property name in the rule-view.
  *
  * @param {CssRuleView} view
  *        The instance of the rule-view panel
@@ -568,25 +613,38 @@ function getRuleViewRule(view, selectorText, index = 0) {
  *        The selector in the rule-view to look for the property in
  * @param {String} propertyName
  *        The name of the property
+ * @param {Object=} options
+ * @param {Boolean=} options.wait
+ *        When true, returns a promise which waits until a valid rule view
+ *        property can be retrieved for the provided selectorText & propertyName.
+ *        Defaults to false.
  * @return {Object} An object like {nameSpan: DOMNode, valueSpan: DOMNode}
  */
-function getRuleViewProperty(view, selectorText, propertyName) {
-  let prop;
+function getRuleViewProperty(view, selectorText, propertyName, options = {}) {
+  if (options.wait) {
+    return waitFor(() =>
+      _syncGetRuleViewProperty(view, selectorText, propertyName)
+    );
+  }
+  return _syncGetRuleViewProperty(view, selectorText, propertyName);
+}
 
+function _syncGetRuleViewProperty(view, selectorText, propertyName) {
   const rule = getRuleViewRule(view, selectorText);
-  if (rule) {
-    // Look for the propertyName in that rule element
-    for (const p of rule.querySelectorAll(".ruleview-property")) {
-      const nameSpan = p.querySelector(".ruleview-propertyname");
-      const valueSpan = p.querySelector(".ruleview-propertyvalue");
+  if (!rule) {
+    return null;
+  }
 
-      if (nameSpan.textContent === propertyName) {
-        prop = { nameSpan: nameSpan, valueSpan: valueSpan };
-        break;
-      }
+  // Look for the propertyName in that rule element
+  for (const p of rule.querySelectorAll(".ruleview-property")) {
+    const nameSpan = p.querySelector(".ruleview-propertyname");
+    const valueSpan = p.querySelector(".ruleview-propertyvalue");
+
+    if (nameSpan.textContent === propertyName) {
+      return { nameSpan, valueSpan };
     }
   }
-  return prop;
+  return null;
 }
 
 /**
@@ -618,7 +676,9 @@ function getRuleViewPropertyValue(view, selectorText, propertyName) {
  */
 function getRuleViewSelector(view, selectorText) {
   const rule = getRuleViewRule(view, selectorText);
-  return rule.querySelector(".ruleview-selector, .ruleview-selector-matched");
+  return rule.querySelector(
+    ".ruleview-selectors-container, .ruleview-selector.matched"
+  );
 }
 
 /**
@@ -657,7 +717,7 @@ function getRuleViewLinkTextByIndex(view, index) {
  * @return a promise that resolves to the newly created editor when ready and
  * focused
  */
-var focusNewRuleViewProperty = async function(ruleEditor) {
+var focusNewRuleViewProperty = async function (ruleEditor) {
   info("Clicking on a close ruleEditor brace to start editing a new property");
 
   // Use bottom alignment to avoid scrolling out of the parent element area.
@@ -689,7 +749,7 @@ var focusNewRuleViewProperty = async function(ruleEditor) {
  * @return a promise that resolves when the new property name has been entered
  * and once the value field is focused
  */
-var createNewRuleViewProperty = async function(ruleEditor, inputValue) {
+var createNewRuleViewProperty = async function (ruleEditor, inputValue) {
   info("Creating a new property editor");
   const editor = await focusNewRuleViewProperty(ruleEditor);
 
@@ -716,7 +776,7 @@ var createNewRuleViewProperty = async function(ruleEditor, inputValue) {
  * @return a promise that resolves when the rule-view is filtered for the
  * search term
  */
-var setSearchFilter = async function(view, searchValue) {
+var setSearchFilter = async function (view, searchValue) {
   info('Setting filter text to "' + searchValue + '"');
 
   const searchField = view.searchField;
@@ -754,7 +814,7 @@ function buildContextMenuItems(menu) {
  * @return An array of MenuItems
  */
 function openStyleContextMenuAndGetAllItems(view, target) {
-  const menu = view.contextMenu._openMenu({ target: target });
+  const menu = view.contextMenu._openMenu({ target });
   return buildContextMenuItems(menu);
 }
 
@@ -783,16 +843,16 @@ async function waitUntilVisitedState(tab, selectors) {
       tab.linkedBrowser,
       selectors,
       args => {
-        const NS_EVENT_STATE_VISITED = 1 << 19;
+        // ElementState::VISITED
+        const ELEMENT_STATE_VISITED = 1 << 18;
 
         for (const selector of args) {
-          const target = content.wrappedJSObject.document.querySelector(
-            selector
-          );
+          const target =
+            content.wrappedJSObject.document.querySelector(selector);
           if (
             !(
               target &&
-              InspectorUtils.getContentState(target) & NS_EVENT_STATE_VISITED
+              InspectorUtils.getContentState(target) & ELEMENT_STATE_VISITED
             )
           ) {
             return false;
@@ -812,11 +872,13 @@ async function waitUntilVisitedState(tab, selectors) {
  * @returns Promise<Boolean>
  */
 function hasMatchingElementInContentPage(selector) {
-  return SpecialPowers.spawn(gBrowser.selectedBrowser, [selector], function(
-    innerSelector
-  ) {
-    return content.document.querySelector(innerSelector) !== null;
-  });
+  return SpecialPowers.spawn(
+    gBrowser.selectedBrowser,
+    [selector],
+    function (innerSelector) {
+      return content.document.querySelector(innerSelector) !== null;
+    }
+  );
 }
 
 /**
@@ -826,11 +888,13 @@ function hasMatchingElementInContentPage(selector) {
  * @returns Promise<Number> the number of matching elements
  */
 function getNumberOfMatchingElementsInContentPage(selector) {
-  return SpecialPowers.spawn(gBrowser.selectedBrowser, [selector], function(
-    innerSelector
-  ) {
-    return content.document.querySelectorAll(innerSelector).length;
-  });
+  return SpecialPowers.spawn(
+    gBrowser.selectedBrowser,
+    [selector],
+    function (innerSelector) {
+      return content.document.querySelectorAll(innerSelector).length;
+    }
+  );
 }
 
 /**
@@ -844,7 +908,7 @@ function getContentPageElementProperty(selector, propertyName) {
   return SpecialPowers.spawn(
     gBrowser.selectedBrowser,
     [selector, propertyName],
-    function(innerSelector, innerPropertyName) {
+    function (innerSelector, innerPropertyName) {
       return content.document.querySelector(innerSelector)[innerPropertyName];
     }
   );
@@ -862,10 +926,9 @@ function setContentPageElementProperty(selector, propertyName, propertyValue) {
   return SpecialPowers.spawn(
     gBrowser.selectedBrowser,
     [selector, propertyName, propertyValue],
-    function(innerSelector, innerPropertyName, innerPropertyValue) {
-      content.document.querySelector(innerSelector)[
-        innerPropertyName
-      ] = innerPropertyValue;
+    function (innerSelector, innerPropertyName, innerPropertyValue) {
+      content.document.querySelector(innerSelector)[innerPropertyName] =
+        innerPropertyValue;
     }
   );
 }
@@ -940,4 +1003,139 @@ async function removeContentPageElementAttribute(selector, attribute) {
       content.document.querySelector(_selector).removeAttribute(_attribute);
     }
   );
+}
+
+/**
+ * Get the rule editor from the rule-view given its index
+ *
+ * @param {CssRuleView} ruleView
+ *        The instance of the rule-view panel
+ * @param {Number} childrenIndex
+ *        The children index of the element to get
+ * @param {Number} nodeIndex
+ *        The child node index of the element to get
+ * @return {DOMNode} The rule editor if any at this index
+ */
+function getRuleViewRuleEditor(ruleView, childrenIndex, nodeIndex) {
+  const child = ruleView.element.children[childrenIndex];
+  if (!child) {
+    return null;
+  }
+
+  return nodeIndex !== undefined
+    ? child.childNodes[nodeIndex]?._ruleEditor
+    : child._ruleEditor;
+}
+
+/**
+ * Get the TextProperty instance corresponding to a CSS declaration
+ * from a CSS rule in the Rules view.
+ *
+ * @param  {RuleView} ruleView
+ *         Instance of RuleView.
+ * @param  {Number} ruleIndex
+ *         The index of the CSS rule where to find the declaration.
+ * @param  {Object} declaration
+ *         An object representing the target declaration e.g. { color: red }.
+ *         The first TextProperty instance which matches will be returned.
+ * @return {TextProperty}
+ */
+function getTextProperty(ruleView, ruleIndex, declaration) {
+  const ruleEditor = getRuleViewRuleEditor(ruleView, ruleIndex);
+  const [[name, value]] = Object.entries(declaration);
+  const textProp = ruleEditor.rule.textProps.find(prop => {
+    return prop.name === name && prop.value === value;
+  });
+
+  if (!textProp) {
+    throw Error(
+      `Declaration ${name}:${value} not found on rule at index ${ruleIndex}`
+    );
+  }
+
+  return textProp;
+}
+
+/**
+ * Simulate changing the value of a property in a rule in the rule-view.
+ *
+ * @param {CssRuleView} ruleView
+ *        The instance of the rule-view panel
+ * @param {TextProperty} textProp
+ *        The instance of the TextProperty to be changed
+ * @param {String} value
+ *        The new value to be used. If null is passed, then the value will be
+ *        deleted
+ * @param {Object} options
+ * @param {Boolean} options.blurNewProperty
+ *        After the value has been changed, a new property would have been
+ *        focused. This parameter is true by default, and that causes the new
+ *        property to be blurred. Set to false if you don't want this.
+ * @param {number} options.flushCount
+ *        The ruleview uses a manual flush for tests only, and some properties are
+ *        only updated after several flush. Allow tests to trigger several flushes
+ *        if necessary. Defaults to 1.
+ */
+async function setProperty(
+  ruleView,
+  textProp,
+  value,
+  { blurNewProperty = true, flushCount = 1 } = {}
+) {
+  info("Set property to: " + value);
+  await focusEditableField(ruleView, textProp.editor.valueSpan);
+
+  // Because of the manual flush approach used for tests, we might have an
+  // unknown number of debounced "preview" requests . Each preview should
+  // synchronously emit "start-preview-property-value".
+  // Listen to both this event and "ruleview-changed" which is emitted at the
+  // end of a preview and make sure each preview completes successfully.
+  let previewStartedCounter = 0;
+  const onStartPreview = () => previewStartedCounter++;
+  ruleView.on("start-preview-property-value", onStartPreview);
+
+  let previewCounter = 0;
+  const onPreviewApplied = () => previewCounter++;
+  ruleView.on("ruleview-changed", onPreviewApplied);
+
+  if (value === null) {
+    const onPopupOpened = once(ruleView.popup, "popup-opened");
+    EventUtils.synthesizeKey("VK_DELETE", {}, ruleView.styleWindow);
+    await onPopupOpened;
+  } else {
+    await wait(500);
+    EventUtils.sendString(value, ruleView.styleWindow);
+  }
+
+  info(`Flush debounced ruleview methods (remaining: ${flushCount})`);
+  ruleView.debounce.flush();
+  await waitFor(() => previewCounter >= previewStartedCounter);
+
+  flushCount--;
+
+  while (flushCount > 0) {
+    // Wait for some time before triggering a new flush to let new debounced
+    // functions queue in-between.
+    await wait(100);
+
+    info(`Flush debounced ruleview methods (remaining: ${flushCount})`);
+    ruleView.debounce.flush();
+    await waitFor(() => previewCounter >= previewStartedCounter);
+
+    flushCount--;
+  }
+
+  ruleView.off("start-preview-property-value", onStartPreview);
+  ruleView.off("ruleview-changed", onPreviewApplied);
+
+  const onValueDone = ruleView.once("ruleview-changed");
+  EventUtils.synthesizeKey("VK_RETURN", {}, ruleView.styleWindow);
+
+  info("Waiting for another ruleview-changed after setting property");
+  await onValueDone;
+
+  if (blurNewProperty) {
+    info("Force blur on the active element");
+    ruleView.styleDocument.activeElement.blur();
+  }
 }

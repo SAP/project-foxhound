@@ -4,14 +4,11 @@
 nn{
     %%Parent{"no"}
     AuxExemplarCharacters{"[á ǎ č ç đ è ê ń ñ ŋ š ŧ ü ž ä ö]"}
-    ExemplarCharactersPunctuation{
-        "[\\- ‐ ‑ – — , ; \\: ! ? . … ' ‘ ’ \u0022 “ ” ( ) \\[ \\] § @ * / \\& # † ‡ "
-        "′ ″]"
-    }
     NumberElements{
         latn{
             patterns{
                 accountingFormat{"#,##0.00 ¤"}
+                accountingFormat%noCurrency{"#,##0.00"}
                 currencyFormat{"#,##0.00 ¤"}
             }
             patternsLong{
@@ -60,6 +57,7 @@ nn{
         }
         minimalPairs{
             gender{
+                feminine{"Det tek ei heil {0} å …"}
                 masculine{"Min {0} han har tre kantar"}
                 neuter{"Mitt {0} det har tre kantar"}
             }
@@ -74,21 +72,6 @@ nn{
     }
     calendar{
         generic{
-            DateTimePatterns{
-                "'kl'. HH:mm:ss zzzz",
-                "HH:mm:ss z",
-                "HH:mm:ss",
-                "HH:mm",
-                "EEEE d. MMMM y G",
-                "d. MMMM y G",
-                "d. MMM y G",
-                "d.M.y G",
-                "{1} {0}",
-                "{1} {0}",
-                "{1} {0}",
-                "{1} {0}",
-                "{1} {0}",
-            }
             intervalFormats{
                 MEd{
                     M{"E dd.MM.–E dd.MM."}
@@ -101,7 +84,6 @@ nn{
                     M{"dd.MM.–dd.MM."}
                     d{"dd.MM.–dd.MM."}
                 }
-                fallback{"{0} – {1}"}
                 yM{
                     M{"MM.y–MM.y G"}
                     y{"MM.y–MM.y G"}
@@ -144,7 +126,6 @@ nn{
             availableFormats{
                 EHm{"E HH:mm"}
                 EHms{"E HH:mm:ss"}
-                MEd{"E d.M"}
                 MMMMW{
                     one{"'veke' W 'i' MMMM"}
                     other{"'veke' W 'i' MMMM"}
@@ -164,15 +145,6 @@ nn{
                         "to.",
                         "fr.",
                         "la.",
-                    }
-                    narrow{
-                        "S",
-                        "M",
-                        "T",
-                        "O",
-                        "T",
-                        "F",
-                        "L",
                     }
                     short{
                         "sø.",
@@ -258,24 +230,6 @@ nn{
                 Md{
                     M{"dd.MM–dd.MM"}
                     d{"dd.MM–dd.MM"}
-                }
-            }
-            monthNames{
-                format{
-                    abbreviated{
-                        "jan.",
-                        "feb.",
-                        "mars",
-                        "apr.",
-                        "mai",
-                        "juni",
-                        "juli",
-                        "aug.",
-                        "sep.",
-                        "okt.",
-                        "nov.",
-                        "des.",
-                    }
                 }
             }
             quarters{
@@ -1024,6 +978,14 @@ nn{
             end{"{0} {1}"}
             middle{"{0} {1}"}
             start{"{0} {1}"}
+        }
+    }
+    personNames{
+        nameOrderLocales{
+            givenFirst{
+                "und",
+                "nn",
+            }
         }
     }
 }

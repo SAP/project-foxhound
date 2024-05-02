@@ -1,9 +1,8 @@
 "use strict";
 
-var { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+var { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-var { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 function evict_cache_entries(where) {
   var clearDisk = !where || where == "disk" || where == "all";
@@ -85,7 +84,7 @@ function syncWithCacheIOThread(callback, force) {
       "disk",
       Ci.nsICacheStorage.OPEN_READONLY,
       null,
-      function(status, entry) {
+      function (status, entry) {
         Assert.equal(status, Cr.NS_ERROR_CACHE_KEY_NOT_FOUND);
         callback();
       }
@@ -104,7 +103,7 @@ function get_device_entry_count(where, lci, continuation) {
 
   var visitor = {
     onCacheStorageInfo(entryCount, consumption) {
-      executeSoon(function() {
+      executeSoon(function () {
         continuation(entryCount, consumption);
       });
     },
@@ -120,7 +119,7 @@ function asyncCheckCacheEntryPresence(key, where, shouldExist, continuation) {
     where,
     Ci.nsICacheStorage.OPEN_READONLY,
     null,
-    function(status, entry) {
+    function (status, entry) {
       if (shouldExist) {
         dump("TEST-INFO | checking cache key " + key + " exists @ " + where);
         Assert.equal(status, Cr.NS_OK);

@@ -14,8 +14,7 @@ NS_IMPL_NS_NEW_SVG_ELEMENT(FESpecularLighting)
 
 using namespace mozilla::gfx;
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 JSObject* SVGFESpecularLightingElement::WrapNode(
     JSContext* aCx, JS::Handle<JSObject*> aGivenProto) {
@@ -100,8 +99,7 @@ nsresult SVGFESpecularLightingElement::BindToTree(BindContext& aCtx,
     aCtx.OwnerDoc().SetUseCounter(eUseCounter_custom_feSpecularLighting);
   }
 
-  return SVGFE::BindToTree(aCtx, aParent);
+  return SVGFESpecularLightingElementBase::BindToTree(aCtx, aParent);
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

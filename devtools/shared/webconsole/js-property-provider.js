@@ -4,26 +4,24 @@
 
 "use strict";
 
-const DevToolsUtils = require("devtools/shared/DevToolsUtils");
+const DevToolsUtils = require("resource://devtools/shared/DevToolsUtils.js");
 
 const {
   evalWithDebugger,
-} = require("devtools/server/actors/webconsole/eval-with-debugger");
+} = require("resource://devtools/server/actors/webconsole/eval-with-debugger.js");
 
 if (!isWorker) {
   loader.lazyRequireGetter(
     this,
     "getSyntaxTrees",
-    "devtools/shared/webconsole/parser-helper",
+    "resource://devtools/shared/webconsole/parser-helper.js",
     true
   );
 }
-loader.lazyRequireGetter(
-  this,
-  "Reflect",
-  "resource://gre/modules/reflect.jsm",
-  true
-);
+const lazy = {};
+ChromeUtils.defineESModuleGetters(lazy, {
+  Reflect: "resource://gre/modules/reflect.sys.mjs",
+});
 loader.lazyRequireGetter(
   this,
   [
@@ -31,7 +29,7 @@ loader.lazyRequireGetter(
     "shouldInputBeAutocompleted",
     "shouldInputBeEagerlyEvaluated",
   ],
-  "devtools/shared/webconsole/analyze-input-string",
+  "resource://devtools/shared/webconsole/analyze-input-string.js",
   true
 );
 
@@ -100,6 +98,7 @@ const MAX_AUTOCOMPLETIONS = (exports.MAX_AUTOCOMPLETIONS = 1500);
 function JSPropertyProvider({
   dbgObject,
   environment,
+  frameActorId,
   inputValue,
   cursor,
   authorizedEvaluations = [],
@@ -135,7 +134,7 @@ function JSPropertyProvider({
   if (webconsoleActor && shouldInputBeEagerlyEvaluated(inputAnalysis)) {
     const eagerResponse = evalWithDebugger(
       mainExpression,
-      { eager: true, selectedNodeActor },
+      { eager: true, selectedNodeActor, frameActor: frameActorId },
       webconsoleActor
     );
 
@@ -554,14 +553,14 @@ function prepareReturnedObject({
     matches = wrapMatchesInQuotes(matches, elementAccessQuote);
   } else if (!isWorker) {
     // If we're not performing an element access, we need to check that the property
-    // are suited for a dot access. (Reflect.jsm is not available in worker context yet,
+    // are suited for a dot access. (reflect.sys.mjs is not available in worker context yet,
     // see Bug 1507181).
     for (const match of matches) {
       try {
         // In order to know if the property is suited for dot notation, we use Reflect
         // to parse an expression where we try to access the property with a dot. If it
         // throws, this means that we need to do an element access instead.
-        Reflect.parse(`({${match}: true})`);
+        lazy.Reflect.parse(`({${match}: true})`);
       } catch (e) {
         matches.delete(match);
       }
@@ -683,7 +682,7 @@ function getExactMatchImpl(obj, name, { chainIterator, getProperty }) {
 }
 
 var JSObjectSupport = {
-  chainIterator: function*(obj) {
+  *chainIterator(obj) {
     while (obj) {
       yield obj;
       try {
@@ -695,7 +694,7 @@ var JSObjectSupport = {
     }
   },
 
-  getProperties: function(obj) {
+  getProperties(obj) {
     try {
       return Object.getOwnPropertyNames(obj);
     } catch (error) {
@@ -704,17 +703,32 @@ var JSObjectSupport = {
     }
   },
 
-  getProperty: function() {
+  getProperty() {
     // getProperty is unsafe with raw JS objects.
     throw new Error("Unimplemented!");
   },
 };
 
 var DebuggerObjectSupport = {
-  chainIterator: function*(obj) {
+  *chainIterator(obj) {
     while (obj) {
       yield obj;
       try {
+        // There could be transparent security wrappers, unwrap to check if it's a proxy.
+        const unwrapped = DevToolsUtils.unwrap(obj);
+        if (unwrapped === undefined) {
+          // Objects belonging to an invisible-to-debugger compartment can't be unwrapped.
+          return;
+        }
+
+        if (unwrapped.isProxy) {
+          // Proxies might have a `getPrototypeOf` method, which is triggered by `obj.proto`,
+          // but this does not impact the actual prototype chain.
+          // In such case, we need to use the proxy target prototype.
+          // We retrieve proxyTarget from `obj` (and not `unwrapped`) to avoid exposing
+          // the unwrapped target.
+          obj = unwrapped.proxyTarget;
+        }
         obj = obj.proto;
       } catch (error) {
         // The above can throw e.g. for some proxy objects.
@@ -723,7 +737,7 @@ var DebuggerObjectSupport = {
     }
   },
 
-  getProperties: function(obj) {
+  getProperties(obj) {
     try {
       return obj.getOwnPropertyNames();
     } catch (error) {
@@ -732,21 +746,21 @@ var DebuggerObjectSupport = {
     }
   },
 
-  getProperty: function(obj, name, rootObj) {
+  getProperty(obj, name, rootObj) {
     // This is left unimplemented in favor to DevToolsUtils.getProperty().
     throw new Error("Unimplemented!");
   },
 };
 
 var DebuggerEnvironmentSupport = {
-  chainIterator: function*(obj) {
+  *chainIterator(obj) {
     while (obj) {
       yield obj;
       obj = obj.parent;
     }
   },
 
-  getProperties: function(obj) {
+  getProperties(obj) {
     const names = obj.names();
 
     // Include 'this' in results (in sorted order)
@@ -760,7 +774,7 @@ var DebuggerEnvironmentSupport = {
     return names;
   },
 
-  getProperty: function(obj, name) {
+  getProperty(obj, name) {
     let result;
     // Try/catch since name can be anything, and getVariable throws if
     // it's not a valid ECMAScript identifier name

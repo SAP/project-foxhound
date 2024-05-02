@@ -1,28 +1,23 @@
 /* eslint-disable mozilla/no-arbitrary-setTimeout */
 "use strict";
 
-const { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+const { setTimeout } = ChromeUtils.importESModule(
+  "resource://gre/modules/Timer.sys.mjs"
 );
-const { setTimeout } = ChromeUtils.import("resource://gre/modules/Timer.jsm");
 
-const { Subprocess } = ChromeUtils.import(
-  "resource://gre/modules/Subprocess.jsm"
+const { Subprocess } = ChromeUtils.importESModule(
+  "resource://gre/modules/Subprocess.sys.mjs"
 );
 
 const ProcessTools = Cc["@mozilla.org/processtools-service;1"].getService(
   Ci.nsIProcessToolsService
 );
 
-const env = Cc["@mozilla.org/process/environment;1"].getService(
-  Ci.nsIEnvironment
-);
-
 let PYTHON;
 
 // Find Python.
 add_task(async function setup() {
-  PYTHON = await Subprocess.pathSearch(env.get("PYTHON"));
+  PYTHON = await Subprocess.pathSearch(Services.env.get("PYTHON"));
 });
 
 // Ensure that killing a process... kills the process.

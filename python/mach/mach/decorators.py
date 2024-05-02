@@ -2,16 +2,15 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, unicode_literals
-
 import argparse
 import collections
 import collections.abc
-
 from typing import Optional
+
+from mozbuild.base import MachCommandBase
+
 from .base import MachError
 from .registrar import Registrar
-from mozbuild.base import MachCommandBase
 
 
 class _MachCommand(object):
@@ -178,6 +177,8 @@ class Command(object):
 
     For example:
 
+    .. code-block:: python
+
         @Command('foo', category='misc', description='Run the foo action')
         def foo(self, command_context):
             pass
@@ -224,9 +225,14 @@ class SubCommand(object):
         description=None,
         parser=None,
         metrics_path: Optional[str] = None,
+        virtualenv_name: Optional[str] = None,
     ):
         self._mach_command = _MachCommand(
-            name=command, subcommand=subcommand, description=description, parser=parser
+            name=command,
+            subcommand=subcommand,
+            description=description,
+            parser=parser,
+            virtualenv_name=virtualenv_name,
         )
         self._mach_command.decl_order = SubCommand.global_order
         SubCommand.global_order += 1
@@ -250,6 +256,8 @@ class CommandArgument(object):
     to the decorator are proxied to ArgumentParser.add_argument().
 
     For example:
+
+    .. code-block:: python
 
         @Command('foo', help='Run the foo action')
         @CommandArgument('-b', '--bar', action='store_true', default=False,
@@ -285,6 +293,8 @@ class CommandArgumentGroup(object):
     ArgumentParser.add_argument_group().
 
     For example:
+
+    .. code-block: python
 
         @Command('foo', helps='Run the foo action')
         @CommandArgumentGroup('group1')

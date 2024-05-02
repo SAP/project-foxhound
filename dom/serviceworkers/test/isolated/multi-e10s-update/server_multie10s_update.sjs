@@ -12,7 +12,7 @@ function setGlobalState(data, key) {
 
 function getGlobalState(key) {
   var data;
-  getObjectState(key, function(x) {
+  getObjectState(key, function (x) {
     data = x && x.wrappedJSObject.data;
   });
   return data;
@@ -80,7 +80,6 @@ function handleCountRequest(request, response) {
   response.write(JSON.stringify({ count }));
 }
 
-Components.utils.importGlobalProperties(["URLSearchParams"]);
 function handleRequest(request, response) {
   dump(
     "server_multie10s_update.sjs: processing request for " +

@@ -20,6 +20,7 @@
 #include "nsIPrefBranch.h"
 #include "nsIPrefService.h"
 #include "mozilla/dom/Document.h"
+#include "mozilla/gtest/MozAssertions.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/Unused.h"
 #include "mozilla/net/CookieJarSettings.h"
@@ -77,7 +78,7 @@ void SetACookieInternal(nsICookieService* aCookieService, const char* aSpec,
   nsresult rv0;
   nsCOMPtr<nsIScriptSecurityManager> ssm =
       do_GetService(NS_SCRIPTSECURITYMANAGER_CONTRACTID, &rv0);
-  ASSERT_TRUE(NS_SUCCEEDED(rv0));
+  ASSERT_NS_SUCCEEDED(rv0);
   nsCOMPtr<nsIPrincipal> specPrincipal;
   nsCString tmpString(aSpec);
   ssm->CreateContentPrincipalFromOrigin(tmpString,
@@ -89,8 +90,11 @@ void SetACookieInternal(nsICookieService* aCookieService, const char* aSpec,
                 nsIContentPolicy::TYPE_OTHER);
 
   nsCOMPtr<nsICookieJarSettings> cookieJarSettings =
-      aAllowed ? CookieJarSettings::Create(CookieJarSettings::eRegular)
-               : CookieJarSettings::GetBlockingAll();
+      aAllowed
+          ? CookieJarSettings::Create(CookieJarSettings::eRegular,
+                                      /* shouldResistFingerprinting */ false)
+          : CookieJarSettings::GetBlockingAll(
+                /* shouldResistFingerprinting */ false);
   MOZ_ASSERT(cookieJarSettings);
 
   nsCOMPtr<nsILoadInfo> loadInfo = dummyChannel->LoadInfo();
@@ -98,7 +102,7 @@ void SetACookieInternal(nsICookieService* aCookieService, const char* aSpec,
 
   nsresult rv = aCookieService->SetCookieStringFromHttp(
       uri, nsDependentCString(aCookieString), dummyChannel);
-  EXPECT_TRUE(NS_SUCCEEDED(rv));
+  EXPECT_NS_SUCCEEDED(rv);
 }
 
 void SetACookieJarBlocked(nsICookieService* aCookieService, const char* aSpec,
@@ -211,10 +215,10 @@ TEST(TestCookie, TestCookieMain)
 
   nsCOMPtr<nsICookieService> cookieService =
       do_GetService(kCookieServiceCID, &rv0);
-  ASSERT_TRUE(NS_SUCCEEDED(rv0));
+  ASSERT_NS_SUCCEEDED(rv0);
 
   nsCOMPtr<nsIPrefBranch> prefBranch = do_GetService(kPrefServiceCID, &rv0);
-  ASSERT_TRUE(NS_SUCCEEDED(rv0));
+  ASSERT_NS_SUCCEEDED(rv0);
 
   InitPrefs(prefBranch);
 
@@ -740,15 +744,10 @@ TEST(TestCookie, TestCookieMain)
   GetACookieNoHttp(cookieService, "http://www.security.test/", cookie);
   EXPECT_TRUE(CheckResult(cookie.get(), MUST_CONTAIN, "test=non-security2"));
 
-  Preferences::SetBool("network.cookie.sameSite.schemeful", true);
-  GetACookieNoHttp(cookieService, "http://www.security.test/", cookie);
-  EXPECT_FALSE(CheckResult(cookie.get(), MUST_CONTAIN, "test=security3"));
-  Preferences::SetBool("network.cookie.sameSite.schemeful", false);
-
   // *** nsICookieManager interface tests
   nsCOMPtr<nsICookieManager> cookieMgr =
       do_GetService(NS_COOKIEMANAGER_CONTRACTID, &rv0);
-  ASSERT_TRUE(NS_SUCCEEDED(rv0));
+  ASSERT_NS_SUCCEEDED(rv0);
 
   const nsCOMPtr<nsICookieManager>& cookieMgr2 = cookieMgr;
   ASSERT_TRUE(cookieMgr2);
@@ -756,7 +755,7 @@ TEST(TestCookie, TestCookieMain)
   mozilla::OriginAttributes attrs;
 
   // first, ensure a clean slate
-  EXPECT_TRUE(NS_SUCCEEDED(cookieMgr->RemoveAll()));
+  EXPECT_NS_SUCCEEDED(cookieMgr->RemoveAll());
   // add some cookies
   EXPECT_TRUE(NS_SUCCEEDED(cookieMgr2->AddNative("cookiemgr.test"_ns,  // domain
                                                  "/foo"_ns,            // path
@@ -793,7 +792,7 @@ TEST(TestCookie, TestCookieMain)
                                                  nsICookie::SCHEME_HTTPS)));
   // confirm using enumerator
   nsTArray<RefPtr<nsICookie>> cookies;
-  EXPECT_TRUE(NS_SUCCEEDED(cookieMgr->GetCookies(cookies)));
+  EXPECT_NS_SUCCEEDED(cookieMgr->GetCookies(cookies));
   nsCOMPtr<nsICookie> expiredCookie, newDomainCookie;
   for (const auto& cookie : cookies) {
     nsAutoCString name;
@@ -832,7 +831,7 @@ TEST(TestCookie, TestCookieMain)
       "cookiemgr.test"_ns, "/foo"_ns, "test2"_ns, &attrs, &found)));
   EXPECT_TRUE(found);
   // double-check RemoveAll() using the enumerator
-  EXPECT_TRUE(NS_SUCCEEDED(cookieMgr->RemoveAll()));
+  EXPECT_NS_SUCCEEDED(cookieMgr->RemoveAll());
   cookies.SetLength(0);
   EXPECT_TRUE(NS_SUCCEEDED(cookieMgr->GetCookies(cookies)) &&
               cookies.IsEmpty());
@@ -882,7 +881,7 @@ TEST(TestCookie, TestCookieMain)
 
   // *** SameSite attribute - parsing and cookie storage tests
   // Clear the cookies
-  EXPECT_TRUE(NS_SUCCEEDED(cookieMgr->RemoveAll()));
+  EXPECT_NS_SUCCEEDED(cookieMgr->RemoveAll());
 
   // None of these cookies will be set because using
   // CookieJarSettings::GetBlockingAll().
@@ -899,7 +898,7 @@ TEST(TestCookie, TestCookieMain)
                        "lax=yes; samesite=lax");
 
   cookies.SetLength(0);
-  EXPECT_TRUE(NS_SUCCEEDED(cookieMgr->GetCookies(cookies)));
+  EXPECT_NS_SUCCEEDED(cookieMgr->GetCookies(cookies));
 
   EXPECT_TRUE(cookies.IsEmpty());
 
@@ -921,7 +920,7 @@ TEST(TestCookie, TestCookieMain)
   SetACookie(cookieService, "http://samesite.test", "lax=yes; samesite=lax");
 
   cookies.SetLength(0);
-  EXPECT_TRUE(NS_SUCCEEDED(cookieMgr->GetCookies(cookies)));
+  EXPECT_NS_SUCCEEDED(cookieMgr->GetCookies(cookies));
 
   // check the cookies for the required samesite value
   for (const auto& cookie : cookies) {
@@ -948,7 +947,7 @@ TEST(TestCookie, TestCookieMain)
 
   // *** SameSite attribute
   // Clear the cookies
-  EXPECT_TRUE(NS_SUCCEEDED(cookieMgr->RemoveAll()));
+  EXPECT_NS_SUCCEEDED(cookieMgr->RemoveAll());
 
   // please note that the flag aForeign is always set to true using this test
   // setup because no nsIChannel is passed to SetCookieString(). therefore we
@@ -994,18 +993,18 @@ TEST(TestCookie, SameSiteLax)
 
   nsCOMPtr<nsICookieService> cookieService =
       do_GetService(kCookieServiceCID, &rv);
-  ASSERT_TRUE(NS_SUCCEEDED(rv));
+  ASSERT_NS_SUCCEEDED(rv);
 
   nsCOMPtr<nsICookieManager> cookieMgr =
       do_GetService(NS_COOKIEMANAGER_CONTRACTID, &rv);
-  ASSERT_TRUE(NS_SUCCEEDED(rv));
+  ASSERT_NS_SUCCEEDED(rv);
 
-  EXPECT_TRUE(NS_SUCCEEDED(cookieMgr->RemoveAll()));
+  EXPECT_NS_SUCCEEDED(cookieMgr->RemoveAll());
 
   SetACookie(cookieService, "http://samesite.test", "unset=yes");
 
   nsTArray<RefPtr<nsICookie>> cookies;
-  EXPECT_TRUE(NS_SUCCEEDED(cookieMgr->GetCookies(cookies)));
+  EXPECT_NS_SUCCEEDED(cookieMgr->GetCookies(cookies));
   EXPECT_EQ(cookies.Length(), (uint64_t)1);
 
   Cookie* cookie = static_cast<Cookie*>(cookies[0].get());
@@ -1015,21 +1014,21 @@ TEST(TestCookie, SameSiteLax)
   Preferences::SetCString("network.cookie.sameSite.laxByDefault.disabledHosts",
                           "foo.com,samesite.test,bar.net");
 
-  EXPECT_TRUE(NS_SUCCEEDED(cookieMgr->RemoveAll()));
+  EXPECT_NS_SUCCEEDED(cookieMgr->RemoveAll());
 
   cookies.SetLength(0);
-  EXPECT_TRUE(NS_SUCCEEDED(cookieMgr->GetCookies(cookies)));
+  EXPECT_NS_SUCCEEDED(cookieMgr->GetCookies(cookies));
   EXPECT_EQ(cookies.Length(), (uint64_t)0);
 
   SetACookie(cookieService, "http://samesite.test", "unset=yes");
 
   cookies.SetLength(0);
-  EXPECT_TRUE(NS_SUCCEEDED(cookieMgr->GetCookies(cookies)));
+  EXPECT_NS_SUCCEEDED(cookieMgr->GetCookies(cookies));
   EXPECT_EQ(cookies.Length(), (uint64_t)1);
 
   cookie = static_cast<Cookie*>(cookies[0].get());
   EXPECT_EQ(cookie->RawSameSite(), nsICookie::SAMESITE_NONE);
-  EXPECT_EQ(cookie->SameSite(), nsICookie::SAMESITE_NONE);
+  EXPECT_EQ(cookie->SameSite(), nsICookie::SAMESITE_LAX);
 }
 
 TEST(TestCookie, OnionSite)
@@ -1042,7 +1041,7 @@ TEST(TestCookie, OnionSite)
 
   nsCOMPtr<nsICookieService> cookieService =
       do_GetService(kCookieServiceCID, &rv);
-  ASSERT_TRUE(NS_SUCCEEDED(rv));
+  ASSERT_NS_SUCCEEDED(rv);
 
   // .onion secure cookie tests
   SetACookie(cookieService, "http://123456789abcdef.onion/",
@@ -1061,4 +1060,67 @@ TEST(TestCookie, OnionSite)
              "test=onion-security4");
   GetACookieNoHttp(cookieService, "http://123456789abcdef.onion/", cookie);
   EXPECT_TRUE(CheckResult(cookie.get(), MUST_EQUAL, "test=onion-security4"));
+}
+
+TEST(TestCookie, HiddenPrefix)
+{
+  nsresult rv;
+  nsCString cookie;
+
+  nsCOMPtr<nsICookieService> cookieService =
+      do_GetService(kCookieServiceCID, &rv);
+  ASSERT_NS_SUCCEEDED(rv);
+
+  SetACookie(cookieService, "http://hiddenprefix.test/", "=__Host-test=a");
+  GetACookie(cookieService, "http://hiddenprefix.test/", cookie);
+  EXPECT_TRUE(CheckResult(cookie.get(), MUST_BE_NULL));
+
+  SetACookie(cookieService, "http://hiddenprefix.test/", "=__Secure-test=a");
+  GetACookie(cookieService, "http://hiddenprefix.test/", cookie);
+  EXPECT_TRUE(CheckResult(cookie.get(), MUST_BE_NULL));
+
+  SetACookie(cookieService, "http://hiddenprefix.test/", "=__Host-check");
+  GetACookie(cookieService, "http://hiddenprefix.test/", cookie);
+  EXPECT_TRUE(CheckResult(cookie.get(), MUST_BE_NULL));
+
+  SetACookie(cookieService, "http://hiddenprefix.test/", "=__Secure-check");
+  GetACookie(cookieService, "http://hiddenprefix.test/", cookie);
+  EXPECT_TRUE(CheckResult(cookie.get(), MUST_BE_NULL));
+}
+
+TEST(TestCookie, BlockUnicode)
+{
+  Preferences::SetBool("network.cookie.blockUnicode", true);
+
+  nsresult rv;
+  nsCString cookie;
+
+  nsCOMPtr<nsICookieService> cookieService =
+      do_GetService(kCookieServiceCID, &rv);
+  ASSERT_NS_SUCCEEDED(rv);
+
+  SetACookie(cookieService, "http://unicode.com/", "name=🍪");
+  GetACookie(cookieService, "http://unicode.com/", cookie);
+  EXPECT_TRUE(CheckResult(cookie.get(), MUST_BE_NULL));
+
+  SetACookie(cookieService, "http://unicode.com/", "🍪=value");
+  GetACookie(cookieService, "http://unicode.com/", cookie);
+  EXPECT_TRUE(CheckResult(cookie.get(), MUST_BE_NULL));
+
+  Preferences::SetBool("network.cookie.blockUnicode", false);
+
+  SetACookie(cookieService, "http://unicode.com/", "name=🍪");
+  GetACookie(cookieService, "http://unicode.com/", cookie);
+  EXPECT_TRUE(CheckResult(cookie.get(), MUST_EQUAL, "name=🍪"));
+
+  nsCOMPtr<nsICookieManager> cookieMgr =
+      do_GetService(NS_COOKIEMANAGER_CONTRACTID);
+  EXPECT_NS_SUCCEEDED(cookieMgr->RemoveAll());
+
+  SetACookie(cookieService, "http://unicode.com/", "🍪=value");
+  GetACookie(cookieService, "http://unicode.com/", cookie);
+  EXPECT_TRUE(CheckResult(cookie.get(), MUST_EQUAL, "🍪=value"));
+
+  EXPECT_NS_SUCCEEDED(cookieMgr->RemoveAll());
+  Preferences::ClearUser("network.cookie.blockUnicode");
 }

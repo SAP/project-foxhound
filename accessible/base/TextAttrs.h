@@ -364,11 +364,11 @@ class TextAttrsMgr {
     TextDecorValue()
         : mColor{0},
           mLine{StyleTextDecorationLine::NONE},
-          mStyle{NS_STYLE_TEXT_DECORATION_STYLE_NONE} {}
+          mStyle{StyleTextDecorationStyle::None} {}
     explicit TextDecorValue(nsIFrame* aFrame);
 
     nscolor Color() const { return mColor; }
-    uint8_t Style() const { return mStyle; }
+    mozilla::StyleTextDecorationStyle Style() const { return mStyle; }
 
     bool IsDefined() const { return IsUnderline() || IsLineThrough(); }
     bool IsUnderline() const {
@@ -378,16 +378,18 @@ class TextAttrsMgr {
       return bool(mLine & mozilla::StyleTextDecorationLine::LINE_THROUGH);
     }
 
-    bool operator==(const TextDecorValue& aValue) {
+    bool operator==(const TextDecorValue& aValue) const {
       return mColor == aValue.mColor && mLine == aValue.mLine &&
              mStyle == aValue.mStyle;
     }
-    bool operator!=(const TextDecorValue& aValue) { return !(*this == aValue); }
+    bool operator!=(const TextDecorValue& aValue) const {
+      return !(*this == aValue);
+    }
 
    private:
     nscolor mColor;
     mozilla::StyleTextDecorationLine mLine;
-    uint8_t mStyle;
+    mozilla::StyleTextDecorationStyle mStyle;
   };
 
   class TextDecorTextAttr : public TTextAttr<TextDecorValue> {
@@ -407,27 +409,27 @@ class TextAttrsMgr {
    * Class is used for the work with "text-position" text attribute.
    */
 
-  enum TextPosValue {
-    eTextPosNone = 0,
-    eTextPosBaseline,
-    eTextPosSub,
-    eTextPosSuper
-  };
+  enum TextPosValue { eTextPosBaseline, eTextPosSub, eTextPosSuper };
 
-  class TextPosTextAttr : public TTextAttr<TextPosValue> {
+  class TextPosTextAttr : public TTextAttr<Maybe<TextPosValue>> {
    public:
-    TextPosTextAttr(nsIFrame* aRootFrame, nsIFrame* aFrame);
+    TextPosTextAttr(nsIFrame* aRootFrame, nsIFrame* aFrame,
+                    nsIContent* aRootElm, nsIContent* aElm);
     virtual ~TextPosTextAttr() {}
 
    protected:
     // TextAttr
     virtual bool GetValueFor(LocalAccessible* aAccessible,
-                             TextPosValue* aValue) override;
+                             Maybe<TextPosValue>* aValue) override;
     virtual void ExposeValue(AccAttributes* aAttributes,
-                             const TextPosValue& aValue) override;
+                             const Maybe<TextPosValue>& aValue) override;
 
    private:
-    TextPosValue GetTextPosValue(nsIFrame* aFrame) const;
+    Maybe<TextPosValue> GetAriaTextPosValue(nsIContent* aElm) const;
+    Maybe<TextPosValue> GetAriaTextPosValue(nsIContent* aElm,
+                                            nsIFrame*& ariaFrame) const;
+    Maybe<TextPosValue> GetLayoutTextPosValue(nsIFrame* aFrame) const;
+    nsIContent* mRootElm;
   };
 
 };  // TextAttrMgr

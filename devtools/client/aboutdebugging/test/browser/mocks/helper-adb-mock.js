@@ -17,7 +17,7 @@
 function enableAdbMock(mock) {
   const {
     setMockedModule,
-  } = require("devtools/shared/loader/browser-loader-mocks");
+  } = require("resource://devtools/shared/loader/browser-loader-mocks.js");
   setMockedModule(mock, "devtools/client/shared/remote-debugging/adb/adb");
 }
 /* exported enableAdbMock */
@@ -28,7 +28,7 @@ function enableAdbMock(mock) {
 function disableAdbMock() {
   const {
     removeMockedModule,
-  } = require("devtools/shared/loader/browser-loader-mocks");
+  } = require("resource://devtools/shared/loader/browser-loader-mocks.js");
   removeMockedModule("devtools/client/shared/remote-debugging/adb/adb");
 }
 /* exported disableAdbMock */
@@ -39,31 +39,31 @@ function disableAdbMock() {
  */
 function createAdbMock() {
   const adbMock = {};
-  adbMock.registerListener = function(listener) {
+  adbMock.registerListener = function (listener) {
     console.log("MOCKED METHOD registerListener");
   };
 
-  adbMock.getRuntimes = function() {
+  adbMock.getRuntimes = function () {
     console.log("MOCKED METHOD getRuntimes");
   };
 
-  adbMock.getDevices = function() {
+  adbMock.getDevices = function () {
     console.log("MOCKED METHOD getDevices");
   };
 
-  adbMock.updateRuntimes = function() {
+  adbMock.updateRuntimes = function () {
     console.log("MOCKED METHOD updateRuntimes");
   };
 
-  adbMock.unregisterListener = function(listener) {
+  adbMock.unregisterListener = function (listener) {
     console.log("MOCKED METHOD unregisterListener");
   };
 
-  adbMock.once = function() {
+  adbMock.once = function () {
     console.log("MOCKED METHOD once");
   };
 
-  adbMock.isProcessStarted = function() {
+  adbMock.isProcessStarted = function () {
     console.log("MOCKED METHOD isProcessStarted");
   };
 
@@ -81,11 +81,11 @@ function createAdbMock() {
  * so that the test can emit "runtime-list-updated" when needed.
  */
 function addObserverMock(adbMock) {
-  const EventEmitter = require("devtools/shared/event-emitter");
+  const EventEmitter = require("resource://devtools/shared/event-emitter.js");
 
   const observerMock = {};
   EventEmitter.decorate(observerMock);
-  adbMock.registerListener = function(listener) {
+  adbMock.registerListener = function (listener) {
     console.log("MOCKED METHOD registerListener with mock scanner");
     observerMock.on("runtime-list-updated", listener);
   };
@@ -100,7 +100,7 @@ function addObserverMock(adbMock) {
 /* exported addObserverMock */
 
 function createAdbProcessMock() {
-  const EventEmitter = require("devtools/shared/event-emitter");
+  const EventEmitter = require("resource://devtools/shared/event-emitter.js");
 
   const mock = {};
   EventEmitter.decorate(mock);
@@ -120,7 +120,7 @@ function createAdbProcessMock() {
 function enableAdbProcessMock(mock) {
   const {
     setMockedModule,
-  } = require("devtools/shared/loader/browser-loader-mocks");
+  } = require("resource://devtools/shared/loader/browser-loader-mocks.js");
   setMockedModule(
     mock,
     "devtools/client/shared/remote-debugging/adb/adb-process"
@@ -131,7 +131,7 @@ function enableAdbProcessMock(mock) {
 function disableAdbProcessMock() {
   const {
     removeMockedModule,
-  } = require("devtools/shared/loader/browser-loader-mocks");
+  } = require("resource://devtools/shared/loader/browser-loader-mocks.js");
   removeMockedModule("devtools/client/shared/remote-debugging/adb/adb-process");
 }
 /* exported disableAdbProcessMock */

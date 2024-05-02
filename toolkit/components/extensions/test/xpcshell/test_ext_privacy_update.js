@@ -2,11 +2,9 @@
 /* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "Preferences",
-  "resource://gre/modules/Preferences.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  Preferences: "resource://gre/modules/Preferences.sys.mjs",
+});
 
 const {
   createAppInfo,
@@ -53,17 +51,15 @@ add_task(async function test_privacy_update() {
       let settingData;
       switch (msg) {
         case "get":
-          settingData = await browser.privacy.network.networkPredictionEnabled.get(
-            {}
-          );
+          settingData =
+            await browser.privacy.network.networkPredictionEnabled.get({});
           browser.test.sendMessage("privacyData", settingData);
           break;
 
         case "set":
           await browser.privacy.network.networkPredictionEnabled.set(data);
-          settingData = await browser.privacy.network.networkPredictionEnabled.get(
-            {}
-          );
+          settingData =
+            await browser.privacy.network.networkPredictionEnabled.get({});
           browser.test.sendMessage("privacyData", settingData);
           break;
       }
@@ -94,7 +90,7 @@ add_task(async function test_privacy_update() {
   let webExtensionFile = createTempWebExtensionFile({
     manifest: {
       version: "2.0",
-      applications: {
+      browser_specific_settings: {
         gecko: {
           id: EXTENSION_ID,
         },
@@ -112,7 +108,7 @@ add_task(async function test_privacy_update() {
     useAddonManager: "permanent",
     manifest: {
       version: "1.0",
-      applications: {
+      browser_specific_settings: {
         gecko: {
           id: EXTENSION_ID,
           update_url: `http://localhost:${port}/test_update.json`,

@@ -570,10 +570,10 @@ SECMOD_GetDefaultModuleListLock
 SECMOD_GetInternalModule
 SECMOD_GetModuleSpecList
 SECMOD_GetReadLock
-SECMOD_HasRemovableSlots
 SECMOD_InternaltoPubMechFlags
 SECMOD_LoadModule
 SECMOD_LoadUserModule
+SECMOD_LockedModuleHasRemovableSlots
 SECMOD_OpenUserDB
 SECMOD_PubCipherFlagstoInternal
 SECMOD_PubMechFlagstoInternal
@@ -667,6 +667,7 @@ SSL_CipherPrefGet
 SSL_CipherPrefSet
 SSL_CipherPrefSetDefault
 SSL_ClearSessionCache
+SSL_ClientCertCallbackComplete
 SSL_ConfigSecureServer
 SSL_ConfigSecureServerWithCertChain
 SSL_ConfigServerCert

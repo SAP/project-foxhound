@@ -32,6 +32,7 @@
 #ifdef MOZ_BUNDLED_FONTS
 #  include "mozilla/Telemetry.h"
 #  include "nsDirectoryServiceDefs.h"
+#  include "mozilla/StaticPrefs_gfx.h"
 #endif
 
 #include <dlfcn.h>
@@ -47,115 +48,21 @@ using namespace mozilla::unicode;
 
 using mozilla::dom::SystemFontList;
 
-// cribbed from CTFontManager.h
-enum { kAutoActivationDisabled = 1 };
-typedef uint32_t AutoActivationSetting;
-
-// bug 567552 - disable auto-activation of fonts
-
-static void DisableFontActivation() {
-  // get the main bundle identifier
-  CFBundleRef mainBundle = ::CFBundleGetMainBundle();
-  CFStringRef mainBundleID = nullptr;
-
-  if (mainBundle) {
-    mainBundleID = ::CFBundleGetIdentifier(mainBundle);
-  }
-
-  // bug 969388 and bug 922590 - mainBundlID as null is sometimes problematic
-  if (!mainBundleID) {
-    NS_WARNING("missing bundle ID, packaging set up incorrectly");
-    return;
-  }
-
-  // if possible, fetch CTFontManagerSetAutoActivationSetting
-  void (*CTFontManagerSetAutoActivationSettingPtr)(CFStringRef,
-                                                   AutoActivationSetting);
-  CTFontManagerSetAutoActivationSettingPtr =
-      (void (*)(CFStringRef, AutoActivationSetting))dlsym(
-          RTLD_DEFAULT, "CTFontManagerSetAutoActivationSetting");
-
-  // bug 567552 - disable auto-activation of fonts
-  if (CTFontManagerSetAutoActivationSettingPtr) {
-    CTFontManagerSetAutoActivationSettingPtr(mainBundleID,
-                                             kAutoActivationDisabled);
-  }
-}
-
-// Helpers for gfxPlatformMac::RegisterSupplementalFonts below.
-static void ActivateFontsFromDir(const nsACString& aDir) {
-  AutoCFRelease<CFURLRef> directory = CFURLCreateFromFileSystemRepresentation(
-      kCFAllocatorDefault, (const UInt8*)nsPromiseFlatCString(aDir).get(),
-      aDir.Length(), true);
-  if (!directory) {
-    return;
-  }
-  AutoCFRelease<CFURLEnumeratorRef> enumerator =
-      CFURLEnumeratorCreateForDirectoryURL(kCFAllocatorDefault, directory,
-                                           kCFURLEnumeratorDefaultBehavior,
-                                           nullptr);
-  if (!enumerator) {
-    return;
-  }
-  AutoCFRelease<CFMutableArrayRef> urls =
-      ::CFArrayCreateMutable(kCFAllocatorDefault, 0, &kCFTypeArrayCallBacks);
-  if (!urls) {
-    return;
-  }
-
-  CFURLRef url;
-  CFURLEnumeratorResult result;
-  do {
-    result = CFURLEnumeratorGetNextURL(enumerator, &url, nullptr);
-    if (result == kCFURLEnumeratorSuccess) {
-      CFArrayAppendValue(urls, url);
-    }
-  } while (result != kCFURLEnumeratorEnd);
-
-  CTFontManagerRegisterFontsForURLs(urls, kCTFontManagerScopeProcess, nullptr);
-}
-
-#ifdef MOZ_BUNDLED_FONTS
-static void ActivateBundledFonts() {
-  nsCOMPtr<nsIFile> localDir;
-  if (NS_FAILED(NS_GetSpecialDirectory(NS_GRE_DIR, getter_AddRefs(localDir)))) {
-    return;
-  }
-  if (NS_FAILED(localDir->Append(u"fonts"_ns))) {
-    return;
-  }
-  nsAutoCString path;
-  if (NS_FAILED(localDir->GetNativePath(path))) {
-    return;
-  }
-  ActivateFontsFromDir(path);
-}
-#endif
-
 // A bunch of fonts for "additional language support" are shipped in a
 // "Language Support" directory, and don't show up in the standard font
 // list returned by CTFontManagerCopyAvailableFontFamilyNames unless
 // we explicitly activate them.
-//
-// On macOS Big Sur, the various Noto fonts etc have moved to a new location
-// under /System/Fonts. Whether they're exposed in the font list by default
-// depends on the SDK used; when built with SDK 10.15, they're absent. So
-// we explicitly activate them to be sure they'll be available.
-#if __MAC_OS_X_VERSION_MAX_ALLOWED < 101500
-static const nsLiteralCString kLangFontsDirs[] = {
-    "/Library/Application Support/Apple/Fonts/Language Support"_ns};
-#else
 static const nsLiteralCString kLangFontsDirs[] = {
     "/Library/Application Support/Apple/Fonts/Language Support"_ns,
     "/System/Library/Fonts/Supplemental"_ns};
-#endif
 
-static void FontRegistrationCallback(void* aUnused) {
+/* static */
+void gfxPlatformMac::FontRegistrationCallback(void* aUnused) {
   AUTO_PROFILER_REGISTER_THREAD("RegisterFonts");
   PR_SetCurrentThreadName("RegisterFonts");
 
   for (const auto& dir : kLangFontsDirs) {
-    ActivateFontsFromDir(dir);
+    gfxMacPlatformFontList::ActivateFontsFromDir(dir);
   }
 }
 
@@ -167,23 +74,12 @@ PRThread* gfxPlatformMac::sFontRegistrationThread = nullptr;
    our font list. */
 /* static */
 void gfxPlatformMac::RegisterSupplementalFonts() {
-  if (XRE_IsParentProcess()) {
+  if (XRE_GetProcessType() == GeckoProcessType_Default) {
+    // We activate the fonts on a separate thread, to minimize the startup-
+    // time cost.
     sFontRegistrationThread = PR_CreateThread(
         PR_USER_THREAD, FontRegistrationCallback, nullptr, PR_PRIORITY_NORMAL,
         PR_GLOBAL_THREAD, PR_JOINABLE_THREAD, 0);
-  } else if (!nsCocoaFeatures::OnCatalinaOrLater()) {
-    // On Catalina+, it appears to be sufficient to activate fonts in the
-    // parent process; they are then also usable in child processes. But on
-    // pre-Catalina systems we need to explicitly activate them in each child
-    // process (per bug 1704273).
-    //
-    // But at least on 10.14 (Mojave), doing font registration on a separate
-    // thread in the content process seems crashy (bug 1708821), despite the
-    // CTFontManager.h header claiming that it's thread-safe. So we just do it
-    // immediately on the main thread, and accept the startup-time hit (sigh).
-    for (const auto& dir : kLangFontsDirs) {
-      ActivateFontsFromDir(dir);
-    }
   }
 }
 
@@ -192,34 +88,13 @@ void gfxPlatformMac::WaitForFontRegistration() {
   if (sFontRegistrationThread) {
     PR_JoinThread(sFontRegistrationThread);
     sFontRegistrationThread = nullptr;
-
-#ifdef MOZ_BUNDLED_FONTS
-    // This is not done by the font registration thread because it uses the
-    // XPCOM directory service, which is not yet available at the time we start
-    // the registration thread.
-    //
-    // We activate bundled fonts if the pref is > 0 (on) or < 0 (auto), only an
-    // explicit value of 0 (off) will disable them.
-    if (StaticPrefs::gfx_bundled_fonts_activate_AtStartup() != 0) {
-      TimeStamp start = TimeStamp::Now();
-      ActivateBundledFonts();
-      TimeStamp end = TimeStamp::Now();
-      Telemetry::Accumulate(Telemetry::FONTLIST_BUNDLEDFONTS_ACTIVATE,
-                            (end - start).ToMilliseconds());
-    }
-#endif
   }
 }
 
 gfxPlatformMac::gfxPlatformMac() {
-  DisableFontActivation();
   mFontAntiAliasingThreshold = ReadAntiAliasingThreshold();
 
   InitBackendPrefs(GetBackendPrefs());
-
-  if (nsCocoaFeatures::OnHighSierraOrLater()) {
-    mHasNativeColrFontSupport = true;
-  }
 }
 
 gfxPlatformMac::~gfxPlatformMac() { gfxCoreTextShaper::Shutdown(); }
@@ -251,20 +126,6 @@ already_AddRefed<gfxASurface> gfxPlatformMac::CreateOffscreenSurface(
 
   RefPtr<gfxASurface> newSurface = new gfxQuartzSurface(aSize, aFormat);
   return newSurface.forget();
-}
-
-bool gfxPlatformMac::IsFontFormatSupported(uint32_t aFormatFlags) {
-  if (gfxPlatform::IsFontFormatSupported(aFormatFlags)) {
-    return true;
-  }
-
-  // If the generic method rejected the format hint, then check for any
-  // platform-specific format we know about.
-  if (aFormatFlags & gfxUserFontSet::FLAG_FORMAT_TRUETYPE_AAT) {
-    return true;
-  }
-
-  return false;
 }
 
 void gfxPlatformMac::GetCommonFallbackFonts(uint32_t aCh, Script aRunScript,
@@ -774,6 +635,8 @@ void gfxPlatformMac::GetCommonFallbackFonts(uint32_t aCh, Script aRunScript,
     case Script::TANGSA:
     case Script::TOTO:
     case Script::VITHKUQI:
+    case Script::KAWI:
+    case Script::NAG_MUNDARI:
       break;
   }
 
@@ -805,8 +668,8 @@ void gfxPlatformMac::GetCommonFallbackFonts(uint32_t aCh, Script aRunScript,
 void gfxPlatformMac::LookupSystemFont(
     mozilla::LookAndFeel::FontID aSystemFontID, nsACString& aSystemFontName,
     gfxFontStyle& aFontStyle) {
-  gfxMacPlatformFontList* pfl = gfxMacPlatformFontList::PlatformFontList();
-  return pfl->LookupSystemFont(aSystemFontID, aSystemFontName, aFontStyle);
+  return gfxMacPlatformFontList::LookupSystemFont(aSystemFontID,
+                                                  aSystemFontName, aFontStyle);
 }
 
 uint32_t gfxPlatformMac::ReadAntiAliasingThreshold() {
@@ -846,208 +709,197 @@ static CVReturn VsyncCallback(CVDisplayLinkRef aDisplayLink,
 
 class OSXVsyncSource final : public VsyncSource {
  public:
-  OSXVsyncSource() : mGlobalDisplay(new OSXDisplay()) {}
-
-  Display& GetGlobalDisplay() override { return *mGlobalDisplay; }
-
-  class OSXDisplay final : public VsyncSource::Display {
-   public:
-    OSXDisplay()
-        : mDisplayLink(nullptr, "OSXVsyncSource::OSXDisplay::mDisplayLink") {
-      MOZ_ASSERT(NS_IsMainThread());
-      mTimer = NS_NewTimer();
-      CGDisplayRegisterReconfigurationCallback(DisplayReconfigurationCallback,
-                                               this);
-    }
-
-    virtual ~OSXDisplay() {
-      MOZ_ASSERT(NS_IsMainThread());
-      CGDisplayRemoveReconfigurationCallback(DisplayReconfigurationCallback,
+  OSXVsyncSource()
+      : mDisplayLink(nullptr, "OSXVsyncSource::OSXDisplay::mDisplayLink") {
+    MOZ_ASSERT(NS_IsMainThread());
+    mTimer = NS_NewTimer();
+    CGDisplayRegisterReconfigurationCallback(DisplayReconfigurationCallback,
                                              this);
+  }
+
+  virtual ~OSXVsyncSource() {
+    MOZ_ASSERT(NS_IsMainThread());
+    CGDisplayRemoveReconfigurationCallback(DisplayReconfigurationCallback,
+                                           this);
+  }
+
+  static void RetryEnableVsync(nsITimer* aTimer, void* aOsxVsyncSource) {
+    MOZ_ASSERT(NS_IsMainThread());
+    OSXVsyncSource* osxVsyncSource =
+        static_cast<OSXVsyncSource*>(aOsxVsyncSource);
+    MOZ_ASSERT(osxVsyncSource);
+    osxVsyncSource->EnableVsync();
+  }
+
+  void EnableVsync() override {
+    MOZ_ASSERT(NS_IsMainThread());
+    if (IsVsyncEnabled()) {
+      return;
     }
 
-    static void RetryEnableVsync(nsITimer* aTimer, void* aOsxDisplay) {
-      MOZ_ASSERT(NS_IsMainThread());
-      OSXDisplay* osxDisplay = static_cast<OSXDisplay*>(aOsxDisplay);
-      MOZ_ASSERT(osxDisplay);
-      osxDisplay->EnableVsync();
+    auto displayLink = mDisplayLink.Lock();
+
+    // Create a display link capable of being used with all active displays
+    // TODO: See if we need to create an active DisplayLink for each monitor
+    // in multi-monitor situations. According to the docs, it is compatible
+    // with all displays running on the computer But if we have different
+    // monitors at different display rates, we may hit issues.
+    CVReturn retval = CVDisplayLinkCreateWithActiveCGDisplays(&*displayLink);
+
+    // Workaround for bug 1201401: CVDisplayLinkCreateWithCGDisplays()
+    // (called by CVDisplayLinkCreateWithActiveCGDisplays()) sometimes
+    // creates a CVDisplayLinkRef with an uninitialized (nulled) internal
+    // pointer. If we continue to use this CVDisplayLinkRef, we will
+    // eventually crash in CVCGDisplayLink::getDisplayTimes(), where the
+    // internal pointer is dereferenced. Fortunately, when this happens
+    // another internal variable is also left uninitialized (zeroed),
+    // which is accessible via CVDisplayLinkGetCurrentCGDisplay(). In
+    // normal conditions the current display is never zero.
+    if ((retval == kCVReturnSuccess) &&
+        (CVDisplayLinkGetCurrentCGDisplay(*displayLink) == 0)) {
+      retval = kCVReturnInvalidDisplay;
     }
 
-    void EnableVsync() override {
-      MOZ_ASSERT(NS_IsMainThread());
-      if (IsVsyncEnabled()) {
-        return;
-      }
+    if (retval != kCVReturnSuccess) {
+      NS_WARNING(
+          "Could not create a display link with all active displays. "
+          "Retrying");
+      CVDisplayLinkRelease(*displayLink);
+      *displayLink = nullptr;
 
-      auto displayLink = mDisplayLink.Lock();
-
-      // Create a display link capable of being used with all active displays
-      // TODO: See if we need to create an active DisplayLink for each monitor
-      // in multi-monitor situations. According to the docs, it is compatible
-      // with all displays running on the computer But if we have different
-      // monitors at different display rates, we may hit issues.
-      CVReturn retval = CVDisplayLinkCreateWithActiveCGDisplays(&*displayLink);
-
-      // Workaround for bug 1201401: CVDisplayLinkCreateWithCGDisplays()
-      // (called by CVDisplayLinkCreateWithActiveCGDisplays()) sometimes
-      // creates a CVDisplayLinkRef with an uninitialized (nulled) internal
-      // pointer. If we continue to use this CVDisplayLinkRef, we will
-      // eventually crash in CVCGDisplayLink::getDisplayTimes(), where the
-      // internal pointer is dereferenced. Fortunately, when this happens
-      // another internal variable is also left uninitialized (zeroed),
-      // which is accessible via CVDisplayLinkGetCurrentCGDisplay(). In
-      // normal conditions the current display is never zero.
-      if ((retval == kCVReturnSuccess) &&
-          (CVDisplayLinkGetCurrentCGDisplay(*displayLink) == 0)) {
-        retval = kCVReturnInvalidDisplay;
-      }
-
-      if (retval != kCVReturnSuccess) {
-        NS_WARNING(
-            "Could not create a display link with all active displays. "
-            "Retrying");
-        CVDisplayLinkRelease(*displayLink);
-        *displayLink = nullptr;
-
-        // bug 1142708 - When coming back from sleep,
-        // or when changing displays, active displays may not be ready yet,
-        // even if listening for the kIOMessageSystemHasPoweredOn event
-        // from OS X sleep notifications.
-        // Active displays are those that are drawable.
-        // bug 1144638 - When changing display configurations and getting
-        // notifications from CGDisplayReconfigurationCallBack, the
-        // callback gets called twice for each active display
-        // so it's difficult to know when all displays are active.
-        // Instead, try again soon. The delay is arbitrary. 100ms chosen
-        // because on a late 2013 15" retina, it takes about that
-        // long to come back up from sleep.
-        uint32_t delay = 100;
-        mTimer->InitWithNamedFuncCallback(RetryEnableVsync, this, delay,
-                                          nsITimer::TYPE_ONE_SHOT,
-                                          "RetryEnableVsync");
-        return;
-      }
-
-      if (CVDisplayLinkSetOutputCallback(*displayLink, &VsyncCallback, this) !=
-          kCVReturnSuccess) {
-        NS_WARNING("Could not set displaylink output callback");
-        CVDisplayLinkRelease(*displayLink);
-        *displayLink = nullptr;
-        return;
-      }
-
-      mPreviousTimestamp = TimeStamp::Now();
-      if (CVDisplayLinkStart(*displayLink) != kCVReturnSuccess) {
-        NS_WARNING("Could not activate the display link");
-        CVDisplayLinkRelease(*displayLink);
-        *displayLink = nullptr;
-      }
-
-      CVTime vsyncRate =
-          CVDisplayLinkGetNominalOutputVideoRefreshPeriod(*displayLink);
-      if (vsyncRate.flags & kCVTimeIsIndefinite) {
-        NS_WARNING("Could not get vsync rate, setting to 60.");
-        mVsyncRate = TimeDuration::FromMilliseconds(1000.0 / 60.0);
-      } else {
-        int64_t timeValue = vsyncRate.timeValue;
-        int64_t timeScale = vsyncRate.timeScale;
-        const int milliseconds = 1000;
-        float rateInMs = ((double)timeValue / (double)timeScale) * milliseconds;
-        mVsyncRate = TimeDuration::FromMilliseconds(rateInMs);
-      }
+      // bug 1142708 - When coming back from sleep,
+      // or when changing displays, active displays may not be ready yet,
+      // even if listening for the kIOMessageSystemHasPoweredOn event
+      // from OS X sleep notifications.
+      // Active displays are those that are drawable.
+      // bug 1144638 - When changing display configurations and getting
+      // notifications from CGDisplayReconfigurationCallBack, the
+      // callback gets called twice for each active display
+      // so it's difficult to know when all displays are active.
+      // Instead, try again soon. The delay is arbitrary. 100ms chosen
+      // because on a late 2013 15" retina, it takes about that
+      // long to come back up from sleep.
+      uint32_t delay = 100;
+      mTimer->InitWithNamedFuncCallback(RetryEnableVsync, this, delay,
+                                        nsITimer::TYPE_ONE_SHOT,
+                                        "RetryEnableVsync");
+      return;
     }
 
-    void DisableVsync() override {
-      MOZ_ASSERT(NS_IsMainThread());
-      if (!IsVsyncEnabled()) {
-        return;
-      }
-
-      // Release the display link
-      auto displayLink = mDisplayLink.Lock();
-      if (*displayLink) {
-        CVDisplayLinkRelease(*displayLink);
-        *displayLink = nullptr;
-      }
+    if (CVDisplayLinkSetOutputCallback(*displayLink, &VsyncCallback, this) !=
+        kCVReturnSuccess) {
+      NS_WARNING("Could not set displaylink output callback");
+      CVDisplayLinkRelease(*displayLink);
+      *displayLink = nullptr;
+      return;
     }
 
-    bool IsVsyncEnabled() override {
-      MOZ_ASSERT(NS_IsMainThread());
-      auto displayLink = mDisplayLink.Lock();
-      return *displayLink != nullptr;
+    mPreviousTimestamp = TimeStamp::Now();
+    if (CVDisplayLinkStart(*displayLink) != kCVReturnSuccess) {
+      NS_WARNING("Could not activate the display link");
+      CVDisplayLinkRelease(*displayLink);
+      *displayLink = nullptr;
     }
 
-    TimeDuration GetVsyncRate() override { return mVsyncRate; }
+    CVTime vsyncRate =
+        CVDisplayLinkGetNominalOutputVideoRefreshPeriod(*displayLink);
+    if (vsyncRate.flags & kCVTimeIsIndefinite) {
+      NS_WARNING("Could not get vsync rate, setting to 60.");
+      mVsyncRate = TimeDuration::FromMilliseconds(1000.0 / 60.0);
+    } else {
+      int64_t timeValue = vsyncRate.timeValue;
+      int64_t timeScale = vsyncRate.timeScale;
+      const int milliseconds = 1000;
+      float rateInMs = ((double)timeValue / (double)timeScale) * milliseconds;
+      mVsyncRate = TimeDuration::FromMilliseconds(rateInMs);
+    }
+  }
 
-    void Shutdown() override {
-      MOZ_ASSERT(NS_IsMainThread());
-      mTimer->Cancel();
-      mTimer = nullptr;
-      DisableVsync();
+  void DisableVsync() override {
+    MOZ_ASSERT(NS_IsMainThread());
+    if (!IsVsyncEnabled()) {
+      return;
     }
 
-    // The vsync timestamps given by the CVDisplayLinkCallback are
-    // in the future for the NEXT frame. Large parts of Gecko, such
-    // as animations assume a timestamp at either now or in the past.
-    // Normalize the timestamps given to the VsyncDispatchers to the vsync
-    // that just occured, not the vsync that is upcoming.
-    TimeStamp mPreviousTimestamp;
-
-   private:
-    static void DisplayReconfigurationCallback(
-        CGDirectDisplayID aDisplay, CGDisplayChangeSummaryFlags aFlags,
-        void* aUserInfo) {
-      static_cast<OSXDisplay*>(aUserInfo)->OnDisplayReconfiguration(aDisplay,
-                                                                    aFlags);
+    // Release the display link
+    auto displayLink = mDisplayLink.Lock();
+    if (*displayLink) {
+      CVDisplayLinkRelease(*displayLink);
+      *displayLink = nullptr;
     }
+  }
 
-    void OnDisplayReconfiguration(CGDirectDisplayID aDisplay,
-                                  CGDisplayChangeSummaryFlags aFlags) {
-      // Display reconfiguration notifications are fired in two phases: Before
-      // the reconfiguration and after the reconfiguration.
-      // All displays are notified before (with a "BeginConfiguration" flag),
-      // and the reconfigured displays are notified again after the
-      // configuration.
-      if (aFlags & kCGDisplayBeginConfigurationFlag) {
-        // We're only interested in the "after" notification, for the display
-        // link's current display.
-        return;
-      }
+  bool IsVsyncEnabled() override {
+    MOZ_ASSERT(NS_IsMainThread());
+    auto displayLink = mDisplayLink.Lock();
+    return *displayLink != nullptr;
+  }
 
-      if (!NS_IsMainThread()) {
-        return;
-      }
+  TimeDuration GetVsyncRate() override { return mVsyncRate; }
 
-      bool didReconfigureCurrentDisplayLinkDisplay = false;
-      {  // scope for lock
-        auto displayLink = mDisplayLink.Lock();
-        didReconfigureCurrentDisplayLinkDisplay =
-            *displayLink &&
-            CVDisplayLinkGetCurrentCGDisplay(*displayLink) == aDisplay;
-      }
+  void Shutdown() override {
+    MOZ_ASSERT(NS_IsMainThread());
+    mTimer->Cancel();
+    mTimer = nullptr;
+    DisableVsync();
+  }
 
-      if (didReconfigureCurrentDisplayLinkDisplay) {
-        // The link's current display has been reconfigured.
-        // Recreate the display link, because otherwise it may be stuck with a
-        // "removed" display forever and never notify us again.
-        DisableVsync();
-        EnableVsync();
-      }
-    }
-
-    // Accessed from main thread and from display reconfiguration callback
-    // thread... which also happens to be the main thread.
-    DataMutex<CVDisplayLinkRef> mDisplayLink;
-
-    // Accessed only from the main thread.
-    RefPtr<nsITimer> mTimer;
-    TimeDuration mVsyncRate;
-  };  // OSXDisplay
+  // The vsync timestamps given by the CVDisplayLinkCallback are
+  // in the future for the NEXT frame. Large parts of Gecko, such
+  // as animations assume a timestamp at either now or in the past.
+  // Normalize the timestamps given to the VsyncDispatchers to the vsync
+  // that just occured, not the vsync that is upcoming.
+  TimeStamp mPreviousTimestamp;
 
  private:
-  virtual ~OSXVsyncSource() = default;
+  static void DisplayReconfigurationCallback(CGDirectDisplayID aDisplay,
+                                             CGDisplayChangeSummaryFlags aFlags,
+                                             void* aUserInfo) {
+    static_cast<OSXVsyncSource*>(aUserInfo)->OnDisplayReconfiguration(aDisplay,
+                                                                      aFlags);
+  }
 
-  RefPtr<OSXDisplay> mGlobalDisplay;
+  void OnDisplayReconfiguration(CGDirectDisplayID aDisplay,
+                                CGDisplayChangeSummaryFlags aFlags) {
+    // Display reconfiguration notifications are fired in two phases: Before
+    // the reconfiguration and after the reconfiguration.
+    // All displays are notified before (with a "BeginConfiguration" flag),
+    // and the reconfigured displays are notified again after the
+    // configuration.
+    if (aFlags & kCGDisplayBeginConfigurationFlag) {
+      // We're only interested in the "after" notification, for the display
+      // link's current display.
+      return;
+    }
+
+    if (!NS_IsMainThread()) {
+      return;
+    }
+
+    bool didReconfigureCurrentDisplayLinkDisplay = false;
+    {  // scope for lock
+      auto displayLink = mDisplayLink.Lock();
+      didReconfigureCurrentDisplayLinkDisplay =
+          *displayLink &&
+          CVDisplayLinkGetCurrentCGDisplay(*displayLink) == aDisplay;
+    }
+
+    if (didReconfigureCurrentDisplayLinkDisplay) {
+      // The link's current display has been reconfigured.
+      // Recreate the display link, because otherwise it may be stuck with a
+      // "removed" display forever and never notify us again.
+      DisableVsync();
+      EnableVsync();
+    }
+  }
+
+  // Accessed from main thread and from display reconfiguration callback
+  // thread... which also happens to be the main thread.
+  DataMutex<CVDisplayLinkRef> mDisplayLink;
+
+  // Accessed only from the main thread.
+  RefPtr<nsITimer> mTimer;
+  TimeDuration mVsyncRate;
 };  // OSXVsyncSource
 
 static CVReturn VsyncCallback(CVDisplayLinkRef aDisplayLink,
@@ -1056,13 +908,12 @@ static CVReturn VsyncCallback(CVDisplayLinkRef aDisplayLink,
                               CVOptionFlags aFlagsIn, CVOptionFlags* aFlagsOut,
                               void* aDisplayLinkContext) {
   // Executed on OS X hardware vsync thread
-  OSXVsyncSource::OSXDisplay* display =
-      (OSXVsyncSource::OSXDisplay*)aDisplayLinkContext;
+  OSXVsyncSource* vsyncSource = (OSXVsyncSource*)aDisplayLinkContext;
 
   mozilla::TimeStamp outputTime =
       mozilla::TimeStamp::FromSystemTime(aOutputTime->hostTime);
   mozilla::TimeStamp nextVsync = outputTime;
-  mozilla::TimeStamp previousVsync = display->mPreviousTimestamp;
+  mozilla::TimeStamp previousVsync = vsyncSource->mPreviousTimestamp;
   mozilla::TimeStamp now = TimeStamp::Now();
 
   // Snow leopard sometimes sends vsync timestamps very far in the past.
@@ -1074,29 +925,47 @@ static CVReturn VsyncCallback(CVDisplayLinkRef aDisplayLink,
     // Bug 1158321 - The VsyncCallback can sometimes execute before the reported
     // vsync time. In those cases, normalize the timestamp to Now() as sending
     // timestamps in the future has undefined behavior. See the comment above
-    // OSXDisplay::mPreviousTimestamp
+    // OSXVsyncSource::mPreviousTimestamp
     previousVsync = now;
   }
 
-  display->mPreviousTimestamp = nextVsync;
+  vsyncSource->mPreviousTimestamp = nextVsync;
 
-  display->NotifyVsync(previousVsync, outputTime);
+  vsyncSource->NotifyVsync(previousVsync, outputTime);
   return kCVReturnSuccess;
 }
 
 already_AddRefed<mozilla::gfx::VsyncSource>
-gfxPlatformMac::CreateHardwareVsyncSource() {
+gfxPlatformMac::CreateGlobalHardwareVsyncSource() {
   RefPtr<VsyncSource> osxVsyncSource = new OSXVsyncSource();
-  VsyncSource::Display& primaryDisplay = osxVsyncSource->GetGlobalDisplay();
-  primaryDisplay.EnableVsync();
-  if (!primaryDisplay.IsVsyncEnabled()) {
+  osxVsyncSource->EnableVsync();
+  if (!osxVsyncSource->IsVsyncEnabled()) {
     NS_WARNING(
         "OS X Vsync source not enabled. Falling back to software vsync.");
-    return gfxPlatform::CreateHardwareVsyncSource();
+    return GetSoftwareVsyncSource();
   }
 
-  primaryDisplay.DisableVsync();
+  osxVsyncSource->DisableVsync();
   return osxVsyncSource.forget();
+}
+
+bool gfxPlatformMac::SupportsHDR() {
+  // HDR has 3 requirements:
+  // 1) high peak brightness
+  // 2) high contrast ratio
+  // 3) color depth > 24
+  if (GetScreenDepth() <= 24) {
+    return false;
+  }
+
+  // Screen is capable. Is the OS capable?
+#ifdef EARLY_BETA_OR_EARLIER
+  // More-or-less supported in Catalina.
+  return true;
+#else
+  // Definitely supported in Big Sur.
+  return nsCocoaFeatures::OnBigSurOrLater();
+#endif
 }
 
 nsTArray<uint8_t> gfxPlatformMac::GetPlatformCMSOutputProfileData() {
@@ -1135,13 +1004,7 @@ nsTArray<uint8_t> gfxPlatformMac::GetPlatformCMSOutputProfileData() {
   return result;
 }
 
-bool gfxPlatformMac::CheckVariationFontSupport() {
-  // We don't allow variation fonts to be enabled before 10.13,
-  // as although the Core Text APIs existed, they are known to be
-  // fairly buggy.
-  // (Note that Safari also requires 10.13 for variation-font support.)
-  return nsCocoaFeatures::OnHighSierraOrLater();
-}
+bool gfxPlatformMac::CheckVariationFontSupport() { return true; }
 
 void gfxPlatformMac::InitPlatformGPUProcessPrefs() {
   FeatureState& gpuProc = gfxConfig::GetFeature(Feature::GPU_PROCESS);

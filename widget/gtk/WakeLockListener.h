@@ -12,7 +12,7 @@
 
 #include "mozilla/StaticPtr.h"
 #include "nsHashKeys.h"
-#include "nsClassHashtable.h"
+#include "nsRefPtrHashtable.h"
 
 #include "nsIDOMWakeLockListener.h"
 
@@ -37,19 +37,13 @@ class WakeLockListener final : public nsIDOMMozWakeLockListener {
                             const nsAString& state) override;
 
  private:
-  WakeLockListener();
   ~WakeLockListener() = default;
-
-  bool EnsureDBusConnection();
 
   static mozilla::StaticRefPtr<WakeLockListener> sSingleton;
 
-#ifdef MOZ_ENABLE_DBUS
-  RefPtr<DBusConnection> mConnection;
-#endif
   // Map of topic names to |WakeLockTopic|s.
   // We assume a small, finite-sized set of topics.
-  nsClassHashtable<nsStringHashKey, WakeLockTopic> mTopics;
+  nsRefPtrHashtable<nsStringHashKey, WakeLockTopic> mTopics;
 };
 
 #endif  // __WakeLockListener_h__

@@ -19,6 +19,8 @@
 #ifndef MODULES_AUDIO_CODING_CODECS_ILBC_MAIN_SOURCE_UNPACK_BITS_H_
 #define MODULES_AUDIO_CODING_CODECS_ILBC_MAIN_SOURCE_UNPACK_BITS_H_
 
+#include <stdint.h>
+
 #include "modules/audio_coding/codecs/ilbc/defines.h"
 
 /*----------------------------------------------------------------*
@@ -32,6 +34,6 @@ WebRtcIlbcfix_UnpackBits(/* (o) "Empty" frame indicator */
                          iLBC_bits*
                              enc_bits, /* (o) Paramerers from bitstream */
                          int16_t mode  /* (i) Codec mode (20 or 30) */
-                         );
+);
 
 #endif

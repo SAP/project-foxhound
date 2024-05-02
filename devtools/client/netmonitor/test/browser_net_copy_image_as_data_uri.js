@@ -7,7 +7,7 @@
  * Tests if copying an image as data uri works.
  */
 
-add_task(async function() {
+add_task(async function () {
   const { tab, monitor } = await initNetMonitor(
     CONTENT_TYPE_WITHOUT_CACHE_URL,
     { requestCount: 1 }
@@ -28,11 +28,11 @@ add_task(async function() {
     document.querySelectorAll(".request-list-item")[5]
   );
 
-  await waitForClipboardPromise(function setup() {
-    getContextMenuItem(
+  await waitForClipboardPromise(async function setup() {
+    await selectContextMenuItem(
       monitor,
       "request-list-context-copy-image-as-data-uri"
-    ).click();
+    );
   }, TEST_IMAGE_DATA_URI);
 
   ok(true, "Clipboard contains the currently selected image as data uri.");

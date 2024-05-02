@@ -11,28 +11,27 @@
 #include <array>
 #include <utility>
 
-#include "gtest/gtest.h"
-#include "lib/jxl/aux_out.h"
+#include "lib/jxl/base/common.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/override.h"
 #include "lib/jxl/base/padded_bytes.h"
-#include "lib/jxl/base/thread_pool_internal.h"
+#include "lib/jxl/cms/jxl_cms.h"
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/color_encoding_internal.h"
-#include "lib/jxl/color_management.h"
-#include "lib/jxl/common.h"
-#include "lib/jxl/dec_file.h"
-#include "lib/jxl/dec_params.h"
 #include "lib/jxl/enc_cache.h"
-#include "lib/jxl/enc_color_management.h"
 #include "lib/jxl/enc_file.h"
 #include "lib/jxl/enc_params.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/image_ops.h"
+#include "lib/jxl/test_utils.h"
+#include "lib/jxl/testing.h"
 
 namespace jxl {
+
+struct AuxOut;
+
 namespace {
 
 // Returns distance of point p to line p0..p1, the result is signed and is not
@@ -151,8 +150,6 @@ void TestGradient(ThreadPool* pool, uint32_t color0, uint32_t color1,
   if (fast_mode) {
     cparams.speed_tier = SpeedTier::kSquirrel;
   }
-  DecompressParams dparams;
-
   Image3F gradient = GenerateTestGradient(color0, color1, angle, xsize, ysize);
 
   CodecInOut io;
@@ -165,11 +162,12 @@ void TestGradient(ThreadPool* pool, uint32_t color0, uint32_t color1,
   PaddedBytes compressed;
   AuxOut* aux_out = nullptr;
   PassesEncoderState enc_state;
-  EXPECT_TRUE(EncodeFile(cparams, &io, &enc_state, &compressed, GetJxlCms(),
-                         aux_out, pool));
-  EXPECT_TRUE(DecodeFile(dparams, compressed, &io2, pool));
+  EXPECT_TRUE(EncodeFile(cparams, &io, &enc_state, &compressed,
+                         *JxlGetDefaultCms(), aux_out, pool));
   EXPECT_TRUE(
-      io2.Main().TransformTo(io2.metadata.m.color_encoding, GetJxlCms(), pool));
+      test::DecodeFile({}, Span<const uint8_t>(compressed), &io2, pool));
+  EXPECT_TRUE(io2.Main().TransformTo(io2.metadata.m.color_encoding,
+                                     *JxlGetDefaultCms(), pool));
 
   if (use_gradient) {
     // Test that the gradient map worked. For that, we take a second derivative
@@ -193,13 +191,13 @@ void TestGradient(ThreadPool* pool, uint32_t color0, uint32_t color1,
 static constexpr bool fast_mode = true;
 
 TEST(GradientTest, SteepGradient) {
-  ThreadPoolInternal pool(8);
+  test::ThreadPoolForTests pool(8);
   // Relatively steep gradients, colors from the sky of stp.png
   TestGradient(&pool, 0xd99d58, 0x889ab1, 512, 512, 90, fast_mode, 3.0);
 }
 
 TEST(GradientTest, SubtleGradient) {
-  ThreadPoolInternal pool(8);
+  test::ThreadPoolForTests pool(8);
   // Very subtle gradient
   TestGradient(&pool, 0xb89b7b, 0xa89b8d, 512, 512, 90, fast_mode, 4.0);
 }

@@ -2,8 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/* import-globals-from ../../shared/test/shared-head.js */
-
 "use strict";
 
 // Test deleting storage items
@@ -28,7 +26,7 @@ const TEST_CASES = [
   ],
 ];
 
-add_task(async function() {
+add_task(async function () {
   // storage-listings.html explicitly mixes secure and insecure frames.
   // We should not enforce https for tests using this page.
   await pushPref("dom.security.https_first", false);
@@ -58,12 +56,14 @@ add_task(async function() {
 
     await waitForContextMenu(contextMenu, row[cellToClick], () => {
       info(`Opened context menu in ${treeItemName}, row '${rowName}'`);
-      menuDeleteItem.click();
+      contextMenu.activateItem(menuDeleteItem);
       const truncatedRowName = String(rowName)
         .replace(SEPARATOR_GUID, "-")
         .substr(0, 16);
       ok(
-        menuDeleteItem.getAttribute("label").includes(truncatedRowName),
+        JSON.parse(
+          menuDeleteItem.getAttribute("data-l10n-args")
+        ).itemName.includes(truncatedRowName),
         `Context menu item label contains '${rowName}' (maybe truncated)`
       );
     });

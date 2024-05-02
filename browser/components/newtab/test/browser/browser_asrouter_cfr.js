@@ -1,14 +1,12 @@
-const { CFRPageActions } = ChromeUtils.import(
-  "resource://activity-stream/lib/CFRPageActions.jsm"
-);
+/* eslint-disable @microsoft/sdl/no-insecure-url */
 const { ASRouterTriggerListeners } = ChromeUtils.import(
   "resource://activity-stream/lib/ASRouterTriggerListeners.jsm"
 );
 const { ASRouter } = ChromeUtils.import(
   "resource://activity-stream/lib/ASRouter.jsm"
 );
-const { CFRMessageProvider } = ChromeUtils.import(
-  "resource://activity-stream/lib/CFRMessageProvider.jsm"
+const { CFRMessageProvider } = ChromeUtils.importESModule(
+  "resource://activity-stream/lib/CFRMessageProvider.sys.mjs"
 );
 
 const { TelemetryFeed } = ChromeUtils.import(
@@ -21,6 +19,7 @@ const createDummyRecommendation = ({
   heading_text,
   layout,
   skip_address_bar_notifier,
+  show_in_private_browsing,
   template,
 }) => {
   let recommendation = {
@@ -31,13 +30,13 @@ const createDummyRecommendation = ({
       category,
       anchor_id: "page-action-buttons",
       skip_address_bar_notifier,
+      show_in_private_browsing,
       heading_text: heading_text || "Mochitest",
       info_icon: {
         label: { attributes: { tooltiptext: "Why am I seeing this" } },
         sumo_path: "extensionrecommendations",
       },
-      icon:
-        "chrome://activity-stream/content/data/content/assets/glyph-webextension-16.svg",
+      icon: "chrome://activity-stream/content/data/content/assets/glyph-webextension-16.svg",
       icon_dark_theme:
         "chrome://activity-stream/content/data/content/assets/glyph-webextension-16.svg",
       learn_more: "extensionrecommendations",
@@ -147,6 +146,7 @@ function trigger_cfr_panel(
     layout,
     skip_address_bar_notifier = false,
     use_single_secondary_button = false,
+    show_in_private_browsing = false,
     template = "cfr_doorhanger",
   } = {}
 ) {
@@ -157,6 +157,7 @@ function trigger_cfr_panel(
     heading_text,
     layout,
     skip_address_bar_notifier,
+    show_in_private_browsing,
     template,
   });
   if (category !== "cfrAddons") {
@@ -178,7 +179,7 @@ function trigger_cfr_panel(
   );
 }
 
-add_task(async function setup() {
+add_setup(async function () {
   // Store it in order to restore to the original value
   const { _fetchLatestAddonVersion } = CFRPageActions;
   // Prevent fetching the real addon url and making a network request
@@ -198,7 +199,7 @@ add_task(async function test_cfr_notification_show() {
   );
   // addRecommendation checks that scheme starts with http and host matches
   let browser = gBrowser.selectedBrowser;
-  BrowserTestUtils.loadURI(browser, "http://example.com/");
+  BrowserTestUtils.startLoadingURIString(browser, "http://example.com/");
   await BrowserTestUtils.browserLoaded(browser, false, "http://example.com/");
 
   const response = await trigger_cfr_panel(browser, "example.com");
@@ -257,7 +258,7 @@ add_task(async function test_cfr_notification_show() {
 add_task(async function test_cfr_notification_show() {
   // addRecommendation checks that scheme starts with http and host matches
   let browser = gBrowser.selectedBrowser;
-  BrowserTestUtils.loadURI(browser, "http://example.com/");
+  BrowserTestUtils.startLoadingURIString(browser, "http://example.com/");
   await BrowserTestUtils.browserLoaded(browser, false, "http://example.com/");
 
   let response = await trigger_cfr_panel(browser, "example.com", {
@@ -323,7 +324,7 @@ add_task(async function test_cfr_notification_show() {
 add_task(async function test_cfr_notification_minimize() {
   // addRecommendation checks that scheme starts with http and host matches
   let browser = gBrowser.selectedBrowser;
-  BrowserTestUtils.loadURI(browser, "http://example.com/");
+  BrowserTestUtils.startLoadingURIString(browser, "http://example.com/");
   await BrowserTestUtils.browserLoaded(browser, false, "http://example.com/");
 
   let response = await trigger_cfr_panel(browser, "example.com");
@@ -370,7 +371,7 @@ add_task(async function test_cfr_notification_minimize() {
 add_task(async function test_cfr_notification_minimize_2() {
   // addRecommendation checks that scheme starts with http and host matches
   let browser = gBrowser.selectedBrowser;
-  BrowserTestUtils.loadURI(browser, "http://example.com/");
+  BrowserTestUtils.startLoadingURIString(browser, "http://example.com/");
   await BrowserTestUtils.browserLoaded(browser, false, "http://example.com/");
 
   let response = await trigger_cfr_panel(browser, "example.com");
@@ -432,7 +433,7 @@ add_task(async function test_cfr_notification_minimize_2() {
 add_task(async function test_cfr_addon_install() {
   // addRecommendation checks that scheme starts with http and host matches
   const browser = gBrowser.selectedBrowser;
-  BrowserTestUtils.loadURI(browser, "http://example.com/");
+  BrowserTestUtils.startLoadingURIString(browser, "http://example.com/");
   await BrowserTestUtils.browserLoaded(browser, false, "http://example.com/");
 
   const response = await trigger_cfr_panel(browser, "example.com", {
@@ -502,7 +503,7 @@ add_task(
 
     // addRecommendation checks that scheme starts with http and host matches
     let browser = gBrowser.selectedBrowser;
-    BrowserTestUtils.loadURI(browser, "http://example.com/");
+    BrowserTestUtils.startLoadingURIString(browser, "http://example.com/");
     await BrowserTestUtils.browserLoaded(browser, false, "http://example.com/");
 
     const showPanel = BrowserTestUtils.waitForEvent(
@@ -543,7 +544,7 @@ add_task(
 add_task(async function test_cfr_addon_and_features_show() {
   // addRecommendation checks that scheme starts with http and host matches
   let browser = gBrowser.selectedBrowser;
-  BrowserTestUtils.loadURI(browser, "http://example.com/");
+  BrowserTestUtils.startLoadingURIString(browser, "http://example.com/");
   await BrowserTestUtils.browserLoaded(browser, false, "http://example.com/");
 
   // Trigger Feature CFR
@@ -641,17 +642,17 @@ add_task(async function test_onLocationChange_cb() {
     "example.com",
   ]);
 
-  BrowserTestUtils.loadURI(browser, "about:blank");
+  BrowserTestUtils.startLoadingURIString(browser, "about:blank");
   await BrowserTestUtils.browserLoaded(browser, false, "about:blank");
 
-  BrowserTestUtils.loadURI(browser, "http://example.com/");
+  BrowserTestUtils.startLoadingURIString(browser, "http://example.com/");
   await BrowserTestUtils.browserLoaded(browser, false, "http://example.com/");
 
   Assert.equal(count, 1, "Count navigation to example.com");
 
   // Anchor scroll triggers a location change event with the same document
   // https://searchfox.org/mozilla-central/rev/8848b9741fc4ee4e9bc3ae83ea0fc048da39979f/uriloader/base/nsIWebProgressListener.idl#400-403
-  BrowserTestUtils.loadURI(browser, "http://example.com/#foo");
+  BrowserTestUtils.startLoadingURIString(browser, "http://example.com/#foo");
   await BrowserTestUtils.waitForLocationChange(
     gBrowser,
     "http://example.com/#foo"
@@ -659,7 +660,7 @@ add_task(async function test_onLocationChange_cb() {
 
   Assert.equal(count, 1, "It should ignore same page navigation");
 
-  BrowserTestUtils.loadURI(browser, TEST_URL);
+  BrowserTestUtils.startLoadingURIString(browser, TEST_URL);
   await BrowserTestUtils.browserLoaded(browser, false, TEST_URL);
 
   Assert.equal(count, 2, "We moved to a new document");
@@ -676,7 +677,7 @@ add_task(async function test_matchPattern() {
   await frequentVisitsTrigger.init(triggerHandler, [], ["*://*.example.com/"]);
 
   const browser = gBrowser.selectedBrowser;
-  BrowserTestUtils.loadURI(browser, "http://example.com/");
+  BrowserTestUtils.startLoadingURIString(browser, "http://example.com/");
   await BrowserTestUtils.browserLoaded(browser, false, "http://example.com/");
 
   await BrowserTestUtils.waitForCondition(
@@ -684,7 +685,7 @@ add_task(async function test_matchPattern() {
     "Registered pattern matched the current location"
   );
 
-  BrowserTestUtils.loadURI(browser, "about:config");
+  BrowserTestUtils.startLoadingURIString(browser, "about:config");
   await BrowserTestUtils.browserLoaded(browser, false, "about:config");
 
   await BrowserTestUtils.waitForCondition(
@@ -692,7 +693,7 @@ add_task(async function test_matchPattern() {
     "Navigated to a new page but not a match"
   );
 
-  BrowserTestUtils.loadURI(browser, "http://example.com/");
+  BrowserTestUtils.startLoadingURIString(browser, "http://example.com/");
   await BrowserTestUtils.browserLoaded(browser, false, "http://example.com/");
 
   await BrowserTestUtils.waitForCondition(
@@ -700,7 +701,7 @@ add_task(async function test_matchPattern() {
     "Navigated to a location that matches the pattern but within 15 mins"
   );
 
-  BrowserTestUtils.loadURI(browser, "http://www.example.com/");
+  BrowserTestUtils.startLoadingURIString(browser, "http://www.example.com/");
   await BrowserTestUtils.browserLoaded(
     browser,
     false,
@@ -741,7 +742,7 @@ add_task(async function test_providerNames() {
 add_task(async function test_cfr_notification_keyboard() {
   // addRecommendation checks that scheme starts with http and host matches
   const browser = gBrowser.selectedBrowser;
-  BrowserTestUtils.loadURI(browser, "http://example.com/");
+  BrowserTestUtils.startLoadingURIString(browser, "http://example.com/");
   await BrowserTestUtils.browserLoaded(browser, false, "http://example.com/");
 
   const response = await trigger_cfr_panel(browser, "example.com");
@@ -845,4 +846,67 @@ add_task(async function test_heartbeat_tactic_2() {
   document.getElementById("contextual-feature-recommendation").click();
 
   await newTabPromise;
+});
+
+add_task(async function test_cfr_doorhanger_in_private_window() {
+  const win = await BrowserTestUtils.openNewBrowserWindow({ private: true });
+  const sendPingStub = sinon.stub(
+    TelemetryFeed.prototype,
+    "sendStructuredIngestionEvent"
+  );
+
+  const tab = await BrowserTestUtils.openNewForegroundTab(
+    win.gBrowser,
+    "http://example.com/"
+  );
+  const browser = tab.linkedBrowser;
+
+  const response1 = await trigger_cfr_panel(browser, "example.com");
+  Assert.ok(
+    !response1,
+    "CFR should not be shown in a private window if show_in_private_browsing is false"
+  );
+
+  const response2 = await trigger_cfr_panel(browser, "example.com", {
+    show_in_private_browsing: true,
+  });
+  Assert.ok(
+    response2,
+    "CFR should be shown in a private window if show_in_private_browsing is true"
+  );
+
+  const shownPromise = BrowserTestUtils.waitForEvent(
+    win.PopupNotifications.panel,
+    "popupshown"
+  );
+  win.document.getElementById("contextual-feature-recommendation").click();
+  await shownPromise;
+
+  const hiddenPromise = BrowserTestUtils.waitForEvent(
+    win.PopupNotifications.panel,
+    "popuphidden"
+  );
+  const button = win.document.getElementById(
+    "contextual-feature-recommendation-notification"
+  )?.button;
+  Assert.ok(button, "CFR doorhanger button found");
+  button.click();
+  await hiddenPromise;
+
+  Assert.greater(sendPingStub.callCount, 0, "Recorded CFR telemetry");
+  const cfrPing = sendPingStub.args.find(args => args[2] === "cfr");
+  Assert.equal(cfrPing[0].source, "CFR", "Got a CFR event");
+  Assert.equal(
+    cfrPing[0].message_id,
+    "n/a",
+    "Omitted message_id consistent with CFR telemetry policy"
+  );
+  Assert.equal(
+    cfrPing[0].client_id,
+    undefined,
+    "Omitted client_id consistent with CFR telemetry policy"
+  );
+
+  sendPingStub.restore();
+  await BrowserTestUtils.closeWindow(win);
 });

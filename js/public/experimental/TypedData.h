@@ -14,6 +14,7 @@
 
 #include "mozilla/Assertions.h"  // MOZ_ASSERT, MOZ_CRASH
 #include "mozilla/Casting.h"     // mozilla::AssertedCast
+#include "mozilla/Span.h"
 
 #include <stddef.h>  // size_t
 #include <stdint.h>  // {,u}int8_t, {,u}int16_t, {,u}int32_t
@@ -269,11 +270,37 @@ namespace JS {
 
 /*
  * Returns whether the passed array buffer view is 'large': its byteLength >= 2
- * GB. See also SetLargeArrayBuffersEnabled.
+ * GB.
  *
  * |obj| must pass a JS_IsArrayBufferViewObject test.
  */
 JS_PUBLIC_API bool IsLargeArrayBufferView(JSObject* obj);
+
+/*
+ * Given an ArrayBuffer or view, prevent the length of the underlying
+ * ArrayBuffer from changing (with pin=true) until unfrozen (with
+ * pin=false). Note that some objects (eg SharedArrayBuffers) cannot change
+ * length to begin with, and are treated as always pinned.
+ *
+ * Normally, ArrayBuffers and their views cannot change length, but one way
+ * currently exists: detaching them. In the future, more will be added with
+ * GrowableArrayBuffer and ResizableArrayBuffer.
+ *
+ * Returns whether the pinned status changed.
+ */
+JS_PUBLIC_API bool PinArrayBufferOrViewLength(JSObject* obj, bool pin);
+
+/*
+ * Given an ArrayBuffer or view, make sure its contents are not stored inline
+ * so that the data is safe for use even if a GC moves the owning object.
+ *
+ * Note that this by itself does not make it safe to use the data pointer
+ * if JS can run or the ArrayBuffer can be detached in any way. Consider using
+ * this in conjunction with PinArrayBufferOrViewLength, which will cause any
+ * potentially invalidating operations to fail.
+ */
+JS_PUBLIC_API bool EnsureNonInlineArrayBufferOrView(JSContext* cx,
+                                                    JSObject* obj);
 
 namespace detail {
 
@@ -358,13 +385,13 @@ class JS_PUBLIC_API ArrayBufferOrView {
 };
 
 class JS_PUBLIC_API ArrayBuffer : public ArrayBufferOrView {
+  static const JSClass* const UnsharedClass;
+  static const JSClass* const SharedClass;
+
  protected:
   explicit ArrayBuffer(JSObject* unwrapped) : ArrayBufferOrView(unwrapped) {}
 
  public:
-  static const JSClass* const UnsharedClass;
-  static const JSClass* const SharedClass;
-
   static ArrayBuffer fromObject(JSObject* unwrapped) {
     if (unwrapped) {
       const JSClass* clasp = GetClass(unwrapped);
@@ -381,13 +408,8 @@ class JS_PUBLIC_API ArrayBuffer : public ArrayBufferOrView {
   bool isDetached() const;
   bool isSharedMemory() const;
 
-  uint8_t* getLengthAndData(size_t* length, bool* isSharedMemory,
-                            const JS::AutoRequireNoGC&);
-
-  uint8_t* getData(bool* isSharedMemory, const JS::AutoRequireNoGC& nogc) {
-    size_t length;
-    return getLengthAndData(&length, isSharedMemory, nogc);
-  }
+  mozilla::Span<uint8_t> getData(bool* isSharedMemory,
+                                 const JS::AutoRequireNoGC&);
 };
 
 // A view into an ArrayBuffer, either a DataViewObject or a Typed Array variant.
@@ -412,24 +434,20 @@ class JS_PUBLIC_API ArrayBufferView : public ArrayBufferOrView {
   bool isDetached() const;
   bool isSharedMemory() const;
 
-  uint8_t* getLengthAndData(size_t* length, bool* isSharedMemory,
-                            const JS::AutoRequireNoGC&);
-  uint8_t* getData(bool* isSharedMemory, const JS::AutoRequireNoGC& nogc) {
-    size_t length;
-    return getLengthAndData(&length, isSharedMemory, nogc);
-  }
+  mozilla::Span<uint8_t> getData(bool* isSharedMemory,
+                                 const JS::AutoRequireNoGC&);
 
   // Must only be called if !isDetached().
   size_t getByteLength(const JS::AutoRequireNoGC&);
 };
 
 class JS_PUBLIC_API DataView : public ArrayBufferView {
+  static const JSClass* const ClassPtr;
+
  protected:
   explicit DataView(JSObject* unwrapped) : ArrayBufferView(unwrapped) {}
 
  public:
-  static const JSClass* const ClassPtr;
-
   static DataView fromObject(JSObject* unwrapped) {
     if (unwrapped && GetClass(unwrapped) == ClassPtr) {
       return DataView(unwrapped);
@@ -530,13 +548,8 @@ class JS_PUBLIC_API TypedArray : public TypedArray_base {
   // |*isSharedMemory| will be set to true if the typed array maps a
   // SharedArrayBuffer, otherwise to false.
   //
-  DataType* getLengthAndData(size_t* length, bool* isSharedMemory,
-                             const JS::AutoRequireNoGC& nogc);
-
-  DataType* getData(bool* isSharedMemory, const JS::AutoRequireNoGC& nogc) {
-    size_t length;
-    return getLengthAndData(&length, isSharedMemory, nogc);
-  }
+  mozilla::Span<DataType> getData(bool* isSharedMemory,
+                                  const JS::AutoRequireNoGC& nogc);
 };
 
 ArrayBufferOrView ArrayBufferOrView::fromObject(JSObject* unwrapped) {
@@ -659,13 +672,8 @@ class WrappedPtrOperations<T, Wrapper, EnableIfABOVType<T>> {
   bool isDetached() const { return get().isDetached(); }
   bool isSharedMemory() const { return get().isSharedMemory(); }
 
-  typename T::DataType* getLengthAndData(size_t* length, bool* isSharedMemory,
-                                         const JS::AutoRequireNoGC& nogc) {
-    return get().getLengthAndData(length, isSharedMemory, nogc);
-  }
-
-  typename T::DataType* getData(bool* isSharedMemory,
-                                const JS::AutoRequireNoGC& nogc) {
+  mozilla::Span<typename T::DataType> getData(bool* isSharedMemory,
+                                              const JS::AutoRequireNoGC& nogc) {
     return get().getData(isSharedMemory, nogc);
   }
 };

@@ -13,11 +13,14 @@
 #include "nsTArray.h"
 
 #include <gdk/gdk.h>
-#include <X11/XKBlib.h>
+#ifdef MOZ_X11
+#  include <X11/XKBlib.h>
+#endif
 #ifdef MOZ_WAYLAND
 #  include <gdk/gdkwayland.h>
 #  include <xkbcommon/xkbcommon.h>
 #endif
+#include "X11UndefineNone.h"
 
 class nsWindow;
 
@@ -210,8 +213,13 @@ class KeymapWrapper {
   static void SetFocusOut(wl_surface* aFocusSurface);
   static void GetFocusInfo(wl_surface** aFocusSurface, uint32_t* aFocusSerial);
 
-  static void SetSeat(wl_seat* aSeat);
+  static void SetSeat(wl_seat* aSeat, int aId);
+  static void ClearSeat(int aId);
   static wl_seat* GetSeat();
+
+  static void SetKeyboard(wl_keyboard* aKeyboard);
+  static wl_keyboard* GetKeyboard();
+  static void ClearKeyboard();
 
   /**
    * EnsureInstance() is provided on Wayland to register Wayland callbacks
@@ -231,7 +239,7 @@ class KeymapWrapper {
    */
   static void Shutdown();
 
- protected:
+ private:
   /**
    * GetInstance() returns a KeymapWrapper instance.
    *
@@ -248,8 +256,10 @@ class KeymapWrapper {
    * Initializing methods.
    */
   void Init();
+#ifdef MOZ_X11
   void InitXKBExtension();
   void InitBySystemSettingsX11();
+#endif
 #ifdef MOZ_WAYLAND
   void InitBySystemSettingsWayland();
 #endif
@@ -325,6 +335,7 @@ class KeymapWrapper {
    */
   int mXKBBaseEventCode;
 
+#ifdef MOZ_X11
   /**
    * Only auto_repeats[] stores valid value.  If you need to use other
    * members, you need to listen notification events for them.
@@ -332,6 +343,7 @@ class KeymapWrapper {
    * InitXKBExtension().
    */
   XKeyboardState mKeyboardState;
+#endif
 
   /**
    * Pointer of the singleton instance.
@@ -342,7 +354,9 @@ class KeymapWrapper {
    * Auto key repeat management.
    */
   static guint sLastRepeatableHardwareKeyCode;
+#ifdef MOZ_X11
   static Time sLastRepeatableKeyTime;
+#endif
   enum RepeatState { NOT_PRESSED, FIRST_PRESS, REPEATING };
   static RepeatState sRepeatState;
 
@@ -448,6 +462,7 @@ class KeymapWrapper {
    */
   static uint32_t GetDOMKeyCodeFromKeyPairs(guint aGdkKeyval);
 
+#ifdef MOZ_X11
   /**
    * FilterEvents() listens all events on all our windows.
    * Be careful, this may make damage to performance if you add expensive
@@ -455,6 +470,7 @@ class KeymapWrapper {
    */
   static GdkFilterReturn FilterEvents(GdkXEvent* aXEvent, GdkEvent* aGdkEvent,
                                       gpointer aData);
+#endif
 
   /**
    * MaybeDispatchContextMenuEvent() may dispatch eContextMenu event if
@@ -476,6 +492,9 @@ class KeymapWrapper {
   void WillDispatchKeyboardEventInternal(WidgetKeyboardEvent& aKeyEvent,
                                          GdkEventKey* aGdkKeyEvent);
 
+  static guint GetModifierState(GdkEventKey* aGdkKeyEvent,
+                                KeymapWrapper* aWrapper);
+
 #ifdef MOZ_WAYLAND
   /**
    * Utility function to set Xkb modifier key mask.
@@ -485,7 +504,9 @@ class KeymapWrapper {
 #endif
 
 #ifdef MOZ_WAYLAND
-  wl_seat* mSeat = nullptr;
+  static wl_seat* sSeat;
+  static int sSeatID;
+  static wl_keyboard* sKeyboard;
   wl_surface* mFocusSurface = nullptr;
   uint32_t mFocusSerial = 0;
 #endif

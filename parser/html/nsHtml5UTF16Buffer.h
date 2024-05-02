@@ -59,7 +59,7 @@ class nsHtml5Portability;
 class nsHtml5UTF16Buffer {
  private:
   char16_t* buffer;
-  StringTaint taint;
+  SafeStringTaint taint;
   int32_t start;
   int32_t end;
 

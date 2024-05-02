@@ -1,5 +1,6 @@
 """Base Command class, and related routines"""
 
+import functools
 import logging
 import logging.config
 import optparse
@@ -7,7 +8,9 @@ import os
 import sys
 import traceback
 from optparse import Values
-from typing import Any, List, Optional, Tuple
+from typing import Any, Callable, List, Optional, Tuple
+
+from pip._vendor.rich import traceback as rich_traceback
 
 from pip._internal.cli import cmdoptions
 from pip._internal.cli.command_context import CommandContextMixIn
@@ -21,12 +24,12 @@ from pip._internal.cli.status_codes import (
 from pip._internal.exceptions import (
     BadCommand,
     CommandError,
+    DiagnosticPipError,
     InstallationError,
     NetworkConnectionError,
     PreviousBuildDirError,
     UninstallationError,
 )
-from pip._internal.utils.deprecation import deprecated
 from pip._internal.utils.filesystem import check_path_owner
 from pip._internal.utils.logging import BrokenStdoutLoggingError, setup_logging
 from pip._internal.utils.misc import get_prog, normalize_path
@@ -85,10 +88,10 @@ class Command(CommandContextMixIn):
         # are present.
         assert not hasattr(options, "no_index")
 
-    def run(self, options: Values, args: List[Any]) -> int:
+    def run(self, options: Values, args: List[str]) -> int:
         raise NotImplementedError
 
-    def parse_args(self, args: List[str]) -> Tuple[Any, Any]:
+    def parse_args(self, args: List[str]) -> Tuple[Values, List[str]]:
         # factored out for testability
         return self.parser.parse_args(args)
 
@@ -119,6 +122,26 @@ class Command(CommandContextMixIn):
             user_log_file=options.log,
         )
 
+        always_enabled_features = set(options.features_enabled) & set(
+            cmdoptions.ALWAYS_ENABLED_FEATURES
+        )
+        if always_enabled_features:
+            logger.warning(
+                "The following features are always enabled: %s. ",
+                ", ".join(sorted(always_enabled_features)),
+            )
+
+        # Make sure that the --python argument isn't specified after the
+        # subcommand. We can tell, because if --python was specified,
+        # we should only reach this point if we're running in the created
+        # subprocess, which has the _PIP_RUNNING_IN_SUBPROCESS environment
+        # variable set.
+        if options.python and "_PIP_RUNNING_IN_SUBPROCESS" not in os.environ:
+            logger.critical(
+                "The --python option must be placed before the pip subcommand name"
+            )
+            sys.exit(ERROR)
+
         # TODO: Try to get these passing down from the command?
         #       without resorting to os.environ to hold these.
         #       This also affects isolated builds and it should.
@@ -148,67 +171,66 @@ class Command(CommandContextMixIn):
                 )
                 options.cache_dir = None
 
-        if getattr(options, "build_dir", None):
-            deprecated(
-                reason=(
-                    "The -b/--build/--build-dir/--build-directory "
-                    "option is deprecated and has no effect anymore."
-                ),
-                replacement=(
-                    "use the TMPDIR/TEMP/TMP environment variable, "
-                    "possibly combined with --no-clean"
-                ),
-                gone_in="21.3",
-                issue=8333,
-            )
+        def intercepts_unhandled_exc(
+            run_func: Callable[..., int]
+        ) -> Callable[..., int]:
+            @functools.wraps(run_func)
+            def exc_logging_wrapper(*args: Any) -> int:
+                try:
+                    status = run_func(*args)
+                    assert isinstance(status, int)
+                    return status
+                except DiagnosticPipError as exc:
+                    logger.error("[present-rich] %s", exc)
+                    logger.debug("Exception information:", exc_info=True)
 
-        if "2020-resolver" in options.features_enabled:
-            logger.warning(
-                "--use-feature=2020-resolver no longer has any effect, "
-                "since it is now the default dependency resolver in pip. "
-                "This will become an error in pip 21.0."
-            )
+                    return ERROR
+                except PreviousBuildDirError as exc:
+                    logger.critical(str(exc))
+                    logger.debug("Exception information:", exc_info=True)
+
+                    return PREVIOUS_BUILD_DIR_ERROR
+                except (
+                    InstallationError,
+                    UninstallationError,
+                    BadCommand,
+                    NetworkConnectionError,
+                ) as exc:
+                    logger.critical(str(exc))
+                    logger.debug("Exception information:", exc_info=True)
+
+                    return ERROR
+                except CommandError as exc:
+                    logger.critical("%s", exc)
+                    logger.debug("Exception information:", exc_info=True)
+
+                    return ERROR
+                except BrokenStdoutLoggingError:
+                    # Bypass our logger and write any remaining messages to
+                    # stderr because stdout no longer works.
+                    print("ERROR: Pipe to stdout was broken", file=sys.stderr)
+                    if level_number <= logging.DEBUG:
+                        traceback.print_exc(file=sys.stderr)
+
+                    return ERROR
+                except KeyboardInterrupt:
+                    logger.critical("Operation cancelled by user")
+                    logger.debug("Exception information:", exc_info=True)
+
+                    return ERROR
+                except BaseException:
+                    logger.critical("Exception:", exc_info=True)
+
+                    return UNKNOWN_ERROR
+
+            return exc_logging_wrapper
 
         try:
-            status = self.run(options, args)
-            assert isinstance(status, int)
-            return status
-        except PreviousBuildDirError as exc:
-            logger.critical(str(exc))
-            logger.debug("Exception information:", exc_info=True)
-
-            return PREVIOUS_BUILD_DIR_ERROR
-        except (
-            InstallationError,
-            UninstallationError,
-            BadCommand,
-            NetworkConnectionError,
-        ) as exc:
-            logger.critical(str(exc))
-            logger.debug("Exception information:", exc_info=True)
-
-            return ERROR
-        except CommandError as exc:
-            logger.critical("%s", exc)
-            logger.debug("Exception information:", exc_info=True)
-
-            return ERROR
-        except BrokenStdoutLoggingError:
-            # Bypass our logger and write any remaining messages to stderr
-            # because stdout no longer works.
-            print("ERROR: Pipe to stdout was broken", file=sys.stderr)
-            if level_number <= logging.DEBUG:
-                traceback.print_exc(file=sys.stderr)
-
-            return ERROR
-        except KeyboardInterrupt:
-            logger.critical("Operation cancelled by user")
-            logger.debug("Exception information:", exc_info=True)
-
-            return ERROR
-        except BaseException:
-            logger.critical("Exception:", exc_info=True)
-
-            return UNKNOWN_ERROR
+            if not options.debug_mode:
+                run = intercepts_unhandled_exc(self.run)
+            else:
+                run = self.run
+                rich_traceback.install(show_locals=True)
+            return run(options, args)
         finally:
             self.handle_pip_version_check(options)

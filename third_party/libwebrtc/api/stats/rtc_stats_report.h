@@ -17,19 +17,24 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
+#include "api/ref_counted_base.h"
 #include "api/scoped_refptr.h"
 #include "api/stats/rtc_stats.h"
-#include "rtc_base/ref_count.h"
+#include "api/units/timestamp.h"
+// TODO(tommi): Remove this include after fixing iwyu issue in chromium.
+// See: third_party/blink/renderer/platform/peerconnection/rtc_stats.cc
 #include "rtc_base/ref_counted_object.h"
 #include "rtc_base/system/rtc_export.h"
 
 namespace webrtc {
 
 // A collection of stats.
-// This is accessible as a map from |RTCStats::id| to |RTCStats|.
-class RTC_EXPORT RTCStatsReport : public rtc::RefCountInterface {
+// This is accessible as a map from `RTCStats::id` to `RTCStats`.
+class RTC_EXPORT RTCStatsReport final
+    : public rtc::RefCountedNonVirtual<RTCStatsReport> {
  public:
   typedef std::map<std::string, std::unique_ptr<const RTCStats>> StatsMap;
 
@@ -55,21 +60,32 @@ class RTC_EXPORT RTCStatsReport : public rtc::RefCountInterface {
     StatsMap::const_iterator it_;
   };
 
-  // TODO(hbos): Remove "= 0" once Chromium unittest has been updated to call
-  // with a parameter. crbug.com/627816
-  static rtc::scoped_refptr<RTCStatsReport> Create(int64_t timestamp_us = 0);
+  static rtc::scoped_refptr<RTCStatsReport> Create(Timestamp timestamp);
 
-  explicit RTCStatsReport(int64_t timestamp_us);
+  explicit RTCStatsReport(Timestamp timestamp);
+
   RTCStatsReport(const RTCStatsReport& other) = delete;
   rtc::scoped_refptr<RTCStatsReport> Copy() const;
 
-  int64_t timestamp_us() const { return timestamp_us_; }
+  Timestamp timestamp() const { return timestamp_; }
   void AddStats(std::unique_ptr<const RTCStats> stats);
+  // On success, returns a non-owning pointer to `stats`. If the stats ID is not
+  // unique, `stats` is not inserted and nullptr is returned.
+  template <typename T>
+  T* TryAddStats(std::unique_ptr<T> stats) {
+    T* stats_ptr = stats.get();
+    if (!stats_
+             .insert(std::make_pair(std::string(stats->id()), std::move(stats)))
+             .second) {
+      return nullptr;
+    }
+    return stats_ptr;
+  }
   const RTCStats* Get(const std::string& id) const;
   size_t size() const { return stats_.size(); }
 
-  // Gets the stat object of type |T| by ID, where |T| is any class descending
-  // from |RTCStats|.
+  // Gets the stat object of type `T` by ID, where `T` is any class descending
+  // from `RTCStats`.
   // Returns null if there is no stats object for the given ID or it is the
   // wrong type.
   template <typename T>
@@ -82,17 +98,17 @@ class RTC_EXPORT RTCStatsReport : public rtc::RefCountInterface {
   }
 
   // Removes the stats object from the report, returning ownership of it or null
-  // if there is no object with |id|.
+  // if there is no object with `id`.
   std::unique_ptr<const RTCStats> Take(const std::string& id);
-  // Takes ownership of all the stats in |victim|, leaving it empty.
-  void TakeMembersFrom(rtc::scoped_refptr<RTCStatsReport> victim);
+  // Takes ownership of all the stats in `other`, leaving it empty.
+  void TakeMembersFrom(rtc::scoped_refptr<RTCStatsReport> other);
 
-  // Stats iterators. Stats are ordered lexicographically on |RTCStats::id|.
+  // Stats iterators. Stats are ordered lexicographically on `RTCStats::id`.
   ConstIterator begin() const;
   ConstIterator end() const;
 
-  // Gets the subset of stats that are of type |T|, where |T| is any class
-  // descending from |RTCStats|.
+  // Gets the subset of stats that are of type `T`, where `T` is any class
+  // descending from `RTCStats`.
   template <typename T>
   std::vector<const T*> GetStatsOfType() const {
     std::vector<const T*> stats_of_type;
@@ -107,12 +123,12 @@ class RTC_EXPORT RTCStatsReport : public rtc::RefCountInterface {
   // listing all of its stats objects.
   std::string ToJson() const;
 
-  friend class rtc::RefCountedObject<RTCStatsReport>;
+ protected:
+  friend class rtc::RefCountedNonVirtual<RTCStatsReport>;
+  ~RTCStatsReport() = default;
 
  private:
-  ~RTCStatsReport() override;
-
-  int64_t timestamp_us_;
+  Timestamp timestamp_;
   StatsMap stats_;
 };
 

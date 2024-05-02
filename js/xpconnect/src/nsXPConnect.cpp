@@ -22,18 +22,22 @@
 #include "js/Object.h"             // JS::GetClass
 #include "js/ProfilingStack.h"
 #include "GeckoProfiler.h"
+#include "mozJSModuleLoader.h"
 #include "nsJSEnvironment.h"
 #include "nsThreadUtils.h"
 #include "nsDOMJSUtils.h"
 
 #include "WrapperFactory.h"
 #include "AccessCheck.h"
+#include "JSServices.h"
 
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/DOMException.h"
 #include "mozilla/dom/Exceptions.h"
 #include "mozilla/dom/Promise.h"
+#include "mozilla/glean/bindings/Glean.h"
+#include "mozilla/glean/bindings/GleanPings.h"
 #include "mozilla/ScriptPreloader.h"
 
 #include "nsDOMMutationObserver.h"
@@ -46,9 +50,14 @@
 #include "nsContentUtils.h"
 #include "nsScriptError.h"
 #include "nsJSUtils.h"
+#include "nsRFPService.h"
 #include "prsystem.h"
 
-#ifndef XP_WIN
+#include "xpcprivate.h"
+
+#ifdef XP_WIN
+#  include "mozilla/WinHeaderOnlyUtils.h"
+#else
 #  include <sys/mman.h>
 #endif
 
@@ -91,7 +100,7 @@ void nsXPConnect::InitJSContext() {
   gSelf->mContext = xpccx;
   gSelf->mRuntime = xpccx->Runtime();
 
-  mozJSComponentLoader::InitStatics();
+  mozJSModuleLoader::InitStatics();
 
   // Initialize the script preloader cache.
   Unused << mozilla::ScriptPreloader::GetSingleton();
@@ -112,16 +121,20 @@ nsXPConnect::~nsXPConnect() {
   // XPConnect, to clean the stuff we forcibly disconnected. The forced
   // shutdown code defaults to leaking in a number of situations, so we can't
   // get by with only the second GC. :-(
-  mRuntime->GarbageCollect(JS::GCReason::XPCONNECT_SHUTDOWN);
+  //
+  // Bug 1650075: These should really pass GCOptions::Shutdown but doing that
+  // seems to cause crashes.
+  mRuntime->GarbageCollect(JS::GCOptions::Normal,
+                           JS::GCReason::XPCONNECT_SHUTDOWN);
 
   XPCWrappedNativeScope::SystemIsBeingShutDown();
-  mRuntime->SystemIsBeingShutDown();
 
   // The above causes us to clean up a bunch of XPConnect data structures,
   // after which point we need to GC to clean everything up. We need to do
   // this before deleting the XPCJSContext, because doing so destroys the
   // maps that our finalize callback depends on.
-  mRuntime->GarbageCollect(JS::GCReason::XPCONNECT_SHUTDOWN);
+  mRuntime->GarbageCollect(JS::GCOptions::Normal,
+                           JS::GCReason::XPCONNECT_SHUTDOWN);
 
   NS_RELEASE(gSystemPrincipal);
   gScriptSecurityManager = nullptr;
@@ -167,7 +180,7 @@ void nsXPConnect::ReleaseXPConnectSingleton() {
     NS_RELEASE2(xpc, cnt);
   }
 
-  mozJSComponentLoader::Shutdown();
+  mozJSModuleLoader::ShutdownLoaders();
 }
 
 // static
@@ -180,12 +193,13 @@ void xpc::ErrorBase::Init(JSErrorBase* aReport) {
   if (!aReport->filename) {
     mFileName.SetIsVoid(true);
   } else {
-    CopyUTF8toUTF16(mozilla::MakeStringSpan(aReport->filename), mFileName);
+    CopyUTF8toUTF16(mozilla::MakeStringSpan(aReport->filename.c_str()),
+                    mFileName);
   }
 
   mSourceId = aReport->sourceId;
   mLineNumber = aReport->lineno;
-  mColumn = aReport->column;
+  mColumn = aReport->column.oneOriginValue();
 }
 
 void xpc::ErrorNote::Init(JSErrorNotes::Note* aNote) {
@@ -472,23 +486,27 @@ JSObject* CreateGlobalObject(JSContext* cx, const JSClass* clasp,
 }
 
 void InitGlobalObjectOptions(JS::RealmOptions& aOptions,
-                             nsIPrincipal* aPrincipal) {
-  bool shouldDiscardSystemSource = ShouldDiscardSystemSource();
-
-  bool isSystem = aPrincipal->IsSystemPrincipal();
-
-  if (isSystem) {
+                             bool aIsSystemPrincipal, bool aSecureContext,
+                             bool aForceUTC, bool aAlwaysUseFdlibm,
+                             bool aLocaleEnUS) {
+  if (aIsSystemPrincipal) {
     // Make toSource functions [ChromeOnly]
     aOptions.creationOptions().setToSourceEnabled(true);
     // Make sure [SecureContext] APIs are visible:
     aOptions.creationOptions().setSecureContext(true);
     aOptions.behaviors().setClampAndJitterTime(false);
+    aOptions.behaviors().setDiscardSource(ShouldDiscardSystemSource());
+    MOZ_ASSERT(aSecureContext,
+               "aIsSystemPrincipal should imply aSecureContext");
+  } else {
+    aOptions.creationOptions().setSecureContext(aSecureContext);
   }
 
-  if (shouldDiscardSystemSource) {
-    bool discardSource = isSystem;
-
-    aOptions.behaviors().setDiscardSource(discardSource);
+  aOptions.creationOptions().setForceUTC(aForceUTC);
+  aOptions.creationOptions().setAlwaysUseFdlibm(aAlwaysUseFdlibm);
+  if (aLocaleEnUS) {
+    nsCString locale = nsRFPService::GetSpoofedJSLocale();
+    aOptions.creationOptions().setLocaleCopyZ(locale.get());
   }
 }
 
@@ -505,6 +523,10 @@ bool InitGlobalObject(JSContext* aJSContext, JS::Handle<JSObject*> aGlobal,
     // XPCCallContext gives us an active request needed to save/restore.
     if (!ObjectScope(aGlobal)->AttachComponentsObject(aJSContext) ||
         !XPCNativeWrapper::AttachNewConstructorObject(aJSContext, aGlobal)) {
+      return UnexpectedFailure(false);
+    }
+
+    if (!mozJSModuleLoader::Get()->DefineJSServices(aJSContext, aGlobal)) {
       return UnexpectedFailure(false);
     }
   }
@@ -528,8 +550,19 @@ nsresult InitClassesWithNewWrappedGlobal(JSContext* aJSContext,
   // We pass null for the 'extra' pointer during global object creation, so
   // we need to have a principal.
   MOZ_ASSERT(aPrincipal);
+  // All uses (at time of writing) were System Principal, meaning
+  // aShouldResistFingerprinting can be hardcoded to false.
+  // If this changes, ShouldRFP needs to be updated accordingly.
+  MOZ_RELEASE_ASSERT(aPrincipal->IsSystemPrincipal());
 
-  InitGlobalObjectOptions(aOptions, aPrincipal);
+  // Similarly we can thus hardcode the RTPCallerType.
+  aOptions.behaviors().setReduceTimerPrecisionCallerType(
+      RTPCallerTypeToToken(RTPCallerType::SystemPrincipal));
+
+  InitGlobalObjectOptions(aOptions, /* aSystemPrincipal */ true,
+                          /* aSecureContext */ true,
+                          /* aForceUTC */ false, /* aAlwaysUseFdlibm */ false,
+                          /* aLocaleEnUS */ false);
 
   // Call into XPCWrappedNative to make a new global object, scope, and global
   // prototype.
@@ -566,6 +599,69 @@ nsresult InitClassesWithNewWrappedGlobal(JSContext* aJSContext,
   return NS_OK;
 }
 
+nsCString GetFunctionName(JSContext* cx, HandleObject obj) {
+  RootedObject inner(cx, js::UncheckedUnwrap(obj));
+  JSAutoRealm ar(cx, inner);
+
+  RootedFunction fun(cx, JS_GetObjectFunction(inner));
+  if (!fun) {
+    // If the object isn't a function, it's likely that it has a single
+    // function property (for things like nsITimerCallback). In this case,
+    // return the name of that function property.
+
+    Rooted<IdVector> idArray(cx, IdVector(cx));
+    if (!JS_Enumerate(cx, inner, &idArray)) {
+      JS_ClearPendingException(cx);
+      return nsCString("error");
+    }
+
+    if (idArray.length() != 1) {
+      return nsCString("nonfunction");
+    }
+
+    RootedId id(cx, idArray[0]);
+    RootedValue v(cx);
+    if (!JS_GetPropertyById(cx, inner, id, &v)) {
+      JS_ClearPendingException(cx);
+      return nsCString("nonfunction");
+    }
+
+    if (!v.isObject()) {
+      return nsCString("nonfunction");
+    }
+
+    RootedObject vobj(cx, &v.toObject());
+    return GetFunctionName(cx, vobj);
+  }
+
+  RootedString funName(cx, JS_GetMaybePartialFunctionDisplayId(fun));
+  RootedScript script(cx, JS_GetFunctionScript(cx, fun));
+  const char* filename = script ? JS_GetScriptFilename(script) : "anonymous";
+  const char* filenameSuffix = strrchr(filename, '/');
+
+  if (filenameSuffix) {
+    filenameSuffix++;
+  } else {
+    filenameSuffix = filename;
+  }
+
+  nsCString displayName("anonymous");
+  if (funName) {
+    RootedValue funNameVal(cx, StringValue(funName));
+    if (!XPCConvert::JSData2Native(cx, &displayName, funNameVal,
+                                   {nsXPTType::T_UTF8STRING}, nullptr, 0,
+                                   nullptr)) {
+      JS_ClearPendingException(cx);
+      return nsCString("anonymous");
+    }
+  }
+
+  displayName.Append('[');
+  displayName.Append(filenameSuffix, strlen(filenameSuffix));
+  displayName.Append(']');
+  return displayName;
+}
+
 }  // namespace xpc
 
 static nsresult NativeInterface2JSObject(JSContext* aCx, HandleObject aScope,
@@ -589,10 +685,9 @@ static nsresult NativeInterface2JSObject(JSContext* aCx, HandleObject aScope,
   return NS_OK;
 }
 
-NS_IMETHODIMP
-nsXPConnect::WrapNative(JSContext* aJSContext, JSObject* aScopeArg,
-                        nsISupports* aCOMObj, const nsIID& aIID,
-                        JSObject** aRetVal) {
+nsresult nsIXPConnect::WrapNative(JSContext* aJSContext, JSObject* aScopeArg,
+                                  nsISupports* aCOMObj, const nsIID& aIID,
+                                  JSObject** aRetVal) {
   MOZ_ASSERT(aJSContext, "bad param");
   MOZ_ASSERT(aScopeArg, "bad param");
   MOZ_ASSERT(aCOMObj, "bad param");
@@ -613,11 +708,12 @@ nsXPConnect::WrapNative(JSContext* aJSContext, JSObject* aScopeArg,
   return NS_OK;
 }
 
-NS_IMETHODIMP
-nsXPConnect::WrapNativeToJSVal(JSContext* aJSContext, JSObject* aScopeArg,
-                               nsISupports* aCOMObj, nsWrapperCache* aCache,
-                               const nsIID* aIID, bool aAllowWrapping,
-                               MutableHandleValue aVal) {
+nsresult nsIXPConnect::WrapNativeToJSVal(JSContext* aJSContext,
+                                         JSObject* aScopeArg,
+                                         nsISupports* aCOMObj,
+                                         nsWrapperCache* aCache,
+                                         const nsIID* aIID, bool aAllowWrapping,
+                                         MutableHandleValue aVal) {
   MOZ_ASSERT(aJSContext, "bad param");
   MOZ_ASSERT(aScopeArg, "bad param");
   MOZ_ASSERT(aCOMObj, "bad param");
@@ -627,9 +723,8 @@ nsXPConnect::WrapNativeToJSVal(JSContext* aJSContext, JSObject* aScopeArg,
                                   aAllowWrapping, aVal);
 }
 
-NS_IMETHODIMP
-nsXPConnect::WrapJS(JSContext* aJSContext, JSObject* aJSObjArg,
-                    const nsIID& aIID, void** result) {
+nsresult nsIXPConnect::WrapJS(JSContext* aJSContext, JSObject* aJSObjArg,
+                              const nsIID& aIID, void** result) {
   MOZ_ASSERT(aJSContext, "bad param");
   MOZ_ASSERT(aJSObjArg, "bad param");
   MOZ_ASSERT(result, "bad param");
@@ -645,9 +740,8 @@ nsXPConnect::WrapJS(JSContext* aJSContext, JSObject* aJSObjArg,
   return NS_OK;
 }
 
-NS_IMETHODIMP
-nsXPConnect::JSValToVariant(JSContext* cx, HandleValue aJSVal,
-                            nsIVariant** aResult) {
+nsresult nsIXPConnect::JSValToVariant(JSContext* cx, HandleValue aJSVal,
+                                      nsIVariant** aResult) {
   MOZ_ASSERT(aResult, "bad param");
 
   RefPtr<XPCVariant> variant = XPCVariant::newVariant(cx, aJSVal);
@@ -657,11 +751,11 @@ nsXPConnect::JSValToVariant(JSContext* cx, HandleValue aJSVal,
   return NS_OK;
 }
 
-NS_IMETHODIMP
-nsXPConnect::WrapJSAggregatedToNative(nsISupports* aOuter,
-                                      JSContext* aJSContext,
-                                      JSObject* aJSObjArg, const nsIID& aIID,
-                                      void** result) {
+nsresult nsIXPConnect::WrapJSAggregatedToNative(nsISupports* aOuter,
+                                                JSContext* aJSContext,
+                                                JSObject* aJSObjArg,
+                                                const nsIID& aIID,
+                                                void** result) {
   MOZ_ASSERT(aOuter, "bad param");
   MOZ_ASSERT(aJSContext, "bad param");
   MOZ_ASSERT(aJSObjArg, "bad param");
@@ -677,10 +771,9 @@ nsXPConnect::WrapJSAggregatedToNative(nsISupports* aOuter,
   return NS_OK;
 }
 
-NS_IMETHODIMP
-nsXPConnect::GetWrappedNativeOfJSObject(JSContext* aJSContext,
-                                        JSObject* aJSObjArg,
-                                        nsIXPConnectWrappedNative** _retval) {
+nsresult nsIXPConnect::GetWrappedNativeOfJSObject(
+    JSContext* aJSContext, JSObject* aJSObjArg,
+    nsIXPConnectWrappedNative** _retval) {
   MOZ_ASSERT(aJSContext, "bad param");
   MOZ_ASSERT(aJSObjArg, "bad param");
   MOZ_ASSERT(_retval, "bad param");
@@ -688,7 +781,7 @@ nsXPConnect::GetWrappedNativeOfJSObject(JSContext* aJSContext,
   RootedObject aJSObj(aJSContext, aJSObjArg);
   aJSObj = js::CheckedUnwrapDynamic(aJSObj, aJSContext,
                                     /* stopAtWindowProxy = */ false);
-  if (!aJSObj || !IS_WN_REFLECTOR(aJSObj)) {
+  if (!aJSObj || !IsWrappedNativeReflector(aJSObj)) {
     *_retval = nullptr;
     return NS_ERROR_FAILURE;
   }
@@ -704,7 +797,7 @@ static already_AddRefed<nsISupports> ReflectorToISupports(JSObject* reflector) {
   }
 
   // Try XPCWrappedNatives.
-  if (IS_WN_REFLECTOR(reflector)) {
+  if (IsWrappedNativeReflector(reflector)) {
     XPCWrappedNative* wn = XPCWrappedNative::Get(reflector);
     if (!wn) {
       return nullptr;
@@ -735,9 +828,8 @@ already_AddRefed<nsISupports> xpc::ReflectorToISupportsDynamic(
                                /* stopAtWindowProxy = */ false));
 }
 
-NS_IMETHODIMP
-nsXPConnect::CreateSandbox(JSContext* cx, nsIPrincipal* principal,
-                           JSObject** _retval) {
+nsresult nsIXPConnect::CreateSandbox(JSContext* cx, nsIPrincipal* principal,
+                                     JSObject** _retval) {
   *_retval = nullptr;
 
   RootedValue rval(cx);
@@ -753,10 +845,10 @@ nsXPConnect::CreateSandbox(JSContext* cx, nsIPrincipal* principal,
   return rv;
 }
 
-NS_IMETHODIMP
-nsXPConnect::EvalInSandboxObject(const nsAString& source, const char* filename,
-                                 JSContext* cx, JSObject* sandboxArg,
-                                 MutableHandleValue rval) {
+nsresult nsIXPConnect::EvalInSandboxObject(const nsAString& source,
+                                           const char* filename, JSContext* cx,
+                                           JSObject* sandboxArg,
+                                           MutableHandleValue rval) {
   if (!sandboxArg) {
     return NS_ERROR_INVALID_ARG;
   }
@@ -772,28 +864,28 @@ nsXPConnect::EvalInSandboxObject(const nsAString& source, const char* filename,
                        /* enforceFilenameRestrictions */ true, rval);
 }
 
-NS_IMETHODIMP
-nsXPConnect::DebugDump(int16_t depth) {
+nsresult nsIXPConnect::DebugDump(int16_t depth) {
 #ifdef DEBUG
+  auto* self = static_cast<nsXPConnect*>(this);
+
   depth--;
   XPC_LOG_ALWAYS(
-      ("nsXPConnect @ %p with mRefCnt = %" PRIuPTR, this, mRefCnt.get()));
+      ("nsXPConnect @ %p with mRefCnt = %" PRIuPTR, self, self->mRefCnt.get()));
   XPC_LOG_INDENT();
-  XPC_LOG_ALWAYS(("gSelf @ %p", gSelf));
-  XPC_LOG_ALWAYS(("gOnceAliveNowDead is %d", (int)gOnceAliveNowDead));
+  XPC_LOG_ALWAYS(("gSelf @ %p", self->gSelf));
+  XPC_LOG_ALWAYS(("gOnceAliveNowDead is %d", (int)self->gOnceAliveNowDead));
   XPCWrappedNativeScope::DebugDumpAllScopes(depth);
   XPC_LOG_OUTDENT();
 #endif
   return NS_OK;
 }
 
-NS_IMETHODIMP
-nsXPConnect::DebugDumpObject(nsISupports* p, int16_t depth) {
+nsresult nsIXPConnect::DebugDumpObject(nsISupports* aCOMObj, int16_t depth) {
 #ifdef DEBUG
   if (!depth) {
     return NS_OK;
   }
-  if (!p) {
+  if (!aCOMObj) {
     XPC_LOG_ALWAYS(("*** Cound not dump object with NULL address"));
     return NS_OK;
   }
@@ -802,36 +894,35 @@ nsXPConnect::DebugDumpObject(nsISupports* p, int16_t depth) {
   nsCOMPtr<nsIXPConnectWrappedNative> wn;
   nsCOMPtr<nsIXPConnectWrappedJS> wjs;
 
-  if (NS_SUCCEEDED(
-          p->QueryInterface(NS_GET_IID(nsIXPConnect), getter_AddRefs(xpc)))) {
+  if (NS_SUCCEEDED(aCOMObj->QueryInterface(NS_GET_IID(nsIXPConnect),
+                                           getter_AddRefs(xpc)))) {
     XPC_LOG_ALWAYS(("Dumping a nsIXPConnect..."));
     xpc->DebugDump(depth);
-  } else if (NS_SUCCEEDED(p->QueryInterface(
+  } else if (NS_SUCCEEDED(aCOMObj->QueryInterface(
                  NS_GET_IID(nsIXPConnectWrappedNative), getter_AddRefs(wn)))) {
     XPC_LOG_ALWAYS(("Dumping a nsIXPConnectWrappedNative..."));
     wn->DebugDump(depth);
-  } else if (NS_SUCCEEDED(p->QueryInterface(NS_GET_IID(nsIXPConnectWrappedJS),
-                                            getter_AddRefs(wjs)))) {
+  } else if (NS_SUCCEEDED(aCOMObj->QueryInterface(
+                 NS_GET_IID(nsIXPConnectWrappedJS), getter_AddRefs(wjs)))) {
     XPC_LOG_ALWAYS(("Dumping a nsIXPConnectWrappedJS..."));
     wjs->DebugDump(depth);
   } else {
-    XPC_LOG_ALWAYS(("*** Could not dump the nsISupports @ %p", p));
+    XPC_LOG_ALWAYS(("*** Could not dump the nsISupports @ %p", aCOMObj));
   }
 #endif
   return NS_OK;
 }
 
-NS_IMETHODIMP
-nsXPConnect::DebugDumpJSStack(bool showArgs, bool showLocals,
-                              bool showThisProps) {
+nsresult nsIXPConnect::DebugDumpJSStack(bool showArgs, bool showLocals,
+                                        bool showThisProps) {
   xpc_DumpJSStack(showArgs, showLocals, showThisProps);
 
   return NS_OK;
 }
 
-NS_IMETHODIMP
-nsXPConnect::VariantToJS(JSContext* ctx, JSObject* scopeArg, nsIVariant* value,
-                         MutableHandleValue _retval) {
+nsresult nsIXPConnect::VariantToJS(JSContext* ctx, JSObject* scopeArg,
+                                   nsIVariant* value,
+                                   MutableHandleValue _retval) {
   MOZ_ASSERT(ctx, "bad param");
   MOZ_ASSERT(scopeArg, "bad param");
   MOZ_ASSERT(value, "bad param");
@@ -850,9 +941,8 @@ nsXPConnect::VariantToJS(JSContext* ctx, JSObject* scopeArg, nsIVariant* value,
   return NS_OK;
 }
 
-NS_IMETHODIMP
-nsXPConnect::JSToVariant(JSContext* ctx, HandleValue value,
-                         nsIVariant** _retval) {
+nsresult nsIXPConnect::JSToVariant(JSContext* ctx, HandleValue value,
+                                   nsIVariant** _retval) {
   MOZ_ASSERT(ctx, "bad param");
   MOZ_ASSERT(_retval, "bad param");
 

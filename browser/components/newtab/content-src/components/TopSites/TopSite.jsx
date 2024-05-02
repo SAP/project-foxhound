@@ -2,7 +2,10 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-import { actionCreators as ac, actionTypes as at } from "common/Actions.jsm";
+import {
+  actionCreators as ac,
+  actionTypes as at,
+} from "common/Actions.sys.mjs";
 import {
   MIN_RICH_FAVICON_SIZE,
   MIN_SMALL_FAVICON_SIZE,
@@ -16,11 +19,22 @@ import { LinkMenu } from "content-src/components/LinkMenu/LinkMenu";
 import { ImpressionStats } from "../DiscoveryStreamImpressionStats/ImpressionStats";
 import React from "react";
 import { ScreenshotUtils } from "content-src/lib/screenshot-utils";
-import { TOP_SITES_MAX_SITES_PER_ROW } from "common/Reducers.jsm";
+import { TOP_SITES_MAX_SITES_PER_ROW } from "common/Reducers.sys.mjs";
 import { ContextMenuButton } from "content-src/components/ContextMenu/ContextMenuButton";
 import { TopSiteImpressionWrapper } from "./TopSiteImpressionWrapper";
+import { connect } from "react-redux";
+
 const SPOC_TYPE = "SPOC";
 const NEWTAB_SOURCE = "newtab";
+
+// For cases if we want to know if this is sponsored by either sponsored_position or type.
+// We have two sources for sponsored topsites, and
+// sponsored_position is set by one sponsored source, and type is set by another.
+// This is not called in all cases, sometimes we want to know if it's one source
+// or the other. This function is only applicable in cases where we only care if it's either.
+function isSponsored(link) {
+  return link?.sponsored_position || link?.type === SPOC_TYPE;
+}
 
 export class TopSiteLink extends React.PureComponent {
   constructor(props) {
@@ -37,7 +51,7 @@ export class TopSiteLink extends React.PureComponent {
    */
   _allowDrop(e) {
     return (
-      (this.dragged || !this.props.link.sponsored_position) &&
+      (this.dragged || !isSponsored(this.props.link)) &&
       e.dataTransfer.types.includes("text/topsite-index")
     );
   }
@@ -52,7 +66,7 @@ export class TopSiteLink extends React.PureComponent {
         break;
       case "dragstart":
         event.target.blur();
-        if (this.props.link.sponsored_position) {
+        if (isSponsored(this.props.link)) {
           event.preventDefault();
           break;
         }
@@ -200,19 +214,18 @@ export class TopSiteLink extends React.PureComponent {
       smallFaviconStyle = { backgroundImage: `url(${tippyTopIcon})` };
     } else if (link.customScreenshotURL) {
       // assume high quality custom screenshot and use rich icon styles and class names
-
-      // TopSite spoc experiment only
-      const spocImgURL =
-        link.type === SPOC_TYPE ? link.customScreenshotURL : "";
-
       imageClassName = "top-site-icon rich-icon";
       imageStyle = {
         backgroundColor: link.backgroundColor,
         backgroundImage: hasScreenshotImage
           ? `url(${this.state.screenshotImage.url})`
-          : `url(${spocImgURL})`,
+          : "",
       };
-    } else if (tippyTopIcon || faviconSize >= MIN_RICH_FAVICON_SIZE) {
+    } else if (
+      tippyTopIcon ||
+      link.type === SPOC_TYPE ||
+      faviconSize >= MIN_RICH_FAVICON_SIZE
+    ) {
       // styles and class names for top sites with rich icons
       imageClassName = "top-site-icon rich-icon";
       imageStyle = {
@@ -237,14 +250,8 @@ export class TopSiteLink extends React.PureComponent {
   }
 
   render() {
-    const {
-      children,
-      className,
-      isDraggable,
-      link,
-      onClick,
-      title,
-    } = this.props;
+    const { children, className, isDraggable, link, onClick, title } =
+      this.props;
     const topSiteOuterClassName = `top-site-outer${
       className ? ` ${className}` : ""
     }${link.isDragged ? " dragged" : ""}${
@@ -269,6 +276,59 @@ export class TopSiteLink extends React.PureComponent {
       };
     }
 
+    let impressionStats = null;
+    if (link.type === SPOC_TYPE) {
+      // Record impressions for Pocket tiles.
+      impressionStats = (
+        <ImpressionStats
+          flightId={link.flightId}
+          rows={[
+            {
+              id: link.id,
+              pos: link.pos,
+              shim: link.shim && link.shim.impression,
+              advertiser: title.toLocaleLowerCase(),
+            },
+          ]}
+          dispatch={this.props.dispatch}
+          source={TOP_SITES_SOURCE}
+        />
+      );
+    } else if (isSponsored(link)) {
+      // Record impressions for non-Pocket sponsored tiles.
+      impressionStats = (
+        <TopSiteImpressionWrapper
+          actionType={at.TOP_SITES_SPONSORED_IMPRESSION_STATS}
+          tile={{
+            position: this.props.index,
+            tile_id: link.sponsored_tile_id || -1,
+            reporting_url: link.sponsored_impression_url,
+            advertiser: title.toLocaleLowerCase(),
+            source: NEWTAB_SOURCE,
+          }}
+          // For testing.
+          IntersectionObserver={this.props.IntersectionObserver}
+          document={this.props.document}
+          dispatch={this.props.dispatch}
+        />
+      );
+    } else {
+      // Record impressions for organic tiles.
+      impressionStats = (
+        <TopSiteImpressionWrapper
+          actionType={at.TOP_SITES_ORGANIC_IMPRESSION_STATS}
+          tile={{
+            position: this.props.index,
+            source: NEWTAB_SOURCE,
+          }}
+          // For testing.
+          IntersectionObserver={this.props.IntersectionObserver}
+          document={this.props.document}
+          dispatch={this.props.dispatch}
+        />
+      );
+    }
+
     return (
       <li
         className={topSiteOuterClassName}
@@ -288,6 +348,7 @@ export class TopSiteLink extends React.PureComponent {
             onKeyPress={this.onKeyPress}
             onClick={onClick}
             draggable={true}
+            data-is-sponsored-link={!!link.sponsored_tile_id}
           >
             <div className="tile" aria-hidden={true}>
               <div
@@ -330,33 +391,7 @@ export class TopSiteLink extends React.PureComponent {
             </div>
           </a>
           {children}
-          {link.type === SPOC_TYPE ? (
-            <ImpressionStats
-              flightId={link.flightId}
-              rows={[
-                {
-                  id: link.id,
-                  pos: link.pos,
-                  shim: link.shim && link.shim.impression,
-                },
-              ]}
-              dispatch={this.props.dispatch}
-              source={TOP_SITES_SOURCE}
-            />
-          ) : null}
-          {/* Set up an impression wrapper for the sponsored TopSite */}
-          {link.sponsored_position ? (
-            <TopSiteImpressionWrapper
-              tile={{
-                position: this.props.index + 1,
-                tile_id: link.sponsored_tile_id || -1,
-                reporting_url: link.sponsored_impression_url,
-                advertiser: title.toLocaleLowerCase(),
-                source: NEWTAB_SOURCE,
-              }}
-              dispatch={this.props.dispatch}
-            />
-          ) : null}
+          {impressionStats}
         </div>
       </li>
     );
@@ -390,10 +425,7 @@ export class TopSite extends React.PureComponent {
       value.card_type = "search";
       value.search_vendor = this.props.link.hostname;
     }
-    if (
-      this.props.link.type === SPOC_TYPE ||
-      this.props.link.sponsored_position
-    ) {
+    if (isSponsored(this.props.link)) {
       value.card_type = "spoc";
     }
     return { value };
@@ -431,8 +463,8 @@ export class TopSite extends React.PureComponent {
         })
       );
 
-      // Fire off a spoc specific impression.
       if (this.props.link.type === SPOC_TYPE) {
+        // Record a Pocket-specific click.
         this.props.dispatch(
           ac.ImpressionStats({
             source: TOP_SITES_SOURCE,
@@ -446,7 +478,51 @@ export class TopSite extends React.PureComponent {
             ],
           })
         );
+
+        // Record a click for a Pocket sponsored tile.
+        const title = this.props.link.label || this.props.link.hostname;
+        this.props.dispatch(
+          ac.OnlyToMain({
+            type: at.TOP_SITES_SPONSORED_IMPRESSION_STATS,
+            data: {
+              type: "click",
+              position: this.props.link.pos,
+              tile_id: this.props.link.id,
+              advertiser: title.toLocaleLowerCase(),
+              source: NEWTAB_SOURCE,
+            },
+          })
+        );
+      } else if (isSponsored(this.props.link)) {
+        // Record a click for a non-Pocket sponsored tile.
+        const title = this.props.link.label || this.props.link.hostname;
+        this.props.dispatch(
+          ac.OnlyToMain({
+            type: at.TOP_SITES_SPONSORED_IMPRESSION_STATS,
+            data: {
+              type: "click",
+              position: this.props.index,
+              tile_id: this.props.link.sponsored_tile_id || -1,
+              reporting_url: this.props.link.sponsored_click_url,
+              advertiser: title.toLocaleLowerCase(),
+              source: NEWTAB_SOURCE,
+            },
+          })
+        );
+      } else {
+        // Record a click for an organic tile.
+        this.props.dispatch(
+          ac.OnlyToMain({
+            type: at.TOP_SITES_ORGANIC_IMPRESSION_STATS,
+            data: {
+              type: "click",
+              position: this.props.index,
+              source: NEWTAB_SOURCE,
+            },
+          })
+        );
       }
+
       if (this.props.link.sendAttributionRequest) {
         this.props.dispatch(
           ac.OnlyToMain({
@@ -454,22 +530,6 @@ export class TopSite extends React.PureComponent {
             data: {
               targetURL: this.props.link.url,
               source: "newtab",
-            },
-          })
-        );
-      }
-      if (this.props.link.sponsored_position) {
-        const title = this.props.link.label || this.props.link.hostname;
-        this.props.dispatch(
-          ac.OnlyToMain({
-            type: at.TOP_SITES_IMPRESSION_STATS,
-            data: {
-              type: "click",
-              position: this.props.index + 1,
-              tile_id: this.props.link.sponsored_tile_id || -1,
-              reporting_url: this.props.link.sponsored_click_url,
-              advertiser: title.toLocaleLowerCase(),
-              source: NEWTAB_SOURCE,
             },
           })
         );
@@ -566,7 +626,7 @@ export class TopSitePlaceholder extends React.PureComponent {
         isDraggable={false}
       >
         <button
-          aria-haspopup="true"
+          aria-haspopup="dialog"
           className="context-menu-button edit-button icon"
           data-l10n-id="newtab-menu-topsites-placeholder-tooltip"
           onClick={this.onEditButtonClick}
@@ -576,7 +636,7 @@ export class TopSitePlaceholder extends React.PureComponent {
   }
 }
 
-export class TopSiteList extends React.PureComponent {
+export class _TopSiteList extends React.PureComponent {
   static get DEFAULT_STATE() {
     return {
       activeIndex: null,
@@ -589,7 +649,7 @@ export class TopSiteList extends React.PureComponent {
 
   constructor(props) {
     super(props);
-    this.state = TopSiteList.DEFAULT_STATE;
+    this.state = _TopSiteList.DEFAULT_STATE;
     this.onDragEvent = this.onDragEvent.bind(this);
     this.onActivate = this.onActivate.bind(this);
   }
@@ -608,7 +668,7 @@ export class TopSiteList extends React.PureComponent {
             this.state.draggedSite.url)
       ) {
         // We got the new order from the redux store via props. We can clear state now.
-        this.setState(TopSiteList.DEFAULT_STATE);
+        this.setState(_TopSiteList.DEFAULT_STATE);
       }
     }
   }
@@ -638,7 +698,7 @@ export class TopSiteList extends React.PureComponent {
       case "dragend":
         if (!this.dropped) {
           // If there was no drop event, reset the state to the default.
-          this.setState(TopSiteList.DEFAULT_STATE);
+          this.setState(_TopSiteList.DEFAULT_STATE);
         }
         break;
       case "dragenter":
@@ -660,8 +720,8 @@ export class TopSiteList extends React.PureComponent {
                 site: {
                   url: this.state.draggedSite.url,
                   label: this.state.draggedTitle,
-                  customScreenshotURL: this.state.draggedSite
-                    .customScreenshotURL,
+                  customScreenshotURL:
+                    this.state.draggedSite.customScreenshotURL,
                   // Only if the search topsites experiment is enabled
                   ...(this.state.draggedSite.searchTopSite && {
                     searchTopSite: true,
@@ -693,10 +753,10 @@ export class TopSiteList extends React.PureComponent {
     const topSites = this._getTopSites();
     topSites[this.state.draggedIndex] = null;
     const preview = topSites.map(site =>
-      site && (site.isPinned || site.sponsored_position) ? site : null
+      site && (site.isPinned || isSponsored(site)) ? site : null
     );
     const unpinned = topSites.filter(
-      site => site && !site.isPinned && !site.sponsored_position
+      site => site && !site.isPinned && !isSponsored(site)
     );
     const siteToInsert = Object.assign({}, this.state.draggedSite, {
       isPinned: true,
@@ -720,7 +780,7 @@ export class TopSiteList extends React.PureComponent {
         index > this.state.draggedIndex ? holeIndex < index : holeIndex > index
       ) {
         let nextIndex = holeIndex + shiftingStep;
-        while (preview[nextIndex] && preview[nextIndex].sponsored_position) {
+        while (isSponsored(preview[nextIndex])) {
           nextIndex += shiftingStep;
         }
         preview[holeIndex] = preview[nextIndex];
@@ -767,6 +827,7 @@ export class TopSiteList extends React.PureComponent {
         Object.assign({}, topSites[i], {
           iconType: this.props.topSiteIconType(topSites[i]),
         });
+
       const slotProps = {
         key: link ? link.url : holeIndex++,
         index: i,
@@ -774,10 +835,14 @@ export class TopSiteList extends React.PureComponent {
       if (i >= maxNarrowVisibleIndex) {
         slotProps.className = "hide-for-narrow";
       }
-      topSitesUI.push(
-        !link ? (
-          <TopSitePlaceholder {...slotProps} {...commonProps} />
-        ) : (
+
+      let topSiteLink;
+      // Use a placeholder if the link is empty or it's rendering a sponsored
+      // tile for the about:home startup cache.
+      if (!link || (props.App.isForStartupCache && isSponsored(link))) {
+        topSiteLink = <TopSitePlaceholder {...slotProps} {...commonProps} />;
+      } else {
+        topSiteLink = (
           <TopSite
             link={link}
             activeIndex={this.state.activeIndex}
@@ -786,8 +851,10 @@ export class TopSiteList extends React.PureComponent {
             {...commonProps}
             colors={props.colors}
           />
-        )
-      );
+        );
+      }
+
+      topSitesUI.push(topSiteLink);
     }
     return (
       <ul
@@ -800,3 +867,7 @@ export class TopSiteList extends React.PureComponent {
     );
   }
 }
+
+export const TopSiteList = connect(state => ({
+  App: state.App,
+}))(_TopSiteList);

@@ -2,8 +2,11 @@
 
 use std::fs;
 use std::io::{Read, Seek, SeekFrom, Write};
-use std::sync::mpsc::{sync_channel, TryRecvError};
-use std::thread;
+#[cfg(target_os = "linux")]
+use std::{
+    sync::mpsc::{sync_channel, TryRecvError},
+    thread,
+};
 
 #[test]
 fn test_basic() {
@@ -26,6 +29,8 @@ fn test_cleanup() {
     assert!(num_files == 0);
 }
 
+// Only run this test on Linux. MacOS doesn't like us creating so many files, apparently.
+#[cfg(target_os = "linux")]
 #[test]
 fn test_pathological_cleaner() {
     let tmpdir = tempfile::tempdir().unwrap();

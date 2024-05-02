@@ -13,7 +13,6 @@
 #include "jit/MoveResolver.h"
 #include "vm/BytecodeUtil.h"
 #include "wasm/WasmBuiltins.h"
-#include "wasm/WasmTlsData.h"
 
 namespace js {
 namespace jit {
@@ -495,10 +494,6 @@ class MacroAssemblerMIPSCompat : public MacroAssemblerMIPS {
   }
 
   template <typename T>
-  void storeUnboxedValue(ConstantOrRegister value, MIRType valueType,
-                         const T& dest, MIRType slotType);
-
-  template <typename T>
   void storeUnboxedPayload(ValueOperand value, T address, size_t nbytes,
                            JSValueType) {
     switch (nbytes) {
@@ -715,12 +710,6 @@ class MacroAssemblerMIPSCompat : public MacroAssemblerMIPS {
   void store32(Imm32 src, const Address& address);
   void store32(Imm32 src, const BaseIndex& address);
 
-  // NOTE: This will use second scratch on MIPS. Only ARM needs the
-  // implementation without second scratch.
-  void store32_NoSecondScratch(Imm32 src, const Address& address) {
-    store32(src, address);
-  }
-
   template <typename T>
   void store32Unaligned(Register src, const T& dest) {
     ma_store_unaligned(src, dest);
@@ -819,9 +808,6 @@ class MacroAssemblerMIPSCompat : public MacroAssemblerMIPS {
 
   void moveFloat32(FloatRegister src, FloatRegister dest) {
     as_movs(dest, src);
-  }
-  void loadWasmPinnedRegsFromTls() {
-    loadPtr(Address(WasmTlsReg, offsetof(wasm::TlsData, memoryBase)), HeapReg);
   }
 
   // Instrumentation for entering and leaving the profiler.

@@ -17,8 +17,7 @@
 #include "nsISupportsImpl.h"
 #include "nsITimer.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class BrowsingContext;
 
@@ -177,7 +176,7 @@ class MediaController final : public DOMEventTargetHelper,
   void UpdateDeactivationTimerIfNeeded();
 
   void DispatchAsyncEvent(const nsAString& aName);
-  void DispatchAsyncEvent(Event* aEvent);
+  void DispatchAsyncEvent(already_AddRefed<Event> aEvent);
 
   bool IsMainController() const;
   void ForceToBecomeMainControllerIfNeeded();
@@ -210,7 +209,6 @@ class MediaController final : public DOMEventTargetHelper,
   nsCOMPtr<nsITimer> mDeactivationTimer;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif

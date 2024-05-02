@@ -4,12 +4,11 @@ use crate::ast::{Data, Fields, Style};
 use crate::codegen;
 use crate::codegen::PostfixTransform;
 use crate::options::{DefaultExpression, InputField, InputVariant, ParseAttribute, ParseData};
-use crate::util::Flag;
 use crate::{Error, FromMeta, Result};
 
 /// A struct or enum which should have `FromMeta` or `FromDeriveInput` implementations
 /// generated.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct Core {
     /// The type identifier.
     pub ident: syn::Ident,
@@ -40,7 +39,7 @@ pub struct Core {
     pub bound: Option<Vec<syn::WherePredicate>>,
 
     /// Whether or not unknown fields should produce an error at compilation time.
-    pub allow_unknown_fields: Flag,
+    pub allow_unknown_fields: Option<bool>,
 }
 
 impl Core {
@@ -67,9 +66,13 @@ impl Core {
     fn as_codegen_default(&self) -> Option<codegen::DefaultExpression<'_>> {
         self.default.as_ref().map(|expr| match *expr {
             DefaultExpression::Explicit(ref path) => codegen::DefaultExpression::Explicit(path),
-            DefaultExpression::Inherit | DefaultExpression::Trait => {
-                codegen::DefaultExpression::Trait
+            DefaultExpression::Inherit => {
+                // It should be impossible for any input to get here,
+                // so panic rather than returning an error or pretending
+                // everything is fine.
+                panic!("DefaultExpression::Inherit is not valid at container level")
             }
+            DefaultExpression::Trait { span } => codegen::DefaultExpression::Trait { span },
         })
     }
 }
@@ -163,8 +166,8 @@ impl<'a> From<&'a Core> for codegen::TraitImpl<'a> {
                 .map_enum_variants(|variant| variant.as_codegen_variant(&v.ident)),
             default: v.as_codegen_default(),
             post_transform: v.post_transform.as_ref(),
-            bound: v.bound.as_ref().map(|i| i.as_slice()),
-            allow_unknown_fields: v.allow_unknown_fields.into(),
+            bound: v.bound.as_deref(),
+            allow_unknown_fields: v.allow_unknown_fields.unwrap_or_default(),
         }
     }
 }

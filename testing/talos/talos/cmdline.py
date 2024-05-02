@@ -1,13 +1,11 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this file,
 # You can obtain one at http://mozilla.org/MPL/2.0/.
-from __future__ import absolute_import, print_function
-
 import argparse
 import os
 
-from mozlog.commandline import add_logging_group
 import six
+from mozlog.commandline import add_logging_group
 
 
 class _StopAction(argparse.Action):
@@ -173,6 +171,12 @@ def create_parser(mach_interface=False):
         help="Comma-separated list of threads to sample",
     )
     add_arg(
+        "--gecko-profile-extra-threads",
+        dest="gecko_profile_extra_threads",
+        type=str,
+        help="Comma-separated list of extra threads to add to the default list of threads to profile.",
+    )
+    add_arg(
         "--extension",
         dest="extensions",
         action="append",
@@ -275,12 +279,6 @@ def create_parser(mach_interface=False):
         help="If given, it disables uploading of talos results.",
     )
     add_arg(
-        "--stylo-threads",
-        type=int,
-        dest="stylothreads",
-        help="If given, run Stylo with a certain number of threads",
-    )
-    add_arg(
         "--profile",
         type=str,
         default=None,
@@ -317,6 +315,20 @@ def create_parser(mach_interface=False):
         dest="fission",
         default=True,
         help="Disable Fission (site isolation) in Gecko.",
+    )
+    add_arg(
+        "--project",
+        type=str,
+        default="mozilla-central",
+        help="The project branch we're running tests on. Used for "
+        "disabling/skipping tests.",
+    )
+    add_arg(
+        "--screenshot-on-failure",
+        action="store_true",
+        dest="screenshot_on_failure",
+        default=False,
+        help="Take a screenshot when the test fails.",
     )
 
     add_logging_group(parser)

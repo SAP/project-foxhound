@@ -5,49 +5,40 @@
 "use strict";
 
 const Debugger = require("Debugger");
-const DevToolsUtils = require("devtools/shared/DevToolsUtils");
-const Services = require("Services");
+const DevToolsUtils = require("resource://devtools/shared/DevToolsUtils.js");
 
+const lazy = {};
+ChromeUtils.defineESModuleGetters(lazy, {
+  Reflect: "resource://gre/modules/reflect.sys.mjs",
+});
 loader.lazyRequireGetter(
   this,
-  "Reflect",
-  "resource://gre/modules/reflect.jsm",
+  ["getCommandAndArgs", "isCommand"],
+  "resource://devtools/server/actors/webconsole/commands/parser.js",
   true
 );
 loader.lazyRequireGetter(
   this,
-  "formatCommand",
-  "devtools/server/actors/webconsole/commands",
-  true
-);
-loader.lazyRequireGetter(
-  this,
-  "isCommand",
-  "devtools/server/actors/webconsole/commands",
-  true
-);
-loader.lazyRequireGetter(
-  this,
-  "WebConsoleCommands",
-  "devtools/server/actors/webconsole/utils",
+  "WebConsoleCommandsManager",
+  "resource://devtools/server/actors/webconsole/commands/manager.js",
   true
 );
 
 loader.lazyRequireGetter(
   this,
   "LongStringActor",
-  "devtools/server/actors/string",
+  "resource://devtools/server/actors/string.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "eagerEcmaAllowlist",
-  "devtools/server/actors/webconsole/eager-ecma-allowlist"
+  "resource://devtools/server/actors/webconsole/eager-ecma-allowlist.js"
 );
 loader.lazyRequireGetter(
   this,
   "eagerFunctionAllowlist",
-  "devtools/server/actors/webconsole/eager-function-allowlist"
+  "resource://devtools/server/actors/webconsole/eager-function-allowlist.js"
 );
 
 function isObject(value) {
@@ -108,41 +99,83 @@ function isObject(value) {
  *        - eager: Set to true if you want the evaluation to bail if it may have side effects.
  *        - url: the url to evaluate the script as. Defaults to "debugger eval code",
  *        or "debugger eager eval code" if eager is true.
+ * @param object webConsole
+ *
  * @return object
  *         An object that holds the following properties:
  *         - dbg: the debugger where the string was evaluated.
  *         - frame: (optional) the frame where the string was evaluated.
  *         - global: the Debugger.Object for the global where the string was evaluated in.
  *         - result: the result of the evaluation.
- *         - helperResult: any result coming from a Web Console commands
- *         function.
  */
-exports.evalWithDebugger = function(string, options = {}, webConsole) {
-  if (isCommand(string.trim()) && options.eager) {
+function evalWithDebugger(string, options = {}, webConsole) {
+  if (string.trim() === "?") {
+    return evalWithDebugger(":help", options, webConsole);
+  }
+
+  const isCmd = isCommand(string.trim());
+
+  if (isCmd && options.eager) {
     return {
       result: null,
     };
   }
 
-  const evalString = getEvalInput(string);
   const { frame, dbg } = getFrameDbg(options, webConsole);
 
   const { dbgGlobal, bindSelf } = getDbgGlobal(options, dbg, webConsole);
-  const helpers = getHelpers(dbgGlobal, options, webConsole);
-  let { bindings, helperCache } = bindCommands(
-    isCommand(string),
-    dbgGlobal,
-    bindSelf,
-    frame,
-    helpers
-  );
 
-  if (options.bindings) {
-    bindings = { ...(bindings || {}), ...options.bindings };
+  if (isCmd) {
+    try {
+      const { command, args } = getCommandAndArgs(string);
+
+      const helpers = WebConsoleCommandsManager.getColonCommandFunction(
+        webConsole,
+        dbgGlobal,
+        string,
+        options.selectedNodeActor,
+        command
+      );
+
+      const result = helpers.commandFunc(args);
+
+      return {
+        result,
+        helperResult: helpers.getHelperResult(),
+      };
+    } catch (e) {
+      return {
+        helperResult: {
+          type: "exception",
+          message: e.message,
+        },
+      };
+    }
   }
 
-  // Ready to evaluate the string.
-  helpers.evalInput = string;
+  const helpers = WebConsoleCommandsManager.getWebConsoleCommands(
+    webConsole,
+    dbgGlobal,
+    frame,
+    string,
+    options.selectedNodeActor,
+    !!options.disableBreaks
+  );
+  let { bindings } = helpers;
+
+  // '_self' refers to the JS object references via options.selectedObjectActor.
+  // This isn't exposed on typical console evaluation, but only when "Store As Global"
+  // runs an invisible script storing `_self` into `temp${i}`.
+  if (bindSelf) {
+    bindings._self = bindSelf;
+  }
+
+  // Log points calls this method from the server side and pass additional variables
+  // to be exposed to the evaluated JS string
+  if (options.bindings) {
+    bindings = { ...bindings, ...options.bindings };
+  }
+
   const evalOptions = {};
 
   const urlOption =
@@ -155,6 +188,17 @@ exports.evalWithDebugger = function(string, options = {}, webConsole) {
     evalOptions.lineNumber = options.lineNumber;
   }
 
+  if (options.disableBreaks) {
+    // When we are disabling breakpoints for a given evaluation,
+    // also prevent spawning related Debugger.Source object to avoid showing it
+    // in the debugger UI
+    evalOptions.hideFromDebugger = true;
+
+    // disableBreaks is used for all non-user-provided code, and in this case
+    // extra bindings shouldn't be shadowed.
+    evalOptions.useInnerBindings = true;
+  }
+
   updateConsoleInputEvaluation(dbg, webConsole);
 
   let noSideEffectDebugger = null;
@@ -164,6 +208,7 @@ exports.evalWithDebugger = function(string, options = {}, webConsole) {
 
   let result;
   try {
+    const evalString = getEvalInput(string, bindings);
     result = getEvalResult(
       dbg,
       evalString,
@@ -186,25 +231,39 @@ exports.evalWithDebugger = function(string, options = {}, webConsole) {
   // since they may now be stuck in an "initializing" state due to the
   // error. Already-initialized bindings will be ignored.
   if (!frame && result && "throw" in result) {
-    parseErrorOutput(dbgGlobal, string);
+    forceLexicalInitForVariableDeclarationsInThrowingExpression(
+      dbgGlobal,
+      string
+    );
   }
 
-  const { helperResult } = helpers;
-
-  // Clean up helpers helpers and bindings
-  delete helpers.evalInput;
-  delete helpers.helperResult;
-  delete helpers.selectedNode;
-  cleanupBindings(bindings, helperCache);
+  // The help function needs to be easy to guess, so we make the () optional.
+  if (string.trim() === "help" && isHelpFunction(result, bindings)) {
+    return evalWithDebugger(":help", options, webConsole);
+  }
 
   return {
     result,
-    helperResult,
+    // Retrieve the result of commands, if any ran
+    helperResult: helpers.getHelperResult(),
     dbg,
     frame,
     dbgGlobal,
   };
-};
+}
+exports.evalWithDebugger = evalWithDebugger;
+
+/**
+ * Checks if the evaluation result is the 'help' function in bindings.
+ */
+function isHelpFunction(result, bindings) {
+  return (
+    "return" in result &&
+    result.return &&
+    result.return.class === "Function" &&
+    result.return === bindings.help
+  );
+}
 
 function getEvalResult(
   dbg,
@@ -257,7 +316,23 @@ function getEvalResult(
   return result;
 }
 
-function parseErrorOutput(dbgGlobal, string) {
+/**
+ * Force lexical initialization for let/const variables declared in a throwing expression.
+ * By spec, a lexical declaration is added to the *page-visible* global lexical environment
+ * for those variables, meaning they can't be redeclared (See Bug 1246215).
+ *
+ * This function gets the AST of the throwing expression to collect all the let/const
+ * declarations and call `forceLexicalInitializationByName`, which will initialize them
+ * to undefined, making it possible for them to be redeclared.
+ *
+ * @param {DebuggerObject} dbgGlobal
+ * @param {String} string: The expression that was evaluated and threw
+ * @returns
+ */
+function forceLexicalInitForVariableDeclarationsInThrowingExpression(
+  dbgGlobal,
+  string
+) {
   // Reflect is not usable in workers, so return early to avoid logging an error
   // to the console when loading it.
   if (isWorker) {
@@ -269,61 +344,77 @@ function parseErrorOutput(dbgGlobal, string) {
   // since it's already being handled elsewhere and we are only interested
   // in initializing bindings.
   try {
-    ast = Reflect.parse(string);
-  } catch (ex) {
+    ast = lazy.Reflect.parse(string);
+  } catch (e) {
     return;
   }
-  for (const line of ast.body) {
-    // Only let and const declarations put bindings into an
-    // "initializing" state.
-    if (!(line.kind == "let" || line.kind == "const")) {
-      continue;
-    }
 
-    const identifiers = [];
-    for (const decl of line.declarations) {
-      switch (decl.id.type) {
-        case "Identifier":
-          // let foo = bar;
-          identifiers.push(decl.id.name);
-          break;
-        case "ArrayPattern":
-          // let [foo, bar]    = [1, 2];
-          // let [foo=99, bar] = [1, 2];
-          for (const e of decl.id.elements) {
-            if (e.type == "Identifier") {
-              identifiers.push(e.name);
-            } else if (e.type == "AssignmentExpression") {
-              identifiers.push(e.left.name);
+  try {
+    for (const line of ast.body) {
+      // Only let and const declarations put bindings into an
+      // "initializing" state.
+      if (!(line.kind == "let" || line.kind == "const")) {
+        continue;
+      }
+
+      const identifiers = [];
+      for (const decl of line.declarations) {
+        switch (decl.id.type) {
+          case "Identifier":
+            // let foo = bar;
+            identifiers.push(decl.id.name);
+            break;
+          case "ArrayPattern":
+            // let [foo, bar]    = [1, 2];
+            // let [foo=99, bar] = [1, 2];
+            for (const e of decl.id.elements) {
+              if (e.type == "Identifier") {
+                identifiers.push(e.name);
+              } else if (e.type == "AssignmentExpression") {
+                identifiers.push(e.left.name);
+              }
             }
-          }
-          break;
-        case "ObjectPattern":
-          // let {bilbo, my}    = {bilbo: "baggins", my: "precious"};
-          // let {blah: foo}    = {blah: yabba()}
-          // let {blah: foo=99} = {blah: yabba()}
-          for (const prop of decl.id.properties) {
-            // key
-            if (prop.key.type == "Identifier") {
-              identifiers.push(prop.key.name);
+            break;
+          case "ObjectPattern":
+            // let {bilbo, my}    = {bilbo: "baggins", my: "precious"};
+            // let {blah: foo}    = {blah: yabba()}
+            // let {blah: foo=99} = {blah: yabba()}
+            for (const prop of decl.id.properties) {
+              // key
+              if (prop.key?.type == "Identifier") {
+                identifiers.push(prop.key.name);
+              }
+              // value
+              if (prop.value?.type == "Identifier") {
+                identifiers.push(prop.value.name);
+              } else if (prop.value?.type == "AssignmentExpression") {
+                identifiers.push(prop.value.left.name);
+              } else if (prop.type === "SpreadExpression") {
+                identifiers.push(prop.expression.name);
+              }
             }
-            // value
-            if (prop.value.type == "Identifier") {
-              identifiers.push(prop.value.name);
-            } else if (prop.value.type == "AssignmentExpression") {
-              identifiers.push(prop.value.left.name);
-            }
-          }
-          break;
+            break;
+        }
+      }
+
+      for (const name of identifiers) {
+        dbgGlobal.forceLexicalInitializationByName(name);
       }
     }
-
-    for (const name of identifiers) {
-      dbgGlobal.forceLexicalInitializationByName(name);
-    }
+  } catch (ex) {
+    console.error(
+      "Error in forceLexicalInitForVariableDeclarationsInThrowingExpression:",
+      ex
+    );
   }
 }
 
+/**
+ * Creates a side-effect-free debugger instance
+ *
+ * @return object
+ *         Side-effect-free debugger.
+ */
 function makeSideeffectFreeDebugger() {
   // We ensure that the metadata for native functions is loaded before we
   // initialize sideeffect-prevention because the data is lazy-loaded, and this
@@ -383,15 +474,15 @@ function makeSideeffectFreeDebugger() {
   };
 
   // The debugger only calls onNativeCall handlers on the debugger that is
-  // explicitly calling eval, so we need to add this hook on "dbg" even though
-  // the rest of our hooks work via "newDbg".
+  // explicitly calling either eval, DebuggerObject.apply or DebuggerObject.call,
+  // so we need to add this hook on "dbg" even though the rest of our hooks work via "newDbg".
   dbg.onNativeCall = (callee, reason) => {
     try {
-      // Getters are never considered effectful, and setters are always effectful.
-      // Natives called normally are handled with an allowlist.
+      // Setters are always effectful. Natives called normally or called via
+      // getters are handled with an allowlist.
       if (
-        reason == "get" ||
-        (reason == "call" && nativeHasNoSideEffects(callee))
+        (reason == "get" || reason == "call") &&
+        nativeIsEagerlyEvaluateable(callee)
       ) {
         // Returning undefined causes execution to continue normally.
         return undefined;
@@ -412,17 +503,23 @@ function makeSideeffectFreeDebugger() {
 // Native functions which are considered to be side effect free.
 let gSideEffectFreeNatives; // string => Array(Function)
 
+/**
+ * Generate gSideEffectFreeNatives map.
+ */
 function ensureSideEffectFreeNatives() {
   if (gSideEffectFreeNatives) {
     return;
   }
 
+  const { natives: domNatives } = eagerFunctionAllowlist;
+
   const natives = [
-    ...eagerEcmaAllowlist,
+    ...eagerEcmaAllowlist.functions,
+    ...eagerEcmaAllowlist.getters,
 
     // Pull in all of the non-ECMAScript native functions that we want to
     // allow as well.
-    ...eagerFunctionAllowlist,
+    ...domNatives,
   ];
 
   const map = new Map();
@@ -436,9 +533,21 @@ function ensureSideEffectFreeNatives() {
   gSideEffectFreeNatives = map;
 }
 
-function nativeHasNoSideEffects(fn) {
+function nativeIsEagerlyEvaluateable(fn) {
   if (fn.isBoundFunction) {
     fn = fn.boundTargetFunction;
+  }
+
+  // We assume all DOM getters have no major side effect, and they are
+  // eagerly-evaluateable.
+  //
+  // JitInfo is used only by methods/accessors in WebIDL, and being
+  // "a getter with JitInfo" can be used as a condition to check if given
+  // function is DOM getter.
+  //
+  // This includes privileged interfaces in addition to standard web APIs.
+  if (fn.isNativeGetterWithJitInfo()) {
+    return true;
   }
 
   // Natives with certain names are always considered side effect free.
@@ -465,22 +574,8 @@ function updateConsoleInputEvaluation(dbg, webConsole) {
   }
 }
 
-function getEvalInput(string) {
+function getEvalInput(string, bindings) {
   const trimmedString = string.trim();
-  // The help function needs to be easy to guess, so we make the () optional.
-  if (trimmedString === "help" || trimmedString === "?") {
-    return "help()";
-  }
-  // we support Unix like syntax for commands if it is preceeded by `:`
-  if (isCommand(string)) {
-    try {
-      return formatCommand(string);
-    } catch (e) {
-      console.log(e);
-      return `throw "${e}"`;
-    }
-  }
-
   // Add easter egg for console.mihai().
   if (
     trimmedString == "console.mihai()" ||
@@ -512,6 +607,21 @@ function getFrameDbg(options, webConsole) {
   );
 }
 
+/**
+ * Get debugger object for given debugger and Web Console.
+ *
+ * @param object options
+ *        See the `options` parameter of evalWithDebugger
+ * @param {Debugger} dbg
+ *        Debugger object
+ * @param {WebConsoleActor} webConsole
+ *        A reference to a webconsole actor which is used to get the target
+ *        eval global and optionally the target actor
+ * @return object
+ *         An object that holds the following properties:
+ *         - bindSelf: (optional) the self object for the evaluation
+ *         - dbgGlobal: the global object reference in the debugger
+ */
 function getDbgGlobal(options, dbg, webConsole) {
   let evalGlobal = webConsole.evalGlobal;
 
@@ -555,65 +665,4 @@ function getDbgGlobal(options, dbg, webConsole) {
   // jsVal appropriately for the evaluation compartment.
   const bindSelf = dbgGlobal.makeDebuggeeValue(jsVal);
   return { bindSelf, dbgGlobal };
-}
-
-function getHelpers(dbgGlobal, options, webConsole) {
-  // Get the Web Console commands for the given debugger global.
-  const helpers = webConsole._getWebConsoleCommands(dbgGlobal);
-  if (options.selectedNodeActor) {
-    const actor = webConsole.conn.getActor(options.selectedNodeActor);
-    if (actor) {
-      helpers.selectedNode = actor.rawNode;
-    }
-  }
-
-  return helpers;
-}
-
-function cleanupBindings(bindings, helperCache) {
-  // Replaces bindings that were overwritten with commands saved in the helperCache
-  for (const [helperName, helper] of Object.entries(helperCache)) {
-    bindings[helperName] = helper;
-  }
-
-  if (bindings._self) {
-    delete bindings._self;
-  }
-}
-
-function bindCommands(isCmd, dbgGlobal, bindSelf, frame, helpers) {
-  const bindings = helpers.sandbox;
-  if (bindSelf) {
-    bindings._self = bindSelf;
-  }
-  // Check if the Debugger.Frame or Debugger.Object for the global include any of the
-  // helper function we set. We will not overwrite these functions with the Web Console
-  // commands.
-  const availableHelpers = [...WebConsoleCommands._originalCommands.keys()];
-
-  let helpersToDisable = [];
-  const helperCache = {};
-
-  // do not override command functions if we are using the command key `:`
-  // before the command string
-  if (!isCmd) {
-    if (frame) {
-      const env = frame.environment;
-      if (env) {
-        helpersToDisable = availableHelpers.filter(name => !!env.find(name));
-      }
-    } else {
-      helpersToDisable = availableHelpers.filter(
-        name => !!dbgGlobal.getOwnPropertyDescriptor(name)
-      );
-    }
-    // if we do not have the command key as a prefix, screenshot is disabled by default
-    helpersToDisable.push("screenshot");
-  }
-
-  for (const helper of helpersToDisable) {
-    helperCache[helper] = bindings[helper];
-    delete bindings[helper];
-  }
-  return { bindings, helperCache };
 }

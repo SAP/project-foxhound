@@ -3,7 +3,7 @@
 
 "use strict";
 
-add_task(async function init() {
+add_setup(async function () {
   await SpecialPowers.pushPrefEnv({
     set: [
       ["browser.newtabpage.activity-stream.feeds.section.highlights", true],
@@ -18,7 +18,7 @@ add_task(async function test_firefox_home_without_policy_without_pocket() {
     waitForStateStop: true,
   });
 
-  await SpecialPowers.spawn(tab.linkedBrowser, [], function() {
+  await SpecialPowers.spawn(tab.linkedBrowser, [], function () {
     let search = content.document.querySelector(".search-wrapper");
     isnot(search, null, "Search section should be there.");
     let topsites = content.document.querySelector(
@@ -35,6 +35,15 @@ add_task(async function test_firefox_home_without_policy_without_pocket() {
 });
 
 add_task(async function test_firefox_home_with_policy() {
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      [
+        "browser.newtabpage.activity-stream.discoverystream.endpointSpocsClear",
+        "",
+      ],
+    ],
+  });
+
   await setupPolicyEngineWithJson({
     policies: {
       FirefoxHome: {
@@ -52,7 +61,7 @@ add_task(async function test_firefox_home_with_policy() {
     waitForStateStop: true,
   });
 
-  await SpecialPowers.spawn(tab.linkedBrowser, [], function() {
+  await SpecialPowers.spawn(tab.linkedBrowser, [], function () {
     let search = content.document.querySelector(".search-wrapper");
     is(search, null, "Search section should not be there.");
     let topsites = content.document.querySelector(
@@ -65,6 +74,7 @@ add_task(async function test_firefox_home_with_policy() {
     is(highlights, null, "Highlights section should not be there.");
   });
   BrowserTestUtils.removeTab(tab);
+  await SpecialPowers.popPrefEnv();
 });
 
 add_task(async function test_firefoxhome_preferences_set() {

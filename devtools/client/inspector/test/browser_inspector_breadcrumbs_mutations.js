@@ -24,10 +24,10 @@ const TEST_URI = URL_ROOT + "doc_inspector_breadcrumbs.html";
 const TEST_DATA = [
   {
     desc: "Adding a child at the end of the chain shouldn't change anything",
-    setup: async function(inspector) {
+    async setup(inspector) {
       await selectNode("#i1111", inspector);
     },
-    run: async function({ walker, selection }) {
+    async run({ walker, selection }) {
       await walker.setInnerHTML(selection.nodeFront, "<b>test</b>");
     },
     shouldRefresh: false,
@@ -35,8 +35,8 @@ const TEST_DATA = [
   },
   {
     desc: "Updating an ID to an displayed element should refresh",
-    setup: function() {},
-    run: async function({ walker }) {
+    setup() {},
+    async run({ walker }) {
       const node = await walker.querySelector(walker.rootNode, "#i1");
       await node.modifyAttributes([
         {
@@ -57,8 +57,8 @@ const TEST_DATA = [
   },
   {
     desc: "Updating an class to a displayed element should refresh",
-    setup: function() {},
-    run: async function({ walker }) {
+    setup() {},
+    async run({ walker }) {
       const node = await walker.querySelector(walker.rootNode, "body");
       await node.modifyAttributes([
         {
@@ -81,8 +81,8 @@ const TEST_DATA = [
     desc:
       "Updating a non id/class attribute to a displayed element should not " +
       "refresh",
-    setup: function() {},
-    run: async function({ walker }) {
+    setup() {},
+    async run({ walker }) {
       const node = await walker.querySelector(walker.rootNode, "#i11");
       await node.modifyAttributes([
         {
@@ -102,10 +102,9 @@ const TEST_DATA = [
     ],
   },
   {
-    desc:
-      "Moving a child in an element that's not displayed should not refresh",
-    setup: function() {},
-    run: async function({ walker }) {
+    desc: "Moving a child in an element that's not displayed should not refresh",
+    setup() {},
+    async run({ walker }) {
       // Re-append #i1211 as a last child of #i2.
       const parent = await walker.querySelector(walker.rootNode, "#i2");
       const child = await walker.querySelector(walker.rootNode, "#i211");
@@ -122,10 +121,9 @@ const TEST_DATA = [
     ],
   },
   {
-    desc:
-      "Moving an undisplayed child in a displayed element should not refresh",
-    setup: function() {},
-    run: async function({ walker }) {
+    desc: "Moving an undisplayed child in a displayed element should not refresh",
+    setup() {},
+    async run({ walker }) {
       // Re-append #i2 in body (move it to the end).
       const parent = await walker.querySelector(walker.rootNode, "body");
       const child = await walker.querySelector(walker.rootNode, "#i2");
@@ -145,8 +143,8 @@ const TEST_DATA = [
     desc:
       "Updating attributes on an element that's not displayed should not " +
       "refresh",
-    setup: function() {},
-    run: async function({ walker }) {
+    setup() {},
+    async run({ walker }) {
       const node = await walker.querySelector(walker.rootNode, "#i2");
       await node.modifyAttributes([
         {
@@ -171,10 +169,10 @@ const TEST_DATA = [
   },
   {
     desc: "Removing the currently selected node should refresh",
-    setup: async function(inspector) {
+    async setup(inspector) {
       await selectNode("#i2-changed", inspector);
     },
-    run: async function({ walker, selection }) {
+    async run({ walker, selection }) {
       await walker.removeNode(selection.nodeFront);
     },
     shouldRefresh: true,
@@ -182,8 +180,8 @@ const TEST_DATA = [
   },
   {
     desc: "Changing the class of the currently selected node should refresh",
-    setup: function() {},
-    run: async function({ selection }) {
+    setup() {},
+    async run({ selection }) {
       await selection.nodeFront.modifyAttributes([
         {
           attributeName: "class",
@@ -196,8 +194,8 @@ const TEST_DATA = [
   },
   {
     desc: "Changing the id of the currently selected node should refresh",
-    setup: function() {},
-    run: async function({ selection }) {
+    setup() {},
+    async run({ selection }) {
       await selection.nodeFront.modifyAttributes([
         {
           attributeName: "id",
@@ -210,7 +208,7 @@ const TEST_DATA = [
   },
 ];
 
-add_task(async function() {
+add_task(async function () {
   const { inspector } = await openInspectorForURL(TEST_URI);
   const breadcrumbs = inspector.panelDoc.getElementById(
     "inspector-breadcrumbs"

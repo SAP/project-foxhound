@@ -8,13 +8,23 @@
  */
 
 import { combineReducers } from "redux";
-import sourceMaps from "devtools-source-map";
 import reducers from "../reducers";
 import actions from "../actions";
 import * as selectors from "../selectors";
-import { parserWorker, evaluationsParser } from "../test/tests-setup";
+import {
+  searchWorker,
+  prettyPrintWorker,
+  parserWorker,
+} from "../test/tests-setup";
 import configureStore from "../actions/utils/create-store";
 import sourceQueue from "../utils/source-queue";
+import { setupCreate } from "../client/firefox/create";
+import { createLocation } from "./location";
+
+// Import the internal module used by the source-map worker
+// as node doesn't have Web Worker support and require path mapping
+// doesn't work from nodejs worker thread and break mappings to devtools/ folder.
+import sourceMapLoader from "devtools/client/shared/source-map-loader/source-map";
 
 /**
  * This file contains older interfaces used by tests that have not been
@@ -25,16 +35,20 @@ import sourceQueue from "../utils/source-queue";
  * @memberof utils/test-head
  * @static
  */
-function createStore(client, initialState = {}, sourceMapsMock) {
+function createStore(client, initialState = {}, sourceMapLoaderMock) {
   const store = configureStore({
     log: false,
     makeThunkArgs: args => {
       return {
         ...args,
         client,
-        sourceMaps: sourceMapsMock !== undefined ? sourceMapsMock : sourceMaps,
-        parser: parserWorker,
-        evaluationsParser,
+        sourceMapLoader:
+          sourceMapLoaderMock !== undefined
+            ? sourceMapLoaderMock
+            : sourceMapLoader,
+        parserWorker,
+        prettyPrintWorker,
+        searchWorker,
       };
     },
   })(combineReducers(reducers), initialState);
@@ -48,12 +62,14 @@ function createStore(client, initialState = {}, sourceMapsMock) {
     dispatch: store.dispatch,
     getState: store.getState,
     client,
-    sourceMaps,
+    sourceMapLoader,
     panel: {},
   });
 
   // Put the initial context in the store, for convenience to unit tests.
   store.cx = selectors.getThreadContext(store.getState());
+
+  setupCreate({ store });
 
   return store;
 }
@@ -67,10 +83,19 @@ function commonLog(msg, data = {}) {
 }
 
 function makeFrame({ id, sourceId, thread }, opts = {}) {
+  const source = createSourceObject(sourceId);
+  const sourceActor = {
+    id: `${sourceId}-actor`,
+    actor: `${sourceId}-actor`,
+    source: sourceId,
+    sourceObject: source,
+  };
+  const location = createLocation({ source, sourceActor, line: 4 });
   return {
     id,
     scope: { bindings: { variables: {}, arguments: [] } },
-    location: { sourceId, line: 4 },
+    location,
+    generatedLocation: location,
     thread: thread || "FakeThread",
     ...opts,
   };
@@ -80,20 +105,11 @@ function createSourceObject(filename, props = {}) {
   return {
     id: filename,
     url: makeSourceURL(filename),
-    isBlackBoxed: !!props.isBlackBoxed,
     isPrettyPrinted: false,
     isExtension: false,
     isOriginal: filename.includes("originalSource"),
+    displayURL: makeSourceURL(filename),
   };
-}
-
-function createOriginalSourceObject(generated) {
-  const rv = {
-    ...generated,
-    id: `${generated.id}/originalSource`,
-  };
-
-  return rv;
 }
 
 function makeSourceURL(filename) {
@@ -103,7 +119,7 @@ function makeSourceURL(filename) {
 function createMakeSource() {
   const indicies = {};
 
-  return function(name, props = {}) {
+  return function (name, props = {}) {
     const index = (indicies[name] | 0) + 1;
     indicies[name] = index;
 
@@ -117,9 +133,7 @@ function createMakeSource() {
           return false;
         },
         getCachedFront(typeName) {
-          if (typeName == "thread") {
-            return { actorID: "FakeThread" };
-          }
+          return typeName == "thread" ? { actorID: "FakeThread" } : null;
         },
       },
       // Allow to use custom ID's for reducer source objects
@@ -129,7 +143,6 @@ function createMakeSource() {
       sourceMapBaseURL: props.sourceMapBaseURL || null,
       sourceMapURL: props.sourceMapURL || null,
       introductionType: props.introductionType || null,
-      isBlackBoxed: !!props.isBlackBoxed,
       extensionName: null,
     };
   };
@@ -158,6 +171,10 @@ function makeOriginalSource(source) {
   return {
     id: `${source.id}/originalSource`,
     url: `${source.url}-original`,
+    sourceActor: {
+      id: `${source.id}-1-actor`,
+      thread: "FakeThread",
+    },
   };
 }
 
@@ -208,7 +225,7 @@ function waitForState(store, predicate) {
 
 function watchForState(store, predicate) {
   let sawState = false;
-  const checkState = function() {
+  const checkState = function () {
     if (!sawState && predicate(store.getState())) {
       sawState = true;
     }
@@ -255,7 +272,6 @@ export {
   getTelemetryEvents,
   makeFrame,
   createSourceObject,
-  createOriginalSourceObject,
   createMakeSource,
   makeSourceURL,
   makeSource,

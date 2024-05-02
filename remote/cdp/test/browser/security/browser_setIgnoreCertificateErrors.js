@@ -3,11 +3,8 @@
 
 "use strict";
 
-const {
-  STATE_IS_SECURE,
-  STATE_IS_BROKEN,
-  STATE_IS_INSECURE,
-} = Ci.nsIWebProgressListener;
+const { STATE_IS_SECURE, STATE_IS_BROKEN, STATE_IS_INSECURE } =
+  Ci.nsIWebProgressListener;
 
 // from ../../../build/pgo/server-locations.txt
 const NO_CERT = "https://nocert.example.com:443";
@@ -75,7 +72,7 @@ add_task(async function testDefault({ Security }) {
   for (const url of BAD_CERTS) {
     info(`Navigating to ${url}`);
     const loaded = BrowserTestUtils.waitForErrorPage(gBrowser.selectedBrowser);
-    BrowserTestUtils.loadURI(gBrowser.selectedBrowser, url);
+    BrowserTestUtils.startLoadingURIString(gBrowser.selectedBrowser, url);
     await loaded;
 
     is(
@@ -94,7 +91,7 @@ add_task(async function testIgnore({ client }) {
 
   for (const url of BAD_CERTS) {
     info(`Navigating to ${url}`);
-    BrowserTestUtils.loadURI(gBrowser.selectedBrowser, url);
+    BrowserTestUtils.startLoadingURIString(gBrowser.selectedBrowser, url);
     await BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser);
 
     is(
@@ -114,7 +111,7 @@ add_task(async function testUnignore({ client }) {
   for (const url of BAD_CERTS) {
     info(`Navigating to ${url}`);
     const loaded = BrowserTestUtils.waitForErrorPage(gBrowser.selectedBrowser);
-    BrowserTestUtils.loadURI(gBrowser.selectedBrowser, url);
+    BrowserTestUtils.startLoadingURIString(gBrowser.selectedBrowser, url);
     await loaded;
 
     is(
@@ -135,7 +132,7 @@ add_task(async function testToggle({ client }) {
   await Security.setIgnoreCertificateErrors({ ignore: true });
 
   info(`Navigating to ${UNTRUSTED} having set the override`);
-  BrowserTestUtils.loadURI(gBrowser.selectedBrowser, UNTRUSTED);
+  BrowserTestUtils.startLoadingURIString(gBrowser.selectedBrowser, UNTRUSTED);
   await BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser);
 
   is(
@@ -150,7 +147,7 @@ add_task(async function testToggle({ client }) {
 
   info(`Navigating to ${UNTRUSTED} having unset the override`);
   loaded = BrowserTestUtils.waitForErrorPage(gBrowser.selectedBrowser);
-  BrowserTestUtils.loadURI(gBrowser.selectedBrowser, UNTRUSTED);
+  BrowserTestUtils.startLoadingURIString(gBrowser.selectedBrowser, UNTRUSTED);
   await loaded;
 
   is(

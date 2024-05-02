@@ -10,7 +10,7 @@ NSS Sample Code Sample_3_Basic Encryption and MACing
 
 .. container::
 
-   This example program demonstrates how to encrypt and MAC a file. 
+   This example program demonstrates how to encrypt and MAC a file. 
 
 .. _sample_code_3:
 
@@ -19,7 +19,7 @@ NSS Sample Code Sample_3_Basic Encryption and MACing
 
 .. container::
 
-   .. code:: brush:
+   .. code:: c
 
       /* NSPR Headers */
       #include <prthread.h>

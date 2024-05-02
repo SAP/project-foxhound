@@ -1,18 +1,13 @@
 #!/usr/bin/env python
 
-from __future__ import absolute_import
-
-from unittest import mock
-import mozunit
-import pytest
 import subprocess
 import sys
+from unittest import mock
 
+import mozunit
+import pytest
 from mozpower import MozPower
-from mozpower.mozpower import (
-    OsCpuComboMissingError,
-    MissingProcessorInfoError,
-)
+from mozpower.mozpower import MissingProcessorInfoError, OsCpuComboMissingError
 
 
 def test_mozpower_android_init_failure():
@@ -60,7 +55,6 @@ def test_mozpower_processor_info_missing_error():
 
     # Test failures in macos processor information parsing
     with mock.patch.object(MozPower, "_get_os", return_value="Darwin") as _:
-
         with mock.patch("os.path.exists") as os_mock:
             os_mock.side_effect = os_side_effect_false
 
@@ -79,7 +73,6 @@ def test_mozpower_processor_info_missing_error():
 
     # Test failures in linux processor information parsing
     with mock.patch.object(MozPower, "_get_os", return_value="Linux") as _:
-
         with mock.patch("os.path.exists") as os_mock:
             os_mock.side_effect = os_side_effect_false
 

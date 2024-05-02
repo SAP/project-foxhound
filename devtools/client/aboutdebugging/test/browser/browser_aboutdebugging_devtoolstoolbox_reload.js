@@ -23,20 +23,10 @@ const TOOLS = [
   "accessibility",
 ];
 
-// If the new performance panel is enabled, it's not available in about:debugging toolboxes.
-if (
-  Services.prefs.getBoolPref(
-    "devtools.performance.new-panel-enabled",
-    false
-  ) === false
-) {
-  TOOLS.push("performance");
-}
-
 /**
  * Test whether about:devtools-toolbox display correctly after reloading.
  */
-add_task(async function() {
+add_task(async function () {
   info("Force all debug target panes to be expanded");
   prepareCollapsibilitiesTest();
 
@@ -51,11 +41,8 @@ async function testReloadAboutDevToolsToolbox(toolId) {
   // We set the options panel to be the default one because slower panels might lead to
   // race conditions which create leaks in debug mode.
   await pushPref("devtools.toolbox.selectedTool", "options");
-  const {
-    devtoolsBrowser,
-    devtoolsTab,
-    devtoolsWindow,
-  } = await openAboutDevtoolsToolbox(document, tab, window);
+  const { devtoolsBrowser, devtoolsTab, devtoolsWindow } =
+    await openAboutDevtoolsToolbox(document, tab, window);
 
   info(`Select tool: ${toolId}`);
   const toolbox = getToolbox(devtoolsWindow);

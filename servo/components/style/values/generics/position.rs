@@ -67,7 +67,6 @@ pub trait PositionComponent {
 /// A generic type for representing an `Auto | <position>`.
 /// This is used by <offset-anchor> for now.
 /// https://drafts.fxtf.org/motion-1/#offset-anchor-property
-/// cbindgen:private-default-tagged-enum-constructor=false
 #[derive(
     Animate,
     Clone,
@@ -81,6 +80,7 @@ pub trait PositionComponent {
     Serialize,
     SpecifiedValueInfo,
     ToAnimatedZero,
+    ToAnimatedValue,
     ToComputedValue,
     ToCss,
     ToResolvedValue,
@@ -101,6 +101,12 @@ impl<Pos> PositionOrAuto<Pos> {
     #[inline]
     pub fn auto() -> Self {
         PositionOrAuto::Auto
+    }
+
+    /// Return true if it is 'auto'.
+    #[inline]
+    pub fn is_auto(&self) -> bool {
+        matches!(self, PositionOrAuto::Auto)
     }
 }
 

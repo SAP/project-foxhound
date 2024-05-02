@@ -10,14 +10,16 @@ const TEST_URI = TEST_PATH + TEST_FILE;
 
 const NET_PREF = "devtools.webconsole.filter.net";
 const XHR_PREF = "devtools.webconsole.filter.netxhr";
-const { l10n } = require("devtools/client/webconsole/utils/messages");
+const {
+  l10n,
+} = require("resource://devtools/client/webconsole/utils/messages.js");
 const LEARN_MORE_URI =
   "https://developer.mozilla.org/docs/Web/HTTP/Status/200" + GA_PARAMS;
 
 pushPref(NET_PREF, true);
 pushPref(XHR_PREF, true);
 
-registerCleanupFunction(async function() {
+registerCleanupFunction(async function () {
   await new Promise(resolve => {
     Services.clearData.deleteData(Ci.nsIClearDataService.CLEAR_ALL, value =>
       resolve()
@@ -31,7 +33,7 @@ add_task(async function task() {
   const onNetworkMessageUpdate = hud.ui.once("network-messages-updated");
 
   // Fire an XHR POST request.
-  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], function() {
+  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], function () {
     content.wrappedJSObject.testXhrPost();
   });
 
@@ -39,7 +41,9 @@ add_task(async function task() {
   await onNetworkMessageUpdate;
 
   const xhrUrl = TEST_PATH + "test-data.json";
-  const messageNode = await waitFor(() => findMessage(hud, xhrUrl, ".network"));
+  const messageNode = await waitFor(() =>
+    findMessageByType(hud, xhrUrl, ".network")
+  );
   ok(!!messageNode, "Network message found.");
 
   const statusCodeNode = await waitFor(() =>

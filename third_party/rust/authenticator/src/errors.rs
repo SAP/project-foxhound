@@ -2,12 +2,24 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+pub use crate::ctap2::commands::{client_pin::PinError, CommandError};
+pub use crate::transport::errors::HIDError;
 use std::fmt;
 use std::io;
 use std::sync::mpsc;
 
 // This composite error type is patterned from Phil Daniels' blog:
 // https://www.philipdaniels.com/blog/2019/defining-rust-error-types/
+
+#[derive(Debug)]
+pub enum UnsupportedOption {
+    CredProtect,
+    EmptyAllowList,
+    MaxPinLength,
+    PubCredParams,
+    ResidentKey,
+    UserVerification,
+}
 
 #[derive(Debug)]
 pub enum AuthenticatorError {
@@ -20,15 +32,13 @@ pub enum AuthenticatorError {
     InternalError(String),
     U2FToken(U2FTokenError),
     Custom(String),
-}
-
-impl AuthenticatorError {
-    pub fn as_u2f_errorcode(&self) -> u8 {
-        match *self {
-            AuthenticatorError::U2FToken(ref err) => *err as u8,
-            _ => U2FTokenError::Unknown as u8,
-        }
-    }
+    VersionMismatch(&'static str, u32),
+    HIDError(HIDError),
+    CryptoError,
+    PinError(PinError),
+    UnsupportedOption(UnsupportedOption),
+    CancelledByUser,
+    CredentialExcluded,
 }
 
 impl std::error::Error for AuthenticatorError {}
@@ -45,11 +55,28 @@ impl fmt::Display for AuthenticatorError {
                 "no transports were configured in the authenticator service"
             ),
             AuthenticatorError::Platform => write!(f, "unknown platform error"),
-            AuthenticatorError::InternalError(ref err) => write!(f, "internal error: {}", err),
+            AuthenticatorError::InternalError(ref err) => write!(f, "internal error: {err}"),
             AuthenticatorError::U2FToken(ref err) => {
-                write!(f, "A u2f token error occurred {:?}", err)
+                write!(f, "A u2f token error occurred {err:?}")
             }
-            AuthenticatorError::Custom(ref err) => write!(f, "A custom error occurred {:?}", err),
+            AuthenticatorError::Custom(ref err) => write!(f, "A custom error occurred {err:?}"),
+            AuthenticatorError::VersionMismatch(manager, version) => {
+                write!(f, "{manager} expected arguments of version CTAP{version}")
+            }
+            AuthenticatorError::HIDError(ref e) => write!(f, "Device error: {e}"),
+            AuthenticatorError::CryptoError => {
+                write!(f, "The cryptography implementation encountered an error")
+            }
+            AuthenticatorError::PinError(ref e) => write!(f, "PIN Error: {e}"),
+            AuthenticatorError::UnsupportedOption(ref e) => {
+                write!(f, "Unsupported option: {e:?}")
+            }
+            AuthenticatorError::CancelledByUser => {
+                write!(f, "Cancelled by user.")
+            }
+            AuthenticatorError::CredentialExcluded => {
+                write!(f, "Credential excluded.")
+            }
         }
     }
 }
@@ -57,6 +84,18 @@ impl fmt::Display for AuthenticatorError {
 impl From<io::Error> for AuthenticatorError {
     fn from(err: io::Error) -> AuthenticatorError {
         AuthenticatorError::Io(err)
+    }
+}
+
+impl From<HIDError> for AuthenticatorError {
+    fn from(err: HIDError) -> AuthenticatorError {
+        AuthenticatorError::HIDError(err)
+    }
+}
+
+impl From<CommandError> for AuthenticatorError {
+    fn from(err: CommandError) -> AuthenticatorError {
+        AuthenticatorError::HIDError(HIDError::Command(err))
     }
 }
 

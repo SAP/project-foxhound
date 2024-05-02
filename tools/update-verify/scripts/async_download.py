@@ -3,14 +3,15 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this file,
 # You can obtain one at http://mozilla.org/MPL/2.0/.
 
-import aiohttp
 import asyncio
+import glob
 import logging
 import os
-from os import path
-import glob
 import sys
 import xml.etree.ElementTree as ET
+from os import path
+
+import aiohttp
 
 logging.basicConfig(stream=sys.stdout, level=logging.INFO, format="%(message)s")
 log = logging.getLogger(__name__)
@@ -89,7 +90,9 @@ async def fetch_url(url, path, connector):
             connector=connector, connector_owner=False, timeout=timeout
         ) as session:
             log.info(f"Retrieving {url}")
-            async with session.get(url) as response:
+            async with session.get(
+                url, headers={"Cache-Control": "max-stale=0"}
+            ) as response:
                 # Any response code > 299 means something went wrong
                 if response.status > 299:
                     log.info(f"Failed to download {url} with status {response.status}")

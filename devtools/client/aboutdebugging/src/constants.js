@@ -7,7 +7,7 @@
 const {
   CONNECTION_TYPES,
   DEBUG_TARGET_TYPES,
-} = require("devtools/client/shared/remote-debugging/constants");
+} = require("resource://devtools/client/shared/remote-debugging/constants.js");
 
 const actionTypes = {
   ADB_ADDON_INSTALL_START: "ADB_ADDON_INSTALL_START",
@@ -27,6 +27,7 @@ const actionTypes = {
   DISCONNECT_RUNTIME_FAILURE: "DISCONNECT_RUNTIME_FAILURE",
   DISCONNECT_RUNTIME_START: "DISCONNECT_RUNTIME_START",
   DISCONNECT_RUNTIME_SUCCESS: "DISCONNECT_RUNTIME_SUCCESS",
+  EXTENSION_BGSCRIPT_STATUS_UPDATED: "EXTENSION_BGSCRIPT_STATUS_UPDATED",
   HIDE_PROFILER_DIALOG: "HIDE_PROFILER_DIALOG",
   SWITCH_PROFILER_CONTEXT: "SWITCH_PROFILER_CONTEXT",
   NETWORK_LOCATIONS_UPDATE_FAILURE: "NETWORK_LOCATIONS_UPDATE_FAILURE",
@@ -57,6 +58,9 @@ const actionTypes = {
   TEMPORARY_EXTENSION_RELOAD_FAILURE: "TEMPORARY_EXTENSION_RELOAD_FAILURE",
   TEMPORARY_EXTENSION_RELOAD_START: "TEMPORARY_EXTENSION_RELOAD_START",
   TEMPORARY_EXTENSION_RELOAD_SUCCESS: "TEMPORARY_EXTENSION_RELOAD_SUCCESS",
+  TERMINATE_EXTENSION_BGSCRIPT_FAILURE: "TERMINATE_EXTENSION_BGSCRIPT_FAILURE",
+  TERMINATE_EXTENSION_BGSCRIPT_START: "TERMINATE_EXTENSION_BGSCRIPT_START",
+  TERMINATE_EXTENSION_BGSCRIPT_SUCCESS: "TERMINATE_EXTENSION_BGSCRIPT_SUCCESS",
   THIS_FIREFOX_RUNTIME_CREATED: "THIS_FIREFOX_RUNTIME_CREATED",
   UNWATCH_RUNTIME_FAILURE: "UNWATCH_RUNTIME_FAILURE",
   UNWATCH_RUNTIME_START: "UNWATCH_RUNTIME_START",
@@ -103,10 +107,6 @@ const PAGE_TYPES = {
 };
 
 const PREFERENCES = {
-  // Preference that enables the Multiprocess Browser Toolbox. This will also
-  // enable inspecting Content processes when opening a "Main Process" toolbox
-  // on a remote target.
-  FISSION_BROWSER_TOOLBOX: "devtools.browsertoolbox.fission",
   // Preference that drives the display of the "Tabs" category on This Firefox.
   LOCAL_TAB_DEBUGGING_ENABLED: "devtools.aboutdebugging.local-tab-debugging",
   // Preference that drives the display of the "Processes" debug target category.
@@ -148,6 +148,11 @@ const USB_STATES = {
   UPDATING_USB: "UPDATING_USB",
 };
 
+const EXTENSION_BGSCRIPT_STATUSES = {
+  RUNNING: "RUNNING",
+  STOPPED: "STOPPED",
+};
+
 /**
  * These constants reference the performance-new's concept of a PageContext.
  * These are defined in devtools/client/performance-new/@types/perf.d.ts
@@ -164,6 +169,7 @@ module.exports = Object.assign(
   {
     DEBUG_TARGETS,
     DEBUG_TARGET_PANE,
+    EXTENSION_BGSCRIPT_STATUSES,
     ICON_LABEL_LEVEL,
     MESSAGE_LEVEL,
     PAGE_TYPES,

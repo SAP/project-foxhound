@@ -30,7 +30,7 @@ function test() {
     .then(openSidebar)
     .then(win => openWindow(win, { private: true }))
     .then(cacheWindow)
-    .then(function({ document }) {
+    .then(function ({ document }) {
       let sidebarBox = document.getElementById("sidebar-box");
       is(
         sidebarBox.hidden,
@@ -38,13 +38,14 @@ function test() {
         "Opening a private window from reg window does not open the sidebar"
       );
     })
+    .then(closeCachedWindows)
     // Part 2: NON PRIVATE WINDOW -> NON PRIVATE WINDOW
     .then(() => openWindow(window))
     .then(cacheWindow)
     .then(openSidebar)
     .then(win => openWindow(win))
     .then(cacheWindow)
-    .then(function({ document }) {
+    .then(function ({ document }) {
       let sidebarBox = document.getElementById("sidebar-box");
       is(
         sidebarBox.hidden,
@@ -52,13 +53,14 @@ function test() {
         "Opening a reg window from reg window does open the sidebar"
       );
     })
+    .then(closeCachedWindows)
     // Part 3: PRIVATE WINDOW -> NON PRIVATE WINDOW
     .then(() => openWindow(window, { private: true }))
     .then(cacheWindow)
     .then(openSidebar)
     .then(win => openWindow(win))
     .then(cacheWindow)
-    .then(function({ document }) {
+    .then(function ({ document }) {
       let sidebarBox = document.getElementById("sidebar-box");
       is(
         sidebarBox.hidden,
@@ -66,13 +68,14 @@ function test() {
         "Opening a reg window from a private window does not open the sidebar"
       );
     })
+    .then(closeCachedWindows)
     // Part 4: PRIVATE WINDOW -> PRIVATE WINDOW
     .then(() => openWindow(window, { private: true }))
     .then(cacheWindow)
     .then(openSidebar)
     .then(win => openWindow(win, { private: true }))
     .then(cacheWindow)
-    .then(function({ document }) {
+    .then(function ({ document }) {
       let sidebarBox = document.getElementById("sidebar-box");
       is(
         sidebarBox.hidden,

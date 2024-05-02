@@ -1,7 +1,6 @@
-(function() {
-  const { Services } = ChromeUtils.import(
-    "resource://gre/modules/Services.jsm"
-  );
+/* eslint-env mozilla/frame-script */
+
+(function () {
   sendAsyncMessage("CPStartup:BrowserChildReady", {
     time: Services.telemetry.msSystemNow(),
   });

@@ -1,11 +1,11 @@
-const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
-const { NetUtil } = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { HttpServer } = ChromeUtils.importESModule(
+  "resource://testing-common/httpd.sys.mjs"
+);
+const { NetUtil } = ChromeUtils.importESModule(
+  "resource://gre/modules/NetUtil.sys.mjs"
 );
 
-XPCOMUtils.defineLazyGetter(this, "HTTP_TEST_URL", function() {
+ChromeUtils.defineLazyGetter(this, "HTTP_TEST_URL", function () {
   return "http://test1.example.com";
 });
 
@@ -267,7 +267,10 @@ function ChannelListener() {}
 
 ChannelListener.prototype = {
   onStartRequest(request) {
-    // dummy implementation
+    var chan = request.QueryInterface(Ci.nsIChannel);
+    var httpChan = chan.QueryInterface(Ci.nsIHttpChannel);
+    var authHeader = httpChan.getRequestHeader("Authorization");
+    Assert.equal(authHeader, "Basic user:pass", curTest.description);
   },
   onDataAvailable(request, stream, offset, count) {
     do_throw("Should not get any data!");
@@ -324,6 +327,7 @@ function setUpChannel() {
   });
   chan.QueryInterface(Ci.nsIHttpChannel);
   chan.requestMethod = "GET";
+  chan.setRequestHeader("Authorization", "Basic user:pass", false);
   return chan;
 }
 

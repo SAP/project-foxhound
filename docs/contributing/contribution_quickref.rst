@@ -5,6 +5,8 @@ Some parts of this process, including cloning and compiling, can take a long tim
 If at any point you get stuck, please don't hesitate to ask at `https://chat.mozilla.org <https://chat.mozilla.org>`__
 in the `#introduction <https://chat.mozilla.org/#/room/#introduction:mozilla.org>`__ channel.
 
+Don’t hesitate to look at the :ref:`Getting Set Up To Work On The Firefox Codebase<Getting Set Up To Work On The Firefox Codebase>` for a more detailed tutorial.
+
 Before you start
 ----------------
 Please register and create your account for
@@ -15,45 +17,11 @@ To register with Phabricator, make sure you enable Two-Factor Authentication (My
 `Phabricator <https://phabricator.services.mozilla.com/>`__: web-based software development collaboration tools, mainly for code review.
 Please obtain an API Token (Settings >> Conduit API Tokens)
 
-Clone the sources
------------------
-
-You can use either mercurial or git. `Mercurial <https://www.mercurial-scm.org/downloads>`__ is the canonical version control system.
-
-.. code-block:: shell
-
-    $ hg clone https://hg.mozilla.org/mozilla-central/
-
-For git, see the `git cinnabar documentation <https://github.com/glandium/git-cinnabar/wiki/Mozilla:-A-git-workflow-for-Gecko-development>`__
-
-The clone can take from 40 minutes to two hours (depending on your connection) and
-the repository should be less than 5GB (~ 20GB after the build).
-
-If you have any network connection issues and cannot clone with command, try :ref:`Mercurial bundles <Mercurial bundles>`.
-
-:ref:`More information <Mercurial Overview>`
-
-Install dependencies (non-Windows)
-----------------------------------
-
-Firefox provides a mechanism to install all dependencies; in the source tree:
-
-.. code-block:: shell
-
-     $ ./mach bootstrap
-
-The default options are recommended.
-If you're not planning to write C++ or Rust code, select :ref:`Artifact Mode <Understanding Artifact Builds>`
-and follow the instructions at the end of the bootstrap for creating a mozconfig file.
-
-More information :ref:`for Linux <Building Firefox On Linux>` and :ref:`for MacOS <Building Firefox On MacOS>`
-
 Windows dependencies
 --------------------
 
-#. You need 64-bit version of Windows 7 or later.
-#. Download and install `Visual Studio Community Edition. <https://visualstudio.microsoft.com/downloads/>`__
-#. Finally download the `MozillaBuild Package. <https://ftp.mozilla.org/pub/mozilla.org/mozilla/libraries/win32/MozillaBuildSetup-Latest.exe>`__ Installation directory should be:
+#. You need a :ref:`supported version of Windows<tier_1_hosts>`.
+#. Download the `MozillaBuild Package. <https://ftp.mozilla.org/pub/mozilla/libraries/win32/MozillaBuildSetup-Latest.exe>`__ Installation directory should be:
 
     .. code-block:: shell
 
@@ -65,16 +33,66 @@ Windows dependencies
 
     All the commands of this tutorial must be run in the shell provided with the MozillaBuild Package (start-shell.bat)
 
-:ref:`More information <Building Firefox On Windows>`
+:ref:`More information on building Firefox on Windows <Building Firefox On Windows>`
+
+Bootstrap a copy of the Firefox source code
+-------------------------------------------
+
+You can download the source code and have Firefox automatically download and install the other dependencies it needs. The below command as per your Operating System, will download a lot of data (years of Firefox history!) then guide you through the interactive setup process.
+
+Downloading can take from 40 minutes to two hours (depending on your connection) and the repository should be less than 5GB (~ 20GB after the build).
+
+The default options are recommended.
+If you're not planning to write C++ or Rust code, select :ref:`Artifact Mode <Understanding Artifact Builds>`
+and follow the instructions at the end of the bootstrap for creating a mozconfig file.
+
+To Setup Firefox On Windows
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. code-block:: shell
+
+    $ cd c:/
+    $ mkdir mozilla-source
+    $ cd mozilla-source
+    $ wget https://hg.mozilla.org/mozilla-central/raw-file/default/python/mozboot/bin/bootstrap.py
+    $ python3 bootstrap.py
+
+More information on :ref:`building Firefox for Windows <Building Firefox On Windows>`.
+
+To Setup Firefox On macOS and Linux
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. code-block:: shell
+
+    $ curl https://hg.mozilla.org/mozilla-central/raw-file/default/python/mozboot/bin/bootstrap.py -O
+    $ python3 bootstrap.py
+
+More information on :ref:`building Firefox for Linux <Building Firefox On Linux>` and :ref:`building Firefox for MacOS <Building Firefox On MacOS>`.
+
+To set up your editor
+---------------------
+
+.. note::
+
+    Visual Studio Code is the recommended editor for Firefox development.
+    Not because it is better than the other editors but because we decided to
+    focus our energy on a single editor.
+
+Setting up your editor is an important part of the contributing process. Having
+linting and other features integrated, saves you time and will help with reducing
+build and reviews cycles.
+
+See our :ref:`editor page for more information about how to set up your favorite editor <Editor / IDE integration>`.
 
 To build & run
 --------------
 
-Once all the dependencies have been installed, run:
+Once the System is bootstrapped, run:
 
 .. code-block:: shell
 
-     $ ./mach build
+    $ cd mozilla-unified
+    $ ./mach build
 
 which will check for dependencies and start the build.
 This will take a while; a few minutes to a few hours depending on your hardware.
@@ -92,7 +110,11 @@ To run it:
 
      $ ./mach run
 
-:ref:`More information about Linux <Building Firefox On Linux>` / :ref:`More information about MacOS <Building Firefox On MacOS>`
+This command will open your locally built Firefox in a new window.
+
+:ref:`More information about building Firefox on Linux <Building Firefox On Linux>` / :ref:`More information about building Firefox on MacOS <Building Firefox On MacOS>`
+
+If you encounter build errors, please reference the more detailed "Building Firefox" on your specific operating system document and specifically the "Troubleshooting" section.
 
 .. _write_a_patch:
 
@@ -101,7 +123,30 @@ To write a patch
 
 Make the changes you need in the codebase. You can look up UI text in `Searchfox <https://searchfox.org>`__ to find the right file.
 
-Then:
+.. note::
+    If you are unsure of what changes you need to make, or need help from the mentor of the bug,
+    please don't hesitate to use the needinfo feature ("Request information from") on `Bugzilla <https://bugzilla.mozilla.org/home>`__ to get the attention of your mentor.
+
+
+After making your changes, visualize your changes to ensure you're including all the necessary work:
+
+.. code-block:: shell
+
+    # Mercurial
+    # For files changed/added/removed
+    $ hg status
+
+    # For detailed line changes
+    $ hg diff
+
+    # Git
+    # For files changed/added/removed
+    $ git status
+
+    # For detailed line changes
+    $ git diff
+
+Then commit your changes:
 
 .. code-block:: shell
 
@@ -123,6 +168,10 @@ The commit message should look like:
 
 **Make sure you include the bug number and at least one reviewer (or reviewer group) in this format.**
 
+For example, here is an example of a good commit message:
+"Bug 123456 - Null-check presentation shell so we don't crash when a button removes itself
+during its own onclick handler. r=person"
+
 To :ref:`find a reviewer or a review group <Getting reviews>`, the easiest way is to run
 ``hg log <modified-file>`` (or ``git log <modified-file>``, if
 you're using git) on the relevant files, and look who usually is
@@ -141,7 +190,7 @@ To visualize your patch in the repository, run:
 
 :ref:`More information on how to work with stack of patches <Working with stack of patches Quick Reference>`
 
-:ref:`More information <Mercurial Overview>`
+:ref:`More information on Mercurial <Mercurial Overview>`
 
 To make sure the change follows the coding style
 ------------------------------------------------
@@ -178,17 +227,26 @@ To test a change remotely
 
 Running all the tests for Firefox takes a very long time and requires multiple
 operating systems with various configurations. To build Firefox and run its
-tests on continuous integration servers (CI), two commands are available:
+tests on continuous integration servers (CI), multiple :ref:`options to select tasks <Selectors>`
+are available.
+
+To automatically select the tasks that are most likely to be affected by your changes, run:
 
 .. code-block:: shell
 
-    $ ./mach try chooser
+    $ ./mach try auto
 
-To select jobs running a fuzzy search:
+To select tasks manually using a fuzzy search interface, run:
 
 .. code-block:: shell
 
     $ ./mach try fuzzy
+
+To rerun the same tasks:
+
+.. code-block:: shell
+
+    $ ./mach try again
 
 From `Treeherder <https://treeherder.mozilla.org/>`__ (our continuous integration system), it is also possible to attach new jobs. As every review has
 a try CI run associated, it makes this work easier. See :ref:`attach-job-review` for
@@ -229,7 +287,7 @@ If you wrote several patches on top of each other:
     $ moz-phab submit <first_revision>::<last_revision>
 
 `More
-information <https://moz-conduit.readthedocs.io/en/latest/phabricator-user.html>`__
+information on how to use Phabricator and MozPhab <https://moz-conduit.readthedocs.io/en/latest/phabricator-user.html>`__
 
 To update the working directory
 -------------------------------
@@ -253,6 +311,9 @@ If your patch is not loaded in your working directory, you first need to re-appl
 .. code-block:: shell
 
     $ moz-phab patch D<revision_id>
+
+    # Or you can use the URL of the revision on Phabricator
+    $ moz-phab patch https://phabricator.services.mozilla.com/D<revision_id>
 
 Make your changes in the working folder and run:
 

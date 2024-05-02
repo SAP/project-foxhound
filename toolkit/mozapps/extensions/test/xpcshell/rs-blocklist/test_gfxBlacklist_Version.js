@@ -17,7 +17,6 @@ async function run_test() {
   }
 
   gfxInfo.QueryInterface(Ci.nsIGfxInfoDebug);
-  gfxInfo.fireTestProcess();
 
   // Save OS in variable since createAppInfo below will change it to "xpcshell".
   const OS = Services.appinfo.OS;
@@ -84,13 +83,7 @@ async function run_test() {
     Assert.equal(failureId.value, "");
 
     status = gfxInfo.getFeatureStatus(Ci.nsIGfxInfo.FEATURE_OPENGL_LAYERS);
-    if (OS == "Android") {
-      // OpenGL layers are never blocklisted on Android, despite an entry in test_gfxBlacklist.json.
-      // https://searchfox.org/mozilla-central/rev/c1ec9ecbbc7eac698923ffd18c8594aa3e2e9da0/widget/android/GfxInfo.cpp#431-437
-      Assert.equal(status, Ci.nsIGfxInfo.FEATURE_STATUS_OK);
-    } else {
-      Assert.equal(status, Ci.nsIGfxInfo.FEATURE_BLOCKED_DRIVER_VERSION);
-    }
+    Assert.equal(status, Ci.nsIGfxInfo.FEATURE_BLOCKED_DRIVER_VERSION);
 
     status = gfxInfo.getFeatureStatus(
       Ci.nsIGfxInfo.FEATURE_WEBGL_OPENGL,
@@ -160,7 +153,17 @@ async function run_test() {
       Ci.nsIGfxInfo.FEATURE_HARDWARE_VIDEO_DECODING,
       failureId
     );
-    Assert.equal(status, Ci.nsIGfxInfo.FEATURE_STATUS_OK);
+    if (OS == "Linux" && status != Ci.nsIGfxInfo.FEATURE_STATUS_OK) {
+      // Linux test suite is running on SW OpenGL backend and we disable
+      // HW video decoding there.
+      Assert.equal(status, Ci.nsIGfxInfo.FEATURE_BLOCKED_PLATFORM_TEST);
+      Assert.equal(
+        failureId.value,
+        "FEATURE_FAILURE_VIDEO_DECODING_TEST_FAILED"
+      );
+    } else {
+      Assert.equal(status, Ci.nsIGfxInfo.FEATURE_STATUS_OK);
+    }
 
     status = gfxInfo.getFeatureStatus(
       Ci.nsIGfxInfo.FEATURE_DIRECT3D_11_ANGLE,
@@ -177,7 +180,7 @@ async function run_test() {
     do_test_finished();
   }
 
-  Services.obs.addObserver(function(aSubject, aTopic, aData) {
+  Services.obs.addObserver(function (aSubject, aTopic, aData) {
     // If we wait until after we go through the event loop, gfxInfo is sure to
     // have processed the gfxItems event.
     executeSoon(checkBlocklist);

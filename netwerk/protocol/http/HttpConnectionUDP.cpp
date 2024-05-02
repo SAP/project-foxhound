@@ -55,7 +55,6 @@ nsresult HttpConnectionUDP::Init(nsHttpConnectionInfo* info,
   LOG1(("HttpConnectionUDP::Init this=%p", this));
   NS_ENSURE_ARG_POINTER(info);
   NS_ENSURE_TRUE(!mConnInfo, NS_ERROR_ALREADY_INITIALIZED);
-  MOZ_ASSERT(dnsRecord || NS_FAILED(status));
 
   mConnInfo = info;
   MOZ_ASSERT(mConnInfo);
@@ -68,15 +67,17 @@ nsresult HttpConnectionUDP::Init(nsHttpConnectionInfo* info,
     // SetSecurityCallbacks.
     mCallbacks = new nsMainThreadPtrHolder<nsIInterfaceRequestor>(
         "HttpConnectionUDP::mCallbacks", callbacks, false);
+    SetCloseReason(ToCloseReason(mErrorBeforeConnect));
     return mErrorBeforeConnect;
   }
 
   nsCOMPtr<nsIDNSAddrRecord> dnsAddrRecord = do_QueryInterface(dnsRecord);
-  MOZ_ASSERT(dnsAddrRecord);
   if (!dnsAddrRecord) {
     return NS_ERROR_FAILURE;
   }
   dnsAddrRecord->IsTRR(&mResolvedByTRR);
+  dnsAddrRecord->GetEffectiveTRRMode(&mEffectiveTRRMode);
+  dnsAddrRecord->GetTrrSkipReason(&mTRRSkipReason);
   NetAddr peerAddr;
   nsresult rv = dnsAddrRecord->GetNextAddr(mConnInfo->GetRoutedHost().IsEmpty()
                                                ? mConnInfo->OriginPort()
@@ -141,6 +142,10 @@ nsresult HttpConnectionUDP::Init(nsHttpConnectionInfo* info,
     controlFlags |= nsISocketProvider::BE_CONSERVATIVE;
   }
 
+  if (mResolvedByTRR) {
+    controlFlags |= nsISocketProvider::USED_PRIVATE_DNS;
+  }
+
   mPeerAddr = new nsNetAddr(&peerAddr);
   mHttp3Session = new Http3Session();
   rv = mHttp3Session->Init(mConnInfo, mSelfAddr, mPeerAddr, this, controlFlags,
@@ -156,6 +161,7 @@ nsresult HttpConnectionUDP::Init(nsHttpConnectionInfo* info,
     return rv;
   }
 
+  ChangeConnectionState(ConnectionState::INITED);
   // See explanation for non-strictness of this operation in
   // SetSecurityCallbacks.
   mCallbacks = new nsMainThreadPtrHolder<nsIInterfaceRequestor>(
@@ -181,6 +187,7 @@ nsresult HttpConnectionUDP::Activate(nsAHttpTransaction* trans, uint32_t caps,
         caps));
 
   if (!mExperienced && !trans->IsNullTransaction()) {
+    mHasFirstHttpTransaction = true;
     // For QUIC we have HttpConnecitonUDP before the actual connection
     // has been establish so wait for TLS handshake to be finished before
     // we mark the connection 'experienced'.
@@ -218,6 +225,11 @@ nsresult HttpConnectionUDP::Activate(nsAHttpTransaction* trans, uint32_t caps,
     return NS_ERROR_FAILURE;
   }
 
+  if (mHasFirstHttpTransaction && mExperienced) {
+    mHasFirstHttpTransaction = false;
+    mExperienceState |= ConnectionExperienceState::Experienced;
+  }
+
   Unused << ResumeSend();
   return NS_OK;
 }
@@ -227,6 +239,11 @@ void HttpConnectionUDP::Close(nsresult reason, bool aIsShutdown) {
        static_cast<uint32_t>(reason)));
 
   MOZ_ASSERT(OnSocketThread(), "not on socket thread");
+
+  if (mConnectionState != ConnectionState::CLOSED) {
+    RecordConnectionCloseTelemetry(reason);
+    ChangeConnectionState(ConnectionState::CLOSED);
+  }
 
   if (mForceSendTimer) {
     mForceSendTimer->Cancel();
@@ -346,13 +363,13 @@ nsresult HttpConnectionUDP::TakeTransport(
   return NS_ERROR_FAILURE;
 }
 
-void HttpConnectionUDP::GetSecurityInfo(nsISupports** secinfo) {
+void HttpConnectionUDP::GetTLSSocketControl(nsITLSSocketControl** secinfo) {
   MOZ_ASSERT(OnSocketThread(), "not on socket thread");
-  LOG(("HttpConnectionUDP::GetSecurityInfo http3Session=%p\n",
+  LOG(("HttpConnectionUDP::GetTLSSocketControl http3Session=%p\n",
        mHttp3Session.get()));
 
   if (mHttp3Session &&
-      NS_SUCCEEDED(mHttp3Session->GetTransactionSecurityInfo(secinfo))) {
+      NS_SUCCEEDED(mHttp3Session->GetTransactionTLSSocketControl(secinfo))) {
     return;
   }
 
@@ -448,6 +465,10 @@ nsresult HttpConnectionUDP::ForceSend() {
 
 HttpVersion HttpConnectionUDP::Version() { return HttpVersion::v3_0; }
 
+PRIntervalTime HttpConnectionUDP::LastWriteTime() {
+  return mHttp3Session->LastWriteTime();
+}
+
 //-----------------------------------------------------------------------------
 // HttpConnectionUDP <private>
 //-----------------------------------------------------------------------------
@@ -499,15 +520,9 @@ void HttpConnectionUDP::CloseTransaction(nsAHttpTransaction* trans,
   mIsReused = true;
 }
 
-void HttpConnectionUDP::OnQuicTimeout(nsITimer* aTimer, void* aClosure) {
-  MOZ_ASSERT(OnSocketThread(), "not on socket thread");
-  LOG(("HttpConnectionUDP::OnQuicTimeout [this=%p]\n", aClosure));
-
-  HttpConnectionUDP* self = static_cast<HttpConnectionUDP*>(aClosure);
-  self->OnQuicTimeoutExpired();
-}
-
 void HttpConnectionUDP::OnQuicTimeoutExpired() {
+  MOZ_ASSERT(OnSocketThread(), "not on socket thread");
+  LOG(("HttpConnectionUDP::OnQuicTimeoutExpired [this=%p]\n", this));
   // if the transaction was dropped...
   if (!mHttp3Session) {
     LOG(("  no transaction; ignoring event\n"));
@@ -534,6 +549,14 @@ NS_INTERFACE_MAP_BEGIN(HttpConnectionUDP)
   NS_INTERFACE_MAP_ENTRY(HttpConnectionBase)
   NS_INTERFACE_MAP_ENTRY_CONCRETE(HttpConnectionUDP)
 NS_INTERFACE_MAP_END
+
+void HttpConnectionUDP::NotifyDataRead() {
+  mExperienceState |= ConnectionExperienceState::First_Response_Received;
+}
+
+void HttpConnectionUDP::NotifyDataWrite() {
+  mExperienceState |= ConnectionExperienceState::First_Request_Sent;
+}
 
 // called on the socket transport thread
 nsresult HttpConnectionUDP::RecvData() {
@@ -672,6 +695,12 @@ nsresult HttpConnectionUDP::GetPeerAddr(NetAddr* addr) {
 }
 
 bool HttpConnectionUDP::ResolvedByTRR() { return mResolvedByTRR; }
+
+nsIRequest::TRRMode HttpConnectionUDP::EffectiveTRRMode() {
+  return mEffectiveTRRMode;
+}
+
+TRRSkippedReason HttpConnectionUDP::TRRSkipReason() { return mTRRSkipReason; }
 
 }  // namespace net
 }  // namespace mozilla

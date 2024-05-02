@@ -15,11 +15,11 @@ add_task(async function test_windowGlobalHandlerCreated() {
   );
 
   info("Add a new session data item to get window global handlers created");
-  await rootMessageHandler.addSessionData({
+  await rootMessageHandler.addSessionDataItem({
     moduleName: "command",
     category: "browser_session_data_browser_element",
     contextDescriptor: {
-      type: CONTEXT_DESCRIPTOR_TYPES.ALL,
+      type: ContextDescriptorType.All,
     },
     values: [true],
   });
@@ -50,7 +50,6 @@ add_task(async function test_windowGlobalHandlerCreated() {
       );
     });
     is(contextEvents.length, 1, `Found event for context ${context.id}`);
-    ok(!events[0].isProtocolEvent, "Received expected internal event");
   }
 
   rootMessageHandler.off("message-handler-event", onEvent);

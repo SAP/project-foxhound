@@ -11,7 +11,7 @@ NSS 3.41.1 release notes
    Network Security Services (NSS) 3.41.1 is a patch release for NSS 3.41. The bug fixes in NSS
    3.41.1 are described in the "Bugs Fixed" section below. It was released on 22 January 2019.
 
-.. _distribution_information:
+
 
 `Distribution Information <#distribution_information>`__
 --------------------------------------------------------
@@ -31,8 +31,6 @@ NSS 3.41.1 release notes
 
 `New in NSS 3.41.1 <#new_in_nss_3.41.1>`__
 ------------------------------------------
-
-.. container::
 
 .. _new_functionality:
 

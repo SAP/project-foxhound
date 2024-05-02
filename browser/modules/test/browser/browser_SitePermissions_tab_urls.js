@@ -4,10 +4,6 @@
 
 "use strict";
 
-const { SitePermissions } = ChromeUtils.import(
-  "resource:///modules/SitePermissions.jsm"
-);
-
 function newPrincipal(origin) {
   return Services.scriptSecurityManager.createContentPrincipalFromOrigin(
     origin
@@ -40,14 +36,14 @@ add_task(async function testTemporaryPermissionTabURLs() {
 
   let id = "microphone";
 
-  await BrowserTestUtils.withNewTab("about:blank", async function(browser) {
+  await BrowserTestUtils.withNewTab("about:blank", async function (browser) {
     for (let principal of same) {
       let loaded = BrowserTestUtils.browserLoaded(
         browser,
         false,
         principal.spec
       );
-      BrowserTestUtils.loadURI(browser, principal.spec);
+      BrowserTestUtils.startLoadingURIString(browser, principal.spec);
       await loaded;
 
       SitePermissions.setForPrincipal(
@@ -64,7 +60,7 @@ add_task(async function testTemporaryPermissionTabURLs() {
           false,
           principal2.URI.spec
         );
-        BrowserTestUtils.loadURI(browser, principal2.URI.spec);
+        BrowserTestUtils.startLoadingURIString(browser, principal2.URI.spec);
         await loaded2;
 
         Assert.deepEqual(
@@ -86,7 +82,7 @@ add_task(async function testTemporaryPermissionTabURLs() {
         false,
         principal.spec
       );
-      BrowserTestUtils.loadURI(browser, principal.spec);
+      BrowserTestUtils.startLoadingURIString(browser, principal.spec);
       await loaded;
 
       SitePermissions.setForPrincipal(
@@ -111,7 +107,7 @@ add_task(async function testTemporaryPermissionTabURLs() {
           false,
           principal2.URI.spec
         );
-        BrowserTestUtils.loadURI(browser, principal2.URI.spec);
+        BrowserTestUtils.startLoadingURIString(browser, principal2.URI.spec);
         await loaded;
 
         if (principal2 != principal) {

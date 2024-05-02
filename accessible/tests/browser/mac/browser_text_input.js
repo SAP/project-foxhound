@@ -78,9 +78,8 @@ function matchWebArea(expectedId, expectedInfo) {
       return false;
     }
 
-    let textChangeElemID = data.AXTextChangeElement.getAttributeValue(
-      "AXDOMIdentifier"
-    );
+    let textChangeElemID =
+      data.AXTextChangeElement.getAttributeValue("AXDOMIdentifier");
 
     return (
       iface.getAttributeValue("AXRole") == "AXWebArea" &&
@@ -153,6 +152,44 @@ async function synthKeyAndTestSelectionChanged(
     expectedSelectionString,
     `selection has correct value (${expectedSelectionString}) via top document`
   );
+
+  return inputEvent;
+}
+
+function testSelectionEventLeftChar(event, expectedChar) {
+  const selStart = event.macIface.getParameterizedAttributeValue(
+    "AXStartTextMarkerForTextMarkerRange",
+    event.data.AXSelectedTextMarkerRange
+  );
+  const selLeft = event.macIface.getParameterizedAttributeValue(
+    "AXPreviousTextMarkerForTextMarker",
+    selStart
+  );
+  const leftCharRange = event.macIface.getParameterizedAttributeValue(
+    "AXTextMarkerRangeForUnorderedTextMarkers",
+    [selLeft, selStart]
+  );
+  const leftCharString = event.macIface.getParameterizedAttributeValue(
+    "AXStringForTextMarkerRange",
+    leftCharRange
+  );
+  is(leftCharString, expectedChar, "Left character is correct");
+}
+
+function testSelectionEventLine(event, expectedLine) {
+  const selStart = event.macIface.getParameterizedAttributeValue(
+    "AXStartTextMarkerForTextMarkerRange",
+    event.data.AXSelectedTextMarkerRange
+  );
+  const lineRange = event.macIface.getParameterizedAttributeValue(
+    "AXLineTextMarkerRangeForTextMarker",
+    selStart
+  );
+  const lineString = event.macIface.getParameterizedAttributeValue(
+    "AXStringForTextMarkerRange",
+    lineRange
+  );
+  is(lineString, expectedLine, "Line is correct");
 }
 
 async function synthKeyAndTestValueChanged(
@@ -224,7 +261,7 @@ async function synthKeyAndTestValueChanged(
   );
 }
 
-async function focusIntoInputAndType(accDoc, inputId, innerContainerId) {
+async function focusIntoInput(accDoc, inputId, innerContainerId) {
   let selectionId = innerContainerId ? innerContainerId : inputId;
   let input = getNativeInterface(accDoc, inputId);
   ok(!input.getAttributeValue("AXFocused"), "input is not focused");
@@ -249,6 +286,11 @@ async function focusIntoInputAndType(accDoc, inputId, innerContainerId) {
   ]);
   input.setAttributeValue("AXFocused", true);
   await events;
+}
+
+async function focusIntoInputAndType(accDoc, inputId, innerContainerId) {
+  let selectionId = innerContainerId ? innerContainerId : inputId;
+  await focusIntoInput(accDoc, inputId, innerContainerId);
 
   async function testTextInput(
     synthKey,
@@ -337,14 +379,14 @@ async function focusIntoInputAndType(accDoc, inputId, innerContainerId) {
     { AXTextStateChangeType: AXTextStateChangeTypeSelectionMove }
   );
   await synthKeyAndTestSelectionChanged(
-    "KEY_Home",
-    { shiftKey: true },
+    "KEY_ArrowLeft",
+    { shiftKey: true, metaKey: true },
     selectionId,
     "hello ",
     {
       AXTextStateChangeType: AXTextStateChangeTypeSelectionExtend,
-      AXTextSelectionDirection: AXTextSelectionDirectionPrevious,
-      AXTextSelectionGranularity: AXTextSelectionGranularityWord,
+      AXTextSelectionDirection: AXTextSelectionDirectionBeginning,
+      AXTextSelectionGranularity: AXTextSelectionGranularityLine,
     }
   );
   await synthKeyAndTestSelectionChanged(
@@ -372,7 +414,8 @@ addAccessibleTask(
   `<a href="#">link</a> <input id="input">`,
   async (browser, accDoc) => {
     await focusIntoInputAndType(accDoc, "input");
-  }
+  },
+  { topLevel: true, iframe: true, remoteIframe: true }
 );
 
 // Test content editable
@@ -390,15 +433,6 @@ addAccessibleTask(
   }
 );
 
-// Test text input in iframe
-addAccessibleTask(
-  `<a href="#">link</a> <input id="input">`,
-  async (browser, accDoc) => {
-    await focusIntoInputAndType(accDoc, "input");
-  },
-  { iframe: true }
-);
-
 // Test input that gets role::EDITCOMBOBOX
 addAccessibleTask(`<input type="text" id="box">`, async (browser, accDoc) => {
   const box = getNativeInterface(accDoc, "box");
@@ -410,3 +444,214 @@ addAccessibleTask(`<input type="text" id="box">`, async (browser, accDoc) => {
   );
   await focusIntoInputAndType(accDoc, "box");
 });
+
+// Test multiline caret control in a text area
+addAccessibleTask(
+  `<textarea id="input" cols="15">one two three four five six seven eight</textarea>`,
+  async (browser, accDoc) => {
+    await focusIntoInput(accDoc, "input");
+
+    await synthKeyAndTestSelectionChanged("KEY_ArrowRight", null, "input", "", {
+      AXTextStateChangeType: AXTextStateChangeTypeSelectionMove,
+      AXTextSelectionDirection: AXTextSelectionDirectionNext,
+      AXTextSelectionGranularity: AXTextSelectionGranularityCharacter,
+    });
+
+    await synthKeyAndTestSelectionChanged("KEY_ArrowDown", null, "input", "", {
+      AXTextStateChangeType: AXTextStateChangeTypeSelectionMove,
+      AXTextSelectionDirection: AXTextSelectionDirectionNext,
+      AXTextSelectionGranularity: AXTextSelectionGranularityLine,
+    });
+
+    await synthKeyAndTestSelectionChanged(
+      "KEY_ArrowLeft",
+      { metaKey: true },
+      "input",
+      "",
+      {
+        AXTextStateChangeType: AXTextStateChangeTypeSelectionMove,
+        AXTextSelectionDirection: AXTextSelectionDirectionBeginning,
+        AXTextSelectionGranularity: AXTextSelectionGranularityLine,
+      }
+    );
+
+    await synthKeyAndTestSelectionChanged(
+      "KEY_ArrowRight",
+      { metaKey: true },
+      "input",
+      "",
+      {
+        AXTextStateChangeType: AXTextStateChangeTypeSelectionMove,
+        AXTextSelectionDirection: AXTextSelectionDirectionEnd,
+        AXTextSelectionGranularity: AXTextSelectionGranularityLine,
+      }
+    );
+  },
+  { topLevel: true, iframe: true, remoteIframe: true }
+);
+
+/**
+ * Test that the caret returns the correct marker when it is positioned after
+ * the last character (to facilitate appending text).
+ */
+addAccessibleTask(
+  `<input id="input" value="abc">`,
+  async function (browser, docAcc) {
+    await focusIntoInput(docAcc, "input");
+
+    let event = await synthKeyAndTestSelectionChanged(
+      "KEY_ArrowRight",
+      null,
+      "input",
+      "",
+      {
+        AXTextStateChangeType: AXTextStateChangeTypeSelectionMove,
+        AXTextSelectionDirection: AXTextSelectionDirectionNext,
+        AXTextSelectionGranularity: AXTextSelectionGranularityCharacter,
+      }
+    );
+    testSelectionEventLeftChar(event, "a");
+    event = await synthKeyAndTestSelectionChanged(
+      "KEY_ArrowRight",
+      null,
+      "input",
+      "",
+      {
+        AXTextStateChangeType: AXTextStateChangeTypeSelectionMove,
+        AXTextSelectionDirection: AXTextSelectionDirectionNext,
+        AXTextSelectionGranularity: AXTextSelectionGranularityCharacter,
+      }
+    );
+    testSelectionEventLeftChar(event, "b");
+    event = await synthKeyAndTestSelectionChanged(
+      "KEY_ArrowRight",
+      null,
+      "input",
+      "",
+      {
+        AXTextStateChangeType: AXTextStateChangeTypeSelectionMove,
+        AXTextSelectionDirection: AXTextSelectionDirectionNext,
+        AXTextSelectionGranularity: AXTextSelectionGranularityCharacter,
+      }
+    );
+    testSelectionEventLeftChar(event, "c");
+  },
+  { chrome: true, topLevel: true }
+);
+
+/**
+ * Test that the caret returns the correct line when the caret is at the start
+ * of the line.
+ */
+addAccessibleTask(
+  `
+<textarea id="hard">ab
+cd
+ef
+
+gh
+</textarea>
+<div role="textbox" id="wrapped" contenteditable style="width: 1ch;">a b c</div>
+  `,
+  async function (browser, docAcc) {
+    let hard = getNativeInterface(docAcc, "hard");
+    await focusIntoInput(docAcc, "hard");
+    is(hard.getAttributeValue("AXInsertionPointLineNumber"), 0);
+    let event = await synthKeyAndTestSelectionChanged(
+      "KEY_ArrowDown",
+      null,
+      "hard",
+      "",
+      {
+        AXTextStateChangeType: AXTextStateChangeTypeSelectionMove,
+        AXTextSelectionDirection: AXTextSelectionDirectionNext,
+        AXTextSelectionGranularity: AXTextSelectionGranularityLine,
+      }
+    );
+    testSelectionEventLine(event, "cd");
+    is(hard.getAttributeValue("AXInsertionPointLineNumber"), 1);
+    event = await synthKeyAndTestSelectionChanged(
+      "KEY_ArrowDown",
+      null,
+      "hard",
+      "",
+      {
+        AXTextStateChangeType: AXTextStateChangeTypeSelectionMove,
+        AXTextSelectionDirection: AXTextSelectionDirectionNext,
+        AXTextSelectionGranularity: AXTextSelectionGranularityLine,
+      }
+    );
+    testSelectionEventLine(event, "ef");
+    is(hard.getAttributeValue("AXInsertionPointLineNumber"), 2);
+    event = await synthKeyAndTestSelectionChanged(
+      "KEY_ArrowDown",
+      null,
+      "hard",
+      "",
+      {
+        AXTextStateChangeType: AXTextStateChangeTypeSelectionMove,
+        AXTextSelectionDirection: AXTextSelectionDirectionNext,
+        AXTextSelectionGranularity: AXTextSelectionGranularityLine,
+      }
+    );
+    testSelectionEventLine(event, "");
+    is(hard.getAttributeValue("AXInsertionPointLineNumber"), 3);
+    event = await synthKeyAndTestSelectionChanged(
+      "KEY_ArrowDown",
+      null,
+      "hard",
+      "",
+      {
+        AXTextStateChangeType: AXTextStateChangeTypeSelectionMove,
+        AXTextSelectionDirection: AXTextSelectionDirectionNext,
+        AXTextSelectionGranularity: AXTextSelectionGranularityLine,
+      }
+    );
+    testSelectionEventLine(event, "gh");
+    is(hard.getAttributeValue("AXInsertionPointLineNumber"), 4);
+    event = await synthKeyAndTestSelectionChanged(
+      "KEY_ArrowDown",
+      null,
+      "hard",
+      "",
+      {
+        AXTextStateChangeType: AXTextStateChangeTypeSelectionMove,
+        AXTextSelectionDirection: AXTextSelectionDirectionNext,
+        AXTextSelectionGranularity: AXTextSelectionGranularityLine,
+      }
+    );
+    testSelectionEventLine(event, "");
+    is(hard.getAttributeValue("AXInsertionPointLineNumber"), 5);
+
+    let wrapped = getNativeInterface(docAcc, "wrapped");
+    await focusIntoInput(docAcc, "wrapped");
+    is(wrapped.getAttributeValue("AXInsertionPointLineNumber"), 0);
+    event = await synthKeyAndTestSelectionChanged(
+      "KEY_ArrowDown",
+      null,
+      "wrapped",
+      "",
+      {
+        AXTextStateChangeType: AXTextStateChangeTypeSelectionMove,
+        AXTextSelectionDirection: AXTextSelectionDirectionNext,
+        AXTextSelectionGranularity: AXTextSelectionGranularityLine,
+      }
+    );
+    testSelectionEventLine(event, "b ");
+    is(wrapped.getAttributeValue("AXInsertionPointLineNumber"), 1);
+    event = await synthKeyAndTestSelectionChanged(
+      "KEY_ArrowDown",
+      null,
+      "wrapped",
+      "",
+      {
+        AXTextStateChangeType: AXTextStateChangeTypeSelectionMove,
+        AXTextSelectionDirection: AXTextSelectionDirectionNext,
+        AXTextSelectionGranularity: AXTextSelectionGranularityLine,
+      }
+    );
+    testSelectionEventLine(event, "c");
+    is(wrapped.getAttributeValue("AXInsertionPointLineNumber"), 2);
+  },
+  { chrome: true, topLevel: true }
+);

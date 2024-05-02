@@ -7,6 +7,7 @@
 
 #include "mozilla/AssembleCmdLine.h"
 #include "mozilla/CmdLineAndEnvUtils.h"
+#include "mozilla/gtest/MozAssertions.h"
 #include "mozilla/UniquePtrExtensions.h"
 #include "WinRemoteMessage.h"
 
@@ -60,7 +61,6 @@ TestCase<char> testCases[] = {
      ALPHA_IN_UTF16 L" " OMEGA_IN_UTF16},
 
     // More single-argument cases
-    {{"", nullptr}, L""},
     {{"a\fb", nullptr}, L"\"a\fb\""},
     {{"a\nb", nullptr}, L"\"a\nb\""},
     {{"a\rb", nullptr}, L"\"a\rb\""},
@@ -73,6 +73,12 @@ TestCase<char> testCases[] = {
      ALPHA_IN_UTF16 L"\\" OMEGA_IN_UTF16},
     {{ALPHA_IN_UTF8 " " OMEGA_IN_UTF8, nullptr},
      L"\"" ALPHA_IN_UTF16 L" " OMEGA_IN_UTF16 L"\""},
+
+    // Empty string cases
+    {{"", nullptr}, L"\"\""},
+    {{"foo", "", nullptr}, L"foo \"\""},
+    {{"", "bar", nullptr}, L"\"\" bar"},
+    {{"foo", "", "bar", nullptr}, L"foo \"\" bar"},
 };
 
 TEST(AssembleCommandLineWin, assembleCmdLine)
@@ -109,9 +115,6 @@ TEST(CommandLineParserWin, HandleCommandLine)
 
 TEST(WinRemoteMessage, SendReceive)
 {
-  const char kCommandline[] =
-      "dummy.exe /arg1 --arg2 \"3rd arg\" "
-      "4th=\"" UPPER_CYRILLIC_P_IN_UTF8 " " LOWER_CYRILLIC_P_IN_UTF8 "\"";
   const wchar_t kCommandlineW[] =
       L"dummy.exe /arg1 --arg2 \"3rd arg\" "
       L"4th=\"" UPPER_CYRILLIC_P_IN_UTF16 L" " LOWER_CYRILLIC_P_IN_UTF16 L"\"";
@@ -119,13 +122,9 @@ TEST(WinRemoteMessage, SendReceive)
       L"-arg1", L"-arg2", L"3rd arg",
       L"4th=" UPPER_CYRILLIC_P_IN_UTF16 L" " LOWER_CYRILLIC_P_IN_UTF16};
 
-  char workingDirA[MAX_PATH];
   wchar_t workingDirW[MAX_PATH];
-  EXPECT_NE(getcwd(workingDirA, MAX_PATH), nullptr);
   EXPECT_NE(_wgetcwd(workingDirW, MAX_PATH), nullptr);
 
-  WinRemoteMessageSender v0(kCommandline);
-  WinRemoteMessageSender v1(kCommandline, workingDirA);
   WinRemoteMessageSender v2(kCommandlineW, workingDirW);
 
   WinRemoteMessageReceiver receiver;
@@ -133,42 +132,17 @@ TEST(WinRemoteMessage, SendReceive)
   nsAutoString arg;
   nsCOMPtr<nsIFile> workingDir;
 
-  receiver.Parse(v0.CopyData());
-  EXPECT_TRUE(NS_SUCCEEDED(receiver.CommandLineRunner()->GetLength(&len)));
-  EXPECT_EQ(len, ArrayLength(kExpectedArgsW));
-  for (int i = 0; i < ArrayLength(kExpectedArgsW); ++i) {
-    EXPECT_TRUE(
-        NS_SUCCEEDED(receiver.CommandLineRunner()->GetArgument(i, arg)));
-    EXPECT_STREQ(arg.get(), kExpectedArgsW[i]);
-  }
-  EXPECT_EQ(receiver.CommandLineRunner()->GetWorkingDirectory(
-                getter_AddRefs(workingDir)),
-            NS_ERROR_NOT_INITIALIZED);
-
-  receiver.Parse(v1.CopyData());
-  EXPECT_TRUE(NS_SUCCEEDED(receiver.CommandLineRunner()->GetLength(&len)));
-  EXPECT_EQ(len, ArrayLength(kExpectedArgsW));
-  for (int i = 0; i < ArrayLength(kExpectedArgsW); ++i) {
-    EXPECT_TRUE(
-        NS_SUCCEEDED(receiver.CommandLineRunner()->GetArgument(i, arg)));
-    EXPECT_STREQ(arg.get(), kExpectedArgsW[i]);
-  }
-  EXPECT_TRUE(NS_SUCCEEDED(receiver.CommandLineRunner()->GetWorkingDirectory(
-      getter_AddRefs(workingDir))));
-  EXPECT_TRUE(NS_SUCCEEDED(workingDir->GetPath(arg)));
-  EXPECT_STREQ(arg.get(), workingDirW);
-
   receiver.Parse(v2.CopyData());
-  EXPECT_TRUE(NS_SUCCEEDED(receiver.CommandLineRunner()->GetLength(&len)));
-  EXPECT_EQ(len, ArrayLength(kExpectedArgsW));
-  for (int i = 0; i < ArrayLength(kExpectedArgsW); ++i) {
+  EXPECT_NS_SUCCEEDED(receiver.CommandLineRunner()->GetLength(&len));
+  EXPECT_EQ(static_cast<size_t>(len), ArrayLength(kExpectedArgsW));
+  for (size_t i = 0; i < ArrayLength(kExpectedArgsW); ++i) {
     EXPECT_TRUE(
         NS_SUCCEEDED(receiver.CommandLineRunner()->GetArgument(i, arg)));
     EXPECT_STREQ(arg.get(), kExpectedArgsW[i]);
   }
   EXPECT_TRUE(NS_SUCCEEDED(receiver.CommandLineRunner()->GetWorkingDirectory(
       getter_AddRefs(workingDir))));
-  EXPECT_TRUE(NS_SUCCEEDED(workingDir->GetPath(arg)));
+  EXPECT_NS_SUCCEEDED(workingDir->GetPath(arg));
   EXPECT_STREQ(arg.get(), workingDirW);
 }
 
@@ -197,23 +171,9 @@ TEST(WinRemoteMessage, NonNullTerminatedBuffer)
     copyData.cbData = i;
     copyData.lpData = bufferEnd - i;
 
-    copyData.dwData =
-        static_cast<ULONG_PTR>(WinRemoteMessageVersion::CommandLineOnly);
-    EXPECT_TRUE(NS_SUCCEEDED(receiver.Parse(&copyData)));
-    EXPECT_EQ(receiver.CommandLineRunner()->GetWorkingDirectory(
-                  getter_AddRefs(workingDir)),
-              NS_ERROR_NOT_INITIALIZED);
-
-    copyData.dwData = static_cast<ULONG_PTR>(
-        WinRemoteMessageVersion::CommandLineAndWorkingDir);
-    EXPECT_TRUE(NS_SUCCEEDED(receiver.Parse(&copyData)));
-    EXPECT_EQ(receiver.CommandLineRunner()->GetWorkingDirectory(
-                  getter_AddRefs(workingDir)),
-              NS_ERROR_NOT_INITIALIZED);
-
     copyData.dwData = static_cast<ULONG_PTR>(
         WinRemoteMessageVersion::CommandLineAndWorkingDirInUtf16);
-    EXPECT_TRUE(NS_SUCCEEDED(receiver.Parse(&copyData)));
+    EXPECT_NS_SUCCEEDED(receiver.Parse(&copyData));
     EXPECT_EQ(receiver.CommandLineRunner()->GetWorkingDirectory(
                   getter_AddRefs(workingDir)),
               NS_ERROR_NOT_INITIALIZED);

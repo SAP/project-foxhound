@@ -5,12 +5,16 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-/* exported libc */
+/* exported LIBC, libc */
 
-// This file is loaded into the same scope as subprocess_unix.jsm
-/* import-globals-from subprocess_unix.jsm */
+// ctypes is either already available in the chrome worker scope, or defined
+// in scope via loadSubScript.
+/* global ctypes */
 
-const LIBC = OS.Constants.libc;
+// This file is loaded into the same scope as subprocess_shared.js.
+/* import-globals-from subprocess_shared.js */
+
+var LIBC = ChromeUtils.getLibcConstants();
 
 const LIBC_CHOICES = ["libc.so", "libSystem.B.dylib", "a.out"];
 
@@ -22,12 +26,6 @@ const unix = {
     { events: ctypes.short },
     { revents: ctypes.short },
   ]),
-
-  posix_spawn_file_actions_t: ctypes.uint8_t.array(
-    LIBC.OSFILE_SIZEOF_POSIX_SPAWN_FILE_ACTIONS_T
-  ),
-
-  posix_spawnattr_t: ctypes.uint8_t.array(LIBC.OSFILE_SIZEOF_POSIX_SPAWNATTR_T),
 
   WEXITSTATUS(status) {
     return (status >> 8) & 0xff;
@@ -88,63 +86,6 @@ var libc = new Library("libc", LIBC_CHOICES, {
     ctypes.int /* timeout */,
   ],
 
-  posix_spawn: [
-    ctypes.default_abi,
-    ctypes.int,
-    unix.pid_t.ptr /* pid */,
-    ctypes.char.ptr /* path */,
-    unix.posix_spawn_file_actions_t.ptr /* file_actions */,
-    ctypes.voidptr_t /* attrp */,
-    ctypes.char.ptr.ptr /* argv */,
-    ctypes.char.ptr.ptr /* envp */,
-  ],
-
-  posix_spawnattr_init: [
-    ctypes.default_abi,
-    ctypes.int,
-    unix.posix_spawnattr_t.ptr,
-  ],
-
-  posix_spawnattr_destroy: [
-    ctypes.default_abi,
-    ctypes.int,
-    unix.posix_spawnattr_t.ptr,
-  ],
-
-  responsibility_spawnattrs_setdisclaim: [
-    ctypes.default_abi,
-    ctypes.int,
-    unix.posix_spawnattr_t.ptr,
-    ctypes.int,
-  ],
-
-  posix_spawn_file_actions_addclose: [
-    ctypes.default_abi,
-    ctypes.int,
-    unix.posix_spawn_file_actions_t.ptr /* file_actions */,
-    ctypes.int /* fildes */,
-  ],
-
-  posix_spawn_file_actions_adddup2: [
-    ctypes.default_abi,
-    ctypes.int,
-    unix.posix_spawn_file_actions_t.ptr /* file_actions */,
-    ctypes.int /* fildes */,
-    ctypes.int /* newfildes */,
-  ],
-
-  posix_spawn_file_actions_destroy: [
-    ctypes.default_abi,
-    ctypes.int,
-    unix.posix_spawn_file_actions_t.ptr /* file_actions */,
-  ],
-
-  posix_spawn_file_actions_init: [
-    ctypes.default_abi,
-    ctypes.int,
-    unix.posix_spawn_file_actions_t.ptr /* file_actions */,
-  ],
-
   read: [
     ctypes.default_abi,
     ctypes.ssize_t,
@@ -170,6 +111,6 @@ var libc = new Library("libc", LIBC_CHOICES, {
   ],
 });
 
-unix.Fd = function(fd) {
+unix.Fd = function (fd) {
   return ctypes.CDataFinalizer(ctypes.int(fd), libc.close);
 };

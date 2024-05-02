@@ -127,8 +127,7 @@ bool ShmSegmentsWriter::AllocChunk() {
 
 layers::OffsetRange ShmSegmentsWriter::AllocLargeChunk(size_t aSize) {
   ipc::Shmem shm;
-  auto shmType = ipc::SharedMemory::SharedMemoryType::TYPE_BASIC;
-  if (!mShmAllocator->AllocShmem(aSize, shmType, &shm)) {
+  if (!mShmAllocator->AllocShmem(aSize, &shm)) {
     gfxCriticalNote
         << "ShmSegmentsWriter failed to allocate large chunk of size " << aSize;
     MOZ_ASSERT(false, "ShmSegmentsWriter fails to allocate large chunk");
@@ -338,12 +337,6 @@ bool IpcResourceUpdateQueue::AddBlobImage(BlobImageKey key,
   return true;
 }
 
-void IpcResourceUpdateQueue::AddPrivateExternalImage(
-    wr::ExternalImageId aExtId, wr::ImageKey aKey, wr::ImageDescriptor aDesc) {
-  mUpdates.AppendElement(
-      layers::OpAddPrivateExternalImage(aExtId, aKey, aDesc));
-}
-
 void IpcResourceUpdateQueue::AddSharedExternalImage(wr::ExternalImageId aExtId,
                                                     wr::ImageKey aKey) {
   mUpdates.AppendElement(layers::OpAddSharedExternalImage(aExtId, aKey));
@@ -357,7 +350,7 @@ void IpcResourceUpdateQueue::PushExternalImageForTexture(
   MOZ_RELEASE_ASSERT(aTexture->GetIPDLActor()->GetIPCChannel() ==
                      mWriter.WrBridge()->GetIPCChannel());
   mUpdates.AppendElement(layers::OpPushExternalImageForTexture(
-      aExtId, aKey, nullptr, aTexture->GetIPDLActor(), aIsUpdate));
+      aExtId, aKey, WrapNotNull(aTexture->GetIPDLActor()), aIsUpdate));
 }
 
 bool IpcResourceUpdateQueue::UpdateImageBuffer(
@@ -384,13 +377,6 @@ bool IpcResourceUpdateQueue::UpdateBlobImage(BlobImageKey aKey,
   mUpdates.AppendElement(layers::OpUpdateBlobImage(aDescriptor, bytes, aKey,
                                                    aVisibleRect, aDirtyRect));
   return true;
-}
-
-void IpcResourceUpdateQueue::UpdatePrivateExternalImage(
-    wr::ExternalImageId aExtId, wr::ImageKey aKey,
-    const wr::ImageDescriptor& aDesc, ImageIntRect aDirtyRect) {
-  mUpdates.AppendElement(
-      layers::OpUpdatePrivateExternalImage(aExtId, aKey, aDesc, aDirtyRect));
 }
 
 void IpcResourceUpdateQueue::UpdateSharedExternalImage(

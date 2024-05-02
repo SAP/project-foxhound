@@ -1,6 +1,6 @@
 # Standard 'directives.txt' prologues for jit-tests
 harness_directive = "|jit-test| skip-if: true"
-directive = "|jit-test| test-also=--wasm-compiler=optimizing; test-also=--wasm-compiler=baseline; test-also=--test-wasm-await-tier2; test-also=--disable-wasm-huge-memory; skip-variant-if: --disable-wasm-huge-memory, !wasmHugeMemorySupported(); local-include:harness/harness.js"
+directive = "|jit-test| test-also=--wasm-compiler=optimizing; test-also=--wasm-compiler=baseline; test-also=--wasm-test-serialization; test-also=--test-wasm-await-tier2; test-also=--disable-wasm-huge-memory; skip-variant-if: --disable-wasm-huge-memory, !wasmHugeMemorySupported(); local-include:harness/harness.js"
 
 # Failing tests across all testsuites
 excluded_tests = [
@@ -21,21 +21,21 @@ excluded_tests = [
   "exports.wast",
   # false-positive windows-specific failure
   "memory_trap.wast",
-  # false-positive error on duplicate export name (names.wast:19)
-  "names.wast",
   # false-positive error on invalid UTF-8 custom section name (utf8-custom-section-id.wast:6)
   "utf8-custom-section-id.wast",
   # invalid table maximum length for web embeddings
   "table.wast",
   # fails after a bottom-type has been added to validation
   "unreached-invalid.wast",
+  # argument is not wasm value
+  "^select.wast",
 ]
 
 [[repos]]
 name = "spec"
 url = "https://github.com/WebAssembly/spec"
 excluded_tests = []
-directive = "; test-also=--enable-avx; skip-variant-if: --enable-avx, !isAvxPresent()"
+directive = "; test-also=--no-avx; skip-variant-if: --no-avx, !getBuildConfiguration('x86') && !getBuildConfiguration('x64') || getBuildConfiguration('simulator')"
 
 [[repos]]
 name = "threads"
@@ -61,11 +61,7 @@ branch = "main"
 parent = "spec"
 # Skip in jit-test when it's not enabled
 directive = "; --wasm-exceptions; skip-if: !wasmExceptionsEnabled()"
-excluded_tests = [
-  # This gets included due to divergence between the proposal repo and the
-  # upstream spec, it can be removed when the repo is rebased.
-  "global.wast"
-]
+excluded_tests = []
 
 [[repos]]
 name = "memory64"
@@ -73,3 +69,76 @@ url = "https://github.com/mozilla-spidermonkey/memory64"
 branch = "test-cases"
 directive = "; skip-if: !wasmMemory64Enabled()"
 excluded_tests = []
+
+[[repos]]
+name = "function-references"
+url = "https://github.com/WebAssembly/function-references"
+branch = "main"
+parent = "spec"
+directive = "; --wasm-function-references; skip-if: !wasmFunctionReferencesEnabled()"
+excluded_tests = [
+  # duplicate tail calls tests
+  "return_call.wast",
+  "return_call_indirect.wast",
+  # table function elem subtyping
+  "ref_is_null.wast",
+  # cannot expose indexed reference type
+  "ref_null.wast",
+  # parameter subtyping
+  "type-equivalence.wast",
+  # NYI WasmValType.h:259
+  "table-sub.wast",
+  # unrelated
+  "tokens.wast",
+  # irrelevant
+  "simd_lane.wast",
+  # globals are of different type
+  "local_init.wast",
+]
+
+[[repos]]
+name = "relaxed-simd"
+url = "https://github.com/WebAssembly/relaxed-simd"
+branch = "main"
+parent = "spec"
+directive = "; --wasm-relaxed-simd; skip-if: !wasmRelaxedSimdEnabled()"
+excluded_tests = []
+
+[[repos]]
+name = "extended-const"
+url = "https://github.com/WebAssembly/extended-const"
+branch = "main"
+parent = "spec"
+directive = "; --wasm-extended-const; --no-wasm-gc; skip-if: !wasmExtendedConstEnabled()"
+excluded_tests = []
+
+[[repos]]
+name = "tail-call"
+url = "https://github.com/WebAssembly/tail-call"
+branch = "main"
+parent = "spec"
+directive = "; --wasm-tail-calls; skip-if: !wasmTailCallsEnabled()"
+excluded_tests = []
+
+[[repos]]
+name = "multi-memory"
+url = "https://github.com/WebAssembly/multi-memory"
+branch = "main"
+parent = "spec"
+directive = "; --wasm-multi-memory; skip-if: !wasmMultiMemoryEnabled()"
+excluded_tests = [
+  # Empty test fails parsing
+  "memory_copy1.wast",
+]
+
+[[repos]]
+name = "gc"
+url = "https://github.com/WebAssembly/gc"
+branch = "main"
+parent = "function-references"
+directive = "; --wasm-gc; skip-if: !wasmGcEnabled()"
+excluded_tests = [
+  # tail call tests that snuck in
+  "return_call.wast",
+  "return_call_indirect.wast",
+]

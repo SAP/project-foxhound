@@ -5,11 +5,14 @@
 with Files("**"):
     BUG_COMPONENT = ("Core", "Widget: Cocoa")
 
-BROWSER_CHROME_MANIFESTS += ["tests/browser/browser.ini"]
+BROWSER_CHROME_MANIFESTS += ["tests/browser/browser.toml"]
 
-EXTRA_COMPONENTS += [
-    "MacTouchBar.js",
-    "MacTouchBar.manifest",
+EXTRA_JS_MODULES += [
+    "MacTouchBar.sys.mjs",
+]
+
+XPCOM_MANIFESTS += [
+    "components.conf",
 ]
 
 SPHINX_TREES["/browser/touchbar"] = "docs"

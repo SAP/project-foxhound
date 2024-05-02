@@ -10,9 +10,9 @@
 #include <stdio.h> /* for FILE* */
 #include "nsDebug.h"
 #include "nsTArray.h"
+#include "mozilla/EnumSet.h"
 #include "mozilla/FunctionTypeTraits.h"
 #include "mozilla/RefPtr.h"
-#include "mozilla/ReverseIterator.h"
 
 #if defined(DEBUG) || defined(MOZ_DUMP_PAINTING) || defined(MOZ_LAYOUT_DEBUGGER)
 // DEBUG_FRAME_DUMP enables nsIFrame::List and related methods.
@@ -26,43 +26,32 @@ class nsIFrame;
 class nsPresContext;
 
 namespace mozilla {
+
+struct FrameDestroyContext;
+
 class PresShell;
-namespace layout {
 class FrameChildList;
-enum FrameChildListID {
+enum class FrameChildListID {
   // The individual concrete child lists.
-  kPrincipalList,
-  kPopupList,
-  kCaptionList,
-  kColGroupList,
-  kSelectPopupList,
-  kAbsoluteList,
-  kFixedList,
-  kOverflowList,
-  kOverflowContainersList,
-  kExcessOverflowContainersList,
-  kOverflowOutOfFlowList,
-  kFloatList,
-  kBulletList,
-  kPushedFloatsList,
-  kBackdropList,
-  // A special alias for kPrincipalList that suppress the reflow request that
-  // is normally done when manipulating child lists.
-  kNoReflowPrincipalList,
+  Principal,
+  Popup,
+  Caption,
+  ColGroup,
+  Absolute,
+  Fixed,
+  Overflow,
+  OverflowContainers,
+  ExcessOverflowContainers,
+  OverflowOutOfFlow,
+  Float,
+  Bullet,
+  PushedFloats,
+  Backdrop,
+  // A special alias for FrameChildListID::Principal that suppress the reflow
+  // request that is normally done when manipulating child lists.
+  NoReflowPrincipal,
 };
 
-// A helper class for nsIFrame::Destroy[From].  It's defined here because
-// nsFrameList needs it and we can't use nsIFrame here.
-struct PostFrameDestroyData {
-  PostFrameDestroyData(const PostFrameDestroyData&) = delete;
-  PostFrameDestroyData() = default;
-
-  AutoTArray<RefPtr<nsIContent>, 100> mAnonymousContent;
-  void AddAnonymousContent(already_AddRefed<nsIContent>&& aContent) {
-    mAnonymousContent.AppendElement(aContent);
-  }
-};
-}  // namespace layout
 }  // namespace mozilla
 
 // Uncomment this to enable expensive frame-list integrity checking
@@ -72,7 +61,27 @@ struct PostFrameDestroyData {
  * A class for managing a list of frames.
  */
 class nsFrameList {
+  // Next()/Prev() need to know about nsIFrame. To make them inline, their
+  // implementations are in nsIFrame.h.
+  struct ForwardFrameTraversal final {
+    static inline nsIFrame* Next(nsIFrame*);
+    static inline nsIFrame* Prev(nsIFrame*);
+  };
+  struct BackwardFrameTraversal final {
+    static inline nsIFrame* Next(nsIFrame*);
+    static inline nsIFrame* Prev(nsIFrame*);
+  };
+
  public:
+  template <typename FrameTraversal>
+  class Iterator;
+  class Slice;
+
+  using iterator = Iterator<ForwardFrameTraversal>;
+  using const_iterator = Iterator<ForwardFrameTraversal>;
+  using reverse_iterator = Iterator<BackwardFrameTraversal>;
+  using const_reverse_iterator = Iterator<BackwardFrameTraversal>;
+
   nsFrameList() : mFirstChild(nullptr), mLastChild(nullptr) {}
 
   nsFrameList(nsIFrame* aFirstFrame, nsIFrame* aLastFrame)
@@ -80,16 +89,14 @@ class nsFrameList {
     VerifyList();
   }
 
-  // XXX: Ideally, copy constructor should be removed because a frame should be
-  // owned by one list.
-  nsFrameList(const nsFrameList& aOther) = default;
-
-  // XXX: ideally, copy assignment should be removed because we should use move
-  // assignment to transfer the ownership.
-  nsFrameList& operator=(const nsFrameList& aOther) = default;
+  // nsFrameList is a move-only class by default. Use Clone() if you really want
+  // a copy of this list.
+  nsFrameList(const nsFrameList& aOther) = delete;
+  nsFrameList& operator=(const nsFrameList& aOther) = delete;
+  nsFrameList Clone() const { return nsFrameList(mFirstChild, mLastChild); }
 
   /**
-   * Move the frames in aOther to this list. aOther becomes empty after this
+   * Transfer frames in aOther to this list. aOther becomes empty after this
    * operation.
    */
   nsFrameList(nsFrameList&& aOther)
@@ -98,7 +105,12 @@ class nsFrameList {
     VerifyList();
   }
   nsFrameList& operator=(nsFrameList&& aOther) {
-    SetFrames(aOther);
+    if (this != &aOther) {
+      MOZ_ASSERT(IsEmpty(), "Assigning to a non-empty list will lose frames!");
+      mFirstChild = aOther.FirstChild();
+      mLastChild = aOther.LastChild();
+      aOther.Clear();
+    }
     return *this;
   }
 
@@ -115,39 +127,19 @@ class nsFrameList {
 
   /**
    * For each frame in this list: remove it from the list then call
-   * Destroy() on it.
+   * Destroy() on it with the passed context as an argument.
    */
-  void DestroyFrames();
-
-  /**
-   * For each frame in this list: remove it from the list then call
-   * DestroyFrom(aDestructRoot, aPostDestroyData) on it.
-   */
-  void DestroyFramesFrom(
-      nsIFrame* aDestructRoot,
-      mozilla::layout::PostFrameDestroyData& aPostDestroyData);
+  void DestroyFrames(mozilla::FrameDestroyContext&);
 
   void Clear() { mFirstChild = mLastChild = nullptr; }
-
-  void SetFrames(nsIFrame* aFrameList);
-
-  void SetFrames(nsFrameList& aFrameList) {
-    MOZ_ASSERT(!mFirstChild, "Losing frames");
-
-    mFirstChild = aFrameList.FirstChild();
-    mLastChild = aFrameList.LastChild();
-    aFrameList.Clear();
-  }
-
-  class Slice;
 
   /**
    * Append aFrameList to this list.  If aParent is not null,
    * reparents the newly added frames.  Clears out aFrameList and
    * returns a list slice represening the newly-appended frames.
    */
-  Slice AppendFrames(nsContainerFrame* aParent, nsFrameList& aFrameList) {
-    return InsertFrames(aParent, LastChild(), aFrameList);
+  Slice AppendFrames(nsContainerFrame* aParent, nsFrameList&& aFrameList) {
+    return InsertFrames(aParent, LastChild(), std::move(aFrameList));
   }
 
   /**
@@ -155,8 +147,7 @@ class nsFrameList {
    * reparents the newly added frame.
    */
   void AppendFrame(nsContainerFrame* aParent, nsIFrame* aFrame) {
-    nsFrameList temp(aFrame, aFrame);
-    AppendFrames(aParent, temp);
+    AppendFrames(aParent, nsFrameList(aFrame, aFrame));
   }
 
   /**
@@ -167,12 +158,22 @@ class nsFrameList {
   void RemoveFrame(nsIFrame* aFrame);
 
   /**
-   * Take the frames after aAfterFrame out of the frame list.  If
-   * aAfterFrame is null, removes the entire list.
-   * @param aAfterFrame a frame in this list, or null
-   * @return the removed frames, if any
+   * Take all the frames before aFrame out of the frame list; aFrame and all the
+   * frames after it stay in this list. If aFrame is nullptr, remove the entire
+   * frame list.
+   * @param aFrame a frame in this frame list, or nullptr.
+   * @return the removed frames, if any.
    */
-  nsFrameList RemoveFramesAfter(nsIFrame* aAfterFrame);
+  [[nodiscard]] nsFrameList TakeFramesBefore(nsIFrame* aFrame);
+
+  /**
+   * Take all the frames after aFrame out of the frame list; aFrame and all the
+   * frames before it stay in this list. If aFrame is nullptr, removes the
+   * entire list.
+   * @param aFrame a frame in this list, or nullptr.
+   * @return the removed frames, if any.
+   */
+  [[nodiscard]] nsFrameList TakeFramesAfter(nsIFrame* aFrame);
 
   /**
    * Take the first frame (if any) out of the frame list.
@@ -211,10 +212,10 @@ class nsFrameList {
   inline bool ContinueRemoveFrame(nsIFrame* aFrame);
 
   /**
-   * Take aFrame out of the frame list and then destroy it.
+   * Take a frame out of the frame list and then destroy it.
    * The frame must be non-null and present on this list.
    */
-  void DestroyFrame(nsIFrame* aFrame);
+  void DestroyFrame(mozilla::FrameDestroyContext&, nsIFrame*);
 
   /**
    * Insert aFrame right after aPrevSibling, or prepend it to this
@@ -224,8 +225,7 @@ class nsFrameList {
    */
   void InsertFrame(nsContainerFrame* aParent, nsIFrame* aPrevSibling,
                    nsIFrame* aFrame) {
-    nsFrameList temp(aFrame, aFrame);
-    InsertFrames(aParent, aPrevSibling, temp);
+    InsertFrames(aParent, aPrevSibling, nsFrameList(aFrame, aFrame));
   }
 
   /**
@@ -235,9 +235,7 @@ class nsFrameList {
    * newly-inserted frames.
    */
   Slice InsertFrames(nsContainerFrame* aParent, nsIFrame* aPrevSibling,
-                     nsFrameList& aFrameList);
-
-  class FrameLinkEnumerator;
+                     nsFrameList&& aFrameList);
 
   /**
    * Split this list just before the first frame that matches aPredicate,
@@ -260,24 +258,13 @@ class nsFrameList {
                          nsIFrame*>::value,
         "aPredicate should be of this function signature: bool(nsIFrame*)");
 
-    FrameLinkEnumerator link(*this);
-    link.Find(aPredicate);
-    return ExtractHead(link);
+    for (nsIFrame* f : *this) {
+      if (aPredicate(f)) {
+        return TakeFramesBefore(f);
+      }
+    }
+    return std::move(*this);
   }
-
-  /**
-   * Split this frame list such that all the frames before the link pointed to
-   * by aLink end up in the returned list, while the remaining frames stay in
-   * this list.  After this call, aLink points to the beginning of this list.
-   */
-  nsFrameList ExtractHead(FrameLinkEnumerator& aLink);
-
-  /**
-   * Split this frame list such that all the frames coming after the link
-   * pointed to by aLink end up in the returned list, while the frames before
-   * that link stay in this list.  After this call, aLink is at end.
-   */
-  nsFrameList ExtractTail(FrameLinkEnumerator& aLink);
 
   nsIFrame* FirstChild() const { return mFirstChild; }
 
@@ -325,11 +312,13 @@ class nsFrameList {
   /**
    * If this frame list is non-empty then append it to aLists as the
    * aListID child list.
-   * (this method is implemented in FrameChildList.h for dependency reasons)
    */
-  inline void AppendIfNonempty(
-      nsTArray<mozilla::layout::FrameChildList>* aLists,
-      mozilla::layout::FrameChildListID aListID) const;
+  inline void AppendIfNonempty(nsTArray<mozilla::FrameChildList>* aLists,
+                               mozilla::FrameChildListID aListID) const {
+    if (NotEmpty()) {
+      aLists->EmplaceBack(*this, aListID);
+    }
+  }
 
   /**
    * Return the frame before this frame in visual order (after Bidi reordering).
@@ -349,166 +338,32 @@ class nsFrameList {
 
   static inline const nsFrameList& EmptyList();
 
-  class Enumerator;
-
   /**
    * A class representing a slice of a frame list.
    */
   class Slice {
-    friend class Enumerator;
-
    public:
-    // Implicit on purpose, so that we can easily create enumerators from
-    // nsFrameList via this impicit constructor.
+    // Implicit on purpose, so that we can easily create Slice from nsFrameList
+    // via this impicit constructor.
     MOZ_IMPLICIT Slice(const nsFrameList& aList)
-        :
-#ifdef DEBUG
-          mList(aList),
-#endif
-          mStart(aList.FirstChild()),
-          mEnd(nullptr) {
-    }
+        : mStart(aList.FirstChild()), mEnd(nullptr) {}
+    Slice(nsIFrame* aStart, nsIFrame* aEnd) : mStart(aStart), mEnd(aEnd) {}
 
-    Slice(const nsFrameList& aList, nsIFrame* aStart, nsIFrame* aEnd)
-        :
-#ifdef DEBUG
-          mList(aList),
-#endif
-          mStart(aStart),
-          mEnd(aEnd) {
-    }
-
-    Slice(const Slice& aOther) = default;
+    iterator begin() const { return iterator(mStart); }
+    const_iterator cbegin() const { return begin(); }
+    iterator end() const { return iterator(mEnd); }
+    const_iterator cend() const { return end(); }
 
    private:
-#ifdef DEBUG
-    const nsFrameList& mList;
-#endif
-    nsIFrame* const mStart;      // our starting frame
-    const nsIFrame* const mEnd;  // The first frame that is NOT in the slice.
-                                 // May be null.
+    // Our starting frame.
+    nsIFrame* const mStart;
+
+    // The first frame that is NOT in the slice. May be null.
+    nsIFrame* const mEnd;
   };
 
-  class Enumerator {
-   public:
-    explicit Enumerator(const Slice& aSlice)
-        :
-#ifdef DEBUG
-          mSlice(aSlice),
-#endif
-          mFrame(aSlice.mStart),
-          mEnd(aSlice.mEnd) {
-    }
-
-    Enumerator(const Enumerator& aOther) = default;
-
-    bool AtEnd() const {
-      // Can't just check mEnd, because some table code goes and destroys the
-      // tail of the frame list (including mEnd!) while iterating over the
-      // frame list.
-      return !mFrame || mFrame == mEnd;
-    }
-
-    /* Next() needs to know about nsIFrame, and nsIFrame will need to
-       know about nsFrameList methods, so in order to inline this put
-       the implementation in nsIFrame.h */
-    inline void Next();
-
-    /**
-     * Get the current frame we're pointing to.  Do not call this on an
-     * iterator that is at end!
-     */
-    nsIFrame* get() const {
-      MOZ_ASSERT(!AtEnd(), "Enumerator is at end");
-      return mFrame;
-    }
-
-    /**
-     * Get an enumerator that is just like this one, but not limited in terms of
-     * the part of the list it will traverse.
-     */
-    Enumerator GetUnlimitedEnumerator() const {
-      return Enumerator(*this, nullptr);
-    }
-
-#ifdef DEBUG
-    const nsFrameList& List() const { return mSlice.mList; }
-#endif
-
-   protected:
-    Enumerator(const Enumerator& aOther, const nsIFrame* const aNewEnd)
-        :
-#ifdef DEBUG
-          mSlice(aOther.mSlice),
-#endif
-          mFrame(aOther.mFrame),
-          mEnd(aNewEnd) {
-    }
-
-#ifdef DEBUG
-    /* Has to be an object, not a reference, since the slice could
-       well be a temporary constructed from an nsFrameList */
-    const Slice mSlice;
-#endif
-    nsIFrame* mFrame;            // our current frame.
-    const nsIFrame* const mEnd;  // The first frame we should NOT enumerate.
-                                 // May be null.
-  };
-
-  /**
-   * A class that can be used to enumerate links between frames.  When created
-   * from an nsFrameList, it points to the "link" immediately before the first
-   * frame.  It can then be advanced until it points to the "link" immediately
-   * after the last frame.  At any position, PrevFrame() and NextFrame() are
-   * the frames before and after the given link.  This means PrevFrame() is
-   * null when the enumerator is at the beginning of the list and NextFrame()
-   * is null when it's AtEnd().
-   */
-  class FrameLinkEnumerator : private Enumerator {
-   public:
-    friend class nsFrameList;
-
-    explicit FrameLinkEnumerator(const nsFrameList& aList)
-        : Enumerator(aList), mPrev(nullptr) {}
-
-    FrameLinkEnumerator(const FrameLinkEnumerator& aOther) = default;
-
-    /* This constructor needs to know about nsIFrame, and nsIFrame will need to
-       know about nsFrameList methods, so in order to inline this put
-       the implementation in nsIFrame.h */
-    inline FrameLinkEnumerator(const nsFrameList& aList, nsIFrame* aPrevFrame);
-
-    void operator=(const FrameLinkEnumerator& aOther) {
-      MOZ_ASSERT(&List() == &aOther.List(), "Different lists?");
-      mFrame = aOther.mFrame;
-      mPrev = aOther.mPrev;
-    }
-
-    inline void Next();
-
-    /**
-     * Find the first frame from the current position that satisfies
-     * aPredicate, and stop at it. If no such frame exists, then this method
-     * advances to the end of the list.
-     *
-     * aPredicate should be of this function signature: bool(nsIFrame*).
-     *
-     * Note: Find() needs to see the definition of Next(), so put this
-     * definition in nsIFrame.h.
-     */
-    template <typename Predicate>
-    inline void Find(Predicate&& aPredicate);
-
-    bool AtEnd() const { return Enumerator::AtEnd(); }
-
-    nsIFrame* PrevFrame() const { return mPrev; }
-    nsIFrame* NextFrame() const { return mFrame; }
-
-   protected:
-    nsIFrame* mPrev;
-  };
-
-  class Iterator {
+  template <typename FrameTraversal>
+  class Iterator final {
    public:
     // It is disputable whether these type definitions are correct, since
     // operator* doesn't return a reference at all. Also, the iterator_category
@@ -522,17 +377,18 @@ class nsFrameList {
     using difference_type = ptrdiff_t;
     using iterator_category = std::input_iterator_tag;
 
-    Iterator(const nsFrameList& aList, nsIFrame* aCurrent)
-        : mList(aList), mCurrent(aCurrent) {}
-
-    Iterator(const Iterator& aOther) = default;
+    explicit constexpr Iterator(nsIFrame* aCurrent) : mCurrent(aCurrent) {}
 
     nsIFrame* operator*() const { return mCurrent; }
 
-    // The operators need to know about nsIFrame, hence the
-    // implementations are in nsIFrame.h
-    Iterator& operator++();
-    Iterator& operator--();
+    Iterator& operator++() {
+      mCurrent = FrameTraversal::Next(mCurrent);
+      return *this;
+    }
+    Iterator& operator--() {
+      mCurrent = FrameTraversal::Prev(mCurrent);
+      return *this;
+    }
 
     Iterator operator++(int) {
       auto ret = *this;
@@ -545,26 +401,25 @@ class nsFrameList {
       return ret;
     }
 
-    friend bool operator==(const Iterator& aIter1, const Iterator& aIter2);
-    friend bool operator!=(const Iterator& aIter1, const Iterator& aIter2);
+    bool operator==(const Iterator<FrameTraversal>& aOther) const {
+      return mCurrent == aOther.mCurrent;
+    }
+
+    bool operator!=(const Iterator<FrameTraversal>& aOther) const {
+      return !(*this == aOther);
+    }
 
    private:
-    const nsFrameList& mList;
     nsIFrame* mCurrent;
   };
 
-  typedef Iterator iterator;
-  typedef Iterator const_iterator;
-  typedef mozilla::ReverseIterator<Iterator> reverse_iterator;
-  typedef mozilla::ReverseIterator<Iterator> const_reverse_iterator;
-
-  iterator begin() const { return iterator(*this, mFirstChild); }
+  iterator begin() const { return iterator(mFirstChild); }
   const_iterator cbegin() const { return begin(); }
-  iterator end() const { return iterator(*this, nullptr); }
+  iterator end() const { return iterator(nullptr); }
   const_iterator cend() const { return end(); }
-  reverse_iterator rbegin() const { return reverse_iterator(end()); }
+  reverse_iterator rbegin() const { return reverse_iterator(mLastChild); }
   const_reverse_iterator crbegin() const { return rbegin(); }
-  reverse_iterator rend() const { return reverse_iterator(begin()); }
+  reverse_iterator rend() const { return reverse_iterator(nullptr); }
   const_reverse_iterator crend() const { return rend(); }
 
  private:
@@ -589,21 +444,21 @@ class nsFrameList {
   nsIFrame* mLastChild;
 };
 
-inline bool operator==(const nsFrameList::Iterator& aIter1,
-                       const nsFrameList::Iterator& aIter2) {
-  MOZ_ASSERT(&aIter1.mList == &aIter2.mList,
-             "must not compare iterator from different list");
-  return aIter1.mCurrent == aIter2.mCurrent;
-}
-
-inline bool operator!=(const nsFrameList::Iterator& aIter1,
-                       const nsFrameList::Iterator& aIter2) {
-  MOZ_ASSERT(&aIter1.mList == &aIter2.mList,
-             "Must not compare iterator from different list");
-  return aIter1.mCurrent != aIter2.mCurrent;
-}
-
 namespace mozilla {
+
+#ifdef DEBUG_FRAME_DUMP
+extern const char* ChildListName(FrameChildListID aListID);
+#endif
+
+using FrameChildListIDs = EnumSet<FrameChildListID>;
+
+class FrameChildList {
+ public:
+  FrameChildList(const nsFrameList& aList, FrameChildListID aID)
+      : mList(aList.Clone()), mID(aID) {}
+  nsFrameList mList;
+  FrameChildListID mID;
+};
 
 /**
  * Simple "auto_ptr" for nsFrameLists allocated from the shell arena.

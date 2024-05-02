@@ -6,20 +6,16 @@
 
 "use strict";
 
-/* eslint-env mozilla/frame-script */
-
 function ChromeTask_ChromeScript() {
+  /* eslint-env mozilla/chrome-script */
+
   "use strict";
 
-  // eslint-disable-next-line no-unused-vars
-  const { Services } = ChromeUtils.import(
-    "resource://gre/modules/Services.jsm"
-  );
-  const { Assert: AssertCls } = ChromeUtils.import(
-    "resource://testing-common/Assert.jsm"
+  const { Assert: AssertCls } = ChromeUtils.importESModule(
+    "resource://testing-common/Assert.sys.mjs"
   );
 
-  addMessageListener("chrome-task:spawn", async function(aData) {
+  addMessageListener("chrome-task:spawn", async function (aData) {
     let id = aData.id;
     let source = aData.runnable || "()=>{}";
 

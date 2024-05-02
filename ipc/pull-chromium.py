@@ -12,19 +12,19 @@ http://dev.chromium.org/developers/how-tos/get-the-code for details about
 doing this efficiently.
 """
 
-import sys
 import os
-from subprocess import check_call
+import sys
 from shutil import rmtree
+from subprocess import check_call
 
 topsrcdir, chromiumtree, rev = sys.argv[1:]
 
 if not os.path.exists(os.path.join(topsrcdir, "client.py")):
-    print >>sys.stderr, "Incorrect topsrcdir"
+    print >> sys.stderr, "Incorrect topsrcdir"
     sys.exit(1)
 
 if not os.path.exists(os.path.join(chromiumtree, "src/DEPS")):
-    print >>sys.stderr, "Incorrect chromium directory, missing DEPS"
+    print >> sys.stderr, "Incorrect chromium directory, missing DEPS"
     sys.exit(1)
 
 check_call(["gclient", "sync", "--force", "--revision=src@%s" % rev], cwd=chromiumtree)

@@ -22,6 +22,7 @@
 #include "nsDisplayList.h"
 #include "nsLayoutUtils.h"
 #include "nsPresContext.h"
+#include "nsPresContextInlines.h"
 #include "nsIFrameInlines.h"
 #include "nsIContentInlines.h"
 
@@ -43,27 +44,6 @@ NS_QUERYFRAME_HEAD(nsPlaceholderFrame)
   NS_QUERYFRAME_ENTRY(nsPlaceholderFrame)
 NS_QUERYFRAME_TAIL_INHERITING(nsIFrame)
 #endif
-
-/* virtual */
-nsSize nsPlaceholderFrame::GetXULMinSize(nsBoxLayoutState& aBoxLayoutState) {
-  nsSize size(0, 0);
-  DISPLAY_MIN_SIZE(this, size);
-  return size;
-}
-
-/* virtual */
-nsSize nsPlaceholderFrame::GetXULPrefSize(nsBoxLayoutState& aBoxLayoutState) {
-  nsSize size(0, 0);
-  DISPLAY_PREF_SIZE(this, size);
-  return size;
-}
-
-/* virtual */
-nsSize nsPlaceholderFrame::GetXULMaxSize(nsBoxLayoutState& aBoxLayoutState) {
-  nsSize size(NS_UNCONSTRAINEDSIZE, NS_UNCONSTRAINEDSIZE);
-  DISPLAY_MAX_SIZE(this, size);
-  return size;
-}
 
 /* virtual */
 void nsPlaceholderFrame::AddInlineMinISize(
@@ -119,7 +99,7 @@ void nsPlaceholderFrame::Reflow(nsPresContext* aPresContext,
   // doesn't hold anyways because the default popupgroup goes before than the
   // default tooltip, for example).
   if (HasAnyStateBits(NS_FRAME_FIRST_REFLOW) &&
-      !HasAnyStateBits(PLACEHOLDER_FOR_POPUP) &&
+      !mOutOfFlowFrame->IsMenuPopupFrame() &&
       !mOutOfFlowFrame->HasAnyStateBits(NS_FRAME_FIRST_REFLOW)) {
     // Unfortunately, this can currently happen when the placeholder is in a
     // later continuation or later IB-split sibling than its out-of-flow (as
@@ -147,49 +127,37 @@ void nsPlaceholderFrame::Reflow(nsPresContext* aPresContext,
   DISPLAY_REFLOW(aPresContext, this, aReflowInput, aDesiredSize, aStatus);
   MOZ_ASSERT(aStatus.IsEmpty(), "Caller should pass a fresh reflow status!");
   aDesiredSize.ClearSize();
-
-  NS_FRAME_SET_TRUNCATION(aStatus, aReflowInput, aDesiredSize);
 }
 
-static nsIFrame::ChildListID ChildListIDForOutOfFlow(
-    nsFrameState aPlaceholderState, const nsIFrame* aChild) {
+static FrameChildListID ChildListIDForOutOfFlow(nsFrameState aPlaceholderState,
+                                                const nsIFrame* aChild) {
   if (aPlaceholderState & PLACEHOLDER_FOR_FLOAT) {
-    return nsIFrame::kFloatList;
-  }
-  if (aPlaceholderState & PLACEHOLDER_FOR_POPUP) {
-    return nsIFrame::kPopupList;
+    return FrameChildListID::Float;
   }
   if (aPlaceholderState & PLACEHOLDER_FOR_FIXEDPOS) {
-    return nsLayoutUtils::MayBeReallyFixedPos(aChild) ? nsIFrame::kFixedList
-                                                      : nsIFrame::kAbsoluteList;
+    return nsLayoutUtils::MayBeReallyFixedPos(aChild)
+               ? FrameChildListID::Fixed
+               : FrameChildListID::Absolute;
   }
   if (aPlaceholderState & PLACEHOLDER_FOR_ABSPOS) {
-    return nsIFrame::kAbsoluteList;
+    return FrameChildListID::Absolute;
   }
   MOZ_DIAGNOSTIC_ASSERT(false, "unknown list");
-  return nsIFrame::kFloatList;
+  return FrameChildListID::Float;
 }
 
-void nsPlaceholderFrame::DestroyFrom(nsIFrame* aDestructRoot,
-                                     PostDestroyData& aPostDestroyData) {
-  nsIFrame* oof = mOutOfFlowFrame;
-  if (oof) {
+void nsPlaceholderFrame::Destroy(DestroyContext& aContext) {
+  if (nsIFrame* oof = mOutOfFlowFrame) {
     mOutOfFlowFrame = nullptr;
     oof->RemoveProperty(nsIFrame::PlaceholderFrameProperty());
 
-    // If aDestructRoot is not an ancestor of the out-of-flow frame,
-    // then call RemoveFrame on it here.
-    // Also destroy it here if it's a popup frame. (Bug 96291)
-    if (HasAnyStateBits(PLACEHOLDER_FOR_POPUP) ||
-        !nsLayoutUtils::IsProperAncestorFrame(aDestructRoot, oof)) {
-      ChildListID listId = ChildListIDForOutOfFlow(GetStateBits(), oof);
-      nsFrameManager* fm = PresContext()->FrameConstructor();
-      fm->RemoveFrame(listId, oof);
-    }
-    // else oof will be destroyed by its parent
+    // Destroy the out of flow now.
+    ChildListID listId = ChildListIDForOutOfFlow(GetStateBits(), oof);
+    nsFrameManager* fm = PresContext()->FrameConstructor();
+    fm->RemoveFrame(aContext, listId, oof);
   }
 
-  nsIFrame::DestroyFrom(aDestructRoot, aPostDestroyData);
+  nsIFrame::Destroy(aContext);
 }
 
 /* virtual */
@@ -233,37 +201,11 @@ ComputedStyle* nsPlaceholderFrame::GetLayoutParentStyleForOutOfFlow(
   return *aProviderFrame ? (*aProviderFrame)->Style() : nullptr;
 }
 
-#ifdef DEBUG
-static void PaintDebugPlaceholder(nsIFrame* aFrame, DrawTarget* aDrawTarget,
-                                  const nsRect& aDirtyRect, nsPoint aPt) {
-  ColorPattern cyan(ToDeviceColor(sRGBColor(0.f, 1.f, 1.f, 1.f)));
-  int32_t appUnitsPerDevPixel = aFrame->PresContext()->AppUnitsPerDevPixel();
-
-  nscoord x = nsPresContext::CSSPixelsToAppUnits(-5);
-  nsRect r(aPt.x + x, aPt.y, nsPresContext::CSSPixelsToAppUnits(13),
-           nsPresContext::CSSPixelsToAppUnits(3));
-  aDrawTarget->FillRect(NSRectToRect(r, appUnitsPerDevPixel), cyan);
-
-  nscoord y = nsPresContext::CSSPixelsToAppUnits(-10);
-  r = nsRect(aPt.x, aPt.y + y, nsPresContext::CSSPixelsToAppUnits(3),
-             nsPresContext::CSSPixelsToAppUnits(10));
-  aDrawTarget->FillRect(NSRectToRect(r, appUnitsPerDevPixel), cyan);
-}
-#endif  // DEBUG
-
 #if defined(DEBUG) || (defined(MOZ_REFLOW_PERF_DSP) && defined(MOZ_REFLOW_PERF))
 
 void nsPlaceholderFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
                                           const nsDisplayListSet& aLists) {
   DO_GLOBAL_REFLOW_COUNT_DSP("nsPlaceholderFrame");
-
-#  ifdef DEBUG
-  if (GetShowFrameBorders()) {
-    aLists.Outlines()->AppendNewToTop<nsDisplayGeneric>(
-        aBuilder, this, PaintDebugPlaceholder, "DebugPlaceholder",
-        DisplayItemType::TYPE_DEBUG_PLACEHOLDER);
-  }
-#  endif
 }
 #endif  // DEBUG || (MOZ_REFLOW_PERF_DSP && MOZ_REFLOW_PERF)
 

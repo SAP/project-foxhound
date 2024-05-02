@@ -38,8 +38,7 @@
 #include "nsStringStream.h"
 #include "nsURLHelper.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(URLSearchParams, mParent, mObserver)
 NS_IMPL_CYCLE_COLLECTING_ADDREF(URLSearchParams)
@@ -106,6 +105,8 @@ void URLSearchParams::ParseInput(const nsACString& aInput) {
   mParams->ParseInput(aInput);
 }
 
+uint32_t URLSearchParams::Size() const { return mParams->Length(); }
+
 void URLSearchParams::Get(const nsAString& aName, nsString& aRetval) {
   return mParams->Get(aName, aRetval);
 }
@@ -125,12 +126,22 @@ void URLSearchParams::Append(const nsAString& aName, const nsAString& aValue) {
   NotifyObserver();
 }
 
-bool URLSearchParams::Has(const nsAString& aName) {
-  return mParams->Has(aName);
+bool URLSearchParams::Has(const nsAString& aName,
+                          const Optional<nsAString>& aValue) {
+  if (!aValue.WasPassed()) {
+    return mParams->Has(aName);
+  }
+  return mParams->Has(aName, aValue.Value());
 }
 
-void URLSearchParams::Delete(const nsAString& aName) {
-  mParams->Delete(aName);
+void URLSearchParams::Delete(const nsAString& aName,
+                             const Optional<nsAString>& aValue) {
+  if (!aValue.WasPassed()) {
+    mParams->Delete(aName);
+    NotifyObserver();
+    return;
+  }
+  mParams->Delete(aName, aValue.Value());
   NotifyObserver();
 }
 
@@ -235,5 +246,4 @@ nsresult URLSearchParams::GetSendInfo(nsIInputStream** aBody,
   return NS_NewCStringInputStream(aBody, std::move(converted));
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

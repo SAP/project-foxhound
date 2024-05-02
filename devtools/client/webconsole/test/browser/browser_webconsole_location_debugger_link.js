@@ -16,7 +16,7 @@ const TEST_URI =
   "http://example.com/browser/devtools/client/webconsole/" +
   "test/browser/test-location-debugger-link.html";
 
-add_task(async function() {
+add_task(async function () {
   await pushPref("devtools.webconsole.filter.error", true);
   await pushPref("devtools.webconsole.filter.log", true);
 
@@ -27,16 +27,25 @@ add_task(async function() {
   }
 
   const hud = await openNewTabAndConsole(TEST_URI);
-  const toolbox = await gDevTools.getToolboxForTab(gBrowser.selectedTab);
+  const toolbox = gDevTools.getToolboxForTab(gBrowser.selectedTab);
 
-  await testOpenInDebugger(hud, toolbox, "document.bar");
+  await testOpenInDebugger(hud, {
+    text: "document.bar",
+    typeSelector: ".error",
+  });
 
   info("Selecting the console again");
   await toolbox.selectTool("webconsole");
-  await testOpenInDebugger(hud, toolbox, "Blah Blah");
+  await testOpenInDebugger(hud, {
+    text: "Blah Blah",
+    typeSelector: ".console-api",
+  });
 
   // // check again the first node.
   info("Selecting the console again");
   await toolbox.selectTool("webconsole");
-  await testOpenInDebugger(hud, toolbox, "document.bar");
+  await testOpenInDebugger(hud, {
+    text: "document.bar",
+    typeSelector: ".error",
+  });
 });

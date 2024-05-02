@@ -4,35 +4,14 @@
 
 "use strict";
 
+add_virtual_authenticator();
+
 let expectSecurityError = expectError("Security");
 
-add_task(function test_setup() {
-  Services.prefs.setBoolPref("security.webauth.u2f", true);
-  Services.prefs.setBoolPref("security.webauth.webauthn", true);
-  Services.prefs.setBoolPref(
-    "security.webauth.webauthn_enable_android_fido2",
-    false
-  );
-  Services.prefs.setBoolPref(
-    "security.webauth.webauthn_enable_softtoken",
-    true
-  );
-  Services.prefs.setBoolPref(
-    "security.webauth.webauthn_enable_usbtoken",
-    false
-  );
-  Services.prefs.setBoolPref("network.proxy.allow_hijacking_localhost", true);
-});
-
-registerCleanupFunction(async function() {
-  Services.prefs.clearUserPref("security.webauth.u2f");
-  Services.prefs.clearUserPref("security.webauth.webauthn");
-  Services.prefs.clearUserPref(
-    "security.webauth.webauthn_enable_android_fido2"
-  );
-  Services.prefs.clearUserPref("security.webauth.webauthn_enable_softtoken");
-  Services.prefs.clearUserPref("security.webauth.webauthn_enable_usbtoken");
-  Services.prefs.clearUserPref("network.proxy.allow_hijacking_localhost");
+add_task(async function test_setup() {
+  return SpecialPowers.pushPrefEnv({
+    set: [["network.proxy.allow_hijacking_localhost", true]],
+  });
 });
 
 add_task(async function test_appid() {
@@ -42,7 +21,7 @@ add_task(async function test_appid() {
   // Open a new tab.
   let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, TEST_URL);
 
-  await promiseWebAuthnMakeCredential(tab, "none", {})
+  await promiseWebAuthnMakeCredential(tab)
     .then(arrivingHereIsBad)
     .catch(expectSecurityError);
 

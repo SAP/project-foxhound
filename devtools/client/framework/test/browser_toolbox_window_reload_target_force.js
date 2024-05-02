@@ -4,14 +4,13 @@
 // Simple test page which writes the value of the cache-control header.
 const TEST_URL = URL_ROOT + "sjs_cache_controle_header.sjs";
 
-const { LocalizationHelper } = require("devtools/shared/l10n");
 const L10N = new LocalizationHelper(
   "devtools/client/locales/toolbox.properties"
 );
 
 // Test that "forceReload" shorcuts send requests with the correct cache-control
 // header value: no-cache.
-add_task(async function() {
+add_task(async function () {
   await addTab(TEST_URL);
   const tab = gBrowser.selectedTab;
 
@@ -42,7 +41,7 @@ async function testReload(shortcut, toolbox, expectedHeader) {
   const textContent = await SpecialPowers.spawn(
     gBrowser.selectedBrowser,
     [],
-    function() {
+    function () {
       return content.document.body.textContent;
     }
   );

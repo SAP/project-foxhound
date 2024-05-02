@@ -19,16 +19,14 @@ namespace mozilla {
 // is a RDDParent. It is instantiated as a singleton in XRE_InitChildProcess.
 class RDDProcessImpl final : public ipc::ProcessChild {
  public:
-  explicit RDDProcessImpl(ProcessId aParentPid);
+  using ipc::ProcessChild::ProcessChild;
   ~RDDProcessImpl();
 
   bool Init(int aArgc, char* aArgv[]) override;
   void CleanUp() override;
 
  private:
-  DISALLOW_COPY_AND_ASSIGN(RDDProcessImpl);
-
-  RDDParent mRDD;
+  RefPtr<RDDParent> mRDD = new RDDParent;
 
 #if defined(XP_WIN)
   // This object initializes and configures COM.

@@ -7,16 +7,14 @@
 #ifndef mozilla_dom_ImageBitmapSource_h
 #define mozilla_dom_ImageBitmapSource_h
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 // So we don't have to forward declare this elsewhere.
 class
-    HTMLImageElementOrSVGImageElementOrHTMLCanvasElementOrHTMLVideoElementOrOffscreenCanvasOrImageBitmapOrBlobOrCanvasRenderingContext2DOrImageData;
-typedef HTMLImageElementOrSVGImageElementOrHTMLCanvasElementOrHTMLVideoElementOrOffscreenCanvasOrImageBitmapOrBlobOrCanvasRenderingContext2DOrImageData
+    HTMLImageElementOrSVGImageElementOrHTMLCanvasElementOrHTMLVideoElementOrOffscreenCanvasOrImageBitmapOrVideoFrameOrBlobOrCanvasRenderingContext2DOrImageData;
+typedef HTMLImageElementOrSVGImageElementOrHTMLCanvasElementOrHTMLVideoElementOrOffscreenCanvasOrImageBitmapOrVideoFrameOrBlobOrCanvasRenderingContext2DOrImageData
     ImageBitmapSource;
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif

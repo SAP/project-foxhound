@@ -8,26 +8,17 @@
 
 "use strict";
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  UrlbarProvider: "resource:///modules/UrlbarUtils.jsm",
-  UrlbarProvidersManager: "resource:///modules/UrlbarProvidersManager.jsm",
-  UrlbarResult: "resource:///modules/UrlbarResult.jsm",
-  UrlbarTestUtils: "resource://testing-common/UrlbarTestUtils.jsm",
+ChromeUtils.defineESModuleGetters(this, {
+  UrlbarProvider: "resource:///modules/UrlbarUtils.sys.mjs",
+  UrlbarProvidersManager: "resource:///modules/UrlbarProvidersManager.sys.mjs",
+  UrlbarResult: "resource:///modules/UrlbarResult.sys.mjs",
+  UrlbarTestUtils: "resource://testing-common/UrlbarTestUtils.sys.mjs",
 });
 
 function snapshotHistograms() {
   Services.telemetry.clearScalars();
   Services.telemetry.clearEvents();
   return {
-    resultIndexHist: TelemetryTestUtils.getAndClearHistogram(
-      "FX_URLBAR_SELECTED_RESULT_INDEX"
-    ),
-    resultTypeHist: TelemetryTestUtils.getAndClearHistogram(
-      "FX_URLBAR_SELECTED_RESULT_TYPE_2"
-    ),
-    resultIndexByTypeHist: TelemetryTestUtils.getAndClearKeyedHistogram(
-      "FX_URLBAR_SELECTED_RESULT_INDEX_BY_TYPE_2"
-    ),
     resultMethodHist: TelemetryTestUtils.getAndClearHistogram(
       "FX_URLBAR_SELECTED_RESULT_METHOD"
     ),
@@ -36,21 +27,6 @@ function snapshotHistograms() {
 }
 
 function assertTelemetryResults(histograms, type, index, method) {
-  TelemetryTestUtils.assertHistogram(histograms.resultIndexHist, index, 1);
-
-  TelemetryTestUtils.assertHistogram(
-    histograms.resultTypeHist,
-    UrlbarUtils.SELECTED_RESULT_TYPES[type],
-    1
-  );
-
-  TelemetryTestUtils.assertKeyedHistogramValue(
-    histograms.resultIndexByTypeHist,
-    type,
-    index,
-    1
-  );
-
   TelemetryTestUtils.assertHistogram(histograms.resultMethodHist, method, 1);
 
   TelemetryTestUtils.assertKeyedScalar(
@@ -61,7 +37,7 @@ function assertTelemetryResults(histograms, type, index, method) {
   );
 }
 
-add_task(async function setup() {
+add_setup(async function () {
   await SpecialPowers.pushPrefEnv({
     set: [
       // Disable search suggestions in the urlbar.
@@ -82,10 +58,15 @@ add_task(async function test() {
         UrlbarUtils.RESULT_TYPE.TIP,
         UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
         {
-          icon: "",
-          text: "This is a test tip.",
-          buttonText: "OK",
+          helpUrl: "https://example.com/",
           type: "test",
+          titleL10n: { id: "urlbar-search-tips-confirm" },
+          buttons: [
+            {
+              url: "https://example.com/",
+              l10n: { id: "urlbar-search-tips-confirm" },
+            },
+          ],
         }
       ),
       { heuristic: true }

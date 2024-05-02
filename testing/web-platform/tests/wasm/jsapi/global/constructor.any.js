@@ -1,4 +1,4 @@
-// META: global=window,dedicatedworker,jsshell
+// META: global=window,dedicatedworker,jsshell,shadowrealm
 // META: script=/wasm/jsapi/assertions.js
 
 function assert_Global(actual, expected) {
@@ -86,6 +86,11 @@ test(() => {
     assert_throws_js(TypeError, () => new WebAssembly.Global(argument));
   }
 }, "Invalid type argument");
+
+test(() => {
+  const argument = { "value": "v128" };
+  assert_throws_js(TypeError, () => new WebAssembly.Global(argument));
+}, "Construct v128 global");
 
 test(() => {
   const argument = { "value": "i64" };

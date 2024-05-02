@@ -1,4 +1,9 @@
-use ron::value::{Map, Number, Value};
+use std::f64;
+
+use ron::{
+    error::Error,
+    value::{Map, Number, Value},
+};
 use serde::Serialize;
 
 #[test]
@@ -23,7 +28,10 @@ fn map() {
 #[test]
 fn number() {
     assert_eq!("42".parse(), Ok(Value::Number(Number::new(42))));
-    assert_eq!("3.1415".parse(), Ok(Value::Number(Number::new(3.1415f64))));
+    assert_eq!(
+        "3.141592653589793".parse(),
+        Ok(Value::Number(Number::new(f64::consts::PI)))
+    );
 }
 
 #[test]
@@ -63,19 +71,47 @@ fn seq() {
         Value::Number(Number::new(2f64)),
     ];
     assert_eq!("[1, 2.0]".parse(), Ok(Value::Seq(seq)));
+
+    let err = Value::Seq(vec![Value::Number(Number::new(1))])
+        .into_rust::<[i32; 2]>()
+        .unwrap_err();
+
+    assert_eq!(
+        err,
+        Error::ExpectedDifferentLength {
+            expected: String::from("an array of length 2"),
+            found: 1,
+        }
+    );
+
+    let err = Value::Seq(vec![
+        Value::Number(Number::new(1)),
+        Value::Number(Number::new(2)),
+        Value::Number(Number::new(3)),
+    ])
+    .into_rust::<[i32; 2]>()
+    .unwrap_err();
+
+    assert_eq!(
+        err,
+        Error::ExpectedDifferentLength {
+            expected: String::from("a sequence of length 2"),
+            found: 3,
+        }
+    );
 }
 
 #[test]
 fn unit() {
-    use ron::error::{Error, ErrorCode, Position};
+    use ron::error::{Error, Position, SpannedError};
 
     assert_eq!("()".parse(), Ok(Value::Unit));
     assert_eq!("Foo".parse(), Ok(Value::Unit));
 
     assert_eq!(
         "".parse::<Value>(),
-        Err(Error {
-            code: ErrorCode::Eof,
+        Err(SpannedError {
+            code: Error::Eof,
             position: Position { col: 1, line: 1 }
         })
     );
@@ -108,4 +144,20 @@ fn roundtrip() {
         let scene: Value = from_str(&s).unwrap();
         println!("{:?}", scene);
     }
+}
+
+#[test]
+fn map_roundtrip_338() {
+    // https://github.com/ron-rs/ron/issues/338
+
+    let v: Value = ron::from_str("{}").unwrap();
+    println!("{:?}", v);
+
+    let ser = ron::to_string(&v).unwrap();
+    println!("{:?}", ser);
+
+    let roundtrip = ron::from_str(&ser).unwrap();
+    println!("{:?}", roundtrip);
+
+    assert_eq!(v, roundtrip);
 }

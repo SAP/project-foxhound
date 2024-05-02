@@ -10,18 +10,18 @@ const {
   createRef,
   Fragment,
   PureComponent,
-} = require("devtools/client/shared/vendor/react");
-const dom = require("devtools/client/shared/vendor/react-dom-factories");
-const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
+} = require("resource://devtools/client/shared/vendor/react.js");
+const dom = require("resource://devtools/client/shared/vendor/react-dom-factories.js");
+const PropTypes = require("resource://devtools/client/shared/vendor/react-prop-types.js");
 
 const Font = createFactory(
-  require("devtools/client/inspector/fonts/components/Font")
+  require("resource://devtools/client/inspector/fonts/components/Font.js")
 );
 const FontPreviewInput = createFactory(
-  require("devtools/client/inspector/fonts/components/FontPreviewInput")
+  require("resource://devtools/client/inspector/fonts/components/FontPreviewInput.js")
 );
 
-const Types = require("devtools/client/inspector/fonts/types");
+const Types = require("resource://devtools/client/inspector/fonts/types.js");
 
 class FontList extends PureComponent {
   static get propTypes() {
@@ -49,12 +49,8 @@ class FontList extends PureComponent {
   }
 
   render() {
-    const {
-      fonts,
-      fontOptions,
-      onPreviewTextChange,
-      onToggleFontHighlight,
-    } = this.props;
+    const { fonts, fontOptions, onPreviewTextChange, onToggleFontHighlight } =
+      this.props;
 
     const { previewText } = fontOptions;
     const { onPreviewClick } = this;

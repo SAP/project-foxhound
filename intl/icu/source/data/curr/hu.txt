@@ -1229,6 +1229,7 @@ hu{
         PYG{"₲"}
         RON{"lei"}
         RUB{"₽"}
+        RUR{"RUR"}
         RWF{"RF"}
         SBD{"$"}
         SEK{"kr"}
@@ -1253,7 +1254,6 @@ hu{
         ZMW{"ZK"}
     }
     Currencies%variant{
-        GEL{"₾"}
         TRY{"TL"}
     }
     CurrencyPlurals{
@@ -1541,6 +1541,10 @@ hu{
             one{"algériai dínár"}
             other{"algériai dínár"}
         }
+        EEK{
+            one{"észt korona"}
+            other{"észt korona"}
+        }
         EGP{
             one{"egyiptomi font"}
             other{"egyiptomi font"}
@@ -1552,6 +1556,10 @@ hu{
         ESA{
             one{"spanyol peseta (A–kontó)"}
             other{"spanyol peseta (A–kontó)"}
+        }
+        ESB{
+            one{"spanyol peseta (konvertibilis kontó)"}
+            other{"spanyol peseta (konvertibilis kontó)"}
         }
         ESP{
             one{"spanyol peseta"}
@@ -1737,6 +1745,14 @@ hu{
             one{"litvániai litas"}
             other{"litvániai litas"}
         }
+        LUC{
+            one{"luxemburgi konvertibilis frank"}
+            other{"luxemburgi konvertibilis frank"}
+        }
+        LUL{
+            one{"luxemburgi pénzügyi frank"}
+            other{"luxemburgi pénzügyi frank"}
+        }
         LVL{
             one{"lett lats"}
             other{"lett lats"}
@@ -1813,6 +1829,14 @@ hu{
             one{"mexikói peso"}
             other{"mexikói peso"}
         }
+        MXP{
+            one{"mexikói ezüst peso (1861–1992)"}
+            other{"mexikói ezüst peso (1861–1992)"}
+        }
+        MXV{
+            one{"mexikói befektetési egység (UDI)"}
+            other{"mexikói befektetési egység (UDI)"}
+        }
         MYR{
             one{"malajziai ringgit"}
             other{"malajziai ringgit"}
@@ -1828,6 +1852,10 @@ hu{
         NGN{
             one{"nigériai naira"}
             other{"nigériai naira"}
+        }
+        NIC{
+            one{"nicaraguai córdoba (1988–1911)"}
+            other{"nicaraguai córdoba (1988–1911)"}
         }
         NIO{
             one{"nicaraguai córdoba"}
@@ -1853,9 +1881,17 @@ hu{
             one{"panamai balboa"}
             other{"panamai balboa"}
         }
+        PEI{
+            one{"perui inti"}
+            other{"perui inti"}
+        }
         PEN{
             one{"perui sol"}
             other{"perui sol"}
+        }
+        PES{
+            one{"perui sol (1863–1965)"}
+            other{"perui sol (1863–1965)"}
         }
         PGK{
             one{"pápua új-guineai kina"}
@@ -1989,6 +2025,10 @@ hu{
             one{"szovjet rubel"}
             other{"szovjet rubel"}
         }
+        SVC{
+            one{"salvadori colón"}
+            other{"salvadori colón"}
+        }
         SYP{
             one{"szíriai font"}
             other{"szíriai font"}
@@ -2064,6 +2104,14 @@ hu{
         USD{
             one{"USA-dollár"}
             other{"USA-dollár"}
+        }
+        USN{
+            one{"USA-dollár (következő napi)"}
+            other{"USA-dollár (következő napi)"}
+        }
+        USS{
+            one{"USA-dollár (aznapi)"}
+            other{"USA-dollár (aznapi)"}
         }
         UYI{
             one{"Uruguayi peso en unidades indexadas"}

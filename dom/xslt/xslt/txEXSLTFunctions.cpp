@@ -531,7 +531,7 @@ nsresult txEXSLTFunctionCall::evaluate(txIEvalContext* aContext,
         nsAutoString str;
         txXPathNodeUtils::appendNodeValue(nodes->get(i), str);
         double val = txDouble::toDouble(str);
-        if (mozilla::IsNaN(val)) {
+        if (std::isnan(val)) {
           res = UnspecifiedNaN<double>();
           break;
         }
@@ -568,7 +568,7 @@ nsresult txEXSLTFunctionCall::evaluate(txIEvalContext* aContext,
         const txXPathNode& node = nodes->get(i);
         txXPathNodeUtils::appendNodeValue(node, str);
         double val = txDouble::toDouble(str);
-        if (mozilla::IsNaN(val)) {
+        if (std::isnan(val)) {
           resultSet->clear();
           break;
         }
@@ -670,7 +670,7 @@ nsresult txEXSLTRegExFunctionCall::evaluate(txIEvalContext* aContext,
   }
 
   nsCOMPtr<txIEXSLTFunctions> funcs =
-      do_ImportModule("resource://gre/modules/txEXSLTRegExFunctions.jsm");
+      do_ImportESModule("resource://gre/modules/txEXSLTRegExFunctions.sys.mjs");
   MOZ_ALWAYS_TRUE(funcs);
 
   switch (mType) {

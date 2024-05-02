@@ -7,7 +7,7 @@
 
 const TEST_URI = `data:text/html;charset=utf8,<!DOCTYPE html><p>test code completion on $_`;
 
-add_task(async function() {
+add_task(async function () {
   const hud = await openNewTabAndConsole(TEST_URI);
   const { jsterm } = hud;
   const { autocompletePopup } = jsterm;
@@ -21,7 +21,7 @@ add_task(async function() {
   is(autocompletePopup.isOpen, false, "autocomplete popup is not open");
 
   info("Populate $_ by executing a command");
-  await executeAndWaitForMessage(
+  await executeAndWaitForResultMessage(
     hud,
     `Object.create(null, Object.getOwnPropertyDescriptors({
     x: 1,

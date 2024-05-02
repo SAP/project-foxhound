@@ -19,8 +19,12 @@ class ResourceDispatcher;
 class ChildThread : public base::Thread {
  public:
   // Creates the thread.
-  explicit ChildThread(Thread::Options options);
+  ChildThread(Thread::Options options, base::ProcessId parent_pid);
   virtual ~ChildThread();
+
+  mozilla::ipc::ScopedPort TakeInitialPort() {
+    return std::move(initial_port_);
+  }
 
  protected:
   friend class ChildProcess;
@@ -32,10 +36,6 @@ class ChildThread : public base::Thread {
   // Returns the one child thread.
   static ChildThread* current();
 
-  mozilla::ipc::ScopedPort TakeInitialPort() {
-    return std::move(initial_port_);
-  }
-
   // Thread implementation.
   virtual void Init() override;
   virtual void CleanUp() override;
@@ -44,11 +44,11 @@ class ChildThread : public base::Thread {
   // The message loop used to run tasks on the thread that started this thread.
   MessageLoop* owner_loop_;
 
-  IPC::Channel::ChannelId channel_name_;
-
   mozilla::ipc::ScopedPort initial_port_;
 
   Thread::Options options_;
+
+  base::ProcessId parent_pid_;
 
   DISALLOW_EVIL_CONSTRUCTORS(ChildThread);
 };

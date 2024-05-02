@@ -3,12 +3,46 @@
 
 "use strict";
 
-var { Toolbox } = require("devtools/client/framework/toolbox");
-var { LEFT, RIGHT, BOTTOM, WINDOW } = Toolbox.HostType;
-var toolbox;
+const {
+  gDevToolsBrowser,
+} = require("resource://devtools/client/framework/devtools-browser.js");
+
+const { Toolbox } = require("resource://devtools/client/framework/toolbox.js");
+const { LEFT, RIGHT, BOTTOM, WINDOW } = Toolbox.HostType;
+let toolbox;
+
+// We are opening/close toolboxes many times,
+// which introduces long GC pauses between each sub task
+// and requires some more time to run in DEBUG builds.
+requestLongerTimeout(2);
 
 const URL =
   "data:text/html;charset=utf8,test for opening toolbox in different hosts";
+
+add_task(async function () {
+  const win = await BrowserTestUtils.openNewBrowserWindow();
+  win.gBrowser.selectedTab = BrowserTestUtils.addTab(win.gBrowser, URL);
+
+  const tab = win.gBrowser.selectedTab;
+  toolbox = await gDevTools.showToolboxForTab(tab, {
+    toolId: "webconsole",
+    hostType: Toolbox.HostType.WINDOW,
+  });
+  const onToolboxClosed = toolbox.once("destroyed");
+  ok(
+    gDevToolsBrowser.hasToolboxOpened(win),
+    "hasToolboxOpened is true before closing the toolbox"
+  );
+  await BrowserTestUtils.closeWindow(win);
+  ok(
+    !gDevToolsBrowser.hasToolboxOpened(win),
+    "hasToolboxOpened is false after closing the window"
+  );
+
+  info("Wait for toolbox to be destroyed after browser window is closed");
+  await onToolboxClosed;
+  toolbox = null;
+});
 
 add_task(async function runTest() {
   info("Create a test tab and open the toolbox");

@@ -14,6 +14,7 @@ var wasCollapsed = toolbar.collapsed;
  * We cannot just use menu.open, since it would not work on Mac due to native menubar.
  *
  * @param {object} aPopup
+ *   The popup element
  */
 function fakeOpenPopup(aPopup) {
   var popupEvent = document.createEvent("MouseEvent");
@@ -113,10 +114,8 @@ add_task(async function test() {
   // Open bookmarks sidebar.
   await withSidebarTree("bookmarks", async () => {
     // Add observers.
-    bookmarksObserver.handlePlacesEvents = bookmarksObserver.handlePlacesEvents.bind(
-      bookmarksObserver
-    );
-    PlacesUtils.bookmarks.addObserver(bookmarksObserver);
+    bookmarksObserver.handlePlacesEvents =
+      bookmarksObserver.handlePlacesEvents.bind(bookmarksObserver);
     PlacesUtils.observers.addListener(
       ["bookmark-added", "bookmark-removed"],
       bookmarksObserver.handlePlacesEvents
@@ -152,7 +151,6 @@ add_task(async function test() {
     }
 
     // Remove observers.
-    PlacesUtils.bookmarks.removeObserver(bookmarksObserver);
     PlacesUtils.observers.removeListener(
       ["bookmark-added", "bookmark-removed"],
       bookmarksObserver.handlePlacesEvents
@@ -172,8 +170,6 @@ add_task(async function test() {
 var bookmarksObserver = {
   _notifications: [],
 
-  QueryInterface: ChromeUtils.generateQI(["nsINavBookmarkObserver"]),
-
   handlePlacesEvents(events) {
     for (let { type, parentGuid, guid, index } of events) {
       switch (type) {
@@ -190,24 +186,6 @@ var bookmarksObserver = {
           break;
       }
     }
-  },
-
-  onItemChanged(
-    itemId,
-    property,
-    annoProperty,
-    newValue,
-    lastModified,
-    itemType,
-    parentId,
-    guid,
-    parentGuid
-  ) {
-    if (property !== "title") {
-      return;
-    }
-
-    this._notifications.push(["assertItemChanged", parentGuid, guid, newValue]);
   },
 
   async assertViewsUpdatedCorrectly() {
@@ -260,7 +238,7 @@ var bookmarksObserver = {
   },
 
   async assertItemChanged(views, guid, newValue) {
-    let validator = function(aElementOrTreeIndex) {
+    let validator = function (aElementOrTreeIndex) {
       if (typeof aElementOrTreeIndex == "number") {
         let sidebar = document.getElementById("sidebar");
         let tree = sidebar.contentDocument.getElementById("bookmarks-view");
@@ -308,9 +286,9 @@ var bookmarksObserver = {
  *        item guid of the item to search.
  * @param {string} view
  *        either "toolbar", "menu" or "sidebar"
- * @param {function} validator
+ * @param {Function} validator
  *        function to check validity of the found node element.
- * @returns {array}
+ * @returns {Array}
  *          [node, index, valid] or [null, null, false] if not found.
  */
 function searchItemInView(itemGuid, view, validator) {
@@ -331,9 +309,9 @@ function searchItemInView(itemGuid, view, validator) {
  *
  * @param {string} itemGuid
  *        item guid of the item to search.
- * @param {function} validator
+ * @param {Function} validator
  *        function to check validity of the found node element.
- * @returns {array}
+ * @returns {Array}
  *        [node, index] or [null, null] if not found.
  */
 function getNodeForToolbarItem(itemGuid, validator) {
@@ -378,9 +356,9 @@ function getNodeForToolbarItem(itemGuid, validator) {
  *
  * @param {string} itemGuid
  *        item guid of the item to search.
- * @param {function} validator
+ * @param {Function} validator
  *        function to check validity of the found node element.
- * @returns {array}
+ * @returns {Array}
  *        [node, index] or [null, null] if not found.
  */
 function getNodeForMenuItem(itemGuid, validator) {
@@ -426,9 +404,9 @@ function getNodeForMenuItem(itemGuid, validator) {
  *
  * @param {string} itemGuid
  *        item guid of the item to search.
- * @param {function} validator
+ * @param {Function} validator
  *        function to check validity of the found node element.
- * @returns {array}
+ * @returns {Array}
  *        [node, index] or [null, null] if not found.
  */
 function getNodeForSidebarItem(itemGuid, validator) {
@@ -491,9 +469,9 @@ function getNodeForSidebarItem(itemGuid, validator) {
 /**
  * Get views affected by changes to a folder.
  *
- * @param {string} folderGuid:
+ * @param {string} folderGuid
  *        item guid of the folder we have changed.
- * @returns {array}
+ * @returns {Array<"toolbar" | "menu" | "sidebar">}
  *          subset of views: ["toolbar", "menu", "sidebar"]
  */
 async function getViewsForFolder(folderGuid) {

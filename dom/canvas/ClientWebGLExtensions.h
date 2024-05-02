@@ -19,7 +19,7 @@ class ClientWebGLExtensionBase : public nsWrapperCache {
 
  public:
   NS_INLINE_DECL_CYCLE_COLLECTING_NATIVE_REFCOUNTING(ClientWebGLExtensionBase)
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_NATIVE_CLASS(ClientWebGLExtensionBase)
+  NS_DECL_CYCLE_COLLECTION_NATIVE_WRAPPERCACHE_CLASS(ClientWebGLExtensionBase)
 
  protected:
   explicit ClientWebGLExtensionBase(ClientWebGLContext& context)
@@ -135,6 +135,21 @@ class ClientWebGLExtensionLoseContext : public ClientWebGLExtensionBase {
   }
 };
 
+class ClientWebGLExtensionProvokingVertex : public ClientWebGLExtensionBase {
+ public:
+  virtual JSObject* WrapObject(JSContext* cx,
+                               JS::Handle<JSObject*> givenProto) override;
+  explicit ClientWebGLExtensionProvokingVertex(ClientWebGLContext&);
+
+  void ProvokingVertexWEBGL(const GLenum mode) const {
+    if (MOZ_UNLIKELY(!mContext)) {
+      AutoJsWarning("provokingVertexWEBGL: Extension is `invalidated`.");
+      return;
+    }
+    mContext->ProvokingVertex(mode);
+  }
+};
+
 DECLARE_SIMPLE_WEBGL_EXTENSION(WebGLExtensionSRGB)
 
 DECLARE_SIMPLE_WEBGL_EXTENSION(WebGLExtensionStandardDerivatives)
@@ -228,8 +243,7 @@ class ClientWebGLExtensionInstancedArrays : public ClientWebGLExtensionBase {
       AutoJsWarning("drawElementsInstancedANGLE: Extension is `invalidated`.");
       return;
     }
-    mContext->DrawElementsInstanced(mode, count, type, offset, primcount,
-                                    FuncScopeId::drawElementsInstanced);
+    mContext->DrawElementsInstanced(mode, count, type, offset, primcount);
   }
   void VertexAttribDivisorANGLE(GLuint index, GLuint divisor) {
     if (MOZ_UNLIKELY(!mContext)) {

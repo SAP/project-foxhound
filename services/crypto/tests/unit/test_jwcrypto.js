@@ -3,19 +3,9 @@
 
 "use strict";
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-
-ChromeUtils.defineModuleGetter(
-  this,
-  "jwcrypto",
-  "resource://services-crypto/jwcrypto.jsm"
-);
-
-Cu.importGlobalProperties(["crypto"]);
-
-const SECOND_MS = 1000;
-const MINUTE_MS = SECOND_MS * 60;
-const HOUR_MS = MINUTE_MS * 60;
+ChromeUtils.defineESModuleGetters(this, {
+  jwcrypto: "resource://services-crypto/jwcrypto.sys.mjs",
+});
 
 // Enable logging from jwcrypto.jsm.
 Services.prefs.setCharPref("services.crypto.jwcrypto.log.level", "Debug");

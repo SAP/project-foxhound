@@ -66,16 +66,31 @@ already_AddRefed<SharedWorker> SharedWorker::Constructor(
       do_QueryInterface(aGlobal.GetAsSupports());
   MOZ_ASSERT(window);
 
-  auto storageAllowed = StorageAllowedForWindow(window);
+  // Our current idiom is that storage-related APIs specialize for the system
+  // principal themselves, which is consistent with StorageAllowedForwindow not
+  // specializing for the system principal.  Without this specialization we
+  // would end up with ePrivateBrowsing for system principaled private browsing
+  // windows which is explicitly not what we want.  System Principal code always
+  // should have access to storage.  It may make sense to enhance
+  // StorageAllowedForWindow in the future to handle this after comprehensive
+  // auditing.
+  nsCOMPtr<nsIPrincipal> principal = aGlobal.GetSubjectPrincipal();
+  StorageAccess storageAllowed;
+  if (principal && principal->IsSystemPrincipal()) {
+    storageAllowed = StorageAccess::eAllow;
+  } else {
+    storageAllowed = StorageAllowedForWindow(window);
+  }
+
   if (storageAllowed == StorageAccess::eDeny) {
-    aRv.Throw(NS_ERROR_DOM_SECURITY_ERR);
+    aRv.ThrowSecurityError("StorageAccess denied.");
     return nullptr;
   }
 
   if (ShouldPartitionStorage(storageAllowed) &&
       !StoragePartitioningEnabled(
           storageAllowed, window->GetExtantDoc()->CookieJarSettings())) {
-    aRv.Throw(NS_ERROR_DOM_SECURITY_ERR);
+    aRv.ThrowSecurityError("StoragePartitioning not enabled.");
     return nullptr;
   }
 
@@ -83,8 +98,6 @@ already_AddRefed<SharedWorker> SharedWorker::Constructor(
   // StorageAccess value.
 #ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
   if (storageAllowed == StorageAccess::ePrivateBrowsing) {
-    nsCOMPtr<Document> doc = window->GetExtantDoc();
-    nsCOMPtr<nsIPrincipal> principal = doc ? doc->NodePrincipal() : nullptr;
     uint32_t privateBrowsingId = 0;
     if (principal) {
       MOZ_ALWAYS_SUCCEEDS(principal->GetPrivateBrowsingId(&privateBrowsingId));
@@ -93,20 +106,30 @@ already_AddRefed<SharedWorker> SharedWorker::Constructor(
   }
 #endif  // MOZ_DIAGNOSTIC_ASSERT_ENABLED
 
+  PBackgroundChild* actorChild = BackgroundChild::GetOrCreateForCurrentThread();
+  if (!actorChild || !actorChild->CanSend()) {
+    aRv.ThrowSecurityError("PBackground not available.");
+    return nullptr;
+  }
+
   nsAutoString name;
+  WorkerType workerType = WorkerType::Classic;
+  RequestCredentials credentials = RequestCredentials::Omit;
   if (aOptions.IsString()) {
     name = aOptions.GetAsString();
   } else {
     MOZ_ASSERT(aOptions.IsWorkerOptions());
     name = aOptions.GetAsWorkerOptions().mName;
+    workerType = aOptions.GetAsWorkerOptions().mType;
+    credentials = aOptions.GetAsWorkerOptions().mCredentials;
   }
 
   JSContext* cx = aGlobal.Context();
 
   WorkerLoadInfo loadInfo;
-  aRv = WorkerPrivate::GetLoadInfo(cx, window, nullptr, aScriptURL, false,
-                                   WorkerPrivate::OverrideLoadGroup,
-                                   WorkerKindShared, &loadInfo);
+  aRv = WorkerPrivate::GetLoadInfo(
+      cx, window, nullptr, aScriptURL, workerType, credentials, false,
+      WorkerPrivate::OverrideLoadGroup, WorkerKindShared, &loadInfo);
   if (NS_WARN_IF(aRv.Failed())) {
     return nullptr;
   }
@@ -127,22 +150,30 @@ already_AddRefed<SharedWorker> SharedWorker::Constructor(
   // Here, the PartitionedPrincipal is always equal to the SharedWorker's
   // principal because the channel is not opened yet, and, because of this, it's
   // not classified. We need to force the correct originAttributes.
-  if (ShouldPartitionStorage(storageAllowed)) {
+  //
+  // The sharedWorker's principal could be a null principal, e.g. loading a
+  // data url. In this case, we don't need to force the OAs for the partitioned
+  // principal because creating storage from a null principal will fail anyway.
+  // We should only do this for content principals.
+  //
+  // You can find more details in StoragePrincipalHelper.h
+  if (ShouldPartitionStorage(storageAllowed) &&
+      BasePrincipal::Cast(loadInfo.mPrincipal)->IsContentPrincipal()) {
     nsCOMPtr<nsIScriptObjectPrincipal> sop = do_QueryInterface(window);
     if (!sop) {
-      aRv.Throw(NS_ERROR_FAILURE);
+      aRv.ThrowSecurityError("ScriptObjectPrincipal not available.");
       return nullptr;
     }
 
     nsIPrincipal* windowPrincipal = sop->GetPrincipal();
     if (!windowPrincipal) {
-      aRv.Throw(NS_ERROR_UNEXPECTED);
+      aRv.ThrowSecurityError("WindowPrincipal not available.");
       return nullptr;
     }
 
     nsIPrincipal* windowPartitionedPrincipal = sop->PartitionedPrincipal();
     if (!windowPartitionedPrincipal) {
-      aRv.Throw(NS_ERROR_UNEXPECTED);
+      aRv.ThrowSecurityError("WindowPartitionedPrincipal not available.");
       return nullptr;
     }
 
@@ -184,8 +215,6 @@ already_AddRefed<SharedWorker> SharedWorker::Constructor(
   SerializeURI(loadInfo.mBaseURI, baseURL);
 
   // Register this component to PBackground.
-  PBackgroundChild* actorChild = BackgroundChild::GetOrCreateForCurrentThread();
-
   bool isSecureContext = JS::GetIsSecureContext(js::GetContextRealm(cx));
 
   Maybe<IPCClientInfo> ipcClientInfo;
@@ -207,21 +236,33 @@ already_AddRefed<SharedWorker> SharedWorker::Constructor(
     return nullptr;
   }
 
+  Maybe<uint64_t> overriddenFingerprintingSettingsArg;
+  if (loadInfo.mOverriddenFingerprintingSettings.isSome()) {
+    overriddenFingerprintingSettingsArg.emplace(
+        uint64_t(loadInfo.mOverriddenFingerprintingSettings.ref()));
+  }
+
   RemoteWorkerData remoteWorkerData(
-      nsString(aScriptURL), baseURL, resolvedScriptURL, name,
-      loadingPrincipalInfo, principalInfo, partitionedPrincipalInfo,
-      loadInfo.mUseRegularPrincipal,
-      loadInfo.mHasStorageAccessPermissionGranted, cjsData, loadInfo.mDomain,
-      isSecureContext, ipcClientInfo, loadInfo.mReferrerInfo, storageAllowed,
+      nsString(aScriptURL), baseURL, resolvedScriptURL, name, workerType,
+      credentials, loadingPrincipalInfo, principalInfo,
+      partitionedPrincipalInfo, loadInfo.mUseRegularPrincipal,
+      loadInfo.mUsingStorageAccess, cjsData, loadInfo.mDomain, isSecureContext,
+      ipcClientInfo, loadInfo.mReferrerInfo, storageAllowed,
       AntiTrackingUtils::IsThirdPartyWindow(window, nullptr),
+      loadInfo.mShouldResistFingerprinting, overriddenFingerprintingSettingsArg,
+      OriginTrials::FromWindow(nsGlobalWindowInner::Cast(window)),
       void_t() /* OptionalServiceWorkerData */, agentClusterId,
       remoteType.unwrap());
 
   PSharedWorkerChild* pActor = actorChild->SendPSharedWorkerConstructor(
       remoteWorkerData, loadInfo.mWindowID, portIdentifier.release());
+  if (!pActor) {
+    MOZ_ASSERT_UNREACHABLE("We already checked PBackground above.");
+    aRv.ThrowSecurityError("PBackground not available.");
+    return nullptr;
+  }
 
   RefPtr<SharedWorkerChild> actor = static_cast<SharedWorkerChild*>(pActor);
-  MOZ_ASSERT(actor);
 
   RefPtr<SharedWorker> sharedWorker =
       new SharedWorker(window, actor, channel->Port2());
@@ -384,6 +425,11 @@ void SharedWorker::GetEventTargetParent(EventChainPreVisitor& aVisitor) {
   }
 
   DOMEventTargetHelper::GetEventTargetParent(aVisitor);
+}
+
+void SharedWorker::DisconnectFromOwner() {
+  Close();
+  DOMEventTargetHelper::DisconnectFromOwner();
 }
 
 void SharedWorker::ErrorPropagation(nsresult aError) {

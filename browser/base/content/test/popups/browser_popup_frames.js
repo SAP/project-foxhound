@@ -4,6 +4,7 @@
 
 const baseURL = getRootDirectory(gTestPath).replace(
   "chrome://mochitests/content",
+  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
   "http://example.com"
 );
 
@@ -45,7 +46,7 @@ async function test_opening_blocked_popups(testURL) {
     "pagehide",
     true
   );
-  await SpecialPowers.spawn(tab.linkedBrowser, [baseURL], async function(uri) {
+  await SpecialPowers.spawn(tab.linkedBrowser, [baseURL], async function (uri) {
     let iframe = content.document.createElement("iframe");
     content.document.body.appendChild(iframe);
     iframe.src = uri;
@@ -63,7 +64,7 @@ async function test_opening_blocked_popups(testURL) {
     true
   );
   // Now navigate the subframe.
-  await SpecialPowers.spawn(popupframeBC, [], async function() {
+  await SpecialPowers.spawn(popupframeBC, [], async function () {
     content.document.location.href = "about:blank";
   });
   await pageHideHappened;
@@ -116,10 +117,12 @@ async function test_opening_blocked_popups(testURL) {
   BrowserTestUtils.removeTab(tab);
 }
 
-add_task(async function() {
+add_task(async function () {
+  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
   await test_opening_blocked_popups("http://example.com/");
 });
 
-add_task(async function() {
+add_task(async function () {
+  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
   await test_opening_blocked_popups("http://w3c-test.org/");
 });

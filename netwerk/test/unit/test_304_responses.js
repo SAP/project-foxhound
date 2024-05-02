@@ -1,9 +1,11 @@
 "use strict";
 // https://bugzilla.mozilla.org/show_bug.cgi?id=761228
 
-const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
+const { HttpServer } = ChromeUtils.importESModule(
+  "resource://testing-common/httpd.sys.mjs"
+);
 
-XPCOMUtils.defineLazyGetter(this, "URL", function() {
+ChromeUtils.defineLazyGetter(this, "URL", function () {
   return "http://localhost:" + httpServer.identity.primaryPort;
 });
 
@@ -11,7 +13,7 @@ var httpServer = null;
 const testFileName = "test_customConditionalRequest_304";
 const basePath = "/" + testFileName + "/";
 
-XPCOMUtils.defineLazyGetter(this, "baseURI", function() {
+ChromeUtils.defineLazyGetter(this, "baseURI", function () {
   return URL + basePath;
 });
 
@@ -46,10 +48,6 @@ function run_test() {
   run_next_test();
 }
 
-function finish_test(request, buffer) {
-  httpServer.stop(do_test_finished);
-}
-
 function consume304(request, buffer) {
   request.QueryInterface(Ci.nsIHttpChannel);
   Assert.equal(request.responseStatus, 304);
@@ -72,7 +70,7 @@ add_test(function test_304_stored_in_cache() {
     "disk",
     Ci.nsICacheStorage.OPEN_NORMALLY,
     null,
-    function(entryStatus, cacheEntry) {
+    function (entryStatus, cacheEntry) {
       cacheEntry.setMetaDataElement("request-method", "GET");
       cacheEntry.setMetaDataElement(
         "response-head",

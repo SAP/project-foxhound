@@ -413,26 +413,36 @@ static P* blendTextureLinearDispatch(S sampler, vec2 uv, int span,
                             swgl_LinearQuantizeScale)) -
         uv.x.x;
     if (uv_step.x > 0.0f && insideDist >= uv_step.x) {
-      int inside = int(end - buf);
+      int32_t inside = int(end - buf);
       if (filter == LINEAR_FILTER_DOWNSCALE) {
-        inside = clamp(int(insideDist * (0.5f / swgl_LinearQuantizeScale)) &
-                           ~(swgl_StepSize - 1),
-                       0, inside);
-        blendTextureLinearDownscale<BLEND>(sampler, uv, inside, min_uv, max_uv,
-                                           color, buf);
+        inside = min(int(insideDist * (0.5f / swgl_LinearQuantizeScale)) &
+                         ~(swgl_StepSize - 1),
+                     inside);
+        if (inside > 0) {
+          blendTextureLinearDownscale<BLEND>(sampler, uv, inside, min_uv,
+                                             max_uv, color, buf);
+          buf += inside;
+          uv.x += (inside / swgl_StepSize) * uv_step.x;
+        }
       } else if (filter == LINEAR_FILTER_UPSCALE) {
-        inside = clamp(int(insideDist / uv_step.x) * swgl_StepSize, 0, inside);
-        blendTextureLinearUpscale<BLEND>(sampler, uv, inside, uv_step, min_uv,
-                                         max_uv, color, buf);
+        inside = min(int(insideDist / uv_step.x) * swgl_StepSize, inside);
+        if (inside > 0) {
+          blendTextureLinearUpscale<BLEND>(sampler, uv, inside, uv_step, min_uv,
+                                           max_uv, color, buf);
+          buf += inside;
+          uv.x += (inside / swgl_StepSize) * uv_step.x;
+        }
       } else {
-        inside = clamp(int(insideDist * (1.0f / swgl_LinearQuantizeScale)) &
-                           ~(swgl_StepSize - 1),
-                       0, inside);
-        blendTextureLinearFast<BLEND>(sampler, uv, inside, min_uv, max_uv,
-                                      color, buf);
+        inside = min(int(insideDist * (1.0f / swgl_LinearQuantizeScale)) &
+                         ~(swgl_StepSize - 1),
+                     inside);
+        if (inside > 0) {
+          blendTextureLinearFast<BLEND>(sampler, uv, inside, min_uv, max_uv,
+                                        color, buf);
+          buf += inside;
+          uv.x += (inside / swgl_StepSize) * uv_step.x;
+        }
       }
-      buf += inside;
-      uv.x += (inside / swgl_StepSize) * uv_step.x;
     }
   }
   // If the fallback filter was requested, or if there are any samples left that
@@ -482,7 +492,7 @@ static int blendTextureNearestFast(S sampler, vec2 uv, int span,
   // bounds.
   P* row =
       &((P*)sampler
-            ->buf)[clamp(clampCoord(i.y, sampler->height), minUV.y, maxUV.y) *
+            ->buf)[clampCoord(clamp(i.y, minUV.y, maxUV.y), sampler->height) *
                    sampler->stride];
   // Find clamped X bounds within the row.
   int minX = clamp(minUV.x, 0, sampler->width - 1);
@@ -542,6 +552,11 @@ static ALWAYS_INLINE int spanNeedsScale(int span, T P) {
 // without diverging too much from the linear filter.
 template <typename S, typename T>
 static inline LinearFilter needsTextureLinear(S sampler, T P, int span) {
+  // If each row is not wide enough for linear filtering, then just use nearest
+  // filtering.
+  if (sampler->width < 2) {
+    return LINEAR_FILTER_NEAREST;
+  }
   // First verify if the row Y doesn't change across samples
   if (P.y.x != P.y.y) {
     return LINEAR_FILTER_FALLBACK;
@@ -620,7 +635,7 @@ template <bool BLEND, typename S, typename C, typename P>
 static inline int blendTextureLinearR8(S sampler, vec2 uv, int span,
                                        const vec4_scalar& uv_rect, C color,
                                        P* buf) {
-  if (!swgl_isTextureR8(sampler)) {
+  if (!swgl_isTextureR8(sampler) || sampler->width < 2) {
     return 0;
   }
   LINEAR_QUANTIZE_UV(sampler, uv, uv_step, uv_rect, min_uv, max_uv);
@@ -679,7 +694,7 @@ static inline int computeNoRepeatSteps(Float uv, float uv_step,
   }
   return uv.x >= 0.0f && uv.w < limit
              ? (uv_step != 0.0f
-                    ? int(min(float(steps), (limit - uv.x) / uv_step))
+                    ? int(clamp((limit - uv.x) / uv_step, 0.0f, float(steps)))
                     : steps)
              : 0;
 }
@@ -796,9 +811,9 @@ static int blendTextureNearestRepeat(S sampler, vec2 uv, int span,
   // greater than one pixel, we can still check if we don't move far enough from
   // the pixel center on that axis to hit the next pixel.
   if ((int(min_uv.x) + (REPEAT ? 1 : 0) >= int(max_uv.x) ||
-       (uv_step.x * span * (REPEAT ? uv_scale.x : 1.0f) < 0.5f)) &&
+       (abs(uv_step.x) * span * (REPEAT ? uv_scale.x : 1.0f) < 0.5f)) &&
       (int(min_uv.y) + (REPEAT ? 1 : 0) >= int(max_uv.y) ||
-       (uv_step.y * span * (REPEAT ? uv_scale.y : 1.0f) < 0.5f))) {
+       (abs(uv_step.y) * span * (REPEAT ? uv_scale.y : 1.0f) < 0.5f))) {
     vec2 repeated_uv = REPEAT
                            ? tileRepeatUV(uv, tile_repeat) * uv_scale + min_uv
                            : clamp(uv, min_uv, max_uv);
@@ -1019,7 +1034,7 @@ static int blendYUV(P* buf, int span, S0 sampler0, vec2 uv0,
   }
   LINEAR_QUANTIZE_UV(sampler0, uv0, uv_step0, uv_rect0, min_uv0, max_uv0);
   const auto rgb_from_ycbcr =
-      YUVMatrix::From(ycbcr_bias, rgb_from_debiased_ycbcr);
+      YUVMatrix::From(ycbcr_bias, rgb_from_debiased_ycbcr, rescaleFactor);
   auto c = packColor(buf, color);
   auto* end = buf + span;
   for (; buf < end; buf += swgl_StepSize, uv0 += uv_step0) {
@@ -1035,7 +1050,7 @@ template <typename S0, typename S1>
 static ALWAYS_INLINE PackedRGBA8 sampleYUV(S0 sampler0, ivec2 uv0, S1 sampler1,
                                            ivec2 uv1,
                                            const YUVMatrix& rgb_from_ycbcr,
-                                           UNUSED int rescaleFactor) {
+                                           int rescaleFactor) {
   switch (sampler1->format) {
     case TextureFormat::RG8: {
       assert(sampler0->format == TextureFormat::R8);
@@ -1050,6 +1065,21 @@ static ALWAYS_INLINE PackedRGBA8 sampleYUV(S0 sampler0, ivec2 uv0, S1 sampler1,
       auto planar = textureLinearPlanarRGBA8(sampler1, uv1);
       return convertYUV(rgb_from_ycbcr, y, lowHalf(planar.ba),
                         highHalf(planar.rg));
+    }
+    case TextureFormat::RG16: {
+      assert(sampler0->format == TextureFormat::R16);
+      // The rescaling factor represents how many bits to add to renormalize the
+      // texture to 16 bits, and so the color depth is actually 16 minus the
+      // rescaling factor.
+      // Need to right shift the sample by the amount of bits over 8 it
+      // occupies. On output from textureLinearUnpackedR16, we have lost 1 bit
+      // of precision at the low end already, hence 1 is subtracted from the
+      // color depth.
+      int colorDepth = 16 - rescaleFactor;
+      int rescaleBits = (colorDepth - 1) - 8;
+      auto y = textureLinearUnpackedR16(sampler0, uv0) >> rescaleBits;
+      auto uv = textureLinearUnpackedRG16(sampler1, uv1) >> rescaleBits;
+      return rgb_from_ycbcr.convert(zip(y, y), uv);
     }
     default:
       assert(false);
@@ -1070,7 +1100,7 @@ static int blendYUV(P* buf, int span, S0 sampler0, vec2 uv0,
   LINEAR_QUANTIZE_UV(sampler0, uv0, uv_step0, uv_rect0, min_uv0, max_uv0);
   LINEAR_QUANTIZE_UV(sampler1, uv1, uv_step1, uv_rect1, min_uv1, max_uv1);
   const auto rgb_from_ycbcr =
-      YUVMatrix::From(ycbcr_bias, rgb_from_debiased_ycbcr);
+      YUVMatrix::From(ycbcr_bias, rgb_from_debiased_ycbcr, rescaleFactor);
   auto c = packColor(buf, color);
   auto* end = buf + span;
   for (; buf < end; buf += swgl_StepSize, uv0 += uv_step0, uv1 += uv_step1) {
@@ -1132,7 +1162,7 @@ static void blendYUVFallback(P* buf, int span, S0 sampler0, vec2 uv0,
                              const mat3_scalar& rgb_from_debiased_ycbcr,
                              int rescaleFactor, C color) {
   const auto rgb_from_ycbcr =
-      YUVMatrix::From(ycbcr_bias, rgb_from_debiased_ycbcr);
+      YUVMatrix::From(ycbcr_bias, rgb_from_debiased_ycbcr, rescaleFactor);
   for (auto* end = buf + span; buf < end; buf += swgl_StepSize, uv0 += uv_step0,
              uv1 += uv_step1, uv2 += uv_step2) {
     commit_blend_span<BLEND>(
@@ -1230,7 +1260,7 @@ static int blendYUV(uint32_t* buf, int span, sampler2DRect sampler0, vec2 uv0,
           (sampler0->format == TextureFormat::R16 ? 16 : 8) - rescaleFactor;
       // Finally, call the inner loop of CompositeYUV.
       const auto rgb_from_ycbcr =
-          YUVMatrix::From(ycbcr_bias, rgb_from_debiased_ycbcr);
+          YUVMatrix::From(ycbcr_bias, rgb_from_debiased_ycbcr, rescaleFactor);
       linear_row_yuv<BLEND>(
           buf, inside * swgl_StepSize, sampler0, force_scalar(uv0),
           uv_step0.x / swgl_StepSize, sampler1, sampler2, force_scalar(uv1),
@@ -1358,25 +1388,51 @@ static inline WideRGBA8 sampleGradient(sampler2D sampler, int address,
 // gradient, then interpolating between those larger gradients within the span.
 template <bool BLEND>
 static bool commitLinearGradient(sampler2D sampler, int address, float size,
-                                 bool repeat, Float offset, uint32_t* buf,
-                                 int span) {
+                                 bool tileRepeat, bool gradientRepeat, vec2 pos,
+                                 const vec2_scalar& scaleDir, float startOffset,
+                                 uint32_t* buf, int span) {
   assert(sampler->format == TextureFormat::RGBA32F);
   assert(address >= 0 && address < int(sampler->height * sampler->stride));
   GradientStops* stops = (GradientStops*)&sampler->buf[address];
   // Get the chunk delta from the difference in offset steps. This represents
   // how far within the gradient table we advance for every step in output,
   // normalized to gradient table size.
-  float delta = (offset.y - offset.x) * 4.0f;
+  vec2_scalar posStep = dFdx(pos) * 4.0f;
+  float delta = dot(posStep, scaleDir);
   if (!isfinite(delta)) {
     return false;
   }
-  for (; span > 0;) {
-    // If repeat is desired, we need to limit the offset to a fractional value.
-    if (repeat) {
-      offset = fract(offset);
+  // If we have a repeating brush, then the position will be modulo the [0,1)
+  // interval. Compute coefficients that can be used to quickly evaluate the
+  // distance to the interval boundary where the offset will wrap.
+  vec2_scalar distCoeffsX = {0.25f * span, 0.0f};
+  vec2_scalar distCoeffsY = distCoeffsX;
+  if (tileRepeat) {
+    if (posStep.x != 0.0f) {
+      distCoeffsX = vec2_scalar{step(0.0f, posStep.x), 1.0f} * recip(posStep.x);
     }
+    if (posStep.y != 0.0f) {
+      distCoeffsY = vec2_scalar{step(0.0f, posStep.y), 1.0f} * recip(posStep.y);
+    }
+  }
+  for (; span > 0;) {
     // Try to process as many chunks as are within the span if possible.
     float chunks = 0.25f * span;
+    vec2 repeatPos = pos;
+    if (tileRepeat) {
+      // If this is a repeating brush, then limit the chunks to not cross the
+      // interval boundaries.
+      repeatPos = fract(pos);
+      chunks = min(chunks, distCoeffsX.x - repeatPos.x.x * distCoeffsX.y);
+      chunks = min(chunks, distCoeffsY.x - repeatPos.y.x * distCoeffsY.y);
+    }
+    // Compute the gradient offset from the position.
+    Float offset =
+        repeatPos.x * scaleDir.x + repeatPos.y * scaleDir.y - startOffset;
+    // If repeat is desired, we need to limit the offset to a fractional value.
+    if (gradientRepeat) {
+      offset = fract(offset);
+    }
     // To properly handle both clamping and repeating of the table offset, we
     // need to ensure we don't run past the 0 and 1 points. Here we compute the
     // intercept points depending on whether advancing forwards or backwards in
@@ -1460,7 +1516,7 @@ static bool commitLinearGradient(sampler2D sampler, int address, float size,
           (maxColorF - minColorF) * (1.0f / (maxIndex + 1 - minIndex));
       // Compute the actual starting color of the current start offset within
       // the merged gradient. The value 0.5 is added to the low bits (0x80) so
-      // that the color will effective round to the nearest increment below.
+      // that the color will effectively round to the nearest increment below.
       auto colorF =
           minColorF + colorRangeF * (startEntry - minIndex) + float(0x80);
       // Compute the portion of the color range that we advance on each chunk.
@@ -1468,16 +1524,26 @@ static bool commitLinearGradient(sampler2D sampler, int address, float size,
       // Quantize the color delta and current color. These have already been
       // scaled to the 0..0xFF00 range, so we just need to round them to U16.
       auto deltaColor = repeat4(CONVERT(round_pixel(deltaColorF, 1), U16));
-      auto color =
-          combine(CONVERT(round_pixel(colorF, 1), U16),
-                  CONVERT(round_pixel(colorF + deltaColorF * 0.25f, 1), U16),
-                  CONVERT(round_pixel(colorF + deltaColorF * 0.5f, 1), U16),
-                  CONVERT(round_pixel(colorF + deltaColorF * 0.75f, 1), U16));
-      // Finally, step the current color through the output chunks, shifting
-      // it into 8 bit range and outputting as we go.
-      for (auto* end = buf + inside * 4; buf < end; buf += 4) {
-        commit_blend_span<BLEND>(buf, bit_cast<WideRGBA8>(color >> 8));
-        color += deltaColor;
+      for (int remaining = inside;;) {
+        auto color =
+            combine(CONVERT(round_pixel(colorF, 1), U16),
+                    CONVERT(round_pixel(colorF + deltaColorF * 0.25f, 1), U16),
+                    CONVERT(round_pixel(colorF + deltaColorF * 0.5f, 1), U16),
+                    CONVERT(round_pixel(colorF + deltaColorF * 0.75f, 1), U16));
+        // Finally, step the current color through the output chunks, shifting
+        // it into 8 bit range and outputting as we go. Only process a segment
+        // at a time to avoid overflowing 8-bit precision due to rounding of
+        // deltas.
+        int segment = min(remaining, 256 / 4);
+        for (auto* end = buf + segment * 4; buf < end; buf += 4) {
+          commit_blend_span<BLEND>(buf, bit_cast<WideRGBA8>(color >> 8));
+          color += deltaColor;
+        }
+        remaining -= segment;
+        if (remaining <= 0) {
+          break;
+        }
+        colorF += deltaColorF * segment;
       }
       // Deduct the number of chunks inside the gradient from the remaining
       // overall span. If we exhausted the span, bail out.
@@ -1487,8 +1553,12 @@ static bool commitLinearGradient(sampler2D sampler, int address, float size,
       }
       // Otherwise, assume we're in a transitional section of the gradient that
       // will probably require per-sample table lookups, so fall through below.
-      offset += inside * delta;
-      if (repeat) {
+      // We need to re-evaluate the position and offset first, though.
+      pos += posStep * float(inside);
+      repeatPos = tileRepeat ? fract(pos) : pos;
+      offset =
+          repeatPos.x * scaleDir.x + repeatPos.y * scaleDir.y - startOffset;
+      if (gradientRepeat) {
         offset = fract(offset);
       }
     }
@@ -1502,7 +1572,7 @@ static bool commitLinearGradient(sampler2D sampler, int address, float size,
     commit_blend_span<BLEND>(buf, sampleGradient(sampler, address, entry));
     span -= 4;
     buf += 4;
-    offset += delta;
+    pos += posStep;
   }
   return true;
 }
@@ -1513,29 +1583,34 @@ static bool commitLinearGradient(sampler2D sampler, int address, float size,
 // each to deal with clamping. Repeating will be handled if necessary. The
 // initial offset within the table is used to designate where to start the span
 // and how to step through the gradient table.
-#define swgl_commitLinearGradientRGBA8(sampler, address, size, repeat, offset) \
-  do {                                                                         \
-    bool drawn = false;                                                        \
-    if (blend_key) {                                                           \
-      drawn =                                                                  \
-          commitLinearGradient<true>(sampler, address, size, repeat, offset,   \
-                                     swgl_OutRGBA8, swgl_SpanLength);          \
-    } else {                                                                   \
-      drawn =                                                                  \
-          commitLinearGradient<false>(sampler, address, size, repeat, offset,  \
-                                      swgl_OutRGBA8, swgl_SpanLength);         \
-    }                                                                          \
-    if (drawn) {                                                               \
-      swgl_OutRGBA8 += swgl_SpanLength;                                        \
-      swgl_SpanLength = 0;                                                     \
-    }                                                                          \
+#define swgl_commitLinearGradientRGBA8(sampler, address, size, tileRepeat,   \
+                                       gradientRepeat, pos, scaleDir,        \
+                                       startOffset)                          \
+  do {                                                                       \
+    bool drawn = false;                                                      \
+    if (blend_key) {                                                         \
+      drawn = commitLinearGradient<true>(                                    \
+          sampler, address, size, tileRepeat, gradientRepeat, pos, scaleDir, \
+          startOffset, swgl_OutRGBA8, swgl_SpanLength);                      \
+    } else {                                                                 \
+      drawn = commitLinearGradient<false>(                                   \
+          sampler, address, size, tileRepeat, gradientRepeat, pos, scaleDir, \
+          startOffset, swgl_OutRGBA8, swgl_SpanLength);                      \
+    }                                                                        \
+    if (drawn) {                                                             \
+      swgl_OutRGBA8 += swgl_SpanLength;                                      \
+      swgl_SpanLength = 0;                                                   \
+    }                                                                        \
   } while (0)
 
 template <bool CLAMP, typename V>
 static ALWAYS_INLINE V fastSqrt(V v) {
+  if (CLAMP) {
+    // Clamp to avoid zero or negative.
+    v = max(v, V(1.0e-12f));
+  }
 #if USE_SSE2 || USE_NEON
-  // Clamp to avoid zero in inversesqrt.
-  return v * inversesqrt(CLAMP ? max(v, V(1.0e-10f)) : v);
+  return v * inversesqrt(v);
 #else
   return sqrt(v);
 #endif
@@ -1693,6 +1768,11 @@ static bool commitRadialGradient(sampler2D sampler, int address, float size,
       if (b > 0) {
         b = fastSqrt<false>(b);
         endT = min(endT, t >= middleT ? middleT + b : middleT - b);
+      } else {
+        // Due to the imprecision of fastSqrt in offset calculations, solving
+        // the quadratic may fail. However, if the discriminant is still close
+        // to 0, then just assume it is 0.
+        endT = min(endT, middleT);
       }
     }
     // Figure out how many chunks are actually inside the merged gradient.

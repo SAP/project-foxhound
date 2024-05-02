@@ -3,6 +3,7 @@
 const TEST_PATH =
   getRootDirectory(gTestPath).replace(
     "chrome://mochitests/content",
+    // eslint-disable-next-line @microsoft/sdl/no-insecure-url
     "http://example.com"
   ) + "dummy_page.html";
 
@@ -13,7 +14,7 @@ async function observeAttached(callback) {
 
   function observer(subject, topic, data) {
     is(topic, TOPIC, "observing correct topic");
-    ok(subject instanceof BrowsingContext, "subject to be a BrowsingContext");
+    ok(BrowsingContext.isInstance(subject), "subject to be a BrowsingContext");
     is(typeof data, "string", "data to be a String");
     info(`*** bc id=${subject.id}, why=${data}`);
     attached.set(subject.id, { browsingContext: subject, why: data });

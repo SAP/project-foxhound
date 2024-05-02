@@ -2,17 +2,8 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, print_function, unicode_literals
-
-from mozbuild.util import (
-    ensureParentDir,
-    ensure_bytes,
-)
-
-from mozpack.errors import (
-    ErrorMessage,
-    errors,
-)
+from mozbuild.util import ensure_bytes, ensureParentDir
+from mozpack.errors import ErrorMessage, errors
 from mozpack.files import (
     AbsoluteSymlinkFile,
     ComposedFinder,
@@ -20,18 +11,18 @@ from mozpack.files import (
     Dest,
     ExistingFile,
     ExtractedTarFile,
-    FileFinder,
     File,
+    FileFinder,
     GeneratedFile,
     HardlinkFile,
     JarFinder,
-    TarFinder,
     ManifestFile,
     MercurialFile,
     MercurialRevisionFinder,
+    MinifiedCommentStripped,
     MinifiedJavaScript,
-    MinifiedProperties,
     PreprocessedFile,
+    TarFinder,
 )
 
 # We don't have hglib installed everywhere.
@@ -40,28 +31,27 @@ try:
 except ImportError:
     hglib = None
 
-from mozpack.mozjar import (
-    JarReader,
-    JarWriter,
-)
-from mozpack.chrome.manifest import (
-    ManifestContent,
-    ManifestResource,
-    ManifestLocale,
-    ManifestOverride,
-)
-import unittest
-import mozfile
-import mozunit
 import os
 import platform
 import random
-import six
 import sys
 import tarfile
-import mozpack.path as mozpath
-from tempfile import mkdtemp
+import unittest
 from io import BytesIO
+from tempfile import mkdtemp
+
+import mozfile
+import mozunit
+import six
+
+import mozpack.path as mozpath
+from mozpack.chrome.manifest import (
+    ManifestContent,
+    ManifestLocale,
+    ManifestOverride,
+    ManifestResource,
+)
+from mozpack.mozjar import JarReader, JarWriter
 
 
 class TestWithTmpDir(unittest.TestCase):
@@ -875,8 +865,8 @@ foo2_xpt = GeneratedFile(
 )
 
 
-class TestMinifiedProperties(TestWithTmpDir):
-    def test_minified_properties(self):
+class TestMinifiedCommentStripped(TestWithTmpDir):
+    def test_minified_comment_stripped(self):
         propLines = [
             "# Comments are removed",
             "foo = bar",
@@ -885,10 +875,10 @@ class TestMinifiedProperties(TestWithTmpDir):
         ]
         prop = GeneratedFile("\n".join(propLines))
         self.assertEqual(
-            MinifiedProperties(prop).open().readlines(), [b"foo = bar\n", b"\n"]
+            MinifiedCommentStripped(prop).open().readlines(), [b"foo = bar\n", b"\n"]
         )
         open(self.tmppath("prop"), "w").write("\n".join(propLines))
-        MinifiedProperties(File(self.tmppath("prop"))).copy(self.tmppath("prop2"))
+        MinifiedCommentStripped(File(self.tmppath("prop"))).copy(self.tmppath("prop2"))
         self.assertEqual(open(self.tmppath("prop2")).readlines(), ["foo = bar\n", "\n"])
 
 
@@ -935,8 +925,8 @@ class TestMinifiedJavaScript(TestWithTmpDir):
         errors.out = sys.stderr
         self.assertEqual(
             output,
-            "Warning: JS minification verification failed for <unknown>:\n"
-            "Warning: Error message\n",
+            "warning: JS minification verification failed for <unknown>:\n"
+            "warning: Error message\n",
         )
         self.assertEqual(mini_lines, orig_f.open().readlines())
 

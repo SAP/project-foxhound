@@ -7,40 +7,40 @@
 const {
   createFactory,
   PureComponent,
-} = require("devtools/client/shared/vendor/react");
-const dom = require("devtools/client/shared/vendor/react-dom-factories");
-const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
+} = require("resource://devtools/client/shared/vendor/react.js");
+const dom = require("resource://devtools/client/shared/vendor/react-dom-factories.js");
+const PropTypes = require("resource://devtools/client/shared/vendor/react-prop-types.js");
 
-const FluentReact = require("devtools/client/shared/vendor/fluent-react");
+const FluentReact = require("resource://devtools/client/shared/vendor/fluent-react.js");
 const Localized = createFactory(FluentReact.Localized);
 
 const {
   ICON_LABEL_LEVEL,
   PAGE_TYPES,
   RUNTIMES,
-} = require("devtools/client/aboutdebugging/src/constants");
-const Types = require("devtools/client/aboutdebugging/src/types/index");
+} = require("resource://devtools/client/aboutdebugging/src/constants.js");
+const Types = require("resource://devtools/client/aboutdebugging/src/types/index.js");
 loader.lazyRequireGetter(
   this,
   "ADB_ADDON_STATES",
-  "devtools/client/shared/remote-debugging/adb/adb-addon",
+  "resource://devtools/client/shared/remote-debugging/adb/adb-addon.js",
   true
 );
 
 const IconLabel = createFactory(
-  require("devtools/client/aboutdebugging/src/components/shared/IconLabel")
+  require("resource://devtools/client/aboutdebugging/src/components/shared/IconLabel.js")
 );
 const SidebarItem = createFactory(
-  require("devtools/client/aboutdebugging/src/components/sidebar/SidebarItem")
+  require("resource://devtools/client/aboutdebugging/src/components/sidebar/SidebarItem.js")
 );
 const SidebarFixedItem = createFactory(
-  require("devtools/client/aboutdebugging/src/components/sidebar/SidebarFixedItem")
+  require("resource://devtools/client/aboutdebugging/src/components/sidebar/SidebarFixedItem.js")
 );
 const SidebarRuntimeItem = createFactory(
-  require("devtools/client/aboutdebugging/src/components/sidebar/SidebarRuntimeItem")
+  require("resource://devtools/client/aboutdebugging/src/components/sidebar/SidebarRuntimeItem.js")
 );
 const RefreshDevicesButton = createFactory(
-  require("devtools/client/aboutdebugging/src/components/sidebar/RefreshDevicesButton")
+  require("resource://devtools/client/aboutdebugging/src/components/sidebar/RefreshDevicesButton.js")
 );
 const FIREFOX_ICON =
   "chrome://devtools/skin/images/aboutdebugging-firefox-logo.svg";
@@ -158,7 +158,7 @@ class Sidebar extends PureComponent {
   renderFooter() {
     const HELP_ICON_SRC = "chrome://global/skin/icons/help.svg";
     const SUPPORT_URL =
-      "https://developer.mozilla.org/docs/Tools/about:debugging";
+      "https://firefox-source-docs.mozilla.org/devtools-user/about_colon_debugging/";
 
     return dom.footer(
       {
@@ -200,12 +200,8 @@ class Sidebar extends PureComponent {
   }
 
   render() {
-    const {
-      dispatch,
-      selectedPage,
-      selectedRuntimeId,
-      isScanningUsb,
-    } = this.props;
+    const { dispatch, selectedPage, selectedRuntimeId, isScanningUsb } =
+      this.props;
 
     return dom.aside(
       {

@@ -7,9 +7,9 @@
 
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/Dafsa.h"
-#include "mozilla/DataStorage.h"
 #include "mozilla/RefPtr.h"
 #include "nsCOMPtr.h"
+#include "nsIDataStorage.h"
 #include "nsIObserver.h"
 #include "nsISiteSecurityService.h"
 #include "nsString.h"
@@ -18,7 +18,6 @@
 #include "prtime.h"
 
 class nsIURI;
-class nsITransportSecurityInfo;
 
 using mozilla::OriginAttributes;
 
@@ -40,15 +39,9 @@ using mozilla::OriginAttributes;
  * in question.
  */
 enum SecurityPropertyState {
-  SecurityPropertyUnset = nsISiteSecurityState::SECURITY_PROPERTY_UNSET,
-  SecurityPropertySet = nsISiteSecurityState::SECURITY_PROPERTY_SET,
-  SecurityPropertyKnockout = nsISiteSecurityState::SECURITY_PROPERTY_KNOCKOUT,
-};
-
-enum SecurityPropertySource {
-  SourceUnknown = nsISiteSecurityService::SOURCE_UNKNOWN,
-  SourcePreload = nsISiteSecurityService::SOURCE_PRELOAD_LIST,
-  SourceOrganic = nsISiteSecurityService::SOURCE_ORGANIC_REQUEST,
+  SecurityPropertyUnset = 0,
+  SecurityPropertySet = 1,
+  SecurityPropertyKnockout = 2,
 };
 
 /**
@@ -61,26 +54,21 @@ enum SecurityPropertySource {
  *  - A state flag (SecurityPropertyState, default SecurityPropertyUnset)
  *  - An include subdomains flag (bool, default false)
  */
-class SiteHSTSState : public nsISiteHSTSState {
+class SiteHSTSState {
  public:
-  NS_DECL_ISUPPORTS
-  NS_DECL_NSISITEHSTSSTATE
-  NS_DECL_NSISITESECURITYSTATE
-
   SiteHSTSState(const nsCString& aHost,
                 const OriginAttributes& aOriginAttributes,
                 const nsCString& aStateString);
   SiteHSTSState(const nsCString& aHost,
                 const OriginAttributes& aOriginAttributes,
                 PRTime aHSTSExpireTime, SecurityPropertyState aHSTSState,
-                bool aHSTSIncludeSubdomains, SecurityPropertySource aSource);
+                bool aHSTSIncludeSubdomains);
 
   nsCString mHostname;
   OriginAttributes mOriginAttributes;
   PRTime mHSTSExpireTime;
   SecurityPropertyState mHSTSState;
   bool mHSTSIncludeSubdomains;
-  SecurityPropertySource mHSTSSource;
 
   bool IsExpired() {
     // If mHSTSExpireTime is 0, this entry never expires (this is the case for
@@ -98,9 +86,6 @@ class SiteHSTSState : public nsISiteHSTSState {
   }
 
   void ToString(nsCString& aString);
-
- protected:
-  virtual ~SiteHSTSState() = default;
 };
 
 struct nsSTSPreload;
@@ -123,43 +108,50 @@ class nsSiteSecurityService : public nsISiteSecurityService,
 
  private:
   nsresult SetHSTSState(const char* aHost, int64_t maxage,
-                        bool includeSubdomains, uint32_t flags,
+                        bool includeSubdomains,
                         SecurityPropertyState aHSTSState,
-                        SecurityPropertySource aSource,
                         const OriginAttributes& aOriginAttributes);
   nsresult ProcessHeaderInternal(nsIURI* aSourceURI, const nsCString& aHeader,
-                                 nsITransportSecurityInfo* aSecInfo,
-                                 uint32_t aFlags,
-                                 SecurityPropertySource aSource,
                                  const OriginAttributes& aOriginAttributes,
                                  uint64_t* aMaxAge, bool* aIncludeSubdomains,
                                  uint32_t* aFailureResult);
   nsresult ProcessSTSHeader(nsIURI* aSourceURI, const nsCString& aHeader,
-                            uint32_t flags, SecurityPropertySource aSource,
                             const OriginAttributes& aOriginAttributes,
                             uint64_t* aMaxAge, bool* aIncludeSubdomains,
                             uint32_t* aFailureResult);
-  nsresult MarkHostAsNotHSTS(const nsAutoCString& aHost, uint32_t aFlags,
-                             bool aIsPreload,
+  nsresult MarkHostAsNotHSTS(const nsAutoCString& aHost,
                              const OriginAttributes& aOriginAttributes);
-  nsresult ResetStateInternal(nsIURI* aURI, uint32_t aFlags,
-                              const OriginAttributes& aOriginAttributes);
-  bool HostHasHSTSEntry(const nsAutoCString& aHost,
-                        bool aRequireIncludeSubdomains, uint32_t aFlags,
-                        const OriginAttributes& aOriginAttributes,
-                        bool* aResult, bool* aCached,
-                        SecurityPropertySource* aSource);
+  nsresult ResetStateInternal(nsIURI* aURI,
+                              const OriginAttributes& aOriginAttributes,
+                              nsISiteSecurityService::ResetStateBy aScope);
+  void ResetStateForExactDomain(const nsCString& aHostname,
+                                const OriginAttributes& aOriginAttributes);
+  nsresult HostHasHSTSEntry(const nsAutoCString& aHost,
+                            bool aRequireIncludeSubdomains,
+                            const OriginAttributes& aOriginAttributes,
+                            bool& aHostHasHSTSEntry, bool* aResult);
   bool GetPreloadStatus(
       const nsACString& aHost,
       /*optional out*/ bool* aIncludeSubdomains = nullptr) const;
-  nsresult IsSecureHost(const nsACString& aHost, uint32_t aFlags,
+  nsresult IsSecureHost(const nsACString& aHost,
                         const OriginAttributes& aOriginAttributes,
-                        bool* aCached, SecurityPropertySource* aSource,
                         bool* aResult);
+
+  nsresult GetWithMigration(const nsACString& aHostname,
+                            const OriginAttributes& aOriginAttributes,
+                            nsIDataStorage::DataType aDataStorageType,
+                            nsACString& aValue);
+  nsresult PutWithMigration(const nsACString& aHostname,
+                            const OriginAttributes& aOriginAttributes,
+                            nsIDataStorage::DataType aDataStorageType,
+                            const nsACString& aStateString);
+  nsresult RemoveWithMigration(const nsACString& aHostname,
+                               const OriginAttributes& aOriginAttributes,
+                               nsIDataStorage::DataType aDataStorageType);
 
   bool mUsePreloadList;
   int64_t mPreloadListTimeOffset;
-  RefPtr<mozilla::DataStorage> mSiteStateStorage;
+  nsCOMPtr<nsIDataStorage> mSiteStateStorage;
   const mozilla::Dafsa mDafsa;
 };
 

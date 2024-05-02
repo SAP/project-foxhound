@@ -3,6 +3,8 @@
 
 "use strict";
 
+requestLongerTimeout(2);
+
 const TEST_PATH = getRootDirectory(gTestPath).replace(
   "chrome://mochitests/content",
   "https://example.com"
@@ -88,12 +90,12 @@ add_task(async function test_closed_by_tab_navigation() {
   info(
     "Set up unload handler to ensure we don't break when the window global gets cleared"
   );
-  await SpecialPowers.spawn(tab.linkedBrowser, [], async function() {
-    content.addEventListener("unload", function() {});
+  await SpecialPowers.spawn(tab.linkedBrowser, [], async function () {
+    content.addEventListener("unload", function () {});
   });
 
   info("Navigating tab to a different but same origin page.");
-  BrowserTestUtils.loadURI(tab.linkedBrowser, TEST_PATH);
+  BrowserTestUtils.startLoadingURIString(tab.linkedBrowser, TEST_PATH);
   await BrowserTestUtils.browserLoaded(tab.linkedBrowser, false, TEST_PATH);
   ok(dialog._frame.contentWindow, "Dialog should stay open.");
 
@@ -109,7 +111,10 @@ add_task(async function test_closed_by_tab_navigation() {
 
   info("Now navigate to a cross-origin page.");
   const CROSS_ORIGIN_TEST_PATH = TEST_PATH.replace(".com", ".org");
-  BrowserTestUtils.loadURI(tab.linkedBrowser, CROSS_ORIGIN_TEST_PATH);
+  BrowserTestUtils.startLoadingURIString(
+    tab.linkedBrowser,
+    CROSS_ORIGIN_TEST_PATH
+  );
   let loadPromise = BrowserTestUtils.browserLoaded(
     tab.linkedBrowser,
     false,
@@ -220,7 +225,7 @@ add_task(async function invisible_iframes() {
     tab.linkedBrowser,
     true
   );
-  await SpecialPowers.spawn(tab.linkedBrowser, [], function() {
+  await SpecialPowers.spawn(tab.linkedBrowser, [], function () {
     let frame = content.document.createElement("iframe");
     frame.style.display = "none";
     frame.src = "mailto:help@example.com";
@@ -263,7 +268,7 @@ add_task(async function nested_iframes() {
     "https://example.org/"
   );
   info("Constructing top frame");
-  await SpecialPowers.spawn(tab.linkedBrowser, [], function() {
+  await SpecialPowers.spawn(tab.linkedBrowser, [], function () {
     let frame = content.document.createElement("iframe");
     frame.src = "https://example.org/"; // cross-origin frame.
     content.document.body.prepend(frame);
@@ -277,7 +282,7 @@ add_task(async function nested_iframes() {
   let parentBC = tab.linkedBrowser.browsingContext;
 
   info("Creating innermost frame");
-  await SpecialPowers.spawn(parentBC.children[0], [], async function() {
+  await SpecialPowers.spawn(parentBC.children[0], [], async function () {
     let innerFrame = content.document.createElement("iframe");
     let frameLoaded = ContentTaskUtils.waitForEvent(innerFrame, "load", true);
     content.document.body.prepend(innerFrame);
@@ -288,7 +293,7 @@ add_task(async function nested_iframes() {
   await SpecialPowers.spawn(
     parentBC.children[0].children[0],
     [],
-    async function() {
+    async function () {
       // Top browsing context needs reference to the innermost, which is cross origin.
       content.eval("top.postMessage('hello', '*')");
     }
@@ -367,7 +372,7 @@ add_task(async function xorigin_iframe_can_navigate_top() {
     "https://example.org/"
   );
   info("Constructing frame");
-  await SpecialPowers.spawn(tab.linkedBrowser, [], function() {
+  await SpecialPowers.spawn(tab.linkedBrowser, [], function () {
     let frame = content.document.createElement("iframe");
     frame.src = "https://example.org/"; // cross-origin frame.
     content.document.body.prepend(frame);
@@ -376,7 +381,7 @@ add_task(async function xorigin_iframe_can_navigate_top() {
 
   info("Navigating top bc from frame");
   let parentBC = tab.linkedBrowser.browsingContext;
-  await SpecialPowers.spawn(parentBC.children[0], [], async function() {
+  await SpecialPowers.spawn(parentBC.children[0], [], async function () {
     content.eval("window.top.location.href = 'mailto:example@example.com';");
   });
 
@@ -413,7 +418,7 @@ add_task(async function iframe_background_tab() {
     "https://example.org/"
   );
   info("Constructing frame");
-  await SpecialPowers.spawn(tab.linkedBrowser, [], function() {
+  await SpecialPowers.spawn(tab.linkedBrowser, [], function () {
     let frame = content.document.createElement("iframe");
     frame.src = "https://example.org/";
     content.document.body.prepend(frame);
@@ -433,7 +438,7 @@ add_task(async function iframe_background_tab() {
 
   info("Navigating to external proto from frame in background tab");
   let parentBC = tab.linkedBrowser.browsingContext;
-  await SpecialPowers.spawn(parentBC.children[0], [], async function() {
+  await SpecialPowers.spawn(parentBC.children[0], [], async function () {
     content.eval("location.href = 'mailto:example@example.com';");
   });
 

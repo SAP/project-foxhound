@@ -36,7 +36,7 @@
 }
 
 .message {
-  color: var(--in-content-deemphasized-text);
+  color: var(--text-color-deemphasized);
   margin-bottom: 0;
 }
 
@@ -54,11 +54,13 @@
 .dismiss-icon {
   -moz-context-properties: fill;
   fill: currentColor;
+  user-select: none;
 }
 
 .warning-icon {
   -moz-context-properties: fill;
   fill: currentColor;
+  user-select: none;
   width: 40px;
   height: 40px;
   margin: 16px;
@@ -68,17 +70,4 @@
 .buttons {
   text-align: center;
   padding: 16px 32px;
-}
-
-.buttons {
-  display: flex;
-  justify-content: space-between;
-}
-
-.buttons.macosx > .confirm-button {
-  order: 1;
-}
-
-.buttons > button {
-  min-width: 140px;
 }

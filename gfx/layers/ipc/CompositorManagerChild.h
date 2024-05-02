@@ -23,7 +23,7 @@ class CompositorManagerParent;
 class WebRenderLayerManager;
 
 class CompositorManagerChild : public PCompositorManagerChild {
-  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(CompositorManagerChild)
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(CompositorManagerChild, override)
 
  public:
   static bool IsInitialized(uint64_t aProcessToken);
@@ -39,7 +39,7 @@ class CompositorManagerChild : public PCompositorManagerChild {
       uint64_t aProcessToken, WebRenderLayerManager* aLayerManager,
       uint32_t aNamespace, CSSToLayoutDeviceScale aScale,
       const CompositorOptions& aOptions, bool aUseExternalSurfaceSize,
-      const gfx::IntSize& aSurfaceSize);
+      const gfx::IntSize& aSurfaceSize, uint64_t aInnerWindowId);
 
   static already_AddRefed<CompositorBridgeChild>
   CreateSameProcessWidgetCompositorBridge(WebRenderLayerManager* aLayerManager,
@@ -83,7 +83,7 @@ class CompositorManagerChild : public PCompositorManagerChild {
 
   void ActorDestroy(ActorDestroyReason aReason) override;
 
-  void HandleFatalError(const char* aMsg) const override;
+  void HandleFatalError(const char* aMsg) override;
 
   void ProcessingError(Result aCode, const char* aReason) override;
 
@@ -103,8 +103,6 @@ class CompositorManagerChild : public PCompositorManagerChild {
                          uint64_t aProcessToken, uint32_t aNamespace);
 
   virtual ~CompositorManagerChild() = default;
-
-  void ActorDealloc() override;
 
   void SetReplyTimeout();
 

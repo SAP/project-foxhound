@@ -17,13 +17,14 @@
  * https://secureonly.example.com:443 instead.
  */
 
-const { UrlbarTestUtils } = ChromeUtils.import(
-  "resource://testing-common/UrlbarTestUtils.jsm"
+const { UrlbarTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/UrlbarTestUtils.sys.mjs"
 );
 
 const bug1002724_tests = [
   {
     original: "example.com",
+    // eslint-disable-next-line @microsoft/sdl/no-insecure-url
     expected: "http://example.com",
     explanation: "Should load HTTP version of example.com",
   },
@@ -62,6 +63,7 @@ add_task(async function test_bug1002724() {
       set: [
         ["network.stricttransportsecurity.preloadlist", false],
         ["network.dns.native-is-localhost", true],
+        ["dom.security.https_first_schemeless", false],
       ],
     }
   );
@@ -69,4 +71,12 @@ add_task(async function test_bug1002724() {
   for (let test of bug1002724_tests) {
     await test_one(test);
   }
+
+  // Test with HTTPS-First upgrading of schemeless enabled
+  await SpecialPowers.pushPrefEnv({
+    set: [["dom.security.https_first_schemeless", true]],
+  });
+
+  bug1002724_tests[0].expected = "https://example.com";
+  await test_one(bug1002724_tests[0]);
 });

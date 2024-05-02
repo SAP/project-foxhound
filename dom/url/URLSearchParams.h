@@ -38,6 +38,8 @@ namespace dom {
 class GlobalObject;
 class URLSearchParams;
 class USVStringSequenceSequenceOrUSVStringUSVStringRecordOrUSVString;
+template <typename T>
+class Optional;
 
 class URLSearchParamsObserver : public nsISupports {
  public:
@@ -51,7 +53,7 @@ class URLSearchParams final : public nsISupports, public nsWrapperCache {
 
  public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(URLSearchParams)
+  NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(URLSearchParams)
 
   explicit URLSearchParams(nsISupports* aParent,
                            URLSearchParamsObserver* aObserver = nullptr);
@@ -72,6 +74,8 @@ class URLSearchParams final : public nsISupports, public nsWrapperCache {
 
   void Serialize(nsAString& aValue) const;
 
+  uint32_t Size() const;
+
   void Get(const nsAString& aName, nsString& aRetval);
 
   void GetAll(const nsAString& aName, nsTArray<nsString>& aRetval);
@@ -80,9 +84,9 @@ class URLSearchParams final : public nsISupports, public nsWrapperCache {
 
   void Append(const nsAString& aName, const nsAString& aValue);
 
-  bool Has(const nsAString& aName);
+  bool Has(const nsAString& aName, const Optional<nsAString>& aValue);
 
-  void Delete(const nsAString& aName);
+  void Delete(const nsAString& aName, const Optional<nsAString>& aValue);
 
   uint32_t GetIterableLength() const;
   const nsAString& GetKeyAtIndex(uint32_t aIndex) const;

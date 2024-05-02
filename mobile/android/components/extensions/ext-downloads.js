@@ -4,15 +4,12 @@
 
 "use strict";
 
-ChromeUtils.defineModuleGetter(this, "OS", "resource://gre/modules/osfile.jsm");
-ChromeUtils.defineModuleGetter(
-  this,
-  "DownloadPaths",
-  "resource://gre/modules/DownloadPaths.jsm"
-);
-XPCOMUtils.defineLazyModuleGetters(this, {
-  DownloadTracker: "resource://gre/modules/GeckoViewWebExtension.jsm",
+ChromeUtils.defineESModuleGetters(this, {
+  DownloadPaths: "resource://gre/modules/DownloadPaths.sys.mjs",
+  DownloadTracker: "resource://gre/modules/GeckoViewWebExtension.sys.mjs",
 });
+
+Cu.importGlobalProperties(["PathUtils"]);
 
 var { ignoreEvent } = ExtensionCommon;
 
@@ -87,8 +84,8 @@ class DownloadItem {
   /**
    * Initializes an object that represents a download
    *
-   * @param {Object} downloadInfo - an object from Java when creating a download
-   * @param {Object} options - an object passed in to download() function
+   * @param {object} downloadInfo - an object from Java when creating a download
+   * @param {object} options - an object passed in to download() function
    * @param {Extension} extension - instance of an extension object
    */
   constructor(downloadInfo, options, extension) {
@@ -114,8 +111,8 @@ class DownloadItem {
   /**
    * This function updates the download item it was called on.
    *
-   * @param {Object} data that arrived from the app (Java)
-   * @returns {Object|null} an object of <a href="https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/API/downloads/onChanged#downloaddelta>downloadDelta type</a>
+   * @param {object} data that arrived from the app (Java)
+   * @returns {object | null} an object of <a href="https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/API/downloads/onChanged#downloaddelta>downloadDelta type</a>
    */
   update(data) {
     const { downloadItemId } = data;
@@ -147,7 +144,30 @@ class DownloadItem {
   }
 }
 
-this.downloads = class extends ExtensionAPI {
+this.downloads = class extends ExtensionAPIPersistent {
+  PERSISTENT_EVENTS = {
+    onChanged({ fire, context }, params) {
+      const listener = (eventName, event) => {
+        const { delta, downloadItem } = event;
+        const { extension } = this;
+        if (extension.privateBrowsingAllowed || !downloadItem.incognito) {
+          fire.async(delta);
+        }
+      };
+      DownloadTracker.on("download-changed", listener);
+
+      return {
+        unregister() {
+          DownloadTracker.off("download-changed", listener);
+        },
+        convert(_fire, _context) {
+          fire = _fire;
+          context = _context;
+        },
+      };
+    },
+  };
+
   getAPI(context) {
     const { extension } = context;
     return {
@@ -160,21 +180,26 @@ this.downloads = class extends ExtensionAPI {
               return Promise.reject({ message: "filename must not be empty" });
             }
 
-            const path = OS.Path.split(filename);
-            if (path.absolute) {
+            if (PathUtils.isAbsolute(filename)) {
               return Promise.reject({
                 message: "filename must not be an absolute path",
               });
             }
 
-            if (path.components.some(component => component == "..")) {
+            const pathComponents = PathUtils.splitRelative(filename, {
+              allowEmpty: true,
+              allowCurrentDir: true,
+              allowParentDir: true,
+            });
+
+            if (pathComponents.some(component => component == "..")) {
               return Promise.reject({
                 message: "filename must not contain back-references (..)",
               });
             }
 
             if (
-              path.components.some(component => {
+              pathComponents.some(component => {
                 const sanitized = DownloadPaths.sanitize(component, {
                   compressWhitespaces: false,
                 });
@@ -266,20 +291,9 @@ this.downloads = class extends ExtensionAPI {
 
         onChanged: new EventManager({
           context,
-          name: "downloads.onChanged",
-          register: fire => {
-            const listener = (eventName, event) => {
-              const { delta, downloadItem } = event;
-              if (context.privateBrowsingAllowed || !downloadItem.incognito) {
-                fire.async(delta);
-              }
-            };
-
-            DownloadTracker.on("download-changed", listener);
-            return () => {
-              DownloadTracker.off("download-changed", listener);
-            };
-          },
+          module: "downloads",
+          event: "onChanged",
+          extensionApi: this,
         }).api(),
 
         onCreated: ignoreEvent(context, "downloads.onCreated"),

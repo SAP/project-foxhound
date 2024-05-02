@@ -4,9 +4,9 @@
 // Tests that history initialization correctly handles a request to forcibly
 // replace the current database.
 
-add_task(async function() {
+add_task(async function () {
   await test_database_replacement(
-    OS.Path.join("..", "migration", "places_v43.sqlite"),
+    ["migration", "places_v52.sqlite"],
     "places.sqlite",
     false,
     PlacesUtils.history.DATABASE_STATUS_CORRUPT

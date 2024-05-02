@@ -146,10 +146,13 @@ mozilla::LazyLogModule ApplicationReputationService::prlog(
 // reputation checks.
 /* static */
 const char* const ApplicationReputationService::kNonBinaryExecutables[] = {
+    // clang-format off
     ".ad",
+    ".afploc",
     ".air",
-    ".fileloc",
-    ".inetloc",
+    ".atloc",
+    ".ftploc",
+    // clang-format on
 };
 
 // Items that should be submitted for application reputation checks that users
@@ -177,7 +180,9 @@ const char* const ApplicationReputationService::kBinaryFileExtensions[] = {
     //".app", exec  // Executable application
     ".applescript",
     //".application", exec // MS ClickOnce
-    ".appref-ms",  // MS ClickOnce
+    //".appref-ms", exec // MS ClickOnce
+    //".appx", exec
+    //".appxbundle", exec
     //".arc",
     //".arj",
     ".as",  // Mac archive
@@ -225,10 +230,11 @@ const char* const ApplicationReputationService::kBinaryFileExtensions[] = {
     ".definition",  // Automator action
     ".desktop",     // A shortcut that runs other files
     //".der", exec  // Signed certificate
-    ".dex",         // Android
-    ".dht",         // HTML
-    ".dhtm",        // HTML
-    ".dhtml",       // HTML
+    ".dex",    // Android
+    ".dht",    // HTML
+    ".dhtm",   // HTML
+    ".dhtml",  // HTML
+    //".diagcab", exec // Executable windows archive, like .cab
     ".diskcopy42",  // Apple DiskCopy Image
     ".dll",         // Windows executable
     ".dmg",         // Mac disk image
@@ -272,10 +278,12 @@ const char* const ApplicationReputationService::kBinaryFileExtensions[] = {
     ".internetconnect",  // Configuration file for Apple system
     //".inx", // InstallShield
     ".iso",  // CD image
-    //".isp", exec // IIS config
-    //".isu", // InstallShield
-    //".jar", exec // Java
-    //".jnlp", exec // Java
+             //".isp", exec // IIS config
+             //".isu", // InstallShield
+             //".jar", exec // Java
+#ifndef MOZ_ESR
+//".jnlp", exec // Java
+#endif
     //".job", // Windows
     //".jpg",
     //".jpeg",
@@ -328,6 +336,8 @@ const char* const ApplicationReputationService::kBinaryFileExtensions[] = {
     //".msh2xml", exec // Windows shell
     //".mshxml", exec // Windows
     //".msi", exec  // Windows installer
+    //".msix", exec // Windows installer
+    //".msixbundle", exec // Windows installer
     //".msp", exec  // Windows installer
     //".mst", exec  // Windows installer
     ".ndif",            // Mac disk image
@@ -504,11 +514,11 @@ const char* const ApplicationReputationService::kBinaryFileExtensions[] = {
     ".xar",   // MS Excel
     ".xbap",  // XAML Browser Application
     ".xht", ".xhtm", ".xhtml",
-    ".xip",     // Mac archive
-    ".xla",     // MS Excel
-    ".xlam",    // MS Excel
-    ".xldm",    // MS Excel
-    ".xll",     // MS Excel
+    ".xip",   // Mac archive
+    ".xla",   // MS Excel
+    ".xlam",  // MS Excel
+    ".xldm",  // MS Excel
+    //".xll", exec  // MS Excel
     ".xlm",     // MS Excel
     ".xls",     // MS Excel
     ".xlsb",    // MS Excel
@@ -1291,12 +1301,9 @@ nsresult PendingLookup::StartLookup() {
 
 nsresult PendingLookup::GetSpecHash(nsACString& aSpec,
                                     nsACString& hexEncodedHash) {
-  nsresult rv;
-
-  nsCOMPtr<nsICryptoHash> cryptoHash =
-      do_CreateInstance("@mozilla.org/security/hash;1", &rv);
-  NS_ENSURE_SUCCESS(rv, rv);
-  rv = cryptoHash->Init(nsICryptoHash::SHA256);
+  nsCOMPtr<nsICryptoHash> cryptoHash;
+  nsresult rv =
+      NS_NewCryptoHash(nsICryptoHash::SHA256, getter_AddRefs(cryptoHash));
   NS_ENSURE_SUCCESS(rv, rv);
 
   rv = cryptoHash->Update(

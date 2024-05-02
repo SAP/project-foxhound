@@ -18,12 +18,23 @@ const TEST_URI = `
     }
 
     body {
+      color: blue;
+    }
+
+    body {
       margin-right: 1px !important;
       font-size: 79px;
+      line-height: 100px !important;
+      color: green !important;
+    }
+
+    body {
+      color: red;
     }
 
     span {
       font-size: 12px;
+      line-height: 10px;
     }
   </style>
   <body>
@@ -33,11 +44,11 @@ const TEST_URI = `
   </body>
 `;
 
-add_task(async function() {
+add_task(async function () {
   await addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
   const { inspector, view } = await openRuleView();
   await selectNode("#testid", inspector);
-  await testMarkOverridden(inspector, view);
+  testMarkOverridden(inspector, view);
 });
 
 function testMarkOverridden(inspector, view) {
@@ -51,11 +62,18 @@ function testMarkOverridden(inspector, view) {
       { name: "margin-right", value: "23px", overridden: false },
       { name: "margin-left", value: "1px", overridden: false },
     ],
-    [{ name: "font-size", value: "12px", overridden: false }],
+    [
+      { name: "font-size", value: "12px", overridden: false },
+      { name: "line-height", value: "10px", overridden: false },
+    ],
+    [{ name: "color", value: "red", overridden: true }],
     [
       { name: "margin-right", value: "1px", overridden: true },
       { name: "font-size", value: "79px", overridden: true },
+      { name: "line-height", value: "100px", overridden: true },
+      { name: "color", value: "green", overridden: false },
     ],
+    [{ name: "color", value: "blue", overridden: true }],
   ];
 
   for (let i = 1; i < RESULTS.length; ++i) {

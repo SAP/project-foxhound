@@ -1,12 +1,14 @@
 "use strict";
 
-const { ChromeMigrationUtils } = ChromeUtils.import(
-  "resource:///modules/ChromeMigrationUtils.jsm"
+const { ChromeMigrationUtils } = ChromeUtils.importESModule(
+  "resource:///modules/ChromeMigrationUtils.sys.mjs"
 );
 
 // Setup chrome user data path for all platforms.
 ChromeMigrationUtils.getDataPath = () => {
-  return do_get_file("Library/Application Support/Google/Chrome/").path;
+  return Promise.resolve(
+    do_get_file("Library/Application Support/Google/Chrome/").path
+  );
 };
 
 add_task(async function test_getExtensionList_function() {
@@ -30,7 +32,8 @@ add_task(async function test_getExtensionList_function() {
     {
       id: "fake-extension-2",
       name: "Fake Extension 2",
-      description: "It is the description of fake extension 2.",
+      // There is no description in the `manifest.json` file of this extension.
+      description: null,
     },
     "Second extension should match expectations."
   );

@@ -16,15 +16,19 @@ const TEST_FILE =
 const TEST_URI =
   "data:text/html;charset=utf8,<!DOCTYPE html>Web Console CSP ignoring reflected XSS (bug 1045902)";
 
-add_task(async function() {
+add_task(async function () {
   const hud = await openNewTabAndConsole(TEST_URI);
   await navigateTo(TEST_FILE);
 
-  await waitFor(() => findMessage(hud, EXPECTED_RESULT, ".message.warn"));
+  await checkUniqueMessageExists(hud, EXPECTED_RESULT, ".warn");
   ok(
     true,
     `CSP logs displayed in console when using "reflected-xss" directive`
   );
+
+  info("Reload page and check that the CSP warning is not duplicated");
+  await reloadBrowser();
+  await checkUniqueMessageExists(hud, EXPECTED_RESULT, ".warn");
 
   Services.cache2.clear();
 });

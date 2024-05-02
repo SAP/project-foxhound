@@ -8,7 +8,7 @@
 
 const TEST_URI = URL_ROOT + "doc_flexbox_specific_cases.html";
 
-add_task(async function() {
+add_task(async function () {
   await addTab(TEST_URI);
   const { inspector, flexboxInspector } = await openLayoutView();
   const { document: doc, store } = flexboxInspector;
@@ -16,7 +16,7 @@ add_task(async function() {
   info(
     "Select an item with flex:0 and wait for the sizing info to be rendered"
   );
-  let onUpdate = waitUntilAction(store, "UPDATE_FLEXBOX");
+  let onUpdate = waitForDispatch(store, "UPDATE_FLEXBOX");
   await selectNode("#did-not-grow-or-shrink div", inspector);
   await onUpdate;
 
@@ -32,7 +32,7 @@ add_task(async function() {
   info(
     "Select a more complex item which also doesn't flex and wait for the sizing info"
   );
-  onUpdate = waitUntilAction(store, "UPDATE_FLEXBOX");
+  onUpdate = waitForDispatch(store, "UPDATE_FLEXBOX");
   await selectNode(
     "#just-enough-space-for-clamped-items div:last-child",
     inspector

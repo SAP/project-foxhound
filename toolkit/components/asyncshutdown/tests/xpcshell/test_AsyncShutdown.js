@@ -2,10 +2,6 @@
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 "use strict";
 
-const { PromiseUtils } = ChromeUtils.import(
-  "resource://gre/modules/PromiseUtils.jsm"
-);
-
 add_task(async function test_no_condition() {
   for (let kind of [
     "phase",
@@ -48,9 +44,20 @@ add_task(async function test_phase_various_failures() {
       );
     }
 
+    if (kind == "xpcom-barrier") {
+      const blocker = () => true;
+      lock.addBlocker("Test 3", blocker);
+      Assert.throws(
+        () => lock.addBlocker("Test 3", blocker),
+        /We have already registered the blocker \(Test 3\)/
+      );
+    }
+
     // Attempting to add a blocker after we are done waiting
+    Assert.ok(!lock.isClosed, "Barrier is open");
     await lock.wait();
-    Assert.throws(() => lock.addBlocker("Test 3", () => true), /is finished/);
+    Assert.throws(() => lock.addBlocker("Test 4", () => true), /is finished/);
+    Assert.ok(lock.isClosed, "Barrier is closed");
   }
 });
 
@@ -86,7 +93,7 @@ add_task(async function test_reentrant() {
     // event loop before calling `lock.wait()`, which we do by forcing
     // a Promise.resolve().
     //
-    let promiseSteps = (async function() {
+    let promiseSteps = (async function () {
       await Promise.resolve();
 
       info("Waiting until we have entered the outer blocker");
@@ -127,7 +134,7 @@ add_task(async function test_phase_removeBlocker() {
     };
 
     lock.addBlocker("Wait forever", blocker);
-    let do_remove_blocker = function(aLock, aBlocker, aShouldRemove) {
+    let do_remove_blocker = function (aLock, aBlocker, aShouldRemove) {
       info(
         "Attempting to remove blocker " +
           aBlocker +
@@ -189,6 +196,65 @@ add_task(async function test_phase_removeBlocker() {
   }
 });
 
+add_task(async function test_addBlocker_noDistinctNamesConstraint() {
+  info("Testing that we can add two distinct blockers with identical names");
+
+  for (let kind of [
+    "phase",
+    "barrier",
+    "xpcom-barrier",
+    "xpcom-barrier-unwrapped",
+  ]) {
+    info("Switching to kind " + kind);
+    let lock = makeLock(kind);
+    let deferred1 = PromiseUtils.defer();
+    let resolved1 = false;
+    let deferred2 = PromiseUtils.defer();
+    let resolved2 = false;
+    let blocker1 = () => {
+      info("Entering blocker1");
+      return deferred1.promise;
+    };
+    let blocker2 = () => {
+      info("Entering blocker2");
+      return deferred2.promise;
+    };
+
+    info("Attempt to add two distinct blockers with identical names");
+    lock.addBlocker("Blocker", blocker1);
+    lock.addBlocker("Blocker", blocker2);
+
+    // Note that phase-style locks spin the event loop and do not return from
+    // `lock.wait()` until after all blockers have been resolved. Therefore,
+    // to be able to test them, we need to dispatch the following steps to the
+    // event loop before calling `lock.wait()`, which we do by forcing
+    // a Promise.resolve().
+    //
+    let promiseSteps = (async () => {
+      info("Waiting for an event-loop spin");
+      await Promise.resolve();
+
+      info("Resolving blocker1");
+      deferred1.resolve();
+      resolved1 = true;
+
+      info("Waiting for an event-loop spin");
+      await Promise.resolve();
+
+      info("Resolving blocker2");
+      deferred2.resolve();
+      resolved2 = true;
+    })();
+
+    info("Waiting for lock");
+    await lock.wait();
+
+    Assert.ok(resolved1);
+    Assert.ok(resolved2);
+    await promiseSteps;
+  }
+});
+
 add_task(async function test_state() {
   info("Testing information contained in `state`");
 
@@ -199,15 +265,15 @@ add_task(async function test_state() {
   let barrier = new AsyncShutdown.Barrier("test_filename");
   let deferred = PromiseUtils.defer();
   let { filename, lineNumber } = Components.stack;
-  barrier.client.addBlocker(BLOCKER_NAME, function() {
+  barrier.client.addBlocker(BLOCKER_NAME, function () {
     return deferred.promise;
   });
 
   let promiseDone = barrier.wait();
 
   // Now that we have called `wait()`, the state contains interesting things
-  let state = barrier.state[0];
   info("State: " + JSON.stringify(barrier.state, null, "\t"));
+  let state = barrier.state[0];
   Assert.equal(state.filename, filename);
   Assert.equal(state.lineNumber, lineNumber + 1);
   Assert.equal(state.name, BLOCKER_NAME);
@@ -224,6 +290,59 @@ add_task(async function test_state() {
   await promiseDone;
 });
 
-add_task(async function() {
+add_task(async function test_multistate() {
+  info("Testing information contained in multiple `state`");
+
+  let BLOCKER_NAMES = [
+    "test_state blocker " + Math.random(),
+    "test_state blocker " + Math.random(),
+  ];
+
+  // Set up the barrier. Note that we cannot test `barrier.state`
+  // immediately, as it initially contains "Not started"
+  let barrier = asyncShutdownService.makeBarrier("test_filename");
+  let deferred = PromiseUtils.defer();
+  let { filename, lineNumber } = Components.stack;
+  for (let name of BLOCKER_NAMES) {
+    barrier.client.jsclient.addBlocker(name, () => deferred.promise, {
+      fetchState: () => ({ progress: name }),
+    });
+  }
+
+  let promiseDone = new Promise(r => barrier.wait(r));
+
+  // Now that we have called `wait()`, the state contains interesting things.
+  Assert.ok(
+    barrier.state instanceof Ci.nsIPropertyBag,
+    "State is a PropertyBag"
+  );
+  for (let i = 0; i < BLOCKER_NAMES.length; ++i) {
+    let state = barrier.state.getProperty(i.toString());
+    Assert.equal(typeof state, "string", "state is a string");
+    info("State: " + state + "\t");
+    state = JSON.parse(state);
+    Assert.equal(state.filename, filename);
+    Assert.equal(state.lineNumber, lineNumber + 2);
+    Assert.equal(state.name, BLOCKER_NAMES[i]);
+    Assert.ok(
+      state.stack.some(x => x.includes("test_multistate")),
+      "The stack contains the caller function's name"
+    );
+    Assert.ok(
+      state.stack.some(x => x.includes(filename)),
+      "The stack contains the calling file's name"
+    );
+    Assert.equal(
+      state.state.progress,
+      BLOCKER_NAMES[i],
+      "The state contains the fetchState provided value"
+    );
+  }
+
+  deferred.resolve();
+  await promiseDone;
+});
+
+add_task(async function () {
   Services.prefs.clearUserPref("toolkit.asyncshutdown.testing");
 });

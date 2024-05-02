@@ -7,7 +7,6 @@
 #ifndef XrayWrapper_h
 #define XrayWrapper_h
 
-#include "mozilla/Attributes.h"
 #include "mozilla/Maybe.h"
 
 #include "WrapperFactory.h"
@@ -212,7 +211,8 @@ class JSXrayTraits : public XrayTraits {
     if (!holder) {
       return false;
     }
-    if (xpc::JSXrayTraits::getProtoKey(holder) == JSProto_Function) {
+    JSProtoKey key = xpc::JSXrayTraits::getProtoKey(holder);
+    if (key == JSProto_Function || key == JSProto_BoundFunction) {
       return baseInstance.call(cx, wrapper, args);
     }
 
@@ -438,8 +438,6 @@ class XrayWrapper : public Base {
 
   virtual bool getBuiltinClass(JSContext* cx, JS::HandleObject wapper,
                                js::ESClass* cls) const override;
-  virtual bool hasInstance(JSContext* cx, JS::HandleObject wrapper,
-                           JS::MutableHandleValue v, bool* bp) const override;
   virtual const char* className(JSContext* cx,
                                 JS::HandleObject proxy) const override;
 

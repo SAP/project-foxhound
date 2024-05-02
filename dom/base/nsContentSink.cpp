@@ -14,12 +14,16 @@
 #include "mozilla/PresShell.h"
 #include "mozilla/StaticPrefs_browser.h"
 #include "mozilla/StaticPrefs_content.h"
+#include "mozilla/StaticPrefs_network.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/LinkStyle.h"
+#include "mozilla/dom/ReferrerInfo.h"
 #include "mozilla/css/Loader.h"
 #include "mozilla/dom/MutationObservers.h"
 #include "mozilla/dom/SRILogHelper.h"
 #include "mozilla/StoragePrincipalHelper.h"
+#include "mozilla/net/HttpBaseChannel.h"
+#include "mozilla/net/NeckoChannelParams.h"
 #include "nsIDocShell.h"
 #include "nsILoadContext.h"
 #include "nsIPrefetchService.h"
@@ -54,6 +58,14 @@
 #include "nsSandboxFlags.h"
 #include "Link.h"
 #include "HTMLLinkElement.h"
+#include "MediaList.h"
+#include "nsString.h"
+#include "nsStringFwd.h"
+#include <stdint.h>
+#include "mozilla/RefPtr.h"
+#include "nsCOMPtr.h"
+#include "nsLiteralString.h"
+#include "nsIContentPolicy.h"
 using namespace mozilla;
 using namespace mozilla::css;
 using namespace mozilla::dom;
@@ -170,7 +182,6 @@ nsresult nsContentSink::Init(Document* aDoc, nsIURI* aURI,
 
   if (StaticPrefs::content_sink_enable_perf_mode() != 0) {
     mDynamicLowerValue = StaticPrefs::content_sink_enable_perf_mode() == 1;
-    FavorPerformanceHint(!mDynamicLowerValue, 0);
   }
 
   return NS_OK;
@@ -222,16 +233,27 @@ nsresult nsContentSink::ProcessHTTPHeaders(nsIChannel* aChannel) {
     return NS_OK;
   }
 
+  bool gotEarlyHints = false;
+  if (nsCOMPtr<mozilla::net::HttpBaseChannel> baseChannel =
+          do_QueryInterface(aChannel)) {
+    nsTArray<mozilla::net::EarlyHintConnectArgs> earlyHints =
+        baseChannel->TakeEarlyHints();
+    gotEarlyHints = !earlyHints.IsEmpty();
+    mDocument->SetEarlyHints(std::move(earlyHints));
+  }
+
   // Note that the only header we care about is the "link" header, since we
   // have all the infrastructure for kicking off stylesheet loads.
 
   nsAutoCString linkHeader;
 
   nsresult rv = httpchannel->GetResponseHeader("link"_ns, linkHeader);
-  if (NS_SUCCEEDED(rv) && !linkHeader.IsEmpty()) {
+  bool gotLinkHeader = NS_SUCCEEDED(rv) && !linkHeader.IsEmpty();
+  if (gotLinkHeader) {
     mDocument->SetHeaderData(nsGkAtoms::link,
                              NS_ConvertASCIItoUTF16(linkHeader));
-
+  }
+  if (gotLinkHeader || gotEarlyHints) {
     NS_ASSERTION(!mProcessLinkHeaderEvent.get(),
                  "Already dispatched an event?");
 
@@ -248,63 +270,32 @@ nsresult nsContentSink::ProcessHTTPHeaders(nsIChannel* aChannel) {
 }
 
 void nsContentSink::DoProcessLinkHeader() {
+  for (const auto& earlyHint : mDocument->GetEarlyHints()) {
+    ProcessLinkFromHeader(earlyHint.link(), earlyHint.earlyHintPreloaderId());
+  }
+
   nsAutoString value;
+
+  // Getting the header data and parsing the link header together roughly
+  // implement <https://httpwg.org/specs/rfc8288.html#parse-set>.
   mDocument->GetHeaderData(nsGkAtoms::link, value);
-  auto linkHeaders = ParseLinkHeader(value);
+  auto linkHeaders = net::ParseLinkHeader(value);
+
   for (const auto& linkHeader : linkHeaders) {
-    ProcessLinkFromHeader(linkHeader);
+    ProcessLinkFromHeader(linkHeader, 0);
   }
 }
 
-// check whether the Link header field applies to the context resource
-// see <http://tools.ietf.org/html/rfc5988#section-5.2>
-
-bool nsContentSink::LinkContextIsOurDocument(const nsAString& aAnchor) {
-  if (aAnchor.IsEmpty()) {
-    // anchor parameter not present or empty -> same document reference
-    return true;
-  }
-
-  nsIURI* docUri = mDocument->GetDocumentURI();
-
-  // the document URI might contain a fragment identifier ("#...')
-  // we want to ignore that because it's invisible to the server
-  // and just affects the local interpretation in the recipient
-  nsCOMPtr<nsIURI> contextUri;
-  nsresult rv = NS_GetURIWithoutRef(docUri, getter_AddRefs(contextUri));
-
-  if (NS_FAILED(rv)) {
-    // copying failed
-    return false;
-  }
-
-  // resolve anchor against context
-  nsCOMPtr<nsIURI> resolvedUri;
-  rv = NS_NewURI(getter_AddRefs(resolvedUri), aAnchor, nullptr, contextUri);
-
-  if (NS_FAILED(rv)) {
-    // resolving failed
-    return false;
-  }
-
-  bool same;
-  rv = contextUri->Equals(resolvedUri, &same);
-  if (NS_FAILED(rv)) {
-    // comparison failed
-    return false;
-  }
-
-  return same;
-}
-
-nsresult nsContentSink::ProcessLinkFromHeader(const LinkHeader& aHeader) {
+nsresult nsContentSink::ProcessLinkFromHeader(const net::LinkHeader& aHeader,
+                                              uint64_t aEarlyHintPreloaderId) {
   uint32_t linkTypes = LinkStyle::ParseLinkTypes(aHeader.mRel);
 
   // The link relation may apply to a different resource, specified
   // in the anchor parameter. For the link relations supported so far,
   // we simply abort if the link applies to a resource different to the
   // one we've loaded
-  if (!LinkContextIsOurDocument(aHeader.mAnchor)) {
+  if (!nsContentUtils::LinkContextIsURI(aHeader.mAnchor,
+                                        mDocument->GetDocumentURI())) {
     return NS_OK;
   }
 
@@ -324,8 +315,16 @@ nsresult nsContentSink::ProcessLinkFromHeader(const LinkHeader& aHeader) {
 
     if (linkTypes & LinkStyle::ePRELOAD) {
       PreloadHref(aHeader.mHref, aHeader.mAs, aHeader.mType, aHeader.mMedia,
-                  aHeader.mIntegrity, aHeader.mSrcset, aHeader.mSizes,
-                  aHeader.mCrossOrigin, aHeader.mReferrerPolicy);
+                  aHeader.mNonce, aHeader.mIntegrity, aHeader.mSrcset,
+                  aHeader.mSizes, aHeader.mCrossOrigin, aHeader.mReferrerPolicy,
+                  aEarlyHintPreloaderId);
+    }
+
+    if ((linkTypes & LinkStyle::eMODULE_PRELOAD) &&
+        mDocument->ScriptLoader()->GetModuleLoader()) {
+      PreloadModule(aHeader.mHref, aHeader.mAs, aHeader.mMedia, aHeader.mNonce,
+                    aHeader.mIntegrity, aHeader.mCrossOrigin,
+                    aHeader.mReferrerPolicy, aEarlyHintPreloaderId);
     }
   }
 
@@ -425,10 +424,12 @@ void nsContentSink::PrefetchHref(const nsAString& aHref, const nsAString& aAs,
 
 void nsContentSink::PreloadHref(const nsAString& aHref, const nsAString& aAs,
                                 const nsAString& aType, const nsAString& aMedia,
+                                const nsAString& aNonce,
                                 const nsAString& aIntegrity,
                                 const nsAString& aSrcset,
                                 const nsAString& aSizes, const nsAString& aCORS,
-                                const nsAString& aReferrerPolicy) {
+                                const nsAString& aReferrerPolicy,
+                                uint64_t aEarlyHintPreloaderId) {
   auto encoding = mDocument->GetDocumentCharacterSet();
   nsCOMPtr<nsIURI> uri;
   NS_NewURI(getter_AddRefs(uri), aHref, encoding, mDocument->GetDocBaseURI());
@@ -438,24 +439,68 @@ void nsContentSink::PreloadHref(const nsAString& aHref, const nsAString& aAs,
   }
 
   nsAttrValue asAttr;
-  HTMLLinkElement::ParseAsValue(aAs, asAttr);
+  mozilla::net::ParseAsValue(aAs, asAttr);
 
   nsAutoString mimeType;
   nsAutoString notUsed;
   nsContentUtils::SplitMimeType(aType, mimeType, notUsed);
 
-  auto policyType = HTMLLinkElement::AsValueToContentPolicy(asAttr);
+  auto policyType = mozilla::net::AsValueToContentPolicy(asAttr);
   if (policyType == nsIContentPolicy::TYPE_INVALID ||
-      !HTMLLinkElement::CheckPreloadAttrs(asAttr, mimeType, aMedia,
-                                          mDocument)) {
+      !mozilla::net::CheckPreloadAttrs(asAttr, mimeType, aMedia, mDocument)) {
     // Ignore preload wrong or empty attributes.
-    HTMLLinkElement::WarnIgnoredPreload(*mDocument, *uri);
+    mozilla::net::WarnIgnoredPreload(*mDocument, *uri);
     return;
   }
 
-  mDocument->Preloads().PreloadLinkHeader(uri, aHref, policyType, aAs, aType,
-                                          aIntegrity, aSrcset, aSizes, aCORS,
-                                          aReferrerPolicy);
+  mDocument->Preloads().PreloadLinkHeader(
+      uri, aHref, policyType, aAs, aType, aNonce, aIntegrity, aSrcset, aSizes,
+      aCORS, aReferrerPolicy, aEarlyHintPreloaderId);
+}
+
+void nsContentSink::PreloadModule(const nsAString& aHref, const nsAString& aAs,
+                                  const nsAString& aMedia,
+                                  const nsAString& aNonce,
+                                  const nsAString& aIntegrity,
+                                  const nsAString& aCORS,
+                                  const nsAString& aReferrerPolicy,
+                                  uint64_t aEarlyHintPreloaderId) {
+  ModuleLoader* moduleLoader = mDocument->ScriptLoader()->GetModuleLoader();
+
+  if (!StaticPrefs::network_modulepreload()) {
+    // Keep behavior from https://phabricator.services.mozilla.com/D149371,
+    // prior to main implementation of modulepreload
+    moduleLoader->DisallowImportMaps();
+    return;
+  }
+
+  RefPtr<mozilla::dom::MediaList> mediaList =
+      mozilla::dom::MediaList::Create(NS_ConvertUTF16toUTF8(aMedia));
+  if (!mediaList->Matches(*mDocument)) {
+    return;
+  }
+
+  if (aHref.IsEmpty()) {
+    return;
+  }
+
+  if (!net::IsScriptLikeOrInvalid(aAs)) {
+    return;
+  }
+
+  auto encoding = mDocument->GetDocumentCharacterSet();
+  nsCOMPtr<nsIURI> uri;
+  NS_NewURI(getter_AddRefs(uri), aHref, encoding, mDocument->GetDocBaseURI());
+  if (!uri) {
+    return;
+  }
+
+  moduleLoader->DisallowImportMaps();
+
+  mDocument->Preloads().PreloadLinkHeader(
+      uri, aHref, nsIContentPolicy::TYPE_SCRIPT, u"script"_ns, u"module"_ns,
+      aNonce, aIntegrity, u""_ns, u""_ns, aCORS, aReferrerPolicy,
+      aEarlyHintPreloaderId);
 }
 
 void nsContentSink::PrefetchDNS(const nsAString& aHref) {
@@ -511,9 +556,6 @@ void nsContentSink::ScrollToRef() {
 }
 
 void nsContentSink::StartLayout(bool aIgnorePendingSheets) {
-  AUTO_PROFILER_LABEL_DYNAMIC_NSCSTRING("nsContentSink::StartLayout", LAYOUT,
-                                        mDocumentURI->GetSpecOrDefault());
-
   if (mLayoutStarted) {
     // Nothing to do here
     return;
@@ -526,6 +568,9 @@ void nsContentSink::StartLayout(bool aIgnorePendingSheets) {
     // Bail out; we'll start layout when the sheets and l10n load
     return;
   }
+
+  AUTO_PROFILER_LABEL_DYNAMIC_NSCSTRING_RELEVANT_FOR_JS(
+      "Layout", LAYOUT, mDocumentURI->GetSpecOrDefault());
 
   mDeferredLayoutStart = false;
 
@@ -687,13 +732,11 @@ nsresult nsContentSink::WillInterruptImpl() {
   return result;
 }
 
-nsresult nsContentSink::WillResumeImpl() {
+void nsContentSink::WillResumeImpl() {
   SINK_TRACE(static_cast<LogModule*>(gContentSinkLogModuleInfo),
              SINK_TRACE_CALLS, ("nsContentSink::WillResume: this=%p", this));
 
   mParsing = true;
-
-  return NS_OK;
 }
 
 nsresult nsContentSink::DidProcessATokenImpl() {
@@ -747,14 +790,6 @@ nsresult nsContentSink::DidProcessATokenImpl() {
 
 //----------------------------------------------------------------------
 
-void nsContentSink::FavorPerformanceHint(bool perfOverStarvation,
-                                         uint32_t starvationDelay) {
-  static NS_DEFINE_CID(kAppShellCID, NS_APPSHELL_CID);
-  nsCOMPtr<nsIAppShell> appShell = do_GetService(kAppShellCID);
-  if (appShell)
-    appShell->FavorPerformanceHint(perfOverStarvation, starvationDelay);
-}
-
 void nsContentSink::BeginUpdate(Document* aDocument) {
   // Remember nested updates from updates that we started.
   if (mInNotification > 0 && mUpdatesInNotification < 2) {
@@ -784,7 +819,7 @@ void nsContentSink::EndUpdate(Document* aDocument) {
 }
 
 void nsContentSink::DidBuildModelImpl(bool aTerminated) {
-  MOZ_ASSERT(aTerminated ||
+  MOZ_ASSERT(aTerminated || (mParser && mParser->IsParserClosed()) ||
                  mDocument->GetReadyStateEnum() == Document::READYSTATE_LOADING,
              "Bad readyState");
   mDocument->SetReadyStateInternal(Document::READYSTATE_INTERACTIVE);
@@ -827,12 +862,6 @@ void nsContentSink::DropParserAndPerfHint(void) {
   RefPtr<nsParserBase> kungFuDeathGrip = std::move(mParser);
   mozilla::Unused << kungFuDeathGrip;
 
-  if (mDynamicLowerValue) {
-    // Reset the performance hint which was set to FALSE
-    // when mDynamicLowerValue was set.
-    FavorPerformanceHint(true, 0);
-  }
-
   // Call UnblockOnload only if mRunsToComletion is false and if
   // we have already started loading because it's possible that this function
   // is called (i.e. the parser is terminated) before we start loading due to
@@ -873,7 +902,6 @@ nsresult nsContentSink::WillParseImpl(void) {
                             StaticPrefs::content_sink_interactive_time());
 
     if (mDynamicLowerValue != newDynLower) {
-      FavorPerformanceHint(!newDynLower, 0);
       mDynamicLowerValue = newDynLower;
     }
   }
@@ -926,8 +954,7 @@ void nsContentSink::NotifyDocElementCreated(Document* aDoc) {
   observerService->NotifyObservers(ToSupports(aDoc),
                                    "document-element-inserted", u"");
 
-  nsContentUtils::DispatchChromeEvent(aDoc, ToSupports(aDoc),
-                                      u"DOMDocElementInserted"_ns,
+  nsContentUtils::DispatchChromeEvent(aDoc, aDoc, u"DOMDocElementInserted"_ns,
                                       CanBubble::eYes, Cancelable::eNo);
 }
 

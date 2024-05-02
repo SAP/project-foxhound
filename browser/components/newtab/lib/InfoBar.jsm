@@ -3,14 +3,11 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
-);
+const lazy = {};
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.jsm",
-  RemoteL10n: "resource://activity-stream/lib/RemoteL10n.jsm",
-  Services: "resource://gre/modules/Services.jsm",
+ChromeUtils.defineESModuleGetters(lazy, {
+  PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
+  RemoteL10n: "resource://activity-stream/lib/RemoteL10n.sys.mjs",
 });
 
 class InfoBarNotification {
@@ -58,7 +55,9 @@ class InfoBarNotification {
   formatMessageConfig(doc, content) {
     let docFragment = doc.createDocumentFragment();
     // notificationbox will only `appendChild` for documentFragments
-    docFragment.appendChild(RemoteL10n.createElement(doc, "span", { content }));
+    docFragment.appendChild(
+      lazy.RemoteL10n.createElement(doc, "span", { content })
+    );
 
     return docFragment;
   }
@@ -153,9 +152,9 @@ const InfoBar = {
       return null;
     }
 
-    const win = browser.ownerGlobal;
+    const win = browser?.ownerGlobal;
 
-    if (PrivateBrowsingUtils.isWindowPrivate(win)) {
+    if (!win || lazy.PrivateBrowsingUtils.isWindowPrivate(win)) {
       return null;
     }
 
@@ -169,7 +168,5 @@ const InfoBar = {
     return notification;
   },
 };
-
-this.InfoBar = InfoBar;
 
 const EXPORTED_SYMBOLS = ["InfoBar"];

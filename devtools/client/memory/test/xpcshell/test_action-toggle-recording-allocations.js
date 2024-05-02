@@ -9,9 +9,9 @@
 
 const {
   toggleRecordingAllocationStacks,
-} = require("devtools/client/memory/actions/allocations");
+} = require("resource://devtools/client/memory/actions/allocations.js");
 
-add_task(async function() {
+add_task(async function () {
   const front = new StubbedMemoryFront();
   await front.attach();
   // Implement the minimal mock, doing nothing to make toggleRecordingAllocationStacks pass

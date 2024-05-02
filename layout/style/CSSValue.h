@@ -17,8 +17,7 @@ namespace mozilla {
 class ErrorResult;
 }  // namespace mozilla
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 /**
  * CSSValue - a DOM object representing values in DOM computed style.
@@ -34,7 +33,7 @@ class CSSValue : public RefCounted<CSSValue> {
   };
 
   // CSSValue
-  virtual void GetCssText(nsString& aText, ErrorResult& aRv) = 0;
+  virtual void GetCssText(nsAString&) = 0;
   virtual uint16_t CssValueType() const = 0;
 
   virtual ~CSSValue() = default;
@@ -50,7 +49,6 @@ class CSSValue : public RefCounted<CSSValue> {
   inline nsROCSSPrimitiveValue* AsPrimitiveValue();
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif

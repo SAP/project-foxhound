@@ -8,6 +8,7 @@
 
 #include "HTTPSRecordResolver.h"
 #include "nsIDNSByTypeRecord.h"
+#include "nsIDNSAdditionalInfo.h"
 #include "nsIDNSService.h"
 #include "nsHttpConnectionInfo.h"
 #include "nsNetCID.h"
@@ -40,14 +41,20 @@ nsresult HTTPSRecordResolver::FetchHTTPSRRInternal(
     return NS_ERROR_NOT_AVAILABLE;
   }
 
-  uint32_t flags = nsIDNSService::GetFlagsFromTRRMode(mConnInfo->GetTRRMode());
+  nsIDNSService::DNSFlags flags =
+      nsIDNSService::GetFlagsFromTRRMode(mConnInfo->GetTRRMode());
   if (mCaps & NS_HTTP_REFRESH_DNS) {
     flags |= nsIDNSService::RESOLVE_BYPASS_CACHE;
   }
 
+  nsCOMPtr<nsIDNSAdditionalInfo> info;
+  if (mConnInfo->OriginPort() != NS_HTTPS_DEFAULT_PORT) {
+    dns->NewAdditionalInfo(""_ns, mConnInfo->OriginPort(),
+                           getter_AddRefs(info));
+  }
   return dns->AsyncResolveNative(
-      mConnInfo->GetOrigin(), nsIDNSService::RESOLVE_TYPE_HTTPSSVC, flags,
-      nullptr, this, aTarget, mConnInfo->GetOriginAttributes(), aDNSRequest);
+      mConnInfo->GetOrigin(), nsIDNSService::RESOLVE_TYPE_HTTPSSVC, flags, info,
+      this, aTarget, mConnInfo->GetOriginAttributes(), aDNSRequest);
 }
 
 NS_IMETHODIMP HTTPSRecordResolver::OnLookupComplete(nsICancelable* aRequest,
@@ -88,7 +95,7 @@ void HTTPSRecordResolver::PrefetchAddrRecord(const nsACString& aTargetName,
     return;
   }
 
-  uint32_t flags = nsIDNSService::GetFlagsFromTRRMode(
+  nsIDNSService::DNSFlags flags = nsIDNSService::GetFlagsFromTRRMode(
       mTransaction->ConnectionInfo()->GetTRRMode());
   if (aRefreshDNS) {
     flags |= nsIDNSService::RESOLVE_BYPASS_CACHE;
@@ -99,7 +106,7 @@ void HTTPSRecordResolver::PrefetchAddrRecord(const nsACString& aTargetName,
   Unused << dns->AsyncResolveNative(
       aTargetName, nsIDNSService::RESOLVE_TYPE_DEFAULT,
       flags | nsIDNSService::RESOLVE_SPECULATE, nullptr, this,
-      GetCurrentEventTarget(),
+      GetCurrentSerialEventTarget(),
       mTransaction->ConnectionInfo()->GetOriginAttributes(),
       getter_AddRefs(tmpOutstanding));
 }

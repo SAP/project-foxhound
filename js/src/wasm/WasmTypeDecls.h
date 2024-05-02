@@ -30,54 +30,58 @@
 
 namespace js {
 
-using JSFunctionVector = GCVector<JSFunction*, 0, SystemAllocPolicy>;
+using JSObjectVector = GCVector<JSObject*, 0, SystemAllocPolicy>;
 
 class WasmMemoryObject;
-using GCPtrWasmMemoryObject = GCPtr<WasmMemoryObject*>;
-using RootedWasmMemoryObject = Rooted<WasmMemoryObject*>;
-using HandleWasmMemoryObject = Handle<WasmMemoryObject*>;
-using MutableHandleWasmMemoryObject = MutableHandle<WasmMemoryObject*>;
-
 class WasmModuleObject;
-using RootedWasmModuleObject = Rooted<WasmModuleObject*>;
-using HandleWasmModuleObject = Handle<WasmModuleObject*>;
-using MutableHandleWasmModuleObject = MutableHandle<WasmModuleObject*>;
-
 class WasmInstanceObject;
-using WasmInstanceObjectVector = GCVector<WasmInstanceObject*>;
-using RootedWasmInstanceObject = Rooted<WasmInstanceObject*>;
-using HandleWasmInstanceObject = Handle<WasmInstanceObject*>;
-using MutableHandleWasmInstanceObject = MutableHandle<WasmInstanceObject*>;
-
 class WasmTableObject;
-using WasmTableObjectVector = GCVector<WasmTableObject*, 0, SystemAllocPolicy>;
-using RootedWasmTableObject = Rooted<WasmTableObject*>;
-using HandleWasmTableObject = Handle<WasmTableObject*>;
-using MutableHandleWasmTableObject = MutableHandle<WasmTableObject*>;
-
 class WasmGlobalObject;
+class WasmTagObject;
+class WasmExceptionObject;
+
+using WasmInstanceObjectVector = GCVector<WasmInstanceObject*>;
+using WasmMemoryObjectVector =
+    GCVector<WasmMemoryObject*, 0, SystemAllocPolicy>;
+using WasmTableObjectVector = GCVector<WasmTableObject*, 0, SystemAllocPolicy>;
 using WasmGlobalObjectVector =
     GCVector<WasmGlobalObject*, 0, SystemAllocPolicy>;
-using RootedWasmGlobalObject = Rooted<WasmGlobalObject*>;
-
-class WasmTagObject;
 using WasmTagObjectVector = GCVector<WasmTagObject*, 0, SystemAllocPolicy>;
-using RootedWasmTagObject = Rooted<WasmTagObject*>;
-
-class WasmExceptionObject;
-using RootedWasmExceptionObject = Rooted<WasmExceptionObject*>;
 
 namespace wasm {
 
 struct ModuleEnvironment;
-class Code;
 class CodeRange;
-class DebugState;
+class CodeTier;
+class ModuleSegment;
+struct Metadata;
+struct MetadataTier;
 class Decoder;
 class GeneratedSourceMap;
 class Instance;
 class Module;
+
+class Code;
+using SharedCode = RefPtr<const Code>;
+using MutableCode = RefPtr<Code>;
+
 class Table;
+using SharedTable = RefPtr<Table>;
+using SharedTableVector = Vector<SharedTable, 0, SystemAllocPolicy>;
+
+class DebugState;
+using UniqueDebugState = UniquePtr<DebugState>;
+
+struct DataSegment;
+using MutableDataSegment = RefPtr<DataSegment>;
+using SharedDataSegment = RefPtr<const DataSegment>;
+using DataSegmentVector = Vector<SharedDataSegment, 0, SystemAllocPolicy>;
+
+struct ModuleElemSegment;
+using ModuleElemSegmentVector = Vector<ModuleElemSegment, 0, SystemAllocPolicy>;
+
+class Val;
+using ValVector = GCVector<Val, 0, SystemAllocPolicy>;
 
 // Uint32Vector has initial size 8 on the basis that the dominant use cases
 // (line numbers and control stacks) tend to have a small but nonzero number
@@ -85,12 +89,9 @@ class Table;
 using Uint32Vector = Vector<uint32_t, 8, SystemAllocPolicy>;
 
 using Bytes = Vector<uint8_t, 0, SystemAllocPolicy>;
-using UniqueBytes = UniquePtr<Bytes>;
-using UniqueConstBytes = UniquePtr<const Bytes>;
 using UTF8Bytes = Vector<char, 0, SystemAllocPolicy>;
 using InstanceVector = Vector<Instance*, 0, SystemAllocPolicy>;
 using UniqueCharsVector = Vector<UniqueChars, 0, SystemAllocPolicy>;
-using RenumberVector = Vector<uint32_t, 0, SystemAllocPolicy>;
 
 }  // namespace wasm
 }  // namespace js

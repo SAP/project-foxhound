@@ -28,13 +28,10 @@ class MockBlockProcessor : public BlockProcessor {
               ProcessCapture,
               (bool level_change,
                bool saturated_microphone_signal,
-               std::vector<std::vector<std::vector<float>>>* linear_output,
-               std::vector<std::vector<std::vector<float>>>* capture_block),
+               Block* linear_output,
+               Block* capture_block),
               (override));
-  MOCK_METHOD(void,
-              BufferRender,
-              (const std::vector<std::vector<std::vector<float>>>& block),
-              (override));
+  MOCK_METHOD(void, BufferRender, (const Block& block), (override));
   MOCK_METHOD(void,
               UpdateEchoLeakageStatus,
               (bool leakage_detected),
@@ -44,6 +41,10 @@ class MockBlockProcessor : public BlockProcessor {
               (EchoControl::Metrics * metrics),
               (const, override));
   MOCK_METHOD(void, SetAudioBufferDelay, (int delay_ms), (override));
+  MOCK_METHOD(void,
+              SetCaptureOutputUsage,
+              (bool capture_output_used),
+              (override));
 };
 
 }  // namespace test

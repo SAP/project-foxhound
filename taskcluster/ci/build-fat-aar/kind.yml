@@ -14,6 +14,7 @@ transforms:
     - gecko_taskgraph.transforms.build_lints:transforms
     - gecko_taskgraph.transforms.build_fat_aar:transforms
     - gecko_taskgraph.transforms.job:transforms
+    - gecko_taskgraph.transforms.artifact:transforms
     - gecko_taskgraph.transforms.task:transforms
 
 job-defaults:
@@ -21,7 +22,8 @@ job-defaults:
         artifact_map: taskcluster/gecko_taskgraph/manifests/fennec_geckoview.yml
     index:
         product: mobile
-    worker-type: b-linux
+    worker-type: b-linux-gcp
+    use-system-python: false
     worker:
         docker-image: {in-tree: android-build}
         max-run-time: 7200
@@ -30,6 +32,7 @@ job-defaults:
             GRADLE_USER_HOME: "/builds/worker/checkouts/build/gecko/mobile/android/gradle/dotgradle-online"
             TOOLTOOL_MANIFEST: "mobile/android/config/tooltool-manifests/android/releng.manifest"
             MOZ_ANDROID_FAT_AAR_ARCHITECTURES: "armeabi-v7a,arm64-v8a,x86,x86_64"
+            MACH_BUILD_PYTHON_NATIVE_PACKAGE_SOURCE: system
         artifacts:
             - name: public/build/maven
               path: /builds/worker/workspace/obj-build/gradle/maven/
@@ -63,6 +66,7 @@ job-defaults:
             by-release-type:
                 nightly: nightly
                 nightly-oak: nightly-oak
+                nightly-pine: nightly-pine
                 beta:
                     by-shipping-product:
                         devedition: aurora

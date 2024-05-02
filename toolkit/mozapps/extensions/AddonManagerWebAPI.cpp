@@ -7,11 +7,13 @@
 #include "AddonManagerWebAPI.h"
 
 #include "mozilla/BasePrincipal.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/Navigator.h"
 #include "mozilla/dom/NavigatorBinding.h"
 
 #include "mozilla/Preferences.h"
-#include "nsGlobalWindow.h"
+#include "mozilla/StaticPrefs_extensions.h"
+#include "nsGlobalWindowInner.h"
 #include "xpcpublic.h"
 
 #include "nsIDocShell.h"
@@ -20,23 +22,34 @@
 namespace mozilla {
 using namespace mozilla::dom;
 
+#ifndef MOZ_THUNDERBIRD
+#  define MOZ_AMO_HOSTNAME "addons.mozilla.org"
+#  define MOZ_AMO_STAGE_HOSTNAME "addons.allizom.org"
+#  define MOZ_AMO_DEV_HOSTNAME "addons-dev.allizom.org"
+#else
+#  define MOZ_AMO_HOSTNAME "addons.thunderbird.net"
+#  define MOZ_AMO_STAGE_HOSTNAME "addons-stage.thunderbird.net"
+#  undef MOZ_AMO_DEV_HOSTNAME
+#endif
+
 static bool IsValidHost(const nsACString& host) {
   // This hidden pref allows users to disable mozAddonManager entirely if they
   // want for fingerprinting resistance. Someone like Tor browser will use this
   // pref.
-  if (Preferences::GetBool(
-          "privacy.resistFingerprinting.block_mozAddonManager")) {
+  if (StaticPrefs::privacy_resistFingerprinting_block_mozAddonManager()) {
     return false;
   }
 
-  if (host.EqualsLiteral("addons.mozilla.org")) {
+  if (host.EqualsLiteral(MOZ_AMO_HOSTNAME)) {
     return true;
   }
 
   // When testing allow access to the developer sites.
-  if (Preferences::GetBool("extensions.webapi.testing", false)) {
-    if (host.LowerCaseEqualsLiteral("addons.allizom.org") ||
-        host.LowerCaseEqualsLiteral("addons-dev.allizom.org") ||
+  if (StaticPrefs::extensions_webapi_testing()) {
+    if (host.LowerCaseEqualsLiteral(MOZ_AMO_STAGE_HOSTNAME) ||
+#ifdef MOZ_AMO_DEV_HOSTNAME
+        host.LowerCaseEqualsLiteral(MOZ_AMO_DEV_HOSTNAME) ||
+#endif
         host.LowerCaseEqualsLiteral("example.com")) {
       return true;
     }
@@ -54,7 +67,7 @@ bool AddonManagerWebAPI::IsValidSite(nsIURI* uri) {
 
   if (!uri->SchemeIs("https")) {
     if (!(xpc::IsInAutomation() &&
-          Preferences::GetBool("extensions.webapi.testing.http", false))) {
+          StaticPrefs::extensions_webapi_testing_http())) {
       return false;
     }
   }
@@ -68,8 +81,11 @@ bool AddonManagerWebAPI::IsValidSite(nsIURI* uri) {
   return IsValidHost(host);
 }
 
-#ifndef ANDROID
 bool AddonManagerWebAPI::IsAPIEnabled(JSContext* aCx, JSObject* aGlobal) {
+  if (!StaticPrefs::extensions_webapi_enabled()) {
+    return false;
+  }
+
   MOZ_DIAGNOSTIC_ASSERT(JS_IsGlobalObject(aGlobal));
   nsCOMPtr<nsPIDOMWindowInner> win = xpc::WindowOrNull(aGlobal);
   if (!win) {
@@ -139,11 +155,6 @@ bool AddonManagerWebAPI::IsAPIEnabled(JSContext* aCx, JSObject* aGlobal) {
   // Found a document with no inner window, don't grant access to the API.
   return false;
 }
-#else   // We don't support mozAddonManager on Android
-bool AddonManagerWebAPI::IsAPIEnabled(JSContext* aCx, JSObject* aGlobal) {
-  return false;
-}
-#endif  // ifndef ANDROID
 
 namespace dom {
 

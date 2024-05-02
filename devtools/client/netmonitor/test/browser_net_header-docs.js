@@ -7,7 +7,7 @@
  * Tests if "Learn More" links are correctly displayed
  * next to headers.
  */
-add_task(async function() {
+add_task(async function () {
   const { tab, monitor } = await initNetMonitor(POST_DATA_URL, {
     requestCount: 1,
   });
@@ -20,7 +20,7 @@ add_task(async function() {
   );
   const {
     getHeadersURL,
-  } = require("devtools/client/netmonitor/src/utils/mdn-utils");
+  } = require("resource://devtools/client/netmonitor/src/utils/doc-utils.js");
 
   store.dispatch(Actions.batchEnable(false));
 

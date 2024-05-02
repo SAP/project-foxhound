@@ -9,23 +9,26 @@
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/ErrorResult.h"
 #include "mozilla/ScopeExit.h"
+#include "mozilla/StaticPrefs_svg.h"
 #include "mozilla/SVGObserverUtils.h"
 #include "mozilla/SVGUseFrame.h"
 #include "mozilla/URLExtraData.h"
 #include "mozilla/dom/Document.h"
-#include "mozilla/dom/Element.h"
+#include "mozilla/dom/ReferrerInfo.h"
+#include "mozilla/dom/ShadowIncludingTreeIterator.h"
 #include "mozilla/dom/SVGLengthBinding.h"
+#include "mozilla/dom/SVGGraphicsElement.h"
 #include "mozilla/dom/SVGSVGElement.h"
 #include "mozilla/dom/SVGUseElementBinding.h"
 #include "nsGkAtoms.h"
 #include "nsContentUtils.h"
+#include "nsIReferrerInfo.h"
 #include "nsIURI.h"
 #include "SVGGeometryProperty.h"
 
 NS_IMPL_NS_NEW_SVG_ELEMENT(Use)
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 JSObject* SVGUseElement::WrapNode(JSContext* aCx,
                                   JS::Handle<JSObject*> aGivenProto) {
@@ -89,12 +92,11 @@ namespace SVGT = SVGGeometryProperty::Tags;
 //----------------------------------------------------------------------
 // nsINode methods
 
-bool SVGUseElement::IsNodeOfType(uint32_t aFlags) const {
-  return !(aFlags & ~eUSE_TARGET);
-}
-
 void SVGUseElement::ProcessAttributeChange(int32_t aNamespaceID,
                                            nsAtom* aAttribute) {
+  if (OwnerDoc()->CloningForSVGUse()) {
+    return;
+  }
   if (aNamespaceID == kNameSpaceID_None) {
     if (aAttribute == nsGkAtoms::width || aAttribute == nsGkAtoms::height) {
       const bool hadValidDimensions = HasValidDimensions();
@@ -122,11 +124,11 @@ void SVGUseElement::ProcessAttributeChange(int32_t aNamespaceID,
   }
 }
 
-nsresult SVGUseElement::AfterSetAttr(int32_t aNamespaceID, nsAtom* aAttribute,
-                                     const nsAttrValue* aValue,
-                                     const nsAttrValue* aOldValue,
-                                     nsIPrincipal* aSubjectPrincipal,
-                                     bool aNotify) {
+void SVGUseElement::AfterSetAttr(int32_t aNamespaceID, nsAtom* aAttribute,
+                                 const nsAttrValue* aValue,
+                                 const nsAttrValue* aOldValue,
+                                 nsIPrincipal* aSubjectPrincipal,
+                                 bool aNotify) {
   ProcessAttributeChange(aNamespaceID, aAttribute);
   return SVGUseElementBase::AfterSetAttr(aNamespaceID, aAttribute, aValue,
                                          aOldValue, aSubjectPrincipal, aNotify);
@@ -235,7 +237,7 @@ void SVGUseElement::ContentRemoved(nsIContent* aChild,
   }
 }
 
-void SVGUseElement::NodeWillBeDestroyed(const nsINode* aNode) {
+void SVGUseElement::NodeWillBeDestroyed(nsINode* aNode) {
   nsCOMPtr<nsIMutationObserver> kungFuDeathGrip(this);
   UnlinkSource();
 }
@@ -252,16 +254,52 @@ static bool NodeCouldBeRendered(const nsINode& aNode) {
   return true;
 }
 
+// <svg:use> can be used (no pun intended) to trivially cause an explosion of
+// clones that could potentially DoS the browser. We have a configurable limit
+// to control this.
+static bool IsTooMuchRecursion(uint32_t aCount) {
+  switch (StaticPrefs::svg_use_element_recursive_clone_limit_enabled()) {
+    case 0:
+      return false;
+    case 1:
+      break;
+    default:
+      if (!XRE_IsParentProcess()) {
+        return false;
+      }
+      break;
+  }
+  return aCount >= StaticPrefs::svg_use_element_recursive_clone_limit();
+}
+
 // Circular loop detection, plus detection of whether this shadow tree is
 // rendered at all.
 auto SVGUseElement::ScanAncestors(const Element& aTarget) const -> ScanResult {
+  uint32_t count = 0;
+  return ScanAncestorsInternal(aTarget, count);
+}
+
+auto SVGUseElement::ScanAncestorsInternal(const Element& aTarget,
+                                          uint32_t& aCount) const
+    -> ScanResult {
   if (&aTarget == this) {
     return ScanResult::CyclicReference;
   }
-  if (mOriginal &&
-      mOriginal->ScanAncestors(aTarget) == ScanResult::CyclicReference) {
-    return ScanResult::CyclicReference;
+  if (mOriginal) {
+    if (IsTooMuchRecursion(++aCount)) {
+      return ScanResult::TooDeep;
+    }
+    auto result = mOriginal->ScanAncestorsInternal(aTarget, aCount);
+    switch (result) {
+      case ScanResult::TooDeep:
+      case ScanResult::CyclicReference:
+        return result;
+      case ScanResult::Ok:
+      case ScanResult::Invisible:
+        break;
+    }
   }
+
   auto result = ScanResult::Ok;
   for (nsINode* parent = GetParentOrShadowHostNode(); parent;
        parent = parent->GetParentOrShadowHostNode()) {
@@ -269,6 +307,9 @@ auto SVGUseElement::ScanAncestors(const Element& aTarget) const -> ScanResult {
       return ScanResult::CyclicReference;
     }
     if (auto* use = SVGUseElement::FromNode(*parent)) {
+      if (IsTooMuchRecursion(++aCount)) {
+        return ScanResult::TooDeep;
+      }
       if (mOriginal && use->mOriginal == mOriginal) {
         return ScanResult::CyclicReference;
       }
@@ -285,6 +326,70 @@ auto SVGUseElement::ScanAncestors(const Element& aTarget) const -> ScanResult {
 
 //----------------------------------------------------------------------
 
+static bool IsForbiddenUseNode(const nsINode& aNode) {
+  if (!aNode.IsElement()) {
+    return false;
+  }
+  const auto* svg = SVGElement::FromNode(aNode);
+  return !svg || !svg->IsSVGGraphicsElement();
+}
+
+static void CollectForbiddenNodes(Element& aRoot,
+                                  nsTArray<RefPtr<nsINode>>& aNodes) {
+  auto iter = dom::ShadowIncludingTreeIterator(aRoot);
+  while (iter) {
+    nsINode* node = *iter;
+    if (IsForbiddenUseNode(*node)) {
+      aNodes.AppendElement(node);
+      iter.SkipChildren();
+      continue;
+    }
+    ++iter;
+  }
+}
+
+// SVG1 restricted <use> trees to SVGGraphicsElements.
+// https://www.w3.org/TR/SVG11/struct.html#UseElement:
+//
+//    Any ‘svg’, ‘symbol’, ‘g’, graphics element or other ‘use’ is potentially a
+//    template object that can be re-used (i.e., "instanced") in the SVG
+//    document via a ‘use’ element. The ‘use’ element references another element
+//    and indicates that the graphical contents of that element is
+//    included/drawn at that given point in the document.
+//
+// SVG2 doesn't have that same restriction.
+// https://www.w3.org/TR/SVG2/struct.html#UseShadowTree:
+//
+//    Previous versions of SVG restricted the contents of the shadow tree to SVG
+//    graphics elements. This specification allows any valid SVG document
+//    subtree to be cloned. Cloning non-graphical content, however, will not
+//    usually have any visible effect.
+//
+// But it's pretty ambiguous as to what the behavior should be for some
+// elements, because <script> is inert, but <iframe> is not, see:
+// https://github.com/w3c/svgwg/issues/876
+//
+// So, fairly confusing, all-in-all.
+static void RemoveForbiddenNodes(Element& aRoot, bool aIsCrossDocument) {
+  switch (StaticPrefs::svg_use_element_graphics_element_restrictions()) {
+    case 0:
+      return;
+    case 1:
+      if (!aIsCrossDocument) {
+        return;
+      }
+      break;
+    default:
+      break;
+  }
+
+  AutoTArray<RefPtr<nsINode>, 10> unsafeNodes;
+  CollectForbiddenNodes(aRoot, unsafeNodes);
+  for (auto& unsafeNode : unsafeNodes) {
+    unsafeNode->Remove();
+  }
+}
+
 void SVGUseElement::UpdateShadowTree() {
   MOZ_ASSERT(IsInComposedDoc());
 
@@ -300,12 +405,12 @@ void SVGUseElement::UpdateShadowTree() {
   }
   MOZ_ASSERT(shadow);
 
-  Element* targetElement = mReferencedElementTracker.get();
+  auto* targetElement =
+      SVGGraphicsElement::FromNodeOrNull(mReferencedElementTracker.get());
   RefPtr<Element> newElement;
 
   auto UpdateShadowTree = mozilla::MakeScopeExit([&]() {
-    nsIContent* firstChild = shadow->GetFirstChild();
-    if (firstChild) {
+    if (nsIContent* firstChild = shadow->GetFirstChild()) {
       MOZ_ASSERT(!firstChild->GetNextSibling());
       shadow->RemoveChildNode(firstChild, /* aNotify = */ true);
     }
@@ -316,7 +421,7 @@ void SVGUseElement::UpdateShadowTree() {
   });
 
   // make sure target is valid type for <use>
-  if (!targetElement || !targetElement->IsNodeOfType(nsINode::eUSE_TARGET)) {
+  if (!targetElement) {
     return;
   }
 
@@ -330,9 +435,10 @@ void SVGUseElement::UpdateShadowTree() {
   }
 
   {
-    nsNodeInfoManager* nodeInfoManager = targetElement->OwnerDoc() == OwnerDoc()
-                                             ? nullptr
-                                             : OwnerDoc()->NodeInfoManager();
+    const bool isCrossDocument = targetElement->OwnerDoc() != OwnerDoc();
+
+    nsNodeInfoManager* nodeInfoManager =
+        isCrossDocument ? OwnerDoc()->NodeInfoManager() : nullptr;
 
     nsCOMPtr<nsINode> newNode =
         targetElement->Clone(true, nodeInfoManager, IgnoreErrors());
@@ -342,6 +448,7 @@ void SVGUseElement::UpdateShadowTree() {
 
     MOZ_ASSERT(newNode->IsElement());
     newElement = newNode.forget().downcast<Element>();
+    RemoveForbiddenNodes(*newElement, isCrossDocument);
   }
 
   if (newElement->IsAnyOfSVGElements(nsGkAtoms::svg, nsGkAtoms::symbol)) {
@@ -448,10 +555,9 @@ void SVGUseElement::LookupHref() {
   nsCOMPtr<nsIURI> targetURI;
   nsContentUtils::NewURIWithDocumentCharset(getter_AddRefs(targetURI), href,
                                             GetComposedDoc(), baseURI);
-  nsCOMPtr<nsIReferrerInfo> referrerInfo =
-      ReferrerInfo::CreateForSVGResources(OwnerDoc());
-
-  mReferencedElementTracker.ResetToURIFragmentID(this, targetURI, referrerInfo);
+  nsIReferrerInfo* referrer =
+      OwnerDoc()->ReferrerInfoForInternalCSSAndSVGResources();
+  mReferencedElementTracker.ResetToURIFragmentID(this, targetURI, referrer);
 }
 
 void SVGUseElement::TriggerReclone() {
@@ -510,6 +616,10 @@ gfxMatrix SVGUseElement::PrependLocalTransformsTo(
 
 /* virtual */
 bool SVGUseElement::HasValidDimensions() const {
+  if (!OurWidthAndHeightAreUsed()) {
+    return true;
+  }
+
   return (!mLengthAttributes[ATTR_WIDTH].IsExplicitlySet() ||
           mLengthAttributes[ATTR_WIDTH].GetAnimValInSpecifiedUnits() > 0) &&
          (!mLengthAttributes[ATTR_HEIGHT].IsExplicitlySet() ||
@@ -542,17 +652,7 @@ SVGUseFrame* SVGUseElement::GetFrame() const {
 
 NS_IMETHODIMP_(bool)
 SVGUseElement::IsAttributeMapped(const nsAtom* name) const {
-  static const MappedAttributeEntry* const map[] = {sFEFloodMap,
-                                                    sFiltersMap,
-                                                    sFontSpecificationMap,
-                                                    sGradientStopMap,
-                                                    sLightingEffectsMap,
-                                                    sMarkersMap,
-                                                    sTextContentElementsMap,
-                                                    sViewportsMap};
-
   return name == nsGkAtoms::x || name == nsGkAtoms::y ||
-         FindAttributeDependence(name, map) ||
          SVGUseElementBase::IsAttributeMapped(name);
 }
 
@@ -568,5 +668,4 @@ nsCSSPropertyID SVGUseElement::GetCSSPropertyIdForAttrEnum(uint8_t aAttrEnum) {
   }
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

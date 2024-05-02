@@ -9,6 +9,8 @@
 
 #include "mozilla/Mutex.h"
 #include "mozilla/Attributes.h"
+#include "mozilla/InputStreamLengthWrapper.h"
+#include "nsIInputStreamLength.h"
 #include "nsStreamUtils.h"
 #include "nsCOMPtr.h"
 #include "nsICloneableInputStream.h"
@@ -319,41 +321,52 @@ class nsAStreamCopier : public nsIInputStreamCallback,
           // more source data, be sure to observe failures on output end.
           mAsyncSource->AsyncWait(this, 0, 0, nullptr);
 
-          if (mAsyncSink)
+          if (mAsyncSink) {
             mAsyncSink->AsyncWait(this, nsIAsyncOutputStream::WAIT_CLOSURE_ONLY,
                                   0, nullptr);
+          }
           break;
-        } else if (sinkCondition == NS_BASE_STREAM_WOULD_BLOCK && mAsyncSink) {
+        }
+        if (sinkCondition == NS_BASE_STREAM_WOULD_BLOCK && mAsyncSink) {
           // need to wait for more room in the sink.  while waiting for
           // more room in the sink, be sure to observer failures on the
           // input end.
           mAsyncSink->AsyncWait(this, 0, 0, nullptr);
 
-          if (mAsyncSource)
+          if (mAsyncSource) {
             mAsyncSource->AsyncWait(
                 this, nsIAsyncInputStream::WAIT_CLOSURE_ONLY, 0, nullptr);
+          }
           break;
         }
       }
       if (copyFailed || canceled) {
+        if (mAsyncSource) {
+          // cancel any previously-registered AsyncWait callbacks to avoid leaks
+          mAsyncSource->AsyncWait(nullptr, 0, 0, nullptr);
+        }
         if (mCloseSource) {
           // close source
-          if (mAsyncSource)
+          if (mAsyncSource) {
             mAsyncSource->CloseWithStatus(canceled ? cancelStatus
                                                    : sinkCondition);
-          else {
+          } else {
             mSource->Close();
           }
         }
         mAsyncSource = nullptr;
         mSource = nullptr;
 
+        if (mAsyncSink) {
+          // cancel any previously-registered AsyncWait callbacks to avoid leaks
+          mAsyncSink->AsyncWait(nullptr, 0, 0, nullptr);
+        }
         if (mCloseSink) {
           // close sink
-          if (mAsyncSink)
+          if (mAsyncSink) {
             mAsyncSink->CloseWithStatus(canceled ? cancelStatus
                                                  : sourceCondition);
-          else {
+          } else {
             // If we have an nsISafeOutputStream, and our
             // sourceCondition and sinkCondition are not set to a
             // failure state, finish writing.
@@ -445,7 +458,7 @@ class nsAStreamCopier : public nsIInputStreamCallback,
     return PostContinuationEvent_Locked();
   }
 
-  nsresult PostContinuationEvent_Locked() {
+  nsresult PostContinuationEvent_Locked() MOZ_REQUIRES(mLock) {
     nsresult rv = NS_OK;
     if (mEventInProcess) {
       mEventIsPending = true;
@@ -471,12 +484,12 @@ class nsAStreamCopier : public nsIInputStreamCallback,
   nsAsyncCopyProgressFun mProgressCallback;
   void* mClosure;
   uint32_t mChunkSize;
-  bool mEventInProcess;
-  bool mEventIsPending;
+  bool mEventInProcess MOZ_GUARDED_BY(mLock);
+  bool mEventIsPending MOZ_GUARDED_BY(mLock);
   bool mCloseSource;
   bool mCloseSink;
-  bool mCanceled;
-  nsresult mCancelStatus;
+  bool mCanceled MOZ_GUARDED_BY(mLock);
+  nsresult mCancelStatus MOZ_GUARDED_BY(mLock);
 
   // virtual since subclasses call superclass Release()
   virtual ~nsAStreamCopier() = default;
@@ -487,7 +500,7 @@ NS_IMPL_ISUPPORTS_INHERITED(nsAStreamCopier, CancelableRunnable,
 
 class nsStreamCopierIB final : public nsAStreamCopier {
  public:
-  nsStreamCopierIB() : nsAStreamCopier() {}
+  nsStreamCopierIB() = default;
   virtual ~nsStreamCopierIB() = default;
 
   struct MOZ_STACK_CLASS ReadSegmentsState {
@@ -520,7 +533,9 @@ class nsStreamCopierIB final : public nsAStreamCopier {
     uint32_t n;
     *aSourceCondition =
         mSource->ReadSegments(ConsumeInputBuffer, &state, mChunkSize, &n);
-    *aSinkCondition = state.mSinkCondition;
+    *aSinkCondition = NS_SUCCEEDED(state.mSinkCondition) && n == 0
+                          ? mSink->StreamStatus()
+                          : state.mSinkCondition;
     return n;
   }
 
@@ -529,7 +544,7 @@ class nsStreamCopierIB final : public nsAStreamCopier {
 
 class nsStreamCopierOB final : public nsAStreamCopier {
  public:
-  nsStreamCopierOB() : nsAStreamCopier() {}
+  nsStreamCopierOB() = default;
   virtual ~nsStreamCopierOB() = default;
 
   struct MOZ_STACK_CLASS WriteSegmentsState {
@@ -562,7 +577,9 @@ class nsStreamCopierOB final : public nsAStreamCopier {
     uint32_t n;
     *aSinkCondition =
         mSink->WriteSegments(FillOutputBuffer, &state, mChunkSize, &n);
-    *aSourceCondition = state.mSourceCondition;
+    *aSourceCondition = NS_SUCCEEDED(state.mSourceCondition) && n == 0
+                            ? mSource->StreamStatus()
+                            : state.mSourceCondition;
     return n;
   }
 
@@ -785,8 +802,7 @@ NS_TaintedCopySegmentToBuffer(nsITaintawareInputStream* aInputStream,
   return NS_OK;
 }
 
-
-nsresult NS_CopySegmentToBuffer(nsIOutputStream* aOutStr, void* aClosure,
+nsresult NS_CopyBufferToSegment(nsIOutputStream* aOutStr, void* aClosure,
                                 char* aBuffer, uint32_t aOffset,
                                 uint32_t aCount, uint32_t* aCountRead) {
 
@@ -794,6 +810,13 @@ nsresult NS_CopySegmentToBuffer(nsIOutputStream* aOutStr, void* aClosure,
   memcpy(aBuffer, &fromBuf[aOffset], aCount);
   *aCountRead = aCount;
   return NS_OK;
+}
+
+nsresult NS_CopyStreamToSegment(nsIOutputStream* aOutputStream, void* aClosure,
+                                char* aToSegment, uint32_t aFromOffset,
+                                uint32_t aCount, uint32_t* aReadCount) {
+  nsIInputStream* fromStream = static_cast<nsIInputStream*>(aClosure);
+  return fromStream->Read(aToSegment, aCount, aReadCount);
 }
 
 nsresult NS_DiscardSegment(nsIInputStream* aInStr, void* aClosure,
@@ -877,17 +900,24 @@ nsresult NS_CloneInputStream(nsIInputStream* aSource,
   nsCOMPtr<nsIInputStream> readerClone;
   nsCOMPtr<nsIOutputStream> writer;
 
-  nsresult rv = NS_NewPipe(getter_AddRefs(reader), getter_AddRefs(writer), 0,
-                           0,            // default segment size and max size
-                           true, true);  // non-blocking
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
+  NS_NewPipe(getter_AddRefs(reader), getter_AddRefs(writer), 0,
+             0,            // default segment size and max size
+             true, true);  // non-blocking
+
+  // Propagate length information provided by nsIInputStreamLength. We don't use
+  // InputStreamLengthHelper::GetSyncLength to avoid the risk of blocking when
+  // called off-main-thread.
+  int64_t length = -1;
+  if (nsCOMPtr<nsIInputStreamLength> streamLength = do_QueryInterface(aSource);
+      streamLength && NS_SUCCEEDED(streamLength->Length(&length)) &&
+      length != -1) {
+    reader = new mozilla::InputStreamLengthWrapper(reader.forget(), length);
   }
 
   cloneable = do_QueryInterface(reader);
   MOZ_ASSERT(cloneable && cloneable->GetCloneable());
 
-  rv = cloneable->Clone(getter_AddRefs(readerClone));
+  nsresult rv = cloneable->Clone(getter_AddRefs(readerClone));
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }

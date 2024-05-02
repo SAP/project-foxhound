@@ -7,7 +7,7 @@ const TEST_JSON_URL = URL_ROOT_SSL + "valid_json.json";
 const EMPTY_PAGE = URL_ROOT_SSL + "empty.html";
 const SW = URL_ROOT_SSL + "passthrough-sw.js";
 
-add_task(async function() {
+add_task(async function () {
   info("Test valid JSON with service worker started");
 
   await SpecialPowers.pushPrefEnv({
@@ -45,9 +45,10 @@ add_task(async function() {
 
   const tab = await addJsonViewTab(TEST_JSON_URL);
 
-  ok(
-    tab.linkedBrowser.contentPrincipal.isNullPrincipal,
-    "Should have null principal"
+  is(
+    tab.linkedBrowser.contentPrincipal.origin,
+    "resource://devtools",
+    "Should have a resource devtools principal"
   );
 
   is(await countRows(), 3, "There must be three rows");

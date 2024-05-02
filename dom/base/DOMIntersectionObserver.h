@@ -15,8 +15,7 @@
 #include "nsTArray.h"
 #include "nsTHashSet.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class DOMIntersectionObserver;
 
@@ -40,7 +39,7 @@ class DOMIntersectionObserverEntry final : public nsISupports,
         mTarget(aTarget),
         mIntersectionRatio(aIntersectionRatio) {}
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(DOMIntersectionObserverEntry)
+  NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(DOMIntersectionObserverEntry)
 
   nsISupports* GetParentObject() const { return mOwner; }
 
@@ -80,6 +79,32 @@ class DOMIntersectionObserverEntry final : public nsISupports,
       0xb6, 0xb1, 0x4d, 0x2b, 0x49, 0xd8, 0xef, 0x94 \
     }                                                \
   }
+
+// An input suitable to compute intersections with multiple targets.
+struct IntersectionInput {
+  // Whether the root is implicit (null, originally).
+  const bool mIsImplicitRoot = false;
+  // The computed root node. For the implicit root, this will be the in-process
+  // root document we can compute coordinates against (along with the remote
+  // document visible rect if appropriate).
+  const nsINode* mRootNode = nullptr;
+  nsIFrame* mRootFrame = nullptr;
+  // The rect of mRootFrame in client coordinates.
+  nsRect mRootRect;
+  // The root margin computed against the root rect.
+  nsMargin mRootMargin;
+  // If this is in an OOP iframe, the visible rect of the OOP frame.
+  Maybe<nsRect> mRemoteDocumentVisibleRect;
+};
+
+struct IntersectionOutput {
+  const bool mIsSimilarOrigin;
+  const nsRect mRootBounds;
+  const nsRect mTargetRect;
+  const Maybe<nsRect> mIntersectionRect;
+
+  bool Intersects() const { return mIntersectionRect.isSome(); }
+};
 
 class DOMIntersectionObserver final : public nsISupports,
                                       public nsWrapperCache {
@@ -123,13 +148,28 @@ class DOMIntersectionObserver final : public nsISupports,
 
   void TakeRecords(nsTArray<RefPtr<DOMIntersectionObserverEntry>>& aRetVal);
 
-  void Update(Document* aDocument, DOMHighResTimeStamp time);
+  static IntersectionInput ComputeInput(
+      const Document& aDocument, const nsINode* aRoot,
+      const StyleRect<LengthPercentage>* aRootMargin);
+
+  enum class IsContentVisibilityObserver : bool { No, Yes };
+  static IntersectionOutput Intersect(
+      const IntersectionInput&, const Element&,
+      IsContentVisibilityObserver = IsContentVisibilityObserver::No);
+  // Intersects with a given rect, already relative to the root frame.
+  static IntersectionOutput Intersect(const IntersectionInput&, const nsRect&);
+
+  void Update(Document& aDocument, DOMHighResTimeStamp time);
   MOZ_CAN_RUN_SCRIPT void Notify();
 
   static already_AddRefed<DOMIntersectionObserver> CreateLazyLoadObserver(
       Document&);
+
   static already_AddRefed<DOMIntersectionObserver>
-  CreateLazyLoadObserverViewport(Document&);
+  CreateContentVisibilityObserver(Document&);
+
+  static Maybe<nsRect> EdgeInclusiveIntersection(const nsRect& aRect,
+                                                 const nsRect& aOtherRect);
 
  protected:
   void Connect();
@@ -146,7 +186,7 @@ class DOMIntersectionObserver final : public nsISupports,
   Variant<RefPtr<dom::IntersectionCallback>, NativeCallback> mCallback;
   RefPtr<nsINode> mRoot;
   StyleRect<LengthPercentage> mRootMargin;
-  nsTArray<double> mThresholds;
+  AutoTArray<double, 1> mThresholds;
 
   // These hold raw pointers which are explicitly cleared by UnlinkTarget().
   //
@@ -156,13 +196,12 @@ class DOMIntersectionObserver final : public nsISupports,
   nsTHashSet<Element*> mObservationTargetSet;
 
   nsTArray<RefPtr<DOMIntersectionObserverEntry>> mQueuedEntries;
-  bool mConnected;
+  bool mConnected = false;
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(DOMIntersectionObserver,
                               NS_DOM_INTERSECTION_OBSERVER_IID)
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif

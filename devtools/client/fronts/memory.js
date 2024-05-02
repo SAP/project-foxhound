@@ -4,22 +4,20 @@
 
 "use strict";
 
-const { memorySpec } = require("devtools/shared/specs/memory");
+const { memorySpec } = require("resource://devtools/shared/specs/memory.js");
 const {
   FrontClassWithSpec,
   registerFront,
-} = require("devtools/shared/protocol");
+} = require("resource://devtools/shared/protocol.js");
 
-loader.lazyRequireGetter(
-  this,
-  "FileUtils",
-  "resource://gre/modules/FileUtils.jsm",
-  true
-);
+const lazy = {};
+ChromeUtils.defineESModuleGetters(lazy, {
+  FileUtils: "resource://gre/modules/FileUtils.sys.mjs",
+});
 loader.lazyRequireGetter(
   this,
   "HeapSnapshotFileUtils",
-  "devtools/shared/heapsnapshot/HeapSnapshotFileUtils"
+  "resource://devtools/shared/heapsnapshot/HeapSnapshotFileUtils.js"
 );
 
 class MemoryFront extends FrontClassWithSpec(memorySpec) {
@@ -85,9 +83,10 @@ class MemoryFront extends FrontClassWithSpec(memorySpec) {
         snapshotId,
       });
 
-      const outFilePath = HeapSnapshotFileUtils.getNewUniqueHeapSnapshotTempFilePath();
-      const outFile = new FileUtils.File(outFilePath);
-      const outFileStream = FileUtils.openSafeFileOutputStream(outFile);
+      const outFilePath =
+        HeapSnapshotFileUtils.getNewUniqueHeapSnapshotTempFilePath();
+      const outFile = new lazy.FileUtils.File(outFilePath);
+      const outFileStream = lazy.FileUtils.openSafeFileOutputStream(outFile);
 
       // This request is a bulk request. That's why the result of the request is
       // an object with the `copyTo` function that can transfer the data to
@@ -96,7 +95,7 @@ class MemoryFront extends FrontClassWithSpec(memorySpec) {
       const { copyTo } = await request;
       await copyTo(outFileStream);
 
-      FileUtils.closeSafeFileOutputStream(outFileStream);
+      lazy.FileUtils.closeSafeFileOutputStream(outFileStream);
       return outFilePath;
     } catch (e) {
       if (e.error) {

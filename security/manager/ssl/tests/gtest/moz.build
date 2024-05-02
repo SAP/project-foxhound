@@ -7,8 +7,8 @@
 SOURCES += [
     "CertDBTest.cpp",
     "CoseTest.cpp",
-    "DataStorageTest.cpp",
     "DeserializeCertTest.cpp",
+    "HMACTest.cpp",
     "MD4Test.cpp",
     "OCSPCacheTest.cpp",
     "TLSIntoleranceTest.cpp",

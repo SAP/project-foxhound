@@ -12,6 +12,7 @@
 
 #include "ia2AccessibleEditableText.h"
 #include "ia2AccessibleText.h"
+#include "ia2AccessibleTextSelectionContainer.h"
 #include "AccessibleHypertext2.h"
 #include "IUnknownImpl.h"
 #include "MsaaAccessible.h"
@@ -19,11 +20,11 @@
 namespace mozilla {
 namespace a11y {
 class HyperTextAccessibleBase;
-class HyperTextAccessibleWrap;
 
 class ia2AccessibleHypertext : public ia2AccessibleText,
                                public IAccessibleHypertext2,
                                public ia2AccessibleEditableText,
+                               public ia2AccessibleTextSelectionContainer,
                                public MsaaAccessible {
  public:
   // IUnknown
@@ -61,7 +62,6 @@ class ia2AccessibleHypertext : public ia2AccessibleText,
 
  private:
   HyperTextAccessibleBase* TextAcc();
-  HyperTextAccessibleWrap* LocalTextAcc();
 };
 
 }  // namespace a11y

@@ -36,6 +36,7 @@
 #endif
 
 namespace mozilla {
+enum class NativeKeyBindingsType : uint8_t;
 namespace widget {
 
 class HeadlessWidget : public nsBaseWidget {
@@ -51,10 +52,10 @@ class HeadlessWidget : public nsBaseWidget {
 
   virtual nsresult Create(nsIWidget* aParent, nsNativeWidget aNativeParent,
                           const LayoutDeviceIntRect& aRect,
-                          nsWidgetInitData* aInitData = nullptr) override;
+                          widget::InitData* aInitData = nullptr) override;
   using nsBaseWidget::Create;  // for Create signature not overridden here
   virtual already_AddRefed<nsIWidget> CreateChild(
-      const LayoutDeviceIntRect& aRect, nsWidgetInitData* aInitData = nullptr,
+      const LayoutDeviceIntRect& aRect, widget::InitData* aInitData = nullptr,
       bool aForceUseIWidgetParent = false) override;
 
   virtual nsIWidget* GetTopLevelWidget() override;
@@ -69,6 +70,7 @@ class HeadlessWidget : public nsBaseWidget {
   virtual void Resize(double aWidth, double aHeight, bool aRepaint) override;
   virtual void Resize(double aX, double aY, double aWidth, double aHeight,
                       bool aRepaint) override;
+  virtual nsSizeMode SizeMode() override { return mSizeMode; }
   virtual void SetSizeMode(nsSizeMode aMode) override;
   virtual nsresult MakeFullScreen(bool aFullScreen) override;
   virtual void Enable(bool aState) override;
@@ -82,7 +84,7 @@ class HeadlessWidget : public nsBaseWidget {
     return NS_OK;
   }
   virtual nsresult SetNonClientMargins(
-      LayoutDeviceIntMargin& margins) override {
+      const LayoutDeviceIntMargin& margins) override {
     // Headless widgets have no chrome margins, so just ignore the call.
     return NS_OK;
   }
@@ -133,13 +135,21 @@ class HeadlessWidget : public nsBaseWidget {
       TouchpadGesturePhase aEventPhase, float aScale,
       LayoutDeviceIntPoint aPoint, int32_t aModifierFlags) override;
 
+  virtual nsresult SynthesizeNativeTouchpadPan(TouchpadGesturePhase aEventPhase,
+                                               LayoutDeviceIntPoint aPoint,
+                                               double aDeltaX, double aDeltaY,
+                                               int32_t aModifierFlags,
+                                               nsIObserver* aObserver) override;
+
  private:
   ~HeadlessWidget();
   bool mEnabled;
   bool mVisible;
   bool mDestroyed;
+  bool mAlwaysOnTop;
   nsIWidget* mTopLevel;
   HeadlessCompositorWidget* mCompositorWidget;
+  nsSizeMode mSizeMode;
   // The size mode before entering fullscreen mode.
   nsSizeMode mLastSizeMode;
   // The last size mode set while the window was visible.
@@ -151,6 +161,10 @@ class HeadlessWidget : public nsBaseWidget {
   // across size mode changes, so we must track it to emulate.
   LayoutDeviceIntRect mRestoreBounds;
   void ApplySizeModeSideEffects();
+  // Move while maintaining size mode.
+  void MoveInternal(int32_t aX, int32_t aY);
+  // Resize while maintaining size mode.
+  void ResizeInternal(int32_t aWidth, int32_t aHeight, bool aRepaint);
   // Similarly, we must track the active window ourselves in order
   // to dispatch (de)activation events properly.
   void RaiseWindow();

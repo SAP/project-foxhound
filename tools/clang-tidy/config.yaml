@@ -19,7 +19,7 @@ platforms:
 # Minimum clang-tidy version that is required for all the following checkers
 # to work properly.
 # This is also used by 'mach clang-format'
-package_version: "13.0.1"
+package_version: "17.0.2"
 clang_checkers:
   - name: -*
     publish: !!bool no
@@ -63,6 +63,8 @@ clang_checkers:
     reliability: high
   - name: bugprone-swapped-arguments
     reliability: high
+  - name: bugprone-switch-missing-default-case
+    reliability: high
   - name: bugprone-too-small-loop-variable
     reliability: high
   - name: bugprone-unused-raii
@@ -91,6 +93,11 @@ clang_checkers:
     reliability: medium
   - name: clang-analyzer-deadcode.DeadStores
     reliability: high
+  - name: clang-analyzer-optin.performance.Padding
+    reliability: high
+    config:
+      - key: AllowedPad
+        value: 2
   - name: clang-analyzer-security.FloatLoopCounter
     reliability: high
   - name: clang-analyzer-security.insecureAPI.bcmp
@@ -129,6 +136,10 @@ clang_checkers:
     reliability: high
   - name: cppcoreguidelines-pro-type-member-init
     reliability: medium
+  - name: misc-include-cleaner
+    # Disable this checker until we move to before/after
+    reliability: high
+    publish: !!bool no
   - name: misc-non-copyable-objects
     reliability: high
   - name: misc-redundant-expression
@@ -177,6 +188,11 @@ clang_checkers:
     reliability: high
   - name: mozilla-*
     reliability: high
+  - name: performance-avoid-endl
+    reliability: high
+    # enable from clang 18
+    #  - name: performance-enum-size
+    #    reliability: high
   - name: performance-faster-string-find
     reliability: high
   - name: performance-for-range-copy
@@ -260,6 +276,8 @@ clang_checkers:
     reliability: high
   - name: readability-redundant-control-flow
     reliability: high
+  - name: readability-redundant-member-init
+    reliability: high
   - name: readability-redundant-preprocessor
     reliability: high
   - name: readability-redundant-smartptr-get
@@ -272,6 +290,11 @@ clang_checkers:
     reliability: high
   - name: readability-simplify-boolean-expr
     reliability: high
+    config:
+      - key: SimplifyDeMorgan
+        # Don't want to enable DeMorgan expressions because of MOZ_ASSERT()
+        # See Bug 1804160
+        value: 0
   - name: readability-uniqueptr-delete-release
     reliability: high
   # We don't publish the google checkers since we are interested in only having

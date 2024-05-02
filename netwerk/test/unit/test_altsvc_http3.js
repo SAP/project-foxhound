@@ -1,6 +1,8 @@
 "use strict";
 
-const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
+const { HttpServer } = ChromeUtils.importESModule(
+  "resource://testing-common/httpd.sys.mjs"
+);
 
 var h3Port;
 
@@ -20,10 +22,7 @@ var httpBarOrigin; // http://bar.example.com:PORT/
 var httpsBarOrigin; // https://bar.example.com:PORT/
 
 function run_test() {
-  var env = Cc["@mozilla.org/process/environment;1"].getService(
-    Ci.nsIEnvironment
-  );
-  h3Port = env.get("MOZHTTP3_PORT");
+  h3Port = Services.env.get("MOZHTTP3_PORT");
   Assert.notEqual(h3Port, null);
   Assert.notEqual(h3Port, "");
 
@@ -141,7 +140,6 @@ function makeChan(origin) {
 
 var origin;
 var xaltsvc;
-var retryCounter = 0;
 var loadWithoutClearingMappings = false;
 var disallowH3 = false;
 var disallowH2 = false;
@@ -151,7 +149,7 @@ var expectPass = true;
 var waitFor = 0;
 var originAttributes = {};
 
-var Listener = function() {};
+var Listener = function () {};
 Listener.prototype = {
   onStartRequest: function testOnStartRequest(request) {
     Assert.ok(request instanceof Ci.nsIHttpChannel);

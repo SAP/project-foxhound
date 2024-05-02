@@ -46,11 +46,8 @@ add_task(async function testPopupSelectPopup() {
 
   await extension.startup();
 
-  let selectPopup = document.getElementById("ContentSelectDropdown")
-    .firstElementChild;
-
   async function testPanel(browser) {
-    let popupPromise = promisePopupShown(selectPopup);
+    const popupPromise = BrowserTestUtils.waitForSelectPopupShown(window);
 
     // Wait the select element in the popup window to be ready before sending a
     // mouse event to open the select popup.
@@ -61,9 +58,9 @@ add_task(async function testPopupSelectPopup() {
     });
     BrowserTestUtils.synthesizeMouseAtCenter("#select", {}, browser);
 
-    await popupPromise;
+    const selectPopup = await popupPromise;
 
-    let elemRect = await SpecialPowers.spawn(browser, [], async function() {
+    let elemRect = await SpecialPowers.spawn(browser, [], async function () {
       let elem = content.document.getElementById("select");
       let r = elem.getBoundingClientRect();
 
@@ -71,15 +68,17 @@ add_task(async function testPopupSelectPopup() {
     });
 
     let popupRect = selectPopup.getOuterScreenRect();
+    let marginTop = parseFloat(getComputedStyle(selectPopup).marginTop);
+    let marginLeft = parseFloat(getComputedStyle(selectPopup).marginLeft);
 
     is(
-      Math.floor(browser.screenX + elemRect.left),
+      Math.floor(browser.screenX + elemRect.left + marginLeft),
       popupRect.left,
       "Select popup has the correct x origin"
     );
 
     is(
-      Math.floor(browser.screenY + elemRect.bottom),
+      Math.floor(browser.screenY + elemRect.bottom + marginTop),
       popupRect.top,
       "Select popup has the correct y origin"
     );

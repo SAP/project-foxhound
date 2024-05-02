@@ -9,6 +9,13 @@ Services.scriptloader.loadSubScript(
   this
 );
 
+const lazy = {};
+
+/* getLibcConstants is only present on *nix */
+ChromeUtils.defineLazyGetter(lazy, "LIBC", () =>
+  ChromeUtils.getLibcConstants()
+);
+
 /*
  * This test is for executing system calls in content processes to validate
  * that calls that are meant to be blocked by content sandboxing are blocked.
@@ -19,7 +26,9 @@ Services.scriptloader.loadSubScript(
 // Calls the native execv library function. Include imports so this can be
 // safely serialized and run remotely by ContentTask.spawn.
 function callExec(args) {
-  const { ctypes } = ChromeUtils.import("resource://gre/modules/ctypes.jsm");
+  const { ctypes } = ChromeUtils.importESModule(
+    "resource://gre/modules/ctypes.sys.mjs"
+  );
   let { lib, cmd } = args;
   let libc = ctypes.open(lib);
   let exec = libc.declare(
@@ -35,7 +44,9 @@ function callExec(args) {
 
 // Calls the native fork syscall.
 function callFork(args) {
-  const { ctypes } = ChromeUtils.import("resource://gre/modules/ctypes.jsm");
+  const { ctypes } = ChromeUtils.importESModule(
+    "resource://gre/modules/ctypes.sys.mjs"
+  );
   let { lib } = args;
   let libc = ctypes.open(lib);
   let fork = libc.declare("fork", ctypes.default_abi, ctypes.int);
@@ -46,7 +57,9 @@ function callFork(args) {
 
 // Calls the native sysctl syscall.
 function callSysctl(args) {
-  const { ctypes } = ChromeUtils.import("resource://gre/modules/ctypes.jsm");
+  const { ctypes } = ChromeUtils.importESModule(
+    "resource://gre/modules/ctypes.sys.mjs"
+  );
   let { lib, name } = args;
   let libc = ctypes.open(lib);
   let sysctlbyname = libc.declare(
@@ -65,7 +78,9 @@ function callSysctl(args) {
 }
 
 function callPrctl(args) {
-  const { ctypes } = ChromeUtils.import("resource://gre/modules/ctypes.jsm");
+  const { ctypes } = ChromeUtils.importESModule(
+    "resource://gre/modules/ctypes.sys.mjs"
+  );
   let { lib, option } = args;
   let libc = ctypes.open(lib);
   let prctl = libc.declare(
@@ -88,7 +103,9 @@ function callPrctl(args) {
 
 // Calls the native open/close syscalls.
 function callOpen(args) {
-  const { ctypes } = ChromeUtils.import("resource://gre/modules/ctypes.jsm");
+  const { ctypes } = ChromeUtils.importESModule(
+    "resource://gre/modules/ctypes.sys.mjs"
+  );
   let { lib, path, flags } = args;
   let libc = ctypes.open(lib);
   let open = libc.declare(
@@ -107,7 +124,9 @@ function callOpen(args) {
 
 // Verify faccessat2
 function callFaccessat2(args) {
-  const { ctypes } = ChromeUtils.import("resource://gre/modules/ctypes.jsm");
+  const { ctypes } = ChromeUtils.importESModule(
+    "resource://gre/modules/ctypes.sys.mjs"
+  );
   let { lib, dirfd, path, mode, flag } = args;
   let libc = ctypes.open(lib);
   let faccessat = libc.declare(
@@ -125,20 +144,6 @@ function callFaccessat2(args) {
   }
   libc.close();
   return rv;
-}
-
-// open syscall flags
-function openWriteCreateFlags() {
-  Assert.ok(isMac() || isLinux());
-  if (isMac()) {
-    let O_WRONLY = 0x001;
-    let O_CREAT = 0x200;
-    return O_WRONLY | O_CREAT;
-  }
-  // Linux
-  let O_WRONLY = 0x01;
-  let O_CREAT = 0x40;
-  return O_WRONLY | O_CREAT;
 }
 
 // Returns the name of the native library needed for native syscalls
@@ -159,10 +164,7 @@ function getOSLib() {
 // Reading a header might be weird, but the alternatives to read a stable
 // version number we can easily check against are not much more fun
 async function getKernelVersion() {
-  const { OS } = ChromeUtils.import("resource://gre/modules/osfile.jsm");
-  let header = await OS.File.read("/usr/include/linux/version.h", {
-    encoding: "utf-8",
-  });
+  let header = await IOUtils.readUTF8("/usr/include/linux/version.h");
   let hr = header.split("\n");
   for (let line in hr) {
     let hrs = hr[line].split(" ");
@@ -179,7 +181,9 @@ function computeKernelVersion(major, minor, dot) {
 }
 
 function getGlibcVersion() {
-  const { ctypes } = ChromeUtils.import("resource://gre/modules/ctypes.jsm");
+  const { ctypes } = ChromeUtils.importESModule(
+    "resource://gre/modules/ctypes.sys.mjs"
+  );
   let libc = ctypes.open(getOSLib());
   let gnu_get_libc_version = libc.declare(
     "gnu_get_libc_version",
@@ -230,7 +234,7 @@ function areContentSyscallsSandboxed(level) {
 // Tests executing OS API calls in the content process. Limited to Mac
 // and Linux calls for now.
 //
-add_task(async function() {
+add_task(async function () {
   // This test is only relevant in e10s
   if (!gMultiProcessBrowser) {
     ok(false, "e10s is enabled");
@@ -285,7 +289,7 @@ add_task(async function() {
   if (isLinux() || isMac()) {
     // open a file for writing in $HOME, this should fail
     let path = fileInHomeDir().path;
-    let flags = openWriteCreateFlags();
+    let flags = lazy.LIBC.O_CREAT | lazy.LIBC.O_WRONLY;
     let fd = await SpecialPowers.spawn(
       browser,
       [{ lib, path, flags }],
@@ -300,7 +304,7 @@ add_task(async function() {
     // macOS and work on Linux. The open handler in the content process closes
     // the file for us
     let path = fileInTempDir().path;
-    let flags = openWriteCreateFlags();
+    let flags = lazy.LIBC.O_CREAT | lazy.LIBC.O_WRONLY;
     let fd = await SpecialPowers.spawn(
       browser,
       [{ lib, path, flags }],
@@ -350,12 +354,12 @@ add_task(async function() {
   }
 
   if (isLinux()) {
-    const { OS } = ChromeUtils.import("resource://gre/modules/osfile.jsm");
+    // These constants are not portable.
 
     // verify we block PR_CAPBSET_READ with EINVAL
-    let option = OS.Constants.libc.PR_CAPBSET_READ;
+    let option = lazy.LIBC.PR_CAPBSET_READ;
     let rv = await SpecialPowers.spawn(browser, [{ lib, option }], callPrctl);
-    ok(rv == OS.Constants.libc.EINVAL, "prctl(PR_CAPBSET_READ) is blocked");
+    ok(rv === lazy.LIBC.EINVAL, "prctl(PR_CAPBSET_READ) is blocked");
 
     const kernelVersion = await getKernelVersion();
     const glibcVersion = getGlibcVersion();
@@ -372,17 +376,17 @@ add_task(async function() {
         callFaccessat2
       );
       ok(
-        rv == OS.Constants.libc.ENOSYS,
+        rv === lazy.LIBC.ENOSYS,
         "faccessat2 (flag=0x01) was blocked with ENOSYS"
       );
 
       rv = await SpecialPowers.spawn(
         browser,
-        [{ lib, dirfd, path, mode, flag: OS.Constants.libc.AT_EACCESS }],
+        [{ lib, dirfd, path, mode, flag: lazy.LIBC.AT_EACCESS }],
         callFaccessat2
       );
       ok(
-        rv == OS.Constants.libc.EACCES,
+        rv === lazy.LIBC.EACCES,
         "faccessat2 (flag=0x200) was allowed, errno=EACCES"
       );
     } else {

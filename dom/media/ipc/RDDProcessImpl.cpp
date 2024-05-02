@@ -8,26 +8,21 @@
 #include "mozilla/ipc/IOThreadChild.h"
 #include "mozilla/GeckoArgs.h"
 
-#if defined(OS_WIN) && defined(MOZ_SANDBOX)
+#if defined(XP_WIN) && defined(MOZ_SANDBOX)
 #  include "mozilla/sandboxTarget.h"
 #elif defined(__OpenBSD__) && defined(MOZ_SANDBOX)
 #  include "mozilla/SandboxSettings.h"
 #  include "prlink.h"
 #endif
 
-#include "mozilla/ipc/ProcessUtils.h"
-
 namespace mozilla {
 
 using namespace ipc;
 
-RDDProcessImpl::RDDProcessImpl(ProcessId aParentPid)
-    : ProcessChild(aParentPid) {}
-
 RDDProcessImpl::~RDDProcessImpl() = default;
 
 bool RDDProcessImpl::Init(int aArgc, char* aArgv[]) {
-#if defined(MOZ_SANDBOX) && defined(OS_WIN)
+#if defined(MOZ_SANDBOX) && defined(XP_WIN)
   // Preload AV dlls so we can enable Binary Signature Policy
   // to restrict further dll loads.
   LoadLibraryW(L"mozavcodec.dll");
@@ -36,6 +31,7 @@ bool RDDProcessImpl::Init(int aArgc, char* aArgv[]) {
 #elif defined(__OpenBSD__) && defined(MOZ_SANDBOX)
   PR_LoadLibrary("libmozavcodec.so");
   PR_LoadLibrary("libmozavutil.so");
+  PR_LoadLibrary("libavcodec.so");
   StartOpenBSDSandbox(GeckoProcessType_RDD);
 #endif
   Maybe<const char*> parentBuildID =
@@ -48,8 +44,7 @@ bool RDDProcessImpl::Init(int aArgc, char* aArgv[]) {
     return false;
   }
 
-  return mRDD.Init(ParentPid(), *parentBuildID,
-                   IOThreadChild::TakeInitialPort());
+  return mRDD->Init(TakeInitialEndpoint(), *parentBuildID);
 }
 
 void RDDProcessImpl::CleanUp() { NS_ShutdownXPCOM(nullptr); }

@@ -2,10 +2,10 @@
 
 function eval(source) {
     offThreadCompileModuleToStencil(source);
-    let stencil = finishOffThreadCompileModuleToStencil();
+    let stencil = finishOffThreadStencil();
     let m = instantiateModuleStencil(stencil);
-    m.declarationInstantiation();
-    return m.evaluation();
+    moduleLink(m);
+    return moduleEvaluate(m);
 }
 function runTestCase(testcase) {
     if (testcase() !== true) {}

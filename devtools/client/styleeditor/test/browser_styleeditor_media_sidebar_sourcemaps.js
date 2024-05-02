@@ -15,7 +15,7 @@ const LINE_NOS = [5, 8];
 
 waitForExplicitFinish();
 
-add_task(async function() {
+add_task(async function () {
   Services.prefs.setBoolPref(MAP_PREF, true);
 
   const { ui } = await openStyleEditorForURL(TESTCASE_URI);
@@ -25,16 +25,16 @@ add_task(async function() {
   // Test editor with @media rules
   const mediaEditor = ui.editors[0];
   await openEditor(mediaEditor);
-  testMediaEditor(mediaEditor);
+  testAtRulesEditor(mediaEditor);
 
   Services.prefs.clearUserPref(MAP_PREF);
 });
 
-function testMediaEditor(editor) {
+function testAtRulesEditor(editor) {
   const sidebar = editor.details.querySelector(".stylesheet-sidebar");
   is(sidebar.hidden, false, "sidebar is showing on editor with @media");
 
-  const entries = [...sidebar.querySelectorAll(".media-rule-label")];
+  const entries = [...sidebar.querySelectorAll(".at-rule-label")];
   is(entries.length, 2, "two @media rules displayed in sidebar");
 
   testRule(entries[0], LABELS[0], LINE_NOS[0]);
@@ -42,10 +42,10 @@ function testMediaEditor(editor) {
 }
 
 function testRule(rule, text, lineno) {
-  const cond = rule.querySelector(".media-rule-condition");
+  const cond = rule.querySelector(".at-rule-condition");
   is(cond.textContent, text, "media label is correct for " + text);
 
-  const line = rule.querySelector(".media-rule-line");
+  const line = rule.querySelector(".at-rule-line");
   is(line.textContent, ":" + lineno, "correct line number shown");
 }
 

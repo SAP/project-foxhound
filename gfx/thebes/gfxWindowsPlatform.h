@@ -170,8 +170,6 @@ class gfxWindowsPlatform final : public gfxPlatform {
  public:
   static nsresult GetGpuTimeSinceProcessStartInMs(uint64_t* aResult);
 
-  bool DwmCompositionEnabled();
-
   static bool IsOptimus();
 
   bool SupportsApzWheelInput() const override { return true; }
@@ -181,7 +179,7 @@ class gfxWindowsPlatform final : public gfxPlatform {
   bool HandleDeviceReset();
   void UpdateBackendPrefs();
 
-  already_AddRefed<mozilla::gfx::VsyncSource> CreateHardwareVsyncSource()
+  already_AddRefed<mozilla::gfx::VsyncSource> CreateGlobalHardwareVsyncSource()
       override;
   static mozilla::Atomic<size_t> sD3D11SharedTextures;
   static mozilla::Atomic<size_t> sD3D9SharedTextures;
@@ -193,9 +191,20 @@ class gfxWindowsPlatform final : public gfxPlatform {
 
   static void InitMemoryReportersForGPUProcess();
 
+  static bool CheckVariationFontSupport();
+
+  // Always false for content processes.
+  bool SupportsHDR() override { return mSupportsHDR; }
+
  protected:
   bool AccelerateLayersByDefault() override { return true; }
+
   nsTArray<uint8_t> GetPlatformCMSOutputProfileData() override;
+
+ public:
+  static nsTArray<uint8_t> GetPlatformCMSOutputProfileData_Impl();
+
+ protected:
   void GetPlatformDisplayInfo(mozilla::widget::InfoObject& aObj) override;
 
   void ImportGPUDeviceData(const mozilla::gfx::GPUDeviceData& aData) override;
@@ -205,18 +214,12 @@ class gfxWindowsPlatform final : public gfxPlatform {
 
   BackendPrefsData GetBackendPrefs() const override;
 
-  bool CheckVariationFontSupport() override;
+  void UpdateSupportsHDR();
 
- protected:
   RenderMode mRenderMode;
+  bool mSupportsHDR;
 
  private:
-  enum class DwmCompositionStatus : uint32_t {
-    Unknown,
-    Disabled,
-    Enabled,
-  };
-
   void Init();
   void InitAcceleration() override;
   void InitWebRenderConfig() override;
@@ -239,9 +242,6 @@ class gfxWindowsPlatform final : public gfxPlatform {
   void RecordStartupTelemetry();
 
   bool mInitializedDevices = false;
-
-  mozilla::Atomic<DwmCompositionStatus, mozilla::ReleaseAcquire>
-      mDwmCompositionStatus;
 
   // Cached contents of the output color profile file
   nsTArray<uint8_t> mCachedOutputColorProfile;

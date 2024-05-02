@@ -3,13 +3,11 @@
 
 "use strict";
 
-const {
-  getClientCssProperties,
-} = require("devtools/client/fronts/css-properties");
-
-add_task(async function() {
+add_task(async function () {
   await pushPref("layout.css.backdrop-filter.enabled", true);
   await pushPref("layout.css.individual-transform.enabled", true);
+  await pushPref("layout.css.color-mix.enabled", true);
+  await pushPref("layout.css.motion-path-basic-shapes.enabled", true);
   await addTab("about:blank");
   await performTest();
   gBrowser.removeCurrentTab();
@@ -20,7 +18,7 @@ async function performTest() {
     set: [["security.allow_unsafe_parent_loads", true]],
   });
 
-  const OutputParser = require("devtools/client/shared/output-parser");
+  const OutputParser = require("resource://devtools/client/shared/output-parser.js");
 
   const { host, doc } = await createHost(
     "bottom",
@@ -67,17 +65,25 @@ function makeColorTest(name, value, segments) {
     if (typeof segment === "string") {
       result.expected += segment;
     } else {
+      const buttonAttributes = {
+        class: COLOR_TEST_CLASS,
+        style: `background-color:${segment.name}`,
+        tabindex: 0,
+        role: "button",
+      };
+      if (segment.colorFunction) {
+        buttonAttributes["data-color-function"] = segment.colorFunction;
+      }
+      const buttonAttrString = Object.entries(buttonAttributes)
+        .map(([attr, v]) => `${attr}="${v}"`)
+        .join(" ");
+
+      // prettier-ignore
       result.expected +=
-        '<span data-color="' +
-        segment.name +
-        '">' +
-        '<span class="' +
-        COLOR_TEST_CLASS +
-        '" style="background-color:' +
-        segment.name +
-        '" tabindex="0" role="button"></span><span>' +
-        segment.name +
-        "</span></span>";
+        `<span data-color="${segment.name}">` +
+          `<span ${buttonAttrString}></span>`+
+          `<span>${segment.name}</span>` +
+        `</span>`;
     }
   }
 
@@ -95,9 +101,9 @@ function testParseCssProperty(doc, parser) {
       "linear-gradient(to right, #F60 10%, rgba(0,0,0,1))",
       [
         "linear-gradient(to right, ",
-        { name: "#F60" },
+        { name: "#F60", colorFunction: "linear-gradient" },
         " 10%, ",
-        { name: "rgba(0,0,0,1)" },
+        { name: "rgba(0,0,0,1)", colorFunction: "linear-gradient" },
         ")",
       ]
     ),
@@ -127,7 +133,7 @@ function testParseCssProperty(doc, parser) {
         '<span data-filters="blur(1px) drop-shadow(0 0 0 blue) ',
         'url(red.svg#blue)"><span>',
         "blur(1px) drop-shadow(0 0 0 ",
-        { name: "blue" },
+        { name: "blue", colorFunction: "drop-shadow" },
         ") url(red.svg#blue)</span></span>",
       ]
     ),
@@ -137,90 +143,88 @@ function testParseCssProperty(doc, parser) {
     // Test a very long property.
     makeColorTest(
       "background-image",
-      /* eslint-disable max-len */
       "linear-gradient(to left, transparent 0, transparent 5%,#F00 0, #F00 10%,#FF0 0, #FF0 15%,#0F0 0, #0F0 20%,#0FF 0, #0FF 25%,#00F 0, #00F 30%,#800 0, #800 35%,#880 0, #880 40%,#080 0, #080 45%,#088 0, #088 50%,#008 0, #008 55%,#FFF 0, #FFF 60%,#EEE 0, #EEE 65%,#CCC 0, #CCC 70%,#999 0, #999 75%,#666 0, #666 80%,#333 0, #333 85%,#111 0, #111 90%,#000 0, #000 95%,transparent 0, transparent 100%)",
-      /* eslint-enable max-len */
       [
         "linear-gradient(to left, ",
-        { name: "transparent" },
+        { name: "transparent", colorFunction: "linear-gradient" },
         " 0, ",
-        { name: "transparent" },
+        { name: "transparent", colorFunction: "linear-gradient" },
         " 5%,",
-        { name: "#F00" },
+        { name: "#F00", colorFunction: "linear-gradient" },
         " 0, ",
-        { name: "#F00" },
+        { name: "#F00", colorFunction: "linear-gradient" },
         " 10%,",
-        { name: "#FF0" },
+        { name: "#FF0", colorFunction: "linear-gradient" },
         " 0, ",
-        { name: "#FF0" },
+        { name: "#FF0", colorFunction: "linear-gradient" },
         " 15%,",
-        { name: "#0F0" },
+        { name: "#0F0", colorFunction: "linear-gradient" },
         " 0, ",
-        { name: "#0F0" },
+        { name: "#0F0", colorFunction: "linear-gradient" },
         " 20%,",
-        { name: "#0FF" },
+        { name: "#0FF", colorFunction: "linear-gradient" },
         " 0, ",
-        { name: "#0FF" },
+        { name: "#0FF", colorFunction: "linear-gradient" },
         " 25%,",
-        { name: "#00F" },
+        { name: "#00F", colorFunction: "linear-gradient" },
         " 0, ",
-        { name: "#00F" },
+        { name: "#00F", colorFunction: "linear-gradient" },
         " 30%,",
-        { name: "#800" },
+        { name: "#800", colorFunction: "linear-gradient" },
         " 0, ",
-        { name: "#800" },
+        { name: "#800", colorFunction: "linear-gradient" },
         " 35%,",
-        { name: "#880" },
+        { name: "#880", colorFunction: "linear-gradient" },
         " 0, ",
-        { name: "#880" },
+        { name: "#880", colorFunction: "linear-gradient" },
         " 40%,",
-        { name: "#080" },
+        { name: "#080", colorFunction: "linear-gradient" },
         " 0, ",
-        { name: "#080" },
+        { name: "#080", colorFunction: "linear-gradient" },
         " 45%,",
-        { name: "#088" },
+        { name: "#088", colorFunction: "linear-gradient" },
         " 0, ",
-        { name: "#088" },
+        { name: "#088", colorFunction: "linear-gradient" },
         " 50%,",
-        { name: "#008" },
+        { name: "#008", colorFunction: "linear-gradient" },
         " 0, ",
-        { name: "#008" },
+        { name: "#008", colorFunction: "linear-gradient" },
         " 55%,",
-        { name: "#FFF" },
+        { name: "#FFF", colorFunction: "linear-gradient" },
         " 0, ",
-        { name: "#FFF" },
+        { name: "#FFF", colorFunction: "linear-gradient" },
         " 60%,",
-        { name: "#EEE" },
+        { name: "#EEE", colorFunction: "linear-gradient" },
         " 0, ",
-        { name: "#EEE" },
+        { name: "#EEE", colorFunction: "linear-gradient" },
         " 65%,",
-        { name: "#CCC" },
+        { name: "#CCC", colorFunction: "linear-gradient" },
         " 0, ",
-        { name: "#CCC" },
+        { name: "#CCC", colorFunction: "linear-gradient" },
         " 70%,",
-        { name: "#999" },
+        { name: "#999", colorFunction: "linear-gradient" },
         " 0, ",
-        { name: "#999" },
+        { name: "#999", colorFunction: "linear-gradient" },
         " 75%,",
-        { name: "#666" },
+        { name: "#666", colorFunction: "linear-gradient" },
         " 0, ",
-        { name: "#666" },
+        { name: "#666", colorFunction: "linear-gradient" },
         " 80%,",
-        { name: "#333" },
+        { name: "#333", colorFunction: "linear-gradient" },
         " 0, ",
-        { name: "#333" },
+        { name: "#333", colorFunction: "linear-gradient" },
         " 85%,",
-        { name: "#111" },
+        { name: "#111", colorFunction: "linear-gradient" },
         " 0, ",
-        { name: "#111" },
+        { name: "#111", colorFunction: "linear-gradient" },
         " 90%,",
-        { name: "#000" },
+        { name: "#000", colorFunction: "linear-gradient" },
         " 0, ",
-        { name: "#000" },
+        { name: "#000", colorFunction: "linear-gradient" },
         " 95%,",
-        { name: "transparent" },
+        { name: "transparent", colorFunction: "linear-gradient" },
         " 0, ",
-        { name: "transparent" },
+        { name: "transparent", colorFunction: "linear-gradient" },
         " 100%)",
       ]
     ),
@@ -230,6 +234,29 @@ function testParseCssProperty(doc, parser) {
       "1px dotted ",
       { name: "#f06" },
     ]),
+
+    makeColorTest("color", "color-mix(in srgb, red, blue)", [
+      "color-mix(in srgb, ",
+      { name: "red", colorFunction: "color-mix" },
+      ", ",
+      { name: "blue", colorFunction: "color-mix" },
+      ")",
+    ]),
+
+    makeColorTest(
+      "background-image",
+      "linear-gradient(to top, color-mix(in srgb, #008000, rgba(255, 255, 0, 0.9)), blue)",
+      [
+        "linear-gradient(to top, ",
+        "color-mix(in srgb, ",
+        { name: "#008000", colorFunction: "color-mix" },
+        ", ",
+        { name: "rgba(255, 255, 0, 0.9)", colorFunction: "color-mix" },
+        "), ",
+        { name: "blue", colorFunction: "linear-gradient" },
+        ")",
+      ]
+    ),
   ];
 
   const target = doc.querySelector("div");
@@ -496,11 +523,17 @@ function testParseShape(doc, parser) {
       definition: "inset()",
       spanCount: 0,
     },
+    {
+      desc: "offset-path property with inset shape value",
+      property: "offset-path",
+      definition: "inset(200px)",
+      spanCount: 1,
+    },
   ];
 
-  for (const { desc, definition, spanCount } of tests) {
+  for (const { desc, definition, property = "clip-path", spanCount } of tests) {
     info(desc);
-    const frag = parser.parseCssProperty("clip-path", definition, {
+    const frag = parser.parseCssProperty(property, definition, {
       shapeClass: "ruleview-shape",
     });
     const spans = frag.querySelectorAll(".ruleview-shape-point");
@@ -515,29 +548,27 @@ function testParseVariable(doc, parser) {
       text: "var(--seen)",
       variables: { "--seen": "chartreuse" },
       expected:
-        /* eslint-disable */
+        // prettier-ignore
         '<span data-color="chartreuse">' +
           "<span>var(" +
             '<span data-variable="--seen = chartreuse">--seen</span>)' +
           "</span>" +
         "</span>",
-        /* eslint-enable */
     },
     {
       text: "var(--not-seen)",
       variables: {},
       expected:
-        /* eslint-disable */
+        // prettier-ignore
         "<span>var(" +
           '<span class="unmatched-class" data-variable="--not-seen is not set">--not-seen</span>' +
         ")</span>",
-        /* eslint-enable */
     },
     {
       text: "var(--seen, seagreen)",
       variables: { "--seen": "chartreuse" },
       expected:
-        /* eslint-disable */
+        // prettier-ignore
         '<span data-color="chartreuse">' +
           "<span>var(" +
             '<span data-variable="--seen = chartreuse">--seen</span>,' +
@@ -548,13 +579,12 @@ function testParseVariable(doc, parser) {
             "</span>)" +
           "</span>" +
         "</span>",
-        /* eslint-enable */
     },
     {
       text: "var(--not-seen, var(--seen))",
       variables: { "--seen": "chartreuse" },
       expected:
-        /* eslint-disable */
+        // prettier-ignore
         "<span>var(" +
           '<span class="unmatched-class" data-variable="--not-seen is not set">--not-seen</span>,' +
           "<span> " +
@@ -565,18 +595,72 @@ function testParseVariable(doc, parser) {
             "</span>" +
           "</span>)" +
         "</span>",
-        /* eslint-enable */
+    },
+    {
+      text: "color-mix(in sgrb, var(--x), purple)",
+      variables: { "--x": "yellow" },
+      expected:
+        // prettier-ignore
+        `color-mix(in sgrb, ` +
+        `<span data-color="yellow">` +
+          `<span class="test-class" style="background-color:yellow" tabindex="0" role="button" data-color-function="color-mix">` +
+          `</span>` +
+          `<span>var(<span data-variable="--x = yellow">--x</span>)</span>` +
+        `</span>` +
+        `, ` +
+        `<span data-color="purple">` +
+          `<span class="test-class" style="background-color:purple" tabindex="0" role="button" data-color-function="color-mix">` +
+          `</span>` +
+          `<span>purple</span>` +
+        `</span>` +
+        `)`,
+      parserExtraOptions: {
+        colorSwatchClass: COLOR_TEST_CLASS,
+      },
+    },
+    {
+      text: "1px solid var(--seen, seagreen)",
+      variables: { "--seen": "chartreuse" },
+      expected:
+        // prettier-ignore
+        '1px solid ' +
+        '<span data-color="chartreuse">' +
+          "<span>var(" +
+            '<span data-variable="--seen = chartreuse">--seen</span>,' +
+            '<span class="unmatched-class"> ' +
+              '<span data-color="seagreen">' +
+                "<span>seagreen</span>" +
+              "</span>" +
+            "</span>)" +
+          "</span>" +
+        "</span>",
+    },
+    {
+      text: "1px solid var(--not-seen, seagreen)",
+      variables: {},
+      expected:
+        // prettier-ignore
+        `1px solid ` +
+        `<span>var(` +
+          `<span class="unmatched-class" data-variable="--not-seen is not set">--not-seen</span>,` +
+          `<span> ` +
+            `<span data-color="seagreen">` +
+              `<span>seagreen</span>` +
+            `</span>` +
+          `</span>)` +
+        `</span>`,
     },
   ];
 
   for (const test of TESTS) {
-    const getValue = function(varName) {
+    const getValue = function (varName) {
       return test.variables[varName];
     };
 
     const frag = parser.parseCssProperty("color", test.text, {
       getVariableValue: getValue,
       unmatchedVariableClass: "unmatched-class",
+      ...(test.parserExtraOptions || {}),
     });
 
     const target = doc.querySelector("div");
@@ -719,4 +803,33 @@ function testParseFontFamily(doc, parser) {
     const frag = parser.parseCssProperty("font-family", definition, {});
     is(frag.textContent, output, desc + " text content matches");
   }
+
+  info("Test font-family with custom properties");
+  const frag = parser.parseCssProperty(
+    "font-family",
+    "var(--family, Georgia, serif)",
+    {
+      getVariableValue: () => {},
+      unmatchedVariableClass: "unmatched-class",
+      fontFamilyClass: "ruleview-font-family",
+    }
+  );
+  const target = doc.createElement("div");
+  target.appendChild(frag);
+  is(
+    target.innerHTML,
+    // prettier-ignore
+    `<span>var(` +
+      `<span class="unmatched-class" data-variable="--family is not set">` +
+        `--family` +
+      `</span>` +
+      `,` +
+      `<span> ` +
+        `<span class="ruleview-font-family">Georgia</span>` +
+        `, ` +
+        `<span class="ruleview-font-family">serif</span>` +
+      `</span>)` +
+    `</span>`,
+    "Got expected output for font-family with custom properties"
+  );
 }

@@ -6,12 +6,8 @@
 
 "use strict";
 
-var { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
-);
-
-XPCOMUtils.defineLazyModuleGetters(this, {
-  PlacesUtils: "resource://gre/modules/PlacesUtils.jsm",
+ChromeUtils.defineESModuleGetters(this, {
+  PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
 });
 
 var { ExtensionError } = ExtensionUtils;
@@ -26,7 +22,7 @@ const BOOKMARKS_TYPES_TO_API_TYPES_MAP = new Map([
 
 const BOOKMARK_SEPERATOR_URL = "data:";
 
-XPCOMUtils.defineLazyGetter(this, "API_TYPES_TO_BOOKMARKS_TYPES_MAP", () => {
+ChromeUtils.defineLazyGetter(this, "API_TYPES_TO_BOOKMARKS_TYPES_MAP", () => {
   let theMap = new Map();
 
   for (let [code, name] of BOOKMARKS_TYPES_TO_API_TYPES_MAP) {
@@ -156,6 +152,7 @@ let observer = new (class extends EventEmitter {
             index: event.index,
             type: BOOKMARKS_TYPES_TO_API_TYPES_MAP.get(event.itemType),
             url: getUrl(event.itemType, event.url),
+            title: event.title,
           };
 
           this.emit("removed", {
@@ -231,7 +228,81 @@ const incrementListeners = () => {
   }
 };
 
-this.bookmarks = class extends ExtensionAPI {
+this.bookmarks = class extends ExtensionAPIPersistent {
+  PERSISTENT_EVENTS = {
+    onCreated({ fire }) {
+      let listener = (event, bookmark) => {
+        fire.sync(bookmark.id, bookmark);
+      };
+
+      observer.on("created", listener);
+      incrementListeners();
+      return {
+        unregister() {
+          observer.off("created", listener);
+          decrementListeners();
+        },
+        convert(_fire) {
+          fire = _fire;
+        },
+      };
+    },
+
+    onRemoved({ fire }) {
+      let listener = (event, data) => {
+        fire.sync(data.guid, data.info);
+      };
+
+      observer.on("removed", listener);
+      incrementListeners();
+      return {
+        unregister() {
+          observer.off("removed", listener);
+          decrementListeners();
+        },
+        convert(_fire) {
+          fire = _fire;
+        },
+      };
+    },
+
+    onChanged({ fire }) {
+      let listener = (event, data) => {
+        fire.sync(data.guid, data.info);
+      };
+
+      observer.on("changed", listener);
+      incrementListeners();
+      return {
+        unregister() {
+          observer.off("changed", listener);
+          decrementListeners();
+        },
+        convert(_fire) {
+          fire = _fire;
+        },
+      };
+    },
+
+    onMoved({ fire }) {
+      let listener = (event, data) => {
+        fire.sync(data.guid, data.info);
+      };
+
+      observer.on("moved", listener);
+      incrementListeners();
+      return {
+        unregister() {
+          observer.off("moved", listener);
+          decrementListeners();
+        },
+        convert(_fire) {
+          fire = _fire;
+        },
+      };
+    },
+  };
+
   getAPI(context) {
     return {
       bookmarks: {
@@ -253,32 +324,32 @@ this.bookmarks = class extends ExtensionAPI {
           }
         },
 
-        getChildren: function(id) {
+        getChildren: function (id) {
           // TODO: We should optimize this.
           return getTree(id, true);
         },
 
-        getTree: function() {
+        getTree: function () {
           return getTree(PlacesUtils.bookmarks.rootGuid, false);
         },
 
-        getSubTree: function(id) {
+        getSubTree: function (id) {
           return getTree(id, false);
         },
 
-        search: function(query) {
+        search: function (query) {
           return PlacesUtils.bookmarks
             .search(query)
             .then(result => result.map(convertBookmarks));
         },
 
-        getRecent: function(numberOfItems) {
+        getRecent: function (numberOfItems) {
           return PlacesUtils.bookmarks
             .getRecent(numberOfItems)
             .then(result => result.map(convertBookmarks));
         },
 
-        create: function(bookmark) {
+        create: function (bookmark) {
           let info = {
             title: bookmark.title || "",
           };
@@ -320,7 +391,7 @@ this.bookmarks = class extends ExtensionAPI {
           }
         },
 
-        move: function(id, destination) {
+        move: function (id, destination) {
           throwIfRootId(id);
           let info = {
             guid: id,
@@ -347,7 +418,7 @@ this.bookmarks = class extends ExtensionAPI {
           }
         },
 
-        update: function(id, changes) {
+        update: function (id, changes) {
           throwIfRootId(id);
           let info = {
             guid: id,
@@ -372,7 +443,7 @@ this.bookmarks = class extends ExtensionAPI {
           }
         },
 
-        remove: function(id) {
+        remove: function (id) {
           throwIfRootId(id);
           let info = {
             guid: id,
@@ -390,7 +461,7 @@ this.bookmarks = class extends ExtensionAPI {
           }
         },
 
-        removeTree: function(id) {
+        removeTree: function (id) {
           throwIfRootId(id);
           let info = {
             guid: id,
@@ -409,70 +480,30 @@ this.bookmarks = class extends ExtensionAPI {
 
         onCreated: new EventManager({
           context,
-          name: "bookmarks.onCreated",
-          register: fire => {
-            let listener = (event, bookmark) => {
-              fire.sync(bookmark.id, bookmark);
-            };
-
-            observer.on("created", listener);
-            incrementListeners();
-            return () => {
-              observer.off("created", listener);
-              decrementListeners();
-            };
-          },
+          module: "bookmarks",
+          event: "onCreated",
+          extensionApi: this,
         }).api(),
 
         onRemoved: new EventManager({
           context,
-          name: "bookmarks.onRemoved",
-          register: fire => {
-            let listener = (event, data) => {
-              fire.sync(data.guid, data.info);
-            };
-
-            observer.on("removed", listener);
-            incrementListeners();
-            return () => {
-              observer.off("removed", listener);
-              decrementListeners();
-            };
-          },
+          module: "bookmarks",
+          event: "onRemoved",
+          extensionApi: this,
         }).api(),
 
         onChanged: new EventManager({
           context,
-          name: "bookmarks.onChanged",
-          register: fire => {
-            let listener = (event, data) => {
-              fire.sync(data.guid, data.info);
-            };
-
-            observer.on("changed", listener);
-            incrementListeners();
-            return () => {
-              observer.off("changed", listener);
-              decrementListeners();
-            };
-          },
+          module: "bookmarks",
+          event: "onChanged",
+          extensionApi: this,
         }).api(),
 
         onMoved: new EventManager({
           context,
-          name: "bookmarks.onMoved",
-          register: fire => {
-            let listener = (event, data) => {
-              fire.sync(data.guid, data.info);
-            };
-
-            observer.on("moved", listener);
-            incrementListeners();
-            return () => {
-              observer.off("moved", listener);
-              decrementListeners();
-            };
-          },
+          module: "bookmarks",
+          event: "onMoved",
+          extensionApi: this,
         }).api(),
       },
     };

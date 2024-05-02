@@ -80,6 +80,16 @@ function Spinner(props, context) {
 
       this.elements.spinner.style.height = ITEM_HEIGHT * viewportSize + "rem";
 
+      // Prepares the spinner container to function as a spinbutton and expose
+      // its properties to assistive technology
+      this.elements.spinner.setAttribute("role", "spinbutton");
+      this.elements.spinner.setAttribute("tabindex", "0");
+      // Remove up/down buttons from the focus order, because a keyboard-only
+      // user can adjust values by pressing Up/Down arrow keys on a spinbutton,
+      // otherwise it creates extra, redundant tab order stops for users
+      this.elements.up.setAttribute("tabindex", "-1");
+      this.elements.down.setAttribute("tabindex", "-1");
+
       if (id) {
         this.elements.container.id = id;
       }
@@ -118,17 +128,30 @@ function Spinner(props, context) {
       if (this._isArrayDiff(newItems, items)) {
         this.state = Object.assign(this.state, newState);
         this._updateItems();
-        this._scrollTo(newValue, true);
+        this._scrollTo(newValue, /* centering = */ true, /* smooth = */ false);
       } else if (newValue != value) {
         this.state = Object.assign(this.state, newState);
-        if (smoothScroll) {
-          this._smoothScrollTo(newValue, true);
-        } else {
-          this._scrollTo(newValue, true);
-        }
+        this._scrollTo(newValue, /* centering = */ true, smoothScroll);
       }
 
-      if (isValueSet && !isInvalid) {
+      this.elements.spinner.setAttribute(
+        "aria-valuemin",
+        this.state.items[0].value
+      );
+      this.elements.spinner.setAttribute(
+        "aria-valuemax",
+        this.state.items.at(-1).value
+      );
+      this.elements.spinner.setAttribute("aria-valuenow", this.state.value);
+      if (!this.elements.spinner.getAttribute("aria-valuetext")) {
+        this.elements.spinner.setAttribute(
+          "aria-valuetext",
+          this.props.getDisplayString(this.state.value)
+        );
+      }
+
+      // Show selection even if it's passed down from the parent
+      if ((isValueSet && !isInvalid) || this.state.index) {
         this._updateSelection();
       } else {
         this._removeSelection();
@@ -177,6 +200,10 @@ function Spinner(props, context) {
      */
     _onScrollend() {
       this.elements.spinner.classList.remove("scrolling");
+      this.elements.spinner.setAttribute(
+        "aria-valuetext",
+        this.props.getDisplayString(this.state.value)
+      );
     },
 
     /**
@@ -240,6 +267,8 @@ function Spinner(props, context) {
 
         for (let i = 0; i < diff; i++) {
           let el = document.createElement("div");
+          // Spinbutton elements should be hidden from assistive technology:
+          el.setAttribute("aria-hidden", "true");
           frag.appendChild(el);
           this.elements.itemsViewElements.push(el);
         }
@@ -284,8 +313,10 @@ function Spinner(props, context) {
 
       spinner.addEventListener("scroll", this, { passive: true });
       spinner.addEventListener("scrollend", this, { passive: true });
+      spinner.addEventListener("keydown", this);
       container.addEventListener("mouseup", this, { passive: true });
       container.addEventListener("mousedown", this, { passive: true });
+      container.addEventListener("keydown", this);
     },
 
     /**
@@ -379,6 +410,62 @@ function Spinner(props, context) {
           spinner.scrollTop -= event.movementY;
           break;
         }
+        case "keydown": {
+          // Providing keyboard navigation support in accordance with
+          // the ARIA Spinbutton design pattern
+          if (event.target === spinner) {
+            switch (event.key) {
+              case "ArrowUp": {
+                // While the spinner is focused, selects previous value and centers it
+                this._setValueForSpinner(event, index - 1);
+                break;
+              }
+              case "ArrowDown": {
+                // While the spinner is focused, selects next value and centers it
+                this._setValueForSpinner(event, index + 1);
+                break;
+              }
+              case "PageUp": {
+                // While the spinner is focused, selects 5th value above and centers it
+                this._setValueForSpinner(event, index - 5);
+                break;
+              }
+              case "PageDown": {
+                // While the spinner is focused, selects 5th value below and centers it
+                this._setValueForSpinner(event, index + 5);
+                break;
+              }
+              case "Home": {
+                // While the spinner is focused, selects the min value and centers it
+                let targetValue;
+                for (let i = 0; i < this.state.items.length - 1; i++) {
+                  if (this.state.items[i].enabled) {
+                    targetValue = this.state.items[i].value;
+                    break;
+                  }
+                }
+                this._smoothScrollTo(targetValue);
+                event.stopPropagation();
+                event.preventDefault();
+                break;
+              }
+              case "End": {
+                // While the spinner is focused, selects the max value and centers it
+                let targetValue;
+                for (let i = this.state.items.length - 1; i >= 0; i--) {
+                  if (this.state.items[i].enabled) {
+                    targetValue = this.state.items[i].value;
+                    break;
+                  }
+                }
+                this._smoothScrollTo(targetValue);
+                event.stopPropagation();
+                event.preventDefault();
+                break;
+              }
+            }
+          }
+        }
       }
     },
 
@@ -434,48 +521,45 @@ function Spinner(props, context) {
     },
 
     /**
+     * Scroll to a value based on the index
+     *
+     * @param  {Number} index: Index number
+     * @param  {Boolean} smooth: Whether or not scroll should be smooth by default
+     */
+    _scrollToIndex(index, smooth) {
+      // Do nothing if the value is not found
+      if (index < 0) {
+        return;
+      }
+      this.state.index = index;
+      const element = this.elements.spinner.children[index];
+      if (!element) {
+        return;
+      }
+      element.scrollIntoView({
+        behavior: smooth ? "auto" : "instant",
+        block: "start",
+      });
+    },
+
+    /**
      * Scroll to a value.
      *
      * @param  {Number/String} value: Value to scroll to
      * @param  {Boolean} centering: Whether or not to scroll to center location
+     * @param  {Boolean} smooth: Whether or not scroll should be smooth by default
      */
-    _scrollTo(value, centering) {
+    _scrollTo(value, centering, smooth) {
       const index = this._getScrollIndex(value, centering);
-      // Do nothing if the value is not found
-      if (index > -1) {
-        this.state.index = index;
-        this.elements.spinner.scrollTop =
-          this.state.index * ITEM_HEIGHT * this.props.rootFontSize;
-      }
+      this._scrollToIndex(index, smooth);
     },
 
-    /**
-     * Smooth scroll to a value.
-     *
-     * @param  {Number/String} value: Value to scroll to
-     */
     _smoothScrollTo(value) {
-      const index = this._getScrollIndex(value);
-      // Do nothing if the value is not found
-      if (index > -1) {
-        this.state.index = index;
-        this._smoothScrollToIndex(this.state.index);
-      }
+      this._scrollTo(value, /* centering = */ false, /* smooth = */ true);
     },
 
-    /**
-     * Smooth scroll to a value based on the index
-     *
-     * @param  {Number} index: Index number
-     */
     _smoothScrollToIndex(index) {
-      const element = this.elements.spinner.children[index];
-      if (element) {
-        element.scrollIntoView({
-          behavior: "smooth",
-          block: "start",
-        });
-      }
+      this._scrollToIndex(index, /* smooth = */ true);
     },
 
     /**
@@ -502,6 +586,7 @@ function Spinner(props, context) {
      */
     _removeSelection() {
       const { selected } = this.elements;
+
       if (selected) {
         selected.classList.remove("selection");
       }
@@ -533,6 +618,20 @@ function Spinner(props, context) {
         }
       }
       return false;
+    },
+
+    /**
+     * While the spinner is focused and keyboard command is used, selects an
+     * appropriate index and centers it, while preventing default behavior and
+     * stopping event propagation.
+     *
+     * @param {Object} event: Keyboard event
+     * @param {Number} index: The index of the expected next item
+     */
+    _setValueForSpinner(event, index) {
+      this._smoothScrollToIndex(index);
+      event.stopPropagation();
+      event.preventDefault();
     },
   };
 }

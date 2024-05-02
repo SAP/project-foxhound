@@ -2,8 +2,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import
-
 import os
 import shutil
 
@@ -12,7 +10,7 @@ from marionette_harness import MarionetteTestCase
 
 class TestAutoConfig(MarionetteTestCase):
     def tearDown(self):
-        self.marionette.quit(clean=True)
+        self.marionette.quit(in_app=False, clean=True)
 
         if hasattr(self, "pref_file"):
             os.remove(self.pref_file)

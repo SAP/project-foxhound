@@ -1,3 +1,7 @@
+#[cfg_attr(
+    not(any(feature = "full", feature = "derive")),
+    allow(unknown_lints, unused_macro_rules)
+)]
 macro_rules! ast_struct {
     (
         [$($attrs_pub:tt)*]
@@ -55,15 +59,6 @@ macro_rules! ast_enum {
 macro_rules! ast_enum_of_structs {
     (
         $(#[$enum_attr:meta])*
-        $pub:ident $enum:ident $name:ident #$tag:ident $body:tt
-        $($remaining:tt)*
-    ) => {
-        ast_enum!($(#[$enum_attr])* $pub $enum $name #$tag $body);
-        ast_enum_of_structs_impl!($pub $enum $name $body $($remaining)*);
-    };
-
-    (
-        $(#[$enum_attr:meta])*
         $pub:ident $enum:ident $name:ident $body:tt
         $($remaining:tt)*
     ) => {
@@ -76,12 +71,11 @@ macro_rules! ast_enum_of_structs_impl {
     (
         $pub:ident $enum:ident $name:ident {
             $(
-                $(#[$variant_attr:meta])*
+                $(#[cfg $cfg_attr:tt])*
+                $(#[doc $($doc_attr:tt)*])*
                 $variant:ident $( ($($member:ident)::+) )*,
             )*
         }
-
-        $($remaining:tt)*
     ) => {
         check_keyword_matches!(pub $pub);
         check_keyword_matches!(enum $enum);
@@ -92,10 +86,15 @@ macro_rules! ast_enum_of_structs_impl {
 
         #[cfg(feature = "printing")]
         generate_to_tokens! {
-            $($remaining)*
             ()
             tokens
-            $name { $($variant $($($member)::+)*,)* }
+            $name {
+                $(
+                    $(#[cfg $cfg_attr])*
+                    $(#[doc $($doc_attr)*])*
+                    $variant $($($member)::+)*,
+                )*
+            }
         }
     };
 }
@@ -103,9 +102,6 @@ macro_rules! ast_enum_of_structs_impl {
 macro_rules! ast_enum_from_struct {
     // No From<TokenStream> for verbatim variants.
     ($name:ident::Verbatim, $member:ident) => {};
-
-    // No From<TokenStream> for private variants.
-    ($name:ident::$variant:ident, crate::private) => {};
 
     ($name:ident::$variant:ident, $member:ident) => {
         impl From<$member> for $name {
@@ -118,25 +114,30 @@ macro_rules! ast_enum_from_struct {
 
 #[cfg(feature = "printing")]
 macro_rules! generate_to_tokens {
-    (do_not_generate_to_tokens $($foo:tt)*) => ();
-
-    (($($arms:tt)*) $tokens:ident $name:ident { $variant:ident, $($next:tt)*}) => {
+    (
+        ($($arms:tt)*) $tokens:ident $name:ident {
+            $(#[cfg $cfg_attr:tt])*
+            $(#[doc $($doc_attr:tt)*])*
+            $variant:ident,
+            $($next:tt)*
+        }
+    ) => {
         generate_to_tokens!(
-            ($($arms)* $name::$variant => {})
+            ($($arms)* $(#[cfg $cfg_attr])* $name::$variant => {})
             $tokens $name { $($next)* }
         );
     };
 
-    (($($arms:tt)*) $tokens:ident $name:ident { $variant:ident $member:ident, $($next:tt)*}) => {
+    (
+        ($($arms:tt)*) $tokens:ident $name:ident {
+            $(#[cfg $cfg_attr:tt])*
+            $(#[doc $($doc_attr:tt)*])*
+            $variant:ident $member:ident,
+            $($next:tt)*
+        }
+    ) => {
         generate_to_tokens!(
-            ($($arms)* $name::$variant(_e) => _e.to_tokens($tokens),)
-            $tokens $name { $($next)* }
-        );
-    };
-
-    (($($arms:tt)*) $tokens:ident $name:ident { $variant:ident crate::private, $($next:tt)*}) => {
-        generate_to_tokens!(
-            ($($arms)* $name::$variant(_) => unreachable!(),)
+            ($($arms)* $(#[cfg $cfg_attr])* $name::$variant(_e) => _e.to_tokens($tokens),)
             $tokens $name { $($next)* }
         );
     };
@@ -162,7 +163,23 @@ macro_rules! strip_attrs_pub {
 }
 
 macro_rules! check_keyword_matches {
-    (struct struct) => {};
     (enum enum) => {};
     (pub pub) => {};
+}
+
+// Rustdoc bug: does not respect the doc(hidden) on some items.
+#[cfg(all(doc, feature = "parsing"))]
+macro_rules! pub_if_not_doc {
+    ($(#[$m:meta])* pub $($item:tt)*) => {
+        $(#[$m])*
+        pub(crate) $($item)*
+    };
+}
+
+#[cfg(all(not(doc), feature = "parsing"))]
+macro_rules! pub_if_not_doc {
+    ($(#[$m:meta])* pub $($item:tt)*) => {
+        $(#[$m])*
+        pub $($item)*
+    };
 }

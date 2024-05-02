@@ -4,6 +4,8 @@
 /*
  * This file deals with PKCS #11 passwords and authentication.
  */
+#include "dev.h"
+#include "dev3hack.h"
 #include "seccomon.h"
 #include "secmod.h"
 #include "secmodi.h"
@@ -573,7 +575,7 @@ PK11_DoPassword(PK11SlotInfo *slot, CK_SESSION_HANDLE session,
 
     /*
      * Central server type applications which control access to multiple
-     * slave applications to single crypto devices need to virtuallize the
+     * client applications to single crypto devices need to virtuallize the
      * login state. This is done by a callback out of PK11_IsLoggedIn and
      * here. If we are actually logged in, then we got here because the
      * higher level code told us that the particular client application may
@@ -637,8 +639,11 @@ PK11_DoPassword(PK11SlotInfo *slot, CK_SESSION_HANDLE session,
     }
     if (rv == SECSuccess) {
         if (!contextSpecific && !PK11_IsFriendly(slot)) {
-            nssTrustDomain_UpdateCachedTokenCerts(slot->nssToken->trustDomain,
-                                                  slot->nssToken);
+            NSSToken *token = PK11Slot_GetNSSToken(slot);
+            if (token) {
+                nssTrustDomain_UpdateCachedTokenCerts(token->trustDomain, token);
+                (void)nssToken_Destroy(token);
+            }
         }
     } else if (!attempt)
         PORT_SetError(SEC_ERROR_BAD_PASSWORD);

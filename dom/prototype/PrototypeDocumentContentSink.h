@@ -34,14 +34,12 @@ class nsXULPrototypeElement;
 class nsXULPrototypePI;
 class nsXULPrototypeScript;
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 class Element;
 class ScriptLoader;
 class Document;
 class XMLStylesheetProcessingInstruction;
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 nsresult NS_NewPrototypeDocumentContentSink(nsIContentSink** aResult,
                                             mozilla::dom::Document* aDoc,
@@ -49,8 +47,7 @@ nsresult NS_NewPrototypeDocumentContentSink(nsIContentSink** aResult,
                                             nsISupports* aContainer,
                                             nsIChannel* aChannel);
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class PrototypeDocumentContentSink final : public nsIStreamLoaderObserver,
                                            public nsIContentSink,
@@ -71,10 +68,8 @@ class PrototypeDocumentContentSink final : public nsIStreamLoaderObserver,
 
   // nsIContentSink
   NS_IMETHOD WillParse(void) override { return NS_OK; };
-  NS_IMETHOD WillBuildModel(nsDTDMode aDTDMode) override { return NS_OK; };
-  NS_IMETHOD DidBuildModel(bool aTerminated) override { return NS_OK; };
   NS_IMETHOD WillInterrupt(void) override { return NS_OK; };
-  NS_IMETHOD WillResume(void) override { return NS_OK; };
+  void WillResume() override{};
   NS_IMETHOD SetParser(nsParserBase* aParser) override;
   virtual void InitialTranslationCompleted() override;
   virtual void FlushPendingNotifications(FlushType aType) override{};
@@ -126,13 +121,6 @@ class PrototypeDocumentContentSink final : public nsIStreamLoaderObserver,
    * The load event is blocked while this is in progress.
    */
   bool mOffThreadCompiling;
-
-  /**
-   * If the current transcluded script is being compiled off thread, the
-   * source for that script.
-   */
-  char16_t* mOffThreadCompileStringBuf;
-  size_t mOffThreadCompileStringLength;
 
   /**
    * Wether the prototype document is still be traversed to create the DOM.
@@ -262,7 +250,6 @@ class PrototypeDocumentContentSink final : public nsIStreamLoaderObserver,
   void CloseElement(Element* aElement, bool aHadChildren);
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_PrototypeDocumentContentSink_h__

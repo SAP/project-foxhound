@@ -12,12 +12,11 @@
 nsresult NS_NewSVGFEFloodElement(
     nsIContent** aResult, already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
-using SVGFEFloodElementBase = SVGFE;
+using SVGFEFloodElementBase = SVGFilterPrimitiveElement;
 
-class SVGFEFloodElement : public SVGFEFloodElementBase {
+class SVGFEFloodElement final : public SVGFEFloodElementBase {
   friend nsresult(::NS_NewSVGFEFloodElement(
       nsIContent** aResult,
       already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo));
@@ -26,38 +25,34 @@ class SVGFEFloodElement : public SVGFEFloodElementBase {
   explicit SVGFEFloodElement(
       already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
       : SVGFEFloodElementBase(std::move(aNodeInfo)) {}
-  virtual JSObject* WrapNode(JSContext* cx,
-                             JS::Handle<JSObject*> aGivenProto) override;
+  JSObject* WrapNode(JSContext* cx, JS::Handle<JSObject*> aGivenProto) override;
 
  public:
-  virtual bool SubregionIsUnionOfRegions() override { return false; }
+  bool SubregionIsUnionOfRegions() override { return false; }
 
-  virtual FilterPrimitiveDescription GetPrimitiveDescription(
+  FilterPrimitiveDescription GetPrimitiveDescription(
       SVGFilterInstance* aInstance, const IntRect& aFilterSubregion,
       const nsTArray<bool>& aInputsAreTainted,
       nsTArray<RefPtr<SourceSurface>>& aInputImages) override;
-  virtual SVGAnimatedString& GetResultImageName() override {
+  SVGAnimatedString& GetResultImageName() override {
     return mStringAttributes[RESULT];
   }
 
   // nsIContent interface
-  NS_IMETHOD_(bool) IsAttributeMapped(const nsAtom* aAttribute) const override;
+  nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 
-  virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
-
-  virtual nsresult BindToTree(BindContext& aCtx, nsINode& aParent) override;
+  nsresult BindToTree(BindContext& aCtx, nsINode& aParent) override;
 
  protected:
-  virtual bool ProducesSRGB() override { return true; }
+  bool ProducesSRGB() override { return true; }
 
-  virtual StringAttributesInfo GetStringInfo() override;
+  StringAttributesInfo GetStringInfo() override;
 
   enum { RESULT };
   SVGAnimatedString mStringAttributes[1];
   static StringInfo sStringInfo[1];
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // DOM_SVG_SVGFEFLOODELEMENT_H_

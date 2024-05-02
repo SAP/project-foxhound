@@ -9,7 +9,7 @@
  * database in the event of early return due to error. See bug 1559029.
  */
 
-async function testSteps() {
+add_task(async function testSteps() {
   const principal1 = getPrincipal("http://example1.com");
 
   const usageFile1 = getRelativeFile(
@@ -60,7 +60,7 @@ async function testSteps() {
       "finish"
   );
 
-  await new Promise(function(resolve) {
+  await new Promise(function (resolve) {
     setTimeout(resolve, flushSleepTimeSec * 1000);
   });
 
@@ -69,4 +69,4 @@ async function testSteps() {
   // Wait for all database connections to close.
   let request = reset();
   await requestFinished(request);
-}
+});

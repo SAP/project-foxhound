@@ -15,17 +15,17 @@ Services.scriptloader.loadSubScript(
   this
 );
 
-add_task(async function() {
+add_task(async function () {
   // Ensure that SNAP is there
-  const snap = GetEnvironmentVariable("SNAP");
+  const snap = Services.env.get("SNAP");
   ok(snap.length > 1, "SNAP is defined");
 
   // If it is there, do actual testing
   sanityChecks();
 
-  // The linux only tests are the ones that can behave differently based on
-  // existence of SNAP
   add_task(testFileAccessLinuxOnly); // eslint-disable-line no-undef
+
+  add_task(testFileAccessLinuxSnap); // eslint-disable-line no-undef
 
   add_task(cleanupBrowserTabs); // eslint-disable-line no-undef
 });

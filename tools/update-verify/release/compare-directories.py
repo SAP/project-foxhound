@@ -3,15 +3,12 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this file,
 # You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, print_function
-
 import argparse
 import difflib
 import hashlib
 import logging
 import os
 import sys
-
 
 """ Define the transformations needed to make source + update == target
 
@@ -121,17 +118,26 @@ def walk_dir(path):
     return all_dirs, all_files
 
 
-def compare_listings(source_list, target_list, label, source_dir, target_dir):
+def compare_listings(
+    source_list, target_list, label, source_dir, target_dir, ignore_missing=None
+):
     obj1 = set(source_list)
     obj2 = set(target_list)
     difference_found = False
+    ignore_missing = ignore_missing or ()
 
     left_diff = obj1 - obj2
     if left_diff:
-        logging.error("{} only in {}:".format(label, source_dir))
+        if left_diff - set(ignore_missing):
+            _log = logging.error
+            difference_found = True
+        else:
+            _log = logging.warning
+            _log("Ignoring missing files due to ignore_missing")
+
+        _log("{} only in {}:".format(label, source_dir))
         for d in sorted(left_diff):
-            logging.error("  {}".format(d))
-        difference_found = True
+            _log("  {}".format(d))
 
     right_diff = obj2 - obj1
     if right_diff:
@@ -223,6 +229,12 @@ if __name__ == "__main__":
     parser.add_argument(
         "--verbose", "-v", action="store_true", help="Enable verbose logging"
     )
+    parser.add_argument(
+        "--ignore-missing",
+        action="append",
+        metavar="<path>",
+        help="Ignore absence of <path> in the target",
+    )
 
     args = parser.parse_args()
     level = logging.INFO
@@ -244,7 +256,7 @@ if __name__ == "__main__":
         source_dirs, target_dirs, "Directories", source, target
     )
     file_list_diff = compare_listings(
-        source_files, target_files, "Files", source, target
+        source_files, target_files, "Files", source, target, args.ignore_missing
     )
     file_diff = compare_common_files(
         set(source_files) & set(target_files), args.channel, source, target

@@ -1,12 +1,11 @@
-/* eslint-env mozilla/frame-script */
+/* eslint-env mozilla/chrome-script */
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { clearInterval, setInterval, setTimeout } = ChromeUtils.import(
-  "resource://gre/modules/Timer.jsm"
+const { clearInterval, setInterval, setTimeout } = ChromeUtils.importESModule(
+  "resource://gre/modules/Timer.sys.mjs"
 );
 
-const { BrowserTestUtils } = ChromeUtils.import(
-  "resource://testing-common/BrowserTestUtils.jsm"
+const { BrowserTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/BrowserTestUtils.sys.mjs"
 );
 
 var tabSubDialogsEnabled = Services.prefs.getBoolPref(
@@ -228,9 +227,8 @@ function getPromptState(ui) {
 
   // Check the dialog is a common dialog document and has been embedded.
   let isEmbedded = !!ui.prompt?.docShell?.chromeEventHandler;
-  let isCommonDialogDoc = getDialogDoc()?.location.href.includes(
-    "commonDialog.xhtml"
-  );
+  let isCommonDialogDoc =
+    getDialogDoc()?.location.href.includes("commonDialog.xhtml");
   state.isSubDialogPrompt = isCommonDialogDoc && isEmbedded;
   state.showCallerOrigin = ui.prompt.args.showCallerOrigin;
 

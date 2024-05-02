@@ -20,7 +20,6 @@ class StaticRefPtr;
 
 namespace a11y {
 class HyperTextAccessibleBase;
-class HyperTextAccessibleWrap;
 
 class ia2AccessibleText : public IAccessibleText {
  public:
@@ -119,12 +118,16 @@ class ia2AccessibleText : public IAccessibleText {
       /* [retval][out] */ IA2TextSegment* oldText);
 
   static void InitTextChangeData();
-  static void UpdateTextChangeData(HyperTextAccessibleWrap* aAcc, bool aInsert,
-                                   const nsString& aStr, int32_t aStart,
+  static void UpdateTextChangeData(HyperTextAccessibleBase* aAcc, bool aInsert,
+                                   const nsAString& aStr, int32_t aStart,
                                    uint32_t aLen);
 
  protected:
-  static StaticRefPtr<HyperTextAccessibleWrap> sLastTextChangeAcc;
+  // This can't be a RefPtr because RemoteAccessibles aren't ref counted. It
+  // can't be an id because this is global and ids are only unique within the
+  // document. Since this is only used for comparison, we use a raw pointer.
+  // This should *never* be dereferenced, only used for comparison!
+  static HyperTextAccessibleBase* sLastTextChangeAcc;
   static StaticAutoPtr<nsString> sLastTextChangeString;
   static bool sLastTextChangeWasInsert;
   static uint32_t sLastTextChangeStart;
@@ -135,14 +138,6 @@ class ia2AccessibleText : public IAccessibleText {
   AccessibleTextBoundary GetGeckoTextBoundary(
       enum IA2TextBoundaryType coordinateType);
   HyperTextAccessibleBase* TextAcc();
-
-  /**
-   * This can return null for two reasons. The HRESULT indicates the reason:
-   * CO_E_OBJNOTCONNECTED: The Accessible is dead.
-   * E_NOTIMPL: It isn't a LocalAccessible (so we can't support the method
-   * being called yet).
-   */
-  std::pair<HyperTextAccessibleWrap*, HRESULT> LocalTextAcc();
 };
 
 }  // namespace a11y

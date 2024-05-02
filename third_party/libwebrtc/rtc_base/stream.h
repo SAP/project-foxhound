@@ -13,9 +13,8 @@
 
 #include <memory>
 
+#include "api/array_view.h"
 #include "rtc_base/buffer.h"
-#include "rtc_base/constructor_magic.h"
-#include "rtc_base/message_handler.h"
 #include "rtc_base/system/rtc_export.h"
 #include "rtc_base/third_party/sigslot/sigslot.h"
 #include "rtc_base/thread.h"
@@ -48,16 +47,12 @@ enum StreamResult { SR_ERROR, SR_SUCCESS, SR_BLOCK, SR_EOS };
 //  SE_WRITE: Data can be written, so Write is likely to not return SR_BLOCK
 enum StreamEvent { SE_OPEN = 1, SE_READ = 2, SE_WRITE = 4, SE_CLOSE = 8 };
 
-struct StreamEventData : public MessageData {
-  int events, error;
-  StreamEventData(int ev, int er) : events(ev), error(er) {}
-};
-
-class RTC_EXPORT StreamInterface : public MessageHandlerAutoCleanup {
+class RTC_EXPORT StreamInterface {
  public:
-  enum { MSG_POST_EVENT = 0xF1F1, MSG_MAX = MSG_POST_EVENT };
+  virtual ~StreamInterface() {}
 
-  ~StreamInterface() override;
+  StreamInterface(const StreamInterface&) = delete;
+  StreamInterface& operator=(const StreamInterface&) = delete;
 
   virtual StreamState GetState() const = 0;
 
@@ -74,14 +69,14 @@ class RTC_EXPORT StreamInterface : public MessageHandlerAutoCleanup {
   //    block, or the stream is in SS_OPENING state.
   //  SR_EOS: the end-of-stream has been reached, or the stream is in the
   //    SS_CLOSED state.
-  virtual StreamResult Read(void* buffer,
-                            size_t buffer_len,
-                            size_t* read,
-                            int* error) = 0;
-  virtual StreamResult Write(const void* data,
-                             size_t data_len,
-                             size_t* written,
-                             int* error) = 0;
+
+  virtual StreamResult Read(rtc::ArrayView<uint8_t> buffer,
+                            size_t& read,
+                            int& error) = 0;
+  virtual StreamResult Write(rtc::ArrayView<const uint8_t> data,
+                             size_t& written,
+                             int& error) = 0;
+
   // Attempt to transition to the SS_CLOSED state.  SE_CLOSE will not be
   // signalled as a result of this call.
   virtual void Close() = 0;
@@ -95,13 +90,6 @@ class RTC_EXPORT StreamInterface : public MessageHandlerAutoCleanup {
   // SS_OPENING and SR_BLOCK returned from stream member functions imply that
   // certain events will be raised in the future.
   sigslot::signal3<StreamInterface*, int, int> SignalEvent;
-
-  // Like calling SignalEvent, but posts a message to the specified thread,
-  // which will call SignalEvent.  This helps unroll the stack and prevent
-  // re-entrancy.
-  void PostEvent(Thread* t, int events, int err);
-  // Like the aforementioned method, but posts to the current thread.
-  void PostEvent(int events, int err);
 
   // Return true if flush is successful.
   virtual bool Flush();
@@ -117,63 +105,22 @@ class RTC_EXPORT StreamInterface : public MessageHandlerAutoCleanup {
   // unlike Write, the argument 'written' is always set, and may be non-zero
   // on results other than SR_SUCCESS.  The remaining arguments have the
   // same semantics as Write.
-  StreamResult WriteAll(const void* data,
-                        size_t data_len,
-                        size_t* written,
-                        int* error);
+  [[deprecated("Use version with ArrayView")]] StreamResult
+  WriteAll(const void* data, size_t data_len, size_t* written, int* error);
+
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+  // TODO(bugs.webrc.org/14632): Remove pragmas and change underlying
+  // implementation when downstream code is converted.
+  StreamResult WriteAll(ArrayView<const uint8_t> data,
+                        size_t& written,
+                        int& error) {
+    return WriteAll(data.data(), data.size(), &written, &error);
+  }
+#pragma clang diagnostic pop
 
  protected:
   StreamInterface();
-
-  // MessageHandler Interface
-  void OnMessage(Message* msg) override;
-
- private:
-  RTC_DISALLOW_COPY_AND_ASSIGN(StreamInterface);
-};
-
-///////////////////////////////////////////////////////////////////////////////
-// StreamAdapterInterface is a convenient base-class for adapting a stream.
-// By default, all operations are pass-through.  Override the methods that you
-// require adaptation.  Streams should really be upgraded to reference-counted.
-// In the meantime, use the owned flag to indicate whether the adapter should
-// own the adapted stream.
-///////////////////////////////////////////////////////////////////////////////
-
-class StreamAdapterInterface : public StreamInterface,
-                               public sigslot::has_slots<> {
- public:
-  explicit StreamAdapterInterface(StreamInterface* stream, bool owned = true);
-
-  // Core Stream Interface
-  StreamState GetState() const override;
-  StreamResult Read(void* buffer,
-                    size_t buffer_len,
-                    size_t* read,
-                    int* error) override;
-  StreamResult Write(const void* data,
-                     size_t data_len,
-                     size_t* written,
-                     int* error) override;
-  void Close() override;
-
-  bool Flush() override;
-
-  void Attach(StreamInterface* stream, bool owned = true);
-  StreamInterface* Detach();
-
- protected:
-  ~StreamAdapterInterface() override;
-
-  // Note that the adapter presents itself as the origin of the stream events,
-  // since users of the adapter may not recognize the adapted object.
-  virtual void OnEvent(StreamInterface* stream, int events, int err);
-  StreamInterface* stream() { return stream_; }
-
- private:
-  StreamInterface* stream_;
-  bool owned_;
-  RTC_DISALLOW_COPY_AND_ASSIGN(StreamAdapterInterface);
 };
 
 }  // namespace rtc

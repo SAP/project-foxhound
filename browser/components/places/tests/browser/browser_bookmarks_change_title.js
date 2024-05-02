@@ -1,5 +1,5 @@
 /**
- * Tests that the title of a bookmark can be changed from the bookmark star, toolbar, and sidebar.
+ * Tests that the title of a bookmark can be changed from the bookmark star, toolbar, sidebar, and library.
  */
 "use strict";
 
@@ -17,7 +17,7 @@ function getToolbarNodeForItemGuid(aItemGuid) {
 }
 
 // Setup.
-add_task(async function setup() {
+add_setup(async function () {
   let toolbar = document.getElementById("PersonalToolbar");
   let wasCollapsed = toolbar.collapsed;
 
@@ -42,26 +42,30 @@ add_task(async function test_change_title_from_BookmarkStar() {
     title: "Before Edit",
   });
 
+  const win = await BrowserTestUtils.openNewBrowserWindow();
   let tab = await BrowserTestUtils.openNewForegroundTab({
-    gBrowser,
+    gBrowser: win.gBrowser,
     opening: TEST_URL,
     waitForStateStop: true,
   });
 
   registerCleanupFunction(async () => {
     BrowserTestUtils.removeTab(tab);
+    await BrowserTestUtils.closeWindow(win);
   });
 
-  StarUI._createPanelIfNeeded();
-  let bookmarkPanel = document.getElementById("editBookmarkPanel");
+  win.StarUI._createPanelIfNeeded();
+  let bookmarkPanel = win.document.getElementById("editBookmarkPanel");
   let shownPromise = promisePopupShown(bookmarkPanel);
 
-  let bookmarkStar = BookmarkingUI.star;
+  let bookmarkStar = win.BookmarkingUI.star;
   bookmarkStar.click();
 
   await shownPromise;
 
-  let bookmarkPanelTitle = document.getElementById("editBookmarkPanelTitle");
+  let bookmarkPanelTitle = win.document.getElementById(
+    "editBookmarkPanelTitle"
+  );
   await BrowserTestUtils.waitForCondition(
     () =>
       bookmarkPanelTitle.textContent ===
@@ -72,18 +76,17 @@ add_task(async function test_change_title_from_BookmarkStar() {
 
   let promiseNotification = PlacesTestUtils.waitForNotification(
     "bookmark-title-changed",
-    events => events.some(e => e.title === titleAfterFirstUpdate),
-    "places"
+    events => events.some(e => e.title === titleAfterFirstUpdate)
   );
 
   // Update the bookmark's title.
   await fillBookmarkTextField(
     "editBMPanel_namePicker",
     titleAfterFirstUpdate,
-    window
+    win
   );
 
-  let doneButton = document.getElementById("editBookmarkPanelDoneButton");
+  let doneButton = win.document.getElementById("editBookmarkPanelDoneButton");
   doneButton.click();
   await promiseNotification;
 
@@ -93,6 +96,7 @@ add_task(async function test_change_title_from_BookmarkStar() {
     titleAfterFirstUpdate,
     "Should have updated the bookmark title in the database"
   );
+  await PlacesUtils.bookmarks.remove(originalBm.guid);
 });
 
 add_task(async function test_change_title_from_Toolbar() {
@@ -131,9 +135,8 @@ add_task(async function test_change_title_from_Toolbar() {
         "editBMPanel_namePicker"
       );
 
-      let editBookmarkDialogTitle = dialogWin.document.getElementById(
-        "titleText"
-      );
+      let editBookmarkDialogTitle =
+        dialogWin.document.getElementById("titleText");
       let bundle = dialogWin.document.getElementById("stringBundle");
 
       Assert.equal(
@@ -149,8 +152,7 @@ add_task(async function test_change_title_from_Toolbar() {
 
       let promiseTitleChange = PlacesTestUtils.waitForNotification(
         "bookmark-title-changed",
-        events => events.some(e => e.title === "Toolbar title"),
-        "places"
+        events => events.some(e => e.title === "Toolbar title")
       );
 
       // Update the bookmark's title.
@@ -181,7 +183,7 @@ add_task(async function test_change_title_from_Sidebar() {
     bookmarks.push(bm)
   );
 
-  await withSidebarTree("bookmarks", async function(tree) {
+  await withSidebarTree("bookmarks", async function (tree) {
     tree.selectItems([bookmarks[0].guid]);
 
     await withBookmarksDialog(
@@ -201,8 +203,7 @@ add_task(async function test_change_title_from_Sidebar() {
 
         let promiseTitleChange = PlacesTestUtils.waitForNotification(
           "bookmark-title-changed",
-          events => events.some(e => e.title === "Sidebar Title"),
-          "places"
+          events => events.some(e => e.title === "Sidebar Title")
         );
 
         // Update the bookmark's title.
@@ -227,8 +228,29 @@ add_task(async function test_change_title_from_Sidebar() {
           "Sidebar Title",
           "Should have updated the bookmark title in the database"
         );
-        Assert.equal(bookmarks.length, 2, "Two bookmarks should exist");
+        Assert.equal(bookmarks.length, 1, "One bookmark should exist");
       }
     );
   });
+});
+
+add_task(async function test_change_title_from_Library() {
+  info("Open library and select the bookmark.");
+  const library = await promiseLibrary("BookmarksToolbar");
+  registerCleanupFunction(async function () {
+    await promiseLibraryClosed(library);
+  });
+  library.ContentTree.view.selectNode(
+    library.ContentTree.view.view.nodeForTreeIndex(0)
+  );
+  const newTitle = "Library";
+  const promiseTitleChange = PlacesTestUtils.waitForNotification(
+    "bookmark-title-changed",
+    events => events.some(e => e.title === newTitle)
+  );
+  info("Update the bookmark's title.");
+  fillBookmarkTextField("editBMPanel_namePicker", newTitle, library);
+  await promiseTitleChange;
+  info("The bookmark's title was updated.");
+  await promiseLibraryClosed(library);
 });

@@ -9,11 +9,11 @@ const TEST_URI = `
   <style>
   body {
     color: blue;
-    border-block-color: lime;
+    ruby-align: center;
     user-modify: read-only;
   }
   div {
-    font-variant-alternates: historical-forms;
+    scrollbar-width: thin;
   }
   </style>
   <body>
@@ -22,30 +22,36 @@ const TEST_URI = `
 `;
 
 const TEST_DATA_SELECTED = [
-  { property: "border-block-color" },
-  { property: "user-modify" },
+  {
+    property: "ruby-align",
+    url: "https://developer.mozilla.org/docs/Web/CSS/ruby-align",
+  },
+  {
+    property: "user-modify",
+    url: "https://developer.mozilla.org/docs/Web/CSS/user-modify",
+  },
 ];
 
 const TEST_DATA_ALL = [
   ...TEST_DATA_SELECTED,
-  { property: "font-variant-alternates" },
+  {
+    property: "scrollbar-width",
+    url: "https://developer.mozilla.org/docs/Web/CSS/scrollbar-width",
+  },
 ];
 
 const {
   COMPATIBILITY_UPDATE_SELECTED_NODE_FAILURE,
   COMPATIBILITY_UPDATE_TOP_LEVEL_TARGET_FAILURE,
-} = require("devtools/client/inspector/compatibility/actions/index");
+} = require("resource://devtools/client/inspector/compatibility/actions/index.js");
 
-add_task(async function() {
+add_task(async function () {
   const tab = await addTab(
     "data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI)
   );
 
-  const {
-    allElementsPane,
-    inspector,
-    selectedElementPane,
-  } = await openCompatibilityView();
+  const { allElementsPane, inspector, selectedElementPane } =
+    await openCompatibilityView();
 
   info("Check the issues on the selected element");
   await assertIssueList(selectedElementPane, TEST_DATA_SELECTED);

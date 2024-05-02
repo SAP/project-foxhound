@@ -9,35 +9,32 @@ The JS Shell Test Harness.
 See the adjacent README.txt for more details.
 """
 
-from __future__ import print_function
-
 import math
 import os
+import platform
 import posixpath
 import re
 import shlex
 import sys
 import tempfile
-import platform
-
-from os.path import abspath, dirname, isfile, realpath
 from contextlib import contextmanager
 from copy import copy
 from datetime import datetime
 from itertools import chain
-from subprocess import list2cmdline, call
+from os.path import abspath, dirname, isfile, realpath
+from subprocess import call, list2cmdline
 
+from lib.adaptor import xdr_annotate
+from lib.progressbar import ProgressBar
+from lib.results import ResultsSink, TestOutput
+from lib.tempfile import TemporaryDirectory
 from lib.tests import (
     RefTestCase,
-    get_jitflags,
+    change_env,
     get_cpu_count,
     get_environment_overlay,
-    change_env,
+    get_jitflags,
 )
-from lib.results import ResultsSink, TestOutput
-from lib.progressbar import ProgressBar
-from lib.adaptor import xdr_annotate
-from lib.tempfile import TemporaryDirectory
 
 if sys.platform.startswith("linux") or sys.platform.startswith("darwin"):
     from lib.tasks_unix import run_all_tests
@@ -539,7 +536,7 @@ def load_wpt_tests(xul_tester, requested_paths, excluded_paths, update_manifest=
     sys.path[0:0] = abs_sys_paths
 
     import manifestupdate
-    from wptrunner import products, testloader, wptcommandline, wpttest, wptlogging
+    from wptrunner import products, testloader, wptcommandline, wptlogging, wpttest
 
     manifest_root = tempfile.gettempdir()
     (maybe_dist, maybe_bin) = os.path.split(os.path.dirname(xul_tester.js_bin))
@@ -563,6 +560,7 @@ def load_wpt_tests(xul_tester, requested_paths, excluded_paths, update_manifest=
                 manifest_root, "_tests", "web-platform", "wptrunner.local.ini"
             ),
             "gecko_e10s": False,
+            "product": "firefox",
             "verify": False,
             "wasm": xul_tester.test("wasmIsSupported()"),
         }
@@ -584,21 +582,23 @@ def load_wpt_tests(xul_tester, requested_paths, excluded_paths, update_manifest=
         debug=xul_tester.test("isDebugBuild"),
         extras=run_info_extras,
     )
-    release_or_beta = xul_tester.test("getBuildConfiguration().release_or_beta")
+    release_or_beta = xul_tester.test("getBuildConfiguration('release_or_beta')")
     run_info["release_or_beta"] = release_or_beta
     run_info["nightly_build"] = not release_or_beta
     early_beta_or_earlier = xul_tester.test(
-        "getBuildConfiguration().early_beta_or_earlier"
+        "getBuildConfiguration('early_beta_or_earlier')"
     )
     run_info["early_beta_or_earlier"] = early_beta_or_earlier
 
     path_filter = testloader.TestFilter(
         test_manifests, include=requested_paths, exclude=excluded_paths
     )
+    subsuites = testloader.load_subsuites(logger, run_info, None, set())
     loader = testloader.TestLoader(
         test_manifests,
         ["testharness"],
         run_info,
+        subsuites=subsuites,
         manifest_filters=[path_filter, filter_jsshell_tests],
     )
 
@@ -615,7 +615,7 @@ def load_wpt_tests(xul_tester, requested_paths, excluded_paths, update_manifest=
         return os.path.join(wpt, os.path.dirname(test_path), script)
 
     tests = []
-    for test in loader.tests["testharness"]:
+    for test in loader.tests[""]["testharness"]:
         test_path = os.path.relpath(test.path, wpt)
         scripts = [resolve(test_path, s) for s in test.scripts]
         extra_helper_paths_for_test = extra_helper_paths + scripts
@@ -799,7 +799,7 @@ def main():
     if options.remote:
         results = ResultsSink("jstests", options, test_count)
         try:
-            from lib.remote import init_remote_dir, init_device
+            from lib.remote import init_device, init_remote_dir
 
             device = init_device(options)
             tempdir = posixpath.join(options.remote_test_root, "tmp")

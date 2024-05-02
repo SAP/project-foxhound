@@ -10,8 +10,8 @@
 #include "LocalAccessible-inl.h"
 #include "AccIterator.h"
 #include "nsCoreUtils.h"
+#include "mozilla/dom/ChildIterator.h"
 #include "mozilla/dom/Text.h"
-#include "nsIContentInlines.h"
 
 using namespace mozilla;
 using namespace mozilla::a11y;
@@ -21,7 +21,7 @@ using namespace mozilla::a11y;
  * for bailing out during recursive text computation, or for special cases
  * like step f. of the ARIA implementation guide.
  */
-static const LocalAccessible* sInitiatorAcc = nullptr;
+static const Accessible* sInitiatorAcc = nullptr;
 
 ////////////////////////////////////////////////////////////////////////////////
 // nsTextEquivUtils. Public.
@@ -61,6 +61,7 @@ nsresult nsTextEquivUtils::GetTextEquivFromIDRefs(
   while ((refContent = iter.NextElem())) {
     if (!aTextEquiv.IsEmpty()) aTextEquiv += ' ';
 
+    if (refContent->IsHTMLElement(nsGkAtoms::slot)) printf("jtd idref slot\n");
     nsresult rv =
         AppendTextEquivFromContent(aAccessible, refContent, &aTextEquiv);
     NS_ENSURE_SUCCESS(rv, rv);
@@ -77,25 +78,15 @@ nsresult nsTextEquivUtils::AppendTextEquivFromContent(
 
   sInitiatorAcc = aInitiatorAcc;
 
-  // If the given content is not visible or isn't accessible then go down
-  // through the DOM subtree otherwise go down through accessible subtree and
-  // calculate the flat string.
-  nsIFrame* frame = aContent->GetPrimaryFrame();
-  bool isVisible = frame && frame->StyleVisibility()->IsVisible();
-
   nsresult rv = NS_ERROR_FAILURE;
-  bool goThroughDOMSubtree = true;
-
-  if (isVisible) {
-    LocalAccessible* accessible =
-        sInitiatorAcc->Document()->GetAccessible(aContent);
-    if (accessible) {
-      rv = AppendFromAccessible(accessible, aString);
-      goThroughDOMSubtree = false;
-    }
+  if (LocalAccessible* accessible =
+          aInitiatorAcc->Document()->GetAccessible(aContent)) {
+    rv = AppendFromAccessible(accessible, aString);
+  } else {
+    // The given content is invisible or otherwise inaccessible, so use the DOM
+    // subtree.
+    rv = AppendFromDOMNode(aContent, aString);
   }
-
-  if (goThroughDOMSubtree) rv = AppendFromDOMNode(aContent, aString);
 
   sInitiatorAcc = nullptr;
   return rv;
@@ -104,26 +95,6 @@ nsresult nsTextEquivUtils::AppendTextEquivFromContent(
 nsresult nsTextEquivUtils::AppendTextEquivFromTextContent(nsIContent* aContent,
                                                           nsAString* aString) {
   if (aContent->IsText()) {
-    bool isHTMLBlock = false;
-
-    nsIContent* parentContent = aContent->GetFlattenedTreeParent();
-    if (parentContent) {
-      nsIFrame* frame = parentContent->GetPrimaryFrame();
-      if (frame) {
-        // If this text is inside a block level frame (as opposed to span
-        // level), we need to add spaces around that block's text, so we don't
-        // get words jammed together in final name.
-        const nsStyleDisplay* display = frame->StyleDisplay();
-        if (display->IsBlockOutsideStyle() ||
-            display->mDisplay == StyleDisplay::TableCell) {
-          isHTMLBlock = true;
-          if (!aString->IsEmpty()) {
-            aString->Append(char16_t(' '));
-          }
-        }
-      }
-    }
-
     if (aContent->TextLength() > 0) {
       nsIFrame* frame = aContent->GetPrimaryFrame();
       if (frame) {
@@ -134,9 +105,6 @@ nsresult nsTextEquivUtils::AppendTextEquivFromTextContent(nsIContent* aContent,
       } else {
         // If aContent is an object that is display: none, we have no a frame.
         aContent->GetAsText()->AppendTextTo(*aString);
-      }
-      if (isHTMLBlock && !aString->IsEmpty()) {
-        aString->Append(char16_t(' '));
       }
     }
 
@@ -154,8 +122,9 @@ nsresult nsTextEquivUtils::AppendTextEquivFromTextContent(nsIContent* aContent,
 
 nsresult nsTextEquivUtils::AppendFromDOMChildren(nsIContent* aContent,
                                                  nsAString* aString) {
-  for (nsIContent* childContent = aContent->GetFirstChild(); childContent;
-       childContent = childContent->GetNextSibling()) {
+  auto iter =
+      dom::AllChildrenIterator(aContent, nsIContent::eAllChildren, true);
+  while (nsIContent* childContent = iter.GetNextChild()) {
     nsresult rv = AppendFromDOMNode(childContent, aString);
     NS_ENSURE_SUCCESS(rv, rv);
   }
@@ -167,12 +136,12 @@ nsresult nsTextEquivUtils::AppendFromDOMChildren(nsIContent* aContent,
 // nsTextEquivUtils. Private.
 
 nsresult nsTextEquivUtils::AppendFromAccessibleChildren(
-    const LocalAccessible* aAccessible, nsAString* aString) {
+    const Accessible* aAccessible, nsAString* aString) {
   nsresult rv = NS_OK_NO_NAME_CLAUSE_HANDLED;
 
   uint32_t childCount = aAccessible->ChildCount();
   for (uint32_t childIdx = 0; childIdx < childCount; childIdx++) {
-    LocalAccessible* child = aAccessible->LocalChildAt(childIdx);
+    Accessible* child = aAccessible->ChildAt(childIdx);
     rv = AppendFromAccessible(child, aString);
     NS_ENSURE_SUCCESS(rv, rv);
   }
@@ -180,13 +149,30 @@ nsresult nsTextEquivUtils::AppendFromAccessibleChildren(
   return rv;
 }
 
-nsresult nsTextEquivUtils::AppendFromAccessible(LocalAccessible* aAccessible,
+nsresult nsTextEquivUtils::AppendFromAccessible(Accessible* aAccessible,
                                                 nsAString* aString) {
   // XXX: is it necessary to care the accessible is not a document?
-  if (aAccessible->IsContent()) {
-    nsresult rv =
-        AppendTextEquivFromTextContent(aAccessible->GetContent(), aString);
+  bool isHTMLBlock = false;
+  if (aAccessible->IsLocal() && aAccessible->AsLocal()->IsContent()) {
+    nsIContent* content = aAccessible->AsLocal()->GetContent();
+    nsresult rv = AppendTextEquivFromTextContent(content, aString);
     if (rv != NS_OK_NO_NAME_CLAUSE_HANDLED) return rv;
+    if (!content->IsText()) {
+      nsIFrame* frame = content->GetPrimaryFrame();
+      if (frame) {
+        // If this is a block level frame (as opposed to span level), we need to
+        // add spaces around that block's text, so we don't get words jammed
+        // together in final name.
+        const nsStyleDisplay* display = frame->StyleDisplay();
+        if (display->IsBlockOutsideStyle() ||
+            display->mDisplay == StyleDisplay::TableCell) {
+          isHTMLBlock = true;
+          if (!aString->IsEmpty()) {
+            aString->Append(char16_t(' '));
+          }
+        }
+      }
+    }
   }
 
   bool isEmptyTextEquiv = true;
@@ -219,13 +205,19 @@ nsresult nsTextEquivUtils::AppendFromAccessible(LocalAccessible* aAccessible,
   // Implementation of h. step
   if (isEmptyTextEquiv && !text.IsEmpty()) {
     AppendString(aString, text);
+    if (isHTMLBlock) {
+      aString->Append(char16_t(' '));
+    }
     return NS_OK;
   }
 
+  if (!isEmptyTextEquiv && isHTMLBlock) {
+    aString->Append(char16_t(' '));
+  }
   return rv;
 }
 
-nsresult nsTextEquivUtils::AppendFromValue(LocalAccessible* aAccessible,
+nsresult nsTextEquivUtils::AppendFromValue(Accessible* aAccessible,
                                            nsAString* aString) {
   if (GetRoleRule(aAccessible->Role()) != eNameFromValueRule) {
     return NS_OK_NO_NAME_CLAUSE_HANDLED;
@@ -246,24 +238,18 @@ nsresult nsTextEquivUtils::AppendFromValue(LocalAccessible* aAccessible,
   // XXX: is it necessary to care the accessible is not a document?
   if (aAccessible->IsDoc()) return NS_ERROR_UNEXPECTED;
 
-  nsIContent* content = aAccessible->GetContent();
-
-  for (nsIContent* childContent = content->GetPreviousSibling(); childContent;
-       childContent = childContent->GetPreviousSibling()) {
-    // check for preceding text...
-    if (!childContent->TextIsOnlyWhitespace()) {
-      for (nsIContent* siblingContent = content->GetNextSibling();
-           siblingContent; siblingContent = siblingContent->GetNextSibling()) {
-        // .. and subsequent text
-        if (!siblingContent->TextIsOnlyWhitespace()) {
+  for (Accessible* next = aAccessible->NextSibling(); next;
+       next = next->NextSibling()) {
+    if (!IsWhitespaceLeaf(next)) {
+      for (Accessible* prev = aAccessible->PrevSibling(); prev;
+           prev = prev->PrevSibling()) {
+        if (!IsWhitespaceLeaf(prev)) {
           aAccessible->Value(text);
 
           return AppendString(aString, text) ? NS_OK
                                              : NS_OK_NO_NAME_CLAUSE_HANDLED;
-          break;
         }
       }
-      break;
     }
   }
 
@@ -277,19 +263,21 @@ nsresult nsTextEquivUtils::AppendFromDOMNode(nsIContent* aContent,
 
   if (rv != NS_OK_NO_NAME_CLAUSE_HANDLED) return NS_OK;
 
+  if (aContent->IsAnyOfHTMLElements(nsGkAtoms::script, nsGkAtoms::style)) {
+    // The text within these elements is never meant for users.
+    return NS_OK;
+  }
+
   if (aContent->IsXULElement()) {
     nsAutoString textEquivalent;
     if (aContent->NodeInfo()->Equals(nsGkAtoms::label, kNameSpaceID_XUL)) {
-      aContent->AsElement()->GetAttr(kNameSpaceID_None, nsGkAtoms::value,
-                                     textEquivalent);
+      aContent->AsElement()->GetAttr(nsGkAtoms::value, textEquivalent);
     } else {
-      aContent->AsElement()->GetAttr(kNameSpaceID_None, nsGkAtoms::label,
-                                     textEquivalent);
+      aContent->AsElement()->GetAttr(nsGkAtoms::label, textEquivalent);
     }
 
     if (textEquivalent.IsEmpty()) {
-      aContent->AsElement()->GetAttr(kNameSpaceID_None, nsGkAtoms::tooltiptext,
-                                     textEquivalent);
+      aContent->AsElement()->GetAttr(nsGkAtoms::tooltiptext, textEquivalent);
     }
 
     AppendString(aString, textEquivalent);
@@ -317,8 +305,8 @@ bool nsTextEquivUtils::AppendString(nsAString* aString,
 }
 
 uint32_t nsTextEquivUtils::GetRoleRule(role aRole) {
-#define ROLE(geckoRole, stringRole, atkRole, macRole, macSubrole, msaaRole, \
-             ia2Role, androidClass, nameRule)                               \
+#define ROLE(geckoRole, stringRole, ariaRole, atkRole, macRole, macSubrole, \
+             msaaRole, ia2Role, androidClass, nameRule)                     \
   case roles::geckoRole:                                                    \
     return nameRule;
 
@@ -332,7 +320,7 @@ uint32_t nsTextEquivUtils::GetRoleRule(role aRole) {
 }
 
 bool nsTextEquivUtils::ShouldIncludeInSubtreeCalculation(
-    LocalAccessible* aAccessible) {
+    Accessible* aAccessible) {
   uint32_t nameRule = GetRoleRule(aAccessible->Role());
   if (nameRule == eNameFromSubtreeRule) {
     return true;
@@ -359,4 +347,14 @@ bool nsTextEquivUtils::ShouldIncludeInSubtreeCalculation(
   }
 
   return true;
+}
+
+bool nsTextEquivUtils::IsWhitespaceLeaf(Accessible* aAccessible) {
+  if (!aAccessible || !aAccessible->IsTextLeaf()) {
+    return false;
+  }
+
+  nsAutoString name;
+  aAccessible->Name(name);
+  return nsCoreUtils::IsWhitespaceString(name);
 }

@@ -17,7 +17,6 @@
 
 #include "jstypes.h"  // JS_PUBLIC_API
 
-#include "js/Class.h"       // JS{Getter,Setter}Op
 #include "js/Id.h"          // jsid
 #include "js/RootingAPI.h"  // JS::Handle, js::{,Mutable}WrappedPtrOperations
 #include "js/Value.h"       // JS::Value
@@ -481,8 +480,13 @@ extern JS_PUBLIC_API bool JS_GetUCPropertyDescriptor(
 
 namespace JS {
 
-extern JS_PUBLIC_API bool ObjectToCompletePropertyDescriptor(
-    JSContext* cx, Handle<JSObject*> obj, Handle<Value> descriptor,
+// https://tc39.es/ecma262/#sec-topropertydescriptor
+// https://tc39.es/ecma262/#sec-completepropertydescriptor
+//
+// Implements ToPropertyDescriptor combined with CompletePropertyDescriptor,
+// if the former is successful.
+extern JS_PUBLIC_API bool ToCompletePropertyDescriptor(
+    JSContext* cx, Handle<Value> descriptor,
     MutableHandle<PropertyDescriptor> desc);
 
 /*

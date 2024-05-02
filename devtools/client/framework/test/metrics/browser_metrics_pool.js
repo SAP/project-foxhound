@@ -3,8 +3,10 @@
 
 "use strict";
 
-const { DevToolsServer } = require("devtools/server/devtools-server");
-const { Pool } = require("devtools/shared/protocol");
+const {
+  DevToolsServer,
+} = require("resource://devtools/server/devtools-server.js");
+const { Pool } = require("resource://devtools/shared/protocol.js");
 
 // Test parameters
 const ROOT_POOLS = 100;
@@ -13,7 +15,7 @@ const POOLS_BY_LEVEL = 100;
 // Number of Pools that will be added once the environment is set up.
 const ADDITIONAL_POOLS = 5000;
 
-add_task(async function() {
+add_task(async function () {
   DevToolsServer.init();
   DevToolsServer.registerAllActors();
   const conn = DevToolsServer.connectPipe()._serverConnection;

@@ -9,7 +9,7 @@ const FIRST_TEST_PAGE = TEST_BASE_HTTPS + "inline-1.html";
 const SECOND_TEST_PAGE = TEST_BASE_HTTPS + "inline-2.html";
 const SAVE_PATH = "test.css";
 
-add_task(async function() {
+add_task(async function () {
   const { ui } = await openStyleEditorForURL(FIRST_TEST_PAGE);
 
   testIndentifierGeneration(ui);
@@ -51,9 +51,11 @@ function testIndentifierGeneration(ui) {
 function saveFirstInlineStyleSheet(ui) {
   return new Promise(resolve => {
     const editor = ui.editors[0];
-    const destFile = FileUtils.getFile("ProfD", [SAVE_PATH]);
+    const destFile = new FileUtils.File(
+      PathUtils.join(PathUtils.profileDir, SAVE_PATH)
+    );
 
-    editor.saveToFile(destFile, function(file) {
+    editor.saveToFile(destFile, function (file) {
       ok(file, "File was correctly saved.");
       resolve();
     });

@@ -5,15 +5,10 @@ def topsrcdir = rootProject.projectDir.absolutePath
 apply from: "${topsrcdir}/mobile/android/gradle/mach_env.gradle"
 
 def commandLine = ["${topsrcdir}/mach", "environment", "--format", "json", "--verbose"]
-if (System.properties['os.name'].toLowerCase().contains('windows')) {
-    // gradle is called before parsing config.status, we cannot use PYTHON
-    // value.
-    if (System.env.MOZILLABUILD) {
-        def mozillabuild = System.env.MOZILLABUILD
-        if (mozillabuild) {
-            commandLine.addAll(0, ["${mozillabuild}/python3/python.exe"])
-        }
-    }
+if (System.env.GRADLE_MACH_PYTHON) {
+    commandLine.addAll(0, [System.env.GRADLE_MACH_PYTHON])
+} else if (System.properties["os.name"].contains("Windows")) {
+    commandLine.addAll(0, ["python"])
 }
 
 def proc = commandLine.execute(machEnv(topsrcdir), new File(topsrcdir))
@@ -55,14 +50,17 @@ include ':geckoview'
 include ':geckoview_example'
 include ':test_runner'
 include ':exoplayer2'
-include ':omnijar'
 
 project(':annotations').projectDir = new File("${json.topsrcdir}/mobile/android/annotations")
 project(':geckoview').projectDir = new File("${json.topsrcdir}/mobile/android/geckoview")
 project(':geckoview_example').projectDir = new File("${json.topsrcdir}/mobile/android/geckoview_example")
 project(':test_runner').projectDir = new File("${json.topsrcdir}/mobile/android/test_runner")
 project(':exoplayer2').projectDir = new File("${json.topsrcdir}/mobile/android/exoplayer2")
-project(':omnijar').projectDir = new File("${json.topsrcdir}/mobile/android/app/omnijar")
+
+if (hasProperty("androidFormatLintTest")) {
+    include ':androidFormatLintTest'
+    project(':androidFormatLintTest').projectDir = new File("${json.topsrcdir}/tools/lint/test/files/android-format")
+}
 
 // The Gradle instance is shared between settings.gradle and all the
 // other build.gradle files (see

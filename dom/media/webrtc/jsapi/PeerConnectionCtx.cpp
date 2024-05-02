@@ -4,10 +4,11 @@
 
 #include "PeerConnectionCtx.h"
 
+#include "WebrtcGlobalStatsHistory.h"
 #include "api/audio/audio_mixer.h"
 #include "api/audio_codecs/builtin_audio_decoder_factory.h"
+#include "modules/rtp_rtcp/source/rtp_header_extensions.h"
 #include "call/audio_state.h"
-#include "call/call.h"
 #include "common/browser_logging/CSFLog.h"
 #include "common/browser_logging/WebRtcLog.h"
 #include "gmp-video-decode.h"  // GMP_API_VIDEO_DECODER
@@ -16,12 +17,14 @@
 #include "modules/audio_device/include/fake_audio_device.h"
 #include "modules/audio_processing/include/audio_processing.h"
 #include "modules/audio_processing/include/aec_dump.h"
+#include "mozilla/UniquePtr.h"
 #include "mozilla/dom/RTCPeerConnectionBinding.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/Services.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/Types.h"
+#include "mozilla/dom/RTCStatsReportBinding.h"
 #include "nsCRTGlue.h"
 #include "nsIIOService.h"
 #include "nsIObserver.h"
@@ -32,6 +35,7 @@
 #include "prcvar.h"
 #include "transport/runnable_utils.h"
 #include "WebrtcGlobalChild.h"
+#include "WebrtcGlobalInformation.h"
 
 static const char* pccLogTag = "PeerConnectionCtx";
 #ifdef LOGTAG
@@ -56,10 +60,6 @@ class DummyAudioProcessing : public AudioProcessing {
     return kNoError;
   }
   int Initialize(const ProcessingConfig&) override { return Initialize(); }
-  int Initialize(int, int, int, ChannelLayout, ChannelLayout,
-                 ChannelLayout) override {
-    return Initialize();
-  }
   void ApplyConfig(const Config&) override { MOZ_CRASH("Unexpected call"); }
   int proc_sample_rate_hz() const override {
     MOZ_CRASH("Unexpected call");
@@ -89,6 +89,7 @@ class DummyAudioProcessing : public AudioProcessing {
   void SetRuntimeSetting(RuntimeSetting) override {
     MOZ_CRASH("Unexpected call");
   }
+  bool PostRuntimeSetting(RuntimeSetting setting) override { return false; }
   int ProcessStream(const int16_t* const, const StreamConfig&,
                     const StreamConfig&, int16_t* const) override {
     MOZ_CRASH("Unexpected call");
@@ -132,7 +133,7 @@ class DummyAudioProcessing : public AudioProcessing {
     return 0;
   }
   void set_stream_key_pressed(bool) override { MOZ_CRASH("Unexpected call"); }
-  bool CreateAndAttachAecDump(const std::string&, int64_t,
+  bool CreateAndAttachAecDump(absl::string_view, int64_t,
                               rtc::TaskQueue*) override {
     MOZ_CRASH("Unexpected call");
     return false;
@@ -154,14 +155,6 @@ class DummyAudioProcessing : public AudioProcessing {
     return Config();
   }
 };
-
-class NoTrialsConfig : public WebRtcKeyValueConfig {
- public:
-  NoTrialsConfig() = default;
-  std::string Lookup(absl::string_view key) const override {
-    return std::string();
-  }
-};
 }  // namespace
 
 namespace mozilla {
@@ -172,27 +165,13 @@ SharedWebrtcState::SharedWebrtcState(
     RefPtr<AbstractThread> aCallWorkerThread,
     webrtc::AudioState::Config&& aAudioStateConfig,
     RefPtr<webrtc::AudioDecoderFactory> aAudioDecoderFactory,
-    UniquePtr<webrtc::WebRtcKeyValueConfig> aTrials)
+    UniquePtr<webrtc::FieldTrialsView> aTrials)
     : mCallWorkerThread(std::move(aCallWorkerThread)),
       mAudioStateConfig(std::move(aAudioStateConfig)),
       mAudioDecoderFactory(std::move(aAudioDecoderFactory)),
       mTrials(std::move(aTrials)) {}
 
 SharedWebrtcState::~SharedWebrtcState() = default;
-
-SharedModuleThread* SharedWebrtcState::GetModuleThread() {
-  MOZ_ASSERT(mCallWorkerThread->IsOnCurrentThread());
-  if (!mModuleThread) {
-    mModuleThread = webrtc::SharedModuleThread::Create(
-        webrtc::ProcessThread::Create("libwebrtcModuleThread"),
-        [this, self = RefPtr<SharedWebrtcState>(this)] {
-          MOZ_ASSERT(mCallWorkerThread->IsOnCurrentThread());
-          mModuleThread = nullptr;
-        });
-  }
-
-  return mModuleThread.get();
-}
 
 class PeerConnectionCtxObserver : public nsIObserver {
  public:
@@ -207,7 +186,7 @@ class PeerConnectionCtxObserver : public nsIObserver {
 
     nsresult rv = NS_OK;
 
-    rv = observerService->AddObserver(this, NS_XPCOM_SHUTDOWN_OBSERVER_ID,
+    rv = observerService->AddObserver(this, NS_XPCOM_WILL_SHUTDOWN_OBSERVER_ID,
                                       false);
     MOZ_ALWAYS_SUCCEEDS(rv);
     rv = observerService->AddObserver(this, NS_IOSERVICE_OFFLINE_STATUS_TOPIC,
@@ -218,7 +197,7 @@ class PeerConnectionCtxObserver : public nsIObserver {
 
   NS_IMETHOD Observe(nsISupports* aSubject, const char* aTopic,
                      const char16_t* aData) override {
-    if (strcmp(aTopic, NS_XPCOM_SHUTDOWN_OBSERVER_ID) == 0) {
+    if (strcmp(aTopic, NS_XPCOM_WILL_SHUTDOWN_OBSERVER_ID) == 0) {
       CSFLogDebug(LOGTAG, "Shutting down PeerConnectionCtx");
       PeerConnectionCtx::Destroy();
 
@@ -229,7 +208,8 @@ class PeerConnectionCtxObserver : public nsIObserver {
       nsresult rv = observerService->RemoveObserver(
           this, NS_IOSERVICE_OFFLINE_STATUS_TOPIC);
       MOZ_ALWAYS_SUCCEEDS(rv);
-      rv = observerService->RemoveObserver(this, NS_XPCOM_SHUTDOWN_OBSERVER_ID);
+      rv = observerService->RemoveObserver(this,
+                                           NS_XPCOM_WILL_SHUTDOWN_OBSERVER_ID);
       MOZ_ALWAYS_SUCCEEDS(rv);
 
       // Make sure we're not deleted while still inside ::Observe()
@@ -257,7 +237,7 @@ class PeerConnectionCtxObserver : public nsIObserver {
         services::GetObserverService();
     if (observerService) {
       observerService->RemoveObserver(this, NS_IOSERVICE_OFFLINE_STATUS_TOPIC);
-      observerService->RemoveObserver(this, NS_XPCOM_SHUTDOWN_OBSERVER_ID);
+      observerService->RemoveObserver(this, NS_XPCOM_WILL_SHUTDOWN_OBSERVER_ID);
     }
   }
 };
@@ -265,16 +245,10 @@ class PeerConnectionCtxObserver : public nsIObserver {
 NS_IMPL_ISUPPORTS(PeerConnectionCtxObserver, nsIObserver);
 
 PeerConnectionCtx* PeerConnectionCtx::gInstance;
-nsIThread* PeerConnectionCtx::gMainThread;
 StaticRefPtr<PeerConnectionCtxObserver>
     PeerConnectionCtx::gPeerConnectionCtxObserver;
 
-nsresult PeerConnectionCtx::InitializeGlobal(nsIThread* mainThread) {
-  if (!gMainThread) {
-    gMainThread = mainThread;
-  }
-
-  MOZ_ASSERT(gMainThread == mainThread);
+nsresult PeerConnectionCtx::InitializeGlobal() {
   MOZ_ASSERT(NS_IsMainThread());
 
   nsresult res;
@@ -327,7 +301,7 @@ static void RecordCommonRtpTelemetry(const T& list, const T& lastList,
                                      const bool isRemote) {
   using namespace Telemetry;
   for (const auto& s : list) {
-    const bool isAudio = s.mKind.Value().Find("audio") != -1;
+    const bool isAudio = s.mKind.Find(u"audio") != -1;
     if (s.mPacketsLost.WasPassed() && s.mPacketsReceived.WasPassed()) {
       if (const uint64_t total =
               s.mPacketsLost.Value() + s.mPacketsReceived.Value()) {
@@ -336,6 +310,8 @@ static void RecordCommonRtpTelemetry(const T& list, const T& lastList,
                                 : WEBRTC_VIDEO_QUALITY_OUTBOUND_PACKETLOSS_RATE)
                      : (isAudio ? WEBRTC_AUDIO_QUALITY_INBOUND_PACKETLOSS_RATE
                                 : WEBRTC_VIDEO_QUALITY_INBOUND_PACKETLOSS_RATE);
+        // Because this is an integer and we would like some extra precision
+        // the unit is per mille (1/1000) instead of percent (1/100).
         Accumulate(id, (s.mPacketsLost.Value() * 1000) / total);
       }
     }
@@ -377,7 +353,7 @@ void PeerConnectionCtx::DeliverStats(
   // Record bandwidth telemetry
   for (const auto& s : aReport->mInboundRtpStreamStats) {
     if (s.mBytesReceived.WasPassed()) {
-      const bool isAudio = s.mKind.Value().Find("audio") != -1;
+      const bool isAudio = s.mKind.Find(u"audio") != -1;
       for (const auto& lastS : lastReport->mInboundRtpStreamStats) {
         if (lastS.mId == s.mId) {
           int32_t deltaMs = s.mTimestamp.Value() - lastS.mTimestamp.Value();
@@ -405,7 +381,7 @@ void PeerConnectionCtx::DeliverStats(
                            lastReport->mRemoteInboundRtpStreamStats, true);
   for (const auto& s : aReport->mRemoteInboundRtpStreamStats) {
     if (s.mRoundTripTime.WasPassed()) {
-      const bool isAudio = s.mKind.Value().Find("audio") != -1;
+      const bool isAudio = s.mKind.Find(u"audio") != -1;
       HistogramID id = isAudio ? WEBRTC_AUDIO_QUALITY_OUTBOUND_RTT
                                : WEBRTC_VIDEO_QUALITY_OUTBOUND_RTT;
       Accumulate(id, s.mRoundTripTime.Value() * 1000);
@@ -421,7 +397,7 @@ void PeerConnectionCtx::EverySecondTelemetryCallback_m(nsITimer* timer,
   MOZ_ASSERT(PeerConnectionCtx::isActive());
 
   for (auto& idAndPc : GetInstance()->mPeerConnections) {
-    if (idAndPc.second->HasMedia()) {
+    if (!idAndPc.second->IsClosed()) {
       idAndPc.second->GetStats(nullptr, true)
           ->Then(
               GetMainThreadSerialEventTarget(), __func__,
@@ -454,9 +430,32 @@ SharedWebrtcState* PeerConnectionCtx::GetSharedWebrtcState() const {
 
 void PeerConnectionCtx::RemovePeerConnection(const std::string& aKey) {
   MOZ_ASSERT(NS_IsMainThread());
-  size_t result = mPeerConnections.erase(aKey);
-  if (mPeerConnections.size() == 0 && result > 0) {
-    mSharedWebrtcState = nullptr;
+  auto it = mPeerConnections.find(aKey);
+  if (it != mPeerConnections.end()) {
+    if (it->second->GetFinalStats() && !it->second->LongTermStatsIsDisabled()) {
+      WebrtcGlobalInformation::StashStats(*(it->second->GetFinalStats()));
+    }
+    nsAutoString pcId = NS_ConvertASCIItoUTF16(it->second->GetName().c_str());
+    if (XRE_IsContentProcess()) {
+      if (auto* child = WebrtcGlobalChild::Get(); child) {
+        auto pcId = NS_ConvertASCIItoUTF16(it->second->GetName().c_str());
+        child->SendPeerConnectionFinalStats(*(it->second->GetFinalStats()));
+        child->SendPeerConnectionDestroyed(pcId);
+      }
+    } else {
+      using Update = WebrtcGlobalInformation::PcTrackingUpdate;
+      auto update = Update::Remove(pcId);
+      auto finalStats =
+          MakeUnique<RTCStatsReportInternal>(*(it->second->GetFinalStats()));
+      WebrtcGlobalStatsHistory::Record(std::move(finalStats));
+      WebrtcGlobalInformation::PeerConnectionTracking(update);
+    }
+
+    mPeerConnections.erase(it);
+    if (mPeerConnections.empty()) {
+      mSharedWebrtcState = nullptr;
+      StopTelemetryTimer();
+    }
   }
 }
 
@@ -465,7 +464,7 @@ void PeerConnectionCtx::AddPeerConnection(const std::string& aKey,
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(mPeerConnections.count(aKey) == 0,
              "PeerConnection with this key should not already exist");
-  if (mPeerConnections.size() == 0) {
+  if (mPeerConnections.empty()) {
     AudioState::Config audioStateConfig;
     audioStateConfig.audio_mixer = new rtc::RefCountedObject<DummyAudioMixer>();
     AudioProcessingBuilder audio_processing_builder;
@@ -476,14 +475,20 @@ void PeerConnectionCtx::AddPeerConnection(const std::string& aKey,
 
     SharedThreadPoolWebRtcTaskQueueFactory taskQueueFactory;
     constexpr bool supportTailDispatch = true;
-    auto callWorkerThread = WrapUnique(
-        taskQueueFactory
-            .CreateTaskQueueWrapper("CallWorker", supportTailDispatch,
-                                    webrtc::TaskQueueFactory::Priority::NORMAL,
-                                    MediaThreadType::WEBRTC_CALL_THREAD)
-            .release());
+    // Note the NonBlocking DeletionPolicy!
+    // This task queue is passed into libwebrtc as a raw pointer.
+    // WebrtcCallWrapper guarantees that it outlives its webrtc::Call instance.
+    // Outside of libwebrtc we must use ref-counting to either the
+    // WebrtcCallWrapper or to the CallWorkerThread to keep it alive.
+    auto callWorkerThread =
+        WrapUnique(taskQueueFactory
+                       .CreateTaskQueueWrapper<DeletionPolicy::NonBlocking>(
+                           "CallWorker", supportTailDispatch,
+                           webrtc::TaskQueueFactory::Priority::NORMAL,
+                           MediaThreadType::WEBRTC_CALL_THREAD)
+                       .release());
 
-    UniquePtr<webrtc::WebRtcKeyValueConfig> trials =
+    UniquePtr<webrtc::FieldTrialsView> trials =
         WrapUnique(new NoTrialsConfig());
 
     mSharedWebrtcState = MakeAndAddRef<SharedWebrtcState>(
@@ -491,6 +496,18 @@ void PeerConnectionCtx::AddPeerConnection(const std::string& aKey,
         std::move(audioStateConfig),
         already_AddRefed(CreateBuiltinAudioDecoderFactory().release()),
         std::move(trials));
+    StartTelemetryTimer();
+  }
+  auto pcId = NS_ConvertASCIItoUTF16(aPeerConnection->GetName().c_str());
+  if (XRE_IsContentProcess()) {
+    if (auto* child = WebrtcGlobalChild::Get(); child) {
+      child->SendPeerConnectionCreated(
+          pcId, aPeerConnection->LongTermStatsIsDisabled());
+    }
+  } else {
+    using Update = WebrtcGlobalInformation::PcTrackingUpdate;
+    auto update = Update::Add(pcId, aPeerConnection->LongTermStatsIsDisabled());
+    WebrtcGlobalInformation::PeerConnectionTracking(update);
   }
   mPeerConnections[aKey] = aPeerConnection;
 }
@@ -505,28 +522,41 @@ PeerConnectionImpl* PeerConnectionCtx::GetPeerConnection(
   return iterator->second;
 }
 
-template <typename Function>
-void PeerConnectionCtx::ForEachPeerConnection(Function&& aFunction) const {
-  MOZ_ASSERT(NS_IsMainThread());
-  for (const auto& pair : mPeerConnections) {
-    aFunction(pair.second);
+void PeerConnectionCtx::ClearClosedStats() {
+  for (auto& [id, pc] : mPeerConnections) {
+    Unused << id;
+    if (pc->IsClosed()) {
+      // Rare case
+      pc->DisableLongTermStats();
+    }
   }
 }
 
 nsresult PeerConnectionCtx::Initialize() {
+  MOZ_ASSERT(NS_IsMainThread());
   initGMP();
-
-  nsresult rv = NS_NewTimerWithFuncCallback(
-      getter_AddRefs(mTelemetryTimer), EverySecondTelemetryCallback_m, this,
-      1000, nsITimer::TYPE_REPEATING_PRECISE_CAN_SKIP,
-      "EverySecondTelemetryCallback_m");
-  NS_ENSURE_SUCCESS(rv, rv);
+  SdpRidAttributeList::kMaxRidLength =
+      webrtc::BaseRtpStringExtension::kMaxValueSizeBytes;
 
   if (XRE_IsContentProcess()) {
-    WebrtcGlobalChild::Create();
+    WebrtcGlobalChild::Get();
   }
 
   return NS_OK;
+}
+
+nsresult PeerConnectionCtx::StartTelemetryTimer() {
+  return NS_NewTimerWithFuncCallback(getter_AddRefs(mTelemetryTimer),
+                                     EverySecondTelemetryCallback_m, this, 1000,
+                                     nsITimer::TYPE_REPEATING_PRECISE_CAN_SKIP,
+                                     "EverySecondTelemetryCallback_m");
+}
+
+void PeerConnectionCtx::StopTelemetryTimer() {
+  if (mTelemetryTimer) {
+    mTelemetryTimer->Cancel();
+    mTelemetryTimer = nullptr;
+  }
 }
 
 static void GMPReady_m() {
@@ -536,8 +566,8 @@ static void GMPReady_m() {
 };
 
 static void GMPReady() {
-  PeerConnectionCtx::gMainThread->Dispatch(WrapRunnableNM(&GMPReady_m),
-                                           NS_DISPATCH_NORMAL);
+  GetMainThreadSerialEventTarget()->Dispatch(WrapRunnableNM(&GMPReady_m),
+                                             NS_DISPATCH_NORMAL);
 };
 
 void PeerConnectionCtx::initGMP() {
@@ -580,14 +610,6 @@ nsresult PeerConnectionCtx::Cleanup() {
   return NS_OK;
 }
 
-PeerConnectionCtx::~PeerConnectionCtx() {
-  // ensure mTelemetryTimer ends on main thread
-  MOZ_ASSERT(NS_IsMainThread());
-  if (mTelemetryTimer) {
-    mTelemetryTimer->Cancel();
-  }
-};
-
 void PeerConnectionCtx::queueJSEPOperation(nsIRunnable* aOperation) {
   mQueuedJSEPOperations.AppendElement(aOperation);
 }
@@ -607,19 +629,19 @@ bool PeerConnectionCtx::gmpHasH264() {
 
   // XXX I'd prefer if this was all known ahead of time...
 
-  nsTArray<nsCString> tags;
+  AutoTArray<nsCString, 1> tags;
   tags.AppendElement("h264"_ns);
 
   bool has_gmp;
   nsresult rv;
   rv = mGMPService->HasPluginForAPI(nsLiteralCString(GMP_API_VIDEO_ENCODER),
-                                    &tags, &has_gmp);
+                                    tags, &has_gmp);
   if (NS_FAILED(rv) || !has_gmp) {
     return false;
   }
 
   rv = mGMPService->HasPluginForAPI(nsLiteralCString(GMP_API_VIDEO_DECODER),
-                                    &tags, &has_gmp);
+                                    tags, &has_gmp);
   if (NS_FAILED(rv) || !has_gmp) {
     return false;
   }

@@ -12,7 +12,7 @@
 add_task(
   threadFrontTest(({ threadFront, debuggee }) => {
     return new Promise(resolve => {
-      threadFront.once("paused", async function(packet) {
+      threadFront.once("paused", async function (packet) {
         const line = debuggee.line0 + 3;
         const source = await getSourceById(
           threadFront,
@@ -21,16 +21,20 @@ add_task(
 
         // this test has been disabled for a long time so the functionality doesn't work
         const response = await threadFront.setBreakpoint(
-          { sourceUrl: source.url, line: line },
+          { sourceUrl: source.url, line },
           {}
         );
         // check that the breakpoint has properly skipped forward one line.
         assert.equal(response.actuallocation.source.actor, source.actor);
+        // This is wrong - location is not defined, but the test has been disabled
+        // for a long time and currently doesn't work.
+        // eslint-disable-next-line no-undef
         Assert.equal(response.actualLocation.line, location.line + 1);
 
-        threadFront.once("paused", function(packet) {
+        threadFront.once("paused", function (packet) {
           // Check the return value.
           Assert.equal(packet.frame.where.actor, source.actor);
+          // eslint-disable-next-line no-undef
           Assert.equal(packet.frame.where.line, location.line + 1);
           Assert.equal(packet.why.type, "breakpoint");
           Assert.equal(packet.why.actors[0], response.bpClient.actor);
@@ -39,7 +43,7 @@ add_task(
           Assert.equal(debuggee.b, undefined);
 
           // Remove the breakpoint.
-          response.bpClient.remove(function(response) {
+          response.bpClient.remove(function (response) {
             threadFront.resume().then(resolve);
           });
         });
@@ -48,7 +52,7 @@ add_task(
         threadFront.resume();
       });
 
-      /* eslint-disable */
+      // prettier-ignore
       Cu.evalInSandbox("var line0 = Error().lineNumber;\n" +
                        "function foo() {\n" + // line0 + 1
                        "  this.a = 1;\n" +    // line0 + 2
@@ -59,13 +63,13 @@ add_task(
                        "1.7",
                        "script1.js");
 
+      // prettier-ignore
       Cu.evalInSandbox("var line1 = Error().lineNumber;\n" +
                        "debugger;\n" +        // line1 + 1
                        "foo();\n",           // line1 + 2
                        debuggee,
                        "1.7",
                        "script2.js");
-      /* eslint-enable */
     });
   })
 );

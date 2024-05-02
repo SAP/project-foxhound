@@ -3,28 +3,29 @@
 
 "use strict";
 
-const { COMPATIBILITY_ISSUE_TYPE } = require("devtools/shared/constants");
+const {
+  COMPATIBILITY_ISSUE_TYPE,
+} = require("resource://devtools/shared/constants.js");
 
 const {
   COMPATIBILITY_APPEND_NODE_COMPLETE,
   COMPATIBILITY_CLEAR_DESTROYED_NODES,
-} = require("devtools/client/inspector/compatibility/actions/index");
+} = require("resource://devtools/client/inspector/compatibility/actions/index.js");
 
 // Test the behavior rules are dynamically added
 
-const ISSUE_BINDING = {
+const ISSUE_OUTLINE_RADIUS = {
   type: COMPATIBILITY_ISSUE_TYPE.CSS_PROPERTY,
-  property: "-moz-binding",
-  url: "https://developer.mozilla.org/docs/Web/CSS/-moz-binding",
+  property: "-moz-user-input",
+  url: "https://developer.mozilla.org/docs/Web/CSS/-moz-user-input",
   deprecated: true,
   experimental: false,
 };
 
-const ISSUE_HYPHENS = {
-  type: COMPATIBILITY_ISSUE_TYPE.CSS_PROPERTY_ALIASES,
-  aliases: ["hyphens"],
-  property: "hyphens",
-  url: "https://developer.mozilla.org/docs/Web/CSS/hyphens",
+const ISSUE_SCROLLBAR_WIDTH = {
+  type: COMPATIBILITY_ISSUE_TYPE.CSS_PROPERTY,
+  property: "scrollbar-width",
+  url: "https://developer.mozilla.org/docs/Web/CSS/scrollbar-width",
   deprecated: false,
   experimental: false,
 };
@@ -32,23 +33,20 @@ const ISSUE_HYPHENS = {
 const TEST_URI = `
   <style>
     .child {
-      -moz-binding: none;
+      -moz-user-input: none;
     }
   </style>
   <body></body>
 `;
 
-add_task(async function() {
+add_task(async function () {
   info("Testing dynamic DOM mutation using JavaScript");
   const tab = await addTab(
     "data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI)
   );
 
-  const {
-    allElementsPane,
-    inspector,
-    selectedElementPane,
-  } = await openCompatibilityView();
+  const { allElementsPane, inspector, selectedElementPane } =
+    await openCompatibilityView();
 
   info("Check initial issues");
   await assertIssueList(selectedElementPane, []);
@@ -62,14 +60,14 @@ add_task(async function() {
     inspector,
     selectedElementPane,
     allElementsPane,
-    [ISSUE_BINDING],
-    [ISSUE_HYPHENS, ISSUE_BINDING],
-    async function() {
+    [ISSUE_OUTLINE_RADIUS],
+    [ISSUE_SCROLLBAR_WIDTH, ISSUE_OUTLINE_RADIUS],
+    async function () {
       const doc = content.document;
       const parent = doc.querySelector("body");
 
       const newElementWithIssue = doc.createElement("div");
-      newElementWithIssue.style.hyphens = "none";
+      newElementWithIssue.style["scrollbar-width"] = "none";
 
       const parentOfIssueElement = doc.createElement("div");
       parentOfIssueElement.classList.add("parent");
@@ -90,9 +88,9 @@ add_task(async function() {
     inspector,
     selectedElementPane,
     allElementsPane,
-    [ISSUE_HYPHENS],
-    [ISSUE_HYPHENS],
-    async function() {
+    [ISSUE_SCROLLBAR_WIDTH],
+    [ISSUE_SCROLLBAR_WIDTH],
+    async function () {
       const doc = content.document;
       const parent = doc.querySelector(".parent");
       parent.remove();
@@ -109,7 +107,7 @@ add_task(async function() {
     allElementsPane,
     [],
     [],
-    async function() {
+    async function () {
       const doc = content.document;
       const issueElement = doc.querySelector("div");
       issueElement.remove();

@@ -7,8 +7,9 @@
 "use strict";
 
 const kUrl = "https://example.com/";
+var gPlacedData = false;
 
-function initTab() {
+function initTab(performReadbackTest) {
   let contentWindow = content.wrappedJSObject;
 
   let drawCanvas = (fillStyle, id) => {
@@ -30,17 +31,25 @@ function initTab() {
   };
 
   let canvas = drawCanvas("cyan", "canvas-id-canvas");
-  contentWindow.kPlacedData = canvas.toDataURL();
-  is(
-    canvas.toDataURL(),
-    contentWindow.kPlacedData,
-    "no RFP, canvas data == placed data"
-  );
+
+  let placedData = canvas.toDataURL();
+  if (performReadbackTest) {
+    is(
+      canvas.toDataURL(),
+      placedData,
+      "Reading the placed data twice didn't match"
+    );
+    return placedData;
+  }
+  return undefined;
 }
 
 function disableResistFingerprinting() {
   return SpecialPowers.pushPrefEnv({
-    set: [["privacy.resistFingerprinting", false]],
+    set: [
+      ["privacy.resistFingerprinting", false],
+      ["privacy.resistFingerprinting.pbmode", false],
+    ],
   });
 }
 
@@ -48,36 +57,33 @@ function enableResistFingerprinting(RfpNonPbmExclusion, RfpDomainExclusion) {
   if (RfpNonPbmExclusion && RfpDomainExclusion) {
     return SpecialPowers.pushPrefEnv({
       set: [
-        ["privacy.resistFingerprinting", true],
-        ["privacy.resistFingerprinting.testGranularityMask", 6],
+        ["privacy.resistFingerprinting.pbmode", true],
         ["privacy.resistFingerprinting.exemptedDomains", "example.com"],
       ],
     });
   } else if (RfpNonPbmExclusion) {
     return SpecialPowers.pushPrefEnv({
-      set: [
-        ["privacy.resistFingerprinting", true],
-        ["privacy.resistFingerprinting.testGranularityMask", 2],
-      ],
+      set: [["privacy.resistFingerprinting.pbmode", true]],
     });
   } else if (RfpDomainExclusion) {
     return SpecialPowers.pushPrefEnv({
       set: [
         ["privacy.resistFingerprinting", true],
-        ["privacy.resistFingerprinting.testGranularityMask", 4],
         ["privacy.resistFingerprinting.exemptedDomains", "example.com"],
       ],
     });
   }
   return SpecialPowers.pushPrefEnv({
-    set: [
-      ["privacy.resistFingerprinting", true],
-      ["privacy.resistFingerprinting.testGranularityMask", 0],
-    ],
+    set: [["privacy.resistFingerprinting", true]],
   });
 }
 
-function extractCanvasData(isPbm, RfpNonPbmExclusion, RfpDomainExclusion) {
+function extractCanvasData(
+  placedData,
+  isPbm,
+  RfpNonPbmExclusion,
+  RfpDomainExclusion
+) {
   let contentWindow = content.wrappedJSObject;
   let canvas = contentWindow.document.getElementById("canvas-id-canvas");
   let canvasData = canvas.toDataURL();
@@ -85,43 +91,67 @@ function extractCanvasData(isPbm, RfpNonPbmExclusion, RfpDomainExclusion) {
   if (RfpDomainExclusion) {
     is(
       canvasData,
-      contentWindow.kPlacedData,
-      `RFP, domain exempted, canvas data == placed data (isPbm: ${isPbm}, RfpNonPbmExclusion: ${RfpNonPbmExclusion}, RfpDomainExclusion: ${RfpDomainExclusion})`
+      placedData,
+      `A: RFP, domain exempted, canvas data == placed data (isPbm: ${isPbm}, RfpNonPbmExclusion: ${RfpNonPbmExclusion}, RfpDomainExclusion: ${RfpDomainExclusion})`
     );
   } else if (!isPbm && RfpNonPbmExclusion) {
     is(
       canvasData,
-      contentWindow.kPlacedData,
-      `RFP, nonPBM exempted, not in PBM, canvas data == placed data (isPbm: ${isPbm}, RfpNonPbmExclusion: ${RfpNonPbmExclusion}, RfpDomainExclusion: ${RfpDomainExclusion})`
+      placedData,
+      `B: RFP, nonPBM exempted, not in PBM, canvas data == placed data (isPbm: ${isPbm}, RfpNonPbmExclusion: ${RfpNonPbmExclusion}, RfpDomainExclusion: ${RfpDomainExclusion})`
     );
   } else if (isPbm && RfpNonPbmExclusion) {
     isnot(
       canvasData,
-      contentWindow.kPlacedData,
-      `RFP, nonPBM exempted, in PBM, canvas data != placed data (isPbm: ${isPbm}, RfpNonPbmExclusion: ${RfpNonPbmExclusion}, RfpDomainExclusion: ${RfpDomainExclusion})`
+      placedData,
+      `C: RFP, nonPBM exempted, in PBM, canvas data != placed data (isPbm: ${isPbm}, RfpNonPbmExclusion: ${RfpNonPbmExclusion}, RfpDomainExclusion: ${RfpDomainExclusion})`
     );
   } else {
     isnot(
       canvasData,
-      contentWindow.kPlacedData,
-      `RFP, domain not exempted, nonPBM not exempted, canvas data != placed data (isPbm: ${isPbm}, RfpNonPbmExclusion: ${RfpNonPbmExclusion}, RfpDomainExclusion: ${RfpDomainExclusion})`
+      placedData,
+      `D: RFP, domain not exempted, nonPBM not exempted, canvas data != placed data (isPbm: ${isPbm}, RfpNonPbmExclusion: ${RfpNonPbmExclusion}, RfpDomainExclusion: ${RfpDomainExclusion})`
     );
   }
 }
 
+async function populatePlacedData() {
+  let win = await BrowserTestUtils.openNewBrowserWindow();
+  await disableResistFingerprinting();
+  await BrowserTestUtils.withNewTab(
+    {
+      gBrowser: win.gBrowser,
+      url: kUrl,
+    },
+    async function () {
+      let browser = win.gBrowser.selectedBrowser;
+      gPlacedData = await SpecialPowers.spawn(
+        browser,
+        [/* performReadbackTest= */ true],
+        initTab
+      );
+    }
+  );
+  await BrowserTestUtils.closeWindow(win);
+  await SpecialPowers.popPrefEnv();
+}
+
 async function rfpExclusionTestOnCanvas(
   win,
+  placedData,
   isPbm,
   RfpNonPbmExclusion,
   RfpDomainExclusion
 ) {
   let browser = win.gBrowser.selectedBrowser;
-  await disableResistFingerprinting(); /* we need to disable RFP to capture the placed data */
-  await SpecialPowers.spawn(browser, [], initTab);
-  await enableResistFingerprinting(RfpNonPbmExclusion, RfpDomainExclusion);
   await SpecialPowers.spawn(
     browser,
-    [isPbm, RfpNonPbmExclusion, RfpDomainExclusion],
+    [/* performReadbackTest= */ false],
+    initTab
+  );
+  await SpecialPowers.spawn(
+    browser,
+    [placedData, isPbm, RfpNonPbmExclusion, RfpDomainExclusion],
     extractCanvasData
   );
 }
@@ -134,6 +164,7 @@ async function testCanvasRfpExclusion(
   let win = await BrowserTestUtils.openNewBrowserWindow({
     private: isPbm,
   });
+  await enableResistFingerprinting(RfpNonPbmExclusion, RfpDomainExclusion);
   await BrowserTestUtils.withNewTab(
     {
       gBrowser: win.gBrowser,
@@ -142,14 +173,17 @@ async function testCanvasRfpExclusion(
     rfpExclusionTestOnCanvas.bind(
       null,
       win,
+      gPlacedData,
       isPbm,
       RfpNonPbmExclusion,
       RfpDomainExclusion
     )
   );
   await BrowserTestUtils.closeWindow(win);
+  await SpecialPowers.popPrefEnv();
 }
 
+add_task(populatePlacedData.bind(null));
 add_task(testCanvasRfpExclusion.bind(null, false, false, false));
 add_task(testCanvasRfpExclusion.bind(null, false, false, true));
 add_task(testCanvasRfpExclusion.bind(null, false, true, false));

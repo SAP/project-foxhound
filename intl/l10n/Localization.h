@@ -54,7 +54,7 @@ namespace intl {
 #if defined(NIGHTLY_BUILD) || defined(MOZ_DEV_EDITION) || defined(DEBUG)
     dom::Document* doc = nullptr;
     if (aGlobal) {
-      nsPIDOMWindowInner* innerWindow = aGlobal->AsInnerWindow();
+      nsPIDOMWindowInner* innerWindow = aGlobal->GetAsInnerWindow();
       if (innerWindow) {
         doc = innerWindow->GetExtantDoc();
       }
@@ -80,8 +80,8 @@ class Localization : public nsIObserver,
 
  public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS_AMBIGUOUS(Localization,
-                                                         nsIObserver)
+  NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS_AMBIGUOUS(Localization,
+                                                        nsIObserver)
   NS_DECL_NSIOBSERVER
 
   static already_AddRefed<Localization> Constructor(

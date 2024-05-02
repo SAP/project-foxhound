@@ -5,8 +5,12 @@
 
 #include "nsICanvasRenderingContextInternal.h"
 
+#include "mozilla/dom/CanvasUtils.h"
 #include "mozilla/dom/Document.h"
+#include "mozilla/dom/WorkerCommon.h"
+#include "mozilla/dom/WorkerPrivate.h"
 #include "mozilla/PresShell.h"
+#include "nsPIDOMWindow.h"
 #include "nsRefreshDriver.h"
 
 nsICanvasRenderingContextInternal::nsICanvasRenderingContextInternal() =
@@ -33,7 +37,6 @@ nsIGlobalObject* nsICanvasRenderingContextInternal::GetParentObject() const {
 }
 
 nsIPrincipal* nsICanvasRenderingContextInternal::PrincipalOrNull() const {
-  MOZ_ASSERT(NS_IsMainThread());
   if (mCanvasElement) {
     return mCanvasElement->NodePrincipal();
   }
@@ -43,6 +46,35 @@ nsIPrincipal* nsICanvasRenderingContextInternal::PrincipalOrNull() const {
       return global->PrincipalOrNull();
     }
   }
+  return nullptr;
+}
+
+nsICookieJarSettings* nsICanvasRenderingContextInternal::GetCookieJarSettings()
+    const {
+  if (mCanvasElement) {
+    return mCanvasElement->OwnerDoc()->CookieJarSettings();
+  }
+
+  // If there is an offscreen canvas, attempt to retrieve its owner window
+  // and return the cookieJarSettings for the window's document, if available.
+  if (mOffscreenCanvas) {
+    nsCOMPtr<nsPIDOMWindowInner> win =
+        do_QueryInterface(mOffscreenCanvas->GetOwnerGlobal());
+
+    if (win) {
+      return win->GetExtantDoc()->CookieJarSettings();
+    }
+
+    // If the owner window cannot be retrieved, check if there is a current
+    // worker and return its cookie jar settings if available.
+    mozilla::dom::WorkerPrivate* worker =
+        mozilla::dom::GetCurrentThreadWorkerPrivate();
+
+    if (worker) {
+      return worker->CookieJarSettings();
+    }
+  }
+
   return nullptr;
 }
 
@@ -60,4 +92,27 @@ void nsICanvasRenderingContextInternal::AddPostRefreshObserverIfNecessary() {
   }
   mRefreshDriver = GetPresShell()->GetPresContext()->RefreshDriver();
   mRefreshDriver->AddPostRefreshObserver(this);
+}
+
+void nsICanvasRenderingContextInternal::DoSecurityCheck(
+    nsIPrincipal* aPrincipal, bool aForceWriteOnly, bool aCORSUsed) {
+  if (mCanvasElement) {
+    mozilla::CanvasUtils::DoDrawImageSecurityCheck(mCanvasElement, aPrincipal,
+                                                   aForceWriteOnly, aCORSUsed);
+  } else if (mOffscreenCanvas) {
+    mozilla::CanvasUtils::DoDrawImageSecurityCheck(mOffscreenCanvas, aPrincipal,
+                                                   aForceWriteOnly, aCORSUsed);
+  }
+}
+
+bool nsICanvasRenderingContextInternal::ShouldResistFingerprinting(
+    mozilla::RFPTarget aTarget) const {
+  if (mCanvasElement) {
+    return mCanvasElement->OwnerDoc()->ShouldResistFingerprinting(aTarget);
+  }
+  if (mOffscreenCanvas) {
+    return mOffscreenCanvas->ShouldResistFingerprinting(aTarget);
+  }
+  // Last resort, just check the global preference
+  return nsContentUtils::ShouldResistFingerprinting("Fallback", aTarget);
 }

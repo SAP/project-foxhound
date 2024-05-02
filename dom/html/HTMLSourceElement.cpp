@@ -17,10 +17,12 @@
 #include "mozilla/dom/MediaList.h"
 #include "mozilla/dom/MediaSource.h"
 
-#include "nsGkAtoms.h"
-
 #include "mozilla/dom/BlobURLProtocolHandler.h"
+#include "mozilla/AttributeStyles.h"
+#include "mozilla/MappedDeclarationsBuilder.h"
 #include "mozilla/Preferences.h"
+
+#include "nsGkAtoms.h"
 
 NS_IMPL_NS_NEW_HTML_ELEMENT(Source)
 
@@ -77,19 +79,30 @@ nsresult HTMLSourceElement::CheckTaintSinkSetAttr(int32_t aNamespaceID, nsAtom* 
       (aName == nsGkAtoms::src || aName == nsGkAtoms::srcset)) {
     // Taintfox: img.src / img.srcset sink
     const char* sink = (aName == nsGkAtoms::src) ? "source.src" : "source.srcset";
-    nsAutoString id;
-    this->GetId(id);
-    ReportTaintSink(aValue, sink, id);
+    ReportTaintSink(aValue, sink, this);
   }
 
   return nsGenericHTMLElement::CheckTaintSinkSetAttr(aNamespaceID, aName, aValue);
 }
 
-nsresult HTMLSourceElement::AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
-                                         const nsAttrValue* aValue,
-                                         const nsAttrValue* aOldValue,
-                                         nsIPrincipal* aMaybeScriptedPrincipal,
-                                         bool aNotify) {
+bool HTMLSourceElement::ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
+                                       const nsAString& aValue,
+                                       nsIPrincipal* aMaybeScriptedPrincipal,
+                                       nsAttrValue& aResult) {
+  if (aNamespaceID == kNameSpaceID_None &&
+      (aAttribute == nsGkAtoms::width || aAttribute == nsGkAtoms::height)) {
+    return aResult.ParseHTMLDimension(aValue);
+  }
+
+  return nsGenericHTMLElement::ParseAttribute(aNamespaceID, aAttribute, aValue,
+                                              aMaybeScriptedPrincipal, aResult);
+}
+
+void HTMLSourceElement::AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
+                                     const nsAttrValue* aValue,
+                                     const nsAttrValue* aOldValue,
+                                     nsIPrincipal* aMaybeScriptedPrincipal,
+                                     bool aNotify) {
   if (aNameSpaceID == kNameSpaceID_None && aName == nsGkAtoms::srcset) {
     mSrcsetTriggeringPrincipal = nsContentUtils::GetAttrTriggeringPrincipal(
         this, aValue ? aValue->GetStringValue() : EmptyString(),
@@ -97,11 +110,10 @@ nsresult HTMLSourceElement::AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
   }
   // If we are associated with a <picture> with a valid <img>, notify it of
   // responsive parameter changes
-  Element* parent = nsINode::GetParentElement();
   if (aNameSpaceID == kNameSpaceID_None &&
       (aName == nsGkAtoms::srcset || aName == nsGkAtoms::sizes ||
        aName == nsGkAtoms::media || aName == nsGkAtoms::type) &&
-      parent && parent->IsHTMLElement(nsGkAtoms::picture)) {
+      IsInPicture()) {
     if (aName == nsGkAtoms::media) {
       UpdateMediaList(aValue);
     }
@@ -135,6 +147,16 @@ nsresult HTMLSourceElement::AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
         NS_GetSourceForMediaSourceURI(uri, getter_AddRefs(mSrcMediaSource));
       }
     }
+  } else if (aNameSpaceID == kNameSpaceID_None &&
+             IsAttributeMappedToImages(aName) && IsInPicture()) {
+    BuildMappedAttributesForImage();
+
+    nsCOMPtr<nsIContent> sibling = AsContent();
+    while ((sibling = sibling->GetNextSibling())) {
+      if (auto* img = HTMLImageElement::FromNode(sibling)) {
+        img->PictureSourceDimensionChanged(this, aNotify);
+      }
+    }
   }
 
   return nsGenericHTMLElement::AfterSetAttr(
@@ -150,12 +172,74 @@ nsresult HTMLSourceElement::BindToTree(BindContext& aContext,
     media->NotifyAddedSource();
   }
 
+  if (aParent.IsHTMLElement(nsGkAtoms::picture)) {
+    BuildMappedAttributesForImage();
+  } else {
+    mMappedAttributesForImage = nullptr;
+  }
+
   return NS_OK;
+}
+
+void HTMLSourceElement::UnbindFromTree(bool aNullParent) {
+  mMappedAttributesForImage = nullptr;
+  nsGenericHTMLElement::UnbindFromTree(aNullParent);
 }
 
 JSObject* HTMLSourceElement::WrapNode(JSContext* aCx,
                                       JS::Handle<JSObject*> aGivenProto) {
   return HTMLSourceElement_Binding::Wrap(aCx, this, aGivenProto);
+}
+
+/**
+ * Helper to map the image source attributes.
+ * Note: This will override the declaration created by the presentation
+ * attributes of HTMLImageElement (i.e. mapped by MapImageSizeAttributeInto).
+ * https://html.spec.whatwg.org/multipage/embedded-content.html#the-source-element
+ */
+void HTMLSourceElement::BuildMappedAttributesForImage() {
+  MOZ_ASSERT(NS_IsMainThread());
+
+  mMappedAttributesForImage = nullptr;
+
+  Document* document = GetComposedDoc();
+  if (!document) {
+    return;
+  }
+
+  const nsAttrValue* width = mAttrs.GetAttr(nsGkAtoms::width);
+  const nsAttrValue* height = mAttrs.GetAttr(nsGkAtoms::height);
+  if (!width && !height) {
+    return;
+  }
+
+  MappedDeclarationsBuilder builder(*this, *document);
+  // We should set the missing property values with auto value to make sure it
+  // overrides the declaration created by the presentation attributes of
+  // HTMLImageElement. This can make sure we compute the ratio-dependent axis
+  // size properly by the natural aspect-ratio of the image.
+  //
+  // Note: The spec doesn't specify this, so we follow the implementation in
+  // other browsers.
+  // Spec issue: https://github.com/whatwg/html/issues/8178.
+  if (width) {
+    MapDimensionAttributeInto(builder, eCSSProperty_width, *width);
+  } else {
+    builder.SetAutoValue(eCSSProperty_width);
+  }
+
+  if (height) {
+    MapDimensionAttributeInto(builder, eCSSProperty_height, *height);
+  } else {
+    builder.SetAutoValue(eCSSProperty_height);
+  }
+
+  if (width && height) {
+    DoMapAspectRatio(*width, *height, builder);
+  } else {
+    builder.SetAutoValue(eCSSProperty_aspect_ratio);
+  }
+  mMappedAttributesForImage = builder.TakeDeclarationBlock();
 }
 
 }  // namespace mozilla::dom

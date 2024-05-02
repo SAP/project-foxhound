@@ -62,10 +62,12 @@ sftk_parseTokenParameters(char *param, sftk_token_parameters *parsed)
         NSSUTIL_HANDLE_STRING_ARG(index, parsed->tokdes, "tokenDescription=", ;)
         NSSUTIL_HANDLE_STRING_ARG(index, parsed->updtokdes, "updateTokenDescription=", ;)
         NSSUTIL_HANDLE_STRING_ARG(index, parsed->slotdes, "slotDescription=", ;)
-        NSSUTIL_HANDLE_STRING_ARG(index, tmp, "minPWLen=",
-                                  if (tmp) { parsed->minPW=atoi(tmp); PORT_Free(tmp); tmp = NULL; })
-        NSSUTIL_HANDLE_STRING_ARG(index, tmp, "flags=",
-                                  if (tmp) { sftk_parseTokenFlags(param,parsed); PORT_Free(tmp); tmp = NULL; })
+        NSSUTIL_HANDLE_STRING_ARG(
+            index, tmp, "minPWLen=",
+            if (tmp) { parsed->minPW=atoi(tmp); PORT_Free(tmp); tmp = NULL; })
+        NSSUTIL_HANDLE_STRING_ARG(
+            index, tmp, "flags=",
+            if (tmp) { sftk_parseTokenFlags(param,parsed); PORT_Free(tmp); tmp = NULL; })
         NSSUTIL_HANDLE_FINAL_ARG(index)
     }
     return CKR_OK;
@@ -154,10 +156,12 @@ sftk_parseParameters(char *param, sftk_parameters *parsed, PRBool isFIPS)
         NSSUTIL_HANDLE_STRING_ARG(index, pupdtokdes, "updateTokenDescription=", ;)
         NSSUTIL_HANDLE_STRING_ARG(index, minPW, "minPWLen=", ;)
 
-        NSSUTIL_HANDLE_STRING_ARG(index, tmp, "flags=",
-                                  if (tmp) { sftk_parseFlags(param,parsed); PORT_Free(tmp); tmp = NULL; })
-        NSSUTIL_HANDLE_STRING_ARG(index, tmp, "tokens=",
-                                  if (tmp) { sftk_parseTokens(tmp,parsed); PORT_Free(tmp); tmp = NULL; })
+        NSSUTIL_HANDLE_STRING_ARG(
+            index, tmp, "flags=",
+            if (tmp) { sftk_parseFlags(param,parsed); PORT_Free(tmp); tmp = NULL; })
+        NSSUTIL_HANDLE_STRING_ARG(
+            index, tmp, "tokens=",
+            if (tmp) { sftk_parseTokens(tmp,parsed); PORT_Free(tmp); tmp = NULL; })
         NSSUTIL_HANDLE_FINAL_ARG(index)
     }
     if (parsed->tokens == NULL) {
@@ -248,4 +252,17 @@ sftk_freeParams(sftk_parameters *params)
     FREE_CLEAR(params->tokens);
     FREE_CLEAR(params->updatedir);
     FREE_CLEAR(params->updateID);
+}
+
+PRBool
+sftk_RawArgHasFlag(const char *entry, const char *flag, const void *pReserved)
+{
+    CK_C_INITIALIZE_ARGS *init_args = (CK_C_INITIALIZE_ARGS *)pReserved;
+
+    /* if we don't have any params, the flag isn't set */
+    if ((!init_args || !init_args->LibraryParameters)) {
+        return PR_FALSE;
+    }
+
+    return NSSUTIL_ArgHasFlag(entry, flag, (const char *)init_args->LibraryParameters);
 }

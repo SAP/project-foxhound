@@ -7,11 +7,8 @@
 #include "Key.h"
 
 #include <algorithm>
-#include <stdint.h>  // for UINT32_MAX, uintptr_t
-#include "IndexedDBCommon.h"
-#include "IndexedDatabase.h"
-#include "IndexedDatabaseInlines.h"
-#include "IndexedDatabaseManager.h"
+#include <cstdint>
+#include <stdint.h>          // for UINT32_MAX, uintptr_t
 #include "js/Array.h"        // JS::NewArrayObject
 #include "js/ArrayBuffer.h"  // JS::{IsArrayBufferObject,NewArrayBuffer{,WithContents},GetArrayBufferLengthAndData}
 #include "js/Date.h"
@@ -28,11 +25,14 @@
 #include "mozilla/intl/Collator.h"
 #include "mozilla/ResultExtensions.h"
 #include "mozilla/ReverseIterator.h"
+#include "mozilla/dom/indexedDB/IDBResult.h"
+#include "mozilla/dom/indexedDB/Key.h"
+#include "mozilla/dom/quota/QuotaCommon.h"
 #include "mozilla/dom/quota/ResultExtensions.h"
 #include "mozIStorageStatement.h"
 #include "mozIStorageValueArray.h"
-#include "nsAlgorithm.h"
 #include "nsJSUtils.h"
+#include "nsTStringRepr.h"
 #include "ReportInternalError.h"
 #include "xpcpublic.h"
 
@@ -43,7 +43,7 @@ namespace {
 // https://w3c.github.io/IndexedDB/#convert-value-to-key
 template <typename ArrayConversionPolicy>
 IDBResult<Ok, IDBSpecialValue::Invalid> ConvertArrayValueToKey(
-    JSContext* const aCx, JS::HandleObject aObject,
+    JSContext* const aCx, JS::Handle<JSObject*> aObject,
     ArrayConversionPolicy&& aPolicy) {
   // 1. Let `len` be ? ToLength( ? Get(`input`, "length")).
   uint32_t len;
@@ -62,7 +62,7 @@ IDBResult<Ok, IDBSpecialValue::Invalid> ConvertArrayValueToKey(
 
   // 5. While `index` is less than `len`:
   while (index < len) {
-    JS::RootedId indexId(aCx);
+    JS::Rooted<JS::PropertyKey> indexId(aCx);
     if (!JS_IndexToId(aCx, index, &indexId)) {
       return Err(IDBException(NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR));
     }
@@ -79,7 +79,7 @@ IDBResult<Ok, IDBSpecialValue::Invalid> ConvertArrayValueToKey(
     }
 
     // 3. Let `entry` be ? Get(`input`, `index`).
-    JS::RootedValue entry(aCx);
+    JS::Rooted<JS::Value> entry(aCx);
     if (!JS_GetPropertyById(aCx, aObject, indexId, &entry)) {
       return Err(IDBException(NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR));
     }
@@ -272,7 +272,7 @@ Result<Key, nsresult> Key::ToLocaleAwareKey(const nsCString& aLocale) const {
   // Now continue decoding
   while (it < end) {
     char* buffer;
-    const uint32_t oldLen = res.mBuffer.Length();
+    const size_t oldLen = res.mBuffer.Length();
     const auto type = *it % eMaxType;
 
     // Note: Do not modify |it| before calling |updateBufferAndIter|;
@@ -332,7 +332,7 @@ class MOZ_STACK_CLASS Key::ArrayValueEncoder final {
         mTypeOffset(aTypeOffset),
         mRecursionDepth(aRecursionDepth) {}
 
-  void AddToSeenSet(JSContext* const aCx, JS::HandleObject) {
+  void AddToSeenSet(JSContext* const aCx, JS::Handle<JSObject*>) {
     ++mRecursionDepth;
   }
 
@@ -347,9 +347,9 @@ class MOZ_STACK_CLASS Key::ArrayValueEncoder final {
     MOZ_ASSERT(mTypeOffset < eMaxType * kMaxArrayCollapse);
   }
 
-  IDBResult<Ok, IDBSpecialValue::Invalid> ConvertSubkey(JSContext* const aCx,
-                                                        JS::HandleValue aEntry,
-                                                        const uint32_t aIndex) {
+  IDBResult<Ok, IDBSpecialValue::Invalid> ConvertSubkey(
+      JSContext* const aCx, JS::Handle<JS::Value> aEntry,
+      const uint32_t aIndex) {
     auto result =
         mKey.EncodeJSValInternal(aCx, aEntry, mTypeOffset, mRecursionDepth);
     mTypeOffset = 0;
@@ -387,13 +387,12 @@ IDBResult<Ok, IDBSpecialValue::Invalid> Key::EncodeJSValInternal(
     const auto number = aVal.toNumber();
 
     // 1. If `input` is NaN then return invalid.
-    if (mozilla::IsNaN(number)) {
+    if (std::isnan(number)) {
       return Err(IDBError(SpecialValues::Invalid));
     }
 
     // 2. Otherwise, return a new key with type `number` and value `input`.
-    EncodeNumber(number, eFloat + aTypeOffset);
-    return Ok();
+    return EncodeNumber(number, eFloat + aTypeOffset);
   }
 
   // If Type(`input`) is String
@@ -408,7 +407,7 @@ IDBResult<Ok, IDBSpecialValue::Invalid> Key::EncodeJSValInternal(
   }
 
   if (aVal.isObject()) {
-    JS::RootedObject object(aCx, &aVal.toObject());
+    JS::Rooted<JSObject*> object(aCx, &aVal.toObject());
 
     js::ESClass builtinClass;
     if (!JS::GetBuiltinClass(aCx, object, &builtinClass)) {
@@ -426,13 +425,12 @@ IDBResult<Ok, IDBSpecialValue::Invalid> Key::EncodeJSValInternal(
       }
 
       // 2. If `ms` is NaN then return invalid.
-      if (mozilla::IsNaN(ms)) {
+      if (std::isnan(ms)) {
         return Err(IDBError(SpecialValues::Invalid));
       }
 
       // 3. Otherwise, return a new key with type `date` and value `ms`.
-      EncodeNumber(ms, eDate + aTypeOffset);
-      return Ok();
+      return EncodeNumber(ms, eDate + aTypeOffset);
     }
 
     // If `input` is a buffer source type
@@ -557,20 +555,22 @@ Result<Ok, nsresult> Key::EncodeString(const Span<const T> aInput,
   return EncodeAsString(aInput, eString + aTypeOffset);
 }
 
+// nsCString maximum length is limited by INT32_MAX.
+// XXX: We probably want to enforce even shorter keys, though.
+#define KEY_MAXIMUM_BUFFER_LENGTH \
+  ::mozilla::detail::nsTStringLengthStorage<char>::kMax
+
 template <typename T>
 Result<Ok, nsresult> Key::EncodeAsString(const Span<const T> aInput,
                                          uint8_t aType) {
-  // First measure how long the encoded string will be.
-  if (NS_WARN_IF(UINT32_MAX - 2 < uintptr_t(aInput.Length()))) {
-    IDB_REPORT_INTERNAL_ERR();
-    return Err(NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR);
-  }
+  // Please note that the input buffer can either be based on two-byte UTF-16
+  // values or on arbitrary single byte binary values. Only the first case
+  // needs to account for the TWO_BYTE_LIMIT of UTF-8.
+  // First we measure how long the encoded string will be.
 
-  // The +2 is for initial aType and trailing 0. We'll compensate for multi-byte
+  // The 2 is for initial aType and trailing 0. We'll compensate for multi-byte
   // chars below.
-  CheckedUint32 size = 2;
-
-  MOZ_ASSERT(size.isValid());
+  size_t size = 2;
 
   // We construct a range over the raw pointers here because this loop is
   // time-critical.
@@ -579,32 +579,30 @@ Result<Ok, nsresult> Key::EncodeAsString(const Span<const T> aInput,
   const auto inputRange = mozilla::detail::IteratorRange(
       aInput.Elements(), aInput.Elements() + aInput.Length());
 
-  CheckedUint32 payloadSize = aInput.Length();
+  size_t payloadSize = aInput.Length();
   bool anyMultibyte = false;
-  for (const auto val : inputRange) {
+  for (const T val : inputRange) {
     if (val > ONE_BYTE_LIMIT) {
       anyMultibyte = true;
       payloadSize += char16_t(val) > TWO_BYTE_LIMIT ? 2 : 1;
-      if (!payloadSize.isValid()) {
-        IDB_REPORT_INTERNAL_ERR();
-        return Err(NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR);
+      if (payloadSize > KEY_MAXIMUM_BUFFER_LENGTH) {
+        return Err(NS_ERROR_DOM_INDEXEDDB_KEY_ERR);
       }
     }
   }
 
   size += payloadSize;
 
-  // Allocate memory for the new size
-  uint32_t oldLen = mBuffer.Length();
+  // Now we allocate memory for the new size
+  size_t oldLen = mBuffer.Length();
   size += oldLen;
 
-  if (!size.isValid()) {
-    IDB_REPORT_INTERNAL_ERR();
-    return Err(NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR);
+  if (size > KEY_MAXIMUM_BUFFER_LENGTH) {
+    return Err(NS_ERROR_DOM_INDEXEDDB_KEY_ERR);
   }
 
   char* buffer;
-  if (!mBuffer.GetMutableData(&buffer, size.value())) {
+  if (!mBuffer.GetMutableData(&buffer, size)) {
     IDB_REPORT_INTERNAL_ERR();
     return Err(NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR);
   }
@@ -636,7 +634,7 @@ Result<Ok, nsresult> Key::EncodeAsString(const Span<const T> aInput,
     // the T==uint8_t resp. T==char16_t cases (for the char16_t case, copying
     // and then adjusting could even be slightly faster, but then we would need
     // another case distinction here)
-    const auto inputLen = std::distance(inputRange.cbegin(), inputRange.cend());
+    size_t inputLen = std::distance(inputRange.cbegin(), inputRange.cend());
     MOZ_ASSERT(inputLen == payloadSize);
     std::transform(inputRange.cbegin(), inputRange.cend(), buffer,
                    [](auto value) { return value + ONE_BYTE_ADJUST; });
@@ -783,12 +781,17 @@ nsAutoString Key::DecodeString(const EncodedDataType*& aPos,
   return res;
 }
 
-void Key::EncodeNumber(double aFloat, uint8_t aType) {
+Result<Ok, nsresult> Key::EncodeNumber(double aFloat, uint8_t aType) {
   // Allocate memory for the new size
-  uint32_t oldLen = mBuffer.Length();
+  size_t oldLen = mBuffer.Length();
+  size_t newLen = oldLen + 1 + sizeof(double);
+  if (newLen > KEY_MAXIMUM_BUFFER_LENGTH) {
+    return Err(NS_ERROR_DOM_INDEXEDDB_KEY_ERR);
+  }
+
   char* buffer;
-  if (!mBuffer.GetMutableData(&buffer, oldLen + 1 + sizeof(double))) {
-    return;
+  if (!mBuffer.GetMutableData(&buffer, newLen)) {
+    return Err(NS_ERROR_DOM_INDEXEDDB_KEY_ERR);
   }
   buffer += oldLen;
 
@@ -801,6 +804,7 @@ void Key::EncodeNumber(double aFloat, uint8_t aType) {
   uint64_t number = bits & signbit ? (0 - bits) : (bits | signbit);
 
   mozilla::BigEndian::writeUint64(buffer, number);
+  return Ok();
 }
 
 // static
@@ -847,16 +851,23 @@ Result<Ok, nsresult> Key::EncodeBinary(JSObject* aObject, bool aIsViewObject,
 // static
 JSObject* Key::DecodeBinary(const EncodedDataType*& aPos,
                             const EncodedDataType* aEnd, JSContext* aCx) {
-  JS::RootedObject rv(aCx);
+  JS::Rooted<JSObject*> rv(aCx);
   DecodeStringy<eBinary, uint8_t>(
       aPos, aEnd,
       [&rv, aCx](uint8_t** out, uint32_t decodedSize) {
-        *out = static_cast<uint8_t*>(JS_malloc(aCx, decodedSize));
-        if (NS_WARN_IF(!*out)) {
+        UniquePtr<void, JS::FreePolicy> ptr{JS_malloc(aCx, decodedSize)};
+        if (NS_WARN_IF(!ptr)) {
+          *out = nullptr;
           rv = nullptr;
           return false;
         }
-        rv = JS::NewArrayBufferWithContents(aCx, decodedSize, *out);
+
+        *out = static_cast<uint8_t*>(ptr.get());
+        rv = JS::NewArrayBufferWithContents(aCx, decodedSize, std::move(ptr));
+        if (NS_WARN_IF(!rv)) {
+          *out = nullptr;
+          return false;
+        }
         return true;
       },
       [&rv, aCx] { rv = JS::NewArrayBuffer(aCx, 0); });

@@ -15,6 +15,7 @@
 #include "mozilla/Preferences.h"
 #include "mozilla/dom/MediaSourceBinding.h"
 #include "mozilla/dom/TimeRanges.h"
+#include "mozilla/dom/TypedArray.h"
 #include "nsError.h"
 #include "nsIRunnable.h"
 #include "nsThreadUtils.h"
@@ -42,7 +43,7 @@ extern mozilla::LogModule* GetMediaSourceAPILog();
 namespace mozilla {
 
 using media::TimeUnit;
-typedef SourceBufferAttributes::AppendState AppendState;
+using AppendState = SourceBufferAttributes::AppendState;
 
 namespace dom {
 
@@ -102,6 +103,11 @@ void SourceBuffer::SetTimestampOffset(double aTimestampOffset,
   }
 }
 
+media::TimeIntervals SourceBuffer::GetBufferedIntervals() {
+  MOZ_ASSERT(mTrackBuffersManager);
+  return mTrackBuffersManager->Buffered();
+}
+
 TimeRanges* SourceBuffer::GetBuffered(ErrorResult& aRv) {
   MOZ_ASSERT(NS_IsMainThread());
   // http://w3c.github.io/media-source/index.html#widl-SourceBuffer-buffered
@@ -124,13 +130,15 @@ TimeRanges* SourceBuffer::GetBuffered(ErrorResult& aRv) {
   // as the current value of this attribute, then update the current value of
   // this attribute to intersection ranges.
   if (rangeChanged) {
-    mBuffered = new TimeRanges(ToSupports(this), intersection);
+    mBuffered = new TimeRanges(ToSupports(this),
+                               intersection.ToMicrosecondResolution());
   }
   // 6. Return the current value of this attribute.
   return mBuffered;
 }
 
 media::TimeIntervals SourceBuffer::GetTimeIntervals() {
+  MOZ_ASSERT(mTrackBuffersManager);
   return mTrackBuffersManager->Buffered();
 }
 
@@ -160,7 +168,7 @@ void SourceBuffer::SetAppendWindowEnd(double aAppendWindowEnd,
     aRv.Throw(NS_ERROR_DOM_INVALID_STATE_ERR);
     return;
   }
-  if (IsNaN(aAppendWindowEnd) ||
+  if (std::isnan(aAppendWindowEnd) ||
       aAppendWindowEnd <= mCurrentAttributes.GetAppendWindowStart()) {
     aRv.ThrowTypeError("Invalid appendWindowEnd value");
     return;
@@ -171,18 +179,24 @@ void SourceBuffer::SetAppendWindowEnd(double aAppendWindowEnd,
 void SourceBuffer::AppendBuffer(const ArrayBuffer& aData, ErrorResult& aRv) {
   MOZ_ASSERT(NS_IsMainThread());
   MSE_API("AppendBuffer(ArrayBuffer)");
-  aData.ComputeState();
-  DDLOG(DDLogCategory::API, "AppendBuffer", aData.Length());
-  AppendData(aData.Data(), aData.Length(), aRv);
+  RefPtr<MediaByteBuffer> data = PrepareAppend(aData, aRv);
+  if (!data) {
+    return;
+  }
+  DDLOG(DDLogCategory::API, "AppendBuffer", uint64_t(data->Length()));
+  AppendData(std::move(data), aRv);
 }
 
 void SourceBuffer::AppendBuffer(const ArrayBufferView& aData,
                                 ErrorResult& aRv) {
   MOZ_ASSERT(NS_IsMainThread());
   MSE_API("AppendBuffer(ArrayBufferView)");
-  aData.ComputeState();
-  DDLOG(DDLogCategory::API, "AppendBuffer", aData.Length());
-  AppendData(aData.Data(), aData.Length(), aRv);
+  RefPtr<MediaByteBuffer> data = PrepareAppend(aData, aRv);
+  if (!data) {
+    return;
+  }
+  DDLOG(DDLogCategory::API, "AppendBuffer", uint64_t(data->Length()));
+  AppendData(std::move(data), aRv);
 }
 
 already_AddRefed<Promise> SourceBuffer::AppendBufferAsync(
@@ -190,10 +204,13 @@ already_AddRefed<Promise> SourceBuffer::AppendBufferAsync(
   MOZ_ASSERT(NS_IsMainThread());
 
   MSE_API("AppendBufferAsync(ArrayBuffer)");
-  aData.ComputeState();
-  DDLOG(DDLogCategory::API, "AppendBufferAsync", aData.Length());
+  RefPtr<MediaByteBuffer> data = PrepareAppend(aData, aRv);
+  if (!data) {
+    return nullptr;
+  }
+  DDLOG(DDLogCategory::API, "AppendBufferAsync", uint64_t(data->Length()));
 
-  return AppendDataAsync(aData.Data(), aData.Length(), aRv);
+  return AppendDataAsync(std::move(data), aRv);
 }
 
 already_AddRefed<Promise> SourceBuffer::AppendBufferAsync(
@@ -201,10 +218,13 @@ already_AddRefed<Promise> SourceBuffer::AppendBufferAsync(
   MOZ_ASSERT(NS_IsMainThread());
 
   MSE_API("AppendBufferAsync(ArrayBufferView)");
-  aData.ComputeState();
-  DDLOG(DDLogCategory::API, "AppendBufferAsync", aData.Length());
+  RefPtr<MediaByteBuffer> data = PrepareAppend(aData, aRv);
+  if (!data) {
+    return nullptr;
+  }
+  DDLOG(DDLogCategory::API, "AppendBufferAsync", uint64_t(data->Length()));
 
-  return AppendDataAsync(aData.Data(), aData.Length(), aRv);
+  return AppendDataAsync(std::move(data), aRv);
 }
 
 void SourceBuffer::Abort(ErrorResult& aRv) {
@@ -306,7 +326,7 @@ void SourceBuffer::PrepareRemove(double aStart, double aEnd, ErrorResult& aRv) {
     aRv.Throw(NS_ERROR_DOM_INVALID_STATE_ERR);
     return;
   }
-  if (IsNaN(mMediaSource->Duration())) {
+  if (std::isnan(mMediaSource->Duration())) {
     aRv.ThrowTypeError("Duration is NaN");
     return;
   }
@@ -314,7 +334,7 @@ void SourceBuffer::PrepareRemove(double aStart, double aEnd, ErrorResult& aRv) {
     aRv.ThrowTypeError("Invalid start value");
     return;
   }
-  if (aEnd <= aStart || IsNaN(aEnd)) {
+  if (aEnd <= aStart || std::isnan(aEnd)) {
     aRv.ThrowTypeError("Invalid end value");
     return;
   }
@@ -532,34 +552,29 @@ void SourceBuffer::AbortUpdating() {
 void SourceBuffer::CheckEndTime() {
   MOZ_ASSERT(NS_IsMainThread());
   // Check if we need to update mMediaSource duration
-  double endTime = mCurrentAttributes.GetGroupEndTimestamp().ToSeconds();
+  TimeUnit endTime = mCurrentAttributes.GetGroupEndTimestamp();
   double duration = mMediaSource->Duration();
-  if (endTime > duration) {
+  if (!std::isnan(duration) && endTime.ToSeconds() > duration) {
     mMediaSource->SetDuration(endTime);
   }
 }
 
-void SourceBuffer::AppendData(const uint8_t* aData, uint32_t aLength,
+void SourceBuffer::AppendData(RefPtr<MediaByteBuffer>&& aData,
                               ErrorResult& aRv) {
   MOZ_ASSERT(NS_IsMainThread());
-  MSE_DEBUG("AppendData(aLength=%u)", aLength);
+  MSE_DEBUG("AppendData(aLength=%zu)", aData->Length());
 
-  RefPtr<MediaByteBuffer> data = PrepareAppend(aData, aLength, aRv);
-  if (!data) {
-    return;
-  }
   StartUpdating();
 
-  mTrackBuffersManager->AppendData(data.forget(), mCurrentAttributes)
+  mTrackBuffersManager->AppendData(aData.forget(), mCurrentAttributes)
       ->Then(mAbstractMainThread, __func__, this,
              &SourceBuffer::AppendDataCompletedWithSuccess,
              &SourceBuffer::AppendDataErrored)
       ->Track(mPendingAppend);
 }
 
-already_AddRefed<Promise> SourceBuffer::AppendDataAsync(const uint8_t* aData,
-                                                        uint32_t aLength,
-                                                        ErrorResult& aRv) {
+already_AddRefed<Promise> SourceBuffer::AppendDataAsync(
+    RefPtr<MediaByteBuffer>&& aData, ErrorResult& aRv) {
   MOZ_ASSERT(NS_IsMainThread());
 
   if (!IsAttached()) {
@@ -579,7 +594,7 @@ already_AddRefed<Promise> SourceBuffer::AppendDataAsync(const uint8_t* aData,
     return nullptr;
   }
 
-  AppendData(aData, aLength, aRv);
+  AppendData(std::move(aData), aRv);
 
   if (aRv.Failed()) {
     return nullptr;
@@ -692,48 +707,49 @@ already_AddRefed<MediaByteBuffer> SourceBuffer::PrepareAppend(
   // Give a chance to the TrackBuffersManager to evict some data if needed.
   Result evicted = mTrackBuffersManager->EvictData(
       TimeUnit::FromSeconds(mMediaSource->GetDecoder()->GetCurrentTime()),
-      aLength);
+      aLength,
+      mType.ExtendedType().Type().HasAudioMajorType()
+          ? TrackInfo::TrackType::kAudioTrack
+          : TrackInfo::TrackType::kVideoTrack);
 
   // See if we have enough free space to append our new data.
   if (evicted == Result::BUFFER_FULL) {
-    aRv.Throw(NS_ERROR_DOM_QUOTA_EXCEEDED_ERR);
+    aRv.Throw(NS_ERROR_DOM_MEDIA_SOURCE_FULL_BUFFER_QUOTA_EXCEEDED_ERR);
     return nullptr;
   }
 
   RefPtr<MediaByteBuffer> data = new MediaByteBuffer();
   if (!data->AppendElements(aData, aLength, fallible)) {
-    aRv.Throw(NS_ERROR_DOM_QUOTA_EXCEEDED_ERR);
+    aRv.Throw(NS_ERROR_DOM_MEDIA_SOURCE_FULL_BUFFER_QUOTA_EXCEEDED_ERR);
     return nullptr;
   }
   return data.forget();
 }
 
-double SourceBuffer::GetBufferedStart() {
+template <typename T>
+already_AddRefed<MediaByteBuffer> SourceBuffer::PrepareAppend(
+    const T& aData, ErrorResult& aRv) {
+  return aData.ProcessFixedData([&](const Span<uint8_t>& aData) {
+    return PrepareAppend(aData.Elements(), aData.Length(), aRv);
+  });
+}
+TimeUnit SourceBuffer::GetBufferedEnd() {
   MOZ_ASSERT(NS_IsMainThread());
   ErrorResult dummy;
-  RefPtr<TimeRanges> ranges = GetBuffered(dummy);
-  return ranges->Length() > 0 ? ranges->GetStartTime() : 0;
+  media::TimeIntervals intervals = GetBufferedIntervals();
+  return intervals.GetEnd();
 }
 
-double SourceBuffer::GetBufferedEnd() {
+TimeUnit SourceBuffer::HighestStartTime() {
   MOZ_ASSERT(NS_IsMainThread());
-  ErrorResult dummy;
-  RefPtr<TimeRanges> ranges = GetBuffered(dummy);
-  return ranges->Length() > 0 ? ranges->GetEndTime() : 0;
+  MOZ_ASSERT(mTrackBuffersManager);
+  return mTrackBuffersManager->HighestStartTime();
 }
 
-double SourceBuffer::HighestStartTime() {
+TimeUnit SourceBuffer::HighestEndTime() {
   MOZ_ASSERT(NS_IsMainThread());
-  return mTrackBuffersManager
-             ? mTrackBuffersManager->HighestStartTime().ToSeconds()
-             : 0.0;
-}
-
-double SourceBuffer::HighestEndTime() {
-  MOZ_ASSERT(NS_IsMainThread());
-  return mTrackBuffersManager
-             ? mTrackBuffersManager->HighestEndTime().ToSeconds()
-             : 0.0;
+  MOZ_ASSERT(mTrackBuffersManager);
+  return mTrackBuffersManager->HighestEndTime();
 }
 
 NS_IMPL_CYCLE_COLLECTION_CLASS(SourceBuffer)

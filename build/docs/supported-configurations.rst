@@ -29,6 +29,8 @@ While we want to help users resolve build-related issues on their systems, we
 are unable to help resolve build system issues on all possible operating
 systems and versions.
 
+.. _tier_1_hosts:
+
 Tier-1 Hosts and Toolchains
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
@@ -47,8 +49,8 @@ cross-compilation where available:
     * Current stable release
     * Previous stable release
 * macOS Intel and M1
-    * Current release
-    * Previous release
+    * Current major macOS release
+    * Previous major macOS release
 * Windows x86_64
     * Windows 10 with MozillaBuild Environment
     * Windows 11 with MozillaBuild Environment
@@ -145,7 +147,7 @@ platforms may or may not work correctly or build at all.
 -  Linux on various CPU architectures including ARM variants not listed
    above, PowerPC, and x86 CPUs without SSE2 support - maintained by
    various Linux distributions
--  FreeBSD/x86, x86-64, Aarch64 (clang) - maintained by Jan Beich
+-  FreeBSD/x86, x86-64, Aarch64 (clang) - `maintained by gecko@FreeBSD.org <https://www.freshports.org/www/firefox/>`__
 -  OpenBSD/x86, x86-64 (clang) - maintained by Landry Breuil
 -  NetBSD/x86-64 (gcc) - maintained by David Laight
 -  Solaris/x86-64, sparc64 (gcc) - maintained by Petr Sumbera

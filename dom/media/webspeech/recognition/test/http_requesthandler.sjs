@@ -3,10 +3,10 @@ const CC = Components.Constructor;
 // Context structure - we need to set this up properly to pass to setObjectState
 const ctx = {
   QueryInterface(iid) {
-    if (iid.equals(Components.interfaces.nsISupports)) {
+    if (iid.equals(Ci.nsISupports)) {
       return this;
     }
-    throw Components.Exception("", Components.results.NS_ERROR_NO_INTERFACE);
+    throw Components.Exception("", Cr.NS_ERROR_NO_INTERFACE);
   },
 };
 
@@ -25,7 +25,7 @@ function handleRequest(request, response) {
   response.processAsync();
   if (request.queryString == "save") {
     // Get the context structure and finish the old request
-    getObjectState("context", function(obj) {
+    getObjectState("context", function (obj) {
       savedCtx = obj.wrappedJSObject;
       request = savedCtx.request;
 
@@ -43,7 +43,9 @@ function handleRequest(request, response) {
       response.finish();
     });
     return;
-  } else if (
+  }
+
+  if (
     request.queryString == "malformedresult=1" ||
     request.queryString == "emptyresult=1"
   ) {

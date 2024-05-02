@@ -1,14 +1,13 @@
 import { _ToolbarPanelHub } from "lib/ToolbarPanelHub.jsm";
 import { GlobalOverrider } from "test/unit/utils";
 import { OnboardingMessageProvider } from "lib/OnboardingMessageProvider.jsm";
-import { PanelTestProvider } from "lib/PanelTestProvider.jsm";
+import { PanelTestProvider } from "lib/PanelTestProvider.sys.mjs";
 
 describe("ToolbarPanelHub", () => {
   let globals;
   let sandbox;
   let instance;
   let everyWindowStub;
-  let preferencesStub;
   let fakeDocument;
   let fakeWindow;
   let fakeElementById;
@@ -88,7 +87,7 @@ describe("ToolbarPanelHub", () => {
     };
     fakeWindow = {
       // eslint-disable-next-line object-shorthand
-      DocumentFragment: function() {
+      DocumentFragment: function () {
         return fakeElementById;
       },
       document: fakeDocument,
@@ -109,10 +108,6 @@ describe("ToolbarPanelHub", () => {
     everyWindowStub = {
       registerCallback: sandbox.stub(),
       unregisterCallback: sandbox.stub(),
-    };
-    preferencesStub = {
-      get: sandbox.stub(),
-      set: sandbox.stub(),
     };
     scriptloaderStub = { loadSubScript: sandbox.stub() };
     addObserverStub = sandbox.stub();
@@ -151,7 +146,6 @@ describe("ToolbarPanelHub", () => {
       PrivateBrowsingUtils: {
         isBrowserPrivate: isBrowserPrivateStub,
       },
-      Preferences: preferencesStub,
       TrackingDBService: {
         getEarliestRecordedDate: getEarliestRecordedDateStub,
         getEventsByDateRange: getEventsByDateRangeStub,
@@ -204,7 +198,7 @@ describe("ToolbarPanelHub", () => {
     });
   });
   describe("#toggleWhatsNewPref", () => {
-    it("should call Preferences.set() with the opposite value", () => {
+    it("should call Services.prefs.setBoolPref() with the opposite value", () => {
       let checkbox = {};
       let event = { target: checkbox };
       // checkbox starts false
@@ -215,9 +209,9 @@ describe("ToolbarPanelHub", () => {
       // so we have to call it with the opposite value.
       instance.toggleWhatsNewPref(event);
 
-      assert.calledOnce(preferencesStub.set);
+      assert.calledOnce(setBoolPrefStub);
       assert.calledWith(
-        preferencesStub.set,
+        setBoolPrefStub,
         "browser.messaging-system.whatsNewPanel.enabled",
         !checkbox.checked
       );
@@ -322,7 +316,7 @@ describe("ToolbarPanelHub", () => {
     });
     it("should not do anything if the window is closed", () => {
       instance._hideAppmenuButton(fakeWindow, true);
-      assert.notCalled(PanelMultiView.getViewNode);
+      assert.notCalled(global.PanelMultiView.getViewNode);
     });
     it("should not throw if the element does not exist", () => {
       let fn = instance._hideAppmenuButton.bind(null, {
@@ -760,6 +754,10 @@ describe("ToolbarPanelHub", () => {
         assert.calledOnce(removeMessagesSpy);
         assert.calledWithExactly(removeMessagesSpy, fakeWindow, panelSelector);
       });
+      it("should exit gracefully if called before a browser exists", () => {
+        instance.forceShowMessage(null, messages);
+        assert.neverCalledWith(removeMessagesSpy, fakeWindow, panelSelector);
+      });
     });
   });
   describe("#insertProtectionPanelMessage", () => {
@@ -769,7 +767,8 @@ describe("ToolbarPanelHub", () => {
       });
     let getMessagesStub;
     beforeEach(async () => {
-      const onboardingMsgs = await OnboardingMessageProvider.getUntranslatedMessages();
+      const onboardingMsgs =
+        await OnboardingMessageProvider.getUntranslatedMessages();
       getMessagesStub = sandbox
         .stub()
         .resolves(
@@ -808,7 +807,8 @@ describe("ToolbarPanelHub", () => {
         instance,
         "sendUserEventTelemetry"
       );
-      const onboardingMsgs = await OnboardingMessageProvider.getUntranslatedMessages();
+      const onboardingMsgs =
+        await OnboardingMessageProvider.getUntranslatedMessages();
       const msg = onboardingMsgs.find(m => m.template === "protections_panel");
 
       await fakeInsert();
@@ -840,7 +840,8 @@ describe("ToolbarPanelHub", () => {
       const stub = sandbox
         .stub(global.Services.urlFormatter, "formatURL")
         .returns("formattedURL");
-      const onboardingMsgs = await OnboardingMessageProvider.getUntranslatedMessages();
+      const onboardingMsgs =
+        await OnboardingMessageProvider.getUntranslatedMessages();
       const msg = onboardingMsgs.find(m => m.template === "protections_panel");
 
       await fakeInsert();
@@ -866,16 +867,17 @@ describe("ToolbarPanelHub", () => {
       const stub = sandbox
         .stub(global.Services.urlFormatter, "formatURL")
         .throws();
-      const onboardingMsgs = await OnboardingMessageProvider.getUntranslatedMessages();
+      const onboardingMsgs =
+        await OnboardingMessageProvider.getUntranslatedMessages();
       const msg = onboardingMsgs.find(m => m.template === "protections_panel");
-      sandbox.spy(global.Cu, "reportError");
+      sandbox.spy(global.console, "error");
 
       await fakeInsert();
 
       eventListeners.mouseup();
 
       assert.calledOnce(stub);
-      assert.calledOnce(global.Cu.reportError);
+      assert.calledOnce(global.console.error);
       assert.calledOnce(global.SpecialMessageActions.handleAction);
       assert.calledWithExactly(
         global.SpecialMessageActions.handleAction,
@@ -890,7 +892,8 @@ describe("ToolbarPanelHub", () => {
       );
     });
     it("should open link on click (directly attached to the message)", async () => {
-      const onboardingMsgs = await OnboardingMessageProvider.getUntranslatedMessages();
+      const onboardingMsgs =
+        await OnboardingMessageProvider.getUntranslatedMessages();
       const msg = onboardingMsgs.find(m => m.template === "protections_panel");
       getMessagesStub.resolves({
         ...msg,

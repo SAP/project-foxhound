@@ -9,7 +9,10 @@
 #include "nsISupportsImpl.h"
 #include "nsIThread.h"
 
-class nsISerialEventTarget;
+namespace mozilla::baseprofiler {
+class BaseProfilerThreadId;
+}
+using ProfilerThreadId = mozilla::baseprofiler::BaseProfilerThreadId;
 class nsIThread;
 
 namespace mozilla {
@@ -22,9 +25,7 @@ class CompositorThreadHolder final {
  public:
   CompositorThreadHolder();
 
-  nsISerialEventTarget* GetCompositorThread() const {
-    return mCompositorThread;
-  }
+  nsIThread* GetCompositorThread() const { return mCompositorThread; }
 
   static CompositorThreadHolder* GetSingleton();
 
@@ -44,6 +45,9 @@ class CompositorThreadHolder final {
   // Returns true if the calling thread is the compositor thread.
   static bool IsInCompositorThread();
 
+  // Thread id to use as a MarkerThreadId option for profiler markers.
+  static ProfilerThreadId GetThreadId();
+
  private:
   ~CompositorThreadHolder();
 
@@ -54,7 +58,7 @@ class CompositorThreadHolder final {
   friend class CompositorBridgeParent;
 };
 
-nsISerialEventTarget* CompositorThread();
+nsIThread* CompositorThread();
 
 }  // namespace layers
 }  // namespace mozilla

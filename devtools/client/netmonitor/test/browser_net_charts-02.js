@@ -8,8 +8,10 @@
  * initialized with empty data.
  */
 
-add_task(async function() {
-  const { L10N } = require("devtools/client/netmonitor/src/utils/l10n");
+add_task(async function () {
+  const {
+    L10N,
+  } = require("resource://devtools/client/netmonitor/src/utils/l10n.js");
 
   const { monitor } = await initNetMonitor(HTTPS_SIMPLE_URL, {
     requestCount: 1,
@@ -30,7 +32,7 @@ add_task(async function() {
   });
 
   const { node } = pie;
-  const slices = node.querySelectorAll(".pie-chart-slice.chart-colored-blob");
+  const slices = node.querySelectorAll(".pie-chart-slice");
   const labels = node.querySelectorAll(".pie-chart-label");
 
   ok(
@@ -58,7 +60,7 @@ add_task(async function() {
     "The first slice should also be the smallest one."
   );
   is(
-    slices[0].getAttribute("name"),
+    slices[0].getAttribute("data-statistic-name"),
     L10N.getStr("pieChart.loading"),
     "The first slice's name is correct."
   );

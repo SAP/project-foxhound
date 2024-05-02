@@ -4,8 +4,8 @@
 
 "use strict";
 
-const { AddonTestUtils } = ChromeUtils.import(
-  "resource://testing-common/AddonTestUtils.jsm"
+const { AddonTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/AddonTestUtils.sys.mjs"
 );
 
 let gDidSeeChannel = false;
@@ -36,6 +36,10 @@ function check_channel(subject) {
 let gPrivateWin;
 async function test() {
   waitForExplicitFinish(); // have to call this ourselves because we're async.
+
+  // This test currently depends on InstallTrigger.install availability.
+  setInstallTriggerPrefs();
+
   await SpecialPowers.pushPrefEnv({
     set: [["dom.security.https_first_pbm", false]],
   });
@@ -68,7 +72,7 @@ async function test() {
     gPrivateWin.gBrowser
   );
   Services.obs.addObserver(check_channel, "http-on-before-connect");
-  BrowserTestUtils.loadURI(
+  BrowserTestUtils.startLoadingURIString(
     gPrivateWin.gBrowser,
     TESTROOT + "installtrigger.html?" + triggers
   );
@@ -88,7 +92,7 @@ function install_ended(install, addon) {
   return addon.uninstall();
 }
 
-const finish_test = async function(count) {
+const finish_test = async function (count) {
   ok(
     gDidSeeChannel,
     "Should have seen the request for the XPI and verified it was sent the right way."

@@ -5,7 +5,7 @@
 "use strict";
 
 // Make this available to both AMD and CJS environments
-define(function(require, exports, module) {
+define(function (require, exports, module) {
   // Dependencies
   const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
   const { span } = require("devtools/client/shared/vendor/react-dom-factories");
@@ -15,7 +15,6 @@ define(function(require, exports, module) {
   } = require("devtools/client/shared/components/reps/shared/grip-length-bubble");
   const {
     interleave,
-    isGrip,
     wrapRender,
     ellipsisElement,
   } = require("devtools/client/shared/components/reps/reps/rep-utils");
@@ -23,9 +22,6 @@ define(function(require, exports, module) {
   const {
     MODE,
   } = require("devtools/client/shared/components/reps/reps/constants");
-  const {
-    ModePropType,
-  } = require("devtools/client/shared/components/reps/reps/array");
 
   /**
    * Renders an map. A map is represented by a list of its
@@ -34,8 +30,7 @@ define(function(require, exports, module) {
 
   GripMap.propTypes = {
     object: PropTypes.object,
-    // @TODO Change this to Object.values when supported in Node's version of V8
-    mode: ModePropType,
+    mode: PropTypes.oneOf(Object.values(MODE)),
     isInterestingEntry: PropTypes.func,
     onDOMNodeMouseOver: PropTypes.func,
     onDOMNodeMouseOut: PropTypes.func,
@@ -56,7 +51,7 @@ define(function(require, exports, module) {
     const title = getTitle(props, object);
     const isEmpty = getLength(object) === 0;
 
-    if (isEmpty || mode === MODE.TINY) {
+    if (isEmpty || mode === MODE.TINY || mode === MODE.HEADER) {
       return span(config, title);
     }
 
@@ -127,7 +122,7 @@ define(function(require, exports, module) {
         return (
           type == "boolean" ||
           type == "number" ||
-          (type == "string" && value.length != 0)
+          (type == "string" && !!value.length)
         );
       });
 
@@ -169,7 +164,7 @@ define(function(require, exports, module) {
     const { onDOMNodeMouseOver, onDOMNodeMouseOut, onInspectIconClick } = props;
 
     // Make indexes ordered by ascending.
-    indexes.sort(function(a, b) {
+    indexes.sort(function (a, b) {
       return a - b;
     });
 
@@ -204,9 +199,8 @@ define(function(require, exports, module) {
         const value = entry && entry.value !== undefined ? entry.value : entry;
         // Type is specified in grip's "class" field and for primitive
         // values use typeof.
-        const type = (value && value.class
-          ? value.class
-          : typeof value
+        const type = (
+          value && value.class ? value.class : typeof value
         ).toLowerCase();
 
         if (filter(type, value, key)) {
@@ -222,11 +216,8 @@ define(function(require, exports, module) {
     return grip.preview.size || 0;
   }
 
-  function supportsObject(grip, noGrip = false) {
-    if (noGrip === true || !isGrip(grip)) {
-      return false;
-    }
-    return grip.preview && grip.preview.kind == "MapLike";
+  function supportsObject(grip) {
+    return grip?.preview?.kind == "MapLike";
   }
 
   const maxLengthMap = new Map();

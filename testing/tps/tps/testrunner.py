@@ -4,17 +4,17 @@
 
 
 import json
-import yaml
 import os
 import re
 import tempfile
 import time
 import traceback
 
-from wptserve import server
 import mozinfo
-from mozprofile import Profile
 import mozversion
+import yaml
+from mozprofile import Profile
+from wptserve import server
 
 from .firefoxrunner import TPSFirefoxRunner
 from .phase import TPSTestPhase
@@ -45,7 +45,6 @@ class TempFile(object):
 
 
 class TPSTestRunner(object):
-
     extra_env = {
         "MOZ_CRASHREPORTER_DISABLE": "1",
         "GNOME_DISABLE_CRASH_DIALOG": "1",
@@ -75,11 +74,12 @@ class TPSTestRunner(object):
         "extensions.update.notifyUser": False,
         "services.sync.firstSync": "notReady",
         "services.sync.lastversion": "1.0",
-        "services.sync.autoconnectDelay": 60 * 60 * 10,
         "toolkit.startup.max_resumed_crashes": -1,
         # hrm - not sure what the release/beta channels will do?
         "xpinstall.signatures.required": False,
         "services.sync.testing.tps": True,
+        # removed data: schema restriction for easier testing of tabs
+        "services.sync.engine.tabs.filteredSchemes": "about|resource|chrome|file|blob|moz-extension",
         "engine.bookmarks.repair.enabled": False,
         "extensions.experiments.enabled": True,
         "webextensions.storage.sync.kinto": False,
@@ -424,12 +424,7 @@ class TPSTestRunner(object):
                 traceback.print_exc()
         else:
             try:
-
-                if self.numfailed > 0 or self.numpassed == 0:
-                    To = self.config["email"].get("notificationlist")
-                else:
-                    To = self.config["email"].get("passednotificationlist")
-                self.writeToResultFile(self.postdata, sendTo=To)
+                self.writeToResultFile(self.postdata)
             except Exception:
                 traceback.print_exc()
                 try:
@@ -466,7 +461,7 @@ class TPSTestRunner(object):
             f.close()
             testfiles = json.loads(jsondata)
             testlist = []
-            for (filename, meta) in testfiles["tests"].items():
+            for filename, meta in testfiles["tests"].items():
                 skip_reason = meta.get("disabled")
                 if skip_reason:
                     print("Skipping test {} - {}".format(filename, skip_reason))

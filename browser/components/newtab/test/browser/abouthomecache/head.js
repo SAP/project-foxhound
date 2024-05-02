@@ -3,8 +3,14 @@
 
 "use strict";
 
-let { AboutHomeStartupCache } = ChromeUtils.import(
-  "resource:///modules/BrowserGlue.jsm"
+let { AboutHomeStartupCache } = ChromeUtils.importESModule(
+  "resource:///modules/BrowserGlue.sys.mjs"
+);
+const { sinon } = ChromeUtils.importESModule(
+  "resource://testing-common/Sinon.sys.mjs"
+);
+const { DiscoveryStreamFeed } = ChromeUtils.import(
+  "resource://activity-stream/lib/DiscoveryStreamFeed.jsm"
 );
 
 // Some Activity Stream preferences are JSON encoded, and quite complex.
@@ -24,19 +30,47 @@ let { AboutHomeStartupCache } = ChromeUtils.import(
     })
   );
 
-  let newConfig = Object.assign(defaultDSConfig, {
-    show_spocs: false,
-    hardcoded_layout: false,
-    layout_endpoint:
-      "https://example.com/browser/browser/components/newtab/test/browser/ds_layout.json",
-  });
-
   // Configure Activity Stream to query for the layout JSON file that points
   // at the local top stories feed.
   Services.prefs.setCharPref(
     "browser.newtabpage.activity-stream.discoverystream.config",
-    JSON.stringify(newConfig)
+    JSON.stringify(defaultDSConfig)
   );
+}
+
+/**
+ * Utility function that loads about:home in the current window in a new tab, and waits
+ * for the Discovery Stream cards to finish loading before running the taskFn function.
+ * Once taskFn exits, the about:home tab will be closed.
+ *
+ * @param {function} taskFn
+ *   A function that will be run after about:home has finished loading. This can be
+ *   an async function.
+ * @return {Promise}
+ * @resolves {undefined}
+ */
+function withFullyLoadedAboutHome(taskFn) {
+  const sandbox = sinon.createSandbox();
+  sandbox
+    .stub(DiscoveryStreamFeed.prototype, "generateFeedUrl")
+    .returns(
+      "https://example.com/browser/browser/components/newtab/test/browser/topstories.json"
+    );
+
+  return BrowserTestUtils.withNewTab("about:home", async browser => {
+    await SpecialPowers.spawn(browser, [], async () => {
+      await ContentTaskUtils.waitForCondition(
+        () =>
+          content.document.querySelectorAll(
+            "[data-section-id='topstories'] .ds-card-link"
+          ).length,
+        "Waiting for Discovery Stream to be rendered."
+      );
+    });
+
+    await taskFn(browser);
+    sandbox.restore();
+  });
 }
 
 /**
@@ -70,18 +104,22 @@ let { AboutHomeStartupCache } = ChromeUtils.import(
  *       timeout when shutting down. If false, such timeouts will result in
  *       test failures. Defaults to false.
  *
+ *     skipAboutHomeLoad (boolean, optional):
+ *       If true, doesn't automatically load about:home after the simulated
+ *       restart. Defaults to false.
+ *
  * @returns Promise
  * @resolves undefined
  *   Resolves once the restart simulation is complete, and the <xul:browser>
  *   pointed at about:home finishes reloading.
  */
-// eslint-disable-next-line no-unused-vars
 async function simulateRestart(
   browser,
   {
     withAutoShutdownWrite = true,
     ensureCacheWinsRace = true,
     expectTimeout = false,
+    skipAboutHomeLoad = false,
   } = {}
 ) {
   info("Simulating restart of the browser");
@@ -112,8 +150,8 @@ async function simulateRestart(
 
   info("Waiting for AboutHomeStartupCacheChild to uninit");
   await SpecialPowers.spawn(browser, [], async () => {
-    let { AboutHomeStartupCacheChild } = ChromeUtils.import(
-      "resource:///modules/AboutNewTabService.jsm"
+    let { AboutHomeStartupCacheChild } = ChromeUtils.importESModule(
+      "resource:///modules/AboutNewTabService.sys.mjs"
     );
     AboutHomeStartupCacheChild.uninit();
   });
@@ -134,8 +172,8 @@ async function simulateRestart(
     if (ensureCacheWinsRace) {
       info("Ensuring cache bytes are available");
       await SpecialPowers.spawn(browser, [], async () => {
-        let { AboutHomeStartupCacheChild } = ChromeUtils.import(
-          "resource:///modules/AboutNewTabService.jsm"
+        let { AboutHomeStartupCacheChild } = ChromeUtils.importESModule(
+          "resource:///modules/AboutNewTabService.sys.mjs"
         );
         let pageStream = AboutHomeStartupCacheChild._pageInputStream;
         let scriptStream = AboutHomeStartupCacheChild._scriptInputStream;
@@ -146,11 +184,13 @@ async function simulateRestart(
     }
   }
 
-  info("Waiting for about:home to load");
-  let loaded = BrowserTestUtils.browserLoaded(browser, false, "about:home");
-  BrowserTestUtils.loadURI(browser, "about:home");
-  await loaded;
-  info("about:home loaded");
+  if (!skipAboutHomeLoad) {
+    info("Waiting for about:home to load");
+    let loaded = BrowserTestUtils.browserLoaded(browser, false, "about:home");
+    BrowserTestUtils.startLoadingURIString(browser, "about:home");
+    await loaded;
+    info("about:home loaded");
+  }
 }
 
 /**
@@ -170,7 +210,6 @@ async function simulateRestart(
  * @resolves undefined
  *   When the page and script content has been successfully written.
  */
-// eslint-disable-next-line no-unused-vars
 async function injectIntoCache(page, script) {
   if (!page || !script) {
     throw new Error("Cannot injectIntoCache with falsey values");
@@ -203,7 +242,6 @@ async function injectIntoCache(page, script) {
  * @resolves undefined
  *   Resolves when the cache is cleared.
  */
-// eslint-disable-next-line no-unused-vars
 async function clearCache() {
   info("Test is clearing the cache");
   AboutHomeStartupCache.clearCache();
@@ -246,14 +284,15 @@ function assertCacheResultScalar(cacheResultScalar) {
  * @resolves undefined
  *   Resolves once the cache entry has been destroyed.
  */
-// eslint-disable-next-line no-unused-vars
 async function ensureCachedAboutHome(browser) {
   await SpecialPowers.spawn(browser, [], async () => {
-    let scripts = Array.from(content.document.querySelectorAll("script"));
-    Assert.ok(!!scripts.length, "There should be page scripts.");
-    let [lastScript] = scripts.reverse();
+    let syncScripts = Array.from(
+      content.document.querySelectorAll("script:not([type='module'])")
+    );
+    Assert.ok(!!syncScripts.length, "There should be page scripts.");
+    let [lastSyncScript] = syncScripts.reverse();
     Assert.equal(
-      lastScript.src,
+      lastSyncScript.src,
       "about:home?jscache",
       "Found about:home?jscache script tag, indicating the cached doc"
     );
@@ -299,11 +338,12 @@ async function ensureCachedAboutHome(browser) {
  * @resolves undefined
  *   Resolves once the cache entry has been destroyed.
  */
-// eslint-disable-next-line no-unused-vars
 async function ensureDynamicAboutHome(browser, expectedResultScalar) {
   await SpecialPowers.spawn(browser, [], async () => {
-    let scripts = Array.from(content.document.querySelectorAll("script"));
-    Assert.equal(scripts.length, 0, "There should be no page scripts.");
+    let syncScripts = Array.from(
+      content.document.querySelectorAll("script:not([type='module'])")
+    );
+    Assert.equal(syncScripts.length, 0, "There should be no page scripts.");
 
     Assert.equal(
       Cu.waiveXrays(content).__FROM_STARTUP_CACHE__,

@@ -9,12 +9,16 @@ with Files("**"):
 
 EXPORTS.mozilla.dom += [
     "TextDecoder.h",
+    "TextDecoderStream.h",
     "TextEncoder.h",
+    "TextEncoderStream.h",
 ]
 
 UNIFIED_SOURCES += [
     "TextDecoder.cpp",
+    "TextDecoderStream.cpp",
     "TextEncoder.cpp",
+    "TextEncoderStream.cpp",
 ]
 
 FINAL_LIBRARY = "xul"
@@ -23,7 +27,7 @@ LOCAL_INCLUDES += [
 ]
 
 MOCHITEST_MANIFESTS += [
-    "test/mochitest.ini",
+    "test/mochitest.toml",
 ]
-MOCHITEST_CHROME_MANIFESTS += ["test/chrome.ini"]
+MOCHITEST_CHROME_MANIFESTS += ["test/chrome.toml"]
 XPCSHELL_TESTS_MANIFESTS += ["test/unit/xpcshell.ini"]

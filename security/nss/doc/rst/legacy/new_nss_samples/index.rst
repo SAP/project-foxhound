@@ -14,13 +14,13 @@ New NSS Samples
    certificate handling, SSL, etc. It also demonstrates some best practices in the application of
    cryptography.
 
-   | 
+   |
    | These new examples are a work in progress. See
      https://bugzilla.mozilla.org/show_bug.cgi?id=490238
 
    How to download the samples:
 
-   .. code:: bz_comment_text
+   .. code:: sh
 
       hg clone https://hg.mozilla.org/projects/nss; cd nss; hg update SAMPLES_BRANCH
 

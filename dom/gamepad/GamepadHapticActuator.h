@@ -13,8 +13,7 @@
 #include "mozilla/dom/Gamepad.h"
 #include "mozilla/dom/GamepadHandle.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 class Promise;
 
 class GamepadHapticActuator : public nsISupports, public nsWrapperCache {
@@ -23,7 +22,7 @@ class GamepadHapticActuator : public nsISupports, public nsWrapperCache {
                         uint32_t aIndex);
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(GamepadHapticActuator)
+  NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(GamepadHapticActuator)
 
   nsISupports* GetParentObject() const;
 
@@ -47,7 +46,6 @@ class GamepadHapticActuator : public nsISupports, public nsWrapperCache {
   uint32_t mIndex;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_gamepad_GamepadHapticActuator_h

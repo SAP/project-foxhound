@@ -1,8 +1,3 @@
-extern crate pretty_assertions;
-extern crate serde;
-extern crate serde_json;
-extern crate serde_with_macros;
-
 use pretty_assertions::assert_eq;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -142,13 +137,13 @@ fn test_enum() {
         "Tuple": []
     });
     let data = DataEnum::Tuple(None, None);
-    let res = serde_json::to_value(&data).unwrap();
+    let res = serde_json::to_value(data).unwrap();
     assert_eq!(expected, res);
 
     let expected = json!({
         "Struct": {}
     });
     let data = DataEnum::Struct { a: None, b: None };
-    let res = serde_json::to_value(&data).unwrap();
+    let res = serde_json::to_value(data).unwrap();
     assert_eq!(expected, res);
 }

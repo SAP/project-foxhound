@@ -15,7 +15,7 @@
 #include "xpcprivate.h"
 #include "WorkerPrivate.h"
 #include "nsContentUtils.h"
-#include "nsGlobalWindow.h"
+#include "nsGlobalWindowInner.h"
 #include "WorkerScope.h"
 #include "jsapi.h"
 #include "js/ContextOptions.h"
@@ -31,7 +31,7 @@ NS_INTERFACE_MAP_END
 NS_IMPL_CYCLE_COLLECTING_ADDREF(CallbackObject)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(CallbackObject)
 
-NS_IMPL_CYCLE_COLLECTION_MULTI_ZONE_JSHOLDER_CLASS(CallbackObject)
+NS_IMPL_CYCLE_COLLECTION_CLASS(CallbackObject)
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(CallbackObject)
   tmp->ClearJSReferences();
@@ -100,7 +100,7 @@ void CallbackObject::FinishSlowJSInitIfMoreThanOneOwner(JSContext* aCx) {
   if (mRefCnt.get() > 1) {
     mozilla::HoldJSObjects(this);
     if (JS::IsAsyncStackCaptureEnabledForRealm(aCx)) {
-      JS::RootedObject stack(aCx);
+      JS::Rooted<JSObject*> stack(aCx);
       if (!JS::CaptureCurrentStack(aCx, &stack)) {
         JS_ClearPendingException(aCx);
       }
@@ -147,7 +147,7 @@ void CallbackObject::GetDescription(nsACString& aOutString) {
   jsapi.Init();
   JSContext* cx = jsapi.cx();
 
-  JS::RootedObject rootedCallback(cx, unwrappedCallback);
+  JS::Rooted<JSObject*> rootedCallback(cx, unwrappedCallback);
   JSAutoRealm ar(cx, rootedCallback);
 
   JS::Rooted<JSFunction*> rootedFunction(cx,
@@ -157,7 +157,8 @@ void CallbackObject::GetDescription(nsACString& aOutString) {
     return;
   }
 
-  JS::Rooted<JSString*> displayId(cx, JS_GetFunctionDisplayId(rootedFunction));
+  JS::Rooted<JSString*> displayId(
+      cx, JS_GetMaybePartialFunctionDisplayId(rootedFunction));
   if (displayId) {
     nsAutoJSString funcNameStr;
     if (funcNameStr.init(cx, displayId)) {

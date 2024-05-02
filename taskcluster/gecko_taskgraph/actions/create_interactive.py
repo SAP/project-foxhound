@@ -6,16 +6,12 @@
 import logging
 import os
 import re
+
 import taskcluster_urls
+from taskgraph.util.taskcluster import get_root_url, get_task_definition
 
-from .util import create_tasks, fetch_graph_and_labels
-from gecko_taskgraph.util.taskcluster import (
-    send_email,
-    get_root_url,
-)
-from .registry import register_callback_action
-from gecko_taskgraph.util import taskcluster
-
+from gecko_taskgraph.actions.registry import register_callback_action
+from gecko_taskgraph.actions.util import create_tasks, fetch_graph_and_labels
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +59,9 @@ SCOPE_WHITELIST = [
     re.compile(r"^docker-worker:feature:allowPtrace$"),
     # docker-worker capabilities include loopback devices
     re.compile(r"^docker-worker:capability:device:.*$"),
+    re.compile(r"^docker-worker:capability:privileged$"),
+    re.compile(r"^docker-worker:cache:gecko-level-1-checkouts.*$"),
+    re.compile(r"^docker-worker:cache:gecko-level-1-tooltool-cache.*$"),
 ]
 
 
@@ -71,8 +70,7 @@ def context(params):
     # test tasks on level 3 (level-3 builders are firewalled off)
     if int(params["level"]) < 3:
         return [{"worker-implementation": "docker-worker"}]
-    else:
-        return [{"worker-implementation": "docker-worker", "kind": "test"}]
+    return [{"worker-implementation": "docker-worker", "kind": "test"}]
     # Windows is not supported by one-click loaners yet. See
     # https://wiki.mozilla.org/ReleaseEngineering/How_To/Self_Provision_a_TaskCluster_Windows_Instance
     # for instructions for using them.
@@ -110,7 +108,7 @@ def create_interactive_action(parameters, graph_config, input, task_group_id, ta
     decision_task_id, full_task_graph, label_to_taskid = fetch_graph_and_labels(
         parameters, graph_config
     )
-    task = taskcluster.get_task_definition(task_id)
+    task = get_task_definition(task_id)
     label = task["metadata"]["name"]
 
     def edit(task):
@@ -149,6 +147,28 @@ def create_interactive_action(parameters, graph_config, input, task_group_id, ta
         payload.setdefault("features", {})["interactive"] = True
         payload.setdefault("env", {})["TASKCLUSTER_INTERACTIVE"] = "true"
 
+        for key in task_def["payload"]["env"].keys():
+            payload["env"][key] = task_def["payload"]["env"].get(key, "")
+
+        # add notification
+        email = input.get("notify")
+        # no point sending to a noreply address!
+        if email and email != "noreply@noreply.mozilla.org":
+            info = {
+                "url": taskcluster_urls.ui(
+                    get_root_url(False), "tasks/${status.taskId}/connect"
+                ),
+                "label": label,
+                "revision": parameters["head_rev"],
+                "repo": parameters["head_repository"],
+            }
+            task_def.setdefault("extra", {}).setdefault("notify", {})["email"] = {
+                "subject": EMAIL_SUBJECT.format(**info),
+                "content": EMAIL_CONTENT.format(**info),
+                "link": {"text": "Connect", "href": info["url"]},
+            }
+            task_def["routes"].append(f"notify.email.{email}.on-pending")
+
         return task
 
     # Create the task and any of its dependencies. This uses a new taskGroupId to avoid
@@ -165,27 +185,4 @@ def create_interactive_action(parameters, graph_config, input, task_group_id, ta
     )
 
     taskId = label_to_taskid[label]
-    logger.info(f"Created interactive task {taskId}; sending notification")
-
-    if input and "notify" in input:
-        email = input["notify"]
-        # no point sending to a noreply address!
-        if email == "noreply@noreply.mozilla.org":
-            return
-
-        info = {
-            "url": taskcluster_urls.ui(get_root_url(False), f"tasks/{taskId}/connect"),
-            "label": label,
-            "revision": parameters["head_rev"],
-            "repo": parameters["head_repository"],
-        }
-        send_email(
-            email,
-            subject=EMAIL_SUBJECT.format(**info),
-            content=EMAIL_CONTENT.format(**info),
-            link={
-                "text": "Connect",
-                "href": info["url"],
-            },
-            use_proxy=True,
-        )
+    logger.info(f"Created interactive task {taskId}")

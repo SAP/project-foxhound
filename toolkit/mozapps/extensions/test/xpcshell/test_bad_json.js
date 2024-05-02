@@ -5,7 +5,7 @@
 // Tests that we rebuild the database correctly if it contains
 // JSON data that parses correctly but doesn't contain required fields
 
-add_task(async function() {
+add_task(async function () {
   createAppInfo("xpcshell@tests.mozilla.org", "XPCShell", "1", "1.9.2");
 
   await promiseStartupManager();
@@ -14,7 +14,7 @@ add_task(async function() {
   await promiseInstallWebExtension({
     manifest: {
       version: "2.0",
-      applications: { gecko: { id: ID } },
+      browser_specific_settings: { gecko: { id: ID } },
     },
   });
 
@@ -22,7 +22,9 @@ add_task(async function() {
 
   // First startup/shutdown finished
   // Replace the JSON store with something bogus
-  await saveJSON({ not: "what we expect to find" }, gExtensionsJSON.path);
+  await IOUtils.writeJSON(gExtensionsJSON.path, {
+    not: "what we expect to find",
+  });
 
   await promiseStartupManager();
   // Retrieve an addon to force the database to rebuild
@@ -33,7 +35,7 @@ add_task(async function() {
   await promiseShutdownManager();
 
   // Make sure our JSON database has schemaVersion and our installed extension
-  let data = await loadJSON(gExtensionsJSON.path);
+  let data = await IOUtils.readJSON(gExtensionsJSON.path);
   Assert.ok("schemaVersion" in data);
   Assert.equal(data.addons[0].id, ID);
 });

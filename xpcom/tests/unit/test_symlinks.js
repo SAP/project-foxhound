@@ -97,10 +97,7 @@ function createSpaces(dirs, files, links) {
   function longest(a, b) {
     return a.length > b.length ? a : b;
   }
-  return dirs
-    .concat(files, links)
-    .reduce(longest, "")
-    .replace(/./g, " ");
+  return dirs.concat(files, links).reduce(longest, "").replace(/./g, " ");
 }
 
 function testSymLinks(testDir, relative) {
@@ -134,11 +131,6 @@ function testSymLinks(testDir, relative) {
 }
 
 function run_test() {
-  // Skip this test on Windows
-  if (mozinfo.os == "win") {
-    return;
-  }
-
   var testDir = CWD;
   testDir.append("test_symlinks");
 

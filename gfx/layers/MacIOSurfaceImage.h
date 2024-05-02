@@ -38,11 +38,17 @@ class MacIOSurfaceImage : public Image {
 
   already_AddRefed<gfx::SourceSurface> GetAsSourceSurface() override;
 
+  nsresult BuildSurfaceDescriptorBuffer(
+      SurfaceDescriptorBuffer& aSdBuffer, BuildSdbFlags aFlags,
+      const std::function<MemoryOrShmem(uint32_t)>& aAllocate) override;
+
   TextureClient* GetTextureClient(KnowsCompositor* aKnowsCompositor) override;
 
   MacIOSurfaceImage* AsMacIOSurfaceImage() override { return this; }
 
   gfx::IntRect GetPictureRect() const override { return mPictureRect; }
+
+  gfx::ColorDepth GetColorDepth() const override;
 
  private:
   RefPtr<MacIOSurface> mSurface;
@@ -54,10 +60,11 @@ class MacIOSurfaceRecycleAllocator {
  public:
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(MacIOSurfaceRecycleAllocator)
 
-  already_AddRefed<MacIOSurface> Allocate(const gfx::IntSize aYSize,
-                                          const gfx::IntSize& aCbCrSize,
-                                          gfx::YUVColorSpace aYUVColorSpace,
-                                          gfx::ColorRange aColorRange);
+  already_AddRefed<MacIOSurface> Allocate(
+      const gfx::IntSize aYSize, const gfx::IntSize& aCbCrSize,
+      gfx::YUVColorSpace aYUVColorSpace,
+      gfx::TransferFunction aTransferFunction, gfx::ColorRange aColorRange,
+      gfx::ColorDepth aColorDepth);
 
  private:
   ~MacIOSurfaceRecycleAllocator() = default;

@@ -3,8 +3,6 @@
  * should be able to accept form POST.
  */
 
-/* eslint-env mozilla/frame-script */
-
 "use strict";
 
 const SCHEME = "x-bug1241377";
@@ -25,15 +23,6 @@ CustomProtocolHandler.prototype = {
   get scheme() {
     return SCHEME;
   },
-  get defaultPort() {
-    return -1;
-  },
-  get protocolFlags() {
-    return (
-      Ci.nsIProtocolHandler.URI_NORELATIVE |
-      Ci.nsIProtocolHandler.URI_IS_LOCAL_RESOURCE
-    );
-  },
   newChannel(aURI, aLoadInfo) {
     return new CustomChannel(aURI, aLoadInfo);
   },
@@ -41,18 +30,8 @@ CustomProtocolHandler.prototype = {
     return port != -1;
   },
 
-  /** nsIFactory */
-  createInstance(aOuter, aIID) {
-    if (aOuter) {
-      throw Components.Exception("", Cr.NS_ERROR_NO_AGGREGATION);
-    }
-    return this.QueryInterface(aIID);
-  },
-  lockFactory() {},
-
   /** nsISupports */
-  QueryInterface: ChromeUtils.generateQI(["nsIProtocolHandler", "nsIFactory"]),
-  classID: Components.ID("{16d594bc-d9d8-47ae-a139-ea714dc0c35c}"),
+  QueryInterface: ChromeUtils.generateQI(["nsIProtocolHandler"]),
 };
 
 function CustomChannel(aURI, aLoadInfo) {
@@ -202,14 +181,15 @@ document.getElementById('form').submit();
 };
 
 function frameScript() {
-  addMessageListener("Test:WaitForIFrame", function() {
-    var check = function() {
+  /* eslint-env mozilla/frame-script */
+  /* eslint-disable mozilla/no-arbitrary-setTimeout */
+  addMessageListener("Test:WaitForIFrame", function () {
+    var check = function () {
       if (content) {
         var frame = content.document.getElementById("frame");
         if (frame) {
-          var upload_stream = frame.contentDocument.getElementById(
-            "upload_stream"
-          );
+          var upload_stream =
+            frame.contentDocument.getElementById("upload_stream");
           var post_data = frame.contentDocument.getElementById("post_data");
           var headers = frame.contentDocument.getElementById("upload_headers");
           if (upload_stream && post_data && headers) {
@@ -228,6 +208,7 @@ function frameScript() {
 
     check();
   });
+  /* eslint-enable mozilla/no-arbitrary-setTimeout */
 }
 
 function loadTestTab(uri) {
@@ -251,35 +232,35 @@ function loadTestTab(uri) {
   });
 }
 
-add_task(async function() {
+add_task(async function () {
   var handler = new CustomProtocolHandler();
-  var registrar = Components.manager.QueryInterface(Ci.nsIComponentRegistrar);
-  registrar.registerFactory(
-    handler.classID,
-    "",
-    "@mozilla.org/network/protocol;1?name=" + handler.scheme,
-    handler
+  Services.io.registerProtocolHandler(
+    SCHEME,
+    handler,
+    Ci.nsIProtocolHandler.URI_NORELATIVE |
+      Ci.nsIProtocolHandler.URI_IS_LOCAL_RESOURCE,
+    -1
   );
-  registerCleanupFunction(function() {
-    registrar.unregisterFactory(handler.classID, handler);
+  registerCleanupFunction(function () {
+    Services.io.unregisterProtocolHandler(SCHEME);
   });
 });
 
-add_task(async function() {
+add_task(async function () {
   var [hasUploadStream] = await loadTestTab(NORMAL_FORM_URI);
   is(hasUploadStream, "no", "normal action should not have uploadStream");
 
   gBrowser.removeCurrentTab();
 });
 
-add_task(async function() {
+add_task(async function () {
   var [hasUploadStream] = await loadTestTab(UPLOAD_FORM_URI);
   is(hasUploadStream, "no", "upload action should not have uploadStream");
 
   gBrowser.removeCurrentTab();
 });
 
-add_task(async function() {
+add_task(async function () {
   var [hasUploadStream, postData, headers] = await loadTestTab(POST_FORM_URI);
 
   is(hasUploadStream, "yes", "post action should have uploadStream");

@@ -11,8 +11,8 @@
 
 var touchdownTime;
 
-function longPressLink() {
-  synthesizeNativeTouch(document.getElementById("b"), 5, 5, SpecialPowers.DOMWindowUtils.TOUCH_CONTACT, function() {
+async function longPressLink() {
+  await synthesizeNativeTouch(document.getElementById("b"), 5, 5, SpecialPowers.DOMWindowUtils.TOUCH_CONTACT, function() {
     dump("Finished synthesizing touch-start, waiting for events...\n");
   });
 }
@@ -40,10 +40,27 @@ function recordEvent(e) {
   }
   e.preventDefault();
 
-  synthesizeNativeTouch(document.getElementById("b"), 5, 5, SpecialPowers.DOMWindowUtils.TOUCH_REMOVE, function() {
-    dump("Finished synthesizing touch-end to clear state; finishing test...\n");
+  setTimeout(async () => {
+    // On Windows below TOUCH_REMOVE event triggers opening a context menu, we
+    // need to prevent it.
+    const contextmenuPromise = promiseOneEvent(window, "contextmenu", event => {
+      event.preventDefault();
+      return true;
+    });
+    const touchendPromise = promiseOneEvent(window, "touchend", () => {
+      return true;
+    });
+
+    await synthesizeNativeTouch(document.getElementById("b"), 5, 5, SpecialPowers.DOMWindowUtils.TOUCH_REMOVE, function() {
+      dump("Finished synthesizing touch-end to clear state; finishing test...\n");
+    });
+
+    await touchendPromise;
+    if (getPlatform() == "windows") {
+      await contextmenuPromise;
+    }
     subtestDone();
-  });
+  }, 0);
 }
 
 function preventDefaultListener(e) {

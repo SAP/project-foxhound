@@ -12,14 +12,9 @@ LOCAL_INCLUDES += ["!..", ".."]
 include("../js-config.mozbuild")
 include("../js-cxxflags.mozbuild")
 
-if CONFIG["ENABLE_WASM_CRANELIFT"]:
-    UNIFIED_SOURCES += [
-        "WasmCraneliftCompile.cpp",
-    ]
-
 UNIFIED_SOURCES += [
     "AsmJS.cpp",
-    "TypedObject.cpp",
+    "WasmAnyRef.cpp",
     "WasmBaselineCompile.cpp",
     "WasmBCFrame.cpp",
     "WasmBCMemory.cpp",
@@ -30,8 +25,10 @@ UNIFIED_SOURCES += [
     "WasmCompile.cpp",
     "WasmDebug.cpp",
     "WasmDebugFrame.cpp",
+    "WasmFeatures.cpp",
     "WasmFrameIter.cpp",
     "WasmGC.cpp",
+    "WasmGcObject.cpp",
     "WasmGenerator.cpp",
     "WasmInitExpr.cpp",
     "WasmInstance.cpp",
@@ -45,9 +42,11 @@ UNIFIED_SOURCES += [
     "WasmOpIter.cpp",
     "WasmProcess.cpp",
     "WasmRealm.cpp",
+    "WasmSerialize.cpp",
+    "WasmSignalHandlers.cpp",
     "WasmStubs.cpp",
+    "WasmSummarizeInsn.cpp",
     "WasmTable.cpp",
-    "WasmTlsData.cpp",
     "WasmTypeDef.cpp",
     "WasmValidate.cpp",
     "WasmValType.cpp",
@@ -60,10 +59,6 @@ GeneratedFile(
     script="GenerateIntrinsics.py",
     inputs=["WasmIntrinsic.yaml"],
 )
-
-# We don't support signals for wasi yet.
-if CONFIG["OS_ARCH"] != "WASI":
-    UNIFIED_SOURCES += ["WasmSignalHandlers.cpp"]
 
 # Make sure all WebAssembly code is built with libfuzzer
 # coverage instrumentation in FUZZING mode.

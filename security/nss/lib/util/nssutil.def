@@ -341,3 +341,22 @@ NSS_LockPolicy;
 ;+    local:
 ;+       *;
 ;+};
+;+NSSUTIL_3.82 {         # NSS Utilities 3.82 release
+;+    global:
+PK11URI_GetPathAttributeItem;
+PK11URI_GetQueryAttributeItem;
+;+    local:
+;+       *;
+;+};
+;+NSSUTIL_3.90 {         # NSS Utilities 3.90 release
+;+    global:
+NSS_SecureSelect;
+;+    local:
+;+       *;
+;+};
+;+NSSUTIL_3.94 {         # NSS Utilities 3.94 release
+;+    global:
+NSS_GetSystemFIPSEnabled;
+;+    local:
+;+       *;
+;+};

@@ -13,12 +13,12 @@ const TEST_URI =
   "test/browser/" +
   "test-mixedcontent-securityerrors.html";
 
-add_task(async function() {
+add_task(async function () {
   const hud = await openNewTabAndConsole(TEST_URI);
   info("console opened");
 
   const msg = await waitFor(() =>
-    findMessage(hud, "Blocked loading mixed active content")
+    findErrorMessage(hud, "Blocked loading mixed active content")
   );
   ok(msg, "error message");
   const locationNode = msg.querySelector(

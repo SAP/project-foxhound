@@ -7,8 +7,10 @@
  * Tests if requests display the correct status code and text in the UI.
  */
 
-add_task(async function() {
-  const { L10N } = require("devtools/client/netmonitor/src/utils/l10n");
+add_task(async function () {
+  const {
+    L10N,
+  } = require("resource://devtools/client/netmonitor/src/utils/l10n.js");
 
   const { tab, monitor } = await initNetMonitor(STATUS_CODES_URL, {
     requestCount: 1,

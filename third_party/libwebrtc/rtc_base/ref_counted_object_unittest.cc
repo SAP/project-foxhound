@@ -12,8 +12,11 @@
 
 #include <memory>
 #include <string>
+#include <type_traits>
 #include <utility>
 
+#include "absl/strings/string_view.h"
+#include "api/make_ref_counted.h"
 #include "api/scoped_refptr.h"
 #include "rtc_base/ref_count.h"
 #include "test/gtest.h"
@@ -26,8 +29,8 @@ class A {
  public:
   A() {}
 
- private:
-  RTC_DISALLOW_COPY_AND_ASSIGN(A);
+  A(const A&) = delete;
+  A& operator=(const A&) = delete;
 };
 
 class RefClass : public RefCountInterface {
@@ -51,7 +54,7 @@ class RefClassWithRvalue : public RefCountInterface {
 
 class RefClassWithMixedValues : public RefCountInterface {
  public:
-  RefClassWithMixedValues(std::unique_ptr<A> a, int b, const std::string& c)
+  RefClassWithMixedValues(std::unique_ptr<A> a, int b, absl::string_view c)
       : a_(std::move(a)), b_(b), c_(c) {}
 
  protected:
@@ -61,6 +64,20 @@ class RefClassWithMixedValues : public RefCountInterface {
   std::unique_ptr<A> a_;
   int b_;
   std::string c_;
+};
+
+class Foo {
+ public:
+  Foo() {}
+  Foo(int i, int j) : foo_(i + j) {}
+  int foo_ = 0;
+};
+
+class FooItf : public RefCountInterface {
+ public:
+  FooItf() {}
+  FooItf(int i, int j) : foo_(i + j) {}
+  int foo_ = 0;
 };
 
 }  // namespace
@@ -93,6 +110,66 @@ TEST(RefCountedObject, SupportMixedTypesInCtor) {
   EXPECT_TRUE(a.get() == nullptr);
   EXPECT_EQ(b, ref->b_);
   EXPECT_EQ(c, ref->c_);
+}
+
+TEST(FinalRefCountedObject, CanWrapIntoScopedRefptr) {
+  using WrappedTyped = FinalRefCountedObject<A>;
+  static_assert(!std::is_polymorphic<WrappedTyped>::value, "");
+  scoped_refptr<WrappedTyped> ref(new WrappedTyped());
+  EXPECT_TRUE(ref.get());
+  EXPECT_TRUE(ref->HasOneRef());
+  // Test reference counter is updated on some simple operations.
+  scoped_refptr<WrappedTyped> ref2 = ref;
+  EXPECT_FALSE(ref->HasOneRef());
+  EXPECT_FALSE(ref2->HasOneRef());
+
+  ref = nullptr;
+  EXPECT_TRUE(ref2->HasOneRef());
+}
+
+TEST(FinalRefCountedObject, CanCreateFromMovedType) {
+  class MoveOnly {
+   public:
+    MoveOnly(int a) : a_(a) {}
+    MoveOnly(MoveOnly&&) = default;
+
+    int a() { return a_; }
+
+   private:
+    int a_;
+  };
+  MoveOnly foo(5);
+  auto ref = make_ref_counted<MoveOnly>(std::move(foo));
+  EXPECT_EQ(ref->a(), 5);
+}
+
+// This test is mostly a compile-time test for scoped_refptr compatibility.
+TEST(RefCounted, SmartPointers) {
+  // Sanity compile-time tests. FooItf is virtual, Foo is not, FooItf inherits
+  // from RefCountInterface, Foo does not.
+  static_assert(std::is_base_of<RefCountInterface, FooItf>::value, "");
+  static_assert(!std::is_base_of<RefCountInterface, Foo>::value, "");
+  static_assert(std::is_polymorphic<FooItf>::value, "");
+  static_assert(!std::is_polymorphic<Foo>::value, "");
+
+  {
+    // Test with FooItf, a class that inherits from RefCountInterface.
+    // Check that we get a valid FooItf reference counted object.
+    auto p = make_ref_counted<FooItf>(2, 3);
+    EXPECT_NE(p.get(), nullptr);
+    EXPECT_EQ(p->foo_, 5);  // the FooItf ctor just stores 2+3 in foo_.
+
+    // Declaring what should result in the same type as `p` is of.
+    scoped_refptr<FooItf> p2 = p;
+  }
+
+  {
+    // Same for `Foo`
+    auto p = make_ref_counted<Foo>(2, 3);
+    EXPECT_NE(p.get(), nullptr);
+    EXPECT_EQ(p->foo_, 5);
+    scoped_refptr<FinalRefCountedObject<Foo>> p2 = p;
+  }
 }
 
 }  // namespace rtc

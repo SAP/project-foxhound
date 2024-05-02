@@ -9,6 +9,10 @@ function keyedScalarValue(aScalarName) {
 }
 
 add_task(async () => {
+  // Ensure we're starting with a clean slate. test-verify can be tricky.
+  Services.fog.testResetFOG();
+  Services.telemetry.clearScalars();
+
   Assert.equal(
     undefined,
     Glean.testOnlyIpc.aLabeledCounter.a_label.testGetValue(),
@@ -26,19 +30,21 @@ add_task(async () => {
     undefined,
     Glean.testOnlyIpc.aLabeledCounter.__other__.testGetValue()
   );
-  Glean.testOnlyIpc.aLabeledCounter.InvalidLabel.add(3);
+  Glean.testOnlyIpc.aLabeledCounter["1".repeat(72)].add(3);
   Assert.throws(
     () => Glean.testOnlyIpc.aLabeledCounter.__other__.testGetValue(),
-    /NS_ERROR_LOSS_OF_SIGNIFICANT_DATA/,
+    /DataError/,
     "Can't get the value when you're error'd"
   );
 
-  let value = keyedScalarValue("telemetry.test.keyed_unsigned_int");
+  let value = keyedScalarValue(
+    "telemetry.test.another_mirror_for_labeled_counter"
+  );
   Assert.deepEqual(
     {
       a_label: 1,
       another_label: 2,
-      InvalidLabel: 3,
+      ["1".repeat(72)]: 3,
     },
     value
   );

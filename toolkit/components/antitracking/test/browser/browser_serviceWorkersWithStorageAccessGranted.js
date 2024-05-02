@@ -13,8 +13,6 @@
  *  the assertion. See Bug 1641153 for details.
  *  */
 
-/* import-globals-from antitracking_head.js */
-
 add_task(async _ => {
   // Manually add the storage permission.
   PermissionTestUtils.add(
@@ -28,8 +26,7 @@ add_task(async _ => {
   });
 
   AntiTracking._createTask({
-    name:
-      "Test that we can use service worker if we have the storage access permission",
+    name: "Test that we can use service worker if we have the storage access permission",
     cookieBehavior: BEHAVIOR_REJECT_TRACKER,
     allowList: false,
     callback: async _ => {
@@ -58,8 +55,7 @@ add_task(async _ => {
   });
 
   AntiTracking._createTask({
-    name:
-      "Test again to check if we can still use service worker without hit the assertion.",
+    name: "Test again to check if we can still use service worker without hit the assertion.",
     cookieBehavior: BEHAVIOR_REJECT_TRACKER,
     allowList: false,
     callback: async _ => {
@@ -88,8 +84,7 @@ add_task(async _ => {
   });
 
   AntiTracking._createTask({
-    name:
-      "Test again to check if we cannot use service worker in a sandbox iframe without hit the assertion.",
+    name: "Test again to check if we cannot use service worker in a sandbox iframe without hit the assertion.",
     cookieBehavior: BEHAVIOR_REJECT_TRACKER,
     allowList: false,
     callback: async _ => {
@@ -122,8 +117,7 @@ add_task(async _ => {
     TEST_DOMAIN + TEST_PATH + "3rdPartyRelay.html?" + TEST_3RD_PARTY_PAGE;
 
   AntiTracking._createTask({
-    name:
-      "Test again to check if we can use service worker in a nested iframe without hit the assertion.",
+    name: "Test again to check if we can use service worker in a nested iframe without hit the assertion.",
     cookieBehavior: BEHAVIOR_REJECT_TRACKER,
     allowList: false,
     callback: async _ => {

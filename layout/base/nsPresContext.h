@@ -12,6 +12,7 @@
 #include "mozilla/intl/Bidi.h"
 #include "mozilla/AppUnits.h"
 #include "mozilla/Attributes.h"
+#include "mozilla/DepthOrderedFrameList.h"
 #include "mozilla/EnumeratedArray.h"
 #include "mozilla/MediaEmulationData.h"
 #include "mozilla/MemoryReporting.h"
@@ -80,6 +81,7 @@ class PresShell;
 class RestyleManager;
 class ServoStyleSet;
 class StaticPresData;
+class TimelineManager;
 struct MediaFeatureChange;
 enum class MediaFeatureChangePropagation : uint8_t;
 enum class ColorScheme : uint8_t;
@@ -90,8 +92,12 @@ class LayerManager;
 namespace dom {
 class Document;
 class Element;
+class PerformanceMainThread;
 enum class PrefersColorSchemeOverride : uint8_t;
 }  // namespace dom
+namespace gfx {
+class FontPaletteValueSet;
+}  // namespace gfx
 }  // namespace mozilla
 
 // supported values for cached integer pref types
@@ -209,6 +215,7 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
 
   void DocumentCharSetChanged(NotNull<const Encoding*> aCharSet);
 
+  mozilla::dom::PerformanceMainThread* GetPerformanceMainThread() const;
   /**
    * Returns the parent prescontext for this one. Returns null if this is a
    * root.
@@ -234,13 +241,13 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
   /**
    * Returns the root widget for this.
    */
-  already_AddRefed<nsIWidget> GetRootWidget() const;
+  nsIWidget* GetRootWidget() const;
 
   /**
    * Returns the widget which may have native focus and handles text input
    * like keyboard input, IME, etc.
    */
-  already_AddRefed<nsIWidget> GetTextInputHandlingWidget() const {
+  nsIWidget* GetTextInputHandlingWidget() const {
     // Currently, root widget for each PresContext handles text input.
     return GetRootWidget();
   }
@@ -252,7 +259,7 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
    */
   nsRootPresContext* GetRootPresContext() const;
 
-  virtual bool IsRoot() { return false; }
+  virtual bool IsRoot() const { return false; }
 
   mozilla::dom::Document* Document() const {
 #ifdef DEBUG
@@ -267,7 +274,7 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
     return !!mPendingMediaFeatureValuesChange;
   }
 
-  inline nsCSSFrameConstructor* FrameConstructor();
+  inline nsCSSFrameConstructor* FrameConstructor() const;
 
   mozilla::AnimationEventDispatcher* AnimationEventDispatcher() {
     return mAnimationEventDispatcher;
@@ -279,6 +286,7 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
   const nsAnimationManager* AnimationManager() const {
     return mAnimationManager.get();
   }
+  mozilla::TimelineManager* TimelineManager() { return mTimelineManager.get(); }
 
   nsRefreshDriver* RefreshDriver() { return mRefreshDriver; }
 
@@ -345,7 +353,7 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
   /**
    * Get medium of presentation
    */
-  const nsAtom* Medium() {
+  const nsAtom* Medium() const {
     MOZ_ASSERT(mMedium);
     return mMediaEmulationData.mMedium ? mMediaEmulationData.mMedium.get()
                                        : mMedium;
@@ -385,6 +393,7 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
            !PrefSheetPrefs().mUseDocumentColors;
   }
 
+  mozilla::ColorScheme DefaultBackgroundColorScheme() const;
   nscolor DefaultBackgroundColor() const;
 
   nsISupports* GetContainerWeak() const;
@@ -497,47 +506,28 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
    *
    * XXX Temporary: see http://wiki.mozilla.org/Gecko:PrintPreview
    */
-  float GetPrintPreviewScaleForSequenceFrame() { return mPPScale; }
+  float GetPrintPreviewScaleForSequenceFrameOrScrollbars() const {
+    return mPPScale;
+  }
   void SetPrintPreviewScale(float aScale) { mPPScale = aScale; }
 
   nsDeviceContext* DeviceContext() const { return mDeviceContext; }
   mozilla::EventStateManager* EventStateManager() { return mEventManager; }
 
-  /**
-   * Get/set a text zoom factor that is applied on top of the normal text zoom
-   * set by the front-end/user.
-   */
-  float GetSystemFontScale() const { return mSystemFontScale; }
-  void SetSystemFontScale(float aFontScale) {
-    MOZ_ASSERT(aFontScale > 0.0f, "invalid font scale");
-    if (aFontScale == mSystemFontScale || IsPrintingOrPrintPreview()) {
-      return;
-    }
+  bool UserInputEventsAllowed();
 
-    mSystemFontScale = aFontScale;
-    UpdateEffectiveTextZoom();
+  void MaybeIncreaseMeasuredTicksSinceLoading();
+
+  bool NeedsMoreTicksForUserInput() const;
+
+  void ResetUserInputEventsAllowed() {
+    MOZ_ASSERT(IsRoot());
+    mMeasuredTicksSinceLoading = 0;
+    mUserInputEventsAllowed = false;
   }
 
-  /**
-   * Get/set the text zoom factor in use.
-   * This value should be used if you're interested in the pure text zoom value
-   * controlled by the front-end, e.g. when transferring zoom levels to a new
-   * document.
-   * Code that wants to use this value for layouting and rendering purposes
-   * should consider using EffectiveTextZoom() instead, so as to take the system
-   * font scale into account as well.
-   */
+  // Get the text zoom factor in use.
   float TextZoom() const { return mTextZoom; }
-
-  /**
-   * Corresponds to the product of text zoom and system font scale, limited
-   * by zoom.maxPercent and minPercent.
-   * As the system font scale is automatically set by the PresShell, code that
-   * e.g. wants to transfer zoom levels to a new document should use TextZoom()
-   * instead, which corresponds to the text zoom level that was actually set by
-   * the front-end/user.
-   */
-  float EffectiveTextZoom() const { return mEffectiveTextZoom; }
 
   /**
    * Notify the pres context that the safe area insets have changed.
@@ -553,21 +543,14 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
  protected:
   void CancelManagedPostRefreshObservers();
 
-  void UpdateEffectiveTextZoom();
-
 #ifdef DEBUG
   void ValidatePresShellAndDocumentReleation() const;
 #endif  // #ifdef DEBUG
 
-  void SetTextZoom(float aZoom) {
-    MOZ_ASSERT(aZoom > 0.0f, "invalid zoom factor");
-    if (aZoom == mTextZoom) return;
-
-    mTextZoom = aZoom;
-    UpdateEffectiveTextZoom();
-  }
+  void SetTextZoom(float aZoom);
   void SetFullZoom(float aZoom);
   void SetOverrideDPPX(float);
+  void SetInRDMPane(bool aInRDMPane);
 
  public:
   float GetFullZoom() { return mFullZoom; }
@@ -580,11 +563,11 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
 
   float GetOverrideDPPX() const { return mMediaEmulationData.mDPPX; }
 
-  // Gets the forced color-scheme if any via either DevTools emulation or
-  // printing.
+  // Gets the forced color-scheme if any via either our embedder, or DevTools
+  // emulation, or printing.
   //
   // NOTE(emilio): This might be called from an stylo thread.
-  Maybe<mozilla::ColorScheme> GetOverriddenColorScheme() const;
+  Maybe<mozilla::ColorScheme> GetOverriddenOrEmbedderColorScheme() const;
 
   /**
    * Recomputes the data dependent on the browsing context, like zoom and text
@@ -592,9 +575,10 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
    */
   void RecomputeBrowsingContextDependentData();
 
-  mozilla::CSSCoord GetAutoQualityMinFontSize() const {
-    return DevPixelsToFloatCSSPixels(mAutoQualityMinFontSizePixelsPref);
-  }
+  /**
+   * Sets the effective color scheme override, and invalidate stuff as needed.
+   */
+  void SetColorSchemeOverride(mozilla::dom::PrefersColorSchemeOverride);
 
   /**
    * Return the device's screen size in inches, for font size
@@ -657,6 +641,28 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
 
   int32_t DevPixelsToIntCSSPixels(int32_t aPixels) {
     return AppUnitsToIntCSSPixels(DevPixelsToAppUnits(aPixels));
+  }
+
+  static nscoord RoundDownAppUnitsToCSSPixel(nscoord aAppUnits) {
+    return mozilla::RoundDownToMultiple(aAppUnits,
+                                        mozilla::AppUnitsPerCSSPixel());
+  }
+  static nscoord RoundUpAppUnitsToCSSPixel(nscoord aAppUnits) {
+    return mozilla::RoundUpToMultiple(aAppUnits,
+                                      mozilla::AppUnitsPerCSSPixel());
+  }
+  static nscoord RoundAppUnitsToCSSPixel(nscoord aAppUnits) {
+    return mozilla::RoundToMultiple(aAppUnits, mozilla::AppUnitsPerCSSPixel());
+  }
+
+  nscoord RoundDownAppUnitsToDevPixel(nscoord aAppUnits) const {
+    return mozilla::RoundDownToMultiple(aAppUnits, AppUnitsPerDevPixel());
+  }
+  nscoord RoundUpAppUnitsToDevPixel(nscoord aAppUnits) const {
+    return mozilla::RoundUpToMultiple(aAppUnits, AppUnitsPerDevPixel());
+  }
+  nscoord RoundAppUnitsToDevPixel(nscoord aAppUnits) const {
+    return mozilla::RoundToMultiple(aAppUnits, AppUnitsPerDevPixel());
   }
 
   mozilla::CSSIntPoint DevPixelsToIntCSSPixels(
@@ -814,18 +820,7 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
    */
   uint32_t GetBidi() const;
 
-  /*
-   * Obtain a native theme for rendering our widgets (both form controls and
-   * html)
-   *
-   * Guaranteed to return non-null.
-   */
-  nsITheme* Theme() MOZ_NONNULL_RETURN {
-    if (MOZ_LIKELY(mTheme)) {
-      return mTheme;
-    }
-    return EnsureTheme();
-  }
+  nsITheme* Theme() const MOZ_NONNULL_RETURN;
 
   void RecomputeTheme();
 
@@ -869,9 +864,13 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
 
   void ConstructedFrame() { ++mFramesConstructed; }
   void ReflowedFrame() { ++mFramesReflowed; }
+  void TriggeredAnimationRestyle() { ++mAnimationTriggeredRestyles; }
 
-  uint64_t FramesConstructedCount() { return mFramesConstructed; }
-  uint64_t FramesReflowedCount() { return mFramesReflowed; }
+  uint64_t FramesConstructedCount() const { return mFramesConstructed; }
+  uint64_t FramesReflowedCount() const { return mFramesReflowed; }
+  uint64_t AnimationTriggeredRestylesCount() const {
+    return mAnimationTriggeredRestyles;
+  }
 
   static nscoord GetBorderWidthForKeyword(unsigned int aBorderWidthKeyword) {
     // This table maps border-width enums 'thin', 'medium', 'thick'
@@ -897,10 +896,10 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
     return mType == eContext_Print || mType == eContext_PrintPreview;
   }
 
+  bool IsPrintPreview() const { return mType == eContext_PrintPreview; }
+
   // Is this presentation in a chrome docshell?
   bool IsChrome() const;
-
-  bool SuppressingResizeReflow() const { return mSuppressResizeReflow; }
 
   gfxUserFontSet* GetUserFontSet();
 
@@ -918,6 +917,9 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
 
   void FlushFontFeatureValues();
   void MarkFontFeatureValuesDirty() { mFontFeatureValuesDirty = true; }
+
+  void FlushFontPaletteValues();
+  void MarkFontPaletteValuesDirty() { mFontPaletteValuesDirty = true; }
 
   // Ensure that it is safe to hand out CSS rules outside the layout
   // engine by ensuring that all CSS style sheets have unique inners
@@ -1025,12 +1027,6 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
   }
 
   /**
-   * Deprecated. Please use the InProcess or CrossProcess variants
-   * to specify which behaviour you want.
-   */
-  bool IsRootContentDocument() const;
-
-  /**
    * We are a root content document in process if: we are not a resource doc, we
    * are not chrome, and we either have no parent in the current process or our
    * parent is chrome.
@@ -1045,7 +1041,8 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
   bool IsRootContentDocumentCrossProcess() const;
 
   bool HadNonBlankPaint() const { return mHadNonBlankPaint; }
-  bool HadContentfulPaint() const { return mHadContentfulPaint; }
+  bool HadFirstContentfulPaint() const { return mHadFirstContentfulPaint; }
+  bool HasStoppedGeneratingLCP() const;
   void NotifyNonBlankPaint();
   void NotifyContentfulPaint();
   void NotifyPaintStatusReset();
@@ -1053,24 +1050,6 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
 
   bool HasEverBuiltInvisibleText() const { return mHasEverBuiltInvisibleText; }
   void SetBuiltInvisibleText() { mHasEverBuiltInvisibleText = true; }
-
-  bool UsesFontMetricDependentFontUnits() const {
-    return mUsesFontMetricDependentFontUnits;
-  }
-
-  void SetUsesFontMetricDependentFontUnits(bool aValue) {
-    mUsesFontMetricDependentFontUnits = aValue;
-  }
-
-  bool IsDeviceSizePageSize();
-
-  bool HasWarnedAboutPositionedTableParts() const {
-    return mHasWarnedAboutPositionedTableParts;
-  }
-
-  void SetHasWarnedAboutPositionedTableParts() {
-    mHasWarnedAboutPositionedTableParts = true;
-  }
 
   bool HasWarnedAboutTooLargeDashedOrDottedRadius() const {
     return mHasWarnedAboutTooLargeDashedOrDottedRadius;
@@ -1080,10 +1059,24 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
     mHasWarnedAboutTooLargeDashedOrDottedRadius = true;
   }
 
-  mozilla::intl::Bidi& GetBidiEngine();
+  void RegisterContainerQueryFrame(nsIFrame* aFrame);
+  void UnregisterContainerQueryFrame(nsIFrame* aFrame);
+  bool HasContainerQueryFrames() const {
+    return !mContainerQueryFrames.IsEmpty();
+  }
+
+  void FinishedContainerQueryUpdate();
+
+  bool UpdateContainerQueryStyles();
+
+  mozilla::intl::Bidi& BidiEngine();
 
   gfxFontFeatureValueSet* GetFontFeatureValuesLookup() const {
     return mFontFeatureValuesLookup;
+  }
+
+  mozilla::gfx::FontPaletteValueSet* GetFontPaletteValueSet() const {
+    return mFontPaletteValueSet;
   }
 
  protected:
@@ -1091,12 +1084,8 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
   void ThemeChangedInternal();
   void RefreshSystemMetrics();
 
-  // update device context's resolution from the widget
+  // Update device context's resolution from the widget
   void UIResolutionChangedInternal();
-
-  // if aScale > 0.0, use it as resolution scale factor to the device context
-  // (otherwise get it from the widget)
-  void UIResolutionChangedInternalScale(double aScale);
 
   void SetImgAnimations(nsIContent* aParent, uint16_t aMode);
   void SetSMILAnimations(mozilla::dom::Document* aDoc, uint16_t aNewMode,
@@ -1129,11 +1118,15 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
   }
 
   void DidUseFrameRateMultiplier() {
-    if (!mNextFrameRateMultiplier) {
-      mNextFrameRateMultiplier = 1;
-    } else if (mNextFrameRateMultiplier < 8) {
-      mNextFrameRateMultiplier = mNextFrameRateMultiplier * 2;
+    // This heuristic is used to reduce frame rate between fcp and the end of
+    // the page load.
+    if (mNextFrameRateMultiplier < 8) {
+      ++mNextFrameRateMultiplier;
     }
+  }
+
+  mozilla::TimeStamp GetMarkPaintTimingStart() const {
+    return mMarkPaintTimingStart;
   }
 
  protected:
@@ -1187,19 +1180,19 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
   RefPtr<mozilla::EffectCompositor> mEffectCompositor;
   mozilla::UniquePtr<nsTransitionManager> mTransitionManager;
   mozilla::UniquePtr<nsAnimationManager> mAnimationManager;
+  mozilla::UniquePtr<mozilla::TimelineManager> mTimelineManager;
   mozilla::UniquePtr<mozilla::RestyleManager> mRestyleManager;
   RefPtr<mozilla::CounterStyleManager> mCounterStyleManager;
   const nsStaticAtom* mMedium;
   RefPtr<gfxFontFeatureValueSet> mFontFeatureValuesLookup;
+  RefPtr<mozilla::gfx::FontPaletteValueSet> mFontPaletteValueSet;
 
   // TODO(emilio): Maybe lazily create and put under a UniquePtr if this grows a
   // lot?
   MediaEmulationData mMediaEmulationData;
 
-  float mSystemFontScale;    // Internal text zoom factor, defaults to 1.0
-  float mTextZoom;           // Text zoom, defaults to 1.0
-  float mEffectiveTextZoom;  // Text zoom * system font scale
-  float mFullZoom;           // Page zoom, defaults to 1.0
+  float mTextZoom;  // Text zoom, defaults to 1.0
+  float mFullZoom;  // Page zoom, defaults to 1.0
   gfxSize mLastFontInflationScreenSize;
 
   int32_t mCurAppUnitsPerDevPixel;
@@ -1255,8 +1248,12 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
   uint64_t mElementsRestyled;
   uint64_t mFramesConstructed;
   uint64_t mFramesReflowed;
+  uint64_t mAnimationTriggeredRestyles;
 
   mozilla::TimeStamp mReflowStartTime;
+
+  // Defined in https://w3c.github.io/paint-timing/#mark-paint-timing step 2.
+  mozilla::TimeStamp mMarkPaintTimingStart;
 
   Maybe<TransactionId> mFirstContentfulPaintTransactionId;
 
@@ -1279,6 +1276,8 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
   // During page load we use slower frame rate.
   uint32_t mNextFrameRateMultiplier;
 
+  uint32_t mMeasuredTicksSinceLoading;
+
   nsTArray<RefPtr<mozilla::ManagedPostRefreshObserver>>
       mManagedPostRefreshObservers;
 
@@ -1287,6 +1286,14 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
   // this hash-set keeps track of names we've logged for this context, so
   // that we can avoid repeatedly reporting the same font.
   nsTHashSet<nsCString> mBlockedFonts;
+
+  // The set of container query boxes currently in the document, sorted by
+  // depth.
+  mozilla::DepthOrderedFrameList mContainerQueryFrames;
+  // The set of container query elements currently in the document that have
+  // been updated so far. This is necessary to avoid reentering on container
+  // query style changes which cause us to do frame reconstruction.
+  nsTHashSet<nsIContent*> mUpdatedContainerQueryContents;
 
   ScrollStyles mViewportScrollStyles;
 
@@ -1333,25 +1340,19 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
   // Are we currently drawing an SVG glyph?
   unsigned mIsGlyph : 1;
 
-  // Does the associated document use ex or ch units?
-  //
-  // TODO(emilio): It's a bit weird that this lives here but all the other
-  // relevant bits live in Device on the rust side.
-  unsigned mUsesFontMetricDependentFontUnits : 1;
-
   // Is the current mCounterStyleManager valid?
   unsigned mCounterStylesDirty : 1;
 
   // Is the current mFontFeatureValuesLookup valid?
   unsigned mFontFeatureValuesDirty : 1;
 
-  // resize reflow is suppressed when the only change has been to zoom
-  // the document rather than to change the document's dimensions
-  unsigned mSuppressResizeReflow : 1;
+  // Is the current mFontFeatureValueSet valid?
+  unsigned mFontPaletteValuesDirty : 1;
 
   unsigned mIsVisual : 1;
 
-  unsigned mHasWarnedAboutPositionedTableParts : 1;
+  // Are we in the RDM pane?
+  unsigned mInRDMPane : 1;
 
   unsigned mHasWarnedAboutTooLargeDashedOrDottedRadius : 1;
 
@@ -1361,7 +1362,7 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
   // Has NotifyNonBlankPaint been called on this PresContext?
   unsigned mHadNonBlankPaint : 1;
   // Has NotifyContentfulPaint been called on this PresContext?
-  unsigned mHadContentfulPaint : 1;
+  unsigned mHadFirstContentfulPaint : 1;
   // True when a contentful paint has happened and this paint doesn't
   // come from the regular tick process. Usually this means a
   // contentful paint was triggered manually.
@@ -1370,6 +1371,7 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
   // Has NotifyDidPaintForSubtree been called for a contentful paint?
   unsigned mHadContentfulPaintComposite : 1;
 
+  unsigned mUserInputEventsAllowed : 1;
 #ifdef DEBUG
   unsigned mInitialized : 1;
 #endif
@@ -1377,14 +1379,14 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
   // FIXME(emilio): These would be better packed on top of the bitfields, but
   // that breaks bindgen in win32.
   FontVisibility mFontVisibility = FontVisibility::Unknown;
-  mozilla::dom::PrefersColorSchemeOverride mColorSchemeOverride;
+  mozilla::dom::PrefersColorSchemeOverride mOverriddenOrEmbedderColorScheme;
 
  protected:
   virtual ~nsPresContext();
 
   void LastRelease();
 
-  nsITheme* EnsureTheme();
+  void EnsureTheme();
 
 #ifdef DEBUG
  private:
@@ -1402,7 +1404,7 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
 class nsRootPresContext final : public nsPresContext {
  public:
   nsRootPresContext(mozilla::dom::Document* aDocument, nsPresContextType aType);
-  virtual bool IsRoot() override { return true; }
+  virtual bool IsRoot() const override { return true; }
 
   /**
    * Add a runnable that will get called before the next paint. They will get

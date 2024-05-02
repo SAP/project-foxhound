@@ -10,14 +10,14 @@
 #include "nsStubDocumentObserver.h"
 
 #ifndef MOZ_NEW_XULSTORE
+#  include "nsCOMPtr.h"
 class nsIXULStore;
 #endif
 
 template <typename T>
 class nsCOMArray;
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class XULPersist final : public nsStubDocumentObserver {
  public:
@@ -30,25 +30,21 @@ class XULPersist final : public nsStubDocumentObserver {
   NS_DECL_NSIMUTATIONOBSERVER_ATTRIBUTECHANGED
 
  protected:
-  void Persist(mozilla::dom::Element* aElement, int32_t aNameSpaceID,
-               nsAtom* aAttribute);
+  void Persist(mozilla::dom::Element* aElement, nsAtom* aAttribute);
 
  private:
   ~XULPersist();
   nsresult ApplyPersistentAttributes();
-  nsresult ApplyPersistentAttributesInternal();
   nsresult ApplyPersistentAttributesToElements(const nsAString& aID,
+                                               const nsAString& aDocURI,
                                                nsCOMArray<Element>& aElements);
 
-#ifndef MOZ_NEW_XULSTORE
   nsCOMPtr<nsIXULStore> mLocalStore;
-#endif
 
   // A weak pointer to our document. Nulled out by DropDocumentReference.
   Document* MOZ_NON_OWNING_REF mDocument;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_XULPersist_h

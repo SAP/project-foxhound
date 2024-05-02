@@ -15,14 +15,14 @@ test_includes() {
   local ret=0
   local f
   for f in $(git ls-files | grep -E '(\.cc|\.cpp|\.h)$'); do
-    # Check that the public files (in lib/include/ directory) don't use the full
-    # path to the public header since users of the library will include the
-    # library as: #include "jxl/foobar.h".
-    if [[ "${f#lib/include/}" != "${f}" ]]; then
-      if grep -i -H -n -E '#include\s*[<"]lib/include/jxl' "$f" >&2; then
-        echo "Don't add \"include/\" to the include path of public headers." >&2
-        ret=1
-      fi
+    if [ ! -e "$f" ]; then
+      continue
+    fi
+    # Check that the full paths to the public headers are not used, since users
+    # of the library will include the library as: #include "jxl/foobar.h".
+    if grep -i -H -n -E '#include\s*[<"]lib/include/jxl' "$f" >&2; then
+      echo "Don't add \"include/\" to the include path of public headers." >&2
+      ret=1
     fi
 
     if [[ "${f#third_party/}" == "$f" ]]; then
@@ -51,6 +51,9 @@ test_include_collision() {
   local ret=0
   local f
   for f in $(git ls-files | grep -E '^lib/include/'); do
+    if [ ! -e "$f" ]; then
+      continue
+    fi
     local base=${f#lib/include/}
     if [[ -e "lib/${base}" ]]; then
       echo "$f: Name collision, both $f and lib/${base} exist." >&2
@@ -66,6 +69,9 @@ test_copyright() {
   for f in $(
       git ls-files | grep -E \
       '(Dockerfile.*|\.c|\.cc|\.cpp|\.gni|\.h|\.java|\.sh|\.m|\.py|\.ui|\.yml)$'); do
+    if [ ! -e "$f" ]; then
+      continue
+    fi
     if [[ "${f#third_party/}" == "$f" ]]; then
       # $f is not in third_party/
       if ! head -n 10 "$f" |
@@ -94,9 +100,24 @@ test_printf_size_t() {
     ret=1
   fi
 
+  if grep -n -E '[^_]gtest\.h' \
+      $(git ls-files | grep -E '(\.c|\.cc|\.cpp|\.h)$' | grep -v -F /testing.h); then
+    echo "Don't include gtest directly, instead include 'testing.h'. " >&2
+    ret=1
+  fi
+
+  if grep -n -E 'gmock\.h' \
+      $(git ls-files | grep -E '(\.c|\.cc|\.cpp|\.h)$' | grep -v -F /testing.h); then
+    echo "Don't include gmock directly, instead include 'testing.h'. " >&2
+    ret=1
+  fi
+
   local f
   for f in $(git ls-files | grep -E "\.cc$" | xargs grep 'PRI[udx]S' |
       cut -f 1 -d : | uniq); do
+    if [ ! -e "$f" ]; then
+      continue
+    fi
     if ! grep -F printf_macros.h "$f" >/dev/null; then
       echo "$f: Add lib/jxl/base/printf_macros.h for PRI.S, or use other " \
         "types for code outside lib/jxl library." >&2
@@ -104,7 +125,7 @@ test_printf_size_t() {
     fi
   done
 
-  for f in $(git ls-files | grep -E "\.h$" | grep -v -F printf_macros.h |
+  for f in $(git ls-files | grep -E "\.h$" | grep -v -E '(printf_macros\.h|testing\.h)' |
       xargs grep -n 'PRI[udx]S'); do
     # Having PRIuS / PRIdS in a header file means that printf_macros.h may
     # be included before a system header, in particular before gtest headers.
@@ -121,6 +142,9 @@ test_dec_enc_deps() {
   local ret=0
   local f
   for f in $(git ls-files | grep -E '/dec_'); do
+    if [ ! -e "$f" ]; then
+      continue
+    fi
     if [[ "${f#third_party/}" == "$f" ]]; then
       # $f is not in third_party/
       if grep -n -H -E "#include.*/enc_" "$f" >&2; then
@@ -137,6 +161,9 @@ test_merge_conflict() {
   local ret=0
   TEXT_FILES='(\.cc|\.cpp|\.h|\.sh|\.m|\.py|\.md|\.txt|\.cmake)$'
   for f in $(git ls-files | grep -E "${TEXT_FILES}"); do
+    if [ ! -e "$f" ]; then
+      continue
+    fi
     if grep -E '^<<<<<<< ' "$f"; then
       echo "$f: Found git merge conflict marker. Please resolve." >&2
       ret=1
@@ -230,6 +257,9 @@ test_fuzz_fields() {
     xargs grep -h -o -E '\b[^ ]+ : public Fields' | cut -f 1 -d ' ')
   local classname
   for classname in ${field_classes}; do
+    if [ ! -e "$classname" ]; then
+      continue
+    fi
     if ! grep -E "\\b${classname}\\b" tools/fields_fuzzer.cc >/dev/null; then
       cat >&2 <<EOF
 tools/fields_fuzzer.cc: Class ${classname} not found in the fields_fuzzer.
@@ -247,6 +277,9 @@ test_percent_n() {
   local ret=0
   local f
   for f in $(git ls-files | grep -E '(\.cc|\.cpp|\.h)$'); do
+    if [ ! -e "$f" ]; then
+      continue
+    fi
     if grep -i -H -n -E '%h*n' "$f" >&2; then
       echo "Don't use \"%n\"." >&2
       ret=1

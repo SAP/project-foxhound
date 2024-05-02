@@ -29,7 +29,6 @@
 #include "nsString.h"
 #include "nsNetUtil.h"
 #include "nsNetCID.h"
-#include "plstr.h"
 #include "prnetdb.h"
 #include "nsPACMan.h"
 #include "nsProxyRelease.h"
@@ -56,6 +55,7 @@ extern const char kProxyType_SOCKS[];
 extern const char kProxyType_SOCKS4[];
 extern const char kProxyType_SOCKS5[];
 extern const char kProxyType_DIRECT[];
+extern const char kProxyType_PROXY[];
 
 #undef LOG
 #define LOG(args) MOZ_LOG(gProxyLog, LogLevel::Debug, args)
@@ -1513,8 +1513,8 @@ class nsAsyncBridgeRequest final : public nsPACManCallback {
     mCondVar.Notify();
   }
 
-  void Lock() { mMutex.Lock(); }
-  void Unlock() { mMutex.Unlock(); }
+  void Lock() MOZ_CAPABILITY_ACQUIRE(mMutex) { mMutex.Lock(); }
+  void Unlock() MOZ_CAPABILITY_RELEASE(mMutex) { mMutex.Unlock(); }
   void Wait() { mCondVar.Wait(TimeDuration::FromSeconds(3)); }
 
  private:
@@ -1525,10 +1525,10 @@ class nsAsyncBridgeRequest final : public nsPACManCallback {
   Mutex mMutex;
   CondVar mCondVar;
 
-  nsresult mStatus{NS_OK};
-  nsCString mPACString;
-  nsCString mPACURL;
-  bool mCompleted{false};
+  nsresult mStatus MOZ_GUARDED_BY(mMutex){NS_OK};
+  nsCString mPACString MOZ_GUARDED_BY(mMutex);
+  nsCString mPACURL MOZ_GUARDED_BY(mMutex);
+  bool mCompleted MOZ_GUARDED_BY(mMutex){false};
 };
 NS_IMPL_ISUPPORTS0(nsAsyncBridgeRequest)
 
@@ -1749,8 +1749,9 @@ nsresult nsProtocolProxyService::InsertFilterLink(RefPtr<FilterLink>&& link) {
     return NS_ERROR_FAILURE;
   }
 
-  mFilters.AppendElement(link);
-  mFilters.Sort(ProxyFilterPositionComparator());
+  // If we add a new element with the same position as an existing one, we want
+  // to preserve the insertion order to avoid surprises.
+  mFilters.InsertElementSorted(link, ProxyFilterPositionComparator());
 
   NotifyProxyConfigChangedInternal();
 
@@ -1985,7 +1986,7 @@ void nsProtocolProxyService::LoadHostFilters(const nsACString& aFilters) {
       if (!hinfo->name.host) goto loser;
     }
 
-//#define DEBUG_DUMP_FILTERS
+// #define DEBUG_DUMP_FILTERS
 #ifdef DEBUG_DUMP_FILTERS
     printf("loaded filter[%zu]:\n", mHostFiltersArray.Length());
     printf("  is_ipaddr = %u\n", hinfo->is_ipaddr);
@@ -2017,6 +2018,7 @@ void nsProtocolProxyService::LoadHostFilters(const nsACString& aFilters) {
 
 nsresult nsProtocolProxyService::GetProtocolInfo(nsIURI* uri,
                                                  nsProtocolInfo* info) {
+  AssertIsOnMainThread();
   MOZ_ASSERT(uri, "URI is null");
   MOZ_ASSERT(info, "info is null");
 
@@ -2028,14 +2030,10 @@ nsresult nsProtocolProxyService::GetProtocolInfo(nsIURI* uri,
   nsCOMPtr<nsIIOService> ios = do_GetIOService(&rv);
   if (NS_FAILED(rv)) return rv;
 
-  nsCOMPtr<nsIProtocolHandler> handler;
-  rv = ios->GetProtocolHandler(info->scheme.get(), getter_AddRefs(handler));
+  rv = ios->GetDynamicProtocolFlags(uri, &info->flags);
   if (NS_FAILED(rv)) return rv;
 
-  rv = handler->DoGetProtocolFlags(uri, &info->flags);
-  if (NS_FAILED(rv)) return rv;
-
-  rv = handler->GetDefaultPort(&info->defaultPort);
+  rv = ios->GetDefaultPort(info->scheme.get(), &info->defaultPort);
   return rv;
 }
 
@@ -2375,7 +2373,8 @@ void nsProtocolProxyService::PruneProxyInfo(const nsProtocolInfo& info,
     }
   }
 
-  if (allNonDirectProxiesDisabled) {
+  if (allNonDirectProxiesDisabled &&
+      StaticPrefs::network_proxy_retry_failed_proxies()) {
     LOG(("All proxies are disabled, so trying all again"));
   } else {
     // remove any disabled proxies.

@@ -4,13 +4,7 @@
 
 "use strict";
 
-/* global ExtensionAPI, Services, XPCOMUtils */
-
-ChromeUtils.defineModuleGetter(
-  this,
-  "Services",
-  "resource://gre/modules/Services.jsm"
-);
+/* global ExtensionAPI, XPCOMUtils, Services */
 
 XPCOMUtils.defineLazyServiceGetter(
   this,

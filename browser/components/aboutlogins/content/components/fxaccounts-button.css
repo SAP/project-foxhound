@@ -15,15 +15,7 @@
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 3;
   overflow: hidden;
-
-  color: var(--in-content-deemphasized-text);
   text-align: end;
-}
-
-.fxaccounts-extra-text,
-.fxaccount-email,
-.fxaccounts-enable-button {
-  font-size: 13px;
 }
 
 @media (max-width: 830px) {
@@ -35,6 +27,7 @@
 
 .fxaccount-avatar,
 .fxaccounts-enable-button {
+  font-size: var(--font-size-small);
   margin-inline-start: 9px;
 }
 
@@ -53,14 +46,15 @@
 }
 
 .fxaccount-email {
+  font-size: var(--font-size-small);
   vertical-align: middle;
 }
 
 .fxaccount-avatar {
   display: inline-block;
   vertical-align: middle;
-  background-image: var(--avatar-url),
-    url(chrome://browser/skin/fxa/avatar-color.svg);
+  background-image: var(--avatar-url,
+    url(chrome://browser/skin/fxa/avatar-color.svg));
   background-position: center;
   background-repeat: no-repeat;
   background-size: cover;

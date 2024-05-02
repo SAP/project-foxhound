@@ -4,13 +4,15 @@
 
 "use strict";
 
-const { Cc, Ci } = require("chrome");
-const { LocalizationHelper } = require("devtools/shared/l10n");
-const Services = require("Services");
+const { LocalizationHelper } = require("resource://devtools/shared/l10n.js");
 
-loader.lazyImporter(this, "Downloads", "resource://gre/modules/Downloads.jsm");
-loader.lazyImporter(this, "OS", "resource://gre/modules/osfile.jsm");
-loader.lazyImporter(this, "FileUtils", "resource://gre/modules/FileUtils.jsm");
+const lazy = {};
+
+ChromeUtils.defineESModuleGetters(lazy, {
+  Downloads: "resource://gre/modules/Downloads.sys.mjs",
+  FileUtils: "resource://gre/modules/FileUtils.sys.mjs",
+  PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
+});
 
 const STRINGS_URI = "devtools/shared/locales/screenshot.properties";
 const L10N = new LocalizationHelper(STRINGS_URI);
@@ -81,13 +83,8 @@ async function captureScreenshot(targetFront, args) {
 
   // Call the content-process on the server to retrieve informations that will be needed
   // by the parent process.
-  const {
-    rect,
-    windowDpr,
-    windowZoom,
-    messages,
-    error,
-  } = await screenshotContentFront.prepareCapture(args);
+  const { rect, windowDpr, windowZoom, messages, error } =
+    await screenshotContentFront.prepareCapture(args);
 
   if (error) {
     return { error, messages };
@@ -233,7 +230,7 @@ function saveScreenshot(window, args = {}, value) {
   }
 
   simulateCameraShutter(window);
-  return save(args, value);
+  return save(window, args, value);
 }
 
 /**
@@ -254,16 +251,20 @@ function simulateCameraShutter(window) {
 /**
  * Save the captured screenshot to one of several destinations.
  *
+ * @param object window
+ *        The DevTools Client window.
+ *
  * @param object args
  *        The original args with which the screenshot was called.
  *
  * @param object image
  *        The image object that was sent from the server.
  *
+ *
  * @return string[]
  *         Response messages from processing the screenshot.
  */
-async function save(args, image) {
+async function save(window, args, image) {
   const fileNeeded = args.filename || !args.clipboard || args.file;
   const results = [];
 
@@ -273,7 +274,7 @@ async function save(args, image) {
   }
 
   if (fileNeeded) {
-    const result = await saveToFile(image);
+    const result = await saveToFile(window, image);
     results.push(result);
   }
   return results;
@@ -323,9 +324,36 @@ function saveToClipboard(base64URI) {
   }
 }
 
+let _outputDirectory = null;
+
+/**
+ * Returns the default directory for screenshots.
+ * If a specific directory for screenshots is not defined,
+ * it falls back to the system downloads directory.
+ *
+ * @return {Promise<String>} Resolves the path as a string
+ */
+async function getOutputDirectory() {
+  if (_outputDirectory) {
+    return _outputDirectory;
+  }
+
+  try {
+    // This will throw if there is not a screenshot directory set for the platform
+    _outputDirectory = Services.dirsvc.get("Scrnshts", Ci.nsIFile).path;
+  } catch (e) {
+    _outputDirectory = await lazy.Downloads.getPreferredDownloadsDirectory();
+  }
+
+  return _outputDirectory;
+}
+
 /**
  * Save the screenshot data to disk, returning a promise which is resolved on
  * completion.
+ *
+ * @param object window
+ *        The DevTools Client window.
  *
  * @param object image
  *        The image object that was sent from the server.
@@ -333,7 +361,7 @@ function saveToClipboard(base64URI) {
  * @return string
  *         Response message from processing the screenshot.
  */
-async function saveToFile(image) {
+async function saveToFile(window, image) {
   let filename = image.filename;
 
   // Guard against missing image data.
@@ -346,24 +374,35 @@ async function saveToFile(image) {
     filename += ".png";
   }
 
-  const downloadsDir = await Downloads.getPreferredDownloadsDirectory();
-  const downloadsDirExists = await OS.File.exists(downloadsDir);
-  if (downloadsDirExists) {
+  const dir = await getOutputDirectory();
+  const dirExists = await IOUtils.exists(dir);
+  if (dirExists) {
     // If filename is absolute, it will override the downloads directory and
     // still be applied as expected.
-    filename = OS.Path.join(downloadsDir, filename);
+    filename = PathUtils.isAbsolute(filename)
+      ? filename
+      : PathUtils.joinRelative(dir, filename);
   }
 
-  const sourceURI = Services.io.newURI(image.data);
-  const targetFile = new FileUtils.File(filename);
+  const targetFile = new lazy.FileUtils.File(filename);
 
   // Create download and track its progress.
   try {
-    const download = await Downloads.createDownload({
-      source: sourceURI,
+    const download = await lazy.Downloads.createDownload({
+      source: {
+        url: image.data,
+        // Here we want to know if the window in which the screenshot is taken is private.
+        // We have a ChromeWindow when this is called from Browser Console (:screenshot) and
+        // RDM (screenshot button).
+        isPrivate: window.isChromeWindow
+          ? lazy.PrivateBrowsingUtils.isWindowPrivate(window)
+          : lazy.PrivateBrowsingUtils.isBrowserPrivate(
+              window.browsingContext.embedderElement
+            ),
+      },
       target: targetFile,
     });
-    const list = await Downloads.getList(Downloads.ALL);
+    const list = await lazy.Downloads.getList(lazy.Downloads.ALL);
     // add the download to the download list in the Downloads list in the Browser UI
     list.add(download);
     // Await successful completion of the save via the download manager

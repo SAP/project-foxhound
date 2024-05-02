@@ -4,14 +4,17 @@
 
 "use strict";
 
-var { Request } = require("devtools/shared/protocol/Request");
-const { Response } = require("devtools/shared/protocol/Response");
-var { types, registeredTypes } = require("devtools/shared/protocol/types");
+var { Request } = require("resource://devtools/shared/protocol/Request.js");
+const { Response } = require("resource://devtools/shared/protocol/Response.js");
+var {
+  types,
+  registeredTypes,
+} = require("resource://devtools/shared/protocol/types.js");
 
 /**
  * Generates an actor specification from an actor description.
  */
-var generateActorSpec = function(actorDesc) {
+var generateActorSpec = function (actorDesc) {
   const actorSpec = {
     typeName: actorDesc.typeName,
     methods: [],

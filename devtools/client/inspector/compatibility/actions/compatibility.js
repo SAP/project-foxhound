@@ -4,9 +4,9 @@
 
 "use strict";
 
-const nodeConstants = require("devtools/shared/dom-node-constants");
+const nodeConstants = require("resource://devtools/shared/dom-node-constants.js");
 
-const UserSettings = require("devtools/client/inspector/shared/compatibility-user-settings");
+const UserSettings = require("resource://devtools/shared/compatibility/compatibility-user-settings.js");
 
 const {
   COMPATIBILITY_APPEND_NODE_START,
@@ -47,7 +47,7 @@ const {
   COMPATIBILITY_UPDATE_TOP_LEVEL_TARGET_SUCCESS,
   COMPATIBILITY_UPDATE_TOP_LEVEL_TARGET_FAILURE,
   COMPATIBILITY_UPDATE_TOP_LEVEL_TARGET_COMPLETE,
-} = require("devtools/client/inspector/compatibility/actions/index");
+} = require("resource://devtools/client/inspector/compatibility/actions/index.js");
 
 function appendNode(node) {
   return async ({ dispatch, getState }) => {
@@ -78,8 +78,10 @@ function initUserSettings() {
     dispatch({ type: COMPATIBILITY_INIT_USER_SETTINGS_START });
 
     try {
-      const defaultTargetBrowsers = UserSettings.getDefaultTargetBrowsers();
-      const targetBrowsers = UserSettings.getTargetBrowsers();
+      const [defaultTargetBrowsers, targetBrowsers] = await Promise.all([
+        UserSettings.getBrowsersList(),
+        UserSettings.getTargetBrowsers(),
+      ]);
 
       dispatch({
         type: COMPATIBILITY_INIT_USER_SETTINGS_SUCCESS,
@@ -122,11 +124,8 @@ function updateNodes(selector) {
     dispatch({ type: COMPATIBILITY_UPDATE_NODES_START });
 
     try {
-      const {
-        selectedNode,
-        topLevelTarget,
-        targetBrowsers,
-      } = getState().compatibility;
+      const { selectedNode, topLevelTarget, targetBrowsers } =
+        getState().compatibility;
       const { walker } = await topLevelTarget.getFront("inspector");
       const nodeList = await walker.querySelectorAll(walker.rootNode, selector);
 

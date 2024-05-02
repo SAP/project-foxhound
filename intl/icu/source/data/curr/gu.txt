@@ -756,7 +756,6 @@ gu{
         ZMW{"ZK"}
     }
     Currencies%variant{
-        GEL{"₾"}
         TRY{"TL"}
     }
     CurrencyPlurals{
@@ -1091,6 +1090,10 @@ gu{
         LRD{
             one{"લિબેરિયન ડોલર"}
             other{"લિબેરિયન ડોલર"}
+        }
+        LSL{
+            one{"લેસોથો લોતી"}
+            other{"લેસોથો લોતી"}
         }
         LTL{
             one{"લિથુએનિયન લિતાસ"}

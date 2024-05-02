@@ -12,7 +12,6 @@
 
 #  include <windows.h>
 #  include <windows.media.h>
-#  include <winsdkver.h>
 #  include <wrl.h>
 
 #  include "nsMimeTypes.h"
@@ -20,7 +19,6 @@
 #  include "mozilla/Logging.h"
 #  include "mozilla/Maybe.h"
 #  include "mozilla/WidgetUtils.h"
-#  include "mozilla/WindowsVersion.h"
 #  include "mozilla/ScopeExit.h"
 #  include "mozilla/dom/MediaControlUtils.h"
 #  include "mozilla/media/MediaUtils.h"
@@ -124,11 +122,11 @@ WindowsSMTCProvider::~WindowsSMTCProvider() {
   // Dispose the window
   MOZ_ASSERT(mWindow);
   if (!DestroyWindow(mWindow)) {
-    LOG("Failed to destroy the hidden window. Error Code: %d", GetLastError());
+    LOG("Failed to destroy the hidden window. Error Code: %lu", GetLastError());
   }
   if (!UnregisterClass(L"Firefox-MediaKeys", nullptr)) {
     // Note that this is logged when the class wasn't even registered.
-    LOG("Failed to unregister the class. Error Code: %d", GetLastError());
+    LOG("Failed to unregister the class. Error Code: %lu", GetLastError());
   }
 }
 
@@ -137,11 +135,6 @@ bool WindowsSMTCProvider::IsOpened() const { return mInitialized; }
 bool WindowsSMTCProvider::Open() {
   LOG("Opening Source");
   MOZ_ASSERT(!mInitialized);
-
-  if (!IsWin8Point1OrLater()) {
-    LOG("Windows 8.1 or later is required for Media Key Support");
-    return false;
-  }
 
   if (!InitDisplayAndControls()) {
     LOG("Failed to initialize the SMTC and its display");
@@ -222,8 +215,7 @@ void WindowsSMTCProvider::SetPlaybackState(
 void WindowsSMTCProvider::SetMediaMetadata(
     const mozilla::dom::MediaMetadataBase& aMetadata) {
   MOZ_ASSERT(mInitialized);
-  SetMusicMetadata(aMetadata.mArtist.get(), aMetadata.mTitle.get(),
-                   aMetadata.mAlbum.get());
+  SetMusicMetadata(aMetadata.mArtist, aMetadata.mTitle);
   LoadThumbnail(aMetadata.mArtwork);
 }
 
@@ -395,13 +387,9 @@ bool WindowsSMTCProvider::InitDisplayAndControls() {
   return true;
 }
 
-bool WindowsSMTCProvider::SetMusicMetadata(const wchar_t* aArtist,
-                                           const wchar_t* aTitle,
-                                           const wchar_t* aAlbumArtist) {
+bool WindowsSMTCProvider::SetMusicMetadata(const nsString& aArtist,
+                                           const nsString& aTitle) {
   MOZ_ASSERT(mDisplay);
-  MOZ_ASSERT(aArtist);
-  MOZ_ASSERT(aTitle);
-  MOZ_ASSERT(aAlbumArtist);
   ComPtr<IMusicDisplayProperties> musicProps;
 
   HRESULT hr = mDisplay->put_Type(MediaPlaybackType::MediaPlaybackType_Music);
@@ -413,21 +401,15 @@ bool WindowsSMTCProvider::SetMusicMetadata(const wchar_t* aArtist,
     return false;
   }
 
-  hr = musicProps->put_Artist(HStringReference(aArtist).Get());
+  hr = musicProps->put_Artist(HStringReference(aArtist.get()).Get());
   if (FAILED(hr)) {
     LOG("Failed to set the music's artist");
     return false;
   }
 
-  hr = musicProps->put_Title(HStringReference(aTitle).Get());
+  hr = musicProps->put_Title(HStringReference(aTitle.get()).Get());
   if (FAILED(hr)) {
     LOG("Failed to set the music's title");
-    return false;
-  }
-
-  hr = musicProps->put_AlbumArtist(HStringReference(aAlbumArtist).Get());
-  if (FAILED(hr)) {
-    LOG("Failed to set the music's album");
     return false;
   }
 

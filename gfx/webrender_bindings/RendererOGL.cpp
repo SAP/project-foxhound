@@ -57,9 +57,9 @@ class RendererRecordedFrame final : public layers::RecordedFrame {
   wr::RecordedFrameHandle mHandle;
 };
 
-wr::WrExternalImage wr_renderer_lock_external_image(
-    void* aObj, wr::ExternalImageId aId, uint8_t aChannelIndex,
-    wr::ImageRendering aRendering) {
+wr::WrExternalImage wr_renderer_lock_external_image(void* aObj,
+                                                    wr::ExternalImageId aId,
+                                                    uint8_t aChannelIndex) {
   RendererOGL* renderer = reinterpret_cast<RendererOGL*>(aObj);
   RenderTextureHost* texture = renderer->GetRenderTexture(aId);
   MOZ_ASSERT(texture);
@@ -69,10 +69,9 @@ wr::WrExternalImage wr_renderer_lock_external_image(
     return InvalidToWrExternalImage();
   }
   if (auto* gl = renderer->gl()) {
-    return texture->Lock(aChannelIndex, gl, aRendering);
+    return texture->Lock(aChannelIndex, gl);
   } else if (auto* swgl = renderer->swgl()) {
-    return texture->LockSWGL(aChannelIndex, swgl, renderer->GetCompositor(),
-                             aRendering);
+    return texture->LockSWGL(aChannelIndex, swgl, renderer->GetCompositor());
   } else {
     gfxCriticalNoteOnce
         << "No GL or SWGL context available to lock ExternalImage for extId:"
@@ -105,7 +104,8 @@ RendererOGL::RendererOGL(RefPtr<RenderThread>&& aThread,
       mRenderer(aRenderer),
       mBridge(aBridge),
       mWindowId(aWindowId),
-      mDisableNativeCompositor(false) {
+      mDisableNativeCompositor(false),
+      mLastPipelineInfo(new WebRenderPipelineInfo) {
   MOZ_ASSERT(mThread);
   MOZ_ASSERT(mCompositor);
   MOZ_ASSERT(mRenderer);
@@ -130,10 +130,15 @@ wr::WrExternalImageHandler RendererOGL::GetExternalImageHandler() {
   };
 }
 
+void RendererOGL::SetFramePublishId(FramePublishId aPublishId) {
+  wr_renderer_set_target_frame_publish_id(mRenderer, aPublishId);
+}
+
 void RendererOGL::Update() {
   mCompositor->Update();
   if (mCompositor->MakeCurrent()) {
     wr_renderer_update(mRenderer);
+    FlushPipelineInfo();
   }
 }
 
@@ -182,8 +187,10 @@ RenderedFrameId RendererOGL::UpdateAndRender(
   }
 
   nsTArray<DeviceIntRect> dirtyRects;
-  if (!wr_renderer_render(mRenderer, size.width, size.height, bufferAge,
-                          aOutStats, &dirtyRects)) {
+  bool rendered = wr_renderer_render(mRenderer, size.width, size.height,
+                                     bufferAge, aOutStats, &dirtyRects);
+  FlushPipelineInfo();
+  if (!rendered) {
     mCompositor->CancelFrame();
     RenderThread::Get()->HandleWebRenderError(WebRenderError::RENDER);
     mCompositor->GetWidget()->PostRender(&widgetContext);
@@ -210,6 +217,11 @@ RenderedFrameId RendererOGL::UpdateAndRender(
       mScreenshotGrabber.MaybeGrabScreenshot(this, size.ToUnknownSize());
     }
   }
+
+  // Frame recording must happen before EndFrame, as we must ensure we read the
+  // contents of the back buffer before any calls to SwapBuffers which might
+  // invalidate it.
+  MaybeRecordFrame(mLastPipelineInfo);
 
   RenderedFrameId frameId = mCompositor->EndFrame(dirtyRects);
 
@@ -367,43 +379,28 @@ bool RendererOGL::DidPaintContent(const WebRenderPipelineInfo* aFrameEpochs) {
 
   return didPaintContent;
 }
-void RendererOGL::WriteCollectedFrames() {
-  if (!mCompositionRecorder) {
-    MOZ_DIAGNOSTIC_ASSERT(
-        false,
-        "Attempted to write frames from a window that was not recording.");
-    return;
-  }
 
-  mCompositionRecorder->WriteCollectedFrames();
-
-  wr_renderer_release_composition_recorder_structures(mRenderer);
-
-  mCompositor->MaybeRequestAllowFrameRecording(false);
-  mCompositionRecorder = nullptr;
-}
-
-Maybe<layers::CollectedFrames> RendererOGL::GetCollectedFrames() {
+Maybe<layers::FrameRecording> RendererOGL::EndRecording() {
   if (!mCompositionRecorder) {
     MOZ_DIAGNOSTIC_ASSERT(
         false, "Attempted to get frames from a window that was not recording.");
     return Nothing();
   }
 
-  layers::CollectedFrames frames = mCompositionRecorder->GetCollectedFrames();
+  auto maybeRecording = mCompositionRecorder->GetRecording();
 
   wr_renderer_release_composition_recorder_structures(mRenderer);
 
   mCompositor->MaybeRequestAllowFrameRecording(false);
   mCompositionRecorder = nullptr;
 
-  return Some(std::move(frames));
+  return maybeRecording;
 }
 
-RefPtr<WebRenderPipelineInfo> RendererOGL::FlushPipelineInfo() {
-  RefPtr<WebRenderPipelineInfo> info = new WebRenderPipelineInfo();
+void RendererOGL::FlushPipelineInfo() {
+  RefPtr<WebRenderPipelineInfo> info = new WebRenderPipelineInfo;
   wr_renderer_flush_pipeline_info(mRenderer, &info->Raw());
-  return info;
+  mLastPipelineInfo = info;
 }
 
 RenderTextureHost* RendererOGL::GetRenderTexture(
@@ -424,8 +421,8 @@ void RendererOGL::AccumulateMemoryReport(MemoryReport* aReport) {
   aReport->swap_chain += swapChainSize;
 }
 
-void RendererOGL::SetProfilerUI(const nsCString& aUI) {
-  wr_renderer_set_profiler_ui(GetRenderer(), (const uint8_t*)aUI.get(),
+void RendererOGL::SetProfilerUI(const nsACString& aUI) {
+  wr_renderer_set_profiler_ui(GetRenderer(), (const uint8_t*)aUI.BeginReading(),
                               aUI.Length());
 }
 

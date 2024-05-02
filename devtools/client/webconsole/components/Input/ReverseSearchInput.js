@@ -5,46 +5,49 @@
 "use strict";
 
 // React & Redux
-const { Component } = require("devtools/client/shared/vendor/react");
-const dom = require("devtools/client/shared/vendor/react-dom-factories");
-const { connect } = require("devtools/client/shared/vendor/react-redux");
+const {
+  Component,
+} = require("resource://devtools/client/shared/vendor/react.js");
+const dom = require("resource://devtools/client/shared/vendor/react-dom-factories.js");
+const {
+  connect,
+} = require("resource://devtools/client/shared/vendor/react-redux.js");
 
 const {
   getReverseSearchTotalResults,
   getReverseSearchResultPosition,
   getReverseSearchResult,
-} = require("devtools/client/webconsole/selectors/history");
+} = require("resource://devtools/client/webconsole/selectors/history.js");
 
 loader.lazyRequireGetter(
   this,
   "PropTypes",
-  "devtools/client/shared/vendor/react-prop-types"
+  "resource://devtools/client/shared/vendor/react-prop-types.js"
 );
 loader.lazyRequireGetter(
   this,
   "actions",
-  "devtools/client/webconsole/actions/index"
+  "resource://devtools/client/webconsole/actions/index.js"
 );
 loader.lazyRequireGetter(
   this,
   "l10n",
-  "devtools/client/webconsole/utils/messages",
+  "resource://devtools/client/webconsole/utils/messages.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "PluralForm",
-  "devtools/shared/plural-form",
+  "resource://devtools/shared/plural-form.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "KeyCodes",
-  "devtools/client/shared/keycodes",
+  "resource://devtools/client/shared/keycodes.js",
   true
 );
 
-const Services = require("Services");
 const isMacOS = Services.appinfo.OS === "Darwin";
 
 class ReverseSearchInput extends Component {
@@ -162,10 +165,8 @@ class ReverseSearchInput extends Component {
   }
 
   renderSearchInformation() {
-    const {
-      reverseSearchTotalResults,
-      reverseSearchResultPosition,
-    } = this.props;
+    const { reverseSearchTotalResults, reverseSearchResultPosition } =
+      this.props;
 
     if (!Number.isInteger(reverseSearchTotalResults)) {
       return null;

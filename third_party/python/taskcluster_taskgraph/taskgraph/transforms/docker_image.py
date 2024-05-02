@@ -8,19 +8,13 @@ import logging
 import os
 import re
 
+from voluptuous import Optional, Required
+
 import taskgraph
 from taskgraph.transforms.base import TransformSequence
-from taskgraph.util.docker import (
-    generate_context_hash,
-    create_context_tar,
-)
-from taskgraph.util.schema import (
-    Schema,
-)
-from voluptuous import (
-    Optional,
-    Required,
-)
+from taskgraph.util.docker import create_context_tar, generate_context_hash
+from taskgraph.util.schema import Schema
+
 from .task import task_description_schema
 
 logger = logging.getLogger(__name__)
@@ -30,9 +24,9 @@ CONTEXTS_DIR = "docker-contexts"
 DIGEST_RE = re.compile("^[0-9a-f]{64}$")
 
 IMAGE_BUILDER_IMAGE = (
-    "taskcluster/image_builder:4.0.0"
+    "mozillareleases/image_builder:5.0.0"
     "@sha256:"
-    "866c304445334703b68653e1390816012c9e6bdabfbd1906842b5b229e8ed044"
+    "e510a9a9b80385f71c112d61b2f2053da625aff2b6d430411ac42e424c58953f"
 )
 
 transforms = TransformSequence()
@@ -47,7 +41,7 @@ docker_image_schema = Schema(
         Optional("symbol"): str,
         # relative path (from config.path) to the file the docker image was defined
         # in.
-        Optional("job-from"): str,
+        Optional("task-from"): str,
         # Arguments to use for the Dockerfile.
         Optional("args"): {str: str},
         # Name of the docker image definition under taskcluster/docker, when
@@ -73,7 +67,7 @@ transforms.add_validate(docker_image_schema)
 @transforms.add
 def fill_template(config, tasks):
     available_packages = set()
-    for task in config.kind_dependencies_tasks:
+    for task in config.kind_dependencies_tasks.values():
         if task.kind != "packages":
             continue
         name = task.label.replace("packages-", "")
@@ -147,6 +141,7 @@ def fill_template(config, tasks):
                 "image_name": image_name,
                 "artifact_prefix": "public",
             },
+            "always-target": True,
             "expires-after": "28 days" if config.params.is_try() else "1 year",
             "scopes": [],
             "run-on-projects": [],

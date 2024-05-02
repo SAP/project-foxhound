@@ -3,25 +3,23 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-XPCOMUtils.defineLazyModuleGetters(this, {
-  Services: "resource://gre/modules/Services.jsm",
-  EveryWindow: "resource:///modules/EveryWindow.jsm",
-  PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.jsm",
-  Preferences: "resource://gre/modules/Preferences.jsm",
+const lazy = {};
+
+ChromeUtils.defineESModuleGetters(lazy, {
+  EveryWindow: "resource:///modules/EveryWindow.sys.mjs",
+  PanelMultiView: "resource:///modules/PanelMultiView.sys.mjs",
+  PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
+  RemoteL10n: "resource://activity-stream/lib/RemoteL10n.sys.mjs",
+
   SpecialMessageActions:
-    "resource://messaging-system/lib/SpecialMessageActions.jsm",
-  RemoteL10n: "resource://activity-stream/lib/RemoteL10n.jsm",
+    "resource://messaging-system/lib/SpecialMessageActions.sys.mjs",
 });
-ChromeUtils.defineModuleGetter(
-  this,
-  "PanelMultiView",
-  "resource:///modules/PanelMultiView.jsm"
-);
+
 XPCOMUtils.defineLazyServiceGetter(
-  this,
+  lazy,
   "TrackingDBService",
   "@mozilla.org/tracking-db-service;1",
   "nsITrackingDBService"
@@ -52,9 +50,8 @@ class _ToolbarPanelHub {
     this._hideAppmenuButton = this._hideAppmenuButton.bind(this);
     this._showToolbarButton = this._showToolbarButton.bind(this);
     this._hideToolbarButton = this._hideToolbarButton.bind(this);
-    this.insertProtectionPanelMessage = this.insertProtectionPanelMessage.bind(
-      this
-    );
+    this.insertProtectionPanelMessage =
+      this.insertProtectionPanelMessage.bind(this);
 
     this.state = {};
     this._initialized = false;
@@ -85,8 +82,8 @@ class _ToolbarPanelHub {
 
   uninit() {
     this._initialized = false;
-    EveryWindow.unregisterCallback(TOOLBAR_BUTTON_ID);
-    EveryWindow.unregisterCallback(APPMENU_BUTTON_ID);
+    lazy.EveryWindow.unregisterCallback(TOOLBAR_BUTTON_ID);
+    lazy.EveryWindow.unregisterCallback(APPMENU_BUTTON_ID);
   }
 
   get messages() {
@@ -101,7 +98,7 @@ class _ToolbarPanelHub {
     // Checkbox onclick handler gets called before the checkbox state gets toggled,
     // so we have to call it with the opposite value.
     let newValue = !event.target.checked;
-    Preferences.set(WHATSNEW_ENABLED_PREF, newValue);
+    Services.prefs.setBoolPref(WHATSNEW_ENABLED_PREF, newValue);
 
     this.sendUserEventTelemetry(
       event.target.ownerGlobal,
@@ -115,8 +112,8 @@ class _ToolbarPanelHub {
 
   maybeInsertFTL(win) {
     win.MozXULElement.insertFTLIfNeeded("browser/newtab/asrouter.ftl");
-    win.MozXULElement.insertFTLIfNeeded("browser/branding/brandings.ftl");
-    win.MozXULElement.insertFTLIfNeeded("browser/branding/sync-brand.ftl");
+    win.MozXULElement.insertFTLIfNeeded("toolkit/branding/brandings.ftl");
+    win.MozXULElement.insertFTLIfNeeded("toolkit/branding/accounts.ftl");
   }
 
   maybeLoadCustomElement(win) {
@@ -131,7 +128,7 @@ class _ToolbarPanelHub {
   // Turns on the Appmenu (hamburger menu) button for all open windows and future windows.
   async enableAppmenuButton() {
     if ((await this.messages).length) {
-      EveryWindow.registerCallback(
+      lazy.EveryWindow.registerCallback(
         APPMENU_BUTTON_ID,
         this._showAppmenuButton,
         this._hideAppmenuButton
@@ -142,13 +139,13 @@ class _ToolbarPanelHub {
   // Removes the button from the Appmenu.
   // Only used in tests.
   disableAppmenuButton() {
-    EveryWindow.unregisterCallback(APPMENU_BUTTON_ID);
+    lazy.EveryWindow.unregisterCallback(APPMENU_BUTTON_ID);
   }
 
   // Turns on the Toolbar button for all open windows and future windows.
   async enableToolbarButton() {
     if ((await this.messages).length) {
-      EveryWindow.registerCallback(
+      lazy.EveryWindow.registerCallback(
         TOOLBAR_BUTTON_ID,
         this._showToolbarButton,
         this._hideToolbarButton
@@ -164,7 +161,7 @@ class _ToolbarPanelHub {
     // When the panel is hidden we want to remove any toolbar buttons that
     // might have been added as an entry point to the panel
     const removeToolbarButton = () => {
-      EveryWindow.unregisterCallback(TOOLBAR_BUTTON_ID);
+      lazy.EveryWindow.unregisterCallback(TOOLBAR_BUTTON_ID);
     };
     if (!panelContainer) {
       return;
@@ -191,7 +188,7 @@ class _ToolbarPanelHub {
   // Render what's new messages into the panel.
   async renderMessages(win, doc, containerId, options = {}) {
     // Set the checked status of the footer checkbox
-    let value = Preferences.get(WHATSNEW_ENABLED_PREF);
+    let value = Services.prefs.getBoolPref(WHATSNEW_ENABLED_PREF);
     let checkbox = win.document.getElementById("panelMenu-toggleWhatsNew");
 
     checkbox.checked = value;
@@ -200,7 +197,7 @@ class _ToolbarPanelHub {
     const messages =
       (options.force && options.messages) ||
       (await this.messages).sort(this._sortWhatsNewMessages);
-    const container = PanelMultiView.getViewNode(doc, containerId);
+    const container = lazy.PanelMultiView.getViewNode(doc, containerId);
 
     if (messages) {
       // Targeting attribute state might have changed making new messages
@@ -239,7 +236,7 @@ class _ToolbarPanelHub {
 
   removeMessages(win, containerId) {
     const doc = win.document;
-    const messageNodes = PanelMultiView.getViewNode(
+    const messageNodes = lazy.PanelMultiView.getViewNode(
       doc,
       containerId
     ).querySelectorAll(".whatsNew-message");
@@ -257,10 +254,10 @@ class _ToolbarPanelHub {
       // Set platform specific path variables for SUMO articles
       url = Services.urlFormatter.formatURL(message.content.cta_url);
     } catch (e) {
-      Cu.reportError(e);
+      console.error(e);
       url = message.content.cta_url;
     }
-    SpecialMessageActions.handleAction(
+    lazy.SpecialMessageActions.handleAction(
       {
         type: message.content.cta_type,
         data: {
@@ -279,7 +276,7 @@ class _ToolbarPanelHub {
    */
   _attachCommandListener(win, element, message) {
     // Add event listener for `mouseup` not to overlap with the
-    // `mousedown` & `click` events dispatched from PanelMultiView.jsm
+    // `mousedown` & `click` events dispatched from PanelMultiView.sys.mjs
     // https://searchfox.org/mozilla-central/rev/7531325c8660cfa61bf71725f83501028178cbb9/browser/components/customizableui/PanelMultiView.jsm#1830-1837
     element.addEventListener("mouseup", () => {
       this._dispatchUserAction(win, message);
@@ -293,13 +290,13 @@ class _ToolbarPanelHub {
 
   _createMessageElements(win, doc, message, previousDate) {
     const { content } = message;
-    const messageEl = RemoteL10n.createElement(doc, "div");
+    const messageEl = lazy.RemoteL10n.createElement(doc, "div");
     messageEl.classList.add("whatsNew-message");
 
     // Only render date if it is different from the one rendered before.
     if (content.published_date !== previousDate) {
       messageEl.appendChild(
-        RemoteL10n.createElement(doc, "p", {
+        lazy.RemoteL10n.createElement(doc, "p", {
           classList: "whatsNew-message-date",
           content: new Date(content.published_date).toLocaleDateString(
             "default",
@@ -313,14 +310,14 @@ class _ToolbarPanelHub {
       );
     }
 
-    const wrapperEl = RemoteL10n.createElement(doc, "div");
+    const wrapperEl = lazy.RemoteL10n.createElement(doc, "div");
     wrapperEl.doCommand = () => this._dispatchUserAction(win, message);
     wrapperEl.classList.add("whatsNew-message-body");
     messageEl.appendChild(wrapperEl);
 
     if (content.icon_url) {
       wrapperEl.classList.add("has-icon");
-      const iconEl = RemoteL10n.createElement(doc, "img");
+      const iconEl = lazy.RemoteL10n.createElement(doc, "img");
       iconEl.src = content.icon_url;
       iconEl.classList.add("whatsNew-message-icon");
       if (content.icon_alt && content.icon_alt.string_id) {
@@ -334,7 +331,7 @@ class _ToolbarPanelHub {
     wrapperEl.appendChild(this._createMessageContent(win, doc, content));
 
     if (content.link_text) {
-      const anchorEl = RemoteL10n.createElement(doc, "a", {
+      const anchorEl = lazy.RemoteL10n.createElement(doc, "a", {
         classList: "text-link",
         content: content.link_text,
       });
@@ -355,7 +352,7 @@ class _ToolbarPanelHub {
     const wrapperEl = new win.DocumentFragment();
 
     wrapperEl.appendChild(
-      RemoteL10n.createElement(doc, "h2", {
+      lazy.RemoteL10n.createElement(doc, "h2", {
         classList: "whatsNew-message-title",
         content: content.title,
         attributes: this.state.contentArguments,
@@ -363,7 +360,7 @@ class _ToolbarPanelHub {
     );
 
     wrapperEl.appendChild(
-      RemoteL10n.createElement(doc, "p", {
+      lazy.RemoteL10n.createElement(doc, "p", {
         content: content.body,
         classList: "whatsNew-message-content",
         attributes: this.state.contentArguments,
@@ -376,28 +373,28 @@ class _ToolbarPanelHub {
   _createHeroElement(win, doc, message) {
     this.maybeLoadCustomElement(win);
 
-    const messageEl = RemoteL10n.createElement(doc, "div");
+    const messageEl = lazy.RemoteL10n.createElement(doc, "div");
     messageEl.setAttribute("id", "protections-popup-message");
     messageEl.classList.add("whatsNew-hero-message");
-    const wrapperEl = RemoteL10n.createElement(doc, "div");
+    const wrapperEl = lazy.RemoteL10n.createElement(doc, "div");
     wrapperEl.classList.add("whatsNew-message-body");
     messageEl.appendChild(wrapperEl);
 
     wrapperEl.appendChild(
-      RemoteL10n.createElement(doc, "h2", {
+      lazy.RemoteL10n.createElement(doc, "h2", {
         classList: "whatsNew-message-title",
         content: message.content.title,
       })
     );
     wrapperEl.appendChild(
-      RemoteL10n.createElement(doc, "p", {
+      lazy.RemoteL10n.createElement(doc, "p", {
         classList: "protections-popup-content",
         content: message.content.body,
       })
     );
 
     if (message.content.link_text) {
-      let linkEl = RemoteL10n.createElement(doc, "a", {
+      let linkEl = lazy.RemoteL10n.createElement(doc, "a", {
         classList: "text-link",
         content: message.content.link_text,
       });
@@ -416,7 +413,7 @@ class _ToolbarPanelHub {
     // Between now and 6 weeks ago
     const dateTo = new Date();
     const dateFrom = new Date(dateTo.getTime() - 42 * 24 * 60 * 60 * 1000);
-    const eventsByDate = await TrackingDBService.getEventsByDateRange(
+    const eventsByDate = await lazy.TrackingDBService.getEventsByDateRange(
       dateFrom,
       dateTo
     );
@@ -441,7 +438,7 @@ class _ToolbarPanelHub {
       // `earliestDate` will be either 6 weeks ago or when tracking recording
       // started. Whichever is more recent.
       earliestDate: Math.max(
-        new Date(await TrackingDBService.getEarliestRecordedDate()),
+        new Date(await lazy.TrackingDBService.getEarliestRecordedDate()),
         dateFrom
       ),
       ...totalEvents,
@@ -479,13 +476,13 @@ class _ToolbarPanelHub {
   }
 
   _showElement(document, id, string_id) {
-    const el = PanelMultiView.getViewNode(document, id);
+    const el = lazy.PanelMultiView.getViewNode(document, id);
     document.l10n.setAttributes(el, string_id);
     el.hidden = false;
   }
 
   _hideElement(document, id) {
-    const el = PanelMultiView.getViewNode(document, id);
+    const el = lazy.PanelMultiView.getViewNode(document, id);
     if (el) {
       el.hidden = true;
     }
@@ -502,7 +499,7 @@ class _ToolbarPanelHub {
     // Only send pings for non private browsing windows
     if (
       win &&
-      !PrivateBrowsingUtils.isBrowserPrivate(
+      !lazy.PrivateBrowsingUtils.isBrowserPrivate(
         win.ownerGlobal.gBrowser.selectedBrowser
       )
     ) {
@@ -582,10 +579,14 @@ class _ToolbarPanelHub {
   }
 
   /**
-   * @param {object} browser MessageChannel target argument as a response to a user action
+   * @param {object} [browser] MessageChannel target argument as a response to a
+   *   user action. No message is shown if undefined.
    * @param {object[]} messages Messages selected from devtools page
    */
   forceShowMessage(browser, messages) {
+    if (!browser) {
+      return;
+    }
     const win = browser.ownerGlobal;
     const doc = browser.ownerDocument;
     this.removeMessages(win, WHATS_NEW_PANEL_SELECTOR);
@@ -599,12 +600,10 @@ class _ToolbarPanelHub {
   }
 }
 
-this._ToolbarPanelHub = _ToolbarPanelHub;
-
 /**
  * ToolbarPanelHub - singleton instance of _ToolbarPanelHub that can initiate
  * message requests and render messages.
  */
-this.ToolbarPanelHub = new _ToolbarPanelHub();
+const ToolbarPanelHub = new _ToolbarPanelHub();
 
 const EXPORTED_SYMBOLS = ["ToolbarPanelHub", "_ToolbarPanelHub"];

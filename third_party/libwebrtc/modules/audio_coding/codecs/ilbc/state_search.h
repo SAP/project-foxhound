@@ -19,6 +19,9 @@
 #ifndef MODULES_AUDIO_CODING_CODECS_ILBC_MAIN_SOURCE_STATE_SEARCH_H_
 #define MODULES_AUDIO_CODING_CODECS_ILBC_MAIN_SOURCE_STATE_SEARCH_H_
 
+#include <stddef.h>
+#include <stdint.h>
+
 #include "modules/audio_coding/codecs/ilbc/defines.h"
 
 /*----------------------------------------------------------------*
@@ -33,6 +36,6 @@ void WebRtcIlbcfix_StateSearch(
     int16_t* residual,       /* (i) target residual vector */
     int16_t* syntDenum,      /* (i) lpc synthesis filter */
     int16_t* weightDenum     /* (i) weighting filter denuminator */
-    );
+);
 
 #endif

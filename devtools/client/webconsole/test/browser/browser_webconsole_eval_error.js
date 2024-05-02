@@ -10,7 +10,7 @@ const TEST_URI =
   "http://example.com/browser/devtools/client/webconsole/" +
   "test/browser/test-eval-error.html";
 
-add_task(async function() {
+add_task(async function () {
   const hud = await openNewTabAndConsole(TEST_URI);
 
   execute(hud, "throwErrorObject()");
@@ -48,7 +48,7 @@ add_task(async function() {
     `Uncaught Object { fav: "eggplant" }`
   );
   info("Check that object in errors can be expanded");
-  const rejectedObjectMessage = findMessage(hud, "eggplant", ".error");
+  const rejectedObjectMessage = findErrorMessage(hud, "eggplant");
   const oi = rejectedObjectMessage.querySelector(".tree");
   ok(true, "The object was rendered in an ObjectInspector");
 
@@ -78,7 +78,7 @@ add_task(async function() {
 
   execute(hud, `1 + @`);
   const messageNode = await waitFor(() =>
-    findMessage(hud, "illegal character U+0040")
+    findErrorMessage(hud, "illegal character U+0040")
   );
   is(
     messageNode.querySelector(".frames"),

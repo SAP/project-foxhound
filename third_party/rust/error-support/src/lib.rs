@@ -2,6 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+mod macros;
+
 #[cfg(feature = "backtrace")]
 /// Re-export of the `backtrace` crate for use in macros and
 /// to ensure the needed version is kept in sync in dependents.
@@ -21,6 +23,23 @@ pub mod backtrace {
         }
     }
 }
+
+mod redact;
+pub use redact::*;
+
+mod reporting;
+pub use reporting::{
+    report_breadcrumb, report_error_to_app, set_application_error_reporter,
+    unset_application_error_reporter, ApplicationErrorReporter,
+};
+
+pub use error_support_macros::handle_error;
+
+mod handling;
+pub use handling::{convert_log_report_error, ErrorHandling, ErrorReporting, GetErrorHandling};
+
+/// XXX - Most of this is now considered deprecated - only FxA uses it, and
+/// should be replaced with the facilities in the `handling` module.
 
 /// Define a wrapper around the the provided ErrorKind type.
 /// See also `define_error` which is more likely to be what you want.
@@ -139,3 +158,5 @@ macro_rules! define_error {
         }
     };
 }
+
+uniffi::include_scaffolding!("errorsupport");

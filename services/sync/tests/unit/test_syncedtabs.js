@@ -3,13 +3,11 @@
  */
 "use strict";
 
-const { Weave } = ChromeUtils.import("resource://services-sync/main.js");
-const { SyncedTabs } = ChromeUtils.import(
-  "resource://services-sync/SyncedTabs.jsm"
+const { Weave } = ChromeUtils.importESModule(
+  "resource://services-sync/main.sys.mjs"
 );
-
-const faviconService = Cc["@mozilla.org/browser/favicon-service;1"].getService(
-  Ci.nsIFaviconService
+const { SyncedTabs } = ChromeUtils.importESModule(
+  "resource://services-sync/SyncedTabs.sys.mjs"
 );
 
 Log.repository.getLogger("Sync.RemoteTabs").addAppender(new Log.DumpAppender());
@@ -46,7 +44,7 @@ MockTabsEngine.prototype = {
   enabled: true,
 
   getAllClients() {
-    return this.clients;
+    return Object.values(this.clients);
   },
 
   getOpenURLs() {
@@ -138,6 +136,7 @@ add_task(async function test_clientWithTabs() {
         {
           urlHistory: ["http://foo.com/"],
           icon: "http://foo.com/favicon",
+          lastUsed: 1655745700, // Mon, 20 Jun 2022 17:21:40 GMT
         },
       ],
     },
@@ -155,6 +154,7 @@ add_task(async function test_clientWithTabs() {
   equal(clients[0].tabs.length, 1);
   equal(clients[0].tabs[0].url, "http://foo.com/");
   equal(clients[0].tabs[0].icon, "http://foo.com/favicon");
+  equal(clients[0].tabs[0].lastUsed, 1655745700);
   // second client has no tabs.
   equal(clients[1].tabs.length, 0);
 });
@@ -168,6 +168,7 @@ add_task(async function test_staleClientWithTabs() {
           {
             urlHistory: ["http://foo.com/"],
             icon: "http://foo.com/favicon",
+            lastUsed: 1655745750,
           },
         ],
       },
@@ -185,6 +186,7 @@ add_task(async function test_staleClientWithTabs() {
           {
             urlHistory: ["https://bar.com/"],
             icon: "https://bar.com/favicon",
+            lastUsed: 1655745700,
           },
         ],
       },
@@ -194,6 +196,7 @@ add_task(async function test_staleClientWithTabs() {
           {
             urlHistory: ["https://example.edu/"],
             icon: "https://example.edu/favicon",
+            lastUsed: 1655745800,
           },
         ],
       },
@@ -214,9 +217,11 @@ add_task(async function test_staleClientWithTabs() {
   equal(clients[0].name, "My Desktop");
   equal(clients[0].tabs.length, 1);
   equal(clients[0].tabs[0].url, "http://foo.com/");
+  equal(clients[0].tabs[0].lastUsed, 1655745750);
   equal(clients[1].name, "My Laptop");
   equal(clients[1].tabs.length, 1);
   equal(clients[1].tabs[0].url, "https://example.edu/");
+  equal(clients[1].tabs[0].lastUsed, 1655745800);
   equal(clients[2].name, "My Phone");
   equal(clients[2].tabs.length, 0);
 });

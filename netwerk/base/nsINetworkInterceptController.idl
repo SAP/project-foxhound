@@ -144,6 +144,13 @@ interface nsIInterceptedChannel : nsISupports
     [noscript]
     void SetFetchHandlerFinish(in TimeStamp aTimeStamp);
 
+    /**
+     * This method indicates if the ServiceWorker Interception is reset to
+     * network or not.
+     */
+    [noscript]
+    bool GetIsReset();
+
 %{C++
     already_AddRefed<nsIConsoleReportCollector>
     GetConsoleReportCollector()
@@ -164,7 +171,8 @@ interface nsIInterceptedChannel : nsISupports
           case nsIContentPolicy::TYPE_INTERNAL_SCRIPT_PRELOAD:
           case nsIContentPolicy::TYPE_INTERNAL_MODULE:
           case nsIContentPolicy::TYPE_INTERNAL_MODULE_PRELOAD:
-          case nsIContentPolicy::TYPE_INTERNAL_WORKER_IMPORT_SCRIPTS: {
+          case nsIContentPolicy::TYPE_INTERNAL_WORKER_IMPORT_SCRIPTS:
+          case nsIContentPolicy::TYPE_INTERNAL_WORKER_STATIC_MODULE: {
             aKey = "subresource-script"_ns;
             break;
           }
@@ -187,6 +195,14 @@ interface nsIInterceptedChannel : nsISupports
           }
         }
       }
+    }
+
+    bool
+    IsReset()
+    {
+      bool result;
+      GetIsReset(&result);
+      return result;
     }
 %}
 

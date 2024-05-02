@@ -5,6 +5,7 @@
 
 const TEST_ROOT = getRootDirectory(gTestPath).replace(
   "chrome://mochitests/content",
+  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
   "http://example.com"
 );
 
@@ -19,16 +20,16 @@ add_task(async function test_beforeunload_stay_clears_urlbar() {
   });
 
   const TEST_URL = TEST_ROOT + "file_beforeunload_stop.html";
-  await BrowserTestUtils.withNewTab(TEST_URL, async function(browser) {
+  await BrowserTestUtils.withNewTab(TEST_URL, async function (browser) {
     gURLBar.focus();
+    // eslint-disable-next-line @microsoft/sdl/no-insecure-url
     const inputValue = "http://example.org/?q=typed";
-    gURLBar.inputField.value = inputValue.slice(0, -1);
+    gURLBar.value = inputValue.slice(0, -1);
     EventUtils.sendString(inputValue.slice(-1));
 
     if (CONTENT_PROMPT_SUBDIALOG) {
-      let promptOpenedPromise = BrowserTestUtils.promiseAlertDialogOpen(
-        "cancel"
-      );
+      let promptOpenedPromise =
+        BrowserTestUtils.promiseAlertDialogOpen("cancel");
       EventUtils.synthesizeKey("VK_RETURN");
       await promptOpenedPromise;
       await TestUtils.waitForTick();
@@ -67,7 +68,7 @@ add_task(async function test_beforeunload_stay_clears_urlbar() {
 
     // Now we need to get rid of the handler to avoid the prompt coming up when trying to close the
     // tab when we exit `withNewTab`. :-)
-    await SpecialPowers.spawn(browser, [], function() {
+    await SpecialPowers.spawn(browser, [], function () {
       content.window.onbeforeunload = null;
     });
   });

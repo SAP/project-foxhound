@@ -1,5 +1,5 @@
-import { FakePrefs, GlobalOverrider } from "test/unit/utils";
-import { actionTypes as at } from "common/Actions.jsm";
+import { FAKE_GLOBAL_PREFS, FakePrefs, GlobalOverrider } from "test/unit/utils";
+import { actionTypes as at } from "common/Actions.sys.mjs";
 import injector from "inject!lib/TopStoriesFeed.jsm";
 
 describe("Top Stories Feed", () => {
@@ -28,13 +28,16 @@ describe("Top Stories Feed", () => {
   };
 
   beforeEach(() => {
-    FakePrefs.prototype.prefs.apiKeyPref = "test-api-key";
-    FakePrefs.prototype.prefs.pocketCta = JSON.stringify({
-      cta_button: "",
-      cta_text: "",
-      cta_url: "",
-      use_cta: false,
-    });
+    FAKE_GLOBAL_PREFS.set("apiKeyPref", "test-api-key");
+    FAKE_GLOBAL_PREFS.set(
+      "pocketCta",
+      JSON.stringify({
+        cta_button: "",
+        cta_text: "",
+        cta_url: "",
+        use_cta: false,
+      })
+    );
 
     globals = new GlobalOverrider();
     globals.set("PlacesUtils", { history: {} });
@@ -366,7 +369,7 @@ describe("Top Stories Feed", () => {
       assert.notCalled(fetchStub);
     });
     it("should report error for invalid configuration", () => {
-      globals.sandbox.spy(global.Cu, "reportError");
+      globals.sandbox.spy(global.console, "error");
       sectionsManagerStub.sections.set("topstories", {
         options: {
           api_key_pref: "invalid",
@@ -376,12 +379,12 @@ describe("Top Stories Feed", () => {
       instance.init();
 
       assert.calledWith(
-        Cu.reportError,
+        console.error,
         "Problem initializing top stories feed: An API key was specified but none configured: https://invalid.com/?apiKey=$apiKey"
       );
     });
     it("should report error for missing api key", () => {
-      globals.sandbox.spy(global.Cu, "reportError");
+      globals.sandbox.spy(global.console, "error");
       sectionsManagerStub.sections.set("topstories", {
         options: {
           stories_endpoint: "https://somedomain.org/stories?key=$apiKey",
@@ -390,7 +393,7 @@ describe("Top Stories Feed", () => {
       });
       instance.init();
 
-      assert.called(Cu.reportError);
+      assert.called(console.error);
     });
     it("should load data from cache on init", async () => {
       instance.loadCachedData = sinon.spy();
@@ -598,7 +601,7 @@ describe("Top Stories Feed", () => {
         options: { stories_endpoint: "stories-endpoint" },
       });
       globals.set("fetch", fetchStub);
-      globals.sandbox.spy(global.Cu, "reportError");
+      globals.sandbox.spy(global.console, "error");
 
       fetchStub.resolves({ ok: false, status: 400 });
       await instance.onInit();
@@ -608,7 +611,7 @@ describe("Top Stories Feed", () => {
         credentials: "omit",
       });
       assert.equal(instance.storiesLastUpdated, 0);
-      assert.called(Cu.reportError);
+      assert.called(console.error);
     });
     it("should exclude blocked (dismissed) URLs", async () => {
       let fetchStub = globals.sandbox.stub();
@@ -737,7 +740,7 @@ describe("Top Stories Feed", () => {
     it("should report error for unexpected topics response", async () => {
       let fetchStub = globals.sandbox.stub();
       globals.set("fetch", fetchStub);
-      globals.sandbox.spy(global.Cu, "reportError");
+      globals.sandbox.spy(global.console, "error");
 
       instance.topics_endpoint = "topics-endpoint";
       fetchStub.resolves({ ok: false, status: 400 });
@@ -748,7 +751,7 @@ describe("Top Stories Feed", () => {
         credentials: "omit",
       });
       assert.notCalled(instance.store.dispatch);
-      assert.called(Cu.reportError);
+      assert.called(console.error);
     });
   });
   describe("#personalization", () => {

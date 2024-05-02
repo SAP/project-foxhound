@@ -4,12 +4,13 @@
 
 "use strict";
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { NetUtil } = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+const { NetUtil } = ChromeUtils.importESModule(
+  "resource://gre/modules/NetUtil.sys.mjs"
+);
 
 // Check that reading non existant inner jars results in the right error
 
-add_task(async function() {
+add_task(async function () {
   var file = do_get_file("data/test_bug597702.zip");
   var outerJarBase = "jar:" + Services.io.newFileURI(file).spec + "!/";
   var goodSpec =
@@ -23,7 +24,7 @@ add_task(async function() {
   ok(!!instr, "Should be able to open channel");
 });
 
-add_task(async function() {
+add_task(async function () {
   var file = do_get_file("data/test_bug597702.zip");
   var outerJarBase = "jar:" + Services.io.newFileURI(file).spec + "!/";
   var goodSpec =
@@ -37,7 +38,7 @@ add_task(async function() {
   ok(!!instr, "Should be able to open channel");
 });
 
-add_task(async function() {
+add_task(async function () {
   var file = do_get_file("data/test_bug597702.zip");
   var outerJarBase = "jar:" + Services.io.newFileURI(file).spec + "!/";
   var goodSpec = "jar:" + outerJarBase + "inner.jar!/hello?ignore#this!/part";

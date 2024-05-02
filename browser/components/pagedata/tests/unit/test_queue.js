@@ -1,9 +1,9 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  PageDataService: "resource:///modules/pagedata/PageDataService.jsm",
-  PromiseUtils: "resource://gre/modules/PromiseUtils.jsm",
+ChromeUtils.defineESModuleGetters(this, {
+  PageDataService: "resource:///modules/pagedata/PageDataService.sys.mjs",
+  PromiseUtils: "resource://gre/modules/PromiseUtils.sys.mjs",
 });
 
 // Test that urls are retrieved in the expected order.
@@ -87,10 +87,6 @@ add_task(async function test_queueOrder() {
   // Because our fetch implementation is essentially synchronous the results
   // will be in a known order. This isn't guaranteed by the API though.
   Assert.deepEqual(results, pageDataResults);
-
-  for (let pageData of pageDataResults) {
-    Assert.deepEqual(PageDataService.getCached(pageData.url), pageData);
-  }
 
   delete PageDataService.fetchPageData;
 });

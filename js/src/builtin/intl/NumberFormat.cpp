@@ -22,8 +22,6 @@
 #include "mozilla/UniquePtr.h"
 
 #include <algorithm>
-#include <cstring>
-#include <iterator>
 #include <stddef.h>
 #include <stdint.h>
 #include <string>
@@ -32,27 +30,22 @@
 
 #include "builtin/Array.h"
 #include "builtin/intl/CommonFunctions.h"
-#include "builtin/intl/DecimalNumber.h"
 #include "builtin/intl/FormatBuffer.h"
 #include "builtin/intl/LanguageTag.h"
 #include "builtin/intl/RelativeTimeFormat.h"
-#include "ds/Sort.h"
-#include "gc/FreeOp.h"
+#include "gc/GCContext.h"
 #include "js/CharacterEncoding.h"
 #include "js/PropertySpec.h"
 #include "js/RootingAPI.h"
 #include "js/TypeDecls.h"
-#include "js/Vector.h"
 #include "util/Text.h"
 #include "vm/BigIntType.h"
 #include "vm/GlobalObject.h"
 #include "vm/JSContext.h"
 #include "vm/PlainObject.h"  // js::PlainObject
-#include "vm/SelfHosting.h"
-#include "vm/Stack.h"
 #include "vm/StringType.h"
-#include "vm/WellKnownAtom.h"  // js_*_str
 
+#include "vm/GeckoProfiler-inl.h"
 #include "vm/JSObject-inl.h"
 #include "vm/NativeObject-inl.h"
 
@@ -72,7 +65,6 @@ const JSClassOps NumberFormatObject::classOps_ = {
     nullptr,                       // mayResolve
     NumberFormatObject::finalize,  // finalize
     nullptr,                       // call
-    nullptr,                       // hasInstance
     nullptr,                       // construct
     nullptr,                       // trace
 };
@@ -102,12 +94,10 @@ static const JSFunctionSpec numberFormat_methods[] = {
     JS_SELF_HOSTED_FN("resolvedOptions", "Intl_NumberFormat_resolvedOptions", 0,
                       0),
     JS_SELF_HOSTED_FN("formatToParts", "Intl_NumberFormat_formatToParts", 1, 0),
-#ifdef NIGHTLY_BUILD
     JS_SELF_HOSTED_FN("formatRange", "Intl_NumberFormat_formatRange", 2, 0),
     JS_SELF_HOSTED_FN("formatRangeToParts",
                       "Intl_NumberFormat_formatRangeToParts", 2, 0),
-#endif
-    JS_FN(js_toSource_str, numberFormat_toSource, 0, 0),
+    JS_FN("toSource", numberFormat_toSource, 0, 0),
     JS_FS_END,
 };
 
@@ -130,11 +120,13 @@ const ClassSpec NumberFormatObject::classSpec_ = {
     ClassSpec::DontDefineConstructor};
 
 /**
- * 11.2.1 Intl.NumberFormat([ locales [, options]])
+ * 15.1.1 Intl.NumberFormat ( [ locales [ , options ] ] )
  *
- * ES2017 Intl draft rev 94045d234762ad107a3d09bb6f7381a65f1a2f9b
+ * ES2024 Intl draft rev 74ca7099f103d143431b2ea422ae640c6f43e3e6
  */
 static bool NumberFormat(JSContext* cx, const CallArgs& args, bool construct) {
+  AutoJSConstructorProfilerEntry pseudoFrame(cx, "Intl.NumberFormat");
+
   // Step 1 (Handled by OrdinaryCreateFromConstructor fallback code).
 
   // Step 2 (Inlined 9.1.14, OrdinaryCreateFromConstructor).
@@ -156,9 +148,8 @@ static bool NumberFormat(JSContext* cx, const CallArgs& args, bool construct) {
   HandleValue options = args.get(1);
 
   // Step 3.
-  return intl::LegacyInitializeObject(
-      cx, numberFormat, cx->names().InitializeNumberFormat, thisValue, locales,
-      options, DateTimeFormatOptions::Standard, args.rval());
+  return intl::InitializeNumberFormatObject(cx, numberFormat, thisValue,
+                                            locales, options, args.rval());
 }
 
 static bool NumberFormat(JSContext* cx, unsigned argc, Value* vp) {
@@ -176,8 +167,8 @@ bool js::intl_NumberFormat(JSContext* cx, unsigned argc, Value* vp) {
   return NumberFormat(cx, args, true);
 }
 
-void js::NumberFormatObject::finalize(JSFreeOp* fop, JSObject* obj) {
-  MOZ_ASSERT(fop->onMainThread());
+void js::NumberFormatObject::finalize(JS::GCContext* gcx, JSObject* obj) {
+  MOZ_ASSERT(gcx->onMainThread());
 
   auto* numberFormat = &obj->as<NumberFormatObject>();
   mozilla::intl::NumberFormat* nf = numberFormat->getNumberFormatter();
@@ -185,14 +176,14 @@ void js::NumberFormatObject::finalize(JSFreeOp* fop, JSObject* obj) {
       numberFormat->getNumberRangeFormatter();
 
   if (nf) {
-    intl::RemoveICUCellMemory(fop, obj, NumberFormatObject::EstimatedMemoryUse);
+    intl::RemoveICUCellMemory(gcx, obj, NumberFormatObject::EstimatedMemoryUse);
     // This was allocated using `new` in mozilla::intl::NumberFormat, so we
     // delete here.
     delete nf;
   }
 
   if (nrf) {
-    intl::RemoveICUCellMemory(fop, obj, EstimatedRangeFormatterMemoryUse);
+    intl::RemoveICUCellMemory(gcx, obj, EstimatedRangeFormatterMemoryUse);
     // This was allocated using `new` in mozilla::intl::NumberRangeFormat, so we
     // delete here.
     delete nrf;
@@ -248,7 +239,7 @@ bool js::intl_availableMeasurementUnits(JSContext* cx, unsigned argc,
     return false;
   }
 
-  RootedAtom unitAtom(cx);
+  Rooted<JSAtom*> unitAtom(cx);
   for (auto unit : units.unwrap()) {
     if (unit.isErr()) {
       intl::ReportInternalError(cx);
@@ -290,7 +281,7 @@ static UniqueChars NumberFormatLocale(JSContext* cx, HandleObject internals) {
 
   mozilla::intl::Locale tag;
   {
-    RootedLinearString locale(cx, value.toString()->ensureLinear(cx));
+    Rooted<JSLinearString*> locale(cx, value.toString()->ensureLinear(cx));
     if (!locale) {
       return nullptr;
     }
@@ -565,22 +556,11 @@ static bool FillNumberFormatOptions(JSContext* cx, HandleObject internals,
     options.mGrouping = grouping;
   } else {
     MOZ_ASSERT(value.isBoolean());
-#ifdef NIGHTLY_BUILD
-    // The caller passes the string "always" instead of |true| when the
-    // NumberFormat V3 spec is being used.
     MOZ_ASSERT(value.toBoolean() == false);
-#endif
 
     using Grouping = mozilla::intl::NumberFormatOptions::Grouping;
 
-    Grouping grouping;
-    if (value.toBoolean()) {
-      grouping = Grouping::Auto;
-    } else {
-      grouping = Grouping::Never;
-    }
-
-    options.mGrouping = grouping;
+    options.mGrouping = Grouping::Never;
   }
 
   if (!GetProperty(cx, internals, internals, cx->names().notation, &value)) {
@@ -884,8 +864,8 @@ static bool FormattedNumberToParts(JSContext* cx, HandleString str,
   RootedObject singlePart(cx);
   RootedValue propVal(cx);
 
-  RootedArrayObject partsArray(cx,
-                               NewDenseFullyAllocatedArray(cx, parts.length()));
+  Rooted<ArrayObject*> partsArray(
+      cx, NewDenseFullyAllocatedArray(cx, parts.length()));
   if (!partsArray) {
     return false;
   }
@@ -977,65 +957,55 @@ static bool IsNonDecimalNumber(JSLinearString* str) {
                                : IsNonDecimalNumber(str->twoByteRange(nogc));
 }
 
-static bool ToIntlMathematicalValue(JSContext* cx, MutableHandleValue value,
-                                    double* numberApproximation = nullptr) {
+/**
+ * 15.5.16 ToIntlMathematicalValue ( value )
+ *
+ * ES2024 Intl draft rev 74ca7099f103d143431b2ea422ae640c6f43e3e6
+ */
+static bool ToIntlMathematicalValue(JSContext* cx, MutableHandleValue value) {
+  // Step 1.
   if (!ToPrimitive(cx, JSTYPE_NUMBER, value)) {
     return false;
   }
 
-  // Maximum exponent supported by ICU. Exponents larger than this value will
-  // cause ICU to report an error.
-  // See also "intl/icu/source/i18n/decContext.h".
-  constexpr int32_t maximumExponent = 999'999'999;
-
-  // We further limit the maximum positive exponent to avoid spending multiple
-  // seconds or even minutes in ICU when formatting large numbers.
-  constexpr int32_t maximumPositiveExponent = 9'999'999;
-
-  // Compute the maximum BigInt digit length from the maximum positive exponent.
-  //
-  // BigInts are stored with base |2 ** BigInt::DigitBits|, so we have:
-  //
-  //   |maximumPositiveExponent| * Log_DigitBase(10)
-  // = |maximumPositiveExponent| * Log2(10) / Log2(2 ** BigInt::DigitBits)
-  // = |maximumPositiveExponent| * Log2(10) / BigInt::DigitBits
-  // = 33219277.626945525... / BigInt::DigitBits
-  constexpr size_t maximumBigIntLength = 33219277.626945525 / BigInt::DigitBits;
-
-  if (!value.isString()) {
-    if (!ToNumeric(cx, value)) {
-      return false;
-    }
-
-    if (value.isBigInt() &&
-        value.toBigInt()->digitLength() > maximumBigIntLength) {
-      JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
-                                JSMSG_EXPONENT_TOO_LARGE);
-      return false;
-    }
-
+  // Step 2.
+  if (value.isBigInt()) {
     return true;
   }
 
+  // Step 4.
+  if (!value.isString()) {
+    // Step 4.a. (Steps 4.b-10 not applicable in our implementation.)
+    return ToNumber(cx, value);
+  }
+
+  // Step 3.
   JSLinearString* str = value.toString()->ensureLinear(cx);
   if (!str) {
     return false;
   }
 
-  // Call StringToNumber to validate the input can be parsed as a number.
-  double number;
-  if (!StringToNumber(cx, str, &number)) {
-    return false;
-  }
-  if (numberApproximation) {
-    *numberApproximation = number;
-  }
+  // Steps 5-6, 8, and 9.a.
+  double number = LinearStringToNumber(str);
 
-  bool exponentTooLarge = false;
-  if (mozilla::IsNaN(number)) {
+  // Step 7.
+  if (std::isnan(number)) {
     // Set to NaN if the input can't be parsed as a number.
     value.setNaN();
-  } else if (IsNonDecimalNumber(str)) {
+    return true;
+  }
+
+  // Step 9.
+  if (number == 0.0 || std::isinf(number)) {
+    // Step 9.a. (Reordered)
+
+    // Steps 9.b-e.
+    value.setDouble(number);
+    return true;
+  }
+
+  // Step 10.
+  if (IsNonDecimalNumber(str)) {
     // ICU doesn't accept non-decimal numbers, so we have to convert the input
     // into a base-10 string.
 
@@ -1055,41 +1025,9 @@ static bool ToIntlMathematicalValue(JSContext* cx, MutableHandleValue value,
       JS_TRY_VAR_OR_RETURN_FALSE(cx, bi, StringToBigInt(cx, rooted));
       MOZ_ASSERT(bi);
 
-      if (bi->digitLength() > maximumBigIntLength) {
-        exponentTooLarge = true;
-      } else {
-        value.setBigInt(bi);
-      }
-    }
-  } else {
-    JS::AutoCheckCannotGC nogc;
-    if (auto decimal = intl::DecimalNumber::from(str, nogc)) {
-      if (decimal->isZero()) {
-        // Normalize positive/negative zero.
-        MOZ_ASSERT(number == 0);
-
-        value.setDouble(number);
-      } else if (decimal->exponentTooLarge() ||
-                 std::abs(decimal->exponent()) >= maximumExponent ||
-                 decimal->exponent() > maximumPositiveExponent) {
-        exponentTooLarge = true;
-      }
-    } else {
-      // If we can't parse the string as a decimal, it must be ±Infinity.
-      MOZ_ASSERT(mozilla::IsInfinite(number));
-      MOZ_ASSERT(StringFindPattern(str, cx->names().Infinity, 0) >= 0);
-
-      value.setDouble(number);
+      value.setBigInt(bi);
     }
   }
-
-  if (exponentTooLarge) {
-    // Throw an error if the exponent is too large.
-    JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
-                              JSMSG_EXPONENT_TOO_LARGE);
-    return false;
-  }
-
   return true;
 }
 
@@ -1143,20 +1081,15 @@ bool js::intl_FormatNumber(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
   MOZ_ASSERT(args.length() == 3);
   MOZ_ASSERT(args[0].isObject());
-#ifndef NIGHTLY_BUILD
-  MOZ_ASSERT(args[1].isNumeric());
-#endif
   MOZ_ASSERT(args[2].isBoolean());
 
   Rooted<NumberFormatObject*> numberFormat(
       cx, &args[0].toObject().as<NumberFormatObject>());
 
   RootedValue value(cx, args[1]);
-#ifdef NIGHTLY_BUILD
   if (!ToIntlMathematicalValue(cx, &value)) {
     return false;
   }
-#endif
 
   mozilla::intl::NumberFormat* nf = GetOrCreateNumberFormat(cx, numberFormat);
   if (!nf) {
@@ -1257,207 +1190,6 @@ static JSLinearString* ToLinearString(JSContext* cx, HandleValue val) {
   return str ? str->ensureLinear(cx) : nullptr;
 };
 
-static bool ValidateNumberRange(JSContext* cx, MutableHandleValue start,
-                                double startApprox, MutableHandleValue end,
-                                double endApprox, bool formatToParts) {
-  static auto isSpecificDouble = [](const Value& val, auto fn) {
-    return val.isDouble() && fn(val.toDouble());
-  };
-
-  static auto isNaN = [](const Value& val) {
-    return isSpecificDouble(val, mozilla::IsNaN<double>);
-  };
-
-  static auto isPositiveInfinity = [](const Value& val) {
-    return isSpecificDouble(
-        val, [](double num) { return num > 0 && mozilla::IsInfinite(num); });
-  };
-
-  static auto isNegativeInfinity = [](const Value& val) {
-    return isSpecificDouble(
-        val, [](double num) { return num < 0 && mozilla::IsInfinite(num); });
-  };
-
-  static auto isNegativeZero = [](const Value& val) {
-    return isSpecificDouble(val, mozilla::IsNegativeZero<double>);
-  };
-
-  static auto isMathematicalValue = [](const Value& val) {
-    // |ToIntlMathematicalValue()| normalizes non-finite values and negative
-    // zero to Double values, so any string is guaranteed to be a mathematical
-    // value at this point.
-    if (!val.isDouble()) {
-      return true;
-    }
-    double num = val.toDouble();
-    return mozilla::IsFinite(num) && !mozilla::IsNegativeZero(num);
-  };
-
-  static auto isPositiveOrZero = [](const Value& val, double approx) {
-    MOZ_ASSERT(isMathematicalValue(val));
-
-    if (val.isNumber()) {
-      return val.toNumber() >= 0;
-    }
-    if (val.isBigInt()) {
-      return !val.toBigInt()->isNegative();
-    }
-    return approx >= 0;
-  };
-
-  auto throwRangeError = [&]() {
-    JS_ReportErrorNumberASCII(
-        cx, GetErrorMessage, nullptr, JSMSG_START_AFTER_END_NUMBER,
-        "NumberFormat", formatToParts ? "formatRangeToParts" : "formatRange");
-    return false;
-  };
-
-  // PartitionNumberRangePattern, step 1.
-  if (isNaN(start)) {
-    JS_ReportErrorNumberASCII(
-        cx, GetErrorMessage, nullptr, JSMSG_NAN_NUMBER_RANGE, "start",
-        formatToParts ? "formatRangeToParts" : "formatRange");
-    return false;
-  }
-  if (isNaN(end)) {
-    JS_ReportErrorNumberASCII(
-        cx, GetErrorMessage, nullptr, JSMSG_NAN_NUMBER_RANGE, "end",
-        formatToParts ? "formatRangeToParts" : "formatRange");
-    return false;
-  }
-
-  // Make sure |start| and |end| can be correctly classified.
-  MOZ_ASSERT(isMathematicalValue(start) || isNegativeZero(start) ||
-             isNegativeInfinity(start) || isPositiveInfinity(start));
-  MOZ_ASSERT(isMathematicalValue(end) || isNegativeZero(end) ||
-             isNegativeInfinity(end) || isPositiveInfinity(end));
-
-  // PartitionNumberRangePattern, step 2.
-  if (isMathematicalValue(start)) {
-    // PartitionNumberRangePattern, step 2.a.
-    if (isMathematicalValue(end)) {
-      if (!start.isString() && !end.isString()) {
-        MOZ_ASSERT(start.isNumeric() && end.isNumeric());
-
-        bool isLessThan;
-        if (!LessThan(cx, end, start, &isLessThan)) {
-          return false;
-        }
-        if (isLessThan) {
-          return throwRangeError();
-        }
-      } else {
-        // |startApprox| and |endApprox| are only initially computed for string
-        // numbers.
-        if (start.isNumber()) {
-          startApprox = start.toNumber();
-        } else if (start.isBigInt()) {
-          startApprox = BigInt::numberValue(start.toBigInt());
-        }
-        if (end.isNumber()) {
-          endApprox = end.toNumber();
-        } else if (end.isBigInt()) {
-          endApprox = BigInt::numberValue(end.toBigInt());
-        }
-
-        // If the approximation is smaller, the actual value is definitely
-        // smaller, too.
-        if (endApprox < startApprox) {
-          return throwRangeError();
-        }
-
-        // If both approximations are equal to each other, we have to perform
-        // more work.
-        if (endApprox == startApprox) {
-          RootedLinearString strStart(cx, ToLinearString(cx, start));
-          if (!strStart) {
-            return false;
-          }
-
-          RootedLinearString strEnd(cx, ToLinearString(cx, end));
-          if (!strEnd) {
-            return false;
-          }
-
-          bool endLessThanStart;
-          {
-            JS::AutoCheckCannotGC nogc;
-
-            auto decStart = intl::DecimalNumber::from(strStart, nogc);
-            MOZ_ASSERT(decStart);
-
-            auto decEnd = intl::DecimalNumber::from(strEnd, nogc);
-            MOZ_ASSERT(decEnd);
-
-            endLessThanStart = decEnd->compareTo(*decStart) < 0;
-          }
-          if (endLessThanStart) {
-            return throwRangeError();
-          }
-
-          // If either value is a string, we end up passing both values as
-          // strings to the formatter. So let's save the string representation
-          // here, because then we don't have to recompute them later on.
-          start.setString(strStart);
-          end.setString(strEnd);
-        }
-      }
-    }
-
-    // PartitionNumberRangePattern, step 2.b.
-    else if (isNegativeInfinity(end)) {
-      return throwRangeError();
-    }
-
-    // PartitionNumberRangePattern, step 2.c.
-    else if (isNegativeZero(end)) {
-      if (isPositiveOrZero(start, startApprox)) {
-        return throwRangeError();
-      }
-    }
-
-    // No range restrictions when the end is positive infinity.
-    else {
-      MOZ_ASSERT(isPositiveInfinity(end));
-    }
-  }
-
-  // PartitionNumberRangePattern, step 3.
-  else if (isPositiveInfinity(start)) {
-    // PartitionNumberRangePattern, steps 3.a-c.
-    if (!isPositiveInfinity(end)) {
-      return throwRangeError();
-    }
-  }
-
-  // PartitionNumberRangePattern, step 4.
-  else if (isNegativeZero(start)) {
-    // PartitionNumberRangePattern, step 4.a.
-    if (isMathematicalValue(end)) {
-      if (!isPositiveOrZero(end, endApprox)) {
-        return throwRangeError();
-      }
-    }
-
-    // PartitionNumberRangePattern, step 4.b.
-    else if (isNegativeInfinity(end)) {
-      return throwRangeError();
-    }
-
-    // No range restrictions when the end is negative zero or positive infinity.
-    else {
-      MOZ_ASSERT(isNegativeZero(end) || isPositiveInfinity(end));
-    }
-  }
-
-  // No range restrictions when the start is negative infinity.
-  else {
-    MOZ_ASSERT(isNegativeInfinity(start));
-  }
-
-  return true;
-}
-
 bool js::intl_FormatNumberRange(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
   MOZ_ASSERT(args.length() == 4);
@@ -1471,19 +1203,26 @@ bool js::intl_FormatNumberRange(JSContext* cx, unsigned argc, Value* vp) {
   bool formatToParts = args[3].toBoolean();
 
   RootedValue start(cx, args[1]);
-  double startApprox = mozilla::UnspecifiedNaN<double>();
-  if (!ToIntlMathematicalValue(cx, &start, &startApprox)) {
+  if (!ToIntlMathematicalValue(cx, &start)) {
     return false;
   }
 
   RootedValue end(cx, args[2]);
-  double endApprox = mozilla::UnspecifiedNaN<double>();
-  if (!ToIntlMathematicalValue(cx, &end, &endApprox)) {
+  if (!ToIntlMathematicalValue(cx, &end)) {
     return false;
   }
 
-  if (!ValidateNumberRange(cx, &start, startApprox, &end, endApprox,
-                           formatToParts)) {
+  // PartitionNumberRangePattern, step 1.
+  if (start.isDouble() && std::isnan(start.toDouble())) {
+    JS_ReportErrorNumberASCII(
+        cx, GetErrorMessage, nullptr, JSMSG_NAN_NUMBER_RANGE, "start",
+        "NumberFormat", formatToParts ? "formatRangeToParts" : "formatRange");
+    return false;
+  }
+  if (end.isDouble() && std::isnan(end.toDouble())) {
+    JS_ReportErrorNumberASCII(
+        cx, GetErrorMessage, nullptr, JSMSG_NAN_NUMBER_RANGE, "end",
+        "NumberFormat", formatToParts ? "formatRangeToParts" : "formatRange");
     return false;
   }
 
@@ -1526,12 +1265,12 @@ bool js::intl_FormatNumberRange(JSContext* cx, unsigned argc, Value* vp) {
       result = nf->format(numStart, numEnd);
     }
   } else {
-    RootedLinearString strStart(cx, ToLinearString(cx, start));
+    Rooted<JSLinearString*> strStart(cx, ToLinearString(cx, start));
     if (!strStart) {
       return false;
     }
 
-    RootedLinearString strEnd(cx, ToLinearString(cx, end));
+    Rooted<JSLinearString*> strEnd(cx, ToLinearString(cx, end));
     if (!strEnd) {
       return false;
     }

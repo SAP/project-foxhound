@@ -9,6 +9,8 @@
 #define _MacUtils_H_
 
 #include "nsStringFwd.h"
+#include "mozAccessible.h"
+#include "MOXAccessibleBase.h"
 
 @class NSString;
 @class mozAccessible;
@@ -18,11 +20,19 @@ namespace a11y {
 namespace utils {
 
 // convert an array of Gecko accessibles to an NSArray of native accessibles
-NSArray<mozAccessible*>* ConvertToNSArray(nsTArray<LocalAccessible*>& aArray);
+template <typename AccArray>
+NSArray<mozAccessible*>* ConvertToNSArray(AccArray& aArray) {
+  NSMutableArray* nativeArray = [[[NSMutableArray alloc] init] autorelease];
 
-// convert an array of Gecko proxy accessibles to an NSArray of native
-// accessibles
-NSArray<mozAccessible*>* ConvertToNSArray(nsTArray<RemoteAccessible*>& aArray);
+  // iterate through the list, and get each native accessible.
+  for (Accessible* curAccessible : aArray) {
+    mozAccessible* curNative = GetNativeFromGeckoAccessible(curAccessible);
+    if (curNative)
+      [nativeArray addObject:GetObjectOrRepresentedView(curNative)];
+  }
+
+  return nativeArray;
+}
 
 /**
  * Get a localized string from the string bundle.
@@ -36,8 +46,17 @@ NSString* LocalizedString(const nsString& aString);
  * nil if no attribute is found.
  */
 NSString* GetAccAttr(mozAccessible* aNativeAccessible, nsAtom* aAttrName);
-}
-}
-}
+
+/**
+ * Return true if the passed raw pointer is a live document accessible. Uses
+ * the provided root doc accessible to check for current documents.
+ */
+bool DocumentExists(Accessible* aDoc, uintptr_t aDocPtr);
+
+NSDictionary* StringAttributesFromAccAttributes(AccAttributes* aAttributes,
+                                                Accessible* aContainer);
+}  // namespace utils
+}  // namespace a11y
+}  // namespace mozilla
 
 #endif

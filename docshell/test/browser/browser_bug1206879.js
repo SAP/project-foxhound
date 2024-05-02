@@ -1,7 +1,8 @@
-add_task(async function() {
+add_task(async function () {
   let url =
     getRootDirectory(gTestPath).replace(
       "chrome://mochitests/content/",
+      // eslint-disable-next-line @microsoft/sdl/no-insecure-url
       "http://example.com/"
     ) + "file_bug1206879.html";
   let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, url, true);
@@ -9,7 +10,7 @@ add_task(async function() {
   let numLocationChanges = await SpecialPowers.spawn(
     tab.linkedBrowser,
     [],
-    async function() {
+    async function () {
       let webprogress = content.docShell.QueryInterface(Ci.nsIWebProgress);
       let locationChangeCount = 0;
       let listener = {

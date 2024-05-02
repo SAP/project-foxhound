@@ -4,26 +4,35 @@
 
 "use strict";
 
-const Menu = require("devtools/client/framework/menu");
-const MenuItem = require("devtools/client/framework/menu-item");
+const Menu = require("resource://devtools/client/framework/menu.js");
+const MenuItem = require("resource://devtools/client/framework/menu-item.js");
 
-const { MESSAGE_SOURCE } = require("devtools/client/webconsole/constants");
+const {
+  MESSAGE_SOURCE,
+} = require("resource://devtools/client/webconsole/constants.js");
 
-const clipboardHelper = require("devtools/shared/platform/clipboard");
-const { l10n } = require("devtools/client/webconsole/utils/messages");
-const actions = require("devtools/client/webconsole/actions/index");
+const clipboardHelper = require("resource://devtools/shared/platform/clipboard.js");
+const {
+  l10n,
+} = require("resource://devtools/client/webconsole/utils/messages.js");
+const actions = require("resource://devtools/client/webconsole/actions/index.js");
 
-loader.lazyRequireGetter(this, "saveAs", "devtools/shared/DevToolsUtils", true);
+loader.lazyRequireGetter(
+  this,
+  "saveAs",
+  "resource://devtools/shared/DevToolsUtils.js",
+  true
+);
 loader.lazyRequireGetter(
   this,
   "openContentLink",
-  "devtools/client/shared/link",
+  "resource://devtools/client/shared/link.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "getElementText",
-  "devtools/client/webconsole/utils/clipboard",
+  "resource://devtools/client/webconsole/utils/clipboard.js",
   true
 );
 
@@ -209,63 +218,42 @@ function createContextMenu(event, message, webConsoleWrapper) {
     })
   );
 
-  // Select all.
+  // Export to clipboard
   menu.append(
     new MenuItem({
-      id: "console-menu-select",
-      label: l10n.getStr("webconsole.menu.selectAll.label"),
-      accesskey: l10n.getStr("webconsole.menu.selectAll.accesskey"),
-      disabled: false,
-      click: () => {
-        const webconsoleOutput = parentNode.querySelector(".webconsole-output");
-        selection.selectAllChildren(webconsoleOutput);
-      },
-    })
-  );
-
-  const exportSubmenu = new Menu({
-    id: "export-submenu",
-  });
-
-  // Export to clipboard
-  exportSubmenu.append(
-    new MenuItem({
       id: "console-menu-export-clipboard",
-      label: l10n.getStr("webconsole.menu.exportSubmenu.exportCliboard.label"),
+      label: l10n.getStr("webconsole.menu.copyAllMessages.label"),
+      accesskey: l10n.getStr("webconsole.menu.copyAllMessages.accesskey"),
       disabled: false,
-      click: () => {
-        const webconsoleOutput = parentNode.querySelector(".webconsole-output");
-        clipboardHelper.copyString(getElementText(webconsoleOutput));
+      async click() {
+        const outputText = await getUnvirtualizedConsoleOutputText(
+          webConsoleWrapper
+        );
+        clipboardHelper.copyString(outputText);
       },
     })
   );
 
   // Export to file
-  exportSubmenu.append(
+  menu.append(
     new MenuItem({
       id: "console-menu-export-file",
-      label: l10n.getStr("webconsole.menu.exportSubmenu.exportFile.label"),
+      label: l10n.getStr("webconsole.menu.saveAllMessagesFile.label"),
+      accesskey: l10n.getStr("webconsole.menu.saveAllMessagesFile.accesskey"),
       disabled: false,
       // Note: not async, but returns a promise for the actual save.
-      click: () => {
+      click: async () => {
         const date = new Date();
         const suggestedName =
           `console-export-${date.getFullYear()}-` +
           `${date.getMonth() + 1}-${date.getDate()}_${date.getHours()}-` +
           `${date.getMinutes()}-${date.getSeconds()}.txt`;
-        const webconsoleOutput = parentNode.querySelector(".webconsole-output");
-        const data = new TextEncoder().encode(getElementText(webconsoleOutput));
-        return saveAs(window, data, suggestedName);
+        const outputText = await getUnvirtualizedConsoleOutputText(
+          webConsoleWrapper
+        );
+        const data = new TextEncoder().encode(outputText);
+        saveAs(window, data, suggestedName);
       },
-    })
-  );
-
-  menu.append(
-    new MenuItem({
-      id: "console-menu-export",
-      label: l10n.getStr("webconsole.menu.exportSubmenu.label"),
-      disabled: false,
-      submenu: exportSubmenu,
     })
   );
 
@@ -315,3 +303,66 @@ function createContextMenu(event, message, webConsoleWrapper) {
 }
 
 exports.createContextMenu = createContextMenu;
+
+/**
+ * Returns the whole text content of the console output.
+ * We're creating a new ConsoleOutput using the current store, turning off virtualization
+ * so we can have access to all the messages.
+ *
+ * @param {WebConsoleWrapper} webConsoleWrapper
+ * @returns Promise<String>
+ */
+async function getUnvirtualizedConsoleOutputText(webConsoleWrapper) {
+  return new Promise(resolve => {
+    const ReactDOM = require("resource://devtools/client/shared/vendor/react-dom.js");
+    const {
+      createElement,
+      createFactory,
+    } = require("resource://devtools/client/shared/vendor/react.js");
+    const ConsoleOutput = createFactory(
+      require("resource://devtools/client/webconsole/components/Output/ConsoleOutput.js")
+    );
+    const {
+      Provider,
+      createProvider,
+    } = require("resource://devtools/client/shared/vendor/react-redux.js");
+
+    const { parentNode, toolbox } = webConsoleWrapper;
+    const doc = parentNode.ownerDocument;
+
+    // Create an element that won't impact the layout of the console
+    const singleUseElement = doc.createElement("section");
+    singleUseElement.classList.add("clipboard-only");
+    doc.body.append(singleUseElement);
+
+    const consoleOutput = ConsoleOutput({
+      serviceContainer: {
+        ...webConsoleWrapper.getServiceContainer(),
+        preventStacktraceInitialRenderDelay: true,
+      },
+      disableVirtualization: true,
+    });
+
+    ReactDOM.render(
+      createElement(
+        Provider,
+        {
+          store: webConsoleWrapper.getStore(),
+        },
+        toolbox
+          ? createElement(
+              createProvider(toolbox.commands.targetCommand.storeId),
+              { store: toolbox.commands.targetCommand.store },
+              consoleOutput
+            )
+          : consoleOutput
+      ),
+      singleUseElement,
+      () => {
+        resolve(getElementText(singleUseElement));
+        singleUseElement.remove();
+        ReactDOM.unmountComponentAtNode(singleUseElement);
+      }
+    );
+  });
+}

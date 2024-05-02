@@ -4,10 +4,7 @@
 // @ts-check
 "use strict";
 
-const selectors = require("devtools/client/performance-new/store/selectors");
-const {
-  getEnvironmentVariable,
-} = require("devtools/client/performance-new/browser");
+const selectors = require("resource://devtools/client/performance-new/store/selectors.js");
 
 /**
  * @typedef {import("../@types/perf").Action} Action
@@ -31,13 +28,11 @@ const {
  * This is the result of the initial questions about the state of the profiler.
  *
  * @param {boolean} isActive
- * @param {boolean} isLockedForPrivateBrowsing
  * @return {Action}
  */
-exports.reportProfilerReady = (isActive, isLockedForPrivateBrowsing) => ({
+exports.reportProfilerReady = isActive => ({
   type: "REPORT_PROFILER_READY",
   isActive,
-  isLockedForPrivateBrowsing,
 });
 
 /**
@@ -54,22 +49,6 @@ exports.reportProfilerStarted = () => ({
  */
 exports.reportProfilerStopped = () => ({
   type: "REPORT_PROFILER_STOPPED",
-});
-
-/**
- * Dispatched when a private browsing session has started.
- * @return {Action}
- */
-exports.reportPrivateBrowsingStarted = () => ({
-  type: "REPORT_PRIVATE_BROWSING_STARTED",
-});
-
-/**
- * Dispatched when a private browsing session has ended.
- * @return {Action}
- */
-exports.reportPrivateBrowsingStopped = () => ({
-  type: "REPORT_PRIVATE_BROWSING_STOPPED",
 });
 
 /**
@@ -105,7 +84,7 @@ exports.changeFeatures = features => {
       // this hasn't been updated yet for the about:profiling workflow, because
       // jstracer is disabled for now.
       if (
-        !getEnvironmentVariable("JS_TRACE_LOGGING") &&
+        !Services.env.get("JS_TRACE_LOGGING") &&
         features.includes("jstracer")
       ) {
         promptEnvRestart = "JS_TRACE_LOGGING";

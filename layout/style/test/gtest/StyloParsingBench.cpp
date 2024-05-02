@@ -42,9 +42,9 @@ static void ServoParsingBench(const StyleUseCounters* aCounters) {
       new URLExtraData(uri.forget(), referrerInfo.forget(),
                        NullPrincipal::CreateWithoutOriginAttributes());
   for (int i = 0; i < PARSING_REPETITIONS; i++) {
-    RefPtr<RawServoStyleSheetContents> stylesheet =
+    RefPtr<StyleStylesheetContents> stylesheet =
         Servo_StyleSheet_FromUTF8Bytes(
-            nullptr, nullptr, nullptr, &cssStr, eAuthorSheetFeatures, data, 0,
+            nullptr, nullptr, nullptr, &cssStr, eAuthorSheetFeatures, data,
             eCompatibility_FullStandards, nullptr, aCounters,
             StyleAllowImportRules::Yes, StyleSanitizationKind::None, nullptr)
             .Consume();
@@ -54,7 +54,7 @@ static void ServoParsingBench(const StyleUseCounters* aCounters) {
 static constexpr auto STYLE_RULE = StyleCssRuleType::Style;
 
 static void ServoSetPropertyByIdBench(const nsACString& css) {
-  RefPtr<RawServoDeclarationBlock> block =
+  RefPtr<StyleLockedDeclarationBlock> block =
       Servo_DeclarationBlock_CreateEmpty().Consume();
   RefPtr<nsIURI> uri = NullPrincipal::CreateURI();
   nsCOMPtr<nsIReferrerInfo> referrerInfo = new ReferrerInfo(nullptr);
@@ -66,13 +66,13 @@ static void ServoSetPropertyByIdBench(const nsACString& css) {
   for (int i = 0; i < SETPROPERTY_REPETITIONS; i++) {
     Servo_DeclarationBlock_SetPropertyById(
         block, eCSSProperty_width, &css,
-        /* is_important = */ false, data, ParsingMode::Default,
+        /* is_important = */ false, data, StyleParsingMode::DEFAULT,
         eCompatibility_FullStandards, nullptr, STYLE_RULE, {});
   }
 }
 
 static void ServoGetPropertyValueById() {
-  RefPtr<RawServoDeclarationBlock> block =
+  RefPtr<StyleLockedDeclarationBlock> block =
       Servo_DeclarationBlock_CreateEmpty().Consume();
 
   RefPtr<nsIURI> uri = NullPrincipal::CreateURI();
@@ -84,7 +84,7 @@ static void ServoGetPropertyValueById() {
   const nsACString& css = css_;
   Servo_DeclarationBlock_SetPropertyById(
       block, eCSSProperty_width, &css,
-      /* is_important = */ false, data, ParsingMode::Default,
+      /* is_important = */ false, data, StyleParsingMode::DEFAULT,
       eCompatibility_FullStandards, nullptr, STYLE_RULE, {});
 
   for (int i = 0; i < GETPROPERTY_REPETITIONS; i++) {
@@ -99,7 +99,7 @@ MOZ_GTEST_BENCH(Stylo, Servo_StyleSheet_FromUTF8Bytes_Bench,
                 [] { ServoParsingBench(nullptr); });
 
 MOZ_GTEST_BENCH(Stylo, Servo_StyleSheet_FromUTF8Bytes_Bench_UseCounters, [] {
-  UniquePtr<StyleUseCounters> counters = Servo_UseCounters_Create().Consume();
+  UniquePtr<StyleUseCounters> counters(Servo_UseCounters_Create());
   ServoParsingBench(counters.get());
 });
 

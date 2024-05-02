@@ -17,10 +17,6 @@ const PREF_EM_STRICT_COMPATIBILITY = "extensions.strictCompatibility";
 const PREF_GETADDONS_BYIDS = "extensions.getAddons.get.url";
 const PREF_XPI_SIGNATURES_REQUIRED = "xpinstall.signatures.required";
 
-const PREF_DISABLE_SECURITY =
-  "security.turn_off_all_security_so_that_" +
-  "viruses_can_take_over_this_computer";
-
 // Maximum error in file modification times. Some file systems don't store
 // modification times exactly. As long as we are closer than this then it
 // still passes.
@@ -30,79 +26,43 @@ const MAX_TIME_DIFFERENCE = 3000;
 // times are modified (10 hours old).
 const MAKE_FILE_OLD_DIFFERENCE = 10 * 3600 * 1000;
 
-var { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+const { AddonManager, AddonManagerPrivate } = ChromeUtils.importESModule(
+  "resource://gre/modules/AddonManager.sys.mjs"
 );
-var { FileUtils } = ChromeUtils.import("resource://gre/modules/FileUtils.jsm");
-var { NetUtil } = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
-var { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-var { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+var { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
-var { AddonRepository } = ChromeUtils.import(
-  "resource://gre/modules/addons/AddonRepository.jsm"
+var { FileUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/FileUtils.sys.mjs"
 );
-var { OS, require } = ChromeUtils.import("resource://gre/modules/osfile.jsm");
+var { NetUtil } = ChromeUtils.importESModule(
+  "resource://gre/modules/NetUtil.sys.mjs"
+);
+var { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
+);
+var { AddonRepository } = ChromeUtils.importESModule(
+  "resource://gre/modules/addons/AddonRepository.sys.mjs"
+);
 
-var { AddonTestUtils, MockAsyncShutdown } = ChromeUtils.import(
-  "resource://testing-common/AddonTestUtils.jsm"
+var { AddonTestUtils, MockAsyncShutdown } = ChromeUtils.importESModule(
+  "resource://testing-common/AddonTestUtils.sys.mjs"
 );
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "Blocklist",
-  "resource://gre/modules/Blocklist.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "Extension",
-  "resource://gre/modules/Extension.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "ExtensionTestUtils",
-  "resource://testing-common/ExtensionXPCShellUtils.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "ExtensionTestCommon",
-  "resource://testing-common/ExtensionTestCommon.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "HttpServer",
-  "resource://testing-common/httpd.js"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "MockRegistrar",
-  "resource://testing-common/MockRegistrar.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "MockRegistry",
-  "resource://testing-common/MockRegistry.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "PromiseTestUtils",
-  "resource://testing-common/PromiseTestUtils.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "RemoteSettings",
-  "resource://services-settings/remote-settings.js"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "TestUtils",
-  "resource://testing-common/TestUtils.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "setTimeout",
-  "resource://gre/modules/Timer.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  Blocklist: "resource://gre/modules/Blocklist.sys.mjs",
+  Extension: "resource://gre/modules/Extension.sys.mjs",
+  ExtensionTestCommon: "resource://testing-common/ExtensionTestCommon.sys.mjs",
+  ExtensionTestUtils:
+    "resource://testing-common/ExtensionXPCShellUtils.sys.mjs",
+  HttpServer: "resource://testing-common/httpd.sys.mjs",
+  MockRegistrar: "resource://testing-common/MockRegistrar.sys.mjs",
+  MockRegistry: "resource://testing-common/MockRegistry.sys.mjs",
+  PromiseTestUtils: "resource://testing-common/PromiseTestUtils.sys.mjs",
+  RemoteSettings: "resource://services-settings/remote-settings.sys.mjs",
+  TestUtils: "resource://testing-common/TestUtils.sys.mjs",
+  setTimeout: "resource://gre/modules/Timer.sys.mjs",
+});
 
 XPCOMUtils.defineLazyServiceGetter(
   this,
@@ -143,7 +103,7 @@ ExtensionTestUtils.init(this);
 AddonTestUtils.init(this);
 AddonTestUtils.overrideCertDB();
 
-XPCOMUtils.defineLazyGetter(
+ChromeUtils.defineLazyGetter(
   this,
   "BOOTSTRAP_REASONS",
   () => AddonManagerPrivate.BOOTSTRAP_REASONS
@@ -208,15 +168,9 @@ Object.defineProperty(this, "TEST_UNPACKED", {
   },
 });
 
-// We need some internal bits of AddonManager
-var AMscope = ChromeUtils.import(
-  "resource://gre/modules/AddonManager.jsm",
-  null
-);
-var { AddonManager, AddonManagerInternal, AddonManagerPrivate } = AMscope;
-
 const promiseAddonByID = AddonManager.getAddonByID;
 const promiseAddonsByIDs = AddonManager.getAddonsByIDs;
+const promiseAddonsByTypes = AddonManager.getAddonsByTypes;
 
 var gPort = null;
 
@@ -608,7 +562,7 @@ function do_check_addons(aActualAddons, aExpectedAddons, aProperties) {
 function do_check_addon(aActualAddon, aExpectedAddon, aProperties) {
   Assert.notEqual(aActualAddon, null);
 
-  aProperties.forEach(function(aProperty) {
+  aProperties.forEach(function (aProperty) {
     let actualValue = aActualAddon[aProperty];
     let expectedValue = aExpectedAddon[aProperty];
 
@@ -772,14 +726,15 @@ function isExtensionInBootstrappedList(aDir, aId) {
  *          An optional string to override the default installation aId
  * @return  A file pointing to where the extension was installed
  */
-function promiseWriteWebManifestForExtension(
-  aData,
-  aDir,
-  aId = aData.applications.gecko.id
-) {
+function promiseWriteWebManifestForExtension(aData, aDir, aId) {
   let files = {
     "manifest.json": JSON.stringify(aData),
   };
+  if (!aId) {
+    aId =
+      aData?.browser_specific_settings?.gecko?.id ||
+      aData?.applications?.gecko?.id;
+  }
   return AddonTestUtils.promiseWriteFilesToExtension(aDir.path, aId, files);
 }
 
@@ -1192,7 +1147,6 @@ function copyBlocklistToProfile(blocklistFile) {
 }
 
 async function mockGfxBlocklistItemsFromDisk(path) {
-  Cu.importGlobalProperties(["fetch"]);
   let response = await fetch(Services.io.newFileURI(do_get_file(path)).spec);
   let json = await response.json();
   return mockGfxBlocklistItems(json);
@@ -1200,21 +1154,18 @@ async function mockGfxBlocklistItemsFromDisk(path) {
 
 async function mockGfxBlocklistItems(items) {
   const { generateUUID } = Services.uuid;
-  const { BlocklistPrivate } = ChromeUtils.import(
-    "resource://gre/modules/Blocklist.jsm"
+  const { BlocklistPrivate } = ChromeUtils.importESModule(
+    "resource://gre/modules/Blocklist.sys.mjs"
   );
-  const client = RemoteSettings(
-    Services.prefs.getCharPref("services.blocklist.gfx.collection"),
-    { bucketNamePref: "services.blocklist.bucket" }
-  );
+  const client = RemoteSettings("gfx", {
+    bucketName: "blocklists",
+  });
   const records = items.map(item => {
     if (item.id && item.last_modified) {
       return item;
     }
     return {
-      id: generateUUID()
-        .toString()
-        .replace(/[{}]/g, ""),
+      id: generateUUID().toString().replace(/[{}]/g, ""),
       last_modified: Date.now(),
       ...item,
     };
@@ -1231,38 +1182,9 @@ async function mockGfxBlocklistItems(items) {
  * Change the schema version of the JSON extensions database
  */
 async function changeXPIDBVersion(aNewVersion) {
-  let json = await loadJSON(gExtensionsJSON.path);
+  let json = await IOUtils.readJSON(gExtensionsJSON.path);
   json.schemaVersion = aNewVersion;
-  await saveJSON(json, gExtensionsJSON.path);
-}
-
-/**
- * Load a file into a string
- */
-async function loadFile(aFile) {
-  let buffer = await OS.File.read(aFile);
-  return new TextDecoder().decode(buffer);
-}
-
-/**
- * Raw load of a JSON file
- */
-async function loadJSON(aFile) {
-  let data = await loadFile(aFile);
-  info("Loaded JSON file " + aFile);
-  return JSON.parse(data);
-}
-
-/**
- * Raw save of a JSON blob to file
- */
-async function saveJSON(aData, aFile) {
-  info("Starting to save JSON file " + aFile);
-  await OS.File.writeAtomic(
-    aFile,
-    new TextEncoder().encode(JSON.stringify(aData, null, 2))
-  );
-  info("Done saving JSON file " + aFile);
+  await IOUtils.writeJSON(gExtensionsJSON.path, json);
 }
 
 async function setInitialState(addon, initialState) {
@@ -1289,7 +1211,9 @@ async function setupBuiltinExtension(extensionData, location = "ext-test") {
 async function installBuiltinExtension(extensionData, waitForStartup = true) {
   await setupBuiltinExtension(extensionData);
 
-  let id = extensionData.manifest.applications.gecko.id;
+  let id =
+    extensionData.manifest?.browser_specific_settings?.gecko?.id ||
+    extensionData.manifest?.applications?.gecko?.id;
   let wrapper = ExtensionTestUtils.expectExtension(id);
   await AddonManager.installBuiltinAddon("resource://ext-test/");
   if (waitForStartup) {

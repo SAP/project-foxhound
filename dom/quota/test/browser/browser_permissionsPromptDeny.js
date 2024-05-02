@@ -7,14 +7,14 @@ const testPageURL =
   "https://example.com/browser/dom/quota/test/browser/permissionsPrompt.html";
 
 addTest(async function testPermissionTemporaryDenied() {
-  registerPopupEventHandler("popupshowing", function() {
+  registerPopupEventHandler("popupshowing", function () {
     ok(true, "prompt showing");
   });
-  registerPopupEventHandler("popupshown", function() {
+  registerPopupEventHandler("popupshown", function () {
     ok(true, "prompt shown");
     triggerSecondaryCommand(this);
   });
-  registerPopupEventHandler("popuphidden", function() {
+  registerPopupEventHandler("popuphidden", function () {
     ok(true, "prompt hidden");
   });
 
@@ -22,7 +22,7 @@ addTest(async function testPermissionTemporaryDenied() {
   gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser);
 
   info("Loading test page: " + testPageURL);
-  BrowserTestUtils.loadURI(gBrowser.selectedBrowser, testPageURL);
+  BrowserTestUtils.startLoadingURIString(gBrowser.selectedBrowser, testPageURL);
   await waitForMessage(false, gBrowser);
 
   is(
@@ -49,14 +49,14 @@ addTest(async function testPermissionTemporaryDenied() {
 addTest(async function testPermissionDenied() {
   removePermission(testPageURL, "persistent-storage");
 
-  registerPopupEventHandler("popupshowing", function() {
+  registerPopupEventHandler("popupshowing", function () {
     ok(true, "prompt showing");
   });
-  registerPopupEventHandler("popupshown", function() {
+  registerPopupEventHandler("popupshown", function () {
     ok(true, "prompt shown");
     triggerSecondaryCommand(this, /* remember = */ true);
   });
-  registerPopupEventHandler("popuphidden", function() {
+  registerPopupEventHandler("popuphidden", function () {
     ok(true, "prompt hidden");
   });
 
@@ -64,7 +64,7 @@ addTest(async function testPermissionDenied() {
   gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser);
 
   info("Loading test page: " + testPageURL);
-  BrowserTestUtils.loadURI(gBrowser.selectedBrowser, testPageURL);
+  BrowserTestUtils.startLoadingURIString(gBrowser.selectedBrowser, testPageURL);
   await waitForMessage(false, gBrowser);
 
   is(
@@ -78,13 +78,13 @@ addTest(async function testPermissionDenied() {
 });
 
 addTest(async function testNoPermissionPrompt() {
-  registerPopupEventHandler("popupshowing", function() {
+  registerPopupEventHandler("popupshowing", function () {
     ok(false, "Shouldn't show a popup this time");
   });
-  registerPopupEventHandler("popupshown", function() {
+  registerPopupEventHandler("popupshown", function () {
     ok(false, "Shouldn't show a popup this time");
   });
-  registerPopupEventHandler("popuphidden", function() {
+  registerPopupEventHandler("popuphidden", function () {
     ok(false, "Shouldn't show a popup this time");
   });
 
@@ -92,7 +92,7 @@ addTest(async function testNoPermissionPrompt() {
   gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser);
 
   info("Loading test page: " + testPageURL);
-  BrowserTestUtils.loadURI(gBrowser.selectedBrowser, testPageURL);
+  BrowserTestUtils.startLoadingURIString(gBrowser.selectedBrowser, testPageURL);
   await waitForMessage(false, gBrowser);
 
   is(
@@ -106,15 +106,15 @@ addTest(async function testNoPermissionPrompt() {
 });
 
 addTest(async function testPermissionDeniedDismiss() {
-  registerPopupEventHandler("popupshowing", function() {
+  registerPopupEventHandler("popupshowing", function () {
     ok(true, "prompt showing");
   });
-  registerPopupEventHandler("popupshown", function() {
+  registerPopupEventHandler("popupshown", function () {
     ok(true, "prompt shown");
     // Dismiss permission prompt.
     dismissNotification(this);
   });
-  registerPopupEventHandler("popuphidden", function() {
+  registerPopupEventHandler("popuphidden", function () {
     ok(true, "prompt hidden");
   });
 
@@ -122,7 +122,7 @@ addTest(async function testPermissionDeniedDismiss() {
   gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser);
 
   info("Loading test page: " + testPageURL);
-  BrowserTestUtils.loadURI(gBrowser.selectedBrowser, testPageURL);
+  BrowserTestUtils.startLoadingURIString(gBrowser.selectedBrowser, testPageURL);
   await waitForMessage(false, gBrowser);
 
   // Pressing ESC results in a temporary block permission on the browser object.

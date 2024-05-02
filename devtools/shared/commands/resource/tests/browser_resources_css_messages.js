@@ -6,7 +6,7 @@
 // Test the ResourceCommand API around CSS_MESSAGE
 // Reproduces the CSS message assertions from devtools/shared/webconsole/test/chrome/test_page_errors.html
 
-const { MESSAGE_CATEGORY } = require("devtools/shared/constants");
+const { MESSAGE_CATEGORY } = require("resource://devtools/shared/constants.js");
 
 // Create a simple server so we have a nice sourceName in the resources packets.
 const httpServer = createTestHTTPServer();
@@ -15,14 +15,16 @@ httpServer.registerPathHandler(`/test_css_messages.html`, (req, res) => {
   res.write(`<meta charset=utf8>
     <style>
       html {
-        color: bloup;
+        body {
+          color: bloup;
+        }
       }
     </style>Test CSS Messages`);
 });
 
 const TEST_URI = `http://localhost:${httpServer.identity.primaryPort}/test_css_messages.html`;
 
-add_task(async function() {
+add_task(async function () {
   await testWatchingCssMessages();
   await testWatchingCachedCssMessages();
 });
@@ -81,7 +83,7 @@ async function testWatchingCachedCssMessages() {
   // By default, the CSS Parser does not emit warnings at all, for performance matter.
   // Since we actually want the Parser to emit those messages _before_ we start listening
   // for CSS messages, we need to set the cssErrorReportingEnabled flag on the docShell.
-  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], function() {
+  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], function () {
     content.docShell.cssErrorReportingEnabled = true;
   });
 
@@ -120,6 +122,11 @@ function setupOnAvailableFunction(
   receivedMessages,
   isAlreadyExistingResource
 ) {
+  // timeStamp are the result of a number in microsecond divided by 1000.
+  // so we can't expect a precise number of decimals, or even if there would
+  // be decimals at all.
+  const FRACTIONAL_NUMBER_REGEX = /^\d+(\.\d{1,3})?$/;
+
   // The expected messages are the CSS warnings:
   // - one for the rule in the style element
   // - two for the JS modified style we're doing in the test.
@@ -129,11 +136,11 @@ function setupOnAvailableFunction(
         errorMessage: /Expected color but found ‘bloup’/,
         sourceName: /test_css_messages/,
         category: MESSAGE_CATEGORY.CSS_PARSER,
-        timeStamp: /^\d+$/,
+        timeStamp: FRACTIONAL_NUMBER_REGEX,
         error: false,
         warning: true,
       },
-      cssSelectors: "html",
+      cssSelectors: ":is(html) body",
       isAlreadyExistingResource,
     },
     {
@@ -141,7 +148,7 @@ function setupOnAvailableFunction(
         errorMessage: /Error in parsing value for ‘width’/,
         sourceName: /test_css_messages/,
         category: MESSAGE_CATEGORY.CSS_PARSER,
-        timeStamp: /^\d+$/,
+        timeStamp: FRACTIONAL_NUMBER_REGEX,
         error: false,
         warning: true,
       },
@@ -152,7 +159,7 @@ function setupOnAvailableFunction(
         errorMessage: /Error in parsing value for ‘height’/,
         sourceName: /test_css_messages/,
         category: MESSAGE_CATEGORY.CSS_PARSER,
-        timeStamp: /^\d+$/,
+        timeStamp: FRACTIONAL_NUMBER_REGEX,
         error: false,
         warning: true,
       },

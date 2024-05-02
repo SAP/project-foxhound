@@ -12,7 +12,7 @@ use crate::vec::{self, Vec};
 use ::core::cmp::Ordering;
 use ::core::fmt;
 use ::core::hash::{BuildHasher, Hash, Hasher};
-use ::core::iter::FromIterator;
+use ::core::iter::FusedIterator;
 use ::core::ops::{Index, IndexMut, RangeBounds};
 use ::core::slice::{Iter as SliceIter, IterMut as SliceIterMut};
 
@@ -69,12 +69,12 @@ pub use self::core::{Entry, OccupiedEntry, VacantEntry};
 /// ```
 #[cfg(has_std)]
 pub struct IndexMap<K, V, S = RandomState> {
-    core: IndexMapCore<K, V>,
+    pub(crate) core: IndexMapCore<K, V>,
     hash_builder: S,
 }
 #[cfg(not(has_std))]
 pub struct IndexMap<K, V, S> {
-    core: IndexMapCore<K, V>,
+    pub(crate) core: IndexMapCore<K, V>,
     hash_builder: S,
 }
 
@@ -166,10 +166,7 @@ impl<K, V, S> IndexMap<K, V, S> {
     #[inline]
     pub fn with_capacity_and_hasher(n: usize, hash_builder: S) -> Self {
         if n == 0 {
-            IndexMap {
-                core: IndexMapCore::new(),
-                hash_builder,
-            }
+            Self::with_hasher(hash_builder)
         } else {
             IndexMap {
                 core: IndexMapCore::with_capacity(n),
@@ -178,9 +175,15 @@ impl<K, V, S> IndexMap<K, V, S> {
         }
     }
 
-    /// Create a new map with `hash_builder`
-    pub fn with_hasher(hash_builder: S) -> Self {
-        Self::with_capacity_and_hasher(0, hash_builder)
+    /// Create a new map with `hash_builder`.
+    ///
+    /// This function is `const`, so it
+    /// can be called in `static` contexts.
+    pub const fn with_hasher(hash_builder: S) -> Self {
+        IndexMap {
+            core: IndexMapCore::new(),
+            hash_builder,
+        }
     }
 
     /// Computes in **O(1)** time.
@@ -230,6 +233,13 @@ impl<K, V, S> IndexMap<K, V, S> {
         }
     }
 
+    /// Return an owning iterator over the keys of the map, in their order
+    pub fn into_keys(self) -> IntoKeys<K, V> {
+        IntoKeys {
+            iter: self.into_entries().into_iter(),
+        }
+    }
+
     /// Return an iterator over the values of the map, in their order
     pub fn values(&self) -> Values<'_, K, V> {
         Values {
@@ -237,11 +247,18 @@ impl<K, V, S> IndexMap<K, V, S> {
         }
     }
 
-    /// Return an iterator over mutable references to the the values of the map,
+    /// Return an iterator over mutable references to the values of the map,
     /// in their order
     pub fn values_mut(&mut self) -> ValuesMut<'_, K, V> {
         ValuesMut {
             iter: self.as_entries_mut().iter_mut(),
+        }
+    }
+
+    /// Return an owning iterator over the values of the map, in their order
+    pub fn into_values(self) -> IntoValues<K, V> {
+        IntoValues {
+            iter: self.into_entries().into_iter(),
         }
     }
 
@@ -315,7 +332,14 @@ where
     ///
     /// Computes in **O(n)** time.
     pub fn shrink_to_fit(&mut self) {
-        self.core.shrink_to_fit();
+        self.core.shrink_to(0);
+    }
+
+    /// Shrink the capacity of the map with a lower limit.
+    ///
+    /// Computes in **O(n)** time.
+    pub fn shrink_to(&mut self, min_capacity: usize) {
+        self.core.shrink_to(min_capacity);
     }
 
     fn hash<Q: ?Sized + Hash>(&self, key: &Q) -> HashValue {
@@ -424,6 +448,8 @@ where
     }
 
     /// Return item index, if it exists in the map
+    ///
+    /// Computes in **O(1)** time (average).
     pub fn get_index_of<Q: ?Sized>(&self, key: &Q) -> Option<usize>
     where
         Q: Hash + Equivalent<K>,
@@ -620,6 +646,8 @@ where
 
     /// Remove the last key-value pair
     ///
+    /// This preserves the order of the remaining elements.
+    ///
     /// Computes in **O(1)** time (average).
     pub fn pop(&mut self) -> Option<(K, V)> {
         self.core.pop()
@@ -648,18 +676,18 @@ where
 
     /// Sort the map’s key-value pairs by the default ordering of the keys.
     ///
-    /// See `sort_by` for details.
+    /// See [`sort_by`](Self::sort_by) for details.
     pub fn sort_keys(&mut self)
     where
         K: Ord,
     {
-        self.with_entries(|entries| {
-            entries.sort_by(|a, b| Ord::cmp(&a.key, &b.key));
+        self.with_entries(move |entries| {
+            entries.sort_by(move |a, b| K::cmp(&a.key, &b.key));
         });
     }
 
     /// Sort the map’s key-value pairs in place using the comparison
-    /// function `compare`.
+    /// function `cmp`.
     ///
     /// The comparison function receives two key and value pairs to compare (you
     /// can sort by keys or values or their combination as needed).
@@ -675,7 +703,7 @@ where
         });
     }
 
-    /// Sort the key-value pairs of the map and return a by value iterator of
+    /// Sort the key-value pairs of the map and return a by-value iterator of
     /// the key-value pairs with the result.
     ///
     /// The sort is stable.
@@ -685,6 +713,52 @@ where
     {
         let mut entries = self.into_entries();
         entries.sort_by(move |a, b| cmp(&a.key, &a.value, &b.key, &b.value));
+        IntoIter {
+            iter: entries.into_iter(),
+        }
+    }
+
+    /// Sort the map's key-value pairs by the default ordering of the keys, but
+    /// may not preserve the order of equal elements.
+    ///
+    /// See [`sort_unstable_by`](Self::sort_unstable_by) for details.
+    pub fn sort_unstable_keys(&mut self)
+    where
+        K: Ord,
+    {
+        self.with_entries(move |entries| {
+            entries.sort_unstable_by(move |a, b| K::cmp(&a.key, &b.key));
+        });
+    }
+
+    /// Sort the map's key-value pairs in place using the comparison function `cmp`, but
+    /// may not preserve the order of equal elements.
+    ///
+    /// The comparison function receives two key and value pairs to compare (you
+    /// can sort by keys or values or their combination as needed).
+    ///
+    /// Computes in **O(n log n + c)** time where *n* is
+    /// the length of the map and *c* is the capacity. The sort is unstable.
+    pub fn sort_unstable_by<F>(&mut self, mut cmp: F)
+    where
+        F: FnMut(&K, &V, &K, &V) -> Ordering,
+    {
+        self.with_entries(move |entries| {
+            entries.sort_unstable_by(move |a, b| cmp(&a.key, &a.value, &b.key, &b.value));
+        });
+    }
+
+    /// Sort the key-value pairs of the map and return a by-value iterator of
+    /// the key-value pairs with the result.
+    ///
+    /// The sort is unstable.
+    #[inline]
+    pub fn sorted_unstable_by<F>(self, mut cmp: F) -> IntoIter<K, V>
+    where
+        F: FnMut(&K, &V, &K, &V) -> Ordering,
+    {
+        let mut entries = self.into_entries();
+        entries.sort_unstable_by(move |a, b| cmp(&a.key, &a.value, &b.key, &b.value));
         IntoIter {
             iter: entries.into_iter(),
         }
@@ -771,6 +845,19 @@ impl<K, V, S> IndexMap<K, V, S> {
         self.core.shift_remove_index(index)
     }
 
+    /// Moves the position of a key-value pair from one index to another
+    /// by shifting all other pairs in-between.
+    ///
+    /// * If `from < to`, the other pairs will shift down while the targeted pair moves up.
+    /// * If `from > to`, the other pairs will shift up while the targeted pair moves down.
+    ///
+    /// ***Panics*** if `from` or `to` are out of bounds.
+    ///
+    /// Computes in **O(n)** time (average).
+    pub fn move_index(&mut self, from: usize, to: usize) {
+        self.core.move_index(from, to)
+    }
+
     /// Swaps the position of two key-value pairs in the map.
     ///
     /// ***Panics*** if `a` or `b` are out of bounds.
@@ -787,7 +874,7 @@ impl<K, V, S> IndexMap<K, V, S> {
 /// [`keys`]: struct.IndexMap.html#method.keys
 /// [`IndexMap`]: struct.IndexMap.html
 pub struct Keys<'a, K, V> {
-    pub(crate) iter: SliceIter<'a, Bucket<K, V>>,
+    iter: SliceIter<'a, Bucket<K, V>>,
 }
 
 impl<'a, K, V> Iterator for Keys<'a, K, V> {
@@ -797,9 +884,7 @@ impl<'a, K, V> Iterator for Keys<'a, K, V> {
 }
 
 impl<K, V> DoubleEndedIterator for Keys<'_, K, V> {
-    fn next_back(&mut self) -> Option<Self::Item> {
-        self.iter.next_back().map(Bucket::key_ref)
-    }
+    double_ended_iterator_methods!(Bucket::key_ref);
 }
 
 impl<K, V> ExactSizeIterator for Keys<'_, K, V> {
@@ -807,6 +892,8 @@ impl<K, V> ExactSizeIterator for Keys<'_, K, V> {
         self.iter.len()
     }
 }
+
+impl<K, V> FusedIterator for Keys<'_, K, V> {}
 
 // FIXME(#26925) Remove in favor of `#[derive(Clone)]`
 impl<K, V> Clone for Keys<'_, K, V> {
@@ -820,6 +907,42 @@ impl<K, V> Clone for Keys<'_, K, V> {
 impl<K: fmt::Debug, V> fmt::Debug for Keys<'_, K, V> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_list().entries(self.clone()).finish()
+    }
+}
+
+/// An owning iterator over the keys of a `IndexMap`.
+///
+/// This `struct` is created by the [`into_keys`] method on [`IndexMap`].
+/// See its documentation for more.
+///
+/// [`IndexMap`]: struct.IndexMap.html
+/// [`into_keys`]: struct.IndexMap.html#method.into_keys
+pub struct IntoKeys<K, V> {
+    iter: vec::IntoIter<Bucket<K, V>>,
+}
+
+impl<K, V> Iterator for IntoKeys<K, V> {
+    type Item = K;
+
+    iterator_methods!(Bucket::key);
+}
+
+impl<K, V> DoubleEndedIterator for IntoKeys<K, V> {
+    double_ended_iterator_methods!(Bucket::key);
+}
+
+impl<K, V> ExactSizeIterator for IntoKeys<K, V> {
+    fn len(&self) -> usize {
+        self.iter.len()
+    }
+}
+
+impl<K, V> FusedIterator for IntoKeys<K, V> {}
+
+impl<K: fmt::Debug, V> fmt::Debug for IntoKeys<K, V> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let iter = self.iter.as_slice().iter().map(Bucket::key_ref);
+        f.debug_list().entries(iter).finish()
     }
 }
 
@@ -841,9 +964,7 @@ impl<'a, K, V> Iterator for Values<'a, K, V> {
 }
 
 impl<K, V> DoubleEndedIterator for Values<'_, K, V> {
-    fn next_back(&mut self) -> Option<Self::Item> {
-        self.iter.next_back().map(Bucket::value_ref)
-    }
+    double_ended_iterator_methods!(Bucket::value_ref);
 }
 
 impl<K, V> ExactSizeIterator for Values<'_, K, V> {
@@ -851,6 +972,8 @@ impl<K, V> ExactSizeIterator for Values<'_, K, V> {
         self.iter.len()
     }
 }
+
+impl<K, V> FusedIterator for Values<'_, K, V> {}
 
 // FIXME(#26925) Remove in favor of `#[derive(Clone)]`
 impl<K, V> Clone for Values<'_, K, V> {
@@ -885,14 +1008,57 @@ impl<'a, K, V> Iterator for ValuesMut<'a, K, V> {
 }
 
 impl<K, V> DoubleEndedIterator for ValuesMut<'_, K, V> {
-    fn next_back(&mut self) -> Option<Self::Item> {
-        self.iter.next_back().map(Bucket::value_mut)
-    }
+    double_ended_iterator_methods!(Bucket::value_mut);
 }
 
 impl<K, V> ExactSizeIterator for ValuesMut<'_, K, V> {
     fn len(&self) -> usize {
         self.iter.len()
+    }
+}
+
+impl<K, V> FusedIterator for ValuesMut<'_, K, V> {}
+
+impl<K, V: fmt::Debug> fmt::Debug for ValuesMut<'_, K, V> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let iter = self.iter.as_slice().iter().map(Bucket::value_ref);
+        f.debug_list().entries(iter).finish()
+    }
+}
+
+/// An owning iterator over the values of a `IndexMap`.
+///
+/// This `struct` is created by the [`into_values`] method on [`IndexMap`].
+/// See its documentation for more.
+///
+/// [`IndexMap`]: struct.IndexMap.html
+/// [`into_values`]: struct.IndexMap.html#method.into_values
+pub struct IntoValues<K, V> {
+    iter: vec::IntoIter<Bucket<K, V>>,
+}
+
+impl<K, V> Iterator for IntoValues<K, V> {
+    type Item = V;
+
+    iterator_methods!(Bucket::value);
+}
+
+impl<K, V> DoubleEndedIterator for IntoValues<K, V> {
+    double_ended_iterator_methods!(Bucket::value);
+}
+
+impl<K, V> ExactSizeIterator for IntoValues<K, V> {
+    fn len(&self) -> usize {
+        self.iter.len()
+    }
+}
+
+impl<K, V> FusedIterator for IntoValues<K, V> {}
+
+impl<K, V: fmt::Debug> fmt::Debug for IntoValues<K, V> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let iter = self.iter.as_slice().iter().map(Bucket::value_ref);
+        f.debug_list().entries(iter).finish()
     }
 }
 
@@ -914,9 +1080,7 @@ impl<'a, K, V> Iterator for Iter<'a, K, V> {
 }
 
 impl<K, V> DoubleEndedIterator for Iter<'_, K, V> {
-    fn next_back(&mut self) -> Option<Self::Item> {
-        self.iter.next_back().map(Bucket::refs)
-    }
+    double_ended_iterator_methods!(Bucket::refs);
 }
 
 impl<K, V> ExactSizeIterator for Iter<'_, K, V> {
@@ -924,6 +1088,8 @@ impl<K, V> ExactSizeIterator for Iter<'_, K, V> {
         self.iter.len()
     }
 }
+
+impl<K, V> FusedIterator for Iter<'_, K, V> {}
 
 // FIXME(#26925) Remove in favor of `#[derive(Clone)]`
 impl<K, V> Clone for Iter<'_, K, V> {
@@ -958,14 +1124,21 @@ impl<'a, K, V> Iterator for IterMut<'a, K, V> {
 }
 
 impl<K, V> DoubleEndedIterator for IterMut<'_, K, V> {
-    fn next_back(&mut self) -> Option<Self::Item> {
-        self.iter.next_back().map(Bucket::ref_mut)
-    }
+    double_ended_iterator_methods!(Bucket::ref_mut);
 }
 
 impl<K, V> ExactSizeIterator for IterMut<'_, K, V> {
     fn len(&self) -> usize {
         self.iter.len()
+    }
+}
+
+impl<K, V> FusedIterator for IterMut<'_, K, V> {}
+
+impl<K: fmt::Debug, V: fmt::Debug> fmt::Debug for IterMut<'_, K, V> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let iter = self.iter.as_slice().iter().map(Bucket::refs);
+        f.debug_list().entries(iter).finish()
     }
 }
 
@@ -977,7 +1150,7 @@ impl<K, V> ExactSizeIterator for IterMut<'_, K, V> {
 /// [`into_iter`]: struct.IndexMap.html#method.into_iter
 /// [`IndexMap`]: struct.IndexMap.html
 pub struct IntoIter<K, V> {
-    pub(crate) iter: vec::IntoIter<Bucket<K, V>>,
+    iter: vec::IntoIter<Bucket<K, V>>,
 }
 
 impl<K, V> Iterator for IntoIter<K, V> {
@@ -987,9 +1160,7 @@ impl<K, V> Iterator for IntoIter<K, V> {
 }
 
 impl<K, V> DoubleEndedIterator for IntoIter<K, V> {
-    fn next_back(&mut self) -> Option<Self::Item> {
-        self.iter.next_back().map(Bucket::key_value)
-    }
+    double_ended_iterator_methods!(Bucket::key_value);
 }
 
 impl<K, V> ExactSizeIterator for IntoIter<K, V> {
@@ -997,6 +1168,8 @@ impl<K, V> ExactSizeIterator for IntoIter<K, V> {
         self.iter.len()
     }
 }
+
+impl<K, V> FusedIterator for IntoIter<K, V> {}
 
 impl<K: fmt::Debug, V: fmt::Debug> fmt::Debug for IntoIter<K, V> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -1024,6 +1197,21 @@ impl<K, V> Iterator for Drain<'_, K, V> {
 
 impl<K, V> DoubleEndedIterator for Drain<'_, K, V> {
     double_ended_iterator_methods!(Bucket::key_value);
+}
+
+impl<K, V> ExactSizeIterator for Drain<'_, K, V> {
+    fn len(&self) -> usize {
+        self.iter.len()
+    }
+}
+
+impl<K, V> FusedIterator for Drain<'_, K, V> {}
+
+impl<K: fmt::Debug, V: fmt::Debug> fmt::Debug for Drain<'_, K, V> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let iter = self.iter.as_slice().iter().map(Bucket::refs);
+        f.debug_list().entries(iter).finish()
+    }
 }
 
 impl<'a, K, V, S> IntoIterator for &'a IndexMap<K, V, S> {
@@ -1233,6 +1421,25 @@ where
     }
 }
 
+#[cfg(has_std)]
+impl<K, V, const N: usize> From<[(K, V); N]> for IndexMap<K, V, RandomState>
+where
+    K: Hash + Eq,
+{
+    /// # Examples
+    ///
+    /// ```
+    /// use indexmap::IndexMap;
+    ///
+    /// let map1 = IndexMap::from([(1, 2), (3, 4)]);
+    /// let map2: IndexMap<_, _> = [(1, 2), (3, 4)].into();
+    /// assert_eq!(map1, map2);
+    /// ```
+    fn from(arr: [(K, V); N]) -> Self {
+        Self::from_iter(arr)
+    }
+}
+
 impl<K, V, S> Extend<(K, V)> for IndexMap<K, V, S>
 where
     K: Hash + Eq,
@@ -1318,7 +1525,6 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::util::enumerate;
     use std::string::String;
 
     #[test]
@@ -1347,7 +1553,7 @@ mod tests {
         let not_present = [1, 3, 6, 9, 10];
         let mut map = IndexMap::with_capacity(insert.len());
 
-        for (i, &elt) in enumerate(&insert) {
+        for (i, &elt) in insert.iter().enumerate() {
             assert_eq!(map.len(), i);
             map.insert(elt, elt);
             assert_eq!(map.len(), i + 1);
@@ -1367,7 +1573,7 @@ mod tests {
         let present = vec![1, 6, 2];
         let mut map = IndexMap::with_capacity(insert.len());
 
-        for (i, &elt) in enumerate(&insert) {
+        for (i, &elt) in insert.iter().enumerate() {
             assert_eq!(map.len(), i);
             let (index, existing) = map.insert_full(elt, elt);
             assert_eq!(existing, None);
@@ -1390,7 +1596,7 @@ mod tests {
 
         let mut keys = vec![];
         keys.extend(0..16);
-        keys.extend(128..267);
+        keys.extend(if cfg!(miri) { 32..64 } else { 128..267 });
 
         for &i in &keys {
             let old_map = map.clone();
@@ -1434,7 +1640,7 @@ mod tests {
         let not_present = [1, 3, 6, 9, 10];
         let mut map = IndexMap::with_capacity(insert.len());
 
-        for (i, &elt) in enumerate(&insert) {
+        for (i, &elt) in insert.iter().enumerate() {
             assert_eq!(map.len(), i);
             map.insert(elt, elt);
             assert_eq!(map.len(), i + 1);
@@ -1674,7 +1880,18 @@ mod tests {
     fn keys() {
         let vec = vec![(1, 'a'), (2, 'b'), (3, 'c')];
         let map: IndexMap<_, _> = vec.into_iter().collect();
-        let keys: Vec<_> = map.keys().cloned().collect();
+        let keys: Vec<_> = map.keys().copied().collect();
+        assert_eq!(keys.len(), 3);
+        assert!(keys.contains(&1));
+        assert!(keys.contains(&2));
+        assert!(keys.contains(&3));
+    }
+
+    #[test]
+    fn into_keys() {
+        let vec = vec![(1, 'a'), (2, 'b'), (3, 'c')];
+        let map: IndexMap<_, _> = vec.into_iter().collect();
+        let keys: Vec<i32> = map.into_keys().collect();
         assert_eq!(keys.len(), 3);
         assert!(keys.contains(&1));
         assert!(keys.contains(&2));
@@ -1685,7 +1902,7 @@ mod tests {
     fn values() {
         let vec = vec![(1, 'a'), (2, 'b'), (3, 'c')];
         let map: IndexMap<_, _> = vec.into_iter().collect();
-        let values: Vec<_> = map.values().cloned().collect();
+        let values: Vec<_> = map.values().copied().collect();
         assert_eq!(values.len(), 3);
         assert!(values.contains(&'a'));
         assert!(values.contains(&'b'));
@@ -1699,10 +1916,32 @@ mod tests {
         for value in map.values_mut() {
             *value *= 2
         }
-        let values: Vec<_> = map.values().cloned().collect();
+        let values: Vec<_> = map.values().copied().collect();
         assert_eq!(values.len(), 3);
         assert!(values.contains(&2));
         assert!(values.contains(&4));
         assert!(values.contains(&6));
+    }
+
+    #[test]
+    fn into_values() {
+        let vec = vec![(1, 'a'), (2, 'b'), (3, 'c')];
+        let map: IndexMap<_, _> = vec.into_iter().collect();
+        let values: Vec<char> = map.into_values().collect();
+        assert_eq!(values.len(), 3);
+        assert!(values.contains(&'a'));
+        assert!(values.contains(&'b'));
+        assert!(values.contains(&'c'));
+    }
+
+    #[test]
+    #[cfg(has_std)]
+    fn from_array() {
+        let map = IndexMap::from([(1, 2), (3, 4)]);
+        let mut expected = IndexMap::new();
+        expected.insert(1, 2);
+        expected.insert(3, 4);
+
+        assert_eq!(map, expected)
     }
 }

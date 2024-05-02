@@ -13,11 +13,9 @@ const LONGSTRING = `foobar${"a".repeat(
   9000
 )}foobaz${"abbababazomglolztest".repeat(100)}boom!`;
 
-add_task(async function() {
+add_task(async function () {
   // Show the content messages
-  await pushPref("devtools.browserconsole.contentMessages", true);
-  // Enable Fission browser console to see the logged content object
-  await pushPref("devtools.browsertoolbox.fission", true);
+  await pushPref("devtools.browsertoolbox.scope", "everything");
 
   await addTab(TEST_URI);
 
@@ -25,7 +23,11 @@ add_task(async function() {
   const hud = await BrowserConsoleManager.toggleBrowserConsole();
 
   info("Log a longString");
-  const onMessage = waitForMessage(hud, LONGSTRING.slice(0, 50));
+  const onMessage = waitForMessageByType(
+    hud,
+    LONGSTRING.slice(0, 50),
+    ".console-api"
+  );
   SpecialPowers.spawn(gBrowser.selectedBrowser, [LONGSTRING], str => {
     content.console.log(str);
   });
@@ -36,7 +38,7 @@ add_task(async function() {
 
   info("wait for long string expansion");
   const onLongStringFullTextDisplayed = waitFor(() =>
-    findMessage(hud, LONGSTRING)
+    findConsoleAPIMessage(hud, LONGSTRING)
   );
   arrow.click();
   await onLongStringFullTextDisplayed;
@@ -44,7 +46,9 @@ add_task(async function() {
   ok(true, "The full text of the longString is displayed");
 
   info("wait for long string collapse");
-  const onLongStringCollapsed = waitFor(() => !findMessage(hud, LONGSTRING));
+  const onLongStringCollapsed = waitFor(
+    () => !findConsoleAPIMessage(hud, LONGSTRING)
+  );
   arrow.click();
   await onLongStringCollapsed;
 

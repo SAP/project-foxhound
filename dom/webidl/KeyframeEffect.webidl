@@ -25,9 +25,7 @@ dictionary KeyframeEffectOptions : EffectTiming {
 
 // KeyframeEffect should run in the caller's compartment to do custom
 // processing on the `keyframes` object.
-[Func="Document::IsWebAnimationsEnabled",
- RunConstructorInCallerCompartment,
- Exposed=Window]
+[RunConstructorInCallerCompartment, Exposed=Window]
 interface KeyframeEffect : AnimationEffect {
   [Throws]
   constructor(Element? target,
@@ -43,7 +41,7 @@ interface KeyframeEffect : AnimationEffect {
   [Pref="dom.animations-api.compositing.enabled"]
   attribute CompositeOperation              composite;
   [Throws] sequence<object> getKeyframes();
-  [Throws] void             setKeyframes(object? keyframes);
+  [Throws] undefined        setKeyframes(object? keyframes);
 };
 
 // Non-standard extensions

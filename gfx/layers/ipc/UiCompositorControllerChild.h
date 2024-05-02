@@ -29,13 +29,14 @@ class UiCompositorControllerChild final
   friend class PUiCompositorControllerChild;
 
  public:
-  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(UiCompositorControllerChild)
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(UiCompositorControllerChild, final)
 
   static RefPtr<UiCompositorControllerChild> CreateForSameProcess(
-      const LayersId& aRootLayerTreeId);
+      const LayersId& aRootLayerTreeId, nsBaseWidget* aWidget);
   static RefPtr<UiCompositorControllerChild> CreateForGPUProcess(
       const uint64_t& aProcessToken,
-      Endpoint<PUiCompositorControllerChild>&& aEndpoint);
+      Endpoint<PUiCompositorControllerChild>&& aEndpoint,
+      nsBaseWidget* aWidget);
 
   bool Pause();
   bool Resume();
@@ -51,7 +52,6 @@ class UiCompositorControllerChild final
 
   void Destroy();
 
-  void SetBaseWidget(nsBaseWidget* aWidget);
   bool DeallocPixelBuffer(Shmem& aMem);
 
 #ifdef MOZ_WIDGET_ANDROID
@@ -76,9 +76,8 @@ class UiCompositorControllerChild final
 
  protected:
   void ActorDestroy(ActorDestroyReason aWhy) override;
-  void ActorDealloc() override;
   void ProcessingError(Result aCode, const char* aReason) override;
-  void HandleFatalError(const char* aMsg) const override;
+  void HandleFatalError(const char* aMsg) override;
   mozilla::ipc::IPCResult RecvToolbarAnimatorMessageFromCompositor(
       const int32_t& aMessage);
   mozilla::ipc::IPCResult RecvRootFrameMetrics(const ScreenPoint& aScrollOffset,
@@ -88,7 +87,8 @@ class UiCompositorControllerChild final
                                            bool aNeedsYFlip);
 
  private:
-  explicit UiCompositorControllerChild(const uint64_t& aProcessToken);
+  explicit UiCompositorControllerChild(const uint64_t& aProcessToken,
+                                       nsBaseWidget* aWidget);
   virtual ~UiCompositorControllerChild();
   void OpenForSameProcess();
   void OpenForGPUProcess(Endpoint<PUiCompositorControllerChild>&& aEndpoint);

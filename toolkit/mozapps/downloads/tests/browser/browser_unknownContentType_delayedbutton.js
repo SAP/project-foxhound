@@ -2,10 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const { PromiseUtils } = ChromeUtils.import(
-  "resource://gre/modules/PromiseUtils.jsm"
-);
-
 const UCT_URI = "chrome://mozapps/content/downloads/unknownContentType.xhtml";
 const LOAD_URI =
   "http://mochi.test:8888/browser/toolkit/mozapps/downloads/tests/browser/unknownContentType_dialog_layout_data.txt";
@@ -26,7 +22,7 @@ let UCTObserver = {
           "load",
           function onLoad(event) {
             // Let the dialog initialize
-            SimpleTest.executeSoon(function() {
+            SimpleTest.executeSoon(function () {
               UCTObserver.opened.resolve(win);
             });
           },
@@ -63,7 +59,7 @@ add_task(async function test_unknownContentType_delayedbutton() {
       waitForLoad: false,
       waitForStateStop: true,
     },
-    async function() {
+    async function () {
       let uctWindow = await UCTObserver.opened.promise;
       let dialog = uctWindow.document.getElementById("unknownContentType");
       let ok = dialog.getButton("accept");

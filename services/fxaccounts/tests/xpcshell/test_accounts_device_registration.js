@@ -3,14 +3,14 @@
 
 "use strict";
 
-const { FxAccounts } = ChromeUtils.import(
-  "resource://gre/modules/FxAccounts.jsm"
+const { FxAccounts } = ChromeUtils.importESModule(
+  "resource://gre/modules/FxAccounts.sys.mjs"
 );
-const { FxAccountsClient } = ChromeUtils.import(
-  "resource://gre/modules/FxAccountsClient.jsm"
+const { FxAccountsClient } = ChromeUtils.importESModule(
+  "resource://gre/modules/FxAccountsClient.sys.mjs"
 );
-const { FxAccountsDevice } = ChromeUtils.import(
-  "resource://gre/modules/FxAccountsDevice.jsm"
+const { FxAccountsDevice } = ChromeUtils.importESModule(
+  "resource://gre/modules/FxAccountsDevice.sys.mjs"
 );
 const {
   ERRNO_DEVICE_SESSION_CONFLICT,
@@ -18,9 +18,12 @@ const {
   ERRNO_UNKNOWN_DEVICE,
   ON_DEVICE_CONNECTED_NOTIFICATION,
   ON_DEVICE_DISCONNECTED_NOTIFICATION,
-} = ChromeUtils.import("resource://gre/modules/FxAccountsCommon.js");
-var { AccountState } = ChromeUtils.import(
-  "resource://gre/modules/FxAccounts.jsm"
+  ON_DEVICELIST_UPDATED,
+} = ChromeUtils.importESModule(
+  "resource://gre/modules/FxAccountsCommon.sys.mjs"
+);
+var { AccountState } = ChromeUtils.importESModule(
+  "resource://gre/modules/FxAccounts.sys.mjs"
 );
 
 initTestLogging("Trace");
@@ -77,7 +80,7 @@ function MockFxAccountsClient(device) {
 
   // mock calls up to the auth server to determine whether the
   // user account has been verified
-  this.recoveryEmailStatus = function(sessionToken) {
+  this.recoveryEmailStatus = function (sessionToken) {
     // simulate a call to /recovery_email/status
     return Promise.resolve({
       email: this._email,
@@ -85,7 +88,7 @@ function MockFxAccountsClient(device) {
     });
   };
 
-  this.accountKeys = function(keyFetchToken) {
+  this.accountKeys = function (keyFetchToken) {
     Assert.ok(keyFetchToken, "must be called with a key-fetch-token");
     // ideally we'd check the verification status here to more closely simulate
     // the server, but `this._verified` is a test-only construct and doesn't
@@ -97,36 +100,33 @@ function MockFxAccountsClient(device) {
     };
   };
 
-  this.accountStatus = function(uid) {
+  this.accountStatus = function (uid) {
     return Promise.resolve(!!uid && !this._deletedOnServer);
   };
 
-  const {
-    id: deviceId,
-    name: deviceName,
-    type: deviceType,
-    sessionToken,
-  } = device;
-
   this.registerDevice = (st, name, type) =>
-    Promise.resolve({ id: deviceId, name });
+    Promise.resolve({ id: device.id, name });
   this.updateDevice = (st, id, name) => Promise.resolve({ id, name });
   this.signOut = () => Promise.resolve({});
   this.getDeviceList = st =>
     Promise.resolve([
       {
-        id: deviceId,
-        name: deviceName,
-        type: deviceType,
-        isCurrentDevice: st === sessionToken,
+        id: device.id,
+        name: device.name,
+        type: device.type,
+        pushCallback: device.pushCallback,
+        pushEndpointExpired: device.pushEndpointExpired,
+        isCurrentDevice: st === device.sessionToken,
       },
     ]);
 
   FxAccountsClient.apply(this);
 }
-MockFxAccountsClient.prototype = {
-  __proto__: FxAccountsClient.prototype,
-};
+MockFxAccountsClient.prototype = {};
+Object.setPrototypeOf(
+  MockFxAccountsClient.prototype,
+  FxAccountsClient.prototype
+);
 
 async function MockFxAccounts(credentials, device = {}) {
   let fxa = new FxAccounts({
@@ -162,9 +162,11 @@ async function MockFxAccounts(credentials, device = {}) {
     },
     device: {
       DEVICE_REGISTRATION_VERSION,
+      _checkRemoteCommandsUpdateNeeded: async () => false,
     },
     VERIFICATION_POLL_TIMEOUT_INITIAL: 1,
   });
+  fxa._internal.device._fxai = fxa._internal;
   await fxa._internal.setSignedInUser(credentials);
   Services.prefs.setStringPref(
     "identity.fxaccounts.account.device.name",
@@ -192,7 +194,7 @@ add_task(async function test_updateDeviceRegistration_with_new_device() {
     getDeviceList: { count: 0, args: [] },
   };
   const client = fxa._internal.fxAccountsClient;
-  client.registerDevice = function() {
+  client.registerDevice = function () {
     spy.registerDevice.count += 1;
     spy.registerDevice.args.push(arguments);
     return Promise.resolve({
@@ -202,12 +204,12 @@ add_task(async function test_updateDeviceRegistration_with_new_device() {
       type: deviceType,
     });
   };
-  client.updateDevice = function() {
+  client.updateDevice = function () {
     spy.updateDevice.count += 1;
     spy.updateDevice.args.push(arguments);
     return Promise.resolve({});
   };
-  client.getDeviceList = function() {
+  client.getDeviceList = function () {
     spy.getDeviceList.count += 1;
     spy.getDeviceList.args.push(arguments);
     return Promise.resolve([]);
@@ -258,12 +260,12 @@ add_task(async function test_updateDeviceRegistration_with_existing_device() {
     getDeviceList: { count: 0, args: [] },
   };
   const client = fxa._internal.fxAccountsClient;
-  client.registerDevice = function() {
+  client.registerDevice = function () {
     spy.registerDevice.count += 1;
     spy.registerDevice.args.push(arguments);
     return Promise.resolve({});
   };
-  client.updateDevice = function() {
+  client.updateDevice = function () {
     spy.updateDevice.count += 1;
     spy.updateDevice.args.push(arguments);
     return Promise.resolve({
@@ -271,7 +273,7 @@ add_task(async function test_updateDeviceRegistration_with_existing_device() {
       name: deviceName,
     });
   };
-  client.getDeviceList = function() {
+  client.getDeviceList = function () {
     spy.getDeviceList.count += 1;
     spy.getDeviceList.args.push(arguments);
     return Promise.resolve([]);
@@ -323,7 +325,7 @@ add_task(
       getDeviceList: { count: 0, args: [] },
     };
     const client = fxa._internal.fxAccountsClient;
-    client.registerDevice = function() {
+    client.registerDevice = function () {
       spy.registerDevice.count += 1;
       spy.registerDevice.args.push(arguments);
       return Promise.resolve({
@@ -333,7 +335,7 @@ add_task(
         type: deviceType,
       });
     };
-    client.updateDevice = function() {
+    client.updateDevice = function () {
       spy.updateDevice.count += 1;
       spy.updateDevice.args.push(arguments);
       return Promise.reject({
@@ -341,7 +343,7 @@ add_task(
         errno: ERRNO_UNKNOWN_DEVICE,
       });
     };
-    client.getDeviceList = function() {
+    client.getDeviceList = function () {
       spy.getDeviceList.count += 1;
       spy.getDeviceList.args.push(arguments);
       return Promise.resolve([]);
@@ -395,12 +397,12 @@ add_task(
       getDeviceList: { count: 0, args: [] },
     };
     const client = fxa._internal.fxAccountsClient;
-    client.registerDevice = function() {
+    client.registerDevice = function () {
       spy.registerDevice.count += 1;
       spy.registerDevice.args.push(arguments);
       return Promise.resolve({});
     };
-    client.updateDevice = function() {
+    client.updateDevice = function () {
       spy.updateDevice.count += 1;
       spy.updateDevice.args.push(arguments);
       spy.updateDevice.time = Date.now();
@@ -415,7 +417,7 @@ add_task(
         name: deviceName,
       });
     };
-    client.getDeviceList = function() {
+    client.getDeviceList = function () {
       spy.getDeviceList.count += 1;
       spy.getDeviceList.args.push(arguments);
       spy.getDeviceList.time = Date.now();
@@ -477,7 +479,7 @@ add_task(
       getDeviceList: { count: 0, args: [] },
     };
     const client = fxa._internal.fxAccountsClient;
-    client.registerDevice = function() {
+    client.registerDevice = function () {
       spy.registerDevice.count += 1;
       spy.registerDevice.args.push(arguments);
       return Promise.reject({
@@ -485,12 +487,12 @@ add_task(
         errno: ERRNO_TOO_MANY_CLIENT_REQUESTS,
       });
     };
-    client.updateDevice = function() {
+    client.updateDevice = function () {
       spy.updateDevice.count += 1;
       spy.updateDevice.args.push(arguments);
       return Promise.resolve({});
     };
-    client.getDeviceList = function() {
+    client.getDeviceList = function () {
       spy.getDeviceList.count += 1;
       spy.getDeviceList.args.push(arguments);
       return Promise.resolve([]);
@@ -524,7 +526,7 @@ add_task(
         email: credentials.email,
         registrationVersion: DEVICE_REGISTRATION_VERSION,
       });
-    fxa._internal.device._registerOrUpdateDevice = function() {
+    fxa._internal.device._registerOrUpdateDevice = function () {
       spy.count += 1;
       spy.args.push(arguments);
       return Promise.resolve("bar");
@@ -556,7 +558,7 @@ add_task(
           registeredCommandsKeys: [],
         },
       });
-    fxa._internal.device._registerOrUpdateDevice = function() {
+    fxa._internal.device._registerOrUpdateDevice = function () {
       spy.count += 1;
       spy.args.push(arguments);
       return Promise.resolve("wibble");
@@ -586,7 +588,7 @@ add_task(
         registeredCommandsKeys: [],
       },
     });
-    fxa._internal.device._registerOrUpdateDevice = function() {
+    fxa._internal.device._registerOrUpdateDevice = function () {
       spy.count += 1;
       return Promise.resolve("bar");
     };
@@ -608,7 +610,7 @@ add_task(
     const spy = { count: 0, args: [] };
     fxa._internal.currentAccountState.getUserAccountData = () =>
       Promise.resolve({ device: { id: "wibble" } });
-    fxa._internal.device._registerOrUpdateDevice = function() {
+    fxa._internal.device._registerOrUpdateDevice = function () {
       spy.count += 1;
       spy.args.push(arguments);
       return Promise.resolve("wibble");
@@ -643,7 +645,7 @@ add_task(async function test_verification_updates_registration() {
     const old_registerOrUpdateDevice = fxa.device._registerOrUpdateDevice.bind(
       fxa.device
     );
-    fxa.device._registerOrUpdateDevice = async function(
+    fxa.device._registerOrUpdateDevice = async function (
       currentState,
       signedInUser
     ) {
@@ -653,17 +655,15 @@ add_task(async function test_verification_updates_registration() {
     };
   });
 
-  fxa._internal.checkEmailStatus = async function(sessionToken) {
+  fxa._internal.checkEmailStatus = async function (sessionToken) {
     credentials.verified = true;
     return credentials;
   };
 
   await updatePromise;
 
-  const {
-    device: newDevice,
-    encryptedSendTabKeys,
-  } = await state.getUserAccountData();
+  const { device: newDevice, encryptedSendTabKeys } =
+    await state.getUserAccountData();
   Assert.equal(newDevice.registeredCommandsKeys.length, 1);
   Assert.notEqual(encryptedSendTabKeys, null);
   await fxa.signOut(true);
@@ -688,12 +688,12 @@ add_task(async function test_devicelist_pushendpointexpired() {
     getDeviceList: { count: 0, args: [] },
   };
   const client = fxa._internal.fxAccountsClient;
-  client.updateDevice = function() {
+  client.updateDevice = function () {
     spy.updateDevice.count += 1;
     spy.updateDevice.args.push(arguments);
     return Promise.resolve({});
   };
-  client.getDeviceList = function() {
+  client.getDeviceList = function () {
     spy.getDeviceList.count += 1;
     spy.getDeviceList.args.push(arguments);
     return Promise.resolve([
@@ -739,12 +739,12 @@ add_task(async function test_devicelist_nopushcallback() {
     getDeviceList: { count: 0, args: [] },
   };
   const client = fxa._internal.fxAccountsClient;
-  client.updateDevice = function() {
+  client.updateDevice = function () {
     spy.updateDevice.count += 1;
     spy.updateDevice.args.push(arguments);
     return Promise.resolve({});
   };
-  client.getDeviceList = function() {
+  client.getDeviceList = function () {
     spy.getDeviceList.count += 1;
     spy.getDeviceList.args.push(arguments);
     return Promise.resolve([
@@ -783,12 +783,22 @@ add_task(async function test_refreshDeviceList() {
     id: "deviceAAAAAA",
     name: "iPhone",
     type: "phone",
+    pushCallback: "http://mochi.test:8888",
+    pushEndpointExpired: false,
     sessionToken: credentials.sessionToken,
   });
   let spy = {
     getDeviceList: { count: 0 },
   };
-  fxAccountsClient.getDeviceList = (function(old) {
+  const deviceListUpdateObserver = {
+    count: 0,
+    observe(subject, topic, data) {
+      this.count++;
+    },
+  };
+  Services.obs.addObserver(deviceListUpdateObserver, ON_DEVICELIST_UPDATED);
+
+  fxAccountsClient.getDeviceList = (function (old) {
     return function getDeviceList() {
       spy.getDeviceList.count += 1;
       return old.apply(this, arguments);
@@ -814,9 +824,39 @@ add_task(async function test_refreshDeviceList() {
           return result;
         });
     },
-    fxaPushService: null,
+    fxaPushService: {
+      registerPushEndpoint() {
+        return new Promise(resolve => {
+          resolve({
+            endpoint: "http://mochi.test:8888",
+            getKey(type) {
+              return ChromeUtils.base64URLDecode(
+                type === "auth" ? BOGUS_AUTHKEY : BOGUS_PUBLICKEY,
+                { padding: "ignore" }
+              );
+            },
+          });
+        });
+      },
+      unsubscribe() {
+        return Promise.resolve();
+      },
+      getSubscription() {
+        return Promise.resolve({
+          isExpired: () => {
+            return false;
+          },
+          endpoint: "http://mochi.test:8888",
+        });
+      },
+    },
+    async _handleTokenError(e) {
+      _(`Test failure: ${e} - ${e.stack}`);
+      throw e;
+    },
   };
   let device = new FxAccountsDevice(fxai);
+  device._checkRemoteCommandsUpdateNeeded = async () => false;
 
   Assert.equal(
     device.recentDeviceList,
@@ -824,6 +864,11 @@ add_task(async function test_refreshDeviceList() {
     "Should not have device list initially"
   );
   Assert.ok(await device.refreshDeviceList(), "Should refresh list");
+  Assert.equal(
+    deviceListUpdateObserver.count,
+    1,
+    `${ON_DEVICELIST_UPDATED} was notified`
+  );
   Assert.deepEqual(
     device.recentDeviceList,
     [
@@ -831,6 +876,8 @@ add_task(async function test_refreshDeviceList() {
         id: "deviceAAAAAA",
         name: "iPhone",
         type: "phone",
+        pushCallback: "http://mochi.test:8888",
+        pushEndpointExpired: false,
         isCurrentDevice: true,
       },
     ],
@@ -844,6 +891,11 @@ add_task(async function test_refreshDeviceList() {
   Assert.ok(
     !(await device.refreshDeviceList()),
     "Should not refresh device list if fresh"
+  );
+  Assert.equal(
+    deviceListUpdateObserver.count,
+    1,
+    `${ON_DEVICELIST_UPDATED} was not notified`
   );
 
   fxai._now += device.TIME_BETWEEN_FXA_DEVICES_FETCH_MS;
@@ -859,6 +911,11 @@ add_task(async function test_refreshDeviceList() {
     2,
     "Should only make one request if called with pending request"
   );
+  Assert.equal(
+    deviceListUpdateObserver.count,
+    2,
+    `${ON_DEVICELIST_UPDATED} only notified once`
+  );
 
   device.observe(null, ON_DEVICE_CONNECTED_NOTIFICATION);
   await device.refreshDeviceList();
@@ -866,6 +923,11 @@ add_task(async function test_refreshDeviceList() {
     spy.getDeviceList.count,
     3,
     "Should refresh device list after connecting new device"
+  );
+  Assert.equal(
+    deviceListUpdateObserver.count,
+    3,
+    `${ON_DEVICELIST_UPDATED} notified when new device connects`
   );
   device.observe(
     null,
@@ -878,6 +940,11 @@ add_task(async function test_refreshDeviceList() {
     4,
     "Should refresh device list after disconnecting device"
   );
+  Assert.equal(
+    deviceListUpdateObserver.count,
+    4,
+    `${ON_DEVICELIST_UPDATED} notified when device disconnects`
+  );
   device.observe(
     null,
     ON_DEVICE_DISCONNECTED_NOTIFICATION,
@@ -889,11 +956,21 @@ add_task(async function test_refreshDeviceList() {
     4,
     "Should not refresh device list after disconnecting this device"
   );
+  Assert.equal(
+    deviceListUpdateObserver.count,
+    4,
+    `${ON_DEVICELIST_UPDATED} not notified again`
+  );
 
   let refreshBeforeResetPromise = device.refreshDeviceList({
     ignoreCached: true,
   });
   fxai._generation++;
+  Assert.equal(
+    deviceListUpdateObserver.count,
+    4,
+    `${ON_DEVICELIST_UPDATED} not notified`
+  );
   await Assert.rejects(refreshBeforeResetPromise, /Another user has signed in/);
 
   device.reset();
@@ -906,18 +983,215 @@ add_task(async function test_refreshDeviceList() {
     await device.refreshDeviceList(),
     "Should fetch new list after resetting"
   );
+  Assert.equal(
+    deviceListUpdateObserver.count,
+    5,
+    `${ON_DEVICELIST_UPDATED} notified after reset`
+  );
+  Services.obs.removeObserver(deviceListUpdateObserver, ON_DEVICELIST_UPDATED);
 });
 
-function expandHex(two_hex) {
-  // Return a 64-character hex string, encoding 32 identical bytes.
-  let eight_hex = two_hex + two_hex + two_hex + two_hex;
-  let thirtytwo_hex = eight_hex + eight_hex + eight_hex + eight_hex;
-  return thirtytwo_hex + thirtytwo_hex;
-}
+add_task(async function test_push_resubscribe() {
+  let credentials = getTestUser("baz");
 
-function expandBytes(two_hex) {
-  return CommonUtils.hexToBytes(expandHex(two_hex));
-}
+  let storage = new MockStorageManager();
+  storage.initialize(credentials);
+  let state = new AccountState(storage);
+
+  let mockDevice = {
+    id: "deviceAAAAAA",
+    name: "iPhone",
+    type: "phone",
+    pushCallback: "http://mochi.test:8888",
+    pushEndpointExpired: false,
+    sessionToken: credentials.sessionToken,
+  };
+
+  var mockSubscription = {
+    isExpired: () => {
+      return false;
+    },
+    endpoint: "http://mochi.test:8888",
+  };
+
+  let fxAccountsClient = new MockFxAccountsClient(mockDevice);
+
+  const spy = {
+    _registerOrUpdateDevice: { count: 0 },
+  };
+
+  let fxai = {
+    _now: Date.now(),
+    _generation: 0,
+    fxAccountsClient,
+    now() {
+      return this._now;
+    },
+    withVerifiedAccountState(func) {
+      // Ensure `func` is called asynchronously, and simulate the possibility
+      // of a different user signng in while the promise is in-flight.
+      const currentGeneration = this._generation;
+      return Promise.resolve()
+        .then(_ => func(state))
+        .then(result => {
+          if (currentGeneration < this._generation) {
+            throw new Error("Another user has signed in");
+          }
+          return result;
+        });
+    },
+    fxaPushService: {
+      registerPushEndpoint() {
+        return new Promise(resolve => {
+          resolve({
+            endpoint: "http://mochi.test:8888",
+            getKey(type) {
+              return ChromeUtils.base64URLDecode(
+                type === "auth" ? BOGUS_AUTHKEY : BOGUS_PUBLICKEY,
+                { padding: "ignore" }
+              );
+            },
+          });
+        });
+      },
+      unsubscribe() {
+        return Promise.resolve();
+      },
+      getSubscription() {
+        return Promise.resolve(mockSubscription);
+      },
+    },
+    commands: {
+      async pollDeviceCommands() {},
+    },
+    async _handleTokenError(e) {
+      _(`Test failure: ${e} - ${e.stack}`);
+      throw e;
+    },
+  };
+  let device = new FxAccountsDevice(fxai);
+  device._checkRemoteCommandsUpdateNeeded = async () => false;
+  device._registerOrUpdateDevice = async () => {
+    spy._registerOrUpdateDevice.count += 1;
+  };
+
+  Assert.ok(await device.refreshDeviceList(), "Should refresh list");
+  Assert.equal(spy._registerOrUpdateDevice.count, 0, "not expecting a refresh");
+
+  mockDevice.pushEndpointExpired = true;
+  Assert.ok(
+    await device.refreshDeviceList({ ignoreCached: true }),
+    "Should refresh list"
+  );
+  Assert.equal(
+    spy._registerOrUpdateDevice.count,
+    1,
+    "end-point expired means should resubscribe"
+  );
+
+  mockDevice.pushEndpointExpired = false;
+  mockSubscription.isExpired = () => true;
+  Assert.ok(
+    await device.refreshDeviceList({ ignoreCached: true }),
+    "Should refresh list"
+  );
+  Assert.equal(
+    spy._registerOrUpdateDevice.count,
+    2,
+    "push service saying expired should resubscribe"
+  );
+
+  mockSubscription.isExpired = () => false;
+  mockSubscription.endpoint = "something-else";
+  Assert.ok(
+    await device.refreshDeviceList({ ignoreCached: true }),
+    "Should refresh list"
+  );
+  Assert.equal(
+    spy._registerOrUpdateDevice.count,
+    3,
+    "push service endpoint diff should resubscribe"
+  );
+
+  mockSubscription = null;
+  Assert.ok(
+    await device.refreshDeviceList({ ignoreCached: true }),
+    "Should refresh list"
+  );
+  Assert.equal(
+    spy._registerOrUpdateDevice.count,
+    4,
+    "push service saying no sub should resubscribe"
+  );
+
+  // reset everything to make sure we didn't leave something behind causing the above to
+  // not check what we thought it was.
+  mockSubscription = {
+    isExpired: () => {
+      return false;
+    },
+    endpoint: "http://mochi.test:8888",
+  };
+  Assert.ok(
+    await device.refreshDeviceList({ ignoreCached: true }),
+    "Should refresh list"
+  );
+  Assert.equal(
+    spy._registerOrUpdateDevice.count,
+    4,
+    "resetting to good data should not resubscribe"
+  );
+});
+
+add_task(async function test_checking_remote_availableCommands_mismatch() {
+  const credentials = getTestUser("baz");
+  credentials.verified = true;
+  const fxa = await MockFxAccounts(credentials);
+  fxa.device._checkRemoteCommandsUpdateNeeded =
+    FxAccountsDevice.prototype._checkRemoteCommandsUpdateNeeded;
+  fxa.commands.availableCommands = async () => {
+    return {
+      "https://identity.mozilla.com/cmd/open-uri": "local-keys",
+    };
+  };
+
+  const ourDevice = {
+    isCurrentDevice: true,
+    availableCommands: {
+      "https://identity.mozilla.com/cmd/open-uri": "remote-keys",
+    },
+  };
+  Assert.ok(
+    await fxa.device._checkRemoteCommandsUpdateNeeded(
+      ourDevice.availableCommands
+    )
+  );
+});
+
+add_task(async function test_checking_remote_availableCommands_match() {
+  const credentials = getTestUser("baz");
+  credentials.verified = true;
+  const fxa = await MockFxAccounts(credentials);
+  fxa.device._checkRemoteCommandsUpdateNeeded =
+    FxAccountsDevice.prototype._checkRemoteCommandsUpdateNeeded;
+  fxa.commands.availableCommands = async () => {
+    return {
+      "https://identity.mozilla.com/cmd/open-uri": "local-keys",
+    };
+  };
+
+  const ourDevice = {
+    isCurrentDevice: true,
+    availableCommands: {
+      "https://identity.mozilla.com/cmd/open-uri": "local-keys",
+    },
+  };
+  Assert.ok(
+    !(await fxa.device._checkRemoteCommandsUpdateNeeded(
+      ourDevice.availableCommands
+    ))
+  );
+});
 
 function getTestUser(name) {
   return {

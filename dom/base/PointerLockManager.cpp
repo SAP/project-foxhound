@@ -162,7 +162,7 @@ void PointerLockManager::RequestLock(Element* aElement,
       aCallerType == CallerType::System;
   nsCOMPtr<nsIRunnable> request =
       new PointerLockRequest(aElement, userInputOrSystemCaller);
-  doc->Dispatch(TaskCategory::Other, request.forget());
+  doc->Dispatch(request.forget());
 }
 
 /* static */
@@ -187,10 +187,9 @@ void PointerLockManager::Unlock(Document* aDoc) {
     browserChild->SendReleasePointerLock();
   }
 
-  RefPtr<AsyncEventDispatcher> asyncDispatcher = new AsyncEventDispatcher(
-      pointerLockedElement, u"MozDOMPointerLock:Exited"_ns, CanBubble::eYes,
+  AsyncEventDispatcher::RunDOMEventWhenSafe(
+      *pointerLockedElement, u"MozDOMPointerLock:Exited"_ns, CanBubble::eYes,
       ChromeOnlyDispatch::eYes);
-  asyncDispatcher->RunDOMEventWhenSafe();
 }
 
 /* static */
@@ -234,8 +233,8 @@ bool PointerLockManager::StartSetPointerLock(Element* aElement,
 
   ChangePointerLockedElement(aElement, aDocument, nullptr);
   nsContentUtils::DispatchEventOnlyToChrome(
-      aDocument, ToSupports(aElement), u"MozDOMPointerLock:Entered"_ns,
-      CanBubble::eYes, Cancelable::eNo, /* DefaultAction */ nullptr);
+      aDocument, aElement, u"MozDOMPointerLock:Entered"_ns, CanBubble::eYes,
+      Cancelable::eNo, /* DefaultAction */ nullptr);
 
   return true;
 }
@@ -366,8 +365,7 @@ PointerLockManager::PointerLockRequest::Run() {
   }
   // If it is neither user input initiated, nor requested in fullscreen,
   // it should be rejected.
-  if (!error && !mUserInputOrChromeCaller &&
-      !document->GetUnretargetedFullScreenElement()) {
+  if (!error && !mUserInputOrChromeCaller && !document->Fullscreen()) {
     error = "PointerLockDeniedNotInputDriven";
   }
 

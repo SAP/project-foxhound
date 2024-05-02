@@ -100,18 +100,17 @@ nsresult NSSCipherStrategy::Cipher(const Span<uint8_t> aIv,
 
   // XXX make tag a separate parameter
   constexpr size_t tagLen = 16;
-  const auto tag = Span{aIv}.Last(tagLen);
+  const auto tag = aIv.Last(tagLen);
   // tag is const on decrypt, but returned on encrypt
 
-  const auto iv = Span{aIv}.First(12);
+  const auto iv = aIv.First(12);
   MOZ_ASSERT(tag.Length() + iv.Length() <= aIv.Length());
 
   int outLen;
   // aIn and aOut may not overlap resp. be the same, so we can't do this
   // in-place.
   const SECStatus rv = PK11_AEADOp(
-      mPK11Context->get(), CKG_GENERATE_COUNTER,
-      /* TODO use this for the discriminator */ 0, iv.Elements(), iv.Length(),
+      mPK11Context->get(), CKG_GENERATE_COUNTER, 0, iv.Elements(), iv.Length(),
       nullptr, 0, aOut.Elements(), &outLen, aOut.Length(), tag.Elements(),
       tag.Length(), aIn.Elements(), aIn.Length());
 
@@ -142,12 +141,14 @@ Span<const uint8_t> NSSCipherStrategy::SerializeKey(const KeyType& aKey) {
   return Span(aKey);
 }
 
-NSSCipherStrategy::KeyType NSSCipherStrategy::DeserializeKey(
+Maybe<NSSCipherStrategy::KeyType> NSSCipherStrategy::DeserializeKey(
     const Span<const uint8_t>& aSerializedKey) {
   KeyType res;
-  MOZ_ASSERT(res.size() == aSerializedKey.size());
+  if (res.size() != aSerializedKey.size()) {
+    return Nothing();
+  }
   std::copy(aSerializedKey.cbegin(), aSerializedKey.cend(), res.begin());
-  return res;
+  return Some(res);
 }
 
 }  // namespace mozilla::dom::quota

@@ -4,76 +4,75 @@
 
 "use strict";
 
-const Services = require("Services");
-
-const { bindActionCreators } = require("devtools/client/shared/vendor/redux");
-const { createFactory } = require("devtools/client/shared/vendor/react");
+const {
+  bindActionCreators,
+} = require("resource://devtools/client/shared/vendor/redux.js");
+const {
+  createFactory,
+} = require("resource://devtools/client/shared/vendor/react.js");
 const {
   render,
   unmountComponentAtNode,
-} = require("devtools/client/shared/vendor/react-dom");
+} = require("resource://devtools/client/shared/vendor/react-dom.js");
 const Provider = createFactory(
-  require("devtools/client/shared/vendor/react-redux").Provider
+  require("resource://devtools/client/shared/vendor/react-redux.js").Provider
 );
 
-const FluentReact = require("devtools/client/shared/vendor/fluent-react");
+const FluentReact = require("resource://devtools/client/shared/vendor/fluent-react.js");
 const LocalizationProvider = createFactory(FluentReact.LocalizationProvider);
 
-const actions = require("devtools/client/aboutdebugging/src/actions/index");
+const actions = require("resource://devtools/client/aboutdebugging/src/actions/index.js");
 const {
   configureStore,
-} = require("devtools/client/aboutdebugging/src/create-store");
+} = require("resource://devtools/client/aboutdebugging/src/create-store.js");
 const {
   setDebugTargetCollapsibilities,
-} = require("devtools/client/aboutdebugging/src/modules/debug-target-collapsibilities");
+} = require("resource://devtools/client/aboutdebugging/src/modules/debug-target-collapsibilities.js");
 
-const { l10n } = require("devtools/client/aboutdebugging/src/modules/l10n");
+const {
+  l10n,
+} = require("resource://devtools/client/aboutdebugging/src/modules/l10n.js");
 
 const {
   addNetworkLocationsObserver,
   getNetworkLocations,
   removeNetworkLocationsObserver,
-} = require("devtools/client/aboutdebugging/src/modules/network-locations");
+} = require("resource://devtools/client/aboutdebugging/src/modules/network-locations.js");
 const {
   addUSBRuntimesObserver,
   getUSBRuntimes,
   removeUSBRuntimesObserver,
-} = require("devtools/client/aboutdebugging/src/modules/usb-runtimes");
+} = require("resource://devtools/client/aboutdebugging/src/modules/usb-runtimes.js");
 
 loader.lazyRequireGetter(
   this,
   "adb",
-  "devtools/client/shared/remote-debugging/adb/adb",
+  "resource://devtools/client/shared/remote-debugging/adb/adb.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "adbAddon",
-  "devtools/client/shared/remote-debugging/adb/adb-addon",
+  "resource://devtools/client/shared/remote-debugging/adb/adb-addon.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "adbProcess",
-  "devtools/client/shared/remote-debugging/adb/adb-process",
+  "resource://devtools/client/shared/remote-debugging/adb/adb-process.js",
   true
 );
 
 const Router = createFactory(
-  require("devtools/client/shared/vendor/react-router-dom").HashRouter
+  require("resource://devtools/client/shared/vendor/react-router-dom.js")
+    .HashRouter
 );
 const App = createFactory(
-  require("devtools/client/aboutdebugging/src/components/App")
+  require("resource://devtools/client/aboutdebugging/src/components/App.js")
 );
 
 const AboutDebugging = {
   async init() {
-    if (!Services.prefs.getBoolPref("devtools.enabled", true)) {
-      // If DevTools are disabled, navigate to about:devtools.
-      window.location = "about:devtools?reason=AboutDebugging";
-      return;
-    }
-
     const direction = Services.locale.isAppLocaleRTL ? "rtl" : "ltr";
     document.documentElement.setAttribute("dir", direction);
 

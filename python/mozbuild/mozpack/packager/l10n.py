@@ -2,8 +2,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, print_function, unicode_literals
-
 """
 Replace localized parts of a packaged directory with data from a langpack
 directory.
@@ -11,38 +9,25 @@ directory.
 
 import json
 import os
+
 import six
-import mozpack.path as mozpath
-from mozpack.packager.formats import (
-    FlatFormatter,
-    JarFormatter,
-    OmniJarFormatter,
-)
-from mozpack.packager import (
-    Component,
-    SimplePackager,
-    SimpleManifestSink,
-)
-from mozpack.files import (
-    ComposedFinder,
-    GeneratedFile,
-    ManifestFile,
-)
-from mozpack.copier import (
-    FileCopier,
-    Jarrer,
-)
-from mozpack.chrome.manifest import (
-    ManifestLocale,
-    ManifestEntryWithRelPath,
-    is_manifest,
-    ManifestChrome,
-    Manifest,
-)
-from mozpack.errors import errors
-from mozpack.mozjar import JAR_DEFLATED
-from mozpack.packager.unpack import UnpackFinder
 from createprecomplete import generate_precomplete
+
+import mozpack.path as mozpath
+from mozpack.chrome.manifest import (
+    Manifest,
+    ManifestChrome,
+    ManifestEntryWithRelPath,
+    ManifestLocale,
+    is_manifest,
+)
+from mozpack.copier import FileCopier, Jarrer
+from mozpack.errors import errors
+from mozpack.files import ComposedFinder, GeneratedFile, ManifestFile
+from mozpack.mozjar import JAR_DEFLATED
+from mozpack.packager import Component, SimpleManifestSink, SimplePackager
+from mozpack.packager.formats import FlatFormatter, JarFormatter, OmniJarFormatter
+from mozpack.packager.unpack import UnpackFinder
 
 
 class LocaleManifestFinder(object):
@@ -270,7 +255,9 @@ def _repack(app_finder, l10n_finder, copier, formatter, non_chrome=set()):
         copier[path].preload([l.replace(locale, l10n_locale) for l in log])
 
 
-def repack(source, l10n, extra_l10n={}, non_resources=[], non_chrome=set()):
+def repack(
+    source, l10n, extra_l10n={}, non_resources=[], non_chrome=set(), minify=False
+):
     """
     Replace localized data from the `source` directory with localized data
     from `l10n` and `extra_l10n`.
@@ -289,15 +276,16 @@ def repack(source, l10n, extra_l10n={}, non_resources=[], non_chrome=set()):
     is in that format.
     The `non_chrome` argument gives a list of file/directory patterns for
     localized files that are not listed in a chrome.manifest.
+    If `minify`, `.properties` files are minified.
     """
-    app_finder = UnpackFinder(source)
-    l10n_finder = UnpackFinder(l10n)
+    app_finder = UnpackFinder(source, minify=minify)
+    l10n_finder = UnpackFinder(l10n, minify=minify)
     if extra_l10n:
         finders = {
             "": l10n_finder,
         }
         for base, path in six.iteritems(extra_l10n):
-            finders[base] = UnpackFinder(path)
+            finders[base] = UnpackFinder(path, minify=minify)
         l10n_finder = ComposedFinder(finders)
     copier = FileCopier()
     compress = min(app_finder.compressed, JAR_DEFLATED)

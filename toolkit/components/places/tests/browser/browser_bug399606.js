@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-add_task(async function() {
+add_task(async function () {
   registerCleanupFunction(PlacesUtils.history.clear);
 
   const URIS = [
@@ -31,7 +31,7 @@ add_task(async function() {
     expectedURI = uri;
     let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser);
     PlacesObservers.addListener(["page-visited"], onVisitsListener);
-    BrowserTestUtils.loadURI(gBrowser, uri);
+    BrowserTestUtils.startLoadingURIString(gBrowser, uri);
     await BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser, false, uri);
     await BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser, false, uri);
     await BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser, false, uri);

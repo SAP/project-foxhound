@@ -6,17 +6,28 @@
 #ifndef NS_CLIPBOARD_H
 #define NS_CLIPBOARD_H
 
-#include "nsIClipboard.h"
+#include "nsBaseClipboard.h"
 
-class nsClipboard final : public nsIClipboard {
+class nsClipboard final : public nsBaseClipboard {
  private:
-  ~nsClipboard() {}
+  ~nsClipboard();
 
  public:
-  NS_DECL_ISUPPORTS
-  NS_DECL_NSICLIPBOARD
-
   nsClipboard();
+
+  NS_DECL_ISUPPORTS_INHERITED
+
+ protected:
+  // Implement the native clipboard behavior.
+  NS_IMETHOD SetNativeClipboardData(nsITransferable* aTransferable,
+                                    int32_t aWhichClipboard) override;
+  NS_IMETHOD GetNativeClipboardData(nsITransferable* aTransferable,
+                                    int32_t aWhichClipboard) override;
+  nsresult EmptyNativeClipboardData(int32_t aWhichClipboard) override;
+  mozilla::Result<int32_t, nsresult> GetNativeClipboardSequenceNumber(
+      int32_t aWhichClipboard) override;
+  mozilla::Result<bool, nsresult> HasNativeClipboardDataMatchingFlavors(
+      const nsTArray<nsCString>& aFlavorList, int32_t aWhichClipboard) override;
 };
 
 #endif

@@ -8,32 +8,32 @@ const {
   Component,
   createFactory,
   createElement,
-} = require("devtools/client/shared/vendor/react");
+} = require("resource://devtools/client/shared/vendor/react.js");
 const {
   connect,
   Provider,
-} = require("devtools/client/shared/vendor/react-redux");
+} = require("resource://devtools/client/shared/vendor/react-redux.js");
 loader.lazyRequireGetter(
   this,
   "createStore",
-  "devtools/client/shared/redux/create-store"
+  "resource://devtools/client/shared/redux/create-store.js"
 );
 
-const actions = require("devtools/client/shared/components/object-inspector/actions");
+const actions = require("resource://devtools/client/shared/components/object-inspector/actions.js");
 const {
   getExpandedPaths,
   getLoadedProperties,
   getEvaluations,
   default: reducer,
-} = require("devtools/client/shared/components/object-inspector/reducer");
+} = require("resource://devtools/client/shared/components/object-inspector/reducer.js");
 
-const Tree = createFactory(require("devtools/client/shared/components/Tree"));
+const Tree = createFactory(require("resource://devtools/client/shared/components/Tree.js"));
 
 const ObjectInspectorItem = createFactory(
-  require("devtools/client/shared/components/object-inspector/components/ObjectInspectorItem")
+  require("resource://devtools/client/shared/components/object-inspector/components/ObjectInspectorItem.js")
 );
 
-const Utils = require("devtools/client/shared/components/object-inspector/utils/index");
+const Utils = require("resource://devtools/client/shared/components/object-inspector/utils/index.js");
 const { renderRep, shouldRenderRootsInReps } = Utils;
 const {
   getChildrenWithEvaluations,
@@ -45,6 +45,9 @@ const {
   nodeHasGetter,
   nodeHasSetter,
 } = Utils.node;
+const {
+  MODE,
+} = require("resource://devtools/client/shared/components/reps/reps/constants.js");
 
 // This implements a component that renders an interactive inspector
 // for looking at JavaScript objects. It expects descriptions of
@@ -74,7 +77,9 @@ const {
 // children.
 
 class ObjectInspector extends Component {
-  static defaultProps;
+  static defaultProps = {
+    autoReleaseObjectActors: true
+  };
   constructor(props) {
     super();
     this.cachedNodes = new Map();
@@ -91,23 +96,26 @@ class ObjectInspector extends Component {
     self.shouldItemUpdate = this.shouldItemUpdate.bind(this);
   }
 
-  componentWillMount() {
+  // FIXME: https://bugzilla.mozilla.org/show_bug.cgi?id=1774507
+  UNSAFE_componentWillMount() {
     this.roots = this.props.roots;
     this.focusedItem = this.props.focusedItem;
     this.activeItem = this.props.activeItem;
   }
 
-  componentWillUpdate(nextProps) {
+  // FIXME: https://bugzilla.mozilla.org/show_bug.cgi?id=1774507
+  UNSAFE_componentWillUpdate(nextProps) {
     this.removeOutdatedNodesFromCache(nextProps);
 
     if (this.roots !== nextProps.roots) {
       // Since the roots changed, we assume the properties did as well,
       // so we need to cleanup the component internal state.
+      const oldRoots = this.roots;
       this.roots = nextProps.roots;
       this.focusedItem = nextProps.focusedItem;
       this.activeItem = nextProps.activeItem;
       if (this.props.rootsChanged) {
-        this.props.rootsChanged(this.roots);
+        this.props.rootsChanged(this.roots, oldRoots);
       }
     }
   }
@@ -165,7 +173,9 @@ class ObjectInspector extends Component {
   }
 
   componentWillUnmount() {
-    this.props.closeObjectInspector(this.props.roots);
+    if (this.props.autoReleaseObjectActors){
+      this.props.closeObjectInspector(this.props.roots);
+    }
   }
 
   getItemChildren(item) {
@@ -202,7 +212,10 @@ class ObjectInspector extends Component {
   }
 
   isNodeExpandable(item) {
-    if (nodeIsPrimitive(item)) {
+    if (
+      nodeIsPrimitive(item) ||
+      item.contents?.value?.useCustomFormatter
+    ) {
       return false;
     }
 
@@ -214,7 +227,15 @@ class ObjectInspector extends Component {
   }
 
   setExpanded(item, expand) {
-    if (!this.isNodeExpandable(item)) {
+    if (
+      !this.isNodeExpandable(item) ||
+      // Don't allow to collapse header root node
+      (
+        this.props.displayRootNodeAsHeader &&
+        !expand &&
+        this.props.roots[0] == item
+      )
+    ) {
       return;
     }
 
@@ -283,6 +304,7 @@ class ObjectInspector extends Component {
       disableWrap = false,
       expandedPaths,
       inline,
+      displayRootNodeAsHeader = false,
     } = this.props;
 
     const classNames = ["object-inspector"];
@@ -291,6 +313,9 @@ class ObjectInspector extends Component {
     }
     if (disableWrap) {
       classNames.push("nowrap");
+    }
+    if (displayRootNodeAsHeader) {
+      classNames.push("header-root-node");
     }
 
     return Tree({
@@ -322,6 +347,7 @@ class ObjectInspector extends Component {
           depth,
           focused,
           arrow,
+          mode: displayRootNodeAsHeader && this.props.roots[0] == item ? MODE.HEADER : this.props.mode ,
           expanded,
           setExpanded: this.setExpanded,
         }),

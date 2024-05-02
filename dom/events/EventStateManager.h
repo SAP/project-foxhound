@@ -34,11 +34,12 @@ class nsIScrollableFrame;
 class nsITimer;
 class nsPresContext;
 
+enum class FormControlType : uint8_t;
+
 namespace mozilla {
 
 class EditorBase;
 class EnterLeaveDispatcher;
-class EventStates;
 class IMEContentObserver;
 class ScrollbarsForWheel;
 class TextControlElement;
@@ -80,6 +81,8 @@ class EventStateManager : public nsSupportsWeakReference, public nsIObserver {
   friend class mozilla::EnterLeaveDispatcher;
   friend class mozilla::ScrollbarsForWheel;
   friend class mozilla::WheelTransaction;
+
+  using ElementState = dom::ElementState;
 
   virtual ~EventStateManager();
 
@@ -130,7 +133,11 @@ class EventStateManager : public nsSupportsWeakReference, public nsIObserver {
   MOZ_CAN_RUN_SCRIPT_BOUNDARY void DispatchLegacyMouseScrollEvents(
       nsIFrame* aTargetFrame, WidgetWheelEvent* aEvent, nsEventStatus* aStatus);
 
-  void NotifyDestroyPresContext(nsPresContext* aPresContext);
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY void NotifyDestroyPresContext(
+      nsPresContext* aPresContext);
+
+  void ResetHoverState();
+
   void SetPresContext(nsPresContext* aPresContext);
   void ClearFrameRefs(nsIFrame* aFrame);
 
@@ -138,16 +145,16 @@ class EventStateManager : public nsSupportsWeakReference, public nsIObserver {
   already_AddRefed<nsIContent> GetEventTargetContent(WidgetEvent* aEvent);
 
   // We manage 4 states here: ACTIVE, HOVER, DRAGOVER, URLTARGET
-  static bool ManagesState(EventStates aState) {
-    return aState == NS_EVENT_STATE_ACTIVE || aState == NS_EVENT_STATE_HOVER ||
-           aState == NS_EVENT_STATE_DRAGOVER ||
-           aState == NS_EVENT_STATE_URLTARGET;
+  static bool ManagesState(ElementState aState) {
+    return aState == ElementState::ACTIVE || aState == ElementState::HOVER ||
+           aState == ElementState::DRAGOVER ||
+           aState == ElementState::URLTARGET;
   }
 
   /**
-   * Notify that the given NS_EVENT_STATE_* bit has changed for this content.
+   * Notify that the given ElementState::* bit has changed for this content.
    * @param aContent Content which has changed states
-   * @param aState   Corresponding state flags such as NS_EVENT_STATE_FOCUS
+   * @param aState   Corresponding state flags such as ElementState::FOCUS
    * @return  Whether the content was able to change all states. Returns false
    *                  if a resulting DOM event causes the content node passed in
    *                  to not change states. Note, the frame for the content may
@@ -155,10 +162,13 @@ class EventStateManager : public nsSupportsWeakReference, public nsIObserver {
    *                  frame reconstructions that may occur, but this does not
    *                  affect the return value.
    */
-  bool SetContentState(nsIContent* aContent, EventStates aState);
+  bool SetContentState(nsIContent* aContent, ElementState aState);
+
+  nsIContent* GetActiveContent() const { return mActiveContent; }
 
   void NativeAnonymousContentRemoved(nsIContent* aAnonContent);
-  void ContentRemoved(dom::Document* aDocument, nsIContent* aContent);
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY void ContentRemoved(dom::Document* aDocument,
+                                                  nsIContent* aContent);
 
   /**
    * Called when a native anonymous <div> element which is root element of
@@ -190,6 +200,8 @@ class EventStateManager : public nsSupportsWeakReference, public nsIObserver {
    * asynchronously.
    */
   void TryToFlushPendingNotificationsToIME();
+
+  static bool IsKeyboardEventUserActivity(WidgetEvent* aEvent);
 
   /**
    * Register accesskey on the given element. When accesskey is activated then
@@ -262,6 +274,8 @@ class EventStateManager : public nsSupportsWeakReference, public nsIObserver {
                      const Maybe<gfx::IntPoint>& aHotspot, nsIWidget* aWidget,
                      bool aLockCursor);
 
+  void StartHidingCursorWhileTyping(nsIWidget*);
+
   /**
    * Checks if the current mouse over element matches the given
    * Element (which has a remote frame), and if so, notifies
@@ -275,7 +289,10 @@ class EventStateManager : public nsSupportsWeakReference, public nsIObserver {
 
   NS_DECL_CYCLE_COLLECTION_CLASS_AMBIGUOUS(EventStateManager, nsIObserver)
 
-  static dom::Document* sMouseOverDocument;
+  // The manager in this process that is setting the cursor. In the parent
+  // process it might be null if a remote process is setting the cursor.
+  static EventStateManager* sCursorSettingManager;
+  static void ClearCursorSettingManager() { sCursorSettingManager = nullptr; }
 
   static EventStateManager* GetActiveEventStateManager() { return sActiveESM; }
 
@@ -283,9 +300,6 @@ class EventStateManager : public nsSupportsWeakReference, public nsIObserver {
   // if aContent is non-null, marks the object as active.
   static void SetActiveManager(EventStateManager* aNewESM,
                                nsIContent* aContent);
-
-  // Sets the fullscreen event state on aElement to aIsFullscreen.
-  static void SetFullscreenState(dom::Element* aElement, bool aIsFullscreen);
 
   static bool IsRemoteTarget(nsIContent* target);
 
@@ -337,7 +351,8 @@ class EventStateManager : public nsSupportsWeakReference, public nsIObserver {
    * larger than this value, the computed scroll amount isn't rounded down to
    * the page width or height.
    */
-  enum { MIN_MULTIPLIER_VALUE_ALLOWING_OVER_ONE_PAGE_SCROLL = 1000 };
+  static constexpr double MIN_MULTIPLIER_VALUE_ALLOWING_OVER_ONE_PAGE_SCROLL =
+      1000.0;
 
   /**
    * HandleMiddleClickPaste() handles middle mouse button event as pasting
@@ -379,8 +394,8 @@ class EventStateManager : public nsSupportsWeakReference, public nsIObserver {
    */
   void ClearCachedWidgetCursor(nsIFrame* aTargetFrame);
 
-  void UpdateCursor(nsPresContext* aPresContext, WidgetEvent* aEvent,
-                    nsIFrame* aTargetFrame, nsEventStatus* aStatus);
+  void UpdateCursor(nsPresContext*, WidgetMouseEvent*, nsIFrame* aTargetFrame,
+                    nsEventStatus* aStatus);
   /**
    * Turn a GUI mouse/pointer event into a mouse/pointer event targeted at the
    * specified content.  This returns the primary frame for the content (or null
@@ -678,17 +693,16 @@ class EventStateManager : public nsSupportsWeakReference, public nsIObserver {
       INDEX_CONTROL,
       INDEX_META,
       INDEX_SHIFT,
-      INDEX_OS,
       COUNT_OF_MULTIPLIERS
     };
 
     /**
      * GetIndexFor() returns the index of the members which should be used for
      * the aEvent.  When only one modifier key of MODIFIER_ALT,
-     * MODIFIER_CONTROL, MODIFIER_META, MODIFIER_SHIFT or MODIFIER_OS is
-     * pressed, returns the index for the modifier.  Otherwise, this return the
-     * default index which is used at either no modifier key is pressed or
-     * two or modifier keys are pressed.
+     * MODIFIER_CONTROL, MODIFIER_META or MODIFIER_SHIFT is pressed, returns the
+     * index for the modifier.  Otherwise, this return the default index which
+     * is used at either no modifier key is pressed or two or modifier keys are
+     * pressed.
      */
     Index GetIndexFor(const WidgetWheelEvent* aEvent);
 
@@ -1101,17 +1115,17 @@ class EventStateManager : public nsSupportsWeakReference, public nsIObserver {
   //
   // Only meant to be called from ContentRemoved and
   // NativeAnonymousContentRemoved.
-  void RemoveNodeFromChainIfNeeded(EventStates aState,
+  void RemoveNodeFromChainIfNeeded(ElementState aState,
                                    nsIContent* aContentRemoved, bool aNotify);
 
   bool IsEventOutsideDragThreshold(WidgetInputEvent* aEvent) const;
 
-  static inline void DoStateChange(dom::Element* aElement, EventStates aState,
+  static inline void DoStateChange(dom::Element* aElement, ElementState aState,
                                    bool aAddState);
-  static inline void DoStateChange(nsIContent* aContent, EventStates aState,
+  static inline void DoStateChange(nsIContent* aContent, ElementState aState,
                                    bool aAddState);
   static void UpdateAncestorState(nsIContent* aStartNode,
-                                  nsIContent* aStopBefore, EventStates aState,
+                                  nsIContent* aStopBefore, ElementState aState,
                                   bool aAddState);
   static void ResetLastOverForContent(
       const uint32_t& aIdx, const RefPtr<OverOutElementsWrapper>& aChunk,
@@ -1138,11 +1152,27 @@ class EventStateManager : public nsSupportsWeakReference, public nsIObserver {
   void NotifyTargetUserActivation(WidgetEvent* aEvent,
                                   nsIContent* aTargetContent);
 
+  /**
+   * https://html.spec.whatwg.org/multipage/popover.html#light-dismiss-open-popovers.
+   */
+  MOZ_CAN_RUN_SCRIPT void LightDismissOpenPopovers(WidgetEvent* aEvent,
+                                                   nsIContent* aTargetContent);
+
   already_AddRefed<EventStateManager> ESMFromContentOrThis(
       nsIContent* aContent);
 
+  struct LastMouseDownInfo {
+    nsCOMPtr<nsIContent> mLastMouseDownContent;
+    Maybe<FormControlType> mLastMouseDownInputControlType;
+    uint32_t mClickCount = 0;
+  };
+
+  LastMouseDownInfo& GetLastMouseDownInfo(int16_t aButton);
+
+  // These variables are only relevant if we're the cursor-setting manager.
   StyleCursorKind mLockCursor;
-  bool mLastFrameConsumedSetCursor;
+  bool mLastFrameConsumedSetCursor = false;
+  bool mHidingCursorWhileTyping = false;
 
   // Last mouse event mRefPoint (the offset from the widget's origin in
   // device pixels) when mouse was locked, used to restore mouse position
@@ -1178,23 +1208,20 @@ class EventStateManager : public nsSupportsWeakReference, public nsIObserver {
   Modifiers mGestureModifiers;
   uint16_t mGestureDownButtons;
 
-  nsCOMPtr<nsIContent> mLastLeftMouseDownContent;
-  nsCOMPtr<nsIContent> mLastMiddleMouseDownContent;
-  nsCOMPtr<nsIContent> mLastRightMouseDownContent;
+  LastMouseDownInfo mLastLeftMouseDownInfo;
+  LastMouseDownInfo mLastMiddleMouseDownInfo;
+  LastMouseDownInfo mLastRightMouseDownInfo;
 
   nsCOMPtr<nsIContent> mActiveContent;
   nsCOMPtr<nsIContent> mHoverContent;
   static nsCOMPtr<nsIContent> sDragOverContent;
   nsCOMPtr<nsIContent> mURLTargetContent;
+  nsCOMPtr<nsINode> mPopoverPointerDownTarget;
 
   nsPresContext* mPresContext;      // Not refcnted
   RefPtr<dom::Document> mDocument;  // Doesn't necessarily need to be owner
 
   RefPtr<IMEContentObserver> mIMEContentObserver;
-
-  uint32_t mLClickCount;
-  uint32_t mMClickCount;
-  uint32_t mRClickCount;
 
   bool mShouldAlwaysUseLineDeltas : 1;
   bool mShouldAlwaysUseLineDeltasInitialized : 1;
@@ -1240,10 +1267,9 @@ class EventStateManager : public nsSupportsWeakReference, public nsIObserver {
 
 // Click and double-click events need to be handled even for content that
 // has no frame. This is required for Web compatibility.
-#define NS_EVENT_NEEDS_FRAME(event)               \
-  (!(event)->HasPluginActivationEventMessage() && \
-   (event)->mMessage != eMouseClick &&            \
-   (event)->mMessage != eMouseDoubleClick &&      \
+#define NS_EVENT_NEEDS_FRAME(event)          \
+  ((event)->mMessage != eMouseClick &&       \
+   (event)->mMessage != eMouseDoubleClick && \
    (event)->mMessage != eMouseAuxClick)
 
 #endif  // mozilla_EventStateManager_h_

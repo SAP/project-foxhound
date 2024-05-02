@@ -2,17 +2,14 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/* eslint-env mozilla/frame-script */
+/* eslint-env mozilla/remote-page */
 
 /**
  * Determines whether a given value is a fluent id or plain text and adds it to an element
  * @param {Array<[HTMLElement, string]>} items An array of [element, value] where value is
  *                                       a fluent id starting with "fluent:" or plain text
  */
-async function translateElements(container, items) {
-  // We need to wait for fluent to initialize
-  await document.l10n.ready;
-
+function translateElements(items) {
   items.forEach(([element, value]) => {
     // Skip empty text or elements
     if (!element || !value) {
@@ -26,12 +23,10 @@ async function translateElements(container, items) {
       element.removeAttribute("data-l10n-id");
     }
   });
-
-  document.l10n.translateFragment(container);
 }
 
-async function renderInfo({
-  infoEnabled = false,
+function renderInfo({
+  infoEnabled,
   infoTitle,
   infoTitleEnabled,
   infoBody,
@@ -41,81 +36,101 @@ async function renderInfo({
 } = {}) {
   const container = document.querySelector(".info");
   if (infoEnabled === false) {
-    container.remove();
+    container.hidden = true;
     return;
   }
+  container.hidden = false;
 
   const titleEl = document.getElementById("info-title");
   const bodyEl = document.getElementById("info-body");
   const linkEl = document.getElementById("private-browsing-myths");
 
-  if (infoIcon) {
+  let feltPrivacyEnabled = RPMGetBoolPref(
+    "browser.privatebrowsing.felt-privacy-v1",
+    false
+  );
+
+  if (infoIcon && !feltPrivacyEnabled) {
     container.style.backgroundImage = `url(${infoIcon})`;
   }
 
-  if (!infoTitleEnabled) {
-    titleEl.remove();
+  if (feltPrivacyEnabled) {
+    // Record exposure event for Felt Privacy experiment
+    window.FeltPrivacyExposureTelemetry();
+
+    infoTitleEnabled = true;
+    infoTitle = "fluent:about-private-browsing-felt-privacy-v1-info-header";
+    infoBody = "fluent:about-private-browsing-felt-privacy-v1-info-body";
+    infoLinkText = "fluent:about-private-browsing-felt-privacy-v1-info-link";
   }
 
-  await translateElements(container, [
+  titleEl.hidden = !infoTitleEnabled;
+
+  translateElements([
     [titleEl, infoTitle],
     [bodyEl, infoBody],
     [linkEl, infoLinkText],
   ]);
 
-  linkEl.setAttribute(
-    "href",
-    infoLinkUrl ||
-      RPMGetFormatURLPref("app.support.baseURL") + "private-browsing-myths"
-  );
-
-  linkEl.addEventListener("click", () => {
-    window.PrivateBrowsingRecordClick("info_link");
-  });
+  if (infoLinkUrl) {
+    linkEl.setAttribute("href", infoLinkUrl);
+  }
 }
 
 async function renderPromo({
   messageId = null,
   promoEnabled = false,
+  promoType = "VPN",
   promoTitle,
   promoTitleEnabled,
   promoLinkText,
-  promoLinkUrl,
   promoLinkType,
   promoSectionStyle,
   promoHeader,
   promoImageLarge,
   promoImageSmall,
+  promoButton = null,
 } = {}) {
+  const shouldShow = await RPMSendQuery("ShouldShowPromo", { type: promoType });
   const container = document.querySelector(".promo");
-  if (promoEnabled === false) {
+
+  if (!promoEnabled || !shouldShow) {
     container.remove();
     return false;
   }
 
-  const titleEl = document.getElementById("private-browsing-vpn-text");
-  let linkEl = document.getElementById("private-browsing-vpn-link");
+  const titleEl = document.getElementById("private-browsing-promo-text");
+  const linkEl = document.getElementById("private-browsing-promo-link");
   const promoHeaderEl = document.getElementById("promo-header");
   const infoContainerEl = document.querySelector(".info");
   const promoImageLargeEl = document.querySelector(".promo-image-large img");
   const promoImageSmallEl = document.querySelector(".promo-image-small img");
   const dismissBtn = document.querySelector("#dismiss-btn");
 
-  // Setup the private browsing VPN link.
-  const vpnPromoUrl =
-    promoLinkUrl || RPMGetFormatURLPref("browser.privatebrowsing.vpnpromourl");
-
-  if (promoLinkType === "button") {
-    linkEl.classList.add("button");
+  if (promoLinkType === "link") {
+    linkEl.classList.remove("primary");
+    linkEl.classList.add("text-link", "promo-link");
   }
 
-  if (vpnPromoUrl) {
-    linkEl.setAttribute("href", vpnPromoUrl);
-    linkEl.addEventListener("click", () => {
-      window.PrivateBrowsingRecordClick("promo_link");
+  if (promoButton?.action) {
+    linkEl.addEventListener("click", async event => {
+      event.preventDefault();
+
+      // Record promo click telemetry and set metrics as allow for spotlight
+      // modal opened on promo click if user is enrolled in an experiment
+      let isExperiment = window.PrivateBrowsingRecordClick("promo_link");
+      const promoButtonData = promoButton?.action?.data;
+      if (
+        promoButton?.action?.type === "SHOW_SPOTLIGHT" &&
+        promoButtonData?.content
+      ) {
+        promoButtonData.content.metrics = isExperiment ? "allow" : "block";
+      }
+
+      await RPMSendQuery("SpecialMessageActionDispatch", promoButton.action);
     });
   } else {
-    // If the link is undefined, remove the promo completely
+    // If the action doesn't exist, remove the promo completely
     container.remove();
     return false;
   }
@@ -167,7 +182,7 @@ async function renderPromo({
     promoHeaderEl.remove();
   }
 
-  await translateElements(container, [
+  translateElements([
     [titleEl, promoTitle],
     [linkEl, promoLinkText],
     [promoHeaderEl, promoHeader],
@@ -180,9 +195,9 @@ async function renderPromo({
 }
 
 /**
- * For every PB newtab loaded a second is pre-rendered in the background.
+ * For every PB newtab loaded, a second is pre-rendered in the background.
  * We need to guard against invalid impressions by checking visibility state.
- * If visible record otherwise listen for visibility change and record later.
+ * If visible, record. Otherwise, listen for visibility change and record later.
  */
 function recordOnceVisible(message) {
   const recordImpression = () => {
@@ -192,7 +207,7 @@ function recordOnceVisible(message) {
         data: message,
       });
       // Similar telemetry, but for Nimbus experiments
-      window.PrivateBrowsingExposureTelemetry();
+      window.PrivateBrowsingPromoExposureTelemetry();
       document.removeEventListener("visibilitychange", recordImpression);
     }
   };
@@ -203,23 +218,39 @@ function recordOnceVisible(message) {
       data: message,
     });
     // Similar telemetry, but for Nimbus experiments
-    window.PrivateBrowsingExposureTelemetry();
+    window.PrivateBrowsingPromoExposureTelemetry();
   } else {
     document.addEventListener("visibilitychange", recordImpression);
   }
 }
 
-async function setupFeatureConfig() {
-  let config = null;
+// The PB newtab may be pre-rendered. Once the tab is visible, check to make sure the message wasn't blocked after the initial render. If it was, remove the promo.
+function handlePromoOnPreload(message) {
+  async function removePromoIfBlocked() {
+    if (document.visibilityState === "visible") {
+      let blocked = await RPMSendQuery("IsPromoBlocked", message);
+      if (blocked) {
+        const container = document.querySelector(".promo");
+        container.remove();
+      }
+    }
+    document.removeEventListener("visibilitychange", removePromoIfBlocked);
+  }
+  // Only add the listener to pre-rendered tabs that aren't visible
+  if (document.visibilityState !== "visible") {
+    document.addEventListener("visibilitychange", removePromoIfBlocked);
+  }
+}
+
+async function setupMessageConfig(config = null) {
   let message = null;
-  try {
-    config = window.PrivateBrowsingFeatureConfig();
-  } catch (e) {}
-  if (!Object.keys(config).length) {
+
+  if (!config) {
+    let hideDefault = window.PrivateBrowsingShouldHideDefault();
     try {
       let response = await window.ASRouterMessage({
         type: "PBNEWTAB_MESSAGE_REQUEST",
-        data: {},
+        data: { hideDefault: !!hideDefault },
       });
       message = response?.message;
       config = message?.content;
@@ -227,34 +258,55 @@ async function setupFeatureConfig() {
     } catch (e) {}
   }
 
-  await renderInfo(config);
-  // Check the current geo and don't render if we're in the wrong one.
-  const shouldShow = await RPMSendQuery("ShouldShowVPNPromo", {});
-  if (shouldShow) {
-    let hasRendered = await renderPromo(config);
-    if (hasRendered && message) {
-      recordOnceVisible(message);
-    }
+  renderInfo(config);
+  let hasRendered = await renderPromo(config);
+  if (hasRendered && message) {
+    recordOnceVisible(message);
+    handlePromoOnPreload(message);
   }
   // For tests
   document.documentElement.setAttribute("PrivateBrowsingRenderComplete", true);
 }
 
-document.addEventListener("DOMContentLoaded", function() {
+let SHOW_DEVTOOLS_MESSAGE = "ShowDevToolsMessage";
+
+function showDevToolsMessage(msg) {
+  msg.data.content.messageId = "DEVTOOLS_MESSAGE";
+  setupMessageConfig(msg?.data?.content);
+  RPMRemoveMessageListener(SHOW_DEVTOOLS_MESSAGE, showDevToolsMessage);
+}
+
+document.addEventListener("DOMContentLoaded", function () {
+  // check the url to see if we're rendering a devtools message
+  if (document.location.toString().includes("debug")) {
+    RPMAddMessageListener(SHOW_DEVTOOLS_MESSAGE, showDevToolsMessage);
+    return;
+  }
   if (!RPMIsWindowPrivate()) {
     document.documentElement.classList.remove("private");
     document.documentElement.classList.add("normal");
     document
       .getElementById("startPrivateBrowsing")
-      .addEventListener("click", function() {
+      .addEventListener("click", function () {
         RPMSendAsyncMessage("OpenPrivateWindow");
       });
     return;
   }
 
+  // The default info content is already in the markup, but we need to use JS to
+  // set up the learn more link, since it's dynamically generated.
+  const linkEl = document.getElementById("private-browsing-myths");
+  linkEl.setAttribute(
+    "href",
+    RPMGetFormatURLPref("app.support.baseURL") + "private-browsing-myths"
+  );
+  linkEl.addEventListener("click", () => {
+    window.PrivateBrowsingRecordClick("info_link");
+  });
+
   // We don't do this setup until now, because we don't want to record any impressions until we're
   // sure we're actually running a private window, not just about:privatebrowsing in a normal window.
-  setupFeatureConfig();
+  setupMessageConfig();
 
   // Set up the private search banner.
   const privateSearchBanner = document.getElementById("search-banner");
@@ -361,22 +413,22 @@ document.addEventListener("DOMContentLoaded", function() {
       RPMAddMessageListener(DISABLE_SEARCH_TOPIC, disableSearch);
     }
   }
-  btn.addEventListener("focus", function() {
+  btn.addEventListener("focus", function () {
     handoffSearch();
   });
-  btn.addEventListener("click", function() {
+  btn.addEventListener("click", function () {
     handoffSearch();
   });
 
   // Hand-off any text that gets dropped or pasted
-  editable.addEventListener("drop", function(ev) {
+  editable.addEventListener("drop", function (ev) {
     ev.preventDefault();
     let text = ev.dataTransfer.getData("text");
     if (text) {
       handoffSearch(text);
     }
   });
-  editable.addEventListener("paste", function(ev) {
+  editable.addEventListener("paste", function (ev) {
     ev.preventDefault();
     handoffSearch(ev.clipboardData.getData("Text"));
   });

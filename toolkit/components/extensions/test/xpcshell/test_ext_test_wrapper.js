@@ -1,16 +1,10 @@
 "use strict";
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "AddonManager",
-  "resource://gre/modules/AddonManager.jsm"
-);
+Services.prefs.setBoolPref("extensions.blocklist.enabled", false);
 
-// Automatically start the background page after restarting the AddonManager.
-Services.prefs.setBoolPref(
-  "extensions.webextensions.background-delayed-startup",
-  false
-);
+ChromeUtils.defineESModuleGetters(this, {
+  AddonManager: "resource://gre/modules/AddonManager.sys.mjs",
+});
 
 AddonTestUtils.init(this);
 AddonTestUtils.overrideCertDB();
@@ -29,7 +23,7 @@ add_task(async function setup_wrapper() {
   let extension = ExtensionTestUtils.loadExtension({
     useAddonManager: "permanent",
     manifest: {
-      applications: { gecko: { id: TEST_ADDON_ID } },
+      browser_specific_settings: { gecko: { id: TEST_ADDON_ID } },
     },
     background() {
       browser.test.sendMessage("started_up");
@@ -38,6 +32,7 @@ add_task(async function setup_wrapper() {
 
   await AddonTestUtils.promiseStartupManager();
   await extension.startup();
+  await extension.awaitBackgroundStarted();
   await AddonTestUtils.promiseShutdownManager();
 
   // Check message because it is expected to be received while `startup()` was
@@ -47,6 +42,7 @@ add_task(async function setup_wrapper() {
 
   // Load AddonManager, and unload the extension as soon as it has started.
   await AddonTestUtils.promiseStartupManager();
+  await extension.awaitBackgroundStarted();
   await extension.unload();
   await AddonTestUtils.promiseShutdownManager();
 

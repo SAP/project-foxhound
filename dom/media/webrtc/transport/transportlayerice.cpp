@@ -41,37 +41,21 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
 #include <string>
-#include <vector>
 
-#include "nsCOMPtr.h"
 #include "nsComponentManagerUtils.h"
 #include "nsError.h"
 #include "nsNetCID.h"
-#include "nsComponentManagerUtils.h"
-#include "nsServiceManagerUtils.h"
 
 // nICEr includes
 extern "C" {
 #include "nr_api.h"
-#include "registry.h"
-#include "async_timer.h"
 #include "ice_util.h"
 #include "transport_addr.h"
-#include "nr_crypto.h"
-#include "nr_socket.h"
-#include "nr_socket_local.h"
-#include "stun_client_ctx.h"
-#include "stun_server_ctx.h"
-#include "ice_ctx.h"
-#include "ice_candidate.h"
-#include "ice_handler.h"
 }
 
 // Local includes
 #include "logging.h"
-#include "nricectx.h"
 #include "nricemediastream.h"
-#include "transportflow.h"
 #include "transportlayerice.h"
 
 namespace mozilla {
@@ -94,7 +78,7 @@ void TransportLayerIce::SetParameters(RefPtr<NrIceMediaStream> stream,
                                       int component) {
   // Stream could be null in the case of some badly written js that causes
   // us to be in an ICE restart case, but not have valid streams due to
-  // not calling PeerConnectionMedia::EnsureTransports if
+  // not calling PeerConnectionImpl::EnsureTransports if
   // PeerConnectionImpl::SetSignalingState_m thinks the conditions were
   // not correct.  We also solved a case where an incoming answer was
   // incorrectly beginning an ICE restart when the offer did not indicate one.

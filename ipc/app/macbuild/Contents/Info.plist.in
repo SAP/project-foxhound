@@ -5,9 +5,9 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>English</string>
 	<key>CFBundleExecutable</key>
-	<string>@PROGRAM@</string>
+	<string>@EXECUTABLE@</string>
 	<key>CFBundleIdentifier</key>
-	<string>org.mozilla.plugincontainer</string>
+	<string>@BUNDLEID@</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundlePackageType</key>
@@ -16,7 +16,7 @@
 	<string>????</string>
 	<key>CFBundleVersion</key>
 	<string>1.0</string>
-	<key>LSUIElement</key>
+	<key>LSBackgroundOnly</key>
 	<string>1</string>
 	<key>NSRequiresAquaSystemAppearance</key>
 	<true/>

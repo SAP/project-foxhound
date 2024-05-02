@@ -2,8 +2,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, print_function
-
 import datetime
 import os
 import posixpath
@@ -16,14 +14,12 @@ import time
 import traceback
 from contextlib import closing
 
-from six.moves.urllib_request import urlopen
-
-from mozdevice import ADBDeviceFactory, RemoteProcessMonitor
 import mozcrash
-
+import reftestcommandline
+from mozdevice import ADBDeviceFactory, RemoteProcessMonitor
 from output import OutputHandler
 from runreftest import RefTest, ReftestResolver, build_obj
-import reftestcommandline
+from six.moves.urllib_request import urlopen
 
 # We need to know our current directory so that we can serve our test files from it.
 SCRIPT_DIRECTORY = os.path.abspath(os.path.realpath(os.path.dirname(__file__)))
@@ -107,12 +103,12 @@ class ReftestServer:
         args = [
             "-g",
             self.xrePath,
-            "-f",
-            os.path.join(self.httpdPath, "httpd.js"),
             "-e",
             "const _PROFILE_PATH = '%(profile)s';const _SERVER_PORT = "
-            "'%(port)s'; const _SERVER_ADDR ='%(server)s';"
+            "'%(port)s'; const _SERVER_ADDR ='%(server)s'; "
+            "const _HTTPD_PATH = '%(httpdPath)s';"
             % {
+                "httpdPath": self.httpdPath.replace("\\", "\\\\"),
                 "profile": self.profileDir.replace("\\", "\\\\"),
                 "port": self.httpPort,
                 "server": self.webServer,
@@ -340,7 +336,6 @@ class RemoteReftest(RefTest):
         )
         profileDir = profile.profile
         prefs = {}
-        prefs["app.update.url.android"] = ""
         prefs["reftest.remote"] = True
         prefs["datareporting.policy.dataSubmissionPolicyBypassAcceptance"] = True
         # move necko cache to a location that can be cleaned up

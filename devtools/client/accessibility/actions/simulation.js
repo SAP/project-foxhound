@@ -4,9 +4,13 @@
 
 "use strict";
 
-const { SIMULATE } = require("devtools/client/accessibility/constants");
+const {
+  SIMULATE,
+} = require("resource://devtools/client/accessibility/constants.js");
 
-exports.simulate = (simulateFunc, simTypes = []) => ({ dispatch }) =>
-  simulateFunc(simTypes)
-    .then(success => dispatch({ error: !success, simTypes, type: SIMULATE }))
-    .catch(error => dispatch({ error, type: SIMULATE }));
+exports.simulate =
+  (simulateFunc, simTypes = []) =>
+  ({ dispatch }) =>
+    simulateFunc(simTypes)
+      .then(success => dispatch({ error: !success, simTypes, type: SIMULATE }))
+      .catch(error => dispatch({ error, type: SIMULATE }));

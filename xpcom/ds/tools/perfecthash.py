@@ -21,10 +21,11 @@ maintainable, rather than being as optimized as possible, due to the relatively
 small dataset it was designed for. In the future we may want to optimize further.
 """
 
-from collections import namedtuple
-from mozbuild.util import ensure_bytes
 import textwrap
+from collections import namedtuple
+
 import six
+from mozbuild.util import ensure_bytes
 
 
 # Iteration over bytestrings works differently in Python 2 and 3; this function
@@ -126,7 +127,7 @@ class PerfectHash(object):
         32-bit FNV is used for indexing into the first table, and the value
         stored in that table is used as the offset basis for indexing into the
         values table."""
-        for byte in memoryview(key):
+        for byte in memoryview(ensure_bytes(key)):
             obyte = _ord(byte)
             basis ^= obyte  # xor-in the byte
             basis *= cls.FNV_PRIME  # Multiply by the FNV prime
@@ -144,7 +145,7 @@ class PerfectHash(object):
     def get_index(self, key):
         """Given a key, determine the index in self.entries"""
         idx = self.get_raw_index(key)
-        if memoryview(key) != self.key(self.entries[idx]):
+        if memoryview(ensure_bytes(key)) != self.key(self.entries[idx]):
             return None
         return idx
 
@@ -290,8 +291,9 @@ class CGHelper(object):
         if return_type is None:
             return_type = "const %s&" % self.entry_type
 
-        return textwrap.dedent(
-            """
+        return (
+            textwrap.dedent(
+                """
             %(return_type)s
             %(name)s(%(key_type)s aKey)
             {
@@ -304,16 +306,18 @@ class CGHelper(object):
               %(return_entry)s
             }
             """
-        ) % {
-            "name": name,
-            "basis_table": self._indent(self.basis_table()),
-            "entries_name": self.entries_name,
-            "return_type": return_type,
-            "return_entry": self._indent(return_entry),
-            "key_type": key_type,
-            "key_bytes": key_bytes,
-            "key_length": key_length,
-        }
+            )
+            % {
+                "name": name,
+                "basis_table": self._indent(self.basis_table()),
+                "entries_name": self.entries_name,
+                "return_type": return_type,
+                "return_entry": self._indent(return_entry),
+                "key_type": key_type,
+                "key_bytes": key_bytes,
+                "key_length": key_length,
+            }
+        )
 
     def gen_jslinearstr_getter(
         self, name, return_type=None, return_entry="return entry;"
@@ -336,8 +340,9 @@ class CGHelper(object):
         if return_type is None:
             return_type = "const %s&" % self.entry_type
 
-        return textwrap.dedent(
-            """
+        return (
+            textwrap.dedent(
+                """
             %(return_type)s
             %(name)s(JSLinearString* aKey)
             {
@@ -361,10 +366,12 @@ class CGHelper(object):
               }
             }
             """
-        ) % {
-            "name": name,
-            "basis_table": self._indent(self.basis_table()),
-            "entries_name": self.entries_name,
-            "return_type": return_type,
-            "return_entry": self._indent(return_entry, 2),
-        }
+            )
+            % {
+                "name": name,
+                "basis_table": self._indent(self.basis_table()),
+                "entries_name": self.entries_name,
+                "return_type": return_type,
+                "return_entry": self._indent(return_entry, 2),
+            }
+        )

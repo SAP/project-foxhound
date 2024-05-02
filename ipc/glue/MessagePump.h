@@ -10,6 +10,8 @@
 #include "base/message_pump_default.h"
 #if defined(XP_WIN)
 #  include "base/message_pump_win.h"
+#elif defined(XP_DARWIN)
+#  include "base/message_pump_mac.h"
 #endif
 
 #include "base/time.h"
@@ -30,7 +32,7 @@ class MessagePump : public base::MessagePumpDefault {
   friend class DoWorkRunnable;
 
  public:
-  explicit MessagePump(nsIEventTarget* aEventTarget);
+  explicit MessagePump(nsISerialEventTarget* aEventTarget);
 
   // From base::MessagePump.
   virtual void Run(base::MessagePump::Delegate* aDelegate) override;
@@ -45,7 +47,7 @@ class MessagePump : public base::MessagePumpDefault {
   virtual void ScheduleDelayedWork(
       const base::TimeTicks& aDelayedWorkTime) override;
 
-  virtual nsIEventTarget* GetXPCOMThread() override;
+  virtual nsISerialEventTarget* GetXPCOMThread() override;
 
  protected:
   virtual ~MessagePump();
@@ -55,7 +57,7 @@ class MessagePump : public base::MessagePumpDefault {
   void DoDelayedWork(base::MessagePump::Delegate* aDelegate);
 
  protected:
-  nsIEventTarget* mEventTarget;
+  nsISerialEventTarget* mEventTarget;
 
   // mDelayedWorkTimer and mEventTarget are set in Run() by this class or its
   // subclasses.
@@ -80,7 +82,7 @@ class MessagePumpForChildProcess final : public MessagePump {
 
 class MessagePumpForNonMainThreads final : public MessagePump {
  public:
-  explicit MessagePumpForNonMainThreads(nsIEventTarget* aEventTarget)
+  explicit MessagePumpForNonMainThreads(nsISerialEventTarget* aEventTarget)
       : MessagePump(aEventTarget) {}
 
   virtual void Run(base::MessagePump::Delegate* aDelegate) override;
@@ -90,27 +92,21 @@ class MessagePumpForNonMainThreads final : public MessagePump {
 };
 
 #if defined(XP_WIN)
-// Extends the TYPE_UI message pump to process xpcom events. Currently only
-// implemented for Win.
+// Extends the TYPE_UI message pump to process xpcom events.
 class MessagePumpForNonMainUIThreads final : public base::MessagePumpForUI,
                                              public nsIThreadObserver {
  public:
-  // We don't want xpcom refing, chromium controls our lifetime via
-  // RefCountedThreadSafe.
-  NS_IMETHOD_(MozExternalRefCountType) AddRef(void) override { return 2; }
-  NS_IMETHOD_(MozExternalRefCountType) Release(void) override { return 1; }
-  NS_IMETHOD QueryInterface(REFNSIID aIID, void** aInstancePtr) override;
-
+  NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_NSITHREADOBSERVER
 
  public:
-  explicit MessagePumpForNonMainUIThreads(nsIEventTarget* aEventTarget)
+  explicit MessagePumpForNonMainUIThreads(nsISerialEventTarget* aEventTarget)
       : mInWait(false), mWaitLock("mInWait") {}
 
   // The main run loop for this thread.
   virtual void DoRunLoop() override;
 
-  virtual nsIEventTarget* GetXPCOMThread() override {
+  virtual nsISerialEventTarget* GetXPCOMThread() override {
     return nullptr;  // not sure what to do with this one
   }
 
@@ -133,10 +129,43 @@ class MessagePumpForNonMainUIThreads final : public base::MessagePumpForUI,
  private:
   ~MessagePumpForNonMainUIThreads() {}
 
-  bool mInWait;
+  bool mInWait MOZ_GUARDED_BY(mWaitLock);
   mozilla::Mutex mWaitLock;
 };
-#endif  // defined(XP_WIN)
+#elif defined(XP_DARWIN)
+// Extends the CFRunLoopBase message pump to process xpcom events. Based on
+// MessagePumpNSRunLoop.
+class MessagePumpForNonMainUIThreads final
+    : public base::MessagePumpCFRunLoopBase,
+      public nsIThreadObserver {
+ public:
+  NS_DECL_ISUPPORTS_INHERITED
+  NS_DECL_NSITHREADOBSERVER
+
+ public:
+  explicit MessagePumpForNonMainUIThreads(nsISerialEventTarget* aEventTarget);
+
+  void DoRun(base::MessagePump::Delegate* aDelegate) override;
+  void Quit() override;
+
+  nsISerialEventTarget* GetXPCOMThread() override { return mEventTarget; }
+
+ private:
+  ~MessagePumpForNonMainUIThreads();
+
+  nsISerialEventTarget* mEventTarget;
+
+  // A source that doesn't do anything but provide something signalable
+  // attached to the run loop.  This source will be signalled when Quit
+  // is called, to cause the loop to wake up so that it can stop.
+  CFRunLoopSourceRef quit_source_;
+
+  // False after Quit is called.
+  bool keep_running_;
+
+  DISALLOW_COPY_AND_ASSIGN(MessagePumpForNonMainUIThreads);
+};
+#endif  // defined(XP_DARWIN)
 
 #if defined(MOZ_WIDGET_ANDROID)
 /*`
@@ -151,20 +180,20 @@ class MessagePumpForNonMainUIThreads final : public base::MessagePumpForUI,
  */
 class MessagePumpForAndroidUI : public base::MessagePump {
  public:
-  explicit MessagePumpForAndroidUI(nsIEventTarget* aEventTarget)
+  explicit MessagePumpForAndroidUI(nsISerialEventTarget* aEventTarget)
       : mEventTarget(aEventTarget) {}
 
   virtual void Run(Delegate* delegate);
   virtual void Quit();
   virtual void ScheduleWork();
   virtual void ScheduleDelayedWork(const base::TimeTicks& delayed_work_time);
-  virtual nsIEventTarget* GetXPCOMThread() { return mEventTarget; }
+  virtual nsISerialEventTarget* GetXPCOMThread() { return mEventTarget; }
 
  private:
   ~MessagePumpForAndroidUI() {}
   MessagePumpForAndroidUI() {}
 
-  nsIEventTarget* mEventTarget;
+  nsISerialEventTarget* mEventTarget;
 };
 #endif  // defined(MOZ_WIDGET_ANDROID)
 

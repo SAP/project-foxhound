@@ -7,10 +7,10 @@
  * Check that the application panel fetches a manifest when in the Manifest Page
  */
 
-add_task(async function() {
+add_task(async function () {
   info("Test that manifest page has a link that opens the manifest JSON file");
-  const url = URL_ROOT + "resources/manifest/load-ok-manifest-link.html";
-  const manifestUrl = URL_ROOT + "resources/manifest/manifest.json";
+  const url = URL_ROOT_SSL + "resources/manifest/load-ok-manifest-link.html";
+  const manifestUrl = URL_ROOT_SSL + "resources/manifest/manifest.json";
 
   await enableApplicationPanel();
   const { panel, tab } = await openNewTabAndApplicationPanel(url);
@@ -40,11 +40,11 @@ add_task(async function() {
   await BrowserTestUtils.removeTab(jsonTab);
 });
 
-add_task(async function() {
+add_task(async function () {
   info(
     "Test that manifest page does not show a link for manifests embedded in a data url"
   );
-  const url = URL_ROOT + "resources/manifest/load-ok.html";
+  const url = URL_ROOT_SSL + "resources/manifest/load-ok.html";
 
   await enableApplicationPanel();
   const { panel, tab } = await openNewTabAndApplicationPanel(url);

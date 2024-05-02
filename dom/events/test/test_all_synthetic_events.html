@@ -77,6 +77,10 @@ const kEventConstructors = {
                                                          return e;
                                                        },
                                              },
+  ContentVisibilityAutoStateChangeEvent:     { create (aName, aProps) {
+                                                         return new ContentVisibilityAutoStateChangeEvent(aName, aProps);
+                                                       },
+                                             },
   CustomEvent:                               { create (aName, aProps) {
                                                          return new CustomEvent(aName, aProps);
                                                        },
@@ -346,8 +350,18 @@ const kEventConstructors = {
                                                        },
                                                chromeOnly: true,
                                              },
+  StyleSheetRemovedEvent:                    { create (aName, aProps) {
+                                                         return new StyleSheetRemovedEvent(aName, aProps);
+                                                       },
+                                               chromeOnly: true,
+                                             },
   SubmitEvent:                               { create (aName, aProps) {
                                                          return new SubmitEvent(aName, aProps);
+                                                       },
+                                             },
+  TaskPriorityChangeEvent:                   { create (aName, aProps) {
+                                                         aProps.previousPriority = "user-blocking";
+                                                         return new TaskPriorityChangeEvent(aName, aProps);
                                                        },
                                              },
   TCPSocketErrorEvent:                       { create(aName, aProps) {
@@ -364,6 +378,10 @@ const kEventConstructors = {
                                              },
   TimeEvent:                                 { create: null
                                                // Cannot create untrusted event from JS
+                                             },
+  ToggleEvent:                               { create(aName, aProps) {
+                                                         return new ToggleEvent(aName, aProps);
+                                                       },
                                              },
   TouchEvent:                                { create (aName, aProps) {
                                                          var e = document.createEvent("touchevent");
@@ -446,7 +464,7 @@ function test() {
       continue;
     }
     if (typeof(event.getModifierState) == "function") {
-      const kModifiers = [ "Shift", "Control", "Alt", "AltGr", "Meta", "CapsLock", "ScrollLock", "NumLock", "OS", "Fn", "FnLock", "Symbol", "SymbolLock" ];
+      const kModifiers = [ "Shift", "Control", "Alt", "AltGr", "Meta", "CapsLock", "ScrollLock", "NumLock", "Fn", "FnLock", "Symbol", "SymbolLock" ];
       for (var j = 0; j < kModifiers.length; j++) {
         ok(true, "Calling " + props[i] + ".getModifierState(" + kModifiers[j] + ")...");
         var modifierState = event.getModifierState(kModifiers[j]);
@@ -458,7 +476,8 @@ function test() {
 
 SimpleTest.waitForExplicitFinish();
 SpecialPowers.pushPrefEnv(
-  {"set": [["dom.w3c_touch_events.legacy_apis.enabled", true]]},
+  {"set": [["dom.w3c_touch_events.legacy_apis.enabled", true],
+           ["layout.css.content-visibility.enabled", true]]},
   function() {
     test();
     SimpleTest.finish();

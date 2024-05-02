@@ -3,70 +3,78 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 "use strict";
-const protocol = require("devtools/shared/protocol");
-const { watcherSpec } = require("devtools/shared/specs/watcher");
+const { Actor } = require("resource://devtools/shared/protocol.js");
+const { watcherSpec } = require("resource://devtools/shared/specs/watcher.js");
 
-const Resources = require("devtools/server/actors/resources/index");
-const {
-  TargetActorRegistry,
-} = require("devtools/server/actors/targets/target-actor-registry.jsm");
-const {
-  WatcherRegistry,
-} = require("devtools/server/actors/watcher/WatcherRegistry.jsm");
-const Targets = require("devtools/server/actors/targets/index");
-const {
-  getAllBrowsingContextsForContext,
-} = require("devtools/server/actors/watcher/browsing-context-helpers.jsm");
+const Resources = require("resource://devtools/server/actors/resources/index.js");
+const { TargetActorRegistry } = ChromeUtils.importESModule(
+  "resource://devtools/server/actors/targets/target-actor-registry.sys.mjs",
+  {
+    loadInDevToolsLoader: false,
+  }
+);
+const { WatcherRegistry } = ChromeUtils.importESModule(
+  "resource://devtools/server/actors/watcher/WatcherRegistry.sys.mjs",
+  {
+    // WatcherRegistry needs to be a true singleton and loads ActorManagerParent
+    // which also has to be a true singleton.
+    loadInDevToolsLoader: false,
+  }
+);
+const Targets = require("resource://devtools/server/actors/targets/index.js");
+const { getAllBrowsingContextsForContext } = ChromeUtils.importESModule(
+  "resource://devtools/server/actors/watcher/browsing-context-helpers.sys.mjs"
+);
 
 const TARGET_HELPERS = {};
 loader.lazyRequireGetter(
   TARGET_HELPERS,
   Targets.TYPES.FRAME,
-  "devtools/server/actors/watcher/target-helpers/frame-helper"
+  "resource://devtools/server/actors/watcher/target-helpers/frame-helper.js"
 );
 loader.lazyRequireGetter(
   TARGET_HELPERS,
   Targets.TYPES.PROCESS,
-  "devtools/server/actors/watcher/target-helpers/process-helper"
+  "resource://devtools/server/actors/watcher/target-helpers/process-helper.js"
 );
 loader.lazyRequireGetter(
   TARGET_HELPERS,
   Targets.TYPES.WORKER,
-  "devtools/server/actors/watcher/target-helpers/worker-helper"
+  "resource://devtools/server/actors/watcher/target-helpers/worker-helper.js"
 );
 
 loader.lazyRequireGetter(
   this,
   "NetworkParentActor",
-  "devtools/server/actors/network-monitor/network-parent",
+  "resource://devtools/server/actors/network-monitor/network-parent.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "BlackboxingActor",
-  "devtools/server/actors/blackboxing",
+  "resource://devtools/server/actors/blackboxing.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "BreakpointListActor",
-  "devtools/server/actors/breakpoint-list",
+  "resource://devtools/server/actors/breakpoint-list.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "TargetConfigurationActor",
-  "devtools/server/actors/target-configuration",
+  "resource://devtools/server/actors/target-configuration.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "ThreadConfigurationActor",
-  "devtools/server/actors/thread-configuration",
+  "resource://devtools/server/actors/thread-configuration.js",
   true
 );
 
-exports.WatcherActor = protocol.ActorClassWithSpec(watcherSpec, {
+exports.WatcherActor = class WatcherActor extends Actor {
   /**
    * Initialize a new WatcherActor which is the main entry point to debug
    * something. The main features of this actor are to:
@@ -90,8 +98,8 @@ exports.WatcherActor = protocol.ActorClassWithSpec(watcherSpec, {
    * @param {Boolean} sessionContext.isServerTargetSwitchingEnabled: Flag to to know if we should
    *        spawn new top level targets for the debugged context.
    */
-  initialize: function(conn, sessionContext) {
-    protocol.Actor.prototype.initialize.call(this, conn);
+  constructor(conn, sessionContext) {
+    super(conn, watcherSpec);
     this._sessionContext = sessionContext;
     if (sessionContext.type == "browser-element") {
       // Retrieve the <browser> element for the given browser ID
@@ -124,15 +132,11 @@ exports.WatcherActor = protocol.ActorClassWithSpec(watcherSpec, {
     // but there are certain cases when a new target is available before the
     // old target is destroyed.
     this._currentWindowGlobalTargets = new Map();
-
-    this.notifyResourceAvailable = this.notifyResourceAvailable.bind(this);
-    this.notifyResourceDestroyed = this.notifyResourceDestroyed.bind(this);
-    this.notifyResourceUpdated = this.notifyResourceUpdated.bind(this);
-  },
+  }
 
   get sessionContext() {
     return this._sessionContext;
-  },
+  }
 
   /**
    * If we are debugging only one Tab or Document, returns its BrowserElement.
@@ -144,11 +148,11 @@ exports.WatcherActor = protocol.ActorClassWithSpec(watcherSpec, {
    */
   get browserElement() {
     return this._browserElement;
-  },
+  }
 
   getAllBrowsingContexts(options) {
     return getAllBrowsingContextsForContext(this.sessionContext, options);
-  },
+  }
 
   /**
    * Helper to know if the context we are debugging has been already destroyed
@@ -164,9 +168,9 @@ exports.WatcherActor = protocol.ActorClassWithSpec(watcherSpec, {
     throw new Error(
       "Unsupported session context type: " + this.sessionContext.type
     );
-  },
+  }
 
-  destroy: function() {
+  destroy() {
     // Force unwatching for all types, even if we weren't watching.
     // This is fine as unwatchTarget is NOOP if we weren't already watching for this target type.
     for (const targetType of Object.values(Targets.TYPES)) {
@@ -177,8 +181,8 @@ exports.WatcherActor = protocol.ActorClassWithSpec(watcherSpec, {
     WatcherRegistry.unregisterWatcher(this);
 
     // Destroy the actor at the end so that its actorID keeps being defined.
-    protocol.Actor.prototype.destroy.call(this);
-  },
+    super.destroy();
+  }
 
   /*
    * Get the list of the currently watched resources for this watcher.
@@ -188,65 +192,19 @@ exports.WatcherActor = protocol.ActorClassWithSpec(watcherSpec, {
    */
   get sessionData() {
     return WatcherRegistry.getSessionData(this);
-  },
+  }
 
   form() {
-    // All target types and all resources types are supported for tab debugging and web extensions.
-    // But worker target type and most watcher classes are still disabled for the browser toolbox (sessionContext.type=all).
-    // And they may also be disabled for workers once we start supporting them by the watcher.
-    //
-    // So keep the traits to false for all the resources that we don't support yet
-    // and keep using the legacy listeners.
-    const shouldEnableAllWatchers =
-      this.sessionContext.type == "browser-element" ||
-      this.sessionContext.type == "webextension";
-
     return {
       actor: this.actorID,
       // The resources and target traits should be removed all at the same time since the
       // client has generic ways to deal with all of them (See Bug 1680280).
       traits: {
-        [Targets.TYPES.FRAME]: true,
-        [Targets.TYPES.PROCESS]: true,
-        [Targets.TYPES.WORKER]: shouldEnableAllWatchers,
-        resources: {
-          // In Firefox 81 we added support for:
-          // - CONSOLE_MESSAGE
-          // - CSS_CHANGE
-          // - CSS_MESSAGE
-          // - DOCUMENT_EVENT
-          // - ERROR_MESSAGE
-          // - PLATFORM_MESSAGE
-          //
-          // We enabled them for content toolboxes only because we don't support
-          // content process targets yet. Bug 1620248 should help supporting
-          // them and enable this more broadly.
-          [Resources.TYPES.CONSOLE_MESSAGE]: true,
-          [Resources.TYPES.CSS_CHANGE]: shouldEnableAllWatchers,
-          [Resources.TYPES.CSS_MESSAGE]: true,
-          [Resources.TYPES.DOCUMENT_EVENT]: shouldEnableAllWatchers,
-          [Resources.TYPES.CACHE_STORAGE]: shouldEnableAllWatchers,
-          [Resources.TYPES.COOKIE]: shouldEnableAllWatchers,
-          [Resources.TYPES.ERROR_MESSAGE]: true,
-          [Resources.TYPES.INDEXED_DB]: shouldEnableAllWatchers,
-          [Resources.TYPES.LOCAL_STORAGE]: shouldEnableAllWatchers,
-          [Resources.TYPES.SESSION_STORAGE]: shouldEnableAllWatchers,
-          [Resources.TYPES.PLATFORM_MESSAGE]: true,
-          [Resources.TYPES.NETWORK_EVENT]: true,
-          [Resources.TYPES.NETWORK_EVENT_STACKTRACE]: true,
-          [Resources.TYPES.REFLOW]: true,
-          [Resources.TYPES.STYLESHEET]: shouldEnableAllWatchers,
-          [Resources.TYPES.SOURCE]: shouldEnableAllWatchers,
-          [Resources.TYPES.THREAD_STATE]: shouldEnableAllWatchers,
-          [Resources.TYPES.SERVER_SENT_EVENT]: shouldEnableAllWatchers,
-          [Resources.TYPES.WEBSOCKET]: shouldEnableAllWatchers,
-        },
-        // @backward-compat { version 98 } Introduced the Blackboxing actor
-        //                  The traits can be removed when removing 97 support.
-        blackboxing: true,
+        ...this.sessionContext.supportedTargets,
+        resources: this.sessionContext.supportedResources,
       },
     };
-  },
+  }
 
   /**
    * Start watching for a new target type.
@@ -267,26 +225,37 @@ exports.WatcherActor = protocol.ActorClassWithSpec(watcherSpec, {
     const targetHelperModule = TARGET_HELPERS[targetType];
     // Await the registration in order to ensure receiving the already existing targets
     await targetHelperModule.createTargets(this);
-  },
+  }
 
   /**
    * Stop watching for a given target type.
    *
    * @param {string} targetType
    *        Type of context to observe. See Targets.TYPES object.
+   * @param {object} options
+   * @param {boolean} options.isModeSwitching
+   *        true when this is called as the result of a change to the devtools.browsertoolbox.scope pref
    */
-  unwatchTargets(targetType) {
-    const isWatchingTargets = WatcherRegistry.unwatchTargets(this, targetType);
+  unwatchTargets(targetType, options = {}) {
+    const isWatchingTargets = WatcherRegistry.unwatchTargets(
+      this,
+      targetType,
+      options
+    );
     if (!isWatchingTargets) {
       return;
     }
 
     const targetHelperModule = TARGET_HELPERS[targetType];
-    targetHelperModule.destroyTargets(this);
+    targetHelperModule.destroyTargets(this, options);
 
-    // Unregister the JS Window Actor if there is no more DevTools code observing any target/resource
-    WatcherRegistry.maybeUnregisteringJSWindowActor();
-  },
+    // Unregister the JS Window Actor if there is no more DevTools code observing any target/resource,
+    // unless we're switching mode (having both condition at the same time should only
+    // happen in tests).
+    if (!options.isModeSwitching) {
+      WatcherRegistry.maybeUnregisteringJSWindowActor();
+    }
+  }
 
   /**
    * Flush any early iframe targets relating to this top level
@@ -298,7 +267,7 @@ exports.WatcherActor = protocol.ActorClassWithSpec(watcherSpec, {
       const actor = this._earlyIframeTargets[topInnerWindowID].shift();
       this.emit("target-available-form", actor);
     }
-  },
+  }
 
   /**
    * Called by a Watcher module, whenever a new target is available
@@ -335,16 +304,22 @@ exports.WatcherActor = protocol.ActorClassWithSpec(watcherSpec, {
       // Set the first early iframe target
       this._earlyIframeTargets[actor.topInnerWindowId] = [actor];
     }
-  },
+  }
 
   /**
    * Called by a Watcher module, whenever a target has been destroyed
+   *
+   * @param {object} actor
+   *        the actor form of the target being destroyed
+   * @param {object} options
+   * @param {boolean} options.isModeSwitching
+   *        true when this is called as the result of a change to the devtools.browsertoolbox.scope pref
    */
-  async notifyTargetDestroyed(actor) {
+  async notifyTargetDestroyed(actor, options = {}) {
     // Emit immediately for worker, process & extension targets
     // as they don't have a parent browsing context.
     if (!actor.innerWindowId) {
-      this.emit("target-destroyed-form", actor);
+      this.emit("target-destroyed-form", actor, options);
       return;
     }
     // Flush all iframe targets if we are destroying a top level target.
@@ -358,7 +333,7 @@ exports.WatcherActor = protocol.ActorClassWithSpec(watcherSpec, {
           // Ignore the top level target itself, because its topInnerWindowId will be its innerWindowId
           form.innerWindowId != actor.innerWindowId
       );
-      childrenActors.map(form => this.notifyTargetDestroyed(form));
+      childrenActors.map(form => this.notifyTargetDestroyed(form, options));
     }
     if (this._earlyIframeTargets[actor.innerWindowId]) {
       delete this._earlyIframeTargets[actor.innerWindowId];
@@ -391,8 +366,8 @@ exports.WatcherActor = protocol.ActorClassWithSpec(watcherSpec, {
     ) {
       await documentEventWatcher.onceWillNavigateIsEmitted(actor.innerWindowId);
     }
-    this.emit("target-destroyed-form", actor);
-  },
+    this.emit("target-destroyed-form", actor, options);
+  }
 
   /**
    * Given a browsingContextID, returns its parent browsingContextID. Returns null if a
@@ -420,46 +395,29 @@ exports.WatcherActor = protocol.ActorClassWithSpec(watcherSpec, {
       return browsingContext.embedderWindowGlobal.browsingContext.id;
     }
     return null;
-  },
+  }
 
   /**
-   * Called by Resource Watchers, when new resources are available.
+   * Called by Resource Watchers, when new resources are available, updated or destroyed.
    *
+   * @param String updateType
+   *        Can be "available", "updated" or "destroyed"
    * @param Array<json> resources
-   *        List of all available resources. A resource is a JSON object piped over to the client.
-   *        It may contain actor IDs, actor forms, to be manually marshalled by the client.
+   *        List of all resource's form. A resource is a JSON object piped over to the client.
+   *        It can contain actor IDs, actor forms, to be manually marshalled by the client.
    */
-  notifyResourceAvailable(resources) {
-    if (this.sessionContext.type == "webextension") {
-      this._overrideResourceBrowsingContextForWebExtension(resources);
-    }
-    this._emitResourcesForm("resource-available-form", resources);
-  },
-
-  notifyResourceDestroyed(resources) {
-    if (this.sessionContext.type == "webextension") {
-      this._overrideResourceBrowsingContextForWebExtension(resources);
-    }
-    this._emitResourcesForm("resource-destroyed-form", resources);
-  },
-
-  notifyResourceUpdated(resources) {
-    if (this.sessionContext.type == "webextension") {
-      this._overrideResourceBrowsingContextForWebExtension(resources);
-    }
-    this._emitResourcesForm("resource-updated-form", resources);
-  },
-
-  /**
-   * Wrapper around emit for resource forms.
-   */
-  _emitResourcesForm(name, resources) {
+  notifyResources(updateType, resources) {
     if (resources.length === 0) {
       // Don't try to emit if the resources array is empty.
       return;
     }
-    this.emit(name, resources);
-  },
+
+    if (this.sessionContext.type == "webextension") {
+      this._overrideResourceBrowsingContextForWebExtension(resources);
+    }
+
+    this.emit(`resource-${updateType}-form`, resources);
+  }
 
   /**
    * For WebExtension, we have to hack all resource's browsingContextID
@@ -474,24 +432,44 @@ exports.WatcherActor = protocol.ActorClassWithSpec(watcherSpec, {
     resources.forEach(resource => {
       resource.browsingContextID = this.sessionContext.addonBrowsingContextID;
     });
-  },
+  }
 
   /**
-   * Try to retrieve a parent process TargetActor:
-   * - either when debugging a parent process page (when browserElement is set to the page's tab),
-   * - or when debugging the main process (when browserElement is null), including xpcshell tests
+   * Try to retrieve a parent process TargetActor which is ignored by the
+   * TARGET_HELPERS. Examples:
+   * - top level target for the browser toolbox
+   * - xpcshell target for xpcshell debugging
    *
-   * See comment in `watchResources`, this will handle targets which are ignored by Frame and Process
-   * target helpers. (and only those which are ignored)
+   * See comment in `watchResources`.
+   *
+   * @return {TargetActor|null} Matching target actor if any, null otherwise.
    */
-  _getTargetActorInParentProcess() {
+  getTargetActorInParentProcess() {
+    if (TargetActorRegistry.xpcShellTargetActor) {
+      return TargetActorRegistry.xpcShellTargetActor;
+    }
+
     // Note: For browser-element debugging, the WindowGlobalTargetActor returned here is created
     // for a parent process page and lives in the parent process.
-    return TargetActorRegistry.getTopLevelTargetActorForContext(
+    const actors = TargetActorRegistry.getTargetActors(
       this.sessionContext,
       this.conn.prefix
     );
-  },
+
+    switch (this.sessionContext.type) {
+      case "all":
+        return actors.find(actor => actor.typeName === "parentProcessTarget");
+      case "browser-element":
+      case "webextension":
+        // All target actors for browser-element and webextension sessions
+        // should be created using the JS Window actors.
+        return null;
+      default:
+        throw new Error(
+          "Unsupported session context type: " + this.sessionContext.type
+        );
+    }
+  }
 
   /**
    * Start watching for a list of resource types.
@@ -535,14 +513,15 @@ exports.WatcherActor = protocol.ActorClassWithSpec(watcherSpec, {
         resourceTypes,
         targetType
       );
-      if (targetResourceTypes.length == 0) {
+      if (!targetResourceTypes.length) {
         continue;
       }
       const targetHelperModule = TARGET_HELPERS[targetType];
-      await targetHelperModule.addSessionDataEntry({
+      await targetHelperModule.addOrSetSessionDataEntry({
         watcher: this,
         type: "resources",
         entries: targetResourceTypes,
+        updateType: "add",
       });
     }
 
@@ -563,17 +542,20 @@ exports.WatcherActor = protocol.ActorClassWithSpec(watcherSpec, {
      * We will eventually get rid of this code once all targets are properly supported by
      * the Watcher Actor and we have target helpers for all of them.
      */
-    const frameResourceTypes = Resources.getResourceTypesForTargetType(
-      resourceTypes,
-      Targets.TYPES.FRAME
-    );
-    if (frameResourceTypes.length > 0) {
-      const targetActor = this._getTargetActorInParentProcess();
-      if (targetActor) {
-        await targetActor.addSessionDataEntry("resources", frameResourceTypes);
-      }
+    const targetActor = this.getTargetActorInParentProcess();
+    if (targetActor) {
+      const targetActorResourceTypes = Resources.getResourceTypesForTargetType(
+        resourceTypes,
+        targetActor.targetType
+      );
+      await targetActor.addOrSetSessionDataEntry(
+        "resources",
+        targetActorResourceTypes,
+        false,
+        "add"
+      );
     }
-  },
+  }
 
   /**
    * Stop watching for a list of resource types.
@@ -620,7 +602,7 @@ exports.WatcherActor = protocol.ActorClassWithSpec(watcherSpec, {
           resourceTypes,
           targetType
         );
-        if (targetResourceTypes.length == 0) {
+        if (!targetResourceTypes.length) {
           continue;
         }
         const targetHelperModule = TARGET_HELPERS[targetType];
@@ -633,20 +615,28 @@ exports.WatcherActor = protocol.ActorClassWithSpec(watcherSpec, {
     }
 
     // See comment in watchResources.
-    const frameResourceTypes = Resources.getResourceTypesForTargetType(
-      resourceTypes,
-      Targets.TYPES.FRAME
-    );
-    if (frameResourceTypes.length > 0) {
-      const targetActor = this._getTargetActorInParentProcess();
-      if (targetActor) {
-        targetActor.removeSessionDataEntry("resources", frameResourceTypes);
-      }
+    const targetActor = this.getTargetActorInParentProcess();
+    if (targetActor) {
+      const targetActorResourceTypes = Resources.getResourceTypesForTargetType(
+        resourceTypes,
+        targetActor.targetType
+      );
+      targetActor.removeSessionDataEntry("resources", targetActorResourceTypes);
     }
 
     // Unregister the JS Window Actor if there is no more DevTools code observing any target/resource
     WatcherRegistry.maybeUnregisteringJSWindowActor();
-  },
+  }
+
+  clearResources(resourceTypes) {
+    // First process resources which have to be listened from the parent process
+    // (the watcher actor always runs in the parent process)
+    // TODO: content process / worker thread resources are not cleared. See Bug 1774573
+    Resources.clearResources(
+      this,
+      Resources.getParentProcessResourceTypes(resourceTypes)
+    );
+  }
 
   /**
    * Returns the network actor.
@@ -660,7 +650,7 @@ exports.WatcherActor = protocol.ActorClassWithSpec(watcherSpec, {
     }
 
     return this._networkParentActor;
-  },
+  }
 
   /**
    * Returns the blackboxing actor.
@@ -674,7 +664,7 @@ exports.WatcherActor = protocol.ActorClassWithSpec(watcherSpec, {
     }
 
     return this._blackboxingActor;
-  },
+  }
 
   /**
    * Returns the breakpoint list actor.
@@ -688,7 +678,7 @@ exports.WatcherActor = protocol.ActorClassWithSpec(watcherSpec, {
     }
 
     return this._breakpointListActor;
-  },
+  }
 
   /**
    * Returns the target configuration actor.
@@ -701,7 +691,7 @@ exports.WatcherActor = protocol.ActorClassWithSpec(watcherSpec, {
       this._targetConfigurationListActor = new TargetConfigurationActor(this);
     }
     return this._targetConfigurationListActor;
-  },
+  }
 
   /**
    * Returns the thread configuration actor.
@@ -714,7 +704,7 @@ exports.WatcherActor = protocol.ActorClassWithSpec(watcherSpec, {
       this._threadConfigurationListActor = new ThreadConfigurationActor(this);
     }
     return this._threadConfigurationListActor;
-  },
+  }
 
   /**
    * Server internal API, called by other actors, but not by the client.
@@ -724,10 +714,13 @@ exports.WatcherActor = protocol.ActorClassWithSpec(watcherSpec, {
    * @param {String} type
    *        Data type to contribute to.
    * @param {Array<*>} entries
-   *        List of values to add for this data type.
+   *        List of values to add or set for this data type.
+   * @param {String} updateType
+   *        "add" will only add the new entries in the existing data set.
+   *        "set" will update the data set with the new entries.
    */
-  async addDataEntry(type, entries) {
-    WatcherRegistry.addSessionDataEntry(this, type, entries);
+  async addOrSetDataEntry(type, entries, updateType) {
+    WatcherRegistry.addOrSetSessionDataEntry(this, type, entries, updateType);
 
     await Promise.all(
       Object.values(Targets.TYPES)
@@ -743,20 +736,26 @@ exports.WatcherActor = protocol.ActorClassWithSpec(watcherSpec, {
         )
         .map(async targetType => {
           const targetHelperModule = TARGET_HELPERS[targetType];
-          await targetHelperModule.addSessionDataEntry({
+          await targetHelperModule.addOrSetSessionDataEntry({
             watcher: this,
             type,
             entries,
+            updateType,
           });
         })
     );
 
     // See comment in watchResources
-    const targetActor = this._getTargetActorInParentProcess();
+    const targetActor = this.getTargetActorInParentProcess();
     if (targetActor) {
-      await targetActor.addSessionDataEntry(type, entries);
+      await targetActor.addOrSetSessionDataEntry(
+        type,
+        entries,
+        false,
+        updateType
+      );
     }
-  },
+  }
 
   /**
    * Server internal API, called by other actors, but not by the client.
@@ -774,7 +773,7 @@ exports.WatcherActor = protocol.ActorClassWithSpec(watcherSpec, {
     Object.values(Targets.TYPES)
       .filter(
         targetType =>
-          // See comment in addDataEntry
+          // See comment in addOrSetDataEntry
           WatcherRegistry.isWatchingTargets(this, targetType) ||
           targetType === Targets.TYPES.FRAME
       )
@@ -787,12 +786,12 @@ exports.WatcherActor = protocol.ActorClassWithSpec(watcherSpec, {
         });
       });
 
-    // See comment in addDataEntry
-    const targetActor = this._getTargetActorInParentProcess();
+    // See comment in addOrSetDataEntry
+    const targetActor = this.getTargetActorInParentProcess();
     if (targetActor) {
       targetActor.removeSessionDataEntry(type, entries);
     }
-  },
+  }
 
   /**
    * Retrieve the current watched data for the provided type.
@@ -802,5 +801,5 @@ exports.WatcherActor = protocol.ActorClassWithSpec(watcherSpec, {
    */
   getSessionDataForType(type) {
     return this.sessionData?.[type];
-  },
-});
+  }
+};

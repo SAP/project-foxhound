@@ -1,7 +1,7 @@
 /* Any copyright is dedicated to the Public Domain.
  http://creativecommons.org/publicdomain/zero/1.0/ */
 /* eslint no-unused-vars: [2, {"vars": "local"}] */
-/* import-globals-from ../../test/head.js */
+
 "use strict";
 
 // Import the inspector's head.js first (which itself imports shared-head.js).
@@ -10,11 +10,15 @@ Services.scriptloader.loadSubScript(
   this
 );
 
-var { CssRuleView } = require("devtools/client/inspector/rules/rules");
+var {
+  CssRuleView,
+} = require("resource://devtools/client/inspector/rules/rules.js");
 var {
   getInplaceEditorForSpan: inplaceEditor,
-} = require("devtools/client/shared/inplace-editor");
-const { getColor: getThemeColor } = require("devtools/client/shared/theme");
+} = require("resource://devtools/client/shared/inplace-editor.js");
+const {
+  getColor: getThemeColor,
+} = require("resource://devtools/client/shared/theme.js");
 
 const TEST_URL_ROOT =
   "http://example.com/browser/devtools/client/inspector/shared/test/";
@@ -107,7 +111,7 @@ function waitForSuccess(validatorFn, name = "untitled") {
  *        The NodeActor that will used to retrieve the dataURL for the
  *        font family tooltip contents.
  */
-var getFontFamilyDataURL = async function(font, nodeFront) {
+var getFontFamilyDataURL = async function (font, nodeFront) {
   const fillStyle = getThemeColor("body-color");
 
   const { data } = await nodeFront.getFontFamilyDataURL(font, fillStyle);
@@ -139,7 +143,7 @@ var getFontFamilyDataURL = async function(font, nodeFront) {
  *          - {String} value The expected style value
  * The style will be checked like so: getComputedStyle(element)[name] === value
  */
-var simulateColorPickerChange = async function(
+var simulateColorPickerChange = async function (
   ruleView,
   colorPicker,
   newRgba,

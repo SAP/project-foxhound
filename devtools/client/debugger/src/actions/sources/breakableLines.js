@@ -2,15 +2,16 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
-import { isOriginalId } from "devtools-source-map";
-import { getSourceActorsForSource, getBreakableLines } from "../../selectors";
+import {
+  getBreakableLines,
+  getSourceActorBreakableLines,
+} from "../../selectors";
 import { setBreakpointPositions } from "../breakpoints/breakpointPositions";
-import { loadSourceActorBreakableLines } from "../source-actors";
 
 function calculateBreakableLines(positions) {
   const lines = [];
   for (const line in positions) {
-    if (positions[line].length > 0) {
+    if (positions[line].length) {
       lines.push(Number(line));
     }
   }
@@ -18,16 +19,22 @@ function calculateBreakableLines(positions) {
   return lines;
 }
 
-export function setBreakableLines(cx, sourceId) {
+/**
+ * Ensure that breakable lines for a given source are fetched.
+ *
+ * @param Object location
+ */
+export function setBreakableLines(location) {
   return async ({ getState, dispatch, client }) => {
     let breakableLines;
-    if (isOriginalId(sourceId)) {
-      const positions = await dispatch(
-        setBreakpointPositions({ cx, sourceId })
-      );
+    if (location.source.isOriginal) {
+      const positions = await dispatch(setBreakpointPositions(location));
       breakableLines = calculateBreakableLines(positions);
 
-      const existingBreakableLines = getBreakableLines(getState(), sourceId);
+      const existingBreakableLines = getBreakableLines(
+        getState(),
+        location.source.id
+      );
       if (existingBreakableLines) {
         breakableLines = [
           ...new Set([...existingBreakableLines, ...breakableLines]),
@@ -36,18 +43,26 @@ export function setBreakableLines(cx, sourceId) {
 
       dispatch({
         type: "SET_ORIGINAL_BREAKABLE_LINES",
-        cx,
-        sourceId,
+        source: location.source,
         breakableLines,
       });
     } else {
-      const actors = getSourceActorsForSource(getState(), sourceId);
-
-      await Promise.all(
-        actors.map(({ id }) =>
-          dispatch(loadSourceActorBreakableLines({ id, cx }))
-        )
+      // Ignore re-fetching the breakable lines for source actor we already fetched
+      breakableLines = getSourceActorBreakableLines(
+        getState(),
+        location.sourceActor.id
       );
+      if (breakableLines) {
+        return;
+      }
+      breakableLines = await client.getSourceActorBreakableLines(
+        location.sourceActor
+      );
+      dispatch({
+        type: "SET_SOURCE_ACTOR_BREAKABLE_LINES",
+        sourceActor: location.sourceActor,
+        breakableLines,
+      });
     }
   };
 }

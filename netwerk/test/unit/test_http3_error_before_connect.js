@@ -16,16 +16,6 @@ registerCleanupFunction(async () => {
   dump("cleanup done\n");
 });
 
-function chanPromise(chan, listener) {
-  return new Promise(resolve => {
-    function finish() {
-      resolve();
-    }
-    listener.finish = finish;
-    chan.asyncOpen(listener);
-  });
-}
-
 function makeChan() {
   let chan = NetUtil.newChannel({
     uri: httpsUri,
@@ -36,13 +26,9 @@ function makeChan() {
 }
 
 add_task(async function test_setup() {
-  let env = Cc["@mozilla.org/process/environment;1"].getService(
-    Ci.nsIEnvironment
-  );
-
-  let h2Port = env.get("MOZHTTP2_PORT");
+  let h2Port = Services.env.get("MOZHTTP2_PORT");
   Assert.notEqual(h2Port, null);
-  let h3Port = env.get("MOZHTTP3_PORT_NO_RESPONSE");
+  let h3Port = Services.env.get("MOZHTTP3_PORT_NO_RESPONSE");
   Assert.notEqual(h3Port, null);
   Assert.notEqual(h3Port, "");
 
@@ -81,7 +67,7 @@ add_task(async function test_fatal_stream_error() {
   } while (result < 5);
 });
 
-let CheckOnlyHttp2Listener = function() {};
+let CheckOnlyHttp2Listener = function () {};
 
 CheckOnlyHttp2Listener.prototype = {
   onStartRequest: function testOnStartRequest(request) {},

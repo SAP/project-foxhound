@@ -3,8 +3,8 @@
 
 "use strict";
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  NimbusFeatures: "resource://nimbus/ExperimentAPI.jsm",
+ChromeUtils.defineESModuleGetters(this, {
+  NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
 });
 
 const test = new SearchConfigTest({
@@ -16,9 +16,7 @@ const test = new SearchConfigTest({
     excluded: [
       {
         regions: ["cn"],
-        locales: {
-          matches: ["zh-CN"],
-        },
+        locales: ["zh-CN"],
       },
     ],
   },
@@ -31,17 +29,25 @@ const test = new SearchConfigTest({
     {
       included: [{ regions: ["us"] }],
       domain: "google.com",
-      telemetryId: AppConstants.IS_ESR ? "google-b-1-e" : "google-b-1-d",
-      codes: AppConstants.IS_ESR
-        ? "client=firefox-b-1-e"
-        : "client=firefox-b-1-d",
+      telemetryId:
+        SearchUtils.MODIFIED_APP_CHANNEL == "esr"
+          ? "google-b-1-e"
+          : "google-b-1-d",
+      codes:
+        SearchUtils.MODIFIED_APP_CHANNEL == "esr"
+          ? "client=firefox-b-1-e"
+          : "client=firefox-b-1-d",
     },
     {
       excluded: [{ regions: ["us", "by", "kz", "ru", "tr"] }],
       included: [{}],
       domain: "google.com",
-      telemetryId: AppConstants.IS_ESR ? "google-b-e" : "google-b-d",
-      codes: AppConstants.IS_ESR ? "client=firefox-b-e" : "client=firefox-b-d",
+      telemetryId:
+        SearchUtils.MODIFIED_APP_CHANNEL == "esr" ? "google-b-e" : "google-b-d",
+      codes:
+        SearchUtils.MODIFIED_APP_CHANNEL == "esr"
+          ? "client=firefox-b-e"
+          : "client=firefox-b-d",
     },
     {
       included: [{ regions: ["by", "kz", "ru", "tr"] }],
@@ -51,7 +57,7 @@ const test = new SearchConfigTest({
   ],
 });
 
-add_task(async function setup() {
+add_setup(async function () {
   sinon.spy(NimbusFeatures.search, "onUpdate");
   sinon.stub(NimbusFeatures.search, "ready").resolves();
   await test.setup();

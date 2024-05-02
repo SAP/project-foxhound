@@ -3,11 +3,11 @@
 
 "use strict";
 
-const { Downloads } = ChromeUtils.import(
-  "resource://gre/modules/Downloads.jsm"
+const { Downloads } = ChromeUtils.importESModule(
+  "resource://gre/modules/Downloads.sys.mjs"
 );
-const { DownloadIntegration } = ChromeUtils.import(
-  "resource://gre/modules/DownloadIntegration.jsm"
+const { DownloadIntegration } = ChromeUtils.importESModule(
+  "resource://gre/modules/DownloadIntegration.sys.mjs"
 );
 
 const TEST_PATH = getRootDirectory(gTestPath).replace(
@@ -32,17 +32,19 @@ function waitForAcceptButtonToGetEnabled(doc) {
   );
 }
 
-add_task(async function setup() {
-  // Remove the security delay for the dialog during the test.
+add_setup(async function () {
   await SpecialPowers.pushPrefEnv({
     set: [
+      // Remove the security delay for the dialog during the test.
       ["security.dialog_enable_delay", 0],
       ["browser.helperApps.showOpenOptionForViewableInternally", true],
+      // Make sure we don't open a file picker dialog somehow.
+      ["browser.download.useDownloadDir", true],
     ],
   });
 
   // Restore handlers after the whole test has run
-  const registerRestoreHandler = function(type, ext) {
+  const registerRestoreHandler = function (type, ext) {
     const mimeInfo = gMimeSvc.getFromTypeAndExtension(type, ext);
     const existed = gHandlerSvc.exists(mimeInfo);
     registerCleanupFunction(() => {
@@ -56,221 +58,12 @@ add_task(async function setup() {
   registerRestoreHandler("image/svg+xml", "svg");
 });
 
-const kTestCasesPrefDisabled = [
-  {
-    description:
-      "Saving to disk when internal handling is the default shouldn't change prefs.",
-    preDialogState: {
-      preferredAction: handleInternally,
-      alwaysAskBeforeHandling: false,
-    },
-    dialogActions(doc) {
-      let saveItem = doc.querySelector("#save");
-      saveItem.click();
-      ok(saveItem.selected, "The 'save' option should now be selected");
-    },
-    expectTab: false,
-    expectLaunch: false,
-    expectedPreferredAction: handleInternally,
-    expectedAlwaysAskBeforeHandling: false,
-  },
-  {
-    description:
-      "Opening externally when internal handling is the default shouldn't change prefs.",
-    preDialogState: {
-      preferredAction: handleInternally,
-      alwaysAskBeforeHandling: false,
-    },
-    dialogActions(doc) {
-      let openItem = doc.querySelector("#open");
-      openItem.click();
-      ok(openItem.selected, "The 'save' option should now be selected");
-    },
-    expectTab: false,
-    expectLaunch: true,
-    expectedPreferredAction: handleInternally,
-    expectedAlwaysAskBeforeHandling: false,
-  },
-  {
-    description:
-      "Saving to disk when internal handling is the default *should* change prefs if checkbox is ticked.",
-    preDialogState: {
-      preferredAction: handleInternally,
-      alwaysAskBeforeHandling: false,
-    },
-    dialogActions(doc) {
-      let saveItem = doc.querySelector("#save");
-      saveItem.click();
-      ok(saveItem.selected, "The 'save' option should now be selected");
-      let checkbox = doc.querySelector("#rememberChoice");
-      checkbox.checked = true;
-      checkbox.doCommand();
-    },
-    expectTab: false,
-    expectLaunch: false,
-    expectedPreferredAction: saveToDisk,
-    expectedAlwaysAskBeforeHandling: false,
-  },
-  {
-    description:
-      "Saving to disk when asking is the default should change persisted default.",
-    preDialogState: {
-      preferredAction: handleInternally,
-      alwaysAskBeforeHandling: true,
-    },
-    dialogActions(doc) {
-      let saveItem = doc.querySelector("#save");
-      saveItem.click();
-      ok(saveItem.selected, "The 'save' option should now be selected");
-    },
-    expectTab: false,
-    expectLaunch: false,
-    expectedPreferredAction: saveToDisk,
-    expectedAlwaysAskBeforeHandling: true,
-  },
-  {
-    description:
-      "Opening externally when asking is the default should change persisted default.",
-    preDialogState: {
-      preferredAction: handleInternally,
-      alwaysAskBeforeHandling: true,
-    },
-    dialogActions(doc) {
-      let openItem = doc.querySelector("#open");
-      openItem.click();
-      ok(openItem.selected, "The 'save' option should now be selected");
-    },
-    expectTab: false,
-    expectLaunch: true,
-    expectedPreferredAction: useSystemDefault,
-    expectedAlwaysAskBeforeHandling: true,
-  },
-];
-
 function ensureMIMEState({ preferredAction, alwaysAskBeforeHandling }) {
   const mimeInfo = gMimeSvc.getFromTypeAndExtension("image/svg+xml", "svg");
   mimeInfo.preferredAction = preferredAction;
   mimeInfo.alwaysAskBeforeHandling = alwaysAskBeforeHandling;
   gHandlerSvc.store(mimeInfo);
 }
-
-/**
- * Test that if we have SVGs set to handle internally, and the user chooses to
- * do something else with it, we do not alter the saved state.
- */
-add_task(async function test_check_saving_handler_choices() {
-  let publicList = await Downloads.getList(Downloads.PUBLIC);
-  SpecialPowers.pushPrefEnv({
-    set: [["browser.download.improvements_to_download_panel", false]],
-  });
-  registerCleanupFunction(async () => {
-    await publicList.removeFinished();
-  });
-  for (let testCase of kTestCasesPrefDisabled) {
-    let file = "file_image_svgxml.svg";
-    info("Testing with " + file + "; " + testCase.description);
-    ensureMIMEState(testCase.preDialogState);
-
-    let dialogWindowPromise = BrowserTestUtils.domWindowOpenedAndLoaded();
-    let loadingTab = await BrowserTestUtils.openNewForegroundTab({
-      gBrowser,
-      opening: TEST_PATH + file,
-      waitForLoad: false,
-      waitForStateStop: true,
-    });
-    let dialogWindow = await dialogWindowPromise;
-    is(
-      dialogWindow.location.href,
-      "chrome://mozapps/content/downloads/unknownContentType.xhtml",
-      "Should have seen the unknown content dialogWindow."
-    );
-    let doc = dialogWindow.document;
-    let internalHandlerRadio = doc.querySelector("#handleInternally");
-
-    if (Services.focus.activeWindow != dialogWindow) {
-      await BrowserTestUtils.waitForEvent(dialogWindow, "activate");
-    }
-
-    await waitForAcceptButtonToGetEnabled(doc);
-
-    ok(!internalHandlerRadio.hidden, "The option should be visible for SVG");
-    ok(
-      internalHandlerRadio.selected,
-      "The Firefox option should be selected by default"
-    );
-
-    const { expectTab, expectLaunch, description } = testCase;
-    // Prep to intercept things so we only see the results we want.
-    let tabOpenListener = ev => {
-      ok(
-        expectTab,
-        `A new tab should ${expectTab ? "" : "not "}be opened - ${description}`
-      );
-      BrowserTestUtils.removeTab(ev.target);
-    };
-    gBrowser.tabContainer.addEventListener("TabOpen", tabOpenListener);
-
-    let oldLaunchFile = DownloadIntegration.launchFile;
-    let fileLaunched = PromiseUtils.defer();
-    DownloadIntegration.launchFile = () => {
-      ok(
-        expectLaunch,
-        `The file should ${
-          expectLaunch ? "" : "not "
-        }be launched with an external application - ${description}`
-      );
-      fileLaunched.resolve();
-    };
-    let downloadFinishedPromise = promiseDownloadFinished(publicList);
-
-    await testCase.dialogActions(doc);
-
-    let mainWindowActivatedAndFocused = Promise.all([
-      BrowserTestUtils.waitForEvent(window, "activate"),
-      BrowserTestUtils.waitForEvent(window, "focus", true),
-    ]);
-    let dialog = doc.querySelector("#unknownContentType");
-    dialog.acceptDialog();
-    await mainWindowActivatedAndFocused;
-
-    let download = await downloadFinishedPromise;
-    if (expectLaunch) {
-      await fileLaunched.promise;
-    }
-    DownloadIntegration.launchFile = oldLaunchFile;
-    gBrowser.tabContainer.removeEventListener("TabOpen", tabOpenListener);
-
-    is(
-      (await publicList.getAll()).length,
-      1,
-      "download should appear in public list"
-    );
-
-    // Check mime info:
-    const mimeInfo = gMimeSvc.getFromTypeAndExtension("image/svg+xml", "svg");
-    gHandlerSvc.fillHandlerInfo(mimeInfo, "");
-    is(
-      mimeInfo.preferredAction,
-      testCase.expectedPreferredAction,
-      "preferredAction - " + description
-    );
-    is(
-      mimeInfo.alwaysAskBeforeHandling,
-      testCase.expectedAlwaysAskBeforeHandling,
-      "alwaysAskBeforeHandling - " + description
-    );
-
-    BrowserTestUtils.removeTab(loadingTab);
-    await publicList.removeFinished();
-    if (download?.target.exists) {
-      try {
-        await IOUtils.remove(download.target.path);
-      } catch (ex) {
-        /* ignore */
-      }
-    }
-  }
-});
 
 function waitDelay(delay) {
   return new Promise((resolve, reject) => {
@@ -368,9 +161,9 @@ const kTestCasesPrefEnabled = [
 ];
 
 add_task(
-  async function test_check_saving_handler_choices_with_downloads_pref_enabled() {
+  async function test_check_saving_handler_choices_with_always_ask_before_handling_new_types_pref_enabled() {
     SpecialPowers.pushPrefEnv({
-      set: [["browser.download.improvements_to_download_panel", true]],
+      set: [["browser.download.always_ask_before_handling_new_types", false]],
     });
 
     let publicList = await Downloads.getList(Downloads.PUBLIC);

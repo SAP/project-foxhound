@@ -47,10 +47,10 @@
           (global $glob (mut (ref null $point)) (ref.null $point))
 
           (func (export "init")
-           (global.set $glob (struct.new_with_rtt $point (f64.const 0.5) (f64.const 2.75) (rtt.canon $point))))
+           (global.set $glob (struct.new $point (f64.const 0.5) (f64.const 2.75))))
 
           (func (export "change")
-           (global.set $glob (struct.new_with_rtt $point (f64.const 3.5) (f64.const 37.25) (rtt.canon $point))))
+           (global.set $glob (struct.new $point (f64.const 3.5) (f64.const 37.25))))
 
           (func (export "clear")
            (global.set $glob (ref.null $point)))
@@ -93,30 +93,4 @@
     let g = new WebAssembly.Global({value: "externref"}, obj);
     let ins = new WebAssembly.Instance(mod, {"":{g}}).exports;
     assertEq(ins.get(), obj);
-}
-
-// We can't import a global of a reference type because we don't have a good
-// notion of structural type compatibility yet.
-{
-    let bin = wasmTextToBinary(
-        `(module
-          (type $box (struct (field $val i32)))
-          (import "m" "g" (global (mut (ref null $box)))))`);
-
-    assertErrorMessage(() => new WebAssembly.Module(bin), WebAssembly.CompileError,
-                       /cannot expose indexed reference type/);
-}
-
-// We can't export a global of a reference type because we can't later import
-// it.  (Once we can export it, the value setter must also perform the necessary
-// subtype check, which implies we have some notion of exporting types, and we
-// don't have that yet.)
-{
-    let bin = wasmTextToBinary(
-        `(module
-          (type $box (struct (field $val i32)))
-          (global $boxg (export "box") (mut (ref null $box)) (ref.null $box)))`);
-
-    assertErrorMessage(() => new WebAssembly.Module(bin), WebAssembly.CompileError,
-                       /cannot expose indexed reference type/);
 }

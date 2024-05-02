@@ -20,6 +20,7 @@
 #include "mozilla/AlreadyAddRefed.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
+#include "mozilla/FixedBufferOutputStream.h"
 #include "mozilla/NotNull.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/Scoped.h"
@@ -30,7 +31,6 @@
 #include "mozilla/dom/quota/DummyCipherStrategy.h"
 #include "mozilla/dom/quota/EncryptedBlock.h"
 #include "mozilla/dom/quota/EncryptingOutputStream_impl.h"
-#include "mozilla/dom/quota/MemoryOutputStream.h"
 #include "mozilla/dom/quota/NSSCipherStrategy.h"
 #include "mozilla/fallible.h"
 #include "nsCOMPtr.h"
@@ -112,6 +112,11 @@ ArrayBufferInputStream::Available(uint64_t* aCount) {
   }
 
   return NS_OK;
+}
+
+NS_IMETHODIMP
+ArrayBufferInputStream::StreamStatus() {
+  return mClosed ? NS_BASE_STREAM_CLOSED : NS_OK;
 }
 
 NS_IMETHODIMP
@@ -420,15 +425,14 @@ static auto ReadTestData(
 // XXX Change to return the buffer instead.
 template <typename CipherStrategy,
           typename ExtraChecks = decltype(NoExtraChecks<CipherStrategy>)>
-static RefPtr<dom::quota::MemoryOutputStream> DoRoundtripTest(
+static RefPtr<FixedBufferOutputStream> DoRoundtripTest(
     const size_t aDataSize, const size_t aWriteChunkSize,
     const size_t aReadChunkSize, const size_t aBlockSize,
     const typename CipherStrategy::KeyType& aKey, const FlushMode aFlushMode,
     const ExtraChecks& aExtraChecks = NoExtraChecks<CipherStrategy>) {
   // XXX Add deduction guide for RefPtr from already_AddRefed
-  const auto baseOutputStream =
-      WrapNotNull(RefPtr<dom::quota::MemoryOutputStream>{
-          dom::quota::MemoryOutputStream::Create(2048)});
+  const auto baseOutputStream = WrapNotNull(
+      RefPtr<FixedBufferOutputStream>{FixedBufferOutputStream::Create(2048)});
 
   const auto data = MakeTestData(aDataSize);
 
@@ -437,7 +441,7 @@ static RefPtr<dom::quota::MemoryOutputStream> DoRoundtripTest(
       aWriteChunkSize, aBlockSize, aKey, aFlushMode);
 
   const auto baseInputStream =
-      MakeRefPtr<ArrayBufferInputStream>(baseOutputStream->Data());
+      MakeRefPtr<ArrayBufferInputStream>(baseOutputStream->WrittenData());
 
   ReadTestData<CipherStrategy>(
       WrapNotNull(nsCOMPtr<nsIInputStream>{baseInputStream}), Span{data},
@@ -472,7 +476,8 @@ TEST_P(ParametrizedCryptTest, DummyCipherStrategy_CheckOutput) {
     return;
   }
 
-  const auto encryptedDataSpan = AsBytes(Span(encryptedDataStream->Data()));
+  const auto encryptedData = encryptedDataStream->WrittenData();
+  const auto encryptedDataSpan = AsBytes(Span(encryptedData));
 
   const auto plainTestData = MakeTestData(testParams.DataSize());
   auto encryptedBlock = EncryptedBlock<DummyCipherStrategy::BlockPrefixLength,
@@ -549,9 +554,8 @@ TEST_P(ParametrizedCryptTest, DummyCipherStrategy_Clone) {
   const TestParams& testParams = GetParam();
 
   // XXX Add deduction guide for RefPtr from already_AddRefed
-  const auto baseOutputStream =
-      WrapNotNull(RefPtr<dom::quota::MemoryOutputStream>{
-          dom::quota::MemoryOutputStream::Create(2048)});
+  const auto baseOutputStream = WrapNotNull(
+      RefPtr<FixedBufferOutputStream>{FixedBufferOutputStream::Create(2048)});
 
   const auto data = MakeTestData(testParams.DataSize());
 
@@ -561,7 +565,7 @@ TEST_P(ParametrizedCryptTest, DummyCipherStrategy_Clone) {
       CipherStrategy::KeyType{}, testParams.FlushMode());
 
   const auto baseInputStream =
-      MakeRefPtr<ArrayBufferInputStream>(baseOutputStream->Data());
+      MakeRefPtr<ArrayBufferInputStream>(baseOutputStream->WrittenData());
 
   const auto inStream = ReadTestData<CipherStrategy>(
       WrapNotNull(nsCOMPtr<nsIInputStream>{baseInputStream}), Span{data},
@@ -671,9 +675,8 @@ TEST_P(ParametrizedSeekCryptTest, DummyCipherStrategy_Seek) {
   using CipherStrategy = DummyCipherStrategy;
   const SeekTestParams& testParams = GetParam();
 
-  const auto baseOutputStream =
-      WrapNotNull(RefPtr<dom::quota::MemoryOutputStream>{
-          dom::quota::MemoryOutputStream::Create(2048)});
+  const auto baseOutputStream = WrapNotNull(
+      RefPtr<FixedBufferOutputStream>{FixedBufferOutputStream::Create(2048)});
 
   const auto data = MakeTestData(testParams.mDataSize);
 
@@ -683,7 +686,7 @@ TEST_P(ParametrizedSeekCryptTest, DummyCipherStrategy_Seek) {
       FlushMode::Never);
 
   const auto baseInputStream =
-      MakeRefPtr<ArrayBufferInputStream>(baseOutputStream->Data());
+      MakeRefPtr<ArrayBufferInputStream>(baseOutputStream->WrittenData());
 
   const auto inStream = MakeSafeRefPtr<DecryptingInputStream<CipherStrategy>>(
       WrapNotNull(nsCOMPtr<nsIInputStream>{baseInputStream}),
@@ -740,7 +743,7 @@ TEST_P(ParametrizedSeekCryptTest, DummyCipherStrategy_Seek) {
             Span{readData}.First(read).AsConst());
 }
 
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     DOM_Quota_EncryptedStream_Parametrized, ParametrizedCryptTest,
     testing::Combine(
         /* dataSize */ testing::Values(0u, 16u, 256u, 512u, 513u),
@@ -755,7 +758,7 @@ INSTANTIATE_TEST_CASE_P(
         testing::Values(FlushMode::Never, FlushMode::AfterEachChunk)),
     TestParamToString);
 
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     DOM_IndexedDB_EncryptedStream_ParametrizedSeek, ParametrizedSeekCryptTest,
     testing::Combine(
         /* dataSize */ testing::Values(0u, 16u, 256u, 512u, 513u),

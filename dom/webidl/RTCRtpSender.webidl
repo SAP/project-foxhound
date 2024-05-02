@@ -7,84 +7,32 @@
  * http://w3c.github.io/webrtc-pc/#rtcrtpsender-interface
  */
 
-enum RTCPriorityType {
-  "very-low",
-  "low",
-  "medium",
-  "high"
-};
-
-enum RTCDegradationPreference {
-  "maintain-framerate",
-  "maintain-resolution",
-  "balanced"
-};
-
-dictionary RTCRtxParameters {
-  unsigned long ssrc;
-};
-
-dictionary RTCFecParameters {
-  unsigned long ssrc;
-};
-
-dictionary RTCRtpEncodingParameters {
-  unsigned long            ssrc;
-  RTCRtxParameters         rtx;
-  RTCFecParameters         fec;
-  boolean                  active;
-  RTCPriorityType          priority;
-  unsigned long            maxBitrate;
-  RTCDegradationPreference degradationPreference = "balanced";
-  DOMString                rid;
-  float                    scaleResolutionDownBy = 1.0;
-};
-
-dictionary RTCRtpHeaderExtensionParameters {
-  DOMString      uri;
-  unsigned short id;
-  boolean        encrypted;
-};
-
-dictionary RTCRtcpParameters {
-  DOMString cname;
-  boolean   reducedSize;
-};
-
-dictionary RTCRtpCodecParameters {
-  unsigned short payloadType;
-  DOMString      mimeType;
-  unsigned long  clockRate;
-  unsigned short channels = 1;
-  DOMString      sdpFmtpLine;
-};
-
-dictionary RTCRtpParameters {
-  sequence<RTCRtpEncodingParameters>        encodings;
-  sequence<RTCRtpHeaderExtensionParameters> headerExtensions;
-  RTCRtcpParameters                         rtcp;
-  sequence<RTCRtpCodecParameters>           codecs;
-};
-
 [Pref="media.peerconnection.enabled",
- JSImplementation="@mozilla.org/dom/rtpsender;1",
  Exposed=Window]
 interface RTCRtpSender {
   readonly attribute MediaStreamTrack? track;
   readonly attribute RTCDtlsTransport? transport;
-  Promise<void> setParameters (optional RTCRtpParameters parameters = {});
-  RTCRtpParameters getParameters();
-  Promise<void> replaceTrack(MediaStreamTrack? withTrack);
+  static RTCRtpCapabilities? getCapabilities(DOMString kind);
+  [NewObject]
+  Promise<undefined> setParameters (RTCRtpSendParameters parameters);
+  RTCRtpSendParameters getParameters();
+  [Throws]
+  Promise<undefined> replaceTrack(MediaStreamTrack? withTrack);
+  [Throws]
+  undefined setStreams(MediaStream... streams);
+  [NewObject]
   Promise<RTCStatsReport> getStats();
-  [Pref="media.peerconnection.dtmf.enabled"]
   readonly attribute RTCDTMFSender? dtmf;
-  // Ugh, can't use a ChromeOnly attibute sequence<MediaStream>...
   [ChromeOnly]
   sequence<MediaStream> getStreams();
   [ChromeOnly]
-  void setStreams(sequence<MediaStream> streams);
+  undefined setStreamsImpl(MediaStream... streams);
   [ChromeOnly]
-  void setTrack(MediaStreamTrack? track);
-  [ChromeOnly]
-  void checkWasCreatedByPc(RTCPeerConnection pc);
+  undefined setTrack(MediaStreamTrack? track);
+};
+
+// https://w3c.github.io/webrtc-encoded-transform/#specification
+partial interface RTCRtpSender {
+  [SetterThrows,
+   Pref="media.peerconnection.scripttransform.enabled"] attribute RTCRtpTransform? transform;
 };

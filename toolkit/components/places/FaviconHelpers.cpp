@@ -402,18 +402,14 @@ nsresult FetchIconPerSpec(const RefPtr<Database>& aDB,
       "UNION ALL "
       "SELECT width, icon_url, root "
       "FROM moz_icons i "
-      "WHERE fixed_icon_url_hash = hash(fixup_url(:root_icon_url)) "
-      "ORDER BY width DESC, root ASC ");
+      "WHERE fixed_icon_url_hash = hash(fixup_url(:host) || '/favicon.ico') "
+      "ORDER BY width DESC, root ASC");
   NS_ENSURE_STATE(stmt);
   mozStorageStatementScoper scoper(stmt);
 
   nsresult rv = URIBinder::Bind(stmt, "url"_ns, aPageSpec);
   NS_ENSURE_SUCCESS(rv, rv);
-  nsAutoCString rootIconFixedUrl(aPageHost);
-  if (!rootIconFixedUrl.IsEmpty()) {
-    rootIconFixedUrl.AppendLiteral("/favicon.ico");
-  }
-  rv = stmt->BindUTF8StringByName("root_icon_url"_ns, rootIconFixedUrl);
+  rv = stmt->BindUTF8StringByName("host"_ns, aPageHost);
   NS_ENSURE_SUCCESS(rv, rv);
   int32_t hashIdx = PromiseFlatCString(aPageSpec).RFind("#");
   rv = stmt->BindInt32ByName("hash_idx"_ns, hashIdx + 1);
@@ -618,7 +614,8 @@ AsyncFetchAndSetIconForPage::Cancel() {
   }
   mCanceled = true;
   if (mRequest) {
-    mRequest->Cancel(NS_BINDING_ABORTED);
+    mRequest->CancelWithReason(NS_BINDING_ABORTED,
+                               "AsyncFetchAndSetIconForPage::Cancel"_ns);
   }
   return NS_OK;
 }
@@ -644,7 +641,8 @@ AsyncFetchAndSetIconForPage::OnStartRequest(nsIRequest* aRequest) {
         !path.EqualsLiteral("/favicon.ico") &&
         NS_SUCCEEDED(httpChannel->IsNoStoreResponse(&isNoStore)) && isNoStore) {
       // Abandon the network fetch.
-      mRequest->Cancel(NS_BINDING_ABORTED);
+      mRequest->CancelWithReason(
+          NS_BINDING_ABORTED, "AsyncFetchAndSetIconForPage::OnStartRequest"_ns);
     }
   }
   return NS_OK;

@@ -3,55 +3,50 @@
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
 import { createSelector } from "reselect";
-import { getSelectedSource, getSourceFromId } from "../selectors/sources";
-import { getBreakpointsList } from "../selectors/breakpoints";
+import { getSelectedSource } from "./sources";
+import { getBreakpointsList } from "./breakpoints";
 import { getFilename } from "../utils/source";
 import { getSelectedLocation } from "../utils/selected-location";
-import { sortSelectedBreakpoints } from "../utils/breakpoint";
 
-function getBreakpointsForSource(source, selectedSource, breakpoints) {
-  return sortSelectedBreakpoints(breakpoints, selectedSource)
-    .filter(
+// Returns a list of sources with their related breakpoints:
+//   [{ source, breakpoints: [breakpoint1, ...] }, ...]
+//
+// This only returns sources for which we have a visible breakpoint.
+// This will return either generated or original source based on the currently
+// selected source.
+export const getBreakpointSources = createSelector(
+  getBreakpointsList,
+  getSelectedSource,
+  (breakpoints, selectedSource) => {
+    const visibleBreakpoints = breakpoints.filter(
       bp =>
         !bp.options.hidden &&
         (bp.text || bp.originalText || bp.options.condition || bp.disabled)
-    )
-    .filter(
-      bp => getSelectedLocation(bp, selectedSource).sourceId == source.id
     );
-}
 
-const getSourcesForBreakpoints = state => {
-  const selectedSource = getSelectedSource(state);
-  const breakpointSourceIds = getBreakpointsList(state).map(
-    breakpoint => getSelectedLocation(breakpoint, selectedSource).sourceId
-  );
+    const sources = new Map();
+    for (const breakpoint of visibleBreakpoints) {
+      // Depending on the selected source, this will match the original or generated
+      // location of the given selected source.
+      const location = getSelectedLocation(breakpoint, selectedSource);
+      const { source } = location;
 
-  return [...new Set(breakpointSourceIds)]
-    .map(sourceId => {
-      const source = getSourceFromId(state, sourceId);
-      const filename = getFilename(source);
-      return { source, filename };
-    })
-    .filter(({ source }) => source && !source.isBlackBoxed)
-    .sort((a, b) => a.filename - b.filename)
-    .map(({ source }) => source);
-};
-
-export const getBreakpointSources = createSelector(
-  getBreakpointsList,
-  getSourcesForBreakpoints,
-  getSelectedSource,
-  (breakpoints, sources, selectedSource) => {
-    return sources
-      .map(source => ({
-        source,
-        breakpoints: getBreakpointsForSource(
+      // We may have more than one breakpoint per source,
+      // so use the map to have a unique entry per source.
+      if (!sources.has(source)) {
+        sources.set(source, {
           source,
-          selectedSource,
-          breakpoints
-        ),
-      }))
-      .filter(({ breakpoints: bps }) => bps.length > 0);
+          breakpoints: [breakpoint],
+          filename: getFilename(source),
+        });
+      } else {
+        sources.get(source).breakpoints.push(breakpoint);
+      }
+    }
+
+    // Returns an array of breakpoints info per source, sorted by source's filename
+    return [...sources.values()].sort((a, b) =>
+      a.filename.localeCompare(b.filename)
+    );
   }
 );

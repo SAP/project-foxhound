@@ -70,7 +70,7 @@ en_AU{
         }
         BOB{
             "BOB",
-            "Boliviano",
+            "Bolivian boliviano",
         }
         BRL{
             "BRL",
@@ -100,10 +100,6 @@ en_AU{
             "CLP",
             "Chilean Peso",
         }
-        CNH{
-            "CNH",
-            "CNH",
-        }
         CNY{
             "CNY",
             "Chinese Yuan",
@@ -111,6 +107,10 @@ en_AU{
         COP{
             "COP",
             "Colombian Peso",
+        }
+        CUP{
+            "CUP",
+            "Cuban Peso",
         }
         CVE{
             "CVE",
@@ -430,7 +430,7 @@ en_AU{
         }
         SLL{
             "SLL",
-            "Sierra Leonean Leone",
+            "Sierra Leonean Leone (1964–2022)",
         }
         SOS{
             "SOS",
@@ -506,7 +506,7 @@ en_AU{
         }
         VES{
             "VES",
-            "VES",
+            "Venezuelan bolívar",
         }
         VND{
             "VND",
@@ -604,14 +604,6 @@ en_AU{
             one{"Bermuda dollar"}
             other{"Bermuda dollars"}
         }
-        BOB{
-            one{"boliviano"}
-            other{"bolivianos"}
-        }
-        CNH{
-            one{"CNH"}
-            other{"CNH"}
-        }
         ETB{
             one{"Ethiopian birr"}
             other{"Ethiopian birrs"}
@@ -656,6 +648,10 @@ en_AU{
             one{"Qatari riyal"}
             other{"Quatari riyals"}
         }
+        SLL{
+            one{"Sierra Leonean leone (1964–2022)"}
+            other{"Sierra Leonean leones (1964–2022)"}
+        }
         SRD{
             one{"Suriname dollar"}
             other{"Suriname dollars"}
@@ -667,14 +663,6 @@ en_AU{
         UZS{
             one{"Uzbekistani som"}
             other{"Uzbekistani soms"}
-        }
-        VEF{
-            one{"Venezuelan bolívar"}
-            other{"Venezuelan bolívars"}
-        }
-        VES{
-            one{"VES"}
-            other{"VES"}
         }
         VND{
             one{"Vietnamese dong"}

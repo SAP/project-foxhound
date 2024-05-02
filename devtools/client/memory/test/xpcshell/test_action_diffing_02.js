@@ -5,14 +5,21 @@
 
 // Test that toggling diffing unselects all snapshots.
 
-const { censusState, viewState } = require("devtools/client/memory/constants");
-const { toggleDiffing } = require("devtools/client/memory/actions/diffing");
+const {
+  censusState,
+  viewState,
+} = require("resource://devtools/client/memory/constants.js");
+const {
+  toggleDiffing,
+} = require("resource://devtools/client/memory/actions/diffing.js");
 const {
   takeSnapshotAndCensus,
-} = require("devtools/client/memory/actions/snapshot");
-const { changeView } = require("devtools/client/memory/actions/view");
+} = require("resource://devtools/client/memory/actions/snapshot.js");
+const {
+  changeView,
+} = require("resource://devtools/client/memory/actions/view.js");
 
-add_task(async function() {
+add_task(async function () {
   const front = new StubbedMemoryFront();
   const heapWorker = new HeapAnalysesClient();
   await front.attach();

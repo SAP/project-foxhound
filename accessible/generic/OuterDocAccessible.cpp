@@ -6,14 +6,12 @@
 #include "OuterDocAccessible.h"
 
 #include "LocalAccessible-inl.h"
-#include "nsAccUtils.h"
 #include "DocAccessible-inl.h"
 #include "mozilla/a11y/DocAccessibleChild.h"
 #include "mozilla/a11y/DocAccessibleParent.h"
 #include "mozilla/dom/BrowserBridgeChild.h"
 #include "mozilla/dom/BrowserParent.h"
-#include "Role.h"
-#include "States.h"
+#include "mozilla/a11y/Role.h"
 
 #ifdef A11Y_LOG
 #  include "Logging.h"
@@ -30,12 +28,6 @@ OuterDocAccessible::OuterDocAccessible(nsIContent* aContent,
                                        DocAccessible* aDoc)
     : AccessibleWrap(aContent, aDoc) {
   mType = eOuterDocType;
-
-#ifdef XP_WIN
-  if (DocAccessibleParent* remoteDoc = RemoteChildDoc()) {
-    remoteDoc->SendParentCOMProxy(this);
-  }
-#endif
 
   if (IPCAccessibilityActive()) {
     auto bridge = dom::BrowserBridgeChild::GetFrom(aContent);
@@ -62,11 +54,7 @@ void OuterDocAccessible::SendEmbedderAccessible(
   DocAccessibleChild* ipcDoc = mDoc->IPCDoc();
   if (ipcDoc) {
     uint64_t id = reinterpret_cast<uintptr_t>(UniqueID());
-#if defined(XP_WIN)
-    ipcDoc->SetEmbedderOnBridge(aBridge, id);
-#else
     aBridge->SetEmbedderAccessible(ipcDoc, id);
-#endif
   }
 }
 

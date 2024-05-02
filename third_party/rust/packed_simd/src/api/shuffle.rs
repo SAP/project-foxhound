@@ -27,8 +27,6 @@
 /// Shuffling elements of two vectors:
 ///
 /// ```
-/// # #[macro_use]
-/// # extern crate packed_simd;
 /// # use packed_simd::*;
 /// # fn main() {
 /// // Shuffle allows reordering the elements:
@@ -51,8 +49,6 @@
 /// Shuffling elements of one vector:
 ///
 /// ```
-/// # #[macro_use]
-/// # extern crate packed_simd;
 /// # use packed_simd::*;
 /// # fn main() {
 /// // Shuffle allows reordering the elements of a vector:

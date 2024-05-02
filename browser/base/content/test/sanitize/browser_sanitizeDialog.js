@@ -17,16 +17,10 @@
  * browser/base/content/test/sanitize/browser_sanitize-timespans.js.
  */
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "Timer",
-  "resource://gre/modules/Timer.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "PlacesTestUtils",
-  "resource://testing-common/PlacesTestUtils.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  PlacesTestUtils: "resource://testing-common/PlacesTestUtils.sys.mjs",
+  Timer: "resource://gre/modules/Timer.sys.mjs",
+});
 
 const kMsecPerMin = 60 * 1000;
 const kUsecPerMin = 60 * 1000000;
@@ -52,10 +46,10 @@ async function promiseHistoryClearedState(aURIs, aShouldBeCleared) {
   }
 }
 
-add_task(async function init() {
+add_setup(async function () {
   requestLongerTimeout(3);
   await blankSlate();
-  registerCleanupFunction(async function() {
+  registerCleanupFunction(async function () {
     await blankSlate();
     await PlacesTestUtils.promiseAsyncUpdates();
   });
@@ -66,7 +60,7 @@ add_task(async function init() {
  */
 add_task(async function default_state() {
   let dh = new DialogHelper();
-  dh.onload = function() {
+  dh.onload = function () {
     // Select "Last Hour"
     this.selectDuration(Sanitizer.TIMESPAN_HOUR);
     this.acceptDialog();
@@ -84,19 +78,19 @@ add_task(async function test_cancel() {
   let places = [];
   let pURI;
   for (let i = 0; i < 30; i++) {
-    pURI = makeURI("http://" + i + "-minutes-ago.com/");
+    pURI = makeURI("https://" + i + "-minutes-ago.com/");
     places.push({ uri: pURI, visitDate: visitTimeForMinutesAgo(i) });
     uris.push(pURI);
   }
   await PlacesTestUtils.addVisits(places);
 
   let dh = new DialogHelper();
-  dh.onload = function() {
+  dh.onload = function () {
     this.selectDuration(Sanitizer.TIMESPAN_HOUR);
     this.checkPrefCheckbox("history", false);
     this.cancelDialog();
   };
-  dh.onunload = async function() {
+  dh.onunload = async function () {
     await promiseHistoryClearedState(uris, false);
     await blankSlate();
     await promiseHistoryClearedState(uris, true);
@@ -126,14 +120,14 @@ add_task(async function test_history_downloads_checked() {
   let places = [];
   let pURI;
   for (let i = 0; i < 30; i++) {
-    pURI = makeURI("http://" + i + "-minutes-ago.com/");
+    pURI = makeURI("https://" + i + "-minutes-ago.com/");
     places.push({ uri: pURI, visitDate: visitTimeForMinutesAgo(i) });
     uris.push(pURI);
   }
   // Add history (over an hour ago).
   let olderURIs = [];
   for (let i = 0; i < 5; i++) {
-    pURI = makeURI("http://" + (61 + i) + "-minutes-ago.com/");
+    pURI = makeURI("https://" + (61 + i) + "-minutes-ago.com/");
     places.push({ uri: pURI, visitDate: visitTimeForMinutesAgo(61 + i) });
     olderURIs.push(pURI);
   }
@@ -142,12 +136,12 @@ add_task(async function test_history_downloads_checked() {
   await PlacesTestUtils.addVisits(places);
 
   let dh = new DialogHelper();
-  dh.onload = function() {
+  dh.onload = function () {
     this.selectDuration(Sanitizer.TIMESPAN_HOUR);
     this.checkPrefCheckbox("history", true);
     this.acceptDialog();
   };
-  dh.onunload = async function() {
+  dh.onunload = async function () {
     intPrefIs(
       "sanitize.timeSpan",
       Sanitizer.TIMESPAN_HOUR,
@@ -209,14 +203,14 @@ add_task(async function test_history_downloads_unchecked() {
   let places = [];
   let pURI;
   for (let i = 0; i < 5; i++) {
-    pURI = makeURI("http://" + i + "-minutes-ago.com/");
+    pURI = makeURI("https://" + i + "-minutes-ago.com/");
     places.push({ uri: pURI, visitDate: visitTimeForMinutesAgo(i) });
     uris.push(pURI);
   }
 
   await PlacesTestUtils.addVisits(places);
   let dh = new DialogHelper();
-  dh.onload = function() {
+  dh.onload = function () {
     is(
       this.isWarningPanelVisible(),
       false,
@@ -230,7 +224,7 @@ add_task(async function test_history_downloads_unchecked() {
     this.checkPrefCheckbox("formdata", true);
     this.acceptDialog();
   };
-  dh.onunload = async function() {
+  dh.onunload = async function () {
     intPrefIs(
       "sanitize.timeSpan",
       Sanitizer.TIMESPAN_HOUR,
@@ -256,7 +250,7 @@ add_task(async function test_history_downloads_unchecked() {
 
     for (let entry of formEntries) {
       let exists = await formNameExists(entry);
-      is(exists, 0, "form entry " + entry + " should no longer exist");
+      ok(!exists, "form entry " + entry + " should no longer exist");
     }
 
     // OK, done, cleanup after ourselves.
@@ -278,8 +272,8 @@ add_task(async function test_everything() {
   let pURI;
   // within past hour, within past two hours, within past four hours and
   // outside past four hours
-  [10, 70, 130, 250].forEach(function(aValue) {
-    pURI = makeURI("http://" + aValue + "-minutes-ago.com/");
+  [10, 70, 130, 250].forEach(function (aValue) {
+    pURI = makeURI("https://" + aValue + "-minutes-ago.com/");
     places.push({ uri: pURI, visitDate: visitTimeForMinutesAgo(aValue) });
     uris.push(pURI);
   });
@@ -288,7 +282,7 @@ add_task(async function test_everything() {
 
   await PlacesTestUtils.addVisits(places);
   let dh = new DialogHelper();
-  dh.onload = function() {
+  dh.onload = function () {
     is(
       this.isWarningPanelVisible(),
       false,
@@ -299,7 +293,7 @@ add_task(async function test_everything() {
     this.checkPrefCheckbox("history", true);
     this.acceptDialog();
   };
-  dh.onunload = async function() {
+  dh.onunload = async function () {
     await promiseSanitized;
     intPrefIs(
       "sanitize.timeSpan",
@@ -325,8 +319,8 @@ add_task(async function test_everything_warning() {
   let pURI;
   // within past hour, within past two hours, within past four hours and
   // outside past four hours
-  [10, 70, 130, 250].forEach(function(aValue) {
-    pURI = makeURI("http://" + aValue + "-minutes-ago.com/");
+  [10, 70, 130, 250].forEach(function (aValue) {
+    pURI = makeURI("https://" + aValue + "-minutes-ago.com/");
     places.push({ uri: pURI, visitDate: visitTimeForMinutesAgo(aValue) });
     uris.push(pURI);
   });
@@ -335,7 +329,7 @@ add_task(async function test_everything_warning() {
 
   await PlacesTestUtils.addVisits(places);
   let dh = new DialogHelper();
-  dh.onload = function() {
+  dh.onload = function () {
     is(
       this.isWarningPanelVisible(),
       true,
@@ -346,7 +340,7 @@ add_task(async function test_everything_warning() {
     this.checkPrefCheckbox("history", true);
     this.acceptDialog();
   };
-  dh.onunload = async function() {
+  dh.onunload = async function () {
     intPrefIs(
       "sanitize.timeSpan",
       Sanitizer.TIMESPAN_EVERYTHING,
@@ -374,7 +368,7 @@ add_task(async function test_cannot_clear_history() {
   let promiseSanitized = promiseSanitizationComplete();
 
   // Add history.
-  let pURI = makeURI("http://" + 10 + "-minutes-ago.com/");
+  let pURI = makeURI("https://" + 10 + "-minutes-ago.com/");
   await PlacesTestUtils.addVisits({
     uri: pURI,
     visitDate: visitTimeForMinutesAgo(10),
@@ -382,7 +376,7 @@ add_task(async function test_cannot_clear_history() {
   let uris = [pURI];
 
   let dh = new DialogHelper();
-  dh.onload = function() {
+  dh.onload = function () {
     // Check that the relevant checkboxes are enabled
     var cb = this.win.document.querySelectorAll(
       "checkbox[preference='privacy.cpd.formdata']"
@@ -403,17 +397,13 @@ add_task(async function test_cannot_clear_history() {
     this.checkAllCheckboxes();
     this.acceptDialog();
   };
-  dh.onunload = async function() {
+  dh.onunload = async function () {
     await promiseSanitized;
 
     await promiseHistoryClearedState(uris, true);
 
     let exists = await formNameExists(formEntries[0]);
-    is(
-      Boolean(exists),
-      false,
-      "form entry " + formEntries[0] + " should no longer exist"
-    );
+    ok(!exists, "form entry " + formEntries[0] + " should no longer exist");
   };
   dh.open();
   await dh.promiseClosed;
@@ -422,7 +412,7 @@ add_task(async function test_cannot_clear_history() {
 add_task(async function test_no_formdata_history_to_clear() {
   let promiseSanitized = promiseSanitizationComplete();
   let dh = new DialogHelper();
-  dh.onload = function() {
+  dh.onload = function () {
     boolPrefIs(
       "cpd.history",
       true,
@@ -458,7 +448,7 @@ add_task(async function test_form_entries() {
   let promiseSanitized = promiseSanitizationComplete();
 
   let dh = new DialogHelper();
-  dh.onload = function() {
+  dh.onload = function () {
     boolPrefIs(
       "cpd.formdata",
       true,
@@ -479,14 +469,10 @@ add_task(async function test_form_entries() {
 
     this.acceptDialog();
   };
-  dh.onunload = async function() {
+  dh.onunload = async function () {
     await promiseSanitized;
     let exists = await formNameExists(formEntry);
-    is(
-      Boolean(exists),
-      false,
-      "form entry " + formEntry + " should no longer exist"
-    );
+    ok(!exists, "form entry " + formEntry + " should no longer exist");
   };
   dh.open();
   await dh.promiseClosed;
@@ -495,7 +481,7 @@ add_task(async function test_form_entries() {
 // Test for offline apps permission deletion
 add_task(async function test_offline_apps_permissions() {
   // Prepare stuff, we will work with www.example.com
-  var URL = "http://www.example.com";
+  var URL = "https://www.example.com";
   var URI = makeURI(URL);
   var principal = Services.scriptSecurityManager.createContentPrincipal(
     URI,
@@ -506,14 +492,14 @@ add_task(async function test_offline_apps_permissions() {
 
   // Open the dialog
   let dh = new DialogHelper();
-  dh.onload = function() {
+  dh.onload = function () {
     this.selectDuration(Sanitizer.TIMESPAN_EVERYTHING);
     // Clear only offlineApps
     this.uncheckAllCheckboxes();
     this.checkPrefCheckbox("siteSettings", true);
     this.acceptDialog();
   };
-  dh.onunload = async function() {
+  dh.onunload = async function () {
     await promiseSanitized;
 
     // Check all has been deleted (privileges, data, cache)
@@ -746,44 +732,19 @@ function promiseAddFormEntryWithMinutesAgo(aMinutesAgo) {
   // Artifically age the entry to the proper vintage.
   let timestamp = now_uSec - aMinutesAgo * kUsecPerMin;
 
-  return new Promise((resolve, reject) =>
-    FormHistory.update(
-      { op: "add", fieldname: name, value: "dummy", firstUsed: timestamp },
-      {
-        handleError(error) {
-          reject();
-          throw new Error("Error occurred updating form history: " + error);
-        },
-        handleCompletion(reason) {
-          resolve(name);
-        },
-      }
-    )
-  );
+  return FormHistory.update({
+    op: "add",
+    fieldname: name,
+    value: "dummy",
+    firstUsed: timestamp,
+  });
 }
 
 /**
  * Checks if a form entry exists.
  */
-function formNameExists(name) {
-  return new Promise((resolve, reject) => {
-    let count = 0;
-    FormHistory.count(
-      { fieldname: name },
-      {
-        handleResult: result => (count = result),
-        handleError(error) {
-          reject(error);
-          throw new Error("Error occurred searching form history: " + error);
-        },
-        handleCompletion(reason) {
-          if (!reason) {
-            resolve(count);
-          }
-        },
-      }
-    );
-  });
+async function formNameExists(name) {
+  return !!(await FormHistory.count({ fieldname: name }));
 }
 
 /**
@@ -797,23 +758,7 @@ async function blankSlate() {
     await download.finalize(true);
   }
 
-  await new Promise((resolve, reject) => {
-    FormHistory.update(
-      { op: "remove" },
-      {
-        handleCompletion(reason) {
-          if (!reason) {
-            resolve();
-          }
-        },
-        handleError(error) {
-          reject(error);
-          throw new Error("Error occurred updating form history: " + error);
-        },
-      }
-    );
-  });
-
+  await FormHistory.update({ op: "remove" });
   await PlacesUtils.history.clear();
 }
 

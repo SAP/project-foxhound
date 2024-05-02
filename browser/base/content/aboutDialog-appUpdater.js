@@ -7,15 +7,22 @@
 
 /* import-globals-from aboutDialog.js */
 
-var { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-var { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+var { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-XPCOMUtils.defineLazyModuleGetters(this, {
-  AppUpdater: "resource:///modules/AppUpdater.jsm",
-  DownloadUtils: "resource://gre/modules/DownloadUtils.jsm",
-  UpdateUtils: "resource://gre/modules/UpdateUtils.jsm",
+
+ChromeUtils.defineESModuleGetters(this, {
+  AppUpdater: "resource://gre/modules/AppUpdater.sys.mjs",
+  DownloadUtils: "resource://gre/modules/DownloadUtils.sys.mjs",
+  UpdateUtils: "resource://gre/modules/UpdateUtils.sys.mjs",
 });
+
+XPCOMUtils.defineLazyServiceGetter(
+  this,
+  "AUS",
+  "@mozilla.org/updates/update-service;1",
+  "nsIApplicationUpdateService"
+);
 
 var UPDATING_MIN_DISPLAY_TIME_MS = 1500;
 
@@ -49,10 +56,14 @@ function appUpdater(options = {}) {
       Services.urlFormatter.formatURLPref("app.update.url.manual")
     );
 
-    let manualLink = document.getElementById("manualLink");
-    // Strip hash and search parameters for display text.
-    manualLink.textContent = manualURL.origin + manualURL.pathname;
-    manualLink.href = manualURL.href;
+    for (const manualLink of document.querySelectorAll(".manualLink")) {
+      // Strip hash and search parameters for display text.
+      let displayUrl = manualURL.origin + manualURL.pathname;
+      manualLink.href = manualURL.href;
+      document.l10n.setArgs(manualLink.closest("[data-l10n-id]"), {
+        displayUrl,
+      });
+    }
 
     document.getElementById("failedLink").href = manualURL.href;
   } catch (e) {
@@ -80,7 +91,7 @@ appUpdater.prototype = {
   },
 
   get selectedPanel() {
-    return this.updateDeck.querySelector(".selected");
+    return this.updateDeck.selectedPanel;
   },
 
   _onAppUpdateStatus(status, ...args) {
@@ -94,22 +105,27 @@ appUpdater.prototype = {
       case AppUpdater.STATUS.OTHER_INSTANCE_HANDLING_UPDATES:
         this.selectPanel("otherInstanceHandlingUpdates");
         break;
-      case AppUpdater.STATUS.DOWNLOADING:
-        this.downloadStatus = document.getElementById("downloadStatus");
+      case AppUpdater.STATUS.DOWNLOADING: {
+        const downloadStatus = document.getElementById("downloading");
         if (!args.length) {
-          this.downloadStatus.textContent = DownloadUtils.getTransferTotal(
-            0,
-            this.update.selectedPatch.size
-          );
+          // Very early in the DOWNLOADING state, `selectedPatch` may not be
+          // available yet. But this function will be called again when it is
+          // available. A `maxSize < 0` indicates that the max size is not yet
+          // available.
+          let maxSize = -1;
+          if (this.update.selectedPatch) {
+            maxSize = this.update.selectedPatch.size;
+          }
+          const transfer = DownloadUtils.getTransferTotal(0, maxSize);
+          document.l10n.setArgs(downloadStatus, { transfer });
           this.selectPanel("downloading");
         } else {
           let [progress, max] = args;
-          this.downloadStatus.textContent = DownloadUtils.getTransferTotal(
-            progress,
-            max
-          );
+          const transfer = DownloadUtils.getTransferTotal(progress, max);
+          document.l10n.setArgs(downloadStatus, { transfer });
         }
         break;
+      }
       case AppUpdater.STATUS.STAGING:
         this.selectPanel("applying");
         break;
@@ -127,6 +143,9 @@ appUpdater.prototype = {
         }
         break;
       }
+      case AppUpdater.STATUS.CHECKING_FAILED:
+        this.selectPanel("checkingFailed");
+        break;
       case AppUpdater.STATUS.NO_UPDATES_FOUND:
         this.checkingForUpdatesDelayPromise.then(() => {
           if (Services.policies.isAllowed("appUpdate")) {
@@ -152,6 +171,16 @@ appUpdater.prototype = {
       case AppUpdater.STATUS.DOWNLOAD_FAILED:
         this.selectPanel("downloadFailed");
         break;
+      case AppUpdater.STATUS.INTERNAL_ERROR:
+        this.selectPanel("internalError");
+        break;
+      case AppUpdater.STATUS.NEVER_CHECKED:
+        this.selectPanel("checkForUpdates");
+        break;
+      case AppUpdater.STATUS.NO_UPDATER:
+      default:
+        this.selectPanel("noUpdater");
+        break;
     }
   },
 
@@ -168,6 +197,9 @@ appUpdater.prototype = {
     if (icons) {
       icons.className = aChildID;
     }
+
+    // Make sure to select the panel before potentially auto-focusing the button.
+    this.updateDeck.selectedPanel = panel;
 
     let button = panel.querySelector("button");
     if (button) {
@@ -189,19 +221,23 @@ appUpdater.prototype = {
           "update.downloadAndInstallButton.accesskey"
         );
       }
-      this.selectedPanel?.classList.remove("selected");
-      panel.classList.add("selected");
-      if (
-        this.options.buttonAutoFocus &&
-        (!document.commandDispatcher.focusedElement || // don't steal the focus
-          document.commandDispatcher.focusedElement.localName == "button")
-      ) {
-        // except from the other buttons
-        button.focus();
+      if (this.options.buttonAutoFocus) {
+        let promise = Promise.resolve();
+        if (document.readyState != "complete") {
+          promise = new Promise(resolve =>
+            window.addEventListener("load", resolve, { once: true })
+          );
+        }
+        promise.then(() => {
+          if (
+            !document.commandDispatcher.focusedElement || // don't steal the focus
+            // except from the other buttons
+            document.commandDispatcher.focusedElement.localName == "button"
+          ) {
+            button.focus();
+          }
+        });
       }
-    } else {
-      this.selectedPanel?.classList.remove("selected");
-      panel.classList.add("selected");
     }
   },
 
@@ -209,7 +245,7 @@ appUpdater.prototype = {
    * Check for updates
    */
   checkForUpdates() {
-    this._appUpdater.checkForUpdates();
+    this._appUpdater.check();
   },
 
   /**
@@ -217,7 +253,7 @@ appUpdater.prototype = {
    * which is presented after the download has been downloaded.
    */
   buttonRestartAfterDownload() {
-    if (!this._appUpdater.isReadyForRestart) {
+    if (AUS.currentState != Ci.nsIApplicationUpdateService.STATE_PENDING) {
       return;
     }
 
@@ -245,15 +281,20 @@ appUpdater.prototype = {
       return;
     }
 
-    Services.startup.quit(
-      Ci.nsIAppStartup.eAttemptQuit | Ci.nsIAppStartup.eRestart
-    );
+    if (
+      !Services.startup.quit(
+        Ci.nsIAppStartup.eAttemptQuit | Ci.nsIAppStartup.eRestart
+      )
+    ) {
+      // Either the user or the hidden window aborted the quit process.
+      gAppUpdater.selectPanel("apply");
+    }
   },
 
   /**
    * Starts the download of an update mar.
    */
   startDownload() {
-    this._appUpdater.startDownload();
+    this._appUpdater.allowUpdateDownload();
   },
 };

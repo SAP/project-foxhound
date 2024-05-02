@@ -22,10 +22,8 @@ https://bitbucket.org/hpk42/py/src/980c8d526463958ee7cae678a7e4e9b054f36b94/py/_
 by holger krekel, holger at merlinux eu. 2009
 """
 
-from __future__ import absolute_import
-
-import sys
 import re
+import sys
 
 if sys.version_info >= (3, 0):
 
@@ -36,7 +34,6 @@ if sys.version_info >= (3, 0):
         if hasattr(x, "__unicode__"):
             return x.__unicode__()
         return str(x)
-
 
 else:
 
@@ -257,7 +254,6 @@ class SimpleUnicodeVisitor(object):
 
 
 class HtmlVisitor(SimpleUnicodeVisitor):
-
     single = dict(
         [
             (x, 1)

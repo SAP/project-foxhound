@@ -16,8 +16,8 @@
 #include "rtc_base/ignore_wundef.h"
 
 RTC_PUSH_IGNORING_WUNDEF()
-#include "opus.h"
-#include "opus_multistream.h"
+#include "third_party/opus/src/include/opus.h"
+#include "third_party/opus/src/include/opus_multistream.h"
 RTC_POP_IGNORING_WUNDEF()
 
 struct WebRtcOpusEncInst {
@@ -25,6 +25,9 @@ struct WebRtcOpusEncInst {
   OpusMSEncoder* multistream_encoder;
   size_t channels;
   int in_dtx_mode;
+  bool avoid_noise_pumping_during_dtx;
+  int sample_rate_hz;
+  float smooth_energy_non_active_frames;
 };
 
 struct WebRtcOpusDecInst {

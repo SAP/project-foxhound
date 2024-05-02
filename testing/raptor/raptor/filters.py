@@ -4,8 +4,6 @@
 
 # originally taken from /testing/talos/talos/filter.py
 
-from __future__ import absolute_import, division
-
 import math
 
 """
@@ -61,15 +59,11 @@ def register_filter(func):
     all filters defined in this module
     should be registered
     """
-    global _FILTERS
-
     _FILTERS[func.__name__] = func
     return func
 
 
 def filters(*args):
-    global _FILTERS
-
     filters_ = [_FILTERS[filter] for filter in args]
     return filters_
 

@@ -7,11 +7,7 @@
  * Test that WS connection is established successfully and filtered messages using the dropdown menu are correct.
  */
 
-add_task(async function() {
-  await SpecialPowers.pushPrefEnv({
-    set: [["devtools.netmonitor.features.webSockets", true]],
-  });
-
+add_task(async function () {
   const { tab, monitor } = await initNetMonitor(WS_PAGE_URL, {
     requestCount: 1,
   });
@@ -62,11 +58,7 @@ add_task(async function() {
   );
 
   // Click on "sent" option and check
-  const sentOption = getContextMenuItem(
-    monitor,
-    "message-list-context-filter-sent"
-  );
-  sentOption.click();
+  await selectContextMenuItem(monitor, "message-list-context-filter-sent");
 
   const sentFrames = document.querySelectorAll(
     "#messages-view .message-list-table .message-list-item"
@@ -83,12 +75,14 @@ add_task(async function() {
     "The payload type is 'Sent'"
   );
 
-  // Click on "received" option and check
-  const receivedOption = getContextMenuItem(
-    monitor,
-    "message-list-context-filter-received"
+  // Click on filter menu
+  EventUtils.sendMouseEvent(
+    { type: "click" },
+    document.querySelector("#frame-filter-menu")
   );
-  receivedOption.click();
+
+  // Click on "received" option and check
+  await selectContextMenuItem(monitor, "message-list-context-filter-received");
 
   const receivedFrames = document.querySelectorAll(
     "#messages-view .message-list-table .message-list-item"

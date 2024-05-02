@@ -2,15 +2,107 @@ use std::fmt;
 use std::io;
 use std::net::{SocketAddr, TcpListener as StdTcpListener};
 use std::time::Duration;
+use socket2::TcpKeepalive;
 
-use futures_util::FutureExt as _;
 use tokio::net::TcpListener;
-use tokio::time::Delay;
+use tokio::time::Sleep;
+use tracing::{debug, error, trace};
 
 use crate::common::{task, Future, Pin, Poll};
 
+#[allow(unreachable_pub)] // https://github.com/rust-lang/rust/issues/57411
 pub use self::addr_stream::AddrStream;
-use super::Accept;
+use super::accept::Accept;
+
+#[derive(Default, Debug, Clone, Copy)]
+struct TcpKeepaliveConfig {
+    time: Option<Duration>,
+    interval: Option<Duration>,
+    retries: Option<u32>,
+}
+
+impl TcpKeepaliveConfig {
+    /// Converts into a `socket2::TcpKeealive` if there is any keep alive configuration.
+    fn into_socket2(self) -> Option<TcpKeepalive> {
+        let mut dirty = false;
+        let mut ka = TcpKeepalive::new();
+        if let Some(time) = self.time {
+            ka = ka.with_time(time);
+            dirty = true
+        }
+        if let Some(interval) = self.interval {
+            ka = Self::ka_with_interval(ka, interval, &mut dirty)
+        };
+        if let Some(retries) = self.retries {
+            ka = Self::ka_with_retries(ka, retries, &mut dirty)
+        };
+        if dirty {
+            Some(ka)
+        } else {
+            None
+        }
+    }
+
+    #[cfg(any(
+        target_os = "android",
+        target_os = "dragonfly",
+        target_os = "freebsd",
+        target_os = "fuchsia",
+        target_os = "illumos",
+        target_os = "linux",
+        target_os = "netbsd",
+        target_vendor = "apple",
+        windows,
+    ))]
+    fn ka_with_interval(ka: TcpKeepalive, interval: Duration, dirty: &mut bool) -> TcpKeepalive {
+        *dirty = true;
+        ka.with_interval(interval)
+    }
+
+    #[cfg(not(any(
+        target_os = "android",
+        target_os = "dragonfly",
+        target_os = "freebsd",
+        target_os = "fuchsia",
+        target_os = "illumos",
+        target_os = "linux",
+        target_os = "netbsd",
+        target_vendor = "apple",
+        windows,
+    )))]
+    fn ka_with_interval(ka: TcpKeepalive, _: Duration, _: &mut bool) -> TcpKeepalive {
+        ka  // no-op as keepalive interval is not supported on this platform
+    }
+
+    #[cfg(any(
+        target_os = "android",
+        target_os = "dragonfly",
+        target_os = "freebsd",
+        target_os = "fuchsia",
+        target_os = "illumos",
+        target_os = "linux",
+        target_os = "netbsd",
+        target_vendor = "apple",
+    ))]
+    fn ka_with_retries(ka: TcpKeepalive, retries: u32, dirty: &mut bool) -> TcpKeepalive {
+        *dirty = true;
+        ka.with_retries(retries)
+    }
+
+    #[cfg(not(any(
+        target_os = "android",
+        target_os = "dragonfly",
+        target_os = "freebsd",
+        target_os = "fuchsia",
+        target_os = "illumos",
+        target_os = "linux",
+        target_os = "netbsd",
+        target_vendor = "apple",
+    )))]
+    fn ka_with_retries(ka: TcpKeepalive, _: u32, _: &mut bool) -> TcpKeepalive {
+        ka  // no-op as keepalive retries is not supported on this platform
+    }
+}
 
 /// A stream of connections from binding to an address.
 #[must_use = "streams do nothing unless polled"]
@@ -18,9 +110,9 @@ pub struct AddrIncoming {
     addr: SocketAddr,
     listener: TcpListener,
     sleep_on_errors: bool,
-    tcp_keepalive_timeout: Option<Duration>,
+    tcp_keepalive_config: TcpKeepaliveConfig,
     tcp_nodelay: bool,
-    timeout: Option<Delay>,
+    timeout: Option<Pin<Box<Sleep>>>,
 }
 
 impl AddrIncoming {
@@ -31,16 +123,12 @@ impl AddrIncoming {
     }
 
     pub(super) fn from_std(std_listener: StdTcpListener) -> crate::Result<Self> {
+        // TcpListener::from_std doesn't set O_NONBLOCK
+        std_listener
+            .set_nonblocking(true)
+            .map_err(crate::Error::new_listen)?;
         let listener = TcpListener::from_std(std_listener).map_err(crate::Error::new_listen)?;
-        let addr = listener.local_addr().map_err(crate::Error::new_listen)?;
-        Ok(AddrIncoming {
-            listener,
-            addr,
-            sleep_on_errors: true,
-            tcp_keepalive_timeout: None,
-            tcp_nodelay: false,
-            timeout: None,
-        })
+        AddrIncoming::from_listener(listener)
     }
 
     /// Creates a new `AddrIncoming` binding to provided socket address.
@@ -48,18 +136,42 @@ impl AddrIncoming {
         AddrIncoming::new(addr)
     }
 
+    /// Creates a new `AddrIncoming` from an existing `tokio::net::TcpListener`.
+    pub fn from_listener(listener: TcpListener) -> crate::Result<Self> {
+        let addr = listener.local_addr().map_err(crate::Error::new_listen)?;
+        Ok(AddrIncoming {
+            listener,
+            addr,
+            sleep_on_errors: true,
+            tcp_keepalive_config: TcpKeepaliveConfig::default(),
+            tcp_nodelay: false,
+            timeout: None,
+        })
+    }
+
     /// Get the local address bound to this listener.
     pub fn local_addr(&self) -> SocketAddr {
         self.addr
     }
 
-    /// Set whether TCP keepalive messages are enabled on accepted connections.
+    /// Set the duration to remain idle before sending TCP keepalive probes.
     ///
-    /// If `None` is specified, keepalive is disabled, otherwise the duration
-    /// specified will be the time to remain idle before sending TCP keepalive
-    /// probes.
-    pub fn set_keepalive(&mut self, keepalive: Option<Duration>) -> &mut Self {
-        self.tcp_keepalive_timeout = keepalive;
+    /// If `None` is specified, keepalive is disabled.
+    pub fn set_keepalive(&mut self, time: Option<Duration>) -> &mut Self {
+        self.tcp_keepalive_config.time = time;
+        self
+    }
+
+    /// Set the duration between two successive TCP keepalive retransmissions,
+    /// if acknowledgement to the previous keepalive transmission is not received.
+    pub fn set_keepalive_interval(&mut self, interval: Option<Duration>) -> &mut Self {
+        self.tcp_keepalive_config.interval = interval;
+        self
+    }
+
+    /// Set the number of retransmissions to be carried out before declaring that remote end is not available.
+    pub fn set_keepalive_retries(&mut self, retries: Option<u32>) -> &mut Self {
+        self.tcp_keepalive_config.retries = retries;
         self
     }
 
@@ -91,31 +203,26 @@ impl AddrIncoming {
     fn poll_next_(&mut self, cx: &mut task::Context<'_>) -> Poll<io::Result<AddrStream>> {
         // Check if a previous timeout is active that was set by IO errors.
         if let Some(ref mut to) = self.timeout {
-            match Pin::new(to).poll(cx) {
-                Poll::Ready(()) => {}
-                Poll::Pending => return Poll::Pending,
-            }
+            ready!(Pin::new(to).poll(cx));
         }
         self.timeout = None;
 
-        let accept = self.listener.accept();
-        futures_util::pin_mut!(accept);
-
         loop {
-            match accept.poll_unpin(cx) {
-                Poll::Ready(Ok((socket, addr))) => {
-                    if let Some(dur) = self.tcp_keepalive_timeout {
-                        if let Err(e) = socket.set_keepalive(Some(dur)) {
+            match ready!(self.listener.poll_accept(cx)) {
+                Ok((socket, remote_addr)) => {
+                    if let Some(tcp_keepalive) = &self.tcp_keepalive_config.into_socket2() {
+                        let sock_ref = socket2::SockRef::from(&socket);
+                        if let Err(e) = sock_ref.set_tcp_keepalive(tcp_keepalive) {
                             trace!("error trying to set TCP keepalive: {}", e);
                         }
                     }
                     if let Err(e) = socket.set_nodelay(self.tcp_nodelay) {
                         trace!("error trying to set TCP nodelay: {}", e);
                     }
-                    return Poll::Ready(Ok(AddrStream::new(socket, addr)));
+                    let local_addr = socket.local_addr()?;
+                    return Poll::Ready(Ok(AddrStream::new(socket, remote_addr, local_addr)));
                 }
-                Poll::Pending => return Poll::Pending,
-                Poll::Ready(Err(e)) => {
+                Err(e) => {
                     // Connection errors can be ignored directly, continue by
                     // accepting the next request.
                     if is_connection_error(&e) {
@@ -127,9 +234,9 @@ impl AddrIncoming {
                         error!("accept error: {}", e);
 
                         // Sleep 1s.
-                        let mut timeout = tokio::time::delay_for(Duration::from_secs(1));
+                        let mut timeout = Box::pin(tokio::time::sleep(Duration::from_secs(1)));
 
-                        match Pin::new(&mut timeout).poll(cx) {
+                        match timeout.as_mut().poll(cx) {
                             Poll::Ready(()) => {
                                 // Wow, it's been a second already? Ok then...
                                 continue;
@@ -169,12 +276,12 @@ impl Accept for AddrIncoming {
 /// The timeout is useful to handle resource exhaustion errors like ENFILE
 /// and EMFILE. Otherwise, could enter into tight loop.
 fn is_connection_error(e: &io::Error) -> bool {
-    match e.kind() {
+    matches!(
+        e.kind(),
         io::ErrorKind::ConnectionRefused
-        | io::ErrorKind::ConnectionAborted
-        | io::ErrorKind::ConnectionReset => true,
-        _ => false,
-    }
+            | io::ErrorKind::ConnectionAborted
+            | io::ErrorKind::ConnectionReset
+    )
 }
 
 impl fmt::Debug for AddrIncoming {
@@ -182,33 +289,43 @@ impl fmt::Debug for AddrIncoming {
         f.debug_struct("AddrIncoming")
             .field("addr", &self.addr)
             .field("sleep_on_errors", &self.sleep_on_errors)
-            .field("tcp_keepalive_timeout", &self.tcp_keepalive_timeout)
+            .field("tcp_keepalive_config", &self.tcp_keepalive_config)
             .field("tcp_nodelay", &self.tcp_nodelay)
             .finish()
     }
 }
 
 mod addr_stream {
-    use bytes::{Buf, BufMut};
     use std::io;
     use std::net::SocketAddr;
-    use tokio::io::{AsyncRead, AsyncWrite};
+    #[cfg(unix)]
+    use std::os::unix::io::{AsRawFd, RawFd};
+    use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
     use tokio::net::TcpStream;
 
     use crate::common::{task, Pin, Poll};
 
-    /// A transport returned yieled by `AddrIncoming`.
-    #[derive(Debug)]
-    pub struct AddrStream {
-        inner: TcpStream,
-        pub(super) remote_addr: SocketAddr,
+    pin_project_lite::pin_project! {
+        /// A transport returned yieled by `AddrIncoming`.
+        #[derive(Debug)]
+        pub struct AddrStream {
+            #[pin]
+            inner: TcpStream,
+            pub(super) remote_addr: SocketAddr,
+            pub(super) local_addr: SocketAddr
+        }
     }
 
     impl AddrStream {
-        pub(super) fn new(tcp: TcpStream, addr: SocketAddr) -> AddrStream {
+        pub(super) fn new(
+            tcp: TcpStream,
+            remote_addr: SocketAddr,
+            local_addr: SocketAddr,
+        ) -> AddrStream {
             AddrStream {
                 inner: tcp,
-                remote_addr: addr,
+                remote_addr,
+                local_addr,
             }
         }
 
@@ -216,6 +333,12 @@ mod addr_stream {
         #[inline]
         pub fn remote_addr(&self) -> SocketAddr {
             self.remote_addr
+        }
+
+        /// Returns the local address of this connection.
+        #[inline]
+        pub fn local_addr(&self) -> SocketAddr {
+            self.local_addr
         }
 
         /// Consumes the AddrStream and returns the underlying IO object
@@ -230,56 +353,40 @@ mod addr_stream {
         pub fn poll_peek(
             &mut self,
             cx: &mut task::Context<'_>,
-            buf: &mut [u8],
+            buf: &mut tokio::io::ReadBuf<'_>,
         ) -> Poll<io::Result<usize>> {
             self.inner.poll_peek(cx, buf)
         }
     }
 
     impl AsyncRead for AddrStream {
-        unsafe fn prepare_uninitialized_buffer(
-            &self,
-            buf: &mut [std::mem::MaybeUninit<u8>],
-        ) -> bool {
-            self.inner.prepare_uninitialized_buffer(buf)
-        }
-
         #[inline]
         fn poll_read(
-            mut self: Pin<&mut Self>,
+            self: Pin<&mut Self>,
             cx: &mut task::Context<'_>,
-            buf: &mut [u8],
-        ) -> Poll<io::Result<usize>> {
-            Pin::new(&mut self.inner).poll_read(cx, buf)
-        }
-
-        #[inline]
-        fn poll_read_buf<B: BufMut>(
-            mut self: Pin<&mut Self>,
-            cx: &mut task::Context<'_>,
-            buf: &mut B,
-        ) -> Poll<io::Result<usize>> {
-            Pin::new(&mut self.inner).poll_read_buf(cx, buf)
+            buf: &mut ReadBuf<'_>,
+        ) -> Poll<io::Result<()>> {
+            self.project().inner.poll_read(cx, buf)
         }
     }
 
     impl AsyncWrite for AddrStream {
         #[inline]
         fn poll_write(
-            mut self: Pin<&mut Self>,
+            self: Pin<&mut Self>,
             cx: &mut task::Context<'_>,
             buf: &[u8],
         ) -> Poll<io::Result<usize>> {
-            Pin::new(&mut self.inner).poll_write(cx, buf)
+            self.project().inner.poll_write(cx, buf)
         }
 
         #[inline]
-        fn poll_write_buf<B: Buf>(
-            mut self: Pin<&mut Self>,
+        fn poll_write_vectored(
+            self: Pin<&mut Self>,
             cx: &mut task::Context<'_>,
-            buf: &mut B,
+            bufs: &[io::IoSlice<'_>],
         ) -> Poll<io::Result<usize>> {
-            Pin::new(&mut self.inner).poll_write_buf(cx, buf)
+            self.project().inner.poll_write_vectored(cx, bufs)
         }
 
         #[inline]
@@ -289,11 +396,89 @@ mod addr_stream {
         }
 
         #[inline]
-        fn poll_shutdown(
-            mut self: Pin<&mut Self>,
-            cx: &mut task::Context<'_>,
-        ) -> Poll<io::Result<()>> {
-            Pin::new(&mut self.inner).poll_shutdown(cx)
+        fn poll_shutdown(self: Pin<&mut Self>, cx: &mut task::Context<'_>) -> Poll<io::Result<()>> {
+            self.project().inner.poll_shutdown(cx)
+        }
+
+        #[inline]
+        fn is_write_vectored(&self) -> bool {
+            // Note that since `self.inner` is a `TcpStream`, this could
+            // *probably* be hard-coded to return `true`...but it seems more
+            // correct to ask it anyway (maybe we're on some platform without
+            // scatter-gather IO?)
+            self.inner.is_write_vectored()
+        }
+    }
+
+    #[cfg(unix)]
+    impl AsRawFd for AddrStream {
+        fn as_raw_fd(&self) -> RawFd {
+            self.inner.as_raw_fd()
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+    use crate::server::tcp::TcpKeepaliveConfig;
+
+    #[test]
+    fn no_tcp_keepalive_config() {
+        assert!(TcpKeepaliveConfig::default().into_socket2().is_none());
+    }
+
+    #[test]
+    fn tcp_keepalive_time_config() {
+        let mut kac = TcpKeepaliveConfig::default();
+        kac.time = Some(Duration::from_secs(60));
+        if let Some(tcp_keepalive) = kac.into_socket2() {
+            assert!(format!("{tcp_keepalive:?}").contains("time: Some(60s)"));
+        } else {
+            panic!("test failed");
+        }
+    }
+
+    #[cfg(any(
+        target_os = "android",
+        target_os = "dragonfly",
+        target_os = "freebsd",
+        target_os = "fuchsia",
+        target_os = "illumos",
+        target_os = "linux",
+        target_os = "netbsd",
+        target_vendor = "apple",
+        windows,
+    ))]
+    #[test]
+    fn tcp_keepalive_interval_config() {
+        let mut kac = TcpKeepaliveConfig::default();
+        kac.interval = Some(Duration::from_secs(1));
+        if let Some(tcp_keepalive) = kac.into_socket2() {
+            assert!(format!("{tcp_keepalive:?}").contains("interval: Some(1s)"));
+        } else {
+            panic!("test failed");
+        }
+    }
+
+    #[cfg(any(
+        target_os = "android",
+        target_os = "dragonfly",
+        target_os = "freebsd",
+        target_os = "fuchsia",
+        target_os = "illumos",
+        target_os = "linux",
+        target_os = "netbsd",
+        target_vendor = "apple",
+    ))]
+    #[test]
+    fn tcp_keepalive_retries_config() {
+        let mut kac = TcpKeepaliveConfig::default();
+        kac.retries = Some(3);
+        if let Some(tcp_keepalive) = kac.into_socket2() {
+            assert!(format!("{tcp_keepalive:?}").contains("retries: Some(3)"));
+        } else {
+            panic!("test failed");
         }
     }
 }

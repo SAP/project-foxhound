@@ -50,16 +50,17 @@ mozilla::ipc::IPCResult WebBrowserPersistResourcesParent::Recv__delete__(
 }
 
 mozilla::ipc::IPCResult WebBrowserPersistResourcesParent::RecvVisitResource(
-    const nsCString& aURI, const nsContentPolicyType& aContentPolicyType) {
+    const nsACString& aURI, const nsContentPolicyType& aContentPolicyType) {
   mVisitor->VisitResource(mDocument, aURI, aContentPolicyType);
   return IPC_OK();
 }
 
 mozilla::ipc::IPCResult WebBrowserPersistResourcesParent::RecvVisitDocument(
-    PWebBrowserPersistDocumentParent* aSubDocument) {
+    NotNull<PWebBrowserPersistDocumentParent*> aSubDocument) {
   // Don't expose the subdocument to the visitor until it's ready
   // (until the actor isn't in START state).
-  static_cast<WebBrowserPersistDocumentParent*>(aSubDocument)->SetOnReady(this);
+  static_cast<WebBrowserPersistDocumentParent*>(aSubDocument.get())
+      ->SetOnReady(this);
   return IPC_OK();
 }
 

@@ -277,12 +277,16 @@ class ProfileBufferChunkManagerWithLocalLimit final
   }
 
  protected:
-  const ProfileBufferChunk* PeekExtantReleasedChunksAndLock() final {
+  const ProfileBufferChunk* PeekExtantReleasedChunksAndLock() final
+      MOZ_CAPABILITY_ACQUIRE(mMutex) {
     mMutex.Lock();
     MOZ_ASSERT(mUser, "Not registered yet");
     return mReleasedChunks.get();
   }
-  void UnlockAfterPeekExtantReleasedChunks() final { mMutex.Unlock(); }
+  void UnlockAfterPeekExtantReleasedChunks() final
+      MOZ_CAPABILITY_RELEASE(mMutex) {
+    mMutex.Unlock();
+  }
 
  private:
   size_t MaybeRecycleChunkAndGetDeallocatedSize(

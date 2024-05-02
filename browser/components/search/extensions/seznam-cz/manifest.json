@@ -2,8 +2,8 @@
   "name": "Seznam",
   "description": "Vyhledávání na Seznam.cz",
   "manifest_version": 2,
-  "version": "1.0",
-  "applications": {
+  "version": "1.2",
+  "browser_specific_settings": {
     "gecko": {
       "id": "seznam-cz@search.mozilla.org"
     }
@@ -12,14 +12,12 @@
   "icons": {
     "16": "favicon.ico"
   },
-  "web_accessible_resources": [
-    "favicon.ico"
-  ],
+  "web_accessible_resources": ["favicon.ico"],
   "chrome_settings_overrides": {
     "search_provider": {
       "name": "Seznam",
       "search_url": "https://search.seznam.cz/",
-      "search_form": "https://search.seznam.cz/?q={searchTerms}&sourceid=firefox",
+      "search_form": "https://search.seznam.cz/",
       "search_url_get_params": "q={searchTerms}&sourceid=firefox",
       "suggest_url": "https://suggest.seznam.cz/fulltext_ff",
       "suggest_url_get_params": "phrase={searchTerms}"

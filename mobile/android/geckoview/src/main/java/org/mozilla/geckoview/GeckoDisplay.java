@@ -9,6 +9,7 @@ package org.mozilla.geckoview;
 import android.graphics.Bitmap;
 import android.graphics.Rect;
 import android.view.Surface;
+import android.view.SurfaceControl;
 import androidx.annotation.AnyThread;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -18,9 +19,8 @@ import org.mozilla.gecko.util.ThreadUtils;
 /**
  * Applications use a GeckoDisplay instance to provide {@link GeckoSession} with a {@link Surface}
  * for displaying content. To ensure drawing only happens on a valid {@link Surface}, {@link
- * GeckoSession} will only use the provided {@link Surface} after {@link #surfaceChanged(Surface,
- * int, int)} or {@link #surfaceChanged(Surface, int, int, int, int)} is called and before {@link
- * #surfaceDestroyed()} returns.
+ * GeckoSession} will only use the provided {@link Surface} after {@link
+ * #surfaceChanged(SurfaceInfo)} is called and before {@link #surfaceDestroyed()} returns.
  */
 public class GeckoDisplay {
   private final GeckoSession mSession;
@@ -30,19 +30,147 @@ public class GeckoDisplay {
   }
 
   /**
-   * Sets a surface for the compositor render a surface.
-   *
-   * <p>Required call. The display's Surface has been created or changed. Must be called on the
-   * application main thread. GeckoSession may block this call to ensure the Surface is valid while
-   * resuming drawing.
-   *
-   * @param surface The new Surface.
-   * @param width New width of the Surface. Can not be negative.
-   * @param height New height of the Surface. Can not be negative.
+   * Interface that allows Gecko the request a new Surface from the application. An implementation
+   * of this should be set on the {@link GeckoDisplay.SurfaceInfo} object passed to {@link
+   * GeckoDisplay#surfaceChanged(SurfaceInfo)}, by using {@link
+   * GeckoDisplay.SurfaceInfo.Builder#newSurfaceProvider(NewSurfaceProvider)}.
    */
-  @UiThread
-  public void surfaceChanged(@NonNull final Surface surface, final int width, final int height) {
-    surfaceChanged(surface, 0, 0, width, height);
+  public interface NewSurfaceProvider {
+    /**
+     * Called by Gecko to request a new Surface from the application.
+     *
+     * <p>Occasionally the Surface provided to Gecko via {@link #surfaceChanged(SurfaceInfo)} is
+     * invalid and Gecko is unable to render in to it. This function will be called in such
+     * circumstances. It is the implementation's responsibility to ensure that {@link
+     * #surfaceChanged(SurfaceInfo)} gets called soon afterwards with a new Surface, allowing Gecko
+     * to resume rendering.
+     *
+     * <p>Failure to implement this function may result in Gecko either crashing or not rendering
+     * correctly should it encounter an invalid Surface.
+     */
+    @UiThread
+    void requestNewSurface();
+  }
+
+  /**
+   * Wrapper class containing a Surface and associated information that the compositor should render
+   * in to. Should be constructed using {@link SurfaceInfo.Builder}.
+   */
+  public static class SurfaceInfo {
+    /* package */ final @NonNull Surface mSurface;
+    /* package */ final @Nullable SurfaceControl mSurfaceControl;
+    /* package */ final @Nullable NewSurfaceProvider mNewSurfaceProvider;
+    /* package */ final int mLeft;
+    /* package */ final int mTop;
+    /* package */ final int mWidth;
+    /* package */ final int mHeight;
+
+    private SurfaceInfo(final @NonNull Builder builder) {
+      mSurface = builder.mSurface;
+      mSurfaceControl = builder.mSurfaceControl;
+      mNewSurfaceProvider = builder.mNewSurfaceProvider;
+      mLeft = builder.mLeft;
+      mTop = builder.mTop;
+      mWidth = builder.mWidth;
+      mHeight = builder.mHeight;
+    }
+
+    /** Helper class for constructing a {@link SurfaceInfo} object. */
+    public static class Builder {
+      private Surface mSurface;
+      private SurfaceControl mSurfaceControl;
+      private NewSurfaceProvider mNewSurfaceProvider;
+      private int mLeft;
+      private int mTop;
+      private int mWidth;
+      private int mHeight;
+
+      /**
+       * Creates a new Builder and sets the new Surface.
+       *
+       * @param surface The new Surface.
+       */
+      public Builder(final @NonNull Surface surface) {
+        mSurface = surface;
+      }
+
+      /**
+       * Sets the SurfaceControl associated with the new Surface's SurfaceView.
+       *
+       * <p>This must be called when rendering in to a {@link android.view.SurfaceView} on SDK level
+       * 29 or above. On earlier SDK levels, or when rendering in to something other than a
+       * SurfaceView, this call can be omitted or the value can be null.
+       *
+       * @param surfaceControl The SurfaceControl associated with the new Surface's SurfaceView, or
+       *     null.
+       * @return The builder object
+       */
+      @UiThread
+      public @NonNull Builder surfaceControl(final @Nullable SurfaceControl surfaceControl) {
+        mSurfaceControl = surfaceControl;
+        return this;
+      }
+
+      /**
+       * Sets a NewSurfaceProvider from which Gecko can request a new Surface.
+       *
+       * <p>This allows Gecko to recover from situations where the current Surface is for whatever
+       * reason invalid and Gecko is unable to render in to it. Failure to set this field correctly
+       * may result in Gecko either crashing or not rendering correctly should it encounter an
+       * invalid Surface.
+       *
+       * @param newSurfaceProvider A NewSurfaceProvider from which Gecko can request a new Surface.
+       * @return The builder object
+       */
+      @UiThread
+      public @NonNull Builder newSurfaceProvider(
+          final @Nullable NewSurfaceProvider newSurfaceProvider) {
+        mNewSurfaceProvider = newSurfaceProvider;
+        return this;
+      }
+
+      /**
+       * Sets the new compositor origin offset.
+       *
+       * @param left The compositor origin offset in the X axis. Can not be negative.
+       * @param top The compositor origin offset in the Y axis. Can not be negative.
+       * @return The builder object
+       */
+      @UiThread
+      public @NonNull Builder offset(final int left, final int top) {
+        mLeft = left;
+        mTop = top;
+        return this;
+      }
+
+      /**
+       * Sets the new surface size.
+       *
+       * @param width New width of the Surface. Can not be negative.
+       * @param height New height of the Surface. Can not be negative.
+       * @return The builder object
+       */
+      @UiThread
+      public @NonNull Builder size(final int width, final int height) {
+        mWidth = width;
+        mHeight = height;
+        return this;
+      }
+
+      /**
+       * Builds the {@link SurfaceInfo} object with the specified properties.
+       *
+       * @return The SurfaceInfo object
+       */
+      @UiThread
+      public @NonNull SurfaceInfo build() {
+        if ((mLeft < 0) || (mTop < 0)) {
+          throw new IllegalArgumentException("Left and Top offsets can not be negative.");
+        }
+
+        return new SurfaceInfo(this);
+      }
+    }
   }
 
   /**
@@ -50,29 +178,19 @@ public class GeckoDisplay {
    *
    * <p>Required call. The display's Surface has been created or changed. Must be called on the
    * application main thread. GeckoSession may block this call to ensure the Surface is valid while
-   * resuming drawing. The origin of the content window (0, 0) is the top left corner of the screen.
+   * resuming drawing.
    *
-   * @param surface The new Surface.
-   * @param left The compositor origin offset in the X axis. Can not be negative.
-   * @param top The compositor origin offset in the Y axis. Can not be negative.
-   * @param width New width of the Surface. Can not be negative.
-   * @param height New height of the Surface. Can not be negative.
-   * @throws IllegalArgumentException if left or top are negative.
+   * <p>If rendering in to a {@link android.view.SurfaceView} on SDK level 29 or above, please
+   * ensure that the SurfaceControl field of the {@link SurfaceInfo} object is set.
+   *
+   * @param surfaceInfo Information about the new Surface.
    */
   @UiThread
-  public void surfaceChanged(
-      @NonNull final Surface surface,
-      final int left,
-      final int top,
-      final int width,
-      final int height) {
+  public void surfaceChanged(@NonNull final SurfaceInfo surfaceInfo) {
     ThreadUtils.assertOnUiThread();
 
-    if ((left < 0) || (top < 0)) {
-      throw new IllegalArgumentException("Parameters can not be negative.");
-    }
     if (mSession.getDisplay() == this) {
-      mSession.onSurfaceChanged(surface, left, top, width, height);
+      mSession.onSurfaceChanged(surfaceInfo);
     }
   }
 
@@ -127,6 +245,7 @@ public class GeckoDisplay {
       mSession.onSafeAreaInsetsChanged(top, right, bottom, left);
     }
   }
+
   /**
    * Set the maximum height of the dynamic toolbar(s).
    *

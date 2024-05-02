@@ -20,8 +20,6 @@ EXPORTS += [
     "gfxTelemetry.h",
     "nsBoundingMetrics.h",
     "nsColor.h",
-    "nsColorNameList.h",
-    "nsColorNames.h",
     "nsCoord.h",
     "nsDeviceContext.h",
     "nsFont.h",
@@ -49,7 +47,9 @@ EXPORTS.mozilla += [
 ]
 
 EXPORTS.mozilla.gfx += [
+    "AAStroke.h",
     "CompositorHitTestInfo.h",
+    "WPFGpuRaster.h",
 ]
 
 if CONFIG["MOZ_X11"]:

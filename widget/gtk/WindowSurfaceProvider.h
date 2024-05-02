@@ -26,6 +26,8 @@ class nsWindow;
 namespace mozilla {
 namespace widget {
 
+class GtkCompositorWidget;
+
 /*
  * Holds the logic for creating WindowSurface's for a GTK nsWindow.
  * The main purpose of this class is to allow sharing of logic between
@@ -44,6 +46,7 @@ class WindowSurfaceProvider final {
    */
 #ifdef MOZ_WAYLAND
   void Initialize(RefPtr<nsWindow> aWidget);
+  void Initialize(GtkCompositorWidget* aCompositorWidget);
 #endif
 #ifdef MOZ_X11
   void Initialize(Window aWindow, Visual* aVisual, int aDepth, bool aIsShaped);
@@ -75,11 +78,14 @@ class WindowSurfaceProvider final {
    * As nsWindow CleanupResources() call comes from Gtk/X11 we can't synchronize
    * that with WebRender so we use lock to synchronize the access.
    */
-  mozilla::Mutex mMutex;
+  mozilla::Mutex mMutex MOZ_UNANNOTATED;
   // WindowSurface needs to be re-created as underlying window was changed.
   mozilla::Atomic<bool> mWindowSurfaceValid;
 #ifdef MOZ_WAYLAND
   RefPtr<nsWindow> mWidget;
+  // WindowSurfaceProvider is owned by GtkCompositorWidget so we don't need
+  // to reference it.
+  GtkCompositorWidget* mCompositorWidget = nullptr;
 #endif
 #ifdef MOZ_X11
   bool mIsShaped;

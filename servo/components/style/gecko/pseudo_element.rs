@@ -15,7 +15,9 @@ use crate::selector_parser::{PseudoElementCascadeType, SelectorImpl};
 use crate::str::{starts_with_ignore_ascii_case, string_as_ascii_lowercase};
 use crate::string_cache::Atom;
 use crate::values::serialize_atom_identifier;
+use crate::values::AtomIdent;
 use cssparser::ToCss;
+use static_prefs::pref;
 use std::fmt;
 
 include!(concat!(
@@ -33,11 +35,11 @@ impl ::selectors::parser::PseudoElement for PseudoElement {
     fn valid_after_slotted(&self) -> bool {
         matches!(
             *self,
-            PseudoElement::Before |
-                PseudoElement::After |
-                PseudoElement::Marker |
-                PseudoElement::Placeholder |
-                PseudoElement::FileSelectorButton
+            Self::Before |
+                Self::After |
+                Self::Marker |
+                Self::Placeholder |
+                Self::FileSelectorButton
         )
     }
 
@@ -68,15 +70,6 @@ impl PseudoElement {
         PseudoElementCascadeType::Lazy
     }
 
-    /// Whether the pseudo-element should inherit from the default computed
-    /// values instead of from the parent element.
-    ///
-    /// This is not the common thing, but there are some pseudos (namely:
-    /// ::backdrop), that shouldn't inherit from the parent element.
-    pub fn inherits_from_default_values(&self) -> bool {
-        matches!(*self, PseudoElement::Backdrop)
-    }
-
     /// Gets the canonical index of this eagerly-cascaded pseudo-element.
     #[inline]
     pub fn eager_index(&self) -> usize {
@@ -102,7 +95,7 @@ impl PseudoElement {
     /// Whether the current pseudo element is ::before or ::after.
     #[inline]
     pub fn is_before_or_after(&self) -> bool {
-        self.is_before() || self.is_after()
+        matches!(*self, Self::Before | Self::After)
     }
 
     /// Whether this pseudo-element is the ::before pseudo.
@@ -153,6 +146,19 @@ impl PseudoElement {
         !self.is_eager() && !self.is_precomputed()
     }
 
+    /// The identifier of the highlight this pseudo-element represents.
+    pub fn highlight_name(&self) -> Option<&AtomIdent> {
+        match *self {
+            Self::Highlight(ref name) => Some(name),
+            _ => None,
+        }
+    }
+
+    /// Whether this pseudo-element is the ::highlight pseudo.
+    pub fn is_highlight(&self) -> bool {
+        matches!(*self, Self::Highlight(_))
+    }
+
     /// Whether this pseudo-element supports user action selectors.
     pub fn supports_user_action_state(&self) -> bool {
         (self.flags() & structs::CSS_PSEUDO_ELEMENT_SUPPORTS_USER_ACTION_STATE) != 0
@@ -160,7 +166,13 @@ impl PseudoElement {
 
     /// Whether this pseudo-element is enabled for all content.
     pub fn enabled_in_content(&self) -> bool {
-        self.flags() & structs::CSS_PSEUDO_ELEMENT_ENABLED_IN_UA_SHEETS_AND_CHROME == 0
+        match *self {
+            Self::Highlight(..) => pref!("dom.customHighlightAPI.enabled"),
+            Self::SliderFill | Self::SliderTrack | Self::SliderThumb => pref!("layout.css.modern-range-pseudos.enabled"),
+            // If it's not explicitly enabled in UA sheets or chrome, then we're enabled for
+            // content.
+            _ => (self.flags() & structs::CSS_PSEUDO_ELEMENT_ENABLED_IN_UA_SHEETS_AND_CHROME) == 0
+        }
     }
 
     /// Whether this pseudo is enabled explicitly in UA sheets.

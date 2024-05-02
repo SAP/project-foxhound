@@ -10,7 +10,6 @@
 
 #include "frontend/ParserAtom.h"
 #include "vm/GlobalObject.h"
-#include "vm/JSContext.h"
 
 using namespace js;
 
@@ -22,8 +21,6 @@ static JSProtoKey ToProtoKey(BuiltinObjectKind kind) {
       return JSProto_ArrayBuffer;
     case BuiltinObjectKind::Int32Array:
       return JSProto_Int32Array;
-    case BuiltinObjectKind::Iterator:
-      return JSProto_Iterator;
     case BuiltinObjectKind::Map:
       return JSProto_Map;
     case BuiltinObjectKind::Promise:
@@ -39,6 +36,8 @@ static JSProtoKey ToProtoKey(BuiltinObjectKind kind) {
 
     case BuiltinObjectKind::FunctionPrototype:
       return JSProto_Function;
+    case BuiltinObjectKind::IteratorPrototype:
+      return JSProto_Iterator;
     case BuiltinObjectKind::ObjectPrototype:
       return JSProto_Object;
     case BuiltinObjectKind::RegExpPrototype:
@@ -62,7 +61,6 @@ static bool IsPrototype(BuiltinObjectKind kind) {
     case BuiltinObjectKind::Array:
     case BuiltinObjectKind::ArrayBuffer:
     case BuiltinObjectKind::Int32Array:
-    case BuiltinObjectKind::Iterator:
     case BuiltinObjectKind::Map:
     case BuiltinObjectKind::Promise:
     case BuiltinObjectKind::RegExp:
@@ -72,6 +70,7 @@ static bool IsPrototype(BuiltinObjectKind kind) {
       return false;
 
     case BuiltinObjectKind::FunctionPrototype:
+    case BuiltinObjectKind::IteratorPrototype:
     case BuiltinObjectKind::ObjectPrototype:
     case BuiltinObjectKind::RegExpPrototype:
     case BuiltinObjectKind::StringPrototype:
@@ -98,9 +97,6 @@ BuiltinObjectKind js::BuiltinConstructorForName(
   if (name == frontend::TaggedParserAtomIndex::WellKnown::Int32Array()) {
     return BuiltinObjectKind::Int32Array;
   }
-  if (name == frontend::TaggedParserAtomIndex::WellKnown::Iterator()) {
-    return BuiltinObjectKind::Iterator;
-  }
   if (name == frontend::TaggedParserAtomIndex::WellKnown::Map()) {
     return BuiltinObjectKind::Map;
   }
@@ -126,6 +122,9 @@ BuiltinObjectKind js::BuiltinPrototypeForName(
     frontend::TaggedParserAtomIndex name) {
   if (name == frontend::TaggedParserAtomIndex::WellKnown::Function()) {
     return BuiltinObjectKind::FunctionPrototype;
+  }
+  if (name == frontend::TaggedParserAtomIndex::WellKnown::Iterator()) {
+    return BuiltinObjectKind::IteratorPrototype;
   }
   if (name == frontend::TaggedParserAtomIndex::WellKnown::Object()) {
     return BuiltinObjectKind::ObjectPrototype;
@@ -170,8 +169,6 @@ const char* js::BuiltinObjectName(BuiltinObjectKind kind) {
       return "ArrayBuffer";
     case BuiltinObjectKind::Int32Array:
       return "Int32Array";
-    case BuiltinObjectKind::Iterator:
-      return "Iterator";
     case BuiltinObjectKind::Map:
       return "Map";
     case BuiltinObjectKind::Promise:
@@ -187,6 +184,8 @@ const char* js::BuiltinObjectName(BuiltinObjectKind kind) {
 
     case BuiltinObjectKind::FunctionPrototype:
       return "Function.prototype";
+    case BuiltinObjectKind::IteratorPrototype:
+      return "Iterator.prototype";
     case BuiltinObjectKind::ObjectPrototype:
       return "Object.prototype";
     case BuiltinObjectKind::RegExpPrototype:

@@ -11,6 +11,8 @@
 #include "harfbuzz/hb.h"
 #include "nsUnicodeProperties.h"
 #include "mozilla/gfx/2D.h"
+#include "mozilla/MruCache.h"
+#include "mozilla/Mutex.h"
 
 class gfxHarfBuzzShaper : public gfxFontShaper {
  public:
@@ -25,7 +27,11 @@ class gfxHarfBuzzShaper : public gfxFontShaper {
     gfxHarfBuzzShaper* mShaper;
   };
 
+  // Initializes the shaper and returns whether this was successful.
   bool Initialize();
+
+  // Returns whether the shaper has been successfully initialized.
+  bool IsInitialized() const { return mHBFont != nullptr; }
 
   bool ShapeText(DrawTarget* aDrawTarget, const char16_t* aText,
                  uint32_t aOffset, uint32_t aLength, Script aScript,
@@ -37,30 +43,27 @@ class gfxHarfBuzzShaper : public gfxFontShaper {
 
   // map unicode character to glyph ID
   hb_codepoint_t GetNominalGlyph(hb_codepoint_t unicode) const;
+  unsigned int GetNominalGlyphs(unsigned int count,
+                                const hb_codepoint_t* first_unicode,
+                                unsigned int unicode_stride,
+                                hb_codepoint_t* first_glyph,
+                                unsigned int glyph_stride);
   hb_codepoint_t GetVariationGlyph(hb_codepoint_t unicode,
                                    hb_codepoint_t variation_selector) const;
 
   // get harfbuzz glyph advance, in font design units
   hb_position_t GetGlyphHAdvance(hb_codepoint_t glyph) const;
+  void GetGlyphHAdvances(unsigned int count, const hb_codepoint_t* first_glyph,
+                         unsigned int glyph_stride,
+                         hb_position_t* first_advance,
+                         unsigned int advance_stride) const;
 
+  // Get vertical glyph advance, or -1 if not available; caller should check
+  // for a negative result and provide a fallback or fail, as appropriate.
   hb_position_t GetGlyphVAdvance(hb_codepoint_t glyph);
 
   void GetGlyphVOrigin(hb_codepoint_t aGlyph, hb_position_t* aX,
                        hb_position_t* aY) const;
-
-  // get harfbuzz horizontal advance in 16.16 fixed point format.
-  static hb_position_t HBGetGlyphHAdvance(hb_font_t* font, void* font_data,
-                                          hb_codepoint_t glyph,
-                                          void* user_data);
-
-  // get harfbuzz vertical advance in 16.16 fixed point format.
-  static hb_position_t HBGetGlyphVAdvance(hb_font_t* font, void* font_data,
-                                          hb_codepoint_t glyph,
-                                          void* user_data);
-
-  static hb_bool_t HBGetGlyphVOrigin(hb_font_t* font, void* font_data,
-                                     hb_codepoint_t glyph, hb_position_t* x,
-                                     hb_position_t* y, void* user_data);
 
   hb_position_t GetHKerning(uint16_t aFirstGlyph, uint16_t aSecondGlyph) const;
 
@@ -94,7 +97,18 @@ class gfxHarfBuzzShaper : public gfxFontShaper {
                                  hb_font_funcs_t* aFontFuncs = nullptr,
                                  FontCallbackData* aCallbackData = nullptr);
 
+  hb_font_t* GetHBFont() const { return mHBFont; }
+  hb_face_t* GetHBFace() const { return hb_font_get_face(mHBFont); }
+
  protected:
+  // This is called with the cache locked, but if mUseFontGetGlyph is true, it
+  // may unlock it temporarily. So in this case, it may invalidate an earlier
+  // cache entry reference.
+  hb_codepoint_t GetGlyphUncached(hb_codepoint_t unicode) const
+      MOZ_REQUIRES(mCacheLock);
+
+  hb_position_t GetGlyphHAdvanceUncached(hb_codepoint_t gid) const;
+
   nsresult SetGlyphsFromRun(gfxShapedText* aShapedText, uint32_t aOffset,
                             uint32_t aLength, const char16_t* aText,
                             bool aVertical, RoundingFlags aRounding);
@@ -123,6 +137,38 @@ class gfxHarfBuzzShaper : public gfxFontShaper {
 
   // harfbuzz buffer for the shaping process
   hb_buffer_t* mBuffer;
+
+  mutable mozilla::Mutex mCacheLock = mozilla::Mutex("shaperCacheMutex");
+
+  struct CmapCacheData {
+    uint32_t mCodepoint;
+    uint32_t mGlyphId;
+  };
+
+  struct CmapCache
+      : public mozilla::MruCache<uint32_t, CmapCacheData, CmapCache, 251> {
+    static mozilla::HashNumber Hash(const uint32_t& aKey) { return aKey; }
+    static bool Match(const uint32_t& aKey, const CmapCacheData& aData) {
+      return aKey == aData.mCodepoint;
+    }
+  };
+
+  mutable mozilla::UniquePtr<CmapCache> mCmapCache MOZ_GUARDED_BY(mCacheLock);
+
+  struct WidthCacheData {
+    hb_codepoint_t mGlyphId;
+    hb_position_t mAdvance;
+  };
+
+  struct WidthCache
+      : public mozilla::MruCache<uint32_t, WidthCacheData, WidthCache, 251> {
+    static mozilla::HashNumber Hash(const hb_codepoint_t& aKey) { return aKey; }
+    static bool Match(const uint32_t& aKey, const WidthCacheData& aData) {
+      return aKey == aData.mGlyphId;
+    }
+  };
+
+  mutable mozilla::UniquePtr<WidthCache> mWidthCache MOZ_GUARDED_BY(mCacheLock);
 
   FontCallbackData mCallbackData;
 
@@ -169,6 +215,12 @@ class gfxHarfBuzzShaper : public gfxFontShaper {
   // Whether the font implements GetGlyph, or we should read tables
   // directly
   bool mUseFontGetGlyph;
+
+  // Whether the font is an MS Symbol-encoded font, in which case we will
+  // try remapping U+0020..00FF to U+F020..F0FF for characters in the U+00xx
+  // range that are otherwise unsupported.
+  bool mIsSymbolFont;
+
   // Whether the font implements GetGlyphWidth, or we should read tables
   // directly to get ideal widths
   bool mUseFontGlyphWidths;

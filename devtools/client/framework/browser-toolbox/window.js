@@ -4,28 +4,39 @@
 
 "use strict";
 
-var { loader, require, DevToolsLoader } = ChromeUtils.import(
-  "resource://devtools/shared/loader/Loader.jsm"
+var { loader, require } = ChromeUtils.importESModule(
+  "resource://devtools/shared/loader/Loader.sys.mjs"
 );
 
-// Require this module to setup core modules
-loader.require("devtools/client/framework/devtools-browser");
+var { useDistinctSystemPrincipalLoader, releaseDistinctSystemPrincipalLoader } =
+  ChromeUtils.importESModule(
+    "resource://devtools/shared/loader/DistinctSystemPrincipalLoader.sys.mjs"
+  );
 
-var { gDevTools } = require("devtools/client/framework/devtools");
-var { Toolbox } = require("devtools/client/framework/toolbox");
-var Services = require("Services");
-var { DevToolsClient } = require("devtools/client/devtools-client");
-var { PrefsHelper } = require("devtools/client/shared/prefs");
-const KeyShortcuts = require("devtools/client/shared/key-shortcuts");
-const { LocalizationHelper } = require("devtools/shared/l10n");
+// Require this module to setup core modules
+loader.require("resource://devtools/client/framework/devtools-browser.js");
+
+var { gDevTools } = require("resource://devtools/client/framework/devtools.js");
+var { Toolbox } = require("resource://devtools/client/framework/toolbox.js");
+var {
+  DevToolsClient,
+} = require("resource://devtools/client/devtools-client.js");
+var { PrefsHelper } = require("resource://devtools/client/shared/prefs.js");
+const KeyShortcuts = require("resource://devtools/client/shared/key-shortcuts.js");
+const { LocalizationHelper } = require("resource://devtools/shared/l10n.js");
 const L10N = new LocalizationHelper(
   "devtools/client/locales/toolbox.properties"
 );
-loader.lazyImporter(
-  this,
-  "BrowserToolboxLauncher",
-  "resource://devtools/client/framework/browser-toolbox/Launcher.jsm"
-);
+
+const lazy = {};
+ChromeUtils.defineESModuleGetters(lazy, {
+  BrowserToolboxLauncher:
+    "resource://devtools/client/framework/browser-toolbox/Launcher.sys.mjs",
+});
+
+const {
+  CommandsFactory,
+} = require("resource://devtools/shared/commands/commands-factory.js");
 
 // Timeout to wait before we assume that a connect() timed out without an error.
 // In milliseconds. (With the Debugger pane open, this has been reported to last
@@ -40,7 +51,7 @@ var Prefs = new PrefsHelper("devtools.debugger", {
   chromeDebuggingWebSocket: ["Bool", "chrome-debugging-websocket"],
 });
 
-var gToolbox, gClient, gShortcuts;
+var gCommands, gToolbox, gShortcuts;
 
 function appendStatusMessage(msg) {
   const statusMessage = document.getElementById("status-message");
@@ -62,27 +73,23 @@ function hideStatusMessage() {
   toggleStatusMessage(false);
 }
 
-var connect = async function() {
+var connect = async function () {
   // Initiate the connection
-  const env = Cc["@mozilla.org/process/environment;1"].getService(
-    Ci.nsIEnvironment
-  );
 
-  // MOZ_BROWSER_TOOLBOX_FISSION_PREF is set by the target Firefox instance
+  // MOZ_BROWSER_TOOLBOX_INPUT_CONTEXT is set by the target Firefox instance
   // before opening the Browser Toolbox.
-  // If "devtools.browsertoolbox.fission" is true, the variable is set to "1",
+  // If "devtools.webconsole.input.context" is true, the variable is set to "1",
   // otherwise it is set to "0".
   Services.prefs.setBoolPref(
-    "devtools.browsertoolbox.fission",
-    env.get("MOZ_BROWSER_TOOLBOX_FISSION_PREF") === "1"
-  );
-  // Similar, but for the WebConsole input context dropdown.
-  Services.prefs.setBoolPref(
     "devtools.webconsole.input.context",
-    env.get("MOZ_BROWSER_TOOLBOX_INPUT_CONTEXT") === "1"
+    Services.env.get("MOZ_BROWSER_TOOLBOX_INPUT_CONTEXT") === "1"
   );
+  // Similar, but for the Browser Toolbox mode
+  if (Services.env.get("MOZ_BROWSER_TOOLBOX_FORCE_MULTIPROCESS") === "1") {
+    Services.prefs.setCharPref("devtools.browsertoolbox.scope", "everything");
+  }
 
-  const port = env.get("MOZ_BROWSER_TOOLBOX_PORT");
+  const port = Services.env.get("MOZ_BROWSER_TOOLBOX_PORT");
 
   // A port needs to be passed in from the environment, for instance:
   //    MOZ_BROWSER_TOOLBOX_PORT=6080 ./mach run -chrome \
@@ -101,22 +108,24 @@ var connect = async function() {
     port,
     webSocket,
   });
-  gClient = new DevToolsClient(transport);
+  const client = new DevToolsClient(transport);
   appendStatusMessage("Start protocol client for connection");
-  await gClient.connect();
+  await client.connect();
 
   appendStatusMessage("Get root form for toolbox");
-  const mainProcessDescriptor = await gClient.mainRoot.getMainProcess();
-  await openToolbox(mainProcessDescriptor);
+  gCommands = await CommandsFactory.forMainProcess({ client });
+
+  // Bug 1794607: for some unexpected reason, closing the DevToolsClient
+  // when the commands is destroyed by the toolbox would introduce leaks
+  // when running the browser-toolbox mochitests.
+  gCommands.shouldCloseClient = false;
+
+  await openToolbox(gCommands);
 };
 
 // Certain options should be toggled since we can assume chrome debugging here
 function setPrefDefaults() {
   Services.prefs.setBoolPref("devtools.inspector.showUserAgentStyles", true);
-  Services.prefs.setBoolPref(
-    "devtools.performance.ui.show-platform-data",
-    true
-  );
   Services.prefs.setBoolPref(
     "devtools.inspector.showAllAnonymousContent",
     true
@@ -127,18 +136,26 @@ function setPrefDefaults() {
     "devtools.command-button-noautohide.enabled",
     true
   );
-  Services.prefs.setBoolPref("devtools.performance.new-panel-enabled", false);
-  Services.prefs.setBoolPref("layout.css.emulate-moz-box-with-flex", false);
 
-  Services.prefs.setBoolPref("devtools.performance.enabled", false);
+  // We force enabling the performance panel in the browser toolbox.
+  Services.prefs.setBoolPref("devtools.performance.enabled", true);
+
+  // Bug 1773226: Try to avoid session restore to reopen a transient browser window
+  // if we ever opened a URL from the browser toolbox. (but it doesn't seem to be enough)
+  Services.prefs.setBoolPref("browser.sessionstore.resume_from_crash", false);
+
+  // Disable Safe mode as the browser toolbox is often closed brutaly by subprocess
+  // and the safe mode kicks in when reopening it
+  Services.prefs.setIntPref("toolkit.startup.max_resumed_crashes", -1);
 }
 
 window.addEventListener(
   "load",
-  async function() {
+  async function () {
     gShortcuts = new KeyShortcuts({ window });
     gShortcuts.on("CmdOrCtrl+W", onCloseCommand);
     gShortcuts.on("CmdOrCtrl+Alt+Shift+I", onDebugBrowserToolbox);
+    gShortcuts.on("CmdOrCtrl+Alt+R", onReloadBrowser);
 
     const statusMessageContainer = document.getElementById(
       "status-message-title"
@@ -179,11 +196,18 @@ function onCloseCommand(event) {
  * running in the parent process. i.e. frontend code.
  */
 function onDebugBrowserToolbox() {
-  BrowserToolboxLauncher.init();
+  lazy.BrowserToolboxLauncher.init();
 }
 
-async function openToolbox(descriptorFront) {
-  const form = descriptorFront._form;
+/**
+ * Replicate the local-build-only key shortcut to reload the browser
+ */
+function onReloadBrowser() {
+  gToolbox.commands.targetCommand.reloadTopLevelTarget();
+}
+
+async function openToolbox(commands) {
+  const form = commands.descriptorFront._form;
   appendStatusMessage(
     `Create toolbox for target descriptor: ${JSON.stringify({ form }, null, 2)}`
   );
@@ -198,14 +222,13 @@ async function openToolbox(descriptorFront) {
   const toolboxOptions = { doc: document };
   appendStatusMessage(`Show toolbox with ${selectedTool} selected`);
 
-  gToolbox = await gDevTools.showToolbox(descriptorFront, {
+  gToolbox = await gDevTools.showToolbox(commands, {
     toolId: selectedTool,
     hostType: Toolbox.HostType.BROWSERTOOLBOX,
     hostOptions: toolboxOptions,
   });
 
   bindToolboxHandlers();
-  gToolbox.raise();
 
   // Enable some testing features if the browser toolbox test pref is set.
   if (
@@ -217,27 +240,48 @@ async function openToolbox(descriptorFront) {
     // setup a server so that the test can evaluate messages in this process.
     installTestingServer();
   }
+
+  await gToolbox.raise();
+
+  // Warn the user if we started recording this browser toolbox via MOZ_BROWSER_TOOLBOX_PROFILER_STARTUP=1
+  if (Services.env.get("MOZ_PROFILER_STARTUP") === "1") {
+    const notificationBox = gToolbox.getNotificationBox();
+    const text =
+      "The profiler started recording this toolbox, open another browser toolbox to open the profile via the performance panel";
+    notificationBox.appendNotification(
+      text,
+      null,
+      null,
+      notificationBox.PRIORITY_INFO_HIGH
+    );
+  }
 }
 
+let releaseTestLoader = null;
 function installTestingServer() {
   // Install a DevToolsServer in this process and inform the server of its
   // location. Tests operating on the browser toolbox run in the server
   // (the firefox parent process) and can connect to this new server using
   // initBrowserToolboxTask(), allowing them to evaluate scripts here.
 
-  const testLoader = new DevToolsLoader({
-    invisibleToDebugger: true,
-  });
+  const requester = {};
+  const testLoader = useDistinctSystemPrincipalLoader(requester);
+  releaseTestLoader = () => releaseDistinctSystemPrincipalLoader(requester);
   const { DevToolsServer } = testLoader.require(
-    "devtools/server/devtools-server"
+    "resource://devtools/server/devtools-server.js"
   );
   const { SocketListener } = testLoader.require(
-    "devtools/shared/security/socket"
+    "resource://devtools/shared/security/socket.js"
   );
 
   DevToolsServer.init();
   DevToolsServer.registerAllActors();
   DevToolsServer.allowChromeProcess = true;
+
+  // Force this server to be kept alive until the browser toolbox process is closed.
+  // For some reason intermittents appears on Windows when destroying the server
+  // once the last connection drops.
+  DevToolsServer.keepAlive = true;
 
   // Use a fixed port which initBrowserToolboxTask can look for.
   const socketOptions = { portOrPath: 6001 };
@@ -248,6 +292,10 @@ function installTestingServer() {
 async function bindToolboxHandlers() {
   gToolbox.once("destroyed", quitApp);
   window.addEventListener("unload", onUnload);
+
+  // If the remote connection drops, firefox was closed
+  // In such case, force closing the browser toolbox
+  gCommands.client.once("closed", quitApp);
 
   if (Services.appinfo.OS == "Darwin") {
     // Badge the dock icon to differentiate this process from the main application
@@ -269,6 +317,10 @@ function updateBadgeText(paused) {
 function onUnload() {
   window.removeEventListener("unload", onUnload);
   gToolbox.destroy();
+  if (releaseTestLoader) {
+    releaseTestLoader();
+    releaseTestLoader = null;
+  }
 }
 
 function quitApp() {

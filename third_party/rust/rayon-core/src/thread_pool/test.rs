@@ -4,8 +4,6 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::channel;
 use std::sync::{Arc, Mutex};
 
-#[allow(deprecated)]
-use crate::Configuration;
 use crate::{join, Scope, ScopeFifo, ThreadPool, ThreadPoolBuilder};
 
 #[test]
@@ -18,6 +16,7 @@ fn panic_propagate() {
 }
 
 #[test]
+#[cfg_attr(any(target_os = "emscripten", target_family = "wasm"), ignore)]
 fn workers_stop() {
     let registry;
 
@@ -28,7 +27,7 @@ fn workers_stop() {
             // do some work on these threads
             join_a_lot(22);
 
-            thread_pool.registry.clone()
+            Arc::clone(&thread_pool.registry)
         });
         assert_eq!(registry.num_threads(), 22);
     }
@@ -45,6 +44,7 @@ fn join_a_lot(n: usize) {
 }
 
 #[test]
+#[cfg_attr(any(target_os = "emscripten", target_family = "wasm"), ignore)]
 fn sleeper_stop() {
     use std::{thread, time};
 
@@ -53,7 +53,7 @@ fn sleeper_stop() {
     {
         // once we exit this block, thread-pool will be dropped
         let thread_pool = ThreadPoolBuilder::new().num_threads(22).build().unwrap();
-        registry = thread_pool.registry.clone();
+        registry = Arc::clone(&thread_pool.registry);
 
         // Give time for at least some of the thread pool to fall asleep.
         thread::sleep(time::Duration::from_secs(1));
@@ -67,7 +67,7 @@ fn sleeper_stop() {
 /// Creates a start/exit handler that increments an atomic counter.
 fn count_handler() -> (Arc<AtomicUsize>, impl Fn(usize)) {
     let count = Arc::new(AtomicUsize::new(0));
-    (count.clone(), move |_| {
+    (Arc::clone(&count), move |_| {
         count.fetch_add(1, Ordering::SeqCst);
     })
 }
@@ -91,6 +91,7 @@ fn wait_for_counter(mut counter: Arc<AtomicUsize>) -> usize {
 }
 
 #[test]
+#[cfg_attr(any(target_os = "emscripten", target_family = "wasm"), ignore)]
 fn failed_thread_stack() {
     // Note: we first tried to force failure with a `usize::MAX` stack, but
     // macOS and Windows weren't fazed, or at least didn't fail the way we want.
@@ -117,6 +118,7 @@ fn failed_thread_stack() {
 }
 
 #[test]
+#[cfg_attr(not(panic = "unwind"), ignore)]
 fn panic_thread_name() {
     let (start_count, start_handler) = count_handler();
     let (exit_count, exit_handler) = count_handler();
@@ -141,6 +143,7 @@ fn panic_thread_name() {
 }
 
 #[test]
+#[cfg_attr(any(target_os = "emscripten", target_family = "wasm"), ignore)]
 fn self_install() {
     let pool = ThreadPoolBuilder::new().num_threads(1).build().unwrap();
 
@@ -149,6 +152,7 @@ fn self_install() {
 }
 
 #[test]
+#[cfg_attr(any(target_os = "emscripten", target_family = "wasm"), ignore)]
 fn mutual_install() {
     let pool1 = ThreadPoolBuilder::new().num_threads(1).build().unwrap();
     let pool2 = ThreadPoolBuilder::new().num_threads(1).build().unwrap();
@@ -168,6 +172,7 @@ fn mutual_install() {
 }
 
 #[test]
+#[cfg_attr(any(target_os = "emscripten", target_family = "wasm"), ignore)]
 fn mutual_install_sleepy() {
     use std::{thread, time};
 
@@ -196,8 +201,9 @@ fn mutual_install_sleepy() {
 
 #[test]
 #[allow(deprecated)]
+#[cfg_attr(any(target_os = "emscripten", target_family = "wasm"), ignore)]
 fn check_thread_pool_new() {
-    let pool = ThreadPool::new(Configuration::new().num_threads(22)).unwrap();
+    let pool = ThreadPool::new(crate::Configuration::new().num_threads(22)).unwrap();
     assert_eq!(pool.current_num_threads(), 22);
 }
 
@@ -221,6 +227,7 @@ macro_rules! test_scope_order {
 }
 
 #[test]
+#[cfg_attr(any(target_os = "emscripten", target_family = "wasm"), ignore)]
 fn scope_lifo_order() {
     let vec = test_scope_order!(scope => spawn);
     let expected: Vec<i32> = (0..10).rev().collect(); // LIFO -> reversed
@@ -228,6 +235,7 @@ fn scope_lifo_order() {
 }
 
 #[test]
+#[cfg_attr(any(target_os = "emscripten", target_family = "wasm"), ignore)]
 fn scope_fifo_order() {
     let vec = test_scope_order!(scope_fifo => spawn_fifo);
     let expected: Vec<i32> = (0..10).collect(); // FIFO -> natural order
@@ -252,6 +260,7 @@ macro_rules! test_spawn_order {
 }
 
 #[test]
+#[cfg_attr(any(target_os = "emscripten", target_family = "wasm"), ignore)]
 fn spawn_lifo_order() {
     let vec = test_spawn_order!(spawn);
     let expected: Vec<i32> = (0..10).rev().collect(); // LIFO -> reversed
@@ -259,6 +268,7 @@ fn spawn_lifo_order() {
 }
 
 #[test]
+#[cfg_attr(any(target_os = "emscripten", target_family = "wasm"), ignore)]
 fn spawn_fifo_order() {
     let vec = test_spawn_order!(spawn_fifo);
     let expected: Vec<i32> = (0..10).collect(); // FIFO -> natural order
@@ -266,6 +276,7 @@ fn spawn_fifo_order() {
 }
 
 #[test]
+#[cfg_attr(any(target_os = "emscripten", target_family = "wasm"), ignore)]
 fn nested_scopes() {
     // Create matching scopes for every thread pool.
     fn nest<'scope, OP>(pools: &[ThreadPool], scopes: Vec<&Scope<'scope>>, op: OP)
@@ -302,6 +313,7 @@ fn nested_scopes() {
 }
 
 #[test]
+#[cfg_attr(any(target_os = "emscripten", target_family = "wasm"), ignore)]
 fn nested_fifo_scopes() {
     // Create matching fifo scopes for every thread pool.
     fn nest<'scope, OP>(pools: &[ThreadPool], scopes: Vec<&ScopeFifo<'scope>>, op: OP)
@@ -338,6 +350,7 @@ fn nested_fifo_scopes() {
 }
 
 #[test]
+#[cfg_attr(any(target_os = "emscripten", target_family = "wasm"), ignore)]
 fn in_place_scope_no_deadlock() {
     let pool = ThreadPoolBuilder::new().num_threads(1).build().unwrap();
     let (tx, rx) = channel();
@@ -353,6 +366,7 @@ fn in_place_scope_no_deadlock() {
 }
 
 #[test]
+#[cfg_attr(any(target_os = "emscripten", target_family = "wasm"), ignore)]
 fn in_place_scope_fifo_no_deadlock() {
     let pool = ThreadPoolBuilder::new().num_threads(1).build().unwrap();
     let (tx, rx) = channel();
@@ -365,4 +379,40 @@ fn in_place_scope_fifo_no_deadlock() {
         });
         rx_ref.recv().unwrap();
     });
+}
+
+#[test]
+fn yield_now_to_spawn() {
+    let (tx, rx) = channel();
+
+    // Queue a regular spawn.
+    crate::spawn(move || tx.send(22).unwrap());
+
+    // The single-threaded fallback mode (for wasm etc.) won't
+    // get a chance to run the spawn if we never yield to it.
+    crate::registry::in_worker(move |_, _| {
+        crate::yield_now();
+    });
+
+    // The spawn **must** have started by now, but we still might have to wait
+    // for it to finish if a different thread stole it first.
+    assert_eq!(22, rx.recv().unwrap());
+}
+
+#[test]
+fn yield_local_to_spawn() {
+    let (tx, rx) = channel();
+
+    // Queue a regular spawn.
+    crate::spawn(move || tx.send(22).unwrap());
+
+    // The single-threaded fallback mode (for wasm etc.) won't
+    // get a chance to run the spawn if we never yield to it.
+    crate::registry::in_worker(move |_, _| {
+        crate::yield_local();
+    });
+
+    // The spawn **must** have started by now, but we still might have to wait
+    // for it to finish if a different thread stole it first.
+    assert_eq!(22, rx.recv().unwrap());
 }

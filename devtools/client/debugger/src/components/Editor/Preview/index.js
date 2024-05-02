@@ -2,18 +2,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
+import PropTypes from "prop-types";
 import React, { PureComponent } from "react";
 import { connect } from "../../../utils/connect";
 
 import Popup from "./Popup";
 
-import {
-  getPreview,
-  getThreadContext,
-  getCurrentThread,
-  getHighlightedCalls,
-  getIsCurrentThreadPaused,
-} from "../../../selectors";
+import { getIsCurrentThreadPaused } from "../../../selectors";
 import actions from "../../../actions";
 
 const EXCEPTION_MARKER = "mark-text-exception";
@@ -23,6 +18,16 @@ class Preview extends PureComponent {
   constructor(props) {
     super(props);
     this.state = { selecting: false };
+  }
+
+  static get propTypes() {
+    return {
+      editor: PropTypes.object.isRequired,
+      editorRef: PropTypes.object.isRequired,
+      isPaused: PropTypes.bool.isRequired,
+      getExceptionPreview: PropTypes.func.isRequired,
+      getPreview: PropTypes.func,
+    };
   }
 
   componentDidMount() {
@@ -48,80 +53,82 @@ class Preview extends PureComponent {
     codeMirrorWrapper.addEventListener("mousedown", this.onMouseDown);
   }
 
-  onTokenEnter = ({ target, tokenPos }) => {
-    const {
-      cx,
-      editor,
-      updatePreview,
-      highlightedCalls,
-      setExceptionPreview,
-    } = this.props;
+  // Note that these events are emitted by utils/editor/tokens.js
+  onTokenEnter = async ({ target, tokenPos }) => {
+    // Use a temporary object to uniquely identify the asynchronous processing of this user event
+    // and bail out if we started hovering another token.
+    const tokenId = {};
+    this.currentTokenId = tokenId;
+
+    const { editor, getPreview, getExceptionPreview } = this.props;
+
+    // Ignore inline previews code widgets
+    if (target.closest(".CodeMirror-widget")) {
+      return;
+    }
 
     const isTargetException = target.classList.contains(EXCEPTION_MARKER);
 
+    let preview;
     if (isTargetException) {
-      return setExceptionPreview(cx, target, tokenPos, editor.codeMirror);
+      preview = await getExceptionPreview(target, tokenPos, editor.codeMirror);
     }
 
-    if (
-      this.props.isPaused &&
-      !this.state.selecting &&
-      highlightedCalls === null &&
-      !isTargetException
-    ) {
-      updatePreview(cx, target, tokenPos, editor.codeMirror);
+    if (!preview && this.props.isPaused && !this.state.selecting) {
+      preview = await getPreview(target, tokenPos, editor.codeMirror);
     }
+
+    // Prevent modifying state and showing this preview if we started hovering another token
+    if (!preview || this.currentTokenId !== tokenId) {
+      return;
+    }
+    this.setState({ preview });
   };
 
   onMouseUp = () => {
     if (this.props.isPaused) {
       this.setState({ selecting: false });
-      return true;
     }
   };
 
   onMouseDown = () => {
     if (this.props.isPaused) {
       this.setState({ selecting: true });
-      return true;
     }
   };
 
   onScroll = () => {
     if (this.props.isPaused) {
-      this.props.clearPreview(this.props.cx);
+      this.clearPreview();
     }
   };
 
+  clearPreview = () => {
+    this.setState({ preview: null });
+  };
+
   render() {
-    const { preview } = this.props;
+    const { preview } = this.state;
     if (!preview || this.state.selecting) {
       return null;
     }
-
-    return (
-      <Popup
-        preview={preview}
-        editor={this.props.editor}
-        editorRef={this.props.editorRef}
-      />
-    );
+    return React.createElement(Popup, {
+      preview: preview,
+      editor: this.props.editor,
+      editorRef: this.props.editorRef,
+      clearPreview: this.clearPreview,
+    });
   }
 }
 
 const mapStateToProps = state => {
-  const thread = getCurrentThread(state);
   return {
-    highlightedCalls: getHighlightedCalls(state, thread),
-    cx: getThreadContext(state),
-    preview: getPreview(state),
     isPaused: getIsCurrentThreadPaused(state),
   };
 };
 
 export default connect(mapStateToProps, {
-  clearPreview: actions.clearPreview,
   addExpression: actions.addExpression,
-  updatePreview: actions.updatePreview,
-  setExceptionPreview: actions.setExceptionPreview,
+  getPreview: actions.getPreview,
+  getExceptionPreview: actions.getExceptionPreview,
 })(Preview);

@@ -12,9 +12,9 @@
 
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/Logging.h"
-#include "mozilla/StaticPrefs_widget.h"
 #include "mozilla/StaticPtr.h"
 #include "nsHashtablesFwd.h"
+#include "nsdefs.h"
 
 namespace mozilla::widget {
 
@@ -25,9 +25,9 @@ LazyLogModule gWinEventObserverLog("WinEventObserver");
 StaticRefPtr<WinEventHub> WinEventHub::sInstance;
 
 // static
-void WinEventHub::Ensure() {
+bool WinEventHub::Ensure() {
   if (sInstance) {
-    return;
+    return true;
   }
 
   LOG("WinEventHub::Ensure()");
@@ -35,10 +35,11 @@ void WinEventHub::Ensure() {
   RefPtr<WinEventHub> instance = new WinEventHub();
   if (!instance->Initialize()) {
     MOZ_ASSERT_UNREACHABLE("unexpected to be called");
-    return;
+    return false;
   }
   sInstance = instance;
   ClearOnShutdown(&sInstance);
+  return true;
 }
 
 WinEventHub::WinEventHub() {
@@ -121,12 +122,9 @@ void WinEventObserver::Destroy() {
 // static
 already_AddRefed<DisplayStatusObserver> DisplayStatusObserver::Create(
     DisplayStatusListener* aListener) {
-  if (!StaticPrefs::
-          widget_windows_window_occlusion_tracking_display_state_enabled()) {
+  if (!WinEventHub::Ensure()) {
     return nullptr;
   }
-
-  WinEventHub::Ensure();
   RefPtr<DisplayStatusObserver> observer = new DisplayStatusObserver(aListener);
   WinEventHub::Get()->AddObserver(observer);
   return observer.forget();
@@ -172,12 +170,9 @@ void DisplayStatusObserver::OnWinEventProc(HWND aHwnd, UINT aMsg,
 // static
 already_AddRefed<SessionChangeObserver> SessionChangeObserver::Create(
     SessionChangeListener* aListener) {
-  if (!StaticPrefs::
-          widget_windows_window_occlusion_tracking_session_lock_enabled()) {
+  if (!WinEventHub::Ensure()) {
     return nullptr;
   }
-
-  WinEventHub::Ensure();
   RefPtr<SessionChangeObserver> observer = new SessionChangeObserver(aListener);
   WinEventHub::Get()->AddObserver(observer);
   return observer.forget();
@@ -211,8 +206,10 @@ void SessionChangeObserver::OnWinEventProc(HWND aHwnd, UINT aMsg,
     if (!::ProcessIdToSessionId(::GetCurrentProcessId(), &currentSessionId)) {
       isCurrentSession = Nothing();
     } else {
-      LOG("SessionChangeObserver::OnWinEventProc() aWParam %d aLParam %d "
-          "currentSessionId %d this %p",
+      LOG("SessionChangeObserver::OnWinEventProc() aWParam %zu aLParam "
+          "%" PRIdLPTR
+          " "
+          "currentSessionId %lu this %p",
           aWParam, aLParam, currentSessionId, this);
 
       isCurrentSession = Some(static_cast<DWORD>(aLParam) == currentSessionId);

@@ -15,8 +15,7 @@
 
 class nsIThread;
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class Promise;
 class ThreadSafeWorkerRef;
@@ -54,15 +53,18 @@ class BodyConsumer final : public nsIObserver,
    *          file. Used only by CONSUME_BLOB. Optional.
    * @param aBodyMimeType the mime-type for blob. Used only by CONSUME_BLOB.
    *          Optional.
+   * @param aMixedCaseMimeType is needed to get mixed case multipart
+   *          boundary value to FormDataParser.
    * @param aBlobStorageType Blobs can be saved in temporary file. This is the
    *          type of blob storage to use. Used only by CONSUME_BLOB.
    * @param aRv An ErrorResult.
    */
   static already_AddRefed<Promise> Create(
-      nsIGlobalObject* aGlobal, nsIEventTarget* aMainThreadEventTarget,
+      nsIGlobalObject* aGlobal, nsISerialEventTarget* aMainThreadEventTarget,
       nsIInputStream* aBodyStream, AbortSignalImpl* aSignalImpl,
       ConsumeType aType, const nsACString& aBodyBlobURISpec,
       const nsAString& aBodyLocalPath, const nsACString& aBodyMimeType,
+      const nsACString& aMixedCaseMimeType,
       MutableBlobStorage::MutableBlobStorageType aBlobStorageType,
       ErrorResult& aRv);
 
@@ -92,11 +94,12 @@ class BodyConsumer final : public nsIObserver,
   void RunAbortAlgorithm() override;
 
  private:
-  BodyConsumer(nsIEventTarget* aMainThreadEventTarget,
+  BodyConsumer(nsISerialEventTarget* aMainThreadEventTarget,
                nsIGlobalObject* aGlobalObject, nsIInputStream* aBodyStream,
                Promise* aPromise, ConsumeType aType,
                const nsACString& aBodyBlobURISpec,
                const nsAString& aBodyLocalPath, const nsACString& aBodyMimeType,
+               const nsACString& aMixedCaseMimeType,
                MutableBlobStorage::MutableBlobStorageType aBlobStorageType);
 
   ~BodyConsumer();
@@ -106,13 +109,14 @@ class BodyConsumer final : public nsIObserver,
   void AssertIsOnTargetThread() const;
 
   nsCOMPtr<nsIThread> mTargetThread;
-  nsCOMPtr<nsIEventTarget> mMainThreadEventTarget;
+  nsCOMPtr<nsISerialEventTarget> mMainThreadEventTarget;
 
   // This is nullified when the consuming of the body starts.
   nsCOMPtr<nsIInputStream> mBodyStream;
 
   MutableBlobStorage::MutableBlobStorageType mBlobStorageType;
   nsCString mBodyMimeType;
+  nsCString mMixedCaseMimeType;
 
   nsCString mBodyBlobURISpec;
   nsString mBodyLocalPath;
@@ -133,7 +137,6 @@ class BodyConsumer final : public nsIObserver,
   bool mShuttingDown;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_BodyConsumer_h

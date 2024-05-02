@@ -8,6 +8,7 @@
 #define mozilla_dom_ReadableByteStreamController_h
 
 #include <cstddef>
+#include "UnderlyingSourceCallbackHelpers.h"
 #include "js/RootingAPI.h"
 #include "js/TypeDecls.h"
 #include "mozilla/Attributes.h"
@@ -20,7 +21,6 @@
 #include "mozilla/dom/ReadableStreamBYOBRequest.h"
 #include "mozilla/dom/ReadableStreamController.h"
 #include "mozilla/dom/TypedArray.h"
-#include "mozilla/dom/UnderlyingSourceCallbackHelpers.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsWrapperCache.h"
 #include "mozilla/dom/Nullable.h"
@@ -49,7 +49,7 @@ class ReadableByteStreamController final : public ReadableStreamController,
   explicit ReadableByteStreamController(nsIGlobalObject* aGlobal);
 
  protected:
-  ~ReadableByteStreamController();
+  ~ReadableByteStreamController() override;
 
  public:
   bool IsDefault() override { return false; }
@@ -73,12 +73,11 @@ class ReadableByteStreamController final : public ReadableStreamController,
   void Error(JSContext* aCx, JS::Handle<JS::Value> aErrorValue,
              ErrorResult& aRv);
 
-  MOZ_CAN_RUN_SCRIPT virtual already_AddRefed<Promise> CancelSteps(
+  MOZ_CAN_RUN_SCRIPT already_AddRefed<Promise> CancelSteps(
       JSContext* aCx, JS::Handle<JS::Value> aReason, ErrorResult& aRv) override;
-  MOZ_CAN_RUN_SCRIPT virtual void PullSteps(JSContext* aCx,
-                                            ReadRequest* aReadRequest,
-                                            ErrorResult& aRv) override;
-  virtual void ReleaseSteps() override;
+  MOZ_CAN_RUN_SCRIPT void PullSteps(JSContext* aCx, ReadRequest* aReadRequest,
+                                    ErrorResult& aRv) override;
+  void ReleaseSteps() override;
 
   // Internal Slot Accessors
   Maybe<uint64_t> AutoAllocateChunkSize() { return mAutoAllocateChunkSize; }
@@ -96,9 +95,6 @@ class ReadableByteStreamController final : public ReadableStreamController,
   }
   void ClearPendingPullIntos();
 
-  ReadableStream* Stream() const { return mStream; }
-  void SetStream(ReadableStream* aStream) { mStream = aStream; }
-
   double QueueTotalSize() const { return mQueueTotalSize; }
   void SetQueueTotalSize(double aQueueTotalSize) {
     mQueueTotalSize = aQueueTotalSize;
@@ -111,21 +107,6 @@ class ReadableByteStreamController final : public ReadableStreamController,
   bool CloseRequested() const { return mCloseRequested; }
   void SetCloseRequested(bool aCloseRequested) {
     mCloseRequested = aCloseRequested;
-  }
-
-  UnderlyingSourceCancelCallbackHelper* GetCancelAlgorithm() const {
-    return mCancelAlgorithm;
-  }
-  void SetCancelAlgorithm(
-      UnderlyingSourceCancelCallbackHelper* aCancelAlgorithm) {
-    mCancelAlgorithm = aCancelAlgorithm;
-  }
-
-  UnderlyingSourcePullCallbackHelper* GetPullAlgorithm() const {
-    return mPullAlgorithm;
-  }
-  void SetPullAlgorithm(UnderlyingSourcePullCallbackHelper* aPullAlgorithm) {
-    mPullAlgorithm = aPullAlgorithm;
   }
 
   LinkedList<RefPtr<ReadableByteStreamQueueEntry>>& Queue() { return mQueue; }
@@ -169,14 +150,6 @@ class ReadableByteStreamController final : public ReadableStreamController,
   // request, or null if there are no pending requests
   RefPtr<ReadableStreamBYOBRequest> mByobRequest;
 
-  // A promise-returning algorithm, taking one argument (the cancel reason),
-  // which communicates a requested cancelation to the underlying byte source
-  RefPtr<UnderlyingSourceCancelCallbackHelper> mCancelAlgorithm;
-
-  // A promise-returning algorithm that pulls data from the underlying byte
-  // source
-  RefPtr<UnderlyingSourcePullCallbackHelper> mPullAlgorithm;
-
   // A list of pull-into descriptors
   LinkedList<RefPtr<PullIntoDescriptor>> mPendingPullIntos;
 
@@ -196,207 +169,61 @@ class ReadableByteStreamController final : public ReadableStreamController,
   // strategy, indicating the point at which the stream will apply backpressure
   // to its underlying byte source
   double mStrategyHWM = 0.0;
-
-  RefPtr<ReadableStream> mStream;
 };
 
-// https://streams.spec.whatwg.org/#readable-byte-stream-queue-entry
-// Important: These list elements need to be traced by the owning structure.
-struct ReadableByteStreamQueueEntry
-    : LinkedListElement<RefPtr<ReadableByteStreamQueueEntry>> {
-  NS_INLINE_DECL_REFCOUNTING(mozilla::dom::ReadableByteStreamQueueEntry)
+namespace streams_abstract {
 
-  friend class ReadableByteStreamController::cycleCollection;
-
-  ReadableByteStreamQueueEntry(JS::Handle<JSObject*> aBuffer,
-                               size_t aByteOffset, size_t aByteLength)
-      : LinkedListElement<RefPtr<ReadableByteStreamQueueEntry>>(),
-        mBuffer(aBuffer),
-        mByteOffset(aByteOffset),
-        mByteLength(aByteLength) {}
-
-  JSObject* Buffer() const { return mBuffer; }
-  void SetBuffer(JS::Handle<JSObject*> aBuffer) { mBuffer = aBuffer; }
-
-  size_t ByteOffset() const { return mByteOffset; }
-  void SetByteOffset(size_t aByteOffset) { mByteOffset = aByteOffset; }
-
-  size_t ByteLength() const { return mByteLength; }
-  void SetByteLength(size_t aByteLength) { mByteLength = aByteLength; }
-
-  void ClearBuffer() { mBuffer = nullptr; }
-
- private:
-  // An ArrayBuffer, which will be a transferred version of the one originally
-  // supplied by the underlying byte source.
-  //
-  // This is traced by the list owner (see ReadableByteStreamController's
-  // tracing code).
-  JS::Heap<JSObject*> mBuffer;
-
-  // A nonnegative integer number giving the byte offset derived from the view
-  // originally supplied by the underlying byte source
-  size_t mByteOffset = 0;
-
-  // A nonnegative integer number giving the byte length derived from the view
-  // originally supplied by the underlying byte source
-  size_t mByteLength = 0;
-
-  ~ReadableByteStreamQueueEntry() = default;
-};
-
-// Important: These list elments need to be traced by the owning structure.
-struct PullIntoDescriptor final
-    : LinkedListElement<RefPtr<PullIntoDescriptor>> {
-  NS_INLINE_DECL_REFCOUNTING(mozilla::dom::PullIntoDescriptor)
-
-  enum Constructor {
-    DataView,
-#define DEFINE_TYPED_CONSTRUCTOR_ENUM_NAMES(ExternalT, NativeT, Name) Name,
-    JS_FOR_EACH_TYPED_ARRAY(DEFINE_TYPED_CONSTRUCTOR_ENUM_NAMES)
-#undef DEFINE_TYPED_CONSTRUCTOR_ENUM_NAMES
-  };
-
-  static Constructor constructorFromScalar(JS::Scalar::Type type) {
-    switch (type) {
-#define REMAP_PULL_INTO_DESCRIPTOR_TYPE(ExternalT, NativeT, Name) \
-  case JS::Scalar::Name:                                          \
-    return Constructor::Name;
-      JS_FOR_EACH_TYPED_ARRAY(REMAP_PULL_INTO_DESCRIPTOR_TYPE)
-#undef REMAP
-
-      case JS::Scalar::Int64:
-      case JS::Scalar::Simd128:
-      case JS::Scalar::MaxTypedArrayViewType:
-        break;
-    }
-    MOZ_CRASH("Unexpected Scalar::Type");
-  }
-
-  friend class ReadableByteStreamController::cycleCollection;
-
-  PullIntoDescriptor(JS::Handle<JSObject*> aBuffer, uint64_t aBufferByteLength,
-                     uint64_t aByteOffset, uint64_t aByteLength,
-                     uint64_t aBytesFilled, uint64_t aElementSize,
-                     Constructor aViewConstructor, ReaderType aReaderType)
-      : LinkedListElement<RefPtr<PullIntoDescriptor>>(),
-        mBuffer(aBuffer),
-        mBufferByteLength(aBufferByteLength),
-        mByteOffset(aByteOffset),
-        mByteLength(aByteLength),
-        mBytesFilled(aBytesFilled),
-        mElementSize(aElementSize),
-        mViewConstructor(aViewConstructor),
-        mReaderType(aReaderType) {}
-
-  JSObject* Buffer() const { return mBuffer; }
-  void SetBuffer(JS::Handle<JSObject*> aBuffer) { mBuffer = aBuffer; }
-
-  uint64_t BufferByteLength() const { return mBufferByteLength; }
-  void SetBufferByteLength(const uint64_t aBufferByteLength) {
-    mBufferByteLength = aBufferByteLength;
-  }
-
-  uint64_t ByteOffset() const { return mByteOffset; }
-  void SetByteOffset(const uint64_t aByteOffset) { mByteOffset = aByteOffset; }
-
-  uint64_t ByteLength() const { return mByteLength; }
-  void SetByteLength(const uint64_t aByteLength) { mByteLength = aByteLength; }
-
-  uint64_t BytesFilled() const { return mBytesFilled; }
-  void SetBytesFilled(const uint64_t aBytesFilled) {
-    mBytesFilled = aBytesFilled;
-  }
-
-  uint64_t ElementSize() const { return mElementSize; }
-  void SetElementSize(const uint64_t aElementSize) {
-    mElementSize = aElementSize;
-  }
-
-  Constructor ViewConstructor() const { return mViewConstructor; }
-
-  // Note: Named GetReaderType to avoid name conflict with type.
-  ReaderType GetReaderType() const { return mReaderType; }
-  void SetReaderType(const ReaderType aReaderType) {
-    mReaderType = aReaderType;
-  }
-
-  void ClearBuffer() { mBuffer = nullptr; }
-
- private:
-  // This is traced by the list owner (see ReadableByteStreamController's
-  // tracing code).
-  JS::Heap<JSObject*> mBuffer;
-  uint64_t mBufferByteLength = 0;
-  uint64_t mByteOffset = 0;
-  uint64_t mByteLength = 0;
-  uint64_t mBytesFilled = 0;
-  uint64_t mElementSize = 0;
-  Constructor mViewConstructor;
-  ReaderType mReaderType;
-
-  ~PullIntoDescriptor() = default;
-};
-
-MOZ_CAN_RUN_SCRIPT extern void ReadableByteStreamControllerRespond(
+MOZ_CAN_RUN_SCRIPT void ReadableByteStreamControllerRespond(
     JSContext* aCx, ReadableByteStreamController* aController,
     uint64_t aBytesWritten, ErrorResult& aRv);
 
-MOZ_CAN_RUN_SCRIPT extern void ReadableByteStreamControllerRespondInternal(
+MOZ_CAN_RUN_SCRIPT void ReadableByteStreamControllerRespondInternal(
     JSContext* aCx, ReadableByteStreamController* aController,
     uint64_t aBytesWritten, ErrorResult& aRv);
 
-MOZ_CAN_RUN_SCRIPT extern void ReadableByteStreamControllerRespondWithNewView(
+MOZ_CAN_RUN_SCRIPT void ReadableByteStreamControllerRespondWithNewView(
     JSContext* aCx, ReadableByteStreamController* aController,
     JS::Handle<JSObject*> aView, ErrorResult& aRv);
 
-MOZ_CAN_RUN_SCRIPT extern void ReadableByteStreamControllerPullInto(
+MOZ_CAN_RUN_SCRIPT void ReadableByteStreamControllerPullInto(
     JSContext* aCx, ReadableByteStreamController* aController,
-    JS::HandleObject aView, ReadIntoRequest* aReadIntoRequest,
+    JS::Handle<JSObject*> aView, ReadIntoRequest* aReadIntoRequest,
     ErrorResult& aRv);
 
-extern void ReadableByteStreamControllerError(
-    ReadableByteStreamController* aController, JS::HandleValue aValue,
+void ReadableByteStreamControllerError(
+    ReadableByteStreamController* aController, JS::Handle<JS::Value> aValue,
     ErrorResult& aRv);
 
-MOZ_CAN_RUN_SCRIPT extern void ReadableByteStreamControllerEnqueue(
+MOZ_CAN_RUN_SCRIPT void ReadableByteStreamControllerEnqueue(
     JSContext* aCx, ReadableByteStreamController* aController,
-    JS::HandleObject aChunk, ErrorResult& aRv);
+    JS::Handle<JSObject*> aChunk, ErrorResult& aRv);
 
-extern already_AddRefed<ReadableStreamBYOBRequest>
+already_AddRefed<ReadableStreamBYOBRequest>
 ReadableByteStreamControllerGetBYOBRequest(
     JSContext* aCx, ReadableByteStreamController* aController,
     ErrorResult& aRv);
 
-MOZ_CAN_RUN_SCRIPT extern void ReadableByteStreamControllerClose(
+MOZ_CAN_RUN_SCRIPT void ReadableByteStreamControllerClose(
     JSContext* aCx, ReadableByteStreamController* aController,
     ErrorResult& aRv);
 
-MOZ_CAN_RUN_SCRIPT extern void SetUpReadableByteStreamController(
+MOZ_CAN_RUN_SCRIPT void SetUpReadableByteStreamController(
     JSContext* aCx, ReadableStream* aStream,
     ReadableByteStreamController* aController,
-    UnderlyingSourceStartCallbackHelper* aStartAlgorithm,
-    UnderlyingSourcePullCallbackHelper* aPullAlgorithm,
-    UnderlyingSourceCancelCallbackHelper* aCancelAlgorithm,
-    UnderlyingSourceErrorCallbackHelper* aErrorAlgorithm, double aHighWaterMark,
+    UnderlyingSourceAlgorithmsBase* aAlgorithms, double aHighWaterMark,
     Maybe<uint64_t> aAutoAllocateChunkSize, ErrorResult& aRv);
 
-MOZ_CAN_RUN_SCRIPT extern void ReadableByteStreamControllerCallPullIfNeeded(
+MOZ_CAN_RUN_SCRIPT void ReadableByteStreamControllerCallPullIfNeeded(
     JSContext* aCx, ReadableByteStreamController* aController,
     ErrorResult& aRv);
 
 MOZ_CAN_RUN_SCRIPT void SetUpReadableByteStreamControllerFromUnderlyingSource(
-    JSContext* aCx, ReadableStream* aStream, JS::HandleObject aUnderlyingSource,
+    JSContext* aCx, ReadableStream* aStream,
+    JS::Handle<JSObject*> aUnderlyingSource,
     UnderlyingSource& aUnderlyingSourceDict, double aHighWaterMark,
     ErrorResult& aRv);
 
-MOZ_CAN_RUN_SCRIPT void
-SetUpReadableByteStreamControllerFromBodyStreamUnderlyingSource(
-    JSContext* aCx, ReadableStream* aStream,
-    BodyStreamHolder* aUnderlyingSource, ErrorResult& aRv);
-
-void ReadableByteStreamControllerClearAlgorithms(
-    ReadableByteStreamController* aController);
+}  // namespace streams_abstract
 
 }  // namespace mozilla::dom
 

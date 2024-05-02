@@ -1,6 +1,6 @@
 import collections
 import logging
-from typing import Iterator, List, Optional, Sequence, Tuple
+from typing import Generator, List, Optional, Sequence, Tuple
 
 from pip._internal.utils.logging import indent_log
 
@@ -9,8 +9,10 @@ from .req_install import InstallRequirement
 from .req_set import RequirementSet
 
 __all__ = [
-    "RequirementSet", "InstallRequirement",
-    "parse_requirements", "install_given_reqs",
+    "RequirementSet",
+    "InstallRequirement",
+    "parse_requirements",
+    "install_given_reqs",
 ]
 
 logger = logging.getLogger(__name__)
@@ -26,7 +28,7 @@ class InstallationResult:
 
 def _validate_requirements(
     requirements: List[InstallRequirement],
-) -> Iterator[Tuple[str, InstallRequirement]]:
+) -> Generator[Tuple[str, InstallRequirement], None, None]:
     for req in requirements:
         assert req.name, f"invalid to-be-installed requirement: {req}"
         yield req.name, req
@@ -34,7 +36,6 @@ def _validate_requirements(
 
 def install_given_reqs(
     requirements: List[InstallRequirement],
-    install_options: List[str],
     global_options: Sequence[str],
     root: Optional[str],
     home: Optional[str],
@@ -52,8 +53,8 @@ def install_given_reqs(
 
     if to_install:
         logger.info(
-            'Installing collected packages: %s',
-            ', '.join(to_install.keys()),
+            "Installing collected packages: %s",
+            ", ".join(to_install.keys()),
         )
 
     installed = []
@@ -61,17 +62,14 @@ def install_given_reqs(
     with indent_log():
         for req_name, requirement in to_install.items():
             if requirement.should_reinstall:
-                logger.info('Attempting uninstall: %s', req_name)
+                logger.info("Attempting uninstall: %s", req_name)
                 with indent_log():
-                    uninstalled_pathset = requirement.uninstall(
-                        auto_confirm=True
-                    )
+                    uninstalled_pathset = requirement.uninstall(auto_confirm=True)
             else:
                 uninstalled_pathset = None
 
             try:
                 requirement.install(
-                    install_options,
                     global_options,
                     root=root,
                     home=home,

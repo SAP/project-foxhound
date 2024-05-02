@@ -7,9 +7,11 @@
 #ifndef LAYOUT_GENERIC_LAYOUTMESSAGEUTILS_H_
 #define LAYOUT_GENERIC_LAYOUTMESSAGEUTILS_H_
 
+#include "ipc/EnumSerializer.h"
 #include "ipc/IPCMessageUtils.h"
 #include "nsIFrame.h"
 #include "mozilla/AspectRatio.h"
+#include "mozilla/webrender/WebRenderTypes.h"
 
 namespace IPC {
 
@@ -17,15 +19,14 @@ template <>
 struct ParamTraits<mozilla::IntrinsicSize> {
   using paramType = mozilla::IntrinsicSize;
 
-  static void Write(Message* aMsg, const paramType& aParam) {
-    WriteParam(aMsg, aParam.width);
-    WriteParam(aMsg, aParam.height);
+  static void Write(MessageWriter* aWriter, const paramType& aParam) {
+    WriteParam(aWriter, aParam.width);
+    WriteParam(aWriter, aParam.height);
   }
 
-  static bool Read(const Message* aMsg, PickleIterator* aIter,
-                   paramType* aResult) {
-    return ReadParam(aMsg, aIter, &aResult->width) &&
-           ReadParam(aMsg, aIter, &aResult->height);
+  static bool Read(MessageReader* aReader, paramType* aResult) {
+    return ReadParam(aReader, &aResult->width) &&
+           ReadParam(aReader, &aResult->height);
   }
 };
 
@@ -33,15 +34,20 @@ template <>
 struct ParamTraits<mozilla::AspectRatio> {
   using paramType = mozilla::AspectRatio;
 
-  static void Write(Message* aMsg, const paramType& aParam) {
-    WriteParam(aMsg, aParam.mRatio);
+  static void Write(MessageWriter* aWriter, const paramType& aParam) {
+    WriteParam(aWriter, aParam.mRatio);
   }
 
-  static bool Read(const Message* aMsg, PickleIterator* aIter,
-                   paramType* aResult) {
-    return ReadParam(aMsg, aIter, &aResult->mRatio);
+  static bool Read(MessageReader* aReader, paramType* aResult) {
+    return ReadParam(aReader, &aResult->mRatio);
   }
 };
+
+template <>
+struct ParamTraits<mozilla::StyleImageRendering>
+    : public ContiguousEnumSerializerInclusive<
+          mozilla::StyleImageRendering, mozilla::StyleImageRendering::Auto,
+          mozilla::StyleImageRendering::Optimizequality> {};
 
 }  // namespace IPC
 

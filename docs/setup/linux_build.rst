@@ -36,8 +36,8 @@ Python development files as well to install some pip packages.
 
 You should be able to install Python using your system package manager:
 
--  For Debian-based Linux (such as Ubuntu): ``sudo apt-get install curl python3 python3-dev python3-pip``
--  For Fedora Linux: ``sudo dnf install python3 python3-devel``
+-  For Debian-based Linux (such as Ubuntu): ``sudo apt-get install curl python3 python3-pip``
+-  For Fedora Linux: ``sudo dnf install python3 python3-pip``
 
 If you need a version of Python that your package manager doesn't have (e.g.:
 the provided Python 3 is too old, or you want Python 2 but it's not available),
@@ -74,10 +74,10 @@ You can test that Mercurial is installed by running:
     .. code-block:: shell
 
         # If you're using zsh
-        echo "export PATH=\"$(python3 -m site --user-base)/bin:$PATH\"" >> ~/.zshenv
+        echo 'export PATH="'"$(python3 -m site --user-base)"'/bin:$PATH"' >> ~/.zshenv
 
         # If you're using bash
-        echo "export PATH=\"$(python3 -m site --user-base)/bin:$PATH\"" >> ~/.bashrc
+        echo 'export PATH="'"$(python3 -m site --user-base)"'/bin:$PATH"' >> ~/.bashrc
 
         # If you're using a different shell, follow its documentation to see
         # how to configure your PATH. Ensure that `$(python3 -m site --user-base)/bin`
@@ -98,9 +98,8 @@ the interactive setup process.
 
 .. note::
 
-    In general, the Firefox workflow works best with Mercurial. However,
-    if you'd prefer to use ``git``, you can grab the source code in
-    "git" form by running the bootstrap script with the ``vcs`` parameter:
+    To use ``git``, you can grab the source code in "git" form by running the
+    bootstrap script with the ``vcs`` parameter:
 
     .. code-block:: shell
 
@@ -113,16 +112,7 @@ Choosing a build type
 
 If you aren't modifying the Firefox backend, then select one of the
 :ref:`Artifact Mode <Understanding Artifact Builds>` options. If you are
-building Firefox for Android, you should also see the :ref:`GeckoView Contributor Guide`.
-
-Cleanup
-~~~~~~~
-
-After finishing the bootstrap process, ``bootstrap.py`` can be removed.
-
-.. code-block:: shell
-
-    rm bootstrap.py
+building Firefox for Android, you should also see the :ref:`GeckoView Contributor Guide <geckoview-contributor-guide>`.
 
 3. Build
 --------
@@ -132,10 +122,21 @@ Now that your system is bootstrapped, you should be able to build!
 .. code-block:: shell
 
     cd mozilla-unified
+    hg up -C central
     ./mach build
-    ./mach run
 
 🎉 Congratulations! You've built your own home-grown Firefox!
+You should see the following message in your terminal after a successful build:
+
+.. code-block:: console
+
+    Your build was successful!
+    To take your build for a test drive, run: |mach run|
+    For more information on what to do now, see https://firefox-source-docs.mozilla.org/setup/contributing_code.html
+
+You can now use the ``./mach run`` command to run your locally built Firefox!
+
+If your build fails, please reference the steps in the `Troubleshooting section <#troubleshooting>`_.
 
 Now the fun starts
 ------------------
@@ -149,6 +150,14 @@ send patches to Mozilla, update your source code locally, and more.
 
 Troubleshooting
 ---------------
+
+Build errors
+~~~~~~~~~~~~
+
+If you encounter a build error when trying to setup your development environment, please follow these steps:
+   1. Copy the entire build error to your clipboard
+   2. Paste this error to `paste.mozilla.org <https://paste.mozilla.org>`_ in the text area and change the "Expire in one hour" option to "Expire in one week". Note: it won't take a week to get help but it's better to have the snippet be around for a bit longer than expected.
+   3. Go to the `introduction channel <https://chat.mozilla.org/#/room/#introduction:mozilla.org>`__ and ask for help with your build error. Make sure to post the link to the paste.mozilla.org snippet you created!
 
 Using a non-native file system (NTFS, network drive, etc)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

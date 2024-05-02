@@ -19,6 +19,7 @@
 #include "mozilla/TextUtils.h"
 #include "mozilla/Unused.h"
 #include "mozilla/ipc/TransportSecurityInfoUtils.h"
+#include "mozilla/ipc/IPDLParamTraits.h"
 #include "mozilla/net/DNS.h"
 #include "mozpkix/Result.h"
 #include "mozpkix/pkixnss.h"
@@ -78,6 +79,11 @@ UniqueCERTCertificate nsNSSCertificate::GetOrInstantiateCert() {
   if (maybeCert.isSome()) {
     return UniqueCERTCertificate(CERT_DupCertificate((*maybeCert).get()));
   }
+
+  if (!EnsureNSSInitializedChromeOrContent()) {
+    return nullptr;
+  }
+
   SECItem derItem = {siBuffer, mDER.Elements(),
                      static_cast<unsigned int>(mDER.Length())};
   UniqueCERTCertificate cert(CERT_NewTempCertificate(
@@ -450,6 +456,11 @@ nsNSSCertificate::GetSerialNumber(nsAString& _serialNumber) {
 nsresult nsNSSCertificate::GetCertificateHash(nsAString& aFingerprint,
                                               SECOidTag aHashAlg) {
   aFingerprint.Truncate();
+
+  if (!EnsureNSSInitializedChromeOrContent()) {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+
   nsTArray<uint8_t> digestArray;
   nsresult rv =
       Digest::DigestBuf(aHashAlg, mDER.Elements(), mDER.Length(), digestArray);
@@ -504,6 +515,10 @@ NS_IMETHODIMP
 nsNSSCertificate::GetSha256SubjectPublicKeyInfoDigest(
     nsACString& aSha256SPKIDigest) {
   aSha256SPKIDigest.Truncate();
+
+  if (!EnsureNSSInitializedChromeOrContent()) {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
 
   pkix::Input certInput;
   pkix::Result result = certInput.Init(mDER.Elements(), mDER.Length());
@@ -616,19 +631,18 @@ nsNSSCertificate::Read(nsIObjectInputStream* aStream) {
   return NS_OK;
 }
 
-void nsNSSCertificate::SerializeToIPC(IPC::Message* aMsg) {
+void nsNSSCertificate::SerializeToIPC(IPC::MessageWriter* aWriter) {
   bool hasCert = !mDER.IsEmpty();
-  WriteParam(aMsg, hasCert);
+  WriteParam(aWriter, hasCert);
 
   if (!hasCert) {
     return;
   }
 
-  WriteParam(aMsg, mDER);
+  WriteParam(aWriter, mDER);
 }
 
-bool nsNSSCertificate::DeserializeFromIPC(const IPC::Message* aMsg,
-                                          PickleIterator* aIter) {
+bool nsNSSCertificate::DeserializeFromIPC(IPC::MessageReader* aReader) {
   auto lock = mCert.Lock();
   auto& maybeCert = lock.ref();
   if (!mDER.IsEmpty() || maybeCert.isSome()) {
@@ -636,7 +650,7 @@ bool nsNSSCertificate::DeserializeFromIPC(const IPC::Message* aMsg,
   }
 
   bool hasCert = false;
-  if (!ReadParam(aMsg, aIter, &hasCert)) {
+  if (!ReadParam(aReader, &hasCert)) {
     return false;
   }
 
@@ -644,7 +658,7 @@ bool nsNSSCertificate::DeserializeFromIPC(const IPC::Message* aMsg,
     return true;
   }
 
-  if (!ReadParam(aMsg, aIter, &mDER)) {
+  if (!ReadParam(aReader, &mDER)) {
     return false;
   }
   return true;

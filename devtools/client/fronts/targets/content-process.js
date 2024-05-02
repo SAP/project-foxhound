@@ -5,12 +5,14 @@
 
 const {
   contentProcessTargetSpec,
-} = require("devtools/shared/specs/targets/content-process");
+} = require("resource://devtools/shared/specs/targets/content-process.js");
 const {
   FrontClassWithSpec,
   registerFront,
-} = require("devtools/shared/protocol");
-const { TargetMixin } = require("devtools/client/fronts/targets/target-mixin");
+} = require("resource://devtools/shared/protocol.js");
+const {
+  TargetMixin,
+} = require("resource://devtools/client/fronts/targets/target-mixin.js");
 
 class ContentProcessTargetFront extends TargetMixin(
   FrontClassWithSpec(contentProcessTargetSpec)
@@ -30,6 +32,7 @@ class ContentProcessTargetFront extends TargetMixin(
     this.targetForm = json;
 
     this.remoteType = json.remoteType;
+    this.isXpcShellTarget = json.isXpcShellTarget;
   }
 
   get name() {

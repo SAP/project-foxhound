@@ -6,7 +6,7 @@
 const TEST_URI =
   "data:text/html;charset=utf-8,<!DOCTYPE html>Test syntax highlighted output";
 
-add_task(async function() {
+add_task(async function () {
   const hud = await openNewTabAndConsole(TEST_URI);
 
   // Syntax highlighting is implemented with a Custom Element:
@@ -17,7 +17,7 @@ add_task(async function() {
 
   // Check that we syntax highlight output to look like the inputed text.
   // See Bug 1463669.
-  const onMessage = waitForMessage(hud, `var a = 'str';`);
+  const onMessage = waitForMessageByType(hud, `var a = 'str';`, ".command");
   execute(hud, "var a = 'str';");
   const message = await onMessage;
   const highlighted = message.node.querySelectorAll("syntax-highlighted");

@@ -1,4 +1,3 @@
-/* eslint-env mozilla/frame-script */
 /* eslint-disable mozilla/no-arbitrary-setTimeout */
 
 "use strict";
@@ -134,16 +133,17 @@ function checkState(expectedStates, contentStates) {
 }
 
 const kPage =
+  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
   "http://example.org/browser/browser/" +
   "base/content/test/general/dummy_page.html";
 
-add_task(async function() {
+add_task(async function () {
   await pushPrefs(
     ["full-screen-api.transition-duration.enter", "0 0"],
     ["full-screen-api.transition-duration.leave", "0 0"]
   );
 
-  registerCleanupFunction(async function() {
+  registerCleanupFunction(async function () {
     if (window.fullScreen) {
       let fullscreenPromise = waitForFullscreenChanges(
         gBrowser.selectedBrowser,

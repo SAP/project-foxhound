@@ -3,7 +3,10 @@
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
 // Test enabling and disabling a debugger statement using editor context menu
-add_task(async function() {
+
+"use strict";
+
+add_task(async function () {
   const dbg = await initDebugger("doc-pause-points.html", "pause-points.js");
   await selectSource(dbg, "pause-points.js");
   await waitForSelectedSource(dbg, "pause-points.js");
@@ -87,5 +90,5 @@ function waitForBreakpointWithoutCondition(dbg, url, line, index) {
 
 function findBreakpoints(dbg, url, line) {
   const source = findSource(dbg, url);
-  return dbg.selectors.getBreakpointsForSource(source.id, line);
+  return dbg.selectors.getBreakpointsForSource(source, line);
 }

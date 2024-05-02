@@ -2,18 +2,17 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, print_function
-
 import errno
 import glob
 import os
 import shutil
 import subprocess
 from xml.sax.saxutils import quoteattr
-from .common import CommonBackend
+
+from mozbuild.base import ExecutionSummary
 
 from ..frontend.data import ComputedFlags
-from mozbuild.base import ExecutionSummary
+from .common import CommonBackend
 
 # TODO Have ./mach eclipse generate the workspace and index it:
 # /Users/bgirard/mozilla/eclipse/eclipse/eclipse/eclipse -application org.eclipse.cdt.managedbuilder.core.headlessbuild -data $PWD/workspace -importAll $PWD/eclipse
@@ -344,8 +343,8 @@ class CppEclipseBackend(CommonBackend):
             for i in args["includes"]:
                 dirsettings += add_abs_include_path(i)
             for d in args["defines"]:
-                assert d[:2] == u"-D" or d[:2] == u"-U"
-                if d[:2] == u"-U":
+                assert d[:2] == "-D" or d[:2] == "-U"
+                if d[:2] == "-U":
                     # gfx/harfbuzz/src uses -UDEBUG, at least on Mac
                     # netwerk/sctp/src uses -U__APPLE__ on Mac
                     # XXX We should make this code smart enough to remove existing defines.

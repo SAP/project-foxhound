@@ -7,17 +7,19 @@
 /* global jest */
 
 const { shallow } = require("enzyme");
-const { getRep } = require("devtools/client/shared/components/reps/reps/rep");
-const GripMap = require("devtools/client/shared/components/reps/reps/grip-map");
+const {
+  getRep,
+} = require("resource://devtools/client/shared/components/reps/reps/rep.js");
+const GripMap = require("resource://devtools/client/shared/components/reps/reps/grip-map.js");
 const {
   MODE,
-} = require("devtools/client/shared/components/reps/reps/constants");
-const stubs = require("devtools/client/shared/components/test/node/stubs/reps/grip-map");
+} = require("resource://devtools/client/shared/components/reps/reps/constants.js");
+const stubs = require("resource://devtools/client/shared/components/test/node/stubs/reps/grip-map.js");
 const {
   expectActorAttribute,
   getSelectableInInspectorGrips,
   getMapLengthBubbleText,
-} = require("devtools/client/shared/components/test/node/components/reps/test-helpers");
+} = require("resource://devtools/client/shared/components/test/node/components/reps/test-helpers.js");
 const { maxLengthMap, getLength } = GripMap;
 
 function shallowRenderRep(object, props = {}) {
@@ -47,6 +49,11 @@ describe("GripMap - empty map", () => {
     expectActorAttribute(component, object.actor);
 
     component = renderRep({ mode: MODE.TINY, shouldRenderTooltip: true });
+    expect(component.text()).toBe(defaultOutput);
+    expect(component.prop("title")).toBe(`Map(${getLength(object)})`);
+    expectActorAttribute(component, object.actor);
+
+    component = renderRep({ mode: MODE.HEADER, shouldRenderTooltip: true });
     expect(component.text()).toBe(defaultOutput);
     expect(component.prop("title")).toBe(`Map(${getLength(object)})`);
     expectActorAttribute(component, object.actor);
@@ -81,7 +88,7 @@ describe("GripMap - Symbol-keyed Map", () => {
 
     length = getMapLengthBubbleText(object, { mode: MODE.TINY });
     expect(renderRep({ mode: MODE.TINY }).text()).toBe(`Map${length}`);
-
+    expect(renderRep({ mode: MODE.HEADER }).text()).toBe(`Map${length}`);
     expect(renderRep({ mode: MODE.SHORT }).text()).toBe(out);
     expect(renderRep({ mode: MODE.LONG }).text()).toBe(out);
   });
@@ -112,6 +119,14 @@ describe("GripMap - WeakMap", () => {
     ).toBe(`WeakMap${length}`);
     expect(
       renderRep({ mode: MODE.TINY, shouldRenderTooltip: true }).prop("title")
+    ).toBe(`WeakMap(${getLength(object)})`);
+
+    length = getMapLengthBubbleText(object, { mode: MODE.HEADER });
+    expect(
+      renderRep({ mode: MODE.HEADER, shouldRenderTooltip: true }).text()
+    ).toBe(`WeakMap${length}`);
+    expect(
+      renderRep({ mode: MODE.HEADER, shouldRenderTooltip: true }).prop("title")
     ).toBe(`WeakMap(${getLength(object)})`);
 
     expect(
@@ -165,7 +180,7 @@ describe("GripMap - max entries", () => {
 
     length = getMapLengthBubbleText(object, { mode: MODE.TINY });
     expect(renderRep({ mode: MODE.TINY }).text()).toBe(`Map${length}`);
-
+    expect(renderRep({ mode: MODE.HEADER }).text()).toBe(`Map${length}`);
     expect(renderRep({ mode: MODE.SHORT }).text()).toBe(out);
     expect(renderRep({ mode: MODE.LONG }).text()).toBe(out);
   });
@@ -191,7 +206,7 @@ describe("GripMap - more than max entries", () => {
 
     length = getMapLengthBubbleText(object, { mode: MODE.TINY });
     expect(renderRep({ mode: MODE.TINY }).text()).toBe(`Map${length}`);
-
+    expect(renderRep({ mode: MODE.HEADER }).text()).toBe(`Map${length}`);
     expect(renderRep({ mode: MODE.SHORT }).text()).toBe(defaultOutput);
 
     const longString = Array.from({ length: maxLengthMap.get(MODE.LONG) }).map(
@@ -223,7 +238,7 @@ describe("GripMap - uninteresting entries", () => {
 
     length = getMapLengthBubbleText(object, { mode: MODE.TINY });
     expect(renderRep({ mode: MODE.TINY }).text()).toBe(`Map${length}`);
-
+    expect(renderRep({ mode: MODE.HEADER }).text()).toBe(`Map${length}`);
     expect(renderRep({ mode: MODE.SHORT }).text()).toBe(defaultOutput);
 
     length = getMapLengthBubbleText(object, { mode: MODE.LONG });

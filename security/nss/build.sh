@@ -30,11 +30,11 @@ run_verbose()
     if [ "$verbose" = 1 ]; then
         echo "$@"
         exec 3>&1
+        "$@" 1>&3 2>&3
+        exec 3>&-
     else
-        exec 3>/dev/null
+        "$@" >/dev/null
     fi
-    "$@" 1>&3 2>&3
-    exec 3>&-
 }
 
 # The prehistoric bash on Mac doesn't support @Q quoting.
@@ -104,6 +104,7 @@ while [ $# -gt 0 ]; do
         --pprof) gyp_params+=(-Duse_pprof=1) ;;
         --asan) enable_sanitizer asan ;;
         --msan) enable_sanitizer msan ;;
+        --sourcecov) enable_sourcecov ;;
         --ubsan) enable_ubsan ;;
         --ubsan=?*) enable_ubsan "${1#*=}" ;;
         --fuzz) fuzz=1 ;;

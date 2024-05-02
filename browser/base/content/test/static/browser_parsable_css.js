@@ -9,17 +9,11 @@
  * matching the offending error. If an object has multiple regex criteria, they
  * ALL need to match an error in order for that error not to cause a test
  * failure. */
-let whitelist = [
+let ignoreList = [
   // CodeMirror is imported as-is, see bug 1004423.
   { sourceName: /codemirror\.css$/i, isFromDevTools: true },
   {
     sourceName: /devtools\/content\/debugger\/src\/components\/([A-z\/]+).css/i,
-    isFromDevTools: true,
-  },
-  // Highlighter CSS uses a UA-only pseudo-class, see bug 985597.
-  {
-    sourceName: /highlighters\.css$/i,
-    errorMessage: /Unknown pseudo-class.*moz-native-anonymous/i,
     isFromDevTools: true,
   },
   // UA-only media features.
@@ -30,17 +24,19 @@ let whitelist = [
     platforms: ["windows"],
   },
   {
-    sourceName: /\b(contenteditable|EditorOverride|svg|forms|html|mathml|ua)\.css$/i,
+    sourceName:
+      /\b(contenteditable|EditorOverride|svg|forms|html|mathml|ua)\.css$/i,
     errorMessage: /Unknown pseudo-class.*-moz-/i,
     isFromDevTools: false,
   },
   {
-    sourceName: /\b(minimal-xul|html|mathml|ua|forms|svg|manageDialog|autocomplete-item-shared|formautofill)\.css$/i,
+    sourceName:
+      /\b(scrollbars|xul|html|mathml|ua|forms|svg|manageDialog|autocomplete-item-shared|formautofill)\.css$/i,
     errorMessage: /Unknown property.*-moz-/i,
     isFromDevTools: false,
   },
   {
-    sourceName: /(minimal-xul|xul)\.css$/i,
+    sourceName: /(scrollbars|xul)\.css$/i,
     errorMessage: /Unknown pseudo-class.*-moz-/i,
     isFromDevTools: false,
   },
@@ -62,19 +58,23 @@ let whitelist = [
   // PDF.js uses a property that is currently only supported in chrome.
   {
     sourceName: /web\/viewer\.css$/i,
-    errorMessage: /Unknown property ‘text-size-adjust’\. {2}Declaration dropped\./i,
-    isFromDevTools: false,
-  },
-  {
-    sourceName: /overlay\.css$/i,
-    errorMessage: /Unknown pseudo-class.*moz-native-anonymous/i,
+    errorMessage:
+      /Unknown property ‘text-size-adjust’\. {2}Declaration dropped\./i,
     isFromDevTools: false,
   },
 ];
 
+if (!Services.prefs.getBoolPref("layout.css.zoom.enabled")) {
+  ignoreList.push({
+    sourceName: /\bscrollbars\.css$/i,
+    errorMessage: /Unknown property ‘zoom’/i,
+    isFromDevTools: false,
+  });
+}
+
 if (!Services.prefs.getBoolPref("layout.css.color-mix.enabled")) {
   // Reserved to UA sheets unless layout.css.color-mix.enabled flipped to true.
-  whitelist.push({
+  ignoreList.push({
     sourceName: /\b(autocomplete-item)\.css$/,
     errorMessage: /Expected color but found \u2018color-mix\u2019./i,
     isFromDevTools: false,
@@ -84,8 +84,8 @@ if (!Services.prefs.getBoolPref("layout.css.color-mix.enabled")) {
 
 if (!Services.prefs.getBoolPref("layout.css.math-depth.enabled")) {
   // mathml.css UA sheet rule for math-depth.
-  whitelist.push({
-    sourceName: /\b(minimal-xul|mathml)\.css$/i,
+  ignoreList.push({
+    sourceName: /\b(scrollbars|mathml)\.css$/i,
     errorMessage: /Unknown property .*\bmath-depth\b/i,
     isFromDevTools: false,
   });
@@ -93,7 +93,7 @@ if (!Services.prefs.getBoolPref("layout.css.math-depth.enabled")) {
 
 if (!Services.prefs.getBoolPref("layout.css.math-style.enabled")) {
   // mathml.css UA sheet rule for math-style.
-  whitelist.push({
+  ignoreList.push({
     sourceName: /(?:res|gre-resources)\/mathml\.css$/i,
     errorMessage: /Unknown property .*\bmath-style\b/i,
     isFromDevTools: false,
@@ -101,7 +101,7 @@ if (!Services.prefs.getBoolPref("layout.css.math-style.enabled")) {
 }
 
 if (!Services.prefs.getBoolPref("layout.css.scroll-anchoring.enabled")) {
-  whitelist.push({
+  ignoreList.push({
     sourceName: /webconsole\.css$/i,
     errorMessage: /Unknown property .*\boverflow-anchor\b/i,
     isFromDevTools: true,
@@ -109,14 +109,24 @@ if (!Services.prefs.getBoolPref("layout.css.scroll-anchoring.enabled")) {
 }
 
 if (!Services.prefs.getBoolPref("layout.css.forced-colors.enabled")) {
-  whitelist.push({
+  ignoreList.push({
     sourceName: /pdf\.js\/web\/viewer\.css$/,
     errorMessage: /Expected media feature name but found ‘forced-colors’*/i,
     isFromDevTools: false,
   });
 }
 
-let propNameWhitelist = [
+if (!Services.prefs.getBoolPref("layout.css.forced-color-adjust.enabled")) {
+  // PDF.js uses a property that is currently not enabled.
+  ignoreList.push({
+    sourceName: /web\/viewer\.css$/i,
+    errorMessage:
+      /Unknown property ‘forced-color-adjust’\. {2}Declaration dropped\./i,
+    isFromDevTools: false,
+  });
+}
+
+let propNameAllowlist = [
   // These custom properties are retrieved directly from CSSOM
   // in videocontrols.xml to get pre-defined style instead of computed
   // dimensions, which is why they are not referenced by CSS.
@@ -134,15 +144,17 @@ let propNameWhitelist = [
   // These variables are used in a shorthand, but the CSS parser deletes the values
   // when expanding the shorthands. See https://github.com/w3c/csswg-drafts/issues/2515
   { propName: "--bezier-diagonal-color", isFromDevTools: true },
-  { propName: "--bezier-grid-color", isFromDevTools: true },
-  { propName: "--page-border", isFromDevTools: false },
+  { propName: "--highlighter-font-family", isFromDevTools: true },
 
   // This variable is used from CSS embedded in JS in adjustableTitle.js
   { propName: "--icon-url", isFromDevTools: false },
 
-  // This variable is used from CSS embedded in JS in pdf.js
-  { propName: "--zoom-factor", isFromDevTools: false },
-  { propName: "--viewport-scale-factor", isFromDevTools: false },
+  // These are referenced from devtools files.
+  {
+    propName: "--browser-stack-z-index-devtools-splitter",
+    isFromDevTools: false,
+  },
+  { propName: "--browser-stack-z-index-rdm-toolbar", isFromDevTools: false },
 ];
 
 // Add suffix to stylesheets' URI so that we always load them here and
@@ -150,27 +162,27 @@ let propNameWhitelist = [
 // test multiple times, it would be unlikely to affect each other.
 const kPathSuffix = "?always-parse-css-" + Math.random();
 
-function dumpWhitelistItem(item) {
+function dumpAllowlistItem(item) {
   return JSON.stringify(item, (key, value) => {
     return value instanceof RegExp ? value.toString() : value;
   });
 }
 
 /**
- * Check if an error should be ignored due to matching one of the whitelist
- * objects defined in whitelist
+ * Check if an error should be ignored due to matching one of the allowlist
+ * objects.
  *
  * @param aErrorObject the error to check
  * @return true if the error should be ignored, false otherwise.
  */
 function ignoredError(aErrorObject) {
-  for (let whitelistItem of whitelist) {
+  for (let allowlistItem of ignoreList) {
     let matches = true;
     let catchAll = true;
     for (let prop of ["sourceName", "errorMessage"]) {
-      if (whitelistItem.hasOwnProperty(prop)) {
+      if (allowlistItem.hasOwnProperty(prop)) {
         catchAll = false;
-        if (!whitelistItem[prop].test(aErrorObject[prop] || "")) {
+        if (!allowlistItem[prop].test(aErrorObject[prop] || "")) {
           matches = false;
           break;
         }
@@ -179,18 +191,18 @@ function ignoredError(aErrorObject) {
     if (catchAll) {
       ok(
         false,
-        "A whitelist item is catching all errors. " +
-          dumpWhitelistItem(whitelistItem)
+        "An allowlist item is catching all errors. " +
+          dumpAllowlistItem(allowlistItem)
       );
       continue;
     }
     if (matches) {
-      whitelistItem.used = true;
+      allowlistItem.used = true;
       let { sourceName, errorMessage } = aErrorObject;
       info(
         `Ignored error "${errorMessage}" on ${sourceName} ` +
-          "because of whitelist item " +
-          dumpWhitelistItem(whitelistItem)
+          "because of allowlist item " +
+          dumpAllowlistItem(allowlistItem)
       );
       return true;
     }
@@ -215,7 +227,7 @@ trackResourcePrefix("gre");
 trackResourcePrefix("app");
 
 function getBaseUriForChromeUri(chromeUri) {
-  let chromeFile = chromeUri + "gobbledygooknonexistentfile.reallynothere";
+  let chromeFile = chromeUri + "nonexistentfile.reallynothere";
   let uri = Services.io.newURI(chromeFile);
   let fileUri = gChromeReg.convertChromeURL(uri);
   return fileUri.resolve(".");
@@ -267,7 +279,7 @@ function messageIsCSSError(msg) {
   ) {
     let sourceName = msg.sourceName.slice(0, -kPathSuffix.length);
     let msgInfo = { sourceName, errorMessage: msg.errorMessage };
-    // Check if this error is whitelisted in whitelist
+    // Check if this error is allowlisted in allowlist
     if (!ignoredError(msgInfo)) {
       ok(false, `Got error message for ${sourceName}: ${msg.errorMessage}`);
       return true;
@@ -279,23 +291,52 @@ function messageIsCSSError(msg) {
 let imageURIsToReferencesMap = new Map();
 let customPropsToReferencesMap = new Map();
 
-function processCSSRules(sheet) {
-  for (let rule of sheet.cssRules) {
-    if (rule instanceof CSSConditionRule || rule instanceof CSSKeyframesRule) {
-      processCSSRules(rule);
-      continue;
+function neverMatches(mediaList) {
+  const perPlatformMediaQueryMap = {
+    macosx: ["(-moz-platform: macos)"],
+    win: ["(-moz-platform: windows)"],
+    linux: ["(-moz-platform: linux)"],
+    android: ["(-moz-platform: android)"],
+  };
+  for (let platform in perPlatformMediaQueryMap) {
+    const inThisPlatform = platform === AppConstants.platform;
+    for (const media of perPlatformMediaQueryMap[platform]) {
+      if (inThisPlatform && mediaList.mediaText == "not " + media) {
+        // This query can't match on this platform.
+        return true;
+      }
+      if (!inThisPlatform && mediaList.mediaText == media) {
+        // This query only matches on another platform that isn't ours.
+        return true;
+      }
     }
-    if (!(rule instanceof CSSStyleRule) && !(rule instanceof CSSKeyframeRule)) {
-      continue;
-    }
+  }
+  return false;
+}
 
+function processCSSRules(container) {
+  for (let rule of container.cssRules) {
+    if (rule.media && neverMatches(rule.media)) {
+      continue;
+    }
+    if (rule.styleSheet) {
+      processCSSRules(rule.styleSheet); // @import
+      continue;
+    }
+    if (rule.cssRules) {
+      processCSSRules(rule); // @supports, @media, @layer (block), @keyframes, style rules with nested rules.
+    }
+    if (!rule.style) {
+      continue; // @layer (statement), @font-feature-values, @counter-style
+    }
     // Extract urls from the css text.
-    // Note: CSSRule.cssText always has double quotes around URLs even
+    // Note: CSSRule.style.cssText always has double quotes around URLs even
     //       when the original CSS file didn't.
-    let urls = rule.cssText.match(/url\("[^"]*"\)/g);
-    // Extract props by searching all "--" preceeded by "var(" or a non-word
+    let cssText = rule.style.cssText;
+    let urls = cssText.match(/url\("[^"]*"\)/g);
+    // Extract props by searching all "--" preceded by "var(" or a non-word
     // character.
-    let props = rule.cssText.match(/(var\(|\W)(--[\w\-]+)/g);
+    let props = cssText.match(/(var\(|\W|^)(--[\w\-]+)/g);
     if (!urls && !props) {
       continue;
     }
@@ -327,8 +368,10 @@ function processCSSRules(sheet) {
         customPropsToReferencesMap.set(prop, prevValue + 1);
       } else {
         // Remove the extra non-word character captured by the regular
-        // expression.
-        prop = prop.substring(1);
+        // expression if needed.
+        if (prop[0] != "-") {
+          prop = prop.substring(1);
+        }
         if (!customPropsToReferencesMap.has(prop)) {
           customPropsToReferencesMap.set(prop, undefined);
         }
@@ -354,7 +397,7 @@ function chromeFileExists(aURI) {
   } catch (e) {
     if (e.result != Cr.NS_ERROR_FILE_NOT_FOUND) {
       dump("Checking " + aURI + ": " + e + "\n");
-      Cu.reportError(e);
+      console.error(e);
     }
   }
   return available > 0;
@@ -374,10 +417,9 @@ add_task(async function checkAllTheCSS() {
   // Create a clean iframe to load all the files into. This needs to live at a
   // chrome URI so that it's allowed to load and parse any styles.
   let testFile = getRootDirectory(gTestPath) + "dummy_page.html";
-  let HiddenFrame = ChromeUtils.import(
-    "resource://gre/modules/HiddenFrame.jsm",
-    {}
-  ).HiddenFrame;
+  let { HiddenFrame } = ChromeUtils.importESModule(
+    "resource://gre/modules/HiddenFrame.sys.mjs"
+  );
   let hiddenFrame = new HiddenFrame();
   let win = await hiddenFrame.get();
   let iframe = win.document.createElementNS(
@@ -403,7 +445,7 @@ add_task(async function checkAllTheCSS() {
     return true;
   });
   // Wait for all manifest to be parsed
-  await throttledMapPromises(manifestURIs, parseManifest);
+  await PerfTestHelpers.throttledMapPromises(manifestURIs, parseManifest);
 
   // filter out either the devtools paths or the non-devtools paths:
   let isDevtools = SimpleTest.harnessParameters.subsuite == "devtools";
@@ -454,7 +496,7 @@ add_task(async function checkAllTheCSS() {
   }
 
   // Wait for all the files to have actually loaded:
-  await throttledMapPromises(allPromises, loadCSS);
+  await PerfTestHelpers.throttledMapPromises(allPromises, loadCSS);
 
   // Check if all the files referenced from CSS actually exist.
   // Files in browser/ should never be referenced outside browser/.
@@ -483,7 +525,7 @@ add_task(async function checkAllTheCSS() {
   for (let [prop, refCount] of customPropsToReferencesMap) {
     if (!refCount) {
       let ignored = false;
-      for (let item of propNameWhitelist) {
+      for (let item of propNameAllowlist) {
         if (item.propName == prop && isDevtools == item.isFromDevTools) {
           item.used = true;
           if (
@@ -511,8 +553,8 @@ add_task(async function checkAllTheCSS() {
     "All the styles (" + allPromises.length + ") loaded without errors."
   );
 
-  // Confirm that all whitelist rules have been used.
-  function checkWhitelist(list) {
+  // Confirm that all allowlist rules have been used.
+  function checkAllowlist(list) {
     for (let item of list) {
       if (
         !item.used &&
@@ -520,12 +562,12 @@ add_task(async function checkAllTheCSS() {
         (!item.platforms || item.platforms.includes(AppConstants.platform)) &&
         !item.intermittent
       ) {
-        ok(false, "Unused whitelist item: " + dumpWhitelistItem(item));
+        ok(false, "Unused allowlist item: " + dumpAllowlistItem(item));
       }
     }
   }
-  checkWhitelist(whitelist);
-  checkWhitelist(propNameWhitelist);
+  checkAllowlist(ignoreList);
+  checkAllowlist(propNameAllowlist);
 
   // Clean up to avoid leaks:
   doc.head.innerHTML = "";

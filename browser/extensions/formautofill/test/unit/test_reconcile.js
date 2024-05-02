@@ -1,7 +1,9 @@
 "use strict";
 
 const TEST_STORE_FILE_NAME = "test-profile.json";
-const CURRENT_CC_VERSION = 3;
+const { CREDIT_CARD_SCHEMA_VERSION } = ChromeUtils.importESModule(
+  "resource://autofill/FormAutofillStorageBase.sys.mjs"
+);
 
 // NOTE: a guide to reading these test-cases:
 // parent: What the local record looked like the last time we wrote the
@@ -192,6 +194,8 @@ const ADDRESS_RECONCILE_TESTCASES = [
       "given-name": "Mark",
       "family-name": "Hammond",
       country: "NZ",
+      // We also had an unknown field we round-tripped
+      foo: "bar",
     },
     local: [
       {
@@ -208,12 +212,16 @@ const ADDRESS_RECONCILE_TESTCASES = [
       "given-name": "Mark",
       "family-name": "Hammond",
       country: "AU",
+      // This is a new unknown field that should send instead!
+      "unknown-1": "an unknown field from another client",
     },
     reconciled: {
       guid: "e087a06dfc57",
       "given-name": "Skip",
       "family-name": "Hammond",
       country: "AU",
+      // This is a new unknown field that should send instead!
+      "unknown-1": "an unknown field from another client",
     },
   },
   {
@@ -224,16 +232,19 @@ const ADDRESS_RECONCILE_TESTCASES = [
       "given-name": "Mark",
       "family-name": "Hammond",
       tel: "123456",
+      country: "US",
     },
     local: [
       {
         "given-name": "Skip",
         "family-name": "Hammond",
+        country: "US",
       },
       {
         "given-name": "Skip",
         "family-name": "Hammond",
         organization: "Mozilla",
+        country: "US",
       },
     ],
     remote: {
@@ -261,6 +272,8 @@ const ADDRESS_RECONCILE_TESTCASES = [
       version: 1,
       "given-name": "Mark",
       "family-name": "Hammond",
+      // unknown fields we previously roundtripped
+      foo: "bar",
     },
     local: [
       {
@@ -273,6 +286,8 @@ const ADDRESS_RECONCILE_TESTCASES = [
       version: 1,
       "given-name": "Skip",
       "family-name": "Hammond",
+      // New unknown field that should be the new round trip
+      "unknown-1": "an unknown field from another client",
     },
     reconciled: {
       guid: "0b3a72a1bea2",
@@ -288,6 +303,7 @@ const ADDRESS_RECONCILE_TESTCASES = [
       version: 1,
       "given-name": "Mark",
       "family-name": "Hammond",
+      "unknown-1": "an unknown field from another client",
     },
     local: [
       {
@@ -302,18 +318,21 @@ const ADDRESS_RECONCILE_TESTCASES = [
       version: 1,
       "given-name": "Kip",
       "family-name": "Hammond",
+      "unknown-1": "an unknown field from another client",
     },
     forked: {
       // So we've forked the local record to a new GUID (and the next sync is
       // going to write this as a new record)
       "given-name": "Skip",
       "family-name": "Hammond",
+      "unknown-1": "an unknown field from another client",
     },
     reconciled: {
       // And we've updated the local version of the record to be the remote version.
       guid: "62068784d089",
       "given-name": "Kip",
       "family-name": "Hammond",
+      "unknown-1": "an unknown field from another client",
     },
   },
   {
@@ -502,9 +521,10 @@ const CREDIT_CARD_RECONCILE_TESTCASES = [
     parent: {
       // So when we last wrote the record to the server, it had these values.
       guid: "2bbd2d8fbc6b",
-      version: CURRENT_CC_VERSION,
+      version: CREDIT_CARD_SCHEMA_VERSION,
       "cc-name": "John Doe",
       "cc-number": "4111111111111111",
+      "unknown-1": "an unknown field from another client",
     },
     local: [
       {
@@ -519,23 +539,26 @@ const CREDIT_CARD_RECONCILE_TESTCASES = [
       // we can deduce the record hasn't actually been changed remotely so we
       // can safely ignore the incoming record and write our local changes.
       guid: "2bbd2d8fbc6b",
-      version: CURRENT_CC_VERSION,
+      version: CREDIT_CARD_SCHEMA_VERSION,
       "cc-name": "John Doe",
       "cc-number": "4111111111111111",
+      "unknown-2": "a newer unknown field",
     },
     reconciled: {
       guid: "2bbd2d8fbc6b",
       "cc-name": "John Doe",
       "cc-number": "4929001587121045",
+      "unknown-2": "a newer unknown field",
     },
   },
   {
     description: "Remote change",
     parent: {
       guid: "e3680e9f890d",
-      version: CURRENT_CC_VERSION,
+      version: CREDIT_CARD_SCHEMA_VERSION,
       "cc-name": "John Doe",
       "cc-number": "4111111111111111",
+      "unknown-1": "unknown field",
     },
     local: [
       {
@@ -545,14 +568,16 @@ const CREDIT_CARD_RECONCILE_TESTCASES = [
     ],
     remote: {
       guid: "e3680e9f890d",
-      version: CURRENT_CC_VERSION,
+      version: CREDIT_CARD_SCHEMA_VERSION,
       "cc-name": "John Doe",
       "cc-number": "4929001587121045",
+      "unknown-1": "unknown field",
     },
     reconciled: {
       guid: "e3680e9f890d",
       "cc-name": "John Doe",
       "cc-number": "4929001587121045",
+      "unknown-1": "unknown field",
     },
   },
 
@@ -560,7 +585,7 @@ const CREDIT_CARD_RECONCILE_TESTCASES = [
     description: "New local field",
     parent: {
       guid: "0cba738b1be0",
-      version: CURRENT_CC_VERSION,
+      version: CREDIT_CARD_SCHEMA_VERSION,
       "cc-name": "John Doe",
       "cc-number": "4111111111111111",
     },
@@ -573,7 +598,7 @@ const CREDIT_CARD_RECONCILE_TESTCASES = [
     ],
     remote: {
       guid: "0cba738b1be0",
-      version: CURRENT_CC_VERSION,
+      version: CREDIT_CARD_SCHEMA_VERSION,
       "cc-name": "John Doe",
       "cc-number": "4111111111111111",
     },
@@ -588,7 +613,7 @@ const CREDIT_CARD_RECONCILE_TESTCASES = [
     description: "New remote field",
     parent: {
       guid: "be3ef97f8285",
-      version: CURRENT_CC_VERSION,
+      version: CREDIT_CARD_SCHEMA_VERSION,
       "cc-name": "John Doe",
       "cc-number": "4111111111111111",
     },
@@ -600,7 +625,7 @@ const CREDIT_CARD_RECONCILE_TESTCASES = [
     ],
     remote: {
       guid: "be3ef97f8285",
-      version: CURRENT_CC_VERSION,
+      version: CREDIT_CARD_SCHEMA_VERSION,
       "cc-name": "John Doe",
       "cc-number": "4111111111111111",
       "cc-exp-month": 12,
@@ -616,7 +641,7 @@ const CREDIT_CARD_RECONCILE_TESTCASES = [
     description: "Deleted field locally",
     parent: {
       guid: "9627322248ec",
-      version: CURRENT_CC_VERSION,
+      version: CREDIT_CARD_SCHEMA_VERSION,
       "cc-name": "John Doe",
       "cc-number": "4111111111111111",
       "cc-exp-month": 12,
@@ -629,7 +654,7 @@ const CREDIT_CARD_RECONCILE_TESTCASES = [
     ],
     remote: {
       guid: "9627322248ec",
-      version: CURRENT_CC_VERSION,
+      version: CREDIT_CARD_SCHEMA_VERSION,
       "cc-name": "John Doe",
       "cc-number": "4111111111111111",
       "cc-exp-month": 12,
@@ -644,7 +669,7 @@ const CREDIT_CARD_RECONCILE_TESTCASES = [
     description: "Deleted field remotely",
     parent: {
       guid: "7d7509f3eeb2",
-      version: CURRENT_CC_VERSION,
+      version: CREDIT_CARD_SCHEMA_VERSION,
       "cc-name": "John Doe",
       "cc-number": "4111111111111111",
       "cc-exp-month": 12,
@@ -658,7 +683,7 @@ const CREDIT_CARD_RECONCILE_TESTCASES = [
     ],
     remote: {
       guid: "7d7509f3eeb2",
-      version: CURRENT_CC_VERSION,
+      version: CREDIT_CARD_SCHEMA_VERSION,
       "cc-name": "John Doe",
       "cc-number": "4111111111111111",
     },
@@ -673,10 +698,11 @@ const CREDIT_CARD_RECONCILE_TESTCASES = [
     parent: {
       // The last time we wrote this to the server, "cc-exp-month" was 12.
       guid: "e087a06dfc57",
-      version: CURRENT_CC_VERSION,
+      version: CREDIT_CARD_SCHEMA_VERSION,
       "cc-name": "John Doe",
       "cc-number": "4111111111111111",
       "cc-exp-month": 12,
+      "unknown-1": "unknown field",
     },
     local: [
       {
@@ -689,25 +715,28 @@ const CREDIT_CARD_RECONCILE_TESTCASES = [
     remote: {
       // Remotely, we've changed "cc-exp-month" to 1.
       guid: "e087a06dfc57",
-      version: CURRENT_CC_VERSION,
+      version: CREDIT_CARD_SCHEMA_VERSION,
       "cc-name": "John Doe",
       "cc-number": "4111111111111111",
       "cc-exp-month": 1,
+      "unknown-2": "a newer unknown field",
     },
     reconciled: {
       guid: "e087a06dfc57",
       "cc-name": "John Doe",
       "cc-number": "4929001587121045",
       "cc-exp-month": 1,
+      "unknown-2": "a newer unknown field",
     },
   },
   {
     description: "Multiple local changes",
     parent: {
       guid: "340a078c596f",
-      version: CURRENT_CC_VERSION,
+      version: CREDIT_CARD_SCHEMA_VERSION,
       "cc-name": "John Doe",
       "cc-number": "4111111111111111",
+      "unknown-1": "unknown field",
     },
     local: [
       {
@@ -722,10 +751,11 @@ const CREDIT_CARD_RECONCILE_TESTCASES = [
     ],
     remote: {
       guid: "340a078c596f",
-      version: CURRENT_CC_VERSION,
+      version: CREDIT_CARD_SCHEMA_VERSION,
       "cc-name": "John Doe",
       "cc-number": "4111111111111111",
       "cc-exp-year": 2000,
+      "unknown-1": "unknown field",
     },
     reconciled: {
       guid: "340a078c596f",
@@ -733,6 +763,7 @@ const CREDIT_CARD_RECONCILE_TESTCASES = [
       "cc-number": "4111111111111111",
       "cc-exp-month": 12,
       "cc-exp-year": 2000,
+      "unknown-1": "unknown field",
     },
   },
   {
@@ -741,7 +772,7 @@ const CREDIT_CARD_RECONCILE_TESTCASES = [
     description: "Same change to local and remote",
     parent: {
       guid: "0b3a72a1bea2",
-      version: CURRENT_CC_VERSION,
+      version: CREDIT_CARD_SCHEMA_VERSION,
       "cc-name": "John Doe",
       "cc-number": "4111111111111111",
     },
@@ -753,7 +784,7 @@ const CREDIT_CARD_RECONCILE_TESTCASES = [
     ],
     remote: {
       guid: "0b3a72a1bea2",
-      version: CURRENT_CC_VERSION,
+      version: CREDIT_CARD_SCHEMA_VERSION,
       "cc-name": "John Doe",
       "cc-number": "4929001587121045",
     },
@@ -768,9 +799,10 @@ const CREDIT_CARD_RECONCILE_TESTCASES = [
     parent: {
       // This is what we last wrote to the sync server.
       guid: "62068784d089",
-      version: CURRENT_CC_VERSION,
+      version: CREDIT_CARD_SCHEMA_VERSION,
       "cc-name": "John Doe",
       "cc-number": "4111111111111111",
+      "unknown-1": "unknown field",
     },
     local: [
       {
@@ -782,28 +814,31 @@ const CREDIT_CARD_RECONCILE_TESTCASES = [
     remote: {
       // An incoming record has a different cc-number than any of the above!
       guid: "62068784d089",
-      version: CURRENT_CC_VERSION,
+      version: CREDIT_CARD_SCHEMA_VERSION,
       "cc-name": "John Doe",
       "cc-number": "4929001587121045",
+      "unknown-1": "unknown field",
     },
     forked: {
       // So we've forked the local record to a new GUID (and the next sync is
       // going to write this as a new record)
       "cc-name": "John Doe",
       "cc-number": "5103059495477870",
+      "unknown-1": "unknown field",
     },
     reconciled: {
       // And we've updated the local version of the record to be the remote version.
       guid: "62068784d089",
       "cc-name": "John Doe",
       "cc-number": "4929001587121045",
+      "unknown-1": "unknown field",
     },
   },
   {
     description: "Conflicting changes to multiple fields",
     parent: {
       guid: "244dbb692e94",
-      version: CURRENT_CC_VERSION,
+      version: CREDIT_CARD_SCHEMA_VERSION,
       "cc-name": "John Doe",
       "cc-number": "4111111111111111",
       "cc-exp-month": 12,
@@ -817,7 +852,7 @@ const CREDIT_CARD_RECONCILE_TESTCASES = [
     ],
     remote: {
       guid: "244dbb692e94",
-      version: CURRENT_CC_VERSION,
+      version: CREDIT_CARD_SCHEMA_VERSION,
       "cc-name": "John Doe",
       "cc-number": "4929001587121045",
       "cc-exp-month": 3,
@@ -838,7 +873,7 @@ const CREDIT_CARD_RECONCILE_TESTCASES = [
     description: "Field deleted locally, changed remotely",
     parent: {
       guid: "6fc45e03d19a",
-      version: CURRENT_CC_VERSION,
+      version: CREDIT_CARD_SCHEMA_VERSION,
       "cc-name": "John Doe",
       "cc-number": "4111111111111111",
       "cc-exp-month": 12,
@@ -851,7 +886,7 @@ const CREDIT_CARD_RECONCILE_TESTCASES = [
     ],
     remote: {
       guid: "6fc45e03d19a",
-      version: CURRENT_CC_VERSION,
+      version: CREDIT_CARD_SCHEMA_VERSION,
       "cc-name": "John Doe",
       "cc-number": "4111111111111111",
       "cc-exp-month": 3,
@@ -871,7 +906,7 @@ const CREDIT_CARD_RECONCILE_TESTCASES = [
     description: "Field changed locally, deleted remotely",
     parent: {
       guid: "fff9fa27fa18",
-      version: CURRENT_CC_VERSION,
+      version: CREDIT_CARD_SCHEMA_VERSION,
       "cc-name": "John Doe",
       "cc-number": "4111111111111111",
       "cc-exp-month": 12,
@@ -885,7 +920,7 @@ const CREDIT_CARD_RECONCILE_TESTCASES = [
     ],
     remote: {
       guid: "fff9fa27fa18",
-      version: CURRENT_CC_VERSION,
+      version: CREDIT_CARD_SCHEMA_VERSION,
       "cc-name": "John Doe",
       "cc-number": "4111111111111111",
     },
@@ -908,7 +943,7 @@ const CREDIT_CARD_RECONCILE_TESTCASES = [
       "Created, last modified time reconciliation without local changes",
     parent: {
       guid: "5113f329c42f",
-      version: CURRENT_CC_VERSION,
+      version: CREDIT_CARD_SCHEMA_VERSION,
       "cc-name": "John Doe",
       "cc-number": "4111111111111111",
       timeCreated: 1234,
@@ -919,7 +954,7 @@ const CREDIT_CARD_RECONCILE_TESTCASES = [
     local: [],
     remote: {
       guid: "5113f329c42f",
-      version: CURRENT_CC_VERSION,
+      version: CREDIT_CARD_SCHEMA_VERSION,
       "cc-name": "John Doe",
       "cc-number": "4111111111111111",
       timeCreated: 1200,
@@ -944,7 +979,7 @@ const CREDIT_CARD_RECONCILE_TESTCASES = [
       "Created, last modified time reconciliation with local changes",
     parent: {
       guid: "791e5608b80a",
-      version: CURRENT_CC_VERSION,
+      version: CREDIT_CARD_SCHEMA_VERSION,
       "cc-name": "John Doe",
       "cc-number": "4111111111111111",
       timeCreated: 1234,
@@ -960,7 +995,7 @@ const CREDIT_CARD_RECONCILE_TESTCASES = [
     ],
     remote: {
       guid: "791e5608b80a",
-      version: CURRENT_CC_VERSION,
+      version: CREDIT_CARD_SCHEMA_VERSION,
       "cc-name": "John Doe",
       "cc-number": "4111111111111111",
       timeCreated: 1300,
@@ -1004,6 +1039,8 @@ add_task(async function test_reconcile_idempotent() {
       version: 1,
       "given-name": "Mark",
       "family-name": "Hammond",
+      // an unknown field from a previous sync
+      foo: "bar",
     },
     { sourceSync: true }
   );
@@ -1019,6 +1056,7 @@ add_task(async function test_reconcile_idempotent() {
     "given-name": "Mark",
     "family-name": "Hammond",
     tel: "123456",
+    "unknown-1": "an unknown field from another client",
   };
 
   {
@@ -1035,6 +1073,7 @@ add_task(async function test_reconcile_idempotent() {
         "family-name": "Hammond",
         organization: "Mozilla",
         tel: "123456",
+        "unknown-1": "an unknown field from another client",
       }),
       "First merge should merge local and remote changes"
     );
@@ -1054,6 +1093,7 @@ add_task(async function test_reconcile_idempotent() {
         "family-name": "Hammond",
         organization: "Mozilla",
         tel: "123456",
+        "unknown-1": "an unknown field from another client",
       }),
       "Second merge should not change record"
     );

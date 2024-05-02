@@ -1,4 +1,4 @@
-Cu.import("resource://testing-common/httpd.js");
+const { HttpServer } = ChromeUtils.importESModule("resource://testing-common/httpd.sys.mjs");
 
 var httpserver = new HttpServer();
 var httpserver2 = new HttpServer();
@@ -63,7 +63,7 @@ function run_test()
 
   var principal = res.responseXML.nodePrincipal;
   Assert.ok(principal.isContentPrincipal);
-  var requestURL = "http://localhost:4444/simple";
+  var requestURL = "http://localhost:4444/redirect";
   Assert.equal(principal.spec, requestURL);
 
   // negative test sync XHR sending (to ensure that the xhr do not have chrome caps, see bug 779821)
@@ -85,7 +85,7 @@ function run_test()
 
   var principal = res.responseXML.nodePrincipal;
   Assert.ok(principal.isContentPrincipal);
-  var requestURL = "http://localhost:4444/simple";
+  var requestURL = "http://localhost:4444/redirect";
   Assert.equal(principal.spec, requestURL);
 
   httpserver2.stop(finishIfDone);

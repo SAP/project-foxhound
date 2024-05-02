@@ -24,13 +24,20 @@
 
 "use strict";
 
+// Enable the collection (during test) for all products so even products
+// that don't collect the data will be able to run the test without failure.
+Services.prefs.setBoolPref(
+  "toolkit.telemetry.testing.overrideProductsCheck",
+  true
+);
+
 do_get_profile(); // must be called before getting nsIX509CertDB
 const certdb = Cc["@mozilla.org/security/x509certdb;1"].getService(
   Ci.nsIX509CertDB
 );
 
 function add_clear_override(host) {
-  add_test(function() {
+  add_test(function () {
     let certOverrideService = Cc[
       "@mozilla.org/security/certoverride;1"
     ].getService(Ci.nsICertOverrideService);
@@ -43,7 +50,7 @@ function test_strict() {
   // In strict mode, we always evaluate pinning data, regardless of whether the
   // issuer is a built-in trust anchor. We only enforce pins that are not in
   // test mode.
-  add_test(function() {
+  add_test(function () {
     Services.prefs.setIntPref("security.cert_pinning.enforcement_level", 2);
     run_next_test();
   });
@@ -52,7 +59,6 @@ function test_strict() {
   // this host, we don't allow overrides.
   add_prevented_cert_override_test(
     "unknownissuer.include-subdomains.pinning.example.com",
-    Ci.nsICertOverrideService.ERROR_UNTRUSTED,
     SEC_ERROR_UNKNOWN_ISSUER
   );
   add_clear_override("unknownissuer.include-subdomains.pinning.example.com");
@@ -103,7 +109,6 @@ function test_strict() {
   // Similarly, this pin is in test-mode, so it should be overridable.
   add_cert_override_test(
     "unknownissuer.test-mode.pinning.example.com",
-    Ci.nsICertOverrideService.ERROR_UNTRUSTED,
     SEC_ERROR_UNKNOWN_ISSUER
   );
   add_clear_override("unknownissuer.test-mode.pinning.example.com");
@@ -112,7 +117,7 @@ function test_strict() {
 function test_mitm() {
   // In MITM mode, we allow pinning to pass if the chain resolves to any
   // user-specified trust anchor, even if it is not in the pinset.
-  add_test(function() {
+  add_test(function () {
     Services.prefs.setIntPref("security.cert_pinning.enforcement_level", 1);
     run_next_test();
   });
@@ -132,7 +137,6 @@ function test_mitm() {
   // anchor, so we can't allow overrides for it).
   add_prevented_cert_override_test(
     "unknownissuer.include-subdomains.pinning.example.com",
-    Ci.nsICertOverrideService.ERROR_UNTRUSTED,
     SEC_ERROR_UNKNOWN_ISSUER
   );
   add_clear_override("unknownissuer.include-subdomains.pinning.example.com");
@@ -155,7 +159,6 @@ function test_mitm() {
   add_connection_test("test-mode.pinning.example.com", PRErrorCodeSuccess);
   add_cert_override_test(
     "unknownissuer.test-mode.pinning.example.com",
-    Ci.nsICertOverrideService.ERROR_UNTRUSTED,
     SEC_ERROR_UNKNOWN_ISSUER
   );
   add_clear_override("unknownissuer.test-mode.pinning.example.com");
@@ -163,7 +166,7 @@ function test_mitm() {
 
 function test_disabled() {
   // Disable pinning.
-  add_test(function() {
+  add_test(function () {
     Services.prefs.setIntPref("security.cert_pinning.enforcement_level", 0);
     run_next_test();
   });
@@ -192,13 +195,11 @@ function test_disabled() {
 
   add_cert_override_test(
     "unknownissuer.include-subdomains.pinning.example.com",
-    Ci.nsICertOverrideService.ERROR_UNTRUSTED,
     SEC_ERROR_UNKNOWN_ISSUER
   );
   add_clear_override("unknownissuer.include-subdomains.pinning.example.com");
   add_cert_override_test(
     "unknownissuer.test-mode.pinning.example.com",
-    Ci.nsICertOverrideService.ERROR_UNTRUSTED,
     SEC_ERROR_UNKNOWN_ISSUER
   );
   add_clear_override("unknownissuer.test-mode.pinning.example.com");
@@ -206,7 +207,7 @@ function test_disabled() {
 
 function test_enforce_test_mode() {
   // In enforce test mode, we always enforce all pins, even test pins.
-  add_test(function() {
+  add_test(function () {
     Services.prefs.setIntPref("security.cert_pinning.enforcement_level", 3);
     run_next_test();
   });
@@ -215,7 +216,6 @@ function test_enforce_test_mode() {
   // this host, we don't allow overrides.
   add_prevented_cert_override_test(
     "unknownissuer.include-subdomains.pinning.example.com",
-    Ci.nsICertOverrideService.ERROR_UNTRUSTED,
     SEC_ERROR_UNKNOWN_ISSUER
   );
   add_clear_override("unknownissuer.include-subdomains.pinning.example.com");
@@ -259,7 +259,6 @@ function test_enforce_test_mode() {
   // this host (and since we're enforcing test mode), we don't allow overrides.
   add_prevented_cert_override_test(
     "unknownissuer.test-mode.pinning.example.com",
-    Ci.nsICertOverrideService.ERROR_UNTRUSTED,
     SEC_ERROR_UNKNOWN_ISSUER
   );
   add_clear_override("unknownissuer.test-mode.pinning.example.com");
@@ -312,7 +311,7 @@ function run_test() {
   test_disabled();
   test_enforce_test_mode();
 
-  add_test(function() {
+  add_test(function () {
     check_pinning_telemetry();
   });
   run_next_test();

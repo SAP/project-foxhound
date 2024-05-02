@@ -5,7 +5,9 @@
 
 // Check the output of getNodeCssIssues
 
-const { COMPATIBILITY_ISSUE_TYPE } = require("devtools/shared/constants");
+const {
+  COMPATIBILITY_ISSUE_TYPE,
+} = require("resource://devtools/shared/constants.js");
 const URL = MAIN_DOMAIN + "doc_compatibility.html";
 
 const CHROME_81 = {
@@ -70,6 +72,7 @@ const ISSUE_USER_SELECT = {
   property: "user-select",
   aliases: ["-moz-user-select"],
   url: "https://developer.mozilla.org/docs/Web/CSS/user-select",
+  specUrl: "https://drafts.csswg.org/css-ui/#content-selection",
   deprecated: false,
   experimental: false,
   prefixNeeded: true,
@@ -86,6 +89,7 @@ const ISSUE_CLIP = {
   type: COMPATIBILITY_ISSUE_TYPE.CSS_PROPERTY,
   property: "clip",
   url: "https://developer.mozilla.org/docs/Web/CSS/clip",
+  specUrl: "https://drafts.fxtf.org/css-masking/#clip-property",
   deprecated: true,
   experimental: false,
   unsupportedBrowsers: [],
@@ -105,7 +109,7 @@ async function testNodeCssIssues(selector, walker, compatibility, expected) {
   );
 }
 
-add_task(async function() {
+add_task(async function () {
   const { inspector, walker, target } = await initInspectorFront(URL);
   const compatibility = await inspector.getCompatibilityFront();
 

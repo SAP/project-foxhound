@@ -1,5 +1,8 @@
-/*! Standard Portable Intermediate Representation (SPIR-V) backend
-!*/
+/*!
+Backend for [SPIR-V][spv] (Standard Portable Intermediate Representation).
+
+[spv]: https://www.khronos.org/registry/SPIR-V/
+*/
 
 mod block;
 mod helpers;
@@ -7,6 +10,7 @@ mod image;
 mod index;
 mod instructions;
 mod layout;
+mod ray;
 mod recyclable;
 mod selection;
 mod writer;
@@ -66,8 +70,6 @@ pub enum Error {
     FeatureNotImplemented(&'static str),
     #[error("module is not validated properly: {0}")]
     Validation(&'static str),
-    #[error(transparent)]
-    Proc(#[from] crate::proc::ProcError),
 }
 
 #[derive(Default)]
@@ -78,6 +80,12 @@ impl IdGenerator {
         self.0 += 1;
         self.0
     }
+}
+
+#[derive(Debug, Clone)]
+pub struct DebugInfo<'a> {
+    pub source_code: &'a str,
+    pub file_name: &'a std::path::Path,
 }
 
 /// A SPIR-V block to which we are still adding instructions.
@@ -103,7 +111,7 @@ struct TerminatedBlock {
 }
 
 impl Block {
-    fn new(label_id: Word) -> Self {
+    const fn new(label_id: Word) -> Self {
         Block {
             label_id,
             body: Vec::new(),
@@ -174,6 +182,7 @@ struct LocalImageType {
 
 bitflags::bitflags! {
     /// Flags corresponding to the boolean(-ish) parameters to OpTypeImage.
+    #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
     pub struct ImageTypeFlags: u8 {
         const DEPTH = 0x1;
         const ARRAYED = 0x2;
@@ -267,9 +276,8 @@ enum LocalType {
         /// If `None`, this represents a scalar type. If `Some`, this represents
         /// a vector type of the given size.
         vector_size: Option<crate::VectorSize>,
-        kind: crate::ScalarKind,
-        width: crate::Bytes,
-        pointer_class: Option<spirv::StorageClass>,
+        scalar: crate::Scalar,
+        pointer_space: Option<spirv::StorageClass>,
     },
     /// A matrix of floating-point values.
     Matrix {
@@ -286,6 +294,22 @@ enum LocalType {
         image_type_id: Word,
     },
     Sampler,
+    /// Equivalent to a [`LocalType::Pointer`] whose `base` is a Naga IR [`BindingArray`]. SPIR-V
+    /// permits duplicated `OpTypePointer` ids, so it's fine to have two different [`LocalType`]
+    /// representations for pointer types.
+    ///
+    /// [`BindingArray`]: crate::TypeInner::BindingArray
+    PointerToBindingArray {
+        base: Handle<crate::Type>,
+        size: u32,
+        space: crate::AddressSpace,
+    },
+    BindingArray {
+        base: Handle<crate::Type>,
+        size: u32,
+    },
+    AccelerationStructure,
+    RayQuery,
 }
 
 /// A type encountered during SPIR-V generation.
@@ -330,19 +354,15 @@ struct LookupFunctionType {
 
 fn make_local(inner: &crate::TypeInner) -> Option<LocalType> {
     Some(match *inner {
-        crate::TypeInner::Scalar { kind, width } | crate::TypeInner::Atomic { kind, width } => {
-            LocalType::Value {
-                vector_size: None,
-                kind,
-                width,
-                pointer_class: None,
-            }
-        }
-        crate::TypeInner::Vector { size, kind, width } => LocalType::Value {
+        crate::TypeInner::Scalar(scalar) | crate::TypeInner::Atomic(scalar) => LocalType::Value {
+            vector_size: None,
+            scalar,
+            pointer_space: None,
+        },
+        crate::TypeInner::Vector { size, scalar } => LocalType::Value {
             vector_size: Some(size),
-            kind,
-            width,
-            pointer_class: None,
+            scalar,
+            pointer_space: None,
         },
         crate::TypeInner::Matrix {
             columns,
@@ -353,20 +373,18 @@ fn make_local(inner: &crate::TypeInner) -> Option<LocalType> {
             rows,
             width,
         },
-        crate::TypeInner::Pointer { base, class } => LocalType::Pointer {
+        crate::TypeInner::Pointer { base, space } => LocalType::Pointer {
             base,
-            class: helpers::map_storage_class(class),
+            class: helpers::map_storage_class(space),
         },
         crate::TypeInner::ValuePointer {
             size,
-            kind,
-            width,
-            class,
+            scalar,
+            space,
         } => LocalType::Value {
             vector_size: size,
-            kind,
-            width,
-            pointer_class: Some(helpers::map_storage_class(class)),
+            scalar,
+            pointer_space: Some(helpers::map_storage_class(space)),
         },
         crate::TypeInner::Image {
             dim,
@@ -374,7 +392,11 @@ fn make_local(inner: &crate::TypeInner) -> Option<LocalType> {
             class,
         } => LocalType::Image(LocalImageType::from_inner(dim, arrayed, class)),
         crate::TypeInner::Sampler { comparison: _ } => LocalType::Sampler,
-        _ => return None,
+        crate::TypeInner::AccelerationStructure => LocalType::AccelerationStructure,
+        crate::TypeInner::RayQuery => LocalType::RayQuery,
+        crate::TypeInner::Array { .. }
+        | crate::TypeInner::Struct { .. }
+        | crate::TypeInner::BindingArray { .. } => return None,
     })
 }
 
@@ -430,14 +452,37 @@ impl recyclable::Recyclable for CachedExpressions {
     }
 }
 
+#[derive(Eq, Hash, PartialEq)]
+enum CachedConstant {
+    Literal(crate::Literal),
+    Composite {
+        ty: LookupType,
+        constituent_ids: Vec<Word>,
+    },
+    ZeroValue(Word),
+}
+
 #[derive(Clone)]
 struct GlobalVariable {
-    /// ID of the variable. Not really used.
+    /// ID of the OpVariable that declares the global.
+    ///
+    /// If you need the variable's value, use [`access_id`] instead of this
+    /// field. If we wrapped the Naga IR `GlobalVariable`'s type in a struct to
+    /// comply with Vulkan's requirements, then this points to the `OpVariable`
+    /// with the synthesized struct type, whereas `access_id` points to the
+    /// field of said struct that holds the variable's actual value.
+    ///
+    /// This is used to compute the `access_id` pointer in function prologues,
+    /// and used for `ArrayLength` expressions, which do need the struct.
+    ///
+    /// [`access_id`]: GlobalVariable::access_id
     var_id: Word,
-    /// For `StorageClass::Handle` variables, this ID is recorded in the function
+
+    /// For `AddressSpace::Handle` variables, this ID is recorded in the function
     /// prelude block (and reset before every function) as `OpLoad` of the variable.
     /// It is then used for all the global ops, such as `OpImageSample`.
     handle_id: Word,
+
     /// Actual ID used to access this variable.
     /// For wrapped buffer variables, this ID is `OpAccessChain` into the
     /// wrapper. Otherwise, the same as `var_id`.
@@ -453,7 +498,7 @@ struct GlobalVariable {
 }
 
 impl GlobalVariable {
-    fn dummy() -> Self {
+    const fn dummy() -> Self {
         Self {
             var_id: 0,
             handle_id: 0,
@@ -461,7 +506,7 @@ impl GlobalVariable {
         }
     }
 
-    fn new(id: Word) -> Self {
+    const fn new(id: Word) -> Self {
         Self {
             var_id: id,
             handle_id: 0,
@@ -505,6 +550,9 @@ struct BlockContext<'w> {
 
     /// The `Writer`'s temporary vector, for convenience.
     temp_list: Vec<Word>,
+
+    /// Tracks the constness of `Expression`s residing in `self.ir_function.expressions`
+    expression_constness: crate::proc::ExpressionConstnessTracker,
 }
 
 impl BlockContext<'_> {
@@ -521,13 +569,12 @@ impl BlockContext<'_> {
     }
 
     fn get_index_constant(&mut self, index: Word) -> Word {
-        self.writer
-            .get_constant_scalar(crate::ScalarValue::Uint(index as _), 4)
+        self.writer.get_constant_scalar(crate::Literal::U32(index))
     }
 
     fn get_scope_constant(&mut self, scope: Word) -> Word {
         self.writer
-            .get_constant_scalar(crate::ScalarValue::Sint(scope as _), 4)
+            .get_constant_scalar(crate::Literal::I32(scope as _))
     }
 }
 
@@ -551,31 +598,39 @@ pub struct Writer {
     ///
     /// If `capabilities_available` is `Some`, then this is always a subset of
     /// that.
-    capabilities_used: crate::FastHashSet<Capability>,
+    capabilities_used: crate::FastIndexSet<Capability>,
+
+    /// The set of spirv extensions used.
+    extensions_used: crate::FastIndexSet<&'static str>,
 
     debugs: Vec<Instruction>,
     annotations: Vec<Instruction>,
     flags: WriterFlags,
     bounds_check_policies: BoundsCheckPolicies,
+    zero_initialize_workgroup_memory: ZeroInitializeWorkgroupMemoryMode,
     void_type: Word,
     //TODO: convert most of these into vectors, addressable by handle indices
     lookup_type: crate::FastHashMap<LookupType, Word>,
     lookup_function: crate::FastHashMap<Handle<crate::Function>, Word>,
     lookup_function_type: crate::FastHashMap<LookupFunctionType, Word>,
+    /// Indexed by const-expression handle indexes
     constant_ids: Vec<Word>,
-    cached_constants: crate::FastHashMap<(crate::ScalarValue, crate::Bytes), Word>,
+    cached_constants: crate::FastHashMap<CachedConstant, Word>,
     global_variables: Vec<GlobalVariable>,
+    binding_map: BindingMap,
 
     // Cached expressions are only meaningful within a BlockContext, but we
     // retain the table here between functions to save heap allocations.
     saved_cached: CachedExpressions,
 
     gl450_ext_inst_id: Word,
+
     // Just a temporary list of SPIR-V ids
     temp_list: Vec<Word>,
 }
 
 bitflags::bitflags! {
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
     pub struct WriterFlags: u32 {
         /// Include debug labels for everything.
         const DEBUG = 0x1;
@@ -593,13 +648,36 @@ bitflags::bitflags! {
     }
 }
 
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serialize", derive(serde::Serialize))]
+#[cfg_attr(feature = "deserialize", derive(serde::Deserialize))]
+pub struct BindingInfo {
+    /// If the binding is an unsized binding array, this overrides the size.
+    pub binding_array_size: Option<u32>,
+}
+
+// Using `BTreeMap` instead of `HashMap` so that we can hash itself.
+pub type BindingMap = std::collections::BTreeMap<crate::ResourceBinding, BindingInfo>;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ZeroInitializeWorkgroupMemoryMode {
+    /// Via `VK_KHR_zero_initialize_workgroup_memory` or Vulkan 1.3
+    Native,
+    /// Via assignments + barrier
+    Polyfill,
+    None,
+}
+
 #[derive(Debug, Clone)]
-pub struct Options {
+pub struct Options<'a> {
     /// (Major, Minor) target version of the SPIR-V.
     pub lang_version: (u8, u8),
 
     /// Configuration flags for the writer.
     pub flags: WriterFlags,
+
+    /// Map of resources to information about the binding.
+    pub binding_map: BindingMap,
 
     /// If given, the set of capabilities modules are allowed to use. Code that
     /// requires capabilities beyond these is rejected with an error.
@@ -610,9 +688,14 @@ pub struct Options {
     /// How should generate code handle array, vector, matrix, or image texel
     /// indices that are out of range?
     pub bounds_check_policies: BoundsCheckPolicies,
+
+    /// Dictates the way workgroup variables should be zero initialized
+    pub zero_initialize_workgroup_memory: ZeroInitializeWorkgroupMemoryMode,
+
+    pub debug_info: Option<DebugInfo<'a>>,
 }
 
-impl Default for Options {
+impl<'a> Default for Options<'a> {
     fn default() -> Self {
         let mut flags = WriterFlags::ADJUST_COORDINATE_SPACE
             | WriterFlags::LABEL_VARYINGS
@@ -623,23 +706,25 @@ impl Default for Options {
         Options {
             lang_version: (1, 0),
             flags,
+            binding_map: BindingMap::default(),
             capabilities: None,
             bounds_check_policies: crate::proc::BoundsCheckPolicies::default(),
+            zero_initialize_workgroup_memory: ZeroInitializeWorkgroupMemoryMode::Polyfill,
+            debug_info: None,
         }
     }
 }
 
-// A subset of options that are meant to be changed per pipeline.
+// A subset of options meant to be changed per pipeline.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serialize", derive(serde::Serialize))]
 #[cfg_attr(feature = "deserialize", derive(serde::Deserialize))]
 pub struct PipelineOptions {
-    /// The stage of the entry point
+    /// The stage of the entry point.
     pub shader_stage: crate::ShaderStage,
-    /// The name of the entry point
+    /// The name of the entry point.
     ///
-    /// If no entry point that matches is found a error will be thrown while creating a new instance
-    /// of [`Writer`](struct.Writer.html)
+    /// If no entry point that matches is found while creating a [`Writer`], a error will be thrown.
     pub entry_point: String,
 }
 
@@ -649,8 +734,15 @@ pub fn write_vec(
     options: &Options,
     pipeline_options: Option<&PipelineOptions>,
 ) -> Result<Vec<u32>, Error> {
-    let mut words = Vec::new();
+    let mut words: Vec<u32> = Vec::new();
     let mut w = Writer::new(options)?;
-    w.write(module, info, pipeline_options, &mut words)?;
+
+    w.write(
+        module,
+        info,
+        pipeline_options,
+        &options.debug_info,
+        &mut words,
+    )?;
     Ok(words)
 }

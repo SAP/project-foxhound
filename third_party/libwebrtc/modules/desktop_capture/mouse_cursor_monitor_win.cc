@@ -8,7 +8,6 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include <assert.h>
 #include <string.h>
 
 #include <memory>
@@ -22,8 +21,6 @@
 #include "modules/desktop_capture/win/screen_capture_utils.h"
 #include "modules/desktop_capture/win/window_capture_utils.h"
 #include "rtc_base/logging.h"
-
-#include <windows.h>
 
 namespace webrtc {
 
@@ -79,7 +76,7 @@ MouseCursorMonitorWin::MouseCursorMonitorWin(ScreenId screen)
       callback_(NULL),
       mode_(SHAPE_AND_POSITION),
       desktop_dc_(NULL) {
-  assert(screen >= kFullDesktopScreenId);
+  RTC_DCHECK_GE(screen, kFullDesktopScreenId);
   memset(&last_cursor_, 0, sizeof(CURSORINFO));
 }
 
@@ -89,9 +86,8 @@ MouseCursorMonitorWin::~MouseCursorMonitorWin() {
 }
 
 void MouseCursorMonitorWin::Init(Callback* callback, Mode mode) {
-  assert(!callback_);
-  assert(callback);
-  assert(IsGUIThread(false));
+  RTC_DCHECK(!callback_);
+  RTC_DCHECK(callback);
 
   callback_ = callback;
   mode_ = mode;
@@ -100,9 +96,7 @@ void MouseCursorMonitorWin::Init(Callback* callback, Mode mode) {
 }
 
 void MouseCursorMonitorWin::Capture() {
-// TODO: Bug 1666266. Commented out to pass new tests added in bug 1634044.
-//  assert(IsGUIThread(false));
-  assert(callback_);
+  RTC_DCHECK(callback_);
 
   CURSORINFO cursor_info;
   cursor_info.cbSize = sizeof(CURSORINFO);
@@ -113,8 +107,7 @@ void MouseCursorMonitorWin::Capture() {
   }
 
   if (!IsSameCursorShape(cursor_info, last_cursor_)) {
-    // Mozilla - CURSOR_SUPPRESSED is win8 and above; so we seem not to be able to see the symbol
-    if (cursor_info.flags != CURSOR_SHOWING) {
+    if (cursor_info.flags == CURSOR_SUPPRESSED) {
       // The cursor is intentionally hidden now, send an empty bitmap.
       last_cursor_ = cursor_info;
       callback_->OnMouseCursor(new MouseCursor(
@@ -164,7 +157,7 @@ void MouseCursorMonitorWin::Capture() {
       position = position.subtract(cropped_rect.top_left());
     }
   } else {
-    assert(screen_ != kInvalidScreenId);
+    RTC_DCHECK_NE(screen_, kInvalidScreenId);
     DesktopRect rect = GetScreenRect();
     if (inside)
       inside = rect.Contains(position);
@@ -175,8 +168,7 @@ void MouseCursorMonitorWin::Capture() {
 }
 
 DesktopRect MouseCursorMonitorWin::GetScreenRect() {
-  assert(IsGUIThread(false));
-  assert(screen_ != kInvalidScreenId);
+  RTC_DCHECK_NE(screen_, kInvalidScreenId);
   if (screen_ == kFullDesktopScreenId) {
     return DesktopRect::MakeXYWH(GetSystemMetrics(SM_XVIRTUALSCREEN),
                                  GetSystemMetrics(SM_YVIRTUALSCREEN),

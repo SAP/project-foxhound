@@ -8,10 +8,11 @@
  */
 
 #include "nscore.h"
+#include "nsWindowDefs.h"
 #include "WinPointerEvents.h"
+#include "WinUtils.h"
 #include "mozilla/MouseEvents.h"
 #include "mozilla/StaticPrefs_dom.h"
-#include "mozilla/WindowsVersion.h"
 #include "mozilla/dom/MouseEventBinding.h"
 
 using namespace mozilla;
@@ -29,10 +30,6 @@ WinPointerEvents::WinPointerEvents() { InitLibrary(); }
 /* Load and shutdown */
 void WinPointerEvents::InitLibrary() {
   MOZ_ASSERT(XRE_IsParentProcess());
-  if (!IsWin8OrLater()) {
-    // Only Win8 or later supports WM_POINTER*
-    return;
-  }
   if (getPointerType) {
     // Return if we already initialized the PointerEvent related interfaces
     return;
@@ -106,12 +103,6 @@ bool WinPointerEvents::GetPointerPenInfo(uint32_t aPointerId,
     return false;
   }
   return getPointerPenInfo(aPointerId, aPenInfo);
-}
-
-bool WinPointerEvents::ShouldEnableInkCollector() {
-  // We need InkCollector on Win7. For Win8 or later, we handle WM_POINTER* for
-  // pen.
-  return !IsWin8OrLater();
 }
 
 bool WinPointerEvents::ShouldRollupOnPointerEvent(UINT aMsg, WPARAM aWParam) {

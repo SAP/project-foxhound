@@ -6,23 +6,23 @@
 
 // Checks for the AccessibleHighlighter's and XULWindowHighlighter's infobar components.
 
-add_task(async function() {
+add_task(async function () {
   await BrowserTestUtils.withNewTab(
     {
       gBrowser,
       url: MAIN_DOMAIN + "doc_accessibility_infobar.html",
     },
-    async function(browser) {
-      await SpecialPowers.spawn(browser, [], async function() {
-        const { require } = ChromeUtils.import(
-          "resource://devtools/shared/loader/Loader.jsm"
+    async function (browser) {
+      await SpecialPowers.spawn(browser, [], async function () {
+        const { require } = ChromeUtils.importESModule(
+          "resource://devtools/shared/loader/Loader.sys.mjs"
         );
         const {
           HighlighterEnvironment,
-        } = require("devtools/server/actors/highlighters");
+        } = require("resource://devtools/server/actors/highlighters.js");
         const {
           AccessibleHighlighter,
-        } = require("devtools/server/actors/highlighters/accessible");
+        } = require("resource://devtools/server/actors/highlighters/accessible.js");
 
         /**
          * Get whether or not infobar container is hidden.

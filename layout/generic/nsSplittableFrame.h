@@ -23,8 +23,7 @@ class nsSplittableFrame : public nsIFrame {
   void Init(nsIContent* aContent, nsContainerFrame* aParent,
             nsIFrame* aPrevInFlow) override;
 
-  void DestroyFrom(nsIFrame* aDestructRoot,
-                   PostDestroyData& aPostDestroyData) override;
+  void Destroy(DestroyContext&) override;
 
   /*
    * Frame continuations can be either fluid or non-fluid.
@@ -50,7 +49,7 @@ class nsSplittableFrame : public nsIFrame {
   void SetNextContinuation(nsIFrame*) final;
 
   // Get the first/last continuation for this frame.
-  nsIFrame* FirstContinuation() const final;
+  nsIFrame* FirstContinuation() const override;
   nsIFrame* LastContinuation() const final;
 
 #ifdef DEBUG

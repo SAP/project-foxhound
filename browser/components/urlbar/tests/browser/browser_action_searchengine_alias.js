@@ -6,11 +6,12 @@
  * the correct attributes and visits the expected URL for the engine.
  */
 
-add_task(async function() {
-  await SearchTestUtils.installSearchExtension({ keyword: "moz" });
+add_task(async function () {
+  await SearchTestUtils.installSearchExtension(
+    { keyword: "moz" },
+    { setAsDefault: true }
+  );
   let engine = Services.search.getEngineByName("Example");
-  let originalEngine = await Services.search.getDefault();
-  await Services.search.setDefault(engine);
 
   let tab = await BrowserTestUtils.openNewForegroundTab(
     gBrowser,
@@ -22,8 +23,7 @@ add_task(async function() {
     set: [["browser.urlbar.autoFill", false]],
   });
 
-  registerCleanupFunction(async function() {
-    await Services.search.setDefault(originalEngine);
+  registerCleanupFunction(async function () {
     try {
       BrowserTestUtils.removeTab(tab);
     } catch (ex) {

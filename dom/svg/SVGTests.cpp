@@ -13,8 +13,7 @@
 #include "nsStyleUtil.h"
 #include "mozilla/Preferences.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 nsStaticAtom* const SVGTests::sStringListNames[2] = {
     nsGkAtoms::requiredExtensions,
@@ -194,11 +193,9 @@ void SVGTests::GetAttrValue(uint8_t aAttrEnum, nsAttrValue& aValue) const {
 void SVGTests::MaybeInvalidate() {
   nsIContent* parent = AsSVGElement()->GetFlattenedTreeParent();
 
-  if (parent &&
-      parent->NodeInfo()->Equals(nsGkAtoms::svgSwitch, kNameSpaceID_SVG)) {
-    static_cast<dom::SVGSwitchElement*>(parent)->MaybeInvalidate();
+  if (auto* svgSwitch = SVGSwitchElement::FromNodeOrNull(parent)) {
+    svgSwitch->MaybeInvalidate();
   }
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

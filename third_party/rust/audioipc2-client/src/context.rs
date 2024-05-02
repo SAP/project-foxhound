@@ -71,8 +71,7 @@ fn promote_thread(rpc: &rpccore::Proxy<ServerMessage, ClientMessage>) {
     match get_current_thread_info() {
         Ok(info) => {
             let bytes = info.serialize();
-            // Don't wait for the response, this is on the callback thread, which must not block.
-            rpc.call(ServerMessage::PromoteThreadToRealTime(bytes));
+            let _ = rpc.call(ServerMessage::PromoteThreadToRealTime(bytes));
         }
         Err(_) => {
             warn!("Could not remotely promote thread to RT.");
@@ -246,13 +245,11 @@ impl ContextOps for ClientContext {
         collection: &DeviceCollectionRef,
     ) -> Result<()> {
         assert_not_in_callback();
-        let v: Vec<ffi::cubeb_device_info> = match send_recv!(self.rpc(),
-                             ContextGetDeviceEnumeration(devtype.bits()) =>
-                             ContextEnumeratedDevices())
-        {
-            Ok(mut v) => v.drain(..).map(|i| i.into()).collect(),
-            Err(e) => return Err(e),
-        };
+        let v: Vec<ffi::cubeb_device_info> = send_recv!(
+            self.rpc(), ContextGetDeviceEnumeration(devtype.bits()) => ContextEnumeratedDevices())?
+        .into_iter()
+        .map(|i| i.into())
+        .collect();
         let mut vs = v.into_boxed_slice();
         let coll = unsafe { &mut *collection.as_ptr() };
         coll.device = vs.as_mut_ptr();
@@ -267,11 +264,7 @@ impl ContextOps for ClientContext {
         assert_not_in_callback();
         unsafe {
             let coll = &mut *collection.as_ptr();
-            let mut devices = Vec::from_raw_parts(
-                coll.device as *mut ffi::cubeb_device_info,
-                coll.count,
-                coll.count,
-            );
+            let mut devices = Vec::from_raw_parts(coll.device, coll.count, coll.count);
             for dev in &mut devices {
                 if !dev.device_id.is_null() {
                     let _ = CString::from_raw(dev.device_id as *mut _);

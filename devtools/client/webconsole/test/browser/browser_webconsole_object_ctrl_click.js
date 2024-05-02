@@ -13,14 +13,14 @@ const TEST_URI = `data:text/html;charset=utf8,<!DOCTYPE html><script>
     });
   </script>`;
 
-add_task(async function() {
+add_task(async function () {
   // Should be removed when sidebar work is complete
   await pushPref("devtools.webconsole.sidebarToggle", true);
   const isMacOS = Services.appinfo.OS === "Darwin";
 
   const hud = await openNewTabAndConsole(TEST_URI);
 
-  const message = findMessage(hud, "Object");
+  const message = findConsoleAPIMessage(hud, "Object");
   const object = message.querySelector(".object-inspector .objectBox-object");
 
   info("Ctrl+click on an object to put it in the sidebar");
@@ -31,6 +31,9 @@ add_task(async function() {
     // Component that renders an object handles keyboard interactions on the
     // container level.
     mustHaveAccessibleRule: false,
+    interactiveRule: false,
+    focusableRule: false,
+    labelRule: false,
   });
   EventUtils.sendMouseEvent(
     {

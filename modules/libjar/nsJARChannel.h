@@ -34,7 +34,6 @@ class nsInputStreamPump;
 //-----------------------------------------------------------------------------
 
 class nsJARChannel final : public nsIJARChannel,
-                           public nsIStreamListener,
                            public nsIThreadRetargetableRequest,
                            public nsIThreadRetargetableStreamListener,
                            public nsHashPropertyBag {
@@ -66,10 +65,15 @@ class nsJARChannel final : public nsIJARChannel,
   void NotifyError(nsresult aError);
   void FireOnProgress(uint64_t aProgress);
 
+  // Returns false if we don't know the content type of this channel, in which
+  // case we should use the content-type hint.
+  bool GetContentTypeGuess(nsACString&) const;
+  void SetOpened();
+
   nsCString mSpec;
 
   bool mOpened;
-  Atomic<bool, ReleaseAcquire> mCanceled;
+  mozilla::Atomic<bool, mozilla::ReleaseAcquire> mCanceled;
   bool mOnDataCalled = false;
 
   RefPtr<nsJARProtocolHandler> mJarHandler;
@@ -78,7 +82,6 @@ class nsJARChannel final : public nsIJARChannel,
   nsCOMPtr<nsISupports> mOwner;
   nsCOMPtr<nsILoadInfo> mLoadInfo;
   nsCOMPtr<nsIInterfaceRequestor> mCallbacks;
-  nsCOMPtr<nsISupports> mSecurityInfo;
   nsCOMPtr<nsIProgressEventSink> mProgressSink;
   nsCOMPtr<nsILoadGroup> mLoadGroup;
   nsCOMPtr<nsIStreamListener> mListener;
@@ -86,14 +89,14 @@ class nsJARChannel final : public nsIJARChannel,
   nsCString mContentCharset;
   int64_t mContentLength;
   uint32_t mLoadFlags;
-  Atomic<nsresult, ReleaseAcquire> mStatus;
+  mozilla::Atomic<nsresult, mozilla::ReleaseAcquire> mStatus;
   bool mIsPending;  // the AsyncOpen is in progress.
 
   bool mEnableOMT;
   // |Cancel()|, |Suspend()|, and |Resume()| might be called during AsyncOpen.
   struct {
     bool isCanceled;
-    Atomic<uint32_t> suspendCount;
+    mozilla::Atomic<uint32_t> suspendCount;
   } mPendingEvent;
 
   nsCOMPtr<nsIInputStreamPump> mPump;

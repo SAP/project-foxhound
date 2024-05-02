@@ -11,9 +11,10 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=618176
   <label value="Mozilla Bug 618176"/>
   <!-- test code goes here -->
   <script type="application/javascript"><![CDATA[
-
-    const TEST_PAGE =
-"data:text/html,<script>var a=[1,2,3];</script>Hi";
+    /* global messageManager */
+    const TEST_PAGE = Services.io.newURI(
+      "data:text/html,<script>var a=[1,2,3];</script>Hi"
+    );
 
     const FRAME_SCRIPT = 
 "data:,addEventListener('pageshow', function() { sendAsyncMessage('test', content.wrappedJSObject.a) }, false);";
@@ -30,7 +31,6 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=618176
     function start() {
       messageManager.addMessageListener("test", recvTest);
       messageManager.loadFrameScript(FRAME_SCRIPT, true);
-      const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
       let triggeringPrincipal = Services.scriptSecurityManager.getSystemPrincipal();
       setTimeout(function () {
         document.getElementById("browser").loadURI(TEST_PAGE, {triggeringPrincipal});

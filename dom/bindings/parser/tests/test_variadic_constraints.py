@@ -4,13 +4,13 @@ def WebIDLTest(parser, harness):
         parser.parse(
             """
             interface VariadicConstraints1 {
-              void foo(byte... arg1, byte arg2);
+              undefined foo(byte... arg1, byte arg2);
             };
         """
         )
-        results = parser.finish()
+        parser.finish()
 
-    except:
+    except Exception:
         threw = True
 
     harness.ok(
@@ -24,12 +24,12 @@ def WebIDLTest(parser, harness):
         parser.parse(
             """
             interface VariadicConstraints2 {
-              void foo(byte... arg1, optional byte arg2);
+              undefined foo(byte... arg1, optional byte arg2);
             };
         """
         )
-        results = parser.finish()
-    except:
+        parser.finish()
+    except Exception:
         threw = True
 
     harness.ok(
@@ -43,13 +43,13 @@ def WebIDLTest(parser, harness):
         parser.parse(
             """
             interface VariadicConstraints3 {
-              void foo(optional byte... arg1);
+              undefined foo(optional byte... arg1);
             };
         """
         )
-        results = parser.finish()
+        parser.finish()
 
-    except:
+    except Exception:
         threw = True
 
     harness.ok(
@@ -63,12 +63,12 @@ def WebIDLTest(parser, harness):
         parser.parse(
             """
             interface VariadicConstraints4 {
-              void foo(byte... arg1 = 0);
+              undefined foo(byte... arg1 = 0);
             };
         """
         )
-        results = parser.finish()
-    except:
+        parser.finish()
+    except Exception:
         threw = True
 
     harness.ok(threw, "Should have thrown on variadic argument with default value.")

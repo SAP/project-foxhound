@@ -18,7 +18,7 @@ var dragDirections = { LEFT: 0, UP: 1, RIGHT: 2, DOWN: 3 };
  *
  * @param {object} aElement
  *        DOM node element we will drag
- * @param {array} aExpectedDragData
+ * @param {Array} aExpectedDragData
  *        Array of flavors and values in the form:
  *        [ ["text/plain: sometext", "text/html: <b>sometext</b>"], [...] ]
  *        Pass an empty array to check that drag even has been canceled.
@@ -93,7 +93,7 @@ function synthesizeDragWithDirection(aElement, aExpectedDragData, aDirection) {
     });
   });
 
-  var prevent = function(aEvent) {
+  var prevent = function (aEvent) {
     aEvent.preventDefault();
   };
 
@@ -159,7 +159,7 @@ function getExpectedDataForPlacesNode(aNode) {
     "text/html",
   ];
 
-  flavors.forEach(function(aFlavor) {
+  flavors.forEach(function (aFlavor) {
     var wrappedFlavor = aFlavor + ": " + PlacesUtils.wrapNode(aNode, aFlavor);
     wrappedNode.push(wrappedFlavor);
   });
@@ -167,7 +167,7 @@ function getExpectedDataForPlacesNode(aNode) {
   return [wrappedNode];
 }
 
-add_task(async function setup() {
+add_setup(async function () {
   var toolbar = document.getElementById("PersonalToolbar");
   var wasCollapsed = toolbar.collapsed;
 

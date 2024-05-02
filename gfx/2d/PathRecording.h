@@ -17,6 +17,17 @@
 namespace mozilla {
 namespace gfx {
 
+struct Circle {
+  Point origin;
+  float radius;
+  bool closed = false;
+};
+
+struct Line {
+  Point origin;
+  Point destination;
+};
+
 class PathOps {
  public:
   PathOps() = default;
@@ -34,6 +45,8 @@ class PathOps {
   void Record(S& aStream) const;
 
   bool StreamToSink(PathSink& aPathSink) const;
+
+  bool CheckedStreamToSink(PathSink& aPathSink) const;
 
   PathOps TransformedCopy(const Matrix& aTransform) const;
 
@@ -62,6 +75,13 @@ class PathOps {
     mPathData.resize(oldSize + sizeof(OpType));
     *reinterpret_cast<OpType*>(mPathData.data() + oldSize) = OpType::OP_CLOSE;
   }
+
+  Maybe<Circle> AsCircle() const;
+  Maybe<Line> AsLine() const;
+
+  bool IsActive() const { return !mPathData.empty(); }
+
+  bool IsEmpty() const;
 
  private:
   enum class OpType : uint32_t {
@@ -122,12 +142,14 @@ class PathBuilderRecording final : public PathBuilder {
  public:
   MOZ_DECLARE_REFCOUNTED_VIRTUAL_TYPENAME(PathBuilderRecording, override)
 
-  PathBuilderRecording(PathBuilder* aBuilder, FillRule aFillRule)
-      : mPathBuilder(aBuilder), mFillRule(aFillRule) {}
+  PathBuilderRecording(BackendType aBackend, FillRule aFillRule)
+      : mBackendType(aBackend), mFillRule(aFillRule) {}
 
-  PathBuilderRecording(PathBuilder* aBuilder, const PathOps& aPathOps,
+  PathBuilderRecording(BackendType aBackend, PathOps&& aPathOps,
                        FillRule aFillRule)
-      : mPathBuilder(aBuilder), mFillRule(aFillRule), mPathOps(aPathOps) {}
+      : mBackendType(aBackend),
+        mFillRule(aFillRule),
+        mPathOps(std::move(aPathOps)) {}
 
   /* Move the current point in the path, any figure currently being drawn will
    * be considered closed during fill operations, however when stroking the
@@ -153,27 +175,14 @@ class PathBuilderRecording final : public PathBuilder {
   void Arc(const Point& aOrigin, float aRadius, float aStartAngle,
            float aEndAngle, bool aAntiClockwise) final;
 
-  /* Point the current subpath is at - or where the next subpath will start
-   * if there is no active subpath.
-   */
-  Point CurrentPoint() const final { return mPathBuilder->CurrentPoint(); }
-
-  Point BeginPoint() const final { return mPathBuilder->BeginPoint(); }
-
-  void SetCurrentPoint(const Point& aPoint) final {
-    mPathBuilder->SetCurrentPoint(aPoint);
-  }
-
-  void SetBeginPoint(const Point& aPoint) final {
-    mPathBuilder->SetBeginPoint(aPoint);
-  }
-
   already_AddRefed<Path> Finish() final;
 
   BackendType GetBackendType() const final { return BackendType::RECORDING; }
 
+  bool IsActive() const final { return mPathOps.IsActive(); }
+
  private:
-  RefPtr<PathBuilder> mPathBuilder;
+  BackendType mBackendType;
   FillRule mFillRule;
   PathOps mPathOps;
 };
@@ -182,7 +191,7 @@ class PathRecording final : public Path {
  public:
   MOZ_DECLARE_REFCOUNTED_VIRTUAL_TYPENAME(PathRecording, override)
 
-  PathRecording(Path* aPath, PathOps&& aOps, FillRule aFillRule,
+  PathRecording(BackendType aBackend, PathOps&& aOps, FillRule aFillRule,
                 const Point& aCurrentPoint, const Point& aBeginPoint);
 
   ~PathRecording();
@@ -193,33 +202,52 @@ class PathRecording final : public Path {
       const Matrix& aTransform, FillRule aFillRule) const final;
   bool ContainsPoint(const Point& aPoint,
                      const Matrix& aTransform) const final {
+    EnsurePath();
     return mPath->ContainsPoint(aPoint, aTransform);
   }
   bool StrokeContainsPoint(const StrokeOptions& aStrokeOptions,
                            const Point& aPoint,
                            const Matrix& aTransform) const final {
+    EnsurePath();
     return mPath->StrokeContainsPoint(aStrokeOptions, aPoint, aTransform);
   }
 
   Rect GetBounds(const Matrix& aTransform = Matrix()) const final {
+    EnsurePath();
     return mPath->GetBounds(aTransform);
   }
 
   Rect GetStrokedBounds(const StrokeOptions& aStrokeOptions,
                         const Matrix& aTransform = Matrix()) const final {
+    EnsurePath();
     return mPath->GetStrokedBounds(aStrokeOptions, aTransform);
   }
 
-  void StreamToSink(PathSink* aSink) const final { mPath->StreamToSink(aSink); }
+  Maybe<Rect> AsRect() const final {
+    EnsurePath();
+    return mPath->AsRect();
+  }
+
+  Maybe<Circle> AsCircle() const { return mPathOps.AsCircle(); }
+  Maybe<Line> AsLine() const { return mPathOps.AsLine(); }
+
+  void StreamToSink(PathSink* aSink) const final {
+    mPathOps.StreamToSink(*aSink);
+  }
 
   FillRule GetFillRule() const final { return mFillRule; }
+
+  bool IsEmpty() const final { return mPathOps.IsEmpty(); }
 
  private:
   friend class DrawTargetWrapAndRecord;
   friend class DrawTargetRecording;
   friend class RecordedPathCreation;
 
-  RefPtr<Path> mPath;
+  void EnsurePath() const;
+
+  BackendType mBackendType;
+  mutable RefPtr<Path> mPath;
   PathOps mPathOps;
   FillRule mFillRule;
   Point mCurrentPoint;

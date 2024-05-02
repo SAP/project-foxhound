@@ -1,10 +1,12 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
-const { BridgedEngine } = ChromeUtils.import(
-  "resource://services-sync/bridged_engine.js"
+const { BridgedEngine, BridgeWrapperXPCOM } = ChromeUtils.importESModule(
+  "resource://services-sync/bridged_engine.sys.mjs"
 );
-const { Service } = ChromeUtils.import("resource://services-sync/service.js");
+const { Service } = ChromeUtils.importESModule(
+  "resource://services-sync/service.sys.mjs"
+);
 
 // Wraps an `object` in a proxy so that its methods are bound to it. This
 // simulates how XPCOM class instances have all their methods bound.
@@ -84,7 +86,7 @@ add_task(async function test_interface() {
       ].map(cleartext =>
         JSON.stringify({
           id: cleartext.id,
-          cleartext: JSON.stringify(cleartext),
+          payload: JSON.stringify(cleartext),
         })
       );
       CommonUtils.nextTick(() => callback.handleSuccess(outgoingEnvelopes));
@@ -114,7 +116,8 @@ add_task(async function test_interface() {
   }
 
   let bridge = new TestBridge();
-  let engine = new BridgedEngine(withBoundMethods(bridge), "Nineties", Service);
+  let engine = new BridgedEngine("Nineties", Service);
+  engine._bridge = new BridgeWrapperXPCOM(withBoundMethods(bridge));
   engine.enabled = true;
 
   let server = await serverForFoo(engine);
@@ -153,10 +156,7 @@ add_task(async function test_interface() {
     bridge.lastSyncMillis = 1000 * (now + 2);
     await sync_engine_and_validate_telem(engine, false);
 
-    let metaGlobal = foo
-      .collection("meta")
-      .wbo("global")
-      .get();
+    let metaGlobal = foo.collection("meta").wbo("global").get();
     deepEqual(
       JSON.parse(metaGlobal.payload).engines.nineties,
       {
@@ -174,8 +174,8 @@ add_task(async function test_interface() {
     deepEqual(
       bridge.incomingEnvelopes
         .sort((a, b) => a.id.localeCompare(b.id))
-        .map(({ cleartext, ...envelope }) => ({
-          cleartextAsObject: JSON.parse(cleartext),
+        .map(({ payload, ...envelope }) => ({
+          cleartextAsObject: JSON.parse(payload),
           ...envelope,
         })),
       [

@@ -14,15 +14,15 @@
   <script src="../role.js"></script>
 
   <script type="application/javascript">
-    const { TestUtils } = ChromeUtils.import(
-      "resource://testing-common/TestUtils.jsm");
+    const { TestUtils } = ChromeUtils.importESModule(
+      "resource://testing-common/TestUtils.sys.mjs");
 
     async function waitForFocusOnOptionWithname(name) {
       let event = await waitForEvent(
         EVENT_FOCUS,
         evt => evt.accessible.role == ROLE_COMBOBOX_OPTION
       );
-      if (!event.accessible.name) {
+      while (!event.accessible.name) {
         // Sometimes, the name is null for a very short time after the focus
         // event.
         await waitForEvent(EVENT_NAME_CHANGE, event.accessible);

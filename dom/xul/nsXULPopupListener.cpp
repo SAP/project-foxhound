@@ -9,6 +9,7 @@
  */
 
 #include "nsXULPopupListener.h"
+#include "XULButtonElement.h"
 #include "nsCOMPtr.h"
 #include "nsGkAtoms.h"
 #include "nsContentCID.h"
@@ -23,7 +24,6 @@
 #include "nsIObjectLoadingContent.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/EventStateManager.h"
-#include "mozilla/EventStates.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/Event.h"  // for Event
@@ -38,7 +38,6 @@
 #include "nsPIDOMWindow.h"
 #include "nsViewManager.h"
 #include "nsError.h"
-#include "nsMenuFrame.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -147,19 +146,9 @@ nsresult nsXULPopupListener::HandleEvent(Event* aEvent) {
     return NS_OK;
   }
 
-  if (mIsContext) {
-#ifndef NS_CONTEXT_MENU_IS_MOUSEUP
-    uint16_t inputSource = mouseEvent->MozInputSource();
-    bool isTouch = inputSource == MouseEvent_Binding::MOZ_SOURCE_TOUCH;
-    // If the context menu launches on mousedown,
-    // we have to fire focus on the content we clicked on
-    FireFocusOnTargetContent(targetContent, isTouch);
-#endif
-  } else {
+  if (!mIsContext && mouseEvent->Button() != 0) {
     // Only open popups when the left mouse button is down.
-    if (mouseEvent->Button() != 0) {
-      return NS_OK;
-    }
+    return NS_OK;
   }
 
   // Open the popup. LaunchPopup will call StopPropagation and PreventDefault
@@ -168,58 +157,6 @@ nsresult nsXULPopupListener::HandleEvent(Event* aEvent) {
 
   return NS_OK;
 }
-
-#ifndef NS_CONTEXT_MENU_IS_MOUSEUP
-nsresult nsXULPopupListener::FireFocusOnTargetContent(
-    nsIContent* aTargetContent, bool aIsTouch) {
-  nsCOMPtr<Document> doc = aTargetContent->OwnerDoc();
-
-  // strong reference to keep this from going away between events
-  // XXXbz between what events?  We don't use this local at all!
-  RefPtr<nsPresContext> context = doc->GetPresContext();
-  if (!context) {
-    return NS_ERROR_FAILURE;
-  }
-
-  nsIFrame* targetFrame = aTargetContent->GetPrimaryFrame();
-  if (!targetFrame) return NS_ERROR_FAILURE;
-
-  const bool suppressBlur =
-      targetFrame->StyleUI()->UserFocus() == StyleUserFocus::Ignore;
-
-  RefPtr<Element> newFocusElement;
-
-  nsIFrame* currFrame = targetFrame;
-  // Look for the nearest enclosing focusable frame.
-  while (currFrame) {
-    if (currFrame->IsFocusable(/* aWithMouse = */ true) &&
-        currFrame->GetContent()->IsElement()) {
-      newFocusElement = currFrame->GetContent()->AsElement();
-      break;
-    }
-    currFrame = currFrame->GetParent();
-  }
-
-  if (RefPtr<nsFocusManager> fm = nsFocusManager::GetFocusManager()) {
-    if (newFocusElement) {
-      uint32_t focusFlags =
-          nsIFocusManager::FLAG_BYMOUSE | nsIFocusManager::FLAG_NOSCROLL;
-      if (aIsTouch) {
-        focusFlags |= nsIFocusManager::FLAG_BYTOUCH;
-      }
-      fm->SetFocus(newFocusElement, focusFlags);
-    } else if (!suppressBlur) {
-      nsPIDOMWindowOuter* window = doc->GetWindow();
-      fm->ClearFocus(window);
-    }
-  }
-
-  EventStateManager* esm = context->EventStateManager();
-  esm->SetContentState(newFocusElement, NS_EVENT_STATE_ACTIVE);
-
-  return NS_OK;
-}
-#endif
 
 // ClosePopup
 //
@@ -233,7 +170,9 @@ void nsXULPopupListener::ClosePopup() {
     // popup is hidden. Use asynchronous hiding just to be safe so we don't
     // fire events during destruction.
     nsXULPopupManager* pm = nsXULPopupManager::GetInstance();
-    if (pm) pm->HidePopup(mPopupContent, false, true, true, false);
+    if (pm)
+      pm->HidePopup(mPopupContent,
+                    {HidePopupOption::DeselectMenu, HidePopupOption::Async});
     mPopupContent = nullptr;  // release the popup
   }
 }  // ClosePopup
@@ -271,12 +210,11 @@ nsresult nsXULPopupListener::LaunchPopup(MouseEvent* aEvent) {
 
   nsAutoString identifier;
   nsAtom* type = mIsContext ? nsGkAtoms::context : nsGkAtoms::popup;
-  bool hasPopupAttr = mElement->GetAttr(kNameSpaceID_None, type, identifier);
+  bool hasPopupAttr = mElement->GetAttr(type, identifier);
 
   if (identifier.IsEmpty()) {
     hasPopupAttr =
-        mElement->GetAttr(kNameSpaceID_None,
-                          mIsContext ? nsGkAtoms::contextmenu : nsGkAtoms::menu,
+        mElement->GetAttr(mIsContext ? nsGkAtoms::contextmenu : nsGkAtoms::menu,
                           identifier) ||
         hasPopupAttr;
   }
@@ -311,14 +249,16 @@ nsresult nsXULPopupListener::LaunchPopup(MouseEvent* aEvent) {
   }
 
   // return if no popup was found or the popup is the element itself.
-  if (!popup || popup == mElement) return NS_OK;
+  if (!popup || popup == mElement) {
+    return NS_OK;
+  }
 
   // Submenus can't be used as context menus or popups, bug 288763.
   // Similar code also in nsXULTooltipListener::GetTooltipFor.
-  nsIContent* parent = popup->GetParent();
-  if (parent) {
-    nsMenuFrame* menu = do_QueryFrame(parent->GetPrimaryFrame());
-    if (menu) return NS_OK;
+  if (auto* button = XULButtonElement::FromNodeOrNull(popup->GetParent())) {
+    if (button->IsMenu()) {
+      return NS_OK;
+    }
   }
 
   nsXULPopupManager* pm = nsXULPopupManager::GetInstance();
@@ -329,17 +269,14 @@ nsresult nsXULPopupListener::LaunchPopup(MouseEvent* aEvent) {
   // element, otherwise just open it at the screen position where the mouse
   // was clicked. Context menus always open at the mouse position.
   mPopupContent = popup;
-  if (!mIsContext &&
-      (mPopupContent->HasAttr(kNameSpaceID_None, nsGkAtoms::position) ||
-       (mPopupContent->HasAttr(kNameSpaceID_None, nsGkAtoms::popupanchor) &&
-        mPopupContent->HasAttr(kNameSpaceID_None, nsGkAtoms::popupalign)))) {
+  if (!mIsContext && (mPopupContent->HasAttr(nsGkAtoms::position) ||
+                      (mPopupContent->HasAttr(nsGkAtoms::popupanchor) &&
+                       mPopupContent->HasAttr(nsGkAtoms::popupalign)))) {
     pm->ShowPopup(mPopupContent, mElement, u""_ns, 0, 0, false, true, false,
                   aEvent);
   } else {
-    int32_t xPos = aEvent->ScreenX(CallerType::System);
-    int32_t yPos = aEvent->ScreenY(CallerType::System);
-
-    pm->ShowPopupAtScreen(mPopupContent, xPos, yPos, mIsContext, aEvent);
+    CSSIntPoint pos = aEvent->ScreenPoint(CallerType::System);
+    pm->ShowPopupAtScreen(mPopupContent, pos.x, pos.y, mIsContext, aEvent);
   }
 
   return NS_OK;

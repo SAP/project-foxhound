@@ -3,6 +3,7 @@
  * http://creativecommons.org/publicdomain/zero/1.0/
  */
 
+/* exported testGenerator */
 var testGenerator = testSteps();
 
 function* testSteps() {
@@ -45,11 +46,10 @@ function* testSteps() {
 
   let wasAbleToGrabObjectStoreOutsideOfCallback = false;
   let wasAbleToGrabIndexOutsideOfCallback = false;
-  executeSoon(function() {
+  executeSoon(function () {
     ok(!requestComplete, "Ordering is correct.");
-    wasAbleToGrabObjectStoreOutsideOfCallback = !!transaction.objectStore(
-      "foo"
-    );
+    wasAbleToGrabObjectStoreOutsideOfCallback =
+      !!transaction.objectStore("foo");
     wasAbleToGrabIndexOutsideOfCallback = !!transaction
       .objectStore("foo")
       .index("bar");

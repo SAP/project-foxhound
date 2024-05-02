@@ -10,8 +10,8 @@
 
 "use strict";
 
-const client = require("devtools/client/shared/remote-debugging/adb/adb-client");
-const { dumpn } = require("devtools/shared/DevToolsUtils");
+const client = require("resource://devtools/client/shared/remote-debugging/adb/adb-client.js");
+const { dumpn } = require("resource://devtools/shared/DevToolsUtils.js");
 
 exports.check = async function check() {
   let socket;
@@ -63,23 +63,23 @@ exports.check = async function check() {
       }
     };
 
-    const setupSocket = function() {
-      socket.s.onerror = function(event) {
+    const setupSocket = function () {
+      socket.s.onerror = function (event) {
         dumpn("running checker onerror");
         finish(false);
       };
 
-      socket.s.onopen = function(event) {
+      socket.s.onopen = function (event) {
         dumpn("running checker onopen");
         state = "start";
         runFSM();
       };
 
-      socket.s.onclose = function(event) {
+      socket.s.onclose = function (event) {
         dumpn("running checker onclose");
       };
 
-      socket.s.ondata = function(event) {
+      socket.s.ondata = function (event) {
         dumpn("running checker ondata");
         runFSM(event.data);
       };

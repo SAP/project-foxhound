@@ -5,9 +5,12 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+include "mozilla/layers/LayersMessageUtils.h";
+include protocol PCanvas;
 include protocol PWebGL;
 include protocol PWebGPU;
 
+using mozilla::layers::RemoteTextureOwnerId from "mozilla/layers/LayersTypes.h";
 using mozilla::webgl::FrontBufferSnapshotIpc from "mozilla/dom/WebGLIpdl.h";
 
 namespace mozilla {
@@ -19,12 +22,16 @@ namespace gfx {
  * compositor process. This protocol should be used to create accelerated
  * canvas instances.
  */
-[RefCounted] sync protocol PCanvasManager
+[NeedsOtherPid]
+sync protocol PCanvasManager
 {
+  manages PCanvas;
   manages PWebGL;
   manages PWebGPU;
 
 parent:
+  async PCanvas();
+
   // Actor that represents one WebGL context.
   async PWebGL();
 
@@ -38,7 +45,7 @@ parent:
   // intended to be used by the main thread in the content process to block
   // reading without having to block on the worker thread that owns the context
   // instance.
-  sync GetSnapshot(uint32_t aManagerId, int32_t aProtocolId) returns (FrontBufferSnapshotIpc ret);
+  sync GetSnapshot(uint32_t aManagerId, int32_t aProtocolId, RemoteTextureOwnerId? ownerId) returns (FrontBufferSnapshotIpc ret);
 };
 
 } // gfx

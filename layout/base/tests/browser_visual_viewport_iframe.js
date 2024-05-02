@@ -10,11 +10,7 @@ add_task(async () => {
   }
 
   await SpecialPowers.pushPrefEnv({
-    set: [
-      ["apz.allow_zooming", true],
-      ["dom.meta-viewport.enabled", true],
-      ["dom.visualviewport.enabled", true],
-    ],
+    set: [["dom.meta-viewport.enabled", true]],
   });
 
   const fissionWindow = await BrowserTestUtils.openNewBrowserWindow({

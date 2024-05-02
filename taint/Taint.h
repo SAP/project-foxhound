@@ -13,13 +13,17 @@
 #define _Taint_h
 
 #include <initializer_list>
-#include <iterator>
-#include <memory>
-#include <set>
-#include <stack>
 #include <string>
 #include <vector>
 #include <array>
+#include <atomic>
+#include <string_view>
+
+// It appears that source_location is not supported as standard and
+// breaks windows builds. Keep it behind a debug macro for now.
+#ifdef TAINT_DEBUG
+#include <experimental/source_location>
+#endif
 
 /*
  * How to taint:
@@ -82,8 +86,8 @@ class TaintLocation
     TaintLocation& operator=(const TaintLocation& other) = default;
 
     // MSVC doesn't let us = default these :(
-    TaintLocation(TaintLocation&& other);
-    TaintLocation& operator=(TaintLocation&& other);
+    TaintLocation(TaintLocation&& other) noexcept;
+    TaintLocation& operator=(TaintLocation&& other) noexcept;
 
     const std::u16string& filename() const { return filename_; }
     uint32_t line() const { return line_; }
@@ -136,8 +140,8 @@ class TaintOperation
     TaintOperation& operator=(const TaintOperation& other) = default;
 
     // MSVC doesn't let us = default these :(
-    TaintOperation(TaintOperation&& other);
-    TaintOperation& operator=(TaintOperation&& other);
+    TaintOperation(TaintOperation&& other) noexcept;
+    TaintOperation& operator=(TaintOperation&& other) noexcept;
 
     const char* name() const { return name_.c_str(); }
     const std::vector<std::u16string>& arguments() const { return arguments_; }
@@ -168,6 +172,7 @@ class TaintOperation
     TaintLocation location_;
 };
 
+
 /*
  * The nodes of the taint flow graph.
  *
@@ -183,15 +188,18 @@ class TaintOperation
  */
 class TaintNode
 {
-
   public:
     // Constructing a taint node sets the initial reference count to 1.
+    // Constructs an intermediate node.
+    TaintNode(TaintNode* parent, const TaintOperation& operation);
     // Constructs a root node.
     TaintNode(const TaintOperation& operation);
 
     // Constructing a taint node sets the initial reference count to 1.
+    // Constructs an intermediate node.
+    TaintNode(TaintNode* parent, TaintOperation&& operation) noexcept;
     // Constructs a root node.
-    TaintNode(TaintOperation&& operation);
+    TaintNode(TaintOperation&& operation) noexcept;
     
     // Increments the reference count of this object by one.
     void addref();
@@ -199,6 +207,9 @@ class TaintNode
     // Decrement the reference count of this object by one. If the reference
     // count drops to zero then this instance will be destroyed.
     void release();
+
+    // Returns the parent node of this node or nullptr if this is a root node.
+    TaintNode* parent() { return parent_; }
 
     // Returns the operation associated with this taint node.
     const TaintOperation& operation() const { return operation_; }
@@ -208,12 +219,10 @@ class TaintNode
     // through release().
     ~TaintNode();
 
-    // A node takes care of correctly addref()ing and release()ing its parent nodes.
-    // parents_ is a vector, which enables taint nodes to form a directed acyclic graph
-    // TaintNode* parent_;
-    std::vector<TaintNode*> parents_ = std::vector<TaintNode*>();
+    // A node takes care of correctly addref()ing and release()ing its parent node.
+    TaintNode* parent_;
 
-    uint32_t refcount_;
+    std::atomic_uint32_t refcount_;
 
     // The operation that led to the creation of this node.
     TaintOperation operation_;
@@ -222,7 +231,6 @@ class TaintNode
     // refcount them), so these operations are unavailable.
     TaintNode(const TaintNode& other) = delete;
     TaintNode& operator=(const TaintNode& other) = delete;
-
 };
 
 /*
@@ -265,13 +273,26 @@ class TaintNode
 class TaintFlow
 {
   private:
-    // Last (newest) node of this flow.
+    // Iterate over the nodes in this flow.
+    //
+    // Note: The iterator does not increment the reference count. Instead, the
+    // caller must ensure that the TaintFlow instance is alive during the
+    // lifetime of any iterator instance.
+    class Iterator {
+      public:
+        Iterator(TaintNode* head);
+        Iterator();
 
-   struct PtrComp {
-     bool operator()(const TaintNode* lhs, const TaintNode* rhs) const {
-       return lhs < rhs;
-     }
-   };
+        Iterator(const Iterator& other);
+
+        Iterator& operator++();
+        TaintNode& operator*() const;
+        bool operator==(const Iterator& other) const;
+        bool operator!=(const Iterator& other) const;
+
+      private:
+        TaintNode* current_;
+    };
 
   public:
    
@@ -291,13 +312,9 @@ class TaintFlow
     // incrementing the reference count on the head node of the flow.
     TaintFlow(const TaintFlow& other);
     // Moving is even faster..
-    TaintFlow(TaintFlow&& other);
+    TaintFlow(TaintFlow&& other) noexcept;
 
     TaintFlow(const TaintFlow* other);
-
-    TaintFlow(const TaintOperation& operation, const std::vector<TaintFlow*> parents);
-
-    TaintFlow(const TaintFlow& flow1, const TaintFlow& flow2);
  
     ~TaintFlow();
 
@@ -305,11 +322,10 @@ class TaintFlow
     TaintFlow& operator=(const TaintFlow& other);
 
     // Returns the head of this flow, i.e. the newest node in the path.
-    // TaintNode* head() const { return nodes_[0]; }
-    std::set<TaintNode*,PtrComp> nodes() const { return nodes_; }
+    TaintNode* head() const { return head_; }
 
     // Returns the source of this taint flow.
-    std::vector<const TaintOperation*> sources() const;
+    const TaintOperation& source() const;
 
     // Constructs a new taint node as child of the current head node and sets
     // the newly constructed node as head of this taint flow.
@@ -329,37 +345,30 @@ class TaintFlow
     // starting at the newest node.
     // Since TaintNodes are inherently immutable, we can safely return non-const
     // pointers here.
-    std::set<TaintNode*>::iterator begin() const {return nodes_.begin();};
-    std::set<TaintNode*>::iterator end() const {return nodes_.end();};
+    TaintFlow::Iterator begin() const;
+    TaintFlow::Iterator end() const;
 
     // Constructs a new taint node as child of the head node in this flow and
     // returns a new taint flow starting at that node.
     static TaintFlow extend(const TaintFlow& flow, const TaintOperation& operation);
 
-    static TaintFlow extend(const TaintFlow& flow1, const TaintFlow& flow2);
+    // Append two taint flows together
+    static TaintFlow append(const TaintFlow& first, const TaintFlow& second);
 
     // Two TaintFlows are equal if they point to the same taint node.
-    bool operator==(const TaintFlow& other) const { return nodes_ == other.nodes_; }
-    bool operator!=(const TaintFlow& other) const { return nodes_ != other.nodes_; }
+    bool operator==(const TaintFlow& other) const { return head_ == other.head_; }
+    bool operator!=(const TaintFlow& other) const { return head_ != other.head_; }
 
-    // Boolean operator, indicates whether this taint flow is empty or now.
-    operator bool() const { return !nodes_.empty(); }
+    bool isNotEmpty() const { return !!head_; }
+
+    // Boolean operator, indicates whether this taint flow is empty or not.
+    operator bool() const { return isNotEmpty(); }
 
     static const TaintFlow& getEmptyTaintFlow();
 
-    void addrefNodes();
-    void releaseNodes();
-
   private:
     // Last (newest) node of this flow.
-
-  //  struct PtrComp {
-  //    bool operator()(const TaintNode* lhs, const TaintNode* rhs) const {
-  //      return lhs < rhs;
-  //    }
-  //  };
-
-    std::set<TaintNode*,PtrComp> nodes_;
+    TaintNode* head_;
 
     static TaintFlow empty_flow_;
 };
@@ -388,6 +397,14 @@ class TaintRange {
     ~TaintRange();
 
     TaintRange& operator=(const TaintRange& other);
+
+    // Comparison Operators for searches
+    bool operator<(const TaintRange& other) const;
+    bool operator<(uint32_t index) const;
+    bool operator>(uint32_t index) const;
+    bool operator==(uint32_t index) const;
+
+    bool contains(uint32_t index) const;
 
     // Returns a reference to the taint flow associated with this range.
     // All bytes in a taint range share the same taint flow.
@@ -461,14 +478,14 @@ class StringTaint
     explicit constexpr StringTaint() : ranges_(nullptr) { }
 
     // Constructs a new instance containing a single taint range.
-    explicit StringTaint(TaintRange range);
+    explicit StringTaint(const TaintRange& range);
 
     // As above, but also constructs the taint range.
     // TODO make StringTaint(operaton, length) instead.
     StringTaint(uint32_t begin, uint32_t end, const TaintOperation& operation);
 
     // Construct taint information for a uniformly tainted string.
-    explicit StringTaint(TaintFlow flow, uint32_t length);
+    explicit StringTaint(const TaintFlow& flow, uint32_t length);
 
     // Default destructor needed to allow the StringTaint class to
     // act as a literal and appear in constexpr's, e.g. EmptyTaint
@@ -477,14 +494,21 @@ class StringTaint
     ~StringTaint() = default;
 
     StringTaint(const StringTaint& other);
-    StringTaint(StringTaint&& other);
+    StringTaint(StringTaint&& other) noexcept;
     StringTaint& operator=(const StringTaint& other);
-    StringTaint& operator=(StringTaint&& other);
+    StringTaint& operator=(StringTaint&& other) noexcept;
+
+    // Create subtaint
+    StringTaint(const StringTaint& other, uint32_t begin, uint32_t end);
+    StringTaint(const StringTaint& other, uint32_t index);
 
     // Returns true if any characters are tainted.
     bool hasTaint() const {
         return !!ranges_;
     }
+
+    // Boolean operator, indicates whether this taint flow is empty or not.
+    operator bool() const { return hasTaint(); }
 
     // Removes all taint information.
     void clear();
@@ -570,6 +594,9 @@ class StringTaint
     // Adds a taint operation to the taint flows of all ranges in this instance.
     StringTaint& overlay(uint32_t begin, uint32_t end, const TaintOperation& operation);
 
+    // Adds a taint operation to the taint flows of all ranges in this instance.
+    StringTaint& overlay(uint32_t begin, uint32_t end, const TaintFlow& flow);
+
     // Appends a taint range.
     //
     // It is only possible to insert ranges at the end, so the start index of
@@ -584,6 +611,9 @@ class StringTaint
     // TODO rename to append
     void concat(const StringTaint& other, uint32_t offset);
 
+    // Creates a new taint range for a single character and appends it at offset
+    void concat(const TaintFlow& other, uint32_t offset);
+
     // Re-sizes all taint ranges to convert from ASCII to base64
     StringTaint& toBase64();
     // Re-sizes all taint ranges to convert from base64 to ASCII
@@ -596,6 +626,8 @@ class StringTaint
     std::vector<TaintRange>::const_iterator end() const;
 
     SafeStringTaint safeCopy() const;
+    SafeStringTaint safeSubTaint(uint32_t begin, uint32_t end) const;
+    SafeStringTaint safeSubTaint(uint32_t index) const;
 
   private:
     // Assign a new range vector and delete the old one.
@@ -603,6 +635,9 @@ class StringTaint
 
     // Resize any overlapping ranges
     void removeOverlaps();
+
+    // Set the contents to subtaint of another taint
+    void assignFromSubTaint(const StringTaint& other, uint32_t begin, uint32_t end);
 
     // Here we optimize for the (common) case of untainted strings by only
     // storing a single pointer per instance. This keeps untainted strings
@@ -652,14 +687,18 @@ class SafeStringTaint : public StringTaint
     ~SafeStringTaint() { clear(); }
 
     SafeStringTaint(const SafeStringTaint& other) : StringTaint(other) {}
-    SafeStringTaint(SafeStringTaint&& other) : StringTaint(other) {}
+    SafeStringTaint(SafeStringTaint&& other) noexcept : StringTaint(std::move(other)) {}
     SafeStringTaint& operator=(const SafeStringTaint& other) { StringTaint::operator=(other); return *this; }
-    SafeStringTaint& operator=(SafeStringTaint&& other) { StringTaint::operator=(other); return *this; }
+    SafeStringTaint& operator=(SafeStringTaint&& other) noexcept { StringTaint::operator=(other); return *this; }
+
+    // Create subtaint
+    SafeStringTaint(const StringTaint& other, uint32_t begin, uint32_t end) : StringTaint(other, begin, end) {}
+    SafeStringTaint(const StringTaint& other, uint32_t index) : StringTaint(other, index) {}
 
     SafeStringTaint(const StringTaint& other) : StringTaint(other) {}
-    SafeStringTaint(StringTaint&& other) : StringTaint(other) {}
+    SafeStringTaint(StringTaint&& other) noexcept : StringTaint(other) {}
     SafeStringTaint& operator=(const StringTaint& other) { StringTaint::operator=(other); return *this; }
-    SafeStringTaint& operator=(StringTaint&& other) { StringTaint::operator=(other); return *this; }
+    SafeStringTaint& operator=(StringTaint&& other) noexcept { StringTaint::operator=(other); return *this; }
 
 };
 
@@ -758,6 +797,44 @@ class TaintableString {
 // Make sure the TaintableString class is no larger than its StringTaint member.
 static_assert(sizeof(TaintableString) == sizeof(StringTaint), "Class TaintableString must be binary compatible with a StringTaint instance.");
 
+/*
+ * An iterable list of TaintFlows
+ *
+ * Simpler than the StringTaint, for cases where a vector of TaintFlows is sufficient
+ *
+ */
+class TaintList
+{
+  public:
+
+    // Constructs an empty instance without any taint flows.
+    explicit constexpr TaintList() : flows_(nullptr) { }
+
+    ~TaintList() { clear(); }
+
+    // Returns true if any characters are tainted.
+    bool hasTaint() const {
+        return !!flows_;
+    }
+
+    // Removes all taint information.
+    void clear();
+
+    // Appends a taint flow
+    TaintList& append(TaintFlow range);
+
+    // Iterate over the taint ranges.
+    std::vector<TaintFlow>::iterator begin();
+    std::vector<TaintFlow>::iterator end();
+    std::vector<TaintFlow>::const_iterator begin() const;
+    std::vector<TaintFlow>::const_iterator end() const;
+
+  private:
+    // As with StringTaint, just keep a pointer to a vector to save overhead
+    std::vector<TaintFlow>* flows_;
+};
+
+
 // Set to true to enable various debug outputs regarding end2end tainting
 // throughout the engine.
 #define DEBUG_E2E_TAINTING (DEBUG)
@@ -771,10 +848,20 @@ StringTaint ParseTaint(const std::string& str);
 /*
  * Print a string representation of the given StringTaint instance to stdout.
  */
+
+#ifdef TAINT_DEBUG
+
 void PrintTaint(const StringTaint& taint);
 
-void DumpTaint(const StringTaint& taint);
+void DumpTaint(const StringTaint& taint, std::experimental::source_location location = std::experimental::source_location::current());
+
 void DumpTaintFlow(const TaintFlow& flow);
+
 void DumpTaintOperation(const TaintOperation& operation);
+
+void TaintDebug(std::string_view message,
+                std::experimental::source_location location = std::experimental::source_location::current());
+
+#endif
 
 #endif

@@ -23,7 +23,10 @@ use super::*;
 /// `line` is a range of bytes indices within `levels`.
 ///
 /// <http://www.unicode.org/reports/tr9/#Reordering_Resolved_Levels>
-#[deprecated(since = "0.3.0", note = "please use `BidiInfo::visual_runs()` instead.")]
+#[deprecated(
+    since = "0.3.0",
+    note = "please use `BidiInfo::visual_runs()` instead."
+)]
 pub fn visual_runs(line: Range<usize>, levels: &[Level]) -> Vec<LevelRun> {
     assert!(line.start <= levels.len());
     assert!(line.end <= levels.len());
@@ -43,8 +46,8 @@ pub fn visual_runs(line: Range<usize>, levels: &[Level]) -> Vec<LevelRun> {
             start = i;
             run_level = new_level;
 
-            min_level = min(run_level, min_level);
-            max_level = max(run_level, max_level);
+            min_level = cmp::min(run_level, min_level);
+            max_level = cmp::max(run_level, max_level);
         }
     }
     runs.push(start..line.end);
@@ -80,9 +83,9 @@ pub fn visual_runs(line: Range<usize>, levels: &[Level]) -> Vec<LevelRun> {
 
             seq_start = seq_end;
         }
-        max_level.lower(1).expect(
-            "Lowering embedding level below zero",
-        );
+        max_level
+            .lower(1)
+            .expect("Lowering embedding level below zero");
     }
 
     runs

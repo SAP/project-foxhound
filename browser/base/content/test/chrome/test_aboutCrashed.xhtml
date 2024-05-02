@@ -11,9 +11,6 @@
   <iframe type="content" id="frame1"/>
   <iframe type="content" id="frame2" onload="doTest()"/>
   <script type="application/javascript"><![CDATA[
-    const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
-    ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
-
     SimpleTest.waitForExplicitFinish();
 
     // Load error pages do not fire "load" events, so let's use a progressListener.
@@ -46,7 +43,9 @@
     (async function testBody() {
       let frame1 = document.getElementById("frame1");
       let frame2 = document.getElementById("frame2");
+      // eslint-disable-next-line @microsoft/sdl/no-insecure-url
       let uri1 = Services.io.newURI("http://www.example.com/1");
+      // eslint-disable-next-line @microsoft/sdl/no-insecure-url
       let uri2 = Services.io.newURI("http://www.example.com/2");
 
       let errorPageReady = waitForErrorPage(frame1);

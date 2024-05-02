@@ -8,7 +8,7 @@
 const TEST_URL_1 = "http://127.0.0.1:36325/";
 const TEST_URL_2 = "data:text/html,<html><body>test-doc-2</body></html>";
 
-add_task(async function() {
+add_task(async function () {
   // We cannot directly use addTab here as waiting for error pages requires
   // a specific code path.
   gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser, TEST_URL_1);
@@ -27,7 +27,7 @@ add_task(async function() {
     "content is really a net error page."
   );
 
-  const netErrorNode = await getNodeFront("#errorPageContainer", inspector);
+  const netErrorNode = await getNodeFront(".container", inspector);
   ok(netErrorNode, "The inspector can get a node front from the neterror page");
 
   info("Navigate to a valid url");

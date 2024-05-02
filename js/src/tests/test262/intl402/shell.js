@@ -21,11 +21,18 @@ defines:
   - getInvalidLocaleArguments
   - testOption
   - testForUnwantedRegExpChanges
+  - allCalendars
+  - allCollations
+  - allNumberingSystems
   - isValidNumberingSystem
+  - numberingSystemDigits
+  - allSimpleSanctionedUnits
   - testNumberFormat
   - getDateTimeComponents
   - getDateTimeComponentValues
   - isCanonicalizedStructurallyValidTimeZoneName
+  - partitionDurationFormatPattern
+  - formatDurationFormatPattern
 ---*/
 /**
  */
@@ -2031,17 +2038,71 @@ function testForUnwantedRegExpChanges(testFunc) {
 
 
 /**
- * Tests whether name is a valid BCP 47 numbering system name
- * and not excluded from use in the ECMAScript Internationalization API.
- * @param {string} name the name to be tested.
- * @return {boolean} whether name is a valid BCP 47 numbering system name and
- *   allowed for use in the ECMAScript Internationalization API.
+ * Returns an array of all known calendars.
  */
+function allCalendars() {
+  // source: CLDR file common/bcp47/number.xml; version CLDR 39.
+  // https://github.com/unicode-org/cldr/blob/master/common/bcp47/calendar.xml
+  return [
+    "buddhist",
+    "chinese",
+    "coptic",
+    "dangi",
+    "ethioaa",
+    "ethiopic",
+    "gregory",
+    "hebrew",
+    "indian",
+    "islamic",
+    "islamic-umalqura",
+    "islamic-tbla",
+    "islamic-civil",
+    "islamic-rgsa",
+    "iso8601",
+    "japanese",
+    "persian",
+    "roc",
+  ];
+}
 
-function isValidNumberingSystem(name) {
 
-  // source: CLDR file common/bcp47/number.xml; version CLDR 36.1.
-  var numberingSystems = [
+/**
+ * Returns an array of all known collations.
+ */
+function allCollations() {
+  // source: CLDR file common/bcp47/collation.xml; version CLDR 39.
+  // https://github.com/unicode-org/cldr/blob/master/common/bcp47/collation.xml
+  return [
+    "big5han",
+    "compat",
+    "dict",
+    "direct",
+    "ducet",
+    "emoji",
+    "eor",
+    "gb2312",
+    "phonebk",
+    "phonetic",
+    "pinyin",
+    "reformed",
+    "search",
+    "searchjl",
+    "standard",
+    "stroke",
+    "trad",
+    "unihan",
+    "zhuyin",
+  ];
+}
+
+
+/**
+ * Returns an array of all known numbering systems.
+ */
+function allNumberingSystems() {
+  // source: CLDR file common/bcp47/number.xml; version CLDR 40 & new in Unicode 14.0
+  // https://github.com/unicode-org/cldr/blob/master/common/bcp47/number.xml
+  return [
     "adlm",
     "ahom",
     "arab",
@@ -2081,6 +2142,7 @@ function isValidNumberingSystem(name) {
     "jpanfin",
     "jpanyear",
     "kali",
+    "kawi",
     "khmr",
     "knda",
     "lana",
@@ -2102,6 +2164,7 @@ function isValidNumberingSystem(name) {
     "mymr",
     "mymrshan",
     "mymrtlng",
+    "nagm",
     "native",
     "newa",
     "nkoo",
@@ -2121,6 +2184,7 @@ function isValidNumberingSystem(name) {
     "talu",
     "taml",
     "tamldec",
+    "tnsa",
     "telu",
     "thai",
     "tirh",
@@ -2130,6 +2194,20 @@ function isValidNumberingSystem(name) {
     "wara",
     "wcho",
   ];
+}
+
+
+/**
+ * Tests whether name is a valid BCP 47 numbering system name
+ * and not excluded from use in the ECMAScript Internationalization API.
+ * @param {string} name the name to be tested.
+ * @return {boolean} whether name is a valid BCP 47 numbering system name and
+ *   allowed for use in the ECMAScript Internationalization API.
+ */
+
+function isValidNumberingSystem(name) {
+
+  var numberingSystems = allNumberingSystems();
 
   var excluded = [
     "finance",
@@ -2170,6 +2248,7 @@ var numberingSystemDigits = {
   hmnp: "𞅀𞅁𞅂𞅃𞅄𞅅𞅆𞅇𞅈𞅉",
   java: "꧐꧑꧒꧓꧔꧕꧖꧗꧘꧙",
   kali: "꤀꤁꤂꤃꤄꤅꤆꤇꤈꤉",
+  kawi: "\u{11F50}\u{11F51}\u{11F52}\u{11F53}\u{11F54}\u{11F55}\u{11F56}\u{11F57}\u{11F58}\u{11F59}",
   khmr: "០១២៣៤៥៦៧៨៩",
   knda: "೦೧೨೩೪೫೬೭೮೯",
   lana: "᪀᪁᪂᪃᪄᪅᪆᪇᪈᪉",
@@ -2178,6 +2257,7 @@ var numberingSystemDigits = {
   latn: "0123456789",
   lepc: "᱀᱁᱂᱃᱄᱅᱆᱇᱈᱉",
   limb: "\u1946\u1947\u1948\u1949\u194A\u194B\u194C\u194D\u194E\u194F",
+  nagm: "\u{1E4F0}\u{1E4F1}\u{1E4F2}\u{1E4F3}\u{1E4F4}\u{1E4F5}\u{1E4F6}\u{1E4F7}\u{1E4F8}\u{1E4F9}",
   mathbold: "𝟎𝟏𝟐𝟑𝟒𝟓𝟔𝟕𝟖𝟗",
   mathdbl: "𝟘𝟙𝟚𝟛𝟜𝟝𝟞𝟟𝟠𝟡",
   mathmono: "𝟶𝟷𝟸𝟹𝟺𝟻𝟼𝟽𝟾𝟿",
@@ -2207,6 +2287,7 @@ var numberingSystemDigits = {
   takr: "𑛀𑛁𑛂𑛃𑛄𑛅𑛆𑛇𑛈𑛉",
   talu: "᧐᧑᧒᧓᧔᧕᧖᧗᧘᧙",
   tamldec: "௦௧௨௩௪௫௬௭௮௯",
+  tnsa: "\u{16AC0}\u{16AC1}\u{16AC2}\u{16AC3}\u{16AC4}\u{16AC5}\u{16AC6}\u{16AC7}\u{16AC8}\u{16AC9}",
   telu: "౦౧౨౩౪౫౬౭౮౯",
   thai: "๐๑๒๓๔๕๖๗๘๙",
   tibt: "༠༡༢༣༤༥༦༧༨༩",
@@ -2215,6 +2296,61 @@ var numberingSystemDigits = {
   wara: "𑣠𑣡𑣢𑣣𑣤𑣥𑣦𑣧𑣨𑣩",
   wcho: "𞋰𞋱𞋲𞋳𞋴𞋵𞋶𞋷𞋸𞋹",
 };
+
+
+/**
+ * Returns an array of all simple, sanctioned unit identifiers.
+ */
+function allSimpleSanctionedUnits() {
+  // https://tc39.es/ecma402/#table-sanctioned-simple-unit-identifiers
+  return [
+    "acre",
+    "bit",
+    "byte",
+    "celsius",
+    "centimeter",
+    "day",
+    "degree",
+    "fahrenheit",
+    "fluid-ounce",
+    "foot",
+    "gallon",
+    "gigabit",
+    "gigabyte",
+    "gram",
+    "hectare",
+    "hour",
+    "inch",
+    "kilobit",
+    "kilobyte",
+    "kilogram",
+    "kilometer",
+    "liter",
+    "megabit",
+    "megabyte",
+    "meter",
+    "microsecond",
+    "mile",
+    "mile-scandinavian",
+    "milliliter",
+    "millimeter",
+    "millisecond",
+    "minute",
+    "month",
+    "nanosecond",
+    "ounce",
+    "percent",
+    "petabyte",
+    "pound",
+    "second",
+    "stone",
+    "terabit",
+    "terabyte",
+    "week",
+    "yard",
+    "year",
+  ];
+}
 
 
 /**
@@ -2369,4 +2505,213 @@ function isCanonicalizedStructurallyValidTimeZoneName(timeZone) {
     return false;
   }
   return zoneNamePattern.test(timeZone);
+}
+
+
+/**
+ * @description Simplified PartitionDurationFormatPattern implementation which
+ * only supports the "en" locale.
+ * @param {Object} duration the duration record
+ * @param {String} style the duration format style
+ * @result {Array} an array with formatted duration parts
+ */
+
+function partitionDurationFormatPattern(duration, style = "short") {
+  const units = [
+    "years",
+    "months",
+    "weeks",
+    "days",
+    "hours",
+    "minutes",
+    "seconds",
+    "milliseconds",
+    "microseconds",
+    "nanoseconds",
+  ];
+
+  function durationToFractionalSeconds(duration) {
+    let {
+      seconds = 0,
+      milliseconds = 0,
+      microseconds = 0,
+      nanoseconds = 0,
+    } = duration;
+
+    // Directly return seconds when no sub-seconds are present.
+    if (milliseconds === 0 && microseconds === 0 && nanoseconds === 0) {
+      return seconds;
+    }
+
+    // Otherwise compute the overall amount of nanoseconds using BigInt to avoid
+    // loss of precision.
+    let ns_sec = BigInt(seconds) * 1_000_000_000n;
+    let ns_ms = BigInt(milliseconds) * 1_000_000n;
+    let ns_us = BigInt(microseconds) * 1_000n;
+    let ns = ns_sec + ns_ms + ns_us + BigInt(nanoseconds);
+
+    // Split the nanoseconds amount into seconds and sub-seconds.
+    let q = ns / 1_000_000_000n;
+    let r = ns % 1_000_000_000n;
+
+    // Pad sub-seconds, without any leading negative sign, to nine digits.
+    if (r < 0) {
+      r = -r;
+    }
+    r = String(r).padStart(9, "0");
+
+    // Return seconds with fractional part as a decimal string.
+    return `${q}.${r}`;
+  }
+
+  // Only "en" is supported.
+  const locale = "en";
+  const numberingSystem = "latn";
+  const timeSeparator = ":";
+
+  let result = [];
+  let separated = false;
+
+  for (let unit of units) {
+    // Absent units default to zero.
+    let value = duration[unit] ?? 0;
+
+    let display = "auto";
+    if (style === "digital") {
+      // Always display numeric units per GetDurationUnitOptions.
+      if (unit === "hours" || unit === "minutes" || unit === "seconds") {
+        display = "always";
+      }
+
+      // Numeric seconds and sub-seconds are combined into a single value.
+      if (unit === "seconds") {
+        value = durationToFractionalSeconds(duration);
+      }
+    }
+
+    // "auto" display omits zero units.
+    if (value !== 0 || display !== "auto") {
+      // Map the DurationFormat style to a NumberFormat style.
+      let unitStyle = style;
+      if (style === "digital") {
+        if (unit === "hours") {
+          unitStyle = "numeric";
+        } else if (unit === "minutes" || unit === "seconds") {
+          unitStyle = "2-digit";
+        } else {
+          unitStyle = "short";
+        }
+      }
+
+      // NumberFormat requires singular unit names.
+      let numberFormatUnit = unit.slice(0, -1);
+
+      // Compute the matching NumberFormat options.
+      let nfOpts;
+      if (unitStyle !== "numeric" && unitStyle !== "2-digit") {
+        // The value is formatted as a standalone unit.
+        nfOpts = {
+          numberingSystem,
+          style: "unit",
+          unit: numberFormatUnit,
+          unitDisplay: unitStyle,
+        };
+      } else {
+        let roundingMode = undefined;
+        let minimumFractionDigits = undefined;
+        let maximumFractionDigits = undefined;
+
+        // Numeric seconds include any sub-seconds.
+        if (style === "digital" && unit === "seconds") {
+          roundingMode = "trunc";
+          minimumFractionDigits = 0;
+          maximumFractionDigits = 9;
+        }
+
+        // The value is formatted as a numeric unit.
+        nfOpts = {
+          numberingSystem,
+          minimumIntegerDigits: (unitStyle === "2-digit" ? 2 : 1),
+          roundingMode,
+          minimumFractionDigits,
+          maximumFractionDigits,
+        };
+      }
+
+      let nf = new Intl.NumberFormat(locale, nfOpts);
+      let formatted = nf.formatToParts(value);
+
+      // Add |numberFormatUnit| to the formatted number.
+      let list = [];
+      for (let {value, type} of formatted) {
+        list.push({type, value, unit: numberFormatUnit});
+      }
+
+      if (!separated) {
+        // Prepend the separator before the next numeric unit.
+        if (unitStyle === "2-digit" || unitStyle === "numeric") {
+          separated = true;
+        }
+
+        // Append the formatted number to |result|.
+        result.push(list);
+      } else {
+        let last = result[result.length - 1];
+
+        // Prepend the time separator before the formatted number.
+        last.push({
+          type: "literal",
+          value: timeSeparator,
+        });
+
+        // Concatenate |last| and the formatted number.
+        last.push(...list);
+      }
+    } else {
+      separated = false;
+    }
+
+    // No further units possible after "seconds" when style is "digital".
+    if (style === "digital" && unit === "seconds") {
+      break;
+    }
+  }
+
+  let lf = new Intl.ListFormat(locale, {
+    type: "unit",
+    style: (style !== "digital" ? style : "short"),
+  });
+
+  // Collect all formatted units into a list of strings.
+  let strings = [];
+  for (let parts of result) {
+    let string = "";
+    for (let {value} of parts) {
+      string += value;
+    }
+    strings.push(string);
+  }
+
+  // Format the list of strings and compute the overall result.
+  let flattened = [];
+  for (let {type, value} of lf.formatToParts(strings)) {
+    if (type === "element") {
+      flattened.push(...result.shift());
+    } else {
+      flattened.push({type, value});
+    }
+  }
+  return flattened;
+}
+
+
+/**
+ * @description Return the formatted string from partitionDurationFormatPattern.
+ * @param {Object} duration the duration record
+ * @param {String} style the duration format style
+ * @result {String} a string containing the formatted duration
+ */
+
+function formatDurationFormatPattern(duration, style) {
+  return partitionDurationFormatPattern(duration, style).reduce((acc, e) => acc + e.value, "");
 }

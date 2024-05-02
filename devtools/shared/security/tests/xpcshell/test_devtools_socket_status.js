@@ -3,65 +3,92 @@
 
 "use strict";
 
-const { DevToolsLoader } = ChromeUtils.import(
-  "resource://devtools/shared/loader/Loader.jsm"
-);
-const { DevToolsSocketStatus } = ChromeUtils.import(
-  "resource://devtools/shared/security/DevToolsSocketStatus.jsm"
+const {
+  useDistinctSystemPrincipalLoader,
+  releaseDistinctSystemPrincipalLoader,
+} = ChromeUtils.importESModule(
+  "resource://devtools/shared/loader/DistinctSystemPrincipalLoader.sys.mjs"
 );
 
-add_task(async function() {
+const { DevToolsSocketStatus } = ChromeUtils.importESModule(
+  "resource://devtools/shared/security/DevToolsSocketStatus.sys.mjs"
+);
+
+add_task(async function () {
   Services.prefs.setBoolPref("devtools.debugger.remote-enabled", true);
   Services.prefs.setBoolPref("devtools.debugger.prompt-connection", false);
 
-  info("Without any server started, status should be set to false");
-  checkSocketStatus(false);
+  info("Without any server started, all states should be set to false");
+  checkSocketStatus(false, false);
 
-  info("Start a first server, expect status to change to true");
+  info("Start a first server, expect all states to change to true");
   const server = await setupDevToolsServer({ fromBrowserToolbox: false });
-  checkSocketStatus(true);
+  checkSocketStatus(true, true);
 
-  info("Start another server, expect status to remain true");
+  info("Start another server, expect all states to remain true");
   const otherServer = await setupDevToolsServer({ fromBrowserToolbox: false });
-  checkSocketStatus(true);
+  checkSocketStatus(true, true);
 
-  info("Shutdown one of the servers, expect status to remain true");
+  info("Shutdown one of the servers, expect all states to remain true");
   teardownDevToolsServer(otherServer);
-  checkSocketStatus(true);
+  checkSocketStatus(true, true);
 
-  info("Shutdown the other server, expect status to change to false");
+  info("Shutdown the other server, expect all states to change to false");
   teardownDevToolsServer(server);
-  checkSocketStatus(false);
+  checkSocketStatus(false, false);
 
-  info("Start a 'browser toolbox' server, expect status to remain to false");
+  info(
+    "Start a 'browser toolbox' server, expect only the 'include' state to become true"
+  );
   const browserToolboxServer = await setupDevToolsServer({
     fromBrowserToolbox: true,
   });
-  checkSocketStatus(false);
+  checkSocketStatus(true, false);
 
   info(
-    "Shutdown the 'browser toolbox' server, expect status to remain to false"
+    "Shutdown the 'browser toolbox' server, expect all states to become false"
   );
   teardownDevToolsServer(browserToolboxServer);
-  checkSocketStatus(false);
+  checkSocketStatus(false, false);
 
   Services.prefs.clearUserPref("devtools.debugger.remote-enabled");
   Services.prefs.clearUserPref("devtools.debugger.prompt-connection");
 });
 
-function checkSocketStatus(expected) {
-  const opened = DevToolsSocketStatus.opened;
-  if (expected) {
-    ok(opened, "DevTools socket is opened for connections");
-  } else {
-    ok(!opened, "No DevTools socket is opened for connections");
-  }
+function checkSocketStatus(expectedExcludeFalse, expectedExcludeTrue) {
+  const openedDefault = DevToolsSocketStatus.hasSocketOpened();
+  const openedExcludeFalse = DevToolsSocketStatus.hasSocketOpened({
+    excludeBrowserToolboxSockets: false,
+  });
+  const openedExcludeTrue = DevToolsSocketStatus.hasSocketOpened({
+    excludeBrowserToolboxSockets: true,
+  });
+
+  equal(
+    openedDefault,
+    openedExcludeFalse,
+    "DevToolsSocketStatus.hasSocketOpened should default to excludeBrowserToolboxSockets=false"
+  );
+  equal(
+    openedExcludeFalse,
+    expectedExcludeFalse,
+    "DevToolsSocketStatus matches the expectation for excludeBrowserToolboxSockets=false"
+  );
+  equal(
+    openedExcludeTrue,
+    expectedExcludeTrue,
+    "DevToolsSocketStatus matches the expectation for excludeBrowserToolboxSockets=true"
+  );
 }
 
 async function setupDevToolsServer({ fromBrowserToolbox }) {
-  info("Create a separate loader instance for the DevToolsServer.");
-  const loader = new DevToolsLoader();
-  const { DevToolsServer } = loader.require("devtools/server/devtools-server");
+  info("Use the dedicated system principal loader for the DevToolsServer.");
+  const requester = {};
+  const loader = useDistinctSystemPrincipalLoader(requester);
+
+  const { DevToolsServer } = loader.require(
+    "resource://devtools/server/devtools-server.js"
+  );
 
   DevToolsServer.init();
   DevToolsServer.registerAllActors();
@@ -74,17 +101,37 @@ async function setupDevToolsServer({ fromBrowserToolbox }) {
 
   const listener = new SocketListener(DevToolsServer, socketOptions);
   ok(listener, "Socket listener created");
-  await listener.open();
-  equal(DevToolsServer.listeningSockets, 1, "1 listening socket");
 
-  return { DevToolsServer, listener };
+  // Note that useDistinctSystemPrincipalLoader will lead to reuse the same
+  // loader if we are creating several servers in a row. The DevToolsServer
+  // singleton might already have sockets opened.
+  const listeningSockets = DevToolsServer.listeningSockets;
+  await listener.open();
+  equal(
+    DevToolsServer.listeningSockets,
+    listeningSockets + 1,
+    "A new listening socket was created"
+  );
+
+  return { DevToolsServer, listener, requester };
 }
 
-function teardownDevToolsServer({ DevToolsServer, listener }) {
+function teardownDevToolsServer({ DevToolsServer, listener, requester }) {
   info("Close the listener socket");
+  const listeningSockets = DevToolsServer.listeningSockets;
   listener.close();
-  equal(DevToolsServer.listeningSockets, 0, "0 listening sockets");
+  equal(
+    DevToolsServer.listeningSockets,
+    listeningSockets - 1,
+    "A listening socket was closed"
+  );
 
-  info("Destroy the temporary devtools server");
-  DevToolsServer.destroy();
+  if (DevToolsServer.listeningSockets == 0) {
+    info("Destroy the temporary devtools server");
+    DevToolsServer.destroy();
+  }
+
+  if (requester) {
+    releaseDistinctSystemPrincipalLoader(requester);
+  }
 }

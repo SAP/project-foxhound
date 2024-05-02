@@ -2,13 +2,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/* import-globals-from ../../shared/test/shared-head.js */
-
 "use strict";
 
 // Test deleting all storage items
 
-add_task(async function() {
+add_task(async function () {
   // storage-listings.html explicitly mixes secure and insecure frames.
   // We should not enforce https for tests using this page.
   await pushPref("dom.security.https_first", false);
@@ -84,7 +82,7 @@ add_task(async function() {
     const cell = getRowCells(rowName)[cellToClick];
     await waitForContextMenu(contextMenu, cell, () => {
       info(`Opened context menu in ${storeName}, row '${rowName}'`);
-      menuDeleteAllItem.click();
+      contextMenu.activateItem(menuDeleteAllItem);
     });
 
     await eventWait;

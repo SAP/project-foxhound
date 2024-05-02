@@ -3,7 +3,7 @@
 import { CFRPageActions, PageAction } from "lib/CFRPageActions.jsm";
 import { FAKE_RECOMMENDATION } from "./constants";
 import { GlobalOverrider } from "test/unit/utils";
-import { CFRMessageProvider } from "lib/CFRMessageProvider.jsm";
+import { CFRMessageProvider } from "lib/CFRMessageProvider.sys.mjs";
 
 describe("CFRPageActions", () => {
   let sandbox;
@@ -298,13 +298,20 @@ describe("CFRPageActions", () => {
     });
 
     describe("#_popupStateChange", () => {
-      it("should collapse the notification on 'dismissed'", () => {
+      it("should collapse the notification and send dismiss telemetry on 'dismissed'", () => {
         pageAction._expand();
+
+        sandbox.spy(pageAction, "_sendTelemetry");
 
         pageAction._popupStateChange("dismissed");
         assert.equal(
           pageAction.urlbarinput.getAttribute("cfr-recommendation-state"),
           "collapsed"
+        );
+
+        assert.equal(
+          pageAction._sendTelemetry.lastCall.args[0].event,
+          "DISMISS"
         );
       });
       it("should remove the notification on 'removed'", () => {
@@ -351,7 +358,11 @@ describe("CFRPageActions", () => {
         pageAction._sendTelemetry(fakePing);
         assert.calledWith(dispatchStub, {
           type: "DOORHANGER_TELEMETRY",
-          data: { action: "cfr_user_event", source: "CFR", message_id: 42 },
+          data: {
+            action: "cfr_user_event",
+            source: "CFR",
+            message_id: 42,
+          },
         });
       });
     });
@@ -445,7 +456,7 @@ describe("CFRPageActions", () => {
       });
       it("should report an error when no attributes are present but subAttribute is requested", async () => {
         const fromJson = { value: "Foo" };
-        const stub = sandbox.stub(global.Cu, "reportError");
+        const stub = sandbox.stub(global.console, "error");
 
         await pageAction.getStrings(fromJson, "accesskey");
 
@@ -556,11 +567,11 @@ describe("CFRPageActions", () => {
         // .toFixed to sort out some floating precision errors
         assert.equal(
           footerFilledStars.style.width,
-          `${(4.2 * 17).toFixed(1)}px`
+          `${(4.2 * 16).toFixed(1)}px`
         );
         assert.equal(
           footerEmptyStars.style.width,
-          `${(0.8 * 17).toFixed(1)}px`
+          `${(0.8 * 16).toFixed(1)}px`
         );
       });
       it("should add the number of users correctly", async () => {
@@ -569,7 +580,7 @@ describe("CFRPageActions", () => {
         assert.isNull(footerUsers.getAttribute("hidden"));
         assert.equal(
           footerUsers.getAttribute("value"),
-          `${fakeRecommendation.content.addon.users} users`
+          `${fakeRecommendation.content.addon.users}`
         );
       });
       it("should send the right telemetry", async () => {
@@ -629,9 +640,8 @@ describe("CFRPageActions", () => {
       it("should set the secondary action correctly", async () => {
         await pageAction._cfrUrlbarButtonClick();
         // eslint-disable-next-line prefer-destructuring
-        const [
-          secondaryAction,
-        ] = global.PopupNotifications.show.firstCall.args[5];
+        const [secondaryAction] =
+          global.PopupNotifications.show.firstCall.args[5];
 
         assert.deepEqual(secondaryAction.label, {
           value: "Secondary Button",
@@ -728,6 +738,13 @@ describe("CFRPageActions", () => {
             eventCallback: pageAction._popupStateChange,
             persistent: false,
             persistWhileVisible: false,
+            popupIconClass: fakeRecommendation.content.icon_class,
+            recordTelemetryInPrivateBrowsing:
+              fakeRecommendation.content.show_in_private_browsing,
+            name: {
+              string_id: "cfr-doorhanger-extension-author",
+              args: { name: fakeRecommendation.content.addon.author },
+            },
           }
         );
       });
@@ -913,6 +930,137 @@ describe("CFRPageActions", () => {
       });
     });
 
+    describe("showPopup", () => {
+      let savedRec;
+      let pageAction;
+      let fakeAnchorId = "fake_anchor_id";
+      let fakeAltAnchorId = "fake_alt_anchor_id";
+      let TEST_MESSAGE;
+      let getElmStub;
+      let getStyleStub;
+      let isElmVisibleStub;
+      let getWidgetStub;
+      let isCustomizingStub;
+      beforeEach(() => {
+        TEST_MESSAGE = {
+          id: "fake_id",
+          template: "cfr_doorhanger",
+          content: {
+            skip_address_bar_notifier: true,
+            heading_text: "Fake Heading Text",
+            anchor_id: fakeAnchorId,
+          },
+        };
+        getElmStub = sandbox
+          .stub(window.document, "getElementById")
+          .callsFake(id => ({ id }));
+        getStyleStub = sandbox
+          .stub(window, "getComputedStyle")
+          .returns({ display: "block", visibility: "visible" });
+        isElmVisibleStub = sandbox.stub().returns(true);
+        getWidgetStub = sandbox.stub();
+        isCustomizingStub = sandbox.stub().returns(false);
+        globals.set({
+          CustomizableUI: { getWidget: getWidgetStub },
+          CustomizationHandler: { isCustomizing: isCustomizingStub },
+          isElementVisible: isElmVisibleStub,
+        });
+
+        savedRec = {
+          id: TEST_MESSAGE.id,
+          host: fakeHost,
+          content: TEST_MESSAGE.content,
+        };
+        CFRPageActions.RecommendationMap.set(fakeBrowser, savedRec);
+        pageAction = new PageAction(window, dispatchStub);
+        sandbox.stub(pageAction, "_renderPopup");
+      });
+      afterEach(() => {
+        sandbox.restore();
+        globals.restore();
+      });
+
+      it("should use anchor_id if element exists and is not a customizable widget", async () => {
+        await pageAction.showPopup();
+        assert.equal(fakeBrowser.cfrpopupnotificationanchor.id, fakeAnchorId);
+      });
+
+      it("should use anchor_id if element exists and is in the toolbar", async () => {
+        getWidgetStub.withArgs(fakeAnchorId).returns({ areaType: "toolbar" });
+        await pageAction.showPopup();
+        assert.equal(fakeBrowser.cfrpopupnotificationanchor.id, fakeAnchorId);
+      });
+
+      it("should use default container if element exists but is in the widget overflow panel", async () => {
+        getWidgetStub
+          .withArgs(fakeAnchorId)
+          .returns({ areaType: "menu-panel" });
+        await pageAction.showPopup();
+        assert.equal(
+          fakeBrowser.cfrpopupnotificationanchor.id,
+          pageAction.container.id
+        );
+      });
+
+      it("should use default container if element exists but is in the customization palette", async () => {
+        getWidgetStub.withArgs(fakeAnchorId).returns({ areaType: null });
+        isCustomizingStub.returns(true);
+        await pageAction.showPopup();
+        assert.equal(
+          fakeBrowser.cfrpopupnotificationanchor.id,
+          pageAction.container.id
+        );
+      });
+
+      it("should use alt_anchor_id if one has been provided and the anchor_id element cannot be found", async () => {
+        TEST_MESSAGE.content.alt_anchor_id = fakeAltAnchorId;
+        getElmStub.withArgs(fakeAnchorId).returns(null);
+        await pageAction.showPopup();
+        assert.equal(
+          fakeBrowser.cfrpopupnotificationanchor.id,
+          fakeAltAnchorId
+        );
+      });
+
+      it("should use alt_anchor_id if one has been provided and the anchor_id element is hidden by CSS", async () => {
+        TEST_MESSAGE.content.alt_anchor_id = fakeAltAnchorId;
+        getStyleStub
+          .withArgs(sandbox.match({ id: fakeAnchorId }))
+          .returns({ display: "none", visibility: "visible" });
+        await pageAction.showPopup();
+        assert.equal(
+          fakeBrowser.cfrpopupnotificationanchor.id,
+          fakeAltAnchorId
+        );
+      });
+
+      it("should use alt_anchor_id if one has been provided and the anchor_id element has no height/width", async () => {
+        TEST_MESSAGE.content.alt_anchor_id = fakeAltAnchorId;
+        isElmVisibleStub
+          .withArgs(sandbox.match({ id: fakeAnchorId }))
+          .returns(false);
+        await pageAction.showPopup();
+        assert.equal(
+          fakeBrowser.cfrpopupnotificationanchor.id,
+          fakeAltAnchorId
+        );
+      });
+
+      it("should use default container if the anchor_id and alt_anchor_id are both not visible", async () => {
+        TEST_MESSAGE.content.alt_anchor_id = fakeAltAnchorId;
+        getStyleStub
+          .withArgs(sandbox.match({ id: fakeAnchorId }))
+          .returns({ display: "none", visibility: "visible" });
+        getWidgetStub.withArgs(fakeAltAnchorId).returns({ areaType: null });
+        isCustomizingStub.returns(true);
+        await pageAction.showPopup();
+        assert.equal(
+          fakeBrowser.cfrpopupnotificationanchor.id,
+          pageAction.container.id
+        );
+      });
+    });
+
     describe("addRecommendation", () => {
       it("should fail and not add a recommendation if the browser is part of a private window", async () => {
         global.PrivateBrowsingUtils.isWindowPrivate.returns(true);
@@ -926,6 +1074,35 @@ describe("CFRPageActions", () => {
         );
         assert.isFalse(CFRPageActions.RecommendationMap.has(fakeBrowser));
       });
+      it("should successfully add a private browsing recommendation and send correct telemetry", async () => {
+        global.PrivateBrowsingUtils.isWindowPrivate.returns(true);
+        fakeRecommendation.content.show_in_private_browsing = true;
+        assert.isTrue(
+          await CFRPageActions.addRecommendation(
+            fakeBrowser,
+            fakeHost,
+            fakeRecommendation,
+            dispatchStub
+          )
+        );
+        assert.isTrue(CFRPageActions.RecommendationMap.has(fakeBrowser));
+
+        const pageAction = CFRPageActions.PageActionMap.get(
+          fakeBrowser.ownerGlobal
+        );
+        await pageAction.showAddressBarNotifier(fakeRecommendation, true);
+        assert.calledWith(dispatchStub, {
+          type: "DOORHANGER_TELEMETRY",
+          data: {
+            action: "cfr_user_event",
+            source: "CFR",
+            is_private: true,
+            message_id: fakeRecommendation.id,
+            bucket_id: fakeRecommendation.content.bucket_id,
+            event: "IMPRESSION",
+          },
+        });
+      });
       it("should fail and not add a recommendation if the browser is not the selected browser", async () => {
         global.gBrowser.selectedBrowser = {}; // Some other browser
         assert.isFalse(
@@ -936,6 +1113,17 @@ describe("CFRPageActions", () => {
             dispatchStub
           )
         );
+      });
+      it("should fail and not add a recommendation if the browser does not exist", async () => {
+        assert.isFalse(
+          await CFRPageActions.addRecommendation(
+            undefined,
+            fakeHost,
+            fakeRecommendation,
+            dispatchStub
+          )
+        );
+        assert.isFalse(CFRPageActions.RecommendationMap.has(fakeBrowser));
       });
       it("should fail and not add a recommendation if the host doesn't match", async () => {
         const someOtherFakeHost = "subdomain.mozilla.com";
@@ -985,9 +1173,8 @@ describe("CFRPageActions", () => {
           fakeRecommendation,
           dispatchStub
         );
-        const recommendation = CFRPageActions.RecommendationMap.get(
-          fakeBrowser
-        );
+        const recommendation =
+          CFRPageActions.RecommendationMap.get(fakeBrowser);
 
         // sanity check - just go through some of the rest of the attributes to make sure they were untouched
         assert.equal(recommendation.id, fakeRecommendation.id);

@@ -82,8 +82,8 @@ const TESTCASES = [
 ];
 
 add_task(async function do_test() {
-  let { FormAutofillHandler } = ChromeUtils.import(
-    "resource://autofill/FormAutofillHandler.jsm"
+  let { FormAutofillHandler } = ChromeUtils.importESModule(
+    "resource://gre/modules/shared/FormAutofillHandler.sys.mjs"
   );
   for (let test of TESTCASES) {
     info("Test case: " + test.description);
@@ -104,7 +104,7 @@ add_task(async function do_test() {
 
     handler.activeSection.clearPopulatedForm();
     handler.activeSection.fieldDetails.forEach(detail => {
-      let element = detail.elementWeakRef.get();
+      let element = detail.element;
       let id = element.id;
       Assert.equal(
         element.value,

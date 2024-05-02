@@ -3,7 +3,7 @@
 
 "use strict";
 
-add_task(async function setup() {
+add_setup(async function () {
   let toolbar = document.getElementById("PersonalToolbar");
   let wasCollapsed = toolbar.collapsed;
 
@@ -15,7 +15,7 @@ add_task(async function setup() {
   // Clean before and after so we don't have anything in the folders.
   await PlacesUtils.bookmarks.eraseEverything();
 
-  registerCleanupFunction(async function() {
+  registerCleanupFunction(async function () {
     // Collapse the personal toolbar if needed.
     if (wasCollapsed) {
       await promiseSetToolbarVisibility(toolbar, false);
@@ -33,18 +33,18 @@ add_task(async function test_change_location_from_Toolbar() {
   let children = [
     {
       title: "first",
-      url: "http://www.mochi.test/first",
+      url: "http://www.example.com/first",
     },
     {
       title: "second",
-      url: "http://www.mochi.test/second",
+      url: "http://www.example.com/second",
     },
     {
       type: PlacesUtils.bookmarks.TYPE_SEPARATOR,
     },
     {
       title: "third",
-      url: "http://www.mochi.test/third",
+      url: "http://www.example.com/third",
     },
   ];
   let guid = PlacesUtils.history.makeGuid();
@@ -65,7 +65,7 @@ add_task(async function test_change_location_from_Toolbar() {
   let loadedPromises = children
     .filter(item => "url" in item)
     .map(item =>
-      BrowserTestUtils.waitForNewTab(gBrowser, item.url, false, true)
+      BrowserTestUtils.waitForNewTab(gBrowser, item.url, true, true)
     );
 
   let srcX = 10,

@@ -6,17 +6,15 @@
 
 "use strict";
 
-var { ExtensionParent } = ChromeUtils.import(
-  "resource://gre/modules/ExtensionParent.jsm"
+var { ExtensionParent } = ChromeUtils.importESModule(
+  "resource://gre/modules/ExtensionParent.sys.mjs"
 );
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "BroadcastConduit",
-  "resource://gre/modules/ConduitsParent.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  BroadcastConduit: "resource://gre/modules/ConduitsParent.sys.mjs",
+});
 
-var { IconDetails, watchExtensionProxyContextLoad } = ExtensionParent;
+var { watchExtensionProxyContextLoad } = ExtensionParent;
 
 var { promiseDocumentLoaded } = ExtensionUtils;
 
@@ -85,7 +83,9 @@ class BaseDevToolsPanel {
       }
     );
 
-    this.browser.loadURI(url, { triggeringPrincipal: this.context.principal });
+    this.browser.fixupAndLoadURIString(url, {
+      triggeringPrincipal: this.context.principal,
+    });
   }
 
   destroyBrowserElement() {
@@ -156,7 +156,7 @@ class ParentDevToolsPanel extends BaseDevToolsPanel {
       // panelLabel is used to set the aria-label attribute (See Bug 1570645).
       panelLabel: title,
       tooltip: `DevTools Panel added by "${extensionName}" add-on.`,
-      isTargetSupported: target => target.isLocalTab,
+      isToolSupported: toolbox => toolbox.commands.descriptorFront.isLocalTab,
       build: (window, toolbox) => {
         if (toolbox !== this.toolbox) {
           throw new Error(
@@ -491,7 +491,7 @@ class ParentDevToolsInspectorSidebar extends BaseDevToolsPanel {
       if (this.browser) {
         // Just load the new extension page url in the existing browser, if
         // it already exists.
-        this.browser.loadURI(this.panelOptions.url, {
+        this.browser.fixupAndLoadURIString(this.panelOptions.url, {
           triggeringPrincipal: this.context.extension.principal,
         });
       } else {
@@ -666,13 +666,8 @@ this.devtools_panels = class extends ExtensionAPI {
           },
           create(title, icon, url) {
             // Get a fallback icon from the manifest data.
-            if (icon === "" && context.extension.manifest.icons) {
-              const iconInfo = IconDetails.getPreferredIcon(
-                context.extension.manifest.icons,
-                context.extension,
-                128
-              );
-              icon = iconInfo ? iconInfo.icon : "";
+            if (icon === "") {
+              icon = context.extension.getPreferredIcon(128);
             }
 
             icon = context.extension.baseURI.resolve(icon);

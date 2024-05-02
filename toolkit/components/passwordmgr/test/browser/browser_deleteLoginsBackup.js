@@ -2,11 +2,9 @@
  * Test that logins backup is deleted as expected when logins are deleted.
  */
 
-ChromeUtils.defineModuleGetter(this, "OS", "resource://gre/modules/osfile.jsm");
-
-XPCOMUtils.defineLazyModuleGetters(this, {
-  FXA_PWDMGR_HOST: "resource://gre/modules/FxAccountsCommon.js",
-  FXA_PWDMGR_REALM: "resource://gre/modules/FxAccountsCommon.js",
+ChromeUtils.defineESModuleGetters(this, {
+  FXA_PWDMGR_HOST: "resource://gre/modules/FxAccountsCommon.sys.mjs",
+  FXA_PWDMGR_REALM: "resource://gre/modules/FxAccountsCommon.sys.mjs",
 });
 
 const nsLoginInfo = new Components.Constructor(
@@ -16,8 +14,8 @@ const nsLoginInfo = new Components.Constructor(
 );
 
 const login1 = new nsLoginInfo(
-  "http://example.com",
-  "http://example.com",
+  "https://example.com",
+  "https://example.com",
   null,
   "notifyu1",
   "notifyp1",
@@ -25,8 +23,8 @@ const login1 = new nsLoginInfo(
   "pass"
 );
 const login2 = new nsLoginInfo(
-  "http://example.com",
-  "http://example.com",
+  "https://example.com",
+  "https://example.com",
   null,
   "",
   "notifyp1",
@@ -44,12 +42,9 @@ const fxaKey = new nsLoginInfo(
   ""
 );
 
-const loginStorePath = OS.Path.join(
-  OS.Constants.Path.profileDir,
-  "logins.json"
-);
-const loginBackupPath = OS.Path.join(
-  OS.Constants.Path.profileDir,
+const loginStorePath = PathUtils.join(PathUtils.profileDir, "logins.json");
+const loginBackupPath = PathUtils.join(
+  PathUtils.profileDir,
   "logins-backup.json"
 );
 
@@ -63,24 +58,17 @@ async function waitForBackupUpdate() {
 }
 
 async function loginStoreExists() {
-  return TestUtils.waitForCondition(async () => {
-    let fileExists = await OS.File.exists(loginStorePath);
-    return fileExists;
-  });
+  return TestUtils.waitForCondition(() => IOUtils.exists(loginStorePath));
 }
 
 async function loginBackupExists() {
-  return TestUtils.waitForCondition(async () => {
-    let fileExists = await OS.File.exists(loginBackupPath);
-    return fileExists;
-  });
+  return TestUtils.waitForCondition(() => IOUtils.exists(loginBackupPath));
 }
 
 async function loginBackupDeleted() {
-  return TestUtils.waitForCondition(async () => {
-    let fileExists = await OS.File.exists(loginBackupPath);
-    return !fileExists;
-  });
+  return TestUtils.waitForCondition(
+    async () => !(await IOUtils.exists(loginBackupPath))
+  );
 }
 
 // If a fxa key is stored as a login, test that logins backup is updated to only store
@@ -94,13 +82,13 @@ add_task(
     let storageUpdatePromise = TestUtils.topicObserved(
       "password-storage-updated"
     );
-    Services.logins.addLogin(login1);
-    ok(true, "added login1");
+    await Services.logins.addLoginAsync(login1);
+    Assert.ok(true, "added login1");
     await loginStoreExists();
-    Services.logins.addLogin(fxaKey);
-    ok(true, "added fxaKey");
+    await Services.logins.addLoginAsync(fxaKey);
+    Assert.ok(true, "added fxaKey");
     await loginBackupExists();
-    ok(true, "logins-backup.json now exists");
+    Assert.ok(true, "logins-backup.json now exists");
     await storageUpdatePromise;
     info("Writes to storage are complete for addLogin calls");
 
@@ -110,7 +98,7 @@ add_task(
     await storageUpdatePromise;
     info("Writes to storage are complete after removeAllUserFacingLogins call");
     await waitForBackupUpdate();
-    ok(
+    Assert.ok(
       true,
       "logins-backup.json was updated to only store the fxa key, as expected"
     );
@@ -119,7 +107,7 @@ add_task(
     // Since there is a fxa key left, we need to call removeAllLogins() or removeLogin(fxaKey)
     // to remove the fxa key. Otherwise the test will fail in verify mode when trying to add login1
     Services.logins.removeAllLogins();
-    await OS.File.remove(loginStorePath);
+    await IOUtils.remove(loginStorePath);
   }
 );
 
@@ -128,19 +116,19 @@ add_task(async function test_deleteLoginsBackup_removeAllUserFacingLogins() {
   // Remove logins.json and logins-backup.json before starting.
   info("Testing the removeAllUserFacingLogins() case");
 
-  await OS.File.remove(loginStorePath, { ignoreAbsent: true });
-  await OS.File.remove(loginBackupPath, { ignoreAbsent: true });
+  await IOUtils.remove(loginStorePath, { ignoreAbsent: true });
+  await IOUtils.remove(loginBackupPath, { ignoreAbsent: true });
 
   let storageUpdatePromise = TestUtils.topicObserved(
     "password-storage-updated"
   );
   info("Add a login to create logins.json");
-  Services.logins.addLogin(login1);
+  await Services.logins.addLoginAsync(login1);
   await loginStoreExists();
-  ok(true, "logins.json now exists");
+  Assert.ok(true, "logins.json now exists");
 
   info("Add a second login to create logins-backup.json");
-  Services.logins.addLogin(login2);
+  await Services.logins.addLoginAsync(login2);
   await loginBackupExists();
   info("logins-backup.json now exists");
 
@@ -161,7 +149,7 @@ add_task(async function test_deleteLoginsBackup_removeAllUserFacingLogins() {
   );
 
   // Clean up.
-  await OS.File.remove(loginStorePath);
+  await IOUtils.remove(loginStorePath);
 });
 
 // 1. Test that logins backup is deleted when Services.logins.removeAllLogins() is called
@@ -171,19 +159,19 @@ add_task(async function test_deleteLoginsBackup_removeAllLogins() {
   // Remove logins.json and logins-backup.json before starting.
   info("Testing the removeAllLogins() case");
 
-  await OS.File.remove(loginStorePath, { ignoreAbsent: true });
-  await OS.File.remove(loginBackupPath, { ignoreAbsent: true });
+  await IOUtils.remove(loginStorePath, { ignoreAbsent: true });
+  await IOUtils.remove(loginBackupPath, { ignoreAbsent: true });
 
   let storageUpdatePromise = TestUtils.topicObserved(
     "password-storage-updated"
   );
   info("Add a login to create logins.json");
-  Services.logins.addLogin(login1);
-  ok(true, "added login1");
+  await Services.logins.addLoginAsync(login1);
+  Assert.ok(true, "added login1");
   await loginStoreExists();
-  ok(true, "logins.json now exists");
-  Services.logins.addLogin(login2);
-  ok(true, "added login2");
+  Assert.ok(true, "logins.json now exists");
+  await Services.logins.addLoginAsync(login2);
+  Assert.ok(true, "added login2");
   await loginBackupExists();
   info("logins-backup.json now exists");
 
@@ -201,13 +189,13 @@ add_task(async function test_deleteLoginsBackup_removeAllLogins() {
   info(
     "logins-backup.json was deleted as expected when all logins were removed"
   );
-  await OS.File.remove(loginStorePath);
+  await IOUtils.remove(loginStorePath);
 
   info("Testing the removeAllLogins() case when FxA key is present");
   storageUpdatePromise = TestUtils.topicObserved("password-storage-updated");
-  Services.logins.addLogin(login1);
+  await Services.logins.addLoginAsync(login1);
   await loginStoreExists();
-  Services.logins.addLogin(fxaKey);
+  await Services.logins.addLoginAsync(fxaKey);
   await loginBackupExists();
   info("logins-backup.json now exists");
   await storageUpdatePromise;
@@ -224,7 +212,7 @@ add_task(async function test_deleteLoginsBackup_removeAllLogins() {
   );
 
   // Clean up.
-  await OS.File.remove(loginStorePath);
+  await IOUtils.remove(loginStorePath);
 });
 
 // 1. Test that logins backup is deleted when the last saved login is removed using
@@ -237,9 +225,9 @@ add_task(async function test_deleteLoginsBackup_removeLogin() {
   let storageUpdatePromise = TestUtils.topicObserved(
     "password-storage-updated"
   );
-  Services.logins.addLogin(login1);
+  await Services.logins.addLoginAsync(login1);
   await loginStoreExists();
-  Services.logins.addLogin(login2);
+  await Services.logins.addLoginAsync(login2);
   await loginBackupExists();
   info("logins-backup.json now exists");
 
@@ -262,14 +250,14 @@ add_task(async function test_deleteLoginsBackup_removeLogin() {
   info(
     "logins-backup.json was deleted as expected when the last saved login was removed"
   );
-  await OS.File.remove(loginStorePath);
+  await IOUtils.remove(loginStorePath);
 
   info("Testing the removeLogin() case when there is a saved fxa key");
   info("Adding two logins: one user facing and the fxa key");
   storageUpdatePromise = TestUtils.topicObserved("password-storage-updated");
-  Services.logins.addLogin(login1);
+  await Services.logins.addLoginAsync(login1);
   await loginStoreExists();
-  Services.logins.addLogin(fxaKey);
+  await Services.logins.addLoginAsync(fxaKey);
   await loginBackupExists();
   info("logins-backup.json now exists");
 
@@ -290,5 +278,5 @@ add_task(async function test_deleteLoginsBackup_removeLogin() {
   // Since there is a fxa key left, we need to call removeAllLogins() or removeLogin(fxaKey)
   // to remove the fxa key. Otherwise the test will fail in verify mode when trying to add login1
   Services.logins.removeAllLogins();
-  await OS.File.remove(loginStorePath);
+  await IOUtils.remove(loginStorePath);
 });

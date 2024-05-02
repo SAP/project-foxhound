@@ -3,25 +3,24 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 
+import json
 import logging
 import os
 import re
-import json
 
 import mozpack.path as mozpath
-import gecko_taskgraph
-from gecko_taskgraph.transforms.base import TransformSequence
-from .. import GECKO
+import taskgraph
+from taskgraph.transforms.base import TransformSequence
+from taskgraph.util.schema import Schema
+from voluptuous import Optional, Required
+
 from gecko_taskgraph.util.docker import (
     create_context_tar,
     generate_context_hash,
     image_path,
 )
-from gecko_taskgraph.util.schema import Schema
-from voluptuous import (
-    Optional,
-    Required,
-)
+
+from .. import GECKO
 from .task import task_description_schema
 
 logger = logging.getLogger(__name__)
@@ -73,7 +72,7 @@ transforms.add_validate(docker_image_schema)
 
 @transforms.add
 def fill_template(config, tasks):
-    if not gecko_taskgraph.fast and config.write_artifacts:
+    if not taskgraph.fast and config.write_artifacts:
         if not os.path.isdir(CONTEXTS_DIR):
             os.makedirs(CONTEXTS_DIR)
 
@@ -92,7 +91,7 @@ def fill_template(config, tasks):
                     )
                 )
 
-        if not gecko_taskgraph.fast:
+        if not taskgraph.fast:
             context_path = mozpath.relpath(image_path(image_name), GECKO)
             if config.write_artifacts:
                 context_file = os.path.join(CONTEXTS_DIR, f"{image_name}.tar.gz")
@@ -106,9 +105,7 @@ def fill_template(config, tasks):
                 )
         else:
             if config.write_artifacts:
-                raise Exception(
-                    "Can't write artifacts if `gecko_taskgraph.fast` is set."
-                )
+                raise Exception("Can't write artifacts if `taskgraph.fast` is set.")
             context_hash = "0" * 40
         digest_data = [context_hash]
         digest_data += [json.dumps(args, sort_keys=True)]
@@ -135,7 +132,8 @@ def fill_template(config, tasks):
                 "image_name": image_name,
                 "artifact_prefix": "public",
             },
-            "expires-after": "1 year",
+            "always-target": True,
+            "expiration-policy": "long",
             "scopes": [],
             "treeherder": {
                 "symbol": job_symbol,
@@ -144,7 +142,7 @@ def fill_template(config, tasks):
                 "tier": 1,
             },
             "run-on-projects": [],
-            "worker-type": "images",
+            "worker-type": "images-gcp",
             "worker": {
                 "implementation": "docker-worker",
                 "os": "linux",
@@ -202,7 +200,7 @@ def fill_template(config, tasks):
         if "index" in task:
             taskdesc["index"] = task["index"]
 
-        if task.get("cache", True) and not gecko_taskgraph.fast:
+        if task.get("cache", True) and not taskgraph.fast:
             taskdesc["cache"] = {
                 "type": "docker-images.v2",
                 "name": image_name,

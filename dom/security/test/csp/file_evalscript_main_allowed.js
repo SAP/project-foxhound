@@ -1,3 +1,4 @@
+/* eslint-disable no-eval */
 // some javascript for the CSP eval() tests
 // all of these evals should succeed, as the document loading this script
 // has script-src 'self' 'unsafe-eval'
@@ -16,8 +17,8 @@ function logResult(str, passed) {
 }
 
 // callback for when stuff is allowed by CSP
-var onevalexecuted = (function(window) {
-  return function(shouldrun, what, data) {
+var onevalexecuted = (function (window) {
+  return function (shouldrun, what, data) {
     window.parent.scriptRan(shouldrun, what, data);
     logResult(
       (shouldrun ? "PASS: " : "FAIL: ") + what + " : " + data,
@@ -27,8 +28,8 @@ var onevalexecuted = (function(window) {
 })(window);
 
 // callback for when stuff is blocked
-var onevalblocked = (function(window) {
-  return function(shouldrun, what, data) {
+var onevalblocked = (function (window) {
+  return function (shouldrun, what, data) {
     window.parent.scriptBlocked(shouldrun, what, data);
     logResult(
       (shouldrun ? "FAIL: " : "PASS: ") + what + " : " + data,
@@ -41,9 +42,10 @@ var onevalblocked = (function(window) {
 // out.
 addEventListener(
   "load",
-  function() {
+  function () {
     // setTimeout(String) test  -- should pass
     try {
+      // eslint-disable-next-line no-implied-eval
       setTimeout(
         'onevalexecuted(true, "setTimeout(String)", "setTimeout with a string was enabled.");',
         10
@@ -58,7 +60,7 @@ addEventListener(
 
     // setTimeout(function) test  -- should pass
     try {
-      setTimeout(function() {
+      setTimeout(function () {
         onevalexecuted(
           true,
           "setTimeout(function)",
@@ -136,6 +138,23 @@ addEventListener(
         true,
         "new Function(String)",
         "new Function(String) was blocked."
+      );
+    }
+
+    // ShadowRealm.prototype.evaluate
+    try {
+      var sr = new ShadowRealm();
+      sr.evaluate("var x = 10");
+      onevalexecuted(
+        true,
+        "ShadowRealm.prototype.evaluate(String)",
+        "ShadowRealm.prototype.evaluate(String) was enabled."
+      );
+    } catch (e) {
+      onevalblocked(
+        true,
+        "ShadowRealm.prototype.evaluate(String)",
+        "ShadowRealm.prototype.evaluate(String) was blocked."
       );
     }
 

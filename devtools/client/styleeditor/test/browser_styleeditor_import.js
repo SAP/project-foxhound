@@ -7,14 +7,10 @@
 // http rather than chrome to improve coverage
 const TESTCASE_URI = TEST_BASE_HTTP + "simple.html";
 
-const { FileUtils } = ChromeUtils.import(
-  "resource://gre/modules/FileUtils.jsm"
-);
-
 const FILENAME = "styleeditor-import-test.css";
 const SOURCE = "body{background:red;}";
 
-add_task(async function() {
+add_task(async function () {
   const { panel, ui } = await openStyleEditorForURL(TESTCASE_URI);
 
   const added = ui.once("test:editor-updated");
@@ -37,20 +33,19 @@ add_task(async function() {
 
 function importSheet(ui, panelWindow) {
   // create file to import first
-  const file = FileUtils.getFile("ProfD", [FILENAME]);
+  const file = new FileUtils.File(
+    PathUtils.join(PathUtils.profileDir, FILENAME)
+  );
   const ostream = FileUtils.openSafeFileOutputStream(file);
-  const converter = Cc[
-    "@mozilla.org/intl/scriptableunicodeconverter"
-  ].createInstance(Ci.nsIScriptableUnicodeConverter);
-  converter.charset = "UTF-8";
-  const istream = converter.convertToInputStream(SOURCE);
-  NetUtil.asyncCopy(istream, ostream, function() {
+  const istream = getInputStream(SOURCE);
+
+  NetUtil.asyncCopy(istream, ostream, function () {
     FileUtils.closeSafeFileOutputStream(ostream);
 
     // click the import button now that the file to import is ready
     ui._mockImportFile = file;
 
-    waitForFocus(function() {
+    waitForFocus(function () {
       const document = panelWindow.document;
       const importButton = document.querySelector(".style-editor-importButton");
       ok(importButton, "import button exists");

@@ -1,54 +1,43 @@
 use std::any::Any;
 use std::fmt;
 use std::io;
-use std::sync::Mutex;
 
-doc_rt_core! {
+use super::Id;
+use crate::util::SyncWrapper;
+cfg_rt! {
     /// Task failed to execute to completion.
     pub struct JoinError {
         repr: Repr,
+        id: Id,
     }
 }
 
 enum Repr {
     Cancelled,
-    Panic(Mutex<Box<dyn Any + Send + 'static>>),
+    Panic(SyncWrapper<Box<dyn Any + Send + 'static>>),
 }
 
 impl JoinError {
-    #[doc(hidden)]
-    #[deprecated]
-    pub fn cancelled() -> JoinError {
-        Self::cancelled2()
-    }
-
-    pub(crate) fn cancelled2() -> JoinError {
+    pub(crate) fn cancelled(id: Id) -> JoinError {
         JoinError {
             repr: Repr::Cancelled,
+            id,
         }
     }
 
-    #[doc(hidden)]
-    #[deprecated]
-    pub fn panic(err: Box<dyn Any + Send + 'static>) -> JoinError {
-        Self::panic2(err)
-    }
-
-    pub(crate) fn panic2(err: Box<dyn Any + Send + 'static>) -> JoinError {
+    pub(crate) fn panic(id: Id, err: Box<dyn Any + Send + 'static>) -> JoinError {
         JoinError {
-            repr: Repr::Panic(Mutex::new(err)),
+            repr: Repr::Panic(SyncWrapper::new(err)),
+            id,
         }
     }
 
-    /// Returns true if the error was caused by the task being cancelled
+    /// Returns true if the error was caused by the task being cancelled.
     pub fn is_cancelled(&self) -> bool {
-        match &self.repr {
-            Repr::Cancelled => true,
-            _ => false,
-        }
+        matches!(&self.repr, Repr::Cancelled)
     }
 
-    /// Returns true if the error was caused by the task panicking
+    /// Returns true if the error was caused by the task panicking.
     ///
     /// # Examples
     ///
@@ -65,10 +54,7 @@ impl JoinError {
     /// }
     /// ```
     pub fn is_panic(&self) -> bool {
-        match &self.repr {
-            Repr::Panic(_) => true,
-            _ => false,
-        }
+        matches!(&self.repr, Repr::Panic(_))
     }
 
     /// Consumes the join error, returning the object with which the task panicked.
@@ -96,6 +82,7 @@ impl JoinError {
     ///     }
     /// }
     /// ```
+    #[track_caller]
     pub fn into_panic(self) -> Box<dyn Any + Send + 'static> {
         self.try_into_panic()
             .expect("`JoinError` reason is not a panic.")
@@ -124,17 +111,32 @@ impl JoinError {
     /// ```
     pub fn try_into_panic(self) -> Result<Box<dyn Any + Send + 'static>, JoinError> {
         match self.repr {
-            Repr::Panic(p) => Ok(p.into_inner().expect("Extracting panic from mutex")),
+            Repr::Panic(p) => Ok(p.into_inner()),
             _ => Err(self),
         }
+    }
+
+    /// Returns a [task ID] that identifies the task which errored relative to
+    /// other currently spawned tasks.
+    ///
+    /// **Note**: This is an [unstable API][unstable]. The public API of this type
+    /// may break in 1.x releases. See [the documentation on unstable
+    /// features][unstable] for details.
+    ///
+    /// [task ID]: crate::task::Id
+    /// [unstable]: crate#unstable-features
+    #[cfg(tokio_unstable)]
+    #[cfg_attr(docsrs, doc(cfg(tokio_unstable)))]
+    pub fn id(&self) -> Id {
+        self.id
     }
 }
 
 impl fmt::Display for JoinError {
     fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self.repr {
-            Repr::Cancelled => write!(fmt, "cancelled"),
-            Repr::Panic(_) => write!(fmt, "panic"),
+            Repr::Cancelled => write!(fmt, "task {} was cancelled", self.id),
+            Repr::Panic(_) => write!(fmt, "task {} panicked", self.id),
         }
     }
 }
@@ -142,8 +144,8 @@ impl fmt::Display for JoinError {
 impl fmt::Debug for JoinError {
     fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self.repr {
-            Repr::Cancelled => write!(fmt, "JoinError::Cancelled"),
-            Repr::Panic(_) => write!(fmt, "JoinError::Panic(...)"),
+            Repr::Cancelled => write!(fmt, "JoinError::Cancelled({:?})", self.id),
+            Repr::Panic(_) => write!(fmt, "JoinError::Panic({:?}, ...)", self.id),
         }
     }
 }

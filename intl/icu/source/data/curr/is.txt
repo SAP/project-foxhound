@@ -261,7 +261,7 @@ is{
         }
         FJD{
             "FJD",
-            "fidjeyskur dalur",
+            "fídjískur dalur",
         }
         FKP{
             "FKP",
@@ -360,7 +360,7 @@ is{
             "íranskt ríal",
         }
         ISK{
-            "ISK",
+            "kr.",
             "íslensk króna",
         }
         ITL{
@@ -761,7 +761,7 @@ is{
         }
         TND{
             "TND",
-            "túnískur denari",
+            "túniskur denari",
         }
         TOP{
             "TOP",
@@ -928,6 +928,7 @@ is{
         COP{"$"}
         CRC{"₡"}
         CUP{"$"}
+        DKK{"kr."}
         DOP{"$"}
         EUR{"€"}
         FJD{"$"}
@@ -938,7 +939,7 @@ is{
         IDR{"Rp"}
         ILS{"₪"}
         INR{"₹"}
-        ISK{"kr"}
+        ISK{"kr."}
         JMD{"$"}
         JPY{"¥"}
         KHR{"៛"}
@@ -951,10 +952,12 @@ is{
         MXN{"$"}
         NAD{"$"}
         NGN{"₦"}
+        NOK{"kr."}
         NZD{"$"}
         PHP{"₱"}
         PYG{"₲"}
         SBD{"$"}
+        SEK{"kr."}
         SGD{"$"}
         SRD{"$"}
         SSP{"£"}
@@ -967,9 +970,6 @@ is{
         USD{"$"}
         UYU{"$"}
         VND{"₫"}
-    }
-    Currencies%variant{
-        GEL{"₾"}
     }
     CurrencyPlurals{
         AED{
@@ -995,6 +995,10 @@ is{
         AOA{
             one{"angólsk kvansa"}
             other{"angólskar kvönsur"}
+        }
+        ARP{
+            one{"Argentískur pesi (1983–1985)"}
+            other{"Argentískur pesi (1983–1985)"}
         }
         ARS{
             one{"argentínskur pesi"}
@@ -1048,6 +1052,10 @@ is{
             one{"bólivíani"}
             other{"bólivíanar"}
         }
+        BOP{
+            one{"Bólivískur pesi"}
+            other{"Bólivískur pesi"}
+        }
         BRL{
             one{"brasilískt ríal"}
             other{"brasilísk ríöl"}
@@ -1094,7 +1102,7 @@ is{
         }
         CNH{
             one{"kínverskt júan (utan heimalands)"}
-            other{"kínverskt júan (utan heimalands)"}
+            other{"kínversk júön (utan heimalands)"}
         }
         CNY{
             one{"kínverskt júan"}
@@ -1161,8 +1169,8 @@ is{
             other{"evrur"}
         }
         FJD{
-            one{"fidjeyskur dalur"}
-            other{"fidjeyskir dalir"}
+            one{"fídjískur dalur"}
+            other{"fídjískir dalir"}
         }
         FKP{
             one{"falklenskt pund"}
@@ -1376,6 +1384,10 @@ is{
             one{"mexíkóskur pesi"}
             other{"mexíkóskir pesar"}
         }
+        MXP{
+            one{"Mexíkóskur silfurpesi (1861–1992)"}
+            other{"Mexíkóskur silfurpesi (1861–1992)"}
+        }
         MYR{
             one{"malasískt ringit"}
             other{"malasísk ringit"}
@@ -1583,6 +1595,14 @@ is{
         USD{
             one{"Bandaríkjadalur"}
             other{"Bandaríkjadalir"}
+        }
+        USN{
+            one{"Bandaríkjadalur (næsta dag)"}
+            other{"Bandaríkjadalur (næsta dag)"}
+        }
+        USS{
+            one{"Bandaríkjadalur (sama dag)"}
+            other{"Bandaríkjadalur (sama dag)"}
         }
         UYU{
             one{"úrúgvæskur pesi"}

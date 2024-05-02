@@ -16,7 +16,9 @@
 #include "nsAppShellWindowEnumerator.h"
 #include "nsWindowMediator.h"
 #include "nsIWindowMediatorListener.h"
-#include "nsGlobalWindow.h"
+#include "nsGlobalWindowInner.h"
+#include "nsGlobalWindowOuter.h"
+#include "nsServiceManagerUtils.h"
 
 #include "nsIDocShell.h"
 #include "nsIInterfaceRequestor.h"
@@ -38,8 +40,7 @@ nsresult nsWindowMediator::GetDOMWindow(
 }
 
 nsWindowMediator::nsWindowMediator()
-    : mEnumeratorList(),
-      mOldestWindow(nullptr),
+    : mOldestWindow(nullptr),
       mTopmostWindow(nullptr),
       mTimeStamp(0),
       mSortingZOrder(false),

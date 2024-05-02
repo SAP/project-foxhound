@@ -6,20 +6,16 @@ import os
 import pytest
 from mach.logging import LoggingManager
 from responses import RequestsMock
-from taskgraph.config import GraphConfig
-
+from taskgraph import generator as generator_mod
+from taskgraph import target_tasks as target_tasks_mod
+from taskgraph.config import GraphConfig, load_graph_config
+from taskgraph.generator import Kind, TaskGraphGenerator
+from taskgraph.optimize import base as optimize_mod
+from taskgraph.optimize.base import OptimizationStrategy
 from taskgraph.parameters import Parameters
 
-from gecko_taskgraph import (
-    GECKO,
-    generator,
-    optimize as optimize_mod,
-    target_tasks as target_tasks_mod,
-)
+from gecko_taskgraph import GECKO
 from gecko_taskgraph.actions import render_actions_json
-from gecko_taskgraph.config import load_graph_config
-from gecko_taskgraph.generator import TaskGraphGenerator, Kind
-from gecko_taskgraph.optimize import OptimizationStrategy
 from gecko_taskgraph.util.templates import merge
 
 
@@ -83,6 +79,21 @@ def fake_loader(kind, path, config, parameters, loaded_tasks):
         yield task
 
 
+class FakeTransform:
+    transforms = []
+    params = {}
+
+    def __init__(self):
+        pass
+
+    @classmethod
+    def get(self, field, default):
+        try:
+            return getattr(self, field)
+        except AttributeError:
+            return default
+
+
 class FakeKind(Kind):
     def _get_loader(self):
         return fake_loader
@@ -93,16 +104,17 @@ class FakeKind(Kind):
 
     @staticmethod
     def create(name, extra_config, graph_config):
-        config = {
-            "transforms": [],
-        }
+        if name == "fullfake":
+            config = FakeTransform()
+        else:
+            config = {"transforms": []}
         if extra_config:
             config.update(extra_config)
         return FakeKind(name, "/fake", config, graph_config)
 
 
 class WithFakeKind(TaskGraphGenerator):
-    def _load_kinds(self, graph_config, target_kind=None):
+    def _load_kinds(self, graph_config, target_kinds=None):
         for kind_name, cfg in self.parameters["_kinds"]:
             yield FakeKind.create(kind_name, cfg, graph_config)
 
@@ -123,6 +135,8 @@ class FakeParameters(dict):
 
 
 class FakeOptimization(OptimizationStrategy):
+    description = "Fake strategy for testing"
+
     def __init__(self, mode, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.mode = mode
@@ -158,6 +172,7 @@ def maketgg(monkeypatch):
             {
                 "_kinds": kinds,
                 "backstop": False,
+                "enable_always_target": False,
                 "target_tasks_method": "test_method",
                 "test_manifest_loader": "default",
                 "try_mode": None,
@@ -168,7 +183,7 @@ def maketgg(monkeypatch):
         )
         parameters.update(params)
 
-        monkeypatch.setattr(generator, "load_graph_config", fake_load_graph_config)
+        monkeypatch.setattr(generator_mod, "load_graph_config", fake_load_graph_config)
 
         tgg = WithFakeKind("/root", parameters)
         tgg.loaded_kinds = loaded_kinds
@@ -179,9 +194,21 @@ def maketgg(monkeypatch):
 
 @pytest.fixture
 def run_transform():
-
     graph_config = fake_load_graph_config("/root")
     kind = FakeKind.create("fake", {}, graph_config)
+
+    def inner(xform, tasks):
+        if isinstance(tasks, dict):
+            tasks = [tasks]
+        return xform(kind.config, tasks)
+
+    return inner
+
+
+@pytest.fixture
+def run_full_config_transform():
+    graph_config = fake_load_graph_config("/root")
+    kind = FakeKind.create("fullfake", {}, graph_config)
 
     def inner(xform, tasks):
         if isinstance(tasks, dict):

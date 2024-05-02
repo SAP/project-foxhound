@@ -4,8 +4,6 @@
 
 /* import-globals-from /toolkit/content/preferencesBindings.js */
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-
 Preferences.addAll([
   { id: "services.sync.engine.addons", type: "bool" },
   { id: "services.sync.engine.bookmarks", type: "bool" },
@@ -23,7 +21,7 @@ let gSyncChooseWhatToSync = {
     let options = window.arguments[0];
     if (options.disconnectFun) {
       // We offer 'disconnect'
-      document.addEventListener("dialogextra2", function() {
+      document.addEventListener("dialogextra2", function () {
         options.disconnectFun().then(disconnected => {
           if (disconnected) {
             window.close();

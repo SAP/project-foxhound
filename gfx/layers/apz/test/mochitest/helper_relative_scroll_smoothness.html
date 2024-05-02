@@ -2,7 +2,6 @@
 <html>
 <meta charset="utf-8">
 <script src="/tests/SimpleTest/EventUtils.js"></script>
-<script src="/tests/SimpleTest/SimpleTest.js"></script>
 <script src="/tests/SimpleTest/NativeKeyCodes.js"></script>
 <script src="/tests/SimpleTest/paint_listener.js"></script>
 <script src="apz_test_utils.js"></script>
@@ -68,19 +67,6 @@ window.addEventListener("scroll",  () => {
 }, { once: true });
 
 
-function collectRootScrollOffsets() {
-  let data = SpecialPowers.DOMWindowUtils.getCompositorAPZTestData();
-  let sampledResults = data.sampledResults;
-
-  const layersId = SpecialPowers.DOMWindowUtils.getLayersId();
-  const scrollId = SpecialPowers.DOMWindowUtils.getViewId(document.scrollingElement);
-
-  return sampledResults.filter(
-    result => SpecialPowers.wrap(result).layersId == layersId &&
-              SpecialPowers.wrap(result).scrollId == scrollId
-  );
-}
-
 async function test() {
   // Once this content starts scrolling, it triggers a 100ms jank every 300ms so
   // sending arrow down keys for 1500ms will cause some jank.
@@ -98,7 +84,7 @@ async function test() {
           "Dispatched an down arrow key event");
         break;
       case "wheel":
-        synthesizeNativeWheel(window, 50, 50, 0, -50);
+        await synthesizeNativeWheel(window, 50, 50, 0, -50);
         break;
       default:
         ok(false, "Unsupported input type: " + searchParams.get("input-type"));
@@ -110,7 +96,7 @@ async function test() {
   // Stop the periodic expansions.
   clearInterval(intervalId);
 
-  const records = collectRootScrollOffsets();
+  const records = collectSampledScrollOffsets(document.scrollingElement);
 
   let previousRecord = { scrollOffsetY: 0, sampledTimeStamp: 0 };
   for (const record of records) {
@@ -135,9 +121,7 @@ async function test() {
 }
 
 function isOnChaosMode() {
-  const env = SpecialPowers.Cc["@mozilla.org/process/environment;1"]
-                           .getService(SpecialPowers.Ci.nsIEnvironment);
-  return env.get("MOZ_CHAOSMODE");
+  return SpecialPowers.Services.env.get("MOZ_CHAOSMODE");
 }
 
 if (searchParams.get("input-type") == "native-key" &&

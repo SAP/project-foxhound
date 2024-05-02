@@ -15,7 +15,7 @@ const TEST_URI = `
   <div></div>
 `;
 
-add_task(async function() {
+add_task(async function () {
   await addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
   const { inspector, view: ruleView } = await openRuleView();
   const { document: doc, store } = selectChangesView(inspector);
@@ -30,7 +30,7 @@ add_task(async function() {
   editor.input.value = ".test";
 
   // Expect two "TRACK_CHANGE" actions: one for removal, one for addition.
-  const onTrackChange = waitUntilAction(store, "TRACK_CHANGE", 2);
+  const onTrackChange = waitForDispatch(store, "TRACK_CHANGE", 2);
   const onRuleViewChanged = once(ruleView, "ruleview-changed");
   info("Pressing Enter key to commit the change");
   EventUtils.synthesizeKey("KEY_Enter");

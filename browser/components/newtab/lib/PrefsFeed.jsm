@@ -3,25 +3,25 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-const { actionCreators: ac, actionTypes: at } = ChromeUtils.import(
-  "resource://activity-stream/common/Actions.jsm"
-);
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { actionCreators: ac, actionTypes: at } = ChromeUtils.importESModule(
+  "resource://activity-stream/common/Actions.sys.mjs"
 );
 const { Prefs } = ChromeUtils.import(
   "resource://activity-stream/lib/ActivityStreamPrefs.jsm"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
+);
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  AppConstants: "resource://gre/modules/AppConstants.jsm",
-  NimbusFeatures: "resource://nimbus/ExperimentAPI.jsm",
-  PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.jsm",
-  Region: "resource://gre/modules/Region.jsm",
+const lazy = {};
+
+ChromeUtils.defineESModuleGetters(lazy, {
+  NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
+  PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
+  Region: "resource://gre/modules/Region.sys.mjs",
 });
 
-this.PrefsFeed = class PrefsFeed {
+class PrefsFeed {
   constructor(prefMap) {
     this._prefMap = prefMap;
     this._prefs = new Prefs();
@@ -32,8 +32,16 @@ this.PrefsFeed = class PrefsFeed {
   onPrefChanged(name, value) {
     const prefItem = this._prefMap.get(name);
     if (prefItem) {
+      let action = "BroadcastToContent";
+      if (prefItem.skipBroadcast) {
+        action = "OnlyToMain";
+        if (prefItem.alsoToPreloaded) {
+          action = "AlsoToPreloaded";
+        }
+      }
+
       this.store.dispatch(
-        ac[prefItem.skipBroadcast ? "OnlyToMain" : "BroadcastToContent"]({
+        ac[action]({
           type: at.PREF_CHANGED,
           data: { name, value },
         })
@@ -66,7 +74,7 @@ this.PrefsFeed = class PrefsFeed {
    * Handler for when experiment data updates.
    */
   onExperimentUpdated(event, reason) {
-    const value = NimbusFeatures.newtab.getAllVariables() || {};
+    const value = lazy.NimbusFeatures.newtab.getAllVariables() || {};
     this.store.dispatch(
       ac.BroadcastToContent({
         type: at.PREF_CHANGED,
@@ -82,22 +90,28 @@ this.PrefsFeed = class PrefsFeed {
    * Handler for Pocket specific experiment data updates.
    */
   onPocketExperimentUpdated(event, reason) {
-    const value = NimbusFeatures.pocketNewtab.getAllVariables() || {};
-    this.store.dispatch(
-      ac.BroadcastToContent({
-        type: at.PREF_CHANGED,
-        data: {
-          name: "pocketConfig",
-          value,
-        },
-      })
-    );
+    const value = lazy.NimbusFeatures.pocketNewtab.getAllVariables() || {};
+    // Loaded experiments are set up inside init()
+    if (
+      reason !== "feature-experiment-loaded" &&
+      reason !== "feature-rollout-loaded"
+    ) {
+      this.store.dispatch(
+        ac.BroadcastToContent({
+          type: at.PREF_CHANGED,
+          data: {
+            name: "pocketConfig",
+            value,
+          },
+        })
+      );
+    }
   }
 
   init() {
     this._prefs.observeBranch(this);
-    NimbusFeatures.newtab.onUpdate(this.onExperimentUpdated);
-    NimbusFeatures.pocketNewtab.onUpdate(this.onPocketExperimentUpdated);
+    lazy.NimbusFeatures.newtab.onUpdate(this.onExperimentUpdated);
+    lazy.NimbusFeatures.pocketNewtab.onUpdate(this.onPocketExperimentUpdated);
 
     this._storage = this.store.dbStorage.getDbTable("sectionPrefs");
 
@@ -109,16 +123,16 @@ this.PrefsFeed = class PrefsFeed {
 
     // These are not prefs, but are needed to determine stuff in content that can only be
     // computed in main process
-    values.isPrivateBrowsingEnabled = PrivateBrowsingUtils.enabled;
+    values.isPrivateBrowsingEnabled = lazy.PrivateBrowsingUtils.enabled;
     values.platform = AppConstants.platform;
 
     // Save the geo pref if we have it
-    if (Region.home) {
-      values.region = Region.home;
+    if (lazy.Region.home) {
+      values.region = lazy.Region.home;
       this.geo = values.region;
     } else if (this.geo !== "") {
       // Watch for geo changes and use a dummy value for now
-      Services.obs.addObserver(this, Region.REGION_TOPIC);
+      Services.obs.addObserver(this, lazy.Region.REGION_TOPIC);
       this.geo = "";
     }
 
@@ -139,9 +153,8 @@ this.PrefsFeed = class PrefsFeed {
     let searchTopSiteExperimentPrefValue = Services.prefs.getBoolPref(
       "browser.newtabpage.activity-stream.improvesearch.topSiteSearchShortcuts"
     );
-    values[
-      "improvesearch.topSiteSearchShortcuts"
-    ] = searchTopSiteExperimentPrefValue;
+    values["improvesearch.topSiteSearchShortcuts"] =
+      searchTopSiteExperimentPrefValue;
     this._prefMap.set("improvesearch.topSiteSearchShortcuts", {
       value: searchTopSiteExperimentPrefValue,
     });
@@ -171,19 +184,10 @@ this.PrefsFeed = class PrefsFeed {
       value: placeholderPrefValue,
     });
 
-    // Read the pref for search Clorway Closet from firefox.js and store it
-    // in our internal list of prefs to watch
-    let colorwayClosetPrefValue = Services.prefs.getBoolPref(
-      "browser.newtabpage.activity-stream.colorway-closet.enabled"
-    );
-    values["colorway-closet.enabled"] = colorwayClosetPrefValue;
-    this._prefMap.set("colorway-closet.enabled", {
-      value: colorwayClosetPrefValue,
-    });
-
     // Add experiment values and default values
-    values.featureConfig = NimbusFeatures.newtab.getAllVariables() || {};
-    values.pocketConfig = NimbusFeatures.pocketNewtab.getAllVariables() || {};
+    values.featureConfig = lazy.NimbusFeatures.newtab.getAllVariables() || {};
+    values.pocketConfig =
+      lazy.NimbusFeatures.pocketNewtab.getAllVariables() || {};
     this._setBoolPref(values, "logowordmark.alwaysVisible", false);
     this._setBoolPref(values, "feeds.section.topstories", false);
     this._setBoolPref(values, "discoverystream.enabled", false);
@@ -223,10 +227,10 @@ this.PrefsFeed = class PrefsFeed {
 
   removeListeners() {
     this._prefs.ignoreBranch(this);
-    NimbusFeatures.newtab.off(this.onExperimentUpdated);
-    NimbusFeatures.pocketNewtab.off(this.onPocketExperimentUpdated);
+    lazy.NimbusFeatures.newtab.offUpdate(this.onExperimentUpdated);
+    lazy.NimbusFeatures.pocketNewtab.offUpdate(this.onPocketExperimentUpdated);
     if (this.geo === "") {
-      Services.obs.removeObserver(this, Region.REGION_TOPIC);
+      Services.obs.removeObserver(this, lazy.Region.REGION_TOPIC);
     }
   }
 
@@ -235,17 +239,17 @@ this.PrefsFeed = class PrefsFeed {
     try {
       await this._storage.set(name, value);
     } catch (e) {
-      Cu.reportError("Could not set section preferences.");
+      console.error("Could not set section preferences.");
     }
   }
 
   observe(subject, topic, data) {
     switch (topic) {
-      case Region.REGION_TOPIC:
+      case lazy.Region.REGION_TOPIC:
         this.store.dispatch(
           ac.BroadcastToContent({
             type: at.PREF_CHANGED,
-            data: { name: "region", value: Region.home },
+            data: { name: "region", value: lazy.Region.home },
           })
         );
         break;
@@ -271,6 +275,6 @@ this.PrefsFeed = class PrefsFeed {
         break;
     }
   }
-};
+}
 
 const EXPORTED_SYMBOLS = ["PrefsFeed"];

@@ -1,10 +1,13 @@
 "use strict";
 
 const META_PAGE =
+  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
   "http://example.org/browser/browser/base/content/test/general/refresh_meta.sjs";
 const HEADER_PAGE =
+  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
   "http://example.org/browser/browser/base/content/test/general/refresh_header.sjs";
 const TARGET_PAGE =
+  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
   "http://example.org/browser/browser/base/content/test/general/dummy_page.html";
 const PREF = "accessibility.blockautorefresh";
 
@@ -20,29 +23,31 @@ const PREF = "accessibility.blockautorefresh";
  * @returns Promise
  */
 async function attemptFakeRefresh(browser, expectRefresh) {
-  await SpecialPowers.spawn(browser, [expectRefresh], async function(
-    contentExpectRefresh
-  ) {
-    let URI = docShell.QueryInterface(Ci.nsIWebNavigation).currentURI;
-    let refresher = docShell.QueryInterface(Ci.nsIRefreshURI);
-    refresher.refreshURI(URI, null, 0);
+  await SpecialPowers.spawn(
+    browser,
+    [expectRefresh],
+    async function (contentExpectRefresh) {
+      let URI = docShell.QueryInterface(Ci.nsIWebNavigation).currentURI;
+      let refresher = docShell.QueryInterface(Ci.nsIRefreshURI);
+      refresher.refreshURI(URI, null, 0);
 
-    Assert.equal(
-      refresher.refreshPending,
-      contentExpectRefresh,
-      "Got the right refreshPending state"
-    );
+      Assert.equal(
+        refresher.refreshPending,
+        contentExpectRefresh,
+        "Got the right refreshPending state"
+      );
 
-    if (refresher.refreshPending) {
-      // Cancel the pending refresh
-      refresher.cancelRefreshURITimers();
+      if (refresher.refreshPending) {
+        // Cancel the pending refresh
+        refresher.cancelRefreshURITimers();
+      }
+
+      // The RefreshBlocker will wait until onLocationChange has
+      // been fired before it will show any notifications (see bug
+      // 1246291), so we cause this to occur manually here.
+      content.location = URI.spec + "#foo";
     }
-
-    // The RefreshBlocker will wait until onLocationChange has
-    // been fired before it will show any notifications (see bug
-    // 1246291), so we cause this to occur manually here.
-    content.location = URI.spec + "#foo";
-  });
+  );
 }
 
 /**
@@ -56,7 +61,7 @@ add_task(async function test_can_enable_and_block() {
       gBrowser,
       url: TARGET_PAGE,
     },
-    async function(browser) {
+    async function (browser) {
       // By default, we should be able to reload the page.
       await attemptFakeRefresh(browser, true);
 
@@ -103,10 +108,10 @@ async function testRealRefresh(refreshPage, delay) {
       gBrowser,
       url: "about:blank",
     },
-    async function(browser) {
+    async function (browser) {
       await pushPrefs(["accessibility.blockautorefresh", true]);
 
-      BrowserTestUtils.loadURI(
+      BrowserTestUtils.startLoadingURIString(
         browser,
         refreshPage + "?p=" + TARGET_PAGE + "&d=" + delay
       );
@@ -156,4 +161,49 @@ add_task(async function test_can_block_refresh_from_header() {
   await testRealRefresh(HEADER_PAGE, 0);
   await testRealRefresh(HEADER_PAGE, 100);
   await testRealRefresh(HEADER_PAGE, 500);
+});
+
+/**
+ * Tests that we can update a notification when multiple reload/redirect
+ * attempts happen.
+ */
+add_task(async function test_can_update_notification() {
+  await BrowserTestUtils.withNewTab(
+    {
+      gBrowser,
+      url: "about:blank",
+    },
+    async function (browser) {
+      await pushPrefs(["accessibility.blockautorefresh", true]);
+
+      // First, attempt a redirect
+      BrowserTestUtils.startLoadingURIString(
+        browser,
+        META_PAGE + "?d=0&p=" + TARGET_PAGE
+      );
+      await BrowserTestUtils.browserLoaded(browser);
+
+      // Once browserLoaded resolves, all nsIWebProgressListener callbacks
+      // should have fired, so the notification should be visible.
+      let notificationBox = gBrowser.getNotificationBox(browser);
+      let notification = notificationBox.currentNotification;
+
+      let message = notification.messageText.querySelector("span");
+      is(
+        message.dataset.l10nId,
+        "refresh-blocked-redirect-label",
+        "Should be showing the redirect message"
+      );
+
+      // Next, attempt a refresh
+      await attemptFakeRefresh(browser, false);
+
+      message = notification.messageText.querySelector("span");
+      is(
+        message.dataset.l10nId,
+        "refresh-blocked-refresh-label",
+        "Should be showing the refresh message"
+      );
+    }
+  );
 });

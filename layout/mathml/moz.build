@@ -8,18 +8,14 @@ with Files("**"):
     BUG_COMPONENT = ("Core", "MathML")
 
 if CONFIG["ENABLE_TESTS"]:
-    MOCHITEST_MANIFESTS += [
-        "tests/mochitest.ini",
-    ]
     MOCHITEST_CHROME_MANIFESTS += [
-        "tests/chrome.ini",
+        "tests/chrome.toml",
     ]
 
 UNIFIED_SOURCES += [
     "nsMathMLChar.cpp",
     "nsMathMLContainerFrame.cpp",
     "nsMathMLFrame.cpp",
-    "nsMathMLmactionFrame.cpp",
     "nsMathMLmencloseFrame.cpp",
     "nsMathMLmfracFrame.cpp",
     "nsMathMLmmultiscriptsFrame.cpp",
@@ -32,8 +28,6 @@ UNIFIED_SOURCES += [
     "nsMathMLmtableFrame.cpp",
     "nsMathMLmunderoverFrame.cpp",
     "nsMathMLOperators.cpp",
-    "nsMathMLSelectedFrame.cpp",
-    "nsMathMLsemanticsFrame.cpp",
     "nsMathMLTokenFrame.cpp",
 ]
 
@@ -60,5 +54,3 @@ RESOURCE_FILES.fonts += [
     "mathfontSTIXGeneral.properties",
     "mathfontUnicode.properties",
 ]
-
-REQUIRES_UNIFIED_BUILD = True

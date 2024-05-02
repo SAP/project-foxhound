@@ -22,13 +22,12 @@
 #include "nsITaintawareInputStream.h"
 #include "nsCRT.h"
 #include "prerror.h"
-#include "plstr.h"
 #include "nsIClassInfoImpl.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/ipc/InputStreamUtils.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/ReentrantMonitor.h"
-#include "mozilla/StreamBufferSource.h"
+#include "mozilla/StreamBufferSourceImpl.h"
 #include "nsIIPCSerializableInputStream.h"
 #include "XPCOMModule.h"
 
@@ -36,88 +35,12 @@ using namespace mozilla::ipc;
 using mozilla::fallible;
 using mozilla::MakeRefPtr;
 using mozilla::MallocSizeOf;
+using mozilla::nsBorrowedSource;
+using mozilla::nsCStringSource;
+using mozilla::nsTArraySource;
 using mozilla::ReentrantMonitorAutoEnter;
 using mozilla::Span;
 using mozilla::StreamBufferSource;
-
-//-----------------------------------------------------------------------------
-// StreamBufferSource implementations
-//-----------------------------------------------------------------------------
-
-class nsTArraySource final : public StreamBufferSource {
- public:
-  explicit nsTArraySource(nsTArray<uint8_t>&& aArray, const StringTaint& aTaint)
-    : mArray(std::move(aArray)), mTaint(aTaint) {}
-
-  Span<const char> Data() override {
-    return Span{reinterpret_cast<const char*>(mArray.Elements()),
-                mArray.Length()};
-  }
-
-  const StringTaint& Taint() override { return mTaint; }
-
-  void setTaint(const StringTaint& aTaint) override { mTaint = aTaint; }
-  
-  bool Owning() override { return true; }
-
-  size_t SizeOfExcludingThisEvenIfShared(MallocSizeOf aMallocSizeOf) override {
-    return mArray.ShallowSizeOfExcludingThis(aMallocSizeOf);
-  }
-
-  nsTArray<uint8_t> mArray;
-  StringTaint mTaint;
-};
-
-class nsCStringSource final : public StreamBufferSource {
- public:
-  nsCStringSource() = default;
-
-  Span<const char> Data() override { return mString; }
-
-  const StringTaint& Taint() override { return mString.Taint(); }
-
-  void setTaint(const StringTaint& aTaint) override { mString.AssignTaint(aTaint); }
-  
-  nsresult GetData(nsACString& aString) override {
-    if (!aString.Assign(mString, mozilla::fallible)) {
-      return NS_ERROR_OUT_OF_MEMORY;
-    }
-    return NS_OK;
-  }
-
-  bool Owning() override { return true; }
-
-  size_t SizeOfExcludingThisIfUnshared(MallocSizeOf aMallocSizeOf) override {
-    return mString.SizeOfExcludingThisIfUnshared(aMallocSizeOf);
-  }
-
-  size_t SizeOfExcludingThisEvenIfShared(MallocSizeOf aMallocSizeOf) override {
-    return mString.SizeOfExcludingThisEvenIfShared(aMallocSizeOf);
-  }
-
-  nsCString mString;
-};
-
-class nsBorrowedSource final : public StreamBufferSource {
- public:
-  explicit nsBorrowedSource(Span<const char> aBuffer, const StringTaint& aTaint)
-    : mBuffer(aBuffer), mTaint(aTaint) {}
-
-  Span<const char> Data() override { return mBuffer; }
-
-  const StringTaint& Taint() override { return mTaint; }
-
-  void setTaint(const StringTaint& aTaint) override { mTaint = aTaint; }
-  
-  bool Owning() override { return false; }
-
-  size_t SizeOfExcludingThisEvenIfShared(MallocSizeOf aMallocSizeOf) override {
-    return 0;
-  }
-
-  Span<const char> mBuffer;
-  StringTaint mTaint;
-};
 
 //-----------------------------------------------------------------------------
 // nsIStringInputStream implementation
@@ -149,6 +72,7 @@ class nsStringInputStream final : public nsIStringInputStream,
   nsresult Init(nsTArray<uint8_t>&& aArray);
 
   void SetTaint(const StringTaint& aTaint) {
+    ReentrantMonitorAutoEnter lock(mMon);
     if (mSource) {
       mSource->setTaint(aTaint);
     }
@@ -165,31 +89,35 @@ class nsStringInputStream final : public nsIStringInputStream,
                                 uint32_t aCount,
                                 uint32_t* aReadCount);
 
-  template <typename M>
-  void SerializeInternal(InputStreamParams& aParams, bool aDelayedStart,
-                         uint32_t aMaxSize, uint32_t* aSizeUsed, M* aManager);
+  StringTaint Taint() {
+    ReentrantMonitorAutoEnter lock(mMon);
+    return mSource ? mSource->Taint().safeSubTaint(mOffset, Length()) : EmptyTaint;
+  }
+  
+  size_t Length() const MOZ_REQUIRES(mMon) {
+    return mSource ? mSource->Data().Length() : 0;
+  }
 
-  size_t Length() const { return mSource ? mSource->Data().Length() : 0; }
+  size_t LengthRemaining() const MOZ_REQUIRES(mMon) {
+    return Length() - mOffset;
+  }
 
-  StringTaint Taint() const { return mSource ? mSource->Taint().safeCopy().subtaint(mOffset, Length()) : EmptyTaint; }
+  void Clear() MOZ_REQUIRES(mMon) { mSource = nullptr; }
 
-  size_t LengthRemaining() const { return Length() - mOffset; }
+  bool Closed() MOZ_REQUIRES(mMon) { return !mSource; }
 
-  void Clear() { mSource = nullptr; }
+  RefPtr<StreamBufferSource> mSource MOZ_GUARDED_BY(mMon);
+  size_t mOffset MOZ_GUARDED_BY(mMon) = 0;
 
-  bool Closed() { return !mSource; }
-
-  RefPtr<StreamBufferSource> mSource;
-  size_t mOffset = 0;
-
-  mozilla::ReentrantMonitor mMon{"nsStringInputStream"};
+  mutable mozilla::ReentrantMonitor mMon{"nsStringInputStream"};
 };
 
 nsresult nsStringInputStream::Init(nsCString&& aString) {
-  auto source = MakeRefPtr<nsCStringSource>();
-  if (!source->mString.Assign(std::move(aString), fallible)) {
+  nsCString string;
+  if (!string.Assign(std::move(aString), fallible)) {
     return NS_ERROR_OUT_OF_MEMORY;
   }
+  auto source = MakeRefPtr<nsCStringSource>(std::move(string));
   return SetDataSource(source);
 }
 
@@ -245,10 +173,11 @@ nsStringInputStream::GetData(nsACString& data) {
 
 NS_IMETHODIMP
 nsStringInputStream::SetData(const nsACString& aData) {
-  auto source = MakeRefPtr<nsCStringSource>();
-  if (!source->mString.Assign(aData, fallible)) {
+  nsCString string;
+  if (!string.Assign(aData, fallible)) {
     return NS_ERROR_OUT_OF_MEMORY;
   }
+  auto source = MakeRefPtr<nsCStringSource>(std::move(string));
   return SetDataSource(source);
 }
 
@@ -268,10 +197,11 @@ nsStringInputStream::SetData(const char* aData, int32_t aDataLen) {
     return NS_ERROR_INVALID_ARG;
   }
 
-  auto source = MakeRefPtr<nsCStringSource>();
-  if (NS_WARN_IF(!source->mString.Assign(aData, aDataLen, fallible))) {
+  nsCString string;
+  if (NS_WARN_IF(!string.Assign(aData, aDataLen, fallible))) {
     return NS_ERROR_OUT_OF_MEMORY;
   }
+  auto source = MakeRefPtr<nsCStringSource>(std::move(string));
   return SetDataSource(source);
 }
 
@@ -286,8 +216,9 @@ nsStringInputStream::AdoptData(char* aData, int32_t aDataLen) {
     return NS_ERROR_INVALID_ARG;
   }
 
-  auto source = MakeRefPtr<nsCStringSource>();
-  source->mString.Adopt(aData, aDataLen);
+  nsCString string;
+  string.Adopt(aData, aDataLen);
+  auto source = MakeRefPtr<nsCStringSource>(std::move(string));
   return SetDataSource(source);
 }
 
@@ -362,6 +293,12 @@ nsStringInputStream::Available(uint64_t* aLength) {
 
   *aLength = LengthRemaining();
   return NS_OK;
+}
+
+NS_IMETHODIMP
+nsStringInputStream::StreamStatus() {
+  ReentrantMonitorAutoEnter lock(mMon);
+  return Closed() ? NS_BASE_STREAM_CLOSED : NS_OK;
 }
 
 NS_IMETHODIMP
@@ -522,25 +459,21 @@ nsStringInputStream::Tell(int64_t* aOutWhere) {
 // nsIIPCSerializableInputStream implementation
 /////////
 
-void nsStringInputStream::Serialize(
-    InputStreamParams& aParams, FileDescriptorArray& /* aFDs */,
-    bool aDelayedStart, uint32_t aMaxSize, uint32_t* aSizeUsed,
-    mozilla::ipc::ParentToChildStreamActorManager* aManager) {
-  SerializeInternal(aParams, aDelayedStart, aMaxSize, aSizeUsed, aManager);
+void nsStringInputStream::SerializedComplexity(uint32_t aMaxSize,
+                                               uint32_t* aSizeUsed,
+                                               uint32_t* aPipes,
+                                               uint32_t* aTransferables) {
+  ReentrantMonitorAutoEnter lock(mMon);
+
+  if (Length() >= aMaxSize) {
+    *aPipes = 1;
+  } else {
+    *aSizeUsed = Length();
+  }
 }
 
-void nsStringInputStream::Serialize(
-    InputStreamParams& aParams, FileDescriptorArray& /* aFDs */,
-    bool aDelayedStart, uint32_t aMaxSize, uint32_t* aSizeUsed,
-    mozilla::ipc::ChildToParentStreamActorManager* aManager) {
-  SerializeInternal(aParams, aDelayedStart, aMaxSize, aSizeUsed, aManager);
-}
-
-template <typename M>
-void nsStringInputStream::SerializeInternal(InputStreamParams& aParams,
-                                            bool aDelayedStart,
-                                            uint32_t aMaxSize,
-                                            uint32_t* aSizeUsed, M* aManager) {
+void nsStringInputStream::Serialize(InputStreamParams& aParams,
+                                    uint32_t aMaxSize, uint32_t* aSizeUsed) {
   ReentrantMonitorAutoEnter lock(mMon);
 
   MOZ_DIAGNOSTIC_ASSERT(!Closed(), "cannot send a closed stream!");
@@ -552,13 +485,12 @@ void nsStringInputStream::SerializeInternal(InputStreamParams& aParams,
     // `ShareData`), create a new owning source so that it doesn't go away while
     // async copying.
     if (!mSource->Owning()) {
-      auto source = MakeRefPtr<nsCStringSource>();
-      source->mString.Assign(nsDependentCSubstring{mSource->Data()});
+      auto source =
+          MakeRefPtr<nsCStringSource>(nsDependentCSubstring(mSource->Data()));
       mSource = source;
     }
 
-    InputStreamHelper::SerializeInputStreamAsPipe(this, aParams, aDelayedStart,
-                                                  aManager);
+    InputStreamHelper::SerializeInputStreamAsPipe(this, aParams);
     return;
   }
 
@@ -569,8 +501,7 @@ void nsStringInputStream::SerializeInternal(InputStreamParams& aParams,
   aParams = params;
 }
 
-bool nsStringInputStream::Deserialize(const InputStreamParams& aParams,
-                                      const FileDescriptorArray& /* aFDs */) {
+bool nsStringInputStream::Deserialize(const InputStreamParams& aParams) {
   if (aParams.type() != InputStreamParams::TStringInputStreamParams) {
     NS_ERROR("Received unknown parameters from the other process!");
     return false;
@@ -601,6 +532,8 @@ nsStringInputStream::Clone(nsIInputStream** aCloneOut) {
   ReentrantMonitorAutoEnter lock(mMon);
 
   RefPtr<nsStringInputStream> ref = new nsStringInputStream();
+  // Nothing else can access this yet, but suppress static analysis warnings
+  ReentrantMonitorAutoEnter reflock(ref->mMon);
   if (mSource && !mSource->Owning()) {
     auto data = mSource->Data();
     nsresult rv = ref->SetData(data.Elements(), data.Length());
@@ -717,13 +650,8 @@ nsresult NS_NewCStringInputStream(nsIInputStream** aStreamResult,
 }
 
 // factory method for constructing a nsStringInputStream object
-nsresult nsStringInputStreamConstructor(nsISupports* aOuter, REFNSIID aIID,
-                                        void** aResult) {
+nsresult nsStringInputStreamConstructor(REFNSIID aIID, void** aResult) {
   *aResult = nullptr;
-
-  if (NS_WARN_IF(aOuter)) {
-    return NS_ERROR_NO_AGGREGATION;
-  }
 
   RefPtr<nsStringInputStream> inst = new nsStringInputStream();
   return inst->QueryInterface(aIID, aResult);

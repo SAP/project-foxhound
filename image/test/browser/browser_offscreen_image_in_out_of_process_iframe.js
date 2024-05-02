@@ -24,7 +24,7 @@ add_task(async function setup_pref() {
   });
 });
 
-add_task(async function() {
+add_task(async function () {
   const win = await BrowserTestUtils.openNewBrowserWindow({
     fission: true,
   });
@@ -32,7 +32,7 @@ add_task(async function() {
   try {
     const browser = win.gBrowser.selectedTab.linkedBrowser;
 
-    BrowserTestUtils.loadURI(browser, parentURL);
+    BrowserTestUtils.startLoadingURIString(browser, parentURL);
     await BrowserTestUtils.browserLoaded(browser, false, parentURL);
 
     async function setup(url) {

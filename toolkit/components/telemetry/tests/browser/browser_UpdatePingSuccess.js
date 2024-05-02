@@ -4,11 +4,11 @@
 
 "use strict";
 
-const { TelemetryUtils } = ChromeUtils.import(
-  "resource://gre/modules/TelemetryUtils.jsm"
+const { TelemetryUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/TelemetryUtils.sys.mjs"
 );
-const { TelemetryArchiveTesting } = ChromeUtils.import(
-  "resource://testing-common/TelemetryArchiveTesting.jsm"
+const { TelemetryArchiveTesting } = ChromeUtils.importESModule(
+  "resource://testing-common/TelemetryArchiveTesting.sys.mjs"
 );
 
 add_task(async function test_updatePing() {
@@ -60,7 +60,7 @@ add_task(async function test_updatePing() {
   // an update, so let's make sure to have one before moving on with validation.
   let updatePing;
   await BrowserTestUtils.waitForCondition(
-    async function() {
+    async function () {
       // Check that the ping made it into the Telemetry archive.
       // The test data is defined in ../data/sharedUpdateXML.js
       updatePing = await archiveChecker.promiseFindPing("update", [

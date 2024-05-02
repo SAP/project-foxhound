@@ -31,10 +31,11 @@ pub extern "C" fn fog_custom_distribution_test_get_value(
         metric,
         test_get!(metric, ping_name)
     );
-    *sum = val.sum;
+    // FIXME(bug 1771885): Glean should use `u64` where it can.
+    *sum = val.sum as _;
     for (&bucket, &count) in val.values.iter() {
-        buckets.push(bucket);
-        counts.push(count);
+        buckets.push(bucket as _);
+        counts.push(count as _);
     }
 }
 
@@ -68,14 +69,14 @@ pub extern "C" fn fog_custom_distribution_accumulate_samples_signed(
 #[no_mangle]
 pub extern "C" fn fog_custom_distribution_test_get_error(
     id: u32,
-    ping_name: &nsACString,
+
     error_str: &mut nsACString,
 ) -> bool {
     let err = with_metric!(
         CUSTOM_DISTRIBUTION_MAP,
         id,
         metric,
-        test_get_errors!(metric, ping_name)
+        test_get_errors!(metric)
     );
     err.map(|err_str| error_str.assign(&err_str)).is_some()
 }

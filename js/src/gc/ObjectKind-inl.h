@@ -84,7 +84,7 @@ static inline AllocKind GetGCObjectKindForBytes(size_t nbytes) {
 }
 
 /* Get the number of fixed slots and initial capacity associated with a kind. */
-static inline size_t GetGCKindSlots(AllocKind thingKind) {
+static constexpr inline size_t GetGCKindSlots(AllocKind thingKind) {
   // Using a switch in hopes that thingKind will usually be a compile-time
   // constant.
   switch (thingKind) {
@@ -99,7 +99,7 @@ static inline size_t GetGCKindSlots(AllocKind thingKind) {
     case AllocKind::OBJECT4_BACKGROUND:
       return 4;
     case AllocKind::FUNCTION_EXTENDED:
-      return 6;
+      return 7;
     case AllocKind::OBJECT8:
     case AllocKind::OBJECT8_BACKGROUND:
       return 8;
@@ -118,6 +118,10 @@ static inline size_t GetGCKindBytes(AllocKind thingKind) {
   return sizeof(JSObject_Slots0) + GetGCKindSlots(thingKind) * sizeof(Value);
 }
 
+static inline bool CanUseBackgroundAllocKind(const JSClass* clasp) {
+  return !clasp->hasFinalize() || (clasp->flags & JSCLASS_BACKGROUND_FINALIZE);
+}
+
 static inline bool CanChangeToBackgroundAllocKind(AllocKind kind,
                                                   const JSClass* clasp) {
   // If a foreground alloc kind is specified but the class has no finalizer or a
@@ -133,7 +137,7 @@ static inline bool CanChangeToBackgroundAllocKind(AllocKind kind,
     return false;  // This kind is already a background finalized kind.
   }
 
-  return !clasp->hasFinalize() || (clasp->flags & JSCLASS_BACKGROUND_FINALIZE);
+  return CanUseBackgroundAllocKind(clasp);
 }
 
 static inline AllocKind ForegroundToBackgroundAllocKind(AllocKind fgKind) {

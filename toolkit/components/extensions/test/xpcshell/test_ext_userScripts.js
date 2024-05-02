@@ -20,22 +20,13 @@ add_task(async function setup_test_environment() {
     Services.prefs.setIntPref(PROCESS_COUNT_PREF, 1);
   }
 
-  // Grant the optional permissions requested.
-  function permissionObserver(subject, topic, data) {
-    if (topic == "webextension-optional-permission-prompt") {
-      let { resolve } = subject.wrappedJSObject;
-      resolve(true);
-    }
-  }
-  Services.obs.addObserver(
-    permissionObserver,
-    "webextension-optional-permission-prompt"
+  // Grant the optional permissions requested, without prompting.
+  Services.prefs.setBoolPref(
+    "extensions.webextOptionalPermissionPrompts",
+    false
   );
   registerCleanupFunction(() => {
-    Services.obs.removeObserver(
-      permissionObserver,
-      "webextension-optional-permission-prompt"
-    );
+    Services.prefs.clearUserPref("extensions.webextOptionalPermissionPrompts");
   });
 });
 
@@ -290,7 +281,7 @@ add_task(async function test_userScripts_no_webext_apis() {
     url,
     ExtensionTestUtils.remoteContentScripts ? { remote: true } : undefined
   );
-  let result = await contentPage.spawn(undefined, async () => {
+  let result = await contentPage.spawn([], async () => {
     return {
       textContent: this.content.document.body.textContent,
       url: this.content.location.href,
@@ -325,7 +316,7 @@ add_task(async function test_userScripts_no_webext_apis() {
     let contentPage2 = await ExtensionTestUtils.loadContentPage(url2, {
       remote: true,
     });
-    let result2 = await contentPage2.spawn(undefined, async () => {
+    let result2 = await contentPage2.spawn([], async () => {
       return {
         textContent: this.content.document.body.textContent,
         url: this.content.location.href,
@@ -444,8 +435,7 @@ add_task(async function test_userScripts_pref_disabled() {
         await browser.userScripts.register({
           js: [
             {
-              code:
-                "throw new Error('This userScripts should not be registered')",
+              code: "throw new Error('This userScripts should not be registered')",
             },
           ],
           runAt: "document_start",
@@ -527,7 +517,7 @@ add_task(async function test_user_script_api_script_required() {
       user_scripts: {},
     },
     files: {
-      "content_script.js": function() {
+      "content_script.js": function () {
         browser.test.assertEq(
           undefined,
           browser.userScripts && browser.userScripts.onBeforeScript,

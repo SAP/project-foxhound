@@ -7,11 +7,9 @@
 #ifndef mozilla_dom_MIDIPort_h
 #define mozilla_dom_MIDIPort_h
 
-#include "nsWrapperCache.h"
-#include "mozilla/Attributes.h"
-#include "mozilla/Observer.h"
 #include "mozilla/DOMEventTargetHelper.h"
 #include "mozilla/dom/MIDIAccess.h"
+#include "mozilla/dom/MIDIPortChild.h"
 #include "mozilla/dom/MIDIPortInterface.h"
 
 struct JSContext;
@@ -37,8 +35,9 @@ class MIDIPort : public DOMEventTargetHelper,
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS_INHERITED(MIDIPort,
                                                          DOMEventTargetHelper)
  protected:
-  MIDIPort(nsPIDOMWindowInner* aWindow, MIDIAccess* aMIDIAccessParent);
-  bool Initialize(const MIDIPortInfo& aPortInfo, bool aSysexEnabled);
+  explicit MIDIPort(nsPIDOMWindowInner* aWindow);
+  bool Initialize(const MIDIPortInfo& aPortInfo, bool aSysexEnabled,
+                  MIDIAccess* aMIDIAccessParent);
   virtual ~MIDIPort();
 
  public:
@@ -54,8 +53,8 @@ class MIDIPort : public DOMEventTargetHelper,
   MIDIPortDeviceState State() const;
   bool SysexEnabled() const;
 
-  already_AddRefed<Promise> Open();
-  already_AddRefed<Promise> Close();
+  already_AddRefed<Promise> Open(ErrorResult& aError);
+  already_AddRefed<Promise> Close(ErrorResult& aError);
 
   // MIDIPorts observe the death of their parent MIDIAccess object, and delete
   // their reference accordingly.
@@ -73,10 +72,33 @@ class MIDIPort : public DOMEventTargetHelper,
   IMPL_EVENT_HANDLER(statechange)
 
   void DisconnectFromOwner() override;
+  const nsString& StableId();
 
  protected:
-  // IPC Actor corresponding to this class
-  RefPtr<MIDIPortChild> mPort;
+  // Helper class to ensure we always call DetachOwner when we drop the
+  // reference to the the port.
+  class PortHolder {
+   public:
+    void Init(already_AddRefed<MIDIPortChild> aArg) {
+      MOZ_ASSERT(!mInner);
+      mInner = aArg;
+    }
+    void Clear() {
+      if (mInner) {
+        mInner->DetachOwner();
+        mInner = nullptr;
+      }
+    }
+    ~PortHolder() { Clear(); }
+    MIDIPortChild* Get() const { return mInner; }
+
+   private:
+    RefPtr<MIDIPortChild> mInner;
+  };
+
+  // IPC Actor corresponding to this class.
+  PortHolder mPortHolder;
+  MIDIPortChild* Port() const { return mPortHolder.Get(); }
 
  private:
   void KeepAliveOnStatechange();

@@ -3,7 +3,9 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-const { Property } = require("devtools/client/dom/content/reducers/grips");
+const {
+  Property,
+} = require("resource://devtools/client/dom/content/reducers/grips.js");
 
 // Implementation
 
@@ -14,7 +16,7 @@ function DomDecorator() {}
  * appending an icon to read only properties.
  */
 DomDecorator.prototype = {
-  getRowClass: function(object) {
+  getRowClass(object) {
     if (object instanceof Property) {
       const value = object.value;
       const names = [];
@@ -39,7 +41,7 @@ DomDecorator.prototype = {
    * Return custom React template for specified object. The template
    * might depend on specified column.
    */
-  getValueRep: function(value, colId) {},
+  getValueRep(value, colId) {},
 };
 
 // Exports from this module

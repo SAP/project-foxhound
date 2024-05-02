@@ -27,7 +27,7 @@ and [`crate::CommandEncoder::set_render_pipeline`] with
 [`crate::CommandEncoder::set_compute_pipeline`].
 
 For this reason, in order avoid repeating the binding code,
-we are binding everything in [`CommandEncoder::update_root_elements`].
+we are binding everything in `CommandEncoder::update_root_elements`.
 When the pipeline layout is changed, we reset all bindings.
 Otherwise, we pass a range corresponding only to the current bind group.
 
@@ -39,18 +39,23 @@ mod conv;
 mod descriptor;
 mod device;
 mod instance;
+mod shader_compilation;
+mod suballocation;
+mod types;
 mod view;
+
+use crate::auxil::{self, dxgi::result::HResult as _};
 
 use arrayvec::ArrayVec;
 use parking_lot::Mutex;
-use std::{borrow::Cow, ffi, mem, num::NonZeroU32, ptr, sync::Arc};
+use std::{ffi, fmt, mem, num::NonZeroU32, sync::Arc};
 use winapi::{
-    shared::{dxgi, dxgi1_2, dxgi1_4, dxgitype, windef, winerror},
-    um::{d3d12, synchapi, winbase, winnt},
+    shared::{dxgi, dxgi1_4, dxgitype, windef, winerror},
+    um::{d3d12 as d3d12_ty, dcomp, synchapi, winbase, winnt},
     Interface as _,
 };
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Api;
 
 impl crate::Api for Api {
@@ -79,64 +84,71 @@ impl crate::Api for Api {
     type ComputePipeline = ComputePipeline;
 }
 
-trait HResult<O> {
-    fn into_result(self) -> Result<O, Cow<'static, str>>;
-    fn into_device_result(self, description: &str) -> Result<O, crate::DeviceError>;
-}
-impl HResult<()> for i32 {
-    fn into_result(self) -> Result<(), Cow<'static, str>> {
-        if self >= 0 {
-            return Ok(());
-        }
-        let description = match self {
-            winerror::E_UNEXPECTED => "unexpected",
-            winerror::E_NOTIMPL => "not implemented",
-            winerror::E_OUTOFMEMORY => "out of memory",
-            winerror::E_INVALIDARG => "invalid argument",
-            _ => return Err(Cow::Owned(format!("0x{:X}", self as u32))),
-        };
-        Err(Cow::Borrowed(description))
-    }
-    fn into_device_result(self, description: &str) -> Result<(), crate::DeviceError> {
-        self.into_result().map_err(|err| {
-            log::error!("{} failed: {}", description, err);
-            if self == winerror::E_OUTOFMEMORY {
-                crate::DeviceError::OutOfMemory
-            } else {
-                crate::DeviceError::Lost
-            }
-        })
-    }
-}
-
-impl<T> HResult<T> for (T, i32) {
-    fn into_result(self) -> Result<T, Cow<'static, str>> {
-        self.1.into_result().map(|()| self.0)
-    }
-    fn into_device_result(self, description: &str) -> Result<T, crate::DeviceError> {
-        self.1.into_device_result(description).map(|()| self.0)
-    }
-}
-
 // Limited by D3D12's root signature size of 64. Each element takes 1 or 2 entries.
 const MAX_ROOT_ELEMENTS: usize = 64;
 const ZERO_BUFFER_SIZE: wgt::BufferAddress = 256 << 10;
 
 pub struct Instance {
-    factory: native::Factory4,
-    library: Arc<native::D3D12Lib>,
-    _lib_dxgi: native::DxgiLib,
-    flags: crate::InstanceFlags,
+    factory: d3d12::DxgiFactory,
+    factory_media: Option<d3d12::FactoryMedia>,
+    library: Arc<d3d12::D3D12Lib>,
+    supports_allow_tearing: bool,
+    _lib_dxgi: d3d12::DxgiLib,
+    flags: wgt::InstanceFlags,
+    dxc_container: Option<Arc<shader_compilation::DxcContainer>>,
+}
+
+impl Instance {
+    pub unsafe fn create_surface_from_visual(
+        &self,
+        visual: *mut dcomp::IDCompositionVisual,
+    ) -> Surface {
+        Surface {
+            factory: self.factory.clone(),
+            factory_media: self.factory_media.clone(),
+            target: SurfaceTarget::Visual(unsafe { d3d12::ComPtr::from_raw(visual) }),
+            supports_allow_tearing: self.supports_allow_tearing,
+            swap_chain: None,
+        }
+    }
+
+    pub unsafe fn create_surface_from_surface_handle(
+        &self,
+        surface_handle: winnt::HANDLE,
+    ) -> Surface {
+        Surface {
+            factory: self.factory.clone(),
+            factory_media: self.factory_media.clone(),
+            target: SurfaceTarget::SurfaceHandle(surface_handle),
+            supports_allow_tearing: self.supports_allow_tearing,
+            swap_chain: None,
+        }
+    }
+
+    pub unsafe fn create_surface_from_swap_chain_panel(
+        &self,
+        swap_chain_panel: *mut types::ISwapChainPanelNative,
+    ) -> Surface {
+        Surface {
+            factory: self.factory.clone(),
+            factory_media: self.factory_media.clone(),
+            target: SurfaceTarget::SwapChainPanel(unsafe {
+                d3d12::ComPtr::from_raw(swap_chain_panel)
+            }),
+            supports_allow_tearing: self.supports_allow_tearing,
+            swap_chain: None,
+        }
+    }
 }
 
 unsafe impl Send for Instance {}
 unsafe impl Sync for Instance {}
 
 struct SwapChain {
-    raw: native::WeakPtr<dxgi1_4::IDXGISwapChain3>,
+    raw: d3d12::ComPtr<dxgi1_4::IDXGISwapChain3>,
     // need to associate raw image pointers with the swapchain so they can be properly released
     // when the swapchain is destroyed
-    resources: Vec<native::Resource>,
+    resources: Vec<d3d12::Resource>,
     waitable: winnt::HANDLE,
     acquired_count: usize,
     present_mode: wgt::PresentMode,
@@ -144,9 +156,18 @@ struct SwapChain {
     size: wgt::Extent3d,
 }
 
+enum SurfaceTarget {
+    WndHandle(windef::HWND),
+    Visual(d3d12::ComPtr<dcomp::IDCompositionVisual>),
+    SurfaceHandle(winnt::HANDLE),
+    SwapChainPanel(d3d12::ComPtr<types::ISwapChainPanelNative>),
+}
+
 pub struct Surface {
-    factory: native::WeakPtr<dxgi1_4::IDXGIFactory4>,
-    wnd_handle: windef::HWND,
+    factory: d3d12::DxgiFactory,
+    factory_media: Option<d3d12::FactoryMedia>,
+    target: SurfaceTarget,
+    supports_allow_tearing: bool,
     swap_chain: Option<SwapChain>,
 }
 
@@ -164,11 +185,14 @@ enum MemoryArchitecture {
 
 #[derive(Debug, Clone, Copy)]
 struct PrivateCapabilities {
-    instance_flags: crate::InstanceFlags,
+    instance_flags: wgt::InstanceFlags,
     #[allow(unused)]
     heterogeneous_resource_heaps: bool,
     memory_architecture: MemoryArchitecture,
+    #[allow(unused)] // TODO: Exists until windows-rs is standard, then it can probably be removed?
     heap_create_not_zeroed: bool,
+    casting_fully_typed_format_supported: bool,
+    suballocation_supported: bool,
 }
 
 #[derive(Default)]
@@ -179,13 +203,15 @@ struct Workarounds {
 }
 
 pub struct Adapter {
-    raw: native::WeakPtr<dxgi1_2::IDXGIAdapter2>,
-    device: native::Device,
-    library: Arc<native::D3D12Lib>,
+    raw: d3d12::DxgiAdapter,
+    device: d3d12::Device,
+    library: Arc<d3d12::D3D12Lib>,
     private_caps: PrivateCapabilities,
+    presentation_timer: auxil::dxgi::time::PresentationTimer,
     //Note: this isn't used right now, but we'll need it later.
     #[allow(unused)]
     workarounds: Workarounds,
+    dxc_container: Option<Arc<shader_compilation::DxcContainer>>,
 }
 
 unsafe impl Send for Adapter {}
@@ -193,50 +219,26 @@ unsafe impl Sync for Adapter {}
 
 /// Helper structure for waiting for GPU.
 struct Idler {
-    fence: native::Fence,
-    event: native::Event,
-}
-
-impl Idler {
-    unsafe fn destroy(self) {
-        self.fence.destroy();
-    }
+    fence: d3d12::Fence,
+    event: d3d12::Event,
 }
 
 struct CommandSignatures {
-    draw: native::CommandSignature,
-    draw_indexed: native::CommandSignature,
-    dispatch: native::CommandSignature,
-}
-
-impl CommandSignatures {
-    unsafe fn destroy(&self) {
-        self.draw.destroy();
-        self.draw_indexed.destroy();
-        self.dispatch.destroy();
-    }
+    draw: d3d12::CommandSignature,
+    draw_indexed: d3d12::CommandSignature,
+    dispatch: d3d12::CommandSignature,
 }
 
 struct DeviceShared {
-    features: wgt::Features,
-    zero_buffer: native::Resource,
+    zero_buffer: d3d12::Resource,
     cmd_signatures: CommandSignatures,
     heap_views: descriptor::GeneralHeap,
     heap_samplers: descriptor::GeneralHeap,
 }
 
-impl DeviceShared {
-    unsafe fn destroy(&self) {
-        self.zero_buffer.destroy();
-        self.cmd_signatures.destroy();
-        self.heap_views.raw.destroy();
-        self.heap_samplers.raw.destroy();
-    }
-}
-
 pub struct Device {
-    raw: native::Device,
-    present_queue: native::CommandQueue,
+    raw: d3d12::Device,
+    present_queue: d3d12::CommandQueue,
     idler: Idler,
     private_caps: PrivateCapabilities,
     shared: Arc<DeviceShared>,
@@ -246,17 +248,20 @@ pub struct Device {
     srv_uav_pool: Mutex<descriptor::CpuPool>,
     sampler_pool: Mutex<descriptor::CpuPool>,
     // library
-    library: Arc<native::D3D12Lib>,
+    library: Arc<d3d12::D3D12Lib>,
     #[cfg(feature = "renderdoc")]
     render_doc: crate::auxil::renderdoc::RenderDoc,
+    null_rtv_handle: descriptor::Handle,
+    mem_allocator: Option<Mutex<suballocation::GpuAllocatorWrapper>>,
+    dxc_container: Option<Arc<shader_compilation::DxcContainer>>,
 }
 
 unsafe impl Send for Device {}
 unsafe impl Sync for Device {}
 
 pub struct Queue {
-    raw: native::CommandQueue,
-    temp_lists: Vec<native::CommandList>,
+    raw: d3d12::CommandQueue,
+    temp_lists: Vec<d3d12::CommandList>,
 }
 
 unsafe impl Send for Queue {}
@@ -265,7 +270,7 @@ unsafe impl Sync for Queue {}
 #[derive(Default)]
 struct Temp {
     marker: Vec<u16>,
-    barriers: Vec<d3d12::D3D12_RESOURCE_BARRIER>,
+    barriers: Vec<d3d12_ty::D3D12_RESOURCE_BARRIER>,
 }
 
 impl Temp {
@@ -276,25 +281,26 @@ impl Temp {
 }
 
 struct PassResolve {
-    src: (native::Resource, u32),
-    dst: (native::Resource, u32),
-    format: native::Format,
+    src: (d3d12::Resource, u32),
+    dst: (d3d12::Resource, u32),
+    format: d3d12::Format,
 }
 
 #[derive(Clone, Copy)]
 enum RootElement {
     Empty,
+    Constant,
     SpecialConstantBuffer {
         base_vertex: i32,
         base_instance: u32,
         other: u32,
     },
     /// Descriptor table.
-    Table(native::GpuDescriptor),
+    Table(d3d12::GpuDescriptor),
     /// Descriptor for a buffer that has dynamic offset.
     DynamicOffsetBuffer {
         kind: BufferViewKind,
-        address: native::GpuAddress,
+        address: d3d12::GpuAddress,
     },
 }
 
@@ -307,11 +313,12 @@ enum PassKind {
 
 struct PassState {
     has_label: bool,
-    resolves: ArrayVec<PassResolve, { crate::MAX_COLOR_TARGETS }>,
+    resolves: ArrayVec<PassResolve, { crate::MAX_COLOR_ATTACHMENTS }>,
     layout: PipelineLayoutShared,
     root_elements: [RootElement; MAX_ROOT_ELEMENTS],
+    constant_data: [u32; MAX_ROOT_ELEMENTS],
     dirty_root_elements: u64,
-    vertex_buffers: [d3d12::D3D12_VERTEX_BUFFER_VIEW; crate::MAX_VERTEX_BUFFERS],
+    vertex_buffers: [d3d12_ty::D3D12_VERTEX_BUFFER_VIEW; crate::MAX_VERTEX_BUFFERS],
     dirty_vertex_buffers: usize,
     kind: PassKind,
 }
@@ -327,11 +334,13 @@ impl PassState {
             has_label: false,
             resolves: ArrayVec::new(),
             layout: PipelineLayoutShared {
-                signature: native::RootSignature::null(),
+                signature: d3d12::RootSignature::null(),
                 total_root_elements: 0,
                 special_constants_root_index: None,
+                root_constant_info: None,
             },
             root_elements: [RootElement::Empty; MAX_ROOT_ELEMENTS],
+            constant_data: [0; MAX_ROOT_ELEMENTS],
             dirty_root_elements: 0,
             vertex_buffers: [unsafe { mem::zeroed() }; crate::MAX_VERTEX_BUFFERS],
             dirty_vertex_buffers: 0,
@@ -346,20 +355,36 @@ impl PassState {
 }
 
 pub struct CommandEncoder {
-    allocator: native::CommandAllocator,
-    device: native::Device,
+    allocator: d3d12::CommandAllocator,
+    device: d3d12::Device,
     shared: Arc<DeviceShared>,
-    list: Option<native::GraphicsCommandList>,
-    free_lists: Vec<native::GraphicsCommandList>,
+    null_rtv_handle: descriptor::Handle,
+    list: Option<d3d12::GraphicsCommandList>,
+    free_lists: Vec<d3d12::GraphicsCommandList>,
     pass: PassState,
     temp: Temp,
+
+    /// If set, the end of the next render/compute pass will write a timestamp at
+    /// the given pool & location.
+    end_of_pass_timer_query: Option<(d3d12::QueryHeap, u32)>,
 }
 
 unsafe impl Send for CommandEncoder {}
 unsafe impl Sync for CommandEncoder {}
 
+impl fmt::Debug for CommandEncoder {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("CommandEncoder")
+            .field("allocator", &self.allocator)
+            .field("device", &self.allocator)
+            .finish()
+    }
+}
+
+#[derive(Debug)]
 pub struct CommandBuffer {
-    raw: native::GraphicsCommandList,
+    raw: d3d12::GraphicsCommandList,
+    closed: bool,
 }
 
 unsafe impl Send for CommandBuffer {}
@@ -367,8 +392,9 @@ unsafe impl Sync for CommandBuffer {}
 
 #[derive(Debug)]
 pub struct Buffer {
-    resource: native::Resource,
+    resource: d3d12::Resource,
     size: wgt::BufferAddress,
+    allocation: Option<suballocation::AllocationWrapper>,
 }
 
 unsafe impl Send for Buffer {}
@@ -389,12 +415,13 @@ impl crate::BufferBinding<'_, Api> {
 
 #[derive(Debug)]
 pub struct Texture {
-    resource: native::Resource,
+    resource: d3d12::Resource,
     format: wgt::TextureFormat,
     dimension: wgt::TextureDimension,
     size: wgt::Extent3d,
     mip_level_count: u32,
     sample_count: u32,
+    allocation: Option<suballocation::AllocationWrapper>,
 }
 
 unsafe impl Send for Texture {}
@@ -403,27 +430,31 @@ unsafe impl Sync for Texture {}
 impl Texture {
     fn array_layer_count(&self) -> u32 {
         match self.dimension {
-            wgt::TextureDimension::D1 | wgt::TextureDimension::D2 => {
-                self.size.depth_or_array_layers
-            }
-            wgt::TextureDimension::D3 => 1,
+            wgt::TextureDimension::D1 | wgt::TextureDimension::D3 => 1,
+            wgt::TextureDimension::D2 => self.size.depth_or_array_layers,
         }
     }
 
+    /// see https://learn.microsoft.com/en-us/windows/win32/direct3d12/subresources#plane-slice
     fn calc_subresource(&self, mip_level: u32, array_layer: u32, plane: u32) -> u32 {
         mip_level + (array_layer + plane * self.array_layer_count()) * self.mip_level_count
     }
 
     fn calc_subresource_for_copy(&self, base: &crate::TextureCopyBase) -> u32 {
-        self.calc_subresource(base.mip_level, base.array_layer, 0)
+        let plane = match base.aspect {
+            crate::FormatAspects::COLOR | crate::FormatAspects::DEPTH => 0,
+            crate::FormatAspects::STENCIL => 1,
+            _ => unreachable!(),
+        };
+        self.calc_subresource(base.mip_level, base.array_layer, plane)
     }
 }
 
 #[derive(Debug)]
 pub struct TextureView {
-    raw_format: native::Format,
-    format_aspects: crate::FormatAspects, // May explicitly ignore stencil aspect of raw_format!
-    target_base: (native::Resource, u32),
+    raw_format: d3d12::Format,
+    aspects: crate::FormatAspects,
+    target_base: (d3d12::Resource, u32),
     handle_srv: Option<descriptor::Handle>,
     handle_uav: Option<descriptor::Handle>,
     handle_rtv: Option<descriptor::Handle>,
@@ -444,8 +475,8 @@ unsafe impl Sync for Sampler {}
 
 #[derive(Debug)]
 pub struct QuerySet {
-    raw: native::QueryHeap,
-    raw_ty: d3d12::D3D12_QUERY_TYPE,
+    raw: d3d12::QueryHeap,
+    raw_ty: d3d12_ty::D3D12_QUERY_TYPE,
 }
 
 unsafe impl Send for QuerySet {}
@@ -453,12 +484,13 @@ unsafe impl Sync for QuerySet {}
 
 #[derive(Debug)]
 pub struct Fence {
-    raw: native::Fence,
+    raw: d3d12::Fence,
 }
 
 unsafe impl Send for Fence {}
 unsafe impl Sync for Fence {}
 
+#[derive(Debug)]
 pub struct BindGroupLayout {
     /// Sorted list of entries.
     entries: Vec<wgt::BindGroupLayoutEntry>,
@@ -478,10 +510,11 @@ enum BufferViewKind {
 pub struct BindGroup {
     handle_views: Option<descriptor::DualHandle>,
     handle_samplers: Option<descriptor::DualHandle>,
-    dynamic_buffers: Vec<native::GpuAddress>,
+    dynamic_buffers: Vec<d3d12::GpuAddress>,
 }
 
 bitflags::bitflags! {
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
     struct TableTypes: u8 {
         const SRV_CBV_UAV = 1 << 0;
         const SAMPLERS = 1 << 1;
@@ -498,10 +531,17 @@ struct BindGroupInfo {
 }
 
 #[derive(Clone)]
+struct RootConstantInfo {
+    root_index: RootIndex,
+    range: std::ops::Range<u32>,
+}
+
+#[derive(Clone)]
 struct PipelineLayoutShared {
-    signature: native::RootSignature,
+    signature: d3d12::RootSignature,
     total_root_elements: RootIndex,
     special_constants_root_index: Option<RootIndex>,
+    root_constant_info: Option<RootConstantInfo>,
 }
 
 unsafe impl Send for PipelineLayoutShared {}
@@ -521,10 +561,27 @@ pub struct ShaderModule {
     raw_name: Option<ffi::CString>,
 }
 
+pub(super) enum CompiledShader {
+    #[allow(unused)]
+    Dxc(Vec<u8>),
+    Fxc(d3d12::Blob),
+}
+
+impl CompiledShader {
+    fn create_native_shader(&self) -> d3d12::Shader {
+        match *self {
+            CompiledShader::Dxc(ref shader) => d3d12::Shader::from_raw(shader),
+            CompiledShader::Fxc(ref shader) => d3d12::Shader::from_blob(shader),
+        }
+    }
+
+    unsafe fn destroy(self) {}
+}
+
 pub struct RenderPipeline {
-    raw: native::PipelineState,
+    raw: d3d12::PipelineState,
     layout: PipelineLayoutShared,
-    topology: d3d12::D3D12_PRIMITIVE_TOPOLOGY,
+    topology: d3d12_ty::D3D12_PRIMITIVE_TOPOLOGY,
     vertex_strides: [Option<NonZeroU32>; crate::MAX_VERTEX_BUFFERS],
 }
 
@@ -532,7 +589,7 @@ unsafe impl Send for RenderPipeline {}
 unsafe impl Sync for RenderPipeline {}
 
 pub struct ComputePipeline {
-    raw: native::PipelineState,
+    raw: d3d12::PipelineState,
     layout: PipelineLayoutShared,
 }
 
@@ -540,15 +597,19 @@ unsafe impl Send for ComputePipeline {}
 unsafe impl Sync for ComputePipeline {}
 
 impl SwapChain {
-    unsafe fn release_resources(self) -> native::WeakPtr<dxgi1_4::IDXGISwapChain3> {
-        for resource in self.resources {
-            resource.destroy();
-        }
+    unsafe fn release_resources(self) -> d3d12::ComPtr<dxgi1_4::IDXGISwapChain3> {
         self.raw
     }
 
-    unsafe fn wait(&mut self, timeout_ms: u32) -> Result<bool, crate::SurfaceError> {
-        match synchapi::WaitForSingleObject(self.waitable, timeout_ms) {
+    unsafe fn wait(
+        &mut self,
+        timeout: Option<std::time::Duration>,
+    ) -> Result<bool, crate::SurfaceError> {
+        let timeout_ms = match timeout {
+            Some(duration) => duration.as_millis() as u32,
+            None => winbase::INFINITE,
+        };
+        match unsafe { synchapi::WaitForSingleObject(self.waitable, timeout_ms) } {
             winbase::WAIT_ABANDONED | winbase::WAIT_FAILED => Err(crate::SurfaceError::Lost),
             winbase::WAIT_OBJECT_0 => Ok(true),
             winerror::WAIT_TIMEOUT => Ok(false),
@@ -567,29 +628,35 @@ impl crate::Surface<Api> for Surface {
         config: &crate::SurfaceConfiguration,
     ) -> Result<(), crate::SurfaceError> {
         let mut flags = dxgi::DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT;
-        match config.present_mode {
-            wgt::PresentMode::Immediate => {
-                flags |= dxgi::DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING;
-            }
-            _ => {}
+        // We always set ALLOW_TEARING on the swapchain no matter
+        // what kind of swapchain we want because ResizeBuffers
+        // cannot change the swapchain's ALLOW_TEARING flag.
+        //
+        // This does not change the behavior of the swapchain, just
+        // allow present calls to use tearing.
+        if self.supports_allow_tearing {
+            flags |= dxgi::DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING;
         }
 
-        let non_srgb_format = conv::map_texture_format_nosrgb(config.format);
+        // While `configure`s contract ensures that no work on the GPU's main queues
+        // are in flight, we still need to wait for the present queue to be idle.
+        unsafe { device.wait_for_present_queue_idle() }?;
+
+        let non_srgb_format = auxil::dxgi::conv::map_texture_format_nosrgb(config.format);
 
         let swap_chain = match self.swap_chain.take() {
             //Note: this path doesn't properly re-initialize all of the things
             Some(sc) => {
-                // can't have image resources in flight used by GPU
-                let _ = device.wait_idle();
-
-                let raw = sc.release_resources();
-                let result = raw.ResizeBuffers(
-                    config.swap_chain_size,
-                    config.extent.width,
-                    config.extent.height,
-                    non_srgb_format,
-                    flags,
-                );
+                let raw = unsafe { sc.release_resources() };
+                let result = unsafe {
+                    raw.ResizeBuffers(
+                        config.swap_chain_size,
+                        config.extent.width,
+                        config.extent.height,
+                        non_srgb_format,
+                        flags,
+                    )
+                };
                 if let Err(err) = result.into_result() {
                     log::error!("ResizeBuffers failed: {}", err);
                     return Err(crate::SurfaceError::Other("window is in use"));
@@ -597,47 +664,98 @@ impl crate::Surface<Api> for Surface {
                 raw
             }
             None => {
-                let mut swap_chain1 = native::WeakPtr::<dxgi1_2::IDXGISwapChain1>::null();
-
-                let raw_desc = dxgi1_2::DXGI_SWAP_CHAIN_DESC1 {
-                    AlphaMode: conv::map_acomposite_alpha_mode(config.composite_alpha_mode),
-                    BufferCount: config.swap_chain_size,
-                    Width: config.extent.width,
-                    Height: config.extent.height,
-                    Format: non_srgb_format,
-                    Flags: flags,
-                    BufferUsage: dxgitype::DXGI_USAGE_RENDER_TARGET_OUTPUT,
-                    SampleDesc: dxgitype::DXGI_SAMPLE_DESC {
-                        Count: 1,
-                        Quality: 0,
+                let desc = d3d12::SwapchainDesc {
+                    alpha_mode: auxil::dxgi::conv::map_acomposite_alpha_mode(
+                        config.composite_alpha_mode,
+                    ),
+                    width: config.extent.width,
+                    height: config.extent.height,
+                    format: non_srgb_format,
+                    stereo: false,
+                    sample: d3d12::SampleDesc {
+                        count: 1,
+                        quality: 0,
                     },
-                    Scaling: dxgi1_2::DXGI_SCALING_STRETCH,
-                    Stereo: 0,
-                    SwapEffect: dxgi::DXGI_SWAP_EFFECT_FLIP_DISCARD,
+                    buffer_usage: dxgitype::DXGI_USAGE_RENDER_TARGET_OUTPUT,
+                    buffer_count: config.swap_chain_size,
+                    scaling: d3d12::Scaling::Stretch,
+                    swap_effect: d3d12::SwapEffect::FlipDiscard,
+                    flags,
+                };
+                let swap_chain1 = match self.target {
+                    SurfaceTarget::Visual(_) | SurfaceTarget::SwapChainPanel(_) => {
+                        profiling::scope!("IDXGIFactory4::CreateSwapChainForComposition");
+                        self.factory
+                            .unwrap_factory2()
+                            .create_swapchain_for_composition(
+                                device.present_queue.as_mut_ptr() as *mut _,
+                                &desc,
+                            )
+                            .into_result()
+                    }
+                    SurfaceTarget::SurfaceHandle(handle) => {
+                        profiling::scope!(
+                            "IDXGIFactoryMedia::CreateSwapChainForCompositionSurfaceHandle"
+                        );
+                        self.factory_media
+                            .clone()
+                            .ok_or(crate::SurfaceError::Other("IDXGIFactoryMedia not found"))?
+                            .create_swapchain_for_composition_surface_handle(
+                                device.present_queue.as_mut_ptr() as *mut _,
+                                handle,
+                                &desc,
+                            )
+                            .into_result()
+                    }
+                    SurfaceTarget::WndHandle(hwnd) => {
+                        profiling::scope!("IDXGIFactory4::CreateSwapChainForHwnd");
+                        self.factory
+                            .as_factory2()
+                            .unwrap()
+                            .create_swapchain_for_hwnd(
+                                device.present_queue.as_mut_ptr() as *mut _,
+                                hwnd,
+                                &desc,
+                            )
+                            .into_result()
+                    }
                 };
 
-                let hr = {
-                    profiling::scope!("IDXGIFactory4::CreateSwapChainForHwnd");
-                    self.factory.CreateSwapChainForHwnd(
-                        device.present_queue.as_mut_ptr() as *mut _,
-                        self.wnd_handle,
-                        &raw_desc,
-                        ptr::null(),
-                        ptr::null_mut(),
-                        swap_chain1.mut_void() as *mut *mut _,
-                    )
+                let swap_chain1 = match swap_chain1 {
+                    Ok(s) => s,
+                    Err(err) => {
+                        log::error!("SwapChain creation error: {}", err);
+                        return Err(crate::SurfaceError::Other("swap chain creation"));
+                    }
                 };
 
-                if let Err(err) = hr.into_result() {
-                    log::error!("SwapChain creation error: {}", err);
-                    return Err(crate::SurfaceError::Other("swap chain creation"));
+                match &self.target {
+                    &SurfaceTarget::WndHandle(_) | &SurfaceTarget::SurfaceHandle(_) => {}
+                    &SurfaceTarget::Visual(ref visual) => {
+                        if let Err(err) =
+                            unsafe { visual.SetContent(swap_chain1.as_unknown()) }.into_result()
+                        {
+                            log::error!("Unable to SetContent: {}", err);
+                            return Err(crate::SurfaceError::Other(
+                                "IDCompositionVisual::SetContent",
+                            ));
+                        }
+                    }
+                    &SurfaceTarget::SwapChainPanel(ref swap_chain_panel) => {
+                        if let Err(err) =
+                            unsafe { swap_chain_panel.SetSwapChain(swap_chain1.as_ptr()) }
+                                .into_result()
+                        {
+                            log::error!("Unable to SetSwapChain: {}", err);
+                            return Err(crate::SurfaceError::Other(
+                                "ISwapChainPanelNative::SetSwapChain",
+                            ));
+                        }
+                    }
                 }
 
-                match swap_chain1.cast::<dxgi1_4::IDXGISwapChain3>().into_result() {
-                    Ok(swap_chain3) => {
-                        swap_chain1.destroy();
-                        swap_chain3
-                    }
+                match unsafe { swap_chain1.cast::<dxgi1_4::IDXGISwapChain3>() }.into_result() {
+                    Ok(swap_chain3) => swap_chain3,
                     Err(err) => {
                         log::error!("Unable to cast swap chain: {}", err);
                         return Err(crate::SurfaceError::Other("swap chain cast to 3"));
@@ -646,20 +764,33 @@ impl crate::Surface<Api> for Surface {
             }
         };
 
-        // Disable automatic Alt+Enter handling by DXGI.
-        const DXGI_MWA_NO_WINDOW_CHANGES: u32 = 1;
-        const DXGI_MWA_NO_ALT_ENTER: u32 = 2;
-        self.factory.MakeWindowAssociation(
-            self.wnd_handle,
-            DXGI_MWA_NO_WINDOW_CHANGES | DXGI_MWA_NO_ALT_ENTER,
-        );
+        match self.target {
+            SurfaceTarget::WndHandle(wnd_handle) => {
+                // Disable automatic Alt+Enter handling by DXGI.
+                const DXGI_MWA_NO_WINDOW_CHANGES: u32 = 1;
+                const DXGI_MWA_NO_ALT_ENTER: u32 = 2;
+                unsafe {
+                    self.factory.MakeWindowAssociation(
+                        wnd_handle,
+                        DXGI_MWA_NO_WINDOW_CHANGES | DXGI_MWA_NO_ALT_ENTER,
+                    )
+                };
+            }
+            SurfaceTarget::Visual(_)
+            | SurfaceTarget::SurfaceHandle(_)
+            | SurfaceTarget::SwapChainPanel(_) => {}
+        }
 
-        swap_chain.SetMaximumFrameLatency(config.swap_chain_size);
-        let waitable = swap_chain.GetFrameLatencyWaitableObject();
+        unsafe { swap_chain.SetMaximumFrameLatency(config.swap_chain_size) };
+        let waitable = unsafe { swap_chain.GetFrameLatencyWaitableObject() };
 
-        let mut resources = vec![native::Resource::null(); config.swap_chain_size as usize];
-        for (i, res) in resources.iter_mut().enumerate() {
-            swap_chain.GetBuffer(i as _, &d3d12::ID3D12Resource::uuidof(), res.mut_void());
+        let mut resources = Vec::with_capacity(config.swap_chain_size as usize);
+        for i in 0..config.swap_chain_size {
+            let mut resource = d3d12::Resource::null();
+            unsafe {
+                swap_chain.GetBuffer(i, &d3d12_ty::ID3D12Resource::uuidof(), resource.mut_void())
+            };
+            resources.push(resource);
         }
 
         self.swap_chain = Some(SwapChain {
@@ -676,35 +807,41 @@ impl crate::Surface<Api> for Surface {
     }
 
     unsafe fn unconfigure(&mut self, device: &Device) {
-        if let Some(mut sc) = self.swap_chain.take() {
-            let _ = sc.wait(winbase::INFINITE);
-            //TODO: this shouldn't be needed,
-            // but it complains that the queue is still used otherwise
-            let _ = device.wait_idle();
-            let raw = sc.release_resources();
-            raw.destroy();
+        if let Some(sc) = self.swap_chain.take() {
+            unsafe {
+                // While `unconfigure`s contract ensures that no work on the GPU's main queues
+                // are in flight, we still need to wait for the present queue to be idle.
+
+                // The major failure mode of this function is device loss,
+                // which if we have lost the device, we should just continue
+                // cleaning up, without error.
+                let _ = device.wait_for_present_queue_idle();
+
+                let _raw = sc.release_resources();
+            }
         }
     }
 
     unsafe fn acquire_texture(
         &mut self,
-        timeout_ms: u32,
+        timeout: Option<std::time::Duration>,
     ) -> Result<Option<crate::AcquiredSurfaceTexture<Api>>, crate::SurfaceError> {
         let sc = self.swap_chain.as_mut().unwrap();
 
-        sc.wait(timeout_ms)?;
+        unsafe { sc.wait(timeout) }?;
 
-        let base_index = sc.raw.GetCurrentBackBufferIndex() as usize;
+        let base_index = unsafe { sc.raw.GetCurrentBackBufferIndex() } as usize;
         let index = (base_index + sc.acquired_count) % sc.resources.len();
         sc.acquired_count += 1;
 
         let texture = Texture {
-            resource: sc.resources[index],
+            resource: sc.resources[index].clone(),
             format: sc.format,
             dimension: wgt::TextureDimension::D2,
             size: sc.size,
             mip_level_count: 1,
             sample_count: 1,
+            allocation: None,
         };
         Ok(Some(crate::AcquiredSurfaceTexture {
             texture,
@@ -735,9 +872,16 @@ impl crate::Queue<Api> for Queue {
 
         if let Some((fence, value)) = signal_fence {
             self.raw
-                .signal(fence.raw, value)
+                .signal(&fence.raw, value)
                 .into_device_result("Signal fence")?;
         }
+
+        // Note the lack of synchronization here between the main Direct queue
+        // and the dedicated presentation queue. This is automatically handled
+        // by the D3D runtime by detecting uses of resources derived from the
+        // swapchain. This automatic detection is why you cannot use a swapchain
+        // as an UAV in D3D12.
+
         Ok(())
     }
     unsafe fn present(
@@ -749,20 +893,22 @@ impl crate::Queue<Api> for Queue {
         sc.acquired_count -= 1;
 
         let (interval, flags) = match sc.present_mode {
+            // We only allow immediate if ALLOW_TEARING is valid.
             wgt::PresentMode::Immediate => (0, dxgi::DXGI_PRESENT_ALLOW_TEARING),
+            wgt::PresentMode::Mailbox => (0, 0),
             wgt::PresentMode::Fifo => (1, 0),
-            wgt::PresentMode::Mailbox => (1, 0),
+            m => unreachable!("Cannot make surface with present mode {m:?}"),
         };
 
         profiling::scope!("IDXGISwapchain3::Present");
-        sc.raw.Present(interval, flags);
+        unsafe { sc.raw.Present(interval, flags) };
 
         Ok(())
     }
 
     unsafe fn get_timestamp_period(&self) -> f32 {
         let mut frequency = 0u64;
-        self.raw.GetTimestampFrequency(&mut frequency);
+        unsafe { self.raw.GetTimestampFrequency(&mut frequency) };
         (1_000_000_000.0 / frequency as f64) as f32
     }
 }

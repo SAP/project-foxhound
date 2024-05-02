@@ -8,6 +8,7 @@
 
 #include "CookieKey.h"
 
+#include "nsICookieNotification.h"
 #include "nsIObserver.h"
 #include "nsTHashtable.h"
 #include "nsWeakReference.h"
@@ -16,6 +17,7 @@
 
 class nsIArray;
 class nsICookie;
+class nsICookieTransactionCallback;
 class nsIPrefBranch;
 
 namespace mozilla {
@@ -111,21 +113,30 @@ class CookieStorage : public nsIObserver, public nsSupportsWeakReference {
 
   void RemoveAll();
 
-  void NotifyChanged(nsISupports* aSubject, const char16_t* aData,
+  void NotifyChanged(nsISupports* aSubject,
+                     nsICookieNotification::Action aAction,
+                     const nsACString& aBaseDomain,
+                     dom::BrowsingContext* aBrowsingContext = nullptr,
                      bool aOldCookieIsSession = false);
 
   void AddCookie(nsIConsoleReportCollector* aCRC, const nsACString& aBaseDomain,
                  const OriginAttributes& aOriginAttributes, Cookie* aCookie,
                  int64_t aCurrentTimeInUsec, nsIURI* aHostURI,
-                 const nsACString& aCookieHeader, bool aFromHttp);
+                 const nsACString& aCookieHeader, bool aFromHttp,
+                 dom::BrowsingContext* aBrowsingContext);
 
-  static void CreateOrUpdatePurgeList(nsIArray** aPurgedList,
+  static void CreateOrUpdatePurgeList(nsCOMPtr<nsIArray>& aPurgedList,
                                       nsICookie* aCookie);
 
   virtual void StaleCookies(const nsTArray<Cookie*>& aCookieList,
                             int64_t aCurrentTimeInUsec) = 0;
 
   virtual void Close() = 0;
+
+  virtual void EnsureInitialized() = 0;
+
+  virtual nsresult RunInTransaction(
+      nsICookieTransactionCallback* aCallback) = 0;
 
  protected:
   CookieStorage() = default;
@@ -143,8 +154,7 @@ class CookieStorage : public nsIObserver, public nsSupportsWeakReference {
 
   virtual const char* NotificationTopic() const = 0;
 
-  virtual void NotifyChangedInternal(nsISupports* aSubject,
-                                     const char16_t* aData,
+  virtual void NotifyChangedInternal(nsICookieNotification* aSubject,
                                      bool aOldCookieIsSession) = 0;
 
   virtual void RemoveAllInternal() = 0;
@@ -154,7 +164,7 @@ class CookieStorage : public nsIObserver, public nsSupportsWeakReference {
 
   void RemoveCookieFromListInternal(const CookieListIter& aIter);
 
-  virtual void RemoveCookieFromDB(const CookieListIter& aIter) = 0;
+  virtual void RemoveCookieFromDB(const Cookie& aCookie) = 0;
 
   already_AddRefed<nsIArray> PurgeCookiesWithCallbacks(
       int64_t aCurrentTimeInUsec, uint16_t aMaxNumberOfCookies,

@@ -43,7 +43,6 @@
 #include "nsHtml5NamedCharacters.h"
 #include "nsHtml5NamedCharactersAccel.h"
 #include "nsHtml5String.h"
-#include "nsHtml5TokenizerLoopPolicies.h"
 #include "nsIContent.h"
 #include "nsTraceRefcnt.h"
 
@@ -279,9 +278,10 @@ class nsHtml5Tokenizer {
   nsHtml5String systemId;
   autoJArray<char16_t, int32_t> strBuf;
   int32_t strBufLen;
+  SafeStringTaint strBufTaint;
   autoJArray<char16_t, int32_t> charRefBuf;
   int32_t charRefBufLen;
-  StringTaint charRefTaint;
+  SafeStringTaint charRefTaint;
   autoJArray<char16_t, int32_t> bmpChar;
   autoJArray<char16_t, int32_t> astralChar;
 
@@ -339,28 +339,30 @@ class nsHtml5Tokenizer {
   nsHtml5HtmlAttributes* emptyAttributes();
 
  private:
-  // TODO: TaintFox: Why is the taintflow not used here???
-  inline void appendCharRefBuf(char16_t c, const TaintFlow* t) {
+  inline void appendCharRefBuf(char16_t c, const TaintFlow& flow) {
     MOZ_RELEASE_ASSERT(charRefBufLen < charRefBuf.length,
                        "Attempted to overrun charRefBuf!");
+    charRefTaint.concat(flow, charRefBufLen);
     charRefBuf[charRefBufLen++] = c;
   }
 
   void emitOrAppendCharRefBuf(int32_t returnState);
-  inline void clearStrBufAfterUse() { strBufLen = 0; }
+  inline void clearStrBufAfterUse() { strBufLen = 0; strBufTaint.clear(); }
 
   inline void clearStrBufBeforeUse() {
     MOZ_ASSERT(!strBufLen, "strBufLen not reset after previous use!");
     strBufLen = 0;
+    strBufTaint.clear();
   }
 
   inline void clearStrBufAfterOneHyphen() {
     MOZ_ASSERT(strBufLen == 1, "strBufLen length not one!");
     MOZ_ASSERT(strBuf[0] == '-', "strBuf does not start with a hyphen!");
     strBufLen = 0;
+    strBufTaint.clear();
   }
 
-  inline void appendStrBuf(char16_t c) {
+  inline void appendStrBuf(char16_t c, const TaintFlow& flow) {
     MOZ_ASSERT(strBufLen < strBuf.length,
                "Previous buffer length insufficient.");
     if (MOZ_UNLIKELY(strBufLen == strBuf.length)) {
@@ -368,6 +370,7 @@ class nsHtml5Tokenizer {
         MOZ_CRASH("Unable to recover from buffer reallocation failure");
       }
     }
+    strBufTaint.concat(flow, strBufLen);
     strBuf[strBufLen++] = c;
   }
 
@@ -377,17 +380,18 @@ class nsHtml5Tokenizer {
  private:
   void strBufToDoctypeName();
   void emitStrBuf();
-  inline void appendSecondHyphenToBogusComment() { appendStrBuf('-'); }
+  inline void appendSecondHyphenToBogusComment() { appendStrBuf('-', TaintFlow()); }
 
   inline void adjustDoubleHyphenAndAppendToStrBufAndErr(
       char16_t c, bool reportedConsecutiveHyphens) {
-    appendStrBuf(c);
+    appendStrBuf(c, TaintFlow());
   }
 
-  void appendStrBuf(char16_t* buffer, int32_t offset, int32_t length);
+  void appendStrBuf(char16_t* buffer, int32_t offset, int32_t length, const StringTaint& taint);
   inline void appendCharRefBufToStrBuf() {
-    appendStrBuf(charRefBuf, 0, charRefBufLen);
+    appendStrBuf(charRefBuf, 0, charRefBufLen, charRefTaint);
     charRefBufLen = 0;
+    charRefTaint.clear();
   }
 
   void emitComment(int32_t provisionalHyphens, int32_t pos);
@@ -411,35 +415,15 @@ class nsHtml5Tokenizer {
   int32_t stateLoop(int32_t state, char16_t c, int32_t pos, char16_t* buf, const StringTaint& taint,
                     bool reconsume, int32_t returnState, int32_t endPos);
   void initDoctypeFields();
-  inline void adjustDoubleHyphenAndAppendToStrBufCarriageReturn() {
-    silentCarriageReturn();
-    adjustDoubleHyphenAndAppendToStrBufAndErr('\n', false);
-  }
-
-  inline void adjustDoubleHyphenAndAppendToStrBufLineFeed() {
-    silentLineFeed();
-    adjustDoubleHyphenAndAppendToStrBufAndErr('\n', false);
-  }
-
-  inline void appendStrBufLineFeed() {
-    silentLineFeed();
-    appendStrBuf('\n');
-  }
-
-  inline void appendStrBufCarriageReturn() {
-    silentCarriageReturn();
-    appendStrBuf('\n');
-  }
-
- protected:
-  inline void silentCarriageReturn() {
-    ++line;
-    lastCR = true;
-  }
-
-  inline void silentLineFeed() { ++line; }
-
- private:
+  template <class P>
+  void adjustDoubleHyphenAndAppendToStrBufCarriageReturn();
+  template <class P>
+  void adjustDoubleHyphenAndAppendToStrBufLineFeed();
+  template <class P>
+  void appendStrBufLineFeed();
+  template <class P>
+  void appendStrBufCarriageReturn();
+  template <class P>
   void emitCarriageReturn(char16_t* buf, const StringTaint& taint, int32_t pos);
   void emitReplacementCharacter(char16_t* buf, const StringTaint& taint, int32_t pos);
   void maybeEmitReplacementCharacter(char16_t* buf, const StringTaint& taint, int32_t pos);
@@ -457,9 +441,6 @@ class nsHtml5Tokenizer {
   void suspendIfRequestedAfterCurrentNonTextToken();
   void suspendAfterCurrentTokenIfNotInText();
   bool suspensionAfterCurrentNonTextTokenPending();
-
- protected:
-  inline char16_t checkChar(char16_t* buf, int32_t pos) { return buf[pos]; }
 
  public:
   bool internalEncodingDeclaration(nsHtml5String internalCharset);

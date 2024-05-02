@@ -12,15 +12,17 @@
 #include <gdk/gdkkeysyms.h>
 #include <algorithm>
 #include <gdk/gdk.h>
-#include <gdk/gdkx.h>
 #include <dlfcn.h>
 #include <gdk/gdkkeysyms-compat.h>
-#include <X11/XKBlib.h>
-#include "X11UndefineNone.h"
+#ifdef MOZ_X11
+#  include <gdk/gdkx.h>
+#  include <X11/XKBlib.h>
+#  include "X11UndefineNone.h"
+#endif
 #include "IMContextWrapper.h"
 #include "WidgetUtils.h"
 #include "WidgetUtilsGtk.h"
-#include "keysym2ucs.h"
+#include "x11/keysym2ucs.h"
 #include "nsContentUtils.h"
 #include "nsGtkUtils.h"
 #include "nsIBidiKeyboard.h"
@@ -55,9 +57,17 @@ namespace widget {
 
 KeymapWrapper* KeymapWrapper::sInstance = nullptr;
 guint KeymapWrapper::sLastRepeatableHardwareKeyCode = 0;
+#ifdef MOZ_X11
 Time KeymapWrapper::sLastRepeatableKeyTime = 0;
+#endif
 KeymapWrapper::RepeatState KeymapWrapper::sRepeatState =
     KeymapWrapper::NOT_PRESSED;
+
+#ifdef MOZ_WAYLAND
+wl_seat* KeymapWrapper::sSeat = nullptr;
+int KeymapWrapper::sSeatID = -1;
+wl_keyboard* KeymapWrapper::sKeyboard = nullptr;
+#endif
 
 static const char* GetBoolName(bool aBool) { return aBool ? "TRUE" : "FALSE"; }
 
@@ -322,17 +332,19 @@ KeymapWrapper::ModifierKey* KeymapWrapper::GetModifierKey(
 
 /* static */
 KeymapWrapper* KeymapWrapper::GetInstance() {
-  if (sInstance) {
+  if (!sInstance) {
+    sInstance = new KeymapWrapper();
     sInstance->Init();
-    return sInstance;
   }
-
-  sInstance = new KeymapWrapper();
   return sInstance;
 }
 
 #ifdef MOZ_WAYLAND
 void KeymapWrapper::EnsureInstance() { (void)GetInstance(); }
+
+void KeymapWrapper::InitBySystemSettingsWayland() {
+  MOZ_UNUSED(WaylandDisplayGet());
+}
 #endif
 
 /* static */
@@ -354,11 +366,11 @@ KeymapWrapper::KeymapWrapper()
 
   g_object_ref(mGdkKeymap);
 
+#ifdef MOZ_X11
   if (GdkIsX11Display()) {
     InitXKBExtension();
   }
-
-  Init();
+#endif
 }
 
 void KeymapWrapper::Init() {
@@ -373,16 +385,20 @@ void KeymapWrapper::Init() {
   mModifierKeys.Clear();
   memset(mModifierMasks, 0, sizeof(mModifierMasks));
 
+#ifdef MOZ_X11
   if (GdkIsX11Display()) {
     InitBySystemSettingsX11();
   }
+#endif
 #ifdef MOZ_WAYLAND
-  else {
+  if (GdkIsWaylandDisplay()) {
     InitBySystemSettingsWayland();
   }
 #endif
 
+#ifdef MOZ_X11
   gdk_window_add_filter(nullptr, FilterEvents, this);
+#endif
 
   MOZ_LOG(gKeyLog, LogLevel::Info,
           ("%p Init, CapsLock=0x%X, NumLock=0x%X, "
@@ -395,6 +411,7 @@ void KeymapWrapper::Init() {
            GetModifierMask(SUPER), GetModifierMask(HYPER)));
 }
 
+#ifdef MOZ_X11
 void KeymapWrapper::InitXKBExtension() {
   PodZero(&mKeyboardState);
 
@@ -626,6 +643,7 @@ void KeymapWrapper::InitBySystemSettingsX11() {
   XFreeModifiermap(xmodmap);
   XFree(xkeymap);
 }
+#endif
 
 #ifdef MOZ_WAYLAND
 void KeymapWrapper::SetModifierMask(xkb_keymap* aKeymap,
@@ -740,22 +758,24 @@ static void keyboard_handle_modifiers(void* data, struct wl_keyboard* keyboard,
                                       uint32_t serial, uint32_t mods_depressed,
                                       uint32_t mods_latched,
                                       uint32_t mods_locked, uint32_t group) {}
+static void keyboard_handle_repeat_info(void* data,
+                                        struct wl_keyboard* keyboard,
+                                        int32_t rate, int32_t delay) {}
 
 static const struct wl_keyboard_listener keyboard_listener = {
-    keyboard_handle_keymap, keyboard_handle_enter,     keyboard_handle_leave,
-    keyboard_handle_key,    keyboard_handle_modifiers,
-};
+    keyboard_handle_keymap,    keyboard_handle_enter,
+    keyboard_handle_leave,     keyboard_handle_key,
+    keyboard_handle_modifiers, keyboard_handle_repeat_info};
 
 static void seat_handle_capabilities(void* data, struct wl_seat* seat,
                                      unsigned int caps) {
-  static wl_keyboard* keyboard = nullptr;
-
+  wl_keyboard* keyboard = KeymapWrapper::GetKeyboard();
   if ((caps & WL_SEAT_CAPABILITY_KEYBOARD) && !keyboard) {
     keyboard = wl_seat_get_keyboard(seat);
     wl_keyboard_add_listener(keyboard, &keyboard_listener, nullptr);
+    KeymapWrapper::SetKeyboard(keyboard);
   } else if (!(caps & WL_SEAT_CAPABILITY_KEYBOARD) && keyboard) {
-    wl_keyboard_destroy(keyboard);
-    keyboard = nullptr;
+    KeymapWrapper::ClearKeyboard();
   }
 }
 
@@ -763,33 +783,12 @@ static const struct wl_seat_listener seat_listener = {
     seat_handle_capabilities,
 };
 
-static void gdk_registry_handle_global(void* data, struct wl_registry* registry,
-                                       uint32_t id, const char* interface,
-                                       uint32_t version) {
-  if (strcmp(interface, "wl_seat") == 0) {
-    auto* seat =
-        WaylandRegistryBind<wl_seat>(registry, id, &wl_seat_interface, 1);
-    KeymapWrapper::SetSeat(seat);
-    wl_seat_add_listener(seat, &seat_listener, data);
-  }
-}
-
-static void gdk_registry_handle_global_remove(void* data,
-                                              struct wl_registry* registry,
-                                              uint32_t id) {}
-
-static const struct wl_registry_listener keyboard_registry_listener = {
-    gdk_registry_handle_global, gdk_registry_handle_global_remove};
-
-void KeymapWrapper::InitBySystemSettingsWayland() {
-  wl_display* display = WaylandDisplayGetWLDisplay();
-  wl_registry_add_listener(wl_display_get_registry(display),
-                           &keyboard_registry_listener, this);
-}
 #endif
 
 KeymapWrapper::~KeymapWrapper() {
+#ifdef MOZ_X11
   gdk_window_remove_filter(nullptr, FilterEvents, this);
+#endif
   if (mOnKeysChangedSignalHandle) {
     g_signal_handler_disconnect(mGdkKeymap, mOnKeysChangedSignalHandle);
   }
@@ -800,6 +799,7 @@ KeymapWrapper::~KeymapWrapper() {
   MOZ_LOG(gKeyLog, LogLevel::Info, ("%p Destructor", this));
 }
 
+#ifdef MOZ_X11
 /* static */
 GdkFilterReturn KeymapWrapper::FilterEvents(GdkXEvent* aXEvent,
                                             GdkEvent* aGdkEvent,
@@ -913,6 +913,7 @@ GdkFilterReturn KeymapWrapper::FilterEvents(GdkXEvent* aXEvent,
 
   return GDK_FILTER_CONTINUE;
 }
+#endif
 
 static void ResetBidiKeyboard() {
   // Reset the bidi keyboard settings for the new GdkKeymap
@@ -925,8 +926,10 @@ static void ResetBidiKeyboard() {
 
 /* static */
 void KeymapWrapper::ResetKeyboard() {
-  sInstance->mInitialized = false;
-  ResetBidiKeyboard();
+  if (sInstance) {
+    sInstance->mInitialized = false;
+    ResetBidiKeyboard();
+  }
 }
 
 /* static */
@@ -1019,12 +1022,15 @@ uint32_t KeymapWrapper::ComputeKeyModifiers(guint aModifierState) {
   if (keymapWrapper->AreModifiersActive(ALT, aModifierState)) {
     keyModifiers |= MODIFIER_ALT;
   }
-  if (keymapWrapper->AreModifiersActive(META, aModifierState)) {
-    keyModifiers |= MODIFIER_META;
-  }
   if (keymapWrapper->AreModifiersActive(SUPER, aModifierState) ||
-      keymapWrapper->AreModifiersActive(HYPER, aModifierState)) {
-    keyModifiers |= MODIFIER_OS;
+      keymapWrapper->AreModifiersActive(HYPER, aModifierState) ||
+      // "Meta" state is typically mapped to `Alt` + `Shift`, but we ignore the
+      // state if `Alt` is mapped to "Alt" state.  Additionally it's mapped to
+      // `Win` in Sun/Solaris keyboard layout.  In this case, we want to treat
+      // them as DOM Meta modifier keys like "Super" state in the major Linux
+      // environments.
+      keymapWrapper->AreModifiersActive(META, aModifierState)) {
+    keyModifiers |= MODIFIER_META;
   }
   if (keymapWrapper->AreModifiersActive(LEVEL3, aModifierState) ||
       keymapWrapper->AreModifiersActive(LEVEL5, aModifierState)) {
@@ -1091,8 +1097,7 @@ void KeymapWrapper::InitInputEvent(WidgetInputEvent& aInputEvent,
     MOZ_LOG(gKeyLog, LogLevel::Debug,
             ("%p InitInputEvent, aModifierState=0x%08X, "
              "aInputEvent={ mMessage=%s, mModifiers=0x%04X (Shift: %s, "
-             "Control: %s, Alt: %s, "
-             "Meta: %s, OS: %s, AltGr: %s, "
+             "Control: %s, Alt: %s, Meta: %s, AltGr: %s, "
              "CapsLock: %s, NumLock: %s, ScrollLock: %s })",
              keymapWrapper, aModifierState, ToChar(aInputEvent.mMessage),
              aInputEvent.mModifiers,
@@ -1100,7 +1105,6 @@ void KeymapWrapper::InitInputEvent(WidgetInputEvent& aInputEvent,
              GetBoolName(aInputEvent.mModifiers & MODIFIER_CONTROL),
              GetBoolName(aInputEvent.mModifiers & MODIFIER_ALT),
              GetBoolName(aInputEvent.mModifiers & MODIFIER_META),
-             GetBoolName(aInputEvent.mModifiers & MODIFIER_OS),
              GetBoolName(aInputEvent.mModifiers & MODIFIER_ALTGRAPH),
              GetBoolName(aInputEvent.mModifiers & MODIFIER_CAPSLOCK),
              GetBoolName(aInputEvent.mModifiers & MODIFIER_NUMLOCK),
@@ -1731,6 +1735,79 @@ bool KeymapWrapper::HandleKeyReleaseEvent(nsWindow* aWindow,
   return true;
 }
 
+guint KeymapWrapper::GetModifierState(GdkEventKey* aGdkKeyEvent,
+                                      KeymapWrapper* aWrapper) {
+  guint state = aGdkKeyEvent->state;
+  if (!aGdkKeyEvent->is_modifier) {
+    return state;
+  }
+#ifdef MOZ_X11
+  // NOTE: The state of given key event indicates adjacent state of
+  // modifier keys.  E.g., even if the event is Shift key press event,
+  // the bit for Shift is still false.  By the same token, even if the
+  // event is Shift key release event, the bit for Shift is still true.
+  // Unfortunately, gdk_keyboard_get_modifiers() returns current modifier
+  // state.  It means if there're some pending modifier key press or
+  // key release events, the result isn't what we want.
+  GdkDisplay* gdkDisplay = gdk_display_get_default();
+  if (GdkIsX11Display(gdkDisplay)) {
+    GdkDisplay* gdkDisplay = gdk_display_get_default();
+    Display* display = gdk_x11_display_get_xdisplay(gdkDisplay);
+    if (XEventsQueued(display, QueuedAfterReading)) {
+      XEvent nextEvent;
+      XPeekEvent(display, &nextEvent);
+      if (nextEvent.type == aWrapper->mXKBBaseEventCode) {
+        XkbEvent* XKBEvent = (XkbEvent*)&nextEvent;
+        if (XKBEvent->any.xkb_type == XkbStateNotify) {
+          XkbStateNotifyEvent* stateNotifyEvent =
+              (XkbStateNotifyEvent*)XKBEvent;
+          state &= ~0xFF;
+          state |= stateNotifyEvent->lookup_mods;
+        }
+      }
+    }
+    return state;
+  }
+#endif
+#ifdef MOZ_WAYLAND
+  int mask = 0;
+  switch (aGdkKeyEvent->keyval) {
+    case GDK_Shift_L:
+    case GDK_Shift_R:
+      mask = aWrapper->GetModifierMask(SHIFT);
+      break;
+    case GDK_Control_L:
+    case GDK_Control_R:
+      mask = aWrapper->GetModifierMask(CTRL);
+      break;
+    case GDK_Alt_L:
+    case GDK_Alt_R:
+      mask = aWrapper->GetModifierMask(ALT);
+      break;
+    case GDK_Super_L:
+    case GDK_Super_R:
+      mask = aWrapper->GetModifierMask(SUPER);
+      break;
+    case GDK_Hyper_L:
+    case GDK_Hyper_R:
+      mask = aWrapper->GetModifierMask(HYPER);
+      break;
+    case GDK_Meta_L:
+    case GDK_Meta_R:
+      mask = aWrapper->GetModifierMask(META);
+      break;
+    default:
+      break;
+  }
+  if (aGdkKeyEvent->type == GDK_KEY_PRESS) {
+    state |= mask;
+  } else {
+    state &= ~mask;
+  }
+#endif
+  return state;
+}
+
 /* static */
 void KeymapWrapper::InitKeyEvent(WidgetKeyboardEvent& aKeyEvent,
                                  GdkEventKey* aGdkKeyEvent,
@@ -1768,31 +1845,7 @@ void KeymapWrapper::InitKeyEvent(WidgetKeyboardEvent& aKeyEvent,
     aKeyEvent.mKeyCode = 0;
   }
 
-  // NOTE: The state of given key event indicates adjacent state of
-  // modifier keys.  E.g., even if the event is Shift key press event,
-  // the bit for Shift is still false.  By the same token, even if the
-  // event is Shift key release event, the bit for Shift is still true.
-  // Unfortunately, gdk_keyboard_get_modifiers() returns current modifier
-  // state.  It means if there're some pending modifier key press or
-  // key release events, the result isn't what we want.
-  guint modifierState = aGdkKeyEvent->state;
-  GdkDisplay* gdkDisplay = gdk_display_get_default();
-  if (aGdkKeyEvent->is_modifier && GdkIsX11Display(gdkDisplay)) {
-    Display* display = gdk_x11_display_get_xdisplay(gdkDisplay);
-    if (XEventsQueued(display, QueuedAfterReading)) {
-      XEvent nextEvent;
-      XPeekEvent(display, &nextEvent);
-      if (nextEvent.type == keymapWrapper->mXKBBaseEventCode) {
-        XkbEvent* XKBEvent = (XkbEvent*)&nextEvent;
-        if (XKBEvent->any.xkb_type == XkbStateNotify) {
-          XkbStateNotifyEvent* stateNotifyEvent =
-              (XkbStateNotifyEvent*)XKBEvent;
-          modifierState &= ~0xFF;
-          modifierState |= stateNotifyEvent->lookup_mods;
-        }
-      }
-    }
-  }
+  const guint modifierState = GetModifierState(aGdkKeyEvent, keymapWrapper);
   InitInputEvent(aKeyEvent, modifierState);
 
   switch (aGdkKeyEvent->keyval) {
@@ -1861,8 +1914,6 @@ void KeymapWrapper::InitKeyEvent(WidgetKeyboardEvent& aKeyEvent,
   // so link to the GdkEvent (which will vanish soon after return from the
   // event callback) to give plugins access to hardware_keycode and state.
   // (An XEvent would be nice but the GdkEvent is good enough.)
-  aKeyEvent.mPluginEvent.Copy(*aGdkKeyEvent);
-  aKeyEvent.mTime = aGdkKeyEvent->time;
   aKeyEvent.mNativeKeyEvent = static_cast<void*>(aGdkKeyEvent);
   aKeyEvent.mIsRepeat =
       sRepeatState == REPEATING &&
@@ -2040,11 +2091,15 @@ bool KeymapWrapper::IsLatinGroup(guint8 aGroup) {
 }
 
 bool KeymapWrapper::IsAutoRepeatableKey(guint aHardwareKeyCode) {
+#ifdef MOZ_X11
   uint8_t indexOfArray = aHardwareKeyCode / 8;
   MOZ_ASSERT(indexOfArray < ArrayLength(mKeyboardState.auto_repeats),
              "invalid index");
   char bitMask = 1 << (aHardwareKeyCode % 8);
   return (mKeyboardState.auto_repeats[indexOfArray] & bitMask) != 0;
+#else
+  return false;
+#endif
 }
 
 /* static */
@@ -2401,13 +2456,12 @@ void KeymapWrapper::WillDispatchKeyboardEventInternal(
     aKeyEvent.mAlternativeCharCodes.AppendElement(altLatinCharCodes);
   }
   // If the mCharCode is not Latin, and the level is 0 or 1, we should
-  // replace the mCharCode to Latin char if Alt and Meta keys are not
-  // pressed. (Alt should be sent the localized char for accesskey
-  // like handling of Web Applications.)
+  // replace the mCharCode to Latin char if Alt keys are not pressed. (Alt
+  // should be sent the localized char for accesskey like handling of Web
+  // Applications.)
   ch = aKeyEvent.IsShift() ? altLatinCharCodes.mShiftedCharCode
                            : altLatinCharCodes.mUnshiftedCharCode;
-  if (ch && !(aKeyEvent.IsAlt() || aKeyEvent.IsMeta()) &&
-      charCode == unmodifiedCh) {
+  if (ch && !aKeyEvent.IsAlt() && charCode == unmodifiedCh) {
     aKeyEvent.SetCharCode(ch);
   }
 
@@ -2453,14 +2507,33 @@ void KeymapWrapper::GetFocusInfo(wl_surface** aFocusSurface,
   *aFocusSerial = keymapWrapper->mFocusSerial;
 }
 
-void KeymapWrapper::SetSeat(wl_seat* aSeat) {
-  KeymapWrapper* keymapWrapper = KeymapWrapper::GetInstance();
-  keymapWrapper->mSeat = aSeat;
+void KeymapWrapper::SetSeat(wl_seat* aSeat, int aId) {
+  sSeat = aSeat;
+  sSeatID = aId;
+  wl_seat_add_listener(aSeat, &seat_listener, nullptr);
 }
 
-wl_seat* KeymapWrapper::GetSeat() {
-  KeymapWrapper* keymapWrapper = KeymapWrapper::GetInstance();
-  return keymapWrapper->mSeat;
+void KeymapWrapper::ClearSeat(int aId) {
+  if (sSeatID == aId) {
+    ClearKeyboard();
+    sSeat = nullptr;
+    sSeatID = -1;
+  }
+}
+
+wl_seat* KeymapWrapper::GetSeat() { return sSeat; }
+
+void KeymapWrapper::SetKeyboard(wl_keyboard* aKeyboard) {
+  sKeyboard = aKeyboard;
+}
+
+wl_keyboard* KeymapWrapper::GetKeyboard() { return sKeyboard; }
+
+void KeymapWrapper::ClearKeyboard() {
+  if (sKeyboard) {
+    wl_keyboard_destroy(sKeyboard);
+    sKeyboard = nullptr;
+  }
 }
 #endif
 

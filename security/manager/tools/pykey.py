@@ -30,17 +30,18 @@ secp384r1: an ECC key on the curve secp384r1
 secp521r1: an ECC key on the curve secp521r1
 """
 
-from pyasn1.codec.der import encoder
-from pyasn1.type import univ, namedtype, tag
-from pyasn1_modules import rfc2459
 import base64
 import binascii
-import ecdsa
 import hashlib
 import math
+import sys
+
+import ecdsa
 import rsa
 import six
-import sys
+from pyasn1.codec.der import encoder
+from pyasn1.type import namedtype, tag, univ
+from pyasn1_modules import rfc2459
 
 # "constants" to make it easier for consumers to specify hash algorithms
 HASH_MD5 = "hash:md5"
@@ -945,8 +946,6 @@ def keyFromSpecification(specification):
 # The build harness will call this function with an output file-like
 # object and a path to a file containing a specification. This will
 # read the specification and output the key as ASCII-encoded PKCS #8.
-
-
 def main(output, inputPath):
     with open(inputPath) as configStream:
         output.write(keyFromSpecification(configStream.read().strip()).toPEM() + "\n")

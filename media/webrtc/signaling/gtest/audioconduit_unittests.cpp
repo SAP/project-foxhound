@@ -8,9 +8,7 @@
 #include "gtest/gtest.h"
 
 #include "AudioConduit.h"
-#include "ConcreteConduitControl.h"
-#include "WaitFor.h"
-#include "WebrtcCallWrapper.h"
+#include "Canonicals.h"
 
 #include "MockCall.h"
 
@@ -27,7 +25,8 @@ class AudioConduitTest : public ::testing::Test {
         mAudioConduit(MakeRefPtr<WebrtcAudioConduit>(
             mCallWrapper, GetCurrentSerialEventTarget())),
         mControl(GetCurrentSerialEventTarget()) {
-    mAudioConduit->InitControl(&mControl);
+    mControl.Update(
+        [&](auto& aControl) { mAudioConduit->InitControl(&mControl); });
   }
 
   ~AudioConduitTest() override {
@@ -39,7 +38,7 @@ class AudioConduitTest : public ::testing::Test {
 
   const RefPtr<MockCallWrapper> mCallWrapper;
   const RefPtr<WebrtcAudioConduit> mAudioConduit;
-  ConcreteConduitControl mControl;
+  ConcreteControl mControl;
 };
 
 TEST_F(AudioConduitTest, TestConfigureSendMediaCodec) {
@@ -717,7 +716,6 @@ TEST_F(AudioConduitTest, TestSetLocalRTPExtensions) {
     aControl.mTransmitting = true;
   });
   ASSERT_TRUE(Call()->mAudioReceiveConfig);
-  ASSERT_TRUE(Call()->mAudioReceiveConfig->rtp.extensions.empty());
   ASSERT_TRUE(Call()->mAudioSendConfig);
   ASSERT_TRUE(Call()->mAudioSendConfig->rtp.extensions.empty());
 
@@ -731,8 +729,6 @@ TEST_F(AudioConduitTest, TestSetLocalRTPExtensions) {
     aControl.mLocalSendRtpExtensions = extensions;
   });
   ASSERT_TRUE(Call()->mAudioReceiveConfig);
-  ASSERT_EQ(Call()->mAudioReceiveConfig->rtp.extensions.back().uri,
-            webrtc::RtpExtension::kAudioLevelUri);
   ASSERT_TRUE(Call()->mAudioSendConfig);
   ASSERT_EQ(Call()->mAudioSendConfig->rtp.extensions.back().uri,
             webrtc::RtpExtension::kAudioLevelUri);
@@ -743,14 +739,12 @@ TEST_F(AudioConduitTest, TestSetLocalRTPExtensions) {
     // ignored.
     RtpExtList extensions;
     webrtc::RtpExtension extension;
-    extension.uri = webrtc::RtpExtension::kCsrcAudioLevelUri;
+    extension.uri = webrtc::RtpExtension::kCsrcAudioLevelsUri;
     extensions.emplace_back(extension);
     aControl.mLocalRecvRtpExtensions = extensions;
     aControl.mLocalSendRtpExtensions = extensions;
   });
   ASSERT_TRUE(Call()->mAudioReceiveConfig);
-  ASSERT_EQ(Call()->mAudioReceiveConfig->rtp.extensions.back().uri,
-            webrtc::RtpExtension::kCsrcAudioLevelUri);
   ASSERT_TRUE(Call()->mAudioSendConfig);
   ASSERT_TRUE(Call()->mAudioSendConfig->rtp.extensions.empty());
 
@@ -765,7 +759,6 @@ TEST_F(AudioConduitTest, TestSetLocalRTPExtensions) {
     aControl.mLocalSendRtpExtensions = extensions;
   });
   ASSERT_TRUE(Call()->mAudioReceiveConfig);
-  ASSERT_TRUE(Call()->mAudioReceiveConfig->rtp.extensions.empty());
   ASSERT_EQ(Call()->mAudioSendConfig->rtp.extensions.back().uri,
             webrtc::RtpExtension::kMidUri);
 }

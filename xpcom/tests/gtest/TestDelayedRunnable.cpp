@@ -10,6 +10,7 @@
 #include "mozilla/TaskQueue.h"
 
 #include "gtest/gtest.h"
+#include "mozilla/gtest/MozAssertions.h"
 #include "MediaTimer.h"
 #include "mozilla/media/MediaUtils.h"
 #include "VideoUtils.h"
@@ -41,7 +42,7 @@ struct ReleaseDetector {
 TEST(DelayedRunnable, TaskQueueShutdownLeak)
 {
   Atomic<bool> active{false};
-  auto taskQueue = MakeRefPtr<TaskQueue>(
+  auto taskQueue = TaskQueue::Create(
       GetMediaThreadPool(mozilla::MediaThreadType::SUPERVISOR),
       "TestDelayedRunnable TaskQueueShutdownLeak");
   taskQueue->DelayedDispatch(
@@ -91,7 +92,7 @@ TEST(DelayedRunnable, BackgroundTaskQueueShutdownTask)
   nsCOMPtr<nsISerialEventTarget> taskQueue;
   nsresult rv = NS_CreateBackgroundTaskQueue("TestDelayedRunnable",
                                              getter_AddRefs(taskQueue));
-  ASSERT_TRUE(NS_SUCCEEDED(rv));
+  ASSERT_NS_SUCCEEDED(rv);
 
   // Leak the queue, so it gets cleaned up by xpcom-shutdown.
   nsISerialEventTarget* tq = taskQueue.forget().take();
@@ -118,17 +119,22 @@ TEST(DelayedRunnable, TimerFiresBeforeRunnableRuns)
 {
   RefPtr<mozilla::SharedThreadPool> pool =
       mozilla::SharedThreadPool::Get("Test Pool"_ns);
-  auto tailTaskQueue1 = MakeRefPtr<TaskQueue>(
-      do_AddRef(pool), "TestDelayedRunnable tailTaskQueue1",
-      /* aSupportsTailDispatch = */ true);
-  auto tailTaskQueue2 = MakeRefPtr<TaskQueue>(
-      do_AddRef(pool), "TestDelayedRunnable tailTaskQueue2",
-      /* aSupportsTailDispatch = */ true);
-  auto noTailTaskQueue = MakeRefPtr<TaskQueue>(
-      do_AddRef(pool), "TestDelayedRunnable noTailTaskQueue",
-      /* aSupportsTailDispatch = */ false);
-  Monitor outerMonitor(__func__);
-  MonitorAutoLock lock(outerMonitor);
+  auto tailTaskQueue1 =
+      TaskQueue::Create(do_AddRef(pool), "TestDelayedRunnable tailTaskQueue1",
+                        /* aSupportsTailDispatch = */ true);
+  auto tailTaskQueue2 =
+      TaskQueue::Create(do_AddRef(pool), "TestDelayedRunnable tailTaskQueue2",
+                        /* aSupportsTailDispatch = */ true);
+  auto noTailTaskQueue =
+      TaskQueue::Create(do_AddRef(pool), "TestDelayedRunnable noTailTaskQueue",
+                        /* aSupportsTailDispatch = */ false);
+  enum class State : uint8_t {
+    Start,
+    TimerRan,
+    TasksFinished,
+  } state = State::Start;
+  Monitor monitor MOZ_UNANNOTATED(__func__);
+  MonitorAutoLock lock(monitor);
   MOZ_ALWAYS_SUCCEEDS(
       tailTaskQueue1->Dispatch(NS_NewRunnableFunction(__func__, [&] {
         // This will tail dispatch the delayed runnable, making it prone to
@@ -137,21 +143,26 @@ TEST(DelayedRunnable, TimerFiresBeforeRunnableRuns)
         EXPECT_TRUE(tailTaskQueue1->RequiresTailDispatch(tailTaskQueue2));
         tailTaskQueue2->DelayedDispatch(
             NS_NewRunnableFunction(__func__, [&] {}), 1);
-        Monitor innerMonitor(__func__);
-        MonitorAutoLock lock(innerMonitor);
+        MonitorAutoLock lock(monitor);
         auto timer = MakeRefPtr<mozilla::MediaTimer>();
         timer->WaitFor(mozilla::TimeDuration::FromMilliseconds(1), __func__)
             ->Then(noTailTaskQueue, __func__, [&] {
-              MonitorAutoLock lock(innerMonitor);
-              innerMonitor.NotifyAll();
+              MonitorAutoLock lock(monitor);
+              state = State::TimerRan;
+              monitor.NotifyAll();
             });
         // Wait until the timer has run. It should have dispatched the
         // TimerEvent to tailTaskQueue2 by then. The tail dispatch happens when
         // we leave scope.
-        innerMonitor.Wait();
-        // Notify the outer monitor that we've finished the async steps.
-        outerMonitor.NotifyAll();
+        while (state != State::TimerRan) {
+          monitor.Wait();
+        }
+        // Notify main thread that we've finished the async steps.
+        state = State::TasksFinished;
+        monitor.Notify();
       })));
   // Wait for async steps before wrapping up the test case.
-  outerMonitor.Wait();
+  while (state != State::TasksFinished) {
+    monitor.Wait();
+  }
 }

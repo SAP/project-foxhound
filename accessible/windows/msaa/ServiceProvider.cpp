@@ -62,34 +62,16 @@ ServiceProvider::QueryService(REFGUID aGuidService, REFIID aIID,
       0x3571,
       0x4d8f,
       {0x95, 0x21, 0x07, 0xed, 0x28, 0xfb, 0x07, 0x2e}};
-  if (aGuidService == SID_IAccessibleContentDocument && localAcc) {
+  if (aGuidService == SID_IAccessibleContentDocument) {
     if (aIID != IID_IAccessible) return E_NOINTERFACE;
 
-    // If acc is within an OOP iframe document, the top level document
-    // lives in a different process.
-    if (XRE_IsContentProcess()) {
-      RootAccessible* root = localAcc->RootAccessible();
-      // root will be null if acc is the ApplicationAccessible.
-      if (root) {
-        DocAccessibleChild* ipcDoc = root->IPCDoc();
-        if (ipcDoc) {
-          RefPtr<IAccessible> topDoc = ipcDoc->GetTopLevelDocIAccessible();
-          // topDoc will be null if this isn't an OOP iframe document.
-          if (topDoc) {
-            topDoc.forget(aInstancePtr);
-            return S_OK;
-          }
-        }
-      }
+    Relation rel = acc->RelationByType(RelationType::CONTAINING_TAB_PANE);
+    RefPtr<IAccessible> next = MsaaAccessible::GetFrom(rel.Next());
+    if (!next) {
+      return E_NOINTERFACE;
     }
 
-    Relation rel = localAcc->RelationByType(RelationType::CONTAINING_TAB_PANE);
-    AccessibleWrap* tabDoc = static_cast<AccessibleWrap*>(rel.Next());
-    if (!tabDoc) return E_NOINTERFACE;
-
-    RefPtr<IAccessible> result;
-    tabDoc->GetNativeInterface(getter_AddRefs(result));
-    result.forget(aInstancePtr);
+    next.forget(aInstancePtr);
     return S_OK;
   }
 

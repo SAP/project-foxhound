@@ -6,7 +6,7 @@
 <script src="/resources/testharness.js"></script>
 <script src="/resources/testharnessreport.js"></script>
 <script src="../common/get-host-info.sub.js"></script>
-<script src="support-promises.js"></script>
+<script src="resources/support-promises.js"></script>
 
 <body>
 <script>
@@ -126,7 +126,7 @@ for (const databaseKind of ['open', 'closed']) {
       const sameOriginDbNames = await crossOriginHelper(
           testCase, mode, sameOrigin, { action: 'get-database-names' });
       assert_in_array(
-          sameOriginDbNames, dbName,
+          dbName, sameOriginDbNames,
           `Database creation should reflect in same-origin ${mode}`);
 
       const otherOriginDbNames = await crossOriginHelper(

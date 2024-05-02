@@ -6,8 +6,7 @@
 
 #include "xpcAccessibleTable.h"
 
-#include "LocalAccessible.h"
-#include "TableAccessible.h"
+#include "mozilla/a11y/TableAccessible.h"
 
 #include "nsIMutableArray.h"
 #include "nsComponentManagerUtils.h"
@@ -250,12 +249,12 @@ xpcAccessibleTable::GetSelectedCells(nsIArray** aSelectedCells) {
       do_CreateInstance(NS_ARRAY_CONTRACTID, &rv);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  AutoTArray<LocalAccessible*, XPC_TABLE_DEFAULT_SIZE> cellsArray;
+  AutoTArray<Accessible*, XPC_TABLE_DEFAULT_SIZE> cellsArray;
   Intl()->SelectedCells(&cellsArray);
 
   uint32_t totalCount = cellsArray.Length();
   for (uint32_t idx = 0; idx < totalCount; idx++) {
-    LocalAccessible* cell = cellsArray.ElementAt(idx);
+    Accessible* cell = cellsArray.ElementAt(idx);
     selCells->AppendElement(static_cast<nsIAccessible*>(ToXPC(cell)));
   }
 
@@ -359,53 +358,5 @@ xpcAccessibleTable::IsProbablyForLayout(bool* aResult) {
   if (!Intl()) return NS_ERROR_FAILURE;
 
   *aResult = Intl()->IsProbablyLayoutTable();
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-xpcAccessibleTable::SelectColumn(int32_t aColIdx) {
-  if (!Intl()) return NS_ERROR_FAILURE;
-
-  if (aColIdx < 0 || static_cast<uint32_t>(aColIdx) >= Intl()->ColCount()) {
-    return NS_ERROR_INVALID_ARG;
-  }
-
-  Intl()->SelectCol(aColIdx);
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-xpcAccessibleTable::SelectRow(int32_t aRowIdx) {
-  if (!Intl()) return NS_ERROR_FAILURE;
-
-  if (aRowIdx < 0 || static_cast<uint32_t>(aRowIdx) >= Intl()->RowCount()) {
-    return NS_ERROR_INVALID_ARG;
-  }
-
-  Intl()->SelectRow(aRowIdx);
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-xpcAccessibleTable::UnselectColumn(int32_t aColIdx) {
-  if (!Intl()) return NS_ERROR_FAILURE;
-
-  if (aColIdx < 0 || static_cast<uint32_t>(aColIdx) >= Intl()->ColCount()) {
-    return NS_ERROR_INVALID_ARG;
-  }
-
-  Intl()->UnselectCol(aColIdx);
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-xpcAccessibleTable::UnselectRow(int32_t aRowIdx) {
-  if (!Intl()) return NS_ERROR_FAILURE;
-
-  if (aRowIdx < 0 || static_cast<uint32_t>(aRowIdx) >= Intl()->RowCount()) {
-    return NS_ERROR_INVALID_ARG;
-  }
-
-  Intl()->UnselectRow(aRowIdx);
   return NS_OK;
 }

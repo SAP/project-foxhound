@@ -9,6 +9,6 @@ if not CONFIG["MOZ_GLEAN_ANDROID"]:
         "TestFog.cpp",
     ]
 
-FINAL_LIBRARY = "xul-gtest"
+    TEST_HARNESS_FILES.gtest += ["../pytest/jogfile_output"]
 
-REQUIRES_UNIFIED_BUILD = True
+FINAL_LIBRARY = "xul-gtest"

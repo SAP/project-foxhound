@@ -10,6 +10,7 @@
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/DebugOnly.h"
 #include "mozilla/mscom/COMWrappers.h"
+#include "mozilla/mscom/ProcessRuntime.h"
 #include "mozilla/mscom/Utils.h"
 #include "mozilla/SchedulerGroup.h"
 #include "mozilla/StaticLocalPtr.h"
@@ -163,8 +164,7 @@ RefPtr<EnsureMTA::CreateInstanceAgileRefPromise> EnsureMTA::CreateInstance(
 
   nsCOMPtr<nsIThread> mtaThread(GetPersistentMTAThread());
 
-  return InvokeAsync(mtaThread->SerialEventTarget(), __func__,
-                     std::move(invoker));
+  return InvokeAsync(mtaThread, __func__, std::move(invoker));
 }
 
 /* static */
@@ -183,7 +183,6 @@ nsCOMPtr<nsIThread> EnsureMTA::GetPersistentMTAThread() {
         }
 
         SchedulerGroup::Dispatch(
-            TaskCategory::Other,
             NS_NewRunnableFunction("mscom::EnsureMTA::GetPersistentMTAThread",
                                    std::move(setClearOnShutdown)));
 
@@ -228,14 +227,9 @@ void EnsureMTA::SyncDispatchToPersistentThread(nsIRunnable* aRunnable) {
     return;
   }
 
-#if defined(ACCESSIBILITY)
-  const BOOL alertable = XRE_IsContentProcess() && NS_IsMainThread();
-#else
-  const BOOL alertable = FALSE;
-#endif  // defined(ACCESSIBILITY)
-
+  AUTO_PROFILER_THREAD_SLEEP;
   DWORD waitResult;
-  while ((waitResult = ::WaitForSingleObjectEx(event, INFINITE, alertable)) ==
+  while ((waitResult = ::WaitForSingleObjectEx(event, INFINITE, FALSE)) ==
          WAIT_IO_COMPLETION) {
   }
   MOZ_ASSERT(waitResult == WAIT_OBJECT_0);

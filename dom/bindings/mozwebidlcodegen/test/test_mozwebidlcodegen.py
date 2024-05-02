@@ -2,9 +2,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import unicode_literals
-
-import imp
 import io
 import json
 import os
@@ -14,19 +11,9 @@ import tempfile
 import unittest
 
 import mozpack.path as mozpath
-
-from mozwebidlcodegen import (
-    WebIDLCodegenManager,
-    WebIDLCodegenManagerState,
-)
-
-from mozfile import NamedTemporaryFile
-
-from mozunit import (
-    MockedOpen,
-    main,
-)
-
+from mozfile import NamedTemporaryFile, load_source
+from mozunit import MockedOpen, main
+from mozwebidlcodegen import WebIDLCodegenManager, WebIDLCodegenManagerState
 
 OUR_DIR = mozpath.abspath(mozpath.dirname(__file__))
 TOPSRCDIR = mozpath.normpath(mozpath.join(OUR_DIR, "..", "..", "..", ".."))
@@ -148,7 +135,7 @@ class TestWebIDLCodegenManager(unittest.TestCase):
             child = state["webidls"]["Child.webidl"]
             self.assertEqual(len(child["inputs"]), 2)
             self.assertEqual(len(child["outputs"]), 2)
-            self.assertEqual(child["sha1"], "c41527cad3bc161fa6e7909e48fa11f9eca0468b")
+            self.assertEqual(child["sha1"], "c34c40b0fa0ac57c2834ee282efe0681e4dacc35")
 
     def test_generate_build_files_load_state(self):
         """State should be equivalent when instantiating a new instance."""
@@ -254,7 +241,7 @@ class TestWebIDLCodegenManager(unittest.TestCase):
         with NamedTemporaryFile("wt") as fh:
             fh.write("# Original content")
             fh.flush()
-            mod = imp.load_source("mozwebidlcodegen.fakemodule", fh.name)
+            mod = load_source("mozwebidlcodegen.fakemodule", fh.name)
             mod.__file__ = fake_path
 
             args = self._get_manager_args()

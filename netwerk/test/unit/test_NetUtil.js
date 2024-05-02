@@ -10,7 +10,9 @@
 
 "use strict";
 
-const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
+const { HttpServer } = ChromeUtils.importESModule(
+  "resource://testing-common/httpd.sys.mjs"
+);
 
 // We need the profile directory so the test harness will clean up our test
 // files.
@@ -81,7 +83,7 @@ function async_write_file(aContractId, aDeferOpen) {
   );
   istream.setData(TEST_DATA, TEST_DATA.length);
 
-  NetUtil.asyncCopy(istream, ostream, function(aResult) {
+  NetUtil.asyncCopy(istream, ostream, function (aResult) {
     // Make sure the copy was successful!
     Assert.ok(Components.isSuccessCode(aResult));
 
@@ -160,7 +162,7 @@ function test_async_copy() {
     bstream.init(ostream, 256);
     return { file, sink: bstream };
   }
-  (async function() {
+  (async function () {
     do_test_pending();
     for (let bufferedInput of [true, false]) {
       for (let bufferedOutput of [true, false]) {
@@ -246,7 +248,7 @@ function test_newURI_takes_nsIFile() {
 
 function test_asyncFetch_no_channel() {
   try {
-    NetUtil.asyncFetch(null, function() {});
+    NetUtil.asyncFetch(null, function () {});
     do_throw("should throw!");
   } catch (e) {
     Assert.equal(e.result, Cr.NS_ERROR_INVALID_ARG);
@@ -271,7 +273,7 @@ function test_asyncFetch_with_nsIChannel() {
 
   // Start the http server, and register our handler.
   let server = new HttpServer();
-  server.registerPathHandler("/test", function(aRequest, aResponse) {
+  server.registerPathHandler("/test", function (aRequest, aResponse) {
     aResponse.setStatusLine(aRequest.httpVersion, 200, "OK");
     aResponse.setHeader("Content-Type", "text/plain", false);
     aResponse.write(TEST_DATA);
@@ -285,7 +287,7 @@ function test_asyncFetch_with_nsIChannel() {
   });
 
   // Open our channel asynchronously.
-  NetUtil.asyncFetch(channel, function(aInputStream, aResult) {
+  NetUtil.asyncFetch(channel, function (aInputStream, aResult) {
     // Check that we had success.
     Assert.ok(Components.isSuccessCode(aResult));
 
@@ -307,7 +309,7 @@ function test_asyncFetch_with_nsIURI() {
 
   // Start the http server, and register our handler.
   let server = new HttpServer();
-  server.registerPathHandler("/test", function(aRequest, aResponse) {
+  server.registerPathHandler("/test", function (aRequest, aResponse) {
     aResponse.setStatusLine(aRequest.httpVersion, 200, "OK");
     aResponse.setHeader("Content-Type", "text/plain", false);
     aResponse.write(TEST_DATA);
@@ -325,7 +327,7 @@ function test_asyncFetch_with_nsIURI() {
       uri,
       loadUsingSystemPrincipal: true,
     },
-    function(aInputStream, aResult) {
+    function (aInputStream, aResult) {
       // Check that we had success.
       Assert.ok(Components.isSuccessCode(aResult));
 
@@ -353,7 +355,7 @@ function test_asyncFetch_with_string() {
 
   // Start the http server, and register our handler.
   let server = new HttpServer();
-  server.registerPathHandler("/test", function(aRequest, aResponse) {
+  server.registerPathHandler("/test", function (aRequest, aResponse) {
     aResponse.setStatusLine(aRequest.httpVersion, 200, "OK");
     aResponse.setHeader("Content-Type", "text/plain", false);
     aResponse.write(TEST_DATA);
@@ -366,7 +368,7 @@ function test_asyncFetch_with_string() {
       uri: "http://localhost:" + server.identity.primaryPort + "/test",
       loadUsingSystemPrincipal: true,
     },
-    function(aInputStream, aResult) {
+    function (aInputStream, aResult) {
       // Check that we had success.
       Assert.ok(Components.isSuccessCode(aResult));
 
@@ -414,7 +416,7 @@ function test_asyncFetch_with_nsIFile() {
       uri: NetUtil.newURI(file),
       loadUsingSystemPrincipal: true,
     },
-    function(aInputStream, aResult) {
+    function (aInputStream, aResult) {
       // Check that we had success.
       Assert.ok(Components.isSuccessCode(aResult));
 
@@ -447,7 +449,7 @@ function test_asyncFetch_with_nsIInputString() {
   // Read the input stream asynchronously.
   NetUtil.asyncFetch(
     istream,
-    function(aInputStream, aResult) {
+    function (aInputStream, aResult) {
       // Check that we had success.
       Assert.ok(Components.isSuccessCode(aResult));
 
@@ -476,7 +478,7 @@ function test_asyncFetch_does_not_block() {
   });
 
   // Open our channel asynchronously.
-  NetUtil.asyncFetch(channel, function(aInputStream, aResult) {
+  NetUtil.asyncFetch(channel, function (aInputStream, aResult) {
     // Check that we had success.
     Assert.ok(Components.isSuccessCode(aResult));
 
@@ -800,4 +802,3 @@ function test_readInputStreamToString_invalid_sequence() {
   test_readInputStreamToString_with_charset,
   test_readInputStreamToString_invalid_sequence,
 ].forEach(f => add_test(f));
-var index = 0;

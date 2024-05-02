@@ -36,7 +36,7 @@ nsTreeColumn::~nsTreeColumn() {
   }
 }
 
-NS_IMPL_CYCLE_COLLECTION_CLASS(nsTreeColumn)
+NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(nsTreeColumn)
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(nsTreeColumn)
   NS_IMPL_CYCLE_COLLECTION_UNLINK_PRESERVED_WRAPPER
@@ -50,7 +50,6 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(nsTreeColumn)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mContent)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mNext)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
-NS_IMPL_CYCLE_COLLECTION_TRACE_WRAPPERCACHE(nsTreeColumn)
 
 NS_IMPL_CYCLE_COLLECTING_ADDREF(nsTreeColumn)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(nsTreeColumn)
@@ -89,8 +88,12 @@ nsresult nsTreeColumn::GetRect(nsTreeBodyFrame* aBodyFrame, nscoord aY,
     return NS_ERROR_FAILURE;
   }
 
-  bool isRTL = aBodyFrame->StyleVisibility()->mDirection == StyleDirection::Rtl;
+  const bool isRTL =
+      aBodyFrame->StyleVisibility()->mDirection == StyleDirection::Rtl;
   *aResult = frame->GetRect();
+  if (frame->StyleVisibility()->IsCollapse()) {
+    aResult->SizeTo(nsSize());
+  }
   aResult->y = aY;
   aResult->height = aHeight;
   if (isRTL)
@@ -133,7 +136,7 @@ void nsTreeColumn::Invalidate(ErrorResult& aRv) {
   }
 
   // Fetch the Id.
-  mContent->GetAttr(kNameSpaceID_None, nsGkAtoms::id, mId);
+  mContent->GetAttr(nsGkAtoms::id, mId);
 
   // If we have an Id, cache the Id as an atom.
   if (!mId.IsEmpty()) {
@@ -430,16 +433,14 @@ void nsTreeColumns::EnsureColumns() {
     if (!colFrame) return;
 
     colFrame = colFrame->GetParent();
-    if (!colFrame) return;
+    if (!colFrame || !colFrame->GetContent()) return;
 
     nsTreeColumn* currCol = nullptr;
 
     // Enumerate the columns in visible order
     CSSOrderAwareFrameIterator iter(
-        colFrame, mozilla::layout::kPrincipalList,
-        CSSOrderAwareFrameIterator::ChildFilter::IncludeAll,
-        CSSOrderAwareFrameIterator::OrderState::Unknown,
-        CSSOrderAwareFrameIterator::OrderingProperty::BoxOrdinalGroup);
+        colFrame, FrameChildListID::Principal,
+        CSSOrderAwareFrameIterator::ChildFilter::IncludeAll);
     for (; !iter.AtEnd(); iter.Next()) {
       nsIFrame* colFrame = iter.get();
       nsIContent* colContent = colFrame->GetContent();

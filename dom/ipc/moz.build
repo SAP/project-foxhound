@@ -9,6 +9,8 @@ with Files("**"):
 
 DIRS += ["jsactor"]
 
+TEST_DIRS += ["gtest"]
+
 XPIDL_SOURCES += [
     "nsIDOMProcessChild.idl",
     "nsIDOMProcessParent.idl",
@@ -23,7 +25,7 @@ XPCOM_MANIFESTS += [
 ]
 
 EXTRA_JS_MODULES += [
-    "ManifestMessagesChild.jsm",
+    "ManifestMessagesChild.sys.mjs",
 ]
 
 EXPORTS.mozilla.dom.ipc += [
@@ -55,13 +57,20 @@ EXPORTS.mozilla.dom += [
     "CSPMessageUtils.h",
     "DocShellMessageUtils.h",
     "EffectsInfo.h",
+    "FilePickerMessageUtils.h",
     "FilePickerParent.h",
     "InProcessChild.h",
     "InProcessParent.h",
+    "JSOracleChild.h",
+    "JSOracleParent.h",
+    "JSValidatorChild.h",
+    "JSValidatorParent.h",
+    "JSValidatorUtils.h",
     "LoginDetectionService.h",
     "MaybeDiscarded.h",
     "MemoryReportRequest.h",
     "NativeThreadId.h",
+    "PageLoadEventUtils.h",
     "PermissionMessageUtils.h",
     "ProcessActor.h",
     "ProcessIsolation.h",
@@ -114,6 +123,11 @@ UNIFIED_SOURCES += [
     "DocShellMessageUtils.cpp",
     "FilePickerParent.cpp",
     "InProcessImpl.cpp",
+    "JSOracleChild.cpp",
+    "JSOracleParent.cpp",
+    "JSValidatorChild.cpp",
+    "JSValidatorParent.cpp",
+    "JSValidatorUtils.cpp",
     "LoginDetectionService.cpp",
     "MemMapSnapshot.cpp",
     "MemoryReportRequest.cpp",
@@ -133,7 +147,6 @@ UNIFIED_SOURCES += [
     "SharedStringMap.cpp",
     "StructuredCloneData.cpp",
     "TabContext.cpp",
-    "TabMessageUtils.cpp",
     "URLClassifierParent.cpp",
     "WindowGlobalActor.cpp",
     "WindowGlobalChild.cpp",
@@ -156,7 +169,9 @@ PREPROCESSED_IPDL_SOURCES += [
 ]
 
 IPDL_SOURCES += [
+    "CustomElementTypes.ipdlh",
     "DOMTypes.ipdlh",
+    "IPCTransferable.ipdlh",
     "MemoryReportTypes.ipdlh",
     "PColorPicker.ipdl",
     "PContentPermission.ipdlh",
@@ -164,7 +179,8 @@ IPDL_SOURCES += [
     "PCycleCollectWithLogs.ipdl",
     "PFilePicker.ipdl",
     "PInProcess.ipdl",
-    "PLoginReputation.ipdl",
+    "PJSOracle.ipdl",
+    "PJSValidator.ipdl",
     "PProcessHangMonitor.ipdl",
     "PrefsTypes.ipdlh",
     "PTabContext.ipdlh",
@@ -207,6 +223,7 @@ LOCAL_INCLUDES += [
     "/layout/base",
     "/media/webrtc",
     "/netwerk/base",
+    "/netwerk/dns",
     "/netwerk/protocol/http",
     "/toolkit/components/printingui/ipc",
     "/toolkit/crashreporter",
@@ -221,6 +238,11 @@ if CONFIG["MOZ_SANDBOX"] and CONFIG["OS_ARCH"] == "WINNT":
     LOCAL_INCLUDES += [
         "/security/sandbox/chromium",
         "/security/sandbox/chromium-shim",
+    ]
+
+if CONFIG["MOZ_SANDBOX"] and CONFIG["OS_ARCH"] == "OpenBSD":
+    LOCAL_INCLUDES += [
+        "/xpcom/build",
     ]
 
 if CONFIG["OS_ARCH"] != "WINNT":
@@ -238,20 +260,17 @@ if CONFIG["MOZ_WIDGET_TOOLKIT"] == "android":
 JAR_MANIFESTS += ["jar.mn"]
 
 BROWSER_CHROME_MANIFESTS += [
-    "tests/browser.ini",
-    "tests/JSProcessActor/browser.ini",
-    "tests/JSWindowActor/browser.ini",
+    "tests/browser.toml",
+    "tests/JSProcessActor/browser.toml",
+    "tests/JSWindowActor/browser.toml",
 ]
 
-MOCHITEST_CHROME_MANIFESTS += ["tests/chrome.ini"]
-MOCHITEST_MANIFESTS += ["tests/mochitest.ini"]
+MOCHITEST_CHROME_MANIFESTS += ["tests/chrome.toml"]
+MOCHITEST_MANIFESTS += ["tests/mochitest.toml"]
 XPCSHELL_TESTS_MANIFESTS += ["tests/xpcshell.ini"]
 
 if CONFIG["MOZ_WIDGET_TOOLKIT"] == "gtk":
     CXXFLAGS += CONFIG["MOZ_GTK3_CFLAGS"]
-
-if CONFIG["FUZZING"] and CONFIG["FUZZING_INTERFACES"]:
-    TEST_DIRS += ["fuzztest"]
 
 # Add libFuzzer configuration directives
 include("/tools/fuzzing/libfuzzer-config.mozbuild")

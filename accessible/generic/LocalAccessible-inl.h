@@ -43,14 +43,6 @@ inline void LocalAccessible::SetRoleMapEntry(
   mRoleMapEntryIndex = aria::GetIndexFromRoleMap(aRoleMapEntry);
 }
 
-inline bool LocalAccessible::IsSearchbox() const {
-  const nsRoleMapEntry* roleMapEntry = ARIARoleMap();
-  return (roleMapEntry && roleMapEntry->Is(nsGkAtoms::searchbox)) ||
-         (mContent->IsHTMLElement(nsGkAtoms::input) &&
-          mContent->AsElement()->AttrValueIs(kNameSpaceID_None, nsGkAtoms::type,
-                                             nsGkAtoms::search, eCaseMatters));
-}
-
 inline bool LocalAccessible::NativeHasNumericValue() const {
   return mGenericTypes & eNumericValue;
 }
@@ -72,7 +64,7 @@ inline bool LocalAccessible::HasNumericValue() const {
 
 inline bool LocalAccessible::IsDefunct() const {
   MOZ_ASSERT(mStateFlags & eIsDefunct || IsApplication() || IsDoc() ||
-                 IsProxy() || mStateFlags & eSharedNode || mContent,
+                 mStateFlags & eSharedNode || mContent,
              "No content");
   return mStateFlags & eIsDefunct;
 }

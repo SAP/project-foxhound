@@ -277,6 +277,8 @@ class ServiceWorkerManager final : public nsIServiceWorkerManager,
   // RecordTelemetryGap() and Accumulate them.
   void RecordTelemetry(uint32_t aNumber, uint32_t aFetch);
 
+  void EvictFromBFCache(ServiceWorkerRegistrationInfo* aRegistration);
+
  private:
   struct RegistrationDataPerPrincipal;
 
@@ -352,6 +354,9 @@ class ServiceWorkerManager final : public nsIServiceWorkerManager,
   void UpdateClientControllers(ServiceWorkerRegistrationInfo* aRegistration);
 
   void MaybeRemoveRegistration(ServiceWorkerRegistrationInfo* aRegistration);
+
+  void PurgeServiceWorker(const ServiceWorkerRegistrationData& aRegistration,
+                          nsIPrincipal* aPrincipal);
 
   RefPtr<ServiceWorkerManagerChild> mActor;
 

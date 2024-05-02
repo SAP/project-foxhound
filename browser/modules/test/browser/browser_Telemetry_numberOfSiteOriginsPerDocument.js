@@ -4,13 +4,9 @@
 
 "use strict";
 
-const { Assert } = ChromeUtils.import("resource://testing-common/Assert.jsm");
-
-ChromeUtils.defineModuleGetter(
-  this,
-  "TelemetryTestUtils",
-  "resource://testing-common/TelemetryTestUtils.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  TelemetryTestUtils: "resource://testing-common/TelemetryTestUtils.sys.mjs",
+});
 
 const histogramName = "FX_NUMBER_OF_UNIQUE_SITE_ORIGINS_PER_DOCUMENT";
 const testRoot = getRootDirectory(gTestPath).replace(
@@ -77,11 +73,11 @@ add_task(async function test_numberOfSiteOriginsMultipleNavigations() {
   ];
 
   // Navigate to an interstitial page.
-  BrowserTestUtils.loadURI(tab.linkedBrowser, "about:blank");
+  BrowserTestUtils.startLoadingURIString(tab.linkedBrowser, "about:blank");
   await BrowserTestUtils.browserLoaded(tab.linkedBrowser);
 
   // Navigate to another test page.
-  BrowserTestUtils.loadURI(tab.linkedBrowser, testPage);
+  BrowserTestUtils.startLoadingURIString(tab.linkedBrowser, testPage);
   await BrowserTestUtils.browserLoaded(tab.linkedBrowser);
 
   wgpDestroyedPromises.push(

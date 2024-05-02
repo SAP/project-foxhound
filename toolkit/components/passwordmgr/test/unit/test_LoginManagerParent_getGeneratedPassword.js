@@ -4,10 +4,30 @@
 
 "use strict";
 
-const { sinon } = ChromeUtils.import("resource://testing-common/Sinon.jsm");
-const { LoginManagerParent } = ChromeUtils.import(
-  "resource://gre/modules/LoginManagerParent.jsm"
+const { sinon } = ChromeUtils.importESModule(
+  "resource://testing-common/Sinon.sys.mjs"
 );
+const { LoginManagerParent } = ChromeUtils.importESModule(
+  "resource://gre/modules/LoginManagerParent.sys.mjs"
+);
+
+function simulateNavigationInTheFrame(newOrigin) {
+  LoginManagerParent._browsingContextGlobal.get.restore();
+  sinon
+    .stub(LoginManagerParent._browsingContextGlobal, "get")
+    .withArgs(99)
+    .callsFake(() => {
+      return {
+        currentWindowGlobal: {
+          documentPrincipal:
+            Services.scriptSecurityManager.createContentPrincipalFromOrigin(
+              `https://${newOrigin}^userContextId=2`
+            ),
+          documentURI: Services.io.newURI("https://www.example.com"),
+        },
+      };
+    });
+}
 
 add_task(async function test_getGeneratedPassword() {
   // Force the feature to be enabled.
@@ -24,7 +44,7 @@ add_task(async function test_getGeneratedPassword() {
   let LMP = new LoginManagerParent();
   LMP.useBrowsingContext(99);
 
-  ok(LMP.getGeneratedPassword, "LMP.getGeneratedPassword exists");
+  Assert.ok(LMP.getGeneratedPassword, "LMP.getGeneratedPassword exists");
   equal(
     LoginManagerParent.getGeneratedPasswordsByPrincipalOrigin().size,
     0,
@@ -33,11 +53,11 @@ add_task(async function test_getGeneratedPassword() {
 
   equal(await LMP.getGeneratedPassword(), null, "Null with no BrowsingContext");
 
-  ok(
+  Assert.ok(
     LoginManagerParent._browsingContextGlobal,
     "Check _browsingContextGlobal exists"
   );
-  ok(
+  Assert.ok(
     !LoginManagerParent._browsingContextGlobal.get(99),
     "BrowsingContext 99 shouldn't exist yet"
   );
@@ -48,14 +68,15 @@ add_task(async function test_getGeneratedPassword() {
     .callsFake(() => {
       return {
         currentWindowGlobal: {
-          documentPrincipal: Services.scriptSecurityManager.createContentPrincipalFromOrigin(
-            "https://www.example.com^userContextId=6"
-          ),
+          documentPrincipal:
+            Services.scriptSecurityManager.createContentPrincipalFromOrigin(
+              "https://www.example.com^userContextId=6"
+            ),
           documentURI: Services.io.newURI("https://www.example.com"),
         },
       };
     });
-  ok(
+  Assert.ok(
     LoginManagerParent._browsingContextGlobal.get(99),
     "Checking BrowsingContext.get(99) stub"
   );
@@ -85,21 +106,23 @@ add_task(async function test_getGeneratedPassword() {
     "Same password should be returned for the same origin"
   );
 
-  info("Changing the documentPrincipal to simulate a navigation in the frame");
-  LoginManagerParent._browsingContextGlobal.get.restore();
-  sinon
-    .stub(LoginManagerParent._browsingContextGlobal, "get")
-    .withArgs(99)
-    .callsFake(() => {
-      return {
-        currentWindowGlobal: {
-          documentPrincipal: Services.scriptSecurityManager.createContentPrincipalFromOrigin(
-            "https://www.mozilla.org^userContextId=2"
-          ),
-          documentURI: Services.io.newURI("https://www.example.com"),
-        },
-      };
-    });
+  // Updating autosaved login to have username will reset generated password
+  const autoSavedLogin = await LoginTestUtils.addLogin({
+    origin: "https://www.example.com^userContextId=6",
+    username: "",
+    password: password1,
+  });
+  const updatedLogin = autoSavedLogin.clone();
+  updatedLogin.username = "anyone";
+  await LoginTestUtils.modifyLogin(autoSavedLogin, updatedLogin);
+  password2 = await LMP.getGeneratedPassword();
+  notEqual(
+    password1,
+    password2,
+    "New password should be returned for the same origin after login saved"
+  );
+
+  simulateNavigationInTheFrame("www.mozilla.org");
   let password3 = await LMP.getGeneratedPassword();
   notEqual(
     password2,
@@ -111,6 +134,20 @@ add_task(async function test_getGeneratedPassword() {
     LoginTestUtils.generation.LENGTH,
     "Check password3 length"
   );
+
+  simulateNavigationInTheFrame("bank.biz");
+  let password4 = await LMP.getGeneratedPassword({ inputMaxLength: 5 });
+  notEqual(
+    password4,
+    password2,
+    "Different password for a different origin for the same BC"
+  );
+  notEqual(
+    password4,
+    password3,
+    "Different password for a different origin for the same BC"
+  );
+  equal(password4.length, 5, "password4 length is limited by input.maxLength");
 
   info("Now checks cases where null should be returned");
 

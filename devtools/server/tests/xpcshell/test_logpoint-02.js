@@ -7,7 +7,7 @@
  * Check that conditions are respected when specified in a logpoint.
  */
 
-const Resources = require("devtools/server/actors/resources/index");
+const Resources = require("resource://devtools/server/actors/resources/index.js");
 
 add_task(
   threadFrontTest(async ({ threadActor, threadFront, debuggee, client }) => {
@@ -60,6 +60,7 @@ add_task(
     if (lastMessage) {
       Assert.equal(lastMessage.level, "logPoint");
       Assert.equal(lastMessage.arguments[0], 5);
+      Assert.ok(/\d+\.\d+/.test(lastMessage.timeStamp));
     } else {
       Assert.equal(lastExpression.text, "console.log(...[a])");
       Assert.equal(lastExpression.lineNumber, 4);
@@ -71,9 +72,9 @@ function evalCode(debuggee) {
   /* eslint-disable */
   Cu.evalInSandbox(
     "debugger;\n" + // 1
-    "var a = 1;\n" + // 2
-    "while (a < 10) {\n" + // 3
-    "  a++;\n" + // 4
+      "var a = 1;\n" + // 2
+      "while (a < 10) {\n" + // 3
+      "  a++;\n" + // 4
       "}",
     debuggee,
     "1.8",

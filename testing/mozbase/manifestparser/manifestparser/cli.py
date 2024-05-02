@@ -6,16 +6,11 @@
 """
 Mozilla universal manifest parser
 """
-from __future__ import absolute_import, print_function
-
-from optparse import OptionParser
 import os
 import sys
+from optparse import OptionParser
 
-from .manifestparser import (
-    convert,
-    ManifestParser,
-)
+from .manifestparser import ManifestParser, convert
 
 
 class ParserError(Exception):
@@ -160,7 +155,6 @@ class WriteCLI(CLICommand):
     usage = "%prog [options] write manifest <manifest> -tag1 -tag2 --key1=value1 --key2=value2 ..."
 
     def __call__(self, options, args):
-
         # parse the arguments
         try:
             kwargs, tags, args = parse_args(args)

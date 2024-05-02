@@ -29,9 +29,7 @@ add_task(async function test_initialize() {
     Services.prefs.clearUserPref("signon.showAutoCompleteFooter");
   });
 
-  for (let login of loginList()) {
-    Services.logins.addLogin(login);
-  }
+  await Services.logins.addLogins(loginList());
 });
 
 add_task(async function test_autocomplete_footer_onclick() {
@@ -43,12 +41,12 @@ add_task(async function test_autocomplete_footer_onclick() {
     },
     async function footer_onclick(browser) {
       let popup = document.getElementById("PopupAutoComplete");
-      ok(popup, "Got popup");
+      Assert.ok(popup, "Got popup");
 
       await openACPopup(popup, browser, "#form-basic-username");
 
       let footer = popup.querySelector(`[originaltype="loginsFooter"]`);
-      ok(footer, "Got footer richlistitem");
+      Assert.ok(footer, "Got footer richlistitem");
 
       await TestUtils.waitForCondition(() => {
         return !EventUtils.isHidden(footer);
@@ -59,7 +57,7 @@ add_task(async function test_autocomplete_footer_onclick() {
 
       info("Password Manager was opened");
 
-      ok(
+      Assert.ok(
         !passwordManager.filterValue,
         "Search string should not be set to filter logins"
       );
@@ -89,12 +87,12 @@ add_task(async function test_autocomplete_footer_keydown() {
     },
     async function footer_enter_keydown(browser) {
       let popup = document.getElementById("PopupAutoComplete");
-      ok(popup, "Got popup");
+      Assert.ok(popup, "Got popup");
 
       await openACPopup(popup, browser, "#form-basic-username");
 
       let footer = popup.querySelector(`[originaltype="loginsFooter"]`);
-      ok(footer, "Got footer richlistitem");
+      Assert.ok(footer, "Got footer richlistitem");
 
       await TestUtils.waitForCondition(() => {
         return !EventUtils.isHidden(footer);
@@ -108,7 +106,7 @@ add_task(async function test_autocomplete_footer_keydown() {
       let passwordManager = await openPasswordManager(openingFunc, false);
       info("Login dialog was opened");
 
-      ok(
+      Assert.ok(
         !passwordManager.filterValue,
         "Search string should not be set to filter logins"
       );

@@ -8,6 +8,7 @@
 #include <algorithm>
 #include "GLSLANG/ShaderLang.h"
 #include "CanvasUtils.h"
+#include "gfxEnv.h"
 #include "GLContext.h"
 #include "jsfriendapi.h"
 #include "mozilla/CheckedInt.h"
@@ -24,10 +25,6 @@
 #include "WebGLTexture.h"
 #include "WebGLValidateStrings.h"
 #include "WebGLVertexArray.h"
-
-#if defined(MOZ_WIDGET_COCOA)
-#  include "nsCocoaFeatures.h"
-#endif
 
 ////////////////////
 // Minimum value constants defined in GLES 2.0.25 $6.2 "State Tables":
@@ -201,6 +198,8 @@ static webgl::Limits MakeLimits(const WebGLContext& webgl) {
   // GL_MAX_COMBINED_TEXTURE_IMAGE_UNITS value is the accurate value.
   gl.GetUIntegerv(LOCAL_GL_MAX_COMBINED_TEXTURE_IMAGE_UNITS,
                   &limits.maxTexUnits);
+  limits.maxTexUnits = std::min(
+      limits.maxTexUnits, uint32_t{UINT8_MAX});  // We want to use uint8_t.
 
   gl.GetUIntegerv(LOCAL_GL_MAX_TEXTURE_SIZE, &limits.maxTex2dSize);
   gl.GetUIntegerv(LOCAL_GL_MAX_CUBE_MAP_TEXTURE_SIZE, &limits.maxTexCubeSize);
@@ -485,16 +484,6 @@ bool WebGLContext::InitAndValidateGL(FailureReason* const out_failReason) {
     gl->fEnable(LOCAL_GL_PROGRAM_POINT_SIZE);
   }
 
-#ifdef XP_MACOSX
-  if (gl->WorkAroundDriverBugs() && gl->Vendor() == gl::GLVendor::ATI &&
-      !nsCocoaFeatures::IsAtLeastVersion(10, 9)) {
-    // The Mac ATI driver, in all known OSX version up to and including
-    // 10.8, renders points sprites upside-down. (Apple bug 11778921)
-    gl->fPointParameterf(LOCAL_GL_POINT_SPRITE_COORD_ORIGIN,
-                         LOCAL_GL_LOWER_LEFT);
-  }
-#endif
-
   if (gl->IsSupported(gl::GLFeature::seamless_cube_map_opt_in)) {
     gl->fEnable(LOCAL_GL_TEXTURE_CUBE_MAP_SEAMLESS);
   }
@@ -529,12 +518,6 @@ bool WebGLContext::InitAndValidateGL(FailureReason* const out_failReason) {
     return false;
   }
 
-  if (!gl->IsSupported(gl::GLFeature::vertex_array_object)) {
-    *out_failReason = {"FEATURE_FAILURE_WEBGL_VAOS",
-                       "Requires vertex_array_object."};
-    return false;
-  }
-
   // OpenGL core profiles remove the default VAO object from version
   // 4.0.0. We create a default VAO for all core profiles,
   // regardless of version.
@@ -548,6 +531,8 @@ bool WebGLContext::InitAndValidateGL(FailureReason* const out_failReason) {
 
   mPrimRestartTypeBytes = 0;
 
+  // -
+
   mGenericVertexAttribTypes.assign(limits.maxVertexAttribs,
                                    webgl::AttribBaseType::Float);
   mGenericVertexAttribTypeInvalidator.InvalidateCaches();
@@ -557,6 +542,33 @@ bool WebGLContext::InitAndValidateGL(FailureReason* const out_failReason) {
          sizeof(mGenericVertexAttrib0Data));
 
   mFakeVertexAttrib0BufferObject = 0;
+
+  mNeedsLegacyVertexAttrib0Handling = gl->IsCompatibilityProfile();
+  if (gl->WorkAroundDriverBugs() && kIsMacOS) {
+    // Failures in conformance/attribs/gl-disabled-vertex-attrib.
+    // Even in Core profiles on NV. Sigh.
+    mNeedsLegacyVertexAttrib0Handling |= (gl->Vendor() == gl::GLVendor::NVIDIA);
+
+    mBug_DrawArraysInstancedUserAttribFetchAffectedByFirst |=
+        (gl->Vendor() == gl::GLVendor::Intel);
+
+    // Failures for programs with no attribs:
+    // conformance/attribs/gl-vertex-attrib-unconsumed-out-of-bounds.html
+    mMaybeNeedsLegacyVertexAttrib0Handling = true;
+  }
+  mMaybeNeedsLegacyVertexAttrib0Handling |= mNeedsLegacyVertexAttrib0Handling;
+
+  if (const auto& env =
+          gfxEnv::MOZ_WEBGL_WORKAROUND_FIRST_AFFECTS_INSTANCE_ID()) {
+    const auto was = mBug_DrawArraysInstancedUserAttribFetchAffectedByFirst;
+    mBug_DrawArraysInstancedUserAttribFetchAffectedByFirst =
+        (env.as_str != "0");
+    printf_stderr(
+        "mBug_DrawArraysInstancedUserAttribFetchAffectedByFirst: %i -> %i\n",
+        int(was), int(mBug_DrawArraysInstancedUserAttribFetchAffectedByFirst));
+  }
+
+  // -
 
   mNeedsIndexValidation =
       !gl->IsSupported(gl::GLFeature::robust_buffer_access_behavior);

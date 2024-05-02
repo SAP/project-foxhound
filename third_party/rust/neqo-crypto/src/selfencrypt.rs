@@ -43,7 +43,7 @@ impl SelfEncrypt {
         debug_assert_eq!(salt.len(), Self::SALT_LENGTH);
         let salt = hkdf::import_key(self.version, salt)?;
         let secret = hkdf::extract(self.version, self.cipher, Some(&salt), k)?;
-        Aead::new(self.version, self.cipher, &secret, "neqo self")
+        Aead::new(false, self.version, self.cipher, &secret, "neqo self")
     }
 
     /// Rotate keys.  This causes any previous key that is being held to be replaced by the current key.
@@ -90,7 +90,7 @@ impl SelfEncrypt {
         let offset = enc.len();
         let mut output: Vec<u8> = enc.into();
         output.resize(encoded_len, 0);
-        cipher.encrypt(0, &extended_aad, plaintext, &mut output[offset..])?;
+        cipher.encrypt(0, extended_aad.as_ref(), plaintext, &mut output[offset..])?;
         qtrace!(
             ["SelfEncrypt"],
             "seal {} {} -> {}",
@@ -124,9 +124,7 @@ impl SelfEncrypt {
         if ciphertext[0] != Self::VERSION {
             return Err(Error::SelfEncryptFailure);
         }
-        let key = if let Some(k) = self.select_key(ciphertext[1]) {
-            k
-        } else {
+        let Some(key) = self.select_key(ciphertext[1]) else {
             return Err(Error::SelfEncryptFailure);
         };
         let offset = 2 + Self::SALT_LENGTH;
@@ -139,7 +137,8 @@ impl SelfEncrypt {
         // NSS insists on having extra space available for decryption.
         let padded_len = ciphertext.len() - offset;
         let mut output = vec![0; padded_len];
-        let decrypted = aead.decrypt(0, &extended_aad, &ciphertext[offset..], &mut output)?;
+        let decrypted =
+            aead.decrypt(0, extended_aad.as_ref(), &ciphertext[offset..], &mut output)?;
         let final_len = decrypted.len();
         output.truncate(final_len);
         qtrace!(

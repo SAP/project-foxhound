@@ -2,10 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-SpecialPowers.pushPrefEnv({
-  set: [["permissions.delegation.enabled", true]],
-});
-
 // This test has been seen timing out locally in non-opt debug builds.
 requestLongerTimeout(2);
 
@@ -13,7 +9,11 @@ var gTests = [
   {
     desc: "getUserMedia audio+video",
     run: async function checkAudioVideo(aBrowser, aSubFrames) {
-      let { bc: frame1BC, id: frame1ID, observeBC: frame1ObserveBC } = (
+      let {
+        bc: frame1BC,
+        id: frame1ID,
+        observeBC: frame1ObserveBC,
+      } = (
         await getBrowsingContextsAndFrameIdsForSubFrames(
           aBrowser.browsingContext,
           aSubFrames
@@ -73,7 +73,11 @@ var gTests = [
   {
     desc: "getUserMedia audio+video: stop sharing",
     run: async function checkStopSharing(aBrowser, aSubFrames) {
-      let { bc: frame1BC, id: frame1ID, observeBC: frame1ObserveBC } = (
+      let {
+        bc: frame1BC,
+        id: frame1ID,
+        observeBC: frame1ObserveBC,
+      } = (
         await getBrowsingContextsAndFrameIdsForSubFrames(
           aBrowser.browsingContext,
           aSubFrames
@@ -151,10 +155,13 @@ var gTests = [
   },
 
   {
-    desc:
-      "getUserMedia audio+video: Revoking active devices in frame does not add grace period.",
+    desc: "getUserMedia audio+video: Revoking active devices in frame does not add grace period.",
     run: async function checkStopSharingGracePeriod(aBrowser, aSubFrames) {
-      let { bc: frame1BC, id: frame1ID, observeBC: frame1ObserveBC } = (
+      let {
+        bc: frame1BC,
+        id: frame1ID,
+        observeBC: frame1ObserveBC,
+      } = (
         await getBrowsingContextsAndFrameIdsForSubFrames(
           aBrowser.browsingContext,
           aSubFrames
@@ -247,10 +254,13 @@ var gTests = [
   },
 
   {
-    desc:
-      "getUserMedia audio+video: reloading the frame removes all sharing UI",
+    desc: "getUserMedia audio+video: reloading the frame removes all sharing UI",
     run: async function checkReloading(aBrowser, aSubFrames) {
-      let { bc: frame1BC, id: frame1ID, observeBC: frame1ObserveBC } = (
+      let {
+        bc: frame1BC,
+        id: frame1ID,
+        observeBC: frame1ObserveBC,
+      } = (
         await getBrowsingContextsAndFrameIdsForSubFrames(
           aBrowser.browsingContext,
           aSubFrames
@@ -326,7 +336,11 @@ var gTests = [
   {
     desc: "getUserMedia audio+video: reloading the frame removes prompts",
     run: async function checkReloadingRemovesPrompts(aBrowser, aSubFrames) {
-      let { bc: frame1BC, id: frame1ID, observeBC: frame1ObserveBC } = (
+      let {
+        bc: frame1BC,
+        id: frame1ID,
+        observeBC: frame1ObserveBC,
+      } = (
         await getBrowsingContextsAndFrameIdsForSubFrames(
           aBrowser.browsingContext,
           aSubFrames
@@ -359,8 +373,7 @@ var gTests = [
   },
 
   {
-    desc:
-      "getUserMedia audio+video: with two frames sharing at the same time, sharing UI shows all shared devices",
+    desc: "getUserMedia audio+video: with two frames sharing at the same time, sharing UI shows all shared devices",
     run: async function checkFrameOverridingSharingUI(aBrowser, aSubFrames) {
       // This tests an edge case discovered in bug 1440356 that works like this
       // - Share audio and video in iframe 1.
@@ -596,10 +609,13 @@ var gTests = [
   },
 
   {
-    desc:
-      "getUserMedia audio+video: reloading the top level page removes all sharing UI",
+    desc: "getUserMedia audio+video: reloading the top level page removes all sharing UI",
     run: async function checkReloading(aBrowser, aSubFrames) {
-      let { bc: frame1BC, id: frame1ID, observeBC: frame1ObserveBC } = (
+      let {
+        bc: frame1BC,
+        id: frame1ID,
+        observeBC: frame1ObserveBC,
+      } = (
         await getBrowsingContextsAndFrameIdsForSubFrames(
           aBrowser.browsingContext,
           aSubFrames
@@ -647,8 +663,7 @@ var gTests = [
   },
 
   {
-    desc:
-      "getUserMedia audio+video: closing a window with two frames sharing at the same time, closes the indicator",
+    desc: "getUserMedia audio+video: closing a window with two frames sharing at the same time, closes the indicator",
     skipObserverVerification: true,
     run: async function checkFrameIndicatorClosedUI(aBrowser, aSubFrames) {
       // This tests a case where the indicator didn't close when audio/video is
@@ -657,7 +672,11 @@ var gTests = [
       let tabsToRemove = [gBrowser.selectedTab];
 
       for (let t = 0; t < 2; t++) {
-        let { bc: frame1BC, id: frame1ID, observeBC: frame1ObserveBC } = (
+        let {
+          bc: frame1BC,
+          id: frame1ID,
+          observeBC: frame1ObserveBC,
+        } = (
           await getBrowsingContextsAndFrameIdsForSubFrames(
             gBrowser.selectedBrowser.browsingContext,
             aSubFrames

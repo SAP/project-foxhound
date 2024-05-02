@@ -1,45 +1,41 @@
-error: `#[derive(EnumSetType)]` currently only supports discriminants up to 127.
- --> $DIR/variants.rs:5:5
+error: Enum discriminants must not be negative.
+ --> tests/compile-fail/variants.rs:5:15
   |
-5 |     Variant = 128,
-  |     ^^^^^^^^^^^^^
-
-error: Enum set discriminants must be `u32`s. (larger discrimiants are still unsupported with reprs that allow them.)
-  --> $DIR/variants.rs:11:15
-   |
-11 |     Variant = 0x100000000,
-   |               ^^^^^^^^^^^
-
-error: `#[derive(EnumSetType)]` currently only supports enums up to 128 variants.
-  --> $DIR/variants.rs:22:95
-   |
-22 |     _113, _114, _115, _116, _117, _118, _119, _120, _121, _122, _123, _124, _125, _126, _127, _128,
-   |                                                                                               ^^^^
-
-error: Enum set discriminants must be `u32`s.
-  --> $DIR/variants.rs:27:5
-   |
-27 |     Variant = -1,
-   |     ^^^^^^^^^^^^
+5 |     Variant = -1,
+  |               ^^
 
 error: `#[derive(EnumSetType)]` can only be used on fieldless enums.
-  --> $DIR/variants.rs:38:5
+  --> tests/compile-fail/variants.rs:10:5
    |
-38 |     Variant(u32),
+10 |     Variant(u32),
    |     ^^^^^^^^^^^^
 
-error: serialize_repr cannot be smaller than bitset.
-  --> $DIR/variants.rs:41:10
+error: `repr` is too small to contain the largest discriminant.
+  --> tests/compile-fail/variants.rs:16:5
    |
-41 | #[derive(EnumSetType)]
-   |          ^^^^^^^^^^^
-   |
-   = note: this error originates in the derive macro `EnumSetType` (in Nightly builds, run with -Z macro-backtrace for more info)
+16 |     Variant = 128,
+   |     ^^^^^^^^^^^^^
 
-error: `#[derive(EnumSetType)]` may only be used on enums
-  --> $DIR/variants.rs:48:1
+error: `serialize_repr` is too small to contain the largest discriminant.
+  --> tests/compile-fail/variants.rs:22:5
    |
-48 | / struct BadItemType {
-49 | |
-50 | | }
-   | |_^
+22 |     Variant = 8,
+   |     ^^^^^^^^^^^
+
+error: Enum discriminants must be literal expressions.
+  --> tests/compile-fail/variants.rs:27:5
+   |
+27 |     Variant = 1 + 1,
+   |     ^^^^^^^^^^^^^^^
+
+error: `repr` is too small to contain the largest discriminant.
+  --> tests/compile-fail/variants.rs:33:5
+   |
+33 |     Variant = 16,
+   |     ^^^^^^^^^^^^
+
+error: Maximum discriminant allowed is `0xFFFFFFBF`.
+  --> tests/compile-fail/variants.rs:38:5
+   |
+38 |     Variant = 0xFFFFFFD0,
+   |     ^^^^^^^^^^^^^^^^^^^^

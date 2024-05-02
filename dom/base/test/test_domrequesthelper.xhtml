@@ -14,7 +14,9 @@
 
   <script type="application/javascript">
   <![CDATA[
-    const {DOMRequestIpcHelper} = ChromeUtils.import("resource://gre/modules/DOMRequestHelper.jsm");
+    const {DOMRequestIpcHelper} = ChromeUtils.importESModule(
+      "resource://gre/modules/DOMRequestHelper.sys.mjs"
+    );
     let obs = Cc["@mozilla.org/observer-service;1"].
               getService(Ci.nsIObserverService);
     let ppmm = Cc["@mozilla.org/parentprocessmessagemanager;1"].getService();
@@ -24,7 +26,7 @@
     }
     DummyHelperSubclass.prototype = {
       __proto__: DOMRequestIpcHelper.prototype,
-      uninit: function() {
+      uninit() {
         if (typeof this.onuninit === "function") {
           this.onuninit();
         }
@@ -130,7 +132,7 @@
       // can then reasonably expect uninitCalled to be set properly on the
       // next tick.
       let observer = {
-        observe: function(aSubject, aTopic, aData) {
+        observe(aSubject, aTopic, aData) {
           if (aTopic !== TOPIC) {
             return;
           }
@@ -379,7 +381,7 @@
         info("== Test createRequest()");
         ok(DOMRequest, "DOMRequest object exists");
         var req = dummy.createRequest();
-        ok(req instanceof DOMRequest, "Returned a DOMRequest");
+        ok(DOMRequest.isInstance(req), "Returned a DOMRequest");
         next();
       },
       function() {
@@ -420,7 +422,7 @@
         var id;
         var resolver;
         var promise = dummy.createPromise(function(resolve, reject) {
-          var r = { resolve: resolve, reject: reject };
+          var r = { resolve, reject };
           id = dummy.getPromiseResolverId(r);
           resolver = r;
           ok(typeof id === "string", "id is a string");
@@ -435,7 +437,7 @@
         info("== Test removeResolver");
         var id;
         var promise = dummy.createPromise(function(resolve, reject) {
-          var r = { resolve: resolve, reject: reject };
+          var r = { resolve, reject };
           id = dummy.getPromiseResolverId(r);
           ok(typeof id === "string", "id is a string");
 
@@ -456,7 +458,7 @@
         var id;
         var resolver;
         var promise = dummy.createPromise(function(resolve, reject) {
-          var r = { resolve: resolve, reject: reject };
+          var r = { resolve, reject };
           id = dummy.getPromiseResolverId(r);
           resolver = r;
           ok(typeof id === "string", "id is a string");

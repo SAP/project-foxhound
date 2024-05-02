@@ -3,9 +3,8 @@
  */
 "use strict";
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 
 XPCOMUtils.defineLazyServiceGetter(
@@ -17,7 +16,7 @@ XPCOMUtils.defineLazyServiceGetter(
 
 const PREF_APP_UPDATE_LASTUPDATETIME_FMT = "app.update.lastUpdateTime.%ID%";
 
-add_task(async function() {
+add_task(async function () {
   const testId = "test_timer_id";
   const testPref = PREF_APP_UPDATE_LASTUPDATETIME_FMT.replace(/%ID%/, testId);
   const testInterval = 100000000; // Just needs to be longer than the test.

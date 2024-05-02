@@ -12,25 +12,44 @@
 #include "nsCOMPtr.h"
 #include "nsProxyRelease.h"
 #include "prinrval.h"
-#include "TunnelUtils.h"
 #include "mozilla/Mutex.h"
 #include "ARefBase.h"
 #include "TimingStruct.h"
 #include "HttpTrafficAnalyzer.h"
 
+#include "mozilla/net/DNS.h"
 #include "nsIAsyncInputStream.h"
 #include "nsIAsyncOutputStream.h"
 #include "nsIInterfaceRequestor.h"
 #include "nsITimer.h"
 
 class nsISocketTransport;
-class nsISSLSocketControl;
+class nsITLSSocketControl;
 
 namespace mozilla {
 namespace net {
 
 class nsHttpHandler;
 class ASpdySession;
+class Http3WebTransportSession;
+
+enum class ConnectionState : uint32_t {
+  HALF_OPEN = 0,
+  INITED,
+  TLS_HANDSHAKING,
+  ZERORTT,
+  TRANSFERING,
+  CLOSED
+};
+
+enum class ConnectionExperienceState : uint32_t {
+  Not_Experienced = 0,
+  First_Request_Sent = (1 << 0),
+  First_Response_Received = (1 << 1),
+  Experienced = (1 << 2),
+};
+
+MOZ_MAKE_ENUM_CLASS_BITWISE_OPERATORS(ConnectionExperienceState);
 
 // 1dcc863e-db90-4652-a1fe-13fea0b54e46
 #define HTTPCONNECTIONBASE_IID                       \
@@ -82,6 +101,11 @@ class HttpConnectionBase : public nsSupportsWeakReference {
                                                nsIAsyncInputStream**,
                                                nsIAsyncOutputStream**) = 0;
 
+  Http3WebTransportSession* GetWebTransportSession(
+      nsAHttpTransaction* aTransaction) {
+    return nullptr;
+  }
+
   virtual bool UsingSpdy() { return false; }
   virtual bool UsingHttp3() { return false; }
 
@@ -102,12 +126,14 @@ class HttpConnectionBase : public nsSupportsWeakReference {
   virtual bool NoClientCertAuth() const { return true; }
 
   // HTTP/2 websocket support
-  virtual bool CanAcceptWebsocket() { return false; }
+  virtual WebSocketSupport GetWebSocketSupport() {
+    return WebSocketSupport::NO_SUPPORT;
+  }
 
   void GetConnectionInfo(nsHttpConnectionInfo** ci) {
     *ci = do_AddRef(mConnInfo).take();
   }
-  virtual void GetSecurityInfo(nsISupports** result) = 0;
+  virtual void GetTLSSocketControl(nsITLSSocketControl** result) = 0;
 
   [[nodiscard]] virtual nsresult ResumeSend() = 0;
   [[nodiscard]] virtual nsresult ResumeRecv() = 0;
@@ -135,7 +161,19 @@ class HttpConnectionBase : public nsSupportsWeakReference {
   virtual nsresult GetSelfAddr(NetAddr* addr) = 0;
   virtual nsresult GetPeerAddr(NetAddr* addr) = 0;
   virtual bool ResolvedByTRR() = 0;
+  virtual nsIRequest::TRRMode EffectiveTRRMode() = 0;
+  virtual TRRSkippedReason TRRSkipReason() = 0;
   virtual bool GetEchConfigUsed() = 0;
+  virtual PRIntervalTime LastWriteTime() = 0;
+
+  void ChangeConnectionState(ConnectionState aState);
+  void SetCloseReason(ConnectionCloseReason aReason) {
+    if (mCloseReason == ConnectionCloseReason::UNSET) {
+      mCloseReason = aReason;
+    }
+  }
+
+  void RecordConnectionCloseTelemetry(nsresult aReason);
 
  protected:
   // The capabailities associated with the most recent transaction
@@ -144,16 +182,26 @@ class HttpConnectionBase : public nsSupportsWeakReference {
   RefPtr<nsHttpConnectionInfo> mConnInfo;
 
   bool mExperienced{false};
+  // Used to track whether this connection is serving the first request.
+  bool mHasFirstHttpTransaction{false};
 
   bool mBootstrappedTimingsSet{false};
   TimingStruct mBootstrappedTimings;
 
-  Mutex mCallbacksLock{"nsHttpConnection::mCallbacksLock"};
+  Mutex mCallbacksLock MOZ_UNANNOTATED{"nsHttpConnection::mCallbacksLock"};
   nsMainThreadPtrHandle<nsIInterfaceRequestor> mCallbacks;
 
   nsTArray<HttpTrafficCategory> mTrafficCategory;
   PRIntervalTime mRtt{0};
   nsresult mErrorBeforeConnect = NS_OK;
+
+  ConnectionState mConnectionState = ConnectionState::HALF_OPEN;
+
+  // Represent if the connection has served more than one request.
+  ConnectionExperienceState mExperienceState =
+      ConnectionExperienceState::Not_Experienced;
+
+  ConnectionCloseReason mCloseReason = ConnectionCloseReason::UNSET;
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(HttpConnectionBase, HTTPCONNECTIONBASE_IID)
@@ -176,7 +224,7 @@ NS_DEFINE_STATIC_IID_ACCESSOR(HttpConnectionBase, HTTPCONNECTIONBASE_IID)
   void PrintDiagnostics(nsCString&) override;                                  \
   bool TestJoinConnection(const nsACString&, int32_t) override;                \
   bool JoinConnection(const nsACString&, int32_t) override;                    \
-  void GetSecurityInfo(nsISupports** result) override;                         \
+  void GetTLSSocketControl(nsITLSSocketControl** result) override;             \
   [[nodiscard]] nsresult ResumeSend() override;                                \
   [[nodiscard]] nsresult ResumeRecv() override;                                \
   [[nodiscard]] nsresult ForceSend() override;                                 \
@@ -189,7 +237,8 @@ NS_DEFINE_STATIC_IID_ACCESSOR(HttpConnectionBase, HTTPCONNECTIONBASE_IID)
   bool IsReused() override;                                                    \
   [[nodiscard]] nsresult PushBack(const char* data, uint32_t length) override; \
   void SetEvent(nsresult aStatus) override;                                    \
-  virtual nsAHttpTransaction* Transaction() override;
+  virtual nsAHttpTransaction* Transaction() override;                          \
+  PRIntervalTime LastWriteTime() override;
 
 }  // namespace net
 }  // namespace mozilla

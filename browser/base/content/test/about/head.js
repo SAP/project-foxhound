@@ -1,32 +1,19 @@
-/* eslint-env mozilla/frame-script */
-
-XPCOMUtils.defineLazyModuleGetters(this, {
-  FormHistory: "resource://gre/modules/FormHistory.jsm",
-  SearchTestUtils: "resource://testing-common/SearchTestUtils.jsm",
+ChromeUtils.defineESModuleGetters(this, {
+  FormHistory: "resource://gre/modules/FormHistory.sys.mjs",
+  SearchTestUtils: "resource://testing-common/SearchTestUtils.sys.mjs",
 });
 
 SearchTestUtils.init(this);
 
-function getSecurityInfo(securityInfoAsString) {
-  const serhelper = Cc[
-    "@mozilla.org/network/serialization-helper;1"
-  ].getService(Ci.nsISerializationHelper);
-  let securityInfo = serhelper.deserializeObject(securityInfoAsString);
-  securityInfo.QueryInterface(Ci.nsITransportSecurityInfo);
-  return securityInfo;
-}
-
-function getCertChain(securityInfoAsString) {
+function getCertChainAsString(certBase64Array) {
   let certChain = "";
-  let securityInfo = getSecurityInfo(securityInfoAsString);
-  for (let cert of securityInfo.failedCertChain) {
+  for (let cert of certBase64Array) {
     certChain += getPEMString(cert);
   }
   return certChain;
 }
 
-function getPEMString(cert) {
-  var derb64 = cert.getBase64DERString();
+function getPEMString(derb64) {
   // Wrap the Base64 string into lines of 64 characters,
   // with CRLF line breaks (as specified in RFC 1421).
   var wrapped = derb64.replace(/(\S{64}(?!$))/g, "$1\r\n");
@@ -45,17 +32,18 @@ async function injectErrorPageFrame(tab, src, sandboxed) {
     true
   );
 
-  await SpecialPowers.spawn(tab.linkedBrowser, [src, sandboxed], async function(
-    frameSrc,
-    frameSandboxed
-  ) {
-    let iframe = content.document.createElement("iframe");
-    iframe.src = frameSrc;
-    if (frameSandboxed) {
-      iframe.setAttribute("sandbox", "allow-scripts");
+  await SpecialPowers.spawn(
+    tab.linkedBrowser,
+    [src, sandboxed],
+    async function (frameSrc, frameSandboxed) {
+      let iframe = content.document.createElement("iframe");
+      iframe.src = frameSrc;
+      if (frameSandboxed) {
+        iframe.setAttribute("sandbox", "allow-scripts");
+      }
+      content.document.body.appendChild(iframe);
     }
-    content.document.body.appendChild(iframe);
-  });
+  );
 
   await loadedPromise;
 }
@@ -93,7 +81,7 @@ async function openErrorPage(src, useFrame, sandboxed) {
 function waitForCondition(condition, nextTest, errorMsg, retryTimes) {
   retryTimes = typeof retryTimes !== "undefined" ? retryTimes : 30;
   var tries = 0;
-  var interval = setInterval(function() {
+  var interval = setInterval(function () {
     if (tries >= retryTimes) {
       ok(false, errorMsg);
       moveOn();
@@ -110,7 +98,7 @@ function waitForCondition(condition, nextTest, errorMsg, retryTimes) {
     }
     tries++;
   }, 100);
-  var moveOn = function() {
+  var moveOn = function () {
     clearInterval(interval);
     nextTest();
   };
@@ -154,7 +142,7 @@ function promiseTabLoadEvent(tab, url) {
   let loaded = BrowserTestUtils.browserLoaded(tab.linkedBrowser, false, handle);
 
   if (url) {
-    BrowserTestUtils.loadURI(tab.linkedBrowser, url);
+    BrowserTestUtils.startLoadingURIString(tab.linkedBrowser, url);
   }
 
   return loaded;

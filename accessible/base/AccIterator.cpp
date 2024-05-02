@@ -6,8 +6,10 @@
 
 #include "AccGroupInfo.h"
 #include "DocAccessible-inl.h"
+#include "LocalAccessible-inl.h"
 #include "XULTreeAccessible.h"
 
+#include "mozilla/a11y/DocAccessibleParent.h"
 #include "mozilla/dom/DocumentOrShadowRoot.h"
 #include "mozilla/dom/HTMLLabelElement.h"
 
@@ -72,8 +74,7 @@ RelatedAccIterator::RelatedAccIterator(DocAccessible* aDocument,
     : mDocument(aDocument), mRelAttr(aRelAttr), mProviders(nullptr), mIndex(0) {
   nsAutoString id;
   if (aDependentContent->IsElement() &&
-      aDependentContent->AsElement()->GetAttr(kNameSpaceID_None, nsGkAtoms::id,
-                                              id)) {
+      aDependentContent->AsElement()->GetAttr(nsGkAtoms::id, id)) {
     mProviders = mDocument->GetRelProviders(aDependentContent->AsElement(), id);
   }
 }
@@ -138,8 +139,7 @@ LocalAccessible* HTMLLabelIterator::Next() {
   LocalAccessible* walkUp = mAcc->LocalParent();
   while (walkUp && !walkUp->IsDoc()) {
     nsIContent* walkUpEl = walkUp->GetContent();
-    if (IsLabel(walkUp) &&
-        !walkUpEl->AsElement()->HasAttr(kNameSpaceID_None, nsGkAtoms::_for)) {
+    if (IsLabel(walkUp) && !walkUpEl->AsElement()->HasAttr(nsGkAtoms::_for)) {
       mLabelFilter = eSkipAncestorLabel;  // prevent infinite loop
       return walkUp;
     }
@@ -211,7 +211,7 @@ IDRefsIterator::IDRefsIterator(DocAccessible* aDoc, nsIContent* aContent,
                                nsAtom* aIDRefsAttr)
     : mContent(aContent), mDoc(aDoc), mCurrIdx(0) {
   if (mContent->IsElement()) {
-    mContent->AsElement()->GetAttr(kNameSpaceID_None, aIDRefsAttr, mIDs);
+    mContent->AsElement()->GetAttr(aIDRefsAttr, mIDs);
   }
 }
 
@@ -278,12 +278,15 @@ LocalAccessible* IDRefsIterator::Next() {
 // SingleAccIterator
 ////////////////////////////////////////////////////////////////////////////////
 
-LocalAccessible* SingleAccIterator::Next() {
-  RefPtr<LocalAccessible> nextAcc;
-  mAcc.swap(nextAcc);
-  if (!nextAcc || nextAcc->IsDefunct()) {
+Accessible* SingleAccIterator::Next() {
+  Accessible* nextAcc = mAcc;
+  mAcc = nullptr;
+  if (!nextAcc) {
     return nullptr;
   }
+
+  MOZ_ASSERT(!nextAcc->IsLocal() || !nextAcc->AsLocal()->IsDefunct(),
+             "Iterator references defunct accessible?");
   return nextAcc;
 }
 
@@ -291,17 +294,15 @@ LocalAccessible* SingleAccIterator::Next() {
 // ItemIterator
 ////////////////////////////////////////////////////////////////////////////////
 
-LocalAccessible* ItemIterator::Next() {
+Accessible* ItemIterator::Next() {
   if (mContainer) {
-    Accessible* first = AccGroupInfo::FirstItemOf(mContainer);
-    mAnchor = first ? first->AsLocal() : nullptr;
+    mAnchor = AccGroupInfo::FirstItemOf(mContainer);
     mContainer = nullptr;
     return mAnchor;
   }
 
   if (mAnchor) {
-    Accessible* next = AccGroupInfo::NextItemTo(mAnchor);
-    mAnchor = next ? next->AsLocal() : nullptr;
+    mAnchor = AccGroupInfo::NextItemTo(mAnchor);
   }
 
   return mAnchor;
@@ -340,5 +341,20 @@ LocalAccessible* XULTreeItemIterator::Next() {
     mCurrRowIdx++;
   }
 
+  return nullptr;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// RemoteAccIterator
+////////////////////////////////////////////////////////////////////////////////
+
+Accessible* RemoteAccIterator::Next() {
+  while (mIndex < mIds.Length()) {
+    uint64_t id = mIds[mIndex++];
+    Accessible* acc = mDoc->GetAccessible(id);
+    if (acc) {
+      return acc;
+    }
+  }
   return nullptr;
 }

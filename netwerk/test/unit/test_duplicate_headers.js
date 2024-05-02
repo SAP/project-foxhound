@@ -8,14 +8,19 @@
 
 "use strict";
 
-const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
+// The tests in this file use number indexes to run, which can't be detected
+// via ESLint.
+/* eslint-disable no-unused-vars */
 
-XPCOMUtils.defineLazyGetter(this, "URL", function() {
+const { HttpServer } = ChromeUtils.importESModule(
+  "resource://testing-common/httpd.sys.mjs"
+);
+
+ChromeUtils.defineLazyGetter(this, "URL", function () {
   return "http://localhost:" + httpserver.identity.primaryPort;
 });
 
 var httpserver = new HttpServer();
-var index = 0;
 var test_flags = [];
 var testPathBase = "/dupe_hdrs";
 

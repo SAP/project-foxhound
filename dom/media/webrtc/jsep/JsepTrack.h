@@ -46,6 +46,14 @@ class JsepTrackNegotiatedDetails {
     return *mEncodings[index];
   }
 
+  void TruncateEncodings(size_t aSize) {
+    if (mEncodings.size() < aSize) {
+      MOZ_ASSERT(false);
+      return;
+    }
+    mEncodings.resize(aSize);
+  }
+
   const SdpExtmapAttributeList::Extmap* GetExt(
       const std::string& ext_name) const {
     auto it = mExtmap.find(ext_name);
@@ -99,56 +107,13 @@ class JsepTrack {
 
   void ClearStreamIds() { mStreamIds.clear(); }
 
-  void UpdateRecvTrack(const Sdp& sdp, const SdpMediaSection& msection) {
-    MOZ_ASSERT(mDirection == sdp::kRecv);
-    MOZ_ASSERT(msection.GetMediaType() !=
-               SdpMediaSection::MediaType::kApplication);
-    std::string error;
-    SdpHelper helper(&error);
+  void RecvTrackSetRemote(const Sdp& aSdp, const SdpMediaSection& aMsection);
+  void RecvTrackSetLocal(const SdpMediaSection& aMsection);
 
-    mRemoteSetSendBit = msection.IsSending();
-
-    if (msection.IsSending()) {
-      (void)helper.GetIdsFromMsid(sdp, msection, &mStreamIds);
-    } else {
-      mStreamIds.clear();
-    }
-
-    // We do this whether or not the track is active
-    SetCNAME(helper.GetCNAME(msection));
-    mSsrcs.clear();
-    if (msection.GetAttributeList().HasAttribute(
-            SdpAttribute::kSsrcAttribute)) {
-      for (auto& ssrcAttr : msection.GetAttributeList().GetSsrc().mSsrcs) {
-        mSsrcs.push_back(ssrcAttr.ssrc);
-      }
-    }
-
-    // Use FID ssrc-group to associate rtx ssrcs with "regular" ssrcs. Despite
-    // not being part of RFC 4588, this is how rtx is negotiated by libwebrtc
-    // and jitsi.
-    mSsrcToRtxSsrc.clear();
-    if (msection.GetAttributeList().HasAttribute(
-            SdpAttribute::kSsrcGroupAttribute)) {
-      for (const auto& group :
-           msection.GetAttributeList().GetSsrcGroup().mSsrcGroups) {
-        if (group.semantics == SdpSsrcGroupAttributeList::kFid &&
-            group.ssrcs.size() == 2) {
-          // Ensure we have a "regular" ssrc for each rtx ssrc.
-          if (std::find(mSsrcs.begin(), mSsrcs.end(), group.ssrcs[0]) !=
-              mSsrcs.end()) {
-            mSsrcToRtxSsrc[group.ssrcs[0]] = group.ssrcs[1];
-
-            // Remove rtx ssrcs from mSsrcs
-            auto res = std::remove_if(
-                mSsrcs.begin(), mSsrcs.end(),
-                [group](uint32_t ssrc) { return ssrc == group.ssrcs[1]; });
-            mSsrcs.erase(res, mSsrcs.end());
-          }
-        }
-      }
-    }
-  }
+  // This is called whenever a remote description is set; we do not wait for
+  // offer/answer to complete, since there's nothing to actually negotiate here.
+  void SendTrackSetRemote(SsrcGenerator& aSsrcGenerator,
+                          const SdpMediaSection& aRemoteMsection);
 
   JsepTrack(const JsepTrack& orig) { *this = orig; }
 
@@ -162,11 +127,15 @@ class JsepTrack {
       mTrackId = rhs.mTrackId;
       mCNAME = rhs.mCNAME;
       mDirection = rhs.mDirection;
-      mJsEncodeConstraints = rhs.mJsEncodeConstraints;
+      mRids = rhs.mRids;
       mSsrcs = rhs.mSsrcs;
       mSsrcToRtxSsrc = rhs.mSsrcToRtxSsrc;
       mActive = rhs.mActive;
       mRemoteSetSendBit = rhs.mRemoteSetSendBit;
+      mReceptive = rhs.mReceptive;
+      mMaxEncodings = rhs.mMaxEncodings;
+      mInHaveRemote = rhs.mInHaveRemote;
+      mRtxIsAllowed = rhs.mRtxIsAllowed;
 
       mPrototypeCodecs.clear();
       for (const auto& codec : rhs.mPrototypeCodecs) {
@@ -199,10 +168,14 @@ class JsepTrack {
   virtual std::vector<uint32_t> GetRtxSsrcs() const {
     std::vector<uint32_t> result;
     if (mRtxIsAllowed &&
-        Preferences::GetBool("media.peerconnection.video.use_rtx", false)) {
-      std::for_each(
-          mSsrcToRtxSsrc.begin(), mSsrcToRtxSsrc.end(),
-          [&result](const auto& pair) { result.push_back(pair.second); });
+        Preferences::GetBool("media.peerconnection.video.use_rtx", false) &&
+        !mSsrcToRtxSsrc.empty()) {
+      MOZ_ASSERT(mSsrcToRtxSsrc.size() == mSsrcs.size());
+      for (const auto ssrc : mSsrcs) {
+        auto it = mSsrcToRtxSsrc.find(ssrc);
+        MOZ_ASSERT(it != mSsrcToRtxSsrc.end());
+        result.push_back(it->second);
+      }
     }
     return result;
   }
@@ -214,6 +187,7 @@ class JsepTrack {
   void SetActive(bool active) { mActive = active; }
 
   bool GetRemoteSetSendBit() const { return mRemoteSetSendBit; }
+  bool GetReceptive() const { return mReceptive; }
 
   virtual void PopulateCodecs(
       const std::vector<UniquePtr<JsepCodecDescription>>& prototype);
@@ -234,9 +208,9 @@ class JsepTrack {
                            SsrcGenerator& ssrcGenerator,
                            SdpMediaSection* answer);
 
-  virtual void Negotiate(const SdpMediaSection& answer,
-                         const SdpMediaSection& remote,
-                         const SdpMediaSection& local);
+  virtual nsresult Negotiate(const SdpMediaSection& answer,
+                             const SdpMediaSection& remote,
+                             const SdpMediaSection& local);
   static void SetUniquePayloadTypes(std::vector<JsepTrack*>& tracks);
   virtual void GetNegotiatedPayloadTypes(
       std::vector<uint16_t>* payloadTypes) const;
@@ -258,30 +232,19 @@ class JsepTrack {
 
   virtual void ClearNegotiatedDetails() { mNegotiatedDetails.reset(); }
 
-  struct JsConstraints {
-    std::string rid;
-    bool paused = false;
-    EncodingConstraints constraints;
-    bool operator==(const JsConstraints& other) const {
-      return rid == other.rid && paused == other.paused &&
-             constraints == other.constraints;
-    }
-  };
+  void SetRids(const std::vector<std::string>& aRids);
+  void ClearRids() { mRids.clear(); }
+  const std::vector<std::string>& GetRids() const { return mRids; }
 
-  // Returns true if the constraints changed.
-  bool SetJsConstraints(const std::vector<JsConstraints>& constraintsList);
-
-  void GetJsConstraints(std::vector<JsConstraints>* outConstraintsList) const {
-    MOZ_ASSERT(outConstraintsList);
-    *outConstraintsList = mJsEncodeConstraints;
-  }
-
-  void AddToMsection(const std::vector<JsConstraints>& constraintsList,
+  void AddToMsection(const std::vector<std::string>& aRids,
                      sdp::Direction direction, SsrcGenerator& ssrcGenerator,
                      bool rtxEnabled, SdpMediaSection* msection);
 
   // See Bug 1642419, this can be removed when all sites are working with RTX.
   void SetRtxIsAllowed(bool aRtxIsAllowed) { mRtxIsAllowed = aRtxIsAllowed; }
+
+  void SetMaxEncodings(size_t aMax);
+  bool IsInHaveRemote() const { return mInHaveRemote; }
 
  private:
   std::vector<UniquePtr<JsepCodecDescription>> GetCodecClones() const;
@@ -291,10 +254,9 @@ class JsepTrack {
       const std::vector<UniquePtr<JsepCodecDescription>>& codecs,
       std::vector<uint16_t>* pts);
   void AddToMsection(const std::vector<UniquePtr<JsepCodecDescription>>& codecs,
-                     SdpMediaSection* msection);
-  void GetRids(
-      const SdpMediaSection& msection, sdp::Direction direction,
-      std::vector<std::pair<SdpRidAttributeList::Rid, bool>>* rids) const;
+                     SdpMediaSection* msection) const;
+  void GetRids(const SdpMediaSection& msection, sdp::Direction direction,
+               std::vector<SdpRidAttributeList::Rid>* rids) const;
   void CreateEncodings(
       const SdpMediaSection& remote,
       const std::vector<UniquePtr<JsepCodecDescription>>& negotiatedCodecs,
@@ -304,12 +266,6 @@ class JsepTrack {
       const SdpMediaSection& remote, bool remoteIsOffer,
       Maybe<const SdpMediaSection&> local);
 
-  JsConstraints* FindConstraints(
-      const std::string& rid,
-      std::vector<JsConstraints>& constraintsList) const;
-  void NegotiateRids(
-      const std::vector<std::pair<SdpRidAttributeList::Rid, bool>>& rids,
-      std::vector<JsConstraints>* constraints) const;
   void UpdateSsrcs(SsrcGenerator& ssrcGenerator, size_t encodings);
   void PruneSsrcs(size_t aNumSsrcs);
   bool IsRtxEnabled(
@@ -322,15 +278,27 @@ class JsepTrack {
   std::string mCNAME;
   sdp::Direction mDirection;
   std::vector<UniquePtr<JsepCodecDescription>> mPrototypeCodecs;
-  // Holds encoding params/constraints from JS. Simulcast happens when there are
-  // multiple of these. If there are none, we assume unconstrained unicast with
-  // no rid.
-  std::vector<JsConstraints> mJsEncodeConstraints;
+  // List of rids. May be initially populated from JS, or from a remote SDP.
+  // Can be updated by remote SDP. If no negotiation has taken place at all,
+  // this will be empty. If negotiation has taken place, but no simulcast
+  // attr was negotiated, this will contain the empty string as a single
+  // element. If a simulcast attribute was negotiated, this will contain the
+  // negotiated rids.
+  std::vector<std::string> mRids;
   UniquePtr<JsepTrackNegotiatedDetails> mNegotiatedDetails;
   std::vector<uint32_t> mSsrcs;
   std::map<uint32_t, uint32_t> mSsrcToRtxSsrc;
   bool mActive;
   bool mRemoteSetSendBit;
+  // This is used to drive RTCRtpTransceiver.[[Receptive]]. Basically, this
+  // denotes whether we are prepared to receive RTP. When we apply a local
+  // description with the recv bit set, this is set to true, even if we have
+  // not seen the remote description yet. If we apply either a local or remote
+  // description without the recv bit set (from our perspective), this is set
+  // to false.
+  bool mReceptive = false;
+  size_t mMaxEncodings = 3;
+  bool mInHaveRemote = false;
 
   // See Bug 1642419, this can be removed when all sites are working with RTX.
   bool mRtxIsAllowed = true;

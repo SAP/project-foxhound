@@ -2,7 +2,7 @@
 name = "rust1"
 version = "0.1.0"
 authors = [
-  "Nobody <nobody@mozilla.org>",
+  "The Mozilla Project Developers",
 ]
 
 [lib]
@@ -13,3 +13,6 @@ panic = "abort"
 
 [profile.release]
 panic = "abort"
+
+[dependencies]
+mozilla-central-workspace-hack = { version = "0.1", features = ["rust1"], optional = true }

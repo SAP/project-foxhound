@@ -153,16 +153,13 @@ nsDocShell* DocumentChannel::GetDocShell() {
   return nsDocShell::Cast(docshell);
 }
 
-// Changes here should also be made in
-// E10SUtils.documentChannelPermittedForURI().
 static bool URIUsesDocChannel(nsIURI* aURI) {
   if (SchemeIsJavascript(aURI)) {
     return false;
   }
 
   nsCString spec = aURI->GetSpecOrDefault();
-  return !spec.EqualsLiteral("about:printpreview") &&
-         !spec.EqualsLiteral("about:crashcontent");
+  return !spec.EqualsLiteral("about:crashcontent");
 }
 
 bool DocumentChannel::CanUseDocumentChannel(nsIURI* aURI) {
@@ -194,6 +191,19 @@ already_AddRefed<DocumentChannel> DocumentChannel::CreateForObject(
     nsLoadFlags aLoadFlags, nsIInterfaceRequestor* aNotificationCallbacks) {
   return CreateForDocument(aLoadState, aLoadInfo, aLoadFlags,
                            aNotificationCallbacks, 0, false, false);
+}
+
+NS_IMETHODIMP DocumentChannel::SetCanceledReason(const nsACString& aReason) {
+  return SetCanceledReasonImpl(aReason);
+}
+
+NS_IMETHODIMP DocumentChannel::GetCanceledReason(nsACString& aReason) {
+  return GetCanceledReasonImpl(aReason);
+}
+
+NS_IMETHODIMP DocumentChannel::CancelWithReason(nsresult aStatus,
+                                                const nsACString& aReason) {
+  return CancelWithReasonImpl(aStatus, aReason);
 }
 
 NS_IMETHODIMP
@@ -296,7 +306,11 @@ NS_IMETHODIMP DocumentChannel::SetLoadFlags(nsLoadFlags aLoadFlags) {
     return NS_OK;
   }
 
-  MOZ_CRASH("DocumentChannel::SetLoadFlags: Don't set flags after creation");
+  MOZ_CRASH_UNSAFE_PRINTF(
+      "DocumentChannel::SetLoadFlags: Don't set flags after creation "
+      "(differing flags %x != %x)",
+      (mLoadFlags ^ aLoadFlags) & mLoadFlags,
+      (mLoadFlags ^ aLoadFlags) & aLoadFlags);
 }
 
 NS_IMETHODIMP DocumentChannel::GetOriginalURI(nsIURI** aOriginalURI) {
@@ -328,7 +342,8 @@ NS_IMETHODIMP DocumentChannel::SetOwner(nsISupports* aOwner) {
   return NS_OK;
 }
 
-NS_IMETHODIMP DocumentChannel::GetSecurityInfo(nsISupports** aSecurityInfo) {
+NS_IMETHODIMP DocumentChannel::GetSecurityInfo(
+    nsITransportSecurityInfo** aSecurityInfo) {
   *aSecurityInfo = nullptr;
   return NS_OK;
 }

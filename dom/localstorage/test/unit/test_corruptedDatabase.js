@@ -36,10 +36,13 @@ async function doTest(profile) {
   is(request.result.usage, 0, "Correct usage");
 }
 
-async function testSteps() {
+add_task(async function testSteps() {
   info("Setting pref");
 
-  Services.prefs.setBoolPref("dom.storage.next_gen", true);
+  Services.prefs.setBoolPref(
+    "dom.storage.enable_unsupported_legacy_implementation",
+    false
+  );
 
   // XXX This should be refactored into separate sub test cases.
 
@@ -67,4 +70,4 @@ async function testSteps() {
   for (const profile of profiles) {
     await doTest(profile);
   }
-}
+});

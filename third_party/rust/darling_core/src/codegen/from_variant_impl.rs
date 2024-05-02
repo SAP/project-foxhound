@@ -1,5 +1,5 @@
 use proc_macro2::TokenStream;
-use quote::ToTokens;
+use quote::{quote, ToTokens};
 use syn::Ident;
 
 use crate::codegen::{ExtractAttribute, OuterFromImpl, TraitImpl};
@@ -65,8 +65,7 @@ impl<'a> ToTokens for FromVariantImpl<'a> {
 
         let supports = self.supports.map(|i| {
             quote! {
-                #i
-                __validate_data(&#input.fields)?;
+                __errors.handle(#i.check(&#input.fields));
             }
         });
 
@@ -76,7 +75,7 @@ impl<'a> ToTokens for FromVariantImpl<'a> {
 
         self.wrap(
             quote!(
-                fn from_variant(#input: &::syn::Variant) -> ::darling::Result<Self> {
+                fn from_variant(#input: &::darling::export::syn::Variant) -> ::darling::Result<Self> {
                     #error_declaration
 
                     #extractor
@@ -106,10 +105,6 @@ impl<'a> ToTokens for FromVariantImpl<'a> {
 impl<'a> ExtractAttribute for FromVariantImpl<'a> {
     fn local_declarations(&self) -> TokenStream {
         self.base.local_declarations()
-    }
-
-    fn immutable_declarations(&self) -> TokenStream {
-        self.base.immutable_declarations()
     }
 
     fn attr_names(&self) -> &PathList {

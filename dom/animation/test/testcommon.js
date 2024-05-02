@@ -50,14 +50,8 @@ function assert_matrix_equals(actual, expected, description) {
     "Expected value should be a matrix"
   );
 
-  var actualMatrixArray = actual
-    .match(matrixRegExp)
-    .slice(1)
-    .map(Number);
-  var expectedMatrixArray = expected
-    .match(matrixRegExp)
-    .slice(1)
-    .map(Number);
+  var actualMatrixArray = actual.match(matrixRegExp).slice(1).map(Number);
+  var expectedMatrixArray = expected.match(matrixRegExp).slice(1).map(Number);
 
   assert_equals(
     actualMatrixArray.length,
@@ -187,7 +181,7 @@ function addDiv(t, attrs) {
   }
   document.body.appendChild(div);
   if (t && typeof t.add_cleanup === "function") {
-    t.add_cleanup(function() {
+    t.add_cleanup(function () {
       if (div.parentNode) {
         div.remove();
       }
@@ -220,7 +214,7 @@ function addStyle(t, rules) {
   }
 
   if (t && typeof t.add_cleanup === "function") {
-    t.add_cleanup(function() {
+    t.add_cleanup(function () {
       extraStyle.remove();
     });
   }
@@ -237,7 +231,7 @@ function propertyToIDL(property) {
     property = prefix + property.substring(prefixMatch[0].length - 1);
   }
   // https://drafts.csswg.org/cssom/#css-property-to-idl-attribute
-  return property.replace(/-([a-z])/gi, function(str, group) {
+  return property.replace(/-([a-z])/gi, function (str, group) {
     return group.toUpperCase();
   });
 }
@@ -246,16 +240,13 @@ function propertyToIDL(property) {
  * Promise wrapper for requestAnimationFrame.
  */
 function waitForFrame() {
-  return new Promise(function(resolve, reject) {
+  return new Promise(function (resolve, reject) {
     window.requestAnimationFrame(resolve);
   });
 }
 
 /**
  * Waits for a requestAnimationFrame callback in the next refresh driver tick.
- * Note that the 'dom.animations-api.core.enabled' and
- * 'dom.animations-api.timelines.enabled' prefs should be true to use this
- * function.
  */
 function waitForNextFrame(aWindow = window) {
   const timeAtStart = aWindow.document.timeline.currentTime;
@@ -280,7 +271,7 @@ function waitForNextFrame(aWindow = window) {
  */
 function waitForAnimationFrames(aFrameCount, aOnFrame, aWindow = window) {
   const timeAtStart = aWindow.document.timeline.currentTime;
-  return new Promise(function(resolve, reject) {
+  return new Promise(function (resolve, reject) {
     function handleFrame() {
       if (aOnFrame && typeof aOnFrame === "function") {
         aOnFrame();
@@ -314,7 +305,7 @@ function waitForIdle() {
  */
 function waitForAllAnimations(animations) {
   return Promise.all(
-    animations.map(function(animation) {
+    animations.map(function (animation) {
       return animation.ready;
     })
   );
@@ -358,7 +349,7 @@ if (opener) {
   window.EventWatcher = opener.EventWatcher;
 
   function done() {
-    opener.add_completion_callback(function() {
+    opener.add_completion_callback(function () {
       self.close();
     });
     opener.done();
@@ -369,7 +360,7 @@ if (opener) {
  * Returns a promise that is resolved when the document has finished loading.
  */
 function waitForDocumentLoad() {
-  return new Promise(function(resolve, reject) {
+  return new Promise(function (resolve, reject) {
     if (document.readyState === "complete") {
       resolve();
     } else {
@@ -493,15 +484,6 @@ async function waitForAnimationReadyToRestyle(aAnimation) {
   }
 }
 
-function getDocShellForObservingRestylesForWindow(aWindow) {
-  const docShell = SpecialPowers.wrap(aWindow).docShell;
-
-  docShell.recordProfileTimelineMarkers = true;
-  docShell.popProfileTimelineMarkers();
-
-  return docShell;
-}
-
 // Returns the animation restyle markers observed during |frameCount| refresh
 // driver ticks in this `window`.  This function is typically used to count the
 // number of restyles that take place as part of the style update that happens
@@ -515,19 +497,16 @@ function observeStyling(frameCount, onFrame) {
 
 // As with observeStyling but applied to target window |aWindow|.
 function observeStylingInTargetWindow(aWindow, aFrameCount, aOnFrame) {
-  const docShell = getDocShellForObservingRestylesForWindow(aWindow);
+  let priorAnimationTriggeredRestyles =
+    SpecialPowers.wrap(aWindow).windowUtils.animationTriggeredRestyles;
 
   return new Promise(resolve => {
     return waitForAnimationFrames(aFrameCount, aOnFrame, aWindow).then(() => {
-      const markers = docShell.popProfileTimelineMarkers();
-      docShell.recordProfileTimelineMarkers = false;
-      const stylingMarkers = Array.prototype.filter.call(
-        markers,
-        (marker, index) => {
-          return marker.name == "Styles" && marker.isAnimationOnly;
-        }
-      );
-      resolve(stylingMarkers);
+      let restyleCount =
+        SpecialPowers.wrap(aWindow).windowUtils.animationTriggeredRestyles -
+        priorAnimationTriggeredRestyles;
+
+      resolve(restyleCount);
     });
   });
 }

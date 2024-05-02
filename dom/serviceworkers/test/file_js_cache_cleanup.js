@@ -1,6 +1,6 @@
 "use strict";
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 
 function clearCache() {
@@ -10,7 +10,7 @@ function clearCache() {
   cacheStorageSrv.clear();
 }
 
-addMessageListener("teardown", function() {
+addMessageListener("teardown", function () {
   clearCache();
   sendAsyncMessage("teardown-complete");
 });

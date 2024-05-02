@@ -14,14 +14,12 @@
 #include "mozilla/Preferences.h"
 #include "mozilla/SchedulerGroup.h"
 #include "mozilla/Services.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/StorageAccess.h"
 #include "nsIObserverService.h"
 #include "nsPIDOMWindow.h"
 
-namespace mozilla {
-namespace dom {
-
-static const char kStorageEnabled[] = "dom.storage.enabled";
+namespace mozilla::dom {
 
 NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(Storage, mWindow, mPrincipal,
                                       mStoragePrincipal)
@@ -59,7 +57,13 @@ Storage::~Storage() = default;
 
 /* static */
 bool Storage::StoragePrefIsEnabled() {
-  return mozilla::Preferences::GetBool(kStorageEnabled);
+  return StaticPrefs::dom_storage_enabled();
+}
+
+int64_t Storage::GetSnapshotUsage(nsIPrincipal& aSubjectPrincipal,
+                                  ErrorResult& aRv) {
+  aRv.Throw(NS_ERROR_NOT_IMPLEMENTED);
+  return 0;
 }
 
 bool Storage::CanUseStorage(nsIPrincipal& aSubjectPrincipal) {
@@ -145,9 +149,8 @@ void Storage::NotifyChange(Storage* aStorage, nsIPrincipal* aPrincipal,
   if (aImmediateDispatch) {
     Unused << r->Run();
   } else {
-    SchedulerGroup::Dispatch(TaskCategory::Other, r.forget());
+    SchedulerGroup::Dispatch(r.forget());
   }
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

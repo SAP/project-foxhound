@@ -1,19 +1,18 @@
 "use strict";
 
-const { ExperimentAPI } = ChromeUtils.import(
-  "resource://nimbus/ExperimentAPI.jsm"
+const { ExperimentAPI } = ChromeUtils.importESModule(
+  "resource://nimbus/ExperimentAPI.sys.mjs"
 );
-const { ExperimentFakes } = ChromeUtils.import(
-  "resource://testing-common/NimbusTestUtils.jsm"
+const { ExperimentFakes } = ChromeUtils.importESModule(
+  "resource://testing-common/NimbusTestUtils.sys.mjs"
 );
-const { TelemetryTestUtils } = ChromeUtils.import(
-  "resource://testing-common/TelemetryTestUtils.jsm"
+const { TelemetryTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/TelemetryTestUtils.sys.mjs"
 );
 
 const TEST_PROTON_CONTENT = [
   {
     id: "AW_STEP1",
-    order: 0,
     content: {
       title: "Step 1",
       primary_button: {
@@ -32,14 +31,11 @@ const TEST_PROTON_CONTENT = [
           data: { entrypoint: "test" },
         },
       },
-      help_text: {
-        text: "Here's some sample help text",
-      },
+      has_noodles: true,
     },
   },
   {
     id: "AW_STEP2",
-    order: 1,
     content: {
       title: "Step 2",
       primary_button: {
@@ -51,11 +47,11 @@ const TEST_PROTON_CONTENT = [
       secondary_button: {
         label: "link",
       },
+      has_noodles: true,
     },
   },
   {
     id: "AW_STEP3",
-    order: 2,
     content: {
       title: "Step 3",
       tiles: {
@@ -88,11 +84,11 @@ const TEST_PROTON_CONTENT = [
           data: { source: "chrome" },
         },
       },
+      has_noodles: true,
     },
   },
   {
     id: "AW_STEP4",
-    order: 3,
     content: {
       title: "Step 4",
       primary_button: {
@@ -104,6 +100,7 @@ const TEST_PROTON_CONTENT = [
       secondary_button: {
         label: "link",
       },
+      has_noodles: true,
     },
   },
 ];
@@ -150,7 +147,6 @@ add_task(async function test_multistage_aboutwelcome_experimentAPI() {
   const TEST_CONTENT = [
     {
       id: "AW_STEP1",
-      order: 0,
       content: {
         title: "Step 1",
         tiles: {
@@ -186,11 +182,11 @@ add_task(async function test_multistage_aboutwelcome_experimentAPI() {
             data: { entrypoint: "test" },
           },
         },
+        has_noodles: true,
       },
     },
     {
       id: "AW_STEP2",
-      order: 1,
       content: {
         zap: true,
         title: "Step 2 test",
@@ -203,12 +199,13 @@ add_task(async function test_multistage_aboutwelcome_experimentAPI() {
         secondary_button: {
           label: "link",
         },
+        has_noodles: true,
       },
     },
     {
       id: "AW_STEP3",
-      order: 2,
       content: {
+        logo: {},
         title: "Step 3",
         primary_button: {
           label: "Next",
@@ -223,6 +220,7 @@ add_task(async function test_multistage_aboutwelcome_experimentAPI() {
             data: { source: "chrome" },
           },
         },
+        has_noodles: true,
       },
     },
   ];
@@ -259,51 +257,49 @@ add_task(async function test_multistage_aboutwelcome_experimentAPI() {
     sandbox.restore();
   });
 
-  // Test first (theme) screen for non-win7.
-  if (!win7Content) {
-    await test_screen_content(
-      browser,
-      "multistage step 1",
-      // Expected selectors:
-      [
-        "div.onboardingContainer",
-        "main.AW_STEP1",
-        "div.secondary-cta",
-        "div.secondary-cta.top",
-        "button[value='secondary_button']",
-        "button[value='secondary_button_top']",
-        "label.theme",
-        "input[type='radio']",
-      ],
-      // Unexpected selectors:
-      ["main.AW_STEP2", "main.AW_STEP3", "div.tiles-container.info"]
-    );
+  // Test first (theme) screen.
+  await test_screen_content(
+    browser,
+    "multistage step 1",
+    // Expected selectors:
+    [
+      "div.onboardingContainer",
+      "main.AW_STEP1",
+      "div.secondary-cta",
+      "div.secondary-cta.top",
+      "button[value='secondary_button']",
+      "button[value='secondary_button_top']",
+      "label.theme",
+      "input[type='radio']",
+    ],
+    // Unexpected selectors:
+    ["main.AW_STEP2", "main.AW_STEP3", "div.tiles-container.info"]
+  );
 
-    await onButtonClick(browser, "button.primary");
+  await onButtonClick(browser, "button.primary");
 
-    const { callCount } = aboutWelcomeActor.onContentMessage;
-    ok(callCount >= 1, `${callCount} Stub was called`);
-    let clickCall;
-    for (let i = 0; i < callCount; i++) {
-      const call = aboutWelcomeActor.onContentMessage.getCall(i);
-      info(`Call #${i}: ${call.args[0]} ${JSON.stringify(call.args[1])}`);
-      if (call.calledWithMatch("", { event: "CLICK_BUTTON" })) {
-        clickCall = call;
-      }
+  const { callCount } = aboutWelcomeActor.onContentMessage;
+  ok(callCount >= 1, `${callCount} Stub was called`);
+  let clickCall;
+  for (let i = 0; i < callCount; i++) {
+    const call = aboutWelcomeActor.onContentMessage.getCall(i);
+    info(`Call #${i}: ${call.args[0]} ${JSON.stringify(call.args[1])}`);
+    if (call.calledWithMatch("", { event: "CLICK_BUTTON" })) {
+      clickCall = call;
     }
-
-    Assert.equal(
-      clickCall.args[0],
-      "AWPage:TELEMETRY_EVENT",
-      "send telemetry event"
-    );
-
-    Assert.equal(
-      clickCall.args[1].message_id,
-      "MY-MOCHITEST-EXPERIMENT_0_AW_STEP1",
-      "Telemetry should join id defined in feature value with screen"
-    );
   }
+
+  Assert.equal(
+    clickCall.args[0],
+    "AWPage:TELEMETRY_EVENT",
+    "send telemetry event"
+  );
+
+  Assert.equal(
+    clickCall.args[1].message_id,
+    "MY-MOCHITEST-EXPERIMENT_0_AW_STEP1",
+    "Telemetry should join id defined in feature value with screen"
+  );
 
   await test_screen_content(
     browser,
@@ -325,7 +321,7 @@ add_task(async function test_multistage_aboutwelcome_experimentAPI() {
     [
       "div.onboardingContainer",
       "main.AW_STEP3",
-      "div.brand-logo",
+      "img.brand-logo",
       "div.welcome-text",
     ],
     // Unexpected selectors:
@@ -396,7 +392,7 @@ add_task(async function test_multistage_aboutwelcome_transitions() {
     browser,
     "multistage proton step 1",
     // Expected selectors:
-    ["div.proton.transition- .screen-0"],
+    ["div.proton.transition- .screen"],
     // Unexpected selectors:
     ["div.proton.transition-out"]
   );
@@ -409,7 +405,7 @@ add_task(async function test_multistage_aboutwelcome_transitions() {
     browser,
     "multistage proton step 1 transition to 2",
     // Expected selectors:
-    ["div.proton.transition-out .screen-0", "div.proton.transition- .screen-1"]
+    ["div.proton.transition-out .screen", "div.proton.transition- .screen-1"]
   );
 
   await doExperimentCleanup();
@@ -453,7 +449,7 @@ add_task(async function test_multistage_aboutwelcome_transitions_off() {
     browser,
     "multistage proton step 1",
     // Expected selectors:
-    ["div.proton.transition- .screen-0"],
+    ["div.proton.transition- .screen"],
     // Unexpected selectors:
     ["div.proton.transition-out"]
   );
@@ -467,6 +463,130 @@ add_task(async function test_multistage_aboutwelcome_transitions_off() {
     // Unexpected selectors:
     ["div.proton.transition-out .screen-0"]
   );
+
+  await doExperimentCleanup();
+});
+
+/* Test multistage custom backdrop
+ */
+add_task(async function test_multistage_aboutwelcome_backdrop() {
+  const sandbox = sinon.createSandbox();
+  const TEST_BACKDROP = "blue";
+
+  const TEST_CONTENT = [
+    {
+      id: "TEST_SCREEN",
+      content: {
+        position: "split",
+        logo: {},
+        title: "test",
+      },
+    },
+  ];
+  await setAboutWelcomePref(true);
+  await ExperimentAPI.ready();
+  await pushPrefs(["browser.aboutwelcome.backdrop", TEST_BACKDROP]);
+
+  const doExperimentCleanup = await ExperimentFakes.enrollWithFeatureConfig({
+    featureId: "aboutwelcome",
+    value: {
+      id: "my-mochitest-experiment",
+      screens: TEST_CONTENT,
+    },
+  });
+
+  const tab = await BrowserTestUtils.openNewForegroundTab(
+    gBrowser,
+    "about:welcome",
+    true
+  );
+
+  const browser = tab.linkedBrowser;
+
+  registerCleanupFunction(() => {
+    BrowserTestUtils.removeTab(tab);
+    sandbox.restore();
+  });
+
+  await test_screen_content(
+    browser,
+    "multistage step 1",
+    // Expected selectors:
+    [`div.outer-wrapper.onboardingContainer[style*='${TEST_BACKDROP}']`]
+  );
+
+  await doExperimentCleanup();
+});
+
+add_task(async function test_multistage_aboutwelcome_utm_term() {
+  const sandbox = sinon.createSandbox();
+
+  const TEST_CONTENT = [
+    {
+      id: "TEST_SCREEN",
+      content: {
+        position: "split",
+        logo: {},
+        title: "test",
+        secondary_button_top: {
+          label: "test",
+          style: "link",
+          action: {
+            type: "OPEN_URL",
+            data: {
+              args: "https://www.mozilla.org/",
+            },
+          },
+        },
+      },
+    },
+  ];
+  await setAboutWelcomePref(true);
+  await ExperimentAPI.ready();
+
+  const doExperimentCleanup = await ExperimentFakes.enrollWithFeatureConfig({
+    featureId: "aboutwelcome",
+    value: {
+      id: "my-mochitest-experiment",
+      screens: TEST_CONTENT,
+      UTMTerm: "test",
+    },
+  });
+
+  const tab = await BrowserTestUtils.openNewForegroundTab(
+    gBrowser,
+    "about:welcome",
+    true
+  );
+
+  const browser = tab.linkedBrowser;
+  const aboutWelcomeActor = await getAboutWelcomeParent(browser);
+
+  sandbox.stub(aboutWelcomeActor, "onContentMessage");
+
+  await onButtonClick(browser, "button[value='secondary_button_top']");
+
+  let actionCall;
+
+  const { callCount } = aboutWelcomeActor.onContentMessage;
+  for (let i = 0; i < callCount; i++) {
+    const call = aboutWelcomeActor.onContentMessage.getCall(i);
+    info(`Call #${i}: ${call.args[0]} ${JSON.stringify(call.args[1])}`);
+    if (call.calledWithMatch("SPECIAL")) {
+      actionCall = call;
+    }
+  }
+
+  Assert.equal(
+    actionCall.args[1].data.args,
+    "https://www.mozilla.org/?utm_source=activity-stream&utm_campaign=firstrun&utm_medium=referral&utm_term=test-screen",
+    "UTMTerm set in mobile"
+  );
+
+  registerCleanupFunction(() => {
+    sandbox.restore();
+    BrowserTestUtils.removeTab(tab);
+  });
 
   await doExperimentCleanup();
 });

@@ -11,14 +11,14 @@
 #ifndef API_UNITS_DATA_SIZE_H_
 #define API_UNITS_DATA_SIZE_H_
 
-#ifdef UNIT_TEST
+#ifdef WEBRTC_UNIT_TEST
 #include <ostream>  // no-presubmit-check TODO(webrtc:8982)
-#endif              // UNIT_TEST
+#endif              // WEBRTC_UNIT_TEST
 
 #include <string>
 #include <type_traits>
 
-#include "rtc_base/units/unit_base.h"
+#include "rtc_base/units/unit_base.h"  // IWYU pragma: export
 
 namespace webrtc {
 // DataSize is a class represeting a count of bytes.
@@ -53,13 +53,13 @@ inline std::string ToLogString(DataSize value) {
   return ToString(value);
 }
 
-#ifdef UNIT_TEST
+#ifdef WEBRTC_UNIT_TEST
 inline std::ostream& operator<<(  // no-presubmit-check TODO(webrtc:8982)
     std::ostream& stream,         // no-presubmit-check TODO(webrtc:8982)
     DataSize value) {
   return stream << ToString(value);
 }
-#endif  // UNIT_TEST
+#endif  // WEBRTC_UNIT_TEST
 
 }  // namespace webrtc
 

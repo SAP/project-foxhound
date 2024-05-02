@@ -38,8 +38,10 @@ class SharedPlanarYCbCrImage : public PlanarYCbCrImage {
   already_AddRefed<gfx::SourceSurface> GetAsSourceSurface() override;
   bool CopyData(const PlanarYCbCrData& aData) override;
   bool AdoptData(const Data& aData) override;
-  bool CreateEmptyBuffer(const Data& aData) override;
+  bool CreateEmptyBuffer(const Data& aData, const gfx::IntSize& aYSize,
+                         const gfx::IntSize& aCbCrSize) override;
 
+  void SetIsDRM(bool aIsDRM) override;
   bool IsValid() const override;
 
   size_t SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) const override {
@@ -51,8 +53,6 @@ class SharedPlanarYCbCrImage : public PlanarYCbCrImage {
   TextureClientRecycleAllocator* RecycleAllocator();
 
  private:
-  bool Allocate(PlanarYCbCrData& aData);
-
   RefPtr<TextureClient> mTextureClient;
   RefPtr<ImageClient> mCompositable;
   RefPtr<TextureClientRecycleAllocator> mRecycleAllocator;

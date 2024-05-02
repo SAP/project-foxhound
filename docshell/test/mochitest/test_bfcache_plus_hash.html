@@ -18,7 +18,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=646641
 <pre id="test">
 <script type="application/javascript">
 
-/** Test for Bug 646641 **/
+/** Test for Bug 646641 */
 
 /**
  * Steps:
@@ -135,7 +135,11 @@ if (isXOrigin) {
   SpecialPowers.wrap(document).notifyUserGestureActivation();
   SpecialPowers.addPermission("storageAccessAPI", true, window.location.href).then(() => {
     SpecialPowers.wrap(document).requestStorageAccess().then(() => {
-      executeTest();
+      SpecialPowers.pushPrefEnv({
+        set: [["privacy.partition.always_partition_third_party_non_cookie_storage", false]],
+      }).then(() => {
+        executeTest();
+      });
     });
   });
 } else {

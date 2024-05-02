@@ -7,6 +7,7 @@
 use app_units::Au;
 use cssparser::ToCss as CssparserToCss;
 use cssparser::{serialize_string, ParseError, Parser, Token, UnicodeRange};
+use nsstring::nsCString;
 use servo_arc::Arc;
 use std::fmt::{self, Write};
 
@@ -44,6 +45,36 @@ use std::fmt::{self, Write};
 /// * `#[css(represents_keyword)]` can be used on bool fields in order to
 ///   serialize the field name if the field is true, or nothing otherwise.  It
 ///   also collects those keywords for `SpecifiedValueInfo`.
+/// * `#[css(bitflags(single="", mixed="", validate="", overlapping_bits)]` can
+///   be used to derive parse / serialize / etc on bitflags. The rules for parsing
+///   bitflags are the following:
+///
+///     * `single` flags can only appear on their own. It's common that bitflags
+///       properties at least have one such value like `none` or `auto`.
+///     * `mixed` properties can appear mixed together, but not along any other
+///       flag that shares a bit with itself. For example, if you have three
+///       bitflags like:
+///
+///         FOO = 1 << 0;
+///         BAR = 1 << 1;
+///         BAZ = 1 << 2;
+///         BAZZ = BAR | BAZ;
+///
+///       Then the following combinations won't be valid:
+///
+///         * foo foo: (every flag shares a bit with itself)
+///         * bar bazz: (bazz shares a bit with bar)
+///
+///       But `bar baz` will be valid, as they don't share bits, and so would
+///       `foo` with any other flag, or `bazz` on its own.
+///    * `overlapping_bits` enables some tracking during serialization of mixed
+///       flags to avoid serializing variants that can subsume other variants.
+///       In the example above, you could do:
+///         mixed="foo,bazz,bar,baz", overlapping_bits
+///       to ensure that if bazz is serialized, bar and baz aren't, even though
+///       their bits are set. Note that the serialization order is canonical,
+///       and thus depends on the order you specify the flags in.
+///
 /// * finally, one can put `#[css(derive_debug)]` on the whole type, to
 ///   implement `Debug` by a single call to `ToCss::to_css`.
 pub trait ToCss {
@@ -58,6 +89,16 @@ pub trait ToCss {
     #[inline]
     fn to_css_string(&self) -> String {
         let mut s = String::new();
+        self.to_css(&mut CssWriter::new(&mut s)).unwrap();
+        s
+    }
+
+    /// Serialize `self` in CSS syntax and return a nsCString.
+    ///
+    /// (This is a convenience wrapper for `to_css` and probably should not be overridden.)
+    #[inline]
+    fn to_css_nscstring(&self) -> nsCString {
+        let mut s = nsCString::new();
         self.to_css(&mut CssWriter::new(&mut s)).unwrap();
         s
     }
@@ -470,64 +511,7 @@ impl_to_css_for_predefined_type!(i32);
 impl_to_css_for_predefined_type!(u16);
 impl_to_css_for_predefined_type!(u32);
 impl_to_css_for_predefined_type!(::cssparser::Token<'a>);
-impl_to_css_for_predefined_type!(::cssparser::RGBA);
-impl_to_css_for_predefined_type!(::cssparser::Color);
 impl_to_css_for_predefined_type!(::cssparser::UnicodeRange);
-
-/// Define an enum type with unit variants that each correspond to a CSS keyword.
-macro_rules! define_css_keyword_enum {
-    (pub enum $name:ident { $($variant:ident = $css:expr,)+ }) => {
-        #[allow(missing_docs)]
-        #[cfg_attr(feature = "servo", derive(Deserialize, Serialize))]
-        #[derive(Clone, Copy, Debug, Eq, Hash, MallocSizeOf, PartialEq, ToShmem)]
-        pub enum $name {
-            $($variant),+
-        }
-
-        impl $name {
-            /// Parse this property from a CSS input stream.
-            pub fn parse<'i, 't>(input: &mut ::cssparser::Parser<'i, 't>)
-                                 -> Result<$name, $crate::ParseError<'i>> {
-                use cssparser::Token;
-                let location = input.current_source_location();
-                match *input.next()? {
-                    Token::Ident(ref ident) => {
-                        Self::from_ident(ident).map_err(|()| {
-                            location.new_unexpected_token_error(
-                                Token::Ident(ident.clone()),
-                            )
-                        })
-                    }
-                    ref token => {
-                        Err(location.new_unexpected_token_error(token.clone()))
-                    }
-                }
-            }
-
-            /// Parse this property from an already-tokenized identifier.
-            pub fn from_ident(ident: &str) -> Result<$name, ()> {
-                match_ignore_ascii_case! { ident,
-                    $($css => Ok($name::$variant),)+
-                    _ => Err(())
-                }
-            }
-        }
-
-        impl $crate::ToCss for $name {
-            fn to_css<W>(
-                &self,
-                dest: &mut $crate::CssWriter<W>,
-            ) -> ::std::fmt::Result
-            where
-                W: ::std::fmt::Write,
-            {
-                match *self {
-                    $( $name::$variant => ::std::fmt::Write::write_str(dest, $css) ),+
-                }
-            }
-        }
-    };
-}
 
 /// Helper types for the handling of specified values.
 pub mod specified {
@@ -545,6 +529,8 @@ pub mod specified {
         NonNegative,
         /// Allow only numeric values greater or equal to 1.0.
         AtLeastOne,
+        /// Allow only numeric values from 0 to 1.0.
+        ZeroToOne,
     }
 
     impl Default for AllowedNumericType {
@@ -565,6 +551,7 @@ pub mod specified {
                 AllowedNumericType::All => true,
                 AllowedNumericType::NonNegative => val >= 0.0,
                 AllowedNumericType::AtLeastOne => val >= 1.0,
+                AllowedNumericType::ZeroToOne => val >= 0.0 && val <= 1.0,
             }
         }
 
@@ -572,9 +559,10 @@ pub mod specified {
         #[inline]
         pub fn clamp(&self, val: f32) -> f32 {
             match *self {
-                AllowedNumericType::NonNegative if val < 0. => 0.,
-                AllowedNumericType::AtLeastOne if val < 1. => 1.,
-                _ => val,
+                AllowedNumericType::All => val,
+                AllowedNumericType::NonNegative => val.max(0.),
+                AllowedNumericType::AtLeastOne => val.max(1.),
+                AllowedNumericType::ZeroToOne => val.max(0.).min(1.),
             }
         }
     }

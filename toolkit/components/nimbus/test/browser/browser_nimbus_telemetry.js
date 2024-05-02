@@ -1,17 +1,15 @@
 "use strict";
 
-const {
-  ExperimentAPI,
-  _ExperimentFeature: ExperimentFeature,
-} = ChromeUtils.import("resource://nimbus/ExperimentAPI.jsm");
-const { ExperimentManager } = ChromeUtils.import(
-  "resource://nimbus/lib/ExperimentManager.jsm"
+const { ExperimentAPI, _ExperimentFeature: ExperimentFeature } =
+  ChromeUtils.importESModule("resource://nimbus/ExperimentAPI.sys.mjs");
+const { ExperimentManager } = ChromeUtils.importESModule(
+  "resource://nimbus/lib/ExperimentManager.sys.mjs"
 );
-const { ExperimentFakes } = ChromeUtils.import(
-  "resource://testing-common/NimbusTestUtils.jsm"
+const { ExperimentFakes } = ChromeUtils.importESModule(
+  "resource://testing-common/NimbusTestUtils.sys.mjs"
 );
-const { TelemetryTestUtils } = ChromeUtils.import(
-  "resource://testing-common/TelemetryTestUtils.jsm"
+const { TelemetryTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/TelemetryTestUtils.sys.mjs"
 );
 
 const TELEMETRY_CATEGORY = "normandy";
@@ -20,7 +18,7 @@ const TELEMETRY_OBJECT = "nimbus_experiment";
 const EXPERIMENT_TYPE = "nimbus";
 const EVENT_FILTER = { category: TELEMETRY_CATEGORY };
 
-add_task(async function setup() {
+add_setup(async function () {
   let sandbox = sinon.createSandbox();
   // stub the `observe` method to make sure the Experiment Manager
   // pref listener doesn't trigger and cause side effects
@@ -55,7 +53,6 @@ add_task(async function test_experiment_enroll_unenroll_Telemetry() {
         extra: {
           experimentType: EXPERIMENT_TYPE,
           branch: experiment.branch.slug,
-          enrollmentId: experiment.enrollmentId,
         },
       },
     ],
@@ -73,7 +70,6 @@ add_task(async function test_experiment_enroll_unenroll_Telemetry() {
         extra: {
           reason: "cleanup",
           branch: experiment.branch.slug,
-          enrollmentId: experiment.enrollmentId,
         },
       },
     ],

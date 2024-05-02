@@ -17,8 +17,7 @@
 #include "nsHttpHandler.h"
 #include "nsISpeculativeConnect.h"
 
-namespace mozilla {
-namespace net {
+namespace mozilla::net {
 
 HttpConnectionMgrChild::HttpConnectionMgrChild()
     : mConnMgr(gHttpHandler->ConnMgr()) {
@@ -49,10 +48,9 @@ HttpConnectionMgrChild::RecvDoShiftReloadConnectionCleanupWithConnInfo(
   return IPC_OK();
 }
 
-mozilla::ipc::IPCResult
-HttpConnectionMgrChild::RecvUpdateCurrentTopBrowsingContextId(
+mozilla::ipc::IPCResult HttpConnectionMgrChild::RecvUpdateCurrentBrowserId(
     const uint64_t& aId) {
-  mConnMgr->UpdateCurrentTopBrowsingContextId(aId);
+  mConnMgr->UpdateCurrentBrowserId(aId);
   return IPC_OK();
 }
 
@@ -89,7 +87,7 @@ mozilla::ipc::IPCResult HttpConnectionMgrChild::RecvRescheduleTransaction(
 
 mozilla::ipc::IPCResult
 HttpConnectionMgrChild::RecvUpdateClassOfServiceOnTransaction(
-    PHttpTransactionChild* aTrans, const uint32_t& aClassOfService) {
+    PHttpTransactionChild* aTrans, const ClassOfService& aClassOfService) {
   mConnMgr->UpdateClassOfServiceOnTransaction(ToRealHttpTransaction(aTrans),
                                               aClassOfService);
   return IPC_OK();
@@ -190,5 +188,4 @@ mozilla::ipc::IPCResult HttpConnectionMgrChild::RecvStartWebSocketConnection(
   return IPC_OK();
 }
 
-}  // namespace net
-}  // namespace mozilla
+}  // namespace mozilla::net

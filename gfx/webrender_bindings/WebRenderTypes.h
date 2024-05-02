@@ -19,7 +19,6 @@
 #include "mozilla/PodOperations.h"
 #include "mozilla/Range.h"
 #include "mozilla/ScrollGeneration.h"
-#include "mozilla/TypeTraits.h"
 #include "Units.h"
 #include "nsIWidgetListener.h"
 
@@ -60,6 +59,14 @@ struct ExternalImageKeyPair {
 
 /* Generate a brand new window id and return it. */
 WindowId NewWindowId();
+
+inline bool WindowSizeSanityCheck(int32_t aWidth, int32_t aHeight) {
+  if (aWidth < 0 || aWidth > wr::MAX_RENDER_TASK_SIZE || aHeight < 0 ||
+      aHeight > wr::MAX_RENDER_TASK_SIZE) {
+    return false;
+  }
+  return true;
+}
 
 inline DebugFlags NewDebugFlags(uint32_t aFlags) { return {aFlags}; }
 
@@ -291,6 +298,8 @@ static inline MixBlendMode ToMixBlendMode(gfx::CompositionOp compositionOp) {
       return MixBlendMode::Color;
     case gfx::CompositionOp::OP_LUMINOSITY:
       return MixBlendMode::Luminosity;
+    case gfx::CompositionOp::OP_ADD:
+      return MixBlendMode::PlusLighter;
     default:
       return MixBlendMode::Normal;
   }
@@ -302,15 +311,6 @@ static inline wr::ColorF ToColorF(const gfx::DeviceColor& color) {
   c.g = color.g;
   c.b = color.b;
   c.a = color.a;
-  return c;
-}
-
-static inline wr::ColorU ToColorU(const gfx::DeviceColor& color) {
-  wr::ColorU c;
-  c.r = uint8_t(color.r * 255.0f);
-  c.g = uint8_t(color.g * 255.0f);
-  c.b = uint8_t(color.b * 255.0f);
-  c.a = uint8_t(color.a * 255.0f);
   return c;
 }
 
@@ -792,6 +792,8 @@ enum class WebRenderError : int8_t {
   NEW_SURFACE,
   BEGIN_DRAW,
   VIDEO_OVERLAY,
+  VIDEO_HW_OVERLAY,
+  VIDEO_SW_OVERLAY,
   EXCESSIVE_RESETS,
 
   Sentinel /* this must be last for serialization purposes. */

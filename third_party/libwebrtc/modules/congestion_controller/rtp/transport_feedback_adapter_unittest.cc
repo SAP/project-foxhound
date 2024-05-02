@@ -27,9 +27,9 @@ using ::testing::_;
 using ::testing::Invoke;
 
 namespace webrtc {
-namespace webrtc_cc {
 
 namespace {
+constexpr uint32_t kSsrc = 8492;
 const PacedPacketInfo kPacingInfo0(0, 5, 2000);
 const PacedPacketInfo kPacingInfo1(1, 8, 4000);
 const PacedPacketInfo kPacingInfo2(2, 14, 7000);
@@ -49,8 +49,8 @@ void ComparePacketFeedbackVectors(const std::vector<PacketResult>& truth,
   // equal. However, the difference must be the same for all x.
   TimeDelta arrival_time_delta = truth[0].receive_time - input[0].receive_time;
   for (size_t i = 0; i < len; ++i) {
-    RTC_CHECK(truth[i].receive_time.IsFinite());
-    if (input[i].receive_time.IsFinite()) {
+    RTC_CHECK(truth[i].IsReceived());
+    if (input[i].IsReceived()) {
       EXPECT_EQ(truth[i].receive_time - input[i].receive_time,
                 arrival_time_delta);
     }
@@ -77,10 +77,6 @@ PacketResult CreatePacket(int64_t receive_time_ms,
   return res;
 }
 
-}  // namespace
-
-namespace test {
-
 class MockStreamFeedbackObserver : public webrtc::StreamFeedbackObserver {
  public:
   MOCK_METHOD(void,
@@ -88,6 +84,8 @@ class MockStreamFeedbackObserver : public webrtc::StreamFeedbackObserver {
               (std::vector<StreamPacketInfo> packet_feedback_vector),
               (override));
 };
+
+}  // namespace
 
 class TransportFeedbackAdapterTest : public ::testing::Test {
  public:
@@ -100,15 +98,9 @@ class TransportFeedbackAdapterTest : public ::testing::Test {
   virtual void TearDown() { adapter_.reset(); }
 
  protected:
-  void OnReceivedEstimatedBitrate(uint32_t bitrate) {}
-
-  void OnReceivedRtcpReceiverReport(const ReportBlockList& report_blocks,
-                                    int64_t rtt,
-                                    int64_t now_ms) {}
-
   void OnSentPacket(const PacketResult& packet_feedback) {
     RtpPacketSendInfo packet_info;
-    packet_info.ssrc = kSsrc;
+    packet_info.media_ssrc = kSsrc;
     packet_info.transport_sequence_number =
         packet_feedback.sent_packet.sequence_number;
     packet_info.rtp_sequence_number = 0;
@@ -121,8 +113,6 @@ class TransportFeedbackAdapterTest : public ::testing::Test {
         packet_feedback.sent_packet.sequence_number,
         packet_feedback.sent_packet.send_time.ms(), rtc::PacketInfo()));
   }
-
-  static constexpr uint32_t kSsrc = 8492;
 
   SimulatedClock clock_;
   std::unique_ptr<TransportFeedbackAdapter> adapter_;
@@ -141,11 +131,11 @@ TEST_F(TransportFeedbackAdapterTest, AdaptsFeedbackAndPopulatesSendTimes) {
 
   rtcp::TransportFeedback feedback;
   feedback.SetBase(packets[0].sent_packet.sequence_number,
-                   packets[0].receive_time.us());
+                   packets[0].receive_time);
 
   for (const auto& packet : packets) {
     EXPECT_TRUE(feedback.AddReceivedPacket(packet.sent_packet.sequence_number,
-                                           packet.receive_time.us()));
+                                           packet.receive_time));
   }
 
   feedback.Build();
@@ -175,11 +165,11 @@ TEST_F(TransportFeedbackAdapterTest, FeedbackVectorReportsUnreceived) {
 
   rtcp::TransportFeedback feedback;
   feedback.SetBase(received_packets[0].sent_packet.sequence_number,
-                   received_packets[0].receive_time.us());
+                   received_packets[0].receive_time);
 
   for (const auto& packet : received_packets) {
     EXPECT_TRUE(feedback.AddReceivedPacket(packet.sent_packet.sequence_number,
-                                           packet.receive_time.us()));
+                                           packet.receive_time));
   }
 
   feedback.Build();
@@ -206,12 +196,12 @@ TEST_F(TransportFeedbackAdapterTest, HandlesDroppedPackets) {
 
   rtcp::TransportFeedback feedback;
   feedback.SetBase(packets[0].sent_packet.sequence_number,
-                   packets[0].receive_time.us());
+                   packets[0].receive_time);
 
   for (const auto& packet : packets) {
     if (packet.sent_packet.sequence_number <= kReceiveSideDropAfter) {
       EXPECT_TRUE(feedback.AddReceivedPacket(packet.sent_packet.sequence_number,
-                                             packet.receive_time.us()));
+                                             packet.receive_time));
     }
   }
 
@@ -229,16 +219,15 @@ TEST_F(TransportFeedbackAdapterTest, HandlesDroppedPackets) {
 }
 
 TEST_F(TransportFeedbackAdapterTest, SendTimeWrapsBothWays) {
-  int64_t kHighArrivalTimeMs = rtcp::TransportFeedback::kDeltaScaleFactor *
-                               static_cast<int64_t>(1 << 8) *
-                               static_cast<int64_t>((1 << 23) - 1) / 1000;
+  TimeDelta kHighArrivalTime =
+      rtcp::TransportFeedback::kDeltaTick * (1 << 8) * ((1 << 23) - 1);
   std::vector<PacketResult> packets;
+  packets.push_back(CreatePacket(kHighArrivalTime.ms() + 64, 210, 0, 1500,
+                                 PacedPacketInfo()));
+  packets.push_back(CreatePacket(kHighArrivalTime.ms() - 64, 210, 1, 1500,
+                                 PacedPacketInfo()));
   packets.push_back(
-      CreatePacket(kHighArrivalTimeMs + 64, 210, 0, 1500, PacedPacketInfo()));
-  packets.push_back(
-      CreatePacket(kHighArrivalTimeMs - 64, 210, 1, 1500, PacedPacketInfo()));
-  packets.push_back(
-      CreatePacket(kHighArrivalTimeMs, 220, 2, 1500, PacedPacketInfo()));
+      CreatePacket(kHighArrivalTime.ms(), 220, 2, 1500, PacedPacketInfo()));
 
   for (const auto& packet : packets)
     OnSentPacket(packet);
@@ -247,10 +236,10 @@ TEST_F(TransportFeedbackAdapterTest, SendTimeWrapsBothWays) {
     std::unique_ptr<rtcp::TransportFeedback> feedback(
         new rtcp::TransportFeedback());
     feedback->SetBase(packets[i].sent_packet.sequence_number,
-                      packets[i].receive_time.us());
+                      packets[i].receive_time);
 
     EXPECT_TRUE(feedback->AddReceivedPacket(
-        packets[i].sent_packet.sequence_number, packets[i].receive_time.us()));
+        packets[i].sent_packet.sequence_number, packets[i].receive_time));
 
     rtc::Buffer raw_packet = feedback->Build();
     feedback = rtcp::TransportFeedback::ParseFrom(raw_packet.data(),
@@ -276,11 +265,11 @@ TEST_F(TransportFeedbackAdapterTest, HandlesArrivalReordering) {
 
   rtcp::TransportFeedback feedback;
   feedback.SetBase(packets[0].sent_packet.sequence_number,
-                   packets[0].receive_time.us());
+                   packets[0].receive_time);
 
   for (const auto& packet : packets) {
     EXPECT_TRUE(feedback.AddReceivedPacket(packet.sent_packet.sequence_number,
-                                           packet.receive_time.us()));
+                                           packet.receive_time));
   }
 
   feedback.Build();
@@ -295,17 +284,14 @@ TEST_F(TransportFeedbackAdapterTest, HandlesArrivalReordering) {
 TEST_F(TransportFeedbackAdapterTest, TimestampDeltas) {
   std::vector<PacketResult> sent_packets;
   // TODO(srte): Consider using us resolution in the constants.
-  const TimeDelta kSmallDelta =
-      TimeDelta::Micros(rtcp::TransportFeedback::kDeltaScaleFactor * 0xFF)
-          .RoundDownTo(TimeDelta::Millis(1));
-  const TimeDelta kLargePositiveDelta =
-      TimeDelta::Micros(rtcp::TransportFeedback::kDeltaScaleFactor *
-                        std::numeric_limits<int16_t>::max())
-          .RoundDownTo(TimeDelta::Millis(1));
-  const TimeDelta kLargeNegativeDelta =
-      TimeDelta::Micros(rtcp::TransportFeedback::kDeltaScaleFactor *
-                        std::numeric_limits<int16_t>::min())
-          .RoundDownTo(TimeDelta::Millis(1));
+  const TimeDelta kSmallDelta = (rtcp::TransportFeedback::kDeltaTick * 0xFF)
+                                    .RoundDownTo(TimeDelta::Millis(1));
+  const TimeDelta kLargePositiveDelta = (rtcp::TransportFeedback::kDeltaTick *
+                                         std::numeric_limits<int16_t>::max())
+                                            .RoundDownTo(TimeDelta::Millis(1));
+  const TimeDelta kLargeNegativeDelta = (rtcp::TransportFeedback::kDeltaTick *
+                                         std::numeric_limits<int16_t>::min())
+                                            .RoundDownTo(TimeDelta::Millis(1));
 
   PacketResult packet_feedback;
   packet_feedback.sent_packet.sequence_number = 1;
@@ -346,15 +332,15 @@ TEST_F(TransportFeedbackAdapterTest, TimestampDeltas) {
   std::unique_ptr<rtcp::TransportFeedback> feedback(
       new rtcp::TransportFeedback());
   feedback->SetBase(sent_packets[0].sent_packet.sequence_number,
-                    sent_packets[0].receive_time.us());
+                    sent_packets[0].receive_time);
 
   for (const auto& packet : sent_packets) {
     EXPECT_TRUE(feedback->AddReceivedPacket(packet.sent_packet.sequence_number,
-                                            packet.receive_time.us()));
+                                            packet.receive_time));
   }
   EXPECT_FALSE(
       feedback->AddReceivedPacket(packet_feedback.sent_packet.sequence_number,
-                                  packet_feedback.receive_time.us()));
+                                  packet_feedback.receive_time));
 
   rtc::Buffer raw_packet = feedback->Build();
   feedback =
@@ -370,10 +356,10 @@ TEST_F(TransportFeedbackAdapterTest, TimestampDeltas) {
   // Create a new feedback message and add the trailing item.
   feedback.reset(new rtcp::TransportFeedback());
   feedback->SetBase(packet_feedback.sent_packet.sequence_number,
-                    packet_feedback.receive_time.us());
+                    packet_feedback.receive_time);
   EXPECT_TRUE(
       feedback->AddReceivedPacket(packet_feedback.sent_packet.sequence_number,
-                                  packet_feedback.receive_time.us()));
+                                  packet_feedback.receive_time));
   raw_packet = feedback->Build();
   feedback =
       rtcp::TransportFeedback::ParseFrom(raw_packet.data(), raw_packet.size());
@@ -393,7 +379,7 @@ TEST_F(TransportFeedbackAdapterTest, IgnoreDuplicatePacketSentCalls) {
 
   // Add a packet and then mark it as sent.
   RtpPacketSendInfo packet_info;
-  packet_info.ssrc = kSsrc;
+  packet_info.media_ssrc = kSsrc;
   packet_info.transport_sequence_number = packet.sent_packet.sequence_number;
   packet_info.length = packet.sent_packet.size.bytes();
   packet_info.pacing_info = packet.sent_packet.pacing_info;
@@ -412,6 +398,4 @@ TEST_F(TransportFeedbackAdapterTest, IgnoreDuplicatePacketSentCalls) {
   EXPECT_FALSE(duplicate_packet.has_value());
 }
 
-}  // namespace test
-}  // namespace webrtc_cc
 }  // namespace webrtc

@@ -7,6 +7,9 @@
 with Files("**"):
     BUG_COMPONENT = ("Core", "Widget")
 
+with Files("browser/browser_test_ContentCache.html"):
+    BUG_COMPONENT = ("Core", "DOM: UI Events & Focus Handling")
+
 with Files("unit/*macwebapputils*"):
     BUG_COMPONENT = ("Core", "Widget: Cocoa")
 
@@ -35,10 +38,10 @@ with Files("*478536*"):
     BUG_COMPONENT = ("Core", "DOM: UI Events & Focus Handling")
 
 with Files("*485118*"):
-    BUG_COMPONENT = ("Toolkit", "XUL Widgets")
+    BUG_COMPONENT = ("Toolkit", "UI Widgets")
 
 with Files("*517396*"):
-    BUG_COMPONENT = ("Toolkit", "XUL Widgets")
+    BUG_COMPONENT = ("Toolkit", "UI Widgets")
 
 with Files("*522217*"):
     BUG_COMPONENT = ("Core", "Widget: Cocoa")
@@ -94,9 +97,6 @@ with Files("*picker_no_crash*"):
 with Files("*platform_colors*"):
     BUG_COMPONENT = ("Core", "Widget: Cocoa")
 
-with Files("*plugin*"):
-    BUG_COMPONENT = ("Core", "Plug-ins")
-
 with Files("*position_on_resize*"):
     BUG_COMPONENT = ("Core", "Widget: Gtk")
 
@@ -114,9 +114,9 @@ with Files("*wheeltransaction*"):
 
 
 XPCSHELL_TESTS_MANIFESTS += ["unit/xpcshell.ini"]
-MOCHITEST_MANIFESTS += ["mochitest.ini"]
-MOCHITEST_CHROME_MANIFESTS += ["chrome.ini"]
-BROWSER_CHROME_MANIFESTS += ["browser/browser.ini"]
+MOCHITEST_MANIFESTS += ["mochitest.toml"]
+MOCHITEST_CHROME_MANIFESTS += ["chrome.toml"]
+BROWSER_CHROME_MANIFESTS += ["browser/browser.toml"]
 
 # if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'windows':
 #

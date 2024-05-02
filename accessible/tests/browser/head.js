@@ -4,44 +4,17 @@
 
 "use strict";
 
-/* exported initAccService, shutdownAccService, waitForEvent, setE10sPrefs,
-            unsetE10sPrefs, accConsumersChanged */
+/* exported initAccService, shutdownAccService, waitForEvent, accConsumersChanged */
 
 // Load the shared-head file first.
-/* import-globals-from shared-head.js */
 Services.scriptloader.loadSubScript(
   "chrome://mochitests/content/browser/accessible/tests/browser/shared-head.js",
   this
 );
 
-const { CommonUtils } = ChromeUtils.import(
-  "chrome://mochitests/content/browser/accessible/tests/browser/Common.jsm"
+const { CommonUtils } = ChromeUtils.importESModule(
+  "chrome://mochitests/content/browser/accessible/tests/browser/Common.sys.mjs"
 );
-
-/**
- * Set e10s related preferences in the test environment.
- * @return {Promise} promise that resolves when preferences are set.
- */
-function setE10sPrefs() {
-  return new Promise(resolve =>
-    SpecialPowers.pushPrefEnv(
-      {
-        set: [["browser.tabs.remote.autostart", true]],
-      },
-      resolve
-    )
-  );
-}
-
-/**
- * Unset e10s related preferences in the test environment.
- * @return {Promise} promise that resolves when preferences are unset.
- */
-function unsetE10sPrefs() {
-  return new Promise(resolve => {
-    SpecialPowers.popPrefEnv(resolve);
-  });
-}
 
 /**
  * Capture when 'a11y-consumers-changed' event is fired.

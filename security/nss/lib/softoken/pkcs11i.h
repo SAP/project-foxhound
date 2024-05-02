@@ -324,7 +324,7 @@ struct SFTKSessionStr {
  * object hash tables (sessObjHashTable[] and tokObjHashTable), and
  * sessionObjectHandleCount.
  * slotLock protects the remaining protected elements:
- * password, isLoggedIn, ssoLoggedIn, and sessionCount,
+ * password, needLogin, isLoggedIn, ssoLoggedIn, and sessionCount,
  * and pwCheckLock serializes the key database password checks in
  * NSC_SetPIN and NSC_Login.
  *
@@ -874,6 +874,7 @@ NSSLOWKEYPrivateKey *sftk_FindKeyByPublicKey(SFTKSlot *slot, SECItem *dbKey);
  */
 CK_RV sftk_parseParameters(char *param, sftk_parameters *parsed, PRBool isFIPS);
 void sftk_freeParams(sftk_parameters *params);
+PRBool sftk_RawArgHasFlag(const char *entry, const char *flag, const void *pReserved);
 
 /*
  * narrow objects
@@ -912,6 +913,9 @@ void sftk_SSLv3MACConstantTime_Update(void *pctx, const void *data, unsigned int
 void sftk_MACConstantTime_EndHash(
     void *pctx, void *out, unsigned int *outLength, unsigned int maxLength);
 void sftk_MACConstantTime_DestroyContext(void *pctx, PRBool);
+
+/* Crypto Utilities */
+HASH_HashType sftk_GetHashTypeFromMechanism(CK_MECHANISM_TYPE mech);
 
 /****************************************
  * implement TLS Pseudo Random Function (PRF)

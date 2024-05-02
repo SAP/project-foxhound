@@ -11,6 +11,7 @@
 #include "mozilla/webrender/WebRenderAPI.h"
 #include "mozilla/image/WebRenderImageProvider.h"
 #include "mozilla/layers/AnimationInfo.h"
+#include "mozilla/layers/LayersTypes.h"
 #include "mozilla/dom/RemoteBrowser.h"
 #include "mozilla/UniquePtr.h"
 #include "nsIFrame.h"
@@ -39,6 +40,7 @@ class SourceSurface;
 namespace layers {
 
 class BasicLayerManager;
+class CanvasRenderer;
 class ImageClient;
 class ImageContainer;
 class WebRenderBridgeChild;
@@ -48,7 +50,6 @@ class WebRenderCanvasRendererAsync;
 class WebRenderImageData;
 class WebRenderImageProviderData;
 class WebRenderFallbackData;
-class WebRenderLocalCanvasData;
 class RenderRootStateManager;
 class WebRenderGroupData;
 
@@ -84,7 +85,6 @@ class WebRenderUserData {
   virtual WebRenderImageProviderData* AsImageProviderData() { return nullptr; }
   virtual WebRenderFallbackData* AsFallbackData() { return nullptr; }
   virtual WebRenderCanvasData* AsCanvasData() { return nullptr; }
-  virtual WebRenderLocalCanvasData* AsLocalCanvasData() { return nullptr; }
   virtual WebRenderGroupData* AsGroupData() { return nullptr; }
 
   enum class UserDataType {
@@ -93,11 +93,11 @@ class WebRenderUserData {
     eAPZAnimation,
     eAnimation,
     eCanvas,
-    eLocalCanvas,
     eRemote,
     eGroup,
     eMask,
     eImageProvider,  // ImageLib
+    eInProcessImage,
   };
 
   virtual UserDataType GetType() = 0;
@@ -206,7 +206,7 @@ class WebRenderImageProviderData final : public WebRenderUserData {
  protected:
   RefPtr<image::WebRenderImageProvider> mProvider;
   Maybe<wr::ImageKey> mKey;
-  image::ImgDrawResult mDrawResult;
+  image::ImgDrawResult mDrawResult = image::ImgDrawResult::NOT_READY;
 };
 
 /// Used for fallback rendering.
@@ -241,7 +241,7 @@ class WebRenderFallbackData : public WebRenderUserData {
   DisplayItemClip mClip;
   nsRect mBounds;
   nsRect mBuildingRect;
-  gfx::Size mScale;
+  gfx::MatrixScales mScale;
   float mOpacity;
 
  protected:
@@ -295,6 +295,7 @@ class WebRenderCanvasData : public WebRenderUserData {
   void ClearCanvasRenderer();
   WebRenderCanvasRendererAsync* GetCanvasRenderer();
   WebRenderCanvasRendererAsync* CreateCanvasRenderer();
+  bool SetCanvasRenderer(CanvasRenderer* aCanvasRenderer);
 
   void SetImageContainer(ImageContainer* aImageContainer);
   ImageContainer* GetImageContainer();
@@ -303,32 +304,6 @@ class WebRenderCanvasData : public WebRenderUserData {
  protected:
   RefPtr<WebRenderCanvasRendererAsync> mCanvasRenderer;
   RefPtr<ImageContainer> mContainer;
-};
-
-// WebRender data assocatiated with canvases that don't need to
-// synchronize across content-GPU process barrier.
-class WebRenderLocalCanvasData : public WebRenderUserData {
- public:
-  WebRenderLocalCanvasData(RenderRootStateManager* aManager,
-                           nsDisplayItem* aItem);
-  virtual ~WebRenderLocalCanvasData();
-
-  WebRenderLocalCanvasData* AsLocalCanvasData() override { return this; }
-  UserDataType GetType() override { return UserDataType::eLocalCanvas; }
-  static UserDataType Type() { return UserDataType::eLocalCanvas; }
-
-  void RequestFrameReadback();
-  void RefreshExternalImage();
-
-  // TODO: introduce a CanvasRenderer derivative to store here?
-
-  WeakPtr<webgpu::WebGPUChild> mGpuBridge;
-  uint64_t mGpuTextureId = 0;
-  wr::ExternalImageId mExternalImageId = {0};
-  wr::ImageKey mImageKey = {};
-  wr::ImageDescriptor mDescriptor;
-  gfx::SurfaceFormat mFormat = gfx::SurfaceFormat::UNKNOWN;
-  bool mDirty = false;
 };
 
 class WebRenderRemoteData : public WebRenderUserData {
@@ -373,7 +348,7 @@ class WebRenderMaskData : public WebRenderUserData {
   LayerIntRect mItemRect;
   nsPoint mMaskOffset;
   nsStyleImageLayers mMaskStyle;
-  gfx::Size mScale;
+  gfx::MatrixScales mScale;
   bool mShouldHandleOpacity;
 };
 

@@ -9,12 +9,14 @@
 #include "mozilla/Assertions.h"
 #include "mozilla/CheckedInt.h"
 #include "mozilla/ContentIterator.h"
-#include "mozilla/EditorUtils.h"
 #include "mozilla/IMEStateManager.h"
+#include "mozilla/IntegerRange.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/PresShell.h"
+#include "mozilla/RangeBoundary.h"
 #include "mozilla/RangeUtils.h"
 #include "mozilla/TextComposition.h"
+#include "mozilla/TextEditor.h"
 #include "mozilla/TextEvents.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/HTMLBRElement.h"
@@ -29,6 +31,7 @@
 #include "nsFocusManager.h"
 #include "nsFontMetrics.h"
 #include "nsFrameSelection.h"
+#include "nsHTMLTags.h"
 #include "nsIFrame.h"
 #include "nsLayoutUtils.h"
 #include "nsPresContext.h"
@@ -41,26 +44,108 @@
 
 #include <algorithm>
 
+// Work around conflicting define in rpcndr.h
+#if defined(small)
+#  undef small
+#endif  // defined(small)
+
+#if defined(XP_WIN) && !defined(EARLY_BETA_OR_EARLIER)
+#  define TRANSLATE_NEW_LINES
+#endif
+
 namespace mozilla {
 
 using namespace dom;
 using namespace widget;
 
 /******************************************************************/
-/* ContentEventHandler::RawRange                                  */
+/* ContentEventHandler::SimpleRangeBase                           */
 /******************************************************************/
+template <>
+ContentEventHandler::SimpleRangeBase<
+    RefPtr<nsINode>, RangeBoundary>::SimpleRangeBase() = default;
 
-void ContentEventHandler::RawRange::AssertStartIsBeforeOrEqualToEnd() {
+template <>
+ContentEventHandler::SimpleRangeBase<nsINode*,
+                                     RawRangeBoundary>::SimpleRangeBase()
+    : mRoot(nullptr) {
+#ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
+  mAssertNoGC.emplace();
+#endif  // #ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
+}
+
+template <>
+template <typename OtherNodeType, typename OtherRangeBoundaryType>
+ContentEventHandler::SimpleRangeBase<RefPtr<nsINode>, RangeBoundary>::
+    SimpleRangeBase(
+        const SimpleRangeBase<OtherNodeType, OtherRangeBoundaryType>& aOther)
+    : mRoot(aOther.GetRoot()),
+      mStart{aOther.Start().AsRaw()},
+      mEnd{aOther.End().AsRaw()}
+// Don't use the copy constructor of mAssertNoGC
+{}
+
+template <>
+template <typename OtherNodeType, typename OtherRangeBoundaryType>
+ContentEventHandler::SimpleRangeBase<nsINode*, RawRangeBoundary>::
+    SimpleRangeBase(
+        const SimpleRangeBase<OtherNodeType, OtherRangeBoundaryType>& aOther)
+    : mRoot(aOther.GetRoot()),
+      mStart{aOther.Start().AsRaw()},
+      mEnd{aOther.End().AsRaw()} {
+#ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
+  mAssertNoGC.emplace();
+#endif  // #ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
+}
+
+template <>
+ContentEventHandler::SimpleRangeBase<RefPtr<nsINode>, RangeBoundary>::
+    SimpleRangeBase(
+        SimpleRangeBase<RefPtr<nsINode>, RangeBoundary>&& aOther) noexcept
+    : mRoot(std::move(aOther.GetRoot())),
+      mStart(std::move(aOther.mStart)),
+      mEnd(std::move(aOther.mEnd)) {}
+
+template <>
+ContentEventHandler::SimpleRangeBase<nsINode*, RawRangeBoundary>::
+    SimpleRangeBase(
+        SimpleRangeBase<nsINode*, RawRangeBoundary>&& aOther) noexcept
+    : mRoot(std::move(aOther.GetRoot())),
+      mStart(std::move(aOther.mStart)),
+      mEnd(std::move(aOther.mEnd)) {
+#ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
+  mAssertNoGC.emplace();
+#endif  // #ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
+}
+
+#ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
+template <>
+ContentEventHandler::SimpleRangeBase<
+    RefPtr<nsINode>, RangeBoundary>::~SimpleRangeBase() = default;
+
+template <>
+ContentEventHandler::SimpleRangeBase<nsINode*,
+                                     RawRangeBoundary>::~SimpleRangeBase() {
+  MOZ_DIAGNOSTIC_ASSERT(!mMutationGuard.Mutated(0));
+}
+#endif  // #ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
+
+template <typename NodeType, typename RangeBoundaryType>
+void ContentEventHandler::SimpleRangeBase<
+    NodeType, RangeBoundaryType>::AssertStartIsBeforeOrEqualToEnd() {
   MOZ_ASSERT(
       *nsContentUtils::ComparePoints(
           mStart.Container(),
-          *mStart.Offset(NodePosition::OffsetFilter::kValidOrInvalidOffsets),
+          *mStart.Offset(
+              RangeBoundaryType::OffsetFilter::kValidOrInvalidOffsets),
           mEnd.Container(),
-          *mEnd.Offset(NodePosition::OffsetFilter::kValidOrInvalidOffsets)) <=
-      0);
+          *mEnd.Offset(
+              RangeBoundaryType::OffsetFilter::kValidOrInvalidOffsets)) <= 0);
 }
 
-nsresult ContentEventHandler::RawRange::SetStart(
+template <typename NodeType, typename RangeBoundaryType>
+nsresult
+ContentEventHandler::SimpleRangeBase<NodeType, RangeBoundaryType>::SetStart(
     const RawRangeBoundary& aStart) {
   nsINode* newRoot = RangeUtils::ComputeRootNode(aStart.Container());
   if (!newRoot) {
@@ -74,16 +159,20 @@ nsresult ContentEventHandler::RawRange::SetStart(
   // Collapse if not positioned yet, or if positioned in another document.
   if (!IsPositioned() || newRoot != mRoot) {
     mRoot = newRoot;
-    mStart = mEnd = aStart;
+    mStart.CopyFrom(aStart, RangeBoundaryIsMutationObserved::Yes);
+    mEnd.CopyFrom(aStart, RangeBoundaryIsMutationObserved::Yes);
     return NS_OK;
   }
 
-  mStart = aStart;
+  mStart.CopyFrom(aStart, RangeBoundaryIsMutationObserved::Yes);
   AssertStartIsBeforeOrEqualToEnd();
   return NS_OK;
 }
 
-nsresult ContentEventHandler::RawRange::SetEnd(const RawRangeBoundary& aEnd) {
+template <typename NodeType, typename RangeBoundaryType>
+nsresult
+ContentEventHandler::SimpleRangeBase<NodeType, RangeBoundaryType>::SetEnd(
+    const RawRangeBoundary& aEnd) {
   nsINode* newRoot = RangeUtils::ComputeRootNode(aEnd.Container());
   if (!newRoot) {
     return NS_ERROR_DOM_INVALID_NODE_TYPE_ERR;
@@ -96,27 +185,35 @@ nsresult ContentEventHandler::RawRange::SetEnd(const RawRangeBoundary& aEnd) {
   // Collapse if not positioned yet, or if positioned in another document.
   if (!IsPositioned() || newRoot != mRoot) {
     mRoot = newRoot;
-    mStart = mEnd = aEnd;
+    mStart.CopyFrom(aEnd, RangeBoundaryIsMutationObserved::Yes);
+    mEnd.CopyFrom(aEnd, RangeBoundaryIsMutationObserved::Yes);
     return NS_OK;
   }
 
-  mEnd = aEnd;
+  mEnd.CopyFrom(aEnd, RangeBoundaryIsMutationObserved::Yes);
   AssertStartIsBeforeOrEqualToEnd();
   return NS_OK;
 }
 
-nsresult ContentEventHandler::RawRange::SetEndAfter(nsINode* aEndContainer) {
+template <typename NodeType, typename RangeBoundaryType>
+nsresult
+ContentEventHandler::SimpleRangeBase<NodeType, RangeBoundaryType>::SetEndAfter(
+    nsINode* aEndContainer) {
   return SetEnd(RangeUtils::GetRawRangeBoundaryAfter(aEndContainer));
 }
 
-void ContentEventHandler::RawRange::SetStartAndEnd(const nsRange* aRange) {
+template <typename NodeType, typename RangeBoundaryType>
+void ContentEventHandler::SimpleRangeBase<
+    NodeType, RangeBoundaryType>::SetStartAndEnd(const nsRange* aRange) {
   DebugOnly<nsresult> rv =
       SetStartAndEnd(aRange->StartRef().AsRaw(), aRange->EndRef().AsRaw());
   MOZ_ASSERT(!aRange->IsPositioned() || NS_SUCCEEDED(rv));
 }
 
-nsresult ContentEventHandler::RawRange::SetStartAndEnd(
-    const RawRangeBoundary& aStart, const RawRangeBoundary& aEnd) {
+template <typename NodeType, typename RangeBoundaryType>
+nsresult ContentEventHandler::SimpleRangeBase<
+    NodeType, RangeBoundaryType>::SetStartAndEnd(const RawRangeBoundary& aStart,
+                                                 const RawRangeBoundary& aEnd) {
   nsINode* newStartRoot = RangeUtils::ComputeRootNode(aStart.Container());
   if (!newStartRoot) {
     return NS_ERROR_DOM_INVALID_NODE_TYPE_ERR;
@@ -132,8 +229,8 @@ nsresult ContentEventHandler::RawRange::SetStartAndEnd(
     MOZ_ASSERT(*aStart.Offset(RawRangeBoundary::OffsetFilter::kValidOffsets) <=
                *aEnd.Offset(RawRangeBoundary::OffsetFilter::kValidOffsets));
     mRoot = newStartRoot;
-    mStart = aStart;
-    mEnd = aEnd;
+    mStart.CopyFrom(aStart, RangeBoundaryIsMutationObserved::Yes);
+    mEnd.CopyFrom(aEnd, RangeBoundaryIsMutationObserved::Yes);
     return NS_OK;
   }
 
@@ -148,28 +245,32 @@ nsresult ContentEventHandler::RawRange::SetStartAndEnd(
   // If they have different root, this should be collapsed at the end point.
   if (newStartRoot != newEndRoot) {
     mRoot = newEndRoot;
-    mStart = mEnd = aEnd;
+    mStart.CopyFrom(aEnd, RangeBoundaryIsMutationObserved::Yes);
+    mEnd.CopyFrom(aEnd, RangeBoundaryIsMutationObserved::Yes);
     return NS_OK;
   }
 
   // Otherwise, set the range as specified.
   mRoot = newStartRoot;
-  mStart = aStart;
-  mEnd = aEnd;
+  mStart.CopyFrom(aStart, RangeBoundaryIsMutationObserved::Yes);
+  mEnd.CopyFrom(aEnd, RangeBoundaryIsMutationObserved::Yes);
   AssertStartIsBeforeOrEqualToEnd();
   return NS_OK;
 }
 
-nsresult ContentEventHandler::RawRange::SelectNodeContents(
-    nsINode* aNodeToSelectContents) {
-  nsINode* newRoot = RangeUtils::ComputeRootNode(aNodeToSelectContents);
+template <typename NodeType, typename RangeBoundaryType>
+nsresult ContentEventHandler::SimpleRangeBase<NodeType, RangeBoundaryType>::
+    SelectNodeContents(const nsINode* aNodeToSelectContents) {
+  nsINode* const newRoot =
+      RangeUtils::ComputeRootNode(const_cast<nsINode*>(aNodeToSelectContents));
   if (!newRoot) {
     return NS_ERROR_DOM_INVALID_NODE_TYPE_ERR;
   }
   mRoot = newRoot;
-  mStart = RawRangeBoundary(aNodeToSelectContents, nullptr);
-  mEnd = RawRangeBoundary(aNodeToSelectContents,
-                          aNodeToSelectContents->GetLastChild());
+  mStart =
+      RangeBoundaryType(const_cast<nsINode*>(aNodeToSelectContents), nullptr);
+  mEnd = RangeBoundaryType(const_cast<nsINode*>(aNodeToSelectContents),
+                           aNodeToSelectContents->GetLastChild());
   return NS_OK;
 }
 
@@ -260,10 +361,11 @@ nsresult ContentEventHandler::InitRootContent(
   if (!aNormalSelection.RangeCount()) {
     // If there is no selection range, we should compute the selection root
     // from ancestor limiter or root content of the document.
-    mRootContent = aNormalSelection.GetAncestorLimiter();
-    if (!mRootContent) {
-      mRootContent = mDocument->GetRootElement();
-      if (NS_WARN_IF(!mRootContent)) {
+    mRootElement =
+        Element::FromNodeOrNull(aNormalSelection.GetAncestorLimiter());
+    if (!mRootElement) {
+      mRootElement = mDocument->GetRootElement();
+      if (NS_WARN_IF(!mRootElement)) {
         return NS_ERROR_NOT_AVAILABLE;
       }
     }
@@ -296,23 +398,25 @@ nsresult ContentEventHandler::InitRootContent(
                "firstNormalSelectionRange crosses the document boundary");
 
   RefPtr<PresShell> presShell = mDocument->GetPresShell();
-  mRootContent = startNode->GetSelectionRootContent(presShell);
-  if (NS_WARN_IF(!mRootContent)) {
+  mRootElement =
+      Element::FromNodeOrNull(startNode->GetSelectionRootContent(presShell));
+  if (NS_WARN_IF(!mRootElement)) {
     return NS_ERROR_FAILURE;
   }
 
   return NS_OK;
 }
 
-nsresult ContentEventHandler::InitCommon(SelectionType aSelectionType,
+nsresult ContentEventHandler::InitCommon(EventMessage aEventMessage,
+                                         SelectionType aSelectionType,
                                          bool aRequireFlush) {
   if (mSelection && mSelection->Type() == aSelectionType) {
     return NS_OK;
   }
 
   mSelection = nullptr;
-  mRootContent = nullptr;
-  mFirstSelectedRawRange.Clear();
+  mRootElement = nullptr;
+  mFirstSelectedSimpleRange.Clear();
 
   nsresult rv = InitBasic(aRequireFlush);
   NS_ENSURE_SUCCESS(rv, rv);
@@ -346,20 +450,21 @@ nsresult ContentEventHandler::InitCommon(SelectionType aSelectionType,
   }
 
   if (mSelection->RangeCount()) {
-    mFirstSelectedRawRange.SetStartAndEnd(mSelection->GetRangeAt(0));
+    mFirstSelectedSimpleRange.SetStartAndEnd(mSelection->GetRangeAt(0));
     return NS_OK;
   }
 
   // Even if there are no selection ranges, it's usual case if aSelectionType
-  // is a special selection.
-  if (aSelectionType != SelectionType::eNormal) {
-    MOZ_ASSERT(!mFirstSelectedRawRange.IsPositioned());
+  // is a special selection or we're handling eQuerySelectedText.
+  if (aSelectionType != SelectionType::eNormal ||
+      aEventMessage == eQuerySelectedText) {
+    MOZ_ASSERT(!mFirstSelectedSimpleRange.IsPositioned());
     return NS_OK;
   }
 
   // But otherwise, we need to assume that there is a selection range at the
   // beginning of the root content if aSelectionType is eNormal.
-  rv = mFirstSelectedRawRange.CollapseTo(RawRangeBoundary(mRootContent, 0u));
+  rv = mFirstSelectedSimpleRange.CollapseTo(RawRangeBoundary(mRootElement, 0u));
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return NS_ERROR_UNEXPECTED;
   }
@@ -385,7 +490,8 @@ nsresult ContentEventHandler::Init(WidgetQueryContentEvent* aEvent) {
     return NS_ERROR_FAILURE;
   }
 
-  nsresult rv = InitCommon(selectionType, aEvent->NeedsToFlushLayout());
+  nsresult rv = InitCommon(aEvent->mMessage, selectionType,
+                           aEvent->AllowFlushingPendingNotifications());
   NS_ENSURE_SUCCESS(rv, rv);
 
   // Be aware, WidgetQueryContentEvent::mInput::mOffset should be made absolute
@@ -394,7 +500,7 @@ nsresult ContentEventHandler::Init(WidgetQueryContentEvent* aEvent) {
   // should initialize the event with the cached value.
   if (aEvent->mInput.mRelativeToInsertionPoint) {
     MOZ_ASSERT(selectionType == SelectionType::eNormal);
-    RefPtr<TextComposition> composition =
+    TextComposition* composition =
         IMEStateManager::GetTextCompositionFor(aEvent->mWidget);
     if (composition) {
       uint32_t compositionStart = composition->NativeOffsetOfStartComposition();
@@ -404,7 +510,7 @@ nsresult ContentEventHandler::Init(WidgetQueryContentEvent* aEvent) {
     } else {
       LineBreakType lineBreakType = GetLineBreakType(aEvent);
       uint32_t selectionStart = 0;
-      rv = GetStartOffset(mFirstSelectedRawRange, &selectionStart,
+      rv = GetStartOffset(mFirstSelectedSimpleRange, &selectionStart,
                           lineBreakType);
       if (NS_WARN_IF(NS_FAILED(rv))) {
         return NS_ERROR_FAILURE;
@@ -421,14 +527,14 @@ nsresult ContentEventHandler::Init(WidgetQueryContentEvent* aEvent) {
   // corresponding handler returns error.
   aEvent->EmplaceReply();
 
-  aEvent->mReply->mContentsRoot = mRootContent.get();
-
-  aEvent->mReply->mHasSelection = !mSelection->IsCollapsed();
+  aEvent->mReply->mContentsRoot = mRootElement.get();
+  aEvent->mReply->mIsEditableContent =
+      mRootElement && mRootElement->IsEditable();
 
   nsRect r;
   nsIFrame* frame = nsCaret::GetGeometry(mSelection, &r);
   if (!frame) {
-    frame = mRootContent->GetPrimaryFrame();
+    frame = mRootElement->GetPrimaryFrame();
     if (NS_WARN_IF(!frame)) {
       return NS_ERROR_FAILURE;
     }
@@ -441,7 +547,7 @@ nsresult ContentEventHandler::Init(WidgetQueryContentEvent* aEvent) {
 nsresult ContentEventHandler::Init(WidgetSelectionEvent* aEvent) {
   NS_ASSERTION(aEvent, "aEvent must not be null");
 
-  nsresult rv = InitCommon();
+  nsresult rv = InitCommon(aEvent->mMessage);
   NS_ENSURE_SUCCESS(rv, rv);
 
   aEvent->mSucceeded = false;
@@ -503,7 +609,7 @@ static bool IsPaddingBR(const nsIContent& aContent) {
 }
 
 static void ConvertToNativeNewlines(nsString& aString) {
-#if defined(XP_WIN)
+#if defined(TRANSLATE_NEW_LINES)
   aString.ReplaceSubstring(u"\n"_ns, u"\r\n"_ns);
 #endif
 }
@@ -512,7 +618,7 @@ static void AppendString(nsString& aString, const Text& aTextNode) {
   const uint32_t oldXPLength = aString.Length();
   aTextNode.TextFragment().AppendTo(aString);
   if (aTextNode.HasFlag(NS_MAYBE_MASKED)) {
-    EditorUtils::MaskString(aString, aTextNode, oldXPLength, 0);
+    TextEditor::MaskString(aString, aTextNode, oldXPLength, 0);
   }
 }
 
@@ -521,11 +627,23 @@ static void AppendSubString(nsString& aString, const Text& aTextNode,
   const uint32_t oldXPLength = aString.Length();
   aTextNode.TextFragment().AppendTo(aString, aXPOffset, aXPLength);
   if (aTextNode.HasFlag(NS_MAYBE_MASKED)) {
-    EditorUtils::MaskString(aString, aTextNode, oldXPLength, aXPOffset);
+    TextEditor::MaskString(aString, aTextNode, oldXPLength, aXPOffset);
   }
 }
 
-#if defined(XP_WIN)
+#if defined(TRANSLATE_NEW_LINES)
+template <typename StringType>
+static uint32_t CountNewlinesInXPLength(const StringType& aString) {
+  uint32_t count = 0;
+  const auto* end = aString.EndReading();
+  for (const auto* iter = aString.BeginReading(); iter < end; ++iter) {
+    if (*iter == '\n') {
+      count++;
+    }
+  }
+  return count;
+}
+
 static uint32_t CountNewlinesInXPLength(const Text& aTextNode,
                                         uint32_t aXPLength) {
   const nsTextFragment& textFragment = aTextNode.TextFragment();
@@ -533,34 +651,49 @@ static uint32_t CountNewlinesInXPLength(const Text& aTextNode,
   MOZ_ASSERT(aXPLength == UINT32_MAX || aXPLength <= textFragment.GetLength(),
              "aXPLength is out-of-bounds");
   const uint32_t length = std::min(aXPLength, textFragment.GetLength());
-  uint32_t newlines = 0;
-  for (uint32_t i = 0; i < length; ++i) {
-    if (textFragment.CharAt(i) == '\n') {
-      ++newlines;
+  if (!length) {
+    return 0;
+  }
+  if (textFragment.Is2b()) {
+    nsDependentSubstring str(textFragment.Get2b(), length);
+    return CountNewlinesInXPLength(str);
+  }
+  nsDependentCSubstring str(textFragment.Get1b(), length);
+  return CountNewlinesInXPLength(str);
+}
+
+template <typename StringType>
+static uint32_t CountNewlinesInNativeLength(const StringType& aString,
+                                            uint32_t aNativeLength) {
+  MOZ_ASSERT(
+      (aNativeLength == UINT32_MAX || aNativeLength <= aString.Length() * 2),
+      "aNativeLength is unexpected value");
+  uint32_t count = 0;
+  uint32_t nativeOffset = 0;
+  const auto* end = aString.EndReading();
+  for (const auto* iter = aString.BeginReading();
+       iter < end && nativeOffset < aNativeLength; ++iter, ++nativeOffset) {
+    if (*iter == '\n') {
+      count++;
+      nativeOffset++;
     }
   }
-  return newlines;
+  return count;
 }
 
 static uint32_t CountNewlinesInNativeLength(const Text& aTextNode,
                                             uint32_t aNativeLength) {
   const nsTextFragment& textFragment = aTextNode.TextFragment();
-  // For automated tests, we should abort on debug build.
-  MOZ_ASSERT((aNativeLength == UINT32_MAX ||
-              aNativeLength <= textFragment.GetLength() * 2),
-             "aNativeLength is unexpected value");
   const uint32_t xpLength = textFragment.GetLength();
-  uint32_t newlines = 0;
-  for (uint32_t i = 0, nativeOffset = 0;
-       i < xpLength && nativeOffset < aNativeLength; ++i, ++nativeOffset) {
-    // For automated tests, we should abort on debug build.
-    MOZ_ASSERT(i < xpLength, "i is out-of-bounds");
-    if (textFragment.CharAt(i) == '\n') {
-      ++newlines;
-      ++nativeOffset;
-    }
+  if (!xpLength) {
+    return 0;
   }
-  return newlines;
+  if (textFragment.Is2b()) {
+    nsDependentSubstring str(textFragment.Get2b(), xpLength);
+    return CountNewlinesInNativeLength(str, aNativeLength);
+  }
+  nsDependentCSubstring str(textFragment.Get1b(), xpLength);
+  return CountNewlinesInNativeLength(str, aNativeLength);
 }
 #endif
 
@@ -585,7 +718,7 @@ uint32_t ContentEventHandler::GetNativeTextLength(const Text& aTextNode,
 
 /* static inline */
 uint32_t ContentEventHandler::GetBRLength(LineBreakType aLineBreakType) {
-#if defined(XP_WIN)
+#if defined(TRANSLATE_NEW_LINES)
   // Length of \r\n
   return (aLineBreakType == LINE_BREAK_TYPE_NATIVE) ? 2 : 1;
 #else
@@ -598,7 +731,7 @@ uint32_t ContentEventHandler::GetTextLength(const Text& aTextNode,
                                             LineBreakType aLineBreakType,
                                             uint32_t aMaxLength) {
   const uint32_t textLengthDifference =
-#if defined(XP_WIN)
+#if defined(TRANSLATE_NEW_LINES)
       // On Windows, the length of a native newline ("\r\n") is twice the length
       // of the XP newline ("\n"), so XP length is equal to the length of the
       // native offset plus the number of newlines encountered in the string.
@@ -617,7 +750,7 @@ uint32_t ContentEventHandler::GetTextLength(const Text& aTextNode,
 
 static uint32_t ConvertToXPOffset(const Text& aTextNode,
                                   uint32_t aNativeOffset) {
-#if defined(XP_WIN)
+#if defined(TRANSLATE_NEW_LINES)
   // On Windows, the length of a native newline ("\r\n") is twice the length of
   // the XP newline ("\n"), so XP offset is equal to the length of the native
   // offset minus the number of newlines encountered in the string.
@@ -629,10 +762,25 @@ static uint32_t ConvertToXPOffset(const Text& aTextNode,
 }
 
 /* static */
-bool ContentEventHandler::ShouldBreakLineBefore(
-    const nsIContent& aContent, const nsINode* aRootNode /* = nullptr */) {
+uint32_t ContentEventHandler::GetNativeTextLength(const nsAString& aText) {
+  const uint32_t textLengthDifference =
+#if defined(TRANSLATE_NEW_LINES)
+      // On Windows, the length of a native newline ("\r\n") is twice the length
+      // of the XP newline ("\n"), so XP length is equal to the length of the
+      // native offset plus the number of newlines encountered in the string.
+      CountNewlinesInXPLength(aText);
+#else
+      // On other platforms, the native and XP newlines are the same.
+      0;
+#endif
+  return aText.Length() + textLengthDifference;
+}
+
+/* static */
+bool ContentEventHandler::ShouldBreakLineBefore(const nsIContent& aContent,
+                                                const Element* aRootElement) {
   // We don't need to append linebreak at the start of the root element.
-  if (&aContent == aRootNode) {
+  if (&aContent == aRootElement) {
     return false;
   }
 
@@ -644,73 +792,96 @@ bool ContentEventHandler::ShouldBreakLineBefore(
     return false;
   }
 
-  // If the element is <br>, we need to check if the <br> is caused by web
-  // content.  Otherwise, i.e., it's caused by internal reason of Gecko,
-  // it shouldn't be exposed as a line break to flatten text.
-  if (aContent.IsHTMLElement(nsGkAtoms::br)) {
-    return IsContentBR(aContent);
+  switch (
+      nsHTMLTags::CaseSensitiveAtomTagToId(aContent.NodeInfo()->NameAtom())) {
+    case eHTMLTag_br:
+      // If the element is <br>, we need to check if the <br> is caused by web
+      // content.  Otherwise, i.e., it's caused by internal reason of Gecko,
+      // it shouldn't be exposed as a line break to flatten text.
+      return IsContentBR(aContent);
+    case eHTMLTag_a:
+    case eHTMLTag_abbr:
+    case eHTMLTag_acronym:
+    case eHTMLTag_b:
+    case eHTMLTag_bdi:
+    case eHTMLTag_bdo:
+    case eHTMLTag_big:
+    case eHTMLTag_cite:
+    case eHTMLTag_code:
+    case eHTMLTag_data:
+    case eHTMLTag_del:
+    case eHTMLTag_dfn:
+    case eHTMLTag_em:
+    case eHTMLTag_font:
+    case eHTMLTag_i:
+    case eHTMLTag_ins:
+    case eHTMLTag_kbd:
+    case eHTMLTag_mark:
+    case eHTMLTag_s:
+    case eHTMLTag_samp:
+    case eHTMLTag_small:
+    case eHTMLTag_span:
+    case eHTMLTag_strike:
+    case eHTMLTag_strong:
+    case eHTMLTag_sub:
+    case eHTMLTag_sup:
+    case eHTMLTag_time:
+    case eHTMLTag_tt:
+    case eHTMLTag_u:
+    case eHTMLTag_var:
+      // Note that ideally, we should refer the style of the primary frame of
+      // aContent for deciding if it's an inline.  However, it's difficult
+      // IMEContentObserver to notify IME of text change caused by style change.
+      // Therefore, currently, we should check only from the tag for now.
+      return false;
+    case eHTMLTag_userdefined:
+    case eHTMLTag_unknown:
+      // If the element is unknown element, we shouldn't insert line breaks
+      // before it since unknown elements should be ignored.
+      return false;
+    default:
+      return true;
   }
-
-  // Note that ideally, we should refer the style of the primary frame of
-  // aContent for deciding if it's an inline.  However, it's difficult
-  // IMEContentObserver to notify IME of text change caused by style change.
-  // Therefore, currently, we should check only from the tag for now.
-  if (aContent.IsAnyOfHTMLElements(
-          nsGkAtoms::a, nsGkAtoms::abbr, nsGkAtoms::acronym, nsGkAtoms::b,
-          nsGkAtoms::bdi, nsGkAtoms::bdo, nsGkAtoms::big, nsGkAtoms::cite,
-          nsGkAtoms::code, nsGkAtoms::data, nsGkAtoms::del, nsGkAtoms::dfn,
-          nsGkAtoms::em, nsGkAtoms::font, nsGkAtoms::i, nsGkAtoms::ins,
-          nsGkAtoms::kbd, nsGkAtoms::mark, nsGkAtoms::s, nsGkAtoms::samp,
-          nsGkAtoms::small, nsGkAtoms::span, nsGkAtoms::strike,
-          nsGkAtoms::strong, nsGkAtoms::sub, nsGkAtoms::sup, nsGkAtoms::time,
-          nsGkAtoms::tt, nsGkAtoms::u, nsGkAtoms::var)) {
-    return false;
-  }
-
-  // If the element is unknown element, we shouldn't insert line breaks before
-  // it since unknown elements should be ignored.
-  RefPtr<HTMLUnknownElement> unknownHTMLElement =
-      do_QueryObject(const_cast<nsIContent*>(&aContent));
-  return !unknownHTMLElement;
 }
 
 nsresult ContentEventHandler::GenerateFlatTextContent(
-    nsIContent* aContent, nsString& aString, LineBreakType aLineBreakType) {
+    const Element* aElement, nsString& aString, LineBreakType aLineBreakType) {
   MOZ_ASSERT(aString.IsEmpty());
 
-  RawRange rawRange;
-  nsresult rv = rawRange.SelectNodeContents(aContent);
+  UnsafeSimpleRange rawRange;
+  nsresult rv = rawRange.SelectNodeContents(aElement);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
   return GenerateFlatTextContent(rawRange, aString, aLineBreakType);
 }
 
+template <typename NodeType, typename RangeBoundaryType>
 nsresult ContentEventHandler::GenerateFlatTextContent(
-    const RawRange& aRawRange, nsString& aString,
-    LineBreakType aLineBreakType) {
+    const SimpleRangeBase<NodeType, RangeBoundaryType>& aSimpleRange,
+    nsString& aString, LineBreakType aLineBreakType) {
   MOZ_ASSERT(aString.IsEmpty());
 
-  if (aRawRange.Collapsed()) {
+  if (aSimpleRange.Collapsed()) {
     return NS_OK;
   }
 
-  nsINode* startNode = aRawRange.GetStartContainer();
-  nsINode* endNode = aRawRange.GetEndContainer();
+  nsINode* startNode = aSimpleRange.GetStartContainer();
+  nsINode* endNode = aSimpleRange.GetEndContainer();
   if (NS_WARN_IF(!startNode) || NS_WARN_IF(!endNode)) {
     return NS_ERROR_FAILURE;
   }
 
   if (startNode == endNode && startNode->IsText()) {
-    AppendSubString(aString, *startNode->AsText(), aRawRange.StartOffset(),
-                    aRawRange.EndOffset() - aRawRange.StartOffset());
+    AppendSubString(aString, *startNode->AsText(), aSimpleRange.StartOffset(),
+                    aSimpleRange.EndOffset() - aSimpleRange.StartOffset());
     ConvertToNativeNewlines(aString);
     return NS_OK;
   }
 
-  PreContentIterator preOrderIter;
-  nsresult rv =
-      preOrderIter.Init(aRawRange.Start().AsRaw(), aRawRange.End().AsRaw());
+  UnsafePreContentIterator preOrderIter;
+  nsresult rv = preOrderIter.Init(aSimpleRange.Start().AsRaw(),
+                                  aSimpleRange.End().AsRaw());
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
@@ -725,14 +896,14 @@ nsresult ContentEventHandler::GenerateFlatTextContent(
 
     if (const Text* textNode = Text::FromNode(node)) {
       if (textNode == startNode) {
-        AppendSubString(aString, *textNode, aRawRange.StartOffset(),
-                        textNode->TextLength() - aRawRange.StartOffset());
+        AppendSubString(aString, *textNode, aSimpleRange.StartOffset(),
+                        textNode->TextLength() - aSimpleRange.StartOffset());
       } else if (textNode == endNode) {
-        AppendSubString(aString, *textNode, 0, aRawRange.EndOffset());
+        AppendSubString(aString, *textNode, 0, aSimpleRange.EndOffset());
       } else {
         AppendString(aString, *textNode);
       }
-    } else if (ShouldBreakLineBefore(*node->AsContent(), mRootContent)) {
+    } else if (ShouldBreakLineBefore(*node->AsContent(), mRootElement)) {
       aString.Append(char16_t('\n'));
     }
   }
@@ -806,12 +977,12 @@ void ContentEventHandler::AppendFontRanges(FontRangeArray& aFontRanges,
 
     gfxTextRun::Range skipRange(iter.ConvertOriginalToSkipped(frameXPStart),
                                 iter.ConvertOriginalToSkipped(frameXPEnd));
-    gfxTextRun::GlyphRunIterator runIter(textRun, skipRange);
     uint32_t lastXPEndOffset = frameXPStart;
-    while (runIter.NextRun()) {
-      gfxFont* font = runIter.GetGlyphRun()->mFont.get();
+    for (gfxTextRun::GlyphRunIterator runIter(textRun, skipRange);
+         !runIter.AtEnd(); runIter.NextRun()) {
+      gfxFont* font = runIter.GlyphRun()->mFont.get();
       uint32_t startXPOffset =
-          iter.ConvertSkippedToOriginal(runIter.GetStringStart());
+          iter.ConvertSkippedToOriginal(runIter.StringStart());
       // It is possible that the first glyph run has exceeded the frame,
       // because the whole frame is filled by skipped chars.
       if (startXPOffset >= frameXPEnd) {
@@ -840,8 +1011,7 @@ void ContentEventHandler::AppendFontRanges(FontRangeArray& aFontRanges,
 
       // The converted original offset may exceed the range,
       // hence we need to clamp it.
-      uint32_t endXPOffset =
-          iter.ConvertSkippedToOriginal(runIter.GetStringEnd());
+      uint32_t endXPOffset = iter.ConvertSkippedToOriginal(runIter.StringEnd());
       endXPOffset = std::min(frameXPEnd, endXPOffset);
       baseOffset += GetTextLengthInRange(aTextNode, startXPOffset, endXPOffset,
                                          aLineBreakType);
@@ -860,25 +1030,25 @@ void ContentEventHandler::AppendFontRanges(FontRangeArray& aFontRanges,
 }
 
 nsresult ContentEventHandler::GenerateFlatFontRanges(
-    const RawRange& aRawRange, FontRangeArray& aFontRanges, uint32_t& aLength,
-    LineBreakType aLineBreakType) {
+    const UnsafeSimpleRange& aSimpleRange, FontRangeArray& aFontRanges,
+    uint32_t& aLength, LineBreakType aLineBreakType) {
   MOZ_ASSERT(aFontRanges.IsEmpty(), "aRanges must be empty array");
 
-  if (aRawRange.Collapsed()) {
+  if (aSimpleRange.Collapsed()) {
     return NS_OK;
   }
 
-  nsINode* startNode = aRawRange.GetStartContainer();
-  nsINode* endNode = aRawRange.GetEndContainer();
+  nsINode* startNode = aSimpleRange.GetStartContainer();
+  nsINode* endNode = aSimpleRange.GetEndContainer();
   if (NS_WARN_IF(!startNode) || NS_WARN_IF(!endNode)) {
     return NS_ERROR_FAILURE;
   }
 
   // baseOffset is the flattened offset of each content node.
   uint32_t baseOffset = 0;
-  PreContentIterator preOrderIter;
-  nsresult rv =
-      preOrderIter.Init(aRawRange.Start().AsRaw(), aRawRange.End().AsRaw());
+  UnsafePreContentIterator preOrderIter;
+  nsresult rv = preOrderIter.Init(aSimpleRange.Start().AsRaw(),
+                                  aSimpleRange.End().AsRaw());
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
@@ -894,14 +1064,14 @@ nsresult ContentEventHandler::GenerateFlatFontRanges(
 
     if (const Text* textNode = Text::FromNode(content)) {
       const uint32_t startOffset =
-          textNode != startNode ? 0 : aRawRange.StartOffset();
-      const uint32_t endOffset =
-          textNode != endNode ? textNode->TextLength() : aRawRange.EndOffset();
+          textNode != startNode ? 0 : aSimpleRange.StartOffset();
+      const uint32_t endOffset = textNode != endNode ? textNode->TextLength()
+                                                     : aSimpleRange.EndOffset();
       AppendFontRanges(aFontRanges, *textNode, baseOffset, startOffset,
                        endOffset, aLineBreakType);
       baseOffset += GetTextLengthInRange(*textNode, startOffset, endOffset,
                                          aLineBreakType);
-    } else if (ShouldBreakLineBefore(*content, mRootContent)) {
+    } else if (ShouldBreakLineBefore(*content, mRootElement)) {
       if (aFontRanges.IsEmpty()) {
         MOZ_ASSERT(baseOffset == 0);
         FontRange* fontRange = AppendFontRange(aFontRanges, baseOffset);
@@ -988,29 +1158,28 @@ nsresult ContentEventHandler::ExpandToClusterBoundary(
   return NS_OK;
 }
 
-nsresult ContentEventHandler::SetRawRangeFromFlatTextOffset(
-    RawRange* aRawRange, uint32_t aOffset, uint32_t aLength,
-    LineBreakType aLineBreakType, bool aExpandToClusterBoundaries,
-    uint32_t* aNewOffset, Text** aLastTextNode) {
-  if (aNewOffset) {
-    *aNewOffset = aOffset;
-  }
-  if (aLastTextNode) {
-    *aLastTextNode = nullptr;
-  }
+template <typename RangeType, typename TextNodeType>
+Result<ContentEventHandler::DOMRangeAndAdjustedOffsetInFlattenedTextBase<
+           RangeType, TextNodeType>,
+       nsresult>
+ContentEventHandler::ConvertFlatTextOffsetToDOMRangeBase(
+    uint32_t aOffset, uint32_t aLength, LineBreakType aLineBreakType,
+    bool aExpandToClusterBoundaries) {
+  DOMRangeAndAdjustedOffsetInFlattenedTextBase<RangeType, TextNodeType> result;
+  result.mAdjustedOffset = aOffset;
 
   // Special case like <br contenteditable>
-  if (!mRootContent->HasChildren()) {
-    nsresult rv = aRawRange->CollapseTo(RawRangeBoundary(mRootContent, 0u));
+  if (!mRootElement->HasChildren()) {
+    nsresult rv = result.mRange.CollapseTo(RawRangeBoundary(mRootElement, 0u));
     if (NS_WARN_IF(NS_FAILED(rv))) {
-      return rv;
+      return Err(rv);
     }
   }
 
-  PreContentIterator preOrderIter;
-  nsresult rv = preOrderIter.Init(mRootContent);
+  UnsafePreContentIterator preOrderIter;
+  nsresult rv = preOrderIter.Init(mRootElement);
   if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
+    return Err(rv);
   }
 
   uint32_t offset = 0;
@@ -1021,21 +1190,20 @@ nsresult ContentEventHandler::SetRawRangeFromFlatTextOffset(
     if (NS_WARN_IF(!node)) {
       break;
     }
-    // FYI: mRootContent shouldn't cause any text. So, we can skip it simply.
-    if (node == mRootContent || !node->IsContent()) {
+    // FYI: mRootElement shouldn't cause any text. So, we can skip it simply.
+    if (node == mRootElement || !node->IsContent()) {
       continue;
     }
     nsIContent* const content = node->AsContent();
     Text* const contentAsText = Text::FromNode(content);
 
-    if (aLastTextNode && contentAsText) {
-      NS_IF_RELEASE(*aLastTextNode);
-      NS_ADDREF(*aLastTextNode = contentAsText);
+    if (contentAsText) {
+      result.mLastTextNode = contentAsText;
     }
 
     uint32_t textLength = contentAsText
                               ? GetTextLength(*contentAsText, aLineBreakType)
-                              : (ShouldBreakLineBefore(*content, mRootContent)
+                              : (ShouldBreakLineBefore(*content, mRootElement)
                                      ? GetBRLength(aLineBreakType)
                                      : 0);
     if (!textLength) {
@@ -1059,12 +1227,10 @@ nsresult ContentEventHandler::SetRawRangeFromFlatTextOffset(
           nsresult rv =
               ExpandToClusterBoundary(*contentAsText, false, &xpOffset);
           if (NS_WARN_IF(NS_FAILED(rv))) {
-            return rv;
+            return Err(rv);
           }
-          if (aNewOffset) {
-            // This is correct since a cluster shouldn't include line break.
-            *aNewOffset -= (oldXPOffset - xpOffset);
-          }
+          // This is correct since a cluster shouldn't include line break.
+          result.mAdjustedOffset -= (oldXPOffset - xpOffset);
         }
         startNode = contentAsText;
         startNodeOffset = Some(xpOffset);
@@ -1072,23 +1238,23 @@ nsresult ContentEventHandler::SetRawRangeFromFlatTextOffset(
         // Rule #1.2 [<element>
         startNode = content->GetParent();
         if (NS_WARN_IF(!startNode)) {
-          return NS_ERROR_FAILURE;
+          return Err(NS_ERROR_FAILURE);
         }
         startNodeOffset = startNode->ComputeIndexOf(content);
-        if (MOZ_UNLIKELY(NS_WARN_IF(startNodeOffset.isNothing()))) {
+        if (NS_WARN_IF(startNodeOffset.isNothing())) {
           // The content is being removed from the parent!
-          return NS_ERROR_FAILURE;
+          return Err(NS_ERROR_FAILURE);
         }
       } else if (!content->HasChildren()) {
         // Rule #1.3: <element/>[
         startNode = content->GetParent();
         if (NS_WARN_IF(!startNode)) {
-          return NS_ERROR_FAILURE;
+          return Err(NS_ERROR_FAILURE);
         }
         startNodeOffset = startNode->ComputeIndexOf(content);
-        if (MOZ_UNLIKELY(NS_WARN_IF(startNodeOffset.isNothing()))) {
+        if (NS_WARN_IF(startNodeOffset.isNothing())) {
           // The content is being removed from the parent!
-          return NS_ERROR_FAILURE;
+          return Err(NS_ERROR_FAILURE);
         }
         MOZ_ASSERT(*startNodeOffset != UINT32_MAX);
         ++(*startNodeOffset);
@@ -1100,18 +1266,18 @@ nsresult ContentEventHandler::SetRawRangeFromFlatTextOffset(
       NS_ASSERTION(startNode, "startNode must not be nullptr");
       MOZ_ASSERT(startNodeOffset.isSome(),
                  "startNodeOffset must not be Nothing");
-      rv = aRawRange->SetStart(startNode, *startNodeOffset);
+      rv = result.mRange.SetStart(startNode, *startNodeOffset);
       if (NS_WARN_IF(NS_FAILED(rv))) {
-        return rv;
+        return Err(rv);
       }
       startSet = true;
 
       if (!aLength) {
-        rv = aRawRange->SetEnd(startNode, *startNodeOffset);
+        rv = result.mRange.SetEnd(startNode, *startNodeOffset);
         if (NS_WARN_IF(NS_FAILED(rv))) {
-          return rv;
+          return Err(rv);
         }
-        return NS_OK;
+        return result;
       }
     }
 
@@ -1143,15 +1309,15 @@ nsresult ContentEventHandler::SetRawRangeFromFlatTextOffset(
           nsresult rv =
               ExpandToClusterBoundary(*contentAsText, true, &xpOffset);
           if (NS_WARN_IF(NS_FAILED(rv))) {
-            return rv;
+            return Err(rv);
           }
         }
         NS_ASSERTION(xpOffset <= INT32_MAX, "The end node offset is too large");
-        nsresult rv = aRawRange->SetEnd(contentAsText, xpOffset);
+        nsresult rv = result.mRange.SetEnd(contentAsText, xpOffset);
         if (NS_WARN_IF(NS_FAILED(rv))) {
-          return rv;
+          return Err(rv);
         }
-        return NS_OK;
+        return result;
       }
 
       if (endOffset == offset) {
@@ -1162,76 +1328,73 @@ nsresult ContentEventHandler::SetRawRangeFromFlatTextOffset(
         MOZ_ASSERT(false,
                    "This case should've already been handled at "
                    "the last node which caused some text");
-        return NS_ERROR_FAILURE;
+        return Err(NS_ERROR_FAILURE);
       }
 
       if (content->HasChildren() &&
-          ShouldBreakLineBefore(*content, mRootContent)) {
+          ShouldBreakLineBefore(*content, mRootElement)) {
         // Rule #2.3: </element>]
-        rv = aRawRange->SetEnd(content, 0);
+        rv = result.mRange.SetEnd(content, 0);
         if (NS_WARN_IF(NS_FAILED(rv))) {
-          return rv;
+          return Err(rv);
         }
-        return NS_OK;
+        return result;
       }
 
       // Rule #2.4: <element/>]
       nsINode* endNode = content->GetParent();
       if (NS_WARN_IF(!endNode)) {
-        return NS_ERROR_FAILURE;
+        return Err(NS_ERROR_FAILURE);
       }
       const Maybe<uint32_t> indexInParent = endNode->ComputeIndexOf(content);
-      if (MOZ_UNLIKELY(NS_WARN_IF(indexInParent.isNothing()))) {
+      if (NS_WARN_IF(indexInParent.isNothing())) {
         // The content is being removed from the parent!
-        return NS_ERROR_FAILURE;
+        return Err(NS_ERROR_FAILURE);
       }
       MOZ_ASSERT(*indexInParent != UINT32_MAX);
-      rv = aRawRange->SetEnd(endNode, *indexInParent + 1);
+      rv = result.mRange.SetEnd(endNode, *indexInParent + 1);
       if (NS_WARN_IF(NS_FAILED(rv))) {
-        return rv;
+        return Err(rv);
       }
-      return NS_OK;
+      return result;
     }
 
     offset += textLength;
   }
 
   if (!startSet) {
-    MOZ_ASSERT(!mRootContent->IsText());
     if (!offset) {
       // Rule #1.5: <root>[</root>
       // When there are no nodes causing text, the start of the DOM range
       // should be start of the root node since clicking on such editor (e.g.,
       // <div contenteditable><span></span></div>) sets caret to the start of
       // the editor (i.e., before <span> in the example).
-      rv = aRawRange->SetStart(mRootContent, 0);
+      rv = result.mRange.SetStart(mRootElement, 0);
       if (NS_WARN_IF(NS_FAILED(rv))) {
-        return rv;
+        return Err(rv);
       }
       if (!aLength) {
-        rv = aRawRange->SetEnd(mRootContent, 0);
+        rv = result.mRange.SetEnd(mRootElement, 0);
         if (NS_WARN_IF(NS_FAILED(rv))) {
-          return rv;
+          return Err(rv);
         }
-        return NS_OK;
+        return result;
       }
     } else {
       // Rule #1.5: [</root>
-      rv = aRawRange->SetStart(mRootContent, mRootContent->GetChildCount());
+      rv = result.mRange.SetStart(mRootElement, mRootElement->GetChildCount());
       if (NS_WARN_IF(NS_FAILED(rv))) {
-        return rv;
+        return result;
       }
     }
-    if (aNewOffset) {
-      *aNewOffset = offset;
-    }
+    result.mAdjustedOffset = offset;
   }
   // Rule #2.5: ]</root>
-  rv = aRawRange->SetEnd(mRootContent, mRootContent->GetChildCount());
+  rv = result.mRange.SetEnd(mRootElement, mRootElement->GetChildCount());
   if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
+    return Err(rv);
   }
-  return NS_OK;
+  return result;
 }
 
 /* static */
@@ -1299,14 +1462,28 @@ nsresult ContentEventHandler::HandleQueryContentEvent(
 
 // Similar to nsFrameSelection::GetFrameForNodeOffset,
 // but this is more flexible for OnQueryTextRect to use
-static nsresult GetFrameForTextRect(const nsINode* aNode, int32_t aNodeOffset,
-                                    bool aHint, nsIFrame** aReturnFrame) {
-  NS_ENSURE_TRUE(aNode && aNode->IsContent(), NS_ERROR_UNEXPECTED);
-  nsIFrame* frame = aNode->AsContent()->GetPrimaryFrame();
-  NS_ENSURE_TRUE(frame, NS_ERROR_FAILURE);
+static Result<nsIFrame*, nsresult> GetFrameForTextRect(const nsINode* aNode,
+                                                       int32_t aNodeOffset,
+                                                       bool aHint) {
+  const nsIContent* content = nsIContent::FromNodeOrNull(aNode);
+  if (NS_WARN_IF(!content)) {
+    return Err(NS_ERROR_UNEXPECTED);
+  }
+  nsIFrame* frame = content->GetPrimaryFrame();
+  // The node may be invisible, e.g., `display: none`, invisible text node
+  // around block elements, etc.  Therefore, don't warn when we don't find
+  // a primary frame.
+  if (!frame) {
+    return nullptr;
+  }
   int32_t childNodeOffset = 0;
-  return frame->GetChildFrameContainingOffset(aNodeOffset, aHint,
-                                              &childNodeOffset, aReturnFrame);
+  nsIFrame* returnFrame = nullptr;
+  nsresult rv = frame->GetChildFrameContainingOffset(
+      aNodeOffset, aHint, &childNodeOffset, &returnFrame);
+  if (NS_FAILED(rv)) {
+    return Err(rv);
+  }
+  return returnFrame;
 }
 
 nsresult ContentEventHandler::OnQuerySelectedText(
@@ -1318,38 +1495,38 @@ nsresult ContentEventHandler::OnQuerySelectedText(
 
   MOZ_ASSERT(aEvent->mReply->mOffsetAndData.isNothing());
 
-  if (!mFirstSelectedRawRange.IsPositioned()) {
-    MOZ_ASSERT(aEvent->mInput.mSelectionType != SelectionType::eNormal);
+  if (!mFirstSelectedSimpleRange.IsPositioned()) {
     MOZ_ASSERT(aEvent->mReply->mOffsetAndData.isNothing());
-    MOZ_ASSERT(!aEvent->mReply->mHasSelection);
+    MOZ_ASSERT_IF(mSelection, !mSelection->RangeCount());
     // This is special case that `mReply` is emplaced, but mOffsetAndData is
     // not emplaced but treated as succeeded because of no selection ranges
     // is a usual case.
     return NS_OK;
   }
 
-  nsINode* const startNode = mFirstSelectedRawRange.GetStartContainer();
-  nsINode* const endNode = mFirstSelectedRawRange.GetEndContainer();
+  const UnsafeSimpleRange firstSelectedSimpleRange(mFirstSelectedSimpleRange);
+  nsINode* const startNode = firstSelectedSimpleRange.GetStartContainer();
+  nsINode* const endNode = firstSelectedSimpleRange.GetEndContainer();
 
   // Make sure the selection is within the root content range.
-  if (!startNode->IsInclusiveDescendantOf(mRootContent) ||
-      !endNode->IsInclusiveDescendantOf(mRootContent)) {
+  if (!startNode->IsInclusiveDescendantOf(mRootElement) ||
+      !endNode->IsInclusiveDescendantOf(mRootElement)) {
     return NS_ERROR_NOT_AVAILABLE;
   }
 
   LineBreakType lineBreakType = GetLineBreakType(aEvent);
   uint32_t startOffset = 0;
-  if (NS_WARN_IF(NS_FAILED(GetStartOffset(mFirstSelectedRawRange, &startOffset,
-                                          lineBreakType)))) {
+  if (NS_WARN_IF(NS_FAILED(GetStartOffset(firstSelectedSimpleRange,
+                                          &startOffset, lineBreakType)))) {
     return NS_ERROR_FAILURE;
   }
 
-  const RangeBoundary& anchorRef = mSelection->RangeCount() > 0
-                                       ? mSelection->AnchorRef()
-                                       : mFirstSelectedRawRange.Start();
-  const RangeBoundary& focusRef = mSelection->RangeCount() > 0
-                                      ? mSelection->FocusRef()
-                                      : mFirstSelectedRawRange.End();
+  const RawRangeBoundary anchorRef = mSelection->RangeCount() > 0
+                                         ? mSelection->AnchorRef().AsRaw()
+                                         : firstSelectedSimpleRange.Start();
+  const RawRangeBoundary focusRef = mSelection->RangeCount() > 0
+                                        ? mSelection->FocusRef().AsRaw()
+                                        : firstSelectedSimpleRange.End();
   if (NS_WARN_IF(!anchorRef.IsSet()) || NS_WARN_IF(!focusRef.IsSet())) {
     return NS_ERROR_FAILURE;
   }
@@ -1376,9 +1553,9 @@ nsresult ContentEventHandler::OnQuerySelectedText(
     }
 
     nsString selectedString;
-    if (!mFirstSelectedRawRange.Collapsed() &&
+    if (!firstSelectedSimpleRange.Collapsed() &&
         NS_WARN_IF(NS_FAILED(GenerateFlatTextContent(
-            mFirstSelectedRawRange, selectedString, lineBreakType)))) {
+            firstSelectedSimpleRange, selectedString, lineBreakType)))) {
       return NS_ERROR_FAILURE;
     }
     aEvent->mReply->mOffsetAndData.emplace(startOffset, selectedString,
@@ -1393,15 +1570,16 @@ nsresult ContentEventHandler::OnQuerySelectedText(
                                            OffsetAndDataFor::SelectedString);
   }
 
-  nsIFrame* frame = nullptr;
-  rv = GetFrameForTextRect(
+  Result<nsIFrame*, nsresult> frameForTextRectOrError = GetFrameForTextRect(
       focusRef.Container(),
-      focusRef.Offset(RangeBoundary::OffsetFilter::kValidOffsets).valueOr(0),
-      true, &frame);
-  if (NS_SUCCEEDED(rv) && frame) {
-    aEvent->mReply->mWritingMode = frame->GetWritingMode();
-  } else {
+      focusRef.Offset(RawRangeBoundary::OffsetFilter::kValidOffsets).valueOr(0),
+      true);
+  if (NS_WARN_IF(frameForTextRectOrError.isErr()) ||
+      !frameForTextRectOrError.inspect()) {
     aEvent->mReply->mWritingMode = WritingMode();
+  } else {
+    aEvent->mReply->mWritingMode =
+        frameForTextRectOrError.inspect()->GetWritingMode();
   }
 
   MOZ_ASSERT(aEvent->Succeeded());
@@ -1419,28 +1597,32 @@ nsresult ContentEventHandler::OnQueryTextContent(
 
   LineBreakType lineBreakType = GetLineBreakType(aEvent);
 
-  RawRange rawRange;
-  uint32_t startOffset = 0;
-  if (NS_WARN_IF(NS_FAILED(SetRawRangeFromFlatTextOffset(
-          &rawRange, aEvent->mInput.mOffset, aEvent->mInput.mLength,
-          lineBreakType, false, &startOffset)))) {
+  Result<UnsafeDOMRangeAndAdjustedOffsetInFlattenedText, nsresult>
+      domRangeAndAdjustedOffsetOrError = ConvertFlatTextOffsetToUnsafeDOMRange(
+          aEvent->mInput.mOffset, aEvent->mInput.mLength, lineBreakType, false);
+  if (MOZ_UNLIKELY(domRangeAndAdjustedOffsetOrError.isErr())) {
+    NS_WARNING(
+        "ContentEventHandler::ConvertFlatTextOffsetToDOMRangeBase() failed");
     return NS_ERROR_FAILURE;
   }
+  const UnsafeDOMRangeAndAdjustedOffsetInFlattenedText
+      domRangeAndAdjustedOffset = domRangeAndAdjustedOffsetOrError.unwrap();
 
   nsString textInRange;
-  if (NS_WARN_IF(NS_FAILED(
-          GenerateFlatTextContent(rawRange, textInRange, lineBreakType)))) {
+  if (NS_WARN_IF(NS_FAILED(GenerateFlatTextContent(
+          domRangeAndAdjustedOffset.mRange, textInRange, lineBreakType)))) {
     return NS_ERROR_FAILURE;
   }
 
-  aEvent->mReply->mOffsetAndData.emplace(startOffset, textInRange,
-                                         OffsetAndDataFor::EditorString);
+  aEvent->mReply->mOffsetAndData.emplace(
+      domRangeAndAdjustedOffset.mAdjustedOffset, textInRange,
+      OffsetAndDataFor::EditorString);
 
   if (aEvent->mWithFontRanges) {
     uint32_t fontRangeLength;
-    if (NS_WARN_IF(NS_FAILED(
-            GenerateFlatFontRanges(rawRange, aEvent->mReply->mFontRanges,
-                                   fontRangeLength, lineBreakType)))) {
+    if (NS_WARN_IF(NS_FAILED(GenerateFlatFontRanges(
+            domRangeAndAdjustedOffset.mRange, aEvent->mReply->mFontRanges,
+            fontRangeLength, lineBreakType)))) {
       return NS_ERROR_FAILURE;
     }
 
@@ -1464,13 +1646,14 @@ void ContentEventHandler::EnsureNonEmptyRect(LayoutDeviceIntRect& aRect) const {
   aRect.width = std::max(1, aRect.width);
 }
 
+template <typename NodeType, typename RangeBoundaryType>
 ContentEventHandler::FrameAndNodeOffset
 ContentEventHandler::GetFirstFrameInRangeForTextRect(
-    const RawRange& aRawRange) {
-  NodePosition nodePosition;
-  PreContentIterator preOrderIter;
-  nsresult rv =
-      preOrderIter.Init(aRawRange.Start().AsRaw(), aRawRange.End().AsRaw());
+    const SimpleRangeBase<NodeType, RangeBoundaryType>& aSimpleRange) {
+  RawNodePosition nodePosition;
+  UnsafePreContentIterator preOrderIter;
+  nsresult rv = preOrderIter.Init(aSimpleRange.Start().AsRaw(),
+                                  aSimpleRange.End().AsRaw());
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return FrameAndNodeOffset();
   }
@@ -1480,17 +1663,26 @@ ContentEventHandler::GetFirstFrameInRangeForTextRect(
       break;
     }
 
-    if (!node->IsContent()) {
+    auto* content = nsIContent::FromNode(node);
+    if (MOZ_UNLIKELY(!content)) {
       continue;
     }
 
-    if (node->IsText()) {
+    // If the node is invisible (e.g., the node is or is in an invisible node or
+    // it's a white-space only text node around a block boundary), we should
+    // ignore it.
+    if (!content->GetPrimaryFrame()) {
+      continue;
+    }
+
+    if (auto* textNode = Text::FromNode(content)) {
       // If the range starts at the end of a text node, we need to find
       // next node which causes text.
-      const uint32_t offsetInNode =
-          node == aRawRange.GetStartContainer() ? aRawRange.StartOffset() : 0u;
-      if (offsetInNode < node->Length()) {
-        nodePosition = {node, offsetInNode};
+      const uint32_t offsetInNode = textNode == aSimpleRange.GetStartContainer()
+                                        ? aSimpleRange.StartOffset()
+                                        : 0u;
+      if (offsetInNode < textNode->TextDataLength()) {
+        nodePosition = {textNode, offsetInNode};
         break;
       }
       continue;
@@ -1498,9 +1690,9 @@ ContentEventHandler::GetFirstFrameInRangeForTextRect(
 
     // If the element node causes a line break before it, it's the first
     // node causing text.
-    if (ShouldBreakLineBefore(*node->AsContent(), mRootContent) ||
-        IsPaddingBR(*node->AsContent())) {
-      nodePosition = {node, 0u};
+    if (ShouldBreakLineBefore(*content, mRootElement) ||
+        IsPaddingBR(*content)) {
+      nodePosition = {content, 0u};
     }
   }
 
@@ -1508,27 +1700,30 @@ ContentEventHandler::GetFirstFrameInRangeForTextRect(
     return FrameAndNodeOffset();
   }
 
-  nsIFrame* firstFrame = nullptr;
-  GetFrameForTextRect(
+  Result<nsIFrame*, nsresult> firstFrameOrError = GetFrameForTextRect(
       nodePosition.Container(),
-      *nodePosition.Offset(NodePosition::OffsetFilter::kValidOffsets), true,
-      &firstFrame);
+      *nodePosition.Offset(RawNodePosition::OffsetFilter::kValidOffsets), true);
+  if (NS_WARN_IF(firstFrameOrError.isErr()) || !firstFrameOrError.inspect()) {
+    return FrameAndNodeOffset();
+  }
   return FrameAndNodeOffset(
-      firstFrame,
-      *nodePosition.Offset(NodePosition::OffsetFilter::kValidOffsets));
+      firstFrameOrError.inspect(),
+      *nodePosition.Offset(RawNodePosition::OffsetFilter::kValidOffsets));
 }
 
+template <typename NodeType, typename RangeBoundaryType>
 ContentEventHandler::FrameAndNodeOffset
-ContentEventHandler::GetLastFrameInRangeForTextRect(const RawRange& aRawRange) {
-  NodePosition nodePosition;
-  PreContentIterator preOrderIter;
-  nsresult rv =
-      preOrderIter.Init(aRawRange.Start().AsRaw(), aRawRange.End().AsRaw());
+ContentEventHandler::GetLastFrameInRangeForTextRect(
+    const SimpleRangeBase<NodeType, RangeBoundaryType>& aSimpleRange) {
+  RawNodePosition nodePosition;
+  UnsafePreContentIterator preOrderIter;
+  nsresult rv = preOrderIter.Init(aSimpleRange.Start().AsRaw(),
+                                  aSimpleRange.End().AsRaw());
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return FrameAndNodeOffset();
   }
 
-  const RangeBoundary& endPoint = aRawRange.End();
+  const RangeBoundaryType& endPoint = aSimpleRange.End();
   MOZ_ASSERT(endPoint.IsSetAndValid());
   // If the end point is start of a text node or specified by its parent and
   // index, the node shouldn't be included into the range.  For example,
@@ -1545,15 +1740,15 @@ ContentEventHandler::GetLastFrameInRangeForTextRect(const RawRange& aRawRange) {
   // caller will return too tall rect which includes 2 lines in this case isn't
   // expected by native IME  (e.g., popup of IME will be positioned at bottom
   // of "d" instead of right-bottom of "c").  Therefore, this method shouldn't
-  // include the last frame when its content isn't really in aRawRange.
+  // include the last frame when its content isn't really in aSimpleRange.
   nsINode* nextNodeOfRangeEnd = nullptr;
   if (endPoint.Container()->IsText()) {
-    // Don't set nextNodeOfRangeEnd to the start node of aRawRange because if
+    // Don't set nextNodeOfRangeEnd to the start node of aSimpleRange because if
     // the container of the end is same as start node of the range, the text
     // node shouldn't be next of range end even if the offset is 0.  This
     // could occur with empty text node.
     if (endPoint.IsStartOfContainer() &&
-        aRawRange.GetStartContainer() != endPoint.Container()) {
+        aSimpleRange.GetStartContainer() != endPoint.Container()) {
       nextNodeOfRangeEnd = endPoint.Container();
     }
   } else if (endPoint.IsSetAndValid()) {
@@ -1566,29 +1761,41 @@ ContentEventHandler::GetLastFrameInRangeForTextRect(const RawRange& aRawRange) {
       break;
     }
 
-    if (!node->IsContent() || node == nextNodeOfRangeEnd) {
+    if (node == nextNodeOfRangeEnd) {
       continue;
     }
 
-    if (node->IsText()) {
-      nodePosition = {node, node == aRawRange.GetEndContainer()
-                                ? aRawRange.EndOffset()
-                                : node->Length()};
+    auto* content = nsIContent::FromNode(node);
+    if (MOZ_UNLIKELY(!content)) {
+      continue;
+    }
+
+    // If the node is invisible (e.g., the node is or is in an invisible node or
+    // it's a white-space only text node around a block boundary), we should
+    // ignore it.
+    if (!content->GetPrimaryFrame()) {
+      continue;
+    }
+
+    if (auto* textNode = Text::FromNode(node)) {
+      nodePosition = {textNode, textNode == aSimpleRange.GetEndContainer()
+                                    ? aSimpleRange.EndOffset()
+                                    : textNode->TextDataLength()};
 
       // If the text node is empty or the last node of the range but the index
       // is 0, we should store current position but continue looking for
       // previous node (If there are no nodes before it, we should use current
       // node position for returning its frame).
-      if (*nodePosition.Offset(NodePosition::OffsetFilter::kValidOffsets) ==
+      if (*nodePosition.Offset(RawNodePosition::OffsetFilter::kValidOffsets) ==
           0) {
         continue;
       }
       break;
     }
 
-    if (ShouldBreakLineBefore(*node->AsContent(), mRootContent) ||
-        IsPaddingBR(*node->AsContent())) {
-      nodePosition = {node, 0u};
+    if (ShouldBreakLineBefore(*content, mRootElement) ||
+        IsPaddingBR(*content)) {
+      nodePosition = {content, 0u};
       break;
     }
   }
@@ -1597,49 +1804,47 @@ ContentEventHandler::GetLastFrameInRangeForTextRect(const RawRange& aRawRange) {
     return FrameAndNodeOffset();
   }
 
-  nsIFrame* lastFrame = nullptr;
-  GetFrameForTextRect(
+  Result<nsIFrame*, nsresult> lastFrameOrError = GetFrameForTextRect(
       nodePosition.Container(),
-      *nodePosition.Offset(NodePosition::OffsetFilter::kValidOffsets), true,
-      &lastFrame);
-  if (!lastFrame) {
+      *nodePosition.Offset(RawNodePosition::OffsetFilter::kValidOffsets), true);
+  if (NS_WARN_IF(lastFrameOrError.isErr()) || !lastFrameOrError.inspect()) {
     return FrameAndNodeOffset();
   }
 
   // If the last frame is a text frame, we need to check if the range actually
   // includes at least one character in the range.  Therefore, if it's not a
   // text frame, we need to do nothing anymore.
-  if (!lastFrame->IsTextFrame()) {
+  if (!lastFrameOrError.inspect()->IsTextFrame()) {
     return FrameAndNodeOffset(
-        lastFrame,
-        *nodePosition.Offset(NodePosition::OffsetFilter::kValidOffsets));
+        lastFrameOrError.inspect(),
+        *nodePosition.Offset(RawNodePosition::OffsetFilter::kValidOffsets));
   }
 
-  int32_t start = lastFrame->GetOffsets().first;
+  int32_t start = lastFrameOrError.inspect()->GetOffsets().first;
 
   // If the start offset in the node is same as the computed offset in the
   // node and it's not 0, the frame shouldn't be added to the text rect.  So,
   // this should return previous text frame and its last offset if there is
   // at least one text frame.
-  if (*nodePosition.Offset(NodePosition::OffsetFilter::kValidOffsets) &&
-      *nodePosition.Offset(NodePosition::OffsetFilter::kValidOffsets) ==
+  if (*nodePosition.Offset(RawNodePosition::OffsetFilter::kValidOffsets) &&
+      *nodePosition.Offset(RawNodePosition::OffsetFilter::kValidOffsets) ==
           static_cast<uint32_t>(start)) {
     const uint32_t newNodePositionOffset =
-        *nodePosition.Offset(NodePosition::OffsetFilter::kValidOffsets);
+        *nodePosition.Offset(RawNodePosition::OffsetFilter::kValidOffsets);
     MOZ_ASSERT(newNodePositionOffset != 0);
     nodePosition = {nodePosition.Container(), newNodePositionOffset - 1u};
-    GetFrameForTextRect(
+    lastFrameOrError = GetFrameForTextRect(
         nodePosition.Container(),
-        *nodePosition.Offset(NodePosition::OffsetFilter::kValidOffsets), true,
-        &lastFrame);
-    if (NS_WARN_IF(!lastFrame)) {
+        *nodePosition.Offset(RawNodePosition::OffsetFilter::kValidOffsets),
+        true);
+    if (NS_WARN_IF(lastFrameOrError.isErr()) || !lastFrameOrError.inspect()) {
       return FrameAndNodeOffset();
     }
   }
 
   return FrameAndNodeOffset(
-      lastFrame,
-      *nodePosition.Offset(NodePosition::OffsetFilter::kValidOffsets));
+      lastFrameOrError.inspect(),
+      *nodePosition.Offset(RawNodePosition::OffsetFilter::kValidOffsets));
 }
 
 ContentEventHandler::FrameRelativeRect
@@ -1648,7 +1853,7 @@ ContentEventHandler::GetLineBreakerRectBefore(nsIFrame* aFrame) {
   // open tag causes a line break or moz-<br> for computing empty last line's
   // rect.
   MOZ_ASSERT(aFrame->GetContent());
-  MOZ_ASSERT(ShouldBreakLineBefore(*aFrame->GetContent(), mRootContent) ||
+  MOZ_ASSERT(ShouldBreakLineBefore(*aFrame->GetContent(), mRootElement) ||
              IsPaddingBR(*aFrame->GetContent()));
 
   nsIFrame* frameForFontMetrics = aFrame;
@@ -1665,8 +1870,6 @@ ContentEventHandler::GetLineBreakerRectBefore(nsIFrame* aFrame) {
   // height are 0 in quirks mode if it's not an empty line.  So, we cannot
   // use frame rect information even if it's a <br> frame.
 
-  FrameRelativeRect result(aFrame);
-
   RefPtr<nsFontMetrics> fontMetrics =
       nsLayoutUtils::GetInflatedFontMetricsForFrame(frameForFontMetrics);
   if (NS_WARN_IF(!fontMetrics)) {
@@ -1674,18 +1877,10 @@ ContentEventHandler::GetLineBreakerRectBefore(nsIFrame* aFrame) {
   }
 
   const WritingMode kWritingMode = frameForFontMetrics->GetWritingMode();
-  nscoord baseline = aFrame->GetCaretBaseline();
-  if (kWritingMode.IsVertical()) {
-    if (kWritingMode.IsLineInverted()) {
-      result.mRect.x = baseline - fontMetrics->MaxDescent();
-    } else {
-      result.mRect.x = baseline - fontMetrics->MaxAscent();
-    }
-    result.mRect.width = fontMetrics->MaxHeight();
-  } else {
-    result.mRect.y = baseline - fontMetrics->MaxAscent();
-    result.mRect.height = fontMetrics->MaxHeight();
-  }
+
+  auto caretBlockAxisMetrics =
+      aFrame->GetCaretBlockAxisMetrics(kWritingMode, *fontMetrics);
+  nscoord inlineOffset = 0;
 
   // If aFrame isn't a <br> frame, caret should be at outside of it because
   // the line break is before its open tag.  For example, case of
@@ -1702,20 +1897,26 @@ ContentEventHandler::GetLineBreakerRectBefore(nsIFrame* aFrame) {
   // However, this is a hack for unusual scenario.  This hack shouldn't be
   // used as far as possible.
   if (!aFrame->IsBrFrame()) {
-    if (kWritingMode.IsVertical()) {
-      if (kWritingMode.IsLineInverted()) {
-        // above of top-left corner of aFrame.
-        result.mRect.x = 0;
-      } else {
-        // above of top-right corner of aFrame.
-        result.mRect.x = aFrame->GetRect().XMost() - result.mRect.width;
-      }
-      result.mRect.y = -aFrame->PresContext()->AppUnitsPerDevPixel();
+    if (kWritingMode.IsVertical() && !kWritingMode.IsLineInverted()) {
+      // above of top-right corner of aFrame.
+      caretBlockAxisMetrics.mOffset =
+          aFrame->GetRect().XMost() - caretBlockAxisMetrics.mExtent;
     } else {
-      // left of top-left corner of aFrame.
-      result.mRect.x = -aFrame->PresContext()->AppUnitsPerDevPixel();
-      result.mRect.y = 0;
+      // above (For vertical) or left (For horizontal) of top-left corner of
+      // aFrame.
+      caretBlockAxisMetrics.mOffset = 0;
     }
+    inlineOffset = -aFrame->PresContext()->AppUnitsPerDevPixel();
+  }
+  FrameRelativeRect result(aFrame);
+  if (kWritingMode.IsVertical()) {
+    result.mRect.x = caretBlockAxisMetrics.mOffset;
+    result.mRect.y = inlineOffset;
+    result.mRect.width = caretBlockAxisMetrics.mExtent;
+  } else {
+    result.mRect.x = inlineOffset;
+    result.mRect.y = caretBlockAxisMetrics.mOffset;
+    result.mRect.height = caretBlockAxisMetrics.mExtent;
   }
   return result;
 }
@@ -1731,13 +1932,14 @@ ContentEventHandler::GuessLineBreakerRectAfter(const Text& aTextNode) {
   // a text node can cause multiple text frames, e.g., the text is too long
   // and wrapped by its parent block or the text has line breakers and its
   // white-space property respects the line breakers (e.g., |pre|).
-  nsIFrame* lastTextFrame = nullptr;
-  nsresult rv = GetFrameForTextRect(&aTextNode, length, true, &lastTextFrame);
-  if (NS_WARN_IF(NS_FAILED(rv)) || NS_WARN_IF(!lastTextFrame)) {
+  Result<nsIFrame*, nsresult> lastTextFrameOrError =
+      GetFrameForTextRect(&aTextNode, length, true);
+  if (NS_WARN_IF(lastTextFrameOrError.isErr()) ||
+      !lastTextFrameOrError.inspect()) {
     return result;
   }
-  const nsRect kLastTextFrameRect = lastTextFrame->GetRect();
-  if (lastTextFrame->GetWritingMode().IsVertical()) {
+  const nsRect kLastTextFrameRect = lastTextFrameOrError.inspect()->GetRect();
+  if (lastTextFrameOrError.inspect()->GetWritingMode().IsVertical()) {
     // Below of the last text frame.
     result.mRect.SetRect(0, kLastTextFrameRect.height, kLastTextFrameRect.width,
                          0);
@@ -1746,7 +1948,7 @@ ContentEventHandler::GuessLineBreakerRectAfter(const Text& aTextNode) {
     result.mRect.SetRect(kLastTextFrameRect.width, 0, 0,
                          kLastTextFrameRect.height);
   }
-  result.mBaseFrame = lastTextFrame;
+  result.mBaseFrame = lastTextFrameOrError.unwrap();
   return result;
 }
 
@@ -1793,6 +1995,72 @@ ContentEventHandler::GuessFirstCaretRectIn(nsIFrame* aFrame) {
   return FrameRelativeRect(caretRect, aFrame);
 }
 
+//  static
+LayoutDeviceIntRect ContentEventHandler::GetCaretRectBefore(
+    const LayoutDeviceIntRect& aCharRect, const WritingMode& aWritingMode) {
+  LayoutDeviceIntRect caretRectBefore(aCharRect);
+  if (aWritingMode.IsVertical()) {
+    caretRectBefore.height = 1;
+  } else {
+    // TODO: Make here bidi-aware.
+    caretRectBefore.width = 1;
+  }
+  return caretRectBefore;
+}
+
+//  static
+nsRect ContentEventHandler::GetCaretRectBefore(
+    const nsRect& aCharRect, const WritingMode& aWritingMode) {
+  nsRect caretRectBefore(aCharRect);
+  if (aWritingMode.IsVertical()) {
+    // For making the height 1 device pixel after aligning the rect edges to
+    // device pixels, don't add one device pixel in app units here.
+    caretRectBefore.height = 1;
+  } else {
+    // TODO: Make here bidi-aware.
+    // For making the width 1 device pixel after aligning the rect edges to
+    // device pixels, don't add one device pixel in app units here.
+    caretRectBefore.width = 1;
+  }
+  return caretRectBefore;
+}
+
+//  static
+LayoutDeviceIntRect ContentEventHandler::GetCaretRectAfter(
+    const LayoutDeviceIntRect& aCharRect, const WritingMode& aWritingMode) {
+  LayoutDeviceIntRect caretRectAfter(aCharRect);
+  if (aWritingMode.IsVertical()) {
+    caretRectAfter.y = aCharRect.YMost() + 1;
+    caretRectAfter.height = 1;
+  } else {
+    // TODO: Make here bidi-aware.
+    caretRectAfter.x = aCharRect.XMost() + 1;
+    caretRectAfter.width = 1;
+  }
+  return caretRectAfter;
+}
+
+//  static
+nsRect ContentEventHandler::GetCaretRectAfter(nsPresContext& aPresContext,
+                                              const nsRect& aCharRect,
+                                              const WritingMode& aWritingMode) {
+  nsRect caretRectAfter(aCharRect);
+  const nscoord onePixel = aPresContext.AppUnitsPerDevPixel();
+  if (aWritingMode.IsVertical()) {
+    caretRectAfter.y = aCharRect.YMost() + onePixel;
+    // For making the height 1 device pixel after aligning the rect edges to
+    // device pixels, don't add one device pixel in app units here.
+    caretRectAfter.height = 1;
+  } else {
+    // TODO: Make here bidi-aware.
+    caretRectAfter.x = aCharRect.XMost() + onePixel;
+    // For making the width 1 device pixel after aligning the rect edges to
+    // device pixels, don't add one device pixel in app units here.
+    caretRectAfter.width = 1;
+  }
+  return caretRectAfter;
+}
+
 nsresult ContentEventHandler::OnQueryTextRectArray(
     WidgetQueryContentEvent* aEvent) {
   nsresult rv = Init(aEvent);
@@ -1805,53 +2073,102 @@ nsresult ContentEventHandler::OnQueryTextRectArray(
   LineBreakType lineBreakType = GetLineBreakType(aEvent);
   const uint32_t kBRLength = GetBRLength(lineBreakType);
 
-  bool isVertical = false;
+  WritingMode lastVisibleFrameWritingMode;
   LayoutDeviceIntRect rect;
   uint32_t offset = aEvent->mInput.mOffset;
-  const uint32_t kEndOffset = offset + aEvent->mInput.mLength;
+  const uint32_t kEndOffset = aEvent->mInput.EndOffset();
   bool wasLineBreaker = false;
   // lastCharRect stores the last charRect value (see below for the detail of
   // charRect).
   nsRect lastCharRect;
   // lastFrame is base frame of lastCharRect.
+  // TODO: We should look for this if the first text is not visible.  However,
+  //       users cannot put caret invisible text and users cannot type in it
+  //       at least only with user's operations.  Therefore, we don't need to
+  //       fix this immediately.
   nsIFrame* lastFrame = nullptr;
+  nsAutoString flattenedAllText;
+  flattenedAllText.SetIsVoid(true);
   while (offset < kEndOffset) {
-    RefPtr<Text> lastTextNode;
-    RawRange rawRange;
-    nsresult rv =
-        SetRawRangeFromFlatTextOffset(&rawRange, offset, 1, lineBreakType, true,
-                                      nullptr, getter_AddRefs(lastTextNode));
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      return rv;
+    Result<DOMRangeAndAdjustedOffsetInFlattenedText, nsresult>
+        domRangeAndAdjustedOffsetOrError =
+            ConvertFlatTextOffsetToDOMRange(offset, 1, lineBreakType, true);
+    if (MOZ_UNLIKELY(domRangeAndAdjustedOffsetOrError.isErr())) {
+      NS_WARNING(
+          "ContentEventHandler::ConvertFlatTextOffsetToDOMRangeBase() failed");
+      return domRangeAndAdjustedOffsetOrError.unwrapErr();
     }
+    const DOMRangeAndAdjustedOffsetInFlattenedText domRangeAndAdjustedOffset =
+        domRangeAndAdjustedOffsetOrError.unwrap();
+
+    // TODO: When we crossed parent block boundary now, we should fill pending
+    //       character rects with caret rect after the last visible character
+    //       rect.
 
     // If the range is collapsed, offset has already reached the end of the
     // contents.
-    if (rawRange.Collapsed()) {
+    if (domRangeAndAdjustedOffset.mRange.Collapsed()) {
       break;
     }
 
     // Get the first frame which causes some text after the offset.
-    FrameAndNodeOffset firstFrame = GetFirstFrameInRangeForTextRect(rawRange);
+    FrameAndNodeOffset firstFrame =
+        GetFirstFrameInRangeForTextRect(domRangeAndAdjustedOffset.mRange);
 
     // If GetFirstFrameInRangeForTextRect() does not return valid frame, that
-    // means that there are no visible frames having text or the offset reached
-    // the end of contents.
+    // means that the offset reached the end of contents or there is no visible
+    // frame in the range generating flattened text.
     if (!firstFrame.IsValid()) {
-      nsAutoString allText;
-      rv = GenerateFlatTextContent(mRootContent, allText, lineBreakType);
-      // If the offset doesn't reach the end of contents yet but there is no
-      // frames for the node, that means that current offset's node is hidden
-      // by CSS or something.  Ideally, we should handle it with the last
-      // visible text node's last character's rect, but it's not usual cases
-      // in actual web services.  Therefore, currently, we should make this
-      // case fail.
-      if (NS_WARN_IF(NS_FAILED(rv)) || offset < allText.Length()) {
-        return NS_ERROR_FAILURE;
+      if (flattenedAllText.IsVoid()) {
+        flattenedAllText.SetIsVoid(false);
+        if (NS_WARN_IF(NS_FAILED(GenerateFlatTextContent(
+                mRootElement, flattenedAllText, lineBreakType)))) {
+          NS_WARNING("ContentEventHandler::GenerateFlatTextContent() failed");
+          return NS_ERROR_FAILURE;
+        }
       }
-      // Otherwise, we should append caret rect at the end of the contents
-      // later.
-      break;
+      // If we've reached end of the root, append caret rect at the end of
+      // the root later.
+      if (offset >= flattenedAllText.Length()) {
+        break;
+      }
+      // Otherwise, we're in an invisible node. If the node is followed by a
+      // block boundary causing a line break, we can use the boundary.
+      // Otherwise, if the node follows a block boundary of a parent block, we
+      // can use caret rect at previous visible frame causing flattened text.
+      const uint32_t remainingLengthInCurrentRange = [&]() {
+        if (domRangeAndAdjustedOffset.mLastTextNode) {
+          if (domRangeAndAdjustedOffset.RangeStartsFromLastTextNode()) {
+            if (!domRangeAndAdjustedOffset.RangeStartsFromEndOfContainer()) {
+              return domRangeAndAdjustedOffset.mLastTextNode->TextDataLength() -
+                     domRangeAndAdjustedOffset.mRange.StartOffset();
+            }
+            return 0u;
+          }
+          // Must be there are not nodes which may cause generating text.
+          // Therefore, we can skip all nodes before the last found text node
+          // and all text in the last text node.
+          return domRangeAndAdjustedOffset.mLastTextNode->TextDataLength();
+        }
+        if (domRangeAndAdjustedOffset.RangeStartsFromContent() &&
+            ShouldBreakLineBefore(
+                *domRangeAndAdjustedOffset.mRange.GetStartContainer()
+                     ->AsContent(),
+                mRootElement)) {
+          if (kBRLength != 1u && offset - aEvent->mInput.mOffset < kBRLength) {
+            // Don't return kBRLength if start position is less than the length
+            // of a line-break because the offset may be between CRLF on
+            // Windows.  In the case, we will be again here and gets same
+            // result and we need to pay the penalty only once.  Therefore, we
+            // can keep going without complicated check.
+            return 1u;
+          }
+          return kBRLength;
+        }
+        return 0u;
+      }();
+      offset += std::max(1u, remainingLengthInCurrentRange);
+      continue;
     }
 
     nsIContent* firstContent = firstFrame.mFrame->GetContent();
@@ -1861,8 +2178,7 @@ nsresult ContentEventHandler::OnQueryTextRectArray(
 
     bool startsBetweenLineBreaker = false;
     nsAutoString chars;
-    // XXX not bidi-aware this class...
-    isVertical = firstFrame->GetWritingMode().IsVertical();
+    lastVisibleFrameWritingMode = firstFrame->GetWritingMode();
 
     nsIFrame* baseFrame = firstFrame;
     // charRect should have each character rect or line breaker rect relative
@@ -1890,24 +2206,32 @@ nsresult ContentEventHandler::OnQueryTextRectArray(
         // same as the start of query range, the query range starts from
         // between a line breaker (i.e., the range starts between "\r" and
         // "\n").
-        RawRange rawRangeToPrevOffset;
-        nsresult rv = SetRawRangeFromFlatTextOffset(&rawRangeToPrevOffset,
-                                                    aEvent->mInput.mOffset - 1,
-                                                    1, lineBreakType, true);
-        if (NS_WARN_IF(NS_FAILED(rv))) {
-          return rv;
+        Result<UnsafeDOMRangeAndAdjustedOffsetInFlattenedText, nsresult>
+            domRangeAndAdjustedOffsetOrError =
+                ConvertFlatTextOffsetToUnsafeDOMRange(
+                    aEvent->mInput.mOffset - 1, 1, lineBreakType, true);
+        if (MOZ_UNLIKELY(domRangeAndAdjustedOffsetOrError.isErr())) {
+          NS_WARNING(
+              "ContentEventHandler::ConvertFlatTextOffsetToDOMRangeBase() "
+              "failed");
+          return domRangeAndAdjustedOffsetOrError.unwrapErr();
         }
+        const UnsafeDOMRangeAndAdjustedOffsetInFlattenedText
+            domRangeAndAdjustedOffsetOfPreviousChar =
+                domRangeAndAdjustedOffsetOrError.unwrap();
         startsBetweenLineBreaker =
-            rawRange.GetStartContainer() ==
-                rawRangeToPrevOffset.GetStartContainer() &&
-            rawRange.StartOffset() == rawRangeToPrevOffset.StartOffset();
+            domRangeAndAdjustedOffset.mRange.GetStartContainer() ==
+                domRangeAndAdjustedOffsetOfPreviousChar.mRange
+                    .GetStartContainer() &&
+            domRangeAndAdjustedOffset.mRange.StartOffset() ==
+                domRangeAndAdjustedOffsetOfPreviousChar.mRange.StartOffset();
       }
     }
     // Other contents should cause a line breaker rect before it.
     // Note that moz-<br> element does not cause any text, however,
     // it represents empty line at the last of current block.  Therefore,
     // we need to compute its rect too.
-    else if (ShouldBreakLineBefore(*firstContent, mRootContent) ||
+    else if (ShouldBreakLineBefore(*firstContent, mRootElement) ||
              IsPaddingBR(*firstContent)) {
       nsRect brRect;
       // If the frame is not a <br> frame, we need to compute the caret rect
@@ -1938,32 +2262,28 @@ nsresult ContentEventHandler::OnQueryTextRectArray(
       // compute it with the cached last character's rect.  (However, don't
       // use this path if it's a <br> frame because trusting <br> frame's rect
       // is better than guessing the rect from the previous character.)
-      if (!firstFrame->IsBrFrame() && aEvent->mInput.mOffset != offset) {
+      if (!firstFrame->IsBrFrame() && !aEvent->mReply->mRectArray.IsEmpty()) {
         baseFrame = lastFrame;
         brRect = lastCharRect;
         if (!wasLineBreaker) {
-          if (isVertical) {
-            // Right of the last character.
-            brRect.y = brRect.YMost() + 1;
-            brRect.height = 1;
-          } else {
-            // Under the last character.
-            brRect.x = brRect.XMost() + 1;
-            brRect.width = 1;
-          }
+          brRect = GetCaretRectAfter(*baseFrame->PresContext(), brRect,
+                                     lastVisibleFrameWritingMode);
         }
       }
       // If it's not a <br> frame and it's the first character rect at the
-      // queried range, we need to the previous character of the start of
-      // the queried range if there is a text node.
-      else if (!firstFrame->IsBrFrame() && lastTextNode) {
+      // queried range, we need the previous character rect of the start of
+      // the queried range if there is a visible text node.
+      else if (!firstFrame->IsBrFrame() &&
+               domRangeAndAdjustedOffset.mLastTextNode &&
+               domRangeAndAdjustedOffset.mLastTextNode->GetPrimaryFrame()) {
         FrameRelativeRect brRectRelativeToLastTextFrame =
-            GuessLineBreakerRectAfter(*lastTextNode);
+            GuessLineBreakerRectAfter(*domRangeAndAdjustedOffset.mLastTextNode);
         if (NS_WARN_IF(!brRectRelativeToLastTextFrame.IsValid())) {
           return NS_ERROR_FAILURE;
         }
-        // Look for the last text frame for lastTextNode.
-        nsIFrame* primaryFrame = lastTextNode->GetPrimaryFrame();
+        // Look for the last text frame for the last text node.
+        nsIFrame* primaryFrame =
+            domRangeAndAdjustedOffset.mLastTextNode->GetPrimaryFrame();
         if (NS_WARN_IF(!primaryFrame)) {
           return NS_ERROR_FAILURE;
         }
@@ -1993,13 +2313,21 @@ nsresult ContentEventHandler::OnQueryTextRectArray(
         // the first frame for the start of query range are same, that means
         // the start offset is between the first line breaker (i.e., the range
         // starts between "\r" and "\n").
-        nsresult rv = SetRawRangeFromFlatTextOffset(
-            &rawRange, aEvent->mInput.mOffset - 1, 1, lineBreakType, true);
-        if (NS_WARN_IF(NS_FAILED(rv))) {
+        Result<UnsafeDOMRangeAndAdjustedOffsetInFlattenedText, nsresult>
+            domRangeAndAdjustedOffsetOrError =
+                ConvertFlatTextOffsetToUnsafeDOMRange(
+                    aEvent->mInput.mOffset - 1, 1, lineBreakType, true);
+        if (MOZ_UNLIKELY(domRangeAndAdjustedOffsetOrError.isErr())) {
+          NS_WARNING(
+              "ContentEventHandler::ConvertFlatTextOffsetToDOMRangeBase() "
+              "failed");
           return NS_ERROR_UNEXPECTED;
         }
+        const UnsafeDOMRangeAndAdjustedOffsetInFlattenedText
+            domRangeAndAdjustedOffset =
+                domRangeAndAdjustedOffsetOrError.unwrap();
         FrameAndNodeOffset frameForPrevious =
-            GetFirstFrameInRangeForTextRect(rawRange);
+            GetFirstFrameInRangeForTextRect(domRangeAndAdjustedOffset.mRange);
         startsBetweenLineBreaker = frameForPrevious.mFrame == firstFrame.mFrame;
       }
     } else {
@@ -2035,6 +2363,25 @@ nsresult ContentEventHandler::OnQueryTextRectArray(
       // return non-empty rect.
       EnsureNonEmptyRect(rect);
 
+      // If we found some invisible characters followed by current visible
+      // character, make their rects same as caret rect before the first visible
+      // character because IME may want to put their UI next to the rect of the
+      // invisible character for next input.
+      // Note that chars do not contain the invisible characters.
+      if (i == 0u && MOZ_LIKELY(offset > aEvent->mInput.mOffset)) {
+        const uint32_t offsetInRange =
+            offset - CheckedInt<uint32_t>(aEvent->mInput.mOffset).value();
+        if (offsetInRange > aEvent->mReply->mRectArray.Length()) {
+          LayoutDeviceIntRect caretRectBefore =
+              GetCaretRectBefore(rect, lastVisibleFrameWritingMode);
+          for ([[maybe_unused]] uint32_t index : IntegerRange<uint32_t>(
+                   offsetInRange - aEvent->mReply->mRectArray.Length())) {
+            aEvent->mReply->mRectArray.AppendElement(caretRectBefore);
+          }
+          MOZ_ASSERT(aEvent->mReply->mRectArray.Length() == offsetInRange);
+        }
+      }
+
       aEvent->mReply->mRectArray.AppendElement(rect);
       offset++;
 
@@ -2069,6 +2416,23 @@ nsresult ContentEventHandler::OnQueryTextRectArray(
     }
   }
 
+  // If we've not handled some invisible character rects, fill them as caret
+  // rect after the last visible character.
+  if (!aEvent->mReply->mRectArray.IsEmpty()) {
+    const uint32_t offsetInRange =
+        offset - CheckedInt<uint32_t>(aEvent->mInput.mOffset).value();
+    if (offsetInRange > aEvent->mReply->mRectArray.Length()) {
+      LayoutDeviceIntRect caretRectAfter =
+          GetCaretRectAfter(aEvent->mReply->mRectArray.LastElement(),
+                            lastVisibleFrameWritingMode);
+      for ([[maybe_unused]] uint32_t index : IntegerRange<uint32_t>(
+               offsetInRange - aEvent->mReply->mRectArray.Length())) {
+        aEvent->mReply->mRectArray.AppendElement(caretRectAfter);
+      }
+      MOZ_ASSERT(aEvent->mReply->mRectArray.Length() == offsetInRange);
+    }
+  }
+
   // If the query range is longer than actual content length, we should append
   // caret rect at the end of the content as the last character rect because
   // native IME may want to query character rect at the end of contents for
@@ -2080,16 +2444,8 @@ nsresult ContentEventHandler::OnQueryTextRectArray(
     // we can guess the last rect from the last character's rect unless it's a
     // line breaker.  (If it's a line breaker, the caret rect is in next line.)
     if (!aEvent->mReply->mRectArray.IsEmpty() && !wasLineBreaker) {
-      rect = aEvent->mReply->mRectArray.LastElement();
-      if (isVertical) {
-        rect.y = rect.YMost() + 1;
-        rect.height = 1;
-        MOZ_ASSERT(rect.width);
-      } else {
-        rect.x = rect.XMost() + 1;
-        rect.width = 1;
-        MOZ_ASSERT(rect.height);
-      }
+      rect = GetCaretRectAfter(aEvent->mReply->mRectArray.LastElement(),
+                               lastVisibleFrameWritingMode);
       aEvent->mReply->mRectArray.AppendElement(rect);
     } else {
       // Note that don't use eQueryCaretRect here because if caret is at the
@@ -2132,38 +2488,42 @@ nsresult ContentEventHandler::OnQueryTextRect(WidgetQueryContentEvent* aEvent) {
   MOZ_ASSERT(aEvent->mReply->mOffsetAndData.isNothing());
 
   LineBreakType lineBreakType = GetLineBreakType(aEvent);
-  RawRange rawRange;
-  RefPtr<Text> lastTextNode;
-  uint32_t startOffset = 0;
-  if (NS_WARN_IF(NS_FAILED(SetRawRangeFromFlatTextOffset(
-          &rawRange, aEvent->mInput.mOffset, aEvent->mInput.mLength,
-          lineBreakType, true, &startOffset, getter_AddRefs(lastTextNode))))) {
+  Result<DOMRangeAndAdjustedOffsetInFlattenedText, nsresult>
+      domRangeAndAdjustedOffsetOrError = ConvertFlatTextOffsetToDOMRange(
+          aEvent->mInput.mOffset, aEvent->mInput.mLength, lineBreakType, true);
+  if (MOZ_UNLIKELY(domRangeAndAdjustedOffsetOrError.isErr())) {
+    NS_WARNING("ContentEventHandler::ConvertFlatTextOffsetToDOMRange() failed");
     return NS_ERROR_FAILURE;
   }
+  DOMRangeAndAdjustedOffsetInFlattenedText domRangeAndAdjustedOffset =
+      domRangeAndAdjustedOffsetOrError.unwrap();
   nsString string;
-  if (NS_WARN_IF(NS_FAILED(
-          GenerateFlatTextContent(rawRange, string, lineBreakType)))) {
+  if (NS_WARN_IF(NS_FAILED(GenerateFlatTextContent(
+          domRangeAndAdjustedOffset.mRange, string, lineBreakType)))) {
     return NS_ERROR_FAILURE;
   }
-  aEvent->mReply->mOffsetAndData.emplace(startOffset, string,
-                                         OffsetAndDataFor::EditorString);
+  aEvent->mReply->mOffsetAndData.emplace(
+      domRangeAndAdjustedOffset.mAdjustedOffset, string,
+      OffsetAndDataFor::EditorString);
 
   // used to iterate over all contents and their frames
   PostContentIterator postOrderIter;
-  rv = postOrderIter.Init(rawRange.Start().AsRaw(), rawRange.End().AsRaw());
+  rv = postOrderIter.Init(domRangeAndAdjustedOffset.mRange.Start().AsRaw(),
+                          domRangeAndAdjustedOffset.mRange.End().AsRaw());
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return NS_ERROR_FAILURE;
   }
 
   // Get the first frame which causes some text after the offset.
-  FrameAndNodeOffset firstFrame = GetFirstFrameInRangeForTextRect(rawRange);
+  FrameAndNodeOffset firstFrame =
+      GetFirstFrameInRangeForTextRect(domRangeAndAdjustedOffset.mRange);
 
   // If GetFirstFrameInRangeForTextRect() does not return valid frame, that
   // means that there are no visible frames having text or the offset reached
   // the end of contents.
   if (!firstFrame.IsValid()) {
     nsAutoString allText;
-    rv = GenerateFlatTextContent(mRootContent, allText, lineBreakType);
+    rv = GenerateFlatTextContent(mRootElement, allText, lineBreakType);
     // If the offset doesn't reach the end of contents but there is no frames
     // for the node, that means that current offset's node is hidden by CSS or
     // something.  Ideally, we should handle it with the last visible text
@@ -2175,12 +2535,13 @@ nsresult ContentEventHandler::OnQueryTextRect(WidgetQueryContentEvent* aEvent) {
     }
 
     // Look for the last frame which should be included text rects.
-    rv = rawRange.SelectNodeContents(mRootContent);
+    rv = domRangeAndAdjustedOffset.mRange.SelectNodeContents(mRootElement);
     if (NS_WARN_IF(NS_FAILED(rv))) {
       return NS_ERROR_UNEXPECTED;
     }
     nsRect rect;
-    FrameAndNodeOffset lastFrame = GetLastFrameInRangeForTextRect(rawRange);
+    FrameAndNodeOffset lastFrame =
+        GetLastFrameInRangeForTextRect(domRangeAndAdjustedOffset.mRange);
     // If there is at least one frame which can be used for computing a rect
     // for a character or a line breaker, we should use it for guessing the
     // caret rect at the end of the contents.
@@ -2219,10 +2580,10 @@ nsresult ContentEventHandler::OnQueryTextRect(WidgetQueryContentEvent* aEvent) {
       }
       aEvent->mReply->mWritingMode = lastFrame->GetWritingMode();
     }
-    // Otherwise, if there are no contents in mRootContent, guess caret rect in
+    // Otherwise, if there are no contents in mRootElement, guess caret rect in
     // its frame (with its font height and content box).
     else {
-      nsIFrame* rootContentFrame = mRootContent->GetPrimaryFrame();
+      nsIFrame* rootContentFrame = mRootElement->GetPrimaryFrame();
       if (NS_WARN_IF(!rootContentFrame)) {
         return NS_ERROR_FAILURE;
       }
@@ -2297,12 +2658,14 @@ nsresult ContentEventHandler::OnQueryTextRect(WidgetQueryContentEvent* aEvent) {
   //  +-<p>--------------------------------+
   //  |def                                 |
   //  +------------------------------------+
-  // Therefore, if the first frame isn't a <br> frame and there is a text
-  // node before the first node in the queried range, we should compute the
+  // Therefore, if the first frame isn't a <br> frame and there is a visible
+  // text node before the first node in the queried range, we should compute the
   // first rect with the previous character's rect.
-  else if (!firstFrame->IsBrFrame() && lastTextNode) {
+  else if (!firstFrame->IsBrFrame() &&
+           domRangeAndAdjustedOffset.mLastTextNode &&
+           domRangeAndAdjustedOffset.mLastTextNode->GetPrimaryFrame()) {
     FrameRelativeRect brRectAfterLastChar =
-        GuessLineBreakerRectAfter(*lastTextNode);
+        GuessLineBreakerRectAfter(*domRangeAndAdjustedOffset.mLastTextNode);
     if (NS_WARN_IF(!brRectAfterLastChar.IsValid())) {
       return NS_ERROR_FAILURE;
     }
@@ -2338,7 +2701,8 @@ nsresult ContentEventHandler::OnQueryTextRect(WidgetQueryContentEvent* aEvent) {
   EnsureNonEmptyRect(rect);
 
   // Get the last frame which causes some text in the range.
-  FrameAndNodeOffset lastFrame = GetLastFrameInRangeForTextRect(rawRange);
+  FrameAndNodeOffset lastFrame =
+      GetLastFrameInRangeForTextRect(domRangeAndAdjustedOffset.mRange);
   if (NS_WARN_IF(!lastFrame.IsValid())) {
     return NS_ERROR_FAILURE;
   }
@@ -2452,7 +2816,7 @@ nsresult ContentEventHandler::OnQueryEditorRect(
     return rv;
   }
 
-  if (NS_WARN_IF(NS_FAILED(QueryContentRect(mRootContent, aEvent)))) {
+  if (NS_WARN_IF(NS_FAILED(QueryContentRect(mRootElement, aEvent)))) {
     return NS_ERROR_FAILURE;
   }
 
@@ -2474,7 +2838,7 @@ nsresult ContentEventHandler::OnQueryCaretRect(
     nsIFrame* caretFrame = nsCaret::GetGeometry(mSelection, &caretRect);
     if (caretFrame) {
       uint32_t offset;
-      rv = GetStartOffset(mFirstSelectedRawRange, &offset,
+      rv = GetStartOffset(mFirstSelectedSimpleRange, &offset,
                           GetLineBreakType(aEvent));
       NS_ENSURE_SUCCESS(rv, rv);
       if (offset == aEvent->mInput.mOffset) {
@@ -2514,14 +2878,10 @@ nsresult ContentEventHandler::OnQueryCaretRect(
   queryTextRectEvent.mReply->TruncateData();
   aEvent->mReply->mOffsetAndData =
       std::move(queryTextRectEvent.mReply->mOffsetAndData);
-  aEvent->mReply->mRect = std::move(queryTextRectEvent.mReply->mRect);
   aEvent->mReply->mWritingMode =
       std::move(queryTextRectEvent.mReply->mWritingMode);
-  if (aEvent->mReply->WritingModeRef().IsVertical()) {
-    aEvent->mReply->mRect.height = 1;
-  } else {
-    aEvent->mReply->mRect.width = 1;
-  }
+  aEvent->mReply->mRect = GetCaretRectBefore(queryTextRectEvent.mReply->mRect,
+                                             aEvent->mReply->mWritingMode);
 
   MOZ_ASSERT(aEvent->Succeeded());
   return NS_OK;
@@ -2546,7 +2906,7 @@ nsresult ContentEventHandler::OnQuerySelectionAsTransferable(
 
   MOZ_ASSERT(aEvent->mReply.isSome());
 
-  if (!aEvent->mReply->mHasSelection) {
+  if (mSelection->IsCollapsed()) {
     MOZ_ASSERT(!aEvent->mReply->mTransferable);
     return NS_OK;
   }
@@ -2606,7 +2966,7 @@ nsresult ContentEventHandler::OnQueryCharacterAtPoint(
   nsIFrame* targetFrame =
       nsLayoutUtils::GetFrameForPoint(RelativeTo{rootFrame}, ptInRoot);
   if (!targetFrame || !targetFrame->GetContent() ||
-      !targetFrame->GetContent()->IsInclusiveDescendantOf(mRootContent)) {
+      !targetFrame->GetContent()->IsInclusiveDescendantOf(mRootElement)) {
     // There is no character at the point.
     MOZ_ASSERT(aEvent->Succeeded());
     return NS_OK;
@@ -2619,7 +2979,7 @@ nsresult ContentEventHandler::OnQueryCharacterAtPoint(
   nsIFrame::ContentOffsets tentativeCaretOffsets =
       targetFrame->GetContentOffsetsFromPoint(ptInTarget);
   if (!tentativeCaretOffsets.content ||
-      !tentativeCaretOffsets.content->IsInclusiveDescendantOf(mRootContent)) {
+      !tentativeCaretOffsets.content->IsInclusiveDescendantOf(mRootElement)) {
     // There is no character nor tentative caret point at the point.
     MOZ_ASSERT(aEvent->Succeeded());
     return NS_OK;
@@ -2627,8 +2987,9 @@ nsresult ContentEventHandler::OnQueryCharacterAtPoint(
 
   uint32_t tentativeCaretOffset = 0;
   if (NS_WARN_IF(NS_FAILED(GetFlatTextLengthInRange(
-          NodePosition(mRootContent, 0u), NodePosition(tentativeCaretOffsets),
-          mRootContent, &tentativeCaretOffset, GetLineBreakType(aEvent))))) {
+          RawNodePosition(mRootElement, 0u),
+          RawNodePosition(tentativeCaretOffsets), mRootElement,
+          &tentativeCaretOffset, GetLineBreakType(aEvent))))) {
     return NS_ERROR_FAILURE;
   }
 
@@ -2645,8 +3006,8 @@ nsresult ContentEventHandler::OnQueryCharacterAtPoint(
   NS_ENSURE_TRUE(contentOffsets.content, NS_ERROR_FAILURE);
   uint32_t offset = 0;
   if (NS_WARN_IF(NS_FAILED(GetFlatTextLengthInRange(
-          NodePosition(mRootContent, 0u), NodePosition(contentOffsets),
-          mRootContent, &offset, GetLineBreakType(aEvent))))) {
+          RawNodePosition(mRootElement, 0u), RawNodePosition(contentOffsets),
+          mRootElement, &offset, GetLineBreakType(aEvent))))) {
     return NS_ERROR_FAILURE;
   }
 
@@ -2709,10 +3070,10 @@ nsresult ContentEventHandler::OnQueryDOMWidgetHittest(
 
 /* static */
 nsresult ContentEventHandler::GetFlatTextLengthInRange(
-    const NodePosition& aStartPosition, const NodePosition& aEndPosition,
-    nsIContent* aRootContent, uint32_t* aLength, LineBreakType aLineBreakType,
-    bool aIsRemovingNode /* = false */) {
-  if (NS_WARN_IF(!aRootContent) || NS_WARN_IF(!aStartPosition.IsSet()) ||
+    const RawNodePosition& aStartPosition, const RawNodePosition& aEndPosition,
+    const Element* aRootElement, uint32_t* aLength,
+    LineBreakType aLineBreakType, bool aIsRemovingNode /* = false */) {
+  if (NS_WARN_IF(!aRootElement) || NS_WARN_IF(!aStartPosition.IsSet()) ||
       NS_WARN_IF(!aEndPosition.IsSet()) || NS_WARN_IF(!aLength)) {
     return NS_ERROR_INVALID_ARG;
   }
@@ -2722,11 +3083,11 @@ nsresult ContentEventHandler::GetFlatTextLengthInRange(
     return NS_OK;
   }
 
-  PreContentIterator preOrderIter;
+  UnsafePreContentIterator preOrderIter;
 
   // Working with ContentIterator, we may need to adjust the end position for
   // including it forcibly.
-  NodePosition endPosition(aEndPosition);
+  RawNodePosition endPosition(aEndPosition);
 
   // This may be called for retrieving the text of removed nodes.  Even in this
   // case, the node thinks it's still in the tree because UnbindFromTree() will
@@ -2742,11 +3103,11 @@ nsresult ContentEventHandler::GetFlatTextLengthInRange(
     MOZ_ASSERT(aStartPosition.Container() == endPosition.Container(),
                "At removing the node, start and end node should be same");
     MOZ_ASSERT(*aStartPosition.Offset(
-                   NodePosition::OffsetFilter::kValidOrInvalidOffsets) == 0,
+                   RawNodePosition::OffsetFilter::kValidOrInvalidOffsets) == 0,
                "When the node is being removed, the start offset should be 0");
     MOZ_ASSERT(
         static_cast<uint32_t>(*endPosition.Offset(
-            NodePosition::OffsetFilter::kValidOrInvalidOffsets)) ==
+            RawNodePosition::OffsetFilter::kValidOrInvalidOffsets)) ==
             endPosition.Container()->GetChildCount(),
         "When the node is being removed, the end offset should be child count");
     nsresult rv = preOrderIter.Init(aStartPosition.Container());
@@ -2754,15 +3115,15 @@ nsresult ContentEventHandler::GetFlatTextLengthInRange(
       return rv;
     }
   } else {
-    RawRange prevRawRange;
-    nsresult rv = prevRawRange.SetStart(aStartPosition.AsRaw());
+    SimpleRange prevSimpleRange;
+    nsresult rv = prevSimpleRange.SetStart(aStartPosition.AsRaw());
     if (NS_WARN_IF(NS_FAILED(rv))) {
       return rv;
     }
 
     // When the end position is immediately after non-root element's open tag,
     // we need to include a line break caused by the open tag.
-    if (endPosition.Container() != aRootContent &&
+    if (endPosition.Container() != aRootElement &&
         endPosition.IsImmediatelyAfterOpenTag()) {
       if (endPosition.Container()->HasChildren()) {
         // When the end node has some children, move the end position to before
@@ -2771,7 +3132,7 @@ nsresult ContentEventHandler::GetFlatTextLengthInRange(
         if (NS_WARN_IF(!firstChild)) {
           return NS_ERROR_FAILURE;
         }
-        endPosition = NodePositionBefore(firstChild, 0u);
+        endPosition = RawNodePositionBefore(firstChild, 0u);
       } else {
         // When the end node is empty, move the end position after the node.
         nsIContent* parentContent = endPosition.Container()->GetParent();
@@ -2784,35 +3145,35 @@ nsresult ContentEventHandler::GetFlatTextLengthInRange(
           return NS_ERROR_FAILURE;
         }
         MOZ_ASSERT(*indexInParent != UINT32_MAX);
-        endPosition = NodePositionBefore(parentContent, *indexInParent + 1u);
+        endPosition = RawNodePositionBefore(parentContent, *indexInParent + 1u);
       }
     }
 
     if (endPosition.IsSetAndValid()) {
       // Offset is within node's length; set end of range to that offset
-      rv = prevRawRange.SetEnd(endPosition.AsRaw());
+      rv = prevSimpleRange.SetEnd(endPosition.AsRaw());
       if (NS_WARN_IF(NS_FAILED(rv))) {
         return rv;
       }
-      rv = preOrderIter.Init(prevRawRange.Start().AsRaw(),
-                             prevRawRange.End().AsRaw());
+      rv = preOrderIter.Init(prevSimpleRange.Start().AsRaw(),
+                             prevSimpleRange.End().AsRaw());
       if (NS_WARN_IF(NS_FAILED(rv))) {
         return rv;
       }
-    } else if (endPosition.Container() != aRootContent) {
+    } else if (endPosition.Container() != aRootElement) {
       // Offset is past node's length; set end of range to end of node
-      rv = prevRawRange.SetEndAfter(endPosition.Container());
+      rv = prevSimpleRange.SetEndAfter(endPosition.Container());
       if (NS_WARN_IF(NS_FAILED(rv))) {
         return rv;
       }
-      rv = preOrderIter.Init(prevRawRange.Start().AsRaw(),
-                             prevRawRange.End().AsRaw());
+      rv = preOrderIter.Init(prevSimpleRange.Start().AsRaw(),
+                             prevSimpleRange.End().AsRaw());
       if (NS_WARN_IF(NS_FAILED(rv))) {
         return rv;
       }
     } else {
       // Offset is past the root node; set end of range to end of root node
-      rv = preOrderIter.Init(aRootContent);
+      rv = preOrderIter.Init(const_cast<Element*>(aRootElement));
       if (NS_WARN_IF(NS_FAILED(rv))) {
         return rv;
       }
@@ -2838,11 +3199,11 @@ nsresult ContentEventHandler::GetFlatTextLengthInRange(
         *aLength += GetTextLength(
             *textNode, aLineBreakType,
             *endPosition.Offset(
-                NodePosition::OffsetFilter::kValidOrInvalidOffsets));
+                RawNodePosition::OffsetFilter::kValidOrInvalidOffsets));
       } else {
         *aLength += GetTextLength(*textNode, aLineBreakType);
       }
-    } else if (ShouldBreakLineBefore(*content, aRootContent)) {
+    } else if (ShouldBreakLineBefore(*content, aRootElement)) {
       // If the start position is start of this node but doesn't include the
       // open tag, don't append the line break length.
       if (node == aStartPosition.Container() &&
@@ -2860,9 +3221,10 @@ nsresult ContentEventHandler::GetFlatTextLengthInRange(
   return NS_OK;
 }
 
-nsresult ContentEventHandler::GetStartOffset(const RawRange& aRawRange,
-                                             uint32_t* aOffset,
-                                             LineBreakType aLineBreakType) {
+template <typename SimpleRangeType>
+nsresult ContentEventHandler::GetStartOffset(
+    const SimpleRangeType& aSimpleRange, uint32_t* aOffset,
+    LineBreakType aLineBreakType) {
   // To match the "no skip start" hack in ContentIterator::Init, when range
   // offset is 0 and the range node is not a container, we have to assume the
   // range _includes_ the node, which means the start offset should _not_
@@ -2876,35 +3238,34 @@ nsresult ContentEventHandler::GetStartOffset(const RawRange& aRawRange,
   // range does _not_ include the linebreak from <p> because <p> is a container,
   // so the start offset _should_ include <p>, and the start offset should be 1.
 
-  nsINode* startNode = aRawRange.GetStartContainer();
+  nsINode* startNode = aSimpleRange.GetStartContainer();
   bool startIsContainer = true;
   if (startNode->IsHTMLElement()) {
     nsAtom* name = startNode->NodeInfo()->NameAtom();
     startIsContainer =
         nsHTMLElement::IsContainer(nsHTMLTags::AtomTagToId(name));
   }
-  const NodePosition& startPos =
-      startIsContainer ? NodePosition(startNode, aRawRange.StartOffset())
-                       : NodePositionBefore(startNode, aRawRange.StartOffset());
-  return GetFlatTextLengthInRange(NodePosition(mRootContent, 0u), startPos,
-                                  mRootContent, aOffset, aLineBreakType);
+  RawNodePosition startPos(startNode, aSimpleRange.StartOffset());
+  startPos.mAfterOpenTag = startIsContainer;
+  return GetFlatTextLengthInRange(RawNodePosition(mRootElement, 0u), startPos,
+                                  mRootElement, aOffset, aLineBreakType);
 }
 
 nsresult ContentEventHandler::AdjustCollapsedRangeMaybeIntoTextNode(
-    RawRange& aRawRange) {
-  MOZ_ASSERT(aRawRange.Collapsed());
+    SimpleRange& aSimpleRange) {
+  MOZ_ASSERT(aSimpleRange.Collapsed());
 
-  if (!aRawRange.Collapsed()) {
+  if (!aSimpleRange.Collapsed()) {
     return NS_ERROR_INVALID_ARG;
   }
 
-  const RangeBoundary& startPoint = aRawRange.Start();
+  const RangeBoundary& startPoint = aSimpleRange.Start();
   if (NS_WARN_IF(!startPoint.IsSet())) {
     return NS_ERROR_INVALID_ARG;
   }
 
   // If the node does not have children like a text node, we don't need to
-  // modify aRawRange.
+  // modify aSimpleRange.
   if (!startPoint.Container()->HasChildren()) {
     return NS_OK;
   }
@@ -2918,7 +3279,7 @@ nsresult ContentEventHandler::AdjustCollapsedRangeMaybeIntoTextNode(
     if (!startPoint.Container()->GetFirstChild()->IsText()) {
       return NS_OK;
     }
-    nsresult rv = aRawRange.CollapseTo(
+    nsresult rv = aSimpleRange.CollapseTo(
         RawRangeBoundary(startPoint.Container()->GetFirstChild(), 0u));
     if (NS_WARN_IF(NS_FAILED(rv))) {
       return rv;
@@ -2935,7 +3296,7 @@ nsresult ContentEventHandler::AdjustCollapsedRangeMaybeIntoTextNode(
   if (!startPoint.Ref()->IsText()) {
     return NS_OK;
   }
-  nsresult rv = aRawRange.CollapseTo(
+  nsresult rv = aSimpleRange.CollapseTo(
       RawRangeBoundary(startPoint.Ref(), startPoint.Ref()->Length()));
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
@@ -2968,11 +3329,13 @@ nsresult ContentEventHandler::ConvertToRootRelativeOffset(nsIFrame* aFrame,
   return NS_OK;
 }
 
-static void AdjustRangeForSelection(nsIContent* aRoot, nsINode** aNode,
+static void AdjustRangeForSelection(const Element* aRootElement,
+                                    nsINode** aNode,
                                     Maybe<uint32_t>* aNodeOffset) {
   nsINode* node = *aNode;
   Maybe<uint32_t> nodeOffset = *aNodeOffset;
-  if (aRoot == node || NS_WARN_IF(!node->GetParent()) || !node->IsText()) {
+  if (aRootElement == node || NS_WARN_IF(!node->GetParent()) ||
+      !node->IsText()) {
     return;
   }
 
@@ -2986,15 +3349,15 @@ static void AdjustRangeForSelection(nsIContent* aRoot, nsINode** aNode,
     return;
   }
 
-  nsIContent* aRootParent = aRoot->GetParent();
-  if (NS_WARN_IF(!aRootParent)) {
+  Element* rootParentElement = aRootElement->GetParentElement();
+  if (NS_WARN_IF(!rootParentElement)) {
     return;
   }
   // If the root node is not an anonymous div of <textarea>, we don't need to
   // do this hack.  If you did this, ContentEventHandler couldn't distinguish
   // if the range includes open tag of the next node in some cases, e.g.,
   // textNode]<p></p> vs. textNode<p>]</p>
-  if (!aRootParent->IsHTMLElement(nsGkAtoms::textarea)) {
+  if (!rootParentElement->IsHTMLElement(nsGkAtoms::textarea)) {
     return;
   }
 
@@ -3021,10 +3384,8 @@ nsresult ContentEventHandler::OnSelectionEvent(WidgetSelectionEvent* aEvent) {
   // Get selection to manipulate
   // XXX why do we need to get them from ISM? This method should work fine
   //     without ISM.
-  RefPtr<Selection> sel;
-  nsresult rv = IMEStateManager::GetFocusSelectionAndRoot(
-      getter_AddRefs(sel), getter_AddRefs(mRootContent));
-  mSelection = sel;
+  nsresult rv = IMEStateManager::GetFocusSelectionAndRootElement(
+      getter_AddRefs(mSelection), getter_AddRefs(mRootElement));
   if (rv != NS_ERROR_NOT_AVAILABLE) {
     NS_ENSURE_SUCCESS(rv, rv);
   } else {
@@ -3033,22 +3394,34 @@ nsresult ContentEventHandler::OnSelectionEvent(WidgetSelectionEvent* aEvent) {
   }
 
   // Get range from offset and length
-  RawRange rawRange;
-  rv = SetRawRangeFromFlatTextOffset(&rawRange, aEvent->mOffset,
-                                     aEvent->mLength, GetLineBreakType(aEvent),
-                                     aEvent->mExpandToClusterBoundary);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  nsINode* startNode = rawRange.GetStartContainer();
-  nsINode* endNode = rawRange.GetEndContainer();
-  Maybe<uint32_t> startNodeOffset = Some(rawRange.StartOffset());
-  Maybe<uint32_t> endNodeOffset = Some(rawRange.EndOffset());
-  AdjustRangeForSelection(mRootContent, &startNode, &startNodeOffset);
-  AdjustRangeForSelection(mRootContent, &endNode, &endNodeOffset);
-  if (NS_WARN_IF(!startNode) || NS_WARN_IF(!endNode) ||
-      NS_WARN_IF(startNodeOffset.isNothing()) ||
-      NS_WARN_IF(endNodeOffset.isNothing())) {
-    return NS_ERROR_UNEXPECTED;
+  nsINode* startNode = nullptr;
+  nsINode* endNode = nullptr;
+  Maybe<uint32_t> startNodeOffset;
+  Maybe<uint32_t> endNodeOffset;
+  {
+    Result<UnsafeDOMRangeAndAdjustedOffsetInFlattenedText, nsresult>
+        domRangeAndAdjustedOffsetOrError =
+            ConvertFlatTextOffsetToUnsafeDOMRange(
+                aEvent->mOffset, aEvent->mLength, GetLineBreakType(aEvent),
+                aEvent->mExpandToClusterBoundary);
+    if (MOZ_UNLIKELY(domRangeAndAdjustedOffsetOrError.isErr())) {
+      NS_WARNING(
+          "ContentEventHandler::ConvertFlatTextOffsetToDOMRangeBase() failed");
+      return domRangeAndAdjustedOffsetOrError.unwrapErr();
+    }
+    const UnsafeDOMRangeAndAdjustedOffsetInFlattenedText
+        domRangeAndAdjustedOffset = domRangeAndAdjustedOffsetOrError.unwrap();
+    startNode = domRangeAndAdjustedOffset.mRange.GetStartContainer();
+    endNode = domRangeAndAdjustedOffset.mRange.GetEndContainer();
+    startNodeOffset = Some(domRangeAndAdjustedOffset.mRange.StartOffset());
+    endNodeOffset = Some(domRangeAndAdjustedOffset.mRange.EndOffset());
+    AdjustRangeForSelection(mRootElement, &startNode, &startNodeOffset);
+    AdjustRangeForSelection(mRootElement, &endNode, &endNodeOffset);
+    if (NS_WARN_IF(!startNode) || NS_WARN_IF(!endNode) ||
+        NS_WARN_IF(startNodeOffset.isNothing()) ||
+        NS_WARN_IF(endNodeOffset.isNothing())) {
+      return NS_ERROR_UNEXPECTED;
+    }
   }
 
   if (aEvent->mReversed) {

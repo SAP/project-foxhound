@@ -5,14 +5,14 @@
 
 // Test the ResourceCommand API around THREAD_STATE
 
-const ResourceCommand = require("devtools/shared/commands/resource/resource-command");
+const ResourceCommand = require("resource://devtools/shared/commands/resource/resource-command.js");
 
 const BREAKPOINT_TEST_URL = URL_ROOT_SSL + "breakpoint_document.html";
 const REMOTE_IFRAME_URL =
   "https://example.org/document-builder.sjs?html=" +
   encodeURIComponent("<script>debugger;</script>");
 
-add_task(async function() {
+add_task(async function () {
   // Check hitting the "debugger;" statement before and after calling
   // watchResource(THREAD_TYPES). Both should break. First will
   // be a cached resource and second will be a live one.
@@ -43,10 +43,12 @@ async function checkBreakpointBeforeWatchResources() {
     tab
   );
 
-  // Init the Thread actor via attachAndInitThread in order to ensure
-  // memoizing the thread front and avoid attaching it twice
-  info("Attach the top level thread actor");
-  await targetCommand.targetFront.attachAndInitThread(targetCommand);
+  // Ensure that the target front is initialized early from TargetCommand.onTargetAvailable
+  // By the time `initResourceCommand` resolves, it should already be initialized.
+  info(
+    "Verify that TargetFront's initialized is resolved after having calling attachAndInitThread"
+  );
+  await targetCommand.targetFront.initialized;
 
   info("Run the 'debugger' statement");
   // Note that we do not wait for the resolution of spawn as it will be paused
@@ -265,11 +267,8 @@ async function checkPauseOnException() {
     "data:text/html,<meta charset=utf8><script>a.b.c.d</script>"
   );
 
-  const {
-    commands,
-    resourceCommand,
-    targetCommand,
-  } = await initResourceCommand(tab);
+  const { commands, resourceCommand, targetCommand } =
+    await initResourceCommand(tab);
 
   info("Call watchResources");
   const availableResources = [];
@@ -310,7 +309,7 @@ async function checkPauseOnException() {
       // arguments: []
       where: {
         line: 1,
-        column: 0,
+        column: 27,
       },
     },
   });
@@ -445,7 +444,7 @@ async function checkDebuggerStatementInIframes() {
   SpecialPowers.spawn(
     gBrowser.selectedBrowser,
     [REMOTE_IFRAME_URL],
-    async function(url) {
+    async function (url) {
       const iframe = content.document.createElement("iframe");
       iframe.src = url;
       content.document.body.appendChild(iframe);
@@ -472,7 +471,7 @@ async function checkDebuggerStatementInIframes() {
       // arguments: []
       where: {
         line: 1,
-        column: 0,
+        column: 8,
       },
     },
   });

@@ -4,6 +4,7 @@
 "use strict";
 
 const TEST_PAGE =
+  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
   "http://example.org/browser/browser/base/content/test/zoom/zoom_test.html";
 
 var gTab1, gTab2, gLevel1;
@@ -11,7 +12,10 @@ var gTab1, gTab2, gLevel1;
 function test() {
   waitForExplicitFinish();
 
-  (async function() {
+  // Scroll on Ctrl + mousewheel
+  SpecialPowers.pushPrefEnv({ set: [["mousewheel.with_control.action", 3]] });
+
+  (async function () {
     gTab1 = BrowserTestUtils.addTab(gBrowser);
     gTab2 = BrowserTestUtils.addTab(gBrowser);
 
@@ -22,7 +26,7 @@ function test() {
 }
 
 function zoomTab1() {
-  (async function() {
+  (async function () {
     is(gBrowser.selectedTab, gTab1, "Tab 1 is selected");
     FullZoomHelper.zoomTest(gTab1, 1, "Initial zoom of tab 1 should be 1");
     FullZoomHelper.zoomTest(gTab2, 1, "Initial zoom of tab 2 should be 1");
@@ -57,7 +61,7 @@ function zoomTab1() {
 }
 
 function finishTest() {
-  (async function() {
+  (async function () {
     await FullZoomHelper.selectTabAndWaitForLocationChange(gTab1);
     await FullZoom.reset();
     await FullZoomHelper.removeTabAndWaitForLocationChange(gTab1);

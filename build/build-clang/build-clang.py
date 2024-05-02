@@ -4,37 +4,34 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 # Only necessary for flake8 to be happy...
-from __future__ import print_function
-
-import os
-import os.path
-import shutil
-import subprocess
-import platform
-import json
 import argparse
+import errno
 import fnmatch
 import glob
-import errno
+import json
+import os
+import os.path
+import platform
 import re
+import shutil
+import subprocess
 import sys
 import tarfile
 from contextlib import contextmanager
-from distutils.dir_util import copy_tree
-
 from shutil import which
 
 import zstandard
 
+SUPPORTED_TARGETS = {
+    "x86_64-unknown-linux-gnu": ("Linux", "x86_64"),
+    "x86_64-pc-windows-msvc": ("Windows", "AMD64"),
+    "x86_64-apple-darwin": ("Darwin", "x86_64"),
+    "aarch64-apple-darwin": ("Darwin", "arm64"),
+}
 
-def symlink(source, link_name):
-    os_symlink = getattr(os, "symlink", None)
-    if callable(os_symlink):
-        os_symlink(source, link_name)
-    else:
-        if os.path.isdir(source):
-            # Fall back to copying the directory :(
-            copy_tree(source, link_name)
+
+def is_llvm_toolchain(cc, cxx):
+    return "clang" in cc and "clang" in cxx
 
 
 def check_run(args):
@@ -169,37 +166,38 @@ def install_import_library(build_dir, clang_dir):
     )
 
 
-def is_darwin():
-    return platform.system() == "Darwin"
+def is_darwin(target):
+    return "-apple-darwin" in target
 
 
-def is_linux():
-    return platform.system() == "Linux"
+def is_linux(target):
+    return "-linux-gnu" in target
 
 
-def is_windows():
-    return platform.system() == "Windows"
+def is_windows(target):
+    return "-windows-msvc" in target
+
+
+def is_cross_compile(target):
+    return SUPPORTED_TARGETS[target] != (platform.system(), platform.machine())
 
 
 def build_one_stage(
     cc,
     cxx,
     asm,
-    ld,
     ar,
     ranlib,
-    libtool,
+    ldflags,
     src_dir,
     stage_dir,
     package_name,
-    build_libcxx,
-    osx_cross_compile,
     build_type,
     assertions,
-    libcxx_include_dir,
-    build_wasm,
+    target,
+    targets,
     is_final_stage=False,
-    pgo_phase=None,
+    profile=None,
 ):
     if not os.path.exists(stage_dir):
         os.mkdir(stage_dir)
@@ -211,62 +209,54 @@ def build_one_stage(
     def slashify_path(path):
         return path.replace("\\", "/")
 
-    def cmake_base_args(cc, cxx, asm, ld, ar, ranlib, libtool, inst_dir):
-        machine_targets = "X86;ARM;AArch64" if is_final_stage else "X86"
-        if build_wasm and is_final_stage:
-            machine_targets += ";WebAssembly"
+    def cmake_base_args(cc, cxx, asm, ar, ranlib, ldflags, inst_dir):
+        machine_targets = targets if is_final_stage and targets else "X86"
 
         cmake_args = [
             "-GNinja",
             "-DCMAKE_C_COMPILER=%s" % slashify_path(cc[0]),
             "-DCMAKE_CXX_COMPILER=%s" % slashify_path(cxx[0]),
             "-DCMAKE_ASM_COMPILER=%s" % slashify_path(asm[0]),
-            "-DCMAKE_LINKER=%s" % slashify_path(ld[0]),
             "-DCMAKE_AR=%s" % slashify_path(ar),
-            "-DCMAKE_C_FLAGS=%s" % " ".join(cc[1:]),
-            "-DCMAKE_CXX_FLAGS=%s" % " ".join(cxx[1:]),
-            "-DCMAKE_ASM_FLAGS=%s" % " ".join(asm[1:]),
-            "-DCMAKE_EXE_LINKER_FLAGS=%s" % " ".join(ld[1:]),
-            "-DCMAKE_SHARED_LINKER_FLAGS=%s" % " ".join(ld[1:]),
+            "-DCMAKE_C_FLAGS_INIT=%s" % " ".join(cc[1:]),
+            "-DCMAKE_CXX_FLAGS_INIT=%s" % " ".join(cxx[1:]),
+            "-DCMAKE_ASM_FLAGS_INIT=%s" % " ".join(asm[1:]),
+            "-DCMAKE_EXE_LINKER_FLAGS_INIT=%s" % " ".join(ldflags),
+            "-DCMAKE_SHARED_LINKER_FLAGS_INIT=%s" % " ".join(ldflags),
             "-DCMAKE_BUILD_TYPE=%s" % build_type,
             "-DCMAKE_INSTALL_PREFIX=%s" % inst_dir,
             "-DLLVM_TARGETS_TO_BUILD=%s" % machine_targets,
+            "-DLLVM_ENABLE_PER_TARGET_RUNTIME_DIR=OFF",
             "-DLLVM_ENABLE_ASSERTIONS=%s" % ("ON" if assertions else "OFF"),
             "-DLLVM_ENABLE_BINDINGS=OFF",
             "-DLLVM_ENABLE_CURL=OFF",
+            "-DLLVM_INCLUDE_TESTS=OFF",
         ]
+        if is_llvm_toolchain(cc[0], cxx[0]):
+            cmake_args += ["-DLLVM_ENABLE_LLD=ON"]
+        elif is_windows(target) and is_cross_compile(target):
+            raise Exception(
+                "Cannot cross-compile for Windows with a compiler that is not clang"
+            )
+
         if "TASK_ID" in os.environ:
             cmake_args += [
                 "-DCLANG_REPOSITORY_STRING=taskcluster-%s" % os.environ["TASK_ID"],
             ]
-        # libc++ doesn't build with MSVC because of the use of #include_next.
-        if is_final_stage and os.path.basename(cc[0]).lower() != "cl.exe":
-            cmake_args += [
-                "-DLLVM_FORCE_BUILD_RUNTIME=ON",
-                "-DLLVM_TOOL_LIBCXX_BUILD=%s" % ("ON" if build_libcxx else "OFF"),
-                # libc++abi has conflicting definitions between the shared and static
-                # library on Windows because of the import library for the dll having
-                # the same name as the static library. libc++abi is not necessary on
-                # Windows anyways.
-                "-DLLVM_TOOL_LIBCXXABI_BUILD=%s" % ("OFF" if is_windows() else "ON"),
-            ]
-        if not is_final_stage:
-            cmake_args += [
-                "-DLLVM_ENABLE_PROJECTS=clang;compiler-rt",
-                "-DLLVM_INCLUDE_TESTS=OFF",
-                "-DLLVM_TOOL_LLI_BUILD=OFF",
-                "-DCOMPILER_RT_BUILD_SANITIZERS=OFF",
-                "-DCOMPILER_RT_BUILD_XRAY=OFF",
-                "-DCOMPILER_RT_BUILD_MEMPROF=OFF",
-                "-DCOMPILER_RT_BUILD_LIBFUZZER=OFF",
-            ]
+        projects = ["clang", "lld"]
+        if is_final_stage:
+            projects.append("clang-tools-extra")
+        else:
+            cmake_args.append("-DLLVM_TOOL_LLI_BUILD=OFF")
+
+        cmake_args.append("-DLLVM_ENABLE_PROJECTS=%s" % ";".join(projects))
 
         # There is no libxml2 on Windows except if we build one ourselves.
         # libxml2 is only necessary for llvm-mt, but Windows can just use the
         # native MT tool.
-        if not is_windows() and is_final_stage:
+        if not is_windows(target) and is_final_stage:
             cmake_args += ["-DLLVM_ENABLE_LIBXML2=FORCE_ON"]
-        if is_linux() and not osx_cross_compile and is_final_stage:
+        if is_linux(target) and is_final_stage:
             sysroot = os.path.join(os.environ.get("MOZ_FETCHES_DIR", ""), "sysroot")
             if os.path.exists(sysroot):
                 cmake_args += ["-DLLVM_BINUTILS_INCDIR=/usr/include"]
@@ -275,25 +265,28 @@ def build_one_stage(
                 # because it doesn't allow to use a sysroot for that during the cmake
                 # checks.
                 cmake_args += ["-DCAN_TARGET_i386=1"]
-        if is_windows():
+            cmake_args += ["-DLLVM_ENABLE_TERMINFO=OFF"]
+        if is_windows(target):
             cmake_args.insert(-1, "-DLLVM_EXPORT_SYMBOLS_FOR_PLUGINS=ON")
-            cmake_args.insert(-1, "-DLLVM_USE_CRT_RELEASE=MT")
+            cmake_args.insert(-1, "-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded")
+            if is_cross_compile(target):
+                cmake_args += [
+                    f"-DCMAKE_TOOLCHAIN_FILE={src_dir}/cmake/platforms/WinMsvc.cmake",
+                    f"-DLLVM_NATIVE_TOOLCHAIN={os.path.dirname(os.path.dirname(cc[0]))}",
+                    f"-DHOST_ARCH={target[: -len('-pc-windows-msvc')]}",
+                    f"-DLLVM_WINSYSROOT={os.environ['VSINSTALLDIR']}",
+                    "-DLLVM_DISABLE_ASSEMBLY_FILES=ON",
+                ]
         else:
             # libllvm as a shared library is not supported on Windows
             cmake_args += ["-DLLVM_LINK_LLVM_DYLIB=ON"]
         if ranlib is not None:
             cmake_args += ["-DCMAKE_RANLIB=%s" % slashify_path(ranlib)]
-        if libtool is not None:
-            cmake_args += ["-DCMAKE_LIBTOOL=%s" % slashify_path(libtool)]
-        if osx_cross_compile:
-            arch = "arm64" if os.environ.get("OSX_ARCH") == "arm64" else "x86_64"
-            target_cpu = (
-                "aarch64" if os.environ.get("OSX_ARCH") == "arm64" else "x86_64"
-            )
+        if is_darwin(target) and is_cross_compile(target):
+            arch = "arm64" if target.startswith("aarch64") else "x86_64"
             cmake_args += [
                 "-DCMAKE_SYSTEM_NAME=Darwin",
                 "-DCMAKE_SYSTEM_VERSION=%s" % os.environ["MACOSX_DEPLOYMENT_TARGET"],
-                "-DLIBCXXABI_LIBCXX_INCLUDES=%s" % libcxx_include_dir,
                 "-DCMAKE_OSX_SYSROOT=%s" % slashify_path(os.getenv("CROSS_SYSROOT")),
                 "-DCMAKE_FIND_ROOT_PATH=%s" % slashify_path(os.getenv("CROSS_SYSROOT")),
                 "-DCMAKE_FIND_ROOT_PATH_MODE_PROGRAM=NEVER",
@@ -303,9 +296,12 @@ def build_one_stage(
                 "-DCMAKE_OSX_ARCHITECTURES=%s" % arch,
                 "-DDARWIN_osx_ARCHS=%s" % arch,
                 "-DDARWIN_osx_SYSROOT=%s" % slashify_path(os.getenv("CROSS_SYSROOT")),
-                "-DLLVM_DEFAULT_TARGET_TRIPLE=%s-apple-darwin" % target_cpu,
+                "-DLLVM_DEFAULT_TARGET_TRIPLE=%s" % target,
+                "-DCMAKE_C_COMPILER_TARGET=%s" % target,
+                "-DCMAKE_CXX_COMPILER_TARGET=%s" % target,
+                "-DCMAKE_ASM_COMPILER_TARGET=%s" % target,
             ]
-            if os.environ.get("OSX_ARCH") == "arm64":
+            if arch == "arm64":
                 cmake_args += [
                     "-DDARWIN_osx_BUILTIN_ARCHS=arm64",
                 ]
@@ -316,26 +312,32 @@ def build_one_stage(
                 "-DDARWIN_macosx_OVERRIDE_SDK_VERSION=%s"
                 % os.environ["MACOSX_DEPLOYMENT_TARGET"],
             ]
-        if pgo_phase == "gen":
+
+        if profile == "gen":
             # Per https://releases.llvm.org/10.0.0/docs/HowToBuildWithPGO.html
             cmake_args += [
                 "-DLLVM_BUILD_INSTRUMENTED=IR",
                 "-DLLVM_BUILD_RUNTIME=No",
             ]
-        if pgo_phase == "use":
+        elif profile:
             cmake_args += [
-                "-DLLVM_PROFDATA_FILE=%s/merged.profdata" % stage_dir,
+                "-DLLVM_PROFDATA_FILE=%s" % profile,
             ]
+
+        # Using LTO for both profile generation and usage to avoid most
+        # "function control flow change detected (hash mismatch)" error.
+        if profile and not is_windows(target):
+            cmake_args.append("-DLLVM_ENABLE_LTO=Thin")
         return cmake_args
 
     cmake_args = []
-    cmake_args += cmake_base_args(cc, cxx, asm, ld, ar, ranlib, libtool, inst_dir)
+    cmake_args += cmake_base_args(cc, cxx, asm, ar, ranlib, ldflags, inst_dir)
     cmake_args += [src_dir]
     build_package(build_dir, cmake_args)
 
     # For some reasons the import library clang.lib of clang.exe is not
     # installed, so we copy it by ourselves.
-    if is_windows() and is_final_stage:
+    if is_windows(target) and is_final_stage:
         install_import_library(build_dir, inst_dir)
 
 
@@ -391,7 +393,7 @@ def get_tool(config, key):
 #       clang-format-diff.py
 #       clang-tidy-diff.py
 #       run-clang-tidy.py
-def prune_final_dir_for_clang_tidy(final_dir, osx_cross_compile):
+def prune_final_dir_for_clang_tidy(final_dir, target):
     # Make sure we only have what we expect.
     dirs = [
         "bin",
@@ -403,7 +405,7 @@ def prune_final_dir_for_clang_tidy(final_dir, osx_cross_compile):
         "share",
         "tools",
     ]
-    if is_linux():
+    if is_linux(target):
         dirs.append("x86_64-unknown-linux-gnu")
     for f in glob.glob("%s/*" % final_dir):
         if os.path.basename(f) not in dirs:
@@ -427,19 +429,19 @@ def prune_final_dir_for_clang_tidy(final_dir, osx_cross_compile):
     # Keep include/ intact.
 
     # Remove the target-specific files.
-    if is_linux():
+    if is_linux(target):
         if os.path.exists(os.path.join(final_dir, "x86_64-unknown-linux-gnu")):
             shutil.rmtree(os.path.join(final_dir, "x86_64-unknown-linux-gnu"))
 
     # In lib/, only keep lib/clang/N.M.O/include and the LLVM shared library.
-    re_ver_num = re.compile(r"^\d+\.\d+\.\d+$", re.I)
+    re_ver_num = re.compile(r"^\d+(?:\.\d+\.\d+)?$", re.I)
     for f in glob.glob("%s/lib/*" % final_dir):
         name = os.path.basename(f)
         if name == "clang":
             continue
-        if osx_cross_compile and name in ["libLLVM.dylib", "libclang-cpp.dylib"]:
+        if is_darwin(target) and name in ["libLLVM.dylib", "libclang-cpp.dylib"]:
             continue
-        if is_linux() and (
+        if is_linux(target) and (
             fnmatch.fnmatch(name, "libLLVM*.so")
             or fnmatch.fnmatch(name, "libclang-cpp.so*")
         ):
@@ -469,7 +471,7 @@ def prune_final_dir_for_clang_tidy(final_dir, osx_cross_compile):
             delete(f)
 
 
-if __name__ == "__main__":
+def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "-c",
@@ -509,22 +511,6 @@ if __name__ == "__main__":
         os.sys.exit(0)
 
     llvm_source_dir = source_dir + "/llvm"
-    extra_source_dir = source_dir + "/clang-tools-extra"
-    clang_source_dir = source_dir + "/clang"
-    lld_source_dir = source_dir + "/lld"
-    compiler_rt_source_dir = source_dir + "/compiler-rt"
-    libcxx_source_dir = source_dir + "/libcxx"
-    libcxxabi_source_dir = source_dir + "/libcxxabi"
-
-    exe_ext = ""
-    if is_windows():
-        exe_ext = ".exe"
-
-    cc_name = "clang"
-    cxx_name = "clang++"
-    if is_windows():
-        cc_name = "clang-cl"
-        cxx_name = "clang-cl"
 
     config = {}
     # Merge all the configs we got from the command line.
@@ -573,8 +559,6 @@ if __name__ == "__main__":
         pgo = config["pgo"]
         if pgo not in (True, False):
             raise ValueError("Only boolean values are accepted for pgo.")
-        if pgo and stages != 4:
-            raise ValueError("PGO is only supported in 4-stage builds.")
     build_type = "Release"
     if "build_type" in config:
         build_type = config["build_type"]
@@ -583,16 +567,7 @@ if __name__ == "__main__":
                 "We only know how to do Release, Debug, RelWithDebInfo or "
                 "MinSizeRel builds"
             )
-    build_libcxx = True
-    if "build_libcxx" in config:
-        build_libcxx = config["build_libcxx"]
-        if build_libcxx not in (True, False):
-            raise ValueError("Only boolean values are accepted for build_libcxx.")
-    build_wasm = False
-    if "build_wasm" in config:
-        build_wasm = config["build_wasm"]
-        if build_wasm not in (True, False):
-            raise ValueError("Only boolean values are accepted for build_wasm.")
+    targets = config.get("targets")
     build_clang_tidy = False
     if "build_clang_tidy" in config:
         build_clang_tidy = config["build_clang_tidy"]
@@ -614,33 +589,49 @@ if __name__ == "__main__":
             raise ValueError(
                 "Only boolean values are accepted for build_clang_tidy_external."
             )
-    osx_cross_compile = False
-    if "osx_cross_compile" in config:
-        osx_cross_compile = config["osx_cross_compile"]
-        if osx_cross_compile not in (True, False):
-            raise ValueError("Only boolean values are accepted for osx_cross_compile.")
-        if osx_cross_compile and not is_linux():
-            raise ValueError("osx_cross_compile can only be used on Linux.")
     assertions = False
     if "assertions" in config:
         assertions = config["assertions"]
         if assertions not in (True, False):
             raise ValueError("Only boolean values are accepted for assertions.")
 
-    if is_darwin() or osx_cross_compile:
-        os.environ["MACOSX_DEPLOYMENT_TARGET"] = (
-            "11.0" if os.environ.get("OSX_ARCH") == "arm64" else "10.12"
+    for t in SUPPORTED_TARGETS:
+        if not is_cross_compile(t):
+            host = t
+            break
+    else:
+        raise Exception(
+            f"Cannot use this script on {platform.system()} {platform.machine()}"
         )
+
+    target = config.get("target", host)
+    if target not in SUPPORTED_TARGETS:
+        raise ValueError(f"{target} is not a supported target.")
+
+    if is_cross_compile(target) and not is_linux(host):
+        raise Exception("Cross-compilation is only supported on Linux")
+
+    if is_darwin(target):
+        os.environ["MACOSX_DEPLOYMENT_TARGET"] = (
+            "11.0" if target.startswith("aarch64") else "10.12"
+        )
+
+    if is_windows(target):
+        exe_ext = ".exe"
+        cc_name = "clang-cl"
+        cxx_name = "clang-cl"
+    else:
+        exe_ext = ""
+        cc_name = "clang"
+        cxx_name = "clang++"
 
     cc = get_tool(config, "cc")
     cxx = get_tool(config, "cxx")
-    asm = get_tool(config, "ml" if is_windows() else "as")
-    ld = get_tool(config, "link" if is_windows() else "ld")
-    ar = get_tool(config, "lib" if is_windows() else "ar")
-    ranlib = None if is_windows() else get_tool(config, "ranlib")
-    libtool = None
-    if "libtool" in config:
-        libtool = get_tool(config, "libtool")
+    asm = get_tool(config, "ml" if is_windows(target) else "as")
+    # Not using lld here as default here because it's not in PATH. But clang
+    # knows how to find it when they are installed alongside each others.
+    ar = get_tool(config, "lib" if is_windows(target) else "ar")
+    ranlib = None if is_windows(target) else get_tool(config, "ranlib")
 
     if not os.path.exists(source_dir):
         os.makedirs(source_dir)
@@ -648,25 +639,6 @@ if __name__ == "__main__":
     if not args.skip_patch:
         for p in config.get("patches", []):
             patch(p, source_dir)
-
-    compiler_rt_source_link = llvm_source_dir + "/projects/compiler-rt"
-
-    symlinks = [
-        (clang_source_dir, llvm_source_dir + "/tools/clang"),
-        (extra_source_dir, llvm_source_dir + "/tools/clang/tools/extra"),
-        (lld_source_dir, llvm_source_dir + "/tools/lld"),
-        (compiler_rt_source_dir, compiler_rt_source_link),
-        (libcxx_source_dir, llvm_source_dir + "/projects/libcxx"),
-        (libcxxabi_source_dir, llvm_source_dir + "/projects/libcxxabi"),
-        (source_dir + "/cmake", llvm_source_dir + "/projects/cmake"),
-    ]
-    for l in symlinks:
-        # On Windows, we have to re-copy the whole directory every time.
-        if not is_windows() and os.path.islink(l[1]):
-            continue
-        delete(l[1])
-        if os.path.exists(l[0]):
-            symlink(l[0], l[1])
 
     package_name = "clang"
     if build_clang_tidy:
@@ -679,22 +651,25 @@ if __name__ == "__main__":
     if not os.path.exists(build_dir):
         os.makedirs(build_dir)
 
-    libcxx_include_dir = os.path.join(llvm_source_dir, "projects", "libcxx", "include")
-
     stage1_dir = build_dir + "/stage1"
     stage1_inst_dir = stage1_dir + "/" + package_name
 
     final_stage_dir = stage1_dir
-    final_inst_dir = stage1_inst_dir
 
-    if is_darwin():
+    if is_darwin(target):
         extra_cflags = []
-        extra_cxxflags = ["-stdlib=libc++"]
+        extra_cxxflags = []
         extra_cflags2 = []
-        extra_cxxflags2 = ["-stdlib=libc++"]
+        extra_cxxflags2 = []
         extra_asmflags = []
-        extra_ldflags = []
-    elif is_linux():
+        # It's unfortunately required to specify the linker used here because
+        # the linker flags are used in LLVM's configure step before
+        # -DLLVM_ENABLE_LLD is actually processed.
+        extra_ldflags = [
+            "-fuse-ld=lld",
+            "-Wl,-dead_strip",
+        ]
+    elif is_linux(target):
         extra_cflags = []
         extra_cxxflags = []
         extra_cflags2 = ["-fPIC"]
@@ -711,50 +686,32 @@ if __name__ == "__main__":
         # corresponding option to strip unused sections.  We do it explicitly
         # here.  LLVM's build system is also picky about turning on ICF, so
         # we do that explicitly here, too.
-        extra_ldflags += ["-fuse-ld=gold", "-Wl,--gc-sections", "-Wl,--icf=safe"]
-    elif is_windows():
+
+        # It's unfortunately required to specify the linker used here because
+        # the linker flags are used in LLVM's configure step before
+        # -DLLVM_ENABLE_LLD is actually processed.
+        if is_llvm_toolchain(cc, cxx):
+            extra_ldflags += ["-fuse-ld=lld", "-Wl,--icf=safe"]
+        extra_ldflags += ["-Wl,--gc-sections"]
+    elif is_windows(target):
         extra_cflags = []
         extra_cxxflags = []
         # clang-cl would like to figure out what it's supposed to be emulating
         # by looking at an MSVC install, but we don't really have that here.
-        # Force things on.
-        extra_cflags2 = []
-        extra_cxxflags2 = [
-            "-fms-compatibility-version=19.15.26726",
-        ]
+        # Force things on based on WinMsvc.cmake.
+        # Ideally, we'd just use WinMsvc.cmake as a toolchain file, but it only
+        # really works for cross-compiles, which this is not.
+        with open(os.path.join(llvm_source_dir, "cmake/platforms/WinMsvc.cmake")) as f:
+            compat = [
+                item
+                for line in f
+                for item in line.split()
+                if "-fms-compatibility-version=" in item
+            ][0]
+        extra_cflags2 = [compat]
+        extra_cxxflags2 = [compat]
         extra_asmflags = []
         extra_ldflags = []
-
-    if osx_cross_compile:
-        # undo the damage done in the is_linux() block above, and also simulate
-        # the is_darwin() block above.
-        extra_cflags = []
-        extra_cxxflags = ["-stdlib=libc++"]
-        extra_cxxflags2 = ["-stdlib=libc++"]
-
-        extra_flags = [
-            "-target",
-            "x86_64-apple-darwin",
-            "-mlinker-version=137",
-            "-B",
-            "%s/bin" % os.getenv("CROSS_CCTOOLS_PATH"),
-            "-isysroot",
-            os.getenv("CROSS_SYSROOT"),
-            # technically the sysroot flag there should be enough to deduce this,
-            # but clang needs some help to figure this out.
-            "-I%s/usr/include" % os.getenv("CROSS_SYSROOT"),
-            "-iframework",
-            "%s/System/Library/Frameworks" % os.getenv("CROSS_SYSROOT"),
-        ]
-        extra_cflags += extra_flags
-        extra_cxxflags += extra_flags
-        extra_cflags2 += extra_flags
-        extra_cxxflags2 += extra_flags
-        extra_asmflags += extra_flags
-        extra_ldflags = [
-            "-Wl,-syslibroot,%s" % os.getenv("CROSS_SYSROOT"),
-            "-Wl,-dead_strip",
-        ]
 
     upload_dir = os.getenv("UPLOAD_DIR")
     if assertions and upload_dir:
@@ -766,19 +723,16 @@ if __name__ == "__main__":
             [cc] + extra_cflags,
             [cxx] + extra_cxxflags,
             [asm] + extra_asmflags,
-            [ld] + extra_ldflags,
             ar,
             ranlib,
-            libtool,
+            extra_ldflags,
             llvm_source_dir,
             stage1_dir,
             package_name,
-            build_libcxx,
-            osx_cross_compile,
             build_type,
             assertions,
-            libcxx_include_dir,
-            build_wasm,
+            target,
+            targets,
             is_final_stage=(stages == 1),
         )
 
@@ -786,8 +740,6 @@ if __name__ == "__main__":
         stage2_dir = build_dir + "/stage2"
         stage2_inst_dir = stage2_dir + "/" + package_name
         final_stage_dir = stage2_dir
-        final_inst_dir = stage2_inst_dir
-        pgo_phase = "gen" if pgo else None
         if skip_stages < 1:
             cc = stage1_inst_dir + "/bin/%s%s" % (cc_name, exe_ext)
             cxx = stage1_inst_dir + "/bin/%s%s" % (cxx_name, exe_ext)
@@ -796,28 +748,24 @@ if __name__ == "__main__":
             [cc] + extra_cflags2,
             [cxx] + extra_cxxflags2,
             [asm] + extra_asmflags,
-            [ld] + extra_ldflags,
             ar,
             ranlib,
-            libtool,
+            extra_ldflags,
             llvm_source_dir,
             stage2_dir,
             package_name,
-            build_libcxx,
-            osx_cross_compile,
             build_type,
             assertions,
-            libcxx_include_dir,
-            build_wasm,
+            target,
+            targets,
             is_final_stage=(stages == 2),
-            pgo_phase=pgo_phase,
+            profile="gen" if pgo else None,
         )
 
     if stages >= 3 and skip_stages < 3:
         stage3_dir = build_dir + "/stage3"
         stage3_inst_dir = stage3_dir + "/" + package_name
         final_stage_dir = stage3_dir
-        final_inst_dir = stage3_inst_dir
         if skip_stages < 2:
             cc = stage2_inst_dir + "/bin/%s%s" % (cc_name, exe_ext)
             cxx = stage2_inst_dir + "/bin/%s%s" % (cxx_name, exe_ext)
@@ -826,38 +774,40 @@ if __name__ == "__main__":
             [cc] + extra_cflags2,
             [cxx] + extra_cxxflags2,
             [asm] + extra_asmflags,
-            [ld] + extra_ldflags,
             ar,
             ranlib,
-            libtool,
+            extra_ldflags,
             llvm_source_dir,
             stage3_dir,
             package_name,
-            build_libcxx,
-            osx_cross_compile,
             build_type,
             assertions,
-            libcxx_include_dir,
-            build_wasm,
+            target,
+            targets,
             (stages == 3),
         )
-
-    if stages >= 4 and skip_stages < 4:
-        stage4_dir = build_dir + "/stage4"
-        stage4_inst_dir = stage4_dir + "/" + package_name
-        final_stage_dir = stage4_dir
-        final_inst_dir = stage4_inst_dir
-        pgo_phase = None
         if pgo:
-            pgo_phase = "use"
-            llvm_profdata = stage3_inst_dir + "/bin/llvm-profdata%s" % exe_ext
+            llvm_profdata = stage2_inst_dir + "/bin/llvm-profdata%s" % exe_ext
             merge_cmd = [llvm_profdata, "merge", "-o", "merged.profdata"]
             profraw_files = glob.glob(
                 os.path.join(stage2_dir, "build", "profiles", "*.profraw")
             )
-            if not os.path.exists(stage4_dir):
-                os.mkdir(stage4_dir)
-            run_in(stage4_dir, merge_cmd + profraw_files)
+            run_in(stage3_dir, merge_cmd + profraw_files)
+            if stages == 3:
+                mkdir_p(upload_dir)
+                shutil.copy2(os.path.join(stage3_dir, "merged.profdata"), upload_dir)
+                return
+
+    if stages >= 4 and skip_stages < 4:
+        stage4_dir = build_dir + "/stage4"
+        final_stage_dir = stage4_dir
+        profile = None
+        if pgo:
+            if skip_stages == 3:
+                profile_dir = os.environ.get("MOZ_FETCHES_DIR", "")
+            else:
+                profile_dir = stage3_dir
+            profile = os.path.join(profile_dir, "merged.profdata")
         if skip_stages < 3:
             cc = stage3_inst_dir + "/bin/%s%s" % (cc_name, exe_ext)
             cxx = stage3_inst_dir + "/bin/%s%s" % (cxx_name, exe_ext)
@@ -866,42 +816,28 @@ if __name__ == "__main__":
             [cc] + extra_cflags2,
             [cxx] + extra_cxxflags2,
             [asm] + extra_asmflags,
-            [ld] + extra_ldflags,
             ar,
             ranlib,
-            libtool,
+            extra_ldflags,
             llvm_source_dir,
             stage4_dir,
             package_name,
-            build_libcxx,
-            osx_cross_compile,
             build_type,
             assertions,
-            libcxx_include_dir,
-            build_wasm,
+            target,
+            targets,
             (stages == 4),
-            pgo_phase=pgo_phase,
+            profile=profile,
         )
 
     if build_clang_tidy:
         prune_final_dir_for_clang_tidy(
-            os.path.join(final_stage_dir, package_name), osx_cross_compile
+            os.path.join(final_stage_dir, package_name), target
         )
-
-    # Copy the wasm32 builtins to the final_inst_dir if the archive is present.
-    if "wasi-compiler-rt" in config:
-        compiler_rt = config["wasi-compiler-rt"].format(**os.environ)
-        if os.path.isdir(compiler_rt):
-            for libdir in glob.glob(
-                os.path.join(final_inst_dir, "lib", "clang", "*", "lib")
-            ):
-                srcdir = os.path.join(compiler_rt, "lib", "wasi")
-                print("Copying from wasi-compiler-rt srcdir %s" % srcdir)
-                # Copy the contents of the "lib/wasi" subdirectory to the
-                # appropriate location in final_inst_dir.
-                destdir = os.path.join(libdir, "wasi")
-                mkdir_p(destdir)
-                copy_tree(srcdir, destdir)
 
     if not args.skip_tar:
         build_tar_package("%s.tar.zst" % package_name, final_stage_dir, package_name)
+
+
+if __name__ == "__main__":
+    main()

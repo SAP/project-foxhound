@@ -31,9 +31,9 @@ XPCOM_MANIFESTS += [
 EXPORTS += [
     "MainThreadUtils.h",
     "nsICancelableRunnable.h",
-    "nsIDelayedRunnableObserver.h",
     "nsIDiscardableRunnable.h",
     "nsIIdleRunnable.h",
+    "nsITargetShutdownTask.h",
     "nsMemoryPressure.h",
     "nsProcess.h",
     "nsProxyRelease.h",
@@ -52,6 +52,7 @@ EXPORTS.mozilla += [
     "DeadlockDetector.h",
     "DelayedRunnable.h",
     "EventQueue.h",
+    "EventTargetCapability.h",
     "IdlePeriodState.h",
     "IdleTaskRunner.h",
     "InputTaskManager.h",
@@ -59,9 +60,7 @@ EXPORTS.mozilla += [
     "MainThreadIdlePeriod.h",
     "Monitor.h",
     "MozPromise.h",
-    "MozPromiseInlines.h",
     "Mutex.h",
-    "PerformanceCounter.h",
     "Queue.h",
     "RecursiveMutex.h",
     "ReentrantMonitor.h",
@@ -73,7 +72,6 @@ EXPORTS.mozilla += [
     "StateWatching.h",
     "SynchronizedEventQueue.h",
     "SyncRunnable.h",
-    "TaskCategory.h",
     "TaskController.h",
     "TaskDispatcher.h",
     "TaskQueue.h",
@@ -95,7 +93,6 @@ UNIFIED_SOURCES += [
     "DelayedRunnable.cpp",
     "EventQueue.cpp",
     "IdlePeriodState.cpp",
-    "InputEventStatistics.cpp",
     "InputTaskManager.cpp",
     "LazyIdleThread.cpp",
     "MainThreadIdlePeriod.cpp",
@@ -108,7 +105,6 @@ UNIFIED_SOURCES += [
     "nsThreadPool.cpp",
     "nsThreadUtils.cpp",
     "nsTimerImpl.cpp",
-    "PerformanceCounter.cpp",
     "RecursiveMutex.cpp",
     "RWLock.cpp",
     "SchedulerGroup.cpp",
@@ -123,6 +119,19 @@ UNIFIED_SOURCES += [
     "TimerThread.cpp",
     "VsyncTaskManager.cpp",
 ]
+
+if CONFIG["OS_ARCH"] == "WINNT":
+    EXPORTS.mozilla += ["WinHandleWatcher.h"]
+    UNIFIED_SOURCES += ["WinHandleWatcher.cpp"]
+
+# Should match the conditions in toolkit/components/backgroundhangmonitor/moz.build
+if (
+    CONFIG["NIGHTLY_BUILD"]
+    and not CONFIG["MOZ_DEBUG"]
+    and not CONFIG["MOZ_TSAN"]
+    and not CONFIG["MOZ_ASAN"]
+):
+    DEFINES["MOZ_ENABLE_BACKGROUND_HANG_MONITOR"] = 1
 
 LOCAL_INCLUDES += [
     "../build",

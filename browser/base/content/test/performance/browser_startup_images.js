@@ -41,17 +41,6 @@ const knownUnshownImages = [
   },
 
   {
-    file: "resource://gre-resources/loading-image.png",
-    platforms: ["win", "macosx"],
-    intermittentNotLoaded: ["win", "macosx"],
-  },
-  {
-    file: "resource://gre-resources/broken-image.png",
-    platforms: ["win", "macosx"],
-    intermittentNotLoaded: ["win", "macosx"],
-  },
-
-  {
     file: "chrome://global/skin/icons/chevron.svg",
     platforms: ["win", "linux", "macosx"],
     intermittentShown: ["win", "linux"],
@@ -68,19 +57,32 @@ const knownUnshownImages = [
   },
 ];
 
-add_task(async function() {
+add_task(async function () {
   if (!AppConstants.DEBUG) {
     ok(false, "You need to run this test on a debug build.");
   }
 
-  let startupRecorder = Cc["@mozilla.org/test/startuprecorder;1"].getService()
-    .wrappedJSObject;
+  let startupRecorder =
+    Cc["@mozilla.org/test/startuprecorder;1"].getService().wrappedJSObject;
   await startupRecorder.done;
 
   let data = Cu.cloneInto(startupRecorder.data.images, {});
   let knownImagesForPlatform = knownUnshownImages.filter(el => {
     return el.platforms.includes(AppConstants.platform);
   });
+
+  {
+    let results = await PerfTestHelpers.throttledMapPromises(
+      knownImagesForPlatform,
+      async image => ({
+        uri: image.file,
+        exists: await PerfTestHelpers.checkURIExists(image.file),
+      })
+    );
+    for (let { uri, exists } of results) {
+      ok(exists, `Unshown image entry ${uri} must exist`);
+    }
+  }
 
   let loadedImages = data["image-loading"];
   let shownImages = data["image-drawing"];

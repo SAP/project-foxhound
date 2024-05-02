@@ -8,8 +8,8 @@ FINAL_TARGET = "_tests/xpcshell/toolkit/mozapps/update/tests/data"
 
 if not CONFIG["MOZ_SUITE"]:
     BROWSER_CHROME_MANIFESTS += [
-        "browser/browser.ini",
-        "browser/manual_app_update_only/browser.ini",
+        "browser/browser.toml",
+        "browser/manual_app_update_only/browser.toml",
     ]
     if CONFIG["MOZ_BITS_DOWNLOAD"]:
         BROWSER_CHROME_MANIFESTS += ["browser/browser.bits.ini"]
@@ -58,8 +58,8 @@ DisableStlWrapping()
 if CONFIG["MOZ_MAINTENANCE_SERVICE"]:
     DEFINES["MOZ_MAINTENANCE_SERVICE"] = CONFIG["MOZ_MAINTENANCE_SERVICE"]
 
-# For debugging purposes only
-# DEFINES['DISABLE_UPDATER_AUTHENTICODE_CHECK'] = True
+if CONFIG["DISABLE_UPDATER_AUTHENTICODE_CHECK"]:
+    DEFINES["DISABLE_UPDATER_AUTHENTICODE_CHECK"] = True
 
 if CONFIG["CC_TYPE"] == "clang-cl":
     WIN32_EXE_LDFLAGS += ["-ENTRY:wmainCRTStartup"]

@@ -15,7 +15,7 @@ callback WebExtensionLocalizeCallback = DOMString (DOMString unlocalizedText);
 interface WebExtensionPolicy {
   [Throws]
   constructor(WebExtensionInit options);
-  
+
   /**
    * The add-on's internal ID, as specified in its manifest.json file or its
    * XPI signature.
@@ -42,6 +42,12 @@ interface WebExtensionPolicy {
    */
   [Constant]
   readonly attribute DOMString name;
+
+  /**
+   * The add-on's internal type as determined by parsing the manifest.json file.
+   */
+  [Constant]
+  readonly attribute DOMString type;
 
   /**
    * Whether the extension has access to privileged features
@@ -114,6 +120,12 @@ interface WebExtensionPolicy {
   attribute boolean active;
 
   /**
+   * True if this extension is exempt from quarantine.
+   */
+  [Cached, Pure]
+  attribute boolean ignoreQuarantine;
+
+  /**
    * True if both e10s and webextensions.remote are enabled.  This must be
    * used instead of checking the remote pref directly since remote extensions
    * require both to be enabled.
@@ -131,12 +143,19 @@ interface WebExtensionPolicy {
    *
    * NOTE: **do not use Services.prefs to retrieve the value of the undelying pref**
    *
-   * It is defined in StaticPrefs.yaml as `mirror: once` and so checking
+   * It is defined in StaticPrefList.yaml as `mirror: once` and so checking
    * its current value using Services.prefs doesn't guarantee that it does
    * match the value as accessible from the C++ layers, and unexpected issue
    * may be possible if different code has a different idea of its value.
    */
   static readonly attribute boolean backgroundServiceWorkerEnabled;
+
+  /**
+   * Whether the Quarantined Domains feature is enabled.  Use this as a single
+   * source of truth instead of checking extensions.QuarantinedDomains.enabled
+   * pref directly because the logic might change.
+   */
+  static readonly attribute boolean quarantinedDomainsEnabled;
 
   /**
    * Set based on the manifest.incognito value:
@@ -166,18 +185,28 @@ interface WebExtensionPolicy {
   boolean hasPermission(DOMString permission);
 
   /**
+   * Returns true if the domain is on the Quarantined Domains list.
+   */
+  static boolean isQuarantinedURI(URI uri);
+
+  /**
+   * Returns true if this extension is quarantined from the URI.
+   */
+  boolean quarantinedFromURI(URI uri);
+
+  /**
    * Returns true if the given path relative to the extension's moz-extension:
    * URL root is listed as a web accessible path. Access checks on a path, such
    * as performed in nsScriptSecurityManager, use sourceMayAccessPath below.
    */
-  boolean isWebAccessiblePath(DOMString pathname);
+  boolean isWebAccessiblePath(UTF8String pathname);
 
   /**
    * Returns true if the given path relative to the extension's moz-extension:
    * URL root may be accessed by web content at sourceURI.  For Manifest V2,
    * sourceURI is ignored and the path must merely be listed as web accessible.
    */
-  boolean sourceMayAccessPath(URI sourceURI, DOMString pathname);
+  boolean sourceMayAccessPath(URI sourceURI, UTF8String pathname);
 
   /**
    * Replaces localization placeholders in the given string with localized
@@ -195,19 +224,19 @@ interface WebExtensionPolicy {
    * Register a new content script programmatically.
    */
   [Throws]
-  void registerContentScript(WebExtensionContentScript script);
+  undefined registerContentScript(WebExtensionContentScript script);
 
   /**
    * Unregister a content script.
    */
   [Throws]
-  void unregisterContentScript(WebExtensionContentScript script);
+  undefined unregisterContentScript(WebExtensionContentScript script);
 
   /**
    * Injects the extension's content script into all existing matching windows.
    */
   [Throws]
-  void injectContentScripts();
+  undefined injectContentScripts();
 
   /**
    * Returns the list of currently active extension policies.
@@ -274,7 +303,8 @@ interface WebExtensionPolicy {
 
 dictionary WebAccessibleResourceInit {
   required sequence<MatchGlobOrString> resources;
-  MatchPatternSetOrStringSequence matches;
+  MatchPatternSetOrStringSequence? matches = null;
+  sequence<DOMString>? extension_ids = null;
 };
 
 dictionary WebExtensionInit {
@@ -286,7 +316,11 @@ dictionary WebExtensionInit {
 
   DOMString name = "";
 
+  DOMString type = "";
+
   boolean isPrivileged = false;
+
+  boolean ignoreQuarantine = false;
 
   boolean temporarilyInstalled = false;
 
@@ -306,6 +340,9 @@ dictionary WebExtensionInit {
 
   sequence<DOMString>? backgroundScripts = null;
   DOMString? backgroundWorkerScript = null;
+
+  // Whether the background scripts should be loaded as ES modules.
+  boolean backgroundTypeModule = false;
 
   Promise<WebExtensionPolicy?> readyPromise;
 };

@@ -4,111 +4,87 @@
 
 //! Computed color values.
 
-use crate::values::animated::color::RGBA as AnimatedRGBA;
-use crate::values::animated::ToAnimatedValue;
-use crate::values::generics::color::{GenericCaretColor, GenericColor, GenericColorOrAuto};
-use cssparser::{Color as CSSParserColor, RGBA};
+use crate::color::AbsoluteColor;
+use crate::values::animated::ToAnimatedZero;
+use crate::values::computed::percentage::Percentage;
+use crate::values::generics::color::{
+    GenericCaretColor, GenericColor, GenericColorMix, GenericColorOrAuto,
+};
+use crate::color::parsing::Color as CSSParserColor;
 use std::fmt;
 use style_traits::{CssWriter, ToCss};
 
-pub use crate::values::specified::color::{ColorScheme, PrintColorAdjust};
+pub use crate::values::specified::color::{ColorScheme, ForcedColorAdjust, PrintColorAdjust};
 
 /// The computed value of the `color` property.
-pub type ColorPropertyValue = RGBA;
-
-/// The computed value of `-moz-font-smoothing-background-color`.
-pub type MozFontSmoothingBackgroundColor = RGBA;
+pub type ColorPropertyValue = AbsoluteColor;
 
 /// A computed value for `<color>`.
-pub type Color = GenericColor<RGBA>;
+pub type Color = GenericColor<Percentage>;
 
-impl Color {
-    /// Returns a complex color value representing transparent.
-    pub fn transparent() -> Color {
-        Color::rgba(RGBA::transparent())
-    }
-
-    /// Combine this complex color with the given foreground color into
-    /// a numeric RGBA color. It currently uses linear blending.
-    pub fn to_rgba(&self, fg_color: RGBA) -> RGBA {
-        // Common cases that the complex color is either pure numeric color or
-        // pure currentcolor.
-        if self.is_numeric() {
-            return self.color;
-        }
-
-        if self.is_currentcolor() {
-            return fg_color;
-        }
-
-        let ratios = &self.ratios;
-        let color = &self.color;
-
-        // For the more complicated case that the alpha value differs,
-        // we use the following formula to compute the components:
-        // alpha = self_alpha * bg_ratio + fg_alpha * fg_ratio
-        // color = (self_color * self_alpha * bg_ratio +
-        //          fg_color * fg_alpha * fg_ratio) / alpha
-
-        let p1 = ratios.bg;
-        let a1 = color.alpha_f32();
-        let r1 = a1 * color.red_f32();
-        let g1 = a1 * color.green_f32();
-        let b1 = a1 * color.blue_f32();
-
-        let p2 = ratios.fg;
-        let a2 = fg_color.alpha_f32();
-        let r2 = a2 * fg_color.red_f32();
-        let g2 = a2 * fg_color.green_f32();
-        let b2 = a2 * fg_color.blue_f32();
-
-        let a = p1 * a1 + p2 * a2;
-        if a <= 0. {
-            return RGBA::transparent();
-        }
-        let a = a.min(1.);
-
-        let inv = 1. / a;
-
-        let r = (p1 * r1 + p2 * r2) * inv;
-        let g = (p1 * g1 + p2 * g2) * inv;
-        let b = (p1 * b1 + p2 * b2) * inv;
-        RGBA::from_floats(r, g, b, a)
-    }
-}
+/// A computed color-mix().
+pub type ColorMix = GenericColorMix<Color, Percentage>;
 
 impl ToCss for Color {
     fn to_css<W>(&self, dest: &mut CssWriter<W>) -> fmt::Result
     where
         W: fmt::Write,
     {
-        if self.is_currentcolor() {
-            return CSSParserColor::CurrentColor.to_css(dest);
+        match *self {
+            Self::Absolute(ref c) => c.to_css(dest),
+            Self::CurrentColor => cssparser::ToCss::to_css(&CSSParserColor::CurrentColor, dest),
+            Self::ColorMix(ref m) => m.to_css(dest),
         }
-        if self.is_numeric() {
-            return self.color.to_css(dest);
-        }
-        Ok(())
     }
 }
 
-impl ToAnimatedValue for RGBA {
-    type AnimatedValue = AnimatedRGBA;
+impl Color {
+    /// A fully transparent color.
+    pub const TRANSPARENT_BLACK: Self = Self::Absolute(AbsoluteColor::TRANSPARENT_BLACK);
 
-    #[inline]
-    fn to_animated_value(self) -> Self::AnimatedValue {
-        AnimatedRGBA::new(
-            self.red_f32(),
-            self.green_f32(),
-            self.blue_f32(),
-            self.alpha_f32(),
-        )
+    /// An opaque black color.
+    pub const BLACK: Self = Self::Absolute(AbsoluteColor::BLACK);
+
+    /// An opaque white color.
+    pub const WHITE: Self = Self::Absolute(AbsoluteColor::WHITE);
+
+    /// Create a new computed [`Color`] from a given color-mix, simplifying it to an absolute color
+    /// if possible.
+    pub fn from_color_mix(color_mix: ColorMix) -> Self {
+        if let Some(absolute) = color_mix.mix_to_absolute() {
+            Self::Absolute(absolute)
+        } else {
+            Self::ColorMix(Box::new(color_mix))
+        }
     }
 
-    #[inline]
-    fn from_animated_value(animated: Self::AnimatedValue) -> Self {
-        // RGBA::from_floats clamps each component values.
-        RGBA::from_floats(animated.red, animated.green, animated.blue, animated.alpha)
+    /// Combine this complex color with the given foreground color into an
+    /// absolute color.
+    pub fn resolve_to_absolute(&self, current_color: &AbsoluteColor) -> AbsoluteColor {
+        use crate::values::specified::percentage::ToPercentage;
+
+        match *self {
+            Self::Absolute(c) => c,
+            Self::CurrentColor => *current_color,
+            Self::ColorMix(ref mix) => {
+                let left = mix.left.resolve_to_absolute(current_color);
+                let right = mix.right.resolve_to_absolute(current_color);
+                crate::color::mix::mix(
+                    mix.interpolation,
+                    &left,
+                    mix.left_percentage.to_percentage(),
+                    &right,
+                    mix.right_percentage.to_percentage(),
+                    mix.flags,
+                )
+            },
+        }
+    }
+}
+
+impl ToAnimatedZero for AbsoluteColor {
+    fn to_animated_zero(&self) -> Result<Self, ()> {
+        Ok(Self::TRANSPARENT_BLACK)
     }
 }
 

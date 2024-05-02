@@ -8,10 +8,14 @@
 #include <d3d11.h>
 #include <d3d11_1.h>
 #include "GLContext.h"
+#include "GLBlitHelper.h"
 #include "MozFramebuffer.h"
+#include "ScopedGLHelpers.h"
 #include "WGLLibrary.h"
 #include "nsPrintfCString.h"
 #include "mozilla/gfx/DeviceManagerDx.h"
+#include "mozilla/gfx/Logging.h"
+#include "mozilla/layers/LayersSurfaces.h"
 #include "mozilla/StaticPrefs_webgl.h"
 
 namespace mozilla {
@@ -438,8 +442,9 @@ Maybe<layers::SurfaceDescriptor>
 SharedSurface_D3D11Interop::ToSurfaceDescriptor() {
   const auto format = gfx::SurfaceFormat::B8G8R8A8;
   return Some(layers::SurfaceDescriptorD3D10(
-      WindowsHandle(mData.dxgiHandle), format, mDesc.size,
-      gfx::YUVColorSpace::Identity, gfx::ColorRange::FULL));
+      WindowsHandle(mData.dxgiHandle), /* gpuProcessTextureId */ Nothing(),
+      /* arrayIndex */ 0, format, mDesc.size, mDesc.colorSpace,
+      gfx::ColorRange::FULL, /* hasKeyedMutex */ true));
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////

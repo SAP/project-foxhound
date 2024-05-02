@@ -34,8 +34,12 @@
     'ecl/ecp_jac.c',
     'ecl/ecp_jm.c',
     'ecl/ecp_mont.c',
+    'ecl/ecp_secp256r1.c',
     'ecl/ecp_secp384r1.c',
     'ecl/ecp_secp521r1.c',
+    'verified/Hacl_P256.c',
+    'verified/Hacl_P384.c',
+    'verified/Hacl_P521.c',
     'fipsfreebl.c',
     'blinit.c',
     'freeblver.c',
@@ -60,6 +64,10 @@
     'shvfy.c',
     'sysrand.c',
     'tlsprfalg.c',
+    'secmpi.c',
+    'verified/Hacl_Hash_SHA3.c',
+    'sha3.c',
+    'shake.c',
   ],
   'conditions': [
     [ 'OS=="linux" or OS=="android"', {

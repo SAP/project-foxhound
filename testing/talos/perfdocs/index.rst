@@ -60,7 +60,6 @@ figure out what suites and tests are available to run.
     #  bcv                          (basic_compositor_video)
     #  chromez                      (about_preferences_basic:tresize)
     #  dromaeojs                    (dromaeo_css:kraken)
-    #  flex                         (tart_flex:ts_paint_flex)
     # ...
 
     # Run all of the tests in the "bcv" test suite:
@@ -106,7 +105,6 @@ platform and test suites of your choosing.
     | test-windows10-64/opt-talos-webgl-gli-e10s
     | test-linux64-shippable/opt-talos-tp5o-e10s
     | test-linux64-shippable/opt-talos-svgr-e10s
-    | test-linux64-shippable/opt-talos-flex-e10s
     | test-linux64-shippable/opt-talos-damp-e10s
     > test-windows7-32/opt-talos-webgl-gli-e10s
     | test-linux64-shippable/opt-talos-bcv-e10s
@@ -170,7 +168,7 @@ There are two different species of Talos tests:
 In addition we have some variations on existing tests:
 
 -  Heavy_: Run tests with the heavy user profile instead of a blank one
--  `Web extension`_: Run tests with a web extension to see the perf impact extension have
+-  WebExtension_: Run tests with a WebExtension to see the perf impact extension have
 -  `Real-world WebExtensions`_: Run tests with a set of 5 popular real-world WebExtensions installed and enabled.
 
 Some tests measure different things:
@@ -253,14 +251,14 @@ Currently we have issues with this on windows (takes too long to unpack
 the files from the profile), so we have turned this off there. Our goal
 is to run this on basic pageload and startup tests.
 
-Web extension
+WebExtension
 =============
 
-Web Extensions are what Firefox has switched to and there are different
+WebExtensions are what Firefox has switched to and there are different
 code paths and APIs used vs addons. Historically we don't test with
 addons (other than our test addons) and are missing out on common
 slowdowns. In 2017 we started running some startup and basic pageload
-tests with a web extension in the profile (`bug
+tests with a WebExtension in the profile (`bug
 1398974 <https://bugzilla.mozilla.org/show_bug.cgi?id=1398974>`__). We
 have updated the Extension to be more real world and will continue to do
 that.
@@ -327,9 +325,9 @@ median values of the raw data from the subtests).
 
 Tests which are imported benchmarks are:
 
--  `ARES6 <#ARES6>`_
+-  `ARES6 <#ares6>`_
 -  `dromaeo <#dromaeo>`_
--  `JetStream <#JetStream>`_
+-  `JetStream <#jetstream>`_
 -  `kraken <#kraken>`_
 -  `motionmark <#motionmark>`_
 -  `stylebench <#stylebench>`_

@@ -149,14 +149,14 @@ nsresult RegexEval(const nsAString& aPattern, const nsAString& aString,
   // evaluation does not interact with the execution global.
   JSAutoRealm ar(cx, xpc::PrivilegedJunkScope());
 
-  JS::RootedObject regexp(
+  JS::Rooted<JSObject*> regexp(
       cx, JS::NewUCRegExpObject(cx, aPattern.BeginReading(), aPattern.Length(),
                                 JS::RegExpFlag::Unicode));
   if (!regexp) {
     return NS_ERROR_ILLEGAL_VALUE;
   }
 
-  JS::RootedValue regexResult(cx, JS::NullValue());
+  JS::Rooted<JS::Value> regexResult(cx, JS::NullValue());
 
   size_t index = 0;
   if (!JS::ExecuteRegExpNoStatics(cx, regexp, aString.BeginReading(),
@@ -182,14 +182,14 @@ nsresult RegexEval(const nsAString& aPattern, const nsAString& aString,
 
   // Now we know we have a result, and we need to extract it so we can read it.
   uint32_t length;
-  JS::RootedObject regexResultObj(cx, &regexResult.toObject());
+  JS::Rooted<JSObject*> regexResultObj(cx, &regexResult.toObject());
   if (!JS::GetArrayLength(cx, regexResultObj, &length)) {
     return NS_ERROR_NOT_AVAILABLE;
   }
   MOZ_LOG(sCSMLog, LogLevel::Verbose, ("Regex Matched %i strings", length));
 
   for (uint32_t i = 0; i < length; i++) {
-    JS::RootedValue element(cx);
+    JS::Rooted<JS::Value> element(cx);
     if (!JS_GetElement(cx, regexResultObj, i, &element)) {
       return NS_ERROR_NO_CONTENT;
     }
@@ -459,7 +459,7 @@ FilenameTypeAndDetails nsContentSecurityUtils::FilenameToFilenameType(
       sanitizedPathAndScheme.Append(u"can't get addon off main thread]"_ns);
     }
 
-    sanitizedPathAndScheme.Append(url.FilePath());
+    AppendUTF8toUTF16(url.FilePath(), sanitizedPathAndScheme);
     return FilenameTypeAndDetails(kExtensionURI, Some(sanitizedPathAndScheme));
   }
 
@@ -495,7 +495,7 @@ FilenameTypeAndDetails nsContentSecurityUtils::FilenameToFilenameType(
   return FilenameTypeAndDetails(kOther, Nothing());
 }
 
-#ifdef NIGHTLY_BUILD
+#if defined(EARLY_BETA_OR_EARLIER)
 // Crash String must be safe from a telemetry point of view.
 // This will be ensured when this function is used.
 void PossiblyCrash(const char* aPrefSuffix, const char* aUnsafeCrashString,
@@ -598,13 +598,11 @@ bool nsContentSecurityUtils::IsEvalAllowed(JSContext* cx,
   static nsLiteralCString evalAllowlist[] = {
       // Test-only third-party library
       "resource://testing-common/sinon-7.2.7.js"_ns,
-      // Test-only third-party library
-      "resource://testing-common/ajv-6.12.6.js"_ns,
       // Test-only utility
       "resource://testing-common/content-task.js"_ns,
 
       // Tracked by Bug 1584605
-      "resource:///modules/translation/cld-worker.js"_ns,
+      "resource://gre/modules/translation/cld-worker.js"_ns,
 
       // require.js implements a script loader for workers. It uses eval
       // to load the script; but injection is only possible in situations
@@ -612,6 +610,11 @@ bool nsContentSecurityUtils::IsEvalAllowed(JSContext* cx,
       // it is okay to allow eval() as it adds no additional attack surface.
       // Bug 1584564 tracks requiring safe usage of require.js
       "resource://gre/modules/workers/require.js"_ns,
+
+      // The profiler's symbolication code uses a wasm module to extract symbols
+      // from the binary files result of local builds.
+      // See bug 1777479
+      "resource://devtools/client/performance-new/shared/symbolication.jsm.js"_ns,
 
       // The Browser Toolbox/Console
       "debugger"_ns,
@@ -804,6 +807,27 @@ void nsContentSecurityUtils::NotifyEvalUsage(bool aIsSystemPrincipal,
   console->LogMessage(error);
 }
 
+// If we detect that one of the relevant prefs has been changed, reset
+// sJSHacksChecked to cause us to re-evaluate all the pref values.
+// This will stop us from crashing because a user enabled one of these
+// prefs during a session and then triggered the JavaScript load mitigation
+// (which can cause a crash).
+class JSHackPrefObserver final {
+ public:
+  JSHackPrefObserver() = default;
+  static void PrefChanged(const char* aPref, void* aData);
+
+ protected:
+  ~JSHackPrefObserver() = default;
+};
+
+// static
+void JSHackPrefObserver::PrefChanged(const char* aPref, void* aData) {
+  sJSHacksChecked = false;
+}
+
+static bool sJSHackObserverAdded = false;
+
 /* static */
 void nsContentSecurityUtils::DetectJsHacks() {
   // We can only perform the check of this preference on the Main Thread
@@ -814,47 +838,116 @@ void nsContentSecurityUtils::DetectJsHacks() {
   if (!NS_IsMainThread()) {
     return;
   }
+
+  // If the pref service isn't available, do nothing and re-do this later.
+  if (!Preferences::IsServiceAvailable()) {
+    return;
+  }
+
   // No need to check again.
   if (MOZ_LIKELY(sJSHacksChecked || sJSHacksPresent)) {
     return;
   }
+
+  static const char* kObservedPrefs[] = {
+      "xpinstall.signatures.required", "general.config.filename",
+      "autoadmin.global_config_url", "autoadmin.failover_to_cached", nullptr};
+  if (MOZ_UNLIKELY(!sJSHackObserverAdded)) {
+    Preferences::RegisterCallbacks(JSHackPrefObserver::PrefChanged,
+                                   kObservedPrefs);
+    sJSHackObserverAdded = true;
+  }
+
+  nsresult rv;
+  sJSHacksChecked = true;
+
   // This preference is required by bootstrapLoader.xpi, which is an
   // alternate way to load legacy-style extensions. It only works on
   // DevEdition/Nightly.
-  bool xpinstallSignatures =
-      Preferences::GetBool("xpinstall.signatures.required", false);
-  if (!xpinstallSignatures) {
+  bool xpinstallSignatures;
+  rv = Preferences::GetBool("xpinstall.signatures.required",
+                            &xpinstallSignatures, PrefValueKind::Default);
+  if (!NS_FAILED(rv) && !xpinstallSignatures) {
     sJSHacksPresent = true;
-    sJSHacksChecked = true;
+    return;
+  }
+  rv = Preferences::GetBool("xpinstall.signatures.required",
+                            &xpinstallSignatures, PrefValueKind::User);
+  if (!NS_FAILED(rv) && !xpinstallSignatures) {
+    sJSHacksPresent = true;
     return;
   }
 
-  // This preference is a file used for autoconfiguration of Firefox
-  // by administrators. It has also been (ab)used by the userChromeJS
-  // project to run legacy-style 'extensions', some of which use eval,
-  // all of which run in the System Principal context.
-  nsAutoString jsConfigPref;
-  nsresult rv = Preferences::GetString("general.config.filename", jsConfigPref);
-  if (!NS_FAILED(rv) && !jsConfigPref.IsEmpty()) {
-    sJSHacksPresent = true;
-  }
+  // The content process code is probably safe to use for both, but
+  // this hack detection and related efforts has been very fragile so
+  // I'm being extra conservative.
+  if (XRE_IsParentProcess()) {
+    // This preference is a file used for autoconfiguration of Firefox
+    // by administrators. It has also been (ab)used by the userChromeJS
+    // project to run legacy-style 'extensions', some of which use eval,
+    // all of which run in the System Principal context.
+    nsAutoString jsConfigPref;
+    rv = Preferences::GetString("general.config.filename", jsConfigPref,
+                                PrefValueKind::Default);
+    if (!NS_FAILED(rv) && !jsConfigPref.IsEmpty()) {
+      sJSHacksPresent = true;
+      return;
+    }
+    rv = Preferences::GetString("general.config.filename", jsConfigPref,
+                                PrefValueKind::User);
+    if (!NS_FAILED(rv) && !jsConfigPref.IsEmpty()) {
+      sJSHacksPresent = true;
+      return;
+    }
 
-  // These preferences are for autoconfiguration of Firefox by admins.
-  // The first will load a file over the network; the second will
-  // fall back to a local file if the network is unavailable
-  nsAutoString configUrlPref;
-  rv = Preferences::GetString("autoadmin.global_config_url", configUrlPref);
-  if (!NS_FAILED(rv) && !configUrlPref.IsEmpty()) {
-    sJSHacksPresent = true;
+    // These preferences are for autoconfiguration of Firefox by admins.
+    // The first will load a file over the network; the second will
+    // fall back to a local file if the network is unavailable
+    nsAutoString configUrlPref;
+    rv = Preferences::GetString("autoadmin.global_config_url", configUrlPref,
+                                PrefValueKind::Default);
+    if (!NS_FAILED(rv) && !configUrlPref.IsEmpty()) {
+      sJSHacksPresent = true;
+      return;
+    }
+    rv = Preferences::GetString("autoadmin.global_config_url", configUrlPref,
+                                PrefValueKind::User);
+    if (!NS_FAILED(rv) && !configUrlPref.IsEmpty()) {
+      sJSHacksPresent = true;
+      return;
+    }
+
+  } else {
+    if (Preferences::HasDefaultValue("general.config.filename")) {
+      sJSHacksPresent = true;
+      return;
+    }
+    if (Preferences::HasUserValue("general.config.filename")) {
+      sJSHacksPresent = true;
+      return;
+    }
+    if (Preferences::HasDefaultValue("autoadmin.global_config_url")) {
+      sJSHacksPresent = true;
+      return;
+    }
+    if (Preferences::HasUserValue("autoadmin.global_config_url")) {
+      sJSHacksPresent = true;
+      return;
+    }
   }
 
   bool failOverToCache;
-  rv = Preferences::GetBool("autoadmin.failover_to_cached", &failOverToCache);
+  rv = Preferences::GetBool("autoadmin.failover_to_cached", &failOverToCache,
+                            PrefValueKind::Default);
+  if (!NS_FAILED(rv) && failOverToCache) {
+    sJSHacksPresent = true;
+    return;
+  }
+  rv = Preferences::GetBool("autoadmin.failover_to_cached", &failOverToCache,
+                            PrefValueKind::User);
   if (!NS_FAILED(rv) && failOverToCache) {
     sJSHacksPresent = true;
   }
-
-  sJSHacksChecked = true;
 }
 
 /* static */
@@ -865,6 +958,12 @@ void nsContentSecurityUtils::DetectCssHacks() {
   if (!NS_IsMainThread()) {
     return;
   }
+
+  // If the pref service isn't available, do nothing and re-do this later.
+  if (!Preferences::IsServiceAvailable()) {
+    return;
+  }
+
   // No need to check again.
   if (MOZ_LIKELY(sCSSHacksChecked || sCSSHacksPresent)) {
     return;
@@ -907,8 +1006,8 @@ nsresult nsContentSecurityUtils::GetHttpChannelFromPotentialMultiPart(
   return NS_OK;
 }
 
-nsresult ParseCSPAndEnforceFrameAncestorCheck(
-    nsIChannel* aChannel, nsIContentSecurityPolicy** aOutCSP) {
+nsresult CheckCSPFrameAncestorPolicy(nsIChannel* aChannel,
+                                     nsIContentSecurityPolicy** aOutCSP) {
   MOZ_ASSERT(aChannel);
 
   nsCOMPtr<nsILoadInfo> loadInfo = aChannel->LoadInfo();
@@ -960,6 +1059,11 @@ nsresult ParseCSPAndEnforceFrameAncestorCheck(
   }
 
   RefPtr<nsCSPContext> csp = new nsCSPContext();
+  // This CSPContext is only used for checking frame-ancestors, we
+  // will parse the CSP again anyway. (Unless this blocks the load, but
+  // parser warnings aren't really important in that case)
+  csp->SuppressParserLogMessages();
+
   nsCOMPtr<nsIURI> selfURI;
   nsAutoString referrerSpec;
   if (httpChannel) {
@@ -1009,7 +1113,6 @@ nsresult ParseCSPAndEnforceFrameAncestorCheck(
 
   if (NS_FAILED(rv) || !safeAncestry) {
     // stop!  ERROR page!
-    aChannel->Cancel(NS_ERROR_CSP_FRAME_ANCESTOR_VIOLATION);
     return NS_ERROR_CSP_FRAME_ANCESTOR_VIOLATION;
   }
 
@@ -1019,12 +1122,40 @@ nsresult ParseCSPAndEnforceFrameAncestorCheck(
   return NS_OK;
 }
 
+void EnforceCSPFrameAncestorPolicy(nsIChannel* aChannel,
+                                   const nsresult& aError) {
+  if (aError == NS_ERROR_CSP_FRAME_ANCESTOR_VIOLATION) {
+    aChannel->Cancel(NS_ERROR_CSP_FRAME_ANCESTOR_VIOLATION);
+  }
+}
+
 void EnforceXFrameOptionsCheck(nsIChannel* aChannel,
                                nsIContentSecurityPolicy* aCsp) {
   MOZ_ASSERT(aChannel);
-  if (!FramingChecker::CheckFrameOptions(aChannel, aCsp)) {
+  bool isFrameOptionsIgnored = false;
+  // check for XFO options
+  // XFO checks can be skipped if there are frame ancestors
+  if (!FramingChecker::CheckFrameOptions(aChannel, aCsp,
+                                         isFrameOptionsIgnored)) {
     // stop!  ERROR page!
     aChannel->Cancel(NS_ERROR_XFO_VIOLATION);
+  }
+
+  if (isFrameOptionsIgnored) {
+    // log warning to console that xfo is ignored because of CSP
+    nsCOMPtr<nsILoadInfo> loadInfo = aChannel->LoadInfo();
+    uint64_t innerWindowID = loadInfo->GetInnerWindowID();
+    bool privateWindow = !!loadInfo->GetOriginAttributes().mPrivateBrowsingId;
+    AutoTArray<nsString, 2> params = {u"x-frame-options"_ns,
+                                      u"frame-ancestors"_ns};
+    CSP_LogLocalizedStr("IgnoringSrcBecauseOfDirective", params,
+                        u""_ns,  // no sourcefile
+                        u""_ns,  // no scriptsample
+                        0,       // no linenumber
+                        0,       // no columnnumber
+                        nsIScriptError::warningFlag,
+                        "IgnoringSrcBecauseOfDirective"_ns, innerWindowID,
+                        privateWindow);
   }
 }
 
@@ -1032,9 +1163,10 @@ void EnforceXFrameOptionsCheck(nsIChannel* aChannel,
 void nsContentSecurityUtils::PerformCSPFrameAncestorAndXFOCheck(
     nsIChannel* aChannel) {
   nsCOMPtr<nsIContentSecurityPolicy> csp;
-  nsresult rv =
-      ParseCSPAndEnforceFrameAncestorCheck(aChannel, getter_AddRefs(csp));
+  nsresult rv = CheckCSPFrameAncestorPolicy(aChannel, getter_AddRefs(csp));
+
   if (NS_FAILED(rv)) {
+    EnforceCSPFrameAncestorPolicy(aChannel, rv);
     return;
   }
 
@@ -1042,6 +1174,20 @@ void nsContentSecurityUtils::PerformCSPFrameAncestorAndXFOCheck(
   // checks because if frame-ancestors is present, then x-frame-options
   // will be discarded
   EnforceXFrameOptionsCheck(aChannel, csp);
+}
+/* static */
+bool nsContentSecurityUtils::CheckCSPFrameAncestorAndXFO(nsIChannel* aChannel) {
+  nsCOMPtr<nsIContentSecurityPolicy> csp;
+  nsresult rv = CheckCSPFrameAncestorPolicy(aChannel, getter_AddRefs(csp));
+
+  if (NS_FAILED(rv)) {
+    return false;
+  }
+
+  bool isFrameOptionsIgnored = false;
+
+  return FramingChecker::CheckFrameOptions(aChannel, csp,
+                                           isFrameOptionsIgnored);
 }
 
 #if defined(DEBUG)
@@ -1056,6 +1202,13 @@ void nsContentSecurityUtils::AssertAboutPageHasCSP(Document* aDocument) {
   // should at least be as strong as:
   // <meta http-equiv="Content-Security-Policy" content="default-src chrome:;
   // object-src 'none'"/>
+
+  // This is a data document, created using DOMParser or
+  // document.implementation.createDocument() or such, not an about: page which
+  // is loaded as a web page.
+  if (aDocument->IsLoadedAsData()) {
+    return;
+  }
 
   // Check if we should skip the assertion
   if (StaticPrefs::dom_security_skip_about_page_has_csp_assert()) {
@@ -1082,26 +1235,26 @@ void nsContentSecurityUtils::AssertAboutPageHasCSP(Document* aDocument) {
     nsAutoString parsedPolicyStr;
     for (uint32_t i = 0; i < policyCount; ++i) {
       csp->GetPolicyString(i, parsedPolicyStr);
-      if (parsedPolicyStr.Find("default-src") >= 0) {
+      if (parsedPolicyStr.Find(u"default-src") >= 0) {
         foundDefaultSrc = true;
       }
-      if (parsedPolicyStr.Find("object-src 'none'") >= 0) {
+      if (parsedPolicyStr.Find(u"object-src 'none'") >= 0) {
         foundObjectSrc = true;
       }
-      if (parsedPolicyStr.Find("'unsafe-eval'") >= 0) {
+      if (parsedPolicyStr.Find(u"'unsafe-eval'") >= 0) {
         foundUnsafeEval = true;
       }
-      if (parsedPolicyStr.Find("'unsafe-inline'") >= 0) {
+      if (parsedPolicyStr.Find(u"'unsafe-inline'") >= 0) {
         foundUnsafeInline = true;
       }
-      if (parsedPolicyStr.Find("script-src") >= 0) {
+      if (parsedPolicyStr.Find(u"script-src") >= 0) {
         foundScriptSrc = true;
       }
-      if (parsedPolicyStr.Find("worker-src") >= 0) {
+      if (parsedPolicyStr.Find(u"worker-src") >= 0) {
         foundWorkerSrc = true;
       }
-      if (parsedPolicyStr.Find("http:") >= 0 ||
-          parsedPolicyStr.Find("https:") >= 0) {
+      if (parsedPolicyStr.Find(u"http:") >= 0 ||
+          parsedPolicyStr.Find(u"https:") >= 0) {
         foundWebScheme = true;
       }
     }
@@ -1127,8 +1280,6 @@ void nsContentSecurityUtils::AssertAboutPageHasCSP(Document* aDocument) {
     "about:srcdoc"_ns,
     // about:sync-log displays plain text only -> no CSP
     "about:sync-log"_ns,
-    // about:printpreview displays plain text only -> no CSP
-    "about:printpreview"_ns,
     // about:logo just displays the firefox logo -> no CSP
     "about:logo"_ns,
     // about:sync is a special mozilla-signed developer addon with low usage ->
@@ -1182,7 +1333,8 @@ void nsContentSecurityUtils::AssertAboutPageHasCSP(Document* aDocument) {
                  StringBeginsWith(aboutSpec, "about:home"_ns) ||
                  StringBeginsWith(aboutSpec, "about:welcome"_ns) ||
                  StringBeginsWith(aboutSpec, "about:devtools"_ns) ||
-                 StringBeginsWith(aboutSpec, "about:pocket-saved"_ns),
+                 StringBeginsWith(aboutSpec, "about:pocket-saved"_ns) ||
+                 StringBeginsWith(aboutSpec, "about:pocket-home"_ns),
              "about: page must not contain a CSP including a web scheme");
 
   if (aDocument->IsExtensionPage()) {
@@ -1328,7 +1480,7 @@ bool nsContentSecurityUtils::ValidateScriptFilename(JSContext* cx,
 
   auto kAllowedFilenamesExact = {
       // Allow through the injection provided by about:sync addon
-      u"data:,new function() {\n  Components.utils.import(\"chrome://aboutsync/content/AboutSyncRedirector.js\");\n  AboutSyncRedirector.register();\n}"_ns,
+      u"data:,new function() {\n  const { AboutSyncRedirector } = ChromeUtils.import(\"chrome://aboutsync/content/AboutSyncRedirector.js\");\n  AboutSyncRedirector.register();\n}"_ns,
   };
 
   for (auto allowedFilename : kAllowedFilenamesExact) {
@@ -1342,7 +1494,11 @@ bool nsContentSecurityUtils::ValidateScriptFilename(JSContext* cx,
       // and this is the most reasonable. See 1727770
       u"about:downloads"_ns,
       // We think this is the same problem as about:downloads
-      u"about:preferences"_ns};
+      u"about:preferences"_ns,
+      // Browser console will give a filename of 'debugger' See 1763943
+      // Sometimes it's 'debugger eager eval code', other times just 'debugger
+      // eval code'
+      u"debugger"_ns};
 
   for (auto allowedFilenamePrefix : kAllowedFilenamesPrefix) {
     if (StringBeginsWith(filenameU, allowedFilenamePrefix)) {
@@ -1385,7 +1541,7 @@ bool nsContentSecurityUtils::ValidateScriptFilename(JSContext* cx,
           : "(None)",
       "Blocking a script load %s from file %s");
   MOZ_CRASH_UNSAFE_PRINTF("%s", crashString.get());
-#elif defined(NIGHTLY_BUILD)
+#elif defined(EARLY_BETA_OR_EARLIER)
   // Cause a crash (if we've never crashed before and we can ensure we won't do
   // it again.)
   // The details in the second arg, passed to UNSAFE_PRINTF, are also included
@@ -1461,6 +1617,10 @@ long nsContentSecurityUtils::ClassifyDownload(
       loadingPrincipal, loadInfo->TriggeringPrincipal(), nullptr,
       nsILoadInfo::SEC_ONLY_FOR_EXPLICIT_CONTENTSEC_CHECK,
       nsIContentPolicy::TYPE_FETCH);
+  // Disable HTTPS-Only checks for that loadinfo. This is required because
+  // otherwise nsMixedContentBlocker::ShouldLoad would assume that the request
+  // is safe, because HTTPS-Only is handling it.
+  secCheckLoadInfo->SetHttpsOnlyStatus(nsILoadInfo::HTTPS_ONLY_EXEMPT);
 
   int16_t decission = nsIContentPolicy::ACCEPT;
   nsMixedContentBlocker::ShouldLoad(false,  //  aHadInsecureImageRedirect
@@ -1486,10 +1646,6 @@ long nsContentSecurityUtils::ClassifyDownload(
     return nsITransfer::DOWNLOAD_ACCEPTABLE;
   }
 
-  if (!StaticPrefs::dom_block_download_in_sandboxed_iframes()) {
-    return nsITransfer::DOWNLOAD_ACCEPTABLE;
-  }
-
   uint32_t triggeringFlags = loadInfo->GetTriggeringSandboxFlags();
   uint32_t currentflags = loadInfo->GetSandboxFlags();
 
@@ -1501,6 +1657,5 @@ long nsContentSecurityUtils::ClassifyDownload(
     }
     return nsITransfer::DOWNLOAD_FORBIDDEN;
   }
-
   return nsITransfer::DOWNLOAD_ACCEPTABLE;
 }

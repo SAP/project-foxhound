@@ -32,25 +32,24 @@ Required tools for Linux:
     pax
     gzip
     tar
-    xar (http://code.google.com/p/xar/)
     xpwn's dmg (https://github.com/planetbeing/xpwn)
 
 Created on Apr 11, 2012
 
 @author: mrmiller
 """
-from __future__ import absolute_import
-
 import argparse
 import concurrent.futures
 import errno
-import glob
 import logging
 import os
 import shutil
+import stat
 import subprocess
 import tempfile
+import traceback
 
+from mozpack.macpkg import Pbzx, uncpio, unxar
 from scrapesymbols.gathersymbols import process_paths
 
 
@@ -61,9 +60,37 @@ def expand_pkg(pkg_path, out_path):
     @param pkg_path: a path to an installer package (.pkg)
     @param out_path: a path to hold the package contents
     """
+    for name, content in unxar(open(pkg_path, "rb")):
+        with open(os.path.join(out_path, name), "wb") as fh:
+            shutil.copyfileobj(content, fh)
+
+
+def expand_dmg(dmg_path, out_path):
+    """
+    Expands the contents of a DMG file to some directory.
+
+    @param dmg_path: a path to a disk image file (.dmg)
+    @param out_path: a path to hold the image contents
+    """
+
+    with tempfile.NamedTemporaryFile() as f:
+        subprocess.check_call(
+            ["dmg", "extract", dmg_path, f.name], stdout=subprocess.DEVNULL
+        )
+        subprocess.check_call(
+            ["hfsplus", f.name, "extractall"], stdout=subprocess.DEVNULL, cwd=out_path
+        )
+
+
+def expand_zip(zip_path, out_path):
+    """
+    Expands the contents of a ZIP archive to some directory.
+
+    @param dmg_path: a path to a ZIP archive (.zip)
+    @param out_path: a path to hold the archive contents
+    """
     subprocess.check_call(
-        'cd "{dest}" && xar -x -f "{src}"'.format(src=pkg_path, dest=out_path),
-        shell=True,
+        ["unzip", "-d", out_path, zip_path], stdout=subprocess.DEVNULL
     )
 
 
@@ -84,19 +111,25 @@ def filter_files(function, path):
 
 def find_packages(path):
     """
-    Returns a list of installer packages (as determined by the .pkg extension)
-    found within path.
+    Returns a list of installer packages (as determined by the .pkg extension),
+    disk images (as determined by the .dmg extension) or ZIP archives found
+    within path.
 
-    @param path: root path to search for .pkg files
+    @param path: root path to search for .pkg, .dmg and .zip files
     """
-    return filter_files(lambda filename: os.path.splitext(filename)[1] == ".pkg", path)
+    return filter_files(
+        lambda filename: os.path.splitext(filename)[1] in (".pkg", ".dmg", ".zip")
+        and not filename.startswith("._"),
+        path,
+    )
 
 
 def find_all_packages(paths):
     """
-    Yield installer package files found in all of `paths`.
+    Yield installer package files, disk images and ZIP archives found in all
+    of `paths`.
 
-    @param path: list of root paths to search for .pkg files
+    @param path: list of root paths to search for .pkg & .dmg files
     """
     for path in paths:
         logging.info("find_all_packages: {}".format(path))
@@ -125,7 +158,7 @@ def extract_payload(payload_path, output_path):
     """
     header = open(payload_path, "rb").read(2)
     try:
-        if header == "BZ":
+        if header == b"BZ":
             logging.info("Extracting bzip2 payload")
             extract = "bzip2"
             subprocess.check_call(
@@ -135,7 +168,7 @@ def extract_payload(payload_path, output_path):
                 shell=True,
             )
             return True
-        elif header == "\x1f\x8b":
+        elif header == b"\x1f\x8b":
             logging.info("Extracting gzip payload")
             extract = "gzip"
             subprocess.check_call(
@@ -145,45 +178,26 @@ def extract_payload(payload_path, output_path):
                 shell=True,
             )
             return True
-        elif header == "pb":
+        elif header == b"pb":
             logging.info("Extracting pbzx payload")
-            extract = "parse_pbzx.py"
 
-            payload_dir = os.path.dirname(payload_path)
-            # First, unpack the PBZX into cpio parts.
-            subprocess.check_call(["parse_pbzx.py", payload_path], cwd=payload_dir)
-            # Next, decompress any parts that are .xz, and feed them all into pax.
-            pax_proc = subprocess.Popen(
-                ["pax", "-r", "-k", "-s", ":^/::"],
-                stdin=subprocess.PIPE,
-                cwd=output_path,
-            )
-            for part in sorted(glob.glob(os.path.join(payload_dir, "Payload.part*"))):
-                if part.endswith(".xz"):
-                    logging.info("Extracting xz part {}".format(part))
-                    # This would be easier if we pulled in the lzma module...
-                    xz_proc = subprocess.Popen(
-                        ["xz", "-dc", part], stdout=subprocess.PIPE, cwd=payload_dir
-                    )
-                    shutil.copyfileobj(xz_proc.stdout, pax_proc.stdin)
-                    xz_proc.wait()
-                else:
-                    logging.info("Copying plain cpio part {}".format(part))
-                    with open(part, "rb") as f:
-                        shutil.copyfileobj(f, pax_proc.stdin)
-            pax_proc.stdin.close()
-            pax_proc.wait()
+            for path, st, content in uncpio(Pbzx(open(payload_path, "rb"))):
+                if not path or not stat.S_ISREG(st.mode):
+                    continue
+                out = os.path.join(output_path, path.decode())
+                os.makedirs(os.path.dirname(out), exist_ok=True)
+                with open(out, "wb") as fh:
+                    shutil.copyfileobj(content, fh)
+
             return True
         else:
             # Unsupported format
             logging.error(
-                "Unknown payload format: 0x{0:x}{1:x}".format(
-                    ord(header[0]), ord(header[1])
-                )
+                "Unknown payload format: 0x{0:x}{1:x}".format(header[0], header[1])
             )
             return False
 
-    except subprocess.CalledProcessError:
+    except Exception:
         return False
 
 
@@ -195,10 +209,36 @@ def write_symbol_file(dest, filename, contents):
     full_path = os.path.join(dest, filename)
     try:
         os.makedirs(os.path.dirname(full_path))
-        open(full_path, "wb").write(contents)
+        with open(full_path, "wb") as sym_file:
+            sym_file.write(contents)
     except os.error as e:
         if e.errno != errno.EEXIST:
             raise
+
+
+def dump_symbols(executor, dump_syms, path, dest):
+    system_library = os.path.join("System", "Library")
+    subdirectories = [
+        os.path.join(system_library, "Frameworks"),
+        os.path.join(system_library, "PrivateFrameworks"),
+        os.path.join(system_library, "Extensions"),
+        os.path.join("usr", "lib"),
+    ]
+
+    paths_to_dump = [os.path.join(path, d) for d in subdirectories]
+    existing_paths = [path for path in paths_to_dump if os.path.exists(path)]
+
+    for filename, contents in process_paths(
+        paths=existing_paths,
+        executor=executor,
+        dump_syms=dump_syms,
+        verbose=True,
+        write_all=True,
+        platform="darwin",
+    ):
+        if filename and contents:
+            logging.info("Added symbol file " + str(filename, "utf-8"))
+            write_symbol_file(dest, str(filename, "utf-8"), contents)
 
 
 def dump_symbols_from_payload(executor, dump_syms, payload_path, dest):
@@ -216,27 +256,15 @@ def dump_symbols_from_payload(executor, dump_syms, payload_path, dest):
         logging.info("Extracting payload to {path}.".format(path=temp_dir))
         if not extract_payload(payload_path, temp_dir):
             logging.error("Could not extract payload: " + payload_path)
-            return
+            return False
 
-        # dump the symbols for the payload contents
-        system_library = os.path.join("System", "Library")
-        subdirectories = [
-            os.path.join(system_library, "Frameworks"),
-            os.path.join(system_library, "PrivateFrameworks"),
-            os.path.join("usr", "lib"),
-        ]
-        paths_to_dump = map(lambda d: os.path.join(temp_dir, d), subdirectories)
-
-        for filename, contents in process_paths(
-            paths_to_dump, executor, dump_syms, False, platform="darwin"
-        ):
-            if filename and contents:
-                logging.info("Added symbol file " + filename)
-                write_symbol_file(dest, filename, contents)
+        dump_symbols(executor, dump_syms, temp_dir, dest)
 
     finally:
         if temp_dir is not None:
             shutil.rmtree(temp_dir, onerror=shutil_error_handler)
+
+    return True
 
 
 def dump_symbols_from_package(executor, dump_syms, pkg, dest):
@@ -247,27 +275,44 @@ def dump_symbols_from_package(executor, dump_syms, pkg, dest):
     @param pkg: path to an installer package
     @param dest: output path for symbols
     """
+    successful = True
     temp_dir = None
     logging.info("Dumping symbols from package: " + pkg)
     try:
         temp_dir = tempfile.mkdtemp()
-        expand_pkg(pkg, temp_dir)
+        if os.path.splitext(pkg)[1] == ".pkg":
+            expand_pkg(pkg, temp_dir)
+        elif os.path.splitext(pkg)[1] == ".zip":
+            expand_zip(pkg, temp_dir)
+        else:
+            expand_dmg(pkg, temp_dir)
 
         # check for any subpackages
         for subpackage in find_packages(temp_dir):
-            logging.warning("UNTESTED: Found subpackage at: " + subpackage)
-            dump_symbols_from_package(executor, dump_syms, subpackage, dest)
+            logging.info("Found subpackage at: " + subpackage)
+            res = dump_symbols_from_package(executor, dump_syms, subpackage, dest)
+            if not res:
+                logging.error("Error while dumping subpackage: " + subpackage)
 
         # dump symbols from any payloads (only expecting one) in the package
         for payload in find_payloads(temp_dir):
-            dump_symbols_from_payload(executor, dump_syms, payload, dest)
+            res = dump_symbols_from_payload(executor, dump_syms, payload, dest)
+            if not res:
+                successful = False
+
+        # dump symbols directly extracted from the package
+        dump_symbols(executor, dump_syms, temp_dir, dest)
 
     except Exception as e:
+        traceback.print_exc()
         logging.error("Exception while dumping symbols from package: {}".format(e))
+        successful = False
 
     finally:
         if temp_dir is not None:
             shutil.rmtree(temp_dir, onerror=shutil_error_handler)
+
+    return successful
 
 
 def read_processed_packages(tracking_file):

@@ -18,24 +18,27 @@ impl Maintenance1 {
         Self { handle, fp }
     }
 
-    #[doc = "<https://www.khronos.org/registry/vulkan/specs/1.2-extensions/man/html/vkTrimCommandPoolKHR.html>"]
+    /// <https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/vkTrimCommandPoolKHR.html>
+    #[inline]
     pub unsafe fn trim_command_pool(
         &self,
         command_pool: vk::CommandPool,
         flags: vk::CommandPoolTrimFlagsKHR,
     ) {
-        self.fp
-            .trim_command_pool_khr(self.handle, command_pool, flags);
+        (self.fp.trim_command_pool_khr)(self.handle, command_pool, flags);
     }
 
-    pub fn name() -> &'static CStr {
+    #[inline]
+    pub const fn name() -> &'static CStr {
         vk::KhrMaintenance1Fn::name()
     }
 
+    #[inline]
     pub fn fp(&self) -> &vk::KhrMaintenance1Fn {
         &self.fp
     }
 
+    #[inline]
     pub fn device(&self) -> vk::Device {
         self.handle
     }

@@ -14,15 +14,16 @@
 namespace mozilla {
 namespace dom {
 
-CSSImportRule::CSSImportRule(RefPtr<RawServoImportRule> aRawRule,
+CSSImportRule::CSSImportRule(RefPtr<StyleLockedImportRule> aRawRule,
                              StyleSheet* aSheet, css::Rule* aParentRule,
                              uint32_t aLine, uint32_t aColumn)
     : css::Rule(aSheet, aParentRule, aLine, aColumn),
       mRawRule(std::move(aRawRule)) {
   const auto* sheet = Servo_ImportRule_GetSheet(mRawRule.get());
-  MOZ_ASSERT(sheet);
   mChildSheet = const_cast<StyleSheet*>(sheet);
-  mChildSheet->AddReferencingRule(*this);
+  if (mChildSheet) {
+    mChildSheet->AddReferencingRule(*this);
+  }
 }
 
 CSSImportRule::~CSSImportRule() {
@@ -77,31 +78,35 @@ StyleCssRuleType CSSImportRule::Type() const {
   return StyleCssRuleType::Import;
 }
 
-void CSSImportRule::SetRawAfterClone(RefPtr<RawServoImportRule> aRaw) {
+void CSSImportRule::SetRawAfterClone(RefPtr<StyleLockedImportRule> aRaw) {
   mRawRule = std::move(aRaw);
   if (mChildSheet) {
     mChildSheet->RemoveReferencingRule(*this);
   }
   mChildSheet =
       const_cast<StyleSheet*>(Servo_ImportRule_GetSheet(mRawRule.get()));
-  mChildSheet->AddReferencingRule(*this);
+  if (mChildSheet) {
+    mChildSheet->AddReferencingRule(*this);
+  }
 }
 
 StyleSheet* CSSImportRule::GetStyleSheetForBindings() {
-  // FIXME(emilio): This is needed to make sure we don't expose shared sheets to
-  // the OM (see wpt /css/cssom/cssimportrule-sheet-identity.html for example).
-  //
-  // Perhaps instead we could create a clone of the stylesheet and keep it in
-  // mChildSheet, without calling EnsureUniqueInner(), or something like that?
-  if (StyleSheet* parent = GetParentStyleSheet()) {
-    parent->EnsureUniqueInner();
+  if (mChildSheet) {
+    // FIXME(emilio): This is needed to make sure we don't expose shared sheets
+    // to the OM (see wpt /css/cssom/cssimportrule-sheet-identity.html for
+    // example).
+    //
+    // Perhaps instead we could create a clone of the stylesheet and keep it in
+    // mChildSheet, without calling EnsureUniqueInner(), or something like that?
+    if (StyleSheet* parent = GetParentStyleSheet()) {
+      parent->EnsureUniqueInner();
+    }
   }
   return mChildSheet;
 }
 
 dom::MediaList* CSSImportRule::GetMedia() {
   auto* sheet = GetStyleSheetForBindings();
-  // When Bug 1326509 is fixed, we can assert mChildSheet instead.
   return sheet ? sheet->Media() : nullptr;
 }
 
@@ -118,6 +123,10 @@ void CSSImportRule::GetHref(nsAString& aHref) const {
 
 void CSSImportRule::GetLayerName(nsACString& aName) const {
   Servo_ImportRule_GetLayerName(mRawRule, &aName);
+}
+
+void CSSImportRule::GetSupportsText(nsACString& aSupportsText) const {
+  Servo_ImportRule_GetSupportsText(mRawRule, &aSupportsText);
 }
 
 /* virtual */

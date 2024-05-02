@@ -29,16 +29,6 @@ const POLICIES_TESTS = [
    * },
    */
 
-  // POLICY: RememberPasswords
-  {
-    policies: { OfferToSaveLogins: false },
-    lockedPrefs: { "signon.rememberSignons": false },
-  },
-  {
-    policies: { OfferToSaveLogins: true },
-    lockedPrefs: { "signon.rememberSignons": true },
-  },
-
   // POLICY: DisableSecurityBypass
   {
     policies: {
@@ -95,12 +85,25 @@ const POLICIES_TESTS = [
       EnableTrackingProtection: {
         Cryptomining: true,
         Fingerprinting: true,
+        EmailTracking: true,
         Locked: true,
       },
     },
     lockedPrefs: {
       "privacy.trackingprotection.cryptomining.enabled": true,
       "privacy.trackingprotection.fingerprinting.enabled": true,
+      "privacy.trackingprotection.emailtracking.enabled": true,
+      "privacy.trackingprotection.emailtracking.pbmode.enabled": true,
+    },
+  },
+
+  // POLICY: GoToIntranetSiteForSingleWordEntryInAddressBar
+  {
+    policies: {
+      GoToIntranetSiteForSingleWordEntryInAddressBar: true,
+    },
+    lockedPrefs: {
+      "browser.fixup.dns_first_for_single_words": true,
     },
   },
 
@@ -442,6 +445,22 @@ const POLICIES_TESTS = [
     },
   },
 
+  // POLICY: DNSOverHTTPS Unlocked
+  {
+    policies: {
+      DNSOverHTTPS: {
+        Enabled: false,
+        ProviderURL: "https://example.com/provider",
+        ExcludedDomains: ["example.com", "example.org"],
+      },
+    },
+    unlockedPrefs: {
+      "network.trr.mode": 5,
+      "network.trr.uri": "https://example.com/provider",
+      "network.trr.excluded-domains": "example.com,example.org",
+    },
+  },
+
   // POLICY: DNSOverHTTPS Locked
   {
     policies: {
@@ -454,22 +473,6 @@ const POLICIES_TESTS = [
     },
     lockedPrefs: {
       "network.trr.mode": 2,
-      "network.trr.uri": "https://example.com/provider",
-      "network.trr.excluded-domains": "example.com,example.org",
-    },
-  },
-
-  // POLICY: DNSOverHTTPS Unlocked
-  {
-    policies: {
-      DNSOverHTTPS: {
-        Enabled: false,
-        ProviderURL: "https://example.com/provider",
-        ExcludedDomains: ["example.com", "example.org"],
-      },
-    },
-    unlockedPrefs: {
-      "network.trr.mode": 5,
       "network.trr.uri": "https://example.com/provider",
       "network.trr.excluded-domains": "example.com,example.org",
     },
@@ -587,6 +590,16 @@ const POLICIES_TESTS = [
     },
   },
 
+  // POLICY: RememberPasswords
+  {
+    policies: { OfferToSaveLogins: false },
+    lockedPrefs: { "signon.rememberSignons": false },
+  },
+  {
+    policies: { OfferToSaveLogins: true },
+    lockedPrefs: { "signon.rememberSignons": true },
+  },
+
   // POLICY: UserMessaging
   {
     policies: {
@@ -607,6 +620,7 @@ const POLICIES_TESTS = [
     policies: {
       UserMessaging: {
         SkipOnboarding: false,
+        Locked: false,
       },
     },
     unlockedPrefs: {
@@ -618,6 +632,7 @@ const POLICIES_TESTS = [
     policies: {
       UserMessaging: {
         ExtensionRecommendations: false,
+        Locked: false,
       },
     },
     unlockedPrefs: {
@@ -629,6 +644,7 @@ const POLICIES_TESTS = [
     policies: {
       UserMessaging: {
         FeatureRecommendations: false,
+        Locked: false,
       },
     },
     unlockedPrefs: {
@@ -637,6 +653,19 @@ const POLICIES_TESTS = [
   },
 
   // POLICY: Permissions->Autoplay
+  {
+    policies: {
+      Permissions: {
+        Autoplay: {
+          Default: "block-audio-video",
+        },
+      },
+    },
+    unlockedPrefs: {
+      "media.autoplay.default": 5,
+    },
+  },
+
   {
     policies: {
       Permissions: {
@@ -656,24 +685,12 @@ const POLICIES_TESTS = [
       Permissions: {
         Autoplay: {
           Default: "block-audio",
+          Locked: false,
         },
       },
     },
     unlockedPrefs: {
       "media.autoplay.default": 1,
-    },
-  },
-
-  {
-    policies: {
-      Permissions: {
-        Autoplay: {
-          Default: "block-audio-video",
-        },
-      },
-    },
-    unlockedPrefs: {
-      "media.autoplay.default": 5,
     },
   },
 
@@ -935,7 +952,6 @@ const POLICIES_TESTS = [
       "network.cookie.cookieBehavior.pbmode": 5,
     },
   },
-
   {
     policies: {
       Cookies: {
@@ -947,6 +963,62 @@ const POLICIES_TESTS = [
     lockedPrefs: {
       "network.cookie.cookieBehavior": 5,
       "network.cookie.cookieBehavior.pbmode": 0,
+    },
+  },
+
+  {
+    policies: {
+      UseSystemPrintDialog: true,
+    },
+    lockedPrefs: {
+      "print.prefer_system_dialog": true,
+    },
+  },
+
+  // Bug 1820195
+  {
+    policies: {
+      Preferences: {
+        "pdfjs.cursorToolOnLoad": {
+          Value: 1,
+          Status: "default",
+        },
+        "pdfjs.sidebarViewOnLoad": {
+          Value: 0,
+          Status: "default",
+        },
+      },
+    },
+    unlockedPrefs: {
+      "pdfjs.cursorToolOnLoad": 1,
+      "pdfjs.sidebarViewOnLoad": 0,
+    },
+  },
+
+  // Bug 1772503
+  {
+    policies: {
+      DisableFirefoxStudies: true,
+    },
+    lockedPrefs: {
+      "browser.newtabpage.activity-stream.asrouter.userprefs.cfr.addons": false,
+      "browser.newtabpage.activity-stream.asrouter.userprefs.cfr.features": false,
+    },
+  },
+  {
+    policies: {
+      Preferences: {
+        "browser.newtabpage.activity-stream.asrouter.userprefs.cfr.addons": {
+          Value: true,
+        },
+        "browser.newtabpage.activity-stream.asrouter.userprefs.cfr.features": {
+          Value: true,
+        },
+      },
+    },
+    lockedPrefs: {
+      "browser.newtabpage.activity-stream.asrouter.userprefs.cfr.addons": true,
+      "browser.newtabpage.activity-stream.asrouter.userprefs.cfr.features": true,
     },
   },
 ];

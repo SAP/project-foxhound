@@ -5,7 +5,7 @@
 
 // Test the ResourceCommand API around SERVER SENT EVENTS.
 
-const ResourceCommand = require("devtools/shared/commands/resource/resource-command");
+const ResourceCommand = require("resource://devtools/shared/commands/resource/resource-command.js");
 
 const targets = {
   TOP_LEVEL_DOCUMENT: "top-level-document",
@@ -13,7 +13,7 @@ const targets = {
   OUT_PROCESS_IFRAME: "out-process-frame",
 };
 
-add_task(async function() {
+add_task(async function () {
   info("Testing the top-level document");
   await testServerSentEventResources(targets.TOP_LEVEL_DOCUMENT);
   info("Testing the in-process iframe");

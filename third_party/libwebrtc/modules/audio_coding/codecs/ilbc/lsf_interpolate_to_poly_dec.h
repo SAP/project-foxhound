@@ -19,7 +19,7 @@
 #ifndef MODULES_AUDIO_CODING_CODECS_ILBC_MAIN_SOURCE_LSF_INTERPOLATE_TO_POLY_DEC_H_
 #define MODULES_AUDIO_CODING_CODECS_ILBC_MAIN_SOURCE_LSF_INTERPOLATE_TO_POLY_DEC_H_
 
-#include "modules/audio_coding/codecs/ilbc/defines.h"
+#include <stdint.h>
 
 /*----------------------------------------------------------------*
  *  interpolation of lsf coefficients for the decoder
@@ -32,6 +32,6 @@ void WebRtcIlbcfix_LspInterpolate2PolyDec(
     int16_t coef,  /* (i) weighting coefficient to use between
                                    lsf1 and lsf2 Q14 */
     int16_t length /* (i) length of coefficient vectors */
-    );
+);
 
 #endif

@@ -1,5 +1,5 @@
-let { LoginManagerPrompter } = ChromeUtils.import(
-  "resource://gre/modules/LoginManagerPrompter.jsm"
+const { LoginManagerPrompter } = ChromeUtils.importESModule(
+  "resource://gre/modules/LoginManagerPrompter.sys.mjs"
 );
 
 const TEST_CASES = [
@@ -110,46 +110,45 @@ function _setPrefs() {
   });
 }
 
-function _saveLogins(logins) {
-  logins
-    .map(loginData => {
-      let login;
-      if (loginData.isAuth) {
-        login = TestData.authLogin({
-          origin: loginData.origin ?? "https://example.com",
-          httpRealm: "example-realm",
-          username: loginData.username,
-          password: loginData.password,
-        });
-      } else {
-        login = TestData.formLogin({
-          origin: loginData.origin ?? "https://example.com",
-          formActionOrigin: "https://example.com",
-          username: loginData.username,
-          password: loginData.password,
-        });
-      }
-      return login;
-    })
-    .forEach(login => Services.logins.addLogin(login));
+async function _saveLogins(loginDatas) {
+  const logins = loginDatas.map(loginData => {
+    let login;
+    if (loginData.isAuth) {
+      login = TestData.authLogin({
+        origin: loginData.origin ?? "https://example.com",
+        httpRealm: "example-realm",
+        username: loginData.username,
+        password: loginData.password,
+      });
+    } else {
+      login = TestData.formLogin({
+        origin: loginData.origin ?? "https://example.com",
+        formActionOrigin: "https://example.com",
+        username: loginData.username,
+        password: loginData.password,
+      });
+    }
+    return login;
+  });
+  await Services.logins.addLogins(logins);
 }
 
 function _compare(expectedArr, actualArr) {
-  ok(!!expectedArr, "Expect expectedArr to be truthy");
-  ok(!!actualArr, "Expect actualArr to be truthy");
-  ok(
+  Assert.ok(!!expectedArr, "Expect expectedArr to be truthy");
+  Assert.ok(!!actualArr, "Expect actualArr to be truthy");
+  Assert.ok(
     expectedArr.length == actualArr.length,
     "Expect expectedArr and actualArr to be the same length"
   );
   for (let i = 0; i < expectedArr.length; i++) {
-    let expected = expectedArr[i];
-    let actual = actualArr[i];
+    const expected = expectedArr[i];
+    const actual = actualArr[i];
 
-    ok(
+    Assert.ok(
       expected.text == actual.text,
       `Expect element #${i} text to match.  Expected: '${expected.text}', Actual '${actual.text}'`
     );
-    ok(
+    Assert.ok(
       expected.style == actual.style,
       `Expect element #${i} text to match.  Expected: '${expected.style}', Actual '${actual.style}'`
     );
@@ -159,15 +158,15 @@ function _compare(expectedArr, actualArr) {
 async function _test(testCase) {
   info(`Starting test case: ${testCase.description}`);
   info(`Storing saved logins: ${JSON.stringify(testCase.savedLogins)}`);
-  _saveLogins(testCase.savedLogins);
+  await _saveLogins(testCase.savedLogins);
 
   if (!testCase.isLoggedIn) {
     // Primary Password should be enabled and locked
-    LoginTestUtils.masterPassword.enable();
+    LoginTestUtils.primaryPassword.enable();
   }
 
   info("Computing results");
-  let result = await LoginManagerPrompter._getUsernameSuggestions(
+  const result = await LoginManagerPrompter._getUsernameSuggestions(
     LOGIN,
     testCase.possibleUsernames
   );
@@ -176,14 +175,14 @@ async function _test(testCase) {
 
   info("Cleaning up state");
   if (!testCase.isLoggedIn) {
-    LoginTestUtils.masterPassword.disable();
+    LoginTestUtils.primaryPassword.disable();
   }
   LoginTestUtils.clearData();
 }
 
 add_task(async function test_LoginManagerPrompter_getUsernameSuggestions() {
   _setPrefs();
-  for (let tc of TEST_CASES) {
+  for (const tc of TEST_CASES) {
     await _test(tc);
   }
 });

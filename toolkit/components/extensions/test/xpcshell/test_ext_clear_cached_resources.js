@@ -3,6 +3,8 @@
 
 "use strict";
 
+Services.prefs.setBoolPref("extensions.blocklist.enabled", false);
+
 AddonTestUtils.init(this);
 AddonTestUtils.overrideCertDB();
 AddonTestUtils.createAppInfo(
@@ -12,8 +14,8 @@ AddonTestUtils.createAppInfo(
   "43"
 );
 
-const { AddonManager } = ChromeUtils.import(
-  "resource://gre/modules/AddonManager.jsm"
+const { AddonManager } = ChromeUtils.importESModule(
+  "resource://gre/modules/AddonManager.sys.mjs"
 );
 
 const LEAVE_UUID_PREF = "extensions.webextensions.keepUuidOnUninstall";
@@ -292,23 +294,14 @@ add_task(
       files,
     });
 
-    Services.prefs.setBoolPref(
-      "extensions.webextensions.background-delayed-startup",
-      false
-    );
-    registerCleanupFunction(() =>
-      Services.prefs.clearUserPref(
-        "extensions.webextensions.background-delayed-startup"
-      )
-    );
-
     // This temporary directory is going to be removed from the
     // cleanup function, but also make it unique as we do for the
     // other temporary files (e.g. like getTemporaryFile as defined
     // in XPInstall.jsm).
     const random = Math.round(Math.random() * 36 ** 3).toString(36);
     const tmpDirName = `xpcshelltest_unpacked_addons_${random}`;
-    let tmpExtPath = FileUtils.getDir("TmpD", [tmpDirName], true);
+    let tmpExtPath = FileUtils.getDir("TmpD", [tmpDirName]);
+    tmpExtPath.create(Ci.nsIFile.DIRECTORY_TYPE, FileUtils.PERMS_DIRECTORY);
     registerCleanupFunction(() => {
       tmpExtPath.remove(true);
     });

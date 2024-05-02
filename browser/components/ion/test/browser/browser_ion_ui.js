@@ -4,18 +4,16 @@
 
 "use strict";
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "Ajv",
-  "resource://testing-common/ajv-6.12.6.js"
+const { JsonSchema } = ChromeUtils.importESModule(
+  "resource://gre/modules/JsonSchema.sys.mjs"
 );
 
-const { TelemetryArchive } = ChromeUtils.import(
-  "resource://gre/modules/TelemetryArchive.jsm"
+const { TelemetryArchive } = ChromeUtils.importESModule(
+  "resource://gre/modules/TelemetryArchive.sys.mjs"
 );
 
-const { TelemetryStorage } = ChromeUtils.import(
-  "resource://gre/modules/TelemetryStorage.jsm"
+const { TelemetryStorage } = ChromeUtils.importESModule(
+  "resource://gre/modules/TelemetryStorage.sys.mjs"
 );
 
 const ORIG_AVAILABLE_LOCALES = Services.locale.availableLocales;
@@ -48,12 +46,9 @@ const CACHED_ADDONS = [
   {
     addon_id: "ion-v2-example@mozilla.org",
     icons: {
-      "32":
-        "https://localhost/user-media/addon_icons/2644/2644632-32.png?modified=4a64e2bc",
-      "64":
-        "https://localhost/user-media/addon_icons/2644/2644632-64.png?modified=4a64e2bc",
-      "128":
-        "https://localhost/user-media/addon_icons/2644/2644632-128.png?modified=4a64e2bc",
+      32: "https://localhost/user-media/addon_icons/2644/2644632-32.png?modified=4a64e2bc",
+      64: "https://localhost/user-media/addon_icons/2644/2644632-64.png?modified=4a64e2bc",
+      128: "https://localhost/user-media/addon_icons/2644/2644632-128.png?modified=4a64e2bc",
     },
     name: "Demo Study",
     version: "1.0",
@@ -81,12 +76,9 @@ const CACHED_ADDONS = [
   {
     addon_id: "ion-v2-default-example@mozilla.org",
     icons: {
-      "32":
-        "https://localhost/user-media/addon_icons/2644/2644632-32.png?modified=4a64e2bc",
-      "64":
-        "https://localhost/user-media/addon_icons/2644/2644632-64.png?modified=4a64e2bc",
-      "128":
-        "https://localhost/user-media/addon_icons/2644/2644632-128.png?modified=4a64e2bc",
+      32: "https://localhost/user-media/addon_icons/2644/2644632-32.png?modified=4a64e2bc",
+      64: "https://localhost/user-media/addon_icons/2644/2644632-64.png?modified=4a64e2bc",
+      128: "https://localhost/user-media/addon_icons/2644/2644632-128.png?modified=4a64e2bc",
     },
     name: "Demo Default Study",
     version: "1.0",
@@ -114,12 +106,9 @@ const CACHED_ADDONS = [
   {
     addon_id: "study@partner",
     icons: {
-      "32":
-        "https://localhost/user-media/addon_icons/2644/2644632-32.png?modified=4a64e2bc",
-      "64":
-        "https://localhost/user-media/addon_icons/2644/2644632-64.png?modified=4a64e2bc",
-      "128":
-        "https://localhost/user-media/addon_icons/2644/2644632-128.png?modified=4a64e2bc",
+      32: "https://localhost/user-media/addon_icons/2644/2644632-32.png?modified=4a64e2bc",
+      64: "https://localhost/user-media/addon_icons/2644/2644632-64.png?modified=4a64e2bc",
+      128: "https://localhost/user-media/addon_icons/2644/2644632-128.png?modified=4a64e2bc",
     },
     name: "Example Partner Study",
     version: "1.0",
@@ -147,12 +136,9 @@ const CACHED_ADDONS = [
   {
     addon_id: "second-study@partner",
     icons: {
-      "32":
-        "https://localhost/user-media/addon_icons/2644/2644632-32.png?modified=4a64e2bc",
-      "64":
-        "https://localhost/user-media/addon_icons/2644/2644632-64.png?modified=4a64e2bc",
-      "128":
-        "https://localhost/user-media/addon_icons/2644/2644632-128.png?modified=4a64e2bc",
+      32: "https://localhost/user-media/addon_icons/2644/2644632-32.png?modified=4a64e2bc",
+      64: "https://localhost/user-media/addon_icons/2644/2644632-64.png?modified=4a64e2bc",
+      128: "https://localhost/user-media/addon_icons/2644/2644632-128.png?modified=4a64e2bc",
     },
     name: "Example Second Partner Study",
     version: "1.0",
@@ -183,12 +169,9 @@ const CACHED_ADDONS_BAD_DEFAULT = [
   {
     addon_id: "ion-v2-bad-default-example@mozilla.org",
     icons: {
-      "32":
-        "https://localhost/user-media/addon_icons/2644/2644632-32.png?modified=4a64e2bc",
-      "64":
-        "https://localhost/user-media/addon_icons/2644/2644632-64.png?modified=4a64e2bc",
-      "128":
-        "https://localhost/user-media/addon_icons/2644/2644632-128.png?modified=4a64e2bc",
+      32: "https://localhost/user-media/addon_icons/2644/2644632-32.png?modified=4a64e2bc",
+      64: "https://localhost/user-media/addon_icons/2644/2644632-64.png?modified=4a64e2bc",
+      128: "https://localhost/user-media/addon_icons/2644/2644632-128.png?modified=4a64e2bc",
     },
     name: "Demo Default Study",
     version: "1.0",
@@ -216,12 +199,9 @@ const CACHED_ADDONS_BAD_DEFAULT = [
   {
     addon_id: "study@partner",
     icons: {
-      "32":
-        "https://localhost/user-media/addon_icons/2644/2644632-32.png?modified=4a64e2bc",
-      "64":
-        "https://localhost/user-media/addon_icons/2644/2644632-64.png?modified=4a64e2bc",
-      "128":
-        "https://localhost/user-media/addon_icons/2644/2644632-128.png?modified=4a64e2bc",
+      32: "https://localhost/user-media/addon_icons/2644/2644632-32.png?modified=4a64e2bc",
+      64: "https://localhost/user-media/addon_icons/2644/2644632-64.png?modified=4a64e2bc",
+      128: "https://localhost/user-media/addon_icons/2644/2644632-128.png?modified=4a64e2bc",
     },
     name: "Example Partner Study",
     version: "1.0",
@@ -249,12 +229,9 @@ const CACHED_ADDONS_BAD_DEFAULT = [
   {
     addon_id: "second-study@partner",
     icons: {
-      "32":
-        "https://localhost/user-media/addon_icons/2644/2644632-32.png?modified=4a64e2bc",
-      "64":
-        "https://localhost/user-media/addon_icons/2644/2644632-64.png?modified=4a64e2bc",
-      "128":
-        "https://localhost/user-media/addon_icons/2644/2644632-128.png?modified=4a64e2bc",
+      32: "https://localhost/user-media/addon_icons/2644/2644632-32.png?modified=4a64e2bc",
+      64: "https://localhost/user-media/addon_icons/2644/2644632-64.png?modified=4a64e2bc",
+      128: "https://localhost/user-media/addon_icons/2644/2644632-128.png?modified=4a64e2bc",
     },
     name: "Example Second Partner Study",
     version: "1.0",
@@ -312,13 +289,12 @@ add_task(async function testMockSchema() {
       throw new Error(`Failed to load ${schemaName}`);
     }
 
-    const ajv = new Ajv({ allErrors: true });
-    const validate = ajv.compile(schema);
+    const validator = new JsonSchema.Validator(schema, { shortCircuit: false });
 
     for (const entry of values) {
-      const valid = validate(entry);
-      if (!valid) {
-        throw new Error(JSON.stringify(validate.errors));
+      const result = validator.validate(entry);
+      if (!result.valid) {
+        throw new Error(JSON.stringify(result.errors));
       }
     }
   }
@@ -348,9 +324,8 @@ add_task(async function testBadDefaultAddon() {
     async function taskFn(browser) {
       const beforePref = Services.prefs.getStringPref(PREF_ION_ID, null);
       ok(beforePref === null, "before enrollment, Ion pref is null.");
-      const enrollmentButton = content.document.getElementById(
-        "enrollment-button"
-      );
+      const enrollmentButton =
+        content.document.getElementById("enrollment-button");
       enrollmentButton.click();
 
       const dialog = content.document.getElementById("join-ion-consent-dialog");
@@ -387,9 +362,8 @@ add_task(async function testBadDefaultAddon() {
         "After Ion enrollment, join button is now leave button"
       );
 
-      const availableStudies = content.document.getElementById(
-        "available-studies"
-      );
+      const availableStudies =
+        content.document.getElementById("available-studies");
       ok(
         document.l10n.getAttributes(availableStudies).id ==
           "ion-no-current-studies",
@@ -434,9 +408,8 @@ add_task(async function testAboutPage() {
         "before enrollment, Ion toolbar button is hidden."
       );
 
-      const enrollmentButton = content.document.getElementById(
-        "enrollment-button"
-      );
+      const enrollmentButton =
+        content.document.getElementById("enrollment-button");
 
       for (const section of ["details", "data"]) {
         ok(
@@ -709,20 +682,19 @@ add_task(async function testAboutPage() {
 
       // Wait for deletion ping, uninstalls, and UI updates...
       const ionUnenrolled = await new Promise((resolve, reject) => {
-        Services.prefs.addObserver(PREF_ION_ID, function observer(
-          subject,
-          topic,
-          data
-        ) {
-          try {
-            const prefValue = Services.prefs.getStringPref(PREF_ION_ID, null);
-            Services.prefs.removeObserver(PREF_ION_ID, observer);
-            resolve(prefValue);
-          } catch (ex) {
-            Services.prefs.removeObserver(PREF_ION_ID, observer);
-            reject(ex);
+        Services.prefs.addObserver(
+          PREF_ION_ID,
+          function observer(subject, topic, data) {
+            try {
+              const prefValue = Services.prefs.getStringPref(PREF_ION_ID, null);
+              Services.prefs.removeObserver(PREF_ION_ID, observer);
+              resolve(prefValue);
+            } catch (ex) {
+              Services.prefs.removeObserver(PREF_ION_ID, observer);
+              reject(ex);
+            }
           }
-        });
+        );
       });
 
       ok(!ionUnenrolled, "after accepting unenrollment, Ion pref is null.");
@@ -814,9 +786,8 @@ add_task(async function testEnrollmentPings() {
       ok(beforePref === null, "before enrollment, Ion pref is null.");
 
       // Enroll in ion.
-      const enrollmentButton = content.document.getElementById(
-        "enrollment-button"
-      );
+      const enrollmentButton =
+        content.document.getElementById("enrollment-button");
 
       let promiseDialogAccepted = BrowserTestUtils.waitForAttribute(
         "data-l10n-id",
@@ -875,7 +846,7 @@ add_task(async function testEnrollmentPings() {
 
       // Verify that the proper pings were generated.
       let pings;
-      await TestUtils.waitForCondition(async function() {
+      await TestUtils.waitForCondition(async function () {
         pings = await TelemetryArchive.promiseArchivedPingList();
         return pings.length - beginPingCount >= 2;
       }, "Wait until we have at least 2 pings in the telemetry archive");

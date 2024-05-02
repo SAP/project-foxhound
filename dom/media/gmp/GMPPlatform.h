@@ -6,16 +6,20 @@
 #ifndef GMPPlatform_h_
 #define GMPPlatform_h_
 
+#include "mozilla/RefPtr.h"
 #include "gmp-platform.h"
 #include <functional>
+#include "mozilla/gmp/PGMPChild.h"
 
 namespace mozilla {
+#ifdef XP_WIN
+struct ModulePaths;
+#endif
+
 namespace ipc {
 class ByteBuf;
 }  // namespace ipc
-}  // namespace mozilla
 
-namespace mozilla {
 namespace gmp {
 
 class GMPChild;
@@ -29,6 +33,11 @@ GMPTask* NewGMPTask(std::function<void()>&& aFunction);
 GMPErr SetTimerOnMainThread(GMPTask* aTask, int64_t aTimeoutMS);
 
 void SendFOGData(ipc::ByteBuf&& buf);
+
+#ifdef XP_WIN
+RefPtr<PGMPChild::GetModulesTrustPromise> SendGetModulesTrust(
+    ModulePaths&& aModules, bool aRunNormal);
+#endif
 
 }  // namespace gmp
 }  // namespace mozilla

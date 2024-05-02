@@ -21,7 +21,7 @@ const HTML = `
 `;
 const TEST_URI = "data:text/html;charset=utf-8," + encodeURI(HTML);
 
-add_task(async function() {
+add_task(async function () {
   const hud = await openNewTabAndConsole(TEST_URI);
   const toolbox = hud.toolbox;
 
@@ -34,7 +34,7 @@ add_task(async function() {
     content.wrappedJSObject.logNode("h1");
   });
 
-  const msg = await waitFor(() => findMessage(hud, "<h1>"));
+  const msg = await waitFor(() => findConsoleAPIMessage(hud, "<h1>"));
   const node = msg.querySelector(".objectBox-node");
   ok(node !== null, "Node was logged as expected");
   const view = node.ownerDocument.defaultView;

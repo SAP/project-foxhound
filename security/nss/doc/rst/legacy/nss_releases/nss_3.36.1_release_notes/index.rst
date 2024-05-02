@@ -10,7 +10,7 @@ NSS 3.36.1 release notes
 
    Network Security Services (NSS) 3.36.1 is a patch release for NSS 3.36.
 
-.. _distribution_information:
+
 
 `Distribution Information <#distribution_information>`__
 --------------------------------------------------------
@@ -28,8 +28,6 @@ NSS 3.36.1 release notes
 
 `New in NSS 3.XX <#new_in_nss_3.xx>`__
 --------------------------------------
-
-.. container::
 
 .. _new_functionality:
 
@@ -49,7 +47,7 @@ NSS 3.36.1 release notes
 .. container::
 
    -  In NSS version 3.35 the iteration count in optimized builds, which is used for password based
-      encryption algorithm related to encrypted PKCS#7 or PKCS#12 data, was increased to one million
+      encryption algorithm related to encrypted PKCS#7 or PKCS#12 data, was increased to one million
       iterations. That change had caused an interoperability regression with operating systems that
       are limited to 600 K iterations. NSS 3.36.1 has been changed to use the same 600 K limit.
 

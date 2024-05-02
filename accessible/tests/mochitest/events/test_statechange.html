@@ -18,6 +18,12 @@
           src="../states.js"></script>
 
   <script type="application/javascript">
+    // Disable mixed-content upgrading as this test is expecting an HTTP load
+    Services.prefs.setBoolPref(
+      "security.mixed_content.upgrade_display_content",
+      false
+    );
+
     async function openNode(aIDDetails, aIDSummary, aIsOpen) {
       let p = waitForStateChange(aIDSummary, STATE_EXPANDED, aIsOpen, false);
       if (aIsOpen) {
@@ -55,11 +61,10 @@
     async function stateChangeOnFileInput(aID, aAttr, aValue,
                                     aState, aIsExtraState, aIsEnabled) {
       let fileControlNode = getNode(aID);
-      let fileControl = getAccessible(fileControlNode);
-      let browseButton = fileControl.firstChild;
-      let p = waitForEvents([
-        stateChangeEventArgs(fileControl, aState, aIsEnabled, aIsExtraState),
-        stateChangeEventArgs(browseButton, aState, aIsEnabled, aIsExtraState)])
+      let browseButton = getAccessible(fileControlNode);
+      let p = waitForStateChange(
+        browseButton, aState, aIsEnabled, aIsExtraState
+      );
       fileControlNode.setAttribute(aAttr, aValue);
       await p;
     }
@@ -129,20 +134,6 @@
         getNode(aID).setAttribute(aARIAAttr, aValue);
         getNode(aID).setAttribute(aAttr, aValue);
       }
-      await p;
-    }
-
-    async function testLinked() {
-      let p = waitForStateChange("link1", STATE_LINKED, false, false);
-      getNode("link1").removeAttribute("href");
-      await p;
-
-      p = waitForStateChange("link2", STATE_LINKED, false, false);
-      getNode("link2").removeAttribute("onclick");
-      await p;
-
-      p = waitForStateChange("link3", STATE_LINKED, true, false);
-      getNode("link3").setAttribute("href", "http://example.com");
       await p;
     }
 
@@ -245,6 +236,7 @@
     async function testImageLoad() {
       let img = document.createElement("img");
       img.id = "image";
+      // eslint-disable-next-line @microsoft/sdl/no-insecure-url
       img.src = "http://example.com/a11y/accessible/tests/mochitest/events/slow_image.sjs";
       let p = waitForEvent(EVENT_SHOW, "image");
       getNode("eventdump").before(img);
@@ -254,6 +246,7 @@
         0, 0,
         "image should be invisible");
       p = waitForStateChange("image", STATE_INVISIBLE, false, false);
+      // eslint-disable-next-line @microsoft/sdl/no-insecure-url
       await fetch("http://example.com/a11y/accessible/tests/mochitest/events/slow_image.sjs?complete");
       await p;
       testStates("image",
@@ -261,7 +254,7 @@
         STATE_INVISIBLE, 0,
         "image should be invisible");
     }
-    
+
     async function testMultiSelectable(aID, aAttribute) {
       testStates(aID,
         0, 0,
@@ -424,8 +417,6 @@
 
       await testReadonlyUntilEditable();
 
-      await testLinked();
-
       await testHasPopup();
 
       await toggleStateChange("textbox", "aria-multiline", EXT_STATE_MULTI_LINE, true);
@@ -527,10 +518,6 @@
   <div id="sentinel"></div>
 
   <input id="text1">
-
-  <a id="link1" href="#">I am a link link</a>
-  <a id="link2" onclick="console.log('hi')">I am a link-ish link</a>
-  <a id="link3">I am a non-link link</a>
 
   <div id="textbox" role="textbox" aria-multiline="false">hello</div>
 

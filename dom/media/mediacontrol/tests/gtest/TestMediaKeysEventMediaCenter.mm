@@ -3,14 +3,15 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 #import <MediaPlayer/MediaPlayer.h>
 
+#include "gtest/gtest.h"
 #include "MediaHardwareKeysEventSourceMacMediaCenter.h"
 #include "MediaKeyListenerTest.h"
-#include "nsCocoaFeatures.h"
 #include "nsCocoaUtils.h"
 #include "prinrval.h"
 #include "prthread.h"
 
 using namespace mozilla::dom;
+using namespace mozilla::widget;
 
 NS_ASSUME_NONNULL_BEGIN
 
@@ -122,7 +123,8 @@ TEST(MediaHardwareKeysEventSourceMacMediaCenter, TestMediaCenterPrevNextEvent)
 
   ASSERT_TRUE(listener->IsResultEqualTo(MediaControlKey::Nexttrack));
 
-  MediaCenterEventHandler previousHandler = source->CreatePreviousTrackHandler();
+  MediaCenterEventHandler previousHandler =
+      source->CreatePreviousTrackHandler();
 
   previousHandler(nil);
 
@@ -152,9 +154,12 @@ TEST(MediaHardwareKeysEventSourceMacMediaCenter, TestSetMetadata)
   // before checking the result.
   PR_Sleep(PR_SecondsToInterval(1));
   MPNowPlayingInfoCenter* center = [MPNowPlayingInfoCenter defaultCenter];
-  ASSERT_TRUE([center.nowPlayingInfo[MPMediaItemPropertyTitle] isEqualToString:@"MediaPlayback"]);
-  ASSERT_TRUE([center.nowPlayingInfo[MPMediaItemPropertyArtist] isEqualToString:@"Firefox"]);
-  ASSERT_TRUE([center.nowPlayingInfo[MPMediaItemPropertyAlbumTitle] isEqualToString:@"Mozilla"]);
+  ASSERT_TRUE([center.nowPlayingInfo[MPMediaItemPropertyTitle]
+      isEqualToString:@"MediaPlayback"]);
+  ASSERT_TRUE([center.nowPlayingInfo[MPMediaItemPropertyArtist]
+      isEqualToString:@"Firefox"]);
+  ASSERT_TRUE([center.nowPlayingInfo[MPMediaItemPropertyAlbumTitle]
+      isEqualToString:@"Mozilla"]);
 
   source->Close();
   PR_Sleep(PR_SecondsToInterval(1));

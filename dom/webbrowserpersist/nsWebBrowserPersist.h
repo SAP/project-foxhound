@@ -37,7 +37,6 @@ using ClosePromise = mozilla::MozPromise<nsresult, nsresult, true>;
 
 class nsWebBrowserPersist final : public nsIInterfaceRequestor,
                                   public nsIWebBrowserPersist,
-                                  public nsIStreamListener,
                                   public nsIThreadRetargetableStreamListener,
                                   public nsIProgressEventSink,
                                   public nsSupportsWeakReference {
@@ -155,7 +154,7 @@ class nsWebBrowserPersist final : public nsIInterfaceRequestor,
    */
   nsCOMPtr<nsIWebProgressListener2> mProgressListener2;
   nsCOMPtr<nsIProgressEventSink> mEventSink;
-  mozilla::Mutex mOutputMapMutex;
+  mozilla::Mutex mOutputMapMutex MOZ_UNANNOTATED;
   nsClassHashtable<nsISupportsHashKey, OutputData> mOutputMap;
   nsClassHashtable<nsISupportsHashKey, UploadData> mUploadList;
   nsCOMPtr<nsISerialEventTarget> mBackgroundQueue;

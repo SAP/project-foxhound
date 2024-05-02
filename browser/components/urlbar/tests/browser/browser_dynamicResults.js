@@ -47,8 +47,14 @@ const DYNAMIC_TYPE_VIEW_TEMPLATE = {
   ],
 };
 
+const IS_UPGRADING_SCHEMELESS = SpecialPowers.getBoolPref(
+  "dom.security.https_first_schemeless"
+);
+// eslint-disable-next-line @microsoft/sdl/no-insecure-url
+const DEFAULT_URL_SCHEME = IS_UPGRADING_SCHEMELESS ? "https://" : "http://";
 const DUMMY_PAGE =
-  "http://example.com/browser/browser/base/content/test/general/dummy_page.html";
+  DEFAULT_URL_SCHEME +
+  "example.com/browser/browser/base/content/test/general/dummy_page.html";
 
 // Tests the dynamic type registration functions and stylesheet loading.
 add_task(async function registration() {
@@ -201,6 +207,10 @@ add_task(async function viewCreated() {
       DYNAMIC_TYPE_NAME,
       "row[dynamicType]"
     );
+    Assert.ok(
+      !row.hasAttribute("has-url"),
+      "Row should not have has-url since view template does not contain .urlbarView-url"
+    );
     let inner = row.querySelector(".urlbarView-row-inner");
     Assert.ok(inner, ".urlbarView-row-inner should exist");
 
@@ -212,7 +222,7 @@ add_task(async function viewCreated() {
 });
 
 // Tests that the view is updated correctly.
-add_task(async function viewUpdated() {
+async function checkViewUpdated(provider) {
   await withDynamicTypeProvider(async () => {
     // Test a few different search strings.  The dynamic result view will be
     // updated to reflect the current string.
@@ -268,7 +278,40 @@ add_task(async function viewUpdated() {
 
       await UrlbarTestUtils.promisePopupClose(window);
     }
-  });
+  }, provider);
+}
+
+add_task(async function checkViewUpdatedPlain() {
+  await checkViewUpdated(new TestProvider());
+});
+
+add_task(async function checkViewUpdatedWDynamicViewTemplate() {
+  /**
+   * A dummy provider that provides the viewTemplate dynamically.
+   */
+  class TestShouldCallGetViewTemplateProvider extends TestProvider {
+    getViewTemplateWasCalled = false;
+
+    getViewTemplate() {
+      this.getViewTemplateWasCalled = true;
+      return DYNAMIC_TYPE_VIEW_TEMPLATE;
+    }
+  }
+
+  let provider = new TestShouldCallGetViewTemplateProvider();
+  Assert.ok(
+    !provider.getViewTemplateWasCalled,
+    "getViewTemplate has not yet been called for the provider"
+  );
+  Assert.ok(
+    !UrlbarView.dynamicViewTemplatesByName.get(DYNAMIC_TYPE_NAME),
+    "No template has been registered"
+  );
+  await checkViewUpdated(provider);
+  Assert.ok(
+    provider.getViewTemplateWasCalled,
+    "getViewTemplate was called for the provider"
+  );
 });
 
 // Tests that selection correctly moves through buttons and selectables in a
@@ -294,15 +337,15 @@ add_task(async function selection() {
       "row.result.type"
     );
 
-    // The heuristic result will be selected.  Arrow down from the heuristic
-    // through all the selectable elements in the dynamic result.
+    // The heuristic result will be selected.  TAB from the heuristic through
+    // all the selectable elements in the dynamic result.
     let selectables = ["selectable", "button1", "button2"];
     for (let name of selectables) {
       let element = row.querySelector(
         `.urlbarView-dynamic-${DYNAMIC_TYPE_NAME}-${name}`
       );
       Assert.ok(element, "Sanity check element");
-      EventUtils.synthesizeKey("KEY_ArrowDown");
+      EventUtils.synthesizeKey("KEY_Tab");
       Assert.equal(
         UrlbarTestUtils.getSelectedElement(window),
         element,
@@ -316,8 +359,8 @@ add_task(async function selection() {
       Assert.equal(UrlbarTestUtils.getSelectedRow(window), row, "Row selected");
     }
 
-    // Arrow down again to select the result after the dynamic result.
-    EventUtils.synthesizeKey("KEY_ArrowDown");
+    // TAB again to select the result after the dynamic result.
+    EventUtils.synthesizeKey("KEY_Tab");
     Assert.equal(
       UrlbarTestUtils.getSelectedRowIndex(window),
       2,
@@ -329,13 +372,13 @@ add_task(async function selection() {
       "Row is not selected"
     );
 
-    // Arrow back up through the dynamic result.
+    // SHIFT+TAB back through the dynamic result.
     for (let name of selectables.reverse()) {
       let element = row.querySelector(
         `.urlbarView-dynamic-${DYNAMIC_TYPE_NAME}-${name}`
       );
       Assert.ok(element, "Sanity check element");
-      EventUtils.synthesizeKey("KEY_ArrowUp");
+      EventUtils.synthesizeKey("KEY_Tab", { shiftKey: true });
       Assert.equal(
         UrlbarTestUtils.getSelectedElement(window),
         element,
@@ -349,8 +392,8 @@ add_task(async function selection() {
       Assert.equal(UrlbarTestUtils.getSelectedRow(window), row, "Row selected");
     }
 
-    // Arrow up again to select the heuristic result.
-    EventUtils.synthesizeKey("KEY_ArrowUp");
+    // SHIFT+TAB again to select the heuristic result.
+    EventUtils.synthesizeKey("KEY_Tab", { shiftKey: true });
     Assert.equal(
       UrlbarTestUtils.getSelectedRowIndex(window),
       0,
@@ -389,13 +432,13 @@ add_task(async function pick() {
         "row.result.type"
       );
 
-      // The heuristic result will be selected.  Arrow down from the heuristic
+      // The heuristic result will be selected.  TAB from the heuristic
       // to the selectable element.
       let element = row.querySelector(
         `.urlbarView-dynamic-${DYNAMIC_TYPE_NAME}-${selectable}`
       );
       Assert.ok(element, "Sanity check element");
-      EventUtils.synthesizeKey("KEY_ArrowDown", { repeat: i + 1 });
+      EventUtils.synthesizeKey("KEY_Tab", { repeat: i + 1 });
       Assert.equal(
         UrlbarTestUtils.getSelectedElement(window),
         element,
@@ -422,7 +465,7 @@ add_task(async function shouldNavigate() {
   class TestShouldNavigateProvider extends TestProvider {
     /**
      * @param {object} context - Data regarding the context of the query.
-     * @param {function} addCallback - Function to add a result to the query.
+     * @param {Function} addCallback - Function to add a result to the query.
      */
     async startQuery(context, addCallback) {
       for (let result of this._results) {
@@ -450,13 +493,13 @@ add_task(async function shouldNavigate() {
       "row.result.type"
     );
 
-    // The heuristic result will be selected.  Arrow down from the heuristic
+    // The heuristic result will be selected.  TAB from the heuristic
     // to the selectable element.
     let element = row.querySelector(
       `.urlbarView-dynamic-${DYNAMIC_TYPE_NAME}-selectable`
     );
     Assert.ok(element, "Sanity check element");
-    EventUtils.synthesizeKey("KEY_ArrowDown", { repeat: 1 });
+    EventUtils.synthesizeKey("KEY_Tab", { repeat: 1 });
     Assert.equal(
       UrlbarTestUtils.getSelectedElement(window),
       element,
@@ -468,7 +511,7 @@ add_task(async function shouldNavigate() {
     await UrlbarTestUtils.promisePopupClose(window, () =>
       EventUtils.synthesizeKey("KEY_Enter")
     );
-    // Verify that pickResult was still called.
+    // Verify that onEngagement was still called.
     let [result, pickedElement] = await pickPromise;
     Assert.equal(result, row.result, "Picked result");
     Assert.equal(pickedElement, element, "Picked element");
@@ -480,7 +523,10 @@ add_task(async function shouldNavigate() {
       "We navigated to payload.url when result selected"
     );
 
-    BrowserTestUtils.loadURI(gBrowser.selectedBrowser, "about:home");
+    BrowserTestUtils.startLoadingURIString(
+      gBrowser.selectedBrowser,
+      "about:home"
+    );
     await BrowserTestUtils.browserLoaded(
       gBrowser.selectedBrowser,
       false,
@@ -610,6 +656,192 @@ add_task(async function highlighting() {
   }, new TestHighlightProviderOveridden());
 });
 
+// View templates that contain a top-level `.urlbarView-url` element should
+// cause `has-url` to be set on `.urlbarView-row`.
+add_task(async function hasUrlTopLevel() {
+  await doAttributesTest({
+    viewTemplate: {
+      name: "url",
+      tag: "span",
+      classList: ["urlbarView-url"],
+    },
+    viewUpdate: {
+      url: {
+        textContent: "https://example.com/",
+      },
+    },
+    expectedAttributes: {
+      "has-url": true,
+    },
+  });
+});
+
+// View templates that contain a descendant `.urlbarView-url` element should
+// cause `has-url` to be set on `.urlbarView-row`.
+add_task(async function hasUrlDescendant() {
+  await doAttributesTest({
+    viewTemplate: {
+      children: [
+        {
+          children: [
+            {
+              children: [
+                {
+                  name: "url",
+                  tag: "span",
+                  classList: ["urlbarView-url"],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    },
+    viewUpdate: {
+      url: {
+        textContent: "https://example.com/",
+      },
+    },
+    expectedAttributes: {
+      "has-url": true,
+    },
+  });
+});
+
+// View templates that contain a top-level `.urlbarView-action` element should
+// cause `has-action` to be set on `.urlbarView-row`.
+add_task(async function hasActionTopLevel() {
+  await doAttributesTest({
+    viewTemplate: {
+      name: "action",
+      tag: "span",
+      classList: ["urlbarView-action"],
+    },
+    viewUpdate: {
+      action: {
+        textContent: "Some action text",
+      },
+    },
+    expectedAttributes: {
+      "has-action": true,
+    },
+  });
+});
+
+// View templates that contain a descendant `.urlbarView-action` element should
+// cause `has-action` to be set on `.urlbarView-row`.
+add_task(async function hasActionDescendant() {
+  await doAttributesTest({
+    viewTemplate: {
+      children: [
+        {
+          children: [
+            {
+              children: [
+                {
+                  name: "action",
+                  tag: "span",
+                  classList: ["urlbarView-action"],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    },
+    viewUpdate: {
+      action: {
+        textContent: "Some action text",
+      },
+    },
+    expectedAttributes: {
+      "has-action": true,
+    },
+  });
+});
+
+// View templates that contain descendant `.urlbarView-url` and
+// `.urlbarView-action` elements should cause `has-url` and `has-action` to be
+// set on `.urlbarView-row`.
+add_task(async function hasUrlAndActionDescendant() {
+  await doAttributesTest({
+    viewTemplate: {
+      children: [
+        {
+          children: [
+            {
+              children: [
+                {
+                  name: "url",
+                  tag: "span",
+                  classList: ["urlbarView-url"],
+                },
+              ],
+            },
+            {
+              name: "action",
+              tag: "span",
+              classList: ["urlbarView-action"],
+            },
+          ],
+        },
+      ],
+    },
+    viewUpdate: {
+      url: {
+        textContent: "https://example.com/",
+      },
+      action: {
+        textContent: "Some action text",
+      },
+    },
+    expectedAttributes: {
+      "has-url": true,
+      "has-action": true,
+    },
+  });
+});
+
+async function doAttributesTest({
+  viewTemplate,
+  viewUpdate,
+  expectedAttributes,
+}) {
+  expectedAttributes = {
+    "has-url": false,
+    "has-action": false,
+    ...expectedAttributes,
+  };
+
+  let provider = new TestProvider();
+  provider.getViewTemplate = () => viewTemplate;
+  provider.getViewUpdate = () => viewUpdate;
+
+  await withDynamicTypeProvider(async () => {
+    await UrlbarTestUtils.promiseAutocompleteResultPopup({
+      window,
+      value: "test",
+      waitForFocus: SimpleTest.waitForFocus,
+    });
+
+    let row = await UrlbarTestUtils.waitForAutocompleteResultAt(window, 1);
+    Assert.equal(
+      row.result.type,
+      UrlbarUtils.RESULT_TYPE.DYNAMIC,
+      "Sanity check: The expected row is present"
+    );
+    for (let [name, expected] of Object.entries(expectedAttributes)) {
+      Assert.equal(
+        row.hasAttribute(name),
+        expected,
+        "Row should have attribute as expected: " + name
+      );
+    }
+
+    await UrlbarTestUtils.promisePopupClose(window);
+  }, provider);
+}
+
 /**
  * Provides a dynamic result.
  */
@@ -672,8 +904,9 @@ class TestProvider extends UrlbarTestUtils.TestProvider {
     };
   }
 
-  pickResult(result, element) {
+  onEngagement(state, queryContext, details, controller) {
     if (this._pickPromiseResolve) {
+      let { result, element } = details;
       this._pickPromiseResolve([result, element]);
       delete this._pickPromiseResolve;
       delete this._pickPromise;
@@ -690,6 +923,7 @@ class TestProvider extends UrlbarTestUtils.TestProvider {
 
 /**
  * Provides a dynamic result.
+ *
  * @param {object} callback - Function that runs the body of the test.
  * @param {object} provider - The dummy provider to use.
  */
@@ -699,10 +933,12 @@ async function withDynamicTypeProvider(
 ) {
   // Add a dynamic result type.
   UrlbarResult.addDynamicResultType(DYNAMIC_TYPE_NAME);
-  UrlbarView.addDynamicViewTemplate(
-    DYNAMIC_TYPE_NAME,
-    DYNAMIC_TYPE_VIEW_TEMPLATE
-  );
+  if (!provider.getViewTemplate) {
+    UrlbarView.addDynamicViewTemplate(
+      DYNAMIC_TYPE_NAME,
+      DYNAMIC_TYPE_VIEW_TEMPLATE
+    );
+  }
 
   // Add a provider of the dynamic type.
   UrlbarProvidersManager.registerProvider(provider);
@@ -711,7 +947,9 @@ async function withDynamicTypeProvider(
 
   // Clean up.
   UrlbarProvidersManager.unregisterProvider(provider);
-  UrlbarView.removeDynamicViewTemplate(DYNAMIC_TYPE_NAME);
+  if (!provider.getViewTemplate) {
+    UrlbarView.removeDynamicViewTemplate(DYNAMIC_TYPE_NAME);
+  }
   UrlbarResult.removeDynamicResultType(DYNAMIC_TYPE_NAME);
 }
 

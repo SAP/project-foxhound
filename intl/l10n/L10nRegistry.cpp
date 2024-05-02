@@ -11,6 +11,7 @@
 #include "nsString.h"
 #include "nsContentUtils.h"
 #include "FluentResource.h"
+#include "FileSource.h"
 #include "nsICategoryManager.h"
 #include "mozilla/SimpleEnumerator.h"
 #include "mozilla/dom/Promise.h"
@@ -26,9 +27,6 @@ namespace mozilla::intl {
 /* FluentBundleIterator */
 
 NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(FluentBundleIterator, mGlobal)
-
-NS_IMPL_CYCLE_COLLECTION_ROOT_NATIVE(FluentBundleIterator, AddRef)
-NS_IMPL_CYCLE_COLLECTION_UNROOT_NATIVE(FluentBundleIterator, Release)
 
 FluentBundleIterator::FluentBundleIterator(
     nsIGlobalObject* aGlobal, UniquePtr<ffi::GeckoFluentBundleIterator> aRaw)
@@ -58,9 +56,6 @@ already_AddRefed<FluentBundleIterator> FluentBundleIterator::Values() {
 
 NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(FluentBundleAsyncIterator, mGlobal)
 
-NS_IMPL_CYCLE_COLLECTION_ROOT_NATIVE(FluentBundleAsyncIterator, AddRef)
-NS_IMPL_CYCLE_COLLECTION_UNROOT_NATIVE(FluentBundleAsyncIterator, Release)
-
 FluentBundleAsyncIterator::FluentBundleAsyncIterator(
     nsIGlobalObject* aGlobal,
     UniquePtr<ffi::GeckoFluentBundleAsyncIteratorWrapper> aRaw)
@@ -71,10 +66,9 @@ JSObject* FluentBundleAsyncIterator::WrapObject(
   return FluentBundleAsyncIterator_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-already_AddRefed<Promise> FluentBundleAsyncIterator::Next() {
-  ErrorResult rv;
-  RefPtr<Promise> promise = Promise::Create(mGlobal, rv);
-  if (rv.Failed()) {
+already_AddRefed<Promise> FluentBundleAsyncIterator::Next(ErrorResult& aError) {
+  RefPtr<Promise> promise = Promise::Create(mGlobal, aError);
+  if (aError.Failed()) {
     return nullptr;
   }
 
@@ -110,9 +104,6 @@ FluentBundleAsyncIterator::Values() {
 /* L10nRegistry */
 
 NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(L10nRegistry, mGlobal)
-
-NS_IMPL_CYCLE_COLLECTION_ROOT_NATIVE(L10nRegistry, AddRef)
-NS_IMPL_CYCLE_COLLECTION_UNROOT_NATIVE(L10nRegistry, Release)
 
 L10nRegistry::L10nRegistry(nsIGlobalObject* aGlobal, bool aUseIsolating)
     : mGlobal(aGlobal),

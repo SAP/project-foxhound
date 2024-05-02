@@ -16,6 +16,7 @@ EXPORTS.mozilla.intl = [
     "src/DateTimePatternGenerator.h",
     "src/DisplayNames.h",
     "src/FormatBuffer.h",
+    "src/GeneralCategory.h",
     "src/ICU4CGlue.h",
     "src/ICU4CLibrary.h",
     "src/ICUError.h",
@@ -72,6 +73,17 @@ UNIFIED_SOURCES += [
 if not CONFIG["JS_STANDALONE"]:
     TEST_DIRS += ["gtest"]
 
+if CONFIG["MOZ_ICU4X"]:
+    EXPORTS.mozilla.intl += [
+        "src/ICU4XGeckoDataProvider.h",
+    ]
+    UNIFIED_SOURCES += [
+        "src/ICU4XGeckoDataProvider.cpp",
+    ]
+    LOCAL_INCLUDES += [
+        "/third_party/rust/icu_capi/c/include",
+    ]
+
 # At the time of this writing the MOZ_HAS_MOZGLUE define must be true in order to
 # correctly include ConvertUtf8toUtf16 in certain include paths, otherwise it results
 # in a compile time "undeclared identifier" error. See:
@@ -79,5 +91,3 @@ if not CONFIG["JS_STANDALONE"]:
 DEFINES["MOZ_HAS_MOZGLUE"] = True
 
 Library("intlcomponents")
-
-REQUIRES_UNIFIED_BUILD = True

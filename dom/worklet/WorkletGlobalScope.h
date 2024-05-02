@@ -22,12 +22,24 @@
     }                                                \
   }
 
+namespace JS {
+class RealmOptions;
+}
+
+namespace JS::loader {
+class ModuleLoaderBase;
+}
+
 namespace mozilla {
 
 class ErrorResult;
 class WorkletImpl;
 
 namespace dom {
+
+namespace loader {
+class WorkletModuleLoader;
+}
 
 class Console;
 
@@ -36,16 +48,13 @@ class WorkletGlobalScope : public nsIGlobalObject, public nsWrapperCache {
   NS_DECLARE_STATIC_IID_ACCESSOR(WORKLET_IID)
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(WorkletGlobalScope)
+  NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(WorkletGlobalScope)
 
-  WorkletGlobalScope(const Maybe<nsID>& aAgentClusterId,
-                     bool aSharedMemoryAllowed);
+  WorkletGlobalScope(WorkletImpl*);
 
   nsIGlobalObject* GetParentObject() const { return nullptr; }
 
-  virtual JSObject* WrapObject(JSContext* aCx,
-                               JS::Handle<JSObject*> aGivenProto) override;
-
+  JSObject* WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) final;
   virtual bool WrapGlobalObject(JSContext* aCx,
                                 JS::MutableHandle<JSObject*> aReflector) = 0;
 
@@ -54,9 +63,12 @@ class WorkletGlobalScope : public nsIGlobalObject, public nsWrapperCache {
     return GetWrapperPreserveColor();
   }
 
+  nsISerialEventTarget* SerialEventTarget() const final;
+  nsresult Dispatch(already_AddRefed<nsIRunnable>&&) const final;
+
   already_AddRefed<Console> GetConsole(JSContext* aCx, ErrorResult& aRv);
 
-  virtual WorkletImpl* Impl() const = 0;
+  WorkletImpl* Impl() const { return mImpl.get(); }
 
   void Dump(const Optional<nsAString>& aString) const;
 
@@ -66,19 +78,27 @@ class WorkletGlobalScope : public nsIGlobalObject, public nsWrapperCache {
     return duration.ToMilliseconds();
   }
 
-  Maybe<nsID> GetAgentClusterId() const override { return mAgentClusterId; }
+  void InitModuleLoader(loader::WorkletModuleLoader* aModuleLoader);
 
-  bool IsSharedMemoryAllowed() const override { return mSharedMemoryAllowed; }
+  JS::loader::ModuleLoaderBase* GetModuleLoader(
+      JSContext* aCx = nullptr) override;
+
+  OriginTrials Trials() const override;
+  Maybe<nsID> GetAgentClusterId() const override;
+  bool IsSharedMemoryAllowed() const override;
+  bool ShouldResistFingerprinting(RFPTarget aTarget) const override;
 
  protected:
   ~WorkletGlobalScope();
-  ;
+
+  JS::RealmOptions CreateRealmOptions() const;
+
+  const RefPtr<WorkletImpl> mImpl;
 
  private:
   TimeStamp mCreationTimeStamp;
-  Maybe<nsID> mAgentClusterId;
   RefPtr<Console> mConsole;
-  bool mSharedMemoryAllowed;
+  RefPtr<loader::WorkletModuleLoader> mModuleLoader;
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(WorkletGlobalScope, WORKLET_IID)

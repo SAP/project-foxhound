@@ -7,9 +7,7 @@
 
 #include "LocalAccessible-inl.h"
 #include "nsEventShell.h"
-#include "DocAccessible.h"
 #include "DocAccessibleChild.h"
-#include "nsAccessibilityService.h"
 #include "nsTextEquivUtils.h"
 #ifdef A11Y_LOG
 #  include "Logging.h"
@@ -32,6 +30,11 @@ bool EventQueue::PushEvent(AccEvent* aEvent) {
                    aEvent->Document() == mDocument,
                "Queued event belongs to another document!");
 
+  if (aEvent->mEventType == nsIAccessibleEvent::EVENT_FOCUS) {
+    mFocusEvent = aEvent;
+    return true;
+  }
+
   // XXX(Bug 1631371) Check if this should use a fallible operation as it
   // pretended earlier, or change the return type to void.
   mEvents.AppendElement(aEvent);
@@ -43,18 +46,26 @@ bool EventQueue::PushEvent(AccEvent* aEvent) {
       (aEvent->mEventType == nsIAccessibleEvent::EVENT_NAME_CHANGE ||
        aEvent->mEventType == nsIAccessibleEvent::EVENT_TEXT_REMOVED ||
        aEvent->mEventType == nsIAccessibleEvent::EVENT_TEXT_INSERTED)) {
-    PushNameOrDescriptionChange(aEvent->mAccessible);
+    PushNameOrDescriptionChange(aEvent);
   }
   return true;
 }
 
-bool EventQueue::PushNameOrDescriptionChange(LocalAccessible* aTarget) {
+bool EventQueue::PushNameOrDescriptionChange(AccEvent* aOrigEvent) {
   // Fire name/description change event on parent or related LocalAccessible
   // being labelled/described given that this event hasn't been coalesced, the
   // dependent's name/description was calculated from this subtree, and the
   // subtree was changed.
-  const bool doName = aTarget->HasNameDependent();
-  const bool doDesc = aTarget->HasDescriptionDependent();
+  LocalAccessible* target = aOrigEvent->mAccessible;
+  // If the text of a text leaf changed without replacing the leaf, the only
+  // event we get is text inserted on the container. In this case, we might
+  // need to fire a name change event on the target itself.
+  const bool maybeTargetNameChanged =
+      (aOrigEvent->mEventType == nsIAccessibleEvent::EVENT_TEXT_REMOVED ||
+       aOrigEvent->mEventType == nsIAccessibleEvent::EVENT_TEXT_INSERTED) &&
+      nsTextEquivUtils::HasNameRule(target, eNameFromSubtreeRule);
+  const bool doName = target->HasNameDependent() || maybeTargetNameChanged;
+  const bool doDesc = target->HasDescriptionDependent();
   if (!doName && !doDesc) {
     return false;
   }
@@ -63,16 +74,18 @@ bool EventQueue::PushNameOrDescriptionChange(LocalAccessible* aTarget) {
   // Only continue traversing up the tree if it's possible that the parent
   // LocalAccessible's name (or a LocalAccessible being labelled by this
   // LocalAccessible or an ancestor) can depend on this LocalAccessible's name.
-  LocalAccessible* parent = aTarget;
+  LocalAccessible* parent = target;
   do {
     // Test possible name dependent parent.
     if (doName) {
-      if (nameCheckAncestor && parent != aTarget &&
+      if (nameCheckAncestor && (maybeTargetNameChanged || parent != target) &&
           nsTextEquivUtils::HasNameRule(parent, eNameFromSubtreeRule)) {
         nsAutoString name;
         ENameValueFlag nameFlag = parent->Name(name);
         // If name is obtained from subtree, fire name change event.
-        if (nameFlag == eNameFromSubtree) {
+        // HTML file inputs always get part of their name from the subtree, even
+        // if the author provided a name.
+        if (nameFlag == eNameFromSubtree || parent->IsHTMLFileInput()) {
           RefPtr<AccEvent> nameChangeEvent =
               new AccEvent(nsIAccessibleEvent::EVENT_NAME_CHANGE, parent);
           pushed |= PushEvent(nameChangeEvent);
@@ -81,7 +94,7 @@ bool EventQueue::PushNameOrDescriptionChange(LocalAccessible* aTarget) {
       }
 
       Relation rel = parent->RelationByType(RelationType::LABEL_FOR);
-      while (LocalAccessible* relTarget = rel.Next()) {
+      while (LocalAccessible* relTarget = rel.LocalNext()) {
         RefPtr<AccEvent> nameChangeEvent =
             new AccEvent(nsIAccessibleEvent::EVENT_NAME_CHANGE, relTarget);
         pushed |= PushEvent(nameChangeEvent);
@@ -90,13 +103,17 @@ bool EventQueue::PushNameOrDescriptionChange(LocalAccessible* aTarget) {
 
     if (doDesc) {
       Relation rel = parent->RelationByType(RelationType::DESCRIPTION_FOR);
-      while (LocalAccessible* relTarget = rel.Next()) {
+      while (LocalAccessible* relTarget = rel.LocalNext()) {
         RefPtr<AccEvent> descChangeEvent = new AccEvent(
             nsIAccessibleEvent::EVENT_DESCRIPTION_CHANGE, relTarget);
         pushed |= PushEvent(descChangeEvent);
       }
     }
 
+    if (parent->IsDoc()) {
+      // Never cross document boundaries.
+      break;
+    }
     parent = parent->LocalParent();
   } while (parent &&
            nsTextEquivUtils::HasNameRule(parent, eNameFromSubtreeIfReqRule));
@@ -302,65 +319,112 @@ void EventQueue::CoalesceSelChangeEvents(AccSelChangeEvent* aTailEvent,
 void EventQueue::ProcessEventQueue() {
   // Process only currently queued events.
   const nsTArray<RefPtr<AccEvent> > events = std::move(mEvents);
+  nsTArray<uint64_t> selectedIDs;
+  nsTArray<uint64_t> unselectedIDs;
 
   uint32_t eventCount = events.Length();
 #ifdef A11Y_LOG
-  if (eventCount > 0 && logging::IsEnabled(logging::eEvents)) {
+  if ((eventCount > 0 || mFocusEvent) && logging::IsEnabled(logging::eEvents)) {
     logging::MsgBegin("EVENTS", "events processing");
     logging::Address("document", mDocument);
     logging::MsgEnd();
   }
 #endif
 
+  if (mFocusEvent) {
+    // Always fire a pending focus event before all other events. We do this for
+    // two reasons:
+    // 1. It prevents extraneous screen reader speech if the name, states, etc.
+    // of the currently focused item change at the same time as another item is
+    // focused. If aria-activedescendant is used, even setting
+    // aria-activedescendant before changing other properties results in the
+    // property change events being queued before the focus event because we
+    // process  aria-activedescendant async.
+    // 2. It improves perceived performance. Focus changes should be reported as
+    // soon as possible, so clients should handle focus events before they spend
+    // time on anything else.
+    RefPtr<AccEvent> event = std::move(mFocusEvent);
+    if (!event->mAccessible->IsDefunct()) {
+      FocusMgr()->ProcessFocusEvent(event);
+    }
+  }
+
   for (uint32_t idx = 0; idx < eventCount; idx++) {
     AccEvent* event = events[idx];
-    if (event->mEventRule != AccEvent::eDoNotEmit) {
-      LocalAccessible* target = event->GetAccessible();
-      if (!target || target->IsDefunct()) continue;
+    uint32_t eventType = event->mEventType;
+    LocalAccessible* target = event->GetAccessible();
+    if (!target || target->IsDefunct()) continue;
 
-      // Dispatch the focus event if target is still focused.
-      if (event->mEventType == nsIAccessibleEvent::EVENT_FOCUS) {
-        FocusMgr()->ProcessFocusEvent(event);
-        continue;
-      }
-
-      // Dispatch caret moved and text selection change events.
-      if (event->mEventType ==
-          nsIAccessibleEvent::EVENT_TEXT_SELECTION_CHANGED) {
-        SelectionMgr()->ProcessTextSelChangeEvent(event);
-        continue;
-      }
-
-      // Fire selected state change events in support to selection events.
-      if (event->mEventType == nsIAccessibleEvent::EVENT_SELECTION_ADD) {
-        nsEventShell::FireEvent(event->mAccessible, states::SELECTED, true,
-                                event->mIsFromUserInput);
-
-      } else if (event->mEventType ==
-                 nsIAccessibleEvent::EVENT_SELECTION_REMOVE) {
-        nsEventShell::FireEvent(event->mAccessible, states::SELECTED, false,
-                                event->mIsFromUserInput);
-
-      } else if (event->mEventType == nsIAccessibleEvent::EVENT_SELECTION) {
+    // Collect select changes
+    if (IPCAccessibilityActive()) {
+      if ((event->mEventRule == AccEvent::eDoNotEmit &&
+           (eventType == nsIAccessibleEvent::EVENT_SELECTION_ADD ||
+            eventType == nsIAccessibleEvent::EVENT_SELECTION_REMOVE ||
+            eventType == nsIAccessibleEvent::EVENT_SELECTION)) ||
+          eventType == nsIAccessibleEvent::EVENT_SELECTION_WITHIN) {
+        // The selection even was either dropped or morphed to a
+        // selection-within. We need to collect the items from all these events
+        // and manually push their new state to the parent process.
         AccSelChangeEvent* selChangeEvent = downcast_accEvent(event);
-        nsEventShell::FireEvent(event->mAccessible, states::SELECTED,
-                                (selChangeEvent->mSelChangeType ==
-                                 AccSelChangeEvent::eSelectionAdd),
-                                event->mIsFromUserInput);
-
-        if (selChangeEvent->mPackedEvent) {
-          nsEventShell::FireEvent(
-              selChangeEvent->mPackedEvent->mAccessible, states::SELECTED,
-              (selChangeEvent->mPackedEvent->mSelChangeType ==
-               AccSelChangeEvent::eSelectionAdd),
-              selChangeEvent->mPackedEvent->mIsFromUserInput);
+        LocalAccessible* item = selChangeEvent->mItem;
+        if (!item->IsDefunct()) {
+          uint64_t itemID =
+              item->IsDoc() ? 0 : reinterpret_cast<uint64_t>(item->UniqueID());
+          bool selected = selChangeEvent->mSelChangeType ==
+                          AccSelChangeEvent::eSelectionAdd;
+          if (selected) {
+            selectedIDs.AppendElement(itemID);
+          } else {
+            unselectedIDs.AppendElement(itemID);
+          }
         }
       }
-
-      nsEventShell::FireEvent(event);
     }
 
+    if (event->mEventRule == AccEvent::eDoNotEmit) {
+      continue;
+    }
+
+    // Dispatch caret moved and text selection change events.
+    if (eventType == nsIAccessibleEvent::EVENT_TEXT_SELECTION_CHANGED) {
+      SelectionMgr()->ProcessTextSelChangeEvent(event);
+      continue;
+    }
+
+    // Fire selected state change events in support to selection events.
+    if (eventType == nsIAccessibleEvent::EVENT_SELECTION_ADD) {
+      nsEventShell::FireEvent(event->mAccessible, states::SELECTED, true,
+                              event->mIsFromUserInput);
+
+    } else if (eventType == nsIAccessibleEvent::EVENT_SELECTION_REMOVE) {
+      nsEventShell::FireEvent(event->mAccessible, states::SELECTED, false,
+                              event->mIsFromUserInput);
+
+    } else if (eventType == nsIAccessibleEvent::EVENT_SELECTION) {
+      AccSelChangeEvent* selChangeEvent = downcast_accEvent(event);
+      nsEventShell::FireEvent(
+          event->mAccessible, states::SELECTED,
+          (selChangeEvent->mSelChangeType == AccSelChangeEvent::eSelectionAdd),
+          event->mIsFromUserInput);
+
+      if (selChangeEvent->mPackedEvent) {
+        nsEventShell::FireEvent(selChangeEvent->mPackedEvent->mAccessible,
+                                states::SELECTED,
+                                (selChangeEvent->mPackedEvent->mSelChangeType ==
+                                 AccSelChangeEvent::eSelectionAdd),
+                                selChangeEvent->mPackedEvent->mIsFromUserInput);
+      }
+    }
+
+    nsEventShell::FireEvent(event);
+
     if (!mDocument) return;
+  }
+
+  if (mDocument && IPCAccessibilityActive() &&
+      (!selectedIDs.IsEmpty() || !unselectedIDs.IsEmpty())) {
+    DocAccessibleChild* ipcDoc = mDocument->IPCDoc();
+    ipcDoc->SendSelectedAccessiblesChanged(selectedIDs, unselectedIDs);
   }
 }
 

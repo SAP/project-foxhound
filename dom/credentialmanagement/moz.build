@@ -7,6 +7,8 @@
 with Files("**"):
     BUG_COMPONENT = ("Core", "DOM: Web Authentication")
 
+DIRS += ["identity"]
+
 EXPORTS.mozilla.dom += [
     "Credential.h",
     "CredentialsContainer.h",
@@ -21,6 +23,6 @@ include("/ipc/chromium/chromium-config.mozbuild")
 
 FINAL_LIBRARY = "xul"
 
-MOCHITEST_MANIFESTS += ["tests/mochitest/mochitest.ini"]
-BROWSER_CHROME_MANIFESTS += ["tests/browser/browser.ini"]
+MOCHITEST_MANIFESTS += ["tests/mochitest/mochitest.toml"]
+BROWSER_CHROME_MANIFESTS += ["tests/browser/browser.toml"]
 CRASHTEST_MANIFESTS += ["tests/crashtests/crashtests.list"]

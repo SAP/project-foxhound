@@ -4,22 +4,18 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, print_function, unicode_literals
-
 import logging
 import os
 import shutil
 import subprocess
 import tempfile
 from contextlib import contextmanager
-
 from pathlib import Path
 
-from appdirs import user_config_dir
 import taskcluster
-
-from mach.base import FailedCommandError
+from appdirs import user_config_dir
 from gecko_taskgraph import GECKO
+from mach.base import FailedCommandError
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +30,7 @@ TASK_TYPES = {
 
 
 def get_secret(secret):
-    # use proxy if configured, otherwise local credentials from env vars
+    # use proxy if configured, otherwise use local credentials from env vars
     if "TASKCLUSTER_PROXY_URL" in os.environ:
         secrets_options = {"rootUrl": os.environ["TASKCLUSTER_PROXY_URL"]}
     else:
@@ -48,20 +44,17 @@ def configure_ssh(ssh_key_secret):
     if ssh_key_secret is None:
         yield
 
-    # If we get here, we are runnig in automation.
-    # We use a user hgrc, so that we are also get the system-wide hgrc
-    # settings.
-    hgrc = Path(user_config_dir("hg")).joinpath("hgrc")
+    # If we get here, we are running in automation.
+    # We use a user hgrc, so that we also get the system-wide hgrc settings.
+    hgrc = Path(user_config_dir("hg")) / "hgrc"
     if hgrc.exists():
-        raise FailedCommandError(
-            "Not overwriting `{}`; cannot configure ssh.".format(hgrc)
-        )
+        raise FailedCommandError(f"Not overwriting `{hgrc}`; cannot configure ssh.")
 
     try:
         ssh_key_dir = Path(tempfile.mkdtemp())
 
         ssh_key = get_secret(ssh_key_secret)
-        ssh_key_file = ssh_key_dir.joinpath("id_rsa")
+        ssh_key_file = ssh_key_dir / "id_rsa"
         ssh_key_file.write_text(ssh_key["ssh_privkey"])
         ssh_key_file.chmod(0o600)
 
@@ -77,7 +70,7 @@ def configure_ssh(ssh_key_secret):
         yield
     finally:
         shutil.rmtree(str(ssh_key_dir))
-        os.remove(str(hgrc))
+        hgrc.unlink()
 
 
 def push_canary(scriptworkers, addresses, ssh_key_secret):
@@ -96,7 +89,7 @@ def push_canary(scriptworkers, addresses, ssh_key_secret):
         else:
             logger.info("No tasks for {}.".format(scriptworker))
 
-    mach = Path(GECKO).joinpath("mach")
+    mach = Path(GECKO) / "mach"
     base_command = [str(mach), "try", "scriptworker"]
     for address in addresses:
         base_command.extend(

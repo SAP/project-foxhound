@@ -43,10 +43,6 @@ function updateConfigFromFakeAndLoopbackPrefs() {
 updateConfigFromFakeAndLoopbackPrefs();
 
 /**
- *  Global flag to skip LoopbackTone
- */
-let DISABLE_LOOPBACK_TONE = false;
-/**
  * Helper class to setup a sine tone of a given frequency.
  */
 class LoopbackTone {
@@ -224,11 +220,8 @@ AudioStreamAnalyser.prototype = {
    * @returns {integer} the index of the bin in the FFT array.
    */
   binIndexForFrequency(frequency) {
-    return (
-      1 +
-      Math.round(
-        (frequency * this.analyser.fftSize) / this.audioContext.sampleRate
-      )
+    return Math.round(
+      (frequency * this.analyser.fftSize) / this.audioContext.sampleRate
     );
   },
 
@@ -239,7 +232,7 @@ AudioStreamAnalyser.prototype = {
    * @returns {double} the frequency for this bin
    */
   frequencyForBinIndex(index) {
-    return ((index - 1) * this.audioContext.sampleRate) / this.analyser.fftSize;
+    return (index * this.audioContext.sampleRate) / this.analyser.fftSize;
   },
 };
 
@@ -373,23 +366,7 @@ function createMediaElementForTrack(track, idPrefix) {
  *        The constraints for this mozGetUserMedia callback
  */
 function getUserMedia(constraints) {
-  // Tests may have changed the values of prefs, so recheck
-  updateConfigFromFakeAndLoopbackPrefs();
-  if (
-    !WANT_FAKE_AUDIO &&
-    !constraints.fake &&
-    constraints.audio &&
-    !DISABLE_LOOPBACK_TONE
-  ) {
-    // Loopback device is configured, start the default loopback tone
-    if (!DefaultLoopbackTone) {
-      TEST_AUDIO_FREQ = 440;
-      DefaultLoopbackTone = new LoopbackTone(
-        new AudioContext(),
-        TEST_AUDIO_FREQ
-      );
-      DefaultLoopbackTone.start();
-    }
+  if (!constraints.fake && constraints.audio) {
     // Disable input processing mode when it's not explicity enabled.
     // This is to avoid distortion of the loopback tone
     constraints.audio = Object.assign(
@@ -399,9 +376,6 @@ function getUserMedia(constraints) {
       { noiseSuppression: false },
       constraints.audio
     );
-  } else {
-    // Fake device configured, ensure our test freq is correct.
-    TEST_AUDIO_FREQ = 1000;
   }
   info("Call getUserMedia for " + JSON.stringify(constraints));
   return navigator.mediaDevices
@@ -431,11 +405,9 @@ function setupEnvironment() {
   var defaultMochitestPrefs = {
     set: [
       ["media.peerconnection.enabled", true],
-      ["media.peerconnection.identity.enabled", true],
       ["media.peerconnection.identity.timeout", 120000],
       ["media.peerconnection.ice.stun_client_maximum_transmits", 14],
       ["media.peerconnection.ice.trickle_grace_period", 30000],
-      ["media.peerconnection.rtpsourcesapi.enabled", true],
       ["media.navigator.permission.disabled", true],
       // If either fake audio or video is desired we enable fake streams.
       // If loopback devices are set they will be chosen instead of fakes in gecko.
@@ -487,6 +459,7 @@ function setupEnvironment() {
 async function matchPlatformH264CodecPrefs() {
   const hasHW264 =
     SpecialPowers.getBoolPref("media.webrtc.platformencoder") &&
+    !SpecialPowers.getBoolPref("media.webrtc.platformencoder.sw_only") &&
     (navigator.userAgent.includes("Android") ||
       navigator.userAgent.includes("Mac OS X"));
 
@@ -992,6 +965,68 @@ const getTurnHostname = turnUrl => {
   return hostAndMaybePort.split(":")[0];
 };
 
+// Yo dawg I heard you like yo dawg I heard you like Proxies
+// Example: let value = await GleanTest.category.metric.testGetValue();
+// For labeled metrics:
+//    let value = await GleanTest.category.metric["label"].testGetValue();
+// Please don't try to use the string "testGetValue" as a label.
+const GleanTest = new Proxy(
+  {},
+  {
+    get(target, categoryName, receiver) {
+      return new Proxy(
+        {},
+        {
+          get(target, metricName, receiver) {
+            return new Proxy(
+              {
+                async testGetValue() {
+                  return SpecialPowers.spawnChrome(
+                    [categoryName, metricName],
+                    async (categoryName, metricName) => {
+                      await Services.fog.testFlushAllChildren();
+                      const window = this.browsingContext.topChromeWindow;
+                      return window.Glean[categoryName][
+                        metricName
+                      ].testGetValue();
+                    }
+                  );
+                },
+              },
+              {
+                get(target, prop, receiver) {
+                  // The only prop that will be there is testGetValue, but we
+                  // might add more later.
+                  if (prop in target) {
+                    return target[prop];
+                  }
+
+                  // |prop| must be a label?
+                  const label = prop;
+                  return {
+                    async testGetValue() {
+                      return SpecialPowers.spawnChrome(
+                        [categoryName, metricName, label],
+                        async (categoryName, metricName, label) => {
+                          await Services.fog.testFlushAllChildren();
+                          const window = this.browsingContext.topChromeWindow;
+                          return window.Glean[categoryName][metricName][
+                            label
+                          ].testGetValue();
+                        }
+                      );
+                    },
+                  };
+                },
+              }
+            );
+          },
+        }
+      );
+    },
+  }
+);
+
 /**
  * This class executes a series of functions in a continuous sequence.
  * Promise-bearing functions are executed after the previous promise completes.
@@ -1177,11 +1212,20 @@ CommandChain.prototype = {
   },
 };
 
-function AudioStreamHelper() {
+function AudioStreamFlowingHelper() {
   this._context = new AudioContext();
+  // Tests may have changed the values of prefs, so recheck
+  updateConfigFromFakeAndLoopbackPrefs();
+  if (!WANT_FAKE_AUDIO) {
+    // Loopback device is configured, start the default loopback tone
+    if (!DefaultLoopbackTone) {
+      DefaultLoopbackTone = new LoopbackTone(this._context, TEST_AUDIO_FREQ);
+      DefaultLoopbackTone.start();
+    }
+  }
 }
 
-AudioStreamHelper.prototype = {
+AudioStreamFlowingHelper.prototype = {
   checkAudio(stream, analyser, fun) {
     /*
     analyser.enableDebugCanvas();
@@ -1197,6 +1241,10 @@ AudioStreamHelper.prototype = {
     return this.checkAudio(stream, analyser, array => array[freq] > 200);
   },
 
+  // Use checkAudioNotFlowing() only after checkAudioFlowing() or similar to
+  // know that audio had previously been flowing on the same stream, as
+  // checkAudioNotFlowing() does not wait for the loopback device to return
+  // any audio that it receives.
   checkAudioNotFlowing(stream) {
     var analyser = new AudioStreamAnalyser(this._context, stream);
     var freq = analyser.binIndexForFrequency(TEST_AUDIO_FREQ);
@@ -1374,7 +1422,7 @@ class VideoStreamHelper {
   }
 }
 
-(function() {
+(function () {
   var el = document.createElement("link");
   el.rel = "stylesheet";
   el.type = "text/css";

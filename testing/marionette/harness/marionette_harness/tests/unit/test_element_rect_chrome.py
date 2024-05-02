@@ -2,8 +2,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import
-
 from marionette_driver.by import By
 
 from marionette_harness import MarionetteTestCase, WindowManagerMixin
@@ -16,7 +14,7 @@ class TestElementSizeChrome(WindowManagerMixin, MarionetteTestCase):
         self.marionette.set_context("chrome")
 
         new_window = self.open_chrome_window(
-            "chrome://remote/content/marionette/test2.xhtml"
+            "chrome://remote/content/marionette/test.xhtml"
         )
         self.marionette.switch_to_window(new_window)
 

@@ -2,10 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const { SessionStore } = ChromeUtils.import(
-  "resource:///modules/sessionstore/SessionStore.jsm"
-);
-
 add_task(async function testClosedTabData() {
   /** Test for Bug 461634 **/
 
@@ -59,14 +55,14 @@ add_task(async function testClosedTabData() {
     "browser.sessionstore.max_tabs_undo",
     test_state.windows[0]._closedTabs.length
   );
-  await setWindowState(newWin, test_state);
+  await setWindowState(newWin, test_state, true);
 
-  let closedTabs = SessionStore.getClosedTabData(newWin);
+  let closedTabs = SessionStore.getClosedTabDataForWindow(newWin);
 
   // Verify that non JSON serialized data is the same as JSON serialized data.
   is(
     JSON.stringify(closedTabs),
-    JSON.stringify(SessionStore.getClosedTabData(newWin)),
+    JSON.stringify(SessionStore.getClosedTabDataForWindow(newWin)),
     "Non-serialized data is the same as serialized data"
   );
 
@@ -106,12 +102,12 @@ add_task(async function testClosedTabData() {
   ss.forgetClosedTab(newWin, 2);
   ss.forgetClosedTab(newWin, null);
 
-  closedTabs = SessionStore.getClosedTabData(newWin);
+  closedTabs = SessionStore.getClosedTabDataForWindow(newWin);
 
   // Verify that non JSON serialized data is the same as JSON serialized data.
   is(
     JSON.stringify(closedTabs),
-    JSON.stringify(SessionStore.getClosedTabData(newWin)),
+    JSON.stringify(SessionStore.getClosedTabDataForWindow(newWin)),
     "Non-serialized data is the same as serialized data"
   );
 

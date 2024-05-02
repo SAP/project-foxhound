@@ -176,17 +176,62 @@ add_task(async function returnByValueInvalidTypes({ client }) {
   const { id: executionContextId } = await enableRuntime(client);
 
   for (const returnByValue of [null, 1, "foo", [], {}]) {
-    let errorThrown = "";
-    try {
-      await Runtime.callFunctionOn({
+    await Assert.rejects(
+      Runtime.callFunctionOn({
         functionDeclaration: "",
         executionContextId,
         returnByValue,
-      });
-    } catch (e) {
-      errorThrown = e.message;
-    }
-    ok(errorThrown.includes("returnByValue: boolean value expected"));
+      }),
+      err => err.message.includes("returnByValue: boolean value expected"),
+      "returnByValue: boolean value expected"
+    );
+  }
+});
+
+add_task(async function returnByValueCyclicValue({ client }) {
+  const { Runtime } = client;
+
+  const { id: executionContextId } = await enableRuntime(client);
+
+  const functionDeclarations = [
+    "() => { const b = { a: 1}; b.b = b; return b; }",
+    "() => window",
+  ];
+
+  for (const functionDeclaration of functionDeclarations) {
+    await Assert.rejects(
+      Runtime.callFunctionOn({
+        functionDeclaration,
+        executionContextId,
+        returnByValue: true,
+      }),
+      err => err.message.includes("Object reference chain is too long"),
+      "Object reference chain is too long"
+    );
+  }
+});
+
+add_task(async function returnByValueNotPossible({ client }) {
+  const { Runtime } = client;
+
+  const { id: executionContextId } = await enableRuntime(client);
+
+  const functionDeclarations = [
+    "() => Symbol('foo')",
+    "() => [Symbol('foo')]",
+    "() => { return {a: Symbol('foo')}; }",
+  ];
+
+  for (const functionDeclaration of functionDeclarations) {
+    await Assert.rejects(
+      Runtime.callFunctionOn({
+        functionDeclaration,
+        executionContextId,
+        returnByValue: true,
+      }),
+      err => err.message.includes("Object couldn't be returned by value"),
+      "Object couldn't be returned by value"
+    );
   }
 });
 
@@ -347,23 +392,4 @@ add_task(async function returnByValueArgumentsNotSerializable({ client }) {
       );
     }
   }
-});
-
-add_task(async function returnByValueArgumentsSymbol({ client }) {
-  const { Runtime } = client;
-
-  const { id: executionContextId } = await enableRuntime(client);
-
-  let errorThrown = "";
-  try {
-    await Runtime.callFunctionOn({
-      functionDeclaration: "a => a",
-      arguments: [{ unserializableValue: "Symbol('42')" }],
-      executionContextId,
-      returnByValue: true,
-    });
-  } catch (e) {
-    errorThrown = e.message;
-  }
-  ok(errorThrown, "Symbol cannot be returned as value");
 });

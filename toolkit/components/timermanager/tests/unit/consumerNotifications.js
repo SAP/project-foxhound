@@ -9,13 +9,8 @@
 
 const Cm = Components.manager;
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "Services",
-  "resource://gre/modules/Services.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 
 const CATEGORY_UPDATE_TIMER = "update-timer";
@@ -42,9 +37,9 @@ const TESTS = [
   {
     desc: "Test Timer Callback 1",
     timerID: "test1-update-timer",
-    defaultInterval: 86400,
+    defaultInterval: CONSUMER_TIMER_INTERVAL,
     prefInterval: "test1.timer.interval",
-    contractID: "@mozilla.org/test2/timercallback;1",
+    contractID: "@mozilla.org/test1/timercallback;1",
     method: "createInstance",
     classID: Components.ID("512834f3-05bb-46be-84e0-81d881a140b7"),
     notified: false,
@@ -52,7 +47,7 @@ const TESTS = [
   {
     desc: "Test Timer Callback 2",
     timerID: "test2-update-timer",
-    defaultInterval: CONSUMER_TIMER_INTERVAL,
+    defaultInterval: 86400,
     prefInterval: "test2.timer.interval",
     contractID: "@mozilla.org/test2/timercallback;1",
     method: "createInstance",
@@ -142,7 +137,7 @@ const TESTS = [
 var gUTM;
 var gNextFunc;
 
-XPCOMUtils.defineLazyGetter(this, "gCompReg", function() {
+ChromeUtils.defineLazyGetter(this, "gCompReg", function () {
   return Cm.QueryInterface(Ci.nsIComponentRegistrar);
 });
 
@@ -156,11 +151,8 @@ const gTest0TimerCallback = {
 };
 
 const gTest0Factory = {
-  createInstance: function T0F_createInstance(aOuter, aIID) {
-    if (aOuter == null) {
-      return gTest0TimerCallback.QueryInterface(aIID);
-    }
-    throw Components.Exception("", Cr.NS_ERROR_NO_AGGREGATION);
+  createInstance: function T0F_createInstance(aIID) {
+    return gTest0TimerCallback.QueryInterface(aIID);
   },
 };
 
@@ -174,11 +166,8 @@ const gTest1TimerCallback = {
 };
 
 const gTest1Factory = {
-  createInstance: function T1F_createInstance(aOuter, aIID) {
-    if (aOuter == null) {
-      return gTest1TimerCallback.QueryInterface(aIID);
-    }
-    throw Components.Exception("", Cr.NS_ERROR_NO_AGGREGATION);
+  createInstance: function T1F_createInstance(aIID) {
+    return gTest1TimerCallback.QueryInterface(aIID);
   },
 };
 
@@ -192,11 +181,8 @@ const gTest2TimerCallback = {
 };
 
 const gTest2Factory = {
-  createInstance: function T2F_createInstance(aOuter, aIID) {
-    if (aOuter == null) {
-      return gTest2TimerCallback.QueryInterface(aIID);
-    }
-    throw Components.Exception("", Cr.NS_ERROR_NO_AGGREGATION);
+  createInstance: function T2F_createInstance(aIID) {
+    return gTest2TimerCallback.QueryInterface(aIID);
   },
 };
 
@@ -205,11 +191,8 @@ const gTest3TimerCallback = {
 };
 
 const gTest3Factory = {
-  createInstance: function T3F_createInstance(aOuter, aIID) {
-    if (aOuter == null) {
-      return gTest3TimerCallback.QueryInterface(aIID);
-    }
-    throw Components.Exception("", Cr.NS_ERROR_NO_AGGREGATION);
+  createInstance: function T3F_createInstance(aIID) {
+    return gTest3TimerCallback.QueryInterface(aIID);
   },
 };
 
@@ -227,11 +210,8 @@ const gTest4TimerCallback = {
 };
 
 const gTest4Factory = {
-  createInstance: function T4F_createInstance(aOuter, aIID) {
-    if (aOuter == null) {
-      return gTest4TimerCallback.QueryInterface(aIID);
-    }
-    throw Components.Exception("", Cr.NS_ERROR_NO_AGGREGATION);
+  createInstance: function T4F_createInstance(aIID) {
+    return gTest4TimerCallback.QueryInterface(aIID);
   },
 };
 
@@ -249,11 +229,8 @@ const gTest5TimerCallback = {
 };
 
 const gTest5Factory = {
-  createInstance: function T5F_createInstance(aOuter, aIID) {
-    if (aOuter == null) {
-      return gTest5TimerCallback.QueryInterface(aIID);
-    }
-    throw Components.Exception("", Cr.NS_ERROR_NO_AGGREGATION);
+  createInstance: function T5F_createInstance(aIID) {
+    return gTest5TimerCallback.QueryInterface(aIID);
   },
 };
 
@@ -271,11 +248,8 @@ const gTest6TimerCallback = {
 };
 
 const gTest6Factory = {
-  createInstance: function T6F_createInstance(aOuter, aIID) {
-    if (aOuter == null) {
-      return gTest6TimerCallback.QueryInterface(aIID);
-    }
-    throw Components.Exception("", Cr.NS_ERROR_NO_AGGREGATION);
+  createInstance: function T6F_createInstance(aIID) {
+    return gTest6TimerCallback.QueryInterface(aIID);
   },
 };
 
@@ -293,11 +267,8 @@ const gTest7TimerCallback = {
 };
 
 const gTest7Factory = {
-  createInstance: function T7F_createInstance(aOuter, aIID) {
-    if (aOuter == null) {
-      return gTest7TimerCallback.QueryInterface(aIID);
-    }
-    throw Components.Exception("", Cr.NS_ERROR_NO_AGGREGATION);
+  createInstance: function T7F_createInstance(aIID) {
+    return gTest7TimerCallback.QueryInterface(aIID);
   },
 };
 
@@ -305,7 +276,7 @@ const gTest8TimerCallback = {
   notify: function T8CB_notify(aTimer) {
     TESTS[8].notified = true;
     TESTS[8].notifyTime = Date.now();
-    executeSoon(function() {
+    executeSoon(function () {
       check_test8thru10(gTest8TimerCallback);
     });
   },
@@ -313,11 +284,8 @@ const gTest8TimerCallback = {
 };
 
 const gTest8Factory = {
-  createInstance: function T8F_createInstance(aOuter, aIID) {
-    if (aOuter == null) {
-      return gTest8TimerCallback.QueryInterface(aIID);
-    }
-    throw Components.Exception("", Cr.NS_ERROR_NO_AGGREGATION);
+  createInstance: function T8F_createInstance(aIID) {
+    return gTest8TimerCallback.QueryInterface(aIID);
   },
 };
 
@@ -325,8 +293,8 @@ const gTest9TimerCallback = {
   notify: function T9CB_notify(aTimer) {
     TESTS[9].notified = true;
     TESTS[9].notifyTime = Date.now();
-    executeSoon(function() {
-      check_test8thru10(gTest9TimerCallback);
+    executeSoon(function () {
+      check_test8thru10(gTest8TimerCallback);
     });
   },
   QueryInterface: ChromeUtils.generateQI(["nsITimerCallback"]),
@@ -342,11 +310,8 @@ const gTest10TimerCallback = {
 };
 
 const gTest9Factory = {
-  createInstance: function T9F_createInstance(aOuter, aIID) {
-    if (aOuter == null) {
-      return gTest9TimerCallback.QueryInterface(aIID);
-    }
-    throw Components.Exception("", Cr.NS_ERROR_NO_AGGREGATION);
+  createInstance: function T9F_createInstance(aIID) {
+    return gTest9TimerCallback.QueryInterface(aIID);
   },
 };
 
@@ -722,14 +687,13 @@ function check_test8thru10(aTestTimerCallback) {
     "second registerTimer registered timer should have fired"
   );
 
-  // Check that 'staggering' has happened: even though the two events wanted to fire at
-  // the same time, we waited a full MAIN_TIMER_INTERVAL between them.
-  // (to avoid sensitivity to random timing issues, we fudge by a factor of 0.5 here)
-  Assert.ok(
-    Math.abs(TESTS[8].notifyTime - TESTS[9].notifyTime) >=
-      MAIN_TIMER_INTERVAL * 0.5,
-    "staggering between two timers that want to fire at the same " +
-      "time should have occured"
+  // Check that the two events that wanted to fire at the same time
+  // happened in the expected order.
+  Assert.lessOrEqual(
+    TESTS[8].notifyTime,
+    TESTS[9].notifyTime,
+    "two timers that want to fire at the same " +
+      "should fire in the expected order"
   );
 
   let time = Services.prefs.getIntPref(

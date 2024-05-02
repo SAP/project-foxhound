@@ -11,6 +11,7 @@ EXPORTS.mozilla += [
     "Hal.h",
     "HalBatteryInformation.h",
     "HalImpl.h",
+    "HalIPCUtils.h",
     "HalNetworkInformation.h",
     "HalSandbox.h",
     "HalScreenConfiguration.h",
@@ -18,10 +19,6 @@ EXPORTS.mozilla += [
     "HalTypes.h",
     "HalWakeLock.h",
     "HalWakeLockInformation.h",
-]
-
-EXPORTS.mozilla.fallback += [
-    "fallback/FallbackScreenConfiguration.h",
 ]
 
 UNIFIED_SOURCES += [
@@ -40,6 +37,8 @@ if CONFIG["MOZ_WIDGET_TOOLKIT"] == "android":
         "/widget/android",
     ]
     UNIFIED_SOURCES += [
+        "android/AndroidHeterogeneousCpuInfo.cpp",
+        "android/AndroidPerformanceHintManager.cpp",
         "android/AndroidProcessPriority.cpp",
         "android/AndroidSensor.cpp",
     ]
@@ -49,10 +48,10 @@ if CONFIG["MOZ_WIDGET_TOOLKIT"] == "android":
     ]
 elif CONFIG["OS_TARGET"] == "Linux":
     UNIFIED_SOURCES += [
-        "fallback/FallbackProcessPriority.cpp",
         "fallback/FallbackScreenConfiguration.cpp",
         "fallback/FallbackSensor.cpp",
         "fallback/FallbackVibration.cpp",
+        "linux/LinuxProcessPriority.cpp",
     ]
     if CONFIG["MOZ_ENABLE_DBUS"]:
         UNIFIED_SOURCES += [
@@ -63,11 +62,10 @@ elif CONFIG["OS_TARGET"] == "Linux":
             "fallback/FallbackBattery.cpp",
         ]
 elif CONFIG["OS_TARGET"] == "WINNT":
-    REQUIRES_UNIFIED_BUILD = True
     UNIFIED_SOURCES += [
-        "fallback/FallbackScreenConfiguration.cpp",
         "fallback/FallbackVibration.cpp",
         "windows/WindowsProcessPriority.cpp",
+        "windows/WindowsScreenConfiguration.cpp",
         "windows/WindowsSensor.cpp",
     ]
     # WindowsBattery.cpp cannot be built in unified mode because it relies on HalImpl.h.
@@ -108,7 +106,9 @@ else:
 # Fallbacks for backends implemented on Android only.
 if CONFIG["MOZ_WIDGET_TOOLKIT"] != "android":
     UNIFIED_SOURCES += [
+        "fallback/FallbackHeterogeneousCpuInfo.cpp",
         "fallback/FallbackNetwork.cpp",
+        "fallback/FallbackPerformanceHintManager.cpp",
     ]
 
 if CONFIG["MOZ_WIDGET_TOOLKIT"] == "cocoa":
@@ -130,6 +130,6 @@ LOCAL_INCLUDES += [
 ]
 
 CFLAGS += CONFIG["GLIB_CFLAGS"]
-CFLAGS += CONFIG["MOZ_DBUS_GLIB_CFLAGS"]
+CFLAGS += CONFIG["MOZ_GTK3_CFLAGS"]
 CXXFLAGS += CONFIG["GLIB_CFLAGS"]
-CXXFLAGS += CONFIG["MOZ_DBUS_GLIB_CFLAGS"]
+CXXFLAGS += CONFIG["MOZ_GTK3_CFLAGS"]

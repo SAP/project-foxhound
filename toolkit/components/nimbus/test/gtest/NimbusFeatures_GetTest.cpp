@@ -22,6 +22,8 @@ TEST(NimbusFeaturesGet, Errors)
                                  PrefValueKind::User),
             NS_OK);
   ASSERT_TRUE(NimbusFeatures::GetBool("foo"_ns, "enabled"_ns, false));
+
+  ASSERT_EQ(Preferences::ClearUser("nimbus.syncdatastore.foo.value"), NS_OK);
 }
 
 TEST(NimbusFeaturesGetRollout, Errors)
@@ -54,30 +56,43 @@ TEST(NimbusFeaturesExperimentPriorityOverRollouts, Errors)
   ASSERT_TRUE(NimbusFeatures::GetBool("feature"_ns, "enabled"_ns, false));
 }
 
-// Make sure user prefs take predence over experiments and rollouts
 TEST(NimbusFeaturesDataSourcePrecedence, Errors)
 {
-  ASSERT_EQ(
-      Preferences::SetInt("nimbus.testing.testInt", 29, PrefValueKind::User),
-      NS_OK);
-  ASSERT_EQ(NimbusFeatures::GetInt("testFeature"_ns, "testInt"_ns, 0), 29);
+  const auto FALLBACK_VALUE = 1;
+  const auto EXPERIMENT_VALUE = 2;
+  const auto ROLLOUT_VALUE = 3;
 
-  ASSERT_EQ(Preferences::SetInt("nimbus.syncdatastore.testFeature.testInt", 12,
+  ASSERT_EQ(Preferences::SetInt("nimbus.testing.testInt", FALLBACK_VALUE,
                                 PrefValueKind::User),
             NS_OK);
-  ASSERT_EQ(Preferences::SetInt("nimbus.syncdefaultsstore.testFeature.testInt",
-                                13, PrefValueKind::User),
+
+  // If there is no experiment or rollout, the fallback value should be
+  // returned.
+  ASSERT_EQ(NimbusFeatures::GetInt("testFeature"_ns, "testInt"_ns, 0),
+            FALLBACK_VALUE);
+
+  // Enroll in an experiment.
+  ASSERT_EQ(Preferences::SetInt("nimbus.syncdatastore.testFeature.testInt",
+                                EXPERIMENT_VALUE, PrefValueKind::User),
             NS_OK);
-  // Still return user pref
-  ASSERT_EQ(NimbusFeatures::GetInt("testFeature"_ns, "testInt"_ns, 0), 29);
-  // After user prefs it should default to experiment value
-  Preferences::ClearUser("nimbus.testing.testInt");
-  ASSERT_EQ(NimbusFeatures::GetInt("testFeature"_ns, "testInt"_ns, 0), 12);
+
+  // Enroll in a rollout.
+  ASSERT_EQ(Preferences::SetInt("nimbus.syncdefaultsstore.testFeature.testInt",
+                                ROLLOUT_VALUE, PrefValueKind::User),
+            NS_OK);
+
+  // Experiment value should take precedence.
+  ASSERT_EQ(NimbusFeatures::GetInt("testFeature"_ns, "testInt"_ns, 0),
+            EXPERIMENT_VALUE);
+
+  // After experiments it should default to rollouts.
   Preferences::ClearUser("nimbus.syncdatastore.testFeature.testInt");
-  // After experiments it should default to rollouts
-  ASSERT_EQ(NimbusFeatures::GetInt("testFeature"_ns, "testInt"_ns, 0), 13);
+  ASSERT_EQ(NimbusFeatures::GetInt("testFeature"_ns, "testInt"_ns, 0),
+            ROLLOUT_VALUE);
+
   // Cleanup
   Preferences::ClearUser("nimbus.syncdefaultsstore.testFeature.testInt");
+  Preferences::ClearUser("nimbus.testing.testInt");
 }
 
 static void FooValueUpdated(const char* aPref, void* aUserData) {
@@ -101,20 +116,28 @@ TEST(NimbusFeaturesGetFallback, Errors)
 {
   // No experiment is set and we expect to return fallback pref values
 
-  // As defined by fallbackPref browser.aboutwelcome.skipFocus
+  // As defined by fallbackPref browser.aboutwelcome.enabled
   // in FeatureManifest.yaml
-  Preferences::SetBool("browser.aboutwelcome.skipFocus", true,
+  Preferences::SetBool("browser.aboutwelcome.enabled", true,
                        PrefValueKind::Default);
-  ASSERT_EQ(NimbusFeatures::GetBool("aboutwelcome"_ns, "skipFocus"_ns, false),
+  ASSERT_EQ(NimbusFeatures::GetBool("aboutwelcome"_ns, "enabled"_ns, false),
             true);
-  Preferences::SetBool("browser.aboutwelcome.skipFocus", false,
+  Preferences::SetBool("browser.aboutwelcome.enabled", false,
                        PrefValueKind::User);
-  ASSERT_EQ(NimbusFeatures::GetBool("aboutwelcome"_ns, "skipFocus"_ns, true),
+  ASSERT_EQ(NimbusFeatures::GetBool("aboutwelcome"_ns, "enabled"_ns, true),
             false);
-  Preferences::ClearUser("browser.aboutwelcome.skipFocus");
+  Preferences::ClearUser("browser.aboutwelcome.enabled");
 
-  Preferences::SetInt("nimbus.testing.testInt", 5, PrefValueKind::Default);
-  ASSERT_EQ(NimbusFeatures::GetInt("testFeature"_ns, "testInt"_ns, 42), 5);
+  const auto FALLBACK_VALUE = 5;
+  const auto DEFAULT_VALUE = 42;
+
+  Preferences::SetInt("nimbus.testing.testInt", FALLBACK_VALUE,
+                      PrefValueKind::Default);
+  ASSERT_EQ(
+      NimbusFeatures::GetInt("testFeature"_ns, "testInt"_ns, DEFAULT_VALUE),
+      FALLBACK_VALUE);
+
+  Preferences::ClearUser("nimbus.testing.testInt");
 }
 
 TEST(NimbusFeaturesUpdate, Errors)

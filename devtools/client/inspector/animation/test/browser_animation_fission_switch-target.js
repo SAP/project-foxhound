@@ -22,7 +22,7 @@ const PAGE_ON_CONTENT = `data:text/html;charset=utf-8,
 `;
 const PAGE_ON_MAIN = "about:networking";
 
-add_task(async function() {
+add_task(async function () {
   await pushPref("devtools.inspector.three-pane-enabled", false);
 
   info("Open a page that runs on the content process and has animations");
@@ -83,7 +83,7 @@ async function navigateTo(uri, browser, animationInspector, inspector) {
   const previousAnimationsFront = animationInspector.animationsFront;
   const onReloaded = inspector.once("reloaded");
   const onUpdated = inspector.once("inspector-updated");
-  BrowserTestUtils.loadURI(browser, uri);
+  BrowserTestUtils.startLoadingURIString(browser, uri);
   await waitUntil(
     () => previousAnimationsFront !== animationInspector.animationsFront
   );

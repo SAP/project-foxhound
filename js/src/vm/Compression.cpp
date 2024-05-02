@@ -27,8 +27,7 @@ Compressor::Compressor(const unsigned char* inp, size_t inplen)
       inplen(inplen),
       initialized(false),
       finished(false),
-      currentChunkSize(0),
-      chunkOffsets() {
+      currentChunkSize(0) {
   MOZ_ASSERT(inplen > 0, "data to compress can't be empty");
 
   zs.opaque = nullptr;
@@ -233,7 +232,9 @@ bool js::DecompressStringChunk(const unsigned char* inp, size_t chunk,
   MOZ_ASSERT(outlen);
   zs.avail_out = outlen;
 
-  int ret = inflateInit2(&zs, WindowBits);
+  // Bug 1505857 - Use 'volatile' so variable is preserved in crashdump
+  // when release-asserts below are tripped.
+  volatile int ret = inflateInit2(&zs, WindowBits);
   if (ret != Z_OK) {
     MOZ_ASSERT(ret == Z_MEM_ERROR);
     return false;

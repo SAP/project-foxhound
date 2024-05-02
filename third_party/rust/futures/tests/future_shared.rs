@@ -3,6 +3,7 @@ use futures::executor::{block_on, LocalPool};
 use futures::future::{self, FutureExt, LocalFutureObj, TryFutureExt};
 use futures::task::LocalSpawn;
 use std::cell::{Cell, RefCell};
+use std::panic::AssertUnwindSafe;
 use std::rc::Rc;
 use std::task::Poll;
 use std::thread;
@@ -151,6 +152,52 @@ fn downgrade() {
 }
 
 #[test]
+fn ptr_eq() {
+    use future::FusedFuture;
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::Hasher;
+
+    let (tx, rx) = oneshot::channel::<i32>();
+    let shared = rx.shared();
+    let mut shared2 = shared.clone();
+    let mut hasher = DefaultHasher::new();
+    let mut hasher2 = DefaultHasher::new();
+
+    // Because these two futures share the same underlying future,
+    // `ptr_eq` should return true.
+    assert!(shared.ptr_eq(&shared2));
+    // Equivalence relations are symmetric
+    assert!(shared2.ptr_eq(&shared));
+
+    // If `ptr_eq` returns true, they should hash to the same value.
+    shared.ptr_hash(&mut hasher);
+    shared2.ptr_hash(&mut hasher2);
+    assert_eq!(hasher.finish(), hasher2.finish());
+
+    tx.send(42).unwrap();
+    assert_eq!(block_on(&mut shared2).unwrap(), 42);
+
+    // Now that `shared2` has completed, `ptr_eq` should return false.
+    assert!(shared2.is_terminated());
+    assert!(!shared.ptr_eq(&shared2));
+
+    // `ptr_eq` should continue to work for the other `Shared`.
+    let shared3 = shared.clone();
+    let mut hasher3 = DefaultHasher::new();
+    assert!(shared.ptr_eq(&shared3));
+
+    shared3.ptr_hash(&mut hasher3);
+    assert_eq!(hasher.finish(), hasher3.finish());
+
+    let (_tx, rx) = oneshot::channel::<i32>();
+    let shared4 = rx.shared();
+
+    // And `ptr_eq` should return false for two futures that don't share
+    // the underlying future.
+    assert!(!shared.ptr_eq(&shared4));
+}
+
+#[test]
 fn dont_clone_in_single_owner_shared_future() {
     let counter = CountClone(Rc::new(Cell::new(0)));
     let (tx, rx) = oneshot::channel();
@@ -192,4 +239,35 @@ fn shared_future_that_wakes_itself_until_pending_is_returned() {
     // The join future can only complete if the second future gets a chance to run after the first
     // has returned pending
     assert_eq!(block_on(futures::future::join(fut, async { proceed.set(true) })), ((), ()));
+}
+
+#[test]
+#[should_panic(expected = "inner future panicked during poll")]
+fn panic_while_poll() {
+    let fut = futures::future::poll_fn::<i8, _>(|_cx| panic!("test")).shared();
+
+    let fut_captured = fut.clone();
+    std::panic::catch_unwind(AssertUnwindSafe(|| {
+        block_on(fut_captured);
+    }))
+    .unwrap_err();
+
+    block_on(fut);
+}
+
+#[test]
+#[should_panic(expected = "test_marker")]
+fn poll_while_panic() {
+    struct S;
+
+    impl Drop for S {
+        fn drop(&mut self) {
+            let fut = futures::future::ready(1).shared();
+            assert_eq!(block_on(fut.clone()), 1);
+            assert_eq!(block_on(fut), 1);
+        }
+    }
+
+    let _s = S {};
+    panic!("test_marker");
 }

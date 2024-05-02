@@ -3,15 +3,22 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 
 const PROVIDER_PREF_BRANCH =
   "browser.newtabpage.activity-stream.asrouter.providers.";
 const DEVTOOLS_PREF =
   "browser.newtabpage.activity-stream.asrouter.devtoolsEnabled";
+
+/**
+ * Use `ASRouterPreferences.console.debug()` and friends from ASRouter files to
+ * log messages during development.  See LOG_LEVELS in ConsoleAPI.jsm for the
+ * available methods as well as the available values for this pref.
+ */
+const DEBUG_PREF = "browser.newtabpage.activity-stream.asrouter.debugLogLevel";
+
 const FXA_USERNAME_PREF = "services.sync.username";
 
 const DEFAULT_STATE = {
@@ -52,12 +59,18 @@ class _ASRouterPreferences {
   constructor() {
     Object.assign(this, DEFAULT_STATE);
     this._callbacks = new Set();
-    XPCOMUtils.defineLazyPreferenceGetter(
-      this,
-      "disableCaptivePortalVPNPromo",
-      "browser.newtabpage.activity-stream.asrouter.disable-captive-portal-vpn-promo",
-      false
-    );
+
+    XPCOMUtils.defineLazyGetter(this, "console", () => {
+      let { ConsoleAPI } = ChromeUtils.importESModule(
+        "resource://gre/modules/Console.sys.mjs"
+      );
+      let consoleOptions = {
+        maxLogLevel: "error",
+        maxLogLevelPref: DEBUG_PREF,
+        prefix: "ASRouter",
+      };
+      return new ConsoleAPI(consoleOptions);
+    });
   }
 
   _transformPersonalizedCfrScores(value) {
@@ -65,7 +78,7 @@ class _ASRouterPreferences {
     try {
       result = JSON.parse(value);
     } catch (e) {
-      Cu.reportError(e);
+      console.error(e);
     }
     return result;
   }
@@ -77,7 +90,7 @@ class _ASRouterPreferences {
       try {
         value = JSON.parse(Services.prefs.getStringPref(pref, ""));
       } catch (e) {
-        Cu.reportError(
+        console.error(
           `Could not parse ASRouter preference. Try resetting ${pref} in about:config.`
         );
       }
@@ -105,7 +118,7 @@ class _ASRouterPreferences {
     const providers = this._getProviderConfig();
     const config = providers.find(p => p.id === id);
     if (!config) {
-      Cu.reportError(
+      console.error(
         `Cannot set enabled state for '${id}' because the pref ${this._providerPrefBranch}${id} does not exist or is not correctly formatted.`
       );
       return;
@@ -123,6 +136,36 @@ class _ASRouterPreferences {
     }
     for (const id of Object.keys(USER_PREFERENCES)) {
       Services.prefs.clearUserPref(USER_PREFERENCES[id]);
+    }
+  }
+
+  /**
+   * Bug 1800087 - Migrate the ASRouter message provider prefs' values to the
+   * current format (provider.bucket -> provider.collection).
+   *
+   * TODO (Bug 1800937): Remove migration code after the next watershed release.
+   */
+  _migrateProviderPrefs() {
+    const prefList = Services.prefs.getChildList(this._providerPrefBranch);
+    for (const pref of prefList) {
+      if (!Services.prefs.prefHasUserValue(pref)) {
+        continue;
+      }
+      try {
+        let value = JSON.parse(Services.prefs.getStringPref(pref, ""));
+        if (value && "bucket" in value && !("collection" in value)) {
+          const { bucket, ...rest } = value;
+          Services.prefs.setStringPref(
+            pref,
+            JSON.stringify({
+              ...rest,
+              collection: bucket,
+            })
+          );
+        }
+      } catch (e) {
+        Services.prefs.clearUserPref(pref);
+      }
     }
   }
 
@@ -178,6 +221,7 @@ class _ASRouterPreferences {
     if (this._initialized) {
       return;
     }
+    this._migrateProviderPrefs();
     Services.prefs.addObserver(this._providerPrefBranch, this);
     Services.prefs.addObserver(this._devtoolsPref, this);
     for (const id of Object.keys(USER_PREFERENCES)) {
@@ -204,11 +248,8 @@ class _ASRouterPreferences {
     this._callbacks.clear();
   }
 }
-this._ASRouterPreferences = _ASRouterPreferences;
 
-this.ASRouterPreferences = new _ASRouterPreferences();
-this.TEST_PROVIDERS = TEST_PROVIDERS;
-this.TARGETING_PREFERENCES = TARGETING_PREFERENCES;
+const ASRouterPreferences = new _ASRouterPreferences();
 
 const EXPORTED_SYMBOLS = [
   "_ASRouterPreferences",

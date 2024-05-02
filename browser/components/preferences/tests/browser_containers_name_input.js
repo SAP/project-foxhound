@@ -1,14 +1,14 @@
 const CONTAINERS_URL =
   "chrome://browser/content/preferences/dialogs/containers.xhtml";
 
-add_task(async function setup() {
+add_setup(async function () {
   await openPreferencesViaOpenPreferencesAPI("containers", { leaveOpen: true });
-  registerCleanupFunction(async function() {
+  registerCleanupFunction(async function () {
     BrowserTestUtils.removeTab(gBrowser.selectedTab);
   });
 });
 
-add_task(async function() {
+add_task(async function () {
   async function openDialog() {
     let doc = gBrowser.selectedBrowser.contentDocument;
 
@@ -61,5 +61,12 @@ add_task(async function() {
   Assert.ok(
     btnApplyChanges.disabled,
     "The done button should be disabled when the value is empty"
+  );
+
+  setName("\u0009\u000B\u000C\u0020\u00A0\uFEFF\u000A\u000D\u2028\u2029");
+
+  Assert.ok(
+    btnApplyChanges.disabled,
+    "The done button should be disabled when the value contains only whitespaces"
   );
 });

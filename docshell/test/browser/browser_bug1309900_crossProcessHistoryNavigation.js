@@ -13,21 +13,21 @@ add_task(async function runTests() {
     "about:about"
   );
 
-  registerCleanupFunction(function() {
+  registerCleanupFunction(function () {
     gBrowser.removeTab(tab);
   });
 
   let browser = tab.linkedBrowser;
 
   let loaded = BrowserTestUtils.browserLoaded(browser);
-  BrowserTestUtils.loadURI(browser, "about:config");
+  BrowserTestUtils.startLoadingURIString(browser, "about:config");
   let href = await loaded;
   is(href, "about:config", "Check about:config loaded");
 
   // Using a dummy onunload listener to disable the bfcache as that can prevent
   // the test browser load detection mechanism from working.
   loaded = BrowserTestUtils.browserLoaded(browser);
-  BrowserTestUtils.loadURI(
+  BrowserTestUtils.startLoadingURIString(
     browser,
     "data:text/html,<body%20onunload=''><iframe></iframe></body>"
   );

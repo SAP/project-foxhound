@@ -46,12 +46,13 @@
 #include <string.h>
 #include <stdlib.h>
 
-#include <map>
 #include <stack>
 #include <string>
 
 #include "mozilla/Assertions.h"
+#include "mozilla/Attributes.h"
 #include "mozilla/Sprintf.h"
+#include "mozilla/Vector.h"
 
 #include "LulCommonExt.h"
 #include "LulDwarfInt.h"
@@ -61,6 +62,7 @@
 
 namespace lul {
 
+using std::pair;
 using std::string;
 
 ByteReader::ByteReader(enum Endianness endian)
@@ -281,238 +283,510 @@ uint64 ByteReader::ReadEncodedPointer(const char* buffer,
 }
 
 // A DWARF rule for recovering the address or value of a register, or
-// computing the canonical frame address. There is one subclass of this for
+// computing the canonical frame address.  This is an 8-way sum-of-products
+// type.  Excluding the INVALID variant, there is one subclass of this for
 // each '*Rule' member function in CallFrameInfo::Handler.
-//
-// It's annoying that we have to handle Rules using pointers (because
-// the concrete instances can have an arbitrary size). They're small,
-// so it would be much nicer if we could just handle them by value
-// instead of fretting about ownership and destruction.
-//
-// It seems like all these could simply be instances of std::tr1::bind,
-// except that we need instances to be EqualityComparable, too.
 //
 // This could logically be nested within State, but then the qualified names
 // get horrendous.
-class CallFrameInfo::Rule {
+
+class CallFrameInfo::Rule final {
  public:
-  virtual ~Rule() {}
+  enum Tag {
+    INVALID,
+    Undefined,
+    SameValue,
+    Offset,
+    ValOffset,
+    Register,
+    Expression,
+    ValExpression
+  };
+
+ private:
+  // tag_ (below) indicates the form of the expression.  There are 7 forms
+  // plus INVALID.  All non-INVALID expressions denote a machine-word-sized
+  // value at unwind time.  The description below assumes the presence of, at
+  // unwind time:
+  //
+  // * a function R, which takes a Dwarf register number and returns its value
+  //   in the callee frame (the one we are unwinding out of).
+  //
+  // * a function EvalDwarfExpr, which evaluates a Dwarf expression.
+  //
+  // Register numbers are encoded using the target ABI's Dwarf
+  // register-numbering conventions.  Except where otherwise noted, a register
+  // value may also be the special value CallFrameInfo::Handler::kCFARegister
+  // ("the CFA").
+  //
+  // The expression forms are represented using tag_, word1_ and word2_.  The
+  // forms and denoted values are as follows:
+  //
+  // * INVALID: not a valid expression.
+  //   valid fields:  (none)
+  //   denotes:       no value
+  //
+  // * Undefined: denotes no value.  This is used for a register whose value
+  //   cannot be recovered.
+  //   valid fields:  (none)
+  //   denotes:       no value
+  //
+  // * SameValue: the register's value is the same as in the callee.
+  //   valid fields:  (none)
+  //   denotes:       R(the register that this Rule is associated with,
+  //                    not stored here)
+  //
+  // * Offset: the register's value is in memory at word2_ bytes away from
+  //   Dwarf register number word1_.  word2_ is interpreted as a *signed*
+  //   offset.
+  //   valid fields: word1_=DwarfReg, word2=Offset
+  //   denotes:      *(R(word1_) + word2_)
+  //
+  // * ValOffset: same as Offset, without the dereference.
+  //   valid fields: word1_=DwarfReg, word2=Offset
+  //   denotes:      R(word1_) + word2_
+  //
+  // * Register:  the register's value is in some other register,
+  //              which may not be the CFA.
+  //   valid fields: word1_=DwarfReg
+  //   denotes:      R(word1_)
+  //
+  // * Expression: the register's value is in memory at a location that can be
+  //   computed from the Dwarf expression contained in the word2_ bytes
+  //   starting at word1_.  Note these locations are into the area of the .so
+  //   temporarily mmaped info for debuginfo reading and have no validity once
+  //   debuginfo reading has finished.
+  //   valid fields: ExprStart=word1_, ExprLen=word2_
+  //   denotes:      *(EvalDwarfExpr(word1_, word2_))
+  //
+  // * ValExpression: same as Expression, without the dereference.
+  //   valid fields: ExprStart=word1_, ExprLen=word2_
+  //   denotes:      EvalDwarfExpr(word1_, word2_)
+  //
+
+  // 3 words (or less) for representation.  Unused word1_/word2_ fields must
+  // be set to zero.
+  Tag tag_;
+  uintptr_t word1_;
+  uintptr_t word2_;
+
+  // To ensure that word1_ can hold a pointer to an expression string.
+  static_assert(sizeof(const char*) <= sizeof(word1_));
+  // To ensure that word2_ can hold any string length or memory offset.
+  static_assert(sizeof(size_t) <= sizeof(word2_));
+
+  // This class denotes an 8-way sum-of-product type, and accessing invalid
+  // fields is meaningless.  The accessors and constructors below enforce
+  // that.
+  bool isCanonical() const {
+    switch (tag_) {
+      case Tag::INVALID:
+      case Tag::Undefined:
+      case Tag::SameValue:
+        return word1_ == 0 && word2_ == 0;
+      case Tag::Offset:
+      case Tag::ValOffset:
+        return true;
+      case Tag::Register:
+        return word2_ == 0;
+      case Tag::Expression:
+      case Tag::ValExpression:
+        return true;
+      default:
+        MOZ_CRASH();
+    }
+  }
+
+ public:
+  Tag tag() const { return tag_; }
+  int dwreg() const {
+    switch (tag_) {
+      case Tag::Offset:
+      case Tag::ValOffset:
+      case Tag::Register:
+        return (int)word1_;
+      default:
+        MOZ_CRASH();
+    }
+  }
+  intptr_t offset() const {
+    switch (tag_) {
+      case Tag::Offset:
+      case Tag::ValOffset:
+        return (intptr_t)word2_;
+      default:
+        MOZ_CRASH();
+    }
+  }
+  ImageSlice expr() const {
+    switch (tag_) {
+      case Tag::Expression:
+      case Tag::ValExpression:
+        return ImageSlice((const char*)word1_, (size_t)word2_);
+      default:
+        MOZ_CRASH();
+    }
+  }
+
+  // Constructor-y stuff
+  Rule() {
+    tag_ = Tag::INVALID;
+    word1_ = 0;
+    word2_ = 0;
+  }
+
+  static Rule mkINVALID() {
+    Rule r;  // is initialised by Rule()
+    return r;
+  }
+  static Rule mkUndefinedRule() {
+    Rule r;
+    r.tag_ = Tag::Undefined;
+    r.word1_ = 0;
+    r.word2_ = 0;
+    return r;
+  }
+  static Rule mkSameValueRule() {
+    Rule r;
+    r.tag_ = Tag::SameValue;
+    r.word1_ = 0;
+    r.word2_ = 0;
+    return r;
+  }
+  static Rule mkOffsetRule(int dwreg, intptr_t offset) {
+    Rule r;
+    r.tag_ = Tag::Offset;
+    r.word1_ = (uintptr_t)dwreg;
+    r.word2_ = (uintptr_t)offset;
+    return r;
+  }
+  static Rule mkValOffsetRule(int dwreg, intptr_t offset) {
+    Rule r;
+    r.tag_ = Tag::ValOffset;
+    r.word1_ = (uintptr_t)dwreg;
+    r.word2_ = (uintptr_t)offset;
+    return r;
+  }
+  static Rule mkRegisterRule(int dwreg) {
+    Rule r;
+    r.tag_ = Tag::Register;
+    r.word1_ = (uintptr_t)dwreg;
+    r.word2_ = 0;
+    return r;
+  }
+  static Rule mkExpressionRule(ImageSlice expr) {
+    Rule r;
+    r.tag_ = Tag::Expression;
+    r.word1_ = (uintptr_t)expr.start_;
+    r.word2_ = (uintptr_t)expr.length_;
+    return r;
+  }
+  static Rule mkValExpressionRule(ImageSlice expr) {
+    Rule r;
+    r.tag_ = Tag::ValExpression;
+    r.word1_ = (uintptr_t)expr.start_;
+    r.word2_ = (uintptr_t)expr.length_;
+    return r;
+  }
+
+  // Misc
+  inline bool isVALID() const { return tag_ != Tag::INVALID; }
+
+  bool operator==(const Rule& rhs) const {
+    MOZ_ASSERT(isVALID() && rhs.isVALID());
+    MOZ_ASSERT(isCanonical());
+    MOZ_ASSERT(rhs.isCanonical());
+    if (tag_ != rhs.tag_) {
+      return false;
+    }
+    switch (tag_) {
+      case Tag::INVALID:
+        MOZ_CRASH();
+      case Tag::Undefined:
+      case Tag::SameValue:
+        return true;
+      case Tag::Offset:
+      case Tag::ValOffset:
+        return word1_ == rhs.word1_ && word2_ == rhs.word2_;
+      case Tag::Register:
+        return word1_ == rhs.word1_;
+      case Tag::Expression:
+      case Tag::ValExpression:
+        return expr() == rhs.expr();
+      default:
+        MOZ_CRASH();
+    }
+  }
+
+  bool operator!=(const Rule& rhs) const { return !(*this == rhs); }
 
   // Tell HANDLER that, at ADDRESS in the program, REG can be
   // recovered using this rule. If REG is kCFARegister, then this rule
   // describes how to compute the canonical frame address. Return what the
   // HANDLER member function returned.
-  virtual bool Handle(Handler* handler, uint64 address, int reg) const = 0;
+  bool Handle(Handler* handler, uint64 address, int reg) const {
+    MOZ_ASSERT(isVALID());
+    MOZ_ASSERT(isCanonical());
+    switch (tag_) {
+      case Tag::Undefined:
+        return handler->UndefinedRule(address, reg);
+      case Tag::SameValue:
+        return handler->SameValueRule(address, reg);
+      case Tag::Offset:
+        return handler->OffsetRule(address, reg, word1_, word2_);
+      case Tag::ValOffset:
+        return handler->ValOffsetRule(address, reg, word1_, word2_);
+      case Tag::Register:
+        return handler->RegisterRule(address, reg, word1_);
+      case Tag::Expression:
+        return handler->ExpressionRule(
+            address, reg, ImageSlice((const char*)word1_, (size_t)word2_));
+      case Tag::ValExpression:
+        return handler->ValExpressionRule(
+            address, reg, ImageSlice((const char*)word1_, (size_t)word2_));
+      default:
+        MOZ_CRASH();
+    }
+  }
 
-  // Equality on rules. We use these to decide which rules we need
-  // to report after a DW_CFA_restore_state instruction.
-  virtual bool operator==(const Rule& rhs) const = 0;
+  void SetBaseRegister(unsigned reg) {
+    MOZ_ASSERT(isVALID());
+    MOZ_ASSERT(isCanonical());
+    switch (tag_) {
+      case Tag::ValOffset:
+        word1_ = reg;
+        break;
+      case Tag::Offset:
+        // We don't actually need SetBaseRegister or SetOffset here, since they
+        // are only ever applied to CFA rules, for DW_CFA_def_cfa_offset, and it
+        // doesn't make sense to use OffsetRule for computing the CFA: it
+        // computes the address at which a register is saved, not a value.
+        // (fallthrough)
+      case Tag::Undefined:
+      case Tag::SameValue:
+      case Tag::Register:
+      case Tag::Expression:
+      case Tag::ValExpression:
+        // Do nothing
+        break;
+      default:
+        MOZ_CRASH();
+    }
+  }
 
-  bool operator!=(const Rule& rhs) const { return !(*this == rhs); }
+  void SetOffset(long long offset) {
+    MOZ_ASSERT(isVALID());
+    MOZ_ASSERT(isCanonical());
+    switch (tag_) {
+      case Tag::ValOffset:
+        word2_ = offset;
+        break;
+      case Tag::Offset:
+        // Same comment as in SetBaseRegister applies
+        // (fallthrough)
+      case Tag::Undefined:
+      case Tag::SameValue:
+      case Tag::Register:
+      case Tag::Expression:
+      case Tag::ValExpression:
+        // Do nothing
+        break;
+      default:
+        MOZ_CRASH();
+    }
+  }
 
-  // Return a pointer to a copy of this rule.
-  virtual Rule* Copy() const = 0;
+  // For debugging only
+  string show() const {
+    char buf[100];
+    string s = "";
+    switch (tag_) {
+      case Tag::INVALID:
+        s = "INVALID";
+        break;
+      case Tag::Undefined:
+        s = "Undefined";
+        break;
+      case Tag::SameValue:
+        s = "SameValue";
+        break;
+      case Tag::Offset:
+        s = "Offset{..}";
+        break;
+      case Tag::ValOffset:
+        sprintf(buf, "ValOffset{reg=%d offs=%lld}", (int)word1_,
+                (long long int)word2_);
+        s = string(buf);
+        break;
+      case Tag::Register:
+        s = "Register{..}";
+        break;
+      case Tag::Expression:
+        s = "Expression{..}";
+        break;
+      case Tag::ValExpression:
+        s = "ValExpression{..}";
+        break;
+      default:
+        MOZ_CRASH();
+    }
+    return s;
+  }
+};
 
-  // If this is a base+offset rule, change its base register to REG.
-  // Otherwise, do nothing. (Ugly, but required for DW_CFA_def_cfa_register.)
-  virtual void SetBaseRegister(unsigned reg) {}
+// `RuleMapLowLevel` is a simple class that maps from `int` (register numbers)
+// to `Rule`.  This is implemented as a vector of `<int, Rule>` pairs, with a
+// 12-element inline capacity.  From a big-O perspective this is obviously a
+// terrible way to implement an associative map.  This workload is however
+// quite special in that the maximum number of elements is normally 7 (on
+// x86_64-linux), and so this implementation is much faster than one based on
+// std::map with its attendant R-B-tree node allocation and balancing
+// overheads.
+//
+// An iterator that enumerates the mapping in increasing order of the `int`
+// keys is provided.  This ordered iteration facility is required by
+// CallFrameInfo::RuleMap::HandleTransitionTo, which needs to iterate through
+// two such maps simultaneously and in-order so as to compare them.
 
-  // If this is a base+offset rule, change its offset to OFFSET. Otherwise,
-  // do nothing. (Ugly, but required for DW_CFA_def_cfa_offset.)
-  virtual void SetOffset(long long offset) {}
+// All `Rule`s in the map must satisfy `isVALID()`.  That conveniently means
+// that `Rule::mkINVALID()` can be used to indicate "not found` in `get()`.
 
-  // A RTTI workaround, to make it possible to implement equality
-  // comparisons on classes derived from this one.
-  enum CFIRTag {
-    CFIR_UNDEFINED_RULE,
-    CFIR_SAME_VALUE_RULE,
-    CFIR_OFFSET_RULE,
-    CFIR_VAL_OFFSET_RULE,
-    CFIR_REGISTER_RULE,
-    CFIR_EXPRESSION_RULE,
-    CFIR_VAL_EXPRESSION_RULE
+class CallFrameInfo::RuleMapLowLevel {
+  using Entry = pair<int, Rule>;
+
+  // The inline capacity of 12 is carefully chosen.  It would be wise to make
+  // careful measurements of time, instruction count, allocation count and
+  // allocated bytes before changing it.  For x86_64-linux, a value of 8 is
+  // marginally better; using 12 increases the total heap bytes allocated by
+  // around 20%.  For arm64-linux, a value of 24 is better; using 12 increases
+  // the total blocks allocated by around 20%.  But it's a not bad tradeoff
+  // for both targets, and in any case is vastly superior to the previous
+  // scheme of using `std::map`.
+  mozilla::Vector<Entry, 12> entries_;
+
+ public:
+  void clear() { entries_.clear(); }
+
+  RuleMapLowLevel() { clear(); }
+
+  RuleMapLowLevel& operator=(const RuleMapLowLevel& rhs) {
+    entries_.clear();
+    for (size_t i = 0; i < rhs.entries_.length(); i++) {
+      bool ok = entries_.append(rhs.entries_[i]);
+      MOZ_RELEASE_ASSERT(ok);
+    }
+    return *this;
+  }
+
+  void set(int reg, Rule rule) {
+    MOZ_ASSERT(rule.isVALID());
+    // Find the place where it should go, if any
+    size_t i = 0;
+    size_t nEnt = entries_.length();
+    while (i < nEnt && entries_[i].first < reg) {
+      i++;
+    }
+    if (i == nEnt) {
+      // No entry exists, and all the existing ones are for lower register
+      // numbers.  So just add it at the end.
+      bool ok = entries_.append(Entry(reg, rule));
+      MOZ_RELEASE_ASSERT(ok);
+    } else {
+      // It needs to live at location `i`, and ..
+      MOZ_ASSERT(i < nEnt);
+      if (entries_[i].first == reg) {
+        // .. there's already an old entry, so just update it.
+        entries_[i].second = rule;
+      } else {
+        // .. there's no previous entry, so shift `i` and all those following
+        // it one place to the right, and put the new entry at `i`.  Doing it
+        // manually is measurably cheaper than using `Vector::insert`.
+        MOZ_ASSERT(entries_[i].first > reg);
+        bool ok = entries_.append(Entry(999999, Rule::mkINVALID()));
+        MOZ_RELEASE_ASSERT(ok);
+        for (size_t j = nEnt; j >= i + 1; j--) {
+          entries_[j] = entries_[j - 1];
+        }
+        entries_[i] = Entry(reg, rule);
+      }
+    }
+    // Check in-order-ness and validity.
+    for (size_t i = 0; i < entries_.length(); i++) {
+      MOZ_ASSERT(entries_[i].second.isVALID());
+      MOZ_ASSERT_IF(i > 0, entries_[i - 1].first < entries_[i].first);
+    }
+    MOZ_ASSERT(get(reg).isVALID());
+  }
+
+  // Find the entry for `reg`, or return `Rule::mkINVALID()` if not found.
+  Rule get(int reg) const {
+    size_t nEnt = entries_.length();
+    // "early exit" in the case where `entries_[i].first > reg` was tested on
+    // x86_64 and found to be slightly slower than just testing all entries,
+    // presumably because the reduced amount of searching was not offset by
+    // the cost of an extra test per iteration.
+    for (size_t i = 0; i < nEnt; i++) {
+      if (entries_[i].first == reg) {
+        CallFrameInfo::Rule ret = entries_[i].second;
+        MOZ_ASSERT(ret.isVALID());
+        return ret;
+      }
+    }
+    return CallFrameInfo::Rule::mkINVALID();
+  }
+
+  // A very simple in-order iteration facility.
+  class Iter {
+    const RuleMapLowLevel* rmll_;
+    size_t nextIx_;
+
+   public:
+    explicit Iter(const RuleMapLowLevel* rmll) : rmll_(rmll), nextIx_(0) {}
+    bool avail() const { return nextIx_ < rmll_->entries_.length(); }
+    bool finished() const { return !avail(); }
+    // Move the iterator to the next entry.
+    void step() {
+      MOZ_RELEASE_ASSERT(nextIx_ < rmll_->entries_.length());
+      nextIx_++;
+    }
+    // Get the value at the current iteration point, but don't advance to the
+    // next entry.
+    pair<int, Rule> peek() {
+      MOZ_RELEASE_ASSERT(nextIx_ < rmll_->entries_.length());
+      return rmll_->entries_[nextIx_];
+    }
   };
-
-  // Produce the tag that identifies the child class of this object.
-  virtual CFIRTag getTag() const = 0;
 };
 
-// Rule: the value the register had in the caller cannot be recovered.
-class CallFrameInfo::UndefinedRule : public CallFrameInfo::Rule {
- public:
-  UndefinedRule() {}
-  ~UndefinedRule() {}
-  CFIRTag getTag() const override { return CFIR_UNDEFINED_RULE; }
-  bool Handle(Handler* handler, uint64 address, int reg) const override {
-    return handler->UndefinedRule(address, reg);
-  }
-  bool operator==(const Rule& rhs) const override {
-    if (rhs.getTag() != CFIR_UNDEFINED_RULE) return false;
-    return true;
-  }
-  Rule* Copy() const override { return new UndefinedRule(*this); }
-};
+// A map from register numbers to rules.  This is a wrapper around
+// `RuleMapLowLevel`, with added logic for dealing with the "special" CFA
+// rule, and with `HandleTransitionTo`, which effectively computes the
+// difference between two `RuleMaps`.
 
-// Rule: the register's value is the same as that it had in the caller.
-class CallFrameInfo::SameValueRule : public CallFrameInfo::Rule {
- public:
-  SameValueRule() {}
-  ~SameValueRule() {}
-  CFIRTag getTag() const override { return CFIR_SAME_VALUE_RULE; }
-  bool Handle(Handler* handler, uint64 address, int reg) const override {
-    return handler->SameValueRule(address, reg);
-  }
-  bool operator==(const Rule& rhs) const override {
-    if (rhs.getTag() != CFIR_SAME_VALUE_RULE) return false;
-    return true;
-  }
-  Rule* Copy() const override { return new SameValueRule(*this); }
-};
-
-// Rule: the register is saved at OFFSET from BASE_REGISTER.  BASE_REGISTER
-// may be CallFrameInfo::Handler::kCFARegister.
-class CallFrameInfo::OffsetRule : public CallFrameInfo::Rule {
- public:
-  OffsetRule(int base_register, long offset)
-      : base_register_(base_register), offset_(offset) {}
-  ~OffsetRule() {}
-  CFIRTag getTag() const override { return CFIR_OFFSET_RULE; }
-  bool Handle(Handler* handler, uint64 address, int reg) const override {
-    return handler->OffsetRule(address, reg, base_register_, offset_);
-  }
-  bool operator==(const Rule& rhs) const override {
-    if (rhs.getTag() != CFIR_OFFSET_RULE) return false;
-    const OffsetRule* our_rhs = static_cast<const OffsetRule*>(&rhs);
-    return (base_register_ == our_rhs->base_register_ &&
-            offset_ == our_rhs->offset_);
-  }
-  Rule* Copy() const override { return new OffsetRule(*this); }
-  // We don't actually need SetBaseRegister or SetOffset here, since they
-  // are only ever applied to CFA rules, for DW_CFA_def_cfa_offset, and it
-  // doesn't make sense to use OffsetRule for computing the CFA: it
-  // computes the address at which a register is saved, not a value.
- private:
-  int base_register_;
-  long offset_;
-};
-
-// Rule: the value the register had in the caller is the value of
-// BASE_REGISTER plus offset. BASE_REGISTER may be
-// CallFrameInfo::Handler::kCFARegister.
-class CallFrameInfo::ValOffsetRule : public CallFrameInfo::Rule {
- public:
-  ValOffsetRule(int base_register, long offset)
-      : base_register_(base_register), offset_(offset) {}
-  ~ValOffsetRule() {}
-  CFIRTag getTag() const override { return CFIR_VAL_OFFSET_RULE; }
-  bool Handle(Handler* handler, uint64 address, int reg) const override {
-    return handler->ValOffsetRule(address, reg, base_register_, offset_);
-  }
-  bool operator==(const Rule& rhs) const override {
-    if (rhs.getTag() != CFIR_VAL_OFFSET_RULE) return false;
-    const ValOffsetRule* our_rhs = static_cast<const ValOffsetRule*>(&rhs);
-    return (base_register_ == our_rhs->base_register_ &&
-            offset_ == our_rhs->offset_);
-  }
-  Rule* Copy() const override { return new ValOffsetRule(*this); }
-  void SetBaseRegister(unsigned reg) override { base_register_ = reg; }
-  void SetOffset(long long offset) override { offset_ = offset; }
-
- private:
-  int base_register_;
-  long offset_;
-};
-
-// Rule: the register has been saved in another register REGISTER_NUMBER_.
-class CallFrameInfo::RegisterRule : public CallFrameInfo::Rule {
- public:
-  explicit RegisterRule(int register_number)
-      : register_number_(register_number) {}
-  ~RegisterRule() {}
-  CFIRTag getTag() const override { return CFIR_REGISTER_RULE; }
-  bool Handle(Handler* handler, uint64 address, int reg) const override {
-    return handler->RegisterRule(address, reg, register_number_);
-  }
-  bool operator==(const Rule& rhs) const override {
-    if (rhs.getTag() != CFIR_REGISTER_RULE) return false;
-    const RegisterRule* our_rhs = static_cast<const RegisterRule*>(&rhs);
-    return (register_number_ == our_rhs->register_number_);
-  }
-  Rule* Copy() const override { return new RegisterRule(*this); }
-
- private:
-  int register_number_;
-};
-
-// Rule: EXPRESSION evaluates to the address at which the register is saved.
-class CallFrameInfo::ExpressionRule : public CallFrameInfo::Rule {
- public:
-  explicit ExpressionRule(const string& expression) : expression_(expression) {}
-  ~ExpressionRule() {}
-  CFIRTag getTag() const override { return CFIR_EXPRESSION_RULE; }
-  bool Handle(Handler* handler, uint64 address, int reg) const override {
-    return handler->ExpressionRule(address, reg, expression_);
-  }
-  bool operator==(const Rule& rhs) const override {
-    if (rhs.getTag() != CFIR_EXPRESSION_RULE) return false;
-    const ExpressionRule* our_rhs = static_cast<const ExpressionRule*>(&rhs);
-    return (expression_ == our_rhs->expression_);
-  }
-  Rule* Copy() const override { return new ExpressionRule(*this); }
-
- private:
-  string expression_;
-};
-
-// Rule: EXPRESSION evaluates to the previous value of the register.
-class CallFrameInfo::ValExpressionRule : public CallFrameInfo::Rule {
- public:
-  explicit ValExpressionRule(const string& expression)
-      : expression_(expression) {}
-  ~ValExpressionRule() {}
-  CFIRTag getTag() const override { return CFIR_VAL_EXPRESSION_RULE; }
-  bool Handle(Handler* handler, uint64 address, int reg) const override {
-    return handler->ValExpressionRule(address, reg, expression_);
-  }
-  bool operator==(const Rule& rhs) const override {
-    if (rhs.getTag() != CFIR_VAL_EXPRESSION_RULE) return false;
-    const ValExpressionRule* our_rhs =
-        static_cast<const ValExpressionRule*>(&rhs);
-    return (expression_ == our_rhs->expression_);
-  }
-  Rule* Copy() const override { return new ValExpressionRule(*this); }
-
- private:
-  string expression_;
-};
-
-// A map from register numbers to rules.
 class CallFrameInfo::RuleMap {
  public:
-  RuleMap() : cfa_rule_(NULL) {}
-  RuleMap(const RuleMap& rhs) : cfa_rule_(NULL) { *this = rhs; }
+  RuleMap() : cfa_rule_(Rule::mkINVALID()) {}
+  RuleMap(const RuleMap& rhs) : cfa_rule_(Rule::mkINVALID()) { *this = rhs; }
   ~RuleMap() { Clear(); }
 
   RuleMap& operator=(const RuleMap& rhs);
 
-  // Set the rule for computing the CFA to RULE. Take ownership of RULE.
-  void SetCFARule(Rule* rule) {
-    delete cfa_rule_;
-    cfa_rule_ = rule;
-  }
+  // Set the rule for computing the CFA to RULE.
+  void SetCFARule(Rule rule) { cfa_rule_ = rule; }
 
-  // Return the current CFA rule. Unlike RegisterRule, this RuleMap retains
-  // ownership of the rule. We use this for DW_CFA_def_cfa_offset and
-  // DW_CFA_def_cfa_register, and for detecting references to the CFA before
-  // a rule for it has been established.
-  Rule* CFARule() const { return cfa_rule_; }
+  // Return the current CFA rule.  Be careful not to modify it -- it's returned
+  // by value.  If you want to modify the CFA rule, use CFARuleRef() instead.
+  // We use these two for DW_CFA_def_cfa_offset and DW_CFA_def_cfa_register,
+  // and for detecting references to the CFA before a rule for it has been
+  // established.
+  Rule CFARule() const { return cfa_rule_; }
+  Rule* CFARuleRef() { return &cfa_rule_; }
 
-  // Return the rule for REG, or NULL if there is none. The caller takes
-  // ownership of the result.
-  Rule* RegisterRule(int reg) const;
+  // Return the rule for REG, or the INVALID rule if there is none.
+  Rule RegisterRule(int reg) const;
 
-  // Set the rule for computing REG to RULE. Take ownership of RULE.
-  void SetRegisterRule(int reg, Rule* rule);
+  // Set the rule for computing REG to RULE.
+  void SetRegisterRule(int reg, Rule rule);
 
   // Make all the appropriate calls to HANDLER as if we were changing from
   // this RuleMap to NEW_RULES at ADDRESS. We use this to implement
@@ -522,61 +796,49 @@ class CallFrameInfo::RuleMap {
                           const RuleMap& new_rules) const;
 
  private:
-  // A map from register numbers to Rules.
-  typedef std::map<int, Rule*> RuleByNumber;
-
   // Remove all register rules and clear cfa_rule_.
   void Clear();
 
-  // The rule for computing the canonical frame address. This RuleMap owns
-  // this rule.
-  Rule* cfa_rule_;
+  // The rule for computing the canonical frame address.
+  Rule cfa_rule_;
 
   // A map from register numbers to postfix expressions to recover
-  // their values. This RuleMap owns the Rules the map refers to.
-  RuleByNumber registers_;
+  // their values.
+  RuleMapLowLevel registers_;
 };
 
 CallFrameInfo::RuleMap& CallFrameInfo::RuleMap::operator=(const RuleMap& rhs) {
   Clear();
-  // Since each map owns the rules it refers to, assignment must copy them.
-  if (rhs.cfa_rule_) cfa_rule_ = rhs.cfa_rule_->Copy();
-  for (RuleByNumber::const_iterator it = rhs.registers_.begin();
-       it != rhs.registers_.end(); it++)
-    registers_[it->first] = it->second->Copy();
+  if (rhs.cfa_rule_.isVALID()) cfa_rule_ = rhs.cfa_rule_;
+  registers_ = rhs.registers_;
   return *this;
 }
 
-CallFrameInfo::Rule* CallFrameInfo::RuleMap::RegisterRule(int reg) const {
+CallFrameInfo::Rule CallFrameInfo::RuleMap::RegisterRule(int reg) const {
   MOZ_ASSERT(reg != Handler::kCFARegister);
-  RuleByNumber::const_iterator it = registers_.find(reg);
-  if (it != registers_.end())
-    return it->second->Copy();
-  else
-    return NULL;
+  return registers_.get(reg);
 }
 
-void CallFrameInfo::RuleMap::SetRegisterRule(int reg, Rule* rule) {
+void CallFrameInfo::RuleMap::SetRegisterRule(int reg, Rule rule) {
   MOZ_ASSERT(reg != Handler::kCFARegister);
-  MOZ_ASSERT(rule);
-  Rule** slot = &registers_[reg];
-  delete *slot;
-  *slot = rule;
+  MOZ_ASSERT(rule.isVALID());
+  registers_.set(reg, rule);
 }
 
 bool CallFrameInfo::RuleMap::HandleTransitionTo(
     Handler* handler, uint64 address, const RuleMap& new_rules) const {
   // Transition from cfa_rule_ to new_rules.cfa_rule_.
-  if (cfa_rule_ && new_rules.cfa_rule_) {
-    if (*cfa_rule_ != *new_rules.cfa_rule_ &&
-        !new_rules.cfa_rule_->Handle(handler, address, Handler::kCFARegister))
+  if (cfa_rule_.isVALID() && new_rules.cfa_rule_.isVALID()) {
+    if (cfa_rule_ != new_rules.cfa_rule_ &&
+        !new_rules.cfa_rule_.Handle(handler, address, Handler::kCFARegister)) {
       return false;
-  } else if (cfa_rule_) {
+    }
+  } else if (cfa_rule_.isVALID()) {
     // this RuleMap has a CFA rule but new_rules doesn't.
     // CallFrameInfo::Handler has no way to handle this --- and shouldn't;
     // it's garbage input. The instruction interpreter should have
     // detected this and warned, so take no action here.
-  } else if (new_rules.cfa_rule_) {
+  } else if (new_rules.cfa_rule_.isVALID()) {
     // This shouldn't be possible: NEW_RULES is some prior state, and
     // there's no way to remove entries.
     MOZ_ASSERT(0);
@@ -586,54 +848,55 @@ bool CallFrameInfo::RuleMap::HandleTransitionTo(
 
   // Traverse the two maps in order by register number, and report
   // whatever differences we find.
-  RuleByNumber::const_iterator old_it = registers_.begin();
-  RuleByNumber::const_iterator new_it = new_rules.registers_.begin();
-  while (old_it != registers_.end() && new_it != new_rules.registers_.end()) {
-    if (old_it->first < new_it->first) {
-      // This RuleMap has an entry for old_it->first, but NEW_RULES
-      // doesn't.
+  RuleMapLowLevel::Iter old_it(&registers_);
+  RuleMapLowLevel::Iter new_it(&new_rules.registers_);
+  while (!old_it.finished() && !new_it.finished()) {
+    pair<int, Rule> old_pair = old_it.peek();
+    pair<int, Rule> new_pair = new_it.peek();
+    if (old_pair.first < new_pair.first) {
+      // This RuleMap has an entry for old.first, but NEW_RULES doesn't.
       //
       // This isn't really the right thing to do, but since CFI generally
       // only mentions callee-saves registers, and GCC's convention for
       // callee-saves registers is that they are unchanged, it's a good
       // approximation.
-      if (!handler->SameValueRule(address, old_it->first)) return false;
-      old_it++;
-    } else if (old_it->first > new_it->first) {
-      // NEW_RULES has entry for new_it->first, but this RuleMap
+      if (!handler->SameValueRule(address, old_pair.first)) {
+        return false;
+      }
+      old_it.step();
+    } else if (old_pair.first > new_pair.first) {
+      // NEW_RULES has an entry for new_pair.first, but this RuleMap
       // doesn't. This shouldn't be possible: NEW_RULES is some prior
       // state, and there's no way to remove entries.
       MOZ_ASSERT(0);
     } else {
       // Both maps have an entry for this register. Report the new
       // rule if it is different.
-      if (*old_it->second != *new_it->second &&
-          !new_it->second->Handle(handler, address, new_it->first))
+      if (old_pair.second != new_pair.second &&
+          !new_pair.second.Handle(handler, address, new_pair.first)) {
         return false;
-      new_it++;
-      old_it++;
+      }
+      new_it.step();
+      old_it.step();
     }
   }
   // Finish off entries from this RuleMap with no counterparts in new_rules.
-  while (old_it != registers_.end()) {
-    if (!handler->SameValueRule(address, old_it->first)) return false;
-    old_it++;
+  while (!old_it.finished()) {
+    pair<int, Rule> old_pair = old_it.peek();
+    if (!handler->SameValueRule(address, old_pair.first)) return false;
+    old_it.step();
   }
   // Since we only make transitions from a rule set to some previously
   // saved rule set, and we can only add rules to the map, NEW_RULES
   // must have fewer rules than *this.
-  MOZ_ASSERT(new_it == new_rules.registers_.end());
+  MOZ_ASSERT(new_it.finished());
 
   return true;
 }
 
 // Remove all register rules and clear cfa_rule_.
 void CallFrameInfo::RuleMap::Clear() {
-  delete cfa_rule_;
-  cfa_rule_ = NULL;
-  for (RuleByNumber::iterator it = registers_.begin(); it != registers_.end();
-       it++)
-    delete it->second;
+  cfa_rule_ = Rule::mkINVALID();
   registers_.clear();
 }
 
@@ -672,7 +935,7 @@ class CallFrameInfo::State {
     unsigned register_number;  // A register number.
     uint64 offset;             // An offset or address.
     long signed_offset;        // A signed offset.
-    string expression;         // A DWARF expression.
+    ImageSlice expression;     // A DWARF expression.
   };
 
   // Parse CFI instruction operands from STATE's instruction stream as
@@ -699,7 +962,17 @@ class CallFrameInfo::State {
   // Interpret one CFI instruction from STATE's instruction stream, update
   // STATE, report any rule changes to handler_, and return true. On
   // failure, report the problem and return false.
-  bool DoInstruction();
+  MOZ_ALWAYS_INLINE bool DoInstruction();
+
+  // Repeatedly call `DoInstruction`, until either:
+  // * it returns `false`, which indicates some kind of failure,
+  //   in which case return `false` from here too, or
+  // * we've run out of instructions (that is, `cursor_ >= entry_->end`),
+  //   in which case return `true`.
+  // This is marked as never-inline because it is the only place that
+  // `DoInstruction` is called from, and we want to maximise the chances that
+  // `DoInstruction` is inlined into this routine.
+  MOZ_NEVER_INLINE bool DoInstructions();
 
   // The following Do* member functions are subroutines of DoInstruction,
   // factoring out the actual work of operations that have several
@@ -717,7 +990,7 @@ class CallFrameInfo::State {
 
   // Specify that REG can be recovered using RULE, and return true. On
   // failure, report and return false.
-  bool DoRule(unsigned reg, Rule* rule);
+  bool DoRule(unsigned reg, Rule rule);
 
   // Specify that REG can be found at OFFSET from the CFA, and return true.
   // On failure, report and return false. (Subroutine for DW_CFA_offset,
@@ -779,8 +1052,9 @@ class CallFrameInfo::State {
 bool CallFrameInfo::State::InterpretCIE(const CIE& cie) {
   entry_ = &cie;
   cursor_ = entry_->instructions;
-  while (cursor_ < entry_->end)
-    if (!DoInstruction()) return false;
+  if (!DoInstructions()) {
+    return false;
+  }
   // Note the rules established by the CIE, for use by DW_CFA_restore
   // and DW_CFA_restore_extended.
   cie_rules_ = rules_;
@@ -790,9 +1064,7 @@ bool CallFrameInfo::State::InterpretCIE(const CIE& cie) {
 bool CallFrameInfo::State::InterpretFDE(const FDE& fde) {
   entry_ = &fde;
   cursor_ = entry_->instructions;
-  while (cursor_ < entry_->end)
-    if (!DoInstruction()) return false;
-  return true;
+  return DoInstructions();
 }
 
 bool CallFrameInfo::State::ParseOperands(const char* format,
@@ -856,7 +1128,7 @@ bool CallFrameInfo::State::ParseOperands(const char* format,
         if (len > bytes_left || expression_length > bytes_left - len)
           return ReportIncomplete();
         cursor_ += len;
-        operands->expression = string(cursor_, expression_length);
+        operands->expression = ImageSlice(cursor_, expression_length);
         cursor_ += expression_length;
         break;
       }
@@ -869,6 +1141,7 @@ bool CallFrameInfo::State::ParseOperands(const char* format,
   return true;
 }
 
+MOZ_ALWAYS_INLINE
 bool CallFrameInfo::State::DoInstruction() {
   CIE* cie = entry_->cie;
   Operands ops;
@@ -959,8 +1232,8 @@ bool CallFrameInfo::State::DoInstruction() {
 
     // Change the base register used to compute the CFA.
     case DW_CFA_def_cfa_register: {
-      Rule* cfa_rule = rules_.CFARule();
-      if (!cfa_rule) {
+      Rule* cfa_rule = rules_.CFARuleRef();
+      if (!cfa_rule->isVALID()) {
         reporter_->NoCFARule(entry_->offset, entry_->kind, CursorOffset());
         return false;
       }
@@ -987,17 +1260,16 @@ bool CallFrameInfo::State::DoInstruction() {
     // Specify an expression whose value is the CFA.
     case DW_CFA_def_cfa_expression: {
       if (!ParseOperands("e", &ops)) return false;
-      Rule* rule = new ValExpressionRule(ops.expression);
+      Rule rule = Rule::mkValExpressionRule(ops.expression);
       rules_.SetCFARule(rule);
-      if (!rule->Handle(handler_, address_, Handler::kCFARegister))
-        return false;
+      if (!rule.Handle(handler_, address_, Handler::kCFARegister)) return false;
       break;
     }
 
     // The register's value cannot be recovered.
     case DW_CFA_undefined: {
       if (!ParseOperands("r", &ops) ||
-          !DoRule(ops.register_number, new UndefinedRule()))
+          !DoRule(ops.register_number, Rule::mkUndefinedRule()))
         return false;
       break;
     }
@@ -1005,7 +1277,7 @@ bool CallFrameInfo::State::DoInstruction() {
     // The register's value is unchanged from its value in the caller.
     case DW_CFA_same_value: {
       if (!ParseOperands("r", &ops) ||
-          !DoRule(ops.register_number, new SameValueRule()))
+          !DoRule(ops.register_number, Rule::mkSameValueRule()))
         return false;
       break;
     }
@@ -1053,7 +1325,7 @@ bool CallFrameInfo::State::DoInstruction() {
     // The register has been saved in another register.
     case DW_CFA_register: {
       if (!ParseOperands("ro", &ops) ||
-          !DoRule(ops.register_number, new RegisterRule(ops.offset)))
+          !DoRule(ops.register_number, Rule::mkRegisterRule(ops.offset)))
         return false;
       break;
     }
@@ -1061,7 +1333,7 @@ bool CallFrameInfo::State::DoInstruction() {
     // An expression yields the address at which the register is saved.
     case DW_CFA_expression: {
       if (!ParseOperands("re", &ops) ||
-          !DoRule(ops.register_number, new ExpressionRule(ops.expression)))
+          !DoRule(ops.register_number, Rule::mkExpressionRule(ops.expression)))
         return false;
       break;
     }
@@ -1069,7 +1341,8 @@ bool CallFrameInfo::State::DoInstruction() {
     // An expression yields the caller's value for the register.
     case DW_CFA_val_expression: {
       if (!ParseOperands("re", &ops) ||
-          !DoRule(ops.register_number, new ValExpressionRule(ops.expression)))
+          !DoRule(ops.register_number,
+                  Rule::mkValExpressionRule(ops.expression)))
         return false;
       break;
     }
@@ -1096,7 +1369,7 @@ bool CallFrameInfo::State::DoInstruction() {
         return false;
       }
       const RuleMap& new_rules = saved_rules_->top();
-      if (rules_.CFARule() && !new_rules.CFARule()) {
+      if (rules_.CFARule().isVALID() && !new_rules.CFARule().isVALID()) {
         reporter_->ClearingCFARule(entry_->offset, entry_->kind,
                                    CursorOffset());
         return false;
@@ -1119,13 +1392,13 @@ bool CallFrameInfo::State::DoInstruction() {
     case DW_CFA_GNU_window_save: {
       // Save %o0-%o7 in %i0-%i7.
       for (int i = 8; i < 16; i++)
-        if (!DoRule(i, new RegisterRule(i + 16))) return false;
+        if (!DoRule(i, Rule::mkRegisterRule(i + 16))) return false;
       // Save %l0-%l7 and %i0-%i7 at the CFA.
       for (int i = 16; i < 32; i++)
         // Assume that the byte reader's address size is the same as
         // the architecture's register size. !@#%*^ hilarious.
-        if (!DoRule(i, new OffsetRule(Handler::kCFARegister,
-                                      (i - 16) * reader_->AddressSize())))
+        if (!DoRule(i, Rule::mkOffsetRule(Handler::kCFARegister,
+                                          (i - 16) * reader_->AddressSize())))
           return false;
       break;
     }
@@ -1145,15 +1418,26 @@ bool CallFrameInfo::State::DoInstruction() {
   return true;
 }
 
+// See declaration above for rationale re the no-inline directive.
+MOZ_NEVER_INLINE
+bool CallFrameInfo::State::DoInstructions() {
+  while (cursor_ < entry_->end) {
+    if (!DoInstruction()) {
+      return false;
+    }
+  }
+  return true;
+}
+
 bool CallFrameInfo::State::DoDefCFA(unsigned base_register, long offset) {
-  Rule* rule = new ValOffsetRule(base_register, offset);
+  Rule rule = Rule::mkValOffsetRule(base_register, offset);
   rules_.SetCFARule(rule);
-  return rule->Handle(handler_, address_, Handler::kCFARegister);
+  return rule.Handle(handler_, address_, Handler::kCFARegister);
 }
 
 bool CallFrameInfo::State::DoDefCFAOffset(long offset) {
-  Rule* cfa_rule = rules_.CFARule();
-  if (!cfa_rule) {
+  Rule* cfa_rule = rules_.CFARuleRef();
+  if (!cfa_rule->isVALID()) {
     reporter_->NoCFARule(entry_->offset, entry_->kind, CursorOffset());
     return false;
   }
@@ -1161,25 +1445,26 @@ bool CallFrameInfo::State::DoDefCFAOffset(long offset) {
   return cfa_rule->Handle(handler_, address_, Handler::kCFARegister);
 }
 
-bool CallFrameInfo::State::DoRule(unsigned reg, Rule* rule) {
+bool CallFrameInfo::State::DoRule(unsigned reg, Rule rule) {
   rules_.SetRegisterRule(reg, rule);
-  return rule->Handle(handler_, address_, reg);
+  return rule.Handle(handler_, address_, reg);
 }
 
 bool CallFrameInfo::State::DoOffset(unsigned reg, long offset) {
-  if (!rules_.CFARule()) {
+  if (!rules_.CFARule().isVALID()) {
     reporter_->NoCFARule(entry_->offset, entry_->kind, CursorOffset());
     return false;
   }
-  return DoRule(reg, new OffsetRule(Handler::kCFARegister, offset));
+  Rule rule = Rule::mkOffsetRule(Handler::kCFARegister, offset);
+  return DoRule(reg, rule);
 }
 
 bool CallFrameInfo::State::DoValOffset(unsigned reg, long offset) {
-  if (!rules_.CFARule()) {
+  if (!rules_.CFARule().isVALID()) {
     reporter_->NoCFARule(entry_->offset, entry_->kind, CursorOffset());
     return false;
   }
-  return DoRule(reg, new ValOffsetRule(Handler::kCFARegister, offset));
+  return DoRule(reg, Rule::mkValOffsetRule(Handler::kCFARegister, offset));
 }
 
 bool CallFrameInfo::State::DoRestore(unsigned reg) {
@@ -1188,13 +1473,13 @@ bool CallFrameInfo::State::DoRestore(unsigned reg) {
     reporter_->RestoreInCIE(entry_->offset, CursorOffset());
     return false;
   }
-  Rule* rule = cie_rules_.RegisterRule(reg);
-  if (!rule) {
+  Rule rule = cie_rules_.RegisterRule(reg);
+  if (!rule.isVALID()) {
     // This isn't really the right thing to do, but since CFI generally
     // only mentions callee-saves registers, and GCC's convention for
     // callee-saves registers is that they are unchanged, it's a good
     // approximation.
-    rule = new SameValueRule();
+    rule = Rule::mkSameValueRule();
   }
   return DoRule(reg, rule);
 }
@@ -1923,10 +2208,11 @@ unsigned int DwarfCFIToModule::RegisterNames::MIPS() {
 }
 
 // See prototype for comments.
-int32_t parseDwarfExpr(Summariser* summ, const ByteReader* reader, string expr,
-                       bool debug, bool pushCfaAtStart, bool derefAtEnd) {
-  const char* cursor = expr.c_str();
-  const char* end1 = cursor + expr.length();
+int32_t parseDwarfExpr(Summariser* summ, const ByteReader* reader,
+                       ImageSlice expr, bool debug, bool pushCfaAtStart,
+                       bool derefAtEnd) {
+  const char* cursor = expr.start_;
+  const char* end1 = cursor + expr.length_;
 
   char buf[100];
   if (debug) {
@@ -2174,7 +2460,7 @@ bool DwarfCFIToModule::RegisterRule(uint64 address, int reg,
 }
 
 bool DwarfCFIToModule::ExpressionRule(uint64 address, int reg,
-                                      const string& expression) {
+                                      const ImageSlice& expression) {
   bool debug = !!DEBUG_DWARF;
   int32_t start_ix =
       parseDwarfExpr(summ_, reader_, expression, debug, true /*pushCfaAtStart*/,
@@ -2190,7 +2476,7 @@ bool DwarfCFIToModule::ExpressionRule(uint64 address, int reg,
 }
 
 bool DwarfCFIToModule::ValExpressionRule(uint64 address, int reg,
-                                         const string& expression) {
+                                         const ImageSlice& expression) {
   bool debug = !!DEBUG_DWARF;
   int32_t start_ix =
       parseDwarfExpr(summ_, reader_, expression, debug, true /*pushCfaAtStart*/,

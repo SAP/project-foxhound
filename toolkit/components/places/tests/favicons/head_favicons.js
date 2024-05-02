@@ -3,8 +3,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-var { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-
 // Import common head.
 {
   /* import-globals-from ../head_common.js */
@@ -35,17 +33,15 @@ function checkFaviconDataForPage(
   aExpectedData,
   aCallback
 ) {
-  PlacesUtils.favicons.getFaviconDataForPage(aPageURI, function(
-    aURI,
-    aDataLen,
-    aData,
-    aMimeType
-  ) {
-    Assert.equal(aExpectedMimeType, aMimeType);
-    Assert.ok(compareArrays(aExpectedData, aData));
-    do_check_guid_for_uri(aPageURI);
-    aCallback();
-  });
+  PlacesUtils.favicons.getFaviconDataForPage(
+    aPageURI,
+    async function (aURI, aDataLen, aData, aMimeType) {
+      Assert.equal(aExpectedMimeType, aMimeType);
+      Assert.ok(compareArrays(aExpectedData, aData));
+      await check_guid_for_uri(aPageURI);
+      aCallback();
+    }
+  );
 }
 
 /**
@@ -57,15 +53,13 @@ function checkFaviconDataForPage(
  *        This function is called after the check finished.
  */
 function checkFaviconMissingForPage(aPageURI, aCallback) {
-  PlacesUtils.favicons.getFaviconURLForPage(aPageURI, function(
-    aURI,
-    aDataLen,
-    aData,
-    aMimeType
-  ) {
-    Assert.ok(aURI === null);
-    aCallback();
-  });
+  PlacesUtils.favicons.getFaviconURLForPage(
+    aPageURI,
+    function (aURI, aDataLen, aData, aMimeType) {
+      Assert.ok(aURI === null);
+      aCallback();
+    }
+  );
 }
 
 function promiseFaviconMissingForPage(aPageURI) {
@@ -73,17 +67,15 @@ function promiseFaviconMissingForPage(aPageURI) {
 }
 
 function promiseFaviconChanged(aExpectedPageURI, aExpectedFaviconURI) {
-  return PlacesTestUtils.waitForNotification(
-    "favicon-changed",
-    events =>
-      events.some(e => {
+  return new Promise(resolve => {
+    PlacesTestUtils.waitForNotification("favicon-changed", async events => {
+      for (let e of events) {
         if (e.url == aExpectedPageURI.spec) {
           Assert.equal(e.faviconUrl, aExpectedFaviconURI.spec);
-          do_check_guid_for_uri(aExpectedPageURI, e.pageGuid);
-          return true;
+          await check_guid_for_uri(aExpectedPageURI, e.pageGuid);
+          resolve();
         }
-        return false;
-      }),
-    "places"
-  );
+      }
+    });
+  });
 }

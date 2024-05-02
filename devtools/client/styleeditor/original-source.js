@@ -14,15 +14,15 @@
  * @param {String} sourceID
  *        The source ID of the original source, as used by the source
  *        map service.
- * @param {SourceMapService} sourceMapService
- *        The source map service; @see Toolbox.sourceMapService
+ * @param {SourceMapLoader} sourceMapLoader
+ *        The source map loader; @see Toolbox.sourceMapLoader
  */
-function OriginalSource(url, sourceId, sourceMapService) {
+function OriginalSource(url, sourceId, sourceMapLoader) {
   this.isOriginalSource = true;
 
   this._url = url;
   this._sourceId = sourceId;
-  this._sourceMapService = sourceMapService;
+  this._sourceMapLoader = sourceMapLoader;
 }
 
 OriginalSource.prototype = {
@@ -47,9 +47,9 @@ OriginalSource.prototype = {
    * string.  This is done because the style editor elsewhere expects
    * a long string actor.
    */
-  getText: function() {
+  getText() {
     if (!this._sourcePromise) {
-      this._sourcePromise = this._sourceMapService
+      this._sourcePromise = this._sourceMapLoader
         .getOriginalSourceText(this._sourceId)
         .then(contents => {
           // Make it look like a long string actor.
@@ -66,8 +66,8 @@ OriginalSource.prototype = {
    * column, return the corresponding original location in this style
    * sheet.
    *
-   * @param {StyleSheetFront} relatedSheet
-   *        The generated style sheet's actor
+   * @param {StyleSheetResource} relatedSheet
+   *        The generated style sheet's resource
    * @param {Number} line
    *        Line number.
    * @param {Number} column
@@ -77,10 +77,10 @@ OriginalSource.prototype = {
    *        `sourceUrl`, `source`, `styleSheet`, `line`, and `column`
    *        properties.
    */
-  getOriginalLocation: function(relatedSheet, line, column) {
+  getOriginalLocation(relatedSheet, line, column) {
     const { href, nodeHref, resourceId: sourceId } = relatedSheet;
     const sourceUrl = href || nodeHref;
-    return this._sourceMapService
+    return this._sourceMapLoader
       .getOriginalLocation({
         sourceId,
         line,
@@ -96,8 +96,8 @@ OriginalSource.prototype = {
   },
 
   // Dummy implementations, as we never emit an event.
-  on: function() {},
-  off: function() {},
+  on() {},
+  off() {},
 };
 
 exports.OriginalSource = OriginalSource;

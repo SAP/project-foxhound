@@ -35,18 +35,20 @@ class SVGClipPathFrame final : public SVGContainerFrame {
   explicit SVGClipPathFrame(ComputedStyle* aStyle, nsPresContext* aPresContext)
       : SVGContainerFrame(aStyle, aPresContext, kClassID),
         mIsBeingProcessed(false) {
-    AddStateBits(NS_FRAME_IS_NONDISPLAY);
+    AddStateBits(NS_FRAME_IS_NONDISPLAY | NS_STATE_SVG_CLIPPATH_CHILD |
+                 NS_FRAME_MAY_BE_TRANSFORMED |
+                 NS_STATE_SVG_RENDERING_OBSERVER_CONTAINER);
   }
 
  public:
   NS_DECL_FRAMEARENA_HELPERS(SVGClipPathFrame)
 
   // nsIFrame methods:
-  virtual void BuildDisplayList(nsDisplayListBuilder* aBuilder,
-                                const nsDisplayListSet& aLists) override {}
+  void BuildDisplayList(nsDisplayListBuilder* aBuilder,
+                        const nsDisplayListSet& aLists) override {}
 
-  virtual bool IsSVGTransformed(Matrix* aOwnTransforms,
-                                Matrix* aFromParentTransforms) const override;
+  bool IsSVGTransformed(Matrix* aOwnTransforms,
+                        Matrix* aFromParentTransforms) const override;
 
   // SVGClipPathFrame methods:
 
@@ -80,13 +82,10 @@ class SVGClipPathFrame final : public SVGContainerFrame {
    *   current transform.
    * @param [in, optional] aExtraMask An extra surface that the returned
    *   surface should be masked with.
-   * @param [in, optional] aExtraMasksTransform The transform to use with
-   *   aExtraMask. Should be passed when aExtraMask is passed.
    */
   already_AddRefed<SourceSurface> GetClipMask(
       gfxContext& aReferenceContext, nsIFrame* aClippedFrame,
-      const gfxMatrix& aMatrix, SourceSurface* aExtraMask = nullptr,
-      const Matrix& aExtraMasksTransform = Matrix());
+      const gfxMatrix& aMatrix, SourceSurface* aExtraMask = nullptr);
 
   /**
    * Paint mask directly onto a given context(aMaskContext).
@@ -98,12 +97,9 @@ class SVGClipPathFrame final : public SVGContainerFrame {
    *   current transform.
    * @param [in, optional] aExtraMask An extra surface that the returned
    *   surface should be masked with.
-   * @param [in, optional] aExtraMasksTransform The transform to use with
-   *   aExtraMask. Should be passed when aExtraMask is passed.
    */
   void PaintClipMask(gfxContext& aMaskContext, nsIFrame* aClippedFrame,
-                     const gfxMatrix& aMatrix, SourceSurface* aExtraMask,
-                     const Matrix& aExtraMasksTransform);
+                     const gfxMatrix& aMatrix, SourceSurface* aExtraMask);
 
   /**
    * aPoint is expected to be in aClippedFrame's SVG user space.
@@ -115,17 +111,17 @@ class SVGClipPathFrame final : public SVGContainerFrame {
   // mask based clipping.
   bool IsTrivial(ISVGDisplayableFrame** aSingleChild = nullptr);
 
-  bool IsValid();
-
   // nsIFrame interface:
-  virtual nsresult AttributeChanged(int32_t aNameSpaceID, nsAtom* aAttribute,
-                                    int32_t aModType) override;
+  nsresult AttributeChanged(int32_t aNameSpaceID, nsAtom* aAttribute,
+                            int32_t aModType) override;
 
-  virtual void Init(nsIContent* aContent, nsContainerFrame* aParent,
-                    nsIFrame* aPrevInFlow) override;
+#ifdef DEBUG
+  void Init(nsIContent* aContent, nsContainerFrame* aParent,
+            nsIFrame* aPrevInFlow) override;
+#endif
 
 #ifdef DEBUG_FRAME_DUMP
-  virtual nsresult GetFrameName(nsAString& aResult) const override {
+  nsresult GetFrameName(nsAString& aResult) const override {
     return MakeFrameName(u"SVGClipPath"_ns, aResult);
   }
 #endif
@@ -143,13 +139,18 @@ class SVGClipPathFrame final : public SVGContainerFrame {
 
  private:
   // SVGContainerFrame methods:
-  virtual gfxMatrix GetCanvasTM() override;
+  gfxMatrix GetCanvasTM() override;
 
   already_AddRefed<DrawTarget> CreateClipMask(gfxContext& aReferenceContext,
                                               gfx::IntPoint& aOffset);
 
   void PaintFrameIntoMask(nsIFrame* aFrame, nsIFrame* aClippedFrame,
                           gfxContext& aTarget);
+
+  void PaintChildren(gfxContext& aMaskContext, nsIFrame* aClippedFrame,
+                     const gfxMatrix& aMatrix);
+
+  bool IsValid();
 
   // Set, during a GetClipMask() call, to the transform that still needs to be
   // concatenated to the transform of the DrawTarget that was passed to

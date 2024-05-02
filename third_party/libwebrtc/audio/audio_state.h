@@ -13,25 +13,30 @@
 
 #include <map>
 #include <memory>
-#include <unordered_set>
 
+#include "api/sequence_checker.h"
 #include "audio/audio_transport_impl.h"
-#include "audio/null_audio_poller.h"
 #include "call/audio_state.h"
-#include "rtc_base/constructor_magic.h"
+#include "rtc_base/containers/flat_set.h"
 #include "rtc_base/ref_count.h"
-#include "rtc_base/thread_checker.h"
+#include "rtc_base/task_utils/repeating_task.h"
+#include "rtc_base/thread_annotations.h"
 
 namespace webrtc {
 
 class AudioSendStream;
-class AudioReceiveStream;
+class AudioReceiveStreamInterface;
 
 namespace internal {
 
 class AudioState : public webrtc::AudioState {
  public:
   explicit AudioState(const AudioState::Config& config);
+
+  AudioState() = delete;
+  AudioState(const AudioState&) = delete;
+  AudioState& operator=(const AudioState&) = delete;
+
   ~AudioState() override;
 
   AudioProcessing* audio_processing() override;
@@ -47,10 +52,8 @@ class AudioState : public webrtc::AudioState {
     return config_.audio_device_module.get();
   }
 
-  bool typing_noise_detected() const;
-
-  void AddReceivingStream(webrtc::AudioReceiveStream* stream);
-  void RemoveReceivingStream(webrtc::AudioReceiveStream* stream);
+  void AddReceivingStream(webrtc::AudioReceiveStreamInterface* stream);
+  void RemoveReceivingStream(webrtc::AudioReceiveStreamInterface* stream);
 
   void AddSendingStream(webrtc::AudioSendStream* stream,
                         int sample_rate_hz,
@@ -59,10 +62,10 @@ class AudioState : public webrtc::AudioState {
 
  private:
   void UpdateAudioTransportWithSendingStreams();
-  void UpdateNullAudioPollerState();
+  void UpdateNullAudioPollerState() RTC_RUN_ON(&thread_checker_);
 
-  rtc::ThreadChecker thread_checker_;
-  rtc::ThreadChecker process_thread_checker_;
+  SequenceChecker thread_checker_;
+  SequenceChecker process_thread_checker_{SequenceChecker::kDetached};
   const webrtc::AudioState::Config config_;
   bool recording_enabled_ = true;
   bool playout_enabled_ = true;
@@ -74,16 +77,14 @@ class AudioState : public webrtc::AudioState {
   // Null audio poller is used to continue polling the audio streams if audio
   // playout is disabled so that audio processing still happens and the audio
   // stats are still updated.
-  std::unique_ptr<NullAudioPoller> null_audio_poller_;
+  RepeatingTaskHandle null_audio_poller_ RTC_GUARDED_BY(&thread_checker_);
 
-  std::unordered_set<webrtc::AudioReceiveStream*> receiving_streams_;
+  webrtc::flat_set<webrtc::AudioReceiveStreamInterface*> receiving_streams_;
   struct StreamProperties {
     int sample_rate_hz = 0;
     size_t num_channels = 0;
   };
   std::map<webrtc::AudioSendStream*, StreamProperties> sending_streams_;
-
-  RTC_DISALLOW_IMPLICIT_CONSTRUCTORS(AudioState);
 };
 }  // namespace internal
 }  // namespace webrtc

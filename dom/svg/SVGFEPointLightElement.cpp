@@ -12,8 +12,7 @@ NS_IMPL_NS_NEW_SVG_ELEMENT(FEPointLight)
 
 using namespace mozilla::gfx;
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 JSObject* SVGFEPointLightElement::WrapNode(JSContext* aCx,
                                            JS::Handle<JSObject*> aGivenProto) {
@@ -21,9 +20,7 @@ JSObject* SVGFEPointLightElement::WrapNode(JSContext* aCx,
 }
 
 SVGElement::NumberInfo SVGFEPointLightElement::sNumberInfo[3] = {
-    {nsGkAtoms::x, 0, false},
-    {nsGkAtoms::y, 0, false},
-    {nsGkAtoms::z, 0, false}};
+    {nsGkAtoms::x, 0}, {nsGkAtoms::y, 0}, {nsGkAtoms::z, 0}};
 
 //----------------------------------------------------------------------
 // nsINode methods
@@ -31,7 +28,7 @@ SVGElement::NumberInfo SVGFEPointLightElement::sNumberInfo[3] = {
 NS_IMPL_ELEMENT_CLONE_WITH_INIT(SVGFEPointLightElement)
 
 //----------------------------------------------------------------------
-// nsFEUnstyledElement methods
+// SVGFilterPrimitiveChildElement methods
 
 bool SVGFEPointLightElement::AttributeAffectsRendering(
     int32_t aNameSpaceID, nsAtom* aAttribute) const {
@@ -74,5 +71,4 @@ SVGElement::NumberAttributesInfo SVGFEPointLightElement::GetNumberInfo() {
                               ArrayLength(sNumberInfo));
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

@@ -3,17 +3,28 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.jsm",
-  Region: "resource://gre/modules/Region.jsm",
-  EveryWindow: "resource:///modules/EveryWindow.jsm",
-  AboutReaderParent: "resource:///actors/AboutReaderParent.jsm",
-  ASRouterPreferences: "resource://activity-stream/lib/ASRouterPreferences.jsm",
+const lazy = {};
+
+ChromeUtils.defineESModuleGetters(lazy, {
+  AboutReaderParent: "resource:///actors/AboutReaderParent.sys.mjs",
+  BrowserUtils: "resource://gre/modules/BrowserUtils.sys.mjs",
+  EveryWindow: "resource:///modules/EveryWindow.sys.mjs",
+  FeatureCalloutBroker:
+    "resource://activity-stream/lib/FeatureCalloutBroker.sys.mjs",
+  PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
+  clearTimeout: "resource://gre/modules/Timer.sys.mjs",
+  setTimeout: "resource://gre/modules/Timer.sys.mjs",
+});
+
+XPCOMUtils.defineLazyGetter(lazy, "log", () => {
+  const { Logger } = ChromeUtils.importESModule(
+    "resource://messaging-system/lib/Logger.sys.mjs"
+  );
+  return new Logger("ASRouterTriggerListeners");
 });
 
 const FEW_MINUTES = 15 * 60 * 1000; // 15 mins
@@ -22,7 +33,7 @@ function isPrivateWindow(win) {
   return (
     !(win instanceof Ci.nsIDOMWindow) ||
     win.closed ||
-    PrivateBrowsingUtils.isWindowPrivate(win)
+    lazy.PrivateBrowsingUtils.isWindowPrivate(win)
   );
 }
 
@@ -78,7 +89,7 @@ function createMatchPatternSet(patterns, flags) {
   try {
     return new MatchPatternSet(new Set(patterns), flags);
   } catch (e) {
-    Cu.reportError(e);
+    console.error(e);
   }
   return new MatchPatternSet([]);
 }
@@ -87,7 +98,7 @@ function createMatchPatternSet(patterns, flags) {
  * A Map from trigger IDs to singleton trigger listeners. Each listener must
  * have idempotent `init` and `uninit` methods.
  */
-this.ASRouterTriggerListeners = new Map([
+const ASRouterTriggerListeners = new Map([
   [
     "openArticleURL",
     {
@@ -101,7 +112,7 @@ this.ASRouterTriggerListeners = new Map([
       init(triggerHandler, hosts, patterns) {
         if (!this._initialized) {
           this.receiveMessage = this.receiveMessage.bind(this);
-          AboutReaderParent.addMessageListener(this.readerModeEvent, this);
+          lazy.AboutReaderParent.addMessageListener(this.readerModeEvent, this);
           this._triggerHandler = triggerHandler;
           this._initialized = true;
         }
@@ -130,7 +141,10 @@ this.ASRouterTriggerListeners = new Map([
 
       uninit() {
         if (this._initialized) {
-          AboutReaderParent.removeMessageListener(this.readerModeEvent, this);
+          lazy.AboutReaderParent.removeMessageListener(
+            this.readerModeEvent,
+            this
+          );
           this._initialized = false;
           this._triggerHandler = null;
           this._hosts = new Set();
@@ -190,7 +204,7 @@ this.ASRouterTriggerListeners = new Map([
       init(triggerHandler, hosts = [], patterns) {
         if (!this._initialized) {
           this.onTabSwitch = this.onTabSwitch.bind(this);
-          EveryWindow.registerCallback(
+          lazy.EveryWindow.registerCallback(
             this.id,
             win => {
               if (!isPrivateWindow(win)) {
@@ -300,7 +314,7 @@ this.ASRouterTriggerListeners = new Map([
 
       uninit() {
         if (this._initialized) {
-          EveryWindow.unregisterCallback(this.id);
+          lazy.EveryWindow.unregisterCallback(this.id);
 
           this._initialized = false;
           this._triggerHandler = null;
@@ -334,17 +348,15 @@ this.ASRouterTriggerListeners = new Map([
       init(triggerHandler, hosts = [], patterns) {
         if (!this._initialized) {
           this.onLocationChange = this.onLocationChange.bind(this);
-          EveryWindow.registerCallback(
+          lazy.EveryWindow.registerCallback(
             this.id,
             win => {
               if (!isPrivateWindow(win)) {
-                win.addEventListener("TabSelect", this.onTabSwitch);
                 win.gBrowser.addTabsProgressListener(this);
               }
             },
             win => {
               if (!isPrivateWindow(win)) {
-                win.removeEventListener("TabSelect", this.onTabSwitch);
                 win.gBrowser.removeTabsProgressListener(this);
               }
             }
@@ -369,7 +381,7 @@ this.ASRouterTriggerListeners = new Map([
 
       uninit() {
         if (this._initialized) {
-          EveryWindow.unregisterCallback(this.id);
+          lazy.EveryWindow.unregisterCallback(this.id);
 
           this._initialized = false;
           this._triggerHandler = null;
@@ -469,6 +481,82 @@ this.ASRouterTriggerListeners = new Map([
       },
     },
   ],
+  [
+    "formAutofill",
+    {
+      id: "formAutofill",
+      _initialized: false,
+      _triggerHandler: null,
+      _triggerDelay: 10000, // 10 second delay before triggering
+      _topic: "formautofill-storage-changed",
+      _events: ["add", "update", "notifyUsed"] /** @see AutofillRecords */,
+      _collections: ["addresses", "creditCards"] /** @see AutofillRecords */,
+
+      init(triggerHandler) {
+        if (!this._initialized) {
+          Services.obs.addObserver(this, this._topic);
+          this._initialized = true;
+        }
+        this._triggerHandler = triggerHandler;
+      },
+
+      uninit() {
+        if (this._initialized) {
+          Services.obs.removeObserver(this, this._topic);
+          this._initialized = false;
+          this._triggerHandler = null;
+        }
+      },
+
+      observe(subject, topic, data) {
+        const browser =
+          Services.wm.getMostRecentBrowserWindow()?.gBrowser.selectedBrowser;
+        if (
+          !browser ||
+          topic !== this._topic ||
+          !subject.wrappedJSObject ||
+          // Ignore changes caused by manual edits in the credit card/address
+          // managers in about:preferences.
+          browser.contentWindow?.gSubDialog?.dialogs.length
+        ) {
+          return;
+        }
+        let { sourceSync, collectionName } = subject.wrappedJSObject;
+        // Ignore changes from sync and changes to untracked collections.
+        if (sourceSync || !this._collections.includes(collectionName)) {
+          return;
+        }
+        if (this._events.includes(data)) {
+          let event = data;
+          let type = collectionName;
+          if (event === "notifyUsed") {
+            event = "use";
+          }
+          if (type === "creditCards") {
+            type = "card";
+          }
+          if (type === "addresses") {
+            type = "address";
+          }
+          lazy.setTimeout(() => {
+            if (
+              this._initialized &&
+              // Make sure the browser still exists and is still selected.
+              browser.isConnectedAndReady &&
+              browser ===
+                Services.wm.getMostRecentBrowserWindow()?.gBrowser
+                  .selectedBrowser
+            ) {
+              this._triggerHandler(browser, {
+                id: this.id,
+                context: { event, type },
+              });
+            }
+          }, this._triggerDelay);
+        }
+      },
+    },
+  ],
 
   [
     "contentBlocking",
@@ -489,7 +577,7 @@ this.ASRouterTriggerListeners = new Map([
             "SiteProtection:ContentBlockingMilestone"
           );
           this.onLocationChange = this._onLocationChange.bind(this);
-          EveryWindow.registerCallback(
+          lazy.EveryWindow.registerCallback(
             this.id,
             win => {
               if (!isPrivateWindow(win)) {
@@ -518,7 +606,7 @@ this.ASRouterTriggerListeners = new Map([
             this,
             "SiteProtection:ContentBlockingMilestone"
           );
-          EveryWindow.unregisterCallback(this.id);
+          lazy.EveryWindow.unregisterCallback(this.id);
           this.onLocationChange = null;
           this._initialized = false;
         }
@@ -595,25 +683,8 @@ this.ASRouterTriggerListeners = new Map([
       _initialized: false,
       _triggerHandler: null,
 
-      // XXX For the moment, the captive-portal-login trigger is assumed to be
-      // for the VPN promo, and we check to make sure that hasn't been
-      // disabled by pref for a region (or maybe partner or OS distro?).
-      ///
-      // Ultimately, we'd like to unstaple the VPN promo checks from here,
-      // perhaps even doing them entirely using both ASRouter message targeting
-      // and experimenter/rollout targeting.  This work is being tracked in
-      // bug 1731176.
       _shouldShowCaptivePortalVPNPromo() {
-        const disablePromoPref =
-          ASRouterPreferences.disableCaptivePortalVPNPromo;
-        const homeRegion = Region.home || "";
-        const currentRegion = Region.current || "";
-
-        return (
-          !disablePromoPref &&
-          homeRegion.toLowerCase() !== "cn" &&
-          currentRegion.toLowerCase() !== "cn"
-        );
+        return lazy.BrowserUtils.shouldShowVPNPromo();
       },
 
       init(triggerHandler) {
@@ -696,6 +767,677 @@ this.ASRouterTriggerListeners = new Map([
           this._triggerHandler = null;
           this._observedPrefs = [];
         }
+      },
+    },
+  ],
+  [
+    "nthTabClosed",
+    {
+      id: "nthTabClosed",
+      _initialized: false,
+      _triggerHandler: null,
+      // Number of tabs the user closed this session
+      _closedTabs: 0,
+
+      init(triggerHandler) {
+        this._triggerHandler = triggerHandler;
+        if (!this._initialized) {
+          lazy.EveryWindow.registerCallback(
+            this.id,
+            win => {
+              win.addEventListener("TabClose", this);
+            },
+            win => {
+              win.removeEventListener("TabClose", this);
+            }
+          );
+          this._initialized = true;
+        }
+      },
+      handleEvent(event) {
+        if (this._initialized) {
+          if (!event.target.ownerGlobal.gBrowser) {
+            return;
+          }
+          const { gBrowser } = event.target.ownerGlobal;
+          this._closedTabs++;
+          this._triggerHandler(gBrowser.selectedBrowser, {
+            id: this.id,
+            context: { tabsClosedCount: this._closedTabs },
+          });
+        }
+      },
+      uninit() {
+        if (this._initialized) {
+          lazy.EveryWindow.unregisterCallback(this.id);
+          this._initialized = false;
+          this._triggerHandler = null;
+          this._closedTabs = 0;
+        }
+      },
+    },
+  ],
+  [
+    "activityAfterIdle",
+    {
+      id: "activityAfterIdle",
+      _initialized: false,
+      _triggerHandler: null,
+      _idleService: null,
+      // Optimization - only report idle state after one minute of idle time.
+      // This represents a minimum idleForMilliseconds of 60000.
+      _idleThreshold: 60,
+      _idleSince: null,
+      _quietSince: null,
+      _awaitingVisibilityChange: false,
+      // Fire the trigger 2 seconds after activity resumes to ensure user is
+      // actively using the browser when it fires.
+      _triggerDelay: 2000,
+      _triggerTimeout: null,
+      // We may get an idle notification immediately after waking from sleep.
+      // The idle time in such a case will be the amount of time since the last
+      // user interaction, which was before the computer went to sleep. We want
+      // to ignore them in that case, so we ignore idle notifications that
+      // happen within 1 second of the last wake notification.
+      _wakeDelay: 1000,
+      _lastWakeTime: null,
+      _listenedEvents: ["visibilitychange", "TabClose", "TabAttrModified"],
+      // When the OS goes to sleep or the process is suspended, we want to drop
+      // the idle time, since the time between sleep and wake is expected to be
+      // very long (e.g. overnight). Otherwise, this would trigger on the first
+      // activity after waking/resuming, counting sleep as idle time. This
+      // basically means each session starts with a fresh idle time.
+      _observedTopics: [
+        "sleep_notification",
+        "suspend_process_notification",
+        "wake_notification",
+        "resume_process_notification",
+        "mac_app_activate",
+      ],
+
+      get _isVisible() {
+        return [...Services.wm.getEnumerator("navigator:browser")].some(
+          win => !win.closed && !win.document?.hidden
+        );
+      },
+      get _soundPlaying() {
+        return [...Services.wm.getEnumerator("navigator:browser")].some(win =>
+          win.gBrowser?.tabs.some(tab => !tab.closing && tab.soundPlaying)
+        );
+      },
+      init(triggerHandler) {
+        this._triggerHandler = triggerHandler;
+        // Instantiate this here instead of with a lazy service getter so we can
+        // stub it in tests (otherwise we'd have to wait up to 6 minutes for an
+        // idle notification in certain test environments).
+        if (!this._idleService) {
+          this._idleService = Cc[
+            "@mozilla.org/widget/useridleservice;1"
+          ].getService(Ci.nsIUserIdleService);
+        }
+        if (
+          !this._initialized &&
+          !lazy.PrivateBrowsingUtils.permanentPrivateBrowsing
+        ) {
+          this._idleService.addIdleObserver(this, this._idleThreshold);
+          for (let topic of this._observedTopics) {
+            Services.obs.addObserver(this, topic);
+          }
+          lazy.EveryWindow.registerCallback(
+            this.id,
+            win => {
+              for (let ev of this._listenedEvents) {
+                win.addEventListener(ev, this);
+              }
+            },
+            win => {
+              for (let ev of this._listenedEvents) {
+                win.removeEventListener(ev, this);
+              }
+            }
+          );
+          if (!this._soundPlaying) {
+            this._quietSince = Date.now();
+          }
+          this._initialized = true;
+          this.log("Initialized: ", {
+            idleTime: this._idleService.idleTime,
+            quietSince: this._quietSince,
+          });
+        }
+      },
+      observe(subject, topic, data) {
+        if (this._initialized) {
+          this.log("Heard observer notification: ", {
+            subject,
+            topic,
+            data,
+            idleTime: this._idleService.idleTime,
+            idleSince: this._idleSince,
+            quietSince: this._quietSince,
+            lastWakeTime: this._lastWakeTime,
+          });
+          switch (topic) {
+            case "idle":
+              const now = Date.now();
+              // If the idle notification is within 1 second of the last wake
+              // notification, ignore it. We do this to avoid counting time the
+              // computer spent asleep as "idle time"
+              const isImmediatelyAfterWake =
+                this._lastWakeTime &&
+                now - this._lastWakeTime < this._wakeDelay;
+              if (!isImmediatelyAfterWake) {
+                this._idleSince = now - subject.idleTime;
+              }
+              break;
+            case "active":
+              // Trigger when user returns from being idle.
+              if (this._isVisible) {
+                this._onActive();
+                this._idleSince = null;
+                this._lastWakeTime = null;
+              } else if (this._idleSince) {
+                // If the window is not visible, we want to wait until it is
+                // visible before triggering.
+                this._awaitingVisibilityChange = true;
+              }
+              break;
+            // OS/process notifications
+            case "wake_notification":
+            case "resume_process_notification":
+            case "mac_app_activate":
+              this._lastWakeTime = Date.now();
+            // Fall through to reset idle time.
+            default:
+              this._idleSince = null;
+          }
+        }
+      },
+      handleEvent(event) {
+        if (this._initialized) {
+          switch (event.type) {
+            case "visibilitychange":
+              if (this._awaitingVisibilityChange && this._isVisible) {
+                this._onActive();
+                this._idleSince = null;
+                this._lastWakeTime = null;
+                this._awaitingVisibilityChange = false;
+              }
+              break;
+            case "TabAttrModified":
+              // Listen for DOMAudioPlayback* events.
+              if (!event.detail?.changed?.includes("soundplaying")) {
+                break;
+              }
+            // fall through
+            case "TabClose":
+              this.log("Tab sound changed: ", {
+                event,
+                idleTime: this._idleService.idleTime,
+                idleSince: this._idleSince,
+                quietSince: this._quietSince,
+              });
+              // Maybe update time if a tab closes with sound playing.
+              if (this._soundPlaying) {
+                this._quietSince = null;
+              } else if (!this._quietSince) {
+                this._quietSince = Date.now();
+              }
+          }
+        }
+      },
+      _onActive() {
+        this.log("User is active: ", {
+          idleTime: this._idleService.idleTime,
+          idleSince: this._idleSince,
+          quietSince: this._quietSince,
+          lastWakeTime: this._lastWakeTime,
+        });
+        if (this._idleSince && this._quietSince) {
+          const win = Services.wm.getMostRecentBrowserWindow();
+          if (win && !isPrivateWindow(win) && !this._triggerTimeout) {
+            // Time since the most recent user interaction/audio playback,
+            // reported as the number of milliseconds the user has been idle.
+            const idleForMilliseconds =
+              Date.now() - Math.max(this._idleSince, this._quietSince);
+            this._triggerTimeout = lazy.setTimeout(() => {
+              this._triggerHandler(win.gBrowser.selectedBrowser, {
+                id: this.id,
+                context: { idleForMilliseconds },
+              });
+              this._triggerTimeout = null;
+            }, this._triggerDelay);
+          }
+        }
+      },
+      uninit() {
+        if (this._initialized) {
+          this._idleService.removeIdleObserver(this, this._idleThreshold);
+          for (let topic of this._observedTopics) {
+            Services.obs.removeObserver(this, topic);
+          }
+          lazy.EveryWindow.unregisterCallback(this.id);
+          lazy.clearTimeout(this._triggerTimeout);
+          this._triggerTimeout = null;
+          this._initialized = false;
+          this._triggerHandler = null;
+          this._idleSince = null;
+          this._quietSince = null;
+          this._lastWakeTime = null;
+          this._awaitingVisibilityChange = false;
+          this.log("Uninitialized");
+        }
+      },
+      log(...args) {
+        lazy.log.debug("Idle trigger :>>", ...args);
+      },
+
+      QueryInterface: ChromeUtils.generateQI([
+        "nsIObserver",
+        "nsISupportsWeakReference",
+      ]),
+    },
+  ],
+  [
+    "cookieBannerDetected",
+    {
+      id: "cookieBannerDetected",
+      _initialized: false,
+      _triggerHandler: null,
+
+      init(triggerHandler) {
+        this._triggerHandler = triggerHandler;
+        if (!this._initialized) {
+          lazy.EveryWindow.registerCallback(
+            this.id,
+            win => {
+              win.addEventListener("cookiebannerdetected", this);
+            },
+            win => {
+              win.removeEventListener("cookiebannerdetected", this);
+            }
+          );
+          this._initialized = true;
+        }
+      },
+      handleEvent(event) {
+        if (this._initialized) {
+          const win = event.target || Services.wm.getMostRecentBrowserWindow();
+          if (!win) {
+            return;
+          }
+          this._triggerHandler(win.gBrowser.selectedBrowser, {
+            id: this.id,
+          });
+        }
+      },
+      uninit() {
+        if (this._initialized) {
+          lazy.EveryWindow.unregisterCallback(this.id);
+          this._initialized = false;
+          this._triggerHandler = null;
+        }
+      },
+    },
+  ],
+  [
+    "cookieBannerHandled",
+    {
+      id: "cookieBannerHandled",
+      _initialized: false,
+      _triggerHandler: null,
+
+      init(triggerHandler) {
+        this._triggerHandler = triggerHandler;
+        if (!this._initialized) {
+          lazy.EveryWindow.registerCallback(
+            this.id,
+            win => {
+              win.addEventListener("cookiebannerhandled", this);
+            },
+            win => {
+              win.removeEventListener("cookiebannerhandled", this);
+            }
+          );
+          this._initialized = true;
+        }
+      },
+      handleEvent(event) {
+        if (this._initialized) {
+          const browser =
+            event.detail.windowContext.rootFrameLoader?.ownerElement;
+          const win = browser?.ownerGlobal;
+          // We only want to show messages in the active browser window.
+          if (
+            win === Services.wm.getMostRecentBrowserWindow() &&
+            browser === win.gBrowser.selectedBrowser
+          ) {
+            this._triggerHandler(browser, { id: this.id });
+          }
+        }
+      },
+      uninit() {
+        if (this._initialized) {
+          lazy.EveryWindow.unregisterCallback(this.id);
+          this._initialized = false;
+          this._triggerHandler = null;
+        }
+      },
+    },
+  ],
+  [
+    "pdfJsFeatureCalloutCheck",
+    {
+      id: "pdfJsFeatureCalloutCheck",
+      _initialized: false,
+      _triggerHandler: null,
+      _callouts: new WeakMap(),
+
+      init(triggerHandler) {
+        if (!this._initialized) {
+          this.onLocationChange = this.onLocationChange.bind(this);
+          this.onStateChange = this.onLocationChange;
+          lazy.EveryWindow.registerCallback(
+            this.id,
+            win => {
+              this.onBrowserWindow(win);
+              win.addEventListener("TabSelect", this);
+              win.addEventListener("TabClose", this);
+              win.addEventListener("SSTabRestored", this);
+              win.gBrowser.addTabsProgressListener(this);
+            },
+            win => {
+              win.removeEventListener("TabSelect", this);
+              win.removeEventListener("TabClose", this);
+              win.removeEventListener("SSTabRestored", this);
+              win.gBrowser.removeTabsProgressListener(this);
+            }
+          );
+          this._initialized = true;
+        }
+        this._triggerHandler = triggerHandler;
+      },
+
+      uninit() {
+        if (this._initialized) {
+          lazy.EveryWindow.unregisterCallback(this.id);
+          this._initialized = false;
+          this._triggerHandler = null;
+          for (let key of ChromeUtils.nondeterministicGetWeakMapKeys(
+            this._callouts
+          )) {
+            const item = this._callouts.get(key);
+            if (item) {
+              item.callout.endTour(true);
+              item.cleanup();
+              this._callouts.delete(key);
+            }
+          }
+        }
+      },
+
+      async showFeatureCalloutTour(win, browser, panelId, context) {
+        const result = await this._triggerHandler(browser, {
+          id: "pdfJsFeatureCalloutCheck",
+          context,
+        });
+        if (result.message.trigger) {
+          const callout = lazy.FeatureCalloutBroker.showCustomFeatureCallout(
+            {
+              win,
+              browser,
+              pref: {
+                name:
+                  result.message.content?.tour_pref_name ??
+                  "browser.pdfjs.feature-tour",
+                defaultValue: result.message.content?.tour_pref_default_value,
+              },
+              location: "pdfjs",
+              theme: { preset: "pdfjs", simulateContent: true },
+              cleanup: () => {
+                this._callouts.delete(win);
+              },
+            },
+            result.message
+          );
+          if (callout) {
+            callout.panelId = panelId;
+            this._callouts.set(win, callout);
+          }
+        }
+      },
+
+      onLocationChange(browser) {
+        const tabbrowser = browser.getTabBrowser();
+        if (browser !== tabbrowser.selectedBrowser) {
+          return;
+        }
+        const win = tabbrowser.ownerGlobal;
+        const tab = tabbrowser.selectedTab;
+        const existingCallout = this._callouts.get(win);
+        const isPDFJS =
+          browser.contentPrincipal.originNoSuffix === "resource://pdf.js";
+        if (
+          existingCallout &&
+          (existingCallout.panelId !== tab.linkedPanel || !isPDFJS)
+        ) {
+          existingCallout.callout.endTour(true);
+          existingCallout.cleanup();
+        }
+        if (!this._callouts.has(win) && isPDFJS) {
+          this.showFeatureCalloutTour(win, browser, tab.linkedPanel, {
+            source: "open",
+          });
+        }
+      },
+
+      handleEvent(event) {
+        const tab = event.target;
+        const win = tab.ownerGlobal;
+        const { gBrowser } = win;
+        if (!gBrowser) {
+          return;
+        }
+        switch (event.type) {
+          case "SSTabRestored":
+            if (tab !== gBrowser.selectedTab) {
+              return;
+            }
+          // fall through
+          case "TabSelect": {
+            const browser = gBrowser.getBrowserForTab(tab);
+            const existingCallout = this._callouts.get(win);
+            const isPDFJS =
+              browser.contentPrincipal.originNoSuffix === "resource://pdf.js";
+            if (
+              existingCallout &&
+              (existingCallout.panelId !== tab.linkedPanel || !isPDFJS)
+            ) {
+              existingCallout.callout.endTour(true);
+              existingCallout.cleanup();
+            }
+            if (!this._callouts.has(win) && isPDFJS) {
+              this.showFeatureCalloutTour(win, browser, tab.linkedPanel, {
+                source: "open",
+              });
+            }
+            break;
+          }
+          case "TabClose": {
+            const existingCallout = this._callouts.get(win);
+            if (
+              existingCallout &&
+              existingCallout.panelId === tab.linkedPanel
+            ) {
+              existingCallout.callout.endTour(true);
+              existingCallout.cleanup();
+            }
+            break;
+          }
+        }
+      },
+
+      onBrowserWindow(win) {
+        this.onLocationChange(win.gBrowser.selectedBrowser);
+      },
+    },
+  ],
+  [
+    "newtabFeatureCalloutCheck",
+    {
+      id: "newtabFeatureCalloutCheck",
+      _initialized: false,
+      _triggerHandler: null,
+      _callouts: new WeakMap(),
+
+      init(triggerHandler) {
+        if (!this._initialized) {
+          this.onLocationChange = this.onLocationChange.bind(this);
+          this.onStateChange = this.onLocationChange;
+          lazy.EveryWindow.registerCallback(
+            this.id,
+            win => {
+              this.onBrowserWindow(win);
+              win.addEventListener("TabSelect", this);
+              win.addEventListener("TabClose", this);
+              win.addEventListener("SSTabRestored", this);
+              win.gBrowser.addTabsProgressListener(this);
+            },
+            win => {
+              win.removeEventListener("TabSelect", this);
+              win.removeEventListener("TabClose", this);
+              win.removeEventListener("SSTabRestored", this);
+              win.gBrowser.removeTabsProgressListener(this);
+            }
+          );
+          this._initialized = true;
+        }
+        this._triggerHandler = triggerHandler;
+      },
+
+      uninit() {
+        if (this._initialized) {
+          lazy.EveryWindow.unregisterCallback(this.id);
+          this._initialized = false;
+          this._triggerHandler = null;
+          for (let key of ChromeUtils.nondeterministicGetWeakMapKeys(
+            this._callouts
+          )) {
+            const item = this._callouts.get(key);
+            if (item) {
+              item.callout.endTour(true);
+              item.cleanup();
+              this._callouts.delete(key);
+            }
+          }
+        }
+      },
+
+      async showFeatureCalloutTour(win, browser, panelId, context) {
+        const result = await this._triggerHandler(browser, {
+          id: "newtabFeatureCalloutCheck",
+          context,
+        });
+        if (result.message.trigger) {
+          const callout = lazy.FeatureCalloutBroker.showCustomFeatureCallout(
+            {
+              win,
+              browser,
+              pref: {
+                name:
+                  result.message.content?.tour_pref_name ??
+                  "browser.newtab.feature-tour",
+                defaultValue: result.message.content?.tour_pref_default_value,
+              },
+              location: "newtab",
+              theme: { preset: "newtab", simulateContent: true },
+              cleanup: () => {
+                this._callouts.delete(win);
+              },
+            },
+            result.message
+          );
+          if (callout) {
+            callout.panelId = panelId;
+            this._callouts.set(win, callout);
+          }
+        }
+      },
+
+      onLocationChange(browser) {
+        const tabbrowser = browser.getTabBrowser();
+        if (browser !== tabbrowser.selectedBrowser) {
+          return;
+        }
+        const win = tabbrowser.ownerGlobal;
+        const tab = tabbrowser.selectedTab;
+        const existingCallout = this._callouts.get(win);
+        const isNewtabOrHome =
+          browser.currentURI.spec.startsWith("about:home") ||
+          browser.currentURI.spec.startsWith("about:newtab");
+        if (
+          existingCallout &&
+          (existingCallout.panelId !== tab.linkedPanel || !isNewtabOrHome)
+        ) {
+          existingCallout.callout.endTour(true);
+          existingCallout.cleanup();
+        }
+        if (!this._callouts.has(win) && isNewtabOrHome && tab.linkedPanel) {
+          this.showFeatureCalloutTour(win, browser, tab.linkedPanel, {
+            source: "open",
+          });
+        }
+      },
+
+      handleEvent(event) {
+        const tab = event.target;
+        const win = tab.ownerGlobal;
+        const { gBrowser } = win;
+        if (!gBrowser) {
+          return;
+        }
+        switch (event.type) {
+          case "SSTabRestored":
+            if (tab !== gBrowser.selectedTab) {
+              return;
+            }
+          // fall through
+          case "TabSelect": {
+            const browser = gBrowser.getBrowserForTab(tab);
+            const existingCallout = this._callouts.get(win);
+            const isNewtabOrHome =
+              browser.currentURI.spec.startsWith("about:home") ||
+              browser.currentURI.spec.startsWith("about:newtab");
+            if (
+              existingCallout &&
+              (existingCallout.panelId !== tab.linkedPanel || !isNewtabOrHome)
+            ) {
+              existingCallout.callout.endTour(true);
+              existingCallout.cleanup();
+            }
+            if (!this._callouts.has(win) && isNewtabOrHome) {
+              this.showFeatureCalloutTour(win, browser, tab.linkedPanel, {
+                source: "open",
+              });
+            }
+            break;
+          }
+          case "TabClose": {
+            const existingCallout = this._callouts.get(win);
+            if (
+              existingCallout &&
+              existingCallout.panelId === tab.linkedPanel
+            ) {
+              existingCallout.callout.endTour(true);
+              existingCallout.cleanup();
+            }
+            break;
+          }
+        }
+      },
+
+      onBrowserWindow(win) {
+        this.onLocationChange(win.gBrowser.selectedBrowser);
       },
     },
   ],

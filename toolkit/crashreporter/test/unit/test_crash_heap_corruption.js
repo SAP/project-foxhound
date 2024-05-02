@@ -8,17 +8,15 @@ add_task(async function run_test() {
 
   // Try crashing with a STATUS_HEAP_CORRUPTION exception
   await do_crash(
-    function() {
+    function () {
       crashType = CrashTestUtils.CRASH_HEAP_CORRUPTION;
       crashReporter.annotateCrashReport("TestKey", "TestValue");
     },
-    async function(mdump, extra, extraFile) {
+    async function (mdump, extra, extraFile) {
       runMinidumpAnalyzer(mdump);
 
       // Refresh updated extra data
-      let data = await OS.File.read(extraFile.path);
-      let decoder = new TextDecoder();
-      extra = JSON.parse(decoder.decode(data));
+      extra = await IOUtils.readJSON(extraFile.path);
 
       Assert.equal(extra.StackTraces.crash_info.type, "STATUS_HEAP_CORRUPTION");
       Assert.equal(extra.TestKey, "TestValue");

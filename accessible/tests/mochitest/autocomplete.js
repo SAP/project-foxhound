@@ -43,9 +43,8 @@ function shutdownAutoComplete() {
 function registerAutoCompleteSearch(aSearch, aDescription) {
   var name = "@mozilla.org/autocomplete/search;1?name=" + aSearch.name;
 
-  var uuidGenerator = Cc["@mozilla.org/uuid-generator;1"].getService(
-    nsIUUIDGenerator
-  );
+  var uuidGenerator =
+    Cc["@mozilla.org/uuid-generator;1"].getService(nsIUUIDGenerator);
   var cid = uuidGenerator.generateUUID();
 
   var componentManager = Components.manager.QueryInterface(
@@ -123,7 +122,7 @@ AutoCompleteSearch.prototype = {
   ]),
 
   // nsIFactory implementation
-  createInstance(outer, iid) {
+  createInstance(iid) {
     return this.QueryInterface(iid);
   },
 
@@ -141,7 +140,7 @@ function AutoCompleteResult(aValues, aComments) {
   this.values = aValues;
   this.comments = aComments;
 
-  if (this.values.length > 0) {
+  if (this.values.length) {
     this.searchResult = nsIAutoCompleteResult.RESULT_SUCCESS;
   } else {
     this.searchResult = nsIAutoCompleteResult.NOMATCH;

@@ -19,7 +19,8 @@
 #ifndef MODULES_AUDIO_CODING_CODECS_ILBC_MAIN_SOURCE_SWAP_BYTES_H_
 #define MODULES_AUDIO_CODING_CODECS_ILBC_MAIN_SOURCE_SWAP_BYTES_H_
 
-#include "modules/audio_coding/codecs/ilbc/defines.h"
+#include <stddef.h>
+#include <stdint.h>
 
 /*----------------------------------------------------------------*
  * Swap bytes (to simplify operations on Little Endian machines)
@@ -29,6 +30,6 @@ void WebRtcIlbcfix_SwapBytes(
     const uint16_t* input, /* (i) the sequence to swap */
     size_t wordLength,     /* (i) number or uint16_t to swap */
     uint16_t* output       /* (o) the swapped sequence */
-    );
+);
 
 #endif

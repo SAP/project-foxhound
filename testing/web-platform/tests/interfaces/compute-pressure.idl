@@ -1,30 +1,37 @@
 // GENERATED CONTENT - DO NOT EDIT
 // Content was automatically extracted by Reffy into webref
 // (https://github.com/w3c/webref)
-// Source: Compute Pressure API (https://wicg.github.io/compute-pressure/)
+// Source: Compute Pressure Level 1 (https://w3c.github.io/compute-pressure/)
 
-callback ComputePressureUpdateCallback = undefined (
-  ComputePressureEntry update,
-  ComputePressureObserver observer
+enum PressureSource { "thermals", "cpu" };
+
+enum PressureState { "nominal", "fair", "serious", "critical" };
+
+callback PressureUpdateCallback = undefined (
+  sequence<PressureRecord> changes,
+  PressureObserver observer
 );
 
-[Exposed=Window]
-interface ComputePressureObserver {
-  constructor(
-    ComputePressureUpdateCallback callback,
-    optional ComputePressureObserverOptions options = {}
-  );
-  undefined observe();
-  undefined unobserve();
+[Exposed=(DedicatedWorker,SharedWorker,Window), SecureContext]
+interface PressureObserver {
+  constructor(PressureUpdateCallback callback, optional PressureObserverOptions options = {});
+
+  Promise<undefined> observe(PressureSource source);
+  undefined unobserve(PressureSource source);
+  undefined disconnect();
+  sequence<PressureRecord> takeRecords();
+
+  [SameObject] static readonly attribute FrozenArray<PressureSource> supportedSources;
 };
 
-dictionary ComputePressureEntry {
-  double cpuSpeed;
-  double cpuUtilization;
-  ComputePressureObserverOptions options;
+[Exposed=(DedicatedWorker,SharedWorker,Window), SecureContext]
+interface PressureRecord {
+  readonly attribute PressureSource source;
+  readonly attribute PressureState state;
+  readonly attribute DOMHighResTimeStamp time;
+  [Default] object toJSON();
 };
 
-dictionary ComputePressureObserverOptions {
-  sequence<double> cpuUtilizationThresholds = [];
-  sequence<double> cpuSpeedThresholds = [];
+dictionary PressureObserverOptions {
+  double sampleRate = 1.0;
 };

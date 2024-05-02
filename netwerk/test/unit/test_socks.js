@@ -18,8 +18,8 @@ const DirectoryService = CC(
 );
 const Process = CC("@mozilla.org/process/util;1", "nsIProcess", "init");
 
-const currentThread = Cc["@mozilla.org/thread-manager;1"].getService()
-  .currentThread;
+const currentThread =
+  Cc["@mozilla.org/thread-manager;1"].getService().currentThread;
 
 var socks_test_server = null;
 var socks_listen_port = -1;
@@ -41,11 +41,11 @@ function runScriptSubprocess(script, args) {
     do_throw("Can't find xpcshell binary");
   }
 
-  var script = do_get_file(script);
+  var file = do_get_file(script);
   var proc = new Process(bin);
-  var args = [script.path].concat(args);
+  var procArgs = [file.path].concat(args);
 
-  proc.run(false, args, args.length);
+  proc.run(false, procArgs, procArgs.length);
 
   return proc;
 }
@@ -187,7 +187,7 @@ SocksClient.prototype = {
   },
 
   checkSocksGreeting() {
-    if (this.inbuf.length == 0) {
+    if (!this.inbuf.length) {
       return;
     }
 
@@ -399,6 +399,7 @@ SocksTestServer.prototype = {
       }
     }
     do_throw("No test case with id " + id);
+    return null;
   },
 
   testCompleted(client) {

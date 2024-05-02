@@ -6,11 +6,13 @@
 
 /* global jest */
 const { mount } = require("enzyme");
-const { REPS } = require("devtools/client/shared/components/reps/reps/rep");
+const {
+  REPS,
+} = require("resource://devtools/client/shared/components/reps/reps/rep.js");
 const { Rep } = REPS;
 const {
   getGripLengthBubbleText,
-} = require("devtools/client/shared/components/test/node/components/reps/test-helpers");
+} = require("resource://devtools/client/shared/components/test/node/components/reps/test-helpers.js");
 
 const renderRep = (string, props) =>
   mount(
@@ -22,7 +24,7 @@ const renderRep = (string, props) =>
 
 const testLinkClick = (link, openLink, url) => {
   let syntheticEvent;
-  const preventDefault = jest.fn().mockImplementation(function() {
+  const preventDefault = jest.fn().mockImplementation(function () {
     // This refers to the event object for which preventDefault is called (in
     // this case it is the syntheticEvent that is passed to onClick and
     // consequently to openLink).
@@ -99,7 +101,7 @@ describe("test String with URL", () => {
     const string = `"${url}"`;
     const openLink = jest.fn();
     const element = renderRep(string, { openLink, useQuotes: true });
-    expect(element.text()).toEqual(`"\\"${url}\\""`);
+    expect(element.text()).toEqual(`'"${url}"'`);
     const link = element.find("a");
     expect(link.prop("href")).toBe(url);
     expect(link.prop("title")).toBe(url);
@@ -438,10 +440,16 @@ describe("test String with URL", () => {
       urlCropLimit: 20,
     });
 
-    expect(element.text()).toEqual("http://xyz…klmnopqrst is the best");
-    const link = element.find("a").at(0);
+    expect(element.text()).toEqual(text);
+    const link = element.find("a.cropped-url").at(0);
     expect(link.prop("href")).toBe(xyzUrl);
     expect(link.prop("title")).toBe(xyzUrl);
+    const linkParts = link.find("span");
+    expect(linkParts.at(0).hasClass("cropped-url-start")).toBe(true);
+    expect(linkParts.at(0).text()).toEqual("http://xyz");
+    expect(linkParts.at(1).hasClass("cropped-url-middle")).toBe(true);
+    expect(linkParts.at(2).hasClass("cropped-url-end")).toBe(true);
+    expect(linkParts.at(2).text()).toEqual("klmnopqrst");
   });
 
   it("renders multiple cropped URL", () => {
@@ -455,17 +463,28 @@ describe("test String with URL", () => {
       urlCropLimit: 20,
     });
 
-    expect(element.text()).toEqual(
-      "http://xyz…klmnopqrst is lit, not http://abc…klmnopqrst"
-    );
+    expect(element.text()).toEqual(`${xyzUrl} is lit, not ${abcUrl}`);
 
-    const links = element.find("a");
+    const links = element.find("a.cropped-url");
     const xyzLink = links.at(0);
     expect(xyzLink.prop("href")).toBe(xyzUrl);
     expect(xyzLink.prop("title")).toBe(xyzUrl);
+    const xyzLinkParts = xyzLink.find("span");
+    expect(xyzLinkParts.at(0).hasClass("cropped-url-start")).toBe(true);
+    expect(xyzLinkParts.at(0).text()).toEqual("http://xyz");
+    expect(xyzLinkParts.at(1).hasClass("cropped-url-middle")).toBe(true);
+    expect(xyzLinkParts.at(2).hasClass("cropped-url-end")).toBe(true);
+    expect(xyzLinkParts.at(2).text()).toEqual("klmnopqrst");
+
     const abc = links.at(1);
     expect(abc.prop("href")).toBe(abcUrl);
     expect(abc.prop("title")).toBe(abcUrl);
+    const abcLinkParts = abc.find("span");
+    expect(abcLinkParts.at(0).hasClass("cropped-url-start")).toBe(true);
+    expect(abcLinkParts.at(0).text()).toEqual("http://abc");
+    expect(abcLinkParts.at(1).hasClass("cropped-url-middle")).toBe(true);
+    expect(abcLinkParts.at(2).hasClass("cropped-url-end")).toBe(true);
+    expect(abcLinkParts.at(2).text()).toEqual("klmnopqrst");
   });
 
   it("renders full URL if smaller than cropLimit", () => {
@@ -482,6 +501,7 @@ describe("test String with URL", () => {
     const link = element.find("a").at(0);
     expect(link.prop("href")).toBe(xyzUrl);
     expect(link.prop("title")).toBe(xyzUrl);
+    expect(link.find(".cropped-url-start").length).toBe(0);
   });
 
   it("renders cropped URL followed by cropped string with urlCropLimit", () => {
@@ -544,9 +564,10 @@ describe("test String with URL", () => {
   });
 
   it("does render a link in a grip array", () => {
-    const object = require("devtools/client/shared/components/test/node/stubs/reps/grip-array").get(
-      '["http://example.com/abcdefghijabcdefghij some other text"]'
-    );
+    const object =
+      require("resource://devtools/client/shared/components/test/node/stubs/reps/grip-array.js").get(
+        '["http://example.com/abcdefghijabcdefghij some other text"]'
+      );
     const length = getGripLengthBubbleText(object);
     const openLink = jest.fn();
     const element = renderRep(object, { openLink });
@@ -578,9 +599,10 @@ describe("test String with URL", () => {
   });
 
   it("does render a link in a grip object", () => {
-    const object = require("devtools/client/shared/components/test/node/stubs/reps/grip").get(
-      '{test: "http://example.com/ some other text"}'
-    );
+    const object =
+      require("resource://devtools/client/shared/components/test/node/stubs/reps/grip.js").get(
+        '{test: "http://example.com/ some other text"}'
+      );
     const openLink = jest.fn();
     const element = renderRep(object, { openLink });
 

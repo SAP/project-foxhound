@@ -21,7 +21,6 @@
 #include "js/Vector.h"
 #include "vm/FunctionFlags.h"          // js::FunctionFlags
 #include "vm/GeneratorAndAsyncKind.h"  // js::GeneratorKind, js::FunctionAsyncKind
-#include "vm/JSContext.h"
 #include "vm/JSScript.h"  // js::FillImmutableFlagsFromCompileOptionsForTopLevel, js::FillImmutableFlagsFromCompileOptionsForFunction
 #include "vm/StencilEnums.h"  // ImmutableScriptFlagsEnum
 
@@ -33,10 +32,10 @@ class ModuleBuilder;
 
 namespace frontend {
 
-SharedContext::SharedContext(JSContext* cx, Kind kind,
+SharedContext::SharedContext(FrontendContext* fc, Kind kind,
                              const JS::ReadOnlyCompileOptions& options,
                              Directives directives, SourceExtent extent)
-    : cx_(cx),
+    : fc_(fc),
       extent_(extent),
       allowNewTarget_(false),
       allowSuperProperty_(false),
@@ -76,10 +75,10 @@ SharedContext::SharedContext(JSContext* cx, Kind kind,
 }
 
 GlobalSharedContext::GlobalSharedContext(
-    JSContext* cx, ScopeKind scopeKind,
+    FrontendContext* fc, ScopeKind scopeKind,
     const JS::ReadOnlyCompileOptions& options, Directives directives,
     SourceExtent extent)
-    : SharedContext(cx, Kind::Global, options, directives, extent),
+    : SharedContext(fc, Kind::Global, options, directives, extent),
       scopeKind_(scopeKind),
       bindings(nullptr) {
   MOZ_ASSERT(scopeKind == ScopeKind::Global ||
@@ -87,10 +86,10 @@ GlobalSharedContext::GlobalSharedContext(
   MOZ_ASSERT(thisBinding_ == ThisBinding::Global);
 }
 
-EvalSharedContext::EvalSharedContext(JSContext* cx,
+EvalSharedContext::EvalSharedContext(FrontendContext* fc,
                                      CompilationState& compilationState,
                                      SourceExtent extent)
-    : SharedContext(cx, Kind::Eval, compilationState.input.options,
+    : SharedContext(fc, Kind::Eval, compilationState.input.options,
                     compilationState.directives, extent),
       bindings(nullptr) {
   // Eval inherits syntax and binding rules from enclosing environment.
@@ -103,20 +102,20 @@ EvalSharedContext::EvalSharedContext(JSContext* cx,
 }
 
 SuspendableContext::SuspendableContext(
-    JSContext* cx, Kind kind, const JS::ReadOnlyCompileOptions& options,
+    FrontendContext* fc, Kind kind, const JS::ReadOnlyCompileOptions& options,
     Directives directives, SourceExtent extent, bool isGenerator, bool isAsync)
-    : SharedContext(cx, kind, options, directives, extent) {
+    : SharedContext(fc, kind, options, directives, extent) {
   setFlag(ImmutableFlags::IsGenerator, isGenerator);
   setFlag(ImmutableFlags::IsAsync, isAsync);
 }
 
-FunctionBox::FunctionBox(JSContext* cx, SourceExtent extent,
+FunctionBox::FunctionBox(FrontendContext* fc, SourceExtent extent,
                          CompilationState& compilationState,
                          Directives directives, GeneratorKind generatorKind,
                          FunctionAsyncKind asyncKind, bool isInitialCompilation,
                          TaggedParserAtomIndex atom, FunctionFlags flags,
                          ScriptIndex index)
-    : SuspendableContext(cx, Kind::FunctionBox, compilationState.input.options,
+    : SuspendableContext(fc, Kind::FunctionBox, compilationState.input.options,
                          directives, extent,
                          generatorKind == GeneratorKind::Generator,
                          asyncKind == FunctionAsyncKind::AsyncFunction),
@@ -139,10 +138,9 @@ FunctionBox::FunctionBox(JSContext* cx, SourceExtent extent,
 
 void FunctionBox::initFromLazyFunction(const ScriptStencilExtra& extra,
                                        ScopeContext& scopeContext,
-                                       FunctionFlags flags,
                                        FunctionSyntaxKind kind) {
   initFromScriptStencilExtra(extra);
-  initStandaloneOrLazy(scopeContext, flags, kind);
+  initStandaloneOrLazy(scopeContext, kind);
 }
 
 void FunctionBox::initFromScriptStencilExtra(const ScriptStencilExtra& extra) {
@@ -151,7 +149,6 @@ void FunctionBox::initFromScriptStencilExtra(const ScriptStencilExtra& extra) {
 }
 
 void FunctionBox::initWithEnclosingParseContext(ParseContext* enclosing,
-                                                FunctionFlags flags,
                                                 FunctionSyntaxKind kind) {
   SharedContext* sc = enclosing->sc();
 
@@ -160,7 +157,7 @@ void FunctionBox::initWithEnclosingParseContext(ParseContext* enclosing,
   setHasModuleGoal(sc->hasModuleGoal());
 
   // Arrow functions don't have their own `this` binding.
-  if (flags.isArrow()) {
+  if (flags_.isArrow()) {
     allowNewTarget_ = sc->allowNewTarget();
     allowSuperProperty_ = sc->allowSuperProperty();
     allowSuperCall_ = sc->allowSuperCall();
@@ -181,7 +178,7 @@ void FunctionBox::initWithEnclosingParseContext(ParseContext* enclosing,
     }
 
     allowNewTarget_ = true;
-    allowSuperProperty_ = flags.allowSuperProperty();
+    allowSuperProperty_ = flags_.allowSuperProperty();
 
     if (kind == FunctionSyntaxKind::DerivedClassConstructor) {
       setDerivedClassConstructor();
@@ -224,16 +221,15 @@ void FunctionBox::initWithEnclosingParseContext(ParseContext* enclosing,
 }
 
 void FunctionBox::initStandalone(ScopeContext& scopeContext,
-                                 FunctionFlags flags, FunctionSyntaxKind kind) {
-  initStandaloneOrLazy(scopeContext, flags, kind);
+                                 FunctionSyntaxKind kind) {
+  initStandaloneOrLazy(scopeContext, kind);
 
   isStandalone = true;
 }
 
 void FunctionBox::initStandaloneOrLazy(ScopeContext& scopeContext,
-                                       FunctionFlags flags,
                                        FunctionSyntaxKind kind) {
-  if (flags.isArrow()) {
+  if (flags_.isArrow()) {
     allowNewTarget_ = scopeContext.allowNewTarget;
     allowSuperProperty_ = scopeContext.allowSuperProperty;
     allowSuperCall_ = scopeContext.allowSuperCall;
@@ -241,7 +237,7 @@ void FunctionBox::initStandaloneOrLazy(ScopeContext& scopeContext,
     thisBinding_ = scopeContext.thisBinding;
   } else {
     allowNewTarget_ = true;
-    allowSuperProperty_ = flags.allowSuperProperty();
+    allowSuperProperty_ = flags_.allowSuperProperty();
 
     if (kind == FunctionSyntaxKind::DerivedClassConstructor) {
       setDerivedClassConstructor();
@@ -284,23 +280,24 @@ bool FunctionBox::setAsmJSModule(const JS::WasmModule* module) {
   flags_.setKind(FunctionFlags::AsmJS);
 
   if (!compilationState_.asmJS) {
-    compilationState_.asmJS = cx_->new_<StencilAsmJSContainer>();
+    compilationState_.asmJS =
+        fc_->getAllocator()->new_<StencilAsmJSContainer>();
     if (!compilationState_.asmJS) {
       return false;
     }
   }
 
   if (!compilationState_.asmJS->moduleMap.putNew(index(), module)) {
-    js::ReportOutOfMemory(cx_);
+    js::ReportOutOfMemory(fc_);
     return false;
   }
   return true;
 }
 
 ModuleSharedContext::ModuleSharedContext(
-    JSContext* cx, const JS::ReadOnlyCompileOptions& options,
+    FrontendContext* fc, const JS::ReadOnlyCompileOptions& options,
     ModuleBuilder& builder, SourceExtent extent)
-    : SuspendableContext(cx, Kind::Module, options, Directives(true), extent,
+    : SuspendableContext(fc, Kind::Module, options, Directives(true), extent,
                          /* isGenerator = */ false,
                          /* isAsync = */ false),
       bindings(nullptr),

@@ -12,6 +12,7 @@
 #include "js/PropertyAndElement.h"  // JS_DefineProperty
 #include "mozilla/HoldDropJSObjects.h"
 #include "PerformanceEventTiming.h"
+#include "LargestContentfulPaint.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/Event.h"
 #include "mozilla/dom/EventCounts.h"
@@ -25,8 +26,12 @@
 #include "nsIChannel.h"
 #include "nsIHttpChannel.h"
 #include "nsIDocShell.h"
+#include "nsTextFrame.h"
+#include "nsContainerFrame.h"
 
 namespace mozilla::dom {
+
+extern mozilla::LazyLogModule gLCPLogging;
 
 namespace {
 
@@ -59,19 +64,23 @@ NS_IMPL_CYCLE_COLLECTION_CLASS(PerformanceMainThread)
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(PerformanceMainThread,
                                                 Performance)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK(mTiming, mNavigation, mDocEntry, mFCPTiming,
-                                  mEventTimingEntries, mFirstInputEvent,
-                                  mPendingPointerDown,
-                                  mPendingEventTimingEntries, mEventCounts)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(
+      mTiming, mNavigation, mDocEntry, mFCPTiming, mEventTimingEntries,
+      mLargestContentfulPaintEntries, mFirstInputEvent, mPendingPointerDown,
+      mPendingEventTimingEntries, mEventCounts)
+  tmp->mImageLCPEntryMap.Clear();
+  tmp->mTextFrameUnions.Clear();
   mozilla::DropJSObjects(tmp);
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(PerformanceMainThread,
                                                   Performance)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mTiming, mNavigation, mDocEntry, mFCPTiming,
-                                    mEventTimingEntries, mFirstInputEvent,
-                                    mPendingPointerDown,
-                                    mPendingEventTimingEntries, mEventCounts)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(
+      mTiming, mNavigation, mDocEntry, mFCPTiming, mEventTimingEntries,
+      mLargestContentfulPaintEntries, mFirstInputEvent, mPendingPointerDown,
+      mPendingEventTimingEntries, mEventCounts, mImageLCPEntryMap,
+      mTextFrameUnions)
+
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN_INHERITED(PerformanceMainThread,
@@ -85,25 +94,52 @@ NS_IMPL_RELEASE_INHERITED(PerformanceMainThread, Performance)
 // QueryInterface implementation for PerformanceMainThread
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(PerformanceMainThread)
   NS_WRAPPERCACHE_INTERFACE_MAP_ENTRY
-  NS_INTERFACE_MAP_ENTRY(nsISupports)
+  NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports, EventTarget)
 NS_INTERFACE_MAP_END_INHERITING(Performance)
 
 PerformanceMainThread::PerformanceMainThread(nsPIDOMWindowInner* aWindow,
                                              nsDOMNavigationTiming* aDOMTiming,
-                                             nsITimedChannel* aChannel,
-                                             bool aPrincipal)
-    : Performance(aWindow, aPrincipal),
+                                             nsITimedChannel* aChannel)
+    : Performance(aWindow->AsGlobal()),
       mDOMTiming(aDOMTiming),
-      mChannel(aChannel),
-      mCrossOriginIsolated(aWindow->AsGlobal()->CrossOriginIsolated()) {
+      mChannel(aChannel) {
   MOZ_ASSERT(aWindow, "Parent window object should be provided");
   if (StaticPrefs::dom_enable_event_timing()) {
     mEventCounts = new class EventCounts(GetParentObject());
   }
   CreateNavigationTimingEntry();
+
+  if (StaticPrefs::dom_enable_largest_contentful_paint()) {
+    nsCOMPtr<nsPIDOMWindowInner> owner = GetOwner();
+    MarkerInnerWindowId innerWindowID =
+        owner ? MarkerInnerWindowId(owner->WindowID())
+              : MarkerInnerWindowId::NoId();
+    // There might be multiple LCP entries and we only care about the latest one
+    // which is also the biggest value. That's why we need to record these
+    // markers in two different places:
+    // - During the Document unload, so we can record the closed pages.
+    // - During the profile capture, so we can record the open pages.
+    // We are capturing the second one here.
+    // Our static analysis doesn't allow capturing ref-counted pointers in
+    // lambdas, so we need to hide it in a uintptr_t. This is safe because this
+    // lambda will be destroyed in ~PerformanceMainThread().
+    uintptr_t self = reinterpret_cast<uintptr_t>(this);
+    profiler_add_state_change_callback(
+        // Using the "Pausing" state as "GeneratingProfile" profile happens too
+        // late; we can not record markers if the profiler is already paused.
+        ProfilingState::Pausing,
+        [self, innerWindowID](ProfilingState aProfilingState) {
+          const PerformanceMainThread* selfPtr =
+              reinterpret_cast<const PerformanceMainThread*>(self);
+
+          selfPtr->GetDOMTiming()->MaybeAddLCPProfilerMarker(innerWindowID);
+        },
+        self);
+  }
 }
 
 PerformanceMainThread::~PerformanceMainThread() {
+  profiler_remove_state_change_callback(reinterpret_cast<uintptr_t>(this));
   mozilla::DropJSObjects(this);
 }
 
@@ -243,6 +279,15 @@ void PerformanceMainThread::BufferEventTimingEntryIfNeeded(
   }
 }
 
+void PerformanceMainThread::BufferLargestContentfulPaintEntryIfNeeded(
+    LargestContentfulPaint* aEntry) {
+  MOZ_ASSERT(StaticPrefs::dom_enable_largest_contentful_paint());
+  if (mLargestContentfulPaintEntries.Length() <
+      kMaxLargestContentfulPaintBufferSize) {
+    mLargestContentfulPaintEntries.AppendElement(aEntry);
+  }
+}
+
 void PerformanceMainThread::DispatchPendingEventTimingEntries() {
   DOMHighResTimeStamp renderingTime = NowUnclamped();
 
@@ -269,7 +314,7 @@ void PerformanceMainThread::DispatchPendingEventTimingEntries() {
             MOZ_ASSERT(!mFirstInputEvent);
             mFirstInputEvent = mPendingPointerDown.forget();
             QueueEntry(mFirstInputEvent);
-            mHasDispatchedInputEvent = true;
+            SetHasDispatchedInputEvent();
           }
           break;
         }
@@ -279,7 +324,7 @@ void PerformanceMainThread::DispatchPendingEventTimingEntries() {
           mFirstInputEvent = entry->Clone();
           mFirstInputEvent->SetEntryType(u"first-input"_ns);
           QueueEntry(mFirstInputEvent);
-          mHasDispatchedInputEvent = true;
+          SetHasDispatchedInputEvent();
           break;
         }
         default:
@@ -287,42 +332,6 @@ void PerformanceMainThread::DispatchPendingEventTimingEntries() {
       }
     }
   }
-}
-
-// To be removed once bug 1124165 lands
-bool PerformanceMainThread::IsPerformanceTimingAttribute(
-    const nsAString& aName) {
-  // Note that toJSON is added to this list due to bug 1047848
-  static const char* attributes[] = {"navigationStart",
-                                     "unloadEventStart",
-                                     "unloadEventEnd",
-                                     "redirectStart",
-                                     "redirectEnd",
-                                     "fetchStart",
-                                     "domainLookupStart",
-                                     "domainLookupEnd",
-                                     "connectStart",
-                                     "secureConnectionStart",
-                                     "connectEnd",
-                                     "requestStart",
-                                     "responseStart",
-                                     "responseEnd",
-                                     "domLoading",
-                                     "domInteractive",
-                                     "domContentLoadedEventStart",
-                                     "domContentLoadedEventEnd",
-                                     "domComplete",
-                                     "loadEventStart",
-                                     "loadEventEnd",
-                                     nullptr};
-
-  for (uint32_t i = 0; attributes[i]; ++i) {
-    if (aName.EqualsASCII(attributes[i])) {
-      return true;
-    }
-  }
-
-  return false;
 }
 
 DOMHighResTimeStamp PerformanceMainThread::GetPerformanceTimingFromString(
@@ -397,15 +406,14 @@ DOMHighResTimeStamp PerformanceMainThread::GetPerformanceTimingFromString(
         "of sync");
   }
   return nsRFPService::ReduceTimePrecisionAsMSecs(
-      retValue, GetRandomTimelineSeed(), /* aIsSystemPrinciapl */ false,
-      CrossOriginIsolated());
+      retValue, GetRandomTimelineSeed(), mRTPCallerType);
 }
 
 void PerformanceMainThread::InsertUserEntry(PerformanceEntry* aEntry) {
   MOZ_ASSERT(NS_IsMainThread());
 
   nsAutoCString uri;
-  uint64_t markCreationEpoch = 0;
+  double markCreationEpoch = 0;
 
   if (StaticPrefs::dom_performance_enable_user_timing_logging() ||
       StaticPrefs::dom_performance_enable_notify_performance_timing()) {
@@ -419,7 +427,11 @@ void PerformanceMainThread::InsertUserEntry(PerformanceEntry* aEntry) {
       // If we have no URI, just put in "none".
       uri.AssignLiteral("none");
     }
-    markCreationEpoch = static_cast<uint64_t>(PR_Now() / PR_USEC_PER_MSEC);
+
+    // PR_Now() returns a signed 64-bit integer. Since it represents a
+    // timestamp, only ~32-bits will represent the value which should safely fit
+    // into a double.
+    markCreationEpoch = static_cast<double>(PR_Now() / PR_USEC_PER_MSEC);
 
     if (StaticPrefs::dom_performance_enable_user_timing_logging()) {
       Performance::LogEntry(aEntry, uri);
@@ -444,8 +456,7 @@ DOMHighResTimeStamp PerformanceMainThread::CreationTime() const {
 void PerformanceMainThread::CreateNavigationTimingEntry() {
   MOZ_ASSERT(!mDocEntry, "mDocEntry should be null.");
 
-  if (!StaticPrefs::dom_enable_performance_navigation_timing() ||
-      StaticPrefs::privacy_resistFingerprinting()) {
+  if (!StaticPrefs::dom_enable_performance_navigation_timing()) {
     return;
   }
 
@@ -485,8 +496,10 @@ void PerformanceMainThread::QueueNavigationTimingEntry() {
   QueueEntry(mDocEntry);
 }
 
-bool PerformanceMainThread::CrossOriginIsolated() const {
-  return mCrossOriginIsolated;
+void PerformanceMainThread::QueueLargestContentfulPaintEntry(
+    LargestContentfulPaint* aEntry) {
+  MOZ_ASSERT(StaticPrefs::dom_enable_largest_contentful_paint());
+  QueueEntry(aEntry);
 }
 
 EventCounts* PerformanceMainThread::EventCounts() {
@@ -496,12 +509,6 @@ EventCounts* PerformanceMainThread::EventCounts() {
 
 void PerformanceMainThread::GetEntries(
     nsTArray<RefPtr<PerformanceEntry>>& aRetval) {
-  // We return an empty list when 'privacy.resistFingerprinting' is on.
-  if (nsContentUtils::ShouldResistFingerprinting()) {
-    aRetval.Clear();
-    return;
-  }
-
   aRetval = mResourceEntries.Clone();
   aRetval.AppendElements(mUserEntries);
 
@@ -517,12 +524,6 @@ void PerformanceMainThread::GetEntries(
 
 void PerformanceMainThread::GetEntriesByType(
     const nsAString& aEntryType, nsTArray<RefPtr<PerformanceEntry>>& aRetval) {
-  // We return an empty list when 'privacy.resistFingerprinting' is on.
-  if (nsContentUtils::ShouldResistFingerprinting()) {
-    aRetval.Clear();
-    return;
-  }
-
   RefPtr<nsAtom> type = NS_Atomize(aEntryType);
   if (type == nsGkAtoms::navigation) {
     aRetval.Clear();
@@ -553,18 +554,20 @@ void PerformanceMainThread::GetEntriesByTypeForObserver(
     aRetval.AppendElements(mEventTimingEntries);
     return;
   }
+
+  if (StaticPrefs::dom_enable_largest_contentful_paint()) {
+    if (aEntryType.EqualsLiteral("largest-contentful-paint")) {
+      aRetval.AppendElements(mLargestContentfulPaintEntries);
+      return;
+    }
+  }
+
   return GetEntriesByType(aEntryType, aRetval);
 }
 
 void PerformanceMainThread::GetEntriesByName(
     const nsAString& aName, const Optional<nsAString>& aEntryType,
     nsTArray<RefPtr<PerformanceEntry>>& aRetval) {
-  // We return an empty list when 'privacy.resistFingerprinting' is on.
-  if (nsContentUtils::ShouldResistFingerprinting()) {
-    aRetval.Clear();
-    return;
-  }
-
   Performance::GetEntriesByName(aName, aEntryType, aRetval);
 
   if (mFCPTiming && mFCPTiming->GetName()->Equals(aName) &&
@@ -587,7 +590,7 @@ mozilla::PresShell* PerformanceMainThread::GetPresShell() {
   if (!ownerGlobal) {
     return nullptr;
   }
-  if (Document* doc = ownerGlobal->AsInnerWindow()->GetExtantDoc()) {
+  if (Document* doc = ownerGlobal->GetAsInnerWindow()->GetExtantDoc()) {
     return doc->GetPresShell();
   }
   return nullptr;
@@ -619,5 +622,139 @@ size_t PerformanceMainThread::SizeOfEventEntries(
     eventEntries += entry->SizeOfIncludingThis(aMallocSizeOf);
   }
   return eventEntries;
+}
+
+void PerformanceMainThread::ProcessElementTiming() {
+  if (!StaticPrefs::dom_enable_largest_contentful_paint()) {
+    return;
+  }
+  const bool shouldLCPDataEmpty =
+      HasDispatchedInputEvent() || HasDispatchedScrollEvent();
+  MOZ_ASSERT_IF(shouldLCPDataEmpty,
+                mTextFrameUnions.IsEmpty() && mImageLCPEntryMap.IsEmpty());
+
+  if (shouldLCPDataEmpty) {
+    return;
+  }
+
+  nsPresContext* presContext = GetPresShell()->GetPresContext();
+  MOZ_ASSERT(presContext);
+
+  // After https://github.com/w3c/largest-contentful-paint/issues/104 is
+  // resolved, LargestContentfulPaint and FirstContentfulPaint should
+  // be using the same timestamp, which should be the same timestamp
+  // as to what https://w3c.github.io/paint-timing/#mark-paint-timing step 2
+  // defines.
+  // TODO(sefeng): Check the timestamp after this issue is resolved.
+  DOMHighResTimeStamp rawNowTime =
+      TimeStampToDOMHighResForRendering(presContext->GetMarkPaintTimingStart());
+
+  MOZ_ASSERT(GetOwnerGlobal());
+  Document* document = GetOwnerGlobal()->GetAsInnerWindow()->GetExtantDoc();
+  if (!document ||
+      !nsContentUtils::GetInProcessSubtreeRootDocument(document)->IsActive()) {
+    return;
+  }
+
+  nsTArray<ImagePendingRendering> imagesPendingRendering =
+      std::move(mImagesPendingRendering);
+  for (const auto& imagePendingRendering : imagesPendingRendering) {
+    RefPtr<Element> element = imagePendingRendering.GetElement();
+    if (!element) {
+      continue;
+    }
+
+    MOZ_ASSERT(imagePendingRendering.mLoadTime < rawNowTime);
+    if (imgRequestProxy* requestProxy =
+            imagePendingRendering.GetImgRequestProxy()) {
+      LCPHelpers::CreateLCPEntryForImage(
+          this, element, requestProxy, imagePendingRendering.mLoadTime,
+          rawNowTime, imagePendingRendering.mLCPImageEntryKey);
+    }
+  }
+
+  MOZ_ASSERT(mImagesPendingRendering.IsEmpty());
+}
+
+void PerformanceMainThread::FinalizeLCPEntriesForText() {
+  nsPresContext* presContext = GetPresShell()->GetPresContext();
+  MOZ_ASSERT(presContext);
+
+  DOMHighResTimeStamp renderTime =
+      TimeStampToDOMHighResForRendering(presContext->GetMarkPaintTimingStart());
+
+  bool canFinalize = StaticPrefs::dom_enable_largest_contentful_paint() &&
+                     !presContext->HasStoppedGeneratingLCP();
+  nsTHashMap<nsRefPtrHashKey<Element>, nsRect> textFrameUnion =
+      std::move(GetTextFrameUnions());
+  if (canFinalize) {
+    for (const auto& textFrameUnion : textFrameUnion) {
+      LCPHelpers::FinalizeLCPEntryForText(
+          this, renderTime, textFrameUnion.GetKey(), textFrameUnion.GetData(),
+          presContext);
+    }
+  }
+  MOZ_ASSERT(GetTextFrameUnions().IsEmpty());
+}
+
+void PerformanceMainThread::StoreImageLCPEntry(
+    Element* aElement, imgRequestProxy* aImgRequestProxy,
+    LargestContentfulPaint* aEntry) {
+  mImageLCPEntryMap.InsertOrUpdate({aElement, aImgRequestProxy}, aEntry);
+}
+
+already_AddRefed<LargestContentfulPaint>
+PerformanceMainThread::GetImageLCPEntry(Element* aElement,
+                                        imgRequestProxy* aImgRequestProxy) {
+  Maybe<RefPtr<LargestContentfulPaint>> entry =
+      mImageLCPEntryMap.Extract({aElement, aImgRequestProxy});
+  if (entry.isNothing()) {
+    return nullptr;
+  }
+
+  Document* doc = aElement->GetComposedDoc();
+  MOZ_ASSERT(doc, "Element should be connected when it's painted");
+
+  Maybe<LCPImageEntryKey>& contentIdentifier =
+      entry.value()->GetLCPImageEntryKey();
+  if (contentIdentifier.isSome()) {
+    doc->ContentIdentifiersForLCP().EnsureRemoved(contentIdentifier.value());
+    contentIdentifier.reset();
+  }
+
+  return entry.value().forget();
+}
+
+bool PerformanceMainThread::UpdateLargestContentfulPaintSize(double aSize) {
+  if (aSize > mLargestContentfulPaintSize) {
+    mLargestContentfulPaintSize = aSize;
+    return true;
+  }
+  return false;
+}
+
+void PerformanceMainThread::SetHasDispatchedScrollEvent() {
+  mHasDispatchedScrollEvent = true;
+  ClearGeneratedTempDataForLCP();
+}
+
+void PerformanceMainThread::SetHasDispatchedInputEvent() {
+  mHasDispatchedInputEvent = true;
+  ClearGeneratedTempDataForLCP();
+}
+
+void PerformanceMainThread::ClearGeneratedTempDataForLCP() {
+  mTextFrameUnions.Clear();
+  mImageLCPEntryMap.Clear();
+  mImagesPendingRendering.Clear();
+
+  nsIGlobalObject* ownerGlobal = GetOwnerGlobal();
+  if (!ownerGlobal) {
+    return;
+  }
+
+  if (Document* document = ownerGlobal->GetAsInnerWindow()->GetExtantDoc()) {
+    document->ContentIdentifiersForLCP().Clear();
+  }
 }
 }  // namespace mozilla::dom

@@ -1,7 +1,9 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
-const { Service } = ChromeUtils.import("resource://services-sync/service.js");
+const { Service } = ChromeUtils.importESModule(
+  "resource://services-sync/service.sys.mjs"
+);
 
 add_task(async function run_test() {
   validate_all_future_pings();
@@ -13,11 +15,11 @@ add_task(async function run_test() {
     let i = old.info;
     // For the purposes of this test we don't need to do full formatting
     // of the 2nd param, as the ones we care about are always strings.
-    old.debug = function(m, p) {
+    old.debug = function (m, p) {
       debug.push(p ? m + ": " + (p.message || p) : m);
       d.call(old, m, p);
     };
-    old.info = function(m, p) {
+    old.info = function (m, p) {
       info.push(p ? m + ": " + (p.message || p) : m);
       i.call(old, m, p);
     };
@@ -29,7 +31,7 @@ add_task(async function run_test() {
   augmentLogger(Service._log);
 
   // Avoid daily ping
-  Svc.Prefs.set("lastPing", Math.floor(Date.now() / 1000));
+  Svc.PrefBranch.setIntPref("lastPing", Math.floor(Date.now() / 1000));
 
   _("Check that sync will log appropriately if already in 'progress'.");
   Service._locked = true;

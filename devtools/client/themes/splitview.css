@@ -11,14 +11,12 @@
   --sidemenu-selected-arrow-rtl: url(images/item-arrow-rtl.svg);
 }
 
-/* Loading animation */
-@keyframes item-load {
-  0% {
-    transform: scaleY(0) translateY(-100%);
-  }
-  100% {
-    transform: none;
-  }
+box,
+.splitview-nav {
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
 }
 
 .splitview-nav {
@@ -26,20 +24,22 @@
   padding: 0;
   margin: 0;
   background-color: var(--theme-sidebar-background);
+
+  display: flex;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 .splitview-nav > li {
-  animation: item-load .5s var(--animation-curve);
   padding-inline-end: 8px;
-  -moz-box-align: center;
+  align-items: center;
   outline: 0;
   vertical-align: bottom;
   border-bottom: 1px solid var(--theme-splitter-color);
-  background: inherit;
 }
 
 .placeholder {
-  -moz-box-flex: 1;
+  flex: 1;
   text-align: center;
 }
 
@@ -56,14 +56,90 @@
   background-position: center left;
 }
 
+.splitview-nav > li:not(.splitview-active):where(:hover, :focus-within) {
+  background-color: var(--theme-selection-background-hover);
+}
+
 /* Toolbars */
 
 .splitview-main > .devtools-toolbar {
-  background-origin: border-box;
-  background-clip: border-box;
+  height: 29px;
 }
 
 .splitview-main > toolbar,
 .loading .splitview-nav-container {
   border-inline-end: 1px solid var(--theme-splitter-color);
+}
+
+.splitview-nav-container {
+  justify-content: center;
+}
+
+.loading .splitview-nav-container > .placeholder {
+  display: none !important;
+}
+
+.splitview-controller,
+.splitview-main {
+  flex: none;
+}
+
+.splitview-controller {
+  min-height: 3em;
+  max-height: 14em;
+  max-width: 400px;
+  min-width: 200px;
+}
+
+.splitview-side-details > * {
+  display: none;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* only the active details pane is shown */
+.splitview-side-details > .splitview-active {
+  display: flex;
+}
+
+/* filtered items are hidden */
+ol.splitview-nav > li.splitview-filtered {
+  display: none;
+}
+
+/* "empty list" and "all filtered" placeholders are hidden */
+.splitview-nav:empty,
+.splitview-nav.splitview-all-filtered,
+.splitview-nav + .splitview-nav.placeholder {
+  display: none;
+}
+.splitview-nav.splitview-all-filtered ~ .splitview-nav.placeholder.all-filtered,
+.splitview-nav:empty ~ .splitview-nav.placeholder.empty {
+  display: flex;
+}
+
+@media (width >= 700px) {
+  .splitview-root {
+    flex-direction: row;
+  }
+  .splitview-controller {
+    max-height: none;
+    /* Override the potential splitter-set height */
+    height: auto !important;
+  }
+  .splitview-details {
+    display: none;
+  }
+  .splitview-details.splitview-active {
+    display: flex;
+  }
+}
+
+/* portrait mode */
+@media (width < 700px) {
+  .splitview-controller {
+    max-width: none;
+    /* Override the potential splitter-set width */
+    width: auto !important;
+  }
 }

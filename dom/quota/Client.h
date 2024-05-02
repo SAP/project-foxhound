@@ -25,6 +25,7 @@ class nsIFile;
 #define IDB_DIRECTORY_NAME "idb"
 #define DOMCACHE_DIRECTORY_NAME "cache"
 #define SDB_DIRECTORY_NAME "sdb"
+#define FILESYSTEM_DIRECTORY_NAME "fs"
 #define LS_DIRECTORY_NAME "ls"
 
 // Deprecated
@@ -54,6 +55,7 @@ class Client {
     // APPCACHE,
     DOMCACHE,
     SDB,
+    FILESYSTEM,
     LS,
     TYPE_MAX
   };
@@ -70,7 +72,7 @@ class Client {
   };
 
   static Type TypeMax() {
-    if (CachedNextGenLocalStorageEnabled()) {
+    if (NextGenLocalStorageEnabled()) {
       return TYPE_MAX;
     }
     return LS;
@@ -79,6 +81,9 @@ class Client {
   static bool IsValidType(Type aType);
 
   static bool TypeToText(Type aType, nsAString& aText, const fallible_t&);
+
+  // TODO: Rename other similar methods to use String/CString instead of Text.
+  static nsAutoString TypeToString(Type aType);
 
   static nsAutoCString TypeToText(Type aType);
 
@@ -143,6 +148,8 @@ class Client {
   virtual void OnOriginClearCompleted(PersistenceType aPersistenceType,
                                       const nsACString& aOrigin) = 0;
 
+  virtual void OnRepositoryClearCompleted(PersistenceType aPersistenceType) = 0;
+
   virtual void ReleaseIOThreadObjects() = 0;
 
   // Methods which are called on the background thread.
@@ -156,6 +163,14 @@ class Client {
   virtual void StartIdleMaintenance() = 0;
 
   virtual void StopIdleMaintenance() = 0;
+
+  // Both variants just check for QuotaManager::IsShuttingDown()
+  // but assert to be on the right thread.
+  // They must not be used for re-entrance checks.
+  // Deprecated: This distinction is not needed anymore.
+  // QuotaClients should call QuotaManager::IsShuttingDown instead.
+  static bool IsShuttingDownOnBackgroundThread();
+  static bool IsShuttingDownOnNonBackgroundThread();
 
   // Returns true if there is work that needs to be waited for.
   bool InitiateShutdownWorkThreads();

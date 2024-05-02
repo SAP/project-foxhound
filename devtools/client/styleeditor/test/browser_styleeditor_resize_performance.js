@@ -12,7 +12,7 @@
 
 const TESTCASE_URI = TEST_BASE_HTTP + "many-media-rules-sourcemaps/index.html";
 
-// Maximum delay allowed between two media-list-changed events.
+// Maximum delay allowed between two at-rules-list-changed events.
 const EVENTS_DELAY = 2000;
 
 // The window resize will still trigger several resize events which will lead to several
@@ -20,7 +20,7 @@ const EVENTS_DELAY = 2000;
 // This used to be > 100 events for this test case.
 const MAX_EVENTS = 10;
 
-add_task(async function() {
+add_task(async function () {
   const { toolbox, ui } = await openStyleEditorForURL(TESTCASE_URI);
 
   const win = toolbox.win.parent;
@@ -32,7 +32,7 @@ add_task(async function() {
     info("Window is too small for the test, resize it to > 800px width");
     const onMediaListChanged = waitForManyEvents(ui, EVENTS_DELAY);
     await resizeWindow(800, ui, win);
-    info("Wait for media-list-changed events to settle");
+    info("Wait for at-rules-list-changed events to settle");
     await onMediaListChanged;
   }
 

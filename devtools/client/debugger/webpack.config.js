@@ -2,7 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
-const sourceMapAssets = require("devtools-source-map/assets");
 const CopyWebpackPlugin = require("copy-webpack-plugin");
 const webpack = require("webpack");
 const ExtractTextPlugin = require("extract-text-webpack-plugin");
@@ -26,13 +25,6 @@ module.exports = {
   node: { fs: "empty" },
   recordsPath: path.join(__dirname, "bin/module-manifest.json"),
   entry: {
-    // We always generate the debugger bundle, but we will only copy the CSS
-    // artifact over to mozilla-central.
-    "parser-worker": getEntry("src/workers/parser/worker.js"),
-    "pretty-print-worker": getEntry("src/workers/pretty-print/worker.js"),
-    "search-worker": getEntry("src/workers/search/worker.js"),
-    "source-map-worker": getEntry("packages/devtools-source-map/src/worker.js"),
-    "source-map-index": getEntry("packages/devtools-source-map/src/index.js"),
     vendors: getEntry("src/vendors.js"),
   },
 
@@ -44,12 +36,6 @@ module.exports = {
   },
 
   plugins: [
-    new CopyWebpackPlugin(
-      Object.entries(sourceMapAssets).map(([name, filePath]) => ({
-        from: filePath,
-        to: `source-map-worker-assets/${name}`,
-      }))
-    ),
     new webpack.BannerPlugin({
       banner: `/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -59,10 +45,6 @@ module.exports = {
     }),
     new ObjectRestSpreadPlugin(),
     new ExtractTextPlugin("[name].css"),
-    new webpack.NormalModuleReplacementPlugin(
-      /.\/src\/network-request/,
-      "./src/privileged-network-request"
-    ),
     new webpack.DefinePlugin({
       "process.env": {
         NODE_ENV: JSON.stringify(process.env.NODE_ENV || "production"),

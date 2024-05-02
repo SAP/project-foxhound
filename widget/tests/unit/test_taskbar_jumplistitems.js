@@ -4,7 +4,6 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 // This tests taskbar jump list functionality available on win7 and up.
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 function test_basics() {
   var item = Cc["@mozilla.org/windows-jumplistitem;1"].createInstance(
@@ -71,83 +70,38 @@ function test_hashes() {
   link.uri = uri1;
 
   Assert.ok(link.compareHash(uri2));
-  uri2 = uri2
-    .mutate()
-    .setSpec("http://www.456.com/")
-    .finalize();
+  uri2 = uri2.mutate().setSpec("http://www.456.com/").finalize();
   Assert.ok(!link.compareHash(uri2));
-  uri2 = uri2
-    .mutate()
-    .setSpec("http://www.123.com/")
-    .finalize();
+  uri2 = uri2.mutate().setSpec("http://www.123.com/").finalize();
   Assert.ok(link.compareHash(uri2));
-  uri2 = uri2
-    .mutate()
-    .setSpec("https://www.123.com/")
-    .finalize();
+  uri2 = uri2.mutate().setSpec("https://www.123.com/").finalize();
   Assert.ok(!link.compareHash(uri2));
-  uri2 = uri2
-    .mutate()
-    .setSpec("http://www.123.com/test/")
-    .finalize();
+  uri2 = uri2.mutate().setSpec("http://www.123.com/test/").finalize();
   Assert.ok(!link.compareHash(uri2));
-  uri1 = uri1
-    .mutate()
-    .setSpec("http://www.123.com/test/")
-    .finalize();
+  uri1 = uri1.mutate().setSpec("http://www.123.com/test/").finalize();
   link.uri = uri1;
-  uri2 = uri2
-    .mutate()
-    .setSpec("http://www.123.com/test/")
-    .finalize();
+  uri2 = uri2.mutate().setSpec("http://www.123.com/test/").finalize();
   Assert.ok(link.compareHash(uri2));
-  uri1 = uri1
-    .mutate()
-    .setSpec("https://www.123.com/test/")
-    .finalize();
+  uri1 = uri1.mutate().setSpec("https://www.123.com/test/").finalize();
   link.uri = uri1;
-  uri2 = uri2
-    .mutate()
-    .setSpec("https://www.123.com/test/")
-    .finalize();
+  uri2 = uri2.mutate().setSpec("https://www.123.com/test/").finalize();
   Assert.ok(link.compareHash(uri2));
-  uri2 = uri2
-    .mutate()
-    .setSpec("ftp://www.123.com/test/")
-    .finalize();
+  uri2 = uri2.mutate().setSpec("ftp://www.123.com/test/").finalize();
   Assert.ok(!link.compareHash(uri2));
-  uri2 = uri2
-    .mutate()
-    .setSpec("http://123.com/test/")
-    .finalize();
+  uri2 = uri2.mutate().setSpec("http://123.com/test/").finalize();
   Assert.ok(!link.compareHash(uri2));
-  uri1 = uri1
-    .mutate()
-    .setSpec("https://www.123.com/test/")
-    .finalize();
+  uri1 = uri1.mutate().setSpec("https://www.123.com/test/").finalize();
   link.uri = uri1;
-  uri2 = uri2
-    .mutate()
-    .setSpec("https://www.123.com/Test/")
-    .finalize();
+  uri2 = uri2.mutate().setSpec("https://www.123.com/Test/").finalize();
   Assert.ok(!link.compareHash(uri2));
 
-  uri1 = uri1
-    .mutate()
-    .setSpec("http://www.123.com/")
-    .finalize();
+  uri1 = uri1.mutate().setSpec("http://www.123.com/").finalize();
   link.uri = uri1;
   Assert.equal(link.uriHash, "QGLmWuwuTozr3tOfXSf5mg==");
-  uri1 = uri1
-    .mutate()
-    .setSpec("http://www.123.com/test/")
-    .finalize();
+  uri1 = uri1.mutate().setSpec("http://www.123.com/test/").finalize();
   link.uri = uri1;
   Assert.equal(link.uriHash, "AG87Ls+GmaUYSUJFETRr3Q==");
-  uri1 = uri1
-    .mutate()
-    .setSpec("https://www.123.com/")
-    .finalize();
+  uri1 = uri1.mutate().setSpec("https://www.123.com/").finalize();
   link.uri = uri1;
   Assert.equal(link.uriHash, "iSx6UH1a9enVPzUA9JZ42g==");
 }
@@ -182,10 +136,7 @@ function test_links() {
   Assert.ok(!link1.equals(link2));
 
   link2.uriTitle = "Test";
-  uri2 = uri2
-    .mutate()
-    .setSpec("http://www.testing.com/")
-    .finalize();
+  uri2 = uri2.mutate().setSpec("http://www.testing.com/").finalize();
   link2.uri = uri2;
 
   Assert.ok(!link1.equals(link2));
@@ -242,7 +193,10 @@ async function test_jumplist() {
     Ci.nsIWinTaskbar
   );
 
-  var builder = taskbar.createJumpListBuilder();
+  // Since we're only testing the general functionality of the JumpListBuilder
+  // et. al, we can just test the non-private browsing version.
+  // (The only difference between the two at this level is the App User Model ID.)
+  var builder = taskbar.createJumpListBuilder(false);
 
   Assert.notEqual(builder, null);
 

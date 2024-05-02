@@ -5,18 +5,19 @@
 
 const {
   webExtensionDescriptorSpec,
-} = require("devtools/shared/specs/descriptors/webextension");
+} = require("resource://devtools/shared/specs/descriptors/webextension.js");
 const {
   FrontClassWithSpec,
   registerFront,
-} = require("devtools/shared/protocol");
+} = require("resource://devtools/shared/protocol.js");
 const {
   DescriptorMixin,
-} = require("devtools/client/fronts/descriptors/descriptor-mixin");
+} = require("resource://devtools/client/fronts/descriptors/descriptor-mixin.js");
+const DESCRIPTOR_TYPES = require("resource://devtools/client/fronts/descriptors/descriptor-types.js");
 loader.lazyRequireGetter(
   this,
   "WindowGlobalTargetFront",
-  "devtools/client/fronts/targets/window-global",
+  "resource://devtools/client/fronts/targets/window-global.js",
   true
 );
 
@@ -28,12 +29,18 @@ class WebExtensionDescriptorFront extends DescriptorMixin(
     this.traits = {};
   }
 
+  descriptorType = DESCRIPTOR_TYPES.EXTENSION;
+
   form(json) {
     this.actorID = json.actor;
 
     // Do not use `form` name to avoid colliding with protocol.js's `form` method
     this._form = json;
     this.traits = json.traits || {};
+  }
+
+  get backgroundScriptStatus() {
+    return this._form.backgroundScriptStatus;
   }
 
   get debuggable() {
@@ -74,6 +81,10 @@ class WebExtensionDescriptorFront extends DescriptorMixin(
 
   get name() {
     return this._form.name;
+  }
+
+  get persistentBackgroundScript() {
+    return this._form.persistentBackgroundScript;
   }
 
   get temporarilyInstalled() {

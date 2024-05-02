@@ -1,13 +1,12 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { AsyncShutdown } = ChromeUtils.import(
-  "resource://gre/modules/AsyncShutdown.jsm"
+const { AsyncShutdown } = ChromeUtils.importESModule(
+  "resource://gre/modules/AsyncShutdown.sys.mjs"
 );
 
-const { FirefoxAdapter } = ChromeUtils.import(
-  "resource://services-common/kinto-storage-adapter.js"
+const { FirefoxAdapter } = ChromeUtils.importESModule(
+  "resource://services-common/kinto-storage-adapter.sys.mjs"
 );
 
 add_task(async function test_sqlite_shutdown() {
@@ -15,7 +14,7 @@ add_task(async function test_sqlite_shutdown() {
     path: "kinto.sqlite",
   });
 
-  // Shutdown Sqlite.jsm synchronously.
+  // Shutdown Sqlite.sys.mjs synchronously.
   Services.prefs.setBoolPref("toolkit.asyncshutdown.testing", true);
   AsyncShutdown.profileBeforeChange._trigger();
   Services.prefs.clearUserPref("toolkit.asyncshutdown.testing");

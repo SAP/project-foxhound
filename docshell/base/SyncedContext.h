@@ -23,6 +23,8 @@ class PickleIterator;
 
 namespace IPC {
 class Message;
+class MessageReader;
+class MessageWriter;
 }  // namespace IPC
 
 namespace mozilla {
@@ -43,6 +45,23 @@ namespace syncedcontext {
 
 template <size_t I>
 using Index = typename std::integral_constant<size_t, I>;
+
+// We're going to use the empty base optimization for synced fields of different
+// sizes, so we define an empty class for that purpose.
+template <size_t I, size_t S>
+struct Empty {};
+
+// A templated container for a synced field. I is the index and T is the type.
+template <size_t I, typename T>
+struct Field {
+  T mField{};
+};
+
+// SizedField is a Field with a helper to define either an "empty" field, or a
+// field of a given type.
+template <size_t I, typename T, size_t S>
+using SizedField = std::conditional_t<((sizeof(T) > 8) ? 8 : sizeof(T)) == S,
+                                      Field<I, T>, Empty<I, S>>;
 
 template <typename Context>
 class Transaction {
@@ -88,9 +107,9 @@ class Transaction {
  private:
   friend struct mozilla::ipc::IPDLParamTraits<Transaction<Context>>;
 
-  void Write(IPC::Message* aMsg, mozilla::ipc::IProtocol* aActor) const;
-  bool Read(const IPC::Message* aMsg, PickleIterator* aIter,
-            mozilla::ipc::IProtocol* aActor);
+  void Write(IPC::MessageWriter* aWriter,
+             mozilla::ipc::IProtocol* aActor) const;
+  bool Read(IPC::MessageReader* aReader, mozilla::ipc::IProtocol* aActor);
 
   // You probably don't want to directly call this method - instead call
   // `Commit`, which will perform the necessary synchronization.
@@ -139,9 +158,9 @@ class FieldValues : public Base {
  private:
   friend struct mozilla::ipc::IPDLParamTraits<FieldValues<Base, Count>>;
 
-  void Write(IPC::Message* aMsg, mozilla::ipc::IProtocol* aActor) const;
-  bool Read(const IPC::Message* aMsg, PickleIterator* aIter,
-            mozilla::ipc::IProtocol* aActor);
+  void Write(IPC::MessageWriter* aWriter,
+             mozilla::ipc::IProtocol* aActor) const;
+  bool Read(IPC::MessageReader* aReader, mozilla::ipc::IProtocol* aActor);
 
   template <typename F, size_t... Indexes>
   static void EachIndexInner(std::index_sequence<Indexes...> aIndexes,
@@ -236,13 +255,7 @@ template <typename T>
 using FieldSetterType = typename GetFieldSetterType<T>::SetterArg;
 
 #define MOZ_DECL_SYNCED_CONTEXT_FIELD_INDEX(name, type) IDX_##name,
-#define MOZ_DECL_SYNCED_CONTEXT_FIELDS_DECL(name, type)             \
-  /* index based field lookup */                                    \
-  type& Get(FieldIndex<IDX_##name>) { return m##name; }             \
-  const type& Get(FieldIndex<IDX_##name>) const { return m##name; } \
-                                                                    \
-  /* storage for the field */                                       \
-  type m##name{};
+
 #define MOZ_DECL_SYNCED_CONTEXT_FIELD_GETSET(name, type)                       \
   const type& Get##name() const { return mFields.template Get<IDX_##name>(); } \
                                                                                \
@@ -270,6 +283,18 @@ using FieldSetterType = typename GetFieldSetterType<T>::SetterArg;
   case IDX_##name:                                        \
     return #name;
 
+#define MOZ_DECL_SYNCED_FIELD_INHERIT(name, type) \
+ public                                           \
+  syncedcontext::SizedField<IDX_##name, type, Size>,
+
+#define MOZ_DECL_SYNCED_CONTEXT_BASE_FIELD_GETTER(name, type) \
+  type& Get(FieldIndex<IDX_##name>) {                         \
+    return Field<IDX_##name, type>::mField;                   \
+  }                                                           \
+  const type& Get(FieldIndex<IDX_##name>) const {             \
+    return Field<IDX_##name, type>::mField;                   \
+  }
+
 // Declare a type as a synced context type.
 //
 // clazz is the name of the type being declared, and `eachfield` is a macro
@@ -286,9 +311,32 @@ using FieldSetterType = typename GetFieldSetterType<T>::SetterArg;
   template <size_t I>                                                          \
   using FieldIndex = typename ::mozilla::dom::syncedcontext::Index<I>;         \
                                                                                \
-  /* Struct containing the data for all synced fields as members */            \
-  struct BaseFieldValues {                                                     \
-    eachfield(MOZ_DECL_SYNCED_CONTEXT_FIELDS_DECL)                             \
+  /* Fields contain all synced fields defined by                               \
+   * `eachfield(MOZ_DECL_SYNCED_FIELD_INHERIT)`, but only those where the size \
+   * of the field is equal to size Size will be present. We use SizedField to  \
+   * remove fields of the wrong size. */                                       \
+  template <size_t Size>                                                       \
+  struct Fields : eachfield(MOZ_DECL_SYNCED_FIELD_INHERIT)                     \
+                      syncedcontext::Empty<SYNCED_FIELD_COUNT, Size> {};       \
+                                                                               \
+  /* Struct containing the data for all synced fields as members. We filter    \
+   * sizes to lay out fields of size 1, then 2, then 4 and last 8 or greater.  \
+   * This way we don't need to consider packing when defining fields, but      \
+   * we'll just reorder them here.                                             \
+   */                                                                          \
+  struct BaseFieldValues : public Fields<1>,                                   \
+                           public Fields<2>,                                   \
+                           public Fields<4>,                                   \
+                           public Fields<8> {                                  \
+    template <size_t I>                                                        \
+    auto& Get() {                                                              \
+      return Get(FieldIndex<I>{});                                             \
+    }                                                                          \
+    template <size_t I>                                                        \
+    const auto& Get() const {                                                  \
+      return Get(FieldIndex<I>{});                                             \
+    }                                                                          \
+    eachfield(MOZ_DECL_SYNCED_CONTEXT_BASE_FIELD_GETTER)                       \
   };                                                                           \
   using FieldValues =                                                          \
       typename ::mozilla::dom::syncedcontext::FieldValues<BaseFieldValues,     \
@@ -322,14 +370,14 @@ template <typename Context>
 struct IPDLParamTraits<dom::syncedcontext::Transaction<Context>> {
   typedef dom::syncedcontext::Transaction<Context> paramType;
 
-  static void Write(IPC::Message* aMsg, IProtocol* aActor,
+  static void Write(IPC::MessageWriter* aWriter, IProtocol* aActor,
                     const paramType& aParam) {
-    aParam.Write(aMsg, aActor);
+    aParam.Write(aWriter, aActor);
   }
 
-  static bool Read(const IPC::Message* aMsg, PickleIterator* aIter,
-                   IProtocol* aActor, paramType* aResult) {
-    return aResult->Read(aMsg, aIter, aActor);
+  static bool Read(IPC::MessageReader* aReader, IProtocol* aActor,
+                   paramType* aResult) {
+    return aResult->Read(aReader, aActor);
   }
 };
 
@@ -337,14 +385,14 @@ template <typename Base, size_t Count>
 struct IPDLParamTraits<dom::syncedcontext::FieldValues<Base, Count>> {
   typedef dom::syncedcontext::FieldValues<Base, Count> paramType;
 
-  static void Write(IPC::Message* aMsg, IProtocol* aActor,
+  static void Write(IPC::MessageWriter* aWriter, IProtocol* aActor,
                     const paramType& aParam) {
-    aParam.Write(aMsg, aActor);
+    aParam.Write(aWriter, aActor);
   }
 
-  static bool Read(const IPC::Message* aMsg, PickleIterator* aIter,
-                   IProtocol* aActor, paramType* aResult) {
-    return aResult->Read(aMsg, aIter, aActor);
+  static bool Read(IPC::MessageReader* aReader, IProtocol* aActor,
+                   paramType* aResult) {
+    return aResult->Read(aReader, aActor);
   }
 };
 

@@ -7,8 +7,8 @@
  * and seconds; but continue to show only minutes when we have plenty.
  */
 
-const { DownloadUtils } = ChromeUtils.import(
-  "resource://gre/modules/DownloadUtils.jsm"
+const { DownloadUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/DownloadUtils.sys.mjs"
 );
 
 /**
@@ -20,7 +20,7 @@ const { DownloadUtils } = ChromeUtils.import(
  * @usage _("Hello World") -> prints "Hello World"
  * @usage _(1, 2, 3) -> prints "1 2 3"
  */
-var _ = function(some, debug, text, to) {
+var _ = function (some, debug, text, to) {
   print(Array.from(arguments).join(" "));
 };
 
@@ -42,7 +42,7 @@ var expectedTimes = [
 _(expectedTimes.join("\n"));
 
 function run_test() {
-  expectedTimes.forEach(function([time, expectStatus, comment]) {
+  expectedTimes.forEach(function ([time, expectStatus, comment]) {
     _("Running test with time", time);
     _("Test comment:", comment);
     let [status, last] = DownloadUtils.getTimeLeft(time);

@@ -313,20 +313,6 @@ FRAME_STATE_BIT(Generic, 59, NS_FRAME_IS_IN_SINGLE_CHAR_MI)
 // adjusting logic, or moving infrequently-used bits elsewhere. If more space
 // for frame state is still needed, look for bit field gaps in nsIFrame.
 
-// == Frame state bits that apply to box frames ===============================
-
-FRAME_STATE_GROUP(Box, nsBoxFrame)
-
-FRAME_STATE_BIT(Box, 20, NS_STATE_BOX_CHILD_RESERVED)
-FRAME_STATE_BIT(Box, 22, NS_STATE_IS_HORIZONTAL)
-FRAME_STATE_BIT(Box, 23, NS_STATE_AUTO_STRETCH)
-FRAME_STATE_BIT(Box, 24, NS_STATE_IS_ROOT)
-/* Bits 25, 26, and 27 were used for xul debug flags but are now unused */
-FRAME_STATE_BIT(Box, 28, NS_STATE_MENU_HAS_POPUP_LIST)
-FRAME_STATE_BIT(Box, 29, NS_STATE_BOX_WRAPS_KIDS_IN_BLOCK)
-FRAME_STATE_BIT(Box, 30, NS_STATE_EQUAL_SIZE)
-FRAME_STATE_BIT(Box, 31, NS_STATE_IS_DIRECTION_NORMAL)
-
 // == Frame state bits that apply to flex container frames ====================
 
 FRAME_STATE_GROUP(FlexContainer, nsFlexContainerFrame)
@@ -337,24 +323,20 @@ FRAME_STATE_BIT(FlexContainer, 20,
                 NS_STATE_FLEX_NORMAL_FLOW_CHILDREN_IN_CSS_ORDER)
 
 // Set for a flex container that is emulating a legacy
-// 'display:-webkit-{inline-}box' or 'display:-moz-{inline-}box' container.
-FRAME_STATE_BIT(FlexContainer, 21, NS_STATE_FLEX_IS_EMULATING_LEGACY_BOX)
+// 'display:-webkit-{inline-}box'.
+FRAME_STATE_BIT(FlexContainer, 21, NS_STATE_FLEX_IS_EMULATING_LEGACY_WEBKIT_BOX)
 
 // True if the container has no flex items; may lie if there is a pending reflow
 FRAME_STATE_BIT(FlexContainer, 22, NS_STATE_FLEX_SYNTHESIZE_BASELINE)
-
-// True if any flex item in the container has a line with a
-// -webkit-line-ellipsis marker.
-FRAME_STATE_BIT(FlexContainer, 23, NS_STATE_FLEX_HAS_LINE_CLAMP_ELLIPSIS)
 
 // True iff some first-in-flow in-flow children were pushed.
 // Note that those child frames may have been removed without this bit
 // being updated for performance reasons, so code shouldn't depend on
 // actually finding any pushed items when this bit is set.
-FRAME_STATE_BIT(FlexContainer, 24, NS_STATE_FLEX_DID_PUSH_ITEMS)
+FRAME_STATE_BIT(FlexContainer, 23, NS_STATE_FLEX_DID_PUSH_ITEMS)
 
 // We've merged some OverflowList children since last reflow.
-FRAME_STATE_BIT(FlexContainer, 25, NS_STATE_FLEX_HAS_CHILD_NIFS)
+FRAME_STATE_BIT(FlexContainer, 24, NS_STATE_FLEX_HAS_CHILD_NIFS)
 
 // == Frame state bits that apply to grid container frames ====================
 
@@ -446,6 +428,10 @@ FRAME_STATE_BIT(SVG, 23, NS_STATE_SVG_TEXT_IN_REFLOW)
 // TextNodeCorrespondenceRecorder::RecordCorrespondence call
 // to update the cached nsTextNode indexes that they correspond to.
 FRAME_STATE_BIT(SVG, 24, NS_STATE_SVG_TEXT_CORRESPONDENCE_DIRTY)
+
+// We can stop ancestor traversal of rendering observers when we hit
+// one a frame with this state bit.
+FRAME_STATE_BIT(SVG, 25, NS_STATE_SVG_RENDERING_OBSERVER_CONTAINER)
 
 // == Frame state bits that apply to text frames ==============================
 
@@ -540,7 +526,7 @@ FRAME_STATE_BIT(Block, 21, NS_BLOCK_HAS_PUSHED_FLOATS)
 // nsBlockReflowContext::ComputeCollapsedBStartMargin() via
 // nsBlockFrame::IsMarginRoot().
 //
-// This causes the BlockReflowInput's constructor to set the
+// This causes the BlockReflowState's constructor to set the
 // mIsBStartMarginRoot and mIsBEndMarginRoot flags.
 FRAME_STATE_BIT(Block, 22, NS_BLOCK_MARGIN_ROOT)
 
@@ -650,7 +636,6 @@ FRAME_STATE_GROUP(Placeholder, nsPlaceholderFrame)
 FRAME_STATE_BIT(Placeholder, 20, PLACEHOLDER_FOR_FLOAT)
 FRAME_STATE_BIT(Placeholder, 21, PLACEHOLDER_FOR_ABSPOS)
 FRAME_STATE_BIT(Placeholder, 22, PLACEHOLDER_FOR_FIXEDPOS)
-FRAME_STATE_BIT(Placeholder, 23, PLACEHOLDER_FOR_POPUP)
 FRAME_STATE_BIT(Placeholder, 24, PLACEHOLDER_FOR_TOPLAYER)
 
 // This bit indicates that the out-of-flow frame's static position needs to be

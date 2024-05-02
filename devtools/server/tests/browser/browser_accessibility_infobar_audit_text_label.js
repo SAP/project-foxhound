@@ -7,24 +7,26 @@
 // Checks for the AccessibleHighlighter's infobar component and its text label
 // audit.
 
-add_task(async function() {
+add_task(async function () {
   await BrowserTestUtils.withNewTab(
     {
       gBrowser,
       url: MAIN_DOMAIN + "doc_accessibility_infobar.html",
     },
-    async function(browser) {
-      await SpecialPowers.spawn(browser, [], async function() {
-        const { require } = ChromeUtils.import(
-          "resource://devtools/shared/loader/Loader.jsm"
+    async function (browser) {
+      await SpecialPowers.spawn(browser, [], async function () {
+        const { require } = ChromeUtils.importESModule(
+          "resource://devtools/shared/loader/Loader.sys.mjs"
         );
         const {
           HighlighterEnvironment,
-        } = require("devtools/server/actors/highlighters");
+        } = require("resource://devtools/server/actors/highlighters.js");
         const {
           AccessibleHighlighter,
-        } = require("devtools/server/actors/highlighters/accessible");
-        const { LocalizationHelper } = require("devtools/shared/l10n");
+        } = require("resource://devtools/server/actors/highlighters/accessible.js");
+        const {
+          LocalizationHelper,
+        } = require("resource://devtools/shared/l10n.js");
         const L10N = new LocalizationHelper(
           "devtools/shared/locales/accessibility.properties"
         );
@@ -41,7 +43,7 @@ add_task(async function() {
             },
             SCORES: { BEST_PRACTICES, FAIL, WARNING },
           },
-        } = require("devtools/shared/constants");
+        } = require("resource://devtools/shared/constants.js");
 
         /**
          * Checks for updated content for an infobar.
@@ -55,9 +57,8 @@ add_task(async function() {
           const { issue, score } = audit || {};
           let expected = "";
           if (issue) {
-            const { ISSUE_TO_INFOBAR_LABEL_MAP } = infobar.audit.reports[
-              AUDIT_TYPE.TEXT_LABEL
-            ].constructor;
+            const { ISSUE_TO_INFOBAR_LABEL_MAP } =
+              infobar.audit.reports[AUDIT_TYPE.TEXT_LABEL].constructor;
             expected = L10N.getStr(ISSUE_TO_INFOBAR_LABEL_MAP[issue]);
           }
 
@@ -111,12 +112,10 @@ add_task(async function() {
 
         const tests = [
           {
-            desc:
-              "Infobar is shown with no text label audit content when no audit.",
+            desc: "Infobar is shown with no text label audit content when no audit.",
           },
           {
-            desc:
-              "Infobar is shown with no text label audit content when audit is null.",
+            desc: "Infobar is shown with no text label audit content when audit is null.",
             audit: null,
           },
           {
@@ -126,15 +125,13 @@ add_task(async function() {
             audit: { [AUDIT_TYPE.TEXT_LABEL]: null },
           },
           {
-            desc:
-              "Infobar is shown with text label audit content for an error.",
+            desc: "Infobar is shown with text label audit content for an error.",
             audit: {
               [AUDIT_TYPE.TEXT_LABEL]: { score: FAIL, issue: TOOLBAR_NO_NAME },
             },
           },
           {
-            desc:
-              "Infobar is shown with text label audit content for a warning.",
+            desc: "Infobar is shown with text label audit content for a warning.",
             audit: {
               [AUDIT_TYPE.TEXT_LABEL]: {
                 score: WARNING,
@@ -143,8 +140,7 @@ add_task(async function() {
             },
           },
           {
-            desc:
-              "Infobar is shown with text label audit content for best practices.",
+            desc: "Infobar is shown with text label audit content for best practices.",
             audit: {
               [AUDIT_TYPE.TEXT_LABEL]: {
                 score: BEST_PRACTICES,

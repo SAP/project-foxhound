@@ -7,6 +7,7 @@
 #ifndef MOZILLA_GFX_VR_VRMANAGERPARENT_H
 #define MOZILLA_GFX_VR_VRMANAGERPARENT_H
 
+#include "mozilla/dom/ipc/IdType.h"
 #include "mozilla/layers/CompositorThread.h"  // for CompositorThreadHolder
 #include "mozilla/layers/CompositableTransactionParent.h"  // need?
 #include "mozilla/gfx/PVRManagerParent.h"  // for PVRManagerParent
@@ -22,16 +23,18 @@ namespace gfx {
 class VRManager;
 
 class VRManagerParent final : public PVRManagerParent {
-  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(VRManagerParent);
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(VRManagerParent, final);
 
   friend class PVRManagerParent;
 
  public:
-  explicit VRManagerParent(ProcessId aChildProcessId, bool aIsContentChild);
+  explicit VRManagerParent(ProcessId aChildProcessId,
+                           dom::ContentParentId aChildId, bool aIsContentChild);
 
-  static VRManagerParent* CreateSameProcess();
+  static already_AddRefed<VRManagerParent> CreateSameProcess();
   static bool CreateForGPUProcess(Endpoint<PVRManagerParent>&& aEndpoint);
-  static bool CreateForContent(Endpoint<PVRManagerParent>&& aEndpoint);
+  static bool CreateForContent(Endpoint<PVRManagerParent>&& aEndpoint,
+                               dom::ContentParentId aChildId);
   static void Shutdown();
 
   bool IsSameProcess() const;
@@ -73,8 +76,6 @@ class VRManagerParent final : public PVRManagerParent {
   mozilla::ipc::IPCResult RecvResetPuppet();
 
  private:
-  void ActorAlloc() override;
-  void ActorDealloc() override;
   void RegisterWithManager();
   void UnregisterFromManager();
 
@@ -82,14 +83,12 @@ class VRManagerParent final : public PVRManagerParent {
 
   static void RegisterVRManagerInCompositorThread(VRManagerParent* aVRManager);
 
-  // This keeps us alive until ActorDestroy(), at which point we do a
-  // deferred destruction of ourselves.
-  RefPtr<VRManagerParent> mSelfRef;
   // Keep the compositor thread alive, until we have destroyed ourselves.
   RefPtr<CompositorThreadHolder> mCompositorThreadHolder;
 
   // Keep the VRManager alive, until we have destroyed ourselves.
   RefPtr<VRManager> mVRManagerHolder;
+  dom::ContentParentId mChildId;
   bool mHaveEventListener;
   bool mHaveControllerListener;
   bool mIsContentChild;

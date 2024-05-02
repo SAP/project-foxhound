@@ -4,29 +4,28 @@
 
 "use strict";
 
-const Services = require("Services");
-const Rule = require("devtools/client/inspector/rules/models/rule");
-const UserProperties = require("devtools/client/inspector/rules/models/user-properties");
+const Rule = require("resource://devtools/client/inspector/rules/models/rule.js");
+const UserProperties = require("resource://devtools/client/inspector/rules/models/user-properties.js");
 const {
   style: { ELEMENT_STYLE },
-} = require("devtools/shared/constants");
+} = require("resource://devtools/shared/constants.js");
 
 loader.lazyRequireGetter(
   this,
   "promiseWarn",
-  "devtools/client/inspector/shared/utils",
+  "resource://devtools/client/inspector/shared/utils.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   ["parseDeclarations", "parseNamedDeclarations", "parseSingleValue"],
-  "devtools/shared/css/parsing-utils",
+  "resource://devtools/shared/css/parsing-utils.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "isCssVariable",
-  "devtools/client/fronts/css-properties",
+  "resource://devtools/client/fronts/css-properties.js",
   true
 );
 
@@ -323,11 +322,18 @@ class ElementStyle {
     //   If the new property is a lower or equal priority, mark it as
     //   overridden.
     //
+    //   Note that this is different if layers are involved: if both
+    //   old and new properties have a high priority, and if the new
+    //   property is in a rule belonging to a layer that is different
+    //   from the the one the old property rule might be in,
+    //   mark the old property overridden and mark the property name as
+    //   taken by the new property.
+    //
     // _overriddenDirty will be set on each prop, indicating whether its
     // dirty status changed during this pass.
-    const taken = {};
+    const taken = new Map();
     for (const computedProp of computedProps) {
-      const earlier = taken[computedProp.name];
+      const earlier = taken.get(computedProp.name);
 
       // Prevent -webkit-gradient from being selected after unchecking
       // linear-gradient in this case:
@@ -343,9 +349,15 @@ class ElementStyle {
       if (
         earlier &&
         computedProp.priority === "important" &&
-        earlier.priority !== "important" &&
-        (earlier.textProp.rule.inherited ||
-          !computedProp.textProp.rule.inherited)
+        (earlier.priority !== "important" ||
+          // Even if the earlier property was important, if the current rule is in a layer
+          // it will take precedence, unless the earlier property rule was in the same layer.
+          (computedProp.textProp.rule?.isInLayer() &&
+            computedProp.textProp.rule.isInDifferentLayer(
+              earlier.textProp.rule
+            ))) &&
+        // For !important only consider rules applying to the same parent node.
+        computedProp.textProp.rule.inherited == earlier.textProp.rule.inherited
       ) {
         // New property is higher priority. Mark the earlier property
         // overridden (which will reverse its dirty state).
@@ -360,7 +372,7 @@ class ElementStyle {
       computedProp.overridden = overridden;
 
       if (!computedProp.overridden && computedProp.textProp.enabled) {
-        taken[computedProp.name] = computedProp;
+        taken.set(computedProp.name, computedProp);
 
         if (isCssVariable(computedProp.name)) {
           variables.set(computedProp.name, computedProp.value);
@@ -456,7 +468,7 @@ class ElementStyle {
       // longer matches the node. This strict check avoids accidentally causing
       // declarations to be overridden in the remaining matching rules.
       const isStyleRule =
-        rule.pseudoElement === "" && rule.matchedSelectors.length > 0;
+        rule.pseudoElement === "" && !!rule.matchedDesugaredSelectors.length;
 
       // Style rules for pseudo-elements must always be considered, regardless if their
       // selector matches the node. As a convenience, declarations in rules for
@@ -654,9 +666,8 @@ class ElementStyle {
       return;
     }
 
-    const { declarationsToAdd, firstValue } = this._getValueAndExtraProperties(
-      value
-    );
+    const { declarationsToAdd, firstValue } =
+      this._getValueAndExtraProperties(value);
     const parsedValue = parseSingleValue(
       this.cssProperties.isKnown,
       firstValue

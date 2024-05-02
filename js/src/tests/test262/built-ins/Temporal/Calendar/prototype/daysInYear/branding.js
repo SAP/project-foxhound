@@ -1,4 +1,4 @@
-// |reftest| skip -- Temporal is not supported
+// |reftest| skip-if(!this.hasOwnProperty('Temporal')) -- Temporal is not enabled unconditionally
 // Copyright (C) 2021 Igalia, S.L. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 
@@ -12,14 +12,16 @@ const daysInYear = Temporal.Calendar.prototype.daysInYear;
 
 assert.sameValue(typeof daysInYear, "function");
 
-assert.throws(TypeError, () => daysInYear.call(undefined), "undefined");
-assert.throws(TypeError, () => daysInYear.call(null), "null");
-assert.throws(TypeError, () => daysInYear.call(true), "true");
-assert.throws(TypeError, () => daysInYear.call(""), "empty string");
-assert.throws(TypeError, () => daysInYear.call(Symbol()), "symbol");
-assert.throws(TypeError, () => daysInYear.call(1), "1");
-assert.throws(TypeError, () => daysInYear.call({}), "plain object");
-assert.throws(TypeError, () => daysInYear.call(Temporal.Calendar), "Temporal.Calendar");
-assert.throws(TypeError, () => daysInYear.call(Temporal.Calendar.prototype), "Temporal.Calendar.prototype");
+const args = [new Temporal.PlainDate(2000, 1, 1)];
+
+assert.throws(TypeError, () => daysInYear.apply(undefined, args), "undefined");
+assert.throws(TypeError, () => daysInYear.apply(null, args), "null");
+assert.throws(TypeError, () => daysInYear.apply(true, args), "true");
+assert.throws(TypeError, () => daysInYear.apply("", args), "empty string");
+assert.throws(TypeError, () => daysInYear.apply(Symbol(), args), "symbol");
+assert.throws(TypeError, () => daysInYear.apply(1, args), "1");
+assert.throws(TypeError, () => daysInYear.apply({}, args), "plain object");
+assert.throws(TypeError, () => daysInYear.apply(Temporal.Calendar, args), "Temporal.Calendar");
+assert.throws(TypeError, () => daysInYear.apply(Temporal.Calendar.prototype, args), "Temporal.Calendar.prototype");
 
 reportCompare(0, 0);

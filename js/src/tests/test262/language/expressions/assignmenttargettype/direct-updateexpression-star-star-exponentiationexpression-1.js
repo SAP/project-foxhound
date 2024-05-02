@@ -4,6 +4,7 @@
 // - src/assignment-target-type/invalid/direct.template
 /*---
 description: Static Semantics AssignmentTargetType, Return invalid. (Direct assignment)
+features: [exponentiation]
 flags: [generated]
 negative:
   phase: parse
@@ -18,7 +19,4 @@ info: |
 
 $DONOTEVALUATE();
 
-function _() {
-  1 ** 2 = 1;
-}
-
+1 ** 2 = 1;

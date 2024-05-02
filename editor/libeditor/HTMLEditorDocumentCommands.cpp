@@ -3,21 +3,25 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/EditorCommands.h"
+#include "EditorCommands.h"
 
-#include "mozilla/EditorBase.h"               // for EditorBase
-#include "mozilla/HTMLEditor.h"               // for HTMLEditor
-#include "mozilla/dom/Element.h"              // for Element
-#include "mozilla/dom/Document.h"             // for Document
+#include "EditorBase.h"  // for EditorBase
+#include "ErrorList.h"
+#include "HTMLEditor.h"  // for HTMLEditor
+
+#include "mozilla/BasePrincipal.h"  // for nsIPrincipal::IsSystemPrincipal()
+#include "mozilla/dom/Element.h"    // for Element
+#include "mozilla/dom/Document.h"   // for Document
 #include "mozilla/dom/HTMLInputElement.h"     // for HTMLInputElement
 #include "mozilla/dom/HTMLTextAreaElement.h"  // for HTMLTextAreaElement
-#include "nsCommandParams.h"                  // for nsCommandParams
-#include "nsIEditingSession.h"                // for nsIEditingSession, etc
-#include "nsIPrincipal.h"                     // for nsIPrincipal
-#include "nsISupportsImpl.h"                  // for nsPresContext::Release
-#include "nsISupportsUtils.h"                 // for NS_IF_ADDREF
-#include "nsIURI.h"                           // for nsIURI
-#include "nsPresContext.h"                    // for nsPresContext
+
+#include "nsCommandParams.h"    // for nsCommandParams
+#include "nsIEditingSession.h"  // for nsIEditingSession, etc
+#include "nsIPrincipal.h"       // for nsIPrincipal
+#include "nsISupportsImpl.h"    // for nsPresContext::Release
+#include "nsISupportsUtils.h"   // for NS_IF_ADDREF
+#include "nsIURI.h"             // for nsIURI
+#include "nsPresContext.h"      // for nsPresContext
 
 // defines
 #define STATE_ENABLED "state_enabled"
@@ -43,11 +47,13 @@ StaticRefPtr<SetDocumentStateCommand> SetDocumentStateCommand::sInstance;
 
 bool SetDocumentStateCommand::IsCommandEnabled(Command aCommand,
                                                EditorBase* aEditorBase) const {
-  if (aCommand == Command::SetDocumentReadOnly) {
-    return !!aEditorBase;
+  switch (aCommand) {
+    case Command::SetDocumentReadOnly:
+      return !!aEditorBase;
+    default:
+      // The other commands are always enabled if given editor is an HTMLEditor.
+      return aEditorBase && aEditorBase->IsHTMLEditor();
   }
-  // The other commands are always enabled if given editor is an HTMLEditor.
-  return aEditorBase && aEditorBase->IsHTMLEditor();
 }
 
 nsresult SetDocumentStateCommand::DoCommand(Command aCommand,
@@ -160,6 +166,13 @@ nsresult SetDocumentStateCommand::DoCommandParam(
           ->EnableAbsolutePositionEditor(aBoolParam.value());
       return NS_OK;
     }
+    case Command::EnableCompatibleJoinSplitNodeDirection:
+      // Now we don't support the legacy join/split node direction anymore, but
+      // this result may be used for the feature detection whether Gecko
+      // supports the new direction mode.  Therefore, even though we do nothing,
+      // but we should return NS_OK to return `true` from
+      // `Document.execCommand()`.
+      return NS_OK;
     default:
       return NS_ERROR_NOT_IMPLEMENTED;
   }
@@ -344,6 +357,17 @@ nsresult SetDocumentStateCommand::GetCommandStateParams(
       }
       return aParams.SetBool(STATE_ALL,
                              htmlEditor->IsAbsolutePositionEditorEnabled());
+    }
+    case Command::EnableCompatibleJoinSplitNodeDirection: {
+      HTMLEditor* htmlEditor = aEditorBase->GetAsHTMLEditor();
+      if (NS_WARN_IF(!htmlEditor)) {
+        return NS_ERROR_INVALID_ARG;
+      }
+      // Now we don't support the legacy join/split node direction anymore, but
+      // this result may be used for the feature detection whether Gecko
+      // supports the new direction mode.  Therefore, we should return `true`
+      // even though executing the command does nothing.
+      return aParams.SetBool(STATE_ALL, true);
     }
     default:
       return NS_ERROR_NOT_IMPLEMENTED;

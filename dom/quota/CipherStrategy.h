@@ -31,13 +31,11 @@ enum class CipherMode { Encrypt, Decrypt };
 //                   Span<uint8_t> aIv, Span<const uint8_t> aIn,
 //                   Span<uint8_t> aOut);
 //
-// XXX Change MakeBlockPrefix to also accept a file id and offset
-//
 //   BlockPrefixType MakeBlockPrefix();
 //
 //   Span<const uint8_t> SerializeKey(const KeyType& aKey);
 //
-//   KeyType DeserializeKey(const Span<const uint8_t>& aSerializedKey);
+//   Maybe<KeyType> DeserializeKey(const Span<const uint8_t>& aSerializedKey);
 
 }  // namespace mozilla::dom::quota
 

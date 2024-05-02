@@ -1,5 +1,7 @@
 "use strict";
 
+// This test is run as part of the perf tests which require the metadata.
+/* exported perfMetadata */
 var perfMetadata = {
   owner: "Network Team",
   name: "http3 raw",
@@ -23,7 +25,7 @@ var perfMetadata = {
 };
 
 var performance = performance || {};
-performance.now = (function() {
+performance.now = (function () {
   return (
     performance.now ||
     performance.mozNow ||
@@ -58,14 +60,12 @@ function run_next_test() {
   }
 }
 
+// eslint-disable-next-line no-unused-vars
 function run_test() {
-  let env = Cc["@mozilla.org/process/environment;1"].getService(
-    Ci.nsIEnvironment
-  );
-  let h2Port = env.get("MOZHTTP2_PORT");
+  let h2Port = Services.env.get("MOZHTTP2_PORT");
   Assert.notEqual(h2Port, null);
   Assert.notEqual(h2Port, "");
-  let h3Port = env.get("MOZHTTP3_PORT");
+  let h3Port = Services.env.get("MOZHTTP3_PORT");
   Assert.notEqual(h3Port, null);
   Assert.notEqual(h3Port, "");
   h3AltSvc = ":" + h3Port;
@@ -101,7 +101,7 @@ function makeChan(uri) {
   return chan;
 }
 
-let Http3CheckListener = function() {};
+let Http3CheckListener = function () {};
 
 Http3CheckListener.prototype = {
   onDataAvailableFired: false,
@@ -138,7 +138,7 @@ Http3CheckListener.prototype = {
   },
 };
 
-let WaitForHttp3Listener = function() {};
+let WaitForHttp3Listener = function () {};
 
 WaitForHttp3Listener.prototype = new Http3CheckListener();
 
@@ -195,7 +195,7 @@ function test_https_alt_svc() {
   doTest(httpsOrigin + "http3-test", h3Route, h3AltSvc);
 }
 
-let PerfHttp3Listener = function() {};
+let PerfHttp3Listener = function () {};
 
 PerfHttp3Listener.prototype = new Http3CheckListener();
 PerfHttp3Listener.prototype.amount = 0;

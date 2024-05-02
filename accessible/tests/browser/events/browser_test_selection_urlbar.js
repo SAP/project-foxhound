@@ -6,9 +6,8 @@
 /* import-globals-from ../../mochitest/role.js */
 loadScripts({ name: "role.js", dir: MOCHITESTS_DIR });
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  BrowserTestUtils: "resource://testing-common/BrowserTestUtils.jsm",
-  UrlbarTestUtils: "resource://testing-common/UrlbarTestUtils.jsm",
+ChromeUtils.defineESModuleGetters(this, {
+  UrlbarTestUtils: "resource://testing-common/UrlbarTestUtils.sys.mjs",
 });
 
 // Check that the URL bar manages accessibility
@@ -23,10 +22,11 @@ async function runTests() {
   let bookmark = await PlacesUtils.bookmarks.insert({
     parentGuid: PlacesUtils.bookmarks.toolbarGuid,
     title: "addons",
+    // eslint-disable-next-line @microsoft/sdl/no-insecure-url
     url: Services.io.newURI("http://www.addons.mozilla.org/"),
   });
 
-  registerCleanupFunction(async function() {
+  registerCleanupFunction(async function () {
     await BrowserTestUtils.closeWindow(newWin);
     await PlacesUtils.bookmarks.remove(bookmark);
   });

@@ -5,7 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include <fstream>
-#include "mozilla/JSONWriter.h"
+#include "mozilla/JSONStringWriteFuncs.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "nsIThread.h"
 #include "nsString.h"
@@ -60,15 +60,6 @@ using namespace mozilla::gfx;
 namespace mozilla::gfx {
 
 namespace {
-
-// This is for controller action file writer.
-struct StringWriteFunc : public JSONWriteFunc {
-  nsACString& mBuffer;  // This struct must not outlive this buffer
-
-  explicit StringWriteFunc(nsACString& buffer) : mBuffer(buffer) {}
-
-  void Write(const Span<const char>& aStr) override { mBuffer.Append(aStr); }
-};
 
 class ControllerManifestFile {
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(ControllerManifestFile)
@@ -192,8 +183,7 @@ bool GenerateTempFileName(nsCString& aPath) {
 #endif  // defined(XP_WIN)
 
 OpenVRSession::OpenVRSession()
-    : VRSession(),
-      mVRSystem(nullptr),
+    : mVRSystem(nullptr),
       mVRChaperone(nullptr),
       mVRCompositor(nullptr),
       mHapticPulseRemaining{},
@@ -579,8 +569,8 @@ bool OpenVRSession::SetupContollerActions() {
     if (!GenerateTempFileName(controllerAction)) {
       return false;
     }
-    nsCString actionData;
-    JSONWriter actionWriter(MakeUnique<StringWriteFunc>(actionData));
+    JSONStringWriteFunc<nsCString> actionData;
+    JSONWriter actionWriter(actionData);
     actionWriter.Start();
 
     actionWriter.StringProperty("version",
@@ -642,9 +632,8 @@ bool OpenVRSession::SetupContollerActions() {
     actionWriter.End();
 
     std::ofstream actionfile(controllerAction.BeginReading());
-    nsCString actionResult(actionData.get());
     if (actionfile.is_open()) {
-      actionfile << actionResult.get();
+      actionfile << actionData.StringCRef().get();
       actionfile.close();
     }
   }
@@ -1390,7 +1379,8 @@ void OpenVRSession::StartHapticTimer() {
   if (!mHapticTimer && mHapticThread) {
     mLastHapticUpdate = TimeStamp();
     mHapticTimer = NS_NewTimer();
-    mHapticTimer->SetTarget(mHapticThread->GetThread()->EventTarget());
+    nsCOMPtr<nsIThread> thread = mHapticThread->GetThread();
+    mHapticTimer->SetTarget(thread);
     mHapticTimer->InitWithNamedFuncCallback(
         HapticTimerCallback, this, kVRHapticUpdateInterval,
         nsITimer::TYPE_REPEATING_PRECISE_CAN_SKIP,

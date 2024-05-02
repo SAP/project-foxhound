@@ -10,6 +10,7 @@
 #include "nsContentUtils.h"
 #include "AudioNodeEngine.h"
 #include "AudioNodeTrack.h"
+#include "Tracing.h"
 
 namespace mozilla::dom {
 
@@ -44,10 +45,10 @@ class ConstantSourceNodeEngine final : public AudioNodeEngine {
     START,
     STOP,
   };
-  void RecvTimelineEvent(uint32_t aIndex, AudioTimelineEvent& aEvent) override {
+  void RecvTimelineEvent(uint32_t aIndex, AudioParamEvent& aEvent) override {
     MOZ_ASSERT(mDestination);
 
-    WebAudioUtils::ConvertAudioTimelineEventToTicks(aEvent, mDestination);
+    aEvent.ConvertToTicks(mDestination);
 
     switch (aIndex) {
       case OFFSET:
@@ -76,6 +77,7 @@ class ConstantSourceNodeEngine final : public AudioNodeEngine {
                     const AudioBlock& aInput, AudioBlock* aOutput,
                     bool* aFinished) override {
     MOZ_ASSERT(mSource == aTrack, "Invalid source track");
+    TRACE("ConstantSourceNodeEngine::ProcessBlock");
 
     TrackTime ticks = mDestination->GraphTimeToTrackTime(aFrom);
     if (mStart == -1) {
@@ -104,7 +106,7 @@ class ConstantSourceNodeEngine final : public AudioNodeEngine {
           std::min<TrackTime>(WEBAUDIO_BLOCK_SIZE, mStop - ticks) - writeOffset;
 
       if (mOffset.HasSimpleValue()) {
-        float value = mOffset.GetValueAtTime(ticks);
+        float value = mOffset.GetValue();
         std::fill_n(output + writeOffset, count, value);
       } else {
         mOffset.GetValuesAtTime(ticks + writeOffset, output + writeOffset,

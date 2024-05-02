@@ -11,7 +11,7 @@ NSS 3.30.1 release notes
    Network Security Services (NSS) 3.30.1 is a security patch release for NSS 3.30. The bug fixes in
    NSS 3.30.1 are described in the "Bugs Fixed" section below.
 
-.. _distribution_information:
+
 
 `Distribution Information <#distribution_information>`__
 --------------------------------------------------------
@@ -41,7 +41,7 @@ NSS 3.30.1 release notes
 
 .. container::
 
-   -  `Bug 1344380 <https://bugzilla.mozilla.org/show_bug.cgi?id=1344380>`__ / Out-of-bounds write
+   -  `Bug 1344380 <https://bugzilla.mozilla.org/show_bug.cgi?id=1344380>`__ / Out-of-bounds write
       in Base64 encoding in NSS
       (`CVE-2017-5461 <https://www.mozilla.org/en-US/security/advisories/mfsa2017-10/#CVE-2017-5461>`__)
 

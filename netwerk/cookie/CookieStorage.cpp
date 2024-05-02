@@ -6,6 +6,9 @@
 #include "Cookie.h"
 #include "CookieCommons.h"
 #include "CookieLogging.h"
+#include "CookieNotification.h"
+#include "nsCOMPtr.h"
+#include "nsICookieNotification.h"
 #include "CookieStorage.h"
 #include "mozilla/dom/nsMixedContentBlocker.h"
 #include "nsIMutableArray.h"
@@ -281,7 +284,7 @@ void CookieStorage::RemoveCookie(const nsACString& aBaseDomain,
 
   if (cookie) {
     // Everything's done. Notify observers.
-    NotifyChanged(cookie, u"deleted");
+    NotifyChanged(cookie, nsICookieNotification::COOKIE_DELETED, aBaseDomain);
   }
 }
 
@@ -311,7 +314,8 @@ void CookieStorage::RemoveCookiesWithOriginAttributes(
       RemoveCookieFromList(iter);
 
       if (cookie) {
-        NotifyChanged(cookie, u"deleted");
+        NotifyChanged(cookie, nsICookieNotification::COOKIE_DELETED,
+                      aBaseDomain);
       }
     }
   }
@@ -345,7 +349,8 @@ void CookieStorage::RemoveCookiesFromExactHost(
       RemoveCookieFromList(iter);
 
       if (cookie) {
-        NotifyChanged(cookie, u"deleted");
+        NotifyChanged(cookie, nsICookieNotification::COOKIE_DELETED,
+                      aBaseDomain);
       }
     }
   }
@@ -360,27 +365,40 @@ void CookieStorage::RemoveAll() {
 
   RemoveAllInternal();
 
-  NotifyChanged(nullptr, u"cleared");
+  NotifyChanged(nullptr, nsICookieNotification::ALL_COOKIES_CLEARED, ""_ns);
 }
 
-// notify observers that the cookie list changed. there are five possible
-// values for aData:
-// "deleted" means a cookie was deleted. aSubject is the deleted cookie.
-// "added"   means a cookie was added. aSubject is the added cookie.
-// "changed" means a cookie was altered. aSubject is the new cookie.
-// "cleared" means the entire cookie list was cleared. aSubject is null.
-// "batch-deleted" means a set of cookies was purged. aSubject is the list of
-// cookies.
-void CookieStorage::NotifyChanged(nsISupports* aSubject, const char16_t* aData,
+// notify observers that the cookie list changed.
+void CookieStorage::NotifyChanged(nsISupports* aSubject,
+                                  nsICookieNotification::Action aAction,
+                                  const nsACString& aBaseDomain,
+                                  dom::BrowsingContext* aBrowsingContext,
                                   bool aOldCookieIsSession) {
   nsCOMPtr<nsIObserverService> os = services::GetObserverService();
   if (!os) {
     return;
   }
-  // Notify for topic "private-cookie-changed" or "cookie-changed"
-  os->NotifyObservers(aSubject, NotificationTopic(), aData);
 
-  NotifyChangedInternal(aSubject, aData, aOldCookieIsSession);
+  nsCOMPtr<nsICookie> cookie;
+  nsCOMPtr<nsIArray> batchDeletedCookies;
+
+  if (aAction == nsICookieNotification::COOKIES_BATCH_DELETED) {
+    batchDeletedCookies = do_QueryInterface(aSubject);
+  } else {
+    cookie = do_QueryInterface(aSubject);
+  }
+
+  uint64_t browsingContextId = 0;
+  if (aBrowsingContext) {
+    browsingContextId = aBrowsingContext->Id();
+  }
+
+  nsCOMPtr<nsICookieNotification> notification = new CookieNotification(
+      aAction, cookie, aBaseDomain, batchDeletedCookies, browsingContextId);
+  // Notify for topic "private-cookie-changed" or "cookie-changed"
+  os->NotifyObservers(notification, NotificationTopic(), u"");
+
+  NotifyChangedInternal(notification, aOldCookieIsSession);
 }
 
 // this is a backend function for adding a cookie to the list, via SetCookie.
@@ -393,7 +411,8 @@ void CookieStorage::AddCookie(nsIConsoleReportCollector* aCRC,
                               const OriginAttributes& aOriginAttributes,
                               Cookie* aCookie, int64_t aCurrentTimeInUsec,
                               nsIURI* aHostURI, const nsACString& aCookieHeader,
-                              bool aFromHttp) {
+                              bool aFromHttp,
+                              dom::BrowsingContext* aBrowsingContext) {
   int64_t currentTime = aCurrentTimeInUsec / PR_USEC_PER_SEC;
 
   CookieListIter exactIter{};
@@ -449,12 +468,6 @@ void CookieStorage::AddCookie(nsIConsoleReportCollector* aCRC,
         // The new cookie has expired and the old one is stale. Nothing to do.
         COOKIE_LOGFAILURE(SET_COOKIE, aHostURI, aCookieHeader,
                           "cookie has already expired");
-        CookieLogging::LogMessageToConsole(
-            aCRC, aHostURI, nsIScriptError::warningFlag,
-            CONSOLE_REJECTION_CATEGORY, "CookieRejectedExpired"_ns,
-            AutoTArray<nsString, 1>{
-                NS_ConvertUTF8toUTF16(aCookie->Name()),
-            });
         return;
       }
 
@@ -495,6 +508,7 @@ void CookieStorage::AddCookie(nsIConsoleReportCollector* aCRC,
           oldCookie->IsSession() == aCookie->IsSession() &&
           oldCookie->IsHttpOnly() == aCookie->IsHttpOnly() &&
           oldCookie->SameSite() == aCookie->SameSite() &&
+          oldCookie->RawSameSite() == aCookie->RawSameSite() &&
           oldCookie->SchemeMap() == aCookie->SchemeMap() &&
           // We don't want to perform this optimization if the cookie is
           // considered stale, since in this case we would need to update the
@@ -518,13 +532,8 @@ void CookieStorage::AddCookie(nsIConsoleReportCollector* aCRC,
       if (aCookie->Expiry() <= currentTime) {
         COOKIE_LOGFAILURE(SET_COOKIE, aHostURI, aCookieHeader,
                           "previously stored cookie was deleted");
-        CookieLogging::LogMessageToConsole(
-            aCRC, aHostURI, nsIScriptError::warningFlag,
-            CONSOLE_REJECTION_CATEGORY, "CookieRejectedExpired"_ns,
-            AutoTArray<nsString, 1>{
-                NS_ConvertUTF8toUTF16(aCookie->Name()),
-            });
-        NotifyChanged(oldCookie, u"deleted", oldCookieIsSession);
+        NotifyChanged(oldCookie, nsICookieNotification::COOKIE_DELETED,
+                      aBaseDomain, aBrowsingContext, oldCookieIsSession);
         return;
       }
 
@@ -537,12 +546,6 @@ void CookieStorage::AddCookie(nsIConsoleReportCollector* aCRC,
     if (aCookie->Expiry() <= currentTime) {
       COOKIE_LOGFAILURE(SET_COOKIE, aHostURI, aCookieHeader,
                         "cookie has already expired");
-      CookieLogging::LogMessageToConsole(
-          aCRC, aHostURI, nsIScriptError::warningFlag,
-          CONSOLE_REJECTION_CATEGORY, "CookieRejectedExpired"_ns,
-          AutoTArray<nsString, 1>{
-              NS_ConvertUTF8toUTF16(aCookie->Name()),
-          });
       return;
     }
 
@@ -576,7 +579,7 @@ void CookieStorage::AddCookie(nsIConsoleReportCollector* aCRC,
         RefPtr<Cookie> evictedCookie = (*it).Cookie();
         COOKIE_LOGEVICTED(evictedCookie, "Too many cookies for this domain");
         RemoveCookieFromList(*it);
-        CreateOrUpdatePurgeList(getter_AddRefs(purgedList), evictedCookie);
+        CreateOrUpdatePurgeList(purgedList, evictedCookie);
         MOZ_ASSERT((*it).entry);
       }
 
@@ -607,11 +610,15 @@ void CookieStorage::AddCookie(nsIConsoleReportCollector* aCRC,
   // Now that list mutations are complete, notify observers. We do it here
   // because observers may themselves attempt to mutate the list.
   if (purgedList) {
-    NotifyChanged(purgedList, u"batch-deleted");
+    NotifyChanged(purgedList, nsICookieNotification::COOKIES_BATCH_DELETED,
+                  ""_ns);
   }
 
-  NotifyChanged(aCookie, foundCookie ? u"changed" : u"added",
-                oldCookieIsSession);
+  // Notify for topic "private-cookie-changed" or "cookie-changed"
+  NotifyChanged(aCookie,
+                foundCookie ? nsICookieNotification::COOKIE_CHANGED
+                            : nsICookieNotification::COOKIE_ADDED,
+                aBaseDomain, aBrowsingContext, oldCookieIsSession);
 }
 
 void CookieStorage::UpdateCookieOldestTime(Cookie* aCookie) {
@@ -695,16 +702,15 @@ void CookieStorage::FindStaleCookies(CookieEntry* aEntry, int64_t aCurrentTime,
 }
 
 // static
-void CookieStorage::CreateOrUpdatePurgeList(nsIArray** aPurgedList,
+void CookieStorage::CreateOrUpdatePurgeList(nsCOMPtr<nsIArray>& aPurgedList,
                                             nsICookie* aCookie) {
-  if (!*aPurgedList) {
+  if (!aPurgedList) {
     COOKIE_LOGSTRING(LogLevel::Debug, ("Creating new purge list"));
-    nsCOMPtr<nsIArray> purgedList = CreatePurgeList(aCookie);
-    purgedList.forget(aPurgedList);
+    aPurgedList = CreatePurgeList(aCookie);
     return;
   }
 
-  nsCOMPtr<nsIMutableArray> purgedList = do_QueryInterface(*aPurgedList);
+  nsCOMPtr<nsIMutableArray> purgedList = do_QueryInterface(aPurgedList);
   if (purgedList) {
     COOKIE_LOGSTRING(LogLevel::Debug, ("Updating existing purge list"));
     purgedList->AppendElement(aCookie);
@@ -822,7 +828,7 @@ already_AddRefed<nsIArray> CookieStorage::PurgeCookiesWithCallbacks(
 
 // remove a cookie from the hashtable, and update the iterator state.
 void CookieStorage::RemoveCookieFromList(const CookieListIter& aIter) {
-  RemoveCookieFromDB(aIter);
+  RemoveCookieFromDB(*aIter.Cookie());
   RemoveCookieFromListInternal(aIter);
 }
 

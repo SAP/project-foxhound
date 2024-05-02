@@ -60,7 +60,10 @@ ProfileBufferBlockIndex AddMarkerToBuffer(
   AUTO_BASE_PROFILER_LABEL("baseprofiler::AddMarkerToBuffer", PROFILER);
   return base_profiler_markers_detail::AddMarkerToBuffer<MarkerType>(
       aBuffer, aName, aCategory, std::move(aOptions),
-      ::mozilla::baseprofiler::profiler_capture_backtrace_into,
+      // Do not capture a stack if the NoMarkerStacks feature is set.
+      profiler_active_without_feature(ProfilerFeature::NoMarkerStacks)
+          ? ::mozilla::baseprofiler::profiler_capture_backtrace_into
+          : nullptr,
       aPayloadArguments...);
 }
 
@@ -89,17 +92,17 @@ ProfileBufferBlockIndex AddMarker(
 #ifndef MOZ_GECKO_PROFILER
   return {};
 #else
-  if ((aOptions.ThreadId().IsUnspecified() ||
-       aOptions.ThreadId().ThreadId() == profiler_current_thread_id())
-          ? !baseprofiler::profiler_thread_is_being_profiled()
-          // If targetting another thread, we can only check if the profiler
-          // is active&unpaused.
-          : !baseprofiler::detail::RacyFeatures::IsActiveAndUnpaused()) {
+  // Record base markers whenever the core buffer is in session.
+  // TODO: When profiler_thread_is_being_profiled becomes available from
+  // mozglue, use it instead.
+  ProfileChunkedBuffer& coreBuffer =
+      ::mozilla::baseprofiler::profiler_get_core_buffer();
+  if (!coreBuffer.IsInSession()) {
     return {};
   }
   return ::mozilla::baseprofiler::AddMarkerToBuffer(
-      base_profiler_markers_detail::CachedBaseCoreBuffer(), aName, aCategory,
-      std::move(aOptions), aMarkerType, aPayloadArguments...);
+      coreBuffer, aName, aCategory, std::move(aOptions), aMarkerType,
+      aPayloadArguments...);
 #endif
 }
 
@@ -148,7 +151,8 @@ struct TextMarker {
     MS schema{MS::Location::MarkerChart, MS::Location::MarkerTable};
     schema.SetChartLabel("{marker.data.name}");
     schema.SetTableLabel("{marker.name} - {marker.data.name}");
-    schema.AddKeyLabelFormat("name", "Details", MS::Format::String);
+    schema.AddKeyLabelFormatSearchable("name", "Details", MS::Format::String,
+                                       MS::Searchable::Searchable);
     return schema;
   }
 };
@@ -169,7 +173,8 @@ struct Tracing {
     using MS = MarkerSchema;
     MS schema{MS::Location::MarkerChart, MS::Location::MarkerTable,
               MS::Location::TimelineOverview};
-    schema.AddKeyLabelFormat("category", "Type", MS::Format::String);
+    schema.AddKeyLabelFormatSearchable("category", "Type", MS::Format::String,
+                                       MS::Searchable::Searchable);
     return schema;
   }
 };
@@ -201,16 +206,19 @@ class MOZ_RAII AutoProfilerTextMarker {
         mText(aText) {
     MOZ_ASSERT(mOptions.Timing().EndTime().IsNull(),
                "AutoProfilerTextMarker options shouldn't have an end time");
-    if (mOptions.Timing().StartTime().IsNull()) {
+    if (profiler_is_active_and_unpaused() &&
+        mOptions.Timing().StartTime().IsNull()) {
       mOptions.Set(MarkerTiming::InstantNow());
     }
   }
 
   ~AutoProfilerTextMarker() {
-    mOptions.TimingRef().SetIntervalEnd();
-    AUTO_PROFILER_STATS(AUTO_BASE_PROFILER_MARKER_TEXT);
-    AddMarker(ProfilerString8View::WrapNullTerminatedString(mMarkerName),
-              mCategory, std::move(mOptions), markers::TextMarker{}, mText);
+    if (profiler_is_active_and_unpaused()) {
+      mOptions.TimingRef().SetIntervalEnd();
+      AUTO_PROFILER_STATS(AUTO_BASE_PROFILER_MARKER_TEXT);
+      AddMarker(ProfilerString8View::WrapNullTerminatedString(mMarkerName),
+                mCategory, std::move(mOptions), markers::TextMarker{}, mText);
+    }
   }
 
  protected:
@@ -240,7 +248,7 @@ extern template MFBT_API ProfileBufferBlockIndex AddMarkerToBuffer(
 // even if MOZ_GECKO_PROFILER is not #defined.
 #define AUTO_BASE_PROFILER_MARKER_TEXT(markerName, categoryName, options,   \
                                        text)                                \
-  ::mozilla::baseprofiler::AutoProfilerTextMarker BASE_PROFILER_RAII(       \
+  ::mozilla::baseprofiler::AutoProfilerTextMarker PROFILER_RAII(            \
       markerName, ::mozilla::baseprofiler::category::categoryName, options, \
       text)
 

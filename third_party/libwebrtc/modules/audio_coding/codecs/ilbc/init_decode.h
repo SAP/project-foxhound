@@ -19,6 +19,8 @@
 #ifndef MODULES_AUDIO_CODING_CODECS_ILBC_MAIN_SOURCE_INIT_DECODE_H_
 #define MODULES_AUDIO_CODING_CODECS_ILBC_MAIN_SOURCE_INIT_DECODE_H_
 
+#include <stdint.h>
+
 #include "modules/audio_coding/codecs/ilbc/defines.h"
 
 /*----------------------------------------------------------------*
@@ -31,6 +33,6 @@ int WebRtcIlbcfix_InitDecode(/* (o) Number of decoded samples */
                              int16_t mode,     /* (i) frame size mode */
                              int use_enhancer  /* (i) 1 to use enhancer
                                                   0 to run without enhancer */
-                             );
+);
 
 #endif

@@ -6,6 +6,7 @@
 interface URI;
 interface nsIDocShell;
 interface nsISecureBrowserUI;
+interface nsISHEntry;
 interface nsIPrintSettings;
 interface nsIWebProgress;
 
@@ -71,9 +72,6 @@ interface BrowsingContext {
 
   sequence<BrowsingContext> getAllBrowsingContextsInSubtree();
 
-  BrowsingContext? findChildWithName(DOMString name, BrowsingContext accessor);
-  BrowsingContext? findWithName(DOMString name);
-
   readonly attribute DOMString name;
 
   readonly attribute BrowsingContext? parent;
@@ -113,6 +111,8 @@ interface BrowsingContext {
 
   readonly attribute boolean isInBFCache;
 
+  readonly attribute boolean isDiscarded;
+
   /**
    * The sandbox flags on the browsing context. These reflect the value of the
    * sandbox attribute of the associated IFRAME or CSP-protectable content, if
@@ -129,6 +129,25 @@ interface BrowsingContext {
 
   [SetterThrows] attribute boolean isActive;
 
+  /**
+   * When set to true all channels in this browsing context or its children will report navigator.onLine = false,
+   * and HTTP requests created from these browsing context will fail with NS_ERROR_OFFLINE.
+   */
+  [SetterThrows] attribute boolean forceOffline;
+
+  /**
+   * Sets whether this is an app tab. Non-same-origin link navigations from app
+   * tabs may be forced to open in new contexts, rather than in the same context.
+   */
+  [SetterThrows] attribute boolean isAppTab;
+
+  /**
+   * Sets whether this is BC has siblings **at the toplevel** (e.g. in a tabbed
+   * browser environment). Used to determine if web content can resize the top
+   * window. Never set correctly for non-top BCs.
+   */
+  [SetterThrows] attribute boolean hasSiblings;
+
   // The inRDMPane flag indicates whether or not Responsive Design Mode is
   // active for the browsing context.
   [SetterThrows] attribute boolean inRDMPane;
@@ -142,6 +161,14 @@ interface BrowsingContext {
   // only be set from the parent process.
   //
   // A value of 0.0 causes us to use the global default scaling factor.
+  //
+  // NOTE that this override only affects a few minor things (the value exposed
+  // to devicePixelRatio and some media queries in content, and responsive
+  // image selection). Most notably, it does _not_ affect rendering.
+  //
+  // It is intended for RDM, and is probably not what you want in other cases.
+  // If you want to change the actual device pixel ratio that rendering code
+  // uses, you probably want to change the fullZoom.
   [SetterThrows] attribute float overrideDPPX;
 
   [SetterThrows] attribute boolean suspendMediaWhenInactive;
@@ -159,11 +186,11 @@ interface BrowsingContext {
 
   // Extension to give chrome JS the ability to set the window screen
   // orientation while in RDM.
-  [Throws] void setRDMPaneOrientation(OrientationType type, float rotationAngle);
+  [Throws] undefined setRDMPaneOrientation(OrientationType type, float rotationAngle);
 
   // Extension to give chrome JS the ability to set a maxTouchPoints override
   // while in RDM.
-  [Throws] void setRDMPaneMaxTouchPoints(octet maxTouchPoints);
+  [Throws] undefined setRDMPaneMaxTouchPoints(octet maxTouchPoints);
 
   // The watchedByDevTools flag indicates whether or not DevTools are currently
   // debugging this browsing context.
@@ -197,6 +224,12 @@ interface BrowsingContext {
   readonly attribute TouchEventsOverride touchEventsOverride;
 
   /**
+   * Returns true if the top-level BrowsingContext has been configured to
+   * default-target user-initiated link clicks to _blank.
+   */
+  readonly attribute boolean targetTopLevelLinkClicksToBlank;
+
+  /**
    * Partially determines whether script execution is allowed in this
    * BrowsingContext. Script execution will be permitted only if this
    * attribute is true and script execution is allowed in the parent
@@ -205,6 +238,12 @@ interface BrowsingContext {
    * May only be set in the parent process.
    */
   [SetterThrows] attribute boolean allowJavascript;
+
+  /**
+   * Determines whether we're forcing a desktop-mode viewport. Only settable in
+   * the top browsing context from the parent process.
+   */
+  [SetterThrows] attribute boolean forceDesktopViewport;
 
   /*
    * Default load flags (as defined in nsIRequest) that will be set on all
@@ -221,7 +260,7 @@ interface BrowsingContext {
   readonly attribute ChildSHistory? childSessionHistory;
 
   // Resets the location change rate limit. Used for testing.
-  void resetLocationChangeRateLimit();
+  undefined resetLocationChangeRateLimit();
 
   readonly attribute long childOffset;
 };
@@ -244,8 +283,8 @@ interface CanonicalBrowsingContext : BrowsingContext {
 
   readonly attribute WindowGlobalParent? embedderWindowGlobal;
 
-  void notifyStartDelayedAutoplayMedia();
-  [Throws] void notifyMediaMutedChanged(boolean muted);
+  undefined notifyStartDelayedAutoplayMedia();
+  [Throws] undefined notifyMediaMutedChanged(boolean muted);
 
   readonly attribute nsISecureBrowserUI? secureBrowserUI;
 
@@ -267,7 +306,22 @@ interface CanonicalBrowsingContext : BrowsingContext {
    * loading.
    *
    * @param aURI
-   *        The URI string to load.  For HTTP and FTP URLs and possibly others,
+   *        The URI to load.  No fixup will be performed on this URI.
+   * @param aLoadURIOptions
+   *        A JSObject defined in LoadURIOptions.webidl holding info like e.g.
+   *        the triggeringPrincipal, the referrer info.
+   */
+  [Throws]
+  undefined loadURI(URI aURI, optional LoadURIOptions aOptions = {});
+
+  /**
+   * Like `loadURI` but takes a DOMString instead. This will use nsIURIFixup
+   * to "fix up" the input if it doesn't parse as a string. If an existing
+   * DOM URL or nsIURI object is available to you, prefer using `loadURI`
+   * directly.
+   *
+   * @param aURI
+   *        The URI to load.  For HTTP and FTP URLs and possibly others,
    *        characters above U+007F will be converted to UTF-8 and then URL-
    *        escaped per the rules of RFC 2396.
    * @param aLoadURIOptions
@@ -275,7 +329,7 @@ interface CanonicalBrowsingContext : BrowsingContext {
    *        the triggeringPrincipal, the referrer info.
    */
   [Throws]
-  void loadURI(DOMString aURI, optional LoadURIOptions aOptions = {});
+  undefined fixupAndLoadURIString(DOMString aURI, optional LoadURIOptions aOptions = {});
 
    /**
     * Print the current document.
@@ -285,35 +339,46 @@ interface CanonicalBrowsingContext : BrowsingContext {
     *                       set to prevent prompting.
     * @return A Promise that resolves once printing is finished.
     */
-  [Throws]
-  Promise<void> print(nsIPrintSettings aPrintSettings);
+  [NewObject, BinaryName="printJS"]
+  Promise<undefined> print(nsIPrintSettings aPrintSettings);
 
   /**
    * These methods implement the nsIWebNavigation methods of the same names
    */
-  void goBack(optional long aCancelContentJSEpoch, optional boolean aRequireUserInteraction = false, optional boolean aUserActivation = false);
-  void goForward(optional long aCancelContentJSEpoch, optional boolean aRequireUserInteraction  = false, optional boolean aUserActivation = false);
-  void goToIndex(long aIndex, optional long aCancelContentJSEpoch, optional boolean aUserActivation = false);
-  void reload(unsigned long aReloadFlags);
-  void stop(unsigned long aStopFlags);
+  undefined goBack(optional long aCancelContentJSEpoch, optional boolean aRequireUserInteraction = false, optional boolean aUserActivation = false);
+  undefined goForward(optional long aCancelContentJSEpoch, optional boolean aRequireUserInteraction  = false, optional boolean aUserActivation = false);
+  undefined goToIndex(long aIndex, optional long aCancelContentJSEpoch, optional boolean aUserActivation = false);
+  undefined reload(unsigned long aReloadFlags);
+  undefined stop(unsigned long aStopFlags);
 
   readonly attribute nsISHistory? sessionHistory;
+  readonly attribute nsISHEntry? activeSessionHistoryEntry;
 
   readonly attribute MediaController? mediaController;
 
-  void resetScalingZoom();
+  undefined resetScalingZoom();
 
   // The current URI loaded in this BrowsingContext according to nsDocShell.
   // This may not match the current window global's document URI in some cases.
   readonly attribute URI? currentURI;
 
-  void clearRestoreState();
+  undefined clearRestoreState();
+
+  // Force this browsing context, which must correspond to an app window, to
+  // be active regardless of the window being minimized or fully occluded.
+  [SetterThrows] attribute boolean forceAppWindowActive;
 
   /**
    * This allows chrome to override the default choice of whether touch events
    * are available in a specific BrowsingContext and its descendents.
    */
   [SetterThrows] inherit attribute TouchEventsOverride touchEventsOverride;
+
+  /**
+   * Set to true to configure the top-level BrowsingContext to default-target
+   * user-initiated link clicks to _blank.
+   */
+  [SetterThrows] inherit attribute boolean targetTopLevelLinkClicksToBlank;
 
   /**
    * Set the cross-group opener of this BrowsingContext. This is used to
@@ -325,7 +390,7 @@ interface CanonicalBrowsingContext : BrowsingContext {
    * `window.open`.
    */
   [Throws]
-  void setCrossGroupOpener(CanonicalBrowsingContext crossGroupOpener);
+  undefined setCrossGroupOpener(CanonicalBrowsingContext crossGroupOpener);
 
   readonly attribute boolean isReplaced;
 
@@ -333,15 +398,15 @@ interface CanonicalBrowsingContext : BrowsingContext {
   /**
    * Notify APZ to start autoscrolling.
    *
-   * (aAnchorX, aAnchorY) are the coordinates of the autoscroll anchor, in CSS
-   *                      coordinates relative to the screen.
+   * (aAnchorX, aAnchorY) are the coordinates of the autoscroll anchor, in
+   *                      device coordinates relative to the screen.
    * aScrollId and aPresShellId identify the scroll frame that content chose to
    *                            scroll.
    *
    * Returns whether we were successfully able to notify APZ.
-   * If this function returns true, APZ (which may live in another process)
-   * may still reject the autoscroll, but it's then APZ's reponsibility
-   * to notify content via an "autoscroll-rejected-by-apz" message.
+   * If this function returns true, APZ (which may live in another process) may
+   * still reject the autoscroll, but it's then APZ's responsibility to notify
+   * content via an "autoscroll-rejected-by-apz" message.
    */
   boolean startApzAutoscroll(float aAnchorX, float aAnchorY,
                              unsigned long long aScrollId,
@@ -350,8 +415,16 @@ interface CanonicalBrowsingContext : BrowsingContext {
   /**
    * Notify APZ to stop autoscrolling.
    */
-  void stopApzAutoscroll(unsigned long long aScrollId,
-                         unsigned long aPresShellId);
+  undefined stopApzAutoscroll(unsigned long long aScrollId,
+                              unsigned long aPresShellId);
+
+  readonly attribute nsISHEntry? mostRecentLoadingSessionHistoryEntry;
+
+  /**
+   * Indicates if the embedder element or an ancestor has hidden
+   * visibility, or no frame.
+   */
+  readonly attribute boolean isUnderHiddenEmbedderElement;
 };
 
 [Exposed=Window, ChromeOnly]

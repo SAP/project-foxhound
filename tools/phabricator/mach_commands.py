@@ -2,8 +2,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, # You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, unicode_literals
-
 import mozfile
 from mach.decorators import Command, CommandArgument
 from mach.site import MozSiteMetadata
@@ -71,6 +69,7 @@ def install_moz_phab(command_context, force=False):
         or sys.platform.startswith("openbsd")
         or sys.platform.startswith("dragonfly")
         or sys.platform.startswith("freebsd")
+        or sys.platform.startswith("netbsd")
     ):
         # On all Linux and BSD distros we consider doing a user installation.
         platform_prefers_user_install = True
@@ -94,13 +93,18 @@ def install_moz_phab(command_context, force=False):
         )
         platform_prefers_user_install = True
 
+    command_env = os.environ.copy()
+
     if platform_prefers_user_install and not is_external_python_virtualenv:
         # Virtual environments don't see user packages, so only perform a user
         # installation if we're not within one.
         command.append("--user")
+        # This is needed to work around a problem on Ubuntu 23.04 and Debian 12
+        # See bug 1831442 for more details
+        command_env["PIP_BREAK_SYSTEM_PACKAGES"] = "1"
 
     command_context.log(logging.INFO, "run", {}, "Installing moz-phab")
-    subprocess.run(command)
+    subprocess.run(command, env=command_env)
 
     # There isn't an elegant way of determining the CLI location of a pip-installed package.
     # The viable mechanism used here is to:

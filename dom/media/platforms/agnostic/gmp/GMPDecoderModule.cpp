@@ -57,32 +57,33 @@ already_AddRefed<MediaDataDecoder> GMPDecoderModule::CreateAudioDecoder(
 }
 
 /* static */
-bool GMPDecoderModule::SupportsMimeType(const nsACString& aMimeType,
-                                        const Maybe<nsCString>& aGMP) {
-  if (aGMP.isNothing()) {
-    return false;
-  }
-
-  nsCString api = nsLiteralCString(CHROMIUM_CDM_API);
-
+media::DecodeSupportSet GMPDecoderModule::SupportsMimeType(
+    const nsACString& aMimeType, const nsACString& aApi,
+    const Maybe<nsCString>& aKeySystem) {
+  AutoTArray<nsCString, 2> tags;
   if (MP4Decoder::IsH264(aMimeType)) {
-    return HaveGMPFor(api, {"h264"_ns, aGMP.value()});
+    tags.AppendElement("h264"_ns);
+  } else if (VPXDecoder::IsVP9(aMimeType)) {
+    tags.AppendElement("vp9"_ns);
+  } else if (VPXDecoder::IsVP8(aMimeType)) {
+    tags.AppendElement("vp8"_ns);
+  } else {
+    return media::DecodeSupportSet{};
   }
 
-  if (VPXDecoder::IsVP9(aMimeType)) {
-    return HaveGMPFor(api, {"vp9"_ns, aGMP.value()});
+  // Optional tag for EME GMP plugins.
+  if (aKeySystem) {
+    tags.AppendElement(*aKeySystem);
   }
 
-  if (VPXDecoder::IsVP8(aMimeType)) {
-    return HaveGMPFor(api, {"vp8"_ns, aGMP.value()});
-  }
-
-  return false;
+  // GMP plugins are always software based.
+  return HaveGMPFor(aApi, tags) ? media::DecodeSupport::SoftwareDecode
+                                : media::DecodeSupportSet{};
 }
 
-bool GMPDecoderModule::SupportsMimeType(
+media::DecodeSupportSet GMPDecoderModule::SupportsMimeType(
     const nsACString& aMimeType, DecoderDoctorDiagnostics* aDiagnostics) const {
-  return false;
+  return SupportsMimeType(aMimeType, "decode-video"_ns, Nothing());
 }
 
 /* static */

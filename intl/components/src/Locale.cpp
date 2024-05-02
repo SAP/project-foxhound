@@ -547,11 +547,8 @@ Result<Ok, Locale::CanonicalizationError> Locale::CanonicalizeUnicodeExtension(
 
   // We can keep the previous extension when canonicalization didn't modify it.
   if (static_cast<Span<const char>>(sb) != extension) {
-    // Null-terminate the new string and replace the previous extension.
-    if (!sb.append('\0')) {
-      return Err(CanonicalizationError::OutOfMemory);
-    }
-    UniqueChars canonical(sb.extractOrCopyRawBuffer());
+    // Otherwise replace the previous extension with the canonical extension.
+    UniqueChars canonical = DuplicateStringToUniqueChars(sb);
     if (!canonical) {
       return Err(CanonicalizationError::OutOfMemory);
     }
@@ -729,11 +726,8 @@ Locale::CanonicalizeTransformExtension(UniqueChars& aTransformExtension) {
 
   // We can keep the previous extension when canonicalization didn't modify it.
   if (static_cast<Span<const char>>(sb) != extension) {
-    // Null-terminate the new string and replace the previous extension.
-    if (!sb.append('\0')) {
-      return Err(CanonicalizationError::OutOfMemory);
-    }
-    UniqueChars canonical(sb.extractOrCopyRawBuffer());
+    // Otherwise replace the previous extension with the canonical extension.
+    UniqueChars canonical = DuplicateStringToUniqueChars(sb);
     if (!canonical) {
       return Err(CanonicalizationError::OutOfMemory);
     }
@@ -1148,6 +1142,14 @@ Result<Ok, LocaleParser::ParserError> LocaleParser::InternalParseBaseName(
 
 Result<Ok, LocaleParser::ParserError> LocaleParser::TryParse(
     mozilla::Span<const char> aLocale, Locale& aTag) {
+  // |aTag| must be a new, empty Locale.
+  MOZ_ASSERT(aTag.Language().Missing());
+  MOZ_ASSERT(aTag.Script().Missing());
+  MOZ_ASSERT(aTag.Region().Missing());
+  MOZ_ASSERT(aTag.Variants().empty());
+  MOZ_ASSERT(aTag.Extensions().empty());
+  MOZ_ASSERT(aTag.PrivateUse().isNothing());
+
   // unicode_locale_id = unicode_language_id
   //                     extensions*
   //                     pu_extensions? ;
@@ -1271,6 +1273,14 @@ Result<Ok, LocaleParser::ParserError> LocaleParser::TryParse(
 
 Result<Ok, LocaleParser::ParserError> LocaleParser::TryParseBaseName(
     Span<const char> aLocale, Locale& aTag) {
+  // |aTag| must be a new, empty Locale.
+  MOZ_ASSERT(aTag.Language().Missing());
+  MOZ_ASSERT(aTag.Script().Missing());
+  MOZ_ASSERT(aTag.Region().Missing());
+  MOZ_ASSERT(aTag.Variants().empty());
+  MOZ_ASSERT(aTag.Extensions().empty());
+  MOZ_ASSERT(aTag.PrivateUse().isNothing());
+
   LocaleParser ts(aLocale);
   Token tok = ts.NextToken();
 

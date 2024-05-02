@@ -8,12 +8,13 @@
 
 #include "mozilla/Sprintf.h"
 
+#include "jit/JitCode.h"
+#include "js/Utility.h"
 #include "threading/LockGuard.h"
 #include "threading/Mutex.h"
-#include "vm/JSContext.h"
+#include "vm/JSScript.h"
 #include "vm/MutexIDs.h"
-#include "vm/Realm.h"
-#include "vm/Shape.h"
+#include "vtune/jitprofiling.h"
 
 namespace js::vtune {
 
@@ -108,11 +109,9 @@ void MarkScript(const js::jit::JitCode* code, JSScript* script,
   method.method_size = code->instructionsSize();
   method.module_name = const_cast<char*>(module);
 
-  // Line numbers begin at 1, but columns begin at 0.
-  // Text editors start at 1,1 so fixup is performed to match.
   char namebuf[512];
   SprintfLiteral(namebuf, "%s:%u:%u", script->filename(), script->lineno(),
-                 script->column() + 1);
+                 script->column().oneOriginValue());
 
   method.method_name = &namebuf[0];
 

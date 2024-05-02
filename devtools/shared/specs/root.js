@@ -9,7 +9,7 @@ const {
   RetVal,
   Arg,
   Option,
-} = require("devtools/shared/protocol");
+} = require("resource://devtools/shared/protocol.js");
 
 types.addDictType("root.listWorkers", {
   workers: "array:workerDescriptor",
@@ -36,8 +36,7 @@ const rootSpecPrototype = {
 
     getTab: {
       request: {
-        outerWindowID: Option(0, "number"),
-        tabId: Option(0, "number"),
+        browserId: Option(0, "number"),
       },
       response: {
         tab: RetVal("tabDescriptor"),
@@ -79,13 +78,31 @@ const rootSpecPrototype = {
       },
     },
 
+    watchResources: {
+      request: {
+        resourceTypes: Arg(0, "array:string"),
+      },
+      response: {},
+    },
+
+    unwatchResources: {
+      request: {
+        resourceTypes: Arg(0, "array:string"),
+      },
+      oneway: true,
+    },
+
+    clearResources: {
+      request: {
+        resourceTypes: Arg(0, "array:string"),
+      },
+      oneway: true,
+    },
+
     requestTypes: {
       request: {},
       response: RetVal("json"),
     },
-
-    // Note that RootFront also implements 'echo' requests
-    // that can't be described via protocol.js specs.
   },
 
   events: {
@@ -103,6 +120,15 @@ const rootSpecPrototype = {
     },
     processListChanged: {
       type: "processListChanged",
+    },
+
+    "resource-available-form": {
+      type: "resource-available-form",
+      resources: Arg(0, "array:json"),
+    },
+    "resource-destroyed-form": {
+      type: "resource-destroyed-form",
+      resources: Arg(0, "array:json"),
     },
   },
 };

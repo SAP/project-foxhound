@@ -15,11 +15,91 @@
 #include "modules/desktop_capture/mac/desktop_frame_provider.h"
 #include "modules/desktop_capture/mac/window_list_utils.h"
 #include "rtc_base/checks.h"
-#include "rtc_base/constructor_magic.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/time_utils.h"
 #include "rtc_base/trace_event.h"
 #include "sdk/objc/helpers/scoped_cftyperef.h"
+
+// All these symbols have incorrect availability annotations in the 13.3 SDK.
+// These have the correct annotation. See https://crbug.com/1431897.
+// TODO(thakis): Remove this once FB12109479 is fixed and we updated to an SDK
+// with the fix.
+
+static CGDisplayStreamRef __nullable
+    wrapCGDisplayStreamCreate(CGDirectDisplayID display,
+                              size_t outputWidth,
+                              size_t outputHeight,
+                              int32_t pixelFormat,
+                              CFDictionaryRef __nullable properties,
+                              CGDisplayStreamFrameAvailableHandler __nullable handler)
+        CG_AVAILABLE_BUT_DEPRECATED(
+            10.8,
+            14.0,
+            "Please use ScreenCaptureKit API's initWithFilter:configuration:delegate: instead") {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunguarded-availability-new"
+  return CGDisplayStreamCreate(
+      display, outputWidth, outputHeight, pixelFormat, properties, handler);
+#pragma clang diagnostic pop
+}
+
+static CFRunLoopSourceRef __nullable
+    wrapCGDisplayStreamGetRunLoopSource(CGDisplayStreamRef cg_nullable displayStream)
+        CG_AVAILABLE_BUT_DEPRECATED(10.8,
+                                    14.0,
+                                    "There is no direct replacement for this function. Please use "
+                                    "ScreenCaptureKit API's SCStream to replace CGDisplayStream") {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunguarded-availability-new"
+  return CGDisplayStreamGetRunLoopSource(displayStream);
+#pragma clang diagnostic pop
+}
+
+static CGError wrapCGDisplayStreamStart(CGDisplayStreamRef cg_nullable displayStream)
+    CG_AVAILABLE_BUT_DEPRECATED(10.8,
+                                14.0,
+                                "Please use ScreenCaptureKit API's "
+                                "startCaptureWithCompletionHandler: to start a stream instead") {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunguarded-availability-new"
+  return CGDisplayStreamStart(displayStream);
+#pragma clang diagnostic pop
+}
+
+static CGError wrapCGDisplayStreamStop(CGDisplayStreamRef cg_nullable displayStream)
+    CG_AVAILABLE_BUT_DEPRECATED(10.8,
+                                14.0,
+                                "Please use ScreenCaptureKit API's "
+                                "stopCaptureWithCompletionHandler: to stop a stream instead") {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunguarded-availability-new"
+  return CGDisplayStreamStop(displayStream);
+#pragma clang diagnostic pop
+}
+
+static CFStringRef wrapkCGDisplayStreamShowCursor() CG_AVAILABLE_BUT_DEPRECATED(
+    10.8,
+    14.0,
+    "Please use ScreenCaptureKit API's SCStreamConfiguration showsCursor property instead") {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunguarded-availability-new"
+  return kCGDisplayStreamShowCursor;
+#pragma clang diagnostic pop
+}
+
+static const CGRect* __nullable
+    wrapCGDisplayStreamUpdateGetRects(CGDisplayStreamUpdateRef __nullable updateRef,
+                                      CGDisplayStreamUpdateRectType rectType,
+                                      size_t* rectCount)
+        CG_AVAILABLE_BUT_DEPRECATED(10.8,
+                                    14.0,
+                                    "Please use ScreenCaptureKit API's SCStreamFrameInfo with "
+                                    "SCStreamFrameInfoContentRect instead") {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunguarded-availability-new"
+  return CGDisplayStreamUpdateGetRects(updateRef, rectType, rectCount);
+#pragma clang diagnostic pop
+}
 
 namespace webrtc {
 
@@ -33,8 +113,8 @@ DesktopRect ScaleAndRoundCGRect(const CGRect& rect, float scale) {
                                static_cast<int>(ceil((rect.origin.y + rect.size.height) * scale)));
 }
 
-// Copy pixels in the |rect| from |src_place| to |dest_plane|. |rect| should be
-// relative to the origin of |src_plane| and |dest_plane|.
+// Copy pixels in the `rect` from `src_place` to `dest_plane`. `rect` should be
+// relative to the origin of `src_plane` and `dest_plane`.
 void CopyRect(const uint8_t* src_plane,
               int src_plane_stride,
               uint8_t* dest_plane,
@@ -59,7 +139,7 @@ void CopyRect(const uint8_t* src_plane,
 }
 
 // Returns an array of CGWindowID for all the on-screen windows except
-// |window_to_exclude|, or NULL if the window is not found or it fails. The
+// `window_to_exclude`, or NULL if the window is not found or it fails. The
 // caller should release the returned CFArrayRef.
 CFArrayRef CreateWindowListWithExclusion(CGWindowID window_to_exclude) {
   if (!window_to_exclude) return nullptr;
@@ -92,7 +172,7 @@ CFArrayRef CreateWindowListWithExclusion(CGWindowID window_to_exclude) {
   return returned_array;
 }
 
-// Returns the bounds of |window| in physical pixels, enlarged by a small amount
+// Returns the bounds of `window` in physical pixels, enlarged by a small amount
 // on four edges to take account of the border/shadow effects.
 DesktopRect GetExcludedWindowPixelBounds(CGWindowID window, float dip_to_pixel_scale) {
   // The amount of pixels to add to the actual window bounds to take into
@@ -107,10 +187,10 @@ DesktopRect GetExcludedWindowPixelBounds(CGWindowID window, float dip_to_pixel_s
   CFArrayRef window_array = CGWindowListCreateDescriptionFromArray(window_id_array);
 
   if (CFArrayGetCount(window_array) > 0) {
-    CFDictionaryRef window =
+    CFDictionaryRef win =
         reinterpret_cast<CFDictionaryRef>(CFArrayGetValueAtIndex(window_array, 0));
     CFDictionaryRef bounds_ref =
-        reinterpret_cast<CFDictionaryRef>(CFDictionaryGetValue(window, kCGWindowBounds));
+        reinterpret_cast<CFDictionaryRef>(CFDictionaryGetValue(win, kCGWindowBounds));
     CGRectMakeWithDictionaryRepresentation(bounds_ref, &rect);
   }
 
@@ -121,12 +201,12 @@ DesktopRect GetExcludedWindowPixelBounds(CGWindowID window, float dip_to_pixel_s
   rect.origin.y -= kBorderEffectSize;
   rect.size.width += kBorderEffectSize * 2;
   rect.size.height += kBorderEffectSize * 2;
-  // |rect| is in DIP, so convert to physical pixels.
+  // `rect` is in DIP, so convert to physical pixels.
   return ScaleAndRoundCGRect(rect, dip_to_pixel_scale);
 }
 
-// Create an image of the given region using the given |window_list|.
-// |pixel_bounds| should be in the primary display's coordinate in physical
+// Create an image of the given region using the given `window_list`.
+// `pixel_bounds` should be in the primary display's coordinate in physical
 // pixels.
 rtc::ScopedCFTypeRef<CGImageRef> CreateExcludedWindowRegionImage(const DesktopRect& pixel_bounds,
                                                                  float dip_to_pixel_scale,
@@ -199,7 +279,9 @@ void ScreenCapturerMac::CaptureFrame() {
   int64_t capture_start_time_nanos = rtc::TimeNanos();
 
   queue_.MoveToNextFrame();
-  RTC_DCHECK(!queue_.current_frame() || !queue_.current_frame()->IsShared());
+  if (queue_.current_frame() && queue_.current_frame()->IsShared()) {
+    RTC_DLOG(LS_WARNING) << "Overwriting frame that is still shared.";
+  }
 
   MacDesktopConfiguration new_config = desktop_config_monitor_->desktop_configuration();
   if (update_screen_configuration_ || !desktop_config_.Equals(new_config)) {
@@ -369,19 +451,19 @@ bool ScreenCapturerMac::CgBlit(const DesktopFrame& frame, const DesktopRegion& r
     int src_bytes_per_row = frame_source->stride();
     RTC_DCHECK(display_base_address);
 
-    // |frame_source| size may be different from display_bounds in case the screen was
+    // `frame_source` size may be different from display_bounds in case the screen was
     // resized recently.
     copy_region.IntersectWith(frame_source->rect());
 
     // Copy the dirty region from the display buffer into our desktop buffer.
     uint8_t* out_ptr = frame.GetFrameDataAtPos(display_bounds.top_left());
-    for (DesktopRegion::Iterator i(copy_region); !i.IsAtEnd(); i.Advance()) {
+    for (DesktopRegion::Iterator it(copy_region); !it.IsAtEnd(); it.Advance()) {
       CopyRect(display_base_address,
                src_bytes_per_row,
                out_ptr,
                frame.stride(),
                DesktopFrame::kBytesPerPixel,
-               i.rect());
+               it.rect());
     }
 
     if (excluded_image) {
@@ -391,7 +473,7 @@ bool ScreenCapturerMac::CgBlit(const DesktopFrame& frame, const DesktopRegion& r
       display_base_address = CFDataGetBytePtr(excluded_image_data.get());
       src_bytes_per_row = CGImageGetBytesPerRow(excluded_image.get());
 
-      // Translate the bounds relative to the desktop, because |frame| data
+      // Translate the bounds relative to the desktop, because `frame` data
       // starts from the desktop top-left corner.
       DesktopRect window_bounds_relative_to_desktop(excluded_window_bounds);
       window_bounds_relative_to_desktop.Translate(-screen_pixel_bounds_.left(),
@@ -461,7 +543,7 @@ bool ScreenCapturerMac::RegisterRefreshAndMoveHandlers() {
 
       size_t count = 0;
       const CGRect* rects =
-          CGDisplayStreamUpdateGetRects(updateRef, kCGDisplayStreamUpdateDirtyRects, &count);
+          wrapCGDisplayStreamUpdateGetRects(updateRef, kCGDisplayStreamUpdateDirtyRects, &count);
       if (count != 0) {
         // According to CGDisplayStream.h, it's safe to call
         // CGDisplayStreamStop() from within the callback.
@@ -471,20 +553,20 @@ bool ScreenCapturerMac::RegisterRefreshAndMoveHandlers() {
 
     rtc::ScopedCFTypeRef<CFDictionaryRef> properties_dict(
         CFDictionaryCreate(kCFAllocatorDefault,
-                           (const void* []){kCGDisplayStreamShowCursor},
-                           (const void* []){kCFBooleanFalse},
+                           (const void*[]){wrapkCGDisplayStreamShowCursor()},
+                           (const void*[]){kCFBooleanFalse},
                            1,
                            &kCFTypeDictionaryKeyCallBacks,
                            &kCFTypeDictionaryValueCallBacks));
 
-    CGDisplayStreamRef display_stream = CGDisplayStreamCreate(
+    CGDisplayStreamRef display_stream = wrapCGDisplayStreamCreate(
         display_id, pixel_width, pixel_height, 'BGRA', properties_dict.get(), handler);
 
     if (display_stream) {
-      CGError error = CGDisplayStreamStart(display_stream);
+      CGError error = wrapCGDisplayStreamStart(display_stream);
       if (error != kCGErrorSuccess) return false;
 
-      CFRunLoopSourceRef source = CGDisplayStreamGetRunLoopSource(display_stream);
+      CFRunLoopSourceRef source = wrapCGDisplayStreamGetRunLoopSource(display_stream);
       CFRunLoopAddSource(CFRunLoopGetCurrent(), source, kCFRunLoopCommonModes);
       display_streams_.push_back(display_stream);
     }
@@ -497,9 +579,9 @@ void ScreenCapturerMac::UnregisterRefreshAndMoveHandlers() {
   RTC_DCHECK(thread_checker_.IsCurrent());
 
   for (CGDisplayStreamRef stream : display_streams_) {
-    CFRunLoopSourceRef source = CGDisplayStreamGetRunLoopSource(stream);
+    CFRunLoopSourceRef source = wrapCGDisplayStreamGetRunLoopSource(stream);
     CFRunLoopRemoveSource(CFRunLoopGetCurrent(), source, kCFRunLoopCommonModes);
-    CGDisplayStreamStop(stream);
+    wrapCGDisplayStreamStop(stream);
     CFRelease(stream);
   }
   display_streams_.clear();

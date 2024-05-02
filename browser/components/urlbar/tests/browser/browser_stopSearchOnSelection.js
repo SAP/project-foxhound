@@ -18,20 +18,18 @@ const TEST_ENGINE_SUGGESTIONS_TIMEOUT = 3000;
 // The number of suggestions returned by the test engine.
 const TEST_ENGINE_NUM_EXPECTED_RESULTS = 2;
 
-add_task(async function init() {
+add_setup(async function () {
   await PlacesUtils.history.clear();
   await SpecialPowers.pushPrefEnv({
     set: [["browser.urlbar.suggest.searches", true]],
   });
   // Add a test search engine that returns suggestions on a delay.
-  let engine = await SearchTestUtils.promiseNewSearchEngine(
-    getRootDirectory(gTestPath) + TEST_ENGINE_BASENAME
-  );
-  let oldDefaultEngine = await Services.search.getDefault();
+  let engine = await SearchTestUtils.promiseNewSearchEngine({
+    url: getRootDirectory(gTestPath) + TEST_ENGINE_BASENAME,
+    setAsDefault: true,
+  });
   await Services.search.moveEngine(engine, 0);
-  await Services.search.setDefault(engine);
   registerCleanupFunction(async () => {
-    await Services.search.setDefault(oldDefaultEngine);
     await PlacesUtils.history.clear();
   });
 });

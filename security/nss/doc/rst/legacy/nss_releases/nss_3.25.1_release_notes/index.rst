@@ -10,7 +10,7 @@ NSS 3.25.1 release notes
 
    Network Security Services (NSS) 3.25.1 is a patch release for NSS 3.25.
 
-.. _distribution_information:
+
 
 `Distribution Information <#distribution_information>`__
 --------------------------------------------------------
@@ -28,8 +28,6 @@ NSS 3.25.1 release notes
 
 `New in NSS 3.25.1 <#new_in_nss_3.25.1>`__
 ------------------------------------------
-
-.. container::
 
 .. _new_functionality:
 

@@ -39,6 +39,8 @@ void CanvasRenderingContextHelper::ToBlob(
     // This is called on main thread.
     MOZ_CAN_RUN_SCRIPT
     nsresult ReceiveBlobImpl(already_AddRefed<BlobImpl> aBlobImpl) override {
+      MOZ_ASSERT(NS_IsMainThread());
+
       RefPtr<BlobImpl> blobImpl = aBlobImpl;
 
       RefPtr<Blob> blob;
@@ -56,6 +58,11 @@ void CanvasRenderingContextHelper::ToBlob(
       MOZ_ASSERT(!mBlobCallback);
 
       return rv.StealNSResult();
+    }
+
+    bool CanBeDeletedOnAnyThread() override {
+      // EncodeCallback is used from the main thread only.
+      return false;
     }
 
     nsCOMPtr<nsIGlobalObject> mGlobal;
@@ -91,11 +98,11 @@ void CanvasRenderingContextHelper::ToBlob(EncodeCompleteCallback* aCallback,
                                           bool aUsingCustomOptions,
                                           bool aUsePlaceholder,
                                           ErrorResult& aRv) {
+  const nsIntSize elementSize = GetWidthHeight();
   if (mCurrentContext) {
     // We disallow canvases of width or height zero, and set them to 1, so
     // we will have a discrepancy with the sizes of the canvas and the context.
     // That discrepancy is OK, the rest are not.
-    nsIntSize elementSize = GetWidthHeight();
     if ((elementSize.width != mCurrentContext->GetWidth() &&
          (elementSize.width != 0 || mCurrentContext->GetWidth() != 1)) ||
         (elementSize.height != mCurrentContext->GetHeight() &&
@@ -105,17 +112,22 @@ void CanvasRenderingContextHelper::ToBlob(EncodeCompleteCallback* aCallback,
     }
   }
 
-  UniquePtr<uint8_t[]> imageBuffer;
   int32_t format = 0;
-  if (mCurrentContext) {
-    imageBuffer = mCurrentContext->GetImageBuffer(&format);
-  }
-
+  auto imageSize = gfx::IntSize{elementSize.width, elementSize.height};
+  UniquePtr<uint8_t[]> imageBuffer = GetImageBuffer(&format, &imageSize);
   RefPtr<EncodeCompleteCallback> callback = aCallback;
 
   aRv = ImageEncoder::ExtractDataAsync(
       aType, aEncodeOptions, aUsingCustomOptions, std::move(imageBuffer),
-      format, GetWidthHeight(), aUsePlaceholder, callback);
+      format, {imageSize.width, imageSize.height}, aUsePlaceholder, callback);
+}
+
+UniquePtr<uint8_t[]> CanvasRenderingContextHelper::GetImageBuffer(
+    int32_t* aOutFormat, gfx::IntSize* aOutImageSize) {
+  if (mCurrentContext) {
+    return mCurrentContext->GetImageBuffer(aOutFormat, aOutImageSize);
+  }
+  return nullptr;
 }
 
 already_AddRefed<nsICanvasRenderingContextInternal>
@@ -209,7 +221,14 @@ already_AddRefed<nsISupports> CanvasRenderingContextHelper::GetOrCreateContext(
     mCurrentContext = std::move(context);
     mCurrentContextType = aContextType;
 
-    nsresult rv = UpdateContext(aCx, aContextOptions, aRv);
+    // https://html.spec.whatwg.org/multipage/canvas.html#dom-canvas-getcontext-dev
+    // Step 1. If options is not an object, then set options to null.
+    JS::Rooted<JS::Value> options(RootingCx(), aContextOptions);
+    if (!options.isObject()) {
+      options.setNull();
+    }
+
+    nsresult rv = UpdateContext(aCx, options, aRv);
     if (NS_FAILED(rv)) {
       // See bug 645792 and bug 1215072.
       // We want to throw only if dictionary initialization fails,

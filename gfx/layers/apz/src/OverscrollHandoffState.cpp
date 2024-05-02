@@ -153,8 +153,8 @@ bool OverscrollHandoffChain::HasAutoscrollApzc() const {
 }
 
 RefPtr<AsyncPanZoomController> OverscrollHandoffChain::FindFirstScrollable(
-    const InputData& aInput,
-    ScrollDirections* aOutAllowedScrollDirections) const {
+    const InputData& aInput, ScrollDirections* aOutAllowedScrollDirections,
+    IncludeOverscroll aIncludeOverscroll) const {
   // Start by allowing scrolling in both directions. As we do handoff
   // overscroll-behavior may restrict one or both of the directions.
   *aOutAllowedScrollDirections += ScrollDirection::eVertical;
@@ -170,7 +170,7 @@ RefPtr<AsyncPanZoomController> OverscrollHandoffChain::FindFirstScrollable(
     // `none`), we consider the APZC can be scrollable in terms of pan gestures
     // because it causes overscrolling even if it's not able to scroll to the
     // direction.
-    if (StaticPrefs::apz_overscroll_enabled() &&
+    if (StaticPrefs::apz_overscroll_enabled() && bool(aIncludeOverscroll) &&
         // FIXME: Bug 1707491: Drop this pan gesture input check.
         aInput.mInputType == PANGESTURE_INPUT && mChain[i]->IsRootContent()) {
       // Check whether the root content APZC is also overscrollable governed by
@@ -182,10 +182,10 @@ RefPtr<AsyncPanZoomController> OverscrollHandoffChain::FindFirstScrollable(
       ScrollDirections allowedOverscrollDirections =
           mChain[i]->GetOverscrollableDirections();
       ParentLayerPoint delta = mChain[i]->GetDeltaForEvent(aInput);
-      if (FuzzyEqualsAdditive(delta.x, 0.0f, COORDINATE_EPSILON)) {
+      if (mChain[i]->IsZero(delta.x)) {
         allowedOverscrollDirections -= ScrollDirection::eHorizontal;
       }
-      if (FuzzyEqualsAdditive(delta.y, 0.0f, COORDINATE_EPSILON)) {
+      if (mChain[i]->IsZero(delta.y)) {
         allowedOverscrollDirections -= ScrollDirection::eVertical;
       }
 
@@ -222,6 +222,23 @@ OverscrollHandoffChain::ScrollingDownWillMoveDynamicToolbar(
   }
 
   return {false, nullptr};
+}
+
+bool OverscrollHandoffChain::ScrollingUpWillTriggerPullToRefresh(
+    const AsyncPanZoomController* aApzc) const {
+  MOZ_ASSERT(aApzc && !aApzc->IsRootContent(),
+             "Should be used for non-root APZC");
+
+  for (uint32_t i = IndexOf(aApzc); i < Length(); i++) {
+    if (mChain[i]->IsRootContent()) {
+      return mChain[i]->CanOverscrollUpwards();
+    }
+
+    if (!mChain[i]->CanOverscrollUpwards()) {
+      return false;
+    }
+  }
+  return false;
 }
 
 }  // namespace layers

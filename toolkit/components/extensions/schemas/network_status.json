@@ -3,13 +3,13 @@
     "namespace": "manifest",
     "types": [
       {
-        "$extend": "PermissionNoPrompt",
-        "choices": [{
-          "type": "string",
-          "enum": [
-            "networkStatus"
-          ]
-        }]
+        "$extend": "PermissionPrivileged",
+        "choices": [
+          {
+            "type": "string",
+            "enum": ["networkStatus"]
+          }
+        ]
       }
     ]
   },

@@ -12,8 +12,7 @@
 #include "nsGenericHTMLElement.h"
 #include "nsStubMutationObserver.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class FormData;
 
@@ -37,14 +36,12 @@ class HTMLOutputElement final : public nsGenericHTMLFormControlElement,
 
   nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 
-  virtual bool ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
-                              const nsAString& aValue,
-                              nsIPrincipal* aMaybeScriptedPrincipal,
-                              nsAttrValue& aResult) override;
+  bool ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
+                      const nsAString& aValue,
+                      nsIPrincipal* aMaybeScriptedPrincipal,
+                      nsAttrValue& aResult) override;
 
-  virtual void DoneAddingChildren(bool aHaveNotified) override;
-
-  virtual nsresult BindToTree(BindContext&, nsINode& aParent) override;
+  void DoneAddingChildren(bool aHaveNotified) override;
 
   // This function is called when a callback function from nsIMutationObserver
   // has to be used to update the defaultValue attribute.
@@ -59,8 +56,7 @@ class HTMLOutputElement final : public nsGenericHTMLFormControlElement,
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(HTMLOutputElement,
                                            nsGenericHTMLFormControlElement)
 
-  virtual JSObject* WrapNode(JSContext* aCx,
-                             JS::Handle<JSObject*> aGivenProto) override;
+  JSObject* WrapNode(JSContext*, JS::Handle<JSObject*> aGivenProto) override;
 
   // WebIDL
   nsDOMTokenList* HtmlFor();
@@ -79,7 +75,7 @@ class HTMLOutputElement final : public nsGenericHTMLFormControlElement,
 
   void SetDefaultValue(const nsAString& aDefaultValue, ErrorResult& aRv);
 
-  void GetValue(nsAString& aValue);
+  void GetValue(nsAString& aValue) const;
   void SetValue(const nsAString& aValue, ErrorResult& aRv);
 
   // nsIConstraintValidation::WillValidate is fine.
@@ -99,7 +95,6 @@ class HTMLOutputElement final : public nsGenericHTMLFormControlElement,
   RefPtr<nsDOMTokenList> mTokenList;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_HTMLOutputElement_h

@@ -48,9 +48,8 @@ private:
   // callback and the actual callback running The interceptor is responsible for
   // wrapping and converting callback arguments, returns etc. to their
   // appropriate representations
-  using T_Interceptor =
-    decltype(callback_detail::interceptor_type_helper<T_Sbx>(
-      std::declval<T>()));
+  using T_Interceptor = decltype(
+    callback_detail::interceptor_type_helper<T_Sbx>(std::declval<T>()));
   T_Interceptor callback_interceptor;
 
   // The trampoline is the internal sandbox representation of the callback
@@ -97,11 +96,6 @@ private:
 
   inline T_Callback get_raw_value() const noexcept { return callback; }
   inline T_Trampoline get_raw_sandbox_value() const noexcept
-  {
-    return callback_trampoline;
-  }
-  inline T_Callback get_raw_value() noexcept { return callback; }
-  inline T_Trampoline get_raw_sandbox_value() noexcept
   {
     return callback_trampoline;
   }
@@ -177,12 +171,6 @@ public:
     RLBOX_UNUSED(sandbox);
     return get_raw_sandbox_value();
   }
-  inline auto UNSAFE_unverified() noexcept { return get_raw_value(); }
-  inline auto UNSAFE_sandboxed(rlbox_sandbox<T_Sbx>& sandbox) noexcept
-  {
-    RLBOX_UNUSED(sandbox);
-    return get_raw_sandbox_value();
-  }
 };
 
 template<typename T, typename T_Sbx>
@@ -210,11 +198,6 @@ private:
     return to_tainted().get_raw_value();
   }
   inline typename T_Sbx::T_PointerType get_raw_sandbox_value() const noexcept
-  {
-    return idx;
-  }
-  inline T get_raw_value() noexcept { return to_tainted().get_raw_value(); }
-  inline typename T_Sbx::T_PointerType get_raw_sandbox_value() noexcept
   {
     return idx;
   }
@@ -286,12 +269,6 @@ public:
     RLBOX_UNUSED(sandbox);
     return get_raw_sandbox_value();
   }
-  inline auto UNSAFE_unverified() noexcept { return get_raw_value(); }
-  inline auto UNSAFE_sandboxed(rlbox_sandbox<T_Sbx>& sandbox) noexcept
-  {
-    RLBOX_UNUSED(sandbox);
-    return get_raw_sandbox_value();
-  }
 };
 
 /**
@@ -315,7 +292,10 @@ public:
     val = rhs;
     return *this;
   }
-  inline tainted_boolean_hint operator!() { return tainted_boolean_hint(!val); }
+  inline tainted_boolean_hint operator!() const
+  {
+    return tainted_boolean_hint(!val);
+  }
   template<size_t N>
   inline bool unverified_safe_because(const char (&reason)[N]) const
   {
@@ -323,8 +303,6 @@ public:
     return val;
   }
   inline bool UNSAFE_unverified() const { return val; }
-  inline bool UNSAFE_unverified() { return val; }
-  inline auto INTERNAL_unverified_safe() { return UNSAFE_unverified(); }
   inline auto INTERNAL_unverified_safe() const { return UNSAFE_unverified(); }
 
   // Add a template parameter to make sure the assert only fires when called
@@ -373,7 +351,10 @@ public:
     val = rhs;
     return *this;
   }
-  inline tainted_boolean_hint operator!() { return tainted_boolean_hint(!val); }
+  inline tainted_boolean_hint operator!() const
+  {
+    return tainted_boolean_hint(!val);
+  }
   template<size_t N>
   inline int unverified_safe_because(const char (&reason)[N]) const
   {
@@ -381,8 +362,6 @@ public:
     return val;
   }
   inline int UNSAFE_unverified() const { return val; }
-  inline int UNSAFE_unverified() { return val; }
-  inline auto INTERNAL_unverified_safe() { return UNSAFE_unverified(); }
   inline auto INTERNAL_unverified_safe() const { return UNSAFE_unverified(); }
 
   // Add a template parameter to make sure the assert only fires when called

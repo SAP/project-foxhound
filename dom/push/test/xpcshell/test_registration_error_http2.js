@@ -3,8 +3,6 @@
 
 "use strict";
 
-const { PushDB, PushService, PushServiceHttp2 } = serviceExports;
-
 function run_test() {
   do_get_profile();
   run_next_test();
@@ -32,7 +30,7 @@ add_task(async function test_registrations_error() {
         inIsolatedMozBrowser: false,
       }),
     }),
-    function(error) {
+    function (error) {
       return error == "Database error";
     },
     "Wrong message"

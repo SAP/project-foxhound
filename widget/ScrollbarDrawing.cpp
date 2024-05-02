@@ -19,20 +19,21 @@ using namespace mozilla::gfx;
 
 namespace mozilla::widget {
 
-using ScrollbarParams = ScrollbarDrawing::ScrollbarParams;
 using mozilla::RelativeLuminanceUtils;
 
 /* static */
-auto ScrollbarDrawing::GetDPIRatioForScrollbarPart(nsPresContext* aPc)
+auto ScrollbarDrawing::GetDPIRatioForScrollbarPart(const nsPresContext* aPc)
     -> DPIRatio {
-  if (auto* rootPc = aPc->GetRootPresContext()) {
-    if (nsCOMPtr<nsIWidget> widget = rootPc->GetRootWidget()) {
-      return widget->GetDefaultScale();
-    }
-  }
-  return DPIRatio(
+  DPIRatio ratio(
       float(AppUnitsPerCSSPixel()) /
       float(aPc->DeviceContext()->AppUnitsPerDevPixelAtUnitFullZoom()));
+  if (aPc->IsPrintPreview()) {
+    ratio.scale *= aPc->GetPrintPreviewScaleForSequenceFrameOrScrollbars();
+  }
+  if (mKind == Kind::Cocoa) {
+    return DPIRatio(ratio.scale >= 2.0f ? 2.0f : 1.0f);
+  }
+  return ratio;
 }
 
 /*static*/
@@ -52,26 +53,26 @@ nsIFrame* ScrollbarDrawing::GetParentScrollbarFrame(nsIFrame* aFrame) {
 /*static*/
 bool ScrollbarDrawing::IsParentScrollbarRolledOver(nsIFrame* aFrame) {
   nsIFrame* scrollbarFrame = GetParentScrollbarFrame(aFrame);
-  return nsLookAndFeel::GetInt(LookAndFeel::IntID::UseOverlayScrollbars) != 0
+  return aFrame->PresContext()->UseOverlayScrollbars()
              ? nsNativeTheme::CheckBooleanAttr(scrollbarFrame, nsGkAtoms::hover)
              : nsNativeTheme::GetContentState(scrollbarFrame,
                                               StyleAppearance::None)
-                   .HasState(NS_EVENT_STATE_HOVER);
+                   .HasState(ElementState::HOVER);
 }
 
 /*static*/
 bool ScrollbarDrawing::IsParentScrollbarHoveredOrActive(nsIFrame* aFrame) {
   nsIFrame* scrollbarFrame = GetParentScrollbarFrame(aFrame);
-  return scrollbarFrame && scrollbarFrame->GetContent()
-                               ->AsElement()
-                               ->State()
-                               .HasAtLeastOneOfStates(NS_EVENT_STATE_HOVER |
-                                                      NS_EVENT_STATE_ACTIVE);
+  return scrollbarFrame &&
+         scrollbarFrame->GetContent()
+             ->AsElement()
+             ->State()
+             .HasAtLeastOneOfStates(ElementState::HOVER | ElementState::ACTIVE);
 }
 
 /*static*/
 bool ScrollbarDrawing::IsScrollbarWidthThin(const ComputedStyle& aStyle) {
-  auto scrollbarWidth = aStyle.StyleUIReset()->mScrollbarWidth;
+  auto scrollbarWidth = aStyle.StyleUIReset()->ScrollbarWidth();
   return scrollbarWidth == StyleScrollbarWidth::Thin;
 }
 
@@ -81,86 +82,82 @@ bool ScrollbarDrawing::IsScrollbarWidthThin(nsIFrame* aFrame) {
   return IsScrollbarWidthThin(*style);
 }
 
-auto ScrollbarDrawing::GetScrollbarSizes(nsPresContext* aPresContext,
-                                         StyleScrollbarWidth aWidth, Overlay)
-    -> ScrollbarSizes {
-  uint32_t h = GetHorizontalScrollbarHeight();
-  uint32_t w = GetVerticalScrollbarWidth();
-  if (aWidth == StyleScrollbarWidth::Thin) {
-    h /= 2;
-    w /= 2;
-  }
-  auto dpi = GetDPIRatioForScrollbarPart(aPresContext);
-  return {(CSSCoord(w) * dpi).Rounded(), (CSSCoord(h) * dpi).Rounded()};
+CSSIntCoord ScrollbarDrawing::GetCSSScrollbarSize(StyleScrollbarWidth aWidth,
+                                                  Overlay aOverlay) const {
+  return mScrollbarSize[aWidth == StyleScrollbarWidth::Thin]
+                       [aOverlay == Overlay::Yes];
 }
 
-auto ScrollbarDrawing::GetScrollbarSizes(nsPresContext* aPresContext,
-                                         nsIFrame* aFrame) -> ScrollbarSizes {
+void ScrollbarDrawing::ConfigureScrollbarSize(StyleScrollbarWidth aWidth,
+                                              Overlay aOverlay,
+                                              CSSIntCoord aSize) {
+  mScrollbarSize[aWidth == StyleScrollbarWidth::Thin]
+                [aOverlay == Overlay::Yes] = aSize;
+}
+
+void ScrollbarDrawing::ConfigureScrollbarSize(CSSIntCoord aSize) {
+  ConfigureScrollbarSize(StyleScrollbarWidth::Auto, Overlay::No, aSize);
+  ConfigureScrollbarSize(StyleScrollbarWidth::Auto, Overlay::Yes, aSize);
+  ConfigureScrollbarSize(StyleScrollbarWidth::Thin, Overlay::No, aSize / 2);
+  ConfigureScrollbarSize(StyleScrollbarWidth::Thin, Overlay::Yes, aSize / 2);
+}
+
+LayoutDeviceIntCoord ScrollbarDrawing::GetScrollbarSize(
+    const nsPresContext* aPresContext, StyleScrollbarWidth aWidth,
+    Overlay aOverlay) {
+  return (CSSCoord(GetCSSScrollbarSize(aWidth, aOverlay)) *
+          GetDPIRatioForScrollbarPart(aPresContext))
+      .Rounded();
+}
+
+LayoutDeviceIntCoord ScrollbarDrawing::GetScrollbarSize(
+    const nsPresContext* aPresContext, nsIFrame* aFrame) {
   auto* style = nsLayoutUtils::StyleForScrollbar(aFrame);
-  auto width = style->StyleUIReset()->mScrollbarWidth;
+  auto width = style->StyleUIReset()->ScrollbarWidth();
   auto overlay =
       aPresContext->UseOverlayScrollbars() ? Overlay::Yes : Overlay::No;
-  return GetScrollbarSizes(aPresContext, width, overlay);
+  return GetScrollbarSize(aPresContext, width, overlay);
 }
 
 bool ScrollbarDrawing::IsScrollbarTrackOpaque(nsIFrame* aFrame) {
   auto trackColor = ComputeScrollbarTrackColor(
       aFrame, *nsLayoutUtils::StyleForScrollbar(aFrame),
-      aFrame->PresContext()->Document()->GetDocumentState(), Colors(aFrame));
+      aFrame->PresContext()->Document()->State(),
+      Colors(aFrame, StyleAppearance::ScrollbartrackVertical));
   return trackColor.a == 1.0f;
 }
 
 sRGBColor ScrollbarDrawing::ComputeScrollbarTrackColor(
     nsIFrame* aFrame, const ComputedStyle& aStyle,
-    const EventStates& aDocumentState, const Colors& aColors) {
+    const DocumentState& aDocumentState, const Colors& aColors) {
   if (aColors.HighContrast()) {
     return aColors.System(StyleSystemColor::Window);
-  }
-  if (ShouldUseDarkScrollbar(aFrame, aStyle)) {
-    return sRGBColor::FromU8(20, 20, 25, 77);
   }
   const nsStyleUI* ui = aStyle.StyleUI();
   if (ui->mScrollbarColor.IsColors()) {
     return sRGBColor::FromABGR(
         ui->mScrollbarColor.AsColors().track.CalcColor(aStyle));
   }
-  if (aDocumentState.HasAllStates(NS_DOCUMENT_STATE_WINDOW_INACTIVE)) {
-    return aColors.SystemOrElse(StyleSystemColor::ThemedScrollbarInactive,
-                                [] { return sScrollbarColor; });
-  }
-  return aColors.SystemOrElse(StyleSystemColor::ThemedScrollbar,
-                              [] { return sScrollbarColor; });
+  static constexpr sRGBColor sDefaultDarkTrackColor =
+      sRGBColor::FromU8(20, 20, 25, 77);
+  static constexpr sRGBColor sDefaultTrackColor(
+      gfx::sRGBColor::UnusualFromARGB(0xfff0f0f0));
+
+  auto systemColor = aDocumentState.HasAllStates(DocumentState::WINDOW_INACTIVE)
+                         ? StyleSystemColor::ThemedScrollbarInactive
+                         : StyleSystemColor::ThemedScrollbar;
+  return aColors.SystemOrElse(systemColor, [&] {
+    return aColors.IsDark() ? sDefaultDarkTrackColor : sDefaultTrackColor;
+  });
 }
 
 // Don't use the theme color for dark scrollbars if it's not a color (if it's
 // grey-ish), as that'd either lack enough contrast, or be close to what we'd do
 // by default anyways.
-static bool ShouldUseColorForActiveDarkScrollbarThumb(nscolor aColor) {
-  auto IsDifferentEnough = [](int32_t aChannel, int32_t aOtherChannel) {
-    return std::abs(aChannel - aOtherChannel) > 10;
-  };
-  return IsDifferentEnough(NS_GET_R(aColor), NS_GET_G(aColor)) ||
-         IsDifferentEnough(NS_GET_R(aColor), NS_GET_B(aColor));
-}
-
 sRGBColor ScrollbarDrawing::ComputeScrollbarThumbColor(
     nsIFrame* aFrame, const ComputedStyle& aStyle,
-    const EventStates& aElementState, const EventStates& aDocumentState,
+    const ElementState& aElementState, const DocumentState& aDocumentState,
     const Colors& aColors) {
-  if (!aColors.HighContrast() && ShouldUseDarkScrollbar(aFrame, aStyle)) {
-    if (aElementState.HasState(NS_EVENT_STATE_ACTIVE) &&
-        StaticPrefs::widget_non_native_theme_scrollbar_active_always_themed()) {
-      auto color = LookAndFeel::GetColor(
-          StyleSystemColor::ThemedScrollbarThumbActive,
-          LookAndFeel::ColorScheme::Light, LookAndFeel::UseStandins::No);
-      if (color && ShouldUseColorForActiveDarkScrollbarThumb(*color)) {
-        return sRGBColor::FromABGR(*color);
-      }
-    }
-    return sRGBColor::FromABGR(ThemeColors::AdjustUnthemedScrollbarThumbColor(
-        NS_RGBA(249, 249, 250, 102), aElementState));
-  }
-
   const nsStyleUI* ui = aStyle.StyleUI();
   if (ui->mScrollbarColor.IsColors()) {
     return sRGBColor::FromABGR(ThemeColors::AdjustUnthemedScrollbarThumbColor(
@@ -168,16 +165,16 @@ sRGBColor ScrollbarDrawing::ComputeScrollbarThumbColor(
   }
 
   auto systemColor = [&] {
-    if (aDocumentState.HasState(NS_DOCUMENT_STATE_WINDOW_INACTIVE)) {
+    if (aDocumentState.HasState(DocumentState::WINDOW_INACTIVE)) {
       return StyleSystemColor::ThemedScrollbarThumbInactive;
     }
-    if (aElementState.HasState(NS_EVENT_STATE_ACTIVE)) {
+    if (aElementState.HasState(ElementState::ACTIVE)) {
       if (aColors.HighContrast()) {
         return StyleSystemColor::Selecteditem;
       }
       return StyleSystemColor::ThemedScrollbarThumbActive;
     }
-    if (aElementState.HasState(NS_EVENT_STATE_HOVER)) {
+    if (aElementState.HasState(ElementState::HOVER)) {
       if (aColors.HighContrast()) {
         return StyleSystemColor::Selecteditem;
       }
@@ -190,72 +187,57 @@ sRGBColor ScrollbarDrawing::ComputeScrollbarThumbColor(
   }();
 
   return aColors.SystemOrElse(systemColor, [&] {
+    const nscolor unthemedColor = aColors.IsDark() ? NS_RGBA(249, 249, 250, 102)
+                                                   : NS_RGB(0xcd, 0xcd, 0xcd);
+
     return sRGBColor::FromABGR(ThemeColors::AdjustUnthemedScrollbarThumbColor(
-        sScrollbarThumbColor.ToABGR(), aElementState));
+        unthemedColor, aElementState));
   });
-}
-
-/*static*/
-ScrollbarParams ScrollbarDrawing::ComputeScrollbarParams(
-    nsIFrame* aFrame, const ComputedStyle& aStyle, bool aIsHorizontal) {
-  ScrollbarParams params;
-  params.isOverlay =
-      nsLookAndFeel::GetInt(LookAndFeel::IntID::UseOverlayScrollbars) != 0;
-  params.isRolledOver = IsParentScrollbarRolledOver(aFrame);
-  params.isSmall =
-      aStyle.StyleUIReset()->mScrollbarWidth == StyleScrollbarWidth::Thin;
-  params.isRtl = nsNativeTheme::IsFrameRTL(aFrame);
-  params.isHorizontal = aIsHorizontal;
-  params.isOnDarkBackground = !StaticPrefs::widget_disable_dark_scrollbar() &&
-                              nsNativeTheme::IsDarkBackground(aFrame);
-  // Don't use custom scrollbars for overlay scrollbars since they are
-  // generally good enough for use cases of custom scrollbars.
-  if (!params.isOverlay) {
-    const nsStyleUI* ui = aStyle.StyleUI();
-    if (ui->HasCustomScrollbars()) {
-      const auto& colors = ui->mScrollbarColor.AsColors();
-      params.isCustom = true;
-      params.trackColor = colors.track.CalcColor(aStyle);
-      params.faceColor = colors.thumb.CalcColor(aStyle);
-    }
-  }
-
-  return params;
 }
 
 template <typename PaintBackendData>
 bool ScrollbarDrawing::DoPaintDefaultScrollbar(
     PaintBackendData& aPaintData, const LayoutDeviceRect& aRect,
-    bool aHorizontal, nsIFrame* aFrame, const ComputedStyle& aStyle,
-    const EventStates& aElementState, const EventStates& aDocumentState,
+    ScrollbarKind aScrollbarKind, nsIFrame* aFrame, const ComputedStyle& aStyle,
+    const ElementState& aElementState, const DocumentState& aDocumentState,
     const Colors& aColors, const DPIRatio& aDpiRatio) {
-  if (aFrame->PresContext()->UseOverlayScrollbars() &&
-      !aElementState.HasAtLeastOneOfStates(NS_EVENT_STATE_HOVER |
-                                           NS_EVENT_STATE_ACTIVE)) {
+  const bool overlay = aFrame->PresContext()->UseOverlayScrollbars();
+  if (overlay && !aElementState.HasAtLeastOneOfStates(ElementState::HOVER |
+                                                      ElementState::ACTIVE)) {
     return true;
   }
-  auto scrollbarColor =
+  const auto color =
       ComputeScrollbarTrackColor(aFrame, aStyle, aDocumentState, aColors);
-  ThemeDrawing::FillRect(aPaintData, aRect, scrollbarColor);
+  if (overlay && mKind == Kind::Win11) {
+    LayoutDeviceCoord radius =
+        (aScrollbarKind == ScrollbarKind::Horizontal ? aRect.height
+                                                     : aRect.width) /
+        2.0f;
+    ThemeDrawing::PaintRoundedRectWithRadius(aPaintData, aRect, color,
+                                             sRGBColor(), 0, radius / aDpiRatio,
+                                             aDpiRatio);
+  } else {
+    ThemeDrawing::FillRect(aPaintData, aRect, color);
+  }
   return true;
 }
 
 bool ScrollbarDrawing::PaintScrollbar(
-    DrawTarget& aDrawTarget, const LayoutDeviceRect& aRect, bool aHorizontal,
-    nsIFrame* aFrame, const ComputedStyle& aStyle,
-    const EventStates& aElementState, const EventStates& aDocumentState,
+    DrawTarget& aDrawTarget, const LayoutDeviceRect& aRect,
+    ScrollbarKind aScrollbarKind, nsIFrame* aFrame, const ComputedStyle& aStyle,
+    const ElementState& aElementState, const DocumentState& aDocumentState,
     const Colors& aColors, const DPIRatio& aDpiRatio) {
-  return DoPaintDefaultScrollbar(aDrawTarget, aRect, aHorizontal, aFrame,
+  return DoPaintDefaultScrollbar(aDrawTarget, aRect, aScrollbarKind, aFrame,
                                  aStyle, aElementState, aDocumentState, aColors,
                                  aDpiRatio);
 }
 
 bool ScrollbarDrawing::PaintScrollbar(
     WebRenderBackendData& aWrData, const LayoutDeviceRect& aRect,
-    bool aHorizontal, nsIFrame* aFrame, const ComputedStyle& aStyle,
-    const EventStates& aElementState, const EventStates& aDocumentState,
+    ScrollbarKind aScrollbarKind, nsIFrame* aFrame, const ComputedStyle& aStyle,
+    const ElementState& aElementState, const DocumentState& aDocumentState,
     const Colors& aColors, const DPIRatio& aDpiRatio) {
-  return DoPaintDefaultScrollbar(aWrData, aRect, aHorizontal, aFrame, aStyle,
+  return DoPaintDefaultScrollbar(aWrData, aRect, aScrollbarKind, aFrame, aStyle,
                                  aElementState, aDocumentState, aColors,
                                  aDpiRatio);
 }
@@ -263,8 +245,8 @@ bool ScrollbarDrawing::PaintScrollbar(
 template <typename PaintBackendData>
 bool ScrollbarDrawing::DoPaintDefaultScrollCorner(
     PaintBackendData& aPaintData, const LayoutDeviceRect& aRect,
-    nsIFrame* aFrame, const ComputedStyle& aStyle,
-    const EventStates& aDocumentState, const Colors& aColors,
+    ScrollbarKind aScrollbarKind, nsIFrame* aFrame, const ComputedStyle& aStyle,
+    const DocumentState& aDocumentState, const Colors& aColors,
     const DPIRatio& aDpiRatio) {
   auto scrollbarColor =
       ComputeScrollbarTrackColor(aFrame, aStyle, aDocumentState, aColors);
@@ -273,43 +255,30 @@ bool ScrollbarDrawing::DoPaintDefaultScrollCorner(
 }
 
 bool ScrollbarDrawing::PaintScrollCorner(
-    DrawTarget& aDrawTarget, const LayoutDeviceRect& aRect, nsIFrame* aFrame,
-    const ComputedStyle& aStyle, const EventStates& aDocumentState,
-    const Colors& aColors, const DPIRatio& aDpiRatio) {
-  return DoPaintDefaultScrollCorner(aDrawTarget, aRect, aFrame, aStyle,
-                                    aDocumentState, aColors, aDpiRatio);
+    DrawTarget& aDrawTarget, const LayoutDeviceRect& aRect,
+    ScrollbarKind aScrollbarKind, nsIFrame* aFrame, const ComputedStyle& aStyle,
+    const DocumentState& aDocumentState, const Colors& aColors,
+    const DPIRatio& aDpiRatio) {
+  return DoPaintDefaultScrollCorner(aDrawTarget, aRect, aScrollbarKind, aFrame,
+                                    aStyle, aDocumentState, aColors, aDpiRatio);
 }
 
-bool ScrollbarDrawing::PaintScrollCorner(WebRenderBackendData& aWrData,
-                                         const LayoutDeviceRect& aRect,
-                                         nsIFrame* aFrame,
-                                         const ComputedStyle& aStyle,
-                                         const EventStates& aDocumentState,
-                                         const Colors& aColors,
-                                         const DPIRatio& aDpiRatio) {
-  return DoPaintDefaultScrollCorner(aWrData, aRect, aFrame, aStyle,
-                                    aDocumentState, aColors, aDpiRatio);
-}
-
-/*static*/
-bool ScrollbarDrawing::ShouldUseDarkScrollbar(nsIFrame* aFrame,
-                                              const ComputedStyle& aStyle) {
-  if (StaticPrefs::widget_disable_dark_scrollbar()) {
-    return false;
-  }
-  if (aStyle.StyleUI()->mScrollbarColor.IsColors()) {
-    return false;
-  }
-  return nsNativeTheme::IsDarkBackground(aFrame);
+bool ScrollbarDrawing::PaintScrollCorner(
+    WebRenderBackendData& aWrData, const LayoutDeviceRect& aRect,
+    ScrollbarKind aScrollbarKind, nsIFrame* aFrame, const ComputedStyle& aStyle,
+    const DocumentState& aDocumentState, const Colors& aColors,
+    const DPIRatio& aDpiRatio) {
+  return DoPaintDefaultScrollCorner(aWrData, aRect, aScrollbarKind, aFrame,
+                                    aStyle, aDocumentState, aColors, aDpiRatio);
 }
 
 nscolor ScrollbarDrawing::GetScrollbarButtonColor(nscolor aTrackColor,
-                                                  EventStates aStates) {
+                                                  ElementState aStates) {
   // See numbers in GetScrollbarArrowColor.
   // This function is written based on ratios between values listed there.
 
-  bool isActive = aStates.HasState(NS_EVENT_STATE_ACTIVE);
-  bool isHover = aStates.HasState(NS_EVENT_STATE_HOVER);
+  bool isActive = aStates.HasState(ElementState::ACTIVE);
+  bool isHover = aStates.HasState(ElementState::HOVER);
   if (!isActive && !isHover) {
     return aTrackColor;
   }
@@ -378,11 +347,11 @@ Maybe<nscolor> ScrollbarDrawing::GetScrollbarArrowColor(nscolor aButtonColor) {
 
 std::pair<sRGBColor, sRGBColor> ScrollbarDrawing::ComputeScrollbarButtonColors(
     nsIFrame* aFrame, StyleAppearance aAppearance, const ComputedStyle& aStyle,
-    const EventStates& aElementState, const EventStates& aDocumentState,
+    const ElementState& aElementState, const DocumentState& aDocumentState,
     const Colors& aColors) {
   if (aColors.HighContrast()) {
-    if (aElementState.HasAtLeastOneOfStates(NS_EVENT_STATE_ACTIVE |
-                                            NS_EVENT_STATE_HOVER)) {
+    if (aElementState.HasAtLeastOneOfStates(ElementState::ACTIVE |
+                                            ElementState::HOVER)) {
       return aColors.SystemPair(StyleSystemColor::Selecteditem,
                                 StyleSystemColor::Buttonface);
     }
@@ -406,9 +375,10 @@ std::pair<sRGBColor, sRGBColor> ScrollbarDrawing::ComputeScrollbarButtonColors(
 
 bool ScrollbarDrawing::PaintScrollbarButton(
     DrawTarget& aDrawTarget, StyleAppearance aAppearance,
-    const LayoutDeviceRect& aRect, nsIFrame* aFrame,
-    const ComputedStyle& aStyle, const EventStates& aElementState,
-    const EventStates& aDocumentState, const Colors& aColors, const DPIRatio&) {
+    const LayoutDeviceRect& aRect, ScrollbarKind aScrollbarKind,
+    nsIFrame* aFrame, const ComputedStyle& aStyle,
+    const ElementState& aElementState, const DocumentState& aDocumentState,
+    const Colors& aColors, const DPIRatio&) {
   auto [buttonColor, arrowColor] = ComputeScrollbarButtonColors(
       aFrame, aAppearance, aStyle, aElementState, aDocumentState, aColors);
   aDrawTarget.FillRect(aRect.ToUnknownRect(),

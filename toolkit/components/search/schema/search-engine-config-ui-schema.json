@@ -6,9 +6,10 @@
     "orderHint",
     "sendAttributionRequest",
     "telemetryId",
+    "urls",
     "params",
     "extraParams",
-    "regionParams",
+    "suggestExtraParams",
     "appliesTo"
   ]
 }

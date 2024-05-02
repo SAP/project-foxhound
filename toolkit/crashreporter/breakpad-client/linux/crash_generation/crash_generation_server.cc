@@ -52,8 +52,9 @@
 #include "common/linux/safe_readlink.h"
 
 #if defined(MOZ_OXIDIZED_BREAKPAD)
-#include "mozilla/toolkit/crashreporter/rust_minidump_writer_linux_ffi_generated.h"
-#include "nsString.h"
+#  include "mozilla/toolkit/crashreporter/rust_minidump_writer_linux_ffi_generated.h"
+#  include <sys/signalfd.h>
+#  include "nsString.h"
 #endif
 
 static const char kCommandQuit = 'x';
@@ -272,12 +273,36 @@ CrashGenerationServer::ClientEvent(short revents)
     return true;
 
 #if defined(MOZ_OXIDIZED_BREAKPAD)
-  // Ignoring the return-value here for now.
-  // The function always creates an empty minidump file even in case of an error.
-  // So we'll report that as well via the callback-functions.
+  ExceptionHandler::CrashContext* breakpad_cc =
+      reinterpret_cast<ExceptionHandler::CrashContext*>(crash_context);
   nsCString error_msg;
-  bool res = write_minidump_linux_with_context(minidump_filename.c_str(),
-                                    crashing_pid, crash_context, &error_msg);
+  siginfo_t& si = breakpad_cc->siginfo;
+  signalfd_siginfo signalfd_si = {};
+  signalfd_si.ssi_signo = si.si_signo;
+  signalfd_si.ssi_errno = si.si_errno;
+  signalfd_si.ssi_code = si.si_code;
+
+  switch (si.si_signo) {
+    case SIGILL:
+    case SIGFPE:
+    case SIGSEGV:
+    case SIGBUS:
+    case SIGSYS:
+      signalfd_si.ssi_addr = reinterpret_cast<size_t>(si.si_addr);
+      break;
+  }
+
+  // Ignoring the return-value here for now.
+  // The function always creates an empty minidump file even in case of an
+  // error. So we'll report that as well via the callback-functions.
+  bool res = write_minidump_linux_with_context(
+      minidump_filename.c_str(), crashing_pid, &breakpad_cc->context,
+#  ifndef __arm__
+      reinterpret_cast<const fpregset_t *>(&breakpad_cc->float_state),
+#  else
+      nullptr,
+#  endif  // __arm__
+      &signalfd_si, breakpad_cc->tid, &error_msg);
 #else
   if (!google_breakpad::WriteMinidump(minidump_filename.c_str(),
                                       crashing_pid, crash_context,

@@ -24,7 +24,8 @@ pub unsafe extern "C" fn wasm_text_to_binary(
 ) -> bool {
     let text_slice = std::slice::from_raw_parts(text, text_len);
     let text = String::from_utf16_lossy(text_slice);
-    match wat::parse_str(&text) {
+
+    match text_to_binary(&text) {
         Ok(bytes) => {
             let bytes_box = bytes.into_boxed_slice();
             let bytes_slice = Box::leak(bytes_box);
@@ -41,62 +42,12 @@ pub unsafe extern "C" fn wasm_text_to_binary(
     }
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn wasm_code_offsets(
-    bytes: *const u8,
-    bytes_len: usize,
-    out_offsets: *mut *mut u32,
-    out_offsets_len: *mut usize,
-) {
-    fn code_offsets(bytes: &[u8]) -> Vec<u32> {
-        use wasmparser::*;
-
-        if bytes.is_empty() {
-            return Vec::new();
-        }
-
-        let mut offsets = Vec::new();
-
-        // Read operators offsets and skip invalid data.
-        for payload in Parser::new(0).parse_all(bytes) {
-            if payload.is_err() {
-                break;
-            }
-            match payload.unwrap() {
-                Payload::CodeSectionEntry(body) => {
-                    let reader = match body.get_operators_reader() {
-                        Ok(r) => r,
-                        Err(_) => {
-                            break;
-                        }
-                    };
-                    for pair in reader.into_iter_with_offsets() {
-                        let offset = match pair {
-                            Ok((_op, offset)) => offset,
-                            Err(_) => {
-                                break;
-                            }
-                        };
-                        offsets.push(offset as u32);
-                    }
-                }
-                _ => (),
-            }
-        }
-
-        offsets
-    }
-
-    let bytes = std::slice::from_raw_parts(bytes, bytes_len);
-    let offsets = code_offsets(bytes);
-
-    if offsets.len() == 0 {
-        out_offsets.write(std::ptr::null_mut());
-        out_offsets_len.write(0);
-    } else {
-        let offsets_box = offsets.into_boxed_slice();
-        let offsets_slice = Box::leak(offsets_box);
-        out_offsets.write(offsets_slice.as_mut_ptr());
-        out_offsets_len.write(offsets_slice.len());
-    }
+fn text_to_binary(text: &str) -> Result<Vec<u8>, wast::Error> {
+    let mut lexer = wast::lexer::Lexer::new(text);
+    // The 'names.wast' spec test has confusable unicode, so disable detection.
+    // This protection is not very useful for a shell testing function anyways.
+    lexer.allow_confusing_unicode(true);
+    let buf = wast::parser::ParseBuffer::new_with_lexer(lexer)?;
+    let mut ast = wast::parser::parse::<wast::Wat>(&buf)?;
+    return ast.encode();
 }

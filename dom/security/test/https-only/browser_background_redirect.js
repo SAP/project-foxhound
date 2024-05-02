@@ -40,9 +40,9 @@ add_task(async function test_https_only_background_request_redirect() {
 
   await extension.startup();
 
-  await BrowserTestUtils.withNewTab("about:blank", async function(browser) {
+  await BrowserTestUtils.withNewTab("about:blank", async function (browser) {
     let loaded = BrowserTestUtils.browserLoaded(browser, false, null, true);
-    BrowserTestUtils.loadURI(
+    BrowserTestUtils.startLoadingURIString(
       browser,
       "http://example.com/browser/dom/security/test/https-only/file_background_redirect.sjs?start"
     );
@@ -51,7 +51,7 @@ add_task(async function test_https_only_background_request_redirect() {
 
     await loaded;
 
-    await SpecialPowers.spawn(browser, [], async function() {
+    await SpecialPowers.spawn(browser, [], async function () {
       let innerHTML = content.document.body.innerHTML;
       ok(
         innerHTML.includes("Test Page for Bug 1683015 loaded"),

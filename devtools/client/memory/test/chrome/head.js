@@ -10,12 +10,13 @@ var { require } = BrowserLoader({
   baseURI: "resource://devtools/client/memory/",
   window,
 });
-var { Assert } = require("resource://testing-common/Assert.jsm");
-var Services = require("Services");
+var { Assert } = ChromeUtils.importESModule(
+  "resource://testing-common/Assert.sys.mjs"
+);
 
 var EXPECTED_DTU_ASSERT_FAILURE_COUNT = 0;
 
-SimpleTest.registerCleanupFunction(function() {
+SimpleTest.registerCleanupFunction(function () {
   if (
     DevToolsUtils.assertionFailureCount !== EXPECTED_DTU_ASSERT_FAILURE_COUNT
   ) {
@@ -30,10 +31,10 @@ SimpleTest.registerCleanupFunction(function() {
   }
 });
 
-var DevToolsUtils = require("devtools/shared/DevToolsUtils");
+var DevToolsUtils = require("resource://devtools/shared/DevToolsUtils.js");
 var { immutableUpdate } = DevToolsUtils;
 
-var constants = require("devtools/client/memory/constants");
+var constants = require("resource://devtools/client/memory/constants.js");
 var {
   censusDisplays,
   diffingState,
@@ -44,37 +45,41 @@ var {
   censusState,
 } = constants;
 
-const { L10N } = require("devtools/client/memory/utils");
+const { L10N } = require("resource://devtools/client/memory/utils.js");
 
-var models = require("devtools/client/memory/models");
+var models = require("resource://devtools/client/memory/models.js");
 
-var Immutable = require("devtools/client/shared/vendor/immutable");
-var React = require("devtools/client/shared/vendor/react");
-const dom = require("devtools/client/shared/vendor/react-dom-factories");
-var ReactDOM = require("devtools/client/shared/vendor/react-dom");
+var Immutable = require("resource://devtools/client/shared/vendor/immutable.js");
+var React = require("resource://devtools/client/shared/vendor/react.js");
+const dom = require("resource://devtools/client/shared/vendor/react-dom-factories.js");
+var ReactDOM = require("resource://devtools/client/shared/vendor/react-dom.js");
 var { createFactory } = React;
-var Heap = createFactory(require("devtools/client/memory/components/Heap"));
+var Heap = createFactory(
+  require("resource://devtools/client/memory/components/Heap.js")
+);
 var CensusTreeItem = createFactory(
-  require("devtools/client/memory/components/CensusTreeItem")
+  require("resource://devtools/client/memory/components/CensusTreeItem.js")
 );
 var DominatorTreeComponent = createFactory(
-  require("devtools/client/memory/components/DominatorTree")
+  require("resource://devtools/client/memory/components/DominatorTree.js")
 );
 var DominatorTreeItem = createFactory(
-  require("devtools/client/memory/components/DominatorTreeItem")
+  require("resource://devtools/client/memory/components/DominatorTreeItem.js")
 );
 var ShortestPaths = createFactory(
-  require("devtools/client/memory/components/ShortestPaths")
+  require("resource://devtools/client/memory/components/ShortestPaths.js")
 );
 var TreeMap = createFactory(
-  require("devtools/client/memory/components/TreeMap")
+  require("resource://devtools/client/memory/components/TreeMap.js")
 );
 var SnapshotListItem = createFactory(
-  require("devtools/client/memory/components/SnapshotListItem")
+  require("resource://devtools/client/memory/components/SnapshotListItem.js")
 );
-var List = createFactory(require("devtools/client/memory/components/List"));
+var List = createFactory(
+  require("resource://devtools/client/memory/components/List.js")
+);
 var Toolbar = createFactory(
-  require("devtools/client/memory/components/Toolbar")
+  require("resource://devtools/client/memory/components/Toolbar.js")
 );
 
 // All tests are asynchronous.

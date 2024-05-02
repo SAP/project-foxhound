@@ -12,7 +12,7 @@ server.registerPathHandler("/script.js", (request, response) => {
   ok(false, "Unexpected request to /script.js");
 });
 
-/* eslint-disable no-unsanitized/method, no-eval, no-implied-eval */
+/* eslint-disable no-eval, no-implied-eval */
 
 const MODULE1 = `
   import {foo} from "./module2.js";
@@ -37,7 +37,7 @@ add_task(async function test_disallowed_import() {
     },
 
     files: {
-      "main.js": async function() {
+      "main.js": async function () {
         let disallowedURLs = [
           "data:text/javascript,void 0",
           "javascript:void 0",
@@ -70,6 +70,8 @@ add_task(async function test_disallowed_import() {
 });
 
 add_task(async function test_normal_import() {
+  Services.prefs.setBoolPref("extensions.content_web_accessible.enabled", true);
+
   let extension = ExtensionTestUtils.loadExtension({
     manifest: {
       content_scripts: [
@@ -81,14 +83,15 @@ add_task(async function test_normal_import() {
     },
 
     files: {
-      "main.js": async function() {
+      "main.js": async function () {
         /* global exportFunction */
         const url = browser.runtime.getURL("module1.js");
-        let mod = await import(url);
-        browser.test.assertEq(mod.bar, 2);
 
-        browser.test.assertEq(mod.counter(), 0);
-        browser.test.assertEq(mod.counter(), 1);
+        await browser.test.assertRejects(
+          import(url),
+          /error loading dynamically imported module/,
+          "Cannot import script that is not web-accessible from page context"
+        );
 
         await browser.test.assertRejects(
           window.eval(`import("${url}")`),
@@ -124,7 +127,7 @@ add_task(async function test_normal_import() {
   await extension.awaitMessage("done");
 
   // Web page can not import non-web-accessible files.
-  await contentPage.spawn(extension.uuid, async uuid => {
+  await contentPage.spawn([extension.uuid], async uuid => {
     let files = ["main.js", "module1.js", "module2.js"];
 
     for (let file of files) {
@@ -154,7 +157,7 @@ add_task(async function test_import_web_accessible() {
     },
 
     files: {
-      "main.js": async function() {
+      "main.js": async function () {
         let mod = await import(browser.runtime.getURL("module1.js"));
         browser.test.assertEq(mod.bar, 2);
         browser.test.assertEq(mod.counter(), 0);
@@ -173,7 +176,7 @@ add_task(async function test_import_web_accessible() {
 
   // Web page can import web-accessible files,
   // even after WebExtension imported the same files.
-  await contentPage.spawn(extension.uuid, async uuid => {
+  await contentPage.spawn([extension.uuid], async uuid => {
     let base = `moz-extension://${uuid}`;
 
     await Assert.rejects(
@@ -210,7 +213,7 @@ add_task(async function test_import_web_accessible_after_page() {
     },
 
     files: {
-      "main.js": async function() {
+      "main.js": async function () {
         browser.test.onMessage.addListener(async msg => {
           browser.test.assertEq(msg, "import");
 
@@ -245,7 +248,7 @@ add_task(async function test_import_web_accessible_after_page() {
   // The web page imports the web-accessible files first,
   // when the WebExtension imports the same file, they should
   // not be shared.
-  await contentPage.spawn(extension.uuid, async uuid => {
+  await contentPage.spawn([extension.uuid], async uuid => {
     let base = `moz-extension://${uuid}`;
 
     await Assert.rejects(

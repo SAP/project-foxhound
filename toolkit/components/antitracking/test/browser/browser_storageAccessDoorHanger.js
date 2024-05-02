@@ -1,8 +1,8 @@
 /* eslint-disable mozilla/no-arbitrary-setTimeout */
-const CHROME_BASE =
-  "chrome://mochitests/content/browser/browser/modules/test/browser/";
-Services.scriptloader.loadSubScript(CHROME_BASE + "head.js", this);
-/* import-globals-from ../../../../../browser/modules/test/browser/head.js */
+Services.scriptloader.loadSubScript(
+  "chrome://mochitests/content/browser/browser/modules/test/browser/head.js",
+  this
+);
 
 const BLOCK = 0;
 const ALLOW = 1;
@@ -52,7 +52,6 @@ async function testDoorHanger(
         "privacy.restrict3rdpartystorage.userInteractionRequiredForHosts",
         "tracking.example.com,tracking.example.org",
       ],
-      ["browser.contentblocking.state-partitioning.mvp.ui.enabled", true],
       // Bug 1617611: Fix all the tests broken by "cookies SameSite=lax by default"
       ["network.cookie.sameSite.laxByDefault", false],
     ],
@@ -134,7 +133,7 @@ async function testDoorHanger(
           subject &&
           subject
             .QueryInterface(Ci.nsIPermission)
-            .type.startsWith("3rdPartyStorage^") &&
+            .type.startsWith("3rdPartyFrameStorage^") &&
           subject.principal.origin == new URL(topPage).origin &&
           data == "added";
       }
@@ -165,6 +164,7 @@ async function testDoorHanger(
 
     if (choice == BLOCK) {
       if (useEscape) {
+        info("hitting escape");
         EventUtils.synthesizeKey("KEY_Escape", {}, window);
       } else {
         await clickSecondaryAction();
@@ -181,10 +181,10 @@ async function testDoorHanger(
   let ct = SpecialPowers.spawn(
     browser,
     [{ page: url, callback: runChecks.toString(), choice, useEscape }],
-    async function(obj) {
+    async function (obj) {
       await new content.Promise(resolve => {
         let ifr = content.document.createElement("iframe");
-        ifr.onload = function() {
+        ifr.onload = function () {
           info("Sending code to the 3rd party content");
           ifr.contentWindow.postMessage(obj.callback, "*");
         };
@@ -237,7 +237,7 @@ async function testDoorHanger(
   gPermissionPanel._identityPermissionBox.click();
   await permissionPopupPromise;
   let permissionItem = document.querySelector(
-    ".permission-popup-permission-item-3rdPartyStorage"
+    ".permission-popup-permission-item-3rdPartyFrameStorage"
   );
   ok(permissionItem, "Permission item exists");
   ok(
@@ -266,7 +266,7 @@ async function testDoorHanger(
 
 async function preparePermissionsFromOtherSites(topPage) {
   info("Faking permissions from other sites");
-  let type = "3rdPartyStorage^https://tracking.example.org";
+  let type = "3rdPartyFrameStorage^https://example.org";
   let permission = Services.perms.ALLOW_ACTION;
   let expireType = Services.perms.EXPIRE_SESSION;
   if (topPage == TEST_TOP_PAGE) {
@@ -312,6 +312,7 @@ async function cleanUp() {
 }
 
 async function runRound(topPage, showPrompt, maxConcurrent, disableWebcompat) {
+  info("Starting round");
   if (showPrompt) {
     await preparePermissionsFromOtherSites(topPage);
     await testDoorHanger(

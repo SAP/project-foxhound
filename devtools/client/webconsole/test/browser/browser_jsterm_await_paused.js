@@ -7,7 +7,7 @@
 
 const TEST_URI = `data:text/html;charset=utf-8,<!DOCTYPE html>Web Console test top-level await when debugger paused`;
 
-add_task(async function() {
+add_task(async function () {
   // Enable await mapping.
   await pushPref("devtools.debugger.features.map-await-expression", true);
 
@@ -24,7 +24,7 @@ add_task(async function() {
   execute(hud, pauseExpression);
 
   // wait for the debugger to be opened and paused.
-  const toolbox = await gDevTools.getToolboxForTab(gBrowser.selectedTab);
+  const toolbox = gDevTools.getToolboxForTab(gBrowser.selectedTab);
 
   await waitFor(() => toolbox.getPanel("jsdebugger"));
   const dbg = createDebuggerContext(toolbox);
@@ -34,29 +34,36 @@ add_task(async function() {
 
   const awaitExpression = `await new Promise(res => {
     const result = ["res", ...inPausedExpression];
-    setTimeout(() => res(result), 1000);
+    setTimeout(() => res(result), 2000);
+    console.log("awaitExpression executed");
   })`;
 
-  const onAwaitResultMessage = waitForMessage(
+  const onAwaitResultMessage = waitForMessageByType(
     hud,
     `[ "res", "bar" ]`,
-    ".message.result"
+    ".result"
+  );
+  const onAwaitExpressionExecuted = waitForMessageByType(
+    hud,
+    "awaitExpression executed",
+    ".console-api"
   );
   execute(hud, awaitExpression);
 
   // We send an evaluation just after the await one to ensure the await evaluation was
   // done. We can't await on the previous execution because it waits for the result to
   // be send, which won't happen until we resume the debugger.
-  await executeAndWaitForMessage(hud, `"smoke"`, `"smoke"`, ".result");
+  await executeAndWaitForResultMessage(hud, `"smoke"`, `"smoke"`);
 
   // Give the engine some time to evaluate the await expression before resuming.
-  await waitForTick();
+  // Otherwise the awaitExpression may be evaluate while the thread is already resumed!
+  await onAwaitExpressionExecuted;
 
   // Click on the resume button to not be paused anymore.
   await resume(dbg);
 
   info("Wait for the paused expression result to be displayed");
-  await waitFor(() => findMessage(hud, "pauseExpression-res", ".result"));
+  await waitFor(() => findEvaluationResultMessage(hud, "pauseExpression-res"));
 
   await onAwaitResultMessage;
   const messages = hud.ui.outputNode.querySelectorAll(
@@ -71,9 +78,9 @@ add_task(async function() {
     // Result of await
     `Array [ "res", "bar" ]`,
   ];
-  is(
-    JSON.stringify(messagesText, null, 2),
-    JSON.stringify(expectedMessages, null, 2),
+  Assert.deepEqual(
+    messagesText,
+    expectedMessages,
     "The output contains the the expected messages, in the expected order"
   );
 });

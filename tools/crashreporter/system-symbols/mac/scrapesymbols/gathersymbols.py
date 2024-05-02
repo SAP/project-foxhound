@@ -2,18 +2,17 @@
 # Any copyright is dedicated to the Public Domain.
 # http://creativecommons.org/publicdomain/zero/1.0/
 
-from __future__ import print_function, absolute_import
-
 import argparse
 import concurrent.futures
 import datetime
 import os
-import requests
 import subprocess
 import sys
+import traceback
 import urllib
 import zipfile
 
+import requests
 
 if sys.platform == "darwin":
     SYSTEM_DIRS = [
@@ -24,9 +23,7 @@ if sys.platform == "darwin":
     ]
 else:
     SYSTEM_DIRS = ["/lib", "/usr/lib"]
-SYMBOL_SERVER_URL = (
-    "https://s3-us-west-2.amazonaws.com/org.mozilla.crash-stats.symbols-public/v1/"
-)
+SYMBOL_SERVER_URL = "https://symbols.mozilla.org/"
 
 
 def should_process(f, platform=sys.platform):
@@ -39,7 +36,7 @@ def should_process(f, platform=sys.platform):
         prematurely when this happens.
         """
         try:
-            filetype = subprocess.check_output(["file", "-Lb", f])
+            filetype = subprocess.check_output(["file", "-Lb", f], text=True)
         except subprocess.CalledProcessError:
             return False
         """Skip kernel extensions"""
@@ -47,7 +44,7 @@ def should_process(f, platform=sys.platform):
             return False
         return filetype.startswith("Mach-O")
     else:
-        return subprocess.check_output(["file", "-Lb", f]).startswith("ELF")
+        return subprocess.check_output(["file", "-Lb", f], text=True).startswith("ELF")
     return False
 
 
@@ -56,14 +53,19 @@ def get_archs(filename, platform=sys.platform):
     Find the list of architectures present in a Mach-O file, or a single-element
     list on non-OS X.
     """
-    if platform == "darwin":
-        return (
-            subprocess.check_output(["lipo", "-info", filename])
-            .split(":")[2]
-            .strip()
-            .split()
-        )
-    return [None]
+    architectures = []
+    output = subprocess.check_output(["file", "-Lb", filename], text=True)
+    for string in output.split(" "):
+        if string == "arm64e":
+            architectures.append("arm64e")
+        elif string == "x86_64_haswell":
+            architectures.append("x86_64h")
+        elif string == "x86_64":
+            architectures.append("x86_64")
+        elif string == "i386":
+            architectures.append("i386")
+
+    return architectures
 
 
 def server_has_file(filename):
@@ -80,25 +82,22 @@ def server_has_file(filename):
 
 
 def process_file(dump_syms, path, arch, verbose, write_all):
-    if sys.platform == "darwin":
-        arch_arg = ["-a", arch]
-    else:
-        arch_arg = []
+    arch_arg = ["-a", arch]
     try:
-        stderr = None if verbose else open(os.devnull, "wb")
+        stderr = None if verbose else subprocess.DEVNULL
         stdout = subprocess.check_output([dump_syms] + arch_arg + [path], stderr=stderr)
     except subprocess.CalledProcessError:
         if verbose:
             print("Processing %s%s...failed." % (path, " [%s]" % arch if arch else ""))
         return None, None
     module = stdout.splitlines()[0]
-    bits = module.split(" ", 4)
+    bits = module.split(b" ", 4)
     if len(bits) != 5:
         return None, None
     _, platform, cpu_arch, debug_id, debug_file = bits
     if verbose:
         sys.stdout.write("Processing %s [%s]..." % (path, arch))
-    filename = os.path.join(debug_file, debug_id, debug_file + ".sym")
+    filename = os.path.join(debug_file, debug_id, debug_file + b".sym")
     # see if the server already has this symbol file
     if not write_all:
         if server_has_file(filename):
@@ -150,6 +149,7 @@ def process_paths(
         try:
             yield job.result()
         except Exception as e:
+            traceback.print_exc(file=sys.stderr)
             print("Error: %s" % str(e), file=sys.stderr)
 
 

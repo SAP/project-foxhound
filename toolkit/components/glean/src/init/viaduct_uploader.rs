@@ -4,7 +4,11 @@
 
 use glean::net::{PingUploader, UploadResult};
 use url::Url;
-use viaduct::Request;
+use viaduct::{Error::*, Request};
+
+extern "C" {
+    fn FOG_TooLateToSend() -> bool;
+}
 
 /// An uploader that uses [Viaduct](https://github.com/mozilla/application-services/tree/main/components/viaduct).
 #[derive(Debug)]
@@ -23,13 +27,18 @@ impl PingUploader for ViaductUploader {
         log::trace!("FOG Ping Uploader uploading to {}", url);
         let url_clone = url.clone();
         let result: std::result::Result<UploadResult, viaduct::Error> = (move || {
+            // SAFETY NOTE: Safe because it returns a primitive by value.
+            if unsafe { FOG_TooLateToSend() } {
+                log::trace!("Attempted to send ping too late into shutdown.");
+                return Ok(UploadResult::done());
+            }
             let debug_tagged = headers.iter().any(|(name, _)| name == "X-Debug-ID");
             let localhost_port = static_prefs::pref!("telemetry.fog.test.localhost_port");
             if localhost_port < 0
                 || (localhost_port == 0 && !debug_tagged && cfg!(feature = "disable_upload"))
             {
                 log::info!("FOG Ping uploader faking success");
-                return Ok(UploadResult::HttpStatus(200));
+                return Ok(UploadResult::http_status(200));
             }
             let parsed_url = Url::parse(&url_clone)?;
 
@@ -42,7 +51,7 @@ impl PingUploader for ViaductUploader {
 
             log::trace!("FOG Ping Uploader sending ping to {}", parsed_url);
             let res = req.send()?;
-            Ok(UploadResult::HttpStatus(res.status.into()))
+            Ok(UploadResult::http_status(res.status as i32))
         })();
         log::trace!(
             "FOG Ping Uploader completed uploading to {} (Result {:?})",
@@ -51,7 +60,14 @@ impl PingUploader for ViaductUploader {
         );
         match result {
             Ok(result) => result,
-            _ => UploadResult::UnrecoverableFailure,
+            Err(NonTlsUrl | UrlError(_)) => UploadResult::unrecoverable_failure(),
+            Err(
+                RequestHeaderError(_)
+                | BackendError(_)
+                | NetworkError(_)
+                | BackendNotInitialized
+                | SetBackendError,
+            ) => UploadResult::recoverable_failure(),
         }
     }
 }

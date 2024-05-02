@@ -2,6 +2,15 @@
 
 exports[`XHR Breakpoints should render with 0 expressions passed from props 1`] = `
 <XHRBreakpoints
+  disableXHRBreakpoint={[Function]}
+  enableXHRBreakpoint={[Function]}
+  onXHRAdded={[Function]}
+  removeXHRBreakpoint={[Function]}
+  setXHRBreakpoint={[Function]}
+  shouldPauseOnAny={false}
+  showInput={false}
+  togglePauseOnAny={[Function]}
+  updateXHRBreakpoint={[Function]}
   xhrBreakpoints={
     Array [
       Object {
@@ -15,19 +24,19 @@ exports[`XHR Breakpoints should render with 0 expressions passed from props 1`] 
   }
 >
   <div
-    className="breakpoints-exceptions-options empty"
+    className="breakpoints-options empty"
   >
     <ExceptionOption
       className="breakpoints-exceptions"
+      isChecked={false}
       label="Pause on any URL"
       onChange={[Function]}
     >
-      <div
+      <label
         className="breakpoints-exceptions"
-        onClick={[Function]}
       >
         <input
-          checked=""
+          checked={false}
           onChange={[Function]}
           type="checkbox"
         />
@@ -36,7 +45,7 @@ exports[`XHR Breakpoints should render with 0 expressions passed from props 1`] 
         >
           Pause on any URL
         </div>
-      </div>
+      </label>
     </ExceptionOption>
   </div>
   <form
@@ -132,6 +141,15 @@ exports[`XHR Breakpoints should render with 0 expressions passed from props 1`] 
 
 exports[`XHR Breakpoints should render with 8 expressions passed from props 1`] = `
 <XHRBreakpoints
+  disableXHRBreakpoint={[Function]}
+  enableXHRBreakpoint={[Function]}
+  onXHRAdded={[Function]}
+  removeXHRBreakpoint={[Function]}
+  setXHRBreakpoint={[Function]}
+  shouldPauseOnAny={false}
+  showInput={false}
+  togglePauseOnAny={[Function]}
+  updateXHRBreakpoint={[Function]}
   xhrBreakpoints={
     Array [
       Object {
@@ -201,19 +219,19 @@ exports[`XHR Breakpoints should render with 8 expressions passed from props 1`] 
   }
 >
   <div
-    className="breakpoints-exceptions-options"
+    className="breakpoints-options"
   >
     <ExceptionOption
       className="breakpoints-exceptions"
+      isChecked={false}
       label="Pause on any URL"
       onChange={[Function]}
     >
-      <div
+      <label
         className="breakpoints-exceptions"
-        onClick={[Function]}
       >
         <input
-          checked=""
+          checked={false}
           onChange={[Function]}
           type="checkbox"
         />
@@ -222,7 +240,7 @@ exports[`XHR Breakpoints should render with 8 expressions passed from props 1`] 
         >
           Pause on any URL
         </div>
-      </div>
+      </label>
     </ExceptionOption>
   </div>
   <ul

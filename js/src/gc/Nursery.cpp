@@ -10,6 +10,8 @@
 #include "mozilla/DebugOnly.h"
 #include "mozilla/IntegerPrintfMacros.h"
 #include "mozilla/ScopeExit.h"
+#include "mozilla/Sprintf.h"
+#include "mozilla/TimeStamp.h"
 
 #include <algorithm>
 #include <cmath>
@@ -17,46 +19,37 @@
 
 #include "builtin/MapObject.h"
 #include "debugger/DebugAPI.h"
-#include "gc/FreeOp.h"
 #include "gc/GCInternals.h"
 #include "gc/GCLock.h"
+#include "gc/GCParallelTask.h"
 #include "gc/Memory.h"
 #include "gc/PublicIterators.h"
 #include "gc/Tenuring.h"
 #include "jit/JitFrames.h"
-#include "jit/JitRealm.h"
+#include "jit/JitZone.h"
+#include "js/Printer.h"
 #include "util/DifferentialTesting.h"
 #include "util/GetPidProvider.h"  // getpid()
 #include "util/Poison.h"
-#include "vm/ArrayObject.h"
 #include "vm/JSONPrinter.h"
 #include "vm/Realm.h"
 #include "vm/Time.h"
-#include "vm/TypedArrayObject.h"
 
+#include "gc/Heap-inl.h"
 #include "gc/Marking-inl.h"
-#include "gc/Zone-inl.h"
+#include "gc/StableCellHasher-inl.h"
 #include "vm/GeckoProfiler-inl.h"
-#include "vm/NativeObject-inl.h"
 
 using namespace js;
-using namespace gc;
+using namespace js::gc;
 
 using mozilla::DebugOnly;
 using mozilla::PodCopy;
 using mozilla::TimeDuration;
 using mozilla::TimeStamp;
 
-#ifdef JS_GC_ZEAL
-constexpr uint32_t CanaryMagicValue = 0xDEADB15D;
-
-struct alignas(gc::CellAlignBytes) js::Nursery::Canary {
-  uint32_t magicValue;
-  Canary* next;
-};
-#endif
-
 namespace js {
+
 struct NurseryChunk : public ChunkBase {
   char data[Nursery::NurseryChunkUsableSize];
 
@@ -66,7 +59,7 @@ struct NurseryChunk : public ChunkBase {
       : ChunkBase(runtime, &runtime->gc.storeBuffer()) {}
 
   void poisonAndInit(JSRuntime* rt, size_t size = ChunkSize);
-  void poisonRange(size_t from, size_t size, uint8_t value,
+  void poisonRange(size_t start, size_t end, uint8_t value,
                    MemCheckKind checkKind);
   void poisonAfterEvict(size_t extent = ChunkSize);
 
@@ -85,6 +78,33 @@ struct NurseryChunk : public ChunkBase {
 static_assert(sizeof(js::NurseryChunk) == gc::ChunkSize,
               "Nursery chunk size must match gc::Chunk size.");
 
+class NurseryDecommitTask : public GCParallelTask {
+ public:
+  explicit NurseryDecommitTask(gc::GCRuntime* gc);
+  bool reserveSpaceForBytes(size_t nbytes);
+
+  bool isEmpty(const AutoLockHelperThreadState& lock) const;
+
+  void queueChunk(NurseryChunk* chunk, const AutoLockHelperThreadState& lock);
+  void queueRange(size_t newCapacity, NurseryChunk& chunk,
+                  const AutoLockHelperThreadState& lock);
+
+ private:
+  using NurseryChunkVector = Vector<NurseryChunk*, 0, SystemAllocPolicy>;
+
+  void run(AutoLockHelperThreadState& lock) override;
+
+  NurseryChunkVector& chunksToDecommit() { return chunksToDecommit_.ref(); }
+  const NurseryChunkVector& chunksToDecommit() const {
+    return chunksToDecommit_.ref();
+  }
+
+  MainThreadOrGCTaskData<NurseryChunkVector> chunksToDecommit_;
+
+  MainThreadOrGCTaskData<NurseryChunk*> partialChunk;
+  MainThreadOrGCTaskData<size_t> partialCapacity;
+};
+
 }  // namespace js
 
 inline void js::NurseryChunk::poisonAndInit(JSRuntime* rt, size_t size) {
@@ -94,23 +114,26 @@ inline void js::NurseryChunk::poisonAndInit(JSRuntime* rt, size_t size) {
   new (this) NurseryChunk(rt);
 }
 
-inline void js::NurseryChunk::poisonRange(size_t from, size_t size,
+inline void js::NurseryChunk::poisonRange(size_t start, size_t end,
                                           uint8_t value,
                                           MemCheckKind checkKind) {
-  MOZ_ASSERT(from + size <= ChunkSize);
+  MOZ_ASSERT((start % gc::CellAlignBytes) == 0);
+  MOZ_ASSERT((end % gc::CellAlignBytes) == 0);
+  MOZ_ASSERT(end >= start);
+  MOZ_ASSERT(end <= ChunkSize);
 
-  auto* start = reinterpret_cast<uint8_t*>(this) + from;
+  auto* ptr = reinterpret_cast<uint8_t*>(this) + start;
+  size_t size = end - start;
 
   // We can poison the same chunk more than once, so first make sure memory
   // sanitizers will let us poison it.
-  MOZ_MAKE_MEM_UNDEFINED(start, size);
-  Poison(start, value, size, checkKind);
+  MOZ_MAKE_MEM_UNDEFINED(ptr, size);
+  Poison(ptr, value, size, checkKind);
 }
 
 inline void js::NurseryChunk::poisonAfterEvict(size_t extent) {
-  MOZ_ASSERT(extent <= ChunkSize);
-  poisonRange(sizeof(ChunkBase), extent - sizeof(ChunkBase),
-              JS_SWEPT_NURSERY_PATTERN, MemCheckKind::MakeNoAccess);
+  poisonRange(sizeof(ChunkBase), extent, JS_SWEPT_NURSERY_PATTERN,
+              MemCheckKind::MakeNoAccess);
 }
 
 inline void js::NurseryChunk::markPagesUnusedHard(size_t startOffset) {
@@ -174,8 +197,9 @@ void js::NurseryDecommitTask::run(AutoLockHelperThreadState& lock) {
   while (!chunksToDecommit().empty()) {
     NurseryChunk* nurseryChunk = chunksToDecommit().popCopy();
     AutoUnlockHelperThreadState unlock(lock);
-    auto* tenuredChunk = reinterpret_cast<TenuredChunk*>(nurseryChunk);
-    tenuredChunk->init(gc, /* allMemoryCommitted = */ false);
+    nurseryChunk->~NurseryChunk();
+    TenuredChunk* tenuredChunk = TenuredChunk::emplace(
+        nurseryChunk, gc, /* allMemoryCommitted = */ false);
     AutoLockGC lock(gc);
     gc->recycleChunk(tenuredChunk, lock);
   }
@@ -191,32 +215,23 @@ void js::NurseryDecommitTask::run(AutoLockHelperThreadState& lock) {
 }
 
 js::Nursery::Nursery(GCRuntime* gc)
-    : gc(gc),
-      position_(0),
-      currentStartChunk_(0),
-      currentStartPosition_(0),
+    : position_(0),
       currentEnd_(0),
-      currentStringEnd_(0),
-      currentBigIntEnd_(0),
+      gc(gc),
       currentChunk_(0),
+      startChunk_(0),
+      startPosition_(0),
       capacity_(0),
-      timeInChunkAlloc_(0),
       enableProfiling_(false),
-      profileThreshold_(0),
       canAllocateStrings_(true),
       canAllocateBigInts_(true),
       reportDeduplications_(false),
       reportPretenuring_(false),
       reportPretenuringThreshold_(0),
       minorGCTriggerReason_(JS::GCReason::NO_REASON),
+      prevPosition_(0),
       hasRecentGrowthData(false),
-      smoothedTargetSize(0.0),
-      decommitTask(gc)
-#ifdef JS_GC_ZEAL
-      ,
-      lastCanary_(nullptr)
-#endif
-{
+      smoothedTargetSize(0.0) {
   const char* env = getenv("MOZ_NURSERY_STRINGS");
   if (env && *env) {
     canAllocateStrings_ = (*env == '1');
@@ -286,6 +301,11 @@ bool js::Nursery::init(AutoLockGCBgAlloc& lock) {
       "\tallocation sites with at least N allocations.\n",
       &reportPretenuring_, &reportPretenuringThreshold_);
 
+  decommitTask = MakeUnique<NurseryDecommitTask>(gc);
+  if (!decommitTask) {
+    return false;
+  }
+
   if (!gc->storeBuffer().enable()) {
     return false;
   }
@@ -316,6 +336,8 @@ void js::Nursery::enable() {
   }
 #endif
 
+  updateAllZoneAllocFlags();
+
   // This should always succeed after the first time it's called.
   MOZ_ALWAYS_TRUE(gc->storeBuffer().enable());
 }
@@ -325,14 +347,14 @@ bool js::Nursery::initFirstChunk(AutoLockGCBgAlloc& lock) {
 
   capacity_ = tunables().gcMinNurseryBytes();
 
-  if (!decommitTask.reserveSpaceForBytes(capacity_) ||
+  if (!decommitTask->reserveSpaceForBytes(capacity_) ||
       !allocateNextChunk(0, lock)) {
     capacity_ = 0;
     return false;
   }
 
-  setCurrentChunk(0);
-  setStartPosition();
+  moveToStartOfChunk(0);
+  setStartToCurrentPosition();
   poisonAndInitCurrentChunk();
 
   // Clear any information about previous collections.
@@ -342,50 +364,104 @@ bool js::Nursery::initFirstChunk(AutoLockGCBgAlloc& lock) {
 }
 
 void js::Nursery::disable() {
-  stringDeDupSet.reset();
   MOZ_ASSERT(isEmpty());
   if (!isEnabled()) {
     return;
   }
 
   // Free all chunks.
-  decommitTask.join();
+  decommitTask->join();
   freeChunksFrom(0);
-  decommitTask.runFromMainThread();
+  decommitTask->runFromMainThread();
 
   capacity_ = 0;
 
   // We must reset currentEnd_ so that there is no space for anything in the
   // nursery. JIT'd code uses this even if the nursery is disabled.
   currentEnd_ = 0;
-  currentStringEnd_ = 0;
-  currentBigIntEnd_ = 0;
   position_ = 0;
   gc->storeBuffer().disable();
+
+  if (gc->wasInitialized()) {
+    // This assumes there is an atoms zone.
+    updateAllZoneAllocFlags();
+  }
 }
 
 void js::Nursery::enableStrings() {
   MOZ_ASSERT(isEmpty());
   canAllocateStrings_ = true;
-  currentStringEnd_ = currentEnd_;
+  updateAllZoneAllocFlags();
 }
 
 void js::Nursery::disableStrings() {
   MOZ_ASSERT(isEmpty());
   canAllocateStrings_ = false;
-  currentStringEnd_ = 0;
+  updateAllZoneAllocFlags();
 }
 
 void js::Nursery::enableBigInts() {
   MOZ_ASSERT(isEmpty());
   canAllocateBigInts_ = true;
-  currentBigIntEnd_ = currentEnd_;
+  updateAllZoneAllocFlags();
 }
 
 void js::Nursery::disableBigInts() {
   MOZ_ASSERT(isEmpty());
   canAllocateBigInts_ = false;
-  currentBigIntEnd_ = 0;
+  updateAllZoneAllocFlags();
+}
+
+void js::Nursery::updateAllZoneAllocFlags() {
+  // The alloc flags are not relevant for the atoms zone, and flushing
+  // jit-related information can be problematic for the atoms zone.
+  for (ZonesIter zone(gc, SkipAtoms); !zone.done(); zone.next()) {
+    updateAllocFlagsForZone(zone);
+  }
+}
+
+void js::Nursery::getAllocFlagsForZone(JS::Zone* zone, bool* allocObjectsOut,
+                                       bool* allocStringsOut,
+                                       bool* allocBigIntsOut) {
+  *allocObjectsOut = isEnabled();
+  *allocStringsOut =
+      isEnabled() && canAllocateStrings() && !zone->nurseryStringsDisabled;
+  *allocBigIntsOut =
+      isEnabled() && canAllocateBigInts() && !zone->nurseryBigIntsDisabled;
+}
+
+void js::Nursery::setAllocFlagsForZone(JS::Zone* zone) {
+  bool allocObjects;
+  bool allocStrings;
+  bool allocBigInts;
+
+  getAllocFlagsForZone(zone, &allocObjects, &allocStrings, &allocBigInts);
+  zone->setNurseryAllocFlags(allocObjects, allocStrings, allocBigInts);
+}
+
+void js::Nursery::updateAllocFlagsForZone(JS::Zone* zone) {
+  bool allocObjects;
+  bool allocStrings;
+  bool allocBigInts;
+
+  getAllocFlagsForZone(zone, &allocObjects, &allocStrings, &allocBigInts);
+
+  if (allocObjects != zone->allocNurseryObjects() ||
+      allocStrings != zone->allocNurseryStrings() ||
+      allocBigInts != zone->allocNurseryBigInts()) {
+    CancelOffThreadIonCompile(zone);
+    zone->setNurseryAllocFlags(allocObjects, allocStrings, allocBigInts);
+    discardCodeAndSetJitFlagsForZone(zone);
+  }
+}
+
+void js::Nursery::discardCodeAndSetJitFlagsForZone(JS::Zone* zone) {
+  zone->forceDiscardJitCode(runtime()->gcContext());
+
+  if (jit::JitZone* jitZone = zone->jitZone()) {
+    jitZone->discardStubs();
+    jitZone->setStringsCanBeInNursery(zone->allocNurseryStrings());
+  }
 }
 
 bool js::Nursery::isEmpty() const {
@@ -394,10 +470,10 @@ bool js::Nursery::isEmpty() const {
   }
 
   if (!gc->hasZealMode(ZealMode::GenerationalGC)) {
-    MOZ_ASSERT(currentStartChunk_ == 0);
-    MOZ_ASSERT(currentStartPosition_ == chunk(0).start());
+    MOZ_ASSERT(startChunk_ == 0);
+    MOZ_ASSERT(startPosition_ == chunk(0).start());
   }
-  return position() == currentStartPosition_;
+  return position() == startPosition_;
 }
 
 #ifdef JS_GC_ZEAL
@@ -408,7 +484,7 @@ void js::Nursery::enterZealMode() {
 
   MOZ_ASSERT(isEmpty());
 
-  decommitTask.join();
+  decommitTask->join();
 
   AutoEnterOOMUnsafeRegion oomUnsafe;
 
@@ -421,13 +497,13 @@ void js::Nursery::enterZealMode() {
 
     // It'd be simpler to poison the whole chunk, but we can't do that
     // because the nursery might be partially used.
-    chunk(0).poisonRange(capacity_, ChunkSize - capacity_,
-                         JS_FRESH_NURSERY_PATTERN, MemCheckKind::MakeUndefined);
+    chunk(0).poisonRange(capacity_, ChunkSize, JS_FRESH_NURSERY_PATTERN,
+                         MemCheckKind::MakeUndefined);
   }
 
   capacity_ = RoundUp(tunables().gcMaxNurseryBytes(), ChunkSize);
 
-  if (!decommitTask.reserveSpaceForBytes(capacity_)) {
+  if (!decommitTask->reserveSpaceForBytes(capacity_)) {
     oomUnsafe.crash("Nursery::enterZealMode");
   }
 
@@ -441,175 +517,85 @@ void js::Nursery::leaveZealMode() {
 
   MOZ_ASSERT(isEmpty());
 
-  setCurrentChunk(0);
-  setStartPosition();
+  moveToStartOfChunk(0);
+  setStartToCurrentPosition();
   poisonAndInitCurrentChunk();
 }
 #endif  // JS_GC_ZEAL
 
-JSObject* js::Nursery::allocateObject(gc::AllocSite* site, size_t size,
-                                      size_t nDynamicSlots,
-                                      const JSClass* clasp) {
-  // Ensure there's enough space to replace the contents with a
-  // RelocationOverlay.
-  MOZ_ASSERT(size >= sizeof(RelocationOverlay));
-
-  // Sanity check the finalizer.
-  MOZ_ASSERT_IF(clasp->hasFinalize(), CanNurseryAllocateFinalizedClass(clasp) ||
-                                          clasp->isProxyObject());
-
-  auto* obj = reinterpret_cast<JSObject*>(
-      allocateCell(site, size, JS::TraceKind::Object));
-  if (!obj) {
-    return nullptr;
-  }
-
-  // If we want external slots, add them.
-  ObjectSlots* slotsHeader = nullptr;
-  if (nDynamicSlots) {
-    MOZ_ASSERT(clasp->isNativeObject());
-    void* allocation =
-        allocateBuffer(site->zone(), ObjectSlots::allocSize(nDynamicSlots));
-    if (!allocation) {
-      // It is safe to leave the allocated object uninitialized, since we
-      // do not visit unallocated things in the nursery.
-      return nullptr;
-    }
-    slotsHeader = new (allocation) ObjectSlots(nDynamicSlots, 0);
-  }
-
-  // Store slots pointer directly in new object. If no dynamic slots were
-  // requested, caller must initialize slots_ field itself as needed. We
-  // don't know if the caller was a native object or not.
-  if (nDynamicSlots) {
-    static_cast<NativeObject*>(obj)->initSlots(slotsHeader->slots());
-  }
-
-  gcprobes::NurseryAlloc(obj, size);
-  return obj;
-}
-
-Cell* js::Nursery::allocateCell(gc::AllocSite* site, size_t size,
+void* js::Nursery::allocateCell(gc::AllocSite* site, size_t size,
                                 JS::TraceKind kind) {
-  // Ensure there's enough space to replace the contents with a
-  // RelocationOverlay.
-  MOZ_ASSERT(size >= sizeof(RelocationOverlay));
-  MOZ_ASSERT(size % CellAlignBytes == 0);
+  MOZ_ASSERT(CurrentThreadCanAccessRuntime(runtime()));
 
-  void* ptr = allocate(sizeof(NurseryCellHeader) + size);
-  if (!ptr) {
+  void* ptr = tryAllocateCell(site, size, kind);
+  if (MOZ_LIKELY(ptr)) {
+    return ptr;
+  }
+
+  if (handleAllocationFailure() != JS::GCReason::NO_REASON) {
     return nullptr;
   }
 
-  new (ptr) NurseryCellHeader(site, kind);
-
-  auto cell =
-      reinterpret_cast<Cell*>(uintptr_t(ptr) + sizeof(NurseryCellHeader));
-
-  // Update the allocation site. This code is also inlined in
-  // MacroAssembler::updateAllocSite.
-  if (!site->isInAllocatedList()) {
-    pretenuringNursery.insertIntoAllocatedList(site);
-  }
-  site->incAllocCount();
-
-  gcprobes::NurseryAlloc(cell, kind);
-  return cell;
-}
-
-Cell* js::Nursery::allocateString(gc::AllocSite* site, size_t size) {
-  Cell* cell = allocateCell(site, size, JS::TraceKind::String);
-  if (cell) {
-    site->zone()->nurseryAllocatedStrings++;
-    // Taintfox: register the string so we can clean up later on
-    addStringWithNurseryMemory(static_cast<JSString*>(cell));
-  }
-  return cell;
+  ptr = tryAllocateCell(site, size, kind);
+  MOZ_ASSERT(ptr);
+  return ptr;
 }
 
 inline void* js::Nursery::allocate(size_t size) {
-  MOZ_ASSERT(isEnabled());
-  MOZ_ASSERT(!JS::RuntimeHeapIsBusy());
   MOZ_ASSERT(CurrentThreadCanAccessRuntime(runtime()));
-  MOZ_ASSERT_IF(currentChunk_ == currentStartChunk_,
-                position() >= currentStartPosition_);
-  MOZ_ASSERT(position() % CellAlignBytes == 0);
-  MOZ_ASSERT(size % CellAlignBytes == 0);
 
-#ifdef JS_GC_ZEAL
-  if (gc->hasZealMode(ZealMode::CheckNursery)) {
-    size += sizeof(Canary);
-  }
-#endif
-
-  if (MOZ_UNLIKELY(currentEnd() < position() + size)) {
-    return moveToNextChunkAndAllocate(size);
+  void* ptr = tryAllocate(size);
+  if (MOZ_LIKELY(ptr)) {
+    return ptr;
   }
 
-  void* thing = (void*)position();
-  position_ = position() + size;
-  // We count this regardless of the profiler's state, assuming that it costs
-  // just as much to count it, as to check the profiler's state and decide not
-  // to count it.
-  stats().noteNurseryAlloc();
-
-  DebugOnlyPoison(thing, JS_ALLOCATED_NURSERY_PATTERN, size,
-                  MemCheckKind::MakeUndefined);
-
-#ifdef JS_GC_ZEAL
-  if (gc->hasZealMode(ZealMode::CheckNursery)) {
-    writeCanary(position() - sizeof(Canary));
+  if (handleAllocationFailure() != JS::GCReason::NO_REASON) {
+    return nullptr;
   }
-#endif
 
-  return thing;
+  ptr = tryAllocate(size);
+  MOZ_ASSERT(ptr);
+  return ptr;
 }
 
-void* Nursery::moveToNextChunkAndAllocate(size_t size) {
-  MOZ_ASSERT(currentEnd() < position() + size);
+MOZ_NEVER_INLINE JS::GCReason Nursery::handleAllocationFailure() {
+  if (minorGCRequested()) {
+    // If a minor GC was requested then fail the allocation. The collection is
+    // then run in GCRuntime::tryNewNurseryCell.
+    return minorGCTriggerReason_;
+  }
 
+  if (!moveToNextChunk()) {
+    return JS::GCReason::OUT_OF_NURSERY;
+  }
+
+  return JS::GCReason::NO_REASON;
+}
+
+bool Nursery::moveToNextChunk() {
   unsigned chunkno = currentChunk_ + 1;
   MOZ_ASSERT(chunkno <= maxChunkCount());
   MOZ_ASSERT(chunkno <= allocatedChunkCount());
   if (chunkno == maxChunkCount()) {
-    return nullptr;
+    return false;
   }
+
   if (chunkno == allocatedChunkCount()) {
-    mozilla::TimeStamp start = ReallyNow();
+    TimeStamp start = TimeStamp::Now();
     {
       AutoLockGCBgAlloc lock(gc);
       if (!allocateNextChunk(chunkno, lock)) {
-        return nullptr;
+        return false;
       }
     }
-    timeInChunkAlloc_ += ReallyNow() - start;
+    timeInChunkAlloc_ += TimeStamp::Now() - start;
     MOZ_ASSERT(chunkno < allocatedChunkCount());
   }
-  setCurrentChunk(chunkno);
+
+  moveToStartOfChunk(chunkno);
   poisonAndInitCurrentChunk();
-
-  // We know there's enough space to allocate now so we can call allocate()
-  // recursively. Adjust the size for the nursery canary which it will add on.
-  MOZ_ASSERT(currentEnd() >= position() + size);
-#ifdef JS_GC_ZEAL
-  if (gc->hasZealMode(ZealMode::CheckNursery)) {
-    size -= sizeof(Canary);
-  }
-#endif
-  return allocate(size);
+  return true;
 }
-
-#ifdef JS_GC_ZEAL
-inline void Nursery::writeCanary(uintptr_t address) {
-  auto* canary = reinterpret_cast<Canary*>(address);
-  new (canary) Canary{CanaryMagicValue, nullptr};
-  if (lastCanary_) {
-    MOZ_ASSERT(!lastCanary_->next);
-    lastCanary_->next = canary;
-  }
-  lastCanary_ = canary;
-}
-#endif
 
 void* js::Nursery::allocateBuffer(Zone* zone, size_t nbytes) {
   MOZ_ASSERT(nbytes > 0);
@@ -629,23 +615,24 @@ void* js::Nursery::allocateBuffer(Zone* zone, size_t nbytes) {
   return buffer;
 }
 
-void* js::Nursery::allocateBuffer(JSObject* obj, size_t nbytes) {
-  MOZ_ASSERT(obj);
+void* js::Nursery::allocateBuffer(Zone* zone, Cell* cell, size_t nbytes) {
+  MOZ_ASSERT(cell);
   MOZ_ASSERT(nbytes > 0);
 
-  if (!IsInsideNursery(obj)) {
-    return obj->zone()->pod_malloc<uint8_t>(nbytes);
+  if (!IsInsideNursery(cell)) {
+    return zone->pod_malloc<uint8_t>(nbytes);
   }
-  return allocateBuffer(obj->zone(), nbytes);
+
+  return allocateBuffer(zone, nbytes);
 }
 
-void* js::Nursery::allocateBufferSameLocation(JSObject* obj, size_t nbytes) {
-  MOZ_ASSERT(obj);
+void* js::Nursery::allocateBufferSameLocation(Cell* cell, size_t nbytes) {
+  MOZ_ASSERT(cell);
   MOZ_ASSERT(nbytes > 0);
   MOZ_ASSERT(nbytes <= MaxNurseryBufferSize);
 
-  if (!IsInsideNursery(obj)) {
-    return obj->zone()->pod_malloc<uint8_t>(nbytes);
+  if (!IsInsideNursery(cell)) {
+    return cell->asTenured().zone()->pod_malloc<uint8_t>(nbytes);
   }
 
   return allocate(nbytes);
@@ -672,19 +659,21 @@ void* js::Nursery::allocateZeroedBuffer(
 }
 
 void* js::Nursery::allocateZeroedBuffer(
-    JSObject* obj, size_t nbytes, arena_id_t arena /*= js::MallocArena*/) {
-  MOZ_ASSERT(obj);
+    Cell* cell, size_t nbytes, arena_id_t arena /*= js::MallocArena*/) {
+  MOZ_ASSERT(cell);
   MOZ_ASSERT(nbytes > 0);
 
-  if (!IsInsideNursery(obj)) {
-    return obj->zone()->pod_arena_calloc<uint8_t>(arena, nbytes);
+  if (!IsInsideNursery(cell)) {
+    return cell->asTenured().zone()->pod_arena_calloc<uint8_t>(arena, nbytes);
   }
-  return allocateZeroedBuffer(obj->zone(), nbytes, arena);
+
+  return allocateZeroedBuffer(cell->nurseryZone(), nbytes, arena);
 }
 
 void* js::Nursery::reallocateBuffer(Zone* zone, Cell* cell, void* oldBuffer,
                                     size_t oldBytes, size_t newBytes) {
   if (!IsInsideNursery(cell)) {
+    MOZ_ASSERT(!isInside(oldBuffer));
     return zone->pod_realloc<uint8_t>((uint8_t*)oldBuffer, oldBytes, newBytes);
   }
 
@@ -713,16 +702,6 @@ void* js::Nursery::reallocateBuffer(Zone* zone, Cell* cell, void* oldBuffer,
     PodCopy((uint8_t*)newBuffer, (uint8_t*)oldBuffer, oldBytes);
   }
   return newBuffer;
-}
-
-void* js::Nursery::allocateBuffer(JS::BigInt* bi, size_t nbytes) {
-  MOZ_ASSERT(bi);
-  MOZ_ASSERT(nbytes > 0);
-
-  if (!IsInsideNursery(bi)) {
-    return bi->zone()->pod_malloc<uint8_t>(nbytes);
-  }
-  return allocateBuffer(bi->zone(), nbytes);
 }
 
 void js::Nursery::freeBuffer(void* buffer, size_t nbytes) {
@@ -823,6 +802,7 @@ inline double js::Nursery::calcPromotionRate(bool* validForTenuring) const {
   // 90% full.
   *validForTenuring = used > capacity * 0.9;
 
+  MOZ_ASSERT(tenured <= used);
   return tenured / used;
 }
 
@@ -875,20 +855,9 @@ void js::Nursery::renderProfileJSON(JSONPrinter& json) const {
   // and then there's no guarentee.
   if (runtime()->geckoProfiler().enabled()) {
     json.property("cells_allocated_nursery",
-                  stats().allocsSinceMinorGCNursery());
+                  pretenuringNursery.totalAllocCount());
     json.property("cells_allocated_tenured",
                   stats().allocsSinceMinorGCTenured());
-  }
-
-  if (stats().getStat(gcstats::STAT_NURSERY_STRING_REALMS_DISABLED)) {
-    json.property(
-        "nursery_string_realms_disabled",
-        stats().getStat(gcstats::STAT_NURSERY_STRING_REALMS_DISABLED));
-  }
-  if (stats().getStat(gcstats::STAT_NURSERY_BIGINT_REALMS_DISABLED)) {
-    json.property(
-        "nursery_bigint_realms_disabled",
-        stats().getStat(gcstats::STAT_NURSERY_BIGINT_REALMS_DISABLED));
   }
 
   json.beginObjectProperty("phase_times");
@@ -909,41 +878,112 @@ void js::Nursery::renderProfileJSON(JSONPrinter& json) const {
   json.endObject();
 }
 
+// The following macros define nursery GC profile metadata fields that are
+// printed before the timing information defined by
+// FOR_EACH_NURSERY_PROFILE_TIME.
+
+#define FOR_EACH_NURSERY_PROFILE_COMMON_METADATA(_) \
+  _("PID", 7, "%7zu", pid)                          \
+  _("Runtime", 14, "0x%12p", runtime)
+
+#define FOR_EACH_NURSERY_PROFILE_SLICE_METADATA(_)    \
+  _("Timestamp", 10, "%10.6f", timestamp.ToSeconds()) \
+  _("Reason", 20, "%-20.20s", reasonStr)              \
+  _("PRate", 6, "%5.1f%%", promotionRatePercent)      \
+  _("OldKB", 6, "%6zu", oldSizeKB)                    \
+  _("NewKB", 6, "%6zu", newSizeKB)                    \
+  _("Dedup", 6, "%6zu", dedupCount)
+
+#define FOR_EACH_NURSERY_PROFILE_METADATA(_)  \
+  FOR_EACH_NURSERY_PROFILE_COMMON_METADATA(_) \
+  FOR_EACH_NURSERY_PROFILE_SLICE_METADATA(_)
+
 void js::Nursery::printCollectionProfile(JS::GCReason reason,
                                          double promotionRate) {
   stats().maybePrintProfileHeaders();
 
-  TimeDuration ts = collectionStartTime() - stats().creationTime();
+  Sprinter sprinter;
+  if (!sprinter.init()) {
+    return;
+  }
+  sprinter.put(gcstats::MinorGCProfilePrefix);
 
-  FILE* file = stats().profileFile();
-  fprintf(
-      file, "MinorGC: %7zu %14p %10.6f %-20.20s %5.1f%% %6zu %6zu %6" PRIu32,
-      size_t(getpid()), runtime(), ts.ToSeconds(), JS::ExplainGCReason(reason),
-      promotionRate * 100, previousGC.nurseryCapacity / 1024, capacity() / 1024,
-      stats().getStat(gcstats::STAT_STRINGS_DEDUPLICATED));
+  size_t pid = getpid();
+  JSRuntime* runtime = gc->rt;
+  TimeDuration timestamp = collectionStartTime() - stats().creationTime();
+  const char* reasonStr = ExplainGCReason(reason);
+  double promotionRatePercent = promotionRate * 100;
+  size_t oldSizeKB = previousGC.nurseryCapacity / 1024;
+  size_t newSizeKB = capacity() / 1024;
+  size_t dedupCount = stats().getStat(gcstats::STAT_STRINGS_DEDUPLICATED);
 
-  printProfileDurations(file, profileDurations_);
+#define PRINT_FIELD_VALUE(_1, _2, format, value) \
+  sprinter.printf(" " format, value);
+
+  FOR_EACH_NURSERY_PROFILE_METADATA(PRINT_FIELD_VALUE)
+#undef PRINT_FIELD_VALUE
+
+  printProfileDurations(profileDurations_, sprinter);
+
+  JS::UniqueChars str = sprinter.release();
+  if (!str) {
+    return;
+  }
+  fputs(str.get(), stats().profileFile());
 }
 
 void js::Nursery::printProfileHeader() {
-  FILE* file = stats().profileFile();
-  fprintf(
-      file,
-      "MinorGC: PID     Runtime        Timestamp  Reason               PRate  "
-      "OldSz  NewSz  Dedup ");
-#define PRINT_HEADER(name, text) fprintf(file, " %-6.6s", text);
-  FOR_EACH_NURSERY_PROFILE_TIME(PRINT_HEADER)
-#undef PRINT_HEADER
-  fprintf(file, "\n");
+  Sprinter sprinter;
+  if (!sprinter.init()) {
+    return;
+  }
+  sprinter.put(gcstats::MinorGCProfilePrefix);
+
+#define PRINT_FIELD_NAME(name, width, _1, _2) \
+  sprinter.printf(" %-*s", width, name);
+
+  FOR_EACH_NURSERY_PROFILE_METADATA(PRINT_FIELD_NAME)
+#undef PRINT_FIELD_NAME
+
+#define PRINT_PROFILE_NAME(_1, text) sprinter.printf(" %-6.6s", text);
+
+  FOR_EACH_NURSERY_PROFILE_TIME(PRINT_PROFILE_NAME)
+#undef PRINT_PROFILE_NAME
+
+  sprinter.put("\n");
+
+  JS::UniqueChars str = sprinter.release();
+  if (!str) {
+    return;
+  }
+  fputs(str.get(), stats().profileFile());
 }
 
 // static
-void js::Nursery::printProfileDurations(FILE* file,
-                                        const ProfileDurations& times) {
+void js::Nursery::printProfileDurations(const ProfileDurations& times,
+                                        Sprinter& sprinter) {
   for (auto time : times) {
-    fprintf(file, " %6" PRIi64, static_cast<int64_t>(time.ToMicroseconds()));
+    int64_t micros = int64_t(time.ToMicroseconds());
+    sprinter.printf(" %6" PRIi64, micros);
   }
-  fprintf(file, "\n");
+
+  sprinter.put("\n");
+}
+
+static constexpr size_t NurserySliceMetadataFormatWidth() {
+  size_t fieldCount = 0;
+  size_t totalWidth = 0;
+
+#define UPDATE_COUNT_AND_WIDTH(_1, width, _2, _3) \
+  fieldCount++;                                   \
+  totalWidth += width;
+  FOR_EACH_NURSERY_PROFILE_SLICE_METADATA(UPDATE_COUNT_AND_WIDTH)
+#undef UPDATE_COUNT_AND_WIDTH
+
+  // Add padding between fields.
+  totalWidth += fieldCount - 1;
+
+  return totalWidth;
 }
 
 void js::Nursery::printTotalProfileTimes() {
@@ -951,27 +991,52 @@ void js::Nursery::printTotalProfileTimes() {
     return;
   }
 
-  FILE* file = stats().profileFile();
-  fprintf(file,
-          "MinorGC: %7zu %14p TOTALS: %7" PRIu64
-          " collections:               %16" PRIu64,
-          size_t(getpid()), runtime(), gc->stringStats.deduplicatedStrings,
-          gc->minorGCCount());
-  printProfileDurations(file, totalDurations_);
+  Sprinter sprinter;
+  if (!sprinter.init()) {
+    return;
+  }
+  sprinter.put(gcstats::MinorGCProfilePrefix);
+
+  size_t pid = getpid();
+  JSRuntime* runtime = gc->rt;
+
+  char collections[32];
+  DebugOnly<int> r = SprintfLiteral(
+      collections, "TOTALS: %7" PRIu64 " collections:", gc->minorGCCount());
+  MOZ_ASSERT(r > 0 && r < int(sizeof(collections)));
+
+#define PRINT_FIELD_VALUE(_1, _2, format, value) \
+  sprinter.printf(" " format, value);
+
+  FOR_EACH_NURSERY_PROFILE_COMMON_METADATA(PRINT_FIELD_VALUE)
+#undef PRINT_FIELD_VALUE
+
+  // Use whole width of per-slice metadata to print total slices so the profile
+  // totals that follow line up.
+  size_t width = NurserySliceMetadataFormatWidth();
+  sprinter.printf(" %-*s", int(width), collections);
+
+  printProfileDurations(totalDurations_, sprinter);
+
+  JS::UniqueChars str = sprinter.release();
+  if (!str) {
+    return;
+  }
+  fputs(str.get(), stats().profileFile());
 }
 
 void js::Nursery::maybeClearProfileDurations() {
   for (auto& duration : profileDurations_) {
-    duration = mozilla::TimeDuration();
+    duration = mozilla::TimeDuration::Zero();
   }
 }
 
 inline void js::Nursery::startProfile(ProfileKey key) {
-  startTimes_[key] = ReallyNow();
+  startTimes_[key] = TimeStamp::Now();
 }
 
 inline void js::Nursery::endProfile(ProfileKey key) {
-  profileDurations_[key] = ReallyNow() - startTimes_[key];
+  profileDurations_[key] = TimeStamp::Now() - startTimes_[key];
   totalDurations_[key] += profileDurations_[key];
 }
 
@@ -979,7 +1044,7 @@ inline TimeStamp js::Nursery::collectionStartTime() const {
   return startTimes_[ProfileKey::Total];
 }
 
-inline TimeStamp js::Nursery::lastCollectionEndTime() const {
+TimeStamp js::Nursery::lastCollectionEndTime() const {
   return previousGC.endTime;
 }
 
@@ -1047,7 +1112,8 @@ inline bool js::Nursery::isUnderused() const {
   // have idle time. This allows the nursery to shrink when it's not being
   // used. There are other heuristics we could use for this, but this is the
   // simplest.
-  TimeDuration timeSinceLastCollection = ReallyNow() - previousGC.endTime;
+  TimeDuration timeSinceLastCollection =
+      TimeStamp::NowLoRes() - previousGC.endTime;
   return timeSinceLastCollection > tunables().nurseryTimeoutForIdleCollection();
 }
 
@@ -1067,6 +1133,15 @@ void js::Nursery::collect(JS::GCOptions options, JS::GCReason reason) {
   JSRuntime* rt = runtime();
   MOZ_ASSERT(!rt->mainContextFromOwnThread()->suppressGC);
 
+  if (minorGCRequested()) {
+    MOZ_ASSERT(position_ == chunk(currentChunk_).end());
+    position_ = prevPosition_;
+    prevPosition_ = 0;
+    minorGCTriggerReason_ = JS::GCReason::NO_REASON;
+    rt->mainContextFromOwnThread()->clearPendingInterrupt(
+        InterruptReason::MinorGC);
+  }
+
   if (!isEnabled() || isEmpty()) {
     // Our barriers are not always exact, and there may be entries in the
     // storebuffer even when the nursery is disabled or empty. It's not safe
@@ -1081,21 +1156,13 @@ void js::Nursery::collect(JS::GCOptions options, JS::GCReason reason) {
     return;
   }
 
-#ifdef JS_GC_ZEAL
-  if (gc->hasZealMode(ZealMode::CheckNursery)) {
-    for (auto canary = lastCanary_; canary; canary = canary->next) {
-      MOZ_ASSERT(canary->magicValue == CanaryMagicValue);
-    }
-  }
-  lastCanary_ = nullptr;
-#endif
+  AutoGCSession session(gc, JS::HeapState::MinorCollecting);
 
-  stats().beginNurseryCollection(reason);
+  stats().beginNurseryCollection();
   gcprobes::MinorGCStart();
 
-  stringDeDupSet.emplace();
-  auto guardStringDedupSet =
-      mozilla::MakeScopeExit([&] { stringDeDupSet.reset(); });
+  gc->callNurseryCollectionCallbacks(
+      JS::GCNurseryProgress::GC_NURSERY_COLLECTION_START, reason);
 
   maybeClearProfileDurations();
   startProfile(ProfileKey::Total);
@@ -1104,6 +1171,7 @@ void js::Nursery::collect(JS::GCOptions options, JS::GCReason reason) {
   previousGC.nurseryUsedBytes = usedSpace();
   previousGC.nurseryCapacity = capacity();
   previousGC.nurseryCommitted = committed();
+  previousGC.nurseryUsedChunkCount = currentChunk_ + 1;
   previousGC.tenuredBytes = 0;
   previousGC.tenuredCells = 0;
 
@@ -1112,11 +1180,17 @@ void js::Nursery::collect(JS::GCOptions options, JS::GCReason reason) {
   // old empty state.
   bool wasEmpty = isEmpty();
   if (!wasEmpty) {
-    CollectionResult result = doCollection(reason);
-    MOZ_ASSERT(result.tenuredBytes <= previousGC.nurseryUsedBytes);
+    CollectionResult result = doCollection(session, options, reason);
+    // Don't include chunk headers when calculating nursery space, since this
+    // space does not represent data that can be tenured
+    MOZ_ASSERT(result.tenuredBytes <=
+               (previousGC.nurseryUsedBytes -
+                (sizeof(ChunkBase) * previousGC.nurseryUsedChunkCount)));
+
     previousGC.reason = reason;
     previousGC.tenuredBytes = result.tenuredBytes;
     previousGC.tenuredCells = result.tenuredCells;
+    previousGC.nurseryUsedChunkCount = currentChunk_ + 1;
   }
 
   // Resize the nursery.
@@ -1154,17 +1228,21 @@ void js::Nursery::collect(JS::GCOptions options, JS::GCReason reason) {
     disable();
   }
 
-  previousGC.endTime = ReallyNow();  // Must happen after maybeResizeNursery.
+  previousGC.endTime =
+      TimeStamp::Now();  // Must happen after maybeResizeNursery.
   endProfile(ProfileKey::Total);
   gc->incMinorGcNumber();
 
   TimeDuration totalTime = profileDurations_[ProfileKey::Total];
   sendTelemetry(reason, totalTime, wasEmpty, promotionRate, sitesPretenured);
 
-  stats().endNurseryCollection(reason);
+  gc->callNurseryCollectionCallbacks(
+      JS::GCNurseryProgress::GC_NURSERY_COLLECTION_END, reason);
+
+  stats().endNurseryCollection();
   gcprobes::MinorGCEnd();
 
-  timeInChunkAlloc_ = mozilla::TimeDuration();
+  timeInChunkAlloc_ = mozilla::TimeDuration::Zero();
 
   js::StringStats prevStats = gc->stringStats;
   js::StringStats& currStats = gc->stringStats;
@@ -1190,20 +1268,19 @@ void js::Nursery::sendTelemetry(JS::GCReason reason, TimeDuration totalTime,
                                 bool wasEmpty, double promotionRate,
                                 size_t sitesPretenured) {
   JSRuntime* rt = runtime();
-  rt->addTelemetry(JS_TELEMETRY_GC_MINOR_REASON, uint32_t(reason));
+  rt->metrics().GC_MINOR_REASON(uint32_t(reason));
 
   // Long minor GCs are those that take more than 1ms.
   bool wasLongMinorGC = totalTime.ToMilliseconds() > 1.0;
   if (wasLongMinorGC) {
-    rt->addTelemetry(JS_TELEMETRY_GC_MINOR_REASON_LONG, uint32_t(reason));
+    rt->metrics().GC_MINOR_REASON_LONG(uint32_t(reason));
   }
-  rt->addTelemetry(JS_TELEMETRY_GC_MINOR_US, totalTime.ToMicroseconds());
-  rt->addTelemetry(JS_TELEMETRY_GC_NURSERY_BYTES, committed());
+  rt->metrics().GC_MINOR_US(totalTime);
+  rt->metrics().GC_NURSERY_BYTES_2(committed());
 
   if (!wasEmpty) {
-    rt->addTelemetry(JS_TELEMETRY_GC_PRETENURE_COUNT_2, sitesPretenured);
-    rt->addTelemetry(JS_TELEMETRY_GC_NURSERY_PROMOTION_RATE,
-                     promotionRate * 100);
+    rt->metrics().GC_PRETENURE_COUNT_2(sitesPretenured);
+    rt->metrics().GC_NURSERY_PROMOTION_RATE(promotionRate * 100);
   }
 }
 
@@ -1220,10 +1297,106 @@ void js::Nursery::printDeduplicationData(js::StringStats& prev,
   }
 }
 
-js::Nursery::CollectionResult js::Nursery::doCollection(JS::GCReason reason) {
+void js::Nursery::freeTrailerBlocks(void) {
+  // This routine frees those blocks denoted by the set
+  //
+  //  trailersAdded_ (all of it)
+  //    - trailersRemoved_ (entries with index below trailersRemovedUsed_)
+  //
+  // For each block, places it back on the nursery's small-malloced-block pool
+  // by calling mallocedBlockCache_.free.
+
+  MOZ_ASSERT(trailersAdded_.length() == trailersRemoved_.length());
+  MOZ_ASSERT(trailersRemovedUsed_ <= trailersRemoved_.length());
+
+  // Sort the removed entries.
+  std::sort(trailersRemoved_.begin(),
+            trailersRemoved_.begin() + trailersRemovedUsed_,
+            [](const void* block1, const void* block2) {
+              return uintptr_t(block1) < uintptr_t(block2);
+            });
+
+  // Use one of two schemes to enumerate the set subtraction.
+  if (trailersRemovedUsed_ < 1000) {
+    // If the number of removed items is relatively small, it isn't worth the
+    // cost of sorting `trailersAdded_`.  Instead, walk through the vector in
+    // whatever order it is and use binary search to establish whether each
+    // item is present in trailersRemoved_[0 .. trailersRemovedUsed_ - 1].
+    const size_t nAdded = trailersAdded_.length();
+    for (size_t i = 0; i < nAdded; i++) {
+      const PointerAndUint7 block = trailersAdded_[i];
+      const void* blockPointer = block.pointer();
+      if (!std::binary_search(trailersRemoved_.begin(),
+                              trailersRemoved_.begin() + trailersRemovedUsed_,
+                              blockPointer)) {
+        mallocedBlockCache_.free(block);
+      }
+    }
+  } else {
+    // The general case, which is algorithmically safer for large inputs.
+    // Sort the added entries, and then walk through both them and the removed
+    // entries in lockstep.
+    std::sort(trailersAdded_.begin(), trailersAdded_.end(),
+              [](const PointerAndUint7& block1, const PointerAndUint7& block2) {
+                return uintptr_t(block1.pointer()) <
+                       uintptr_t(block2.pointer());
+              });
+    // Enumerate the set subtraction.  This is somewhat simplified by the fact
+    // that all elements of the removed set must also be present in the added
+    // set. (the "inclusion property").
+    const size_t nAdded = trailersAdded_.length();
+    const size_t nRemoved = trailersRemovedUsed_;
+    size_t iAdded;
+    size_t iRemoved = 0;
+    for (iAdded = 0; iAdded < nAdded; iAdded++) {
+      if (iRemoved == nRemoved) {
+        // We've run out of items to skip, so move on to the next loop.
+        break;
+      }
+      const PointerAndUint7 blockAdded = trailersAdded_[iAdded];
+      const void* blockRemoved = trailersRemoved_[iRemoved];
+      if (blockAdded.pointer() < blockRemoved) {
+        mallocedBlockCache_.free(blockAdded);
+        continue;
+      }
+      // If this doesn't hold
+      // (that is, if `blockAdded.pointer() > blockRemoved`),
+      // then the abovementioned inclusion property doesn't hold.
+      MOZ_RELEASE_ASSERT(blockAdded.pointer() == blockRemoved);
+      iRemoved++;
+    }
+    MOZ_ASSERT(iRemoved == nRemoved);
+    // We've used up the removed set, so now finish up the remainder of the
+    // added set.
+    for (/*keep going*/; iAdded < nAdded; iAdded++) {
+      const PointerAndUint7 block = trailersAdded_[iAdded];
+      mallocedBlockCache_.free(block);
+    }
+  }
+
+  // And empty out both sets, but preserve the underlying storage.
+  trailersAdded_.clear();
+  trailersRemoved_.clear();
+  trailersRemovedUsed_ = 0;
+  trailerBytes_ = 0;
+
+  // Discard blocks from the cache at 0.05% per megabyte of nursery capacity,
+  // that is, 0.8% of blocks for a 16-megabyte nursery.  This allows the cache
+  // to gradually discard unneeded blocks in long running applications.
+  mallocedBlockCache_.preen(0.05 * double(capacity()) / (1024.0 * 1024.0));
+}
+
+size_t Nursery::sizeOfTrailerBlockSets(
+    mozilla::MallocSizeOf mallocSizeOf) const {
+  return trailersAdded_.sizeOfExcludingThis(mallocSizeOf) +
+         trailersRemoved_.sizeOfExcludingThis(mallocSizeOf);
+}
+
+js::Nursery::CollectionResult js::Nursery::doCollection(AutoGCSession& session,
+                                                        JS::GCOptions options,
+                                                        JS::GCReason reason) {
   JSRuntime* rt = runtime();
-  AutoGCSession session(gc, JS::HeapState::MinorCollecting);
-  AutoSetThreadIsPerformingGC performingGC;
+  AutoSetThreadIsPerformingGC performingGC(rt->gcContext());
   AutoStopVerifyingBarriers av(rt, false);
   AutoDisableProxyCheck disableStrictProxyChecking;
   mozilla::DebugOnly<AutoEnterOOMUnsafeRegion> oomUnsafeRegion;
@@ -1272,6 +1445,15 @@ js::Nursery::CollectionResult js::Nursery::doCollection(JS::GCReason reason) {
   mallocedBufferBytes = 0;
   endProfile(ProfileKey::FreeMallocedBuffers);
 
+  // Give trailer blocks associated with non-tenured Wasm{Struct,Array}Objects
+  // back to our `mallocedBlockCache_`.
+  startProfile(ProfileKey::FreeTrailerBlocks);
+  freeTrailerBlocks();
+  if (options == JS::GCOptions::Shrink || gc::IsOOMReason(reason)) {
+    mallocedBlockCache_.clear();
+  }
+  endProfile(ProfileKey::FreeTrailerBlocks);
+
   startProfile(ProfileKey::ClearNursery);
   clear();
   endProfile(ProfileKey::ClearNursery);
@@ -1300,39 +1482,46 @@ js::Nursery::CollectionResult js::Nursery::doCollection(JS::GCReason reason) {
 }
 
 void js::Nursery::traceRoots(AutoGCSession& session, TenuringTracer& mover) {
-  // Suppress the sampling profiler to prevent it observing moved functions.
-  AutoSuppressProfilerSampling suppressProfiler(
-      runtime()->mainContextFromOwnThread());
+  {
+    // Suppress the sampling profiler to prevent it observing moved functions.
+    AutoSuppressProfilerSampling suppressProfiler(
+        runtime()->mainContextFromOwnThread());
 
-  // Trace the store buffer. This must happen first.
-  StoreBuffer& sb = gc->storeBuffer();
+    // Trace the store buffer. This must happen first.
+    StoreBuffer& sb = gc->storeBuffer();
 
-  // Strings in the whole cell buffer must be traced first, in order to mark
-  // tenured dependent strings' bases as non-deduplicatable. The rest of
-  // nursery collection (whole non-string cells, edges, etc.) can happen later.
-  startProfile(ProfileKey::TraceWholeCells);
-  sb.traceWholeCells(mover);
-  endProfile(ProfileKey::TraceWholeCells);
+    // Strings in the whole cell buffer must be traced first, in order to mark
+    // tenured dependent strings' bases as non-deduplicatable. The rest of
+    // nursery collection (whole non-string cells, edges, etc.) can happen
+    // later.
+    startProfile(ProfileKey::TraceWholeCells);
+    sb.traceWholeCells(mover);
+    endProfile(ProfileKey::TraceWholeCells);
 
-  startProfile(ProfileKey::TraceValues);
-  sb.traceValues(mover);
-  endProfile(ProfileKey::TraceValues);
+    startProfile(ProfileKey::TraceValues);
+    sb.traceValues(mover);
+    endProfile(ProfileKey::TraceValues);
 
-  startProfile(ProfileKey::TraceCells);
-  sb.traceCells(mover);
-  endProfile(ProfileKey::TraceCells);
+    startProfile(ProfileKey::TraceWasmAnyRefs);
+    sb.traceWasmAnyRefs(mover);
+    endProfile(ProfileKey::TraceWasmAnyRefs);
 
-  startProfile(ProfileKey::TraceSlots);
-  sb.traceSlots(mover);
-  endProfile(ProfileKey::TraceSlots);
+    startProfile(ProfileKey::TraceCells);
+    sb.traceCells(mover);
+    endProfile(ProfileKey::TraceCells);
 
-  startProfile(ProfileKey::TraceGenericEntries);
-  sb.traceGenericEntries(&mover);
-  endProfile(ProfileKey::TraceGenericEntries);
+    startProfile(ProfileKey::TraceSlots);
+    sb.traceSlots(mover);
+    endProfile(ProfileKey::TraceSlots);
 
-  startProfile(ProfileKey::MarkRuntime);
-  gc->traceRuntimeForMinorGC(&mover, session);
-  endProfile(ProfileKey::MarkRuntime);
+    startProfile(ProfileKey::TraceGenericEntries);
+    sb.traceGenericEntries(&mover);
+    endProfile(ProfileKey::TraceGenericEntries);
+
+    startProfile(ProfileKey::MarkRuntime);
+    gc->traceRuntimeForMinorGC(&mover, session);
+    endProfile(ProfileKey::MarkRuntime);
+  }
 
   startProfile(ProfileKey::MarkDebugger);
   {
@@ -1368,67 +1557,41 @@ size_t js::Nursery::doPretenuring(JSRuntime* rt, JS::GCReason reason,
                             reason, JS::GCReason::FULL_CELL_PTR_BIGINT_BUFFER);
   }
 
-  mozilla::Maybe<AutoGCSession> session;
   uint32_t numStringsTenured = 0;
-  uint32_t numNurseryStringRealmsDisabled = 0;
   uint32_t numBigIntsTenured = 0;
-  uint32_t numNurseryBigIntRealmsDisabled = 0;
   for (ZonesIter zone(gc, SkipAtoms); !zone.done(); zone.next()) {
     // For some tests in JetStream2 and Kraken, the tenuredRate is high but the
     // number of allocated strings is low. So we calculate the tenuredRate only
     // if the number of string allocations is enough.
-    bool allocThreshold = zone->nurseryAllocatedStrings > 30000;
+    uint32_t zoneNurseryStrings =
+        zone->nurseryAllocCount(JS::TraceKind::String);
+    bool allocThreshold = zoneNurseryStrings > 30000;
     uint64_t zoneTenuredStrings =
         zone->stringStats.ref().liveNurseryStrings -
         zone->previousGCStringStats.ref().liveNurseryStrings;
     double tenuredRate =
-        allocThreshold
-            ? double(zoneTenuredStrings) / double(zone->nurseryAllocatedStrings)
-            : 0.0;
+        allocThreshold ? double(zoneTenuredStrings) / double(zoneNurseryStrings)
+                       : 0.0;
     bool disableNurseryStrings =
-        pretenureStr && zone->allocNurseryStrings &&
+        pretenureStr && zone->allocNurseryStrings() &&
         tenuredRate > tunables().pretenureStringThreshold();
-    bool disableNurseryBigInts = pretenureBigInt && zone->allocNurseryBigInts &&
+    bool disableNurseryBigInts = pretenureBigInt &&
+                                 zone->allocNurseryBigInts() &&
                                  zone->tenuredBigInts >= 30 * 1000;
     if (disableNurseryStrings || disableNurseryBigInts) {
-      if (!session.isSome()) {
-        session.emplace(gc, JS::HeapState::MinorCollecting);
-      }
-      CancelOffThreadIonCompile(zone);
-      bool preserving = zone->isPreservingCode();
-      zone->setPreservingCode(false);
-      zone->discardJitCode(rt->defaultFreeOp());
-      zone->setPreservingCode(preserving);
-      for (RealmsInZoneIter r(zone); !r.done(); r.next()) {
-        if (jit::JitRealm* jitRealm = r->jitRealm()) {
-          jitRealm->discardStubs();
-          if (disableNurseryStrings) {
-            jitRealm->setStringsCanBeInNursery(false);
-            numNurseryStringRealmsDisabled++;
-          }
-          if (disableNurseryBigInts) {
-            numNurseryBigIntRealmsDisabled++;
-          }
-        }
-      }
       if (disableNurseryStrings) {
-        zone->allocNurseryStrings = false;
+        zone->nurseryStringsDisabled = true;
       }
       if (disableNurseryBigInts) {
-        zone->allocNurseryBigInts = false;
+        zone->nurseryBigIntsDisabled = true;
       }
+      updateAllocFlagsForZone(zone);
     }
     numStringsTenured += zoneTenuredStrings;
     numBigIntsTenured += zone->tenuredBigInts;
     zone->tenuredBigInts = 0;
-    zone->nurseryAllocatedStrings = 0;
   }
-  session.reset();  // End the minor GC session, if running one.
-  stats().setStat(gcstats::STAT_NURSERY_STRING_REALMS_DISABLED,
-                  numNurseryStringRealmsDisabled);
   stats().setStat(gcstats::STAT_STRINGS_TENURED, numStringsTenured);
-  stats().setStat(gcstats::STAT_NURSERY_BIGINT_REALMS_DISABLED,
-                  numNurseryBigIntRealmsDisabled);
   stats().setStat(gcstats::STAT_BIGINTS_TENURED, numBigIntsTenured);
 
   return sitesPretenured;
@@ -1449,7 +1612,80 @@ bool js::Nursery::registerMallocedBuffer(void* buffer, size_t nbytes) {
   return true;
 }
 
+/*
+ * Several things may need to happen when a nursery allocated cell with an
+ * external buffer is promoted:
+ *  - the buffer may need to be moved if it is currently in the nursery
+ *  - the buffer may need to be removed from the list of buffers that will be
+ *    freed after nursery collection if it is malloced
+ *  - memory accounting for the buffer needs to be updated
+ */
+Nursery::WasBufferMoved js::Nursery::maybeMoveRawBufferOnPromotion(
+    void** bufferp, gc::Cell* owner, size_t nbytes, MemoryUse use,
+    arena_id_t arena) {
+  MOZ_ASSERT(!IsInsideNursery(owner));
+
+  void* buffer = *bufferp;
+  if (!isInside(buffer)) {
+    // This is a malloced buffer. Remove it from the nursery's list of buffers
+    // so we don't free it and add it to the memory accounting for the zone
+    removeMallocedBufferDuringMinorGC(buffer);
+    AddCellMemory(owner, nbytes, use);
+    return BufferNotMoved;
+  }
+
+  // Copy the nursery-allocated buffer into a new malloc allocation.
+
+  AutoEnterOOMUnsafeRegion oomUnsafe;
+  Zone* zone = owner->asTenured().zone();
+  void* movedBuffer = zone->pod_arena_malloc<uint8_t>(arena, nbytes);
+  if (!movedBuffer) {
+    oomUnsafe.crash("Nursery::updateBufferOnPromotion");
+  }
+
+  memcpy(movedBuffer, buffer, nbytes);
+
+  AddCellMemory(owner, nbytes, use);
+
+  *bufferp = movedBuffer;
+  return BufferMoved;
+}
+
+void Nursery::requestMinorGC(JS::GCReason reason) {
+  MOZ_ASSERT(reason != JS::GCReason::NO_REASON);
+  MOZ_ASSERT(CurrentThreadCanAccessRuntime(runtime()));
+  MOZ_ASSERT(isEnabled());
+
+  if (minorGCRequested()) {
+    return;
+  }
+
+  // Set position to end of chunk to block further allocation.
+  MOZ_ASSERT(prevPosition_ == 0);
+  prevPosition_ = position_;
+  position_ = chunk(currentChunk_).end();
+
+  minorGCTriggerReason_ = reason;
+  runtime()->mainContextFromOwnThread()->requestInterrupt(
+      InterruptReason::MinorGC);
+}
+
+size_t Nursery::sizeOfMallocedBuffers(
+    mozilla::MallocSizeOf mallocSizeOf) const {
+  size_t total = 0;
+  for (BufferSet::Range r = mallocedBuffers.all(); !r.empty(); r.popFront()) {
+    total += mallocSizeOf(r.front());
+  }
+  total += mallocedBuffers.shallowSizeOfExcludingThis(mallocSizeOf);
+  return total;
+}
+
 void js::Nursery::sweep() {
+  // It's important that the context's GCUse is not Finalizing at this point,
+  // otherwise we will miscount memory attached to nursery objects with
+  // CellAllocPolicy.
+  AutoSetThreadIsSweeping setThreadSweeping(runtime()->gcContext());
+
   MinorSweepingTracer trc(runtime());
 
   // Sweep unique IDs first before we sweep any tables that may be keyed based
@@ -1457,10 +1693,10 @@ void js::Nursery::sweep() {
   for (Cell* cell : cellsWithUid_) {
     auto* obj = static_cast<JSObject*>(cell);
     if (!IsForwarded(obj)) {
-      obj->nurseryZone()->removeUniqueId(obj);
+      gc::RemoveUniqueId(obj);
     } else {
       JSObject* dst = Forwarded(obj);
-      obj->nurseryZone()->transferUniqueId(dst, obj);
+      gc::TransferUniqueId(dst, obj);
     }
   }
   cellsWithUid_.clear();
@@ -1473,7 +1709,6 @@ void js::Nursery::sweep() {
 
   // Taintfox: clean up strings (mostly taint)
   sweepStrings();
-
   runtime()->caches().sweepAfterMinorGC(&trc);
 }
 
@@ -1484,11 +1719,11 @@ void js::Nursery::clear() {
     // Poison all the chunks used in this cycle. The new start chunk is
     // reposioned in Nursery::collect() but there's no point optimising that in
     // this case.
-    firstClearChunk = currentStartChunk_;
+    firstClearChunk = startChunk_;
   } else {
     // In normal mode we start at the second chunk, the first one will be used
     // in the next cycle and poisoned in Nusery::collect();
-    MOZ_ASSERT(currentStartChunk_ == 0);
+    MOZ_ASSERT(startChunk_ == 0);
     firstClearChunk = 1;
   }
   for (unsigned i = firstClearChunk; i < currentChunk_; ++i) {
@@ -1507,52 +1742,22 @@ void js::Nursery::clear() {
   if (!gc->hasZealMode(ZealMode::GenerationalGC) ||
       (gc->hasZealMode(ZealMode::GenerationalGC) &&
        currentChunk_ + 1 == maxChunkCount())) {
-    setCurrentChunk(0);
+    moveToStartOfChunk(0);
   }
 
   // Set current start position for isEmpty checks.
-  setStartPosition();
+  setStartToCurrentPosition();
 }
 
-size_t js::Nursery::spaceToEnd(unsigned chunkCount) const {
-  if (chunkCount == 0) {
-    return 0;
-  }
-
-  unsigned lastChunk = chunkCount - 1;
-
-  MOZ_ASSERT(lastChunk >= currentStartChunk_);
-  MOZ_ASSERT(currentStartPosition_ - chunk(currentStartChunk_).start() <=
-             NurseryChunkUsableSize);
-
-  size_t bytes;
-
-  if (chunkCount != 1) {
-    // In the general case we have to add:
-    //  + the bytes used in the first
-    //    chunk which may be less than the total size of a chunk since in some
-    //    zeal modes we start the first chunk at some later position
-    //    (currentStartPosition_).
-    //  + the size of all the other chunks.
-    bytes = (chunk(currentStartChunk_).end() - currentStartPosition_) +
-            ((lastChunk - currentStartChunk_) * ChunkSize);
-  } else {
-    // In sub-chunk mode, but it also works whenever chunkCount == 1, we need to
-    // use currentEnd_ since it may not refer to a full chunk.
-    bytes = currentEnd_ - currentStartPosition_;
-  }
-
-  MOZ_ASSERT(bytes <= maxChunkCount() * ChunkSize);
-
-  return bytes;
-}
-
-MOZ_ALWAYS_INLINE void js::Nursery::setCurrentChunk(unsigned chunkno) {
+MOZ_ALWAYS_INLINE void js::Nursery::moveToStartOfChunk(unsigned chunkno) {
   MOZ_ASSERT(chunkno < allocatedChunkCount());
 
   currentChunk_ = chunkno;
   position_ = chunk(chunkno).start();
   setCurrentEnd();
+
+  MOZ_ASSERT(position_ != 0);
+  MOZ_ASSERT(currentEnd_ > position_);  // Check this cannot wrap.
 }
 
 void js::Nursery::poisonAndInitCurrentChunk(size_t extent) {
@@ -1569,12 +1774,9 @@ MOZ_ALWAYS_INLINE void js::Nursery::setCurrentEnd() {
                 currentChunk_ == 0 && currentEnd_ <= chunk(0).end());
   currentEnd_ =
       uintptr_t(&chunk(currentChunk_)) + std::min(capacity_, ChunkSize);
-  if (canAllocateStrings_) {
-    currentStringEnd_ = currentEnd_;
-  }
-  if (canAllocateBigInts_) {
-    currentBigIntEnd_ = currentEnd_;
-  }
+
+  MOZ_ASSERT_IF(!isSubChunkMode(), currentEnd_ == chunk(currentChunk_).end());
+  MOZ_ASSERT(currentEnd_ != chunk(currentChunk_).start());
 }
 
 bool js::Nursery::allocateNextChunk(const unsigned chunkno,
@@ -1602,9 +1804,9 @@ bool js::Nursery::allocateNextChunk(const unsigned chunkno,
   return true;
 }
 
-MOZ_ALWAYS_INLINE void js::Nursery::setStartPosition() {
-  currentStartChunk_ = currentChunk_;
-  currentStartPosition_ = position();
+MOZ_ALWAYS_INLINE void js::Nursery::setStartToCurrentPosition() {
+  startChunk_ = currentChunk_;
+  startPosition_ = position();
 }
 
 void js::Nursery::maybeResizeNursery(JS::GCOptions options,
@@ -1616,13 +1818,14 @@ void js::Nursery::maybeResizeNursery(JS::GCOptions options,
   }
 #endif
 
-  decommitTask.join();
+  decommitTask->join();
 
   size_t newCapacity = mozilla::Clamp(targetSize(options, reason),
                                       tunables().gcMinNurseryBytes(),
                                       tunables().gcMaxNurseryBytes());
 
   MOZ_ASSERT(roundSize(newCapacity) == newCapacity);
+  MOZ_ASSERT(newCapacity >= SystemPageSize());
 
   if (newCapacity > capacity()) {
     growAllocableSpace(newCapacity);
@@ -1631,8 +1834,8 @@ void js::Nursery::maybeResizeNursery(JS::GCOptions options,
   }
 
   AutoLockHelperThreadState lock;
-  if (!decommitTask.isEmpty(lock)) {
-    decommitTask.startOrRunIfIdle(lock);
+  if (!decommitTask->isEmpty(lock)) {
+    decommitTask->startOrRunIfIdle(lock);
   }
 }
 
@@ -1663,12 +1866,16 @@ size_t js::Nursery::targetSize(JS::GCOptions options, JS::GCReason reason) {
   }
 
   // Don't resize the nursery during shutdown.
-  if (gc::IsShutdownReason(reason)) {
+  if (options == JS::GCOptions::Shutdown) {
     clearRecentGrowthData();
     return capacity();
   }
 
-  TimeStamp now = ReallyNow();
+  TimeStamp now = TimeStamp::Now();
+
+  if (reason == JS::GCReason::PREPARE_FOR_PAGELOAD) {
+    return roundSize(tunables().gcMaxNurseryBytes());
+  }
 
   // If the nursery is completely unused then minimise it.
   if (hasRecentGrowthData && previousGC.nurseryUsedBytes == 0 &&
@@ -1755,11 +1962,7 @@ void js::Nursery::clearRecentGrowthData() {
 /* static */
 size_t js::Nursery::roundSize(size_t size) {
   size_t step = size >= ChunkSize ? ChunkSize : SystemPageSize();
-  size = Round(size, step);
-
-  MOZ_ASSERT(size >= SystemPageSize());
-
-  return size;
+  return Round(size, step);
 }
 
 void js::Nursery::growAllocableSpace(size_t newCapacity) {
@@ -1767,7 +1970,7 @@ void js::Nursery::growAllocableSpace(size_t newCapacity) {
   MOZ_ASSERT(newCapacity <= tunables().gcMaxNurseryBytes());
   MOZ_ASSERT(newCapacity > capacity());
 
-  if (!decommitTask.reserveSpaceForBytes(newCapacity)) {
+  if (!decommitTask->reserveSpaceForBytes(newCapacity)) {
     return;
   }
 
@@ -1783,8 +1986,8 @@ void js::Nursery::growAllocableSpace(size_t newCapacity) {
     // The capacity has changed and since we were in sub-chunk mode we need to
     // update the poison values / asan information for the now-valid region of
     // this chunk.
-    size_t size = std::min(newCapacity, ChunkSize) - capacity();
-    chunk(0).poisonRange(capacity(), size, JS_FRESH_NURSERY_PATTERN,
+    size_t end = std::min(newCapacity, ChunkSize);
+    chunk(0).poisonRange(capacity(), end, JS_FRESH_NURSERY_PATTERN,
                          MemCheckKind::MakeUndefined);
   }
 
@@ -1814,7 +2017,7 @@ void js::Nursery::freeChunksFrom(const unsigned firstFreeChunk) {
   {
     AutoLockHelperThreadState lock;
     for (size_t i = firstChunkToDecommit; i < chunks_.length(); i++) {
-      decommitTask.queueChunk(chunks_[i], lock);
+      decommitTask->queueChunk(chunks_[i], lock);
     }
   }
 
@@ -1850,23 +2053,13 @@ void js::Nursery::shrinkAllocableSpace(size_t newCapacity) {
 
   if (isSubChunkMode()) {
     MOZ_ASSERT(currentChunk_ == 0);
-    size_t size = std::min(oldCapacity, ChunkSize) - newCapacity;
-    chunk(0).poisonRange(newCapacity, size, JS_SWEPT_NURSERY_PATTERN,
+    size_t end = std::min(oldCapacity, ChunkSize);
+    chunk(0).poisonRange(newCapacity, end, JS_SWEPT_NURSERY_PATTERN,
                          MemCheckKind::MakeNoAccess);
 
     AutoLockHelperThreadState lock;
-    decommitTask.queueRange(capacity_, chunk(0), lock);
+    decommitTask->queueRange(capacity_, chunk(0), lock);
   }
-}
-
-uintptr_t js::Nursery::currentEnd() const {
-  // These are separate asserts because it can be useful to see which one
-  // failed.
-  MOZ_ASSERT_IF(isSubChunkMode(), currentChunk_ == 0);
-  MOZ_ASSERT_IF(isSubChunkMode(), currentEnd_ <= chunk(currentChunk_).end());
-  MOZ_ASSERT_IF(!isSubChunkMode(), currentEnd_ == chunk(currentChunk_).end());
-  MOZ_ASSERT(currentEnd_ != chunk(currentChunk_).start());
-  return currentEnd_;
 }
 
 gcstats::Statistics& js::Nursery::stats() const { return gc->stats(); }
@@ -1881,48 +2074,49 @@ bool js::Nursery::isSubChunkMode() const {
 }
 
 void js::Nursery::sweepMapAndSetObjects() {
-  auto fop = runtime()->defaultFreeOp();
+  auto* gcx = runtime()->gcContext();
 
-  for (auto mapobj : mapsWithNurseryMemory_) {
-    MapObject::sweepAfterMinorGC(fop, mapobj);
+  for (auto* mapobj : mapsWithNurseryMemory_) {
+    MapObject::sweepAfterMinorGC(gcx, mapobj);
   }
   mapsWithNurseryMemory_.clearAndFree();
 
-  for (auto setobj : setsWithNurseryMemory_) {
-    SetObject::sweepAfterMinorGC(fop, setobj);
+  for (auto* setobj : setsWithNurseryMemory_) {
+    SetObject::sweepAfterMinorGC(gcx, setobj);
   }
   setsWithNurseryMemory_.clearAndFree();
 }
 
 void js::Nursery::sweepStrings() {
-  auto fop = runtime()->defaultFreeOp();
-
-  for (auto str : stringsWithNurseryMemory_) {
-    JSString::sweepAfterMinorGC(fop, str);
+  auto* gcx = runtime()->gcContext();
+  for (auto* str : stringsWithNurseryMemory_) {
+    JSString::sweepAfterMinorGC(gcx, str);
   }
   stringsWithNurseryMemory_.clearAndFree();
 }
 
+void js::Nursery::joinDecommitTask() { decommitTask->join(); }
+
 JS_PUBLIC_API void JS::EnableNurseryStrings(JSContext* cx) {
   AutoEmptyNursery empty(cx);
-  ReleaseAllJITCode(cx->defaultFreeOp());
+  ReleaseAllJITCode(cx->gcContext());
   cx->runtime()->gc.nursery().enableStrings();
 }
 
 JS_PUBLIC_API void JS::DisableNurseryStrings(JSContext* cx) {
   AutoEmptyNursery empty(cx);
-  ReleaseAllJITCode(cx->defaultFreeOp());
+  ReleaseAllJITCode(cx->gcContext());
   cx->runtime()->gc.nursery().disableStrings();
 }
 
 JS_PUBLIC_API void JS::EnableNurseryBigInts(JSContext* cx) {
   AutoEmptyNursery empty(cx);
-  ReleaseAllJITCode(cx->defaultFreeOp());
+  ReleaseAllJITCode(cx->gcContext());
   cx->runtime()->gc.nursery().enableBigInts();
 }
 
 JS_PUBLIC_API void JS::DisableNurseryBigInts(JSContext* cx) {
   AutoEmptyNursery empty(cx);
-  ReleaseAllJITCode(cx->defaultFreeOp());
+  ReleaseAllJITCode(cx->gcContext());
   cx->runtime()->gc.nursery().disableBigInts();
 }

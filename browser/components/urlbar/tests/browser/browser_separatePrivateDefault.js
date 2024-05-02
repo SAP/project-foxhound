@@ -13,10 +13,11 @@ const serverInfo = {
   port: 20709, // Must be identical to what is in searchSuggestionEngine2.xml
 };
 
-add_task(async function setup() {
+add_setup(async function () {
   await SpecialPowers.pushPrefEnv({
     set: [
       ["browser.search.separatePrivateDefault.ui.enabled", true],
+      ["browser.search.separatePrivateDefault.urlbarResult.enabled", true],
       ["browser.search.separatePrivateDefault", true],
       ["browser.urlbar.suggest.searches", true],
     ],
@@ -32,18 +33,16 @@ add_task(async function setup() {
 
   // Add a search suggestion engine and move it to the front so that it appears
   // as the first one-off.
-  let oldDefaultEngine = await Services.search.getDefault();
-  let oldDefaultPrivateEngine = await Services.search.getDefaultPrivate();
-  let engine = await SearchTestUtils.promiseNewSearchEngine(
-    getRootDirectory(gTestPath) + "searchSuggestionEngine.xml"
-  );
-  await Services.search.setDefault(engine);
-  await Services.search.setDefaultPrivate(engine);
+  await SearchTestUtils.promiseNewSearchEngine({
+    url: getRootDirectory(gTestPath) + "searchSuggestionEngine.xml",
+    setAsDefault: true,
+    setAsDefaultPrivate: true,
+  });
 
   // Add another engine in the first one-off position.
-  let engine2 = await SearchTestUtils.promiseNewSearchEngine(
-    getRootDirectory(gTestPath) + "POSTSearchEngine.xml"
-  );
+  let engine2 = await SearchTestUtils.promiseNewSearchEngine({
+    url: getRootDirectory(gTestPath) + "POSTSearchEngine.xml",
+  });
   await Services.search.moveEngine(engine2, 0);
 
   // Add an engine with an alias.
@@ -53,8 +52,6 @@ add_task(async function setup() {
   });
 
   registerCleanupFunction(async () => {
-    await Services.search.setDefault(oldDefaultEngine);
-    await Services.search.setDefaultPrivate(oldDefaultPrivateEngine);
     await PlacesUtils.history.clear();
   });
 });
@@ -115,6 +112,21 @@ add_task(async function test_search() {
     value: "unique198273982173",
   });
   await AssertPrivateResult(window, await Services.search.getDefault(), false);
+});
+
+add_task(async function test_search_urlbar_result_disabled() {
+  info("Test that 'Search in a Private Window' does not appear when disabled");
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["browser.search.separatePrivateDefault.urlbarResult.enabled", false],
+    ],
+  });
+  await UrlbarTestUtils.promiseAutocompleteResultPopup({
+    window,
+    value: "unique198273982173",
+  });
+  await AssertNoPrivateResult(window);
+  await SpecialPowers.popPrefEnv();
 });
 
 add_task(async function test_search_disabled_suggestions() {

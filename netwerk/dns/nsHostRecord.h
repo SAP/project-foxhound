@@ -13,7 +13,7 @@
 #include "nsIDNSService.h"
 #include "nsIDNSByTypeRecord.h"
 #include "PLDHashTable.h"
-#include "TRRSkippedReason.h"
+#include "nsITRRSkipReason.h"
 
 class nsHostRecord;
 class nsHostResolver;
@@ -79,13 +79,13 @@ struct nsHostKey {
   const nsCString host;
   const nsCString mTrrServer;
   uint16_t type = 0;
-  uint16_t flags = 0;
+  nsIDNSService::DNSFlags flags = nsIDNSService::RESOLVE_DEFAULT_FLAGS;
   uint16_t af = 0;
   bool pb = false;
   const nsCString originSuffix;
   explicit nsHostKey(const nsACString& host, const nsACString& aTrrServer,
-                     uint16_t type, uint16_t flags, uint16_t af, bool pb,
-                     const nsACString& originSuffix);
+                     uint16_t type, nsIDNSService::DNSFlags flags, uint16_t af,
+                     bool pb, const nsACString& originSuffix);
   bool operator==(const nsHostKey& other) const;
   size_t SizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf) const;
   PLDHashNumber Hash() const;
@@ -150,13 +150,15 @@ class nsHostRecord : public mozilla::LinkedListElement<RefPtr<nsHostRecord>>,
 
   // Checks if the record is usable (not expired and has a value)
   bool HasUsableResult(const mozilla::TimeStamp& now,
-                       uint16_t queryFlags = 0) const;
+                       nsIDNSService::DNSFlags queryFlags =
+                           nsIDNSService::RESOLVE_DEFAULT_FLAGS) const;
 
-  static DnsPriority GetPriority(uint16_t aFlags);
+  static DnsPriority GetPriority(nsIDNSService::DNSFlags aFlags);
 
   virtual void Cancel();
-  virtual bool HasUsableResultInternal(const mozilla::TimeStamp& now,
-                                       uint16_t queryFlags) const = 0;
+  virtual bool HasUsableResultInternal(
+      const mozilla::TimeStamp& now,
+      nsIDNSService::DNSFlags queryFlags) const = 0;
   virtual bool RefreshForNegativeResponse() const { return true; }
 
   mozilla::LinkedList<RefPtr<nsResolveHostCallback>> mCallbacks;
@@ -164,6 +166,18 @@ class nsHostRecord : public mozilla::LinkedListElement<RefPtr<nsHostRecord>>,
   bool IsAddrRecord() const {
     return type == nsIDNSService::RESOLVE_TYPE_DEFAULT;
   }
+
+  virtual void Reset() {
+    mTRRSkippedReason = TRRSkippedReason::TRR_UNSET;
+    mFirstTRRSkippedReason = TRRSkippedReason::TRR_UNSET;
+    mTrrAttempts = 0;
+    mTRRSuccess = false;
+    mNativeSuccess = false;
+  }
+
+  virtual void OnCompleteLookup() {}
+
+  virtual void ResolveComplete() = 0;
 
   // When the record began being valid. Used mainly for bookkeeping.
   mozilla::TimeStamp mValidStart;
@@ -176,6 +190,8 @@ class nsHostRecord : public mozilla::LinkedListElement<RefPtr<nsHostRecord>>,
   // but a request to refresh it will be made.
   mozilla::TimeStamp mGraceStart;
 
+  mozilla::TimeDuration mTrrDuration;
+
   mozilla::Atomic<uint32_t, mozilla::Relaxed> mTtl{0};
 
   // The computed TRR mode that is actually used by the request.
@@ -183,12 +199,12 @@ class nsHostRecord : public mozilla::LinkedListElement<RefPtr<nsHostRecord>>,
   // default resolver and the TRRMode encoded in the flags.
   // The mode into account if the TRR service is disabled,
   // parental controls are on, domain matches exclusion list, etc.
-  nsIRequest::TRRMode mEffectiveTRRMode = nsIRequest::TRR_DEFAULT_MODE;
+  mozilla::Atomic<nsIRequest::TRRMode> mEffectiveTRRMode{
+      nsIRequest::TRR_DEFAULT_MODE};
 
-  TRRSkippedReason mTRRSkippedReason = TRRSkippedReason::TRR_UNSET;
+  mozilla::Atomic<TRRSkippedReason> mTRRSkippedReason{
+      TRRSkippedReason::TRR_UNSET};
   TRRSkippedReason mFirstTRRSkippedReason = TRRSkippedReason::TRR_UNSET;
-  TRRSkippedReason mTRRAFailReason = TRRSkippedReason::TRR_UNSET;
-  TRRSkippedReason mTRRAAAAFailReason = TRRSkippedReason::TRR_UNSET;
 
   mozilla::DataMutex<RefPtr<mozilla::net::TRRQuery>> mTRRQuery;
 
@@ -206,6 +222,12 @@ class nsHostRecord : public mozilla::LinkedListElement<RefPtr<nsHostRecord>>,
 
   // Explicitly expired
   bool mDoomed = false;
+
+  // Whether this is resolved by TRR successfully or not.
+  bool mTRRSuccess = false;
+
+  // Whether this is resolved by native resolver successfully or not.
+  bool mNativeSuccess = false;
 };
 
 // b020e996-f6ab-45e5-9bf5-1da71dd0053a
@@ -241,7 +263,7 @@ class AddrHostRecord final : public nsHostRecord {
    * the other threads just read it.  therefore the resolver worker
    * thread doesn't need to lock when reading |addr_info|.
    */
-  Mutex addr_info_lock{"AddrHostRecord.addr_info_lock"};
+  Mutex addr_info_lock MOZ_UNANNOTATED{"AddrHostRecord.addr_info_lock"};
   // generation count of |addr_info|
   int addr_info_gencnt = 0;
   RefPtr<mozilla::net::AddrInfo> addr_info;
@@ -255,6 +277,7 @@ class AddrHostRecord final : public nsHostRecord {
   size_t SizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf) const override;
 
   nsIRequest::TRRMode EffectiveTRRMode() const { return mEffectiveTRRMode; }
+  nsITRRSkipReason::value TrrSkipReason() const { return mTRRSkippedReason; }
 
   nsresult GetTtl(uint32_t* aResult);
 
@@ -268,8 +291,9 @@ class AddrHostRecord final : public nsHostRecord {
   ~AddrHostRecord();
 
   // Checks if the record is usable (not expired and has a value)
-  bool HasUsableResultInternal(const mozilla::TimeStamp& now,
-                               uint16_t queryFlags) const override;
+  bool HasUsableResultInternal(
+      const mozilla::TimeStamp& now,
+      nsIDNSService::DNSFlags queryFlags) const override;
 
   bool RemoveOrRefresh(bool aTrrToo);  // Mark records currently being resolved
                                        // as needed to resolve again.
@@ -277,23 +301,32 @@ class AddrHostRecord final : public nsHostRecord {
   // Saves the skip reason of a first-attempt TRR lookup and clears
   // it to prepare for a retry attempt.
   void NotifyRetryingTrr();
-  void ResolveComplete();
 
-  static DnsPriority GetPriority(uint16_t aFlags);
+  static DnsPriority GetPriority(nsIDNSService::DNSFlags aFlags);
 
   // true if pending and on the queue (not yet given to getaddrinfo())
   bool onQueue() { return LoadNative() && isInList(); }
 
+  virtual void Reset() override {
+    nsHostRecord::Reset();
+    StoreNativeUsed(false);
+    mResolverType = DNSResolverType::Native;
+  }
+
+  virtual void OnCompleteLookup() override {
+    nsHostRecord::OnCompleteLookup();
+    // This should always be cleared when a request is completed.
+    StoreNative(false);
+  }
+
+  void ResolveComplete() override;
+
   // When the lookups of this record started and their durations
-  mozilla::TimeStamp mTrrStart;
   mozilla::TimeStamp mNativeStart;
-  mozilla::TimeDuration mTrrDuration;
   mozilla::TimeDuration mNativeDuration;
 
-  // TRR or ODoH was used on this record
+  // TRR was used on this record
   mozilla::Atomic<DNSResolverType> mResolverType{DNSResolverType::Native};
-  uint8_t mTRRSuccess = 0;     // number of successful TRR responses
-  uint8_t mNativeSuccess = 0;  // number of native lookup responses
 
   // clang-format off
   MOZ_ATOMIC_BITFIELDS(mAtomicBitfields, 8, (
@@ -344,36 +377,39 @@ class TypeHostRecord final : public nsHostRecord,
 
  private:
   friend class nsHostResolver;
+  friend class mozilla::net::TRR;
   friend class mozilla::net::TRRQuery;
 
   explicit TypeHostRecord(const nsHostKey& key);
   ~TypeHostRecord();
 
   // Checks if the record is usable (not expired and has a value)
-  bool HasUsableResultInternal(const mozilla::TimeStamp& now,
-                               uint16_t queryFlags) const override;
+  bool HasUsableResultInternal(
+      const mozilla::TimeStamp& now,
+      nsIDNSService::DNSFlags queryFlags) const override;
   bool RefreshForNegativeResponse() const override;
 
-  mozilla::net::TypeRecordResultType mResults = AsVariant(mozilla::Nothing());
-  mozilla::Mutex mResultsLock{"TypeHostRecord.mResultsLock"};
+  void ResolveComplete() override;
 
-  // When the lookups of this record started (for telemetry).
-  mozilla::TimeStamp mStart;
+  mozilla::net::TypeRecordResultType mResults = AsVariant(mozilla::Nothing());
+  mozilla::Mutex mResultsLock MOZ_UNANNOTATED{"TypeHostRecord.mResultsLock"};
+
+  mozilla::Maybe<nsCString> mOriginHost;
   bool mAllRecordsExcluded = false;
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(TypeHostRecord, TYPEHOSTRECORD_IID)
 
-static inline bool IsHighPriority(uint16_t flags) {
+static inline bool IsHighPriority(nsIDNSService::DNSFlags flags) {
   return !(flags & (nsHostRecord::DNS_PRIORITY_LOW |
                     nsHostRecord::DNS_PRIORITY_MEDIUM));
 }
 
-static inline bool IsMediumPriority(uint16_t flags) {
+static inline bool IsMediumPriority(nsIDNSService::DNSFlags flags) {
   return flags & nsHostRecord::DNS_PRIORITY_MEDIUM;
 }
 
-static inline bool IsLowPriority(uint16_t flags) {
+static inline bool IsLowPriority(nsIDNSService::DNSFlags flags) {
   return flags & nsHostRecord::DNS_PRIORITY_LOW;
 }
 

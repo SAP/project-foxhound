@@ -7,33 +7,36 @@
 const {
   createFactory,
   PureComponent,
-} = require("devtools/client/shared/vendor/react");
-const dom = require("devtools/client/shared/vendor/react-dom-factories");
-const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
-const { connect } = require("devtools/client/shared/vendor/react-redux");
+} = require("resource://devtools/client/shared/vendor/react.js");
+const dom = require("resource://devtools/client/shared/vendor/react-dom-factories.js");
+const PropTypes = require("resource://devtools/client/shared/vendor/react-prop-types.js");
+const {
+  connect,
+} = require("resource://devtools/client/shared/vendor/react-redux.js");
 
-const FluentReact = require("devtools/client/shared/vendor/fluent-react");
+const FluentReact = require("resource://devtools/client/shared/vendor/fluent-react.js");
 const Localized = createFactory(FluentReact.Localized);
 
 const {
   getCurrentRuntimeDetails,
-} = require("devtools/client/aboutdebugging/src/modules/runtimes-state-helper");
+} = require("resource://devtools/client/aboutdebugging/src/modules/runtimes-state-helper.js");
 
 const DetailsLog = createFactory(
-  require("devtools/client/aboutdebugging/src/components/shared/DetailsLog")
+  require("resource://devtools/client/aboutdebugging/src/components/shared/DetailsLog.js")
 );
 const FieldPair = createFactory(
-  require("devtools/client/aboutdebugging/src/components/debugtarget/FieldPair")
+  require("resource://devtools/client/aboutdebugging/src/components/debugtarget/FieldPair.js")
 );
 const Message = createFactory(
-  require("devtools/client/aboutdebugging/src/components/shared/Message")
+  require("resource://devtools/client/aboutdebugging/src/components/shared/Message.js")
 );
 
 const {
+  EXTENSION_BGSCRIPT_STATUSES,
   MESSAGE_LEVEL,
   RUNTIMES,
-} = require("devtools/client/aboutdebugging/src/constants");
-const Types = require("devtools/client/aboutdebugging/src/types/index");
+} = require("resource://devtools/client/aboutdebugging/src/constants.js");
+const Types = require("resource://devtools/client/aboutdebugging/src/types/index.js");
 
 /**
  * This component displays detail information for extension.
@@ -164,6 +167,52 @@ class ExtensionDetail extends PureComponent {
     );
   }
 
+  renderBackgroundScriptStatus() {
+    // The status of the background script is only relevant if it is
+    // not persistent.
+    const { persistentBackgroundScript } = this.props.target.details;
+    if (!(persistentBackgroundScript === false)) {
+      return null;
+    }
+
+    const { backgroundScriptStatus } = this.props.target.details;
+
+    let status;
+    let statusLocalizationId;
+    let statusClassName;
+
+    if (backgroundScriptStatus === EXTENSION_BGSCRIPT_STATUSES.RUNNING) {
+      status = `extension-backgroundscript__status--running`;
+      statusLocalizationId = `about-debugging-extension-backgroundscript-status-running`;
+      statusClassName = `extension-backgroundscript__status--running`;
+    } else {
+      status = `extension-backgroundscript__status--stopped`;
+      statusLocalizationId = `about-debugging-extension-backgroundscript-status-stopped`;
+      statusClassName = `extension-backgroundscript__status--stopped`;
+    }
+
+    return Localized(
+      {
+        id: "about-debugging-extension-backgroundscript",
+        attrs: { label: true },
+      },
+      FieldPair({
+        label: "Background Script",
+        value: Localized(
+          {
+            id: statusLocalizationId,
+          },
+          dom.span(
+            {
+              className: `extension-backgroundscript__status qa-extension-backgroundscript-status ${statusClassName}`,
+            },
+            status
+          )
+        ),
+      })
+    );
+  }
+
   render() {
     return dom.section(
       {
@@ -176,6 +225,7 @@ class ExtensionDetail extends PureComponent {
         this.renderExtensionId(),
         this.renderUUID(),
         this.renderManifest(),
+        this.renderBackgroundScriptStatus(),
         this.props.children
       )
     );

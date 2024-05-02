@@ -13,6 +13,7 @@
 #include "mozilla/dom/quota/Client.h"
 #include "mozilla/dom/quota/CommonMetadata.h"
 #include "mozilla/dom/quota/PersistenceType.h"
+#include "mozilla/dom/quota/UsageInfo.h"
 #include "mozilla/OriginAttributes.h"
 
 namespace IPC {
@@ -34,23 +35,26 @@ template <>
 struct ParamTraits<mozilla::dom::quota::FullOriginMetadata> {
   using ParamType = mozilla::dom::quota::FullOriginMetadata;
 
-  static void Write(Message* aMsg, const ParamType& aParam) {
-    WriteParam(aMsg, aParam.mSuffix);
-    WriteParam(aMsg, aParam.mGroup);
-    WriteParam(aMsg, aParam.mOrigin);
-    WriteParam(aMsg, aParam.mPersistenceType);
-    WriteParam(aMsg, aParam.mPersisted);
-    WriteParam(aMsg, aParam.mLastAccessTime);
+  static void Write(MessageWriter* aWriter, const ParamType& aParam) {
+    WriteParam(aWriter, aParam.mSuffix);
+    WriteParam(aWriter, aParam.mGroup);
+    WriteParam(aWriter, aParam.mOrigin);
+    WriteParam(aWriter, aParam.mStorageOrigin);
+    WriteParam(aWriter, aParam.mIsPrivate);
+    WriteParam(aWriter, aParam.mPersistenceType);
+    WriteParam(aWriter, aParam.mPersisted);
+    WriteParam(aWriter, aParam.mLastAccessTime);
   }
 
-  static bool Read(const Message* aMsg, PickleIterator* aIter,
-                   ParamType* aResult) {
-    return ReadParam(aMsg, aIter, &aResult->mSuffix) &&
-           ReadParam(aMsg, aIter, &aResult->mGroup) &&
-           ReadParam(aMsg, aIter, &aResult->mOrigin) &&
-           ReadParam(aMsg, aIter, &aResult->mPersistenceType) &&
-           ReadParam(aMsg, aIter, &aResult->mPersisted) &&
-           ReadParam(aMsg, aIter, &aResult->mLastAccessTime);
+  static bool Read(MessageReader* aReader, ParamType* aResult) {
+    return ReadParam(aReader, &aResult->mSuffix) &&
+           ReadParam(aReader, &aResult->mGroup) &&
+           ReadParam(aReader, &aResult->mOrigin) &&
+           ReadParam(aReader, &aResult->mStorageOrigin) &&
+           ReadParam(aReader, &aResult->mIsPrivate) &&
+           ReadParam(aReader, &aResult->mPersistenceType) &&
+           ReadParam(aReader, &aResult->mPersisted) &&
+           ReadParam(aReader, &aResult->mLastAccessTime);
   }
 };
 
@@ -58,21 +62,84 @@ template <>
 struct ParamTraits<mozilla::OriginAttributesPattern> {
   typedef mozilla::OriginAttributesPattern paramType;
 
-  static void Write(Message* aMsg, const paramType& aParam) {
-    WriteParam(aMsg, aParam.mFirstPartyDomain);
-    WriteParam(aMsg, aParam.mInIsolatedMozBrowser);
-    WriteParam(aMsg, aParam.mPrivateBrowsingId);
-    WriteParam(aMsg, aParam.mUserContextId);
-    WriteParam(aMsg, aParam.mGeckoViewSessionContextId);
+  static void Write(MessageWriter* aWriter, const paramType& aParam) {
+    WriteParam(aWriter, aParam.mFirstPartyDomain);
+    WriteParam(aWriter, aParam.mInIsolatedMozBrowser);
+    WriteParam(aWriter, aParam.mPrivateBrowsingId);
+    WriteParam(aWriter, aParam.mUserContextId);
+    WriteParam(aWriter, aParam.mGeckoViewSessionContextId);
   }
 
-  static bool Read(const Message* aMsg, PickleIterator* aIter,
-                   paramType* aResult) {
-    return ReadParam(aMsg, aIter, &aResult->mFirstPartyDomain) &&
-           ReadParam(aMsg, aIter, &aResult->mInIsolatedMozBrowser) &&
-           ReadParam(aMsg, aIter, &aResult->mPrivateBrowsingId) &&
-           ReadParam(aMsg, aIter, &aResult->mUserContextId) &&
-           ReadParam(aMsg, aIter, &aResult->mGeckoViewSessionContextId);
+  static bool Read(MessageReader* aReader, paramType* aResult) {
+    return ReadParam(aReader, &aResult->mFirstPartyDomain) &&
+           ReadParam(aReader, &aResult->mInIsolatedMozBrowser) &&
+           ReadParam(aReader, &aResult->mPrivateBrowsingId) &&
+           ReadParam(aReader, &aResult->mUserContextId) &&
+           ReadParam(aReader, &aResult->mGeckoViewSessionContextId);
+  }
+};
+
+template <>
+struct ParamTraits<mozilla::dom::quota::DatabaseUsageType> {
+  using ParamType = mozilla::dom::quota::DatabaseUsageType;
+
+  static void Write(MessageWriter* aWriter, const ParamType& aParam) {
+    WriteParam(aWriter, aParam.GetValue());
+  }
+
+  static bool Read(MessageReader* aReader, ParamType* aResult) {
+    mozilla::Maybe<uint64_t> value;
+    if (!ReadParam(aReader, &value)) {
+      return false;
+    }
+
+    *aResult += ParamType(value);
+    return true;
+  }
+};
+
+template <>
+struct ParamTraits<mozilla::dom::quota::FileUsageType> {
+  using ParamType = mozilla::dom::quota::FileUsageType;
+
+  static void Write(MessageWriter* aWriter, const ParamType& aParam) {
+    WriteParam(aWriter, aParam.GetValue());
+  }
+
+  static bool Read(MessageReader* aReader, ParamType* aResult) {
+    mozilla::Maybe<uint64_t> value;
+    if (!ReadParam(aReader, &value)) {
+      return false;
+    }
+
+    *aResult += ParamType(value);
+    return true;
+  }
+};
+
+template <>
+struct ParamTraits<mozilla::dom::quota::UsageInfo> {
+  using ParamType = mozilla::dom::quota::UsageInfo;
+
+  static void Write(MessageWriter* aWriter, const ParamType& aParam) {
+    WriteParam(aWriter, aParam.DatabaseUsage());
+    WriteParam(aWriter, aParam.FileUsage());
+  }
+
+  static bool Read(MessageReader* aReader, ParamType* aResult) {
+    mozilla::Maybe<uint64_t> databaseUsage;
+    if (!ReadParam(aReader, &databaseUsage)) {
+      return false;
+    }
+
+    mozilla::Maybe<uint64_t> fileUsage;
+    if (!ReadParam(aReader, &fileUsage)) {
+      return false;
+    }
+
+    *aResult += mozilla::dom::quota::DatabaseUsageType(databaseUsage);
+    *aResult += mozilla::dom::quota::FileUsageType(fileUsage);
+    return true;
   }
 };
 

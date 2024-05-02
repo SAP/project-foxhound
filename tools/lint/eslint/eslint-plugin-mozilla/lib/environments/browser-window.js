@@ -37,6 +37,11 @@ const extraDefinitions = [
   { name: "XPCOMUtils", writable: false },
   { name: "Task", writable: false },
   { name: "windowGlobalChild", writable: false },
+  // structuredClone is a new global that would be defined for the `browser`
+  // environment in ESLint, but only Firefox has implemented it currently and so
+  // it isn't in ESLint's globals yet.
+  // https://developer.mozilla.org/docs/Web/API/structuredClone
+  { name: "structuredClone", writable: false },
 ];
 
 // Some files in global-scripts.inc need mapping to specific locations.
@@ -45,12 +50,17 @@ const MAPPINGS = {
   "panelUI.js": "browser/components/customizableui/content/panelUI.js",
   "viewSourceUtils.js":
     "toolkit/components/viewsource/content/viewSourceUtils.js",
+  "browserPlacesViews.js":
+    "browser/components/places/content/browserPlacesViews.js",
   "places-tree.js": "browser/components/places/content/places-tree.js",
   "places-menupopup.js":
     "browser/components/places/content/places-menupopup.js",
+  "shopping-sidebar.js":
+    "browser/components/shopping/content/shopping-sidebar.js",
 };
 
-const globalScriptsRegExp = /^\s*Services.scriptloader.loadSubScript\(\"(.*?)\", this\);$/;
+const globalScriptsRegExp =
+  /^\s*Services.scriptloader.loadSubScript\(\"(.*?)\", this\);$/;
 
 function getGlobalScriptIncludes(scriptPath) {
   let fileData;

@@ -7,14 +7,12 @@
  * Tests utility functions contained in `source-utils.js`
  */
 
-const curl = require("devtools/client/shared/curl");
+const curl = require("resource://devtools/client/shared/curl.js");
 const Curl = curl.Curl;
 const CurlUtils = curl.CurlUtils;
 
-const Services = require("Services");
-
 // Test `Curl.generateCommand` headers forwarding/filtering
-add_task(async function() {
+add_task(async function () {
   const request = {
     url: "https://example.com/form/",
     method: "GET",
@@ -33,6 +31,7 @@ add_task(async function() {
       { name: "Referer", value: "https://example.com/home/" },
       { name: "Content-Type", value: "text/plain" },
     ],
+    responseHeaders: [],
     httpVersion: "HTTP/2.0",
   };
 
@@ -86,11 +85,12 @@ add_task(async function() {
 });
 
 // Test `Curl.generateCommand` URL glob handling
-add_task(async function() {
+add_task(async function () {
   let request = {
     url: "https://example.com/",
     method: "GET",
     headers: [],
+    responseHeaders: [],
     httpVersion: "HTTP/2.0",
   };
 
@@ -106,6 +106,7 @@ add_task(async function() {
     url: "https://example.com/[]",
     method: "GET",
     headers: [],
+    responseHeaders: [],
     httpVersion: "HTTP/2.0",
   };
 
@@ -119,7 +120,7 @@ add_task(async function() {
 });
 
 // Test `Curl.generateCommand` data POSTing
-add_task(async function() {
+add_task(async function () {
   const request = {
     url: "https://example.com/form/",
     method: "POST",
@@ -127,6 +128,7 @@ add_task(async function() {
       { name: "Content-Length", value: "1000" },
       { name: "Content-Type", value: "text/plain" },
     ],
+    responseHeaders: [],
     httpVersion: "HTTP/2.0",
     postDataText: "A piece of plain payload text",
   };
@@ -153,7 +155,7 @@ add_task(async function() {
 });
 
 // Test `Curl.generateCommand` data POSTing - not post data
-add_task(async function() {
+add_task(async function () {
   const request = {
     url: "https://example.com/form/",
     method: "POST",
@@ -161,6 +163,7 @@ add_task(async function() {
       { name: "Content-Length", value: "1000" },
       { name: "Content-Type", value: "text/plain" },
     ],
+    responseHeaders: [],
     httpVersion: "HTTP/2.0",
   };
 
@@ -181,7 +184,7 @@ add_task(async function() {
 });
 
 // Test `Curl.generateCommand` multipart data POSTing
-add_task(async function() {
+add_task(async function () {
   const boundary = "----------14808";
   const request = {
     url: "https://example.com/form/",
@@ -192,6 +195,7 @@ add_task(async function() {
         value: `multipart/form-data; boundary=${boundary}`,
       },
     ],
+    responseHeaders: [],
     httpVersion: "HTTP/2.0",
     postDataText: [
       `--${boundary}`,
@@ -235,7 +239,7 @@ add_task(async function() {
 });
 
 // Test `CurlUtils.removeBinaryDataFromMultipartText` doesn't change text data
-add_task(async function() {
+add_task(async function () {
   const boundary = "----------14808";
   const postTextLines = [
     `--${boundary}`,
@@ -262,7 +266,7 @@ add_task(async function() {
 });
 
 // Test `CurlUtils.removeBinaryDataFromMultipartText` removes binary data
-add_task(async function() {
+add_task(async function () {
   const boundary = "----------14808";
   const postTextLines = [
     `--${boundary}`,
@@ -286,6 +290,41 @@ add_task(async function() {
     cleanedText,
     postTextLines.join("\r\n"),
     "file content removed from multipart text"
+  );
+});
+
+// Test `Curl.generateCommand` add --compressed flag
+add_task(async function () {
+  let request = {
+    url: "https://example.com/",
+    method: "GET",
+    headers: [],
+    responseHeaders: [],
+    httpVersion: "HTTP/2.0",
+  };
+
+  let cmd = Curl.generateCommand(request);
+  let curlParams = parseCurl(cmd);
+
+  ok(
+    !inParams(curlParams, "--compressed"),
+    "no compressed param in curl output when not needed"
+  );
+
+  request = {
+    url: "https://example.com/",
+    method: "GET",
+    headers: [],
+    responseHeaders: [{ name: "Content-Encoding", value: "gzip" }],
+    httpVersion: "HTTP/2.0",
+  };
+
+  cmd = Curl.generateCommand(request);
+  curlParams = parseCurl(cmd);
+
+  ok(
+    inParams(curlParams, "--compressed"),
+    "compressed param present in curl output when needed"
   );
 });
 

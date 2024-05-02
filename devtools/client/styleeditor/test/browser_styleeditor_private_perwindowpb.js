@@ -5,15 +5,11 @@
 "use strict";
 
 // This test makes sure that the style editor does not store any
-// content CSS files in the permanent cache when opened from PB mode.
+// content CSS files in the permanent cache when opened from a private window tab.
 
-const TEST_URL =
-  "http://" +
-  TEST_HOST +
-  "/browser/devtools/client/" +
-  "styleeditor/test/test_private.html";
+const TEST_URL = `http://${TEST_HOST}/browser/devtools/client/styleeditor/test/test_private.html`;
 
-add_task(async function() {
+add_task(async function () {
   info("Opening a new private window");
   const win = await BrowserTestUtils.openNewBrowserWindow({ private: true });
 
@@ -24,9 +20,15 @@ add_task(async function() {
 
   is(ui.editors.length, 1, "The style editor contains one sheet.");
   const editor = ui.editors[0];
+  is(
+    editor.friendlyName,
+    "test_private.css",
+    "The style editor contains the expected stylesheet"
+  );
 
   await editor.getSourceEditor();
-  await checkDiskCacheFor(TEST_HOST);
+
+  await checkDiskCacheFor(editor.friendlyName);
 
   await toolbox.destroy();
 
@@ -42,20 +44,20 @@ add_task(async function() {
   await onUnload;
 });
 
-function checkDiskCacheFor(host) {
+function checkDiskCacheFor(fileName) {
   let foundPrivateData = false;
 
   return new Promise(resolve => {
     Visitor.prototype = {
-      onCacheStorageInfo: function(num) {
+      onCacheStorageInfo(num) {
         info("disk storage contains " + num + " entries");
       },
-      onCacheEntryInfo: function(uri) {
+      onCacheEntryInfo(uri) {
         const urispec = uri.asciiSpec;
         info(urispec);
-        foundPrivateData = foundPrivateData || urispec.includes(host);
+        foundPrivateData = foundPrivateData || urispec.includes(fileName);
       },
-      onCacheEntryVisitCompleted: function() {
+      onCacheEntryVisitCompleted() {
         is(foundPrivateData, false, "web content present in disk cache");
         resolve();
       },

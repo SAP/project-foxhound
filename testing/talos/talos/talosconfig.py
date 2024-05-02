@@ -2,8 +2,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, print_function
-
 import json
 import os
 
@@ -38,7 +36,6 @@ def generateTalosConfig(command_line, browser_config, test_config, pid=None):
         and ("xperf_user_providers" in test_config)
         and ("xperf_stackwalk" in test_config)
     ):  # noqa
-
         print("extending with xperf!")
         browser_config["xperf_providers"] = test_config["xperf_providers"]
         browser_config["xperf_user_providers"] = test_config["xperf_user_providers"]

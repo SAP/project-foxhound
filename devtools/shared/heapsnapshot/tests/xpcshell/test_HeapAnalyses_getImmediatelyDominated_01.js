@@ -13,7 +13,7 @@ const breakdown = {
   domNode: { by: "count", count: true, bytes: true },
 };
 
-add_task(async function() {
+add_task(async function () {
   const client = new HeapAnalysesClient();
 
   const snapshotFilePath = saveNewHeapSnapshot();
@@ -25,7 +25,7 @@ add_task(async function() {
     breakdown,
   });
   ok(
-    partialTree.children.length > 0,
+    !!partialTree.children.length,
     "root should immediately dominate some nodes"
   );
 

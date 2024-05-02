@@ -17,8 +17,7 @@
 #include "nsIContent.h"
 #include "nsString.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 // XXX DocumentType is currently implemented by inheriting the generic
 // CharacterData object, even though DocumentType is not character
@@ -35,12 +34,11 @@ class DocumentType final : public CharacterData {
   NS_INLINE_DECL_REFCOUNTING_INHERITED(DocumentType, CharacterData)
 
   // nsINode
-  virtual bool IsNodeOfType(uint32_t aFlags) const override;
-  virtual void GetNodeValueInternal(nsAString& aNodeValue) override {
+  void GetNodeValueInternal(nsAString& aNodeValue) override {
     SetDOMStringToNull(aNodeValue);
   }
-  virtual void SetNodeValueInternal(const nsAString& aNodeValue,
-                                    mozilla::ErrorResult& aError) override {}
+  void SetNodeValueInternal(const nsAString& aNodeValue,
+                            mozilla::ErrorResult& aError) override {}
 
   // nsIContent overrides
   virtual const nsTextFragment* GetText() override;
@@ -65,8 +63,7 @@ class DocumentType final : public CharacterData {
   nsString mInternalSubset;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 already_AddRefed<mozilla::dom::DocumentType> NS_NewDOMDocumentType(
     nsNodeInfoManager* aNodeInfoManager, nsAtom* aName,

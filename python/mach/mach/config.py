@@ -14,19 +14,16 @@ ConfigProvider classes are associated with ConfigSettings and define what
 settings are available.
 """
 
-from __future__ import absolute_import, unicode_literals
-
 import collections
 import collections.abc
 import sys
-import six
-
+from functools import wraps
 from pathlib import Path
 from typing import List, Union
 
-from functools import wraps
-from six.moves.configparser import RawConfigParser, NoSectionError
+import six
 from six import string_types
+from six.moves.configparser import NoSectionError, RawConfigParser
 
 
 class ConfigException(Exception):
@@ -312,7 +309,7 @@ class ConfigSettings(collections.abc.Mapping):
         """Load config data by reading file objects."""
 
         for fp in fps:
-            self._config.readfp(fp)
+            self._config.read_file(fp)
 
     def write(self, fh):
         """Write the config to a file object."""

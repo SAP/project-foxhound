@@ -22,22 +22,15 @@ namespace InspectorUtils {
   unsigned long getRuleColumn(CSSRule rule);
   unsigned long getRelativeRuleLine(CSSRule rule);
   boolean hasRulesModifiedByCSSOM(CSSStyleSheet sheet);
-  unsigned long getSelectorCount(CSSStyleRule rule);
-  [Throws] UTF8String getSelectorText(CSSStyleRule rule,
-                                      unsigned long selectorIndex);
-  [Throws] unsigned long long getSpecificity(CSSStyleRule rule,
-                                             unsigned long selectorIndex);
-  [Throws] boolean selectorMatchesElement(
-      Element element,
-      CSSStyleRule rule,
-      unsigned long selectorIndex,
-      optional [LegacyNullToEmptyString] DOMString pseudo = "",
-      optional boolean includeVisitedStyle = false);
+  // Get a flat list of all rules (including nested ones) of a given stylesheet.
+  // Useful for DevTools as this is faster than in JS where we'd have a lot of
+  // proxy access overhead building the same list.
+  sequence<CSSRule> getAllStyleSheetCSSStyleRules(CSSStyleSheet sheet);
   boolean isInheritedProperty(UTF8String property);
   sequence<DOMString> getCSSPropertyNames(optional PropertyNamesOptions options = {});
   sequence<PropertyPref> getCSSPropertyPrefs();
   [Throws] sequence<DOMString> getCSSValuesForProperty(UTF8String property);
-  [Throws] DOMString rgbToColorName(octet r, octet g, octet b);
+  UTF8String rgbToColorName(octet r, octet g, octet b);
   InspectorRGBATuple? colorToRGBA(UTF8String colorString, optional Document? doc = null);
   boolean isValidCSSColor(UTF8String colorString);
   [Throws] sequence<DOMString> getSubpropertiesForCSSProperty(UTF8String property);
@@ -50,8 +43,9 @@ namespace InspectorUtils {
 
   boolean isIgnorableWhitespace(CharacterData dataNode);
   Node? getParentForNode(Node node, boolean showingAnonymousContent);
-  [NewObject] NodeList getChildrenForNode(Node node,
-                                          boolean showingAnonymousContent);
+  sequence<Node> getChildrenForNode(Node node,
+                                    boolean showingAnonymousContent,
+                                    boolean includeAssignedNodes);
   [Throws] boolean setContentState(Element element, unsigned long long state);
   [Throws] boolean removeContentState(
       Element element,
@@ -70,13 +64,13 @@ namespace InspectorUtils {
       optional boolean skipCollapsedWhitespace = true);
 
   sequence<DOMString> getCSSPseudoElementNames();
-  void addPseudoClassLock(Element element,
-                          DOMString pseudoClass,
-                          optional boolean enabled = true);
-  void removePseudoClassLock(Element element, DOMString pseudoClass);
+  undefined addPseudoClassLock(Element element,
+                               DOMString pseudoClass,
+                               optional boolean enabled = true);
+  undefined removePseudoClassLock(Element element, DOMString pseudoClass);
   boolean hasPseudoClassLock(Element element, DOMString pseudoClass);
-  void clearPseudoClassLocks(Element element);
-  [Throws] void parseStyleSheet(CSSStyleSheet sheet, UTF8String input);
+  undefined clearPseudoClassLocks(Element element);
+  [Throws] undefined parseStyleSheet(CSSStyleSheet sheet, UTF8String input);
   boolean isCustomElementName([LegacyNullToEmptyString] DOMString name,
                               DOMString? namespaceURI);
 
@@ -84,7 +78,14 @@ namespace InspectorUtils {
 
   Element? containingBlockOf(Element element);
 
+  // If the element is styled as display:block, returns an array of numbers giving
+  // the number of lines in each fragment.
+  // Returns null if the element is not a block.
+  [NewObject] sequence<unsigned long>? getBlockLineCounts(Element element);
+
   [NewObject] NodeList getOverflowingChildrenOfElement(Element element);
+  sequence<DOMString> getRegisteredCssHighlights(Document document, optional boolean activeOnly = false);
+  sequence<InspectorCSSPropertyDefinition> getCSSRegisteredProperties(Document document);
 };
 
 dictionary SupportsOptions {
@@ -147,6 +148,14 @@ dictionary InspectorFontFeature {
   required DOMString tag;
   required DOMString script;
   required DOMString languageSystem;
+};
+
+dictionary InspectorCSSPropertyDefinition {
+  required UTF8String name;
+  required UTF8String syntax;
+  required boolean inherits;
+  required UTF8String? initialValue;
+  required boolean fromJS;
 };
 
 [Func="nsContentUtils::IsCallerChromeOrFuzzingEnabled",

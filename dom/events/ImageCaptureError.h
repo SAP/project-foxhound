@@ -12,8 +12,7 @@
 #include "nsString.h"
 #include "nsWrapperCache.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 /**
  * This is the implementation of ImageCaptureError on W3C specification
@@ -23,7 +22,7 @@ namespace dom {
 class ImageCaptureError final : public nsISupports, public nsWrapperCache {
  public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(ImageCaptureError)
+  NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(ImageCaptureError)
 
   ImageCaptureError(nsISupports* aParent, uint16_t aCode,
                     const nsAString& aMessage);
@@ -52,7 +51,6 @@ class ImageCaptureError final : public nsISupports, public nsWrapperCache {
   uint16_t mCode;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_ImageCaptureError_h

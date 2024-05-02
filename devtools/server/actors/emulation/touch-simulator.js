@@ -4,13 +4,10 @@
 
 "use strict";
 
-const { Services } = require("resource://gre/modules/Services.jsm");
-
-loader.lazyRequireGetter(this, "InspectorUtils", "InspectorUtils");
 loader.lazyRequireGetter(
   this,
   "PICKER_TYPES",
-  "devtools/shared/picker-constants"
+  "resource://devtools/shared/picker-constants.js"
 );
 
 var isClickHoldEnabled = Services.prefs.getBoolPref(
@@ -43,7 +40,7 @@ const EVENTS_TO_HANDLE = [
   "mouseleave",
 ];
 
-const kStateHover = 0x00000004; // NS_EVENT_STATE_HOVER
+const kStateHover = 0x00000004; // ElementState::HOVER
 
 /**
  * Simulate touch events for platforms where they aren't generally available.
@@ -178,7 +175,7 @@ class TouchSimulator {
     // (especially ignore mouse event being dispatched from a touch event)
     if (
       evt.button ||
-      evt.mozInputSource != evt.MOZ_SOURCE_MOUSE ||
+      evt.inputSource != evt.MOZ_SOURCE_MOUSE ||
       evt.isSynthesized
     ) {
       return;
@@ -294,10 +291,9 @@ class TouchSimulator {
    *        A key appearing in the TOUCH_STATES associative array.
    */
   synthesizeNativeTouch(win, screenX, screenY, type) {
-    // Native events work in device pixels, so calculate device coordinates from
-    // the screen coordinates.
+    // Native events work in device pixels.
     const utils = win.windowUtils;
-    const deviceScale = utils.screenPixelsPerCSSPixelNoOverride;
+    const deviceScale = win.devicePixelRatio;
     const pt = { x: screenX * deviceScale, y: screenY * deviceScale };
 
     utils.sendNativeTouchPoint(0, TOUCH_STATES[type], pt.x, pt.y, 1, 90, null);

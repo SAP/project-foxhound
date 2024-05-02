@@ -2,8 +2,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import
-
 import multiprocessing
 import time
 import unittest
@@ -16,10 +14,7 @@ try:
 except ImportError:
     psutil = None
 
-from mozsystemmonitor.resourcemonitor import (
-    SystemResourceMonitor,
-    SystemResourceUsage,
-)
+from mozsystemmonitor.resourcemonitor import SystemResourceMonitor, SystemResourceUsage
 
 
 @unittest.skipIf(psutil is None, "Resource monitor requires psutil.")
@@ -69,7 +64,7 @@ class TestResourceMonitor(unittest.TestCase):
         self.assertGreater(len(all), len(data1))
         self.assertGreater(len(data1), len(data2))
 
-        # This could fail if time.time() takes more than 0.1s. It really
+        # This could fail if time.monotonic() takes more than 0.1s. It really
         # shouldn't.
         self.assertAlmostEqual(data1[-1].end, data2[-1].end, delta=0.25)
 
@@ -85,7 +80,7 @@ class TestResourceMonitor(unittest.TestCase):
         monitor.start()
         time.sleep(0.5)
 
-        t0 = time.time()
+        t0 = time.monotonic()
         monitor.record_event("t0")
         time.sleep(2)
 

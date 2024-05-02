@@ -10,7 +10,7 @@ NSS 3.25 release notes
 
    The Network Security Services (NSS) team has released NSS 3.25, which is a minor release.
 
-.. _distribution_information:
+
 
 `Distribution information <#distribution_information>`__
 --------------------------------------------------------
@@ -30,8 +30,6 @@ NSS 3.25 release notes
 `New in NSS 3.25 <#new_in_nss_3.25>`__
 --------------------------------------
 
-.. container::
-
 .. _new_functionality:
 
 `New Functionality <#new_functionality>`__
@@ -43,7 +41,7 @@ NSS 3.25 release notes
    -  Added support for ChaCha with TLS 1.3.
    -  Added support for TLS 1.2 ciphersuites that use SHA384 as the PRF.
    -  Removed the limitation that allowed NSS to only support certificate_verify messages that used
-      the same signature hash algorithm as the PRF when using TLS 1.2 client authentication.
+      the same signature hash algorithm as the PRF when using TLS 1.2 client authentication.
    -  Several functions have been added to the public API of the NSS Cryptoki Framework.
 
    .. rubric:: New Functions

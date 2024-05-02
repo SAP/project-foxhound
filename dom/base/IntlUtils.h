@@ -12,8 +12,7 @@
 
 class nsPIDOMWindowInner;
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 #ifdef XP_WIN
 #  undef GetLocaleInfo
@@ -24,7 +23,7 @@ class IntlUtils final : public nsISupports, public nsWrapperCache {
   explicit IntlUtils(nsPIDOMWindowInner* aWindow);
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(IntlUtils)
+  NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(IntlUtils)
 
   nsPIDOMWindowInner* GetParentObject() const { return mWindow; }
 
@@ -48,6 +47,5 @@ class IntlUtils final : public nsISupports, public nsWrapperCache {
   nsCOMPtr<nsPIDOMWindowInner> mWindow;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 #endif

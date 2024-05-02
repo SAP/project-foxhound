@@ -5,9 +5,10 @@ add_task(async function test_windowlessBrowserTroubleshootCrash() {
     let docShell = webNav.docShell;
     let listener = {
       observe(contentWindow, topic, data) {
-        let observedDocShell = contentWindow.docShell.sameTypeRootTreeItem.QueryInterface(
-          Ci.nsIDocShell
-        );
+        let observedDocShell =
+          contentWindow.docShell.sameTypeRootTreeItem.QueryInterface(
+            Ci.nsIDocShell
+          );
         if (docShell === observedDocShell) {
           Services.obs.removeObserver(
             listener,
@@ -22,7 +23,7 @@ add_task(async function test_windowlessBrowserTroubleshootCrash() {
   let loadURIOptions = {
     triggeringPrincipal: Services.scriptSecurityManager.createNullPrincipal({}),
   };
-  webNav.loadURI("about:blank", loadURIOptions);
+  webNav.loadURI(Services.io.newURI("about:blank"), loadURIOptions);
 
   await onLoaded;
 
@@ -39,15 +40,10 @@ add_task(async function test_windowlessBrowserTroubleshootCrash() {
   }
   ok(true, "not crashed");
 
-  var Troubleshoot = ChromeUtils.import(
-    "resource://gre/modules/Troubleshoot.jsm",
-    {}
-  ).Troubleshoot;
-  var data = await new Promise((resolve, reject) => {
-    Troubleshoot.snapshot(data => {
-      resolve(data);
-    });
-  });
+  var { Troubleshoot } = ChromeUtils.importESModule(
+    "resource://gre/modules/Troubleshoot.sys.mjs"
+  );
+  var data = await Troubleshoot.snapshot();
 
   ok(
     data.graphics.windowLayerManagerType !== "None",

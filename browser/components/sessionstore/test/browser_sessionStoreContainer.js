@@ -4,7 +4,7 @@
 
 "use strict";
 
-add_task(async function() {
+add_task(async function () {
   for (let i = 0; i < 3; ++i) {
     let tab = BrowserTestUtils.addTab(gBrowser, "http://example.com/", {
       userContextId: i,
@@ -18,23 +18,25 @@ add_task(async function() {
     let browser2 = tab2.linkedBrowser;
     await promiseTabRestored(tab2);
 
-    await SpecialPowers.spawn(browser2, [{ expectedId: i }], async function(
-      args
-    ) {
-      let loadContext = docShell.QueryInterface(Ci.nsILoadContext);
-      Assert.equal(
-        loadContext.originAttributes.userContextId,
-        args.expectedId,
-        "The docShell has the correct userContextId"
-      );
-    });
+    await SpecialPowers.spawn(
+      browser2,
+      [{ expectedId: i }],
+      async function (args) {
+        let loadContext = docShell.QueryInterface(Ci.nsILoadContext);
+        Assert.equal(
+          loadContext.originAttributes.userContextId,
+          args.expectedId,
+          "The docShell has the correct userContextId"
+        );
+      }
+    );
 
     BrowserTestUtils.removeTab(tab);
     BrowserTestUtils.removeTab(tab2);
   }
 });
 
-add_task(async function() {
+add_task(async function () {
   let tab = BrowserTestUtils.addTab(gBrowser, "http://example.com/", {
     userContextId: 1,
   });
@@ -48,21 +50,23 @@ add_task(async function() {
   let browser2 = tab2.linkedBrowser;
   await promiseTabRestored(tab2);
 
-  await SpecialPowers.spawn(browser2, [{ expectedId: 1 }], async function(
-    args
-  ) {
-    Assert.equal(
-      docShell.getOriginAttributes().userContextId,
-      args.expectedId,
-      "The docShell has the correct userContextId"
-    );
-  });
+  await SpecialPowers.spawn(
+    browser2,
+    [{ expectedId: 1 }],
+    async function (args) {
+      Assert.equal(
+        docShell.getOriginAttributes().userContextId,
+        args.expectedId,
+        "The docShell has the correct userContextId"
+      );
+    }
+  );
 
   BrowserTestUtils.removeTab(tab);
   BrowserTestUtils.removeTab(tab2);
 });
 
-add_task(async function() {
+add_task(async function () {
   let tab = BrowserTestUtils.addTab(gBrowser, "http://example.com/", {
     userContextId: 1,
   });
@@ -78,7 +82,7 @@ add_task(async function() {
   await SpecialPowers.spawn(
     tab2.linkedBrowser,
     [{ expectedId: 1 }],
-    async function(args) {
+    async function (args) {
       Assert.equal(
         docShell.getOriginAttributes().userContextId,
         args.expectedId,
@@ -109,8 +113,9 @@ async function openTabInUserContext(userContextId) {
 
 function waitForNewCookie() {
   return new Promise(resolve => {
-    Services.obs.addObserver(function observer(subj, topic, data) {
-      if (data == "added") {
+    Services.obs.addObserver(function observer(subj, topic) {
+      let notification = subj.QueryInterface(Ci.nsICookieNotification);
+      if (notification.action == Ci.nsICookieNotification.COOKIE_ADDED) {
         Services.obs.removeObserver(observer, topic);
         resolve();
       }
@@ -120,10 +125,6 @@ function waitForNewCookie() {
 
 add_task(async function test() {
   const USER_CONTEXTS = ["default", "personal", "work"];
-
-  const { TabStateFlusher } = ChromeUtils.import(
-    "resource:///modules/sessionstore/TabStateFlusher.jsm"
-  );
 
   // Make sure userContext is enabled.
   await SpecialPowers.pushPrefEnv({

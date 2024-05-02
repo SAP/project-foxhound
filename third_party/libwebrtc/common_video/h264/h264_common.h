@@ -42,11 +42,9 @@ enum NaluType : uint8_t {
   kEndOfSequence = 10,
   kEndOfStream = 11,
   kFiller = 12,
+  kPrefix = 14,
   kStapA = 24,
   kFuA = 28
-};
-enum SeiType : uint8_t {
-  kSeiRecPt = 6, // Recovery Point SEI Payload
 };
 
 enum SliceType : uint8_t { kP = 0, kB = 1, kI = 2, kSp = 3, kSi = 4 };

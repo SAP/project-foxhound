@@ -21,9 +21,11 @@
 #include "jit/BaselineICList.h"
 #include "jit/BaselineJIT.h"
 #include "jit/CalleeToken.h"
+#include "jit/InterpreterEntryTrampoline.h"
 #include "jit/IonCompileTask.h"
 #include "jit/IonTypes.h"
 #include "jit/JitCode.h"
+#include "jit/JitHints.h"
 #include "jit/shared/Assembler-shared.h"
 #include "js/AllocPolicy.h"
 #include "js/ProfilingFrameIterator.h"
@@ -44,12 +46,10 @@ class GCMarker;
 namespace jit {
 
 class FrameSizeClass;
-class JitRealm;
 class Label;
 class MacroAssembler;
 struct VMFunctionData;
 
-enum class TailCallVMFunctionId;
 enum class VMFunctionId;
 
 enum class BaselineICFallbackKind : uint8_t {
@@ -110,15 +110,16 @@ enum class ArgumentsRectifierKind { Normal, TrialInlining };
 
 enum class DebugTrapHandlerKind { Interpreter, Compiler, Count };
 
+enum class IonGenericCallKind { Call, Construct, Count };
+
 using EnterJitCode = void (*)(void*, unsigned int, Value*, InterpreterFrame*,
                               CalleeToken, JSObject*, size_t, Value*);
 
 class JitcodeGlobalTable;
+class PerfSpewerRangeRecorder;
 
 class JitRuntime {
  private:
-  friend class JitRealm;
-
   MainThreadData<uint64_t> nextCompilationId_{0};
 
   // Buffer for OSR from baseline to Ion. To avoid holding on to this for too
@@ -129,24 +130,11 @@ class JitRuntime {
   // Shared exception-handler tail.
   WriteOnceData<uint32_t> exceptionTailOffset_{0};
 
-  // Shared post-bailout-handler tail.
-  WriteOnceData<uint32_t> bailoutTailOffset_{0};
-
   // Shared profiler exit frame tail.
   WriteOnceData<uint32_t> profilerExitFrameTailOffset_{0};
 
   // Trampoline for entering JIT code.
   WriteOnceData<uint32_t> enterJITOffset_{0};
-
-  // Vector mapping frame class sizes to bailout tables.
-  struct BailoutTable {
-    uint32_t startOffset;
-    uint32_t size;
-    BailoutTable(uint32_t startOffset, uint32_t size)
-        : startOffset(startOffset), size(size) {}
-  };
-  typedef Vector<BailoutTable, 4, SystemAllocPolicy> BailoutTableVector;
-  WriteOnceData<BailoutTableVector> bailoutTables_;
 
   // Generic bailout table; used if the bailout table overflows.
   WriteOnceData<uint32_t> bailoutHandlerOffset_{0};
@@ -166,6 +154,7 @@ class JitRuntime {
   WriteOnceData<uint32_t> stringPreBarrierOffset_{0};
   WriteOnceData<uint32_t> objectPreBarrierOffset_{0};
   WriteOnceData<uint32_t> shapePreBarrierOffset_{0};
+  WriteOnceData<uint32_t> wasmAnyRefPreBarrierOffset_{0};
 
   // Thunk to call malloc/free.
   WriteOnceData<uint32_t> freeStubOffset_{0};
@@ -180,6 +169,11 @@ class JitRuntime {
   // Note: this stub treats -0 as +0 and may clobber R1.scratchReg().
   WriteOnceData<uint32_t> doubleToInt32ValueStubOffset_{0};
 
+  // Thunk to do a generic call from Ion.
+  mozilla::EnumeratedArray<IonGenericCallKind, IonGenericCallKind::Count,
+                           WriteOnceData<uint32_t>>
+      ionGenericCallStubOffset_;
+
   // Thunk used by the debugger for breakpoint and step mode.
   mozilla::EnumeratedArray<DebugTrapHandlerKind, DebugTrapHandlerKind::Count,
                            WriteOnceData<JitCode*>>
@@ -191,18 +185,25 @@ class JitRuntime {
   // Code for trampolines and VMFunction wrappers.
   WriteOnceData<JitCode*> trampolineCode_{nullptr};
 
+  // Thunk that calls into the C++ interpreter from the interpreter
+  // entry trampoline that is generated with --emit-interpreter-entry
+  WriteOnceData<uint32_t> vmInterpreterEntryOffset_{0};
+
   // Maps VMFunctionId to the offset of the wrapper code in trampolineCode_.
   using VMWrapperOffsets = Vector<uint32_t, 0, SystemAllocPolicy>;
   VMWrapperOffsets functionWrapperOffsets_;
-
-  // Maps TailCallVMFunctionId to the offset of the wrapper code in
-  // trampolineCode_.
-  VMWrapperOffsets tailCallFunctionWrapperOffsets_;
 
   MainThreadData<BaselineICFallbackCode> baselineICFallbackCode_;
 
   // Global table of jitcode native address => bytecode address mappings.
   UnprotectedData<JitcodeGlobalTable*> jitcodeGlobalTable_{nullptr};
+
+  // Map that stores Jit Hints for each script.
+  MainThreadData<JitHintsMap*> jitHintsMap_{nullptr};
+
+  // Map used to collect entry trampolines for the Interpreters which is used
+  // for external profiling to identify which functions are being interpreted.
+  MainThreadData<EntryTrampolineMap*> interpreterEntryMap_{nullptr};
 
 #ifdef DEBUG
   // The number of possible bailing places encountered before forcefully bailing
@@ -242,38 +243,39 @@ class JitRuntime {
   void generateDoubleToInt32ValueStub(MacroAssembler& masm);
   void generateProfilerExitFrameTailStub(MacroAssembler& masm,
                                          Label* profilerExitTail);
-  void generateExceptionTailStub(MacroAssembler& masm, Label* profilerExitTail);
+  void generateExceptionTailStub(MacroAssembler& masm, Label* profilerExitTail,
+                                 Label* bailoutTail);
   void generateBailoutTailStub(MacroAssembler& masm, Label* bailoutTail);
   void generateEnterJIT(JSContext* cx, MacroAssembler& masm);
   void generateArgumentsRectifier(MacroAssembler& masm,
                                   ArgumentsRectifierKind kind);
-  BailoutTable generateBailoutTable(MacroAssembler& masm, Label* bailoutTail,
-                                    uint32_t frameClass);
   void generateBailoutHandler(MacroAssembler& masm, Label* bailoutTail);
   void generateInvalidator(MacroAssembler& masm, Label* bailoutTail);
   uint32_t generatePreBarrier(JSContext* cx, MacroAssembler& masm,
                               MIRType type);
   void generateFreeStub(MacroAssembler& masm);
+  void generateIonGenericCallStub(MacroAssembler& masm,
+                                  IonGenericCallKind kind);
+
+  // Helper functions for generateIonGenericCallStub
+  void generateIonGenericCallBoundFunction(MacroAssembler& masm, Label* entry,
+                                           Label* vmCall);
+  void generateIonGenericCallNativeFunction(MacroAssembler& masm,
+                                            bool isConstructing);
+  void generateIonGenericCallFunCall(MacroAssembler& masm, Label* entry,
+                                     Label* vmCall);
+  void generateIonGenericCallArgumentsShift(MacroAssembler& masm, Register argc,
+                                            Register curr, Register end,
+                                            Register scratch, Label* done);
+
   JitCode* generateDebugTrapHandler(JSContext* cx, DebugTrapHandlerKind kind);
 
-  bool generateVMWrapper(JSContext* cx, MacroAssembler& masm,
+  bool generateVMWrapper(JSContext* cx, MacroAssembler& masm, VMFunctionId id,
                          const VMFunctionData& f, DynFn nativeFun,
                          uint32_t* wrapperOffset);
 
-  template <typename IdT>
   bool generateVMWrappers(JSContext* cx, MacroAssembler& masm,
-                          VMWrapperOffsets& offsets);
-  bool generateVMWrappers(JSContext* cx, MacroAssembler& masm);
-
-  bool generateTLEventVM(MacroAssembler& masm, const VMFunctionData& f,
-                         bool enter);
-
-  inline bool generateTLEnterVM(MacroAssembler& masm, const VMFunctionData& f) {
-    return generateTLEventVM(masm, f, /* enter = */ true);
-  }
-  inline bool generateTLExitVM(MacroAssembler& masm, const VMFunctionData& f) {
-    return generateTLEventVM(masm, f, /* enter = */ false);
-  }
+                          PerfSpewerRangeRecorder& rangeRecorder);
 
   uint32_t startTrampolineCode(MacroAssembler& masm);
 
@@ -283,7 +285,17 @@ class JitRuntime {
     return TrampolinePtr(trampolineCode_->raw() + offset);
   }
 
+  void generateBaselineInterpreterEntryTrampoline(MacroAssembler& masm);
+  void generateInterpreterEntryTrampoline(MacroAssembler& masm);
+
+  void bindLabelToOffset(Label* label, uint32_t offset) {
+    MOZ_ASSERT(!trampolineCode_);
+    label->bind(offset);
+  }
+
  public:
+  JitCode* generateEntryTrampolineForScript(JSContext* cx, JSScript* script);
+
   JitRuntime() = default;
   ~JitRuntime();
   [[nodiscard]] bool initialize(JSContext* cx);
@@ -315,10 +327,6 @@ class JitRuntime {
     MOZ_ASSERT(trampolineCode_);
     return trampolineCode(functionWrapperOffsets_[size_t(funId)]);
   }
-  TrampolinePtr getVMWrapper(TailCallVMFunctionId funId) const {
-    MOZ_ASSERT(trampolineCode_);
-    return trampolineCode(tailCallFunctionWrapperOffsets_[size_t(funId)]);
-  }
 
   JitCode* debugTrapHandler(JSContext* cx, DebugTrapHandlerKind kind);
 
@@ -332,16 +340,9 @@ class JitRuntime {
     return trampolineCode(exceptionTailOffset_);
   }
 
-  TrampolinePtr getBailoutTail() const {
-    return trampolineCode(bailoutTailOffset_);
-  }
-
   TrampolinePtr getProfilerExitFrameTail() const {
     return trampolineCode(profilerExitFrameTailOffset_);
   }
-
-  TrampolinePtr getBailoutTable(const FrameSizeClass& frameClass) const;
-  uint32_t getBailoutTableSize(const FrameSizeClass& frameClass) const;
 
   TrampolinePtr getArgumentsRectifier(
       ArgumentsRectifierKind kind = ArgumentsRectifierKind::Normal) const {
@@ -350,6 +351,8 @@ class JitRuntime {
     }
     return trampolineCode(argumentsRectifierOffset_);
   }
+
+  uint32_t vmInterpreterEntryOffset() { return vmInterpreterEntryOffset_; }
 
   TrampolinePtr getArgumentsRectifierReturnAddr() const {
     return trampolineCode(argumentsRectifierReturnOffset_);
@@ -381,6 +384,8 @@ class JitRuntime {
         return trampolineCode(objectPreBarrierOffset_);
       case MIRType::Shape:
         return trampolineCode(shapePreBarrierOffset_);
+      case MIRType::WasmAnyRef:
+        return trampolineCode(wasmAnyRefPreBarrierOffset_);
       default:
         MOZ_CRASH();
     }
@@ -399,11 +404,31 @@ class JitRuntime {
     return trampolineCode(doubleToInt32ValueStubOffset_);
   }
 
+  TrampolinePtr getIonGenericCallStub(IonGenericCallKind kind) const {
+    return trampolineCode(ionGenericCallStubOffset_[kind]);
+  }
+
   bool hasJitcodeGlobalTable() const { return jitcodeGlobalTable_ != nullptr; }
 
   JitcodeGlobalTable* getJitcodeGlobalTable() {
     MOZ_ASSERT(hasJitcodeGlobalTable());
     return jitcodeGlobalTable_;
+  }
+
+  bool hasJitHintsMap() const { return jitHintsMap_ != nullptr; }
+
+  JitHintsMap* getJitHintsMap() {
+    MOZ_ASSERT(hasJitHintsMap());
+    return jitHintsMap_;
+  }
+
+  bool hasInterpreterEntryMap() const {
+    return interpreterEntryMap_ != nullptr;
+  }
+
+  EntryTrampolineMap* getInterpreterEntryMap() {
+    MOZ_ASSERT(hasInterpreterEntryMap());
+    return interpreterEntryMap_;
   }
 
   bool isProfilerInstrumentationEnabled(JSRuntime* rt) {

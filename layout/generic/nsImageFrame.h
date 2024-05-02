@@ -70,7 +70,7 @@ class nsImageFrame : public nsAtomicContainerFrame, public nsIReflowCallback {
   NS_DECL_FRAMEARENA_HELPERS(nsImageFrame)
   NS_DECL_QUERYFRAME
 
-  void DestroyFrom(nsIFrame* aDestructRoot, PostDestroyData&) override;
+  void Destroy(DestroyContext&) override;
   void DidSetComputedStyle(ComputedStyle* aOldStyle) final;
 
   void Init(nsIContent* aContent, nsContainerFrame* aParent,
@@ -84,8 +84,9 @@ class nsImageFrame : public nsAtomicContainerFrame, public nsIReflowCallback {
   }
   void Reflow(nsPresContext*, ReflowOutput&, const ReflowInput&,
               nsReflowStatus&) override;
+  bool IsLeafDynamic() const override;
 
-  nsresult GetContentForEvent(mozilla::WidgetEvent*,
+  nsresult GetContentForEvent(const mozilla::WidgetEvent*,
                               nsIContent** aContent) final;
   nsresult HandleEvent(nsPresContext*, mozilla::WidgetGUIEvent*,
                        nsEventStatus*) override;
@@ -98,9 +99,16 @@ class nsImageFrame : public nsAtomicContainerFrame, public nsIReflowCallback {
       const Maybe<OnNonvisible>& aNonvisibleAction = Nothing()) final;
 
   void ResponsiveContentDensityChanged();
-  void SetupForContentURLRequest();
+  void ElementStateChanged(mozilla::dom::ElementState) override;
+  void SetupOwnedRequest();
+  void DeinitOwnedRequest();
   bool ShouldShowBrokenImageIcon() const;
 
+  bool IsForImageLoadingContent() const {
+    return mKind == Kind::ImageLoadingContent;
+  }
+
+  void UpdateXULImage();
   const mozilla::StyleImage* GetImageFromStyle() const;
 
 #ifdef ACCESSIBILITY
@@ -120,15 +128,7 @@ class nsImageFrame : public nsAtomicContainerFrame, public nsIReflowCallback {
 
   LogicalSides GetLogicalSkipSides() const final;
 
-  static void ReleaseGlobals() {
-    if (gIconLoad) {
-      gIconLoad->Shutdown();
-      gIconLoad = nullptr;
-    }
-  }
-
-  nsresult RestartAnimation();
-  nsresult StopAnimation();
+  static void ReleaseGlobals();
 
   already_AddRefed<imgIRequest> GetCurrentRequest() const;
   void Notify(imgIRequest*, int32_t aType, const nsIntRect* aData);
@@ -137,16 +137,21 @@ class nsImageFrame : public nsAtomicContainerFrame, public nsIReflowCallback {
    * Returns whether we should replace an element with an image corresponding to
    * its 'content' CSS property.
    */
-  static bool ShouldCreateImageFrameForContent(const mozilla::dom::Element&,
-                                               const ComputedStyle&);
+  static bool ShouldCreateImageFrameForContentProperty(
+      const mozilla::dom::Element&, const ComputedStyle&);
 
   /**
    * Function to test whether given an element and its style, that element
-   * should get an image frame.  Note that this method is only used by the
-   * frame constructor; it's only here because it uses gIconLoad for now.
+   * should get an image frame, and if so, which kind of image frame (for
+   * `content`, or for the element itself).
    */
-  static bool ShouldCreateImageFrameFor(const mozilla::dom::Element&,
-                                        const ComputedStyle&);
+  enum class ImageFrameType {
+    ForContentProperty,
+    ForElementRequest,
+    None,
+  };
+  static ImageFrameType ImageFrameTypeFor(const mozilla::dom::Element&,
+                                          const ComputedStyle&);
 
   ImgDrawResult DisplayAltFeedback(gfxContext& aRenderingContext,
                                    const nsRect& aDirtyRect, nsPoint aPt,
@@ -184,7 +189,9 @@ class nsImageFrame : public nsAtomicContainerFrame, public nsIReflowCallback {
   // The kind of image frame we are.
   enum class Kind : uint8_t {
     // For an nsImageLoadingContent.
-    ImageElement,
+    ImageLoadingContent,
+    // For a <xul:image> element.
+    XULImage,
     // For css 'content: url(..)' on non-generated content.
     ContentProperty,
     // For a child of a ::before / ::after pseudo-element that had an url() item
@@ -200,6 +207,7 @@ class nsImageFrame : public nsAtomicContainerFrame, public nsIReflowCallback {
 
  private:
   friend nsIFrame* NS_NewImageFrame(mozilla::PresShell*, ComputedStyle*);
+  friend nsIFrame* NS_NewXULImageFrame(mozilla::PresShell*, ComputedStyle*);
   friend nsIFrame* NS_NewImageFrameForContentProperty(mozilla::PresShell*,
                                                       ComputedStyle*);
   friend nsIFrame* NS_NewImageFrameForGeneratedContentIndex(mozilla::PresShell*,
@@ -212,9 +220,14 @@ class nsImageFrame : public nsAtomicContainerFrame, public nsIReflowCallback {
 
   nsImageFrame(ComputedStyle*, nsPresContext* aPresContext, ClassID, Kind);
 
+  void ReflowChildren(nsPresContext*, const ReflowInput&,
+                      const mozilla::LogicalSize& aImageSize);
+
+  void UpdateIntrinsicSizeAndRatio();
+
  protected:
   nsImageFrame(ComputedStyle* aStyle, nsPresContext* aPresContext, ClassID aID)
-      : nsImageFrame(aStyle, aPresContext, aID, Kind::ImageElement) {}
+      : nsImageFrame(aStyle, aPresContext, aID, Kind::ImageLoadingContent) {}
 
   ~nsImageFrame() override;
 
@@ -292,6 +305,13 @@ class nsImageFrame : public nsAtomicContainerFrame, public nsIReflowCallback {
   /// Always sync decode our image when painting if @aForce is true.
   void SetForceSyncDecoding(bool aForce) { mForceSyncDecoding = aForce; }
 
+  void AssertSyncDecodingHintIsInSync() const
+#ifndef DEBUG
+      {}
+#else
+      ;
+#endif
+
   /**
    * Computes the predicted dest rect that we'll draw into, in app units, based
    * upon the provided frame content box. (The content box is what
@@ -301,15 +321,7 @@ class nsImageFrame : public nsAtomicContainerFrame, public nsIReflowCallback {
   nsRect PredictedDestRect(const nsRect& aFrameContentBox);
 
  private:
-  void MaybeRecordContentUrlOnImageTelemetry();
-
-  // random helpers
-  inline void SpecToURI(const nsAString& aSpec, nsIURI** aURI);
-
-  inline void GetLoadGroup(nsPresContext* aPresContext,
-                           nsILoadGroup** aLoadGroup);
   nscoord GetContinuationOffset() const;
-  void GetDocumentCharacterSet(nsACString& aCharset) const;
   bool ShouldDisplaySelection();
 
   // Whether the image frame should use the mapped aspect ratio from width=""
@@ -341,8 +353,8 @@ class nsImageFrame : public nsAtomicContainerFrame, public nsIReflowCallback {
   bool IsPendingLoad(imgIRequest*) const;
 
   /**
-   * Updates mImage based on the current image request (cannot be null), and the
-   * image passed in (can be null), and invalidate layout and paint as needed.
+   * Updates mImage based on the current image request, and the image passed in
+   * (both can be null), and invalidate layout and paint as needed.
    */
   void UpdateImage(imgIRequest*, imgIContainer*);
 
@@ -364,12 +376,17 @@ class nsImageFrame : public nsAtomicContainerFrame, public nsIReflowCallback {
   void InvalidateSelf(const nsIntRect* aLayerInvalidRect,
                       const nsRect* aFrameInvalidRect);
 
+  void MaybeSendIntrinsicSizeAndRatioToEmbedder();
+  void MaybeSendIntrinsicSizeAndRatioToEmbedder(Maybe<mozilla::IntrinsicSize>,
+                                                Maybe<mozilla::AspectRatio>);
+
   RefPtr<nsImageMap> mImageMap;
 
   RefPtr<nsImageListener> mListener;
 
-  // An image request created for content: url(..) or list-style-image.
-  RefPtr<imgRequestProxy> mContentURLRequest;
+  // An image request created for content: url(..), list-style-image, or
+  // <xul:image>.
+  RefPtr<imgRequestProxy> mOwnedRequest;
 
   nsCOMPtr<imgIContainer> mImage;
   nsCOMPtr<imgIContainer> mPrevImage;
@@ -385,65 +402,14 @@ class nsImageFrame : public nsAtomicContainerFrame, public nsIReflowCallback {
   mozilla::AspectRatio mIntrinsicRatio;
 
   const Kind mKind;
-  bool mContentURLRequestRegistered;
-  bool mDisplayingIcon;
-  bool mFirstFrameComplete;
-  bool mReflowCallbackPosted;
-  bool mForceSyncDecoding;
-
-  /* loading / broken image icon support */
-
-  // XXXbz this should be handled by the prescontext, I think; that
-  // way we would have a single iconload per mozilla session instead
-  // of one per document...
-
-  // LoadIcons: initiate the loading of the static icons used to show
-  // loading / broken images
-  nsresult LoadIcons(nsPresContext* aPresContext);
-  nsresult LoadIcon(const nsAString& aSpec, nsPresContext* aPresContext,
-                    imgRequestProxy** aRequest);
-
-  class IconLoad final : public nsIObserver, public imgINotificationObserver {
-    // private class that wraps the data and logic needed for
-    // broken image and loading image icons
-   public:
-    IconLoad();
-
-    void Shutdown();
-
-    NS_DECL_ISUPPORTS
-    NS_DECL_NSIOBSERVER
-    NS_DECL_IMGINOTIFICATIONOBSERVER
-
-    void AddIconObserver(nsImageFrame* frame) {
-      MOZ_ASSERT(!mIconObservers.Contains(frame),
-                 "Observer shouldn't aleady be in array");
-      mIconObservers.AppendElement(frame);
-    }
-
-    void RemoveIconObserver(nsImageFrame* frame) {
-      mozilla::DebugOnly<bool> didRemove = mIconObservers.RemoveElement(frame);
-      MOZ_ASSERT(didRemove, "Observer not in array");
-    }
-
-   private:
-    ~IconLoad() = default;
-
-    void GetPrefs();
-    nsTObserverArray<nsImageFrame*> mIconObservers;
-
-   public:
-    RefPtr<imgRequestProxy> mLoadingImage;
-    RefPtr<imgRequestProxy> mBrokenImage;
-    bool mPrefForceInlineAltText;
-    bool mPrefShowPlaceholders;
-    bool mPrefShowLoadingPlaceholder;
-  };
+  bool mOwnedRequestRegistered = false;
+  bool mDisplayingIcon = false;
+  bool mFirstFrameComplete = false;
+  bool mReflowCallbackPosted = false;
+  bool mForceSyncDecoding = false;
+  bool mIsInObjectOrEmbed = false;
 
  public:
-  // singleton pattern: one LoadIcons instance is used
-  static mozilla::StaticRefPtr<IconLoad> gIconLoad;
-
   friend class mozilla::nsDisplayImage;
   friend class nsDisplayGradient;
 };
@@ -468,10 +434,6 @@ class nsDisplayImage final : public nsPaintedDisplayItem {
   }
   ~nsDisplayImage() final { MOZ_COUNT_DTOR(nsDisplayImage); }
 
-  nsDisplayItemGeometry* AllocateGeometry(nsDisplayListBuilder*) final;
-  void ComputeInvalidationRegion(nsDisplayListBuilder*,
-                                 const nsDisplayItemGeometry*,
-                                 nsRegion* aInvalidRegion) const final;
   void Paint(nsDisplayListBuilder*, gfxContext* aCtx) final;
 
   /**

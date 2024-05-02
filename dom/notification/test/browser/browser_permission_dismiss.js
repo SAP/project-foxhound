@@ -1,7 +1,7 @@
 "use strict";
 
-const { PermissionTestUtils } = ChromeUtils.import(
-  "resource://testing-common/PermissionTestUtils.jsm"
+const { PermissionTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/PermissionTestUtils.sys.mjs"
 );
 
 const ORIGIN_URI = Services.io.newURI("https://example.com");
@@ -22,7 +22,7 @@ const TEST_URL =
 function clickDoorhangerButton(aButtonIndex) {
   let popup = PopupNotifications.getNotification("web-notifications");
   let notifications = popup.owner.panel.childNodes;
-  ok(notifications.length > 0, "at least one notification displayed");
+  ok(notifications.length, "at least one notification displayed");
   ok(true, notifications.length + " notification(s)");
   let notification = notifications[0];
 
@@ -56,7 +56,7 @@ function tabWithRequest(task, permission) {
       gBrowser,
       url: TEST_URL,
     },
-    async function(browser) {
+    async function (browser) {
       let requestPromise = SpecialPowers.spawn(
         browser,
         [
@@ -64,7 +64,7 @@ function tabWithRequest(task, permission) {
             permission,
           },
         ],
-        async function({ permission }) {
+        async function ({ permission }) {
           function requestCallback(perm) {
             is(
               perm,
@@ -93,7 +93,7 @@ function tabWithRequest(task, permission) {
   );
 }
 
-add_task(async function setup() {
+add_setup(async function () {
   Services.prefs.setBoolPref(
     "dom.webnotifications.requireuserinteraction",
     false
@@ -112,7 +112,7 @@ add_task(async function setup() {
 });
 
 add_task(async function test_requestPermission_granted() {
-  await tabWithRequest(function() {
+  await tabWithRequest(function () {
     clickDoorhangerButton(PROMPT_ALLOW_BUTTON);
   }, "granted");
 
@@ -129,7 +129,7 @@ add_task(async function test_requestPermission_granted() {
 });
 
 add_task(async function test_requestPermission_denied_temporarily() {
-  await tabWithRequest(function() {
+  await tabWithRequest(function () {
     clickDoorhangerButton(PROMPT_NOT_NOW_BUTTON);
   }, "default");
 
@@ -146,7 +146,7 @@ add_task(async function test_requestPermission_denied_temporarily() {
 });
 
 add_task(async function test_requestPermission_denied_permanently() {
-  await tabWithRequest(async function() {
+  await tabWithRequest(async function () {
     await clickDoorhangerButton(PROMPT_NEVER_BUTTON);
   }, "denied");
 

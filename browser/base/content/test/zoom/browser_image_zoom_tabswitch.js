@@ -6,11 +6,12 @@
 function test() {
   let tab1, tab2;
   const TEST_IMAGE =
+    // eslint-disable-next-line @microsoft/sdl/no-insecure-url
     "http://example.org/browser/browser/base/content/test/general/moz.png";
 
   waitForExplicitFinish();
 
-  (async function() {
+  (async function () {
     tab1 = BrowserTestUtils.addTab(gBrowser);
     tab2 = BrowserTestUtils.addTab(gBrowser);
     await FullZoomHelper.selectTabAndWaitForLocationChange(tab1);

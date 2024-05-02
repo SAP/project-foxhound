@@ -23,7 +23,7 @@ module.exports = {
     "no-case-declarations": "error",
 
     // Disallow use of the console API.
-    "no-console": "error",
+    "no-console": ["error", { allow: ["error"] }],
 
     // Disallow constant expressions in conditions (except for loops).
     "no-constant-condition": ["error", { checkLoops: false }],
@@ -58,16 +58,6 @@ module.exports = {
 
     // Require "use strict" to be defined globally in the script.
     strict: ["error", "global"],
-
-    // Enforce valid JSDoc comments.
-    "valid-jsdoc": [
-      "error",
-      {
-        requireParamDescription: false,
-        requireReturn: false,
-        requireReturnDescription: false,
-      },
-    ],
 
     // Disallow Yoda conditions.
     yoda: ["error", "never"],

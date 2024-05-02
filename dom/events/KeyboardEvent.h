@@ -11,8 +11,7 @@
 #include "mozilla/dom/KeyboardEventBinding.h"
 #include "mozilla/EventForwards.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class KeyboardEvent : public UIEvent {
  public:
@@ -36,6 +35,11 @@ class KeyboardEvent : public UIEvent {
   bool CtrlKey(CallerType aCallerType = CallerType::System);
   bool ShiftKey(CallerType aCallerType = CallerType::System);
   bool MetaKey();
+
+  // Returns true if the modifier state of the event matches the modifier state
+  // of access key.
+  bool IsMenuAccessKeyPressed() const;
+  Modifiers GetModifiersForMenuAccessKey() const;
 
   bool GetModifierState(const nsAString& aKey,
                         CallerType aCallerType = CallerType::System) {
@@ -122,8 +126,7 @@ class KeyboardEvent : public UIEvent {
       const WidgetKeyboardEvent& aKeyboardEvent, CallerType aCallerType) const;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 already_AddRefed<mozilla::dom::KeyboardEvent> NS_NewDOMKeyboardEvent(
     mozilla::dom::EventTarget* aOwner, nsPresContext* aPresContext,

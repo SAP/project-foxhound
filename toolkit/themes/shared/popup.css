@@ -1,0 +1,135 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+@namespace url("http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul");
+
+/* ::::: menupopup ::::: */
+
+menupopup,
+panel {
+  /* We can always render in the preferred color scheme (unless otherwise
+   * overridden). */
+  color-scheme: light dark;
+
+  min-width: 1px;
+  --panel-background: Menu;
+  --panel-color: MenuText;
+  --panel-padding-block: 4px;
+  --panel-padding: var(--panel-padding-block) 0;
+  --panel-border-radius: 4px;
+  --panel-border-color: ThreeDShadow;
+  --panel-width: initial;
+
+  --panel-shadow-margin: 0px;
+  --panel-shadow: 0 0 var(--panel-shadow-margin) hsla(0,0%,0%,.2);
+
+  /* Panel design token theming */
+  --color-canvas: var(--panel-background);
+
+  @media (-moz-platform: linux) {
+    --panel-border-radius: 8px;
+    --panel-padding-block: max(0px, var(--panel-border-radius) / 2 - 1px);
+
+    @media (prefers-contrast) {
+      --panel-border-color: color-mix(in srgb, currentColor 60%, transparent);
+    }
+  }
+
+  @media (-moz-platform: linux) or (-moz-platform: windows) {
+    /* To account for the box-shadow below */
+    --panel-shadow-margin: 4px;
+    -moz-window-input-region-margin: var(--panel-shadow-margin);
+    margin: calc(-1 * var(--panel-shadow-margin));
+  }
+
+  @media (-moz-platform: macos) {
+    appearance: auto;
+    -moz-default-appearance: menupopup;
+    /* We set the default background here, rather than on ::part(content),
+     * because otherwise it'd interfere with the native look. Non-native-looking
+     * popups should get their background via --panel-background */
+    background-color: Menu;
+    --panel-background: none;
+    --panel-border-color: transparent;
+  }
+
+  &::part(content) {
+    display: flex;
+    box-sizing: border-box;
+
+    padding: var(--panel-padding);
+    color: var(--panel-color);
+    background: var(--panel-background);
+    border-radius: var(--panel-border-radius);
+    border: 1px solid var(--panel-border-color);
+    width: var(--panel-width);
+    box-shadow: var(--panel-shadow);
+    margin: var(--panel-shadow-margin);
+
+    min-width: 0;
+    min-height: 0;
+
+    /* Makes popup constraints work. Round up to avoid subpixel rounding
+     * causing overflow, see bug 1846050 */
+    max-height: round(up, 100% - 2 * var(--panel-shadow-margin), 1px);
+    max-width: round(up, 100% - 2 * var(--panel-shadow-margin), 1px);
+  }
+
+  &[orient=vertical]::part(content) {
+    flex-direction: column;
+  }
+
+  /* ::::: arrow panel ::::: */
+
+  &[type="arrow"] {
+    appearance: none;
+    background-color: transparent;
+
+    &.panel-no-padding::part(content) {
+      padding: 0;
+      overflow: hidden; /* Don't let panel content overflow the border */
+    }
+
+    @media (-moz-platform: macos) {
+      &::part(content) {
+        /* FIXME: why? */
+        margin: 1px;
+      }
+    }
+  }
+}
+
+menupopup {
+  /* Also apply the padding in the inline axis for menus */
+  --panel-padding: var(--panel-padding-block);
+
+  @media (-moz-platform: windows) {
+    > menu,
+    > menuitem {
+      padding-block: 0.5em;
+      padding-inline-start: 1em;
+    }
+  }
+
+  > menu > menupopup {
+    /* Vertically align nested menupopups: the shadow plus the top padding plus top border */
+    margin-top: calc(-1 * (var(--panel-shadow-margin) + var(--panel-padding-block) + 1px));
+  }
+}
+
+/* Rules for popups associated with menulists */
+menulist > menupopup {
+  min-width: 0;
+
+  @media (-moz-platform: windows) {
+    font: inherit;
+  }
+
+  @media (-moz-platform: macos) {
+    &:not([position]) {
+      margin-inline-start: -13px;
+      margin-top: -2px;
+    }
+  }
+}

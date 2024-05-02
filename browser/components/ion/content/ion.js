@@ -11,19 +11,17 @@
  *        this may change in the future.
  */
 
-const { AddonManager } = ChromeUtils.import(
-  "resource://gre/modules/AddonManager.jsm"
+const { AddonManager } = ChromeUtils.importESModule(
+  "resource://gre/modules/AddonManager.sys.mjs"
 );
 
-const { RemoteSettings } = ChromeUtils.import(
-  "resource://services-settings/remote-settings.js"
+const { RemoteSettings } = ChromeUtils.importESModule(
+  "resource://services-settings/remote-settings.sys.mjs"
 );
 
-const { TelemetryController } = ChromeUtils.import(
-  "resource://gre/modules/TelemetryController.jsm"
+const { TelemetryController } = ChromeUtils.importESModule(
+  "resource://gre/modules/TelemetryController.sys.mjs"
 );
-
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 let parserUtils = Cc["@mozilla.org/parserutils;1"].getService(
   Ci.nsIParserUtils
@@ -479,9 +477,8 @@ async function setup(cachedAddons) {
               console.error(
                 `Could not install default add-on ${cachedAddon.addon_id}`
               );
-              const availableStudies = document.getElementById(
-                "available-studies"
-              );
+              const availableStudies =
+                document.getElementById("available-studies");
               document.l10n.setAttributes(
                 availableStudies,
                 "ion-no-current-studies"
@@ -753,7 +750,7 @@ async function sendDeletionPing(studyAddonId) {
  * The `creationDate` provided by the telemetry APIs will be used as the timestamp for
  * considering the user enrolled in pioneer and/or the study.
  *
- * @param [studyAddonid=undefined] - optional study id. It's sent in the ping, if present,
+ * @param {string} [studyAddonId] - optional study id. It's sent in the ping, if present,
  * to signal that user enroled in the study.
  */
 async function sendEnrollmentPing(studyAddonId) {

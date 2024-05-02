@@ -8,7 +8,6 @@
 #include <stdio.h>
 
 #include "nsError.h"
-#include "nsMemory.h"
 #include "nsProxyRelease.h"
 #include "nsThreadUtils.h"
 #include "nsIClassInfoImpl.h"
@@ -38,7 +37,7 @@ NS_IMPL_CI_INTERFACE_GETTER(AsyncStatement, mozIStorageAsyncStatement,
 
 class AsyncStatementClassInfo : public nsIClassInfo {
  public:
-  constexpr AsyncStatementClassInfo() {}
+  constexpr AsyncStatementClassInfo() = default;
 
   NS_DECL_ISUPPORTS_INHERITED
 
@@ -95,8 +94,7 @@ static AsyncStatementClassInfo sAsyncStatementClassInfo;
 ////////////////////////////////////////////////////////////////////////////////
 //// AsyncStatement
 
-AsyncStatement::AsyncStatement()
-    : StorageBaseStatementInternal(), mFinalized(false) {}
+AsyncStatement::AsyncStatement() : mFinalized(false) {}
 
 nsresult AsyncStatement::initialize(Connection* aDBConnection,
                                     sqlite3* aNativeConnection,
@@ -187,24 +185,22 @@ mozIStorageBindingParams* AsyncStatement::getParams() {
 /**
  * If we are here then we know there are no pending async executions relying on
  * us (StatementData holds a reference to us; this also goes for our own
- * AsyncStatementFinalizer which proxies its release to the calling thread) and
- * so it is always safe to destroy our sqlite3_stmt if one exists.  We can be
- * destroyed on the caller thread by garbage-collection/reference counting or on
- * the async thread by the last execution of a statement that already lost its
- * main-thread refs.
+ * AsyncStatementFinalizer which proxies its release to the calling event
+ * target) and so it is always safe to destroy our sqlite3_stmt if one exists.
+ * We can be destroyed on the caller event target by
+ * garbage-collection/reference counting or on the async event target by the
+ * last execution of a statement that already lost its main-thread refs.
  */
 AsyncStatement::~AsyncStatement() {
   destructorAsyncFinalize();
 
-  // If we are getting destroyed on the wrong thread, proxy the connection
-  // release to the right thread.  I'm not sure why we do this.
-  bool onCallingThread = false;
-  (void)mDBConnection->threadOpenedOn->IsOnCurrentThread(&onCallingThread);
-  if (!onCallingThread) {
+  // If we are getting destroyed on the wrong event target, proxy the connection
+  // release to the right one.
+  if (!IsOnCurrentSerialEventTarget(mDBConnection->eventTargetOpenedOn)) {
     // NS_ProxyRelase only magic forgets for us if mDBConnection is an
-    // nsCOMPtr.  Which it is not; it's an nsRefPtr.
-    nsCOMPtr<nsIThread> targetThread(mDBConnection->threadOpenedOn);
-    NS_ProxyRelease("AsyncStatement::mDBConnection", targetThread,
+    // nsCOMPtr.  Which it is not; it's a RefPtr.
+    nsCOMPtr<nsIEventTarget> target(mDBConnection->eventTargetOpenedOn);
+    NS_ProxyRelease("AsyncStatement::mDBConnection", target,
                     mDBConnection.forget());
   }
 }
@@ -233,11 +229,10 @@ Connection* AsyncStatement::getOwner() { return mDBConnection; }
 
 int AsyncStatement::getAsyncStatement(sqlite3_stmt** _stmt) {
 #ifdef DEBUG
-  // Make sure we are never called on the connection's owning thread.
-  bool onOpenedThread = false;
-  (void)mDBConnection->threadOpenedOn->IsOnCurrentThread(&onOpenedThread);
-  NS_ASSERTION(!onOpenedThread,
-               "We should only be called on the async thread!");
+  // Make sure we are never called on the connection's owning event target.
+  NS_ASSERTION(
+      !IsOnCurrentSerialEventTarget(mDBConnection->eventTargetOpenedOn),
+      "We should only be called on the async event target!");
 #endif
 
   if (!mAsyncStatement) {
@@ -265,7 +260,7 @@ nsresult AsyncStatement::getAsynchronousStatementData(StatementData& _data) {
   if (mFinalized) return NS_ERROR_UNEXPECTED;
 
   // Pass null for the sqlite3_stmt; it will be requested on demand from the
-  // async thread.
+  // async event target.
   _data = StatementData(nullptr, bindingParamsArray(), this);
 
   return NS_OK;

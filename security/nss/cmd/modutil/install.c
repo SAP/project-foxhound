@@ -252,23 +252,10 @@ Pk11Install_Release()
  * and sends the string to the handler function if it exists.
  */
 
-#ifdef OSF1
-/* stdarg has already been pulled in from NSPR */
-#undef va_start
-#undef va_end
-#undef va_arg
-#include <varargs.h>
-#else
 #include <stdarg.h>
-#endif
 
-#ifdef OSF1
-static void
-error(long va_alist, ...)
-#else
 static void
 error(PRErrorCode errcode, ...)
-#endif
 {
 
     va_list ap;
@@ -286,13 +273,8 @@ error(PRErrorCode errcode, ...)
     PR_Unlock(errorHandlerLock);
 
     if (handler) {
-#ifdef OSF1
-        va_start(ap);
-        errstr = PR_vsmprintf(errorString[va_arg(ap, Pk11Install_Error)], ap);
-#else
         va_start(ap, errcode);
         errstr = PR_vsmprintf(errorString[errcode], ap);
-#endif
         handler(errstr);
         PR_smprintf_free(errstr);
         va_end(ap);
@@ -830,7 +812,7 @@ rm_dash_r(char *path)
 
         /* Recursively delete all entries in the directory */
         while ((entry = PR_ReadDir(dir, PR_SKIP_BOTH)) != NULL) {
-            sprintf(filename, "%s/%s", path, entry->name);
+            snprintf(filename, sizeof(filename), "%s/%s", path, entry->name);
             if (rm_dash_r(filename)) {
                 PR_CloseDir(dir);
                 return -1;

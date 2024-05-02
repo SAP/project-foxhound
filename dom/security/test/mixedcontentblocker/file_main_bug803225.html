@@ -22,7 +22,9 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=803225
 -->
 
 <script>
-  const {AppConstants} = SpecialPowers.Cu.import("resource://gre/modules/AppConstants.jsm", {});
+  const { AppConstants } = SpecialPowers.ChromeUtils.importESModule(
+    "resource://gre/modules/AppConstants.sys.mjs"
+  );
 
   //For tests that require setTimeout, set the timeout interval
   var TIMEOUT_INTERVAL = 100;
@@ -59,7 +61,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=803225
   // onload listener is called after we successfully fetch the script,
   // independently of whether it throws an exception.
   var resource_script=document.createElement("script");
-  resource_script.src = "resource://gre/modules/XPCOMUtils.jsm";
+  resource_script.src = "resource://gre/modules/XPCOMUtils.sys.mjs";
   resource_script.name = "resource_protocol";
   resource_script.onload = function() {
     parent.postMessage({"test": "resource", "msg": "resource with resource protocol loaded"}, "http://mochi.test:8888");
@@ -96,6 +98,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=803225
 
   // Test 6: mailto protocol
   let mm = SpecialPowers.loadChromeScript(function launchHandler() {
+    /* eslint-env mozilla/chrome-script */
     var ioService = Cc["@mozilla.org/network/io-service;1"].
                       getService(Ci.nsIIOService);
 
@@ -104,7 +107,6 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=803225
     webHandler.name = "Web Handler";
     webHandler.uriTemplate = "http://example.com/tests/dom/security/test/mixedcontentblocker/file_bug803225_test_mailto.html?s=%";
 
-    const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
     Services.ppmm.addMessageListener("Test:content-ready", function contentReadyListener() {
       Services.ppmm.removeMessageListener("Test:content-ready", contentReadyListener);
       sendAsyncMessage("Test:content-ready-forward");
@@ -112,6 +114,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=803225
     })
 
     var pScript = "data:,new " + function () {
+      /* eslint-env mozilla/process-script */
       var os = Cc["@mozilla.org/observer-service;1"]
         .getService(Ci.nsIObserverService);
       var observer = {

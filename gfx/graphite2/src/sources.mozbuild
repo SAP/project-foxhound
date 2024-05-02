@@ -13,7 +13,7 @@ graphite_sources = [
     'Decompressor.cpp',
     'Face.cpp',
     'FeatureMap.cpp',
-    'FileFace.cpp',
+    # 'FileFace.cpp', # Unused file.
     'Font.cpp',
     'GlyphCache.cpp',
     'GlyphFace.cpp',
@@ -21,11 +21,11 @@ graphite_sources = [
     'gr_face.cpp',
     'gr_features.cpp',
     'gr_font.cpp',
-    'gr_logging.cpp',
+    # 'gr_logging.cpp', # Unused file.
     'gr_segment.cpp',
     'gr_slot.cpp',
     'Intervals.cpp',
-    'json.cpp',
+    # 'json.cpp', # Unused file.
     'Justifier.cpp',
     'NameTable.cpp',
     'Pass.cpp',
@@ -44,6 +44,9 @@ graphite_defines = [
     # tell graphite2 not to export symbols, we'll be linking it directly with
     # thebes
     ('GRAPHITE2_STATIC', True),
+    # provide a custom header that overrides malloc() and friends,
+    # to ensure safe OOM handling.
+    ('GRAPHITE2_CUSTOM_HEADER', '"MozGrMalloc.h"'),
 ]
 
 # disable features we don't need in the graphite2 code, to reduce code size

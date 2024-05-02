@@ -7,7 +7,7 @@
 const {
   TAKE_SCREENSHOT_END,
   TAKE_SCREENSHOT_START,
-} = require("devtools/client/responsive/actions/index");
+} = require("resource://devtools/client/responsive/actions/index.js");
 
 const INITIAL_SCREENSHOT = {
   isCapturing: false,
@@ -29,7 +29,7 @@ const reducers = {
   },
 };
 
-module.exports = function(screenshot = INITIAL_SCREENSHOT, action) {
+module.exports = function (screenshot = INITIAL_SCREENSHOT, action) {
   const reducer = reducers[action.type];
   if (!reducer) {
     return screenshot;

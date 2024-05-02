@@ -6,7 +6,7 @@ use crate::codegen::FromVariantImpl;
 use crate::options::{DataShape, OuterFrom, ParseAttribute, ParseData};
 use crate::{FromMeta, Result};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct FromVariantOptions {
     pub base: OuterFrom,
     /// The field on the deriving struct into which the discriminant expression
@@ -58,13 +58,7 @@ impl ParseAttribute for FromVariantOptions {
 
 impl ParseData for FromVariantOptions {
     fn parse_field(&mut self, field: &Field) -> Result<()> {
-        match field
-            .ident
-            .as_ref()
-            .map(|v| v.to_string())
-            .as_ref()
-            .map(|v| v.as_str())
-        {
+        match field.ident.as_ref().map(|v| v.to_string()).as_deref() {
             Some("discriminant") => {
                 self.discriminant = field.ident.clone();
                 Ok(())

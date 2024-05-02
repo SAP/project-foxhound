@@ -4,21 +4,27 @@
 
 "use strict";
 
-var Services = require("Services");
-var DevToolsUtils = require("devtools/shared/DevToolsUtils");
+var DevToolsUtils = require("resource://devtools/shared/DevToolsUtils.js");
 var { dumpn } = DevToolsUtils;
+var {
+  createContentProcessSessionContext,
+} = require("resource://devtools/server/actors/watcher/session-context.js");
 
 loader.lazyRequireGetter(
   this,
   "ChildDebuggerTransport",
-  "devtools/shared/transport/child-transport",
+  "resource://devtools/shared/transport/child-transport.js",
   true
 );
 
 const CONTENT_PROCESS_SERVER_STARTUP_SCRIPT =
   "resource://devtools/server/startup/content-process.js";
 
-loader.lazyRequireGetter(this, "EventEmitter", "devtools/shared/event-emitter");
+loader.lazyRequireGetter(
+  this,
+  "EventEmitter",
+  "resource://devtools/shared/event-emitter.js"
+);
 
 /**
  * Start a DevTools server in a content process (representing the entire process, not
@@ -29,31 +35,32 @@ function connectToContentProcess(connection, mm, onDestroy) {
     const prefix = connection.allocID("content-process");
     let actor, childTransport;
 
-    mm.addMessageListener("debug:content-process-actor", function listener(
-      msg
-    ) {
-      // Ignore actors being created by a Watcher actor,
-      // they will be handled by devtools/server/watcher/target-helpers/process.js
-      if (msg.watcherActorID) {
-        return;
+    mm.addMessageListener(
+      "debug:content-process-actor",
+      function listener(msg) {
+        // Ignore actors being created by a Watcher actor,
+        // they will be handled by devtools/server/watcher/target-helpers/process.js
+        if (msg.watcherActorID) {
+          return;
+        }
+        mm.removeMessageListener("debug:content-process-actor", listener);
+
+        // Pipe Debugger message from/to parent/child via the message manager
+        childTransport = new ChildDebuggerTransport(mm, prefix);
+        childTransport.hooks = {
+          onPacket: connection.send.bind(connection),
+        };
+        childTransport.ready();
+
+        connection.setForwarding(prefix, childTransport);
+
+        dumpn(`Start forwarding for process with prefix ${prefix}`);
+
+        actor = msg.json.actor;
+
+        resolve(actor);
       }
-      mm.removeMessageListener("debug:content-process-actor", listener);
-
-      // Pipe Debugger message from/to parent/child via the message manager
-      childTransport = new ChildDebuggerTransport(mm, prefix);
-      childTransport.hooks = {
-        onPacket: connection.send.bind(connection),
-      };
-      childTransport.ready();
-
-      connection.setForwarding(prefix, childTransport);
-
-      dumpn(`Start forwarding for process with prefix ${prefix}`);
-
-      actor = msg.json.actor;
-
-      resolve(actor);
-    });
+    );
 
     // Load the content process server startup script only once.
     const isContentProcessServerStartupScripLoaded = Services.ppmm
@@ -70,7 +77,10 @@ function connectToContentProcess(connection, mm, onDestroy) {
     // Send a message to the content process server startup script to forward it the
     // prefix.
     mm.sendAsyncMessage("debug:init-content-server", {
-      prefix: prefix,
+      prefix,
+      // This connector is only used for the Browser Content Toolbox,
+      // when creating the content process target from the Process Descriptor.
+      sessionContext: createContentProcessSessionContext(),
     });
 
     function onClose() {

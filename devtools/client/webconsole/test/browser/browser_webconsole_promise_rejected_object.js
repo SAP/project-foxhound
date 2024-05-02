@@ -36,7 +36,7 @@ const TEST_URI = `data:text/html;charset=utf-8,<!DOCTYPE html>
     });
   </script>`;
 
-add_task(async function() {
+add_task(async function () {
   await pushPref("javascript.options.asyncstack_capture_debuggee_only", false);
   const hud = await openNewTabAndConsole(TEST_URI);
 
@@ -55,7 +55,7 @@ add_task(async function() {
 
   for (const expectedError of expectedErrors) {
     const message = await waitFor(
-      () => findMessage(hud, expectedError, ".error"),
+      () => findErrorMessage(hud, expectedError),
       `Couldn't find «${expectedError}» message`
     );
     ok(message, `Found «${expectedError}» message`);
@@ -65,7 +65,7 @@ add_task(async function() {
       const frames = message.querySelectorAll(
         ".message-body-wrapper > .stacktrace .frame"
       );
-      return frames.length > 0 ? frames : null;
+      return frames.length ? frames : null;
     }, "Couldn't find stacktrace");
 
     const frames = Array.from(framesEl)
@@ -93,10 +93,9 @@ add_task(async function() {
   ok(true, "All expected messages were found");
 
   info("Check that object in errors can be expanded");
-  const rejectedObjectMessage = findMessage(
+  const rejectedObjectMessage = findErrorMessage(
     hud,
-    `Uncaught (in promise) Object { fav: "eggplant" }`,
-    ".error"
+    `Uncaught (in promise) Object { fav: "eggplant" }`
   );
   const oi = rejectedObjectMessage.querySelector(".tree");
   ok(true, "The object was rendered in an ObjectInspector");

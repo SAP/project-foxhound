@@ -6,7 +6,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #ifndef ipc_glue_MessageChannel_h
-#define ipc_glue_MessageChannel_h 1
+#define ipc_glue_MessageChannel_h
 
 #include "ipc/EnumSerializer.h"
 #include "mozilla/Atomics.h"
@@ -14,9 +14,9 @@
 #include "mozilla/LinkedList.h"
 #include "mozilla/Monitor.h"
 #include "mozilla/Vector.h"
-#if defined(OS_WIN)
+#if defined(XP_WIN)
 #  include "mozilla/ipc/Neutering.h"
-#endif  // defined(OS_WIN)
+#endif  // defined(XP_WIN)
 
 #include <functional>
 #include <map>
@@ -24,8 +24,12 @@
 #include <vector>
 
 #include "MessageLink.h"  // for HasResultCodes
-#include "mozilla/ipc/Transport.h"
 #include "mozilla/ipc/ScopedPort.h"
+#include "nsITargetShutdownTask.h"
+
+#ifdef FUZZING_SNAPSHOT
+#  include "mozilla/fuzzing/IPCFuzzController.h"
+#endif
 
 class MessageLoop;
 
@@ -43,6 +47,11 @@ class ActorLifecycleProxy;
 class RefCountedMonitor : public Monitor {
  public:
   RefCountedMonitor() : Monitor("mozilla.ipc.MessageChannel.mMonitor") {}
+
+  void AssertSameMonitor(const RefCountedMonitor& aOther) const
+      MOZ_REQUIRES(*this) MOZ_ASSERT_CAPABILITY(aOther) {
+    MOZ_ASSERT(this == &aOther);
+  }
 
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(RefCountedMonitor)
 
@@ -91,7 +100,6 @@ using RejectCallback = std::function<void(ResponseRejectReason)>;
 enum ChannelState {
   ChannelClosed,
   ChannelConnected,
-  ChannelTimeout,
   ChannelClosing,
   ChannelError
 };
@@ -100,35 +108,33 @@ class AutoEnterTransaction;
 
 class MessageChannel : HasResultCodes {
   friend class PortLink;
-#ifdef FUZZING
-  friend class ProtocolFuzzerHelper;
-#endif
 
   typedef mozilla::Monitor Monitor;
 
-  // We could templatize the actor type but it would unnecessarily
-  // expand the code size. Using the actor address as the
-  // identifier is already good enough.
-  typedef void* ActorIdType;
-
  public:
+  using Message = IPC::Message;
+
   struct UntypedCallbackHolder {
-    UntypedCallbackHolder(ActorIdType aActorId, RejectCallback&& aReject)
-        : mActorId(aActorId), mReject(std::move(aReject)) {}
+    UntypedCallbackHolder(int32_t aActorId, Message::msgid_t aReplyMsgId,
+                          RejectCallback&& aReject)
+        : mActorId(aActorId),
+          mReplyMsgId(aReplyMsgId),
+          mReject(std::move(aReject)) {}
 
     virtual ~UntypedCallbackHolder() = default;
 
     void Reject(ResponseRejectReason&& aReason) { mReject(std::move(aReason)); }
 
-    ActorIdType mActorId;
+    int32_t mActorId;
+    Message::msgid_t mReplyMsgId;
     RejectCallback mReject;
   };
 
   template <typename Value>
   struct CallbackHolder : public UntypedCallbackHolder {
-    CallbackHolder(ActorIdType aActorId, ResolveCallback<Value>&& aResolve,
-                   RejectCallback&& aReject)
-        : UntypedCallbackHolder(aActorId, std::move(aReject)),
+    CallbackHolder(int32_t aActorId, Message::msgid_t aReplyMsgId,
+                   ResolveCallback<Value>&& aResolve, RejectCallback&& aReject)
+        : UntypedCallbackHolder(aActorId, aReplyMsgId, std::move(aReject)),
           mResolve(std::move(aResolve)) {}
 
     void Resolve(Value&& aReason) { mResolve(std::move(aReason)); }
@@ -143,8 +149,6 @@ class MessageChannel : HasResultCodes {
  public:
   static constexpr int32_t kNoTimeout = INT32_MIN;
 
-  typedef IPC::Message Message;
-  typedef mozilla::ipc::Transport Transport;
   using ScopedPort = mozilla::ipc::ScopedPort;
 
   explicit MessageChannel(const char* aName, IToplevelProtocol* aListener);
@@ -161,7 +165,7 @@ class MessageChannel : HasResultCodes {
   // valid and connected to a remote.
   //
   // The `aEventTarget` parameter must be on the current thread.
-  bool Open(ScopedPort aPort, Side aSide,
+  bool Open(ScopedPort aPort, Side aSide, const nsID& aMessageChannelId,
             nsISerialEventTarget* aEventTarget = nullptr);
 
   // "Open" a connection to another thread in the same process.
@@ -188,23 +192,35 @@ class MessageChannel : HasResultCodes {
    * This sends a special message that is processed on the IO thread, so that
    * other actors can know that the process will soon shutdown.
    */
-  void NotifyImpendingShutdown();
+  void NotifyImpendingShutdown() MOZ_EXCLUDES(*mMonitor);
 
   // Close the underlying transport channel.
-  void Close();
+  void Close() MOZ_EXCLUDES(*mMonitor);
 
-  // Force the channel to behave as if a channel error occurred. Valid
-  // for process links only, not thread links.
-  void CloseWithError();
+  // Induce an error in this MessageChannel's connection.
+  //
+  // After this method is called, no more message notifications will be
+  // delivered to the listener, and the channel will be unable to send or
+  // receive future messages, as if the peer dropped the connection
+  // unexpectedly.
+  //
+  // The OnChannelError notification will be delivered either asynchronously or
+  // during an explicit call to Close(), whichever happens first.
+  //
+  // NOTE: If SetAbortOnError(true) has been called on this MessageChannel,
+  // calling this function will immediately exit the current process.
+  void InduceConnectionError() MOZ_EXCLUDES(*mMonitor);
 
-  void CloseWithTimeout();
-
-  void SetAbortOnError(bool abort) { mAbortOnError = abort; }
+  void SetAbortOnError(bool abort) MOZ_EXCLUDES(*mMonitor) {
+    MonitorAutoLock lock(*mMonitor);
+    mAbortOnError = abort;
+  }
 
   // Call aInvoke for each pending message until it returns false.
   // XXX: You must get permission from an IPC peer to use this function
   //      since it requires custom deserialization and re-orders events.
-  void PeekMessages(const std::function<bool(const Message& aMsg)>& aInvoke);
+  void PeekMessages(const std::function<bool(const Message& aMsg)>& aInvoke)
+      MOZ_EXCLUDES(*mMonitor);
 
   // Misc. behavioral traits consumers can request for this channel
   enum ChannelFlags {
@@ -215,23 +231,19 @@ class MessageChannel : HasResultCodes {
     // that manage child processes which might create native UI, like
     // plugins.
     REQUIRE_DEFERRED_MESSAGE_PROTECTION = 1 << 0,
-    // Windows: When this flag is specified, any wait that occurs during
-    // synchronous IPC will be alertable, thus allowing a11y code in the
-    // chrome process to reenter content while content is waiting on a
-    // synchronous call.
-    REQUIRE_A11Y_REENTRY = 1 << 1,
   };
   void SetChannelFlags(ChannelFlags aFlags) { mFlags = aFlags; }
   ChannelFlags GetChannelFlags() { return mFlags; }
 
   // Asynchronously send a message to the other side of the channel
-  bool Send(UniquePtr<Message> aMsg);
+  bool Send(UniquePtr<Message> aMsg) MOZ_EXCLUDES(*mMonitor);
 
   // Asynchronously send a message to the other side of the channel
   // and wait for asynchronous reply.
   template <typename Value>
-  void Send(UniquePtr<Message> aMsg, ActorIdType aActorId,
-            ResolveCallback<Value>&& aResolve, RejectCallback&& aReject) {
+  void Send(UniquePtr<Message> aMsg, int32_t aActorId,
+            Message::msgid_t aReplyMsgId, ResolveCallback<Value>&& aResolve,
+            RejectCallback&& aReject) MOZ_EXCLUDES(*mMonitor) {
     int32_t seqno = NextSeqno();
     aMsg->set_seqno(seqno);
     if (!Send(std::move(aMsg))) {
@@ -240,26 +252,32 @@ class MessageChannel : HasResultCodes {
     }
 
     UniquePtr<UntypedCallbackHolder> callback =
-        MakeUnique<CallbackHolder<Value>>(aActorId, std::move(aResolve),
-                                          std::move(aReject));
+        MakeUnique<CallbackHolder<Value>>(
+            aActorId, aReplyMsgId, std::move(aResolve), std::move(aReject));
     mPendingResponses.insert(std::make_pair(seqno, std::move(callback)));
     gUnresolvedResponses++;
   }
 
-  bool SendBuildIDsMatchMessage(const char* aParentBuildI);
-  bool DoBuildIDsMatch() { return mBuildIDsConfirmedMatch; }
+  bool SendBuildIDsMatchMessage(const char* aParentBuildID)
+      MOZ_EXCLUDES(*mMonitor);
+  bool DoBuildIDsMatch() MOZ_EXCLUDES(*mMonitor) {
+    MonitorAutoLock lock(*mMonitor);
+    return mBuildIDsConfirmedMatch;
+  }
 
-  // Synchronously send |msg| (i.e., wait for |reply|)
-  bool Send(UniquePtr<Message> aMsg, Message* aReply);
+  // Synchronously send |aMsg| (i.e., wait for |aReply|)
+  bool Send(UniquePtr<Message> aMsg, UniquePtr<Message>* aReply)
+      MOZ_EXCLUDES(*mMonitor);
 
-  bool CanSend() const;
+  bool CanSend() const MOZ_EXCLUDES(*mMonitor);
 
   // Remove and return a callback that needs reply
-  UniquePtr<UntypedCallbackHolder> PopCallback(const Message& aMsg);
+  UniquePtr<UntypedCallbackHolder> PopCallback(const Message& aMsg,
+                                               int32_t aActorId);
 
   // Used to reject and remove pending responses owned by the given
   // actor when it's about to be destroyed.
-  void RejectPendingResponsesForActor(ActorIdType aActorId);
+  void RejectPendingResponsesForActor(int32_t aActorId);
 
   // If sending a sync message returns an error, this function gives a more
   // descriptive error message.
@@ -272,35 +290,17 @@ class MessageChannel : HasResultCodes {
 
   bool IsOnCxxStack() const { return mOnCxxStack; }
 
-  void CancelCurrentTransaction();
+  void CancelCurrentTransaction() MOZ_EXCLUDES(*mMonitor);
 
-  // Force all calls to Send to defer actually sending messages. This will
-  // cause sync messages to block until another thread calls
-  // StopPostponingSends.
-  //
-  // This must be called from the worker thread.
-  void BeginPostponingSends();
-
-  // Stop postponing sent messages, and immediately flush all postponed
-  // messages to the link. This may be called from any thread.
-  //
-  // Note that there are no ordering guarantees between two different
-  // MessageChannels. If channel B sends a message, then stops postponing
-  // channel A, messages from A may arrive before B. The easiest way to order
-  // this, if needed, is to make B send a sync message.
-  void StopPostponingSends();
-
-  // Unsound_IsClosed and Unsound_NumQueuedMessages are safe to call from any
-  // thread, but they make no guarantees about whether you'll get an
-  // up-to-date value; the values are written on one thread and read without
-  // locking, on potentially different threads.  Thus you should only use
-  // them when you don't particularly care about getting a recent value (e.g.
-  // in a memory report).
-  bool Unsound_IsClosed() const {
-    return mLink ? mLink->Unsound_IsClosed() : true;
+  // IsClosed and NumQueuedMessages are safe to call from any thread, but
+  // may provide an out-of-date value.
+  bool IsClosed() MOZ_EXCLUDES(*mMonitor) {
+    MonitorAutoLock lock(*mMonitor);
+    return IsClosedLocked();
   }
-  uint32_t Unsound_NumQueuedMessages() const {
-    return mLink ? mLink->Unsound_NumQueuedMessages() : 0;
+  bool IsClosedLocked() const MOZ_REQUIRES(*mMonitor) {
+    mMonitor->AssertCurrentThreadOwns();
+    return mLink ? mLink->IsClosed() : true;
   }
 
   static bool IsPumpingMessages() { return sIsPumpingMessages; }
@@ -311,10 +311,22 @@ class MessageChannel : HasResultCodes {
   /**
    * Does this MessageChannel currently cross process boundaries?
    */
-  bool IsCrossProcess() const;
-  void SetIsCrossProcess(bool aIsCrossProcess);
+  bool IsCrossProcess() const MOZ_REQUIRES(*mMonitor);
+  void SetIsCrossProcess(bool aIsCrossProcess) MOZ_REQUIRES(*mMonitor);
 
-#ifdef OS_WIN
+  nsID GetMessageChannelId() const {
+    MonitorAutoLock lock(*mMonitor);
+    return mMessageChannelId;
+  }
+
+#ifdef FUZZING_SNAPSHOT
+  Maybe<mojo::core::ports::PortName> GetPortName() {
+    MonitorAutoLock lock(*mMonitor);
+    return mLink ? mLink->GetPortName() : Nothing();
+  }
+#endif
+
+#ifdef XP_WIN
   struct MOZ_STACK_CLASS SyncStackFrame {
     explicit SyncStackFrame(MessageChannel* channel);
     ~SyncStackFrame();
@@ -353,37 +365,42 @@ class MessageChannel : HasResultCodes {
 
  private:
   void SpinInternalEventLoop();
-#  if defined(ACCESSIBILITY)
-  bool WaitForSyncNotifyWithA11yReentry();
-#  endif  // defined(ACCESSIBILITY)
-#endif    // defined(OS_WIN)
+#endif  // defined(XP_WIN)
 
  private:
-  void PostErrorNotifyTask();
-  void OnNotifyMaybeChannelError();
+  void PostErrorNotifyTask() MOZ_REQUIRES(*mMonitor);
+  void OnNotifyMaybeChannelError() MOZ_EXCLUDES(*mMonitor);
   void ReportConnectionError(const char* aFunctionName,
-                             const uint32_t aMsgTyp) const;
-  void ReportMessageRouteError(const char* channelName) const;
+                             const uint32_t aMsgTyp) const
+      MOZ_REQUIRES(*mMonitor);
+  void ReportMessageRouteError(const char* channelName) const
+      MOZ_EXCLUDES(*mMonitor);
   bool MaybeHandleError(Result code, const Message& aMsg,
-                        const char* channelName);
+                        const char* channelName) MOZ_EXCLUDES(*mMonitor);
 
-  void Clear();
+  void Clear() MOZ_REQUIRES(*mMonitor);
 
-  bool HasPendingEvents();
+  bool HasPendingEvents() MOZ_REQUIRES(*mMonitor);
 
-  void ProcessPendingRequests(AutoEnterTransaction& aTransaction);
-  bool ProcessPendingRequest(Message&& aUrgent);
+  void ProcessPendingRequests(ActorLifecycleProxy* aProxy,
+                              AutoEnterTransaction& aTransaction)
+      MOZ_REQUIRES(*mMonitor);
+  bool ProcessPendingRequest(ActorLifecycleProxy* aProxy,
+                             UniquePtr<Message> aUrgent)
+      MOZ_REQUIRES(*mMonitor);
 
-  void EnqueuePendingMessages();
+  void EnqueuePendingMessages() MOZ_REQUIRES(*mMonitor);
 
   // Dispatches an incoming message to its appropriate handler.
-  void DispatchMessage(Message&& aMsg);
+  void DispatchMessage(ActorLifecycleProxy* aProxy, UniquePtr<Message> aMsg)
+      MOZ_REQUIRES(*mMonitor);
 
   // DispatchMessage will route to one of these functions depending on the
   // protocol type of the message.
   void DispatchSyncMessage(ActorLifecycleProxy* aProxy, const Message& aMsg,
-                           Message*& aReply);
-  void DispatchAsyncMessage(ActorLifecycleProxy* aProxy, const Message& aMsg);
+                           UniquePtr<Message>& aReply) MOZ_EXCLUDES(*mMonitor);
+  void DispatchAsyncMessage(ActorLifecycleProxy* aProxy, const Message& aMsg)
+      MOZ_EXCLUDES(*mMonitor);
 
   // Return true if the wait ended because a notification was received.
   //
@@ -395,16 +412,16 @@ class MessageChannel : HasResultCodes {
   //
   // So in sum: true is a meaningful return value; false isn't,
   // necessarily.
-  bool WaitForSyncNotify(bool aHandleWindowsMessages);
+  bool WaitForSyncNotify() MOZ_REQUIRES(*mMonitor);
 
   bool WaitResponse(bool aWaitTimedOut);
 
-  bool ShouldContinueFromTimeout();
+  bool ShouldContinueFromTimeout() MOZ_REQUIRES(*mMonitor);
 
-  void EndTimeout();
-  void CancelTransaction(int transaction);
+  void EndTimeout() MOZ_REQUIRES(*mMonitor);
+  void CancelTransaction(int transaction) MOZ_REQUIRES(*mMonitor);
 
-  void RepostAllMessages();
+  void RepostAllMessages() MOZ_REQUIRES(*mMonitor);
 
   int32_t NextSeqno() {
     AssertWorkerThread();
@@ -412,10 +429,10 @@ class MessageChannel : HasResultCodes {
   }
 
   void DebugAbort(const char* file, int line, const char* cond, const char* why,
-                  bool reply = false);
+                  bool reply = false) MOZ_REQUIRES(*mMonitor);
 
   void AddProfilerMarker(const IPC::Message& aMessage,
-                         MessageDirection aDirection);
+                         MessageDirection aDirection) MOZ_REQUIRES(*mMonitor);
 
  private:
   // Returns true if we're dispatching an async message's callback.
@@ -429,43 +446,56 @@ class MessageChannel : HasResultCodes {
     return mDispatchingAsyncMessageNestedLevel;
   }
 
-  bool Connected() const;
+  // Check if there is still a live connection to our peer. This may change to
+  // `false` at any time due to the connection to our peer being closed or
+  // dropped (e.g. due to a crash).
+  bool Connected() const MOZ_REQUIRES(*mMonitor);
+
+  // Check if there is either still a live connection to our peer, or we have
+  // received a `Goodbye` from our peer, and are actively shutting down our
+  // connection with our peer.
+  bool ConnectedOrClosing() const MOZ_REQUIRES(*mMonitor);
 
  private:
   // Executed on the IO thread.
-  void NotifyWorkerThread();
+  void NotifyWorkerThread() MOZ_REQUIRES(*mMonitor);
 
   // Return true if |aMsg| is a special message targeted at the IO
   // thread, in which case it shouldn't be delivered to the worker.
-  bool MaybeInterceptSpecialIOMessage(const Message& aMsg);
-
-  // Tell the IO thread to close the channel and wait for it to ACK.
-  void SynchronouslyClose();
+  bool MaybeInterceptSpecialIOMessage(const Message& aMsg)
+      MOZ_REQUIRES(*mMonitor);
 
   // Returns true if ShouldDeferMessage(aMsg) is guaranteed to return true.
   // Otherwise, the result of ShouldDeferMessage(aMsg) may be true or false,
   // depending on context.
   static bool IsAlwaysDeferred(const Message& aMsg);
 
-  // Helper for sending a message via the link. This should only be used for
-  // non-special messages that might have to be postponed.
-  void SendMessageToLink(UniquePtr<Message> aMsg);
+  // Helper for sending a message via the link. If the message is [LazySend], it
+  // will be queued, and if the message is not-[LazySend], it will flush any
+  // pending [LazySend] messages.
+  void SendMessageToLink(UniquePtr<Message> aMsg) MOZ_REQUIRES(*mMonitor);
+
+  // Called to flush [LazySend] messages to the link.
+  void FlushLazySendMessages() MOZ_REQUIRES(*mMonitor);
 
   bool WasTransactionCanceled(int transaction);
-  bool ShouldDeferMessage(const Message& aMsg);
-  void OnMessageReceivedFromLink(Message&& aMsg);
-  void OnChannelErrorFromLink();
+  bool ShouldDeferMessage(const Message& aMsg) MOZ_REQUIRES(*mMonitor);
+  void OnMessageReceivedFromLink(UniquePtr<Message> aMsg)
+      MOZ_REQUIRES(*mMonitor);
+  void OnChannelErrorFromLink() MOZ_REQUIRES(*mMonitor);
 
  private:
   // Clear this channel, and notify the listener that the channel has either
   // closed or errored.
   //
   // These methods must be called on the worker thread, passing in a
-  // `Maybe<MonitorAutoLock>`. This lock guard will be reset before the listener
-  // is called, allowing for the mutex to be unlocked before the MessageChannel
-  // is potentially destroyed.
-  void NotifyChannelClosed(Maybe<MonitorAutoLock>& aLock);
-  void NotifyMaybeChannelError(Maybe<MonitorAutoLock>& aLock);
+  // `ReleasableMonitorAutoLock`. This lock guard will be reset before the
+  // listener is called, allowing for the monitor to be unlocked before the
+  // MessageChannel is potentially destroyed.
+  void NotifyChannelClosed(ReleasableMonitorAutoLock& aLock)
+      MOZ_REQUIRES(*mMonitor);
+  void NotifyMaybeChannelError(ReleasableMonitorAutoLock& aLock)
+      MOZ_REQUIRES(*mMonitor);
 
  private:
   void AssertWorkerThread() const {
@@ -480,7 +510,7 @@ class MessageChannel : HasResultCodes {
                       public nsIRunnablePriority,
                       public nsIRunnableIPCMessageType {
    public:
-    explicit MessageTask(MessageChannel* aChannel, Message&& aMessage);
+    explicit MessageTask(MessageChannel* aChannel, UniquePtr<Message> aMessage);
     MessageTask() = delete;
     MessageTask(const MessageTask&) = delete;
 
@@ -490,20 +520,31 @@ class MessageChannel : HasResultCodes {
     nsresult Cancel() override;
     NS_IMETHOD GetPriority(uint32_t* aPriority) override;
     NS_DECL_NSIRUNNABLEIPCMESSAGETYPE
-    void Post();
+    void Post() MOZ_REQUIRES(*mMonitor);
 
-    bool IsScheduled() const {
+    bool IsScheduled() const MOZ_REQUIRES(*mMonitor) {
       mMonitor->AssertCurrentThreadOwns();
       return mScheduled;
     }
 
-    Message& Msg() { return mMessage; }
-    const Message& Msg() const { return mMessage; }
+    UniquePtr<Message>& Msg() MOZ_REQUIRES(*mMonitor) {
+      MOZ_DIAGNOSTIC_ASSERT(mMessage, "message was moved");
+      return mMessage;
+    }
+    const UniquePtr<Message>& Msg() const MOZ_REQUIRES(*mMonitor) {
+      MOZ_DIAGNOSTIC_ASSERT(mMessage, "message was moved");
+      return mMessage;
+    }
+
+    void AssertMonitorHeld(const RefCountedMonitor& aMonitor)
+        MOZ_REQUIRES(aMonitor) MOZ_ASSERT_CAPABILITY(*mMonitor) {
+      aMonitor.AssertSameMonitor(*mMonitor);
+    }
 
    private:
-    ~MessageTask() = default;
+    ~MessageTask();
 
-    MessageChannel* Channel() {
+    MessageChannel* Channel() MOZ_REQUIRES(*mMonitor) {
       mMonitor->AssertCurrentThreadOwns();
       MOZ_RELEASE_ASSERT(isInList());
       return mChannel;
@@ -515,12 +556,59 @@ class MessageChannel : HasResultCodes {
     // The channel which this MessageTask is associated with. Only valid while
     // `mMonitor` is held, and this MessageTask `isInList()`.
     MessageChannel* const mChannel;
-    Message mMessage;
-    bool mScheduled : 1;
+    UniquePtr<Message> mMessage MOZ_GUARDED_BY(*mMonitor);
+    uint32_t const mPriority;
+    bool mScheduled : 1 MOZ_GUARDED_BY(*mMonitor);
+#ifdef FUZZING_SNAPSHOT
+    const bool mIsFuzzMsg;
+    bool mFuzzStopped MOZ_GUARDED_BY(*mMonitor);
+#endif
   };
 
-  bool ShouldRunMessage(const Message& aMsg);
-  void RunMessage(MessageTask& aTask);
+  bool ShouldRunMessage(const Message& aMsg) MOZ_REQUIRES(*mMonitor);
+  void RunMessage(ActorLifecycleProxy* aProxy, MessageTask& aTask)
+      MOZ_REQUIRES(*mMonitor);
+
+  class WorkerTargetShutdownTask final : public nsITargetShutdownTask {
+   public:
+    NS_DECL_THREADSAFE_ISUPPORTS
+
+    WorkerTargetShutdownTask(nsISerialEventTarget* aTarget,
+                             MessageChannel* aChannel);
+
+    void TargetShutdown() override;
+    void Clear();
+
+   private:
+    ~WorkerTargetShutdownTask() = default;
+
+    const nsCOMPtr<nsISerialEventTarget> mTarget;
+    // Cleared by MessageChannel before it is destroyed.
+    MessageChannel* MOZ_NON_OWNING_REF mChannel;
+  };
+
+  class FlushLazySendMessagesRunnable final : public CancelableRunnable {
+   public:
+    explicit FlushLazySendMessagesRunnable(MessageChannel* aChannel);
+
+    NS_DECL_ISUPPORTS_INHERITED
+
+    NS_IMETHOD Run() override;
+    nsresult Cancel() override;
+
+    void PushMessage(UniquePtr<Message> aMsg);
+    nsTArray<UniquePtr<Message>> TakeMessages();
+
+   private:
+    ~FlushLazySendMessagesRunnable() = default;
+
+    // Cleared by MessageChannel before it is destroyed.
+    MessageChannel* MOZ_NON_OWNING_REF mChannel;
+
+    // LazySend messages which haven't been sent yet, but will be sent as soon
+    // as a non-LazySend message is sent, or this runnable is executed.
+    nsTArray<UniquePtr<Message>> mQueue;
+  };
 
   typedef LinkedList<RefPtr<MessageTask>> MessageQueue;
   typedef std::map<size_t, UniquePtr<UntypedCallbackHolder>> CallbackMap;
@@ -529,6 +617,13 @@ class MessageChannel : HasResultCodes {
  private:
   // This will be a string literal, so lifetime is not an issue.
   const char* const mName;
+
+  // ID for each MessageChannel. Set when it is opened, and never cleared
+  // afterwards.
+  //
+  // This ID is only intended for diagnostics, debugging, and reporting
+  // purposes, and shouldn't be used for message routing or permissions checks.
+  nsID mMessageChannelId MOZ_GUARDED_BY(*mMonitor) = {};
 
   // Based on presumption the listener owns and overlives the channel,
   // this is never nullified.
@@ -540,21 +635,31 @@ class MessageChannel : HasResultCodes {
   // `MessageChannel`.
   RefPtr<RefCountedMonitor> const mMonitor;
 
-  ChannelState mChannelState = ChannelClosed;
+  ChannelState mChannelState MOZ_GUARDED_BY(*mMonitor) = ChannelClosed;
   Side mSide = UnknownSide;
-  bool mIsCrossProcess = false;
-  UniquePtr<MessageLink> mLink;
+  bool mIsCrossProcess MOZ_GUARDED_BY(*mMonitor) = false;
+  UniquePtr<MessageLink> mLink MOZ_GUARDED_BY(*mMonitor);
 
   // NotifyMaybeChannelError runnable
-  RefPtr<CancelableRunnable> mChannelErrorTask;
+  RefPtr<CancelableRunnable> mChannelErrorTask MOZ_GUARDED_BY(*mMonitor);
 
-  // Thread we are allowed to send and receive on.
+  // Thread we are allowed to send and receive on.  Set in Open(); never
+  // changed, and we can only call Open() once.  We shouldn't be accessing
+  // from multiple threads before Open().
   nsCOMPtr<nsISerialEventTarget> mWorkerThread;
+
+  // Shutdown task to close the channel before mWorkerThread goes away.
+  RefPtr<WorkerTargetShutdownTask> mShutdownTask MOZ_GUARDED_BY(*mMonitor);
+
+  // Task to force sending lazy messages when mQueuedLazyMessages is non-empty.
+  RefPtr<FlushLazySendMessagesRunnable> mFlushLazySendTask
+      MOZ_GUARDED_BY(*mMonitor);
 
   // Timeout periods are broken up in two to prevent system suspension from
   // triggering an abort. This method (called by WaitForEvent with a 'did
   // timeout' flag) decides if we should wait again for half of mTimeoutMs
   // or give up.
+  // only accessed on WorkerThread
   int32_t mTimeoutMs = kNoTimeout;
   bool mInTimeoutSecondHalf = false;
 
@@ -611,20 +716,20 @@ class MessageChannel : HasResultCodes {
   // which grow in opposite directions from child to parent.
 
   friend class AutoEnterTransaction;
-  AutoEnterTransaction* mTransactionStack = nullptr;
+  AutoEnterTransaction* mTransactionStack MOZ_GUARDED_BY(*mMonitor) = nullptr;
 
-  int32_t CurrentNestedInsideSyncTransaction() const;
+  int32_t CurrentNestedInsideSyncTransaction() const MOZ_REQUIRES(*mMonitor);
 
-  bool AwaitingSyncReply() const;
-  int AwaitingSyncReplyNestedLevel() const;
+  bool AwaitingSyncReply() const MOZ_REQUIRES(*mMonitor);
+  int AwaitingSyncReplyNestedLevel() const MOZ_REQUIRES(*mMonitor);
 
-  bool DispatchingSyncMessage() const;
-  int DispatchingSyncMessageNestedLevel() const;
+  bool DispatchingSyncMessage() const MOZ_REQUIRES(*mMonitor);
+  int DispatchingSyncMessageNestedLevel() const MOZ_REQUIRES(*mMonitor);
 
 #ifdef DEBUG
-  void AssertMaybeDeferredCountCorrect();
+  void AssertMaybeDeferredCountCorrect() MOZ_REQUIRES(*mMonitor);
 #else
-  void AssertMaybeDeferredCountCorrect() {}
+  void AssertMaybeDeferredCountCorrect() MOZ_REQUIRES(*mMonitor) {}
 #endif
 
   // If a sync message times out, we store its sequence number here. Any
@@ -640,8 +745,8 @@ class MessageChannel : HasResultCodes {
   // A message is only timed out if it initiated a transaction. This avoids
   // hitting a lot of corner cases with message nesting that we don't really
   // care about.
-  int32_t mTimedOutMessageSeqno = 0;
-  int mTimedOutMessageNestedLevel = 0;
+  int32_t mTimedOutMessageSeqno MOZ_GUARDED_BY(*mMonitor) = 0;
+  int mTimedOutMessageNestedLevel MOZ_GUARDED_BY(*mMonitor) = 0;
 
   // Queue of all incoming messages.
   //
@@ -651,12 +756,12 @@ class MessageChannel : HasResultCodes {
   // blocked, and thus can't send us any more messages until we process the sync
   // in-msg.
   //
-  MessageQueue mPending;
+  MessageQueue mPending MOZ_GUARDED_BY(*mMonitor);
 
   // The number of messages in mPending for which IsAlwaysDeferred is false
   // (i.e., the number of messages that might not be deferred, depending on
   // context).
-  size_t mMaybeDeferredPendingCount = 0;
+  size_t mMaybeDeferredPendingCount MOZ_GUARDED_BY(*mMonitor) = 0;
 
   // Is there currently MessageChannel logic for this channel on the C++ stack?
   // This member is only accessed on the worker thread, and so is not protected
@@ -666,27 +771,22 @@ class MessageChannel : HasResultCodes {
   // Map of async Callbacks that are still waiting replies.
   CallbackMap mPendingResponses;
 
-#ifdef OS_WIN
+#ifdef XP_WIN
   HANDLE mEvent;
 #endif
 
   // Should the channel abort the process from the I/O thread when
   // a channel error occurs?
-  bool mAbortOnError = false;
+  bool mAbortOnError MOZ_GUARDED_BY(*mMonitor) = false;
 
   // True if the listener has already been notified of a channel close or
   // error.
-  bool mNotifiedChannelDone = false;
+  bool mNotifiedChannelDone MOZ_GUARDED_BY(*mMonitor) = false;
 
   // See SetChannelFlags
   ChannelFlags mFlags = REQUIRE_DEFAULT;
 
-  // Channels can enter messages are not sent immediately; instead, they are
-  // held in a queue until another thread deems it is safe to send them.
-  bool mIsPostponingSends = false;
-  std::vector<UniquePtr<Message>> mPostponedSends;
-
-  bool mBuildIDsConfirmedMatch = false;
+  bool mBuildIDsConfirmedMatch MOZ_GUARDED_BY(*mMonitor) = false;
 
   // If this is true, both ends of this message channel have event targets
   // on the same thread.
@@ -718,7 +818,8 @@ struct IPCMarker {
       mozilla::TimeStamp aStart, mozilla::TimeStamp aEnd, int32_t aOtherPid,
       int32_t aMessageSeqno, IPC::Message::msgid_t aMessageType,
       mozilla::ipc::Side aSide, mozilla::ipc::MessageDirection aDirection,
-      mozilla::ipc::MessagePhase aPhase, bool aSync) {
+      mozilla::ipc::MessagePhase aPhase, bool aSync,
+      mozilla::MarkerThreadId aOriginThreadId) {
     using namespace mozilla::ipc;
     // This payload still streams a startTime and endTime property because it
     // made the migration to MarkerTiming on the front-end easier.
@@ -737,6 +838,15 @@ struct IPCMarker {
                                : mozilla::MakeStringSpan("receiving"));
     aWriter.StringProperty("phase", IPCPhaseToString(aPhase));
     aWriter.BoolProperty("sync", aSync);
+    if (!aOriginThreadId.IsUnspecified()) {
+      // Tech note: If `ToNumber()` returns a uint64_t, the conversion to
+      // int64_t is "implementation-defined" before C++20. This is acceptable
+      // here, because this is a one-way conversion to a unique identifier
+      // that's used to visually separate data by thread on the front-end.
+      aWriter.IntProperty(
+          "threadId",
+          static_cast<int64_t>(aOriginThreadId.ThreadId().ToNumber()));
+    }
   }
   static mozilla::MarkerSchema MarkerTypeDisplay() {
     return mozilla::MarkerSchema::SpecialFrontendLocation{};

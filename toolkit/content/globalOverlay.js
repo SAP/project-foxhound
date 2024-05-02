@@ -3,8 +3,8 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 function closeWindow(aClose, aPromptFunction, aSource) {
-  let { AppConstants } = ChromeUtils.import(
-    "resource://gre/modules/AppConstants.jsm"
+  let { AppConstants } = ChromeUtils.importESModule(
+    "resource://gre/modules/AppConstants.sys.mjs"
   );
 
   // Closing the last window doesn't quit the application on OS X.
@@ -33,7 +33,7 @@ function closeWindow(aClose, aPromptFunction, aSource) {
 
     // If the user explicitly closes the last tabs in the window close remaining tabs. Bug 490136
     if (aClose) {
-      window.SessionStore?.maybeDontSaveTabs(window);
+      window.SessionStore?.maybeDontRestoreTabs(window);
     }
   } else if (
     typeof aPromptFunction == "function" &&
@@ -102,9 +102,8 @@ function goQuitApplication(event) {
 //
 function goUpdateCommand(aCommand) {
   try {
-    var controller = top.document.commandDispatcher.getControllerForCommand(
-      aCommand
-    );
+    var controller =
+      top.document.commandDispatcher.getControllerForCommand(aCommand);
 
     var enabled = false;
     if (controller) {
@@ -113,23 +112,23 @@ function goUpdateCommand(aCommand) {
 
     goSetCommandEnabled(aCommand, enabled);
   } catch (e) {
-    Cu.reportError(
-      "An error occurred updating the " + aCommand + " command: " + e
-    );
+    console.error("An error occurred updating the ", aCommand, " command: ", e);
   }
 }
 
 function goDoCommand(aCommand) {
   try {
-    var controller = top.document.commandDispatcher.getControllerForCommand(
-      aCommand
-    );
+    var controller =
+      top.document.commandDispatcher.getControllerForCommand(aCommand);
     if (controller && controller.isCommandEnabled(aCommand)) {
       controller.doCommand(aCommand);
     }
   } catch (e) {
-    Cu.reportError(
-      "An error occurred executing the " + aCommand + " command: " + e
+    console.error(
+      "An error occurred executing the ",
+      aCommand,
+      " command: ",
+      e
     );
   }
 }

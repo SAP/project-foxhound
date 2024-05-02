@@ -4,7 +4,7 @@
 
 // Tests dom mutation breakpoints with a remote frame.
 
-/* import-globals-from ../../../inspector/test/shared-head.js */
+"use strict";
 
 // Import helpers for the inspector
 Services.scriptloader.loadSubScript(
@@ -20,23 +20,18 @@ Services.scriptloader.loadSubScript(
  * breakpoint, that's why we need the page itself to have a way of updating
  * the attribute.
  */
-const TEST_COM_URI =
-  `https://example.com/document-builder.sjs?html=` +
-  encodeURI(
-    `<input disabled=""/>
+const TEST_COM_URI = `https://example.com/document-builder.sjs?html=${encodeURI(
+  `<input disabled=""/>
      <button onclick="document.querySelector('input').toggleAttribute('disabled')">
        click me
      </button>`
-  );
+)}`;
 
 // Embed the example.com test page in an example.org iframe.
 const TEST_URI = `https://example.org/document-builder.sjs?html=
 <iframe src="${encodeURI(TEST_COM_URI)}"></iframe><body>`;
 
-add_task(async function() {
-  // Enable features
-  await pushPref("devtools.debugger.features.dom-mutation-breakpoints", true);
-  await pushPref("devtools.markup.mutationBreakpoints.enabled", true);
+add_task(async function () {
   await pushPref("devtools.debugger.dom-mutation-breakpoints-visible", true);
 
   const { inspector, toolbox } = await openInspectorForURL(TEST_URI);
@@ -59,7 +54,7 @@ add_task(async function() {
   const frameBC = await SpecialPowers.spawn(
     gBrowser.selectedBrowser,
     [],
-    function() {
+    function () {
       return content.document.querySelector("iframe").browsingContext;
     }
   );
@@ -75,25 +70,21 @@ add_task(async function() {
   checkbox.click();
   await waitFor(() => !checkbox.checked);
 
-  info(
-    "Click the button in the remote iframe, should not hit the breakpoint"
-  );
+  info("Click the button in the remote iframe, should not hit the breakpoint");
   BrowserTestUtils.synthesizeMouseAtCenter("button", {}, frameBC);
 
   info("Wait until the input is enabled");
   await asyncWaitUntil(() =>
-    SpecialPowers.spawn(gBrowser.selectedBrowser, [], function() {
-      return SpecialPowers.spawn(
-        content.document.querySelector("iframe"),
-        [],
-        () => !content.document.querySelector("input").disabled
-      );
-    })
+    SpecialPowers.spawn(
+      frameBC,
+      [],
+      () => !content.document.querySelector("input").disabled
+    )
   );
-  is(isPaused(dbg), false, "DOM breakpoint should not have been hit");
+  assertNotPaused(dbg, "DOM breakpoint should not have been hit");
 
   info("Restore the disabled attribute");
-  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], function() {
+  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], function () {
     return SpecialPowers.spawn(
       content.document.querySelector("iframe"),
       [],

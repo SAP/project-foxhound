@@ -30,6 +30,12 @@ sd_Deva{
                 "MMM d, y G",
                 "M/d/y GGGGG",
                 "{1}, {0}",
+                "{1}, {0}",
+                "{1}, {0}",
+                "{1}, {0}",
+                "{1}, {0}",
+            }
+            DateTimePatterns%atTime{
                 "{1} ते {0}",
                 "{1} ते {0}",
                 "{1}, {0}",
@@ -51,8 +57,8 @@ sd_Deva{
         }
         gregorian{
             AmPmMarkers{
-                "मंझंदि खां पहिंरियों",
-                "मंझंदि खां पोइ",
+                "सुबुह जा",
+                "शाम जा",
             }
             DateTimePatterns{
                 "h:mm:ss a zzzz",
@@ -64,6 +70,12 @@ sd_Deva{
                 "MMM d, y",
                 "M/d/yy",
                 "{1}, {0}",
+                "{1}, {0}",
+                "{1}, {0}",
+                "{1}, {0}",
+                "{1}, {0}",
+            }
+            DateTimePatterns%atTime{
                 "{1} ते {0}",
                 "{1} ते {0}",
                 "{1}, {0}",
@@ -232,7 +244,7 @@ sd_Deva{
                         "जुलाई",
                         "अगस्ट",
                         "सप्टेंबर",
-                        "ऑक्टोबर",
+                        "ओक्टोबर",
                         "नवंबर",
                         "डिसंबर",
                     }
@@ -337,9 +349,19 @@ sd_Deva{
         }
         day-narrow{
             dn{"दीं॒हुं"}
+            relative{
+                "-1"{"कल"}
+                "0"{"अॼु"}
+                "1"{"सुभाणे"}
+            }
         }
         day-short{
             dn{"दीं॒हुं"}
+            relative{
+                "-1"{"कल"}
+                "0"{"अॼु"}
+                "1"{"सुभाणे"}
+            }
         }
         dayperiod{
             dn{"दीं॒हुं/ रातु"}
@@ -348,6 +370,12 @@ sd_Deva{
             dn{"दौर"}
         }
         hour{
+            dn{"कलाक"}
+        }
+        hour-narrow{
+            dn{"कलाक"}
+        }
+        hour-short{
             dn{"कलाक"}
         }
         minute{
@@ -380,13 +408,28 @@ sd_Deva{
         second{
             dn{"सेकिंडु"}
         }
+        second-narrow{
+            dn{"सेकिंडु"}
+        }
+        second-short{
+            dn{"सेकिंडु"}
+        }
         week{
+            dn{"हफ्तो"}
+        }
+        week-narrow{
+            dn{"हफ्तो"}
+        }
+        week-short{
             dn{"हफ्तो"}
         }
         weekday{
             dn{"हफ्ते जो दीं॒हुं"}
         }
         year{
+            dn{"साल"}
+        }
+        year-narrow{
             dn{"साल"}
         }
         year-short{
@@ -400,5 +443,22 @@ sd_Deva{
         UK{"यूके"}
         US{"यूएस"}
         metric{"मैट्रिक"}
+    }
+    personNames{
+        nameOrderLocales{
+            givenFirst{
+                "und",
+                "sd",
+            }
+            surnameFirst{
+                "ko",
+                "si",
+                "ta",
+                "te",
+                "vi",
+                "yue",
+                "zh",
+            }
+        }
     }
 }

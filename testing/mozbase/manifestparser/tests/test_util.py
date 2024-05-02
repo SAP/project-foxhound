@@ -4,14 +4,11 @@
 Test how our utility functions are working.
 """
 
-from __future__ import absolute_import
-
+from io import StringIO
 from textwrap import dedent
 
 import mozunit
 import pytest
-from six import StringIO
-
 from manifestparser import read_ini
 from manifestparser.util import evaluate_list_from_string
 

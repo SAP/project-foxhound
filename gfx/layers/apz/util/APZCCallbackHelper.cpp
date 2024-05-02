@@ -8,10 +8,13 @@
 
 #include "gfxPlatform.h"  // For gfxPlatform::UseTiling
 
+#include "mozilla/AsyncEventDispatcher.h"
 #include "mozilla/EventForwards.h"
+#include "mozilla/dom/CustomEvent.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/MouseEventBinding.h"
 #include "mozilla/dom/BrowserParent.h"
+#include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/IntegerPrintfMacros.h"
 #include "mozilla/layers/RepaintRequest.h"
 #include "mozilla/layers/WebRenderLayerManager.h"
@@ -29,10 +32,10 @@
 #include "nsIScrollableFrame.h"
 #include "nsLayoutUtils.h"
 #include "nsPrintfCString.h"
+#include "nsPIDOMWindow.h"
 #include "nsRefreshDriver.h"
 #include "nsString.h"
 #include "nsView.h"
-#include "Layers.h"
 
 static mozilla::LazyLogModule sApzHlpLog("apz.helper");
 #define APZCCH_LOG(...) MOZ_LOG(sApzHlpLog, LogLevel::Debug, (__VA_ARGS__))
@@ -106,7 +109,7 @@ static CSSPoint ScrollFrameTo(nsIScrollableFrame* aFrame,
     NS_WARNING(
         nsPrintfCString(
             "APZCCH: targetScrollPosition.y (%f) != geckoScrollPosition.y (%f)",
-            targetScrollPosition.y, geckoScrollPosition.y)
+            targetScrollPosition.y.value, geckoScrollPosition.y.value)
             .get());
   }
   if (aFrame->GetScrollStyles().mHorizontal == StyleOverflow::Hidden &&
@@ -114,7 +117,7 @@ static CSSPoint ScrollFrameTo(nsIScrollableFrame* aFrame,
     NS_WARNING(
         nsPrintfCString(
             "APZCCH: targetScrollPosition.x (%f) != geckoScrollPosition.x (%f)",
-            targetScrollPosition.x, geckoScrollPosition.x)
+            targetScrollPosition.x.value, geckoScrollPosition.x.value)
             .get());
   }
 
@@ -125,7 +128,9 @@ static CSSPoint ScrollFrameTo(nsIScrollableFrame* aFrame,
   // request because we'll clobber that one, which is bad.
   bool scrollInProgress = APZCCallbackHelper::IsScrollInProgress(aFrame);
   if (!scrollInProgress) {
-    aFrame->ScrollToCSSPixelsForApz(targetScrollPosition);
+    ScrollSnapTargetIds snapTargetIds = aRequest.GetLastSnapTargetIds();
+    aFrame->ScrollToCSSPixelsForApz(targetScrollPosition,
+                                    std::move(snapTargetIds));
     geckoScrollPosition = CSSPoint::FromAppUnits(aFrame->GetScrollPosition());
     aSuccessOut = true;
   }
@@ -152,7 +157,9 @@ static DisplayPortMargins ScrollFrame(nsIContent* aContent,
   if (sf) {
     sf->ResetScrollInfoIfNeeded(aRequest.GetScrollGeneration(),
                                 aRequest.GetScrollGenerationOnApz(),
-                                aRequest.GetScrollAnimationType());
+                                aRequest.GetScrollAnimationType(),
+                                nsIScrollableFrame::InScrollingGesture(
+                                    aRequest.IsInScrollingGesture()));
     sf->SetScrollableByAPZ(!aRequest.IsScrollInfoLayer());
     if (sf->IsRootScrollFrameOfDocument()) {
       if (!APZCCallbackHelper::IsScrollInProgress(sf)) {
@@ -171,9 +178,8 @@ static DisplayPortMargins ScrollFrame(nsIContent* aContent,
   // re-get it.
   sf = nsLayoutUtils::FindScrollableFrameFor(aRequest.GetScrollId());
   bool scrollUpdated = false;
-  auto displayPortMargins = DisplayPortMargins::ForScrollFrame(
-      sf, aRequest.GetDisplayPortMargins(),
-      Some(aRequest.DisplayportPixelsPerCSSPixel()));
+  auto displayPortMargins =
+      DisplayPortMargins::ForScrollFrame(sf, aRequest.GetDisplayPortMargins());
   CSSPoint apzScrollOffset = aRequest.GetVisualScrollOffset();
   CSSPoint actualScrollOffset = ScrollFrameTo(sf, aRequest, scrollUpdated);
   CSSPoint scrollDelta = apzScrollOffset - actualScrollOffset;
@@ -192,9 +198,9 @@ static DisplayPortMargins ScrollFrame(nsIContent* aContent,
     } else {
       // Correct the display port due to the difference between the requested
       // and actual scroll offsets.
-      displayPortMargins = DisplayPortMargins::FromAPZ(
-          aRequest.GetDisplayPortMargins(), apzScrollOffset, actualScrollOffset,
-          aRequest.DisplayportPixelsPerCSSPixel());
+      displayPortMargins =
+          DisplayPortMargins::FromAPZ(aRequest.GetDisplayPortMargins(),
+                                      apzScrollOffset, actualScrollOffset);
     }
   } else if (aRequest.IsRootContent() &&
              apzScrollOffset != aRequest.GetLayoutScrollOffset()) {
@@ -206,8 +212,7 @@ static DisplayPortMargins ScrollFrame(nsIContent* aContent,
     // offsets in repaints requested by
     // AsyncPanZoomController::NotifyLayersUpdated.
     displayPortMargins = DisplayPortMargins::FromAPZ(
-        aRequest.GetDisplayPortMargins(), apzScrollOffset, actualScrollOffset,
-        aRequest.DisplayportPixelsPerCSSPixel());
+        aRequest.GetDisplayPortMargins(), apzScrollOffset, actualScrollOffset);
   } else {
     // For whatever reason we couldn't update the scroll offset on the scroll
     // frame, which means the data APZ used for its displayport calculation is
@@ -216,8 +221,7 @@ static DisplayPortMargins ScrollFrame(nsIContent* aContent,
     // the scroll position, and the scroll position here is out of our control.
     // See bug 966507 comment 21 for a more detailed explanation.
     displayPortMargins = DisplayPortMargins::ForScrollFrame(
-        sf, RecenterDisplayPort(aRequest.GetDisplayPortMargins()),
-        Some(aRequest.DisplayportPixelsPerCSSPixel()));
+        sf, RecenterDisplayPort(aRequest.GetDisplayPortMargins()));
   }
 
   // APZ transforms inputs assuming we applied the exact scroll offset it
@@ -383,7 +387,9 @@ void APZCCallbackHelper::UpdateRootFrame(const RepaintRequest& aRequest) {
         nsLayoutUtils::FindScrollableFrameFor(aRequest.GetScrollId());
     CSSPoint currentScrollPosition =
         CSSPoint::FromAppUnits(sf->GetScrollPosition());
-    sf->ScrollToCSSPixelsForApz(currentScrollPosition);
+    ScrollSnapTargetIds snapTargetIds = aRequest.GetLastSnapTargetIds();
+    sf->ScrollToCSSPixelsForApz(currentScrollPosition,
+                                std::move(snapTargetIds));
   }
 
   // Do this as late as possible since scrolling can flush layout. It also
@@ -460,8 +466,6 @@ void APZCCallbackHelper::InitializeRootDisplayport(PresShell* aPresShell) {
       DisplayPortUtils::SetDisplayPortBaseIfNotSet(content, *baseRect);
     }
 
-    // Note that we also set the base rect that goes with these margins in
-    // nsRootBoxFrame::BuildDisplayList.
     DisplayPortUtils::SetDisplayPortMargins(
         content, aPresShell, DisplayPortMargins::Empty(content),
         DisplayPortUtils::ClearMinimalDisplayPortProperty::Yes, 0);
@@ -505,15 +509,14 @@ nsEventStatus APZCCallbackHelper::DispatchWidgetEvent(WidgetGUIEvent& aEvent) {
 }
 
 nsEventStatus APZCCallbackHelper::DispatchSynthesizedMouseEvent(
-    EventMessage aMsg, uint64_t aTime, const LayoutDevicePoint& aRefPoint,
-    Modifiers aModifiers, int32_t aClickCount, nsIWidget* aWidget) {
+    EventMessage aMsg, const LayoutDevicePoint& aRefPoint, Modifiers aModifiers,
+    int32_t aClickCount, nsIWidget* aWidget) {
   MOZ_ASSERT(aMsg == eMouseMove || aMsg == eMouseDown || aMsg == eMouseUp ||
              aMsg == eMouseLongTap);
 
   WidgetMouseEvent event(true, aMsg, aWidget, WidgetMouseEvent::eReal,
                          WidgetMouseEvent::eNormal);
   event.mRefPoint = LayoutDeviceIntPoint::Truncate(aRefPoint.x, aRefPoint.y);
-  event.mTime = aTime;
   event.mButton = MouseButton::ePrimary;
   event.mButtons |= MouseButtonsFlag::ePrimaryFlag;
   event.mInputSource = dom::MouseEvent_Binding::MOZ_SOURCE_TOUCH;
@@ -556,12 +559,11 @@ void APZCCallbackHelper::FireSingleTapEvent(const LayoutDevicePoint& aPoint,
   }
   APZCCH_LOG("Dispatching single-tap component events to %s\n",
              ToString(aPoint).c_str());
-  int time = 0;
-  DispatchSynthesizedMouseEvent(eMouseMove, time, aPoint, aModifiers,
-                                aClickCount, aWidget);
-  DispatchSynthesizedMouseEvent(eMouseDown, time, aPoint, aModifiers,
-                                aClickCount, aWidget);
-  DispatchSynthesizedMouseEvent(eMouseUp, time, aPoint, aModifiers, aClickCount,
+  DispatchSynthesizedMouseEvent(eMouseMove, aPoint, aModifiers, aClickCount,
+                                aWidget);
+  DispatchSynthesizedMouseEvent(eMouseDown, aPoint, aModifiers, aClickCount,
+                                aWidget);
+  DispatchSynthesizedMouseEvent(eMouseUp, aPoint, aModifiers, aClickCount,
                                 aWidget);
 }
 
@@ -814,9 +816,9 @@ void APZCCallbackHelper::NotifyFlushComplete(PresShell* aPresShell) {
 
 /* static */
 bool APZCCallbackHelper::IsScrollInProgress(nsIScrollableFrame* aFrame) {
-  using IncludeApzAnimation = nsIScrollableFrame::IncludeApzAnimation;
+  using AnimationState = nsIScrollableFrame::AnimationState;
 
-  return aFrame->IsScrollAnimating(IncludeApzAnimation::No) ||
+  return aFrame->ScrollAnimationState().contains(AnimationState::MainThread) ||
          nsLayoutUtils::CanScrollOriginClobberApz(aFrame->LastScrollOrigin());
 }
 
@@ -867,6 +869,37 @@ void APZCCallbackHelper::CancelAutoscroll(
   data.AppendInt(aScrollId);
   observerService->NotifyObservers(nullptr, "apz:cancel-autoscroll",
                                    data.get());
+}
+
+/* static */
+void APZCCallbackHelper::NotifyScaleGestureComplete(
+    const nsCOMPtr<nsIWidget>& aWidget, float aScale) {
+  MOZ_ASSERT(NS_IsMainThread());
+
+  if (nsView* view = nsView::GetViewFor(aWidget)) {
+    if (PresShell* presShell = view->GetPresShell()) {
+      dom::Document* doc = presShell->GetDocument();
+      MOZ_ASSERT(doc);
+      if (nsPIDOMWindowInner* win = doc->GetInnerWindow()) {
+        dom::AutoJSAPI jsapi;
+        if (!jsapi.Init(win)) {
+          return;
+        }
+
+        JSContext* cx = jsapi.cx();
+        JS::Rooted<JS::Value> detail(cx, JS::Float32Value(aScale));
+        RefPtr<dom::CustomEvent> event =
+            NS_NewDOMCustomEvent(doc, nullptr, nullptr);
+        event->InitCustomEvent(cx, u"MozScaleGestureComplete"_ns,
+                               /* CanBubble */ true,
+                               /* Cancelable */ false, detail);
+        event->SetTrusted(true);
+        auto* dispatcher = new AsyncEventDispatcher(doc, event.forget(),
+                                                    ChromeOnlyDispatch::eYes);
+        dispatcher->PostDOMEvent();
+      }
+    }
+  }
 }
 
 /* static */

@@ -1,12 +1,11 @@
-/* This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Publi
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 use api::{AsyncBlobImageRasterizer, BlobImageResult, Parameter};
 use api::{DocumentId, PipelineId, ExternalEvent, BlobImageRequest};
 use api::{NotificationRequest, Checkpoint, IdNamespace, QualitySettings};
-use api::{PrimitiveKeyKind, SharedFontInstanceMap};
-use api::{GlyphDimensionRequest, GlyphIndexRequest};
+use api::{PrimitiveKeyKind, GlyphDimensionRequest, GlyphIndexRequest};
 use api::channel::{unbounded_channel, single_msg_channel, Receiver, Sender};
 use api::units::*;
 use crate::render_api::{ApiMsg, FrameMsg, SceneMsg, ResourceUpdate, TransactionMsg, MemoryReport};
@@ -16,10 +15,11 @@ use crate::frame_builder::FrameBuilderConfig;
 use crate::scene_building::SceneBuilder;
 use crate::clip::{ClipIntern, PolygonIntern};
 use crate::filterdata::FilterDataIntern;
+use glyph_rasterizer::SharedFontResources;
 use crate::intern::{Internable, Interner, UpdateList};
 use crate::internal_types::{FastHashMap, FastHashSet};
 use malloc_size_of::{MallocSizeOf, MallocSizeOfOps};
-use crate::prim_store::backdrop::Backdrop;
+use crate::prim_store::backdrop::{BackdropCapture, BackdropRender};
 use crate::prim_store::borders::{ImageBorder, NormalBorderPrim};
 use crate::prim_store::gradient::{LinearGradient, RadialGradient, ConicGradient};
 use crate::prim_store::image::{Image, YuvImage};
@@ -28,9 +28,11 @@ use crate::prim_store::picture::Picture;
 use crate::prim_store::text_run::TextRun;
 use crate::profiler::{self, TransactionProfile};
 use crate::render_backend::SceneView;
-use crate::renderer::{FullFrameStats, PipelineInfo, SceneBuilderHooks};
+use crate::renderer::{FullFrameStats, PipelineInfo};
 use crate::scene::{Scene, BuiltScene, SceneStats};
 use crate::spatial_tree::{SceneSpatialTree, SpatialTreeUpdates};
+use crate::telemetry::Telemetry;
+use crate::SceneBuilderHooks;
 use std::iter;
 use time::precise_time_ns;
 use crate::util::drain_filter;
@@ -75,7 +77,7 @@ pub struct BuiltTransaction {
 pub struct LoadScene {
     pub document_id: DocumentId,
     pub scene: Scene,
-    pub font_instances: SharedFontInstanceMap,
+    pub fonts: SharedFontResources,
     pub view: SceneView,
     pub config: FrameBuilderConfig,
     pub build_frame: bool,
@@ -231,7 +233,7 @@ pub struct SceneBuilderThread {
     rx: Receiver<SceneBuilderRequest>,
     tx: Sender<ApiMsg>,
     config: FrameBuilderConfig,
-    font_instances: SharedFontInstanceMap,
+    fonts: SharedFontResources,
     size_of_ops: Option<MallocSizeOfOps>,
     hooks: Option<Box<dyn SceneBuilderHooks + Send>>,
     simulate_slow_ms: u32,
@@ -263,7 +265,7 @@ impl SceneBuilderThreadChannels {
 impl SceneBuilderThread {
     pub fn new(
         config: FrameBuilderConfig,
-        font_instances: SharedFontInstanceMap,
+        fonts: SharedFontResources,
         size_of_ops: Option<MallocSizeOfOps>,
         hooks: Option<Box<dyn SceneBuilderHooks + Send>>,
         channels: SceneBuilderThreadChannels,
@@ -275,7 +277,7 @@ impl SceneBuilderThread {
             rx,
             tx,
             config,
-            font_instances,
+            fonts,
             size_of_ops,
             hooks,
             simulate_slow_ms: 0,
@@ -426,7 +428,7 @@ impl SceneBuilderThread {
             if item.scene.has_root_pipeline() {
                 built_scene = Some(SceneBuilder::build(
                     &item.scene,
-                    item.font_instances,
+                    item.fonts,
                     &item.view,
                     &self.config,
                     &mut item.interners,
@@ -536,8 +538,6 @@ impl SceneBuilderThread {
                 SceneMsg::SetDisplayList {
                     epoch,
                     pipeline_id,
-                    background,
-                    viewport_size,
                     display_list,
                 } => {
                     let (builder_start_time_ns, builder_end_time_ns, send_time_ns) =
@@ -566,8 +566,6 @@ impl SceneBuilderThread {
                         pipeline_id,
                         epoch,
                         display_list,
-                        background,
-                        viewport_size,
                     );
                 }
                 SceneMsg::SetRootPipeline(pipeline_id) => {
@@ -594,7 +592,7 @@ impl SceneBuilderThread {
 
             let built = SceneBuilder::build(
                 &scene,
-                self.font_instances.clone(),
+                self.fonts.clone(),
                 &doc.view,
                 &self.config,
                 &mut doc.interners,
@@ -630,6 +628,7 @@ impl SceneBuilderThread {
             rasterize_blobs(&mut txn, is_low_priority);
 
             profile.end_time(profiler::BLOB_RASTERIZATION_TIME);
+            Telemetry::record_rasterize_blobs_time(Duration::from_micros((profile.get(profiler::BLOB_RASTERIZATION_TIME).unwrap() * 1000.00) as u64));
         }
 
         drain_filter(
@@ -682,7 +681,8 @@ impl SceneBuilderThread {
 
                     let (tx, rx) = single_msg_channel();
                     let txn = txns.iter().find(|txn| txn.built_scene.is_some()).unwrap();
-                    hooks.pre_scene_swap((txn.profile.get(profiler::SCENE_BUILD_TIME).unwrap() * 1000000.0) as u64);
+                    Telemetry::record_scenebuild_time(Duration::from_millis(txn.profile.get(profiler::SCENE_BUILD_TIME).unwrap() as u64));
+                    hooks.pre_scene_swap();
 
                     (Some(info), Some(tx), Some(rx))
                 } else {
@@ -692,7 +692,7 @@ impl SceneBuilderThread {
             _ => (None, None, None)
         };
 
-        let scene_swap_start_time = precise_time_ns();
+        let timer_id = Telemetry::start_sceneswap_time();
         let document_ids = txns.iter().map(|txn| txn.document_id).collect();
         let have_resources_updates : Vec<DocumentId> = if pipeline_info.is_none() {
             txns.iter()
@@ -715,19 +715,22 @@ impl SceneBuilderThread {
         if let Some(pipeline_info) = pipeline_info {
             // Block until the swap is done, then invoke the hook.
             let swap_result = result_rx.unwrap().recv();
-            let scene_swap_time = precise_time_ns() - scene_swap_start_time;
+            Telemetry::stop_and_accumulate_sceneswap_time(timer_id);
             self.hooks.as_ref().unwrap().post_scene_swap(&document_ids,
-                                                         pipeline_info, scene_swap_time);
+                                                         pipeline_info);
             // Once the hook is done, allow the RB thread to resume
             if let Ok(SceneSwapResult::Complete(resume_tx)) = swap_result {
                 resume_tx.send(()).ok();
             }
-        } else if !have_resources_updates.is_empty() {
-            if let Some(ref hooks) = self.hooks {
-                hooks.post_resource_update(&have_resources_updates);
+        } else {
+            Telemetry::cancel_sceneswap_time(timer_id);
+            if !have_resources_updates.is_empty() {
+                if let Some(ref hooks) = self.hooks {
+                    hooks.post_resource_update(&have_resources_updates);
+                }
+            } else if let Some(ref hooks) = self.hooks {
+                hooks.post_empty_scene_build();
             }
-        } else if let Some(ref hooks) = self.hooks {
-            hooks.post_empty_scene_build();
         }
     }
 
@@ -780,7 +783,10 @@ impl LowPrioritySceneBuilderThread {
 
     fn process_transaction(&mut self, mut txn: Box<TransactionMsg>) -> Box<TransactionMsg> {
         let is_low_priority = true;
+        txn.profile.start_time(profiler::BLOB_RASTERIZATION_TIME);
         rasterize_blobs(&mut txn, is_low_priority);
+        txn.profile.end_time(profiler::BLOB_RASTERIZATION_TIME);
+        Telemetry::record_rasterize_blobs_time(Duration::from_micros((txn.profile.get(profiler::BLOB_RASTERIZATION_TIME).unwrap() * 1000.00) as u64));
         txn.blob_requests = Vec::new();
 
         txn

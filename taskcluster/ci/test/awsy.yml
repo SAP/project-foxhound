@@ -8,7 +8,7 @@ job-defaults:
     instance-size: xlarge
     virtualization:
         by-test-platform:
-            windows10-64-2004(?:-shippable)?-qr/.*: virtual-with-gpu
+            windows.*(?:-shippable)?-qr/.*: virtual-with-gpu
             default: virtual
     allow-software-gl-layers: false
     mozharness:
@@ -32,14 +32,12 @@ awsy:
 
 awsy-tp6:
     description: Are we slim yet - tp6 pageset
-    variants: [fission]
-    run-without-variant: false
     treeherder-symbol: SY(sy-tp6)
     run-on-projects:
         by-test-platform:
             .*-devedition/.*: []  # don't run on devedition
             windows.*-32.*/opt: []
-            (linux|windows10-64-2004|mac)(?!.*shippable).*/opt: []
+            (linux|windows|mac)(?!.*shippable).*/opt: []
             default: [integration, mozilla-central, mozilla-beta, mozilla-release]
     mozharness:
         extra-options:
@@ -55,14 +53,12 @@ awsy-dmd:
 
 awsy-base:
     description: Are we slim yet - about:blank base case
-    variants: [fission]
-    run-without-variant: false
     treeherder-symbol: SY(ab)
     run-on-projects:
         by-test-platform:
             .*-devedition/.*: []  # don't run on devedition.
             windows.*-32.*/opt: []
-            (linux|windows10-64-2004|mac)(?!.*shippable).*/opt: []
+            (linux|windows|mac)(?!.*shippable).*/opt: []
             default: [integration, mozilla-central, mozilla-beta, mozilla-release]
     tier: default
     mozharness:

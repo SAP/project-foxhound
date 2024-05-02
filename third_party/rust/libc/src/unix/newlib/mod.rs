@@ -1,27 +1,57 @@
 pub type blkcnt_t = i32;
 pub type blksize_t = i32;
+
 pub type clockid_t = ::c_ulong;
-pub type dev_t = u32;
+
+cfg_if! {
+    if #[cfg(any(target_os = "espidf"))] {
+        pub type dev_t = ::c_short;
+        pub type ino_t = ::c_ushort;
+        pub type off_t = ::c_long;
+    } else if #[cfg(any(target_os = "vita"))] {
+        pub type dev_t = ::c_short;
+        pub type ino_t = ::c_ushort;
+        pub type off_t = ::c_int;
+    } else {
+        pub type dev_t = u32;
+        pub type ino_t = u32;
+        pub type off_t = i64;
+    }
+}
+
 pub type fsblkcnt_t = u64;
 pub type fsfilcnt_t = u32;
 pub type id_t = u32;
-pub type ino_t = u32;
 pub type key_t = ::c_int;
 pub type loff_t = ::c_longlong;
 pub type mode_t = ::c_uint;
 pub type nfds_t = u32;
 pub type nlink_t = ::c_ushort;
-pub type off_t = i64;
 pub type pthread_t = ::c_ulong;
 pub type pthread_key_t = ::c_uint;
 pub type rlim_t = u32;
-pub type sa_family_t = u8;
+
+cfg_if! {
+    if #[cfg(target_os = "horizon")] {
+        pub type sa_family_t = u16;
+    } else {
+        pub type sa_family_t = u8;
+    }
+}
+
 pub type socklen_t = u32;
 pub type speed_t = u32;
 pub type suseconds_t = i32;
 pub type tcflag_t = ::c_uint;
-pub type time_t = i32;
 pub type useconds_t = u32;
+
+cfg_if! {
+    if #[cfg(any(target_os = "horizon", all(target_os = "espidf", espidf_time64)))] {
+        pub type time_t = ::c_longlong;
+    } else {
+        pub type time_t = i32;
+    }
+}
 
 s! {
     // The order of the `ai_addr` field in this struct is crucial
@@ -114,26 +144,6 @@ s! {
         pub tm_isdst: ::c_int,
     }
 
-    pub struct stat {
-        pub st_dev: ::dev_t,
-        pub st_ino: ::ino_t,
-        pub st_mode: ::mode_t,
-        pub st_nlink: ::nlink_t,
-        pub st_uid: ::uid_t,
-        pub st_gid: ::gid_t,
-        pub st_rdev: dev_t,
-        pub st_size: off_t,
-        pub st_atime: time_t,
-        pub st_spare1: ::c_long,
-        pub st_mtime: time_t,
-        pub st_spare2: ::c_long,
-        pub st_ctime: time_t,
-        pub st_spare3: ::c_long,
-        pub st_blksize: blksize_t,
-        pub st_blocks: blkcnt_t,
-        pub st_spare4: [::c_long; 2usize],
-    }
-
     pub struct statvfs {
         pub f_bsize: ::c_ulong,
         pub f_frsize: ::c_ulong,
@@ -148,20 +158,10 @@ s! {
         pub f_namemax: ::c_ulong,
     }
 
-    pub struct sigset_t {
-        __val: [::c_ulong; 16],
-    }
-
     pub struct sigaction {
         pub sa_handler: extern fn(arg1: ::c_int),
         pub sa_mask: sigset_t,
         pub sa_flags: ::c_int,
-    }
-
-    pub struct dirent {
-        pub d_ino: ino_t,
-        pub d_type: ::c_uchar,
-        pub d_name: [::c_char; 256usize],
     }
 
     pub struct stack_t {
@@ -218,12 +218,11 @@ s! {
     }
 
     pub struct pthread_attr_t { // Unverified
-        __size: [u64; 7]
+        __size: [u8; __SIZEOF_PTHREAD_ATTR_T]
     }
 
     pub struct pthread_rwlockattr_t { // Unverified
-        __lockkind: ::c_int,
-        __pshared: ::c_int,
+        __size: [u8; __SIZEOF_PTHREAD_RWLOCKATTR_T]
     }
 }
 
@@ -240,6 +239,7 @@ align_const! {
     };
 }
 pub const NCCS: usize = 32;
+
 cfg_if! {
     if #[cfg(target_os = "espidf")] {
         const __PTHREAD_INITIALIZER_BYTE: u8 = 0xff;
@@ -250,6 +250,17 @@ cfg_if! {
         pub const __SIZEOF_PTHREAD_CONDATTR_T: usize = 8;
         pub const __SIZEOF_PTHREAD_RWLOCK_T: usize = 4;
         pub const __SIZEOF_PTHREAD_RWLOCKATTR_T: usize = 12;
+        pub const __SIZEOF_PTHREAD_BARRIER_T: usize = 32;
+    } else if #[cfg(target_os = "vita")] {
+        const __PTHREAD_INITIALIZER_BYTE: u8 = 0xff;
+        pub const __SIZEOF_PTHREAD_ATTR_T: usize = 4;
+        pub const __SIZEOF_PTHREAD_MUTEX_T: usize = 4;
+        pub const __SIZEOF_PTHREAD_MUTEXATTR_T: usize = 4;
+        pub const __SIZEOF_PTHREAD_COND_T: usize = 4;
+        pub const __SIZEOF_PTHREAD_CONDATTR_T: usize = 4;
+        pub const __SIZEOF_PTHREAD_RWLOCK_T: usize = 4;
+        pub const __SIZEOF_PTHREAD_RWLOCKATTR_T: usize = 4;
+        pub const __SIZEOF_PTHREAD_BARRIER_T: usize = 4;
     } else {
         const __PTHREAD_INITIALIZER_BYTE: u8 = 0;
         pub const __SIZEOF_PTHREAD_ATTR_T: usize = 56;
@@ -259,16 +270,26 @@ cfg_if! {
         pub const __SIZEOF_PTHREAD_CONDATTR_T: usize = 4;
         pub const __SIZEOF_PTHREAD_RWLOCK_T: usize = 56;
         pub const __SIZEOF_PTHREAD_RWLOCKATTR_T: usize = 8;
+        pub const __SIZEOF_PTHREAD_BARRIER_T: usize = 32;
     }
 }
-pub const __SIZEOF_PTHREAD_BARRIER_T: usize = 32;
+
 pub const __SIZEOF_PTHREAD_BARRIERATTR_T: usize = 4;
 pub const __PTHREAD_MUTEX_HAVE_PREV: usize = 1;
 pub const __PTHREAD_RWLOCK_INT_FLAGS_SHARED: usize = 1;
 pub const PTHREAD_MUTEX_NORMAL: ::c_int = 0;
 pub const PTHREAD_MUTEX_RECURSIVE: ::c_int = 1;
 pub const PTHREAD_MUTEX_ERRORCHECK: ::c_int = 2;
-pub const FD_SETSIZE: usize = 1024;
+
+cfg_if! {
+    if #[cfg(any(target_os = "horizon", target_os = "espidf"))] {
+        pub const FD_SETSIZE: usize = 64;
+    } else if #[cfg(target_os = "vita")] {
+        pub const FD_SETSIZE: usize = 256;
+    } else {
+        pub const FD_SETSIZE: usize = 1024;
+    }
+}
 // intentionally not public, only used for fd_set
 const ULONG_SIZE: usize = 32;
 
@@ -477,15 +498,20 @@ pub const SO_SNDLOWAT: ::c_int = 0x1003;
 pub const SO_RCVLOWAT: ::c_int = 0x1004;
 pub const SO_SNDTIMEO: ::c_int = 0x1005;
 pub const SO_RCVTIMEO: ::c_int = 0x1006;
-pub const SO_ERROR: ::c_int = 0x1007;
+cfg_if! {
+    if #[cfg(target_os = "horizon")] {
+        pub const SO_ERROR: ::c_int = 0x1009;
+    } else {
+        pub const SO_ERROR: ::c_int = 0x1007;
+    }
+}
 pub const SO_TYPE: ::c_int = 0x1008;
 
 pub const SOCK_CLOEXEC: ::c_int = O_CLOEXEC;
 
 pub const INET_ADDRSTRLEN: ::c_int = 16;
 
-// https://github.
-// com/bminor/newlib/blob/master/newlib/libc/sys/linux/include/net/if.h#L121
+// https://github.com/bminor/newlib/blob/HEAD/newlib/libc/sys/linux/include/net/if.h#L121
 pub const IFF_UP: ::c_int = 0x1; // interface is up
 pub const IFF_BROADCAST: ::c_int = 0x2; // broadcast address valid
 pub const IFF_DEBUG: ::c_int = 0x4; // turn on debugging
@@ -504,22 +530,48 @@ pub const IFF_LINK2: ::c_int = 0x4000; // per link layer defined bit
 pub const IFF_ALTPHYS: ::c_int = IFF_LINK2; // use alternate physical connection
 pub const IFF_MULTICAST: ::c_int = 0x8000; // supports multicast
 
-pub const TCP_NODELAY: ::c_int = 8193;
-pub const TCP_MAXSEG: ::c_int = 8194;
+cfg_if! {
+    if #[cfg(target_os = "vita")] {
+        pub const TCP_NODELAY: ::c_int = 1;
+        pub const TCP_MAXSEG: ::c_int = 2;
+    } else {
+        pub const TCP_NODELAY: ::c_int = 8193;
+        pub const TCP_MAXSEG: ::c_int = 8194;
+    }
+}
+
 pub const TCP_NOPUSH: ::c_int = 4;
 pub const TCP_NOOPT: ::c_int = 8;
 pub const TCP_KEEPIDLE: ::c_int = 256;
 pub const TCP_KEEPINTVL: ::c_int = 512;
 pub const TCP_KEEPCNT: ::c_int = 1024;
 
-pub const IP_TOS: ::c_int = 3;
-pub const IP_TTL: ::c_int = 8;
+cfg_if! {
+    if #[cfg(target_os = "horizon")] {
+        pub const IP_TOS: ::c_int = 7;
+    } else {
+        pub const IP_TOS: ::c_int = 3;
+    }
+}
+cfg_if! {
+    if #[cfg(target_os = "vita")] {
+        pub const IP_TTL: ::c_int = 4;
+    } else {
+        pub const IP_TTL: ::c_int = 8;
+    }
+}
 pub const IP_MULTICAST_IF: ::c_int = 9;
 pub const IP_MULTICAST_TTL: ::c_int = 10;
 pub const IP_MULTICAST_LOOP: ::c_int = 11;
-pub const IP_ADD_MEMBERSHIP: ::c_int = 11;
-pub const IP_DROP_MEMBERSHIP: ::c_int = 12;
-
+cfg_if! {
+    if #[cfg(target_os = "vita")] {
+        pub const IP_ADD_MEMBERSHIP: ::c_int = 12;
+        pub const IP_DROP_MEMBERSHIP: ::c_int = 13;
+    } else {
+        pub const IP_ADD_MEMBERSHIP: ::c_int = 11;
+        pub const IP_DROP_MEMBERSHIP: ::c_int = 12;
+    }
+}
 pub const IPV6_UNICAST_HOPS: ::c_int = 4;
 pub const IPV6_MULTICAST_IF: ::c_int = 9;
 pub const IPV6_MULTICAST_HOPS: ::c_int = 10;
@@ -550,10 +602,15 @@ pub const NI_NAMEREQD: ::c_int = 4;
 pub const NI_NUMERICSERV: ::c_int = 0;
 pub const NI_DGRAM: ::c_int = 0;
 
-pub const EAI_FAMILY: ::c_int = -303;
-pub const EAI_MEMORY: ::c_int = -304;
-pub const EAI_NONAME: ::c_int = -305;
-pub const EAI_SOCKTYPE: ::c_int = -307;
+cfg_if! {
+    // Defined in vita/mod.rs for "vita"
+    if #[cfg(not(target_os = "vita"))] {
+        pub const EAI_FAMILY: ::c_int = -303;
+        pub const EAI_MEMORY: ::c_int = -304;
+        pub const EAI_NONAME: ::c_int = -305;
+        pub const EAI_SOCKTYPE: ::c_int = -307;
+    }
+}
 
 pub const EXIT_SUCCESS: ::c_int = 0;
 pub const EXIT_FAILURE: ::c_int = 1;
@@ -601,7 +658,6 @@ extern "C" {
     pub fn sem_init(sem: *mut sem_t, pshared: ::c_int, value: ::c_uint) -> ::c_int;
 
     pub fn abs(i: ::c_int) -> ::c_int;
-    pub fn atof(s: *const ::c_char) -> ::c_double;
     pub fn labs(i: ::c_long) -> ::c_long;
     pub fn rand() -> ::c_int;
     pub fn srand(seed: ::c_uint);
@@ -702,10 +758,18 @@ extern "C" {
     pub fn uname(buf: *mut ::utsname) -> ::c_int;
 }
 
+mod generic;
+
 cfg_if! {
     if #[cfg(target_os = "espidf")] {
         mod espidf;
         pub use self::espidf::*;
+    } else if #[cfg(target_os = "horizon")] {
+        mod horizon;
+        pub use self::horizon::*;
+    } else if #[cfg(target_os = "vita")] {
+        mod vita;
+        pub use self::vita::*;
     } else if #[cfg(target_arch = "arm")] {
         mod arm;
         pub use self::arm::*;

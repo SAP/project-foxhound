@@ -17,7 +17,7 @@ add_task(async function switch_print_preview_browsers() {
       let [headerText, headingText] = await SpecialPowers.spawn(
         sourcePreviewBrowser,
         [],
-        async function() {
+        async function () {
           return [
             content.document.querySelector("header").textContent,
             content.document.querySelector("h1").textContent,
@@ -57,7 +57,7 @@ add_task(async function switch_print_preview_browsers() {
       let [hasHeader, headingText] = await SpecialPowers.spawn(
         simplifiedPreviewBrowser,
         [],
-        async function() {
+        async function () {
           return [
             !!content.document.querySelector("header"),
             content.document.querySelector("h1").textContent,
@@ -98,7 +98,7 @@ add_task(async function switch_print_preview_browsers() {
       let headerText = await SpecialPowers.spawn(
         sourcePreviewBrowser,
         [],
-        async function() {
+        async function () {
           return content.document.querySelector("header").textContent;
         }
       );
@@ -237,4 +237,26 @@ add_task(async function testSimplifyNonArticleTabModal() {
 
     await helper.closeDialog();
   }, "simplifyNonArticleSample.html");
+});
+
+add_task(async function testSimplifyHiddenReaderMode() {
+  await PrintHelper.withTestPage(async helper => {
+    let tab = gBrowser.selectedTab;
+
+    // Trigger reader mode for the tab
+    let readerButton = document.getElementById("reader-mode-button");
+    await TestUtils.waitForCondition(() => !readerButton.hidden);
+    readerButton.click();
+    await BrowserTestUtils.browserLoaded(tab.linkedBrowser);
+
+    // Print from reader mode
+    await helper.startPrint();
+    await helper.openMoreSettings();
+    let sourceVersionSection = helper.get("source-version-section");
+    ok(
+      BrowserTestUtils.is_hidden(sourceVersionSection),
+      "Source version is hidden in reader mode"
+    );
+    await helper.closeDialog();
+  }, "simplifyArticleSample.html");
 });

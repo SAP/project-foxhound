@@ -1,12 +1,13 @@
 #!/usr/bin/env python
+from unittest import mock
+
+import mozunit
 import pytest
 
-from unittest import mock
-import mozunit
 from mozperftest.environment import METRICS
+from mozperftest.metrics.utils import metric_fields
 from mozperftest.tests.support import BT_DATA, EXAMPLE_TEST, get_running_env, temp_file
 from mozperftest.utils import silence
-from mozperftest.metrics.utils import metric_fields
 
 
 def setup_env(options):
@@ -25,8 +26,8 @@ def setup_env(options):
 
 @pytest.mark.parametrize("no_filter", [True, False])
 @mock.patch("mozperftest.metrics.notebookupload.PerftestNotebook")
+@mock.patch("mozperftest.test.BrowsertimeRunner", new=mock.MagicMock())
 def test_notebookupload_with_filter(notebook, no_filter):
-
     options = {
         "notebook-metrics": [],
         "notebook-prefix": "",
@@ -60,6 +61,7 @@ def test_notebookupload_with_filter(notebook, no_filter):
 
 @pytest.mark.parametrize("stats", [False, True])
 @mock.patch("mozperftest.metrics.notebookupload.PerftestNotebook")
+@mock.patch("mozperftest.test.BrowsertimeRunner", new=mock.MagicMock())
 def test_compare_to_success(notebook, stats):
     options = {
         "notebook-metrics": [metric_fields("firstPaint")],
@@ -93,6 +95,7 @@ def test_compare_to_success(notebook, stats):
 
 @pytest.mark.parametrize("filepath", ["invalidPath", str(BT_DATA)])
 @mock.patch("mozperftest.metrics.notebookupload.PerftestNotebook")
+@mock.patch("mozperftest.test.BrowsertimeRunner", new=mock.MagicMock())
 def test_compare_to_invalid_parameter(notebook, filepath):
     options = {
         "notebook-metrics": [metric_fields("firstPaint")],

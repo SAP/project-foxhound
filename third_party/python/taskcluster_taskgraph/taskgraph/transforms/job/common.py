@@ -60,31 +60,6 @@ def add_cache(job, taskdesc, name, mount_point, skip_untrusted=False):
         pass
 
 
-def docker_worker_add_workspace_cache(config, job, taskdesc, extra=None):
-    """Add the workspace cache.
-
-    Args:
-        config (TransformConfig): Transform configuration object.
-        job (dict): Task's job description.
-        taskdesc (dict): Target task description to modify.
-        extra (str): Optional context passed in that supports extending the cache
-            key name to avoid undesired conflicts with other caches.
-    """
-    cache_name = "{}-build-{}-{}-workspace".format(
-        config.params["project"],
-        taskdesc["attributes"]["build_platform"],
-        taskdesc["attributes"]["build_type"],
-    )
-    if extra:
-        cache_name = f"{cache_name}-{extra}"
-
-    mount_point = "{workdir}/workspace".format(**job["run"])
-
-    # Don't enable the workspace cache when we can't guarantee its
-    # behavior, like on Try.
-    add_cache(job, taskdesc, cache_name, mount_point, skip_untrusted=True)
-
-
 def add_artifacts(config, job, taskdesc, path):
     taskdesc["worker"].setdefault("artifacts", []).append(
         {
@@ -190,11 +165,6 @@ def support_vcs_checkout(config, job, taskdesc, repo_configs, sparse=False):
         )
         if repo_config.ssh_secret_name:
             taskdesc["scopes"].append(f"secrets:get:{repo_config.ssh_secret_name}")
-
-    if any(repo_config.type == "hg" for repo_config in repo_configs.values()):
-        # Give task access to hgfingerprint secret so it can pin the certificate
-        # for hg.mozilla.org.
-        taskdesc["scopes"].append("secrets:get:project/taskcluster/gecko/hgfingerprint")
 
     # only some worker platforms have taskcluster-proxy enabled
     if job["worker"]["implementation"] in ("docker-worker",):

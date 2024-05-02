@@ -8,8 +8,8 @@ var bookmarks;
 var bookmarkIds;
 var library;
 
-add_task(async function setup() {
-  registerCleanupFunction(async function() {
+add_setup(async function () {
+  registerCleanupFunction(async function () {
     await PlacesUtils.bookmarks.eraseEverything();
     await PlacesUtils.history.clear();
     await promiseLibraryClosed(library);
@@ -33,7 +33,7 @@ add_task(async function setup() {
     ],
   });
 
-  bookmarkIds = await PlacesUtils.promiseManyItemIds([
+  bookmarkIds = await PlacesTestUtils.promiseManyItemIds([
     bookmarks[0].guid,
     bookmarks[1].guid,
     bookmarks[2].guid,
@@ -112,8 +112,7 @@ add_task(async function test_simple_move_down() {
     events =>
       events.some(
         e => e.guid === bookmarks[0].guid && e.oldIndex == 0 && e.index == 1
-      ),
-    "places"
+      )
   );
 
   await run_drag_test(0, 2);

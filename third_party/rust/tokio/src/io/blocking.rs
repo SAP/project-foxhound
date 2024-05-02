@@ -1,5 +1,5 @@
 use crate::io::sys;
-use crate::io::{AsyncRead, AsyncWrite};
+use crate::io::{AsyncRead, AsyncWrite, ReadBuf};
 
 use std::cmp;
 use std::future::Future;
@@ -16,7 +16,7 @@ use self::State::*;
 pub(crate) struct Blocking<T> {
     inner: Option<T>,
     state: State<T>,
-    /// `true` if the lower IO layer needs flushing
+    /// `true` if the lower IO layer needs flushing.
     need_flush: bool,
 }
 
@@ -26,7 +26,7 @@ pub(crate) struct Buf {
     pos: usize,
 }
 
-pub(crate) const MAX_BUF: usize = 16 * 1024;
+pub(crate) const MAX_BUF: usize = 2 * 1024 * 1024;
 
 #[derive(Debug)]
 enum State<T> {
@@ -34,8 +34,9 @@ enum State<T> {
     Busy(sys::Blocking<(io::Result<usize>, Buf, T)>),
 }
 
-cfg_io_std! {
+cfg_io_blocking! {
     impl<T> Blocking<T> {
+        #[cfg_attr(feature = "fs", allow(dead_code))]
         pub(crate) fn new(inner: T) -> Blocking<T> {
             Blocking {
                 inner: Some(inner),
@@ -53,17 +54,17 @@ where
     fn poll_read(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
-        dst: &mut [u8],
-    ) -> Poll<io::Result<usize>> {
+        dst: &mut ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
         loop {
             match self.state {
                 Idle(ref mut buf_cell) => {
                     let mut buf = buf_cell.take().unwrap();
 
                     if !buf.is_empty() {
-                        let n = buf.copy_to(dst);
+                        buf.copy_to(dst);
                         *buf_cell = Some(buf);
-                        return Ready(Ok(n));
+                        return Ready(Ok(()));
                     }
 
                     buf.ensure_capacity_for(dst);
@@ -80,9 +81,9 @@ where
 
                     match res {
                         Ok(_) => {
-                            let n = buf.copy_to(dst);
+                            buf.copy_to(dst);
                             self.state = Idle(Some(buf));
-                            return Ready(Ok(n));
+                            return Ready(Ok(()));
                         }
                         Err(e) => {
                             assert!(buf.is_empty());
@@ -175,7 +176,7 @@ where
     }
 }
 
-/// Repeates operations that are interrupted
+/// Repeats operations that are interrupted.
 macro_rules! uninterruptibly {
     ($e:expr) => {{
         loop {
@@ -203,9 +204,9 @@ impl Buf {
         self.buf.len() - self.pos
     }
 
-    pub(crate) fn copy_to(&mut self, dst: &mut [u8]) -> usize {
-        let n = cmp::min(self.len(), dst.len());
-        dst[..n].copy_from_slice(&self.bytes()[..n]);
+    pub(crate) fn copy_to(&mut self, dst: &mut ReadBuf<'_>) -> usize {
+        let n = cmp::min(self.len(), dst.remaining());
+        dst.put_slice(&self.bytes()[..n]);
         self.pos += n;
 
         if self.pos == self.buf.len() {
@@ -229,10 +230,10 @@ impl Buf {
         &self.buf[self.pos..]
     }
 
-    pub(crate) fn ensure_capacity_for(&mut self, bytes: &[u8]) {
+    pub(crate) fn ensure_capacity_for(&mut self, bytes: &ReadBuf<'_>) {
         assert!(self.is_empty());
 
-        let len = cmp::min(bytes.len(), MAX_BUF);
+        let len = cmp::min(bytes.remaining(), MAX_BUF);
 
         if self.buf.len() < len {
             self.buf.reserve(len - self.buf.len());

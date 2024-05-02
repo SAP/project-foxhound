@@ -4,8 +4,12 @@
 
 "use strict";
 
-const { AddonTestUtils } = ChromeUtils.import(
-  "resource://testing-common/AddonTestUtils.jsm"
+const { AddonTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/AddonTestUtils.sys.mjs"
+);
+
+const { EnterprisePolicyTesting } = ChromeUtils.importESModule(
+  "resource://testing-common/EnterprisePolicyTesting.sys.mjs"
 );
 
 const TESTPATH = "webapi_checkavailable.html";
@@ -38,7 +42,7 @@ function waitForClear() {
   });
 }
 
-add_task(async function setup() {
+add_setup(async function () {
   await SpecialPowers.pushPrefEnv({
     set: [
       ["extensions.webapi.testing", true],
@@ -59,7 +63,7 @@ async function testInstall(browser, args, steps, description) {
   let success = await SpecialPowers.spawn(
     browser,
     [{ args, steps }],
-    async function(opts) {
+    async function (opts) {
       let { args, steps } = opts;
       let install = await content.navigator.mozAddonManager.createInstall(args);
       if (!install) {
@@ -182,7 +186,7 @@ async function testInstall(browser, args, steps, description) {
 }
 
 function makeInstallTest(task) {
-  return async function() {
+  return async function () {
     // withNewTab() will close the test tab before returning, at which point
     // the cleanup event will come from the content process.  We need to see
     // that event but don't want to race to install a listener for it after
@@ -198,7 +202,7 @@ function makeInstallTest(task) {
 }
 
 function makeRegularTest(options, what) {
-  return makeInstallTest(async function(browser) {
+  return makeInstallTest(async function (browser) {
     let steps = [
       { action: "install" },
       {
@@ -290,7 +294,7 @@ add_task(
 );
 
 add_task(
-  makeInstallTest(async function(browser) {
+  makeInstallTest(async function (browser) {
     let steps = [
       { action: "cancel" },
       {
@@ -320,7 +324,7 @@ add_task(
 );
 
 add_task(
-  makeInstallTest(async function(browser) {
+  makeInstallTest(async function (browser) {
     let steps = [
       { action: "install", expectError: true },
       {
@@ -355,7 +359,7 @@ add_task(
 );
 
 add_task(
-  makeInstallTest(async function(browser) {
+  makeInstallTest(async function (browser) {
     let steps = [
       { action: "install", expectError: true },
       {
@@ -389,38 +393,39 @@ add_task(
   })
 );
 
-add_task(async function test_permissions() {
-  function testBadUrl(url, pattern, successMessage) {
-    return BrowserTestUtils.withNewTab(TESTPAGE, async function(browser) {
-      let result = await SpecialPowers.spawn(
-        browser,
-        [{ url, pattern }],
-        function(opts) {
-          return new Promise(resolve => {
-            content.navigator.mozAddonManager
-              .createInstall({ url: opts.url })
-              .then(
-                () => {
-                  resolve({
-                    success: false,
-                    message: "createInstall should not have succeeded",
-                  });
-                },
-                err => {
-                  if (err.message.match(new RegExp(opts.pattern))) {
-                    resolve({ success: true });
-                  }
-                  resolve({
-                    success: false,
-                    message: `Wrong error message: ${err.message}`,
-                  });
+add_task(async function test_permissions_and_policy() {
+  async function testBadUrl(url, pattern, successMessage) {
+    gBrowser.selectedTab = await BrowserTestUtils.addTab(gBrowser, TESTPAGE);
+    let browser = gBrowser.getBrowserForTab(gBrowser.selectedTab);
+    await BrowserTestUtils.browserLoaded(browser);
+    let result = await SpecialPowers.spawn(
+      browser,
+      [{ url, pattern }],
+      function (opts) {
+        return new Promise(resolve => {
+          content.navigator.mozAddonManager
+            .createInstall({ url: opts.url })
+            .then(
+              () => {
+                resolve({
+                  success: false,
+                  message: "createInstall should not have succeeded",
+                });
+              },
+              err => {
+                if (err.message.match(new RegExp(opts.pattern))) {
+                  resolve({ success: true });
                 }
-              );
-          });
-        }
-      );
-      is(result.success, true, result.message || successMessage);
-    });
+                resolve({
+                  success: false,
+                  message: `Wrong error message: ${err.message}`,
+                });
+              }
+            );
+        });
+      }
+    );
+    is(result.success, true, result.message || successMessage);
   }
 
   await testBadUrl(
@@ -428,16 +433,71 @@ add_task(async function test_permissions() {
     "NS_ERROR_MALFORMED_URI",
     "Installing from an unparseable URL fails"
   );
+  gBrowser.removeTab(gBrowser.selectedTab);
+
+  let popupPromise = promisePopupNotificationShown(
+    "addon-install-webapi-blocked"
+  );
+  await Promise.all([
+    testBadUrl(
+      "https://addons.not-really-mozilla.org/impostor.xpi",
+      "not permitted",
+      "Installing from non-approved URL fails"
+    ),
+    popupPromise,
+  ]);
+
+  gBrowser.removeTab(gBrowser.selectedTab);
+
+  const blocked_install_message = "Custom Policy Block Message";
+
+  await EnterprisePolicyTesting.setupPolicyEngineWithJson({
+    policies: {
+      ExtensionSettings: {
+        "*": {
+          install_sources: [],
+          blocked_install_message,
+        },
+      },
+    },
+  });
+
+  popupPromise = promisePopupNotificationShown("addon-install-policy-blocked");
 
   await testBadUrl(
-    "https://addons.not-really-mozilla.org/impostor.xpi",
-    "not permitted",
-    "Installing from non-approved URL fails"
+    XPI_URL,
+    "not permitted by policy",
+    "Installing from policy blocked origin fails"
   );
+
+  const panel = await popupPromise;
+  const description = panel.querySelector(
+    ".popup-notification-description"
+  ).textContent;
+  ok(
+    description.startsWith("Your system administrator"),
+    "Policy specific error is shown."
+  );
+  ok(
+    description.endsWith(` ${blocked_install_message}`),
+    `Found the expected custom blocked message in "${description}"`
+  );
+
+  gBrowser.removeTab(gBrowser.selectedTab);
+
+  await EnterprisePolicyTesting.setupPolicyEngineWithJson({
+    policies: {
+      ExtensionSettings: {
+        "*": {
+          install_sources: ["<all_urls>"],
+        },
+      },
+    },
+  });
 });
 
 add_task(
-  makeInstallTest(async function(browser) {
+  makeInstallTest(async function (browser) {
     let xpiURL = `${SECURE_TESTROOT}../xpinstall/incompatible.xpi`;
     let id = "incompatible-xpi@tests.mozilla.org";
 
@@ -449,7 +509,7 @@ add_task(
       },
       { event: "onDownloadProgress" },
       { event: "onDownloadEnded" },
-      { event: "onDownloadCancelled" },
+      { event: "onDownloadCancelled", error: "ERROR_INCOMPATIBLE" },
     ];
 
     await testInstall(
@@ -465,7 +525,54 @@ add_task(
 );
 
 add_task(
-  makeInstallTest(async function(browser) {
+  makeInstallTest(async function (browser) {
+    let id = "amosigned-xpi@tests.mozilla.org";
+    let version = "2.1";
+
+    await AddonTestUtils.loadBlocklistRawData({
+      extensionsMLBF: [
+        {
+          stash: { blocked: [`${id}:${version}`], unblocked: [] },
+          stash_time: 0,
+        },
+      ],
+    });
+
+    let steps = [
+      { action: "install", expectError: true },
+      { event: "onDownloadStarted" },
+      { event: "onDownloadProgress" },
+      { event: "onDownloadEnded" },
+      {
+        event: "onDownloadCancelled",
+        props: { state: "STATE_CANCELLED", error: "ERROR_BLOCKLISTED" },
+      },
+    ];
+
+    await testInstall(
+      browser,
+      { url: XPI_URL },
+      steps,
+      "install of a blocked XPI fails"
+    );
+
+    let addons = await promiseAddonsByIDs([id]);
+    is(addons[0], null, "The addon was not installed");
+
+    // Clear the blocklist.
+    await AddonTestUtils.loadBlocklistRawData({
+      extensionsMLBF: [
+        {
+          stash: { blocked: [], unblocked: [] },
+          stash_time: 0,
+        },
+      ],
+    });
+  })
+);
+
+add_task(
+  makeInstallTest(async function (browser) {
     const options = { url: XPI_URL, addonId };
     let steps = [
       { action: "install" },

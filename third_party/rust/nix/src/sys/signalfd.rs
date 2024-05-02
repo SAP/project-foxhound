@@ -15,18 +15,16 @@
 //!
 //! Please note that signal discarding is not specific to `signalfd`, but also happens with regular
 //! signal handlers.
-use libc;
-use unistd;
-use {Error, Result};
-use errno::Errno;
-pub use sys::signal::{self, SigSet};
+use crate::errno::Errno;
+pub use crate::sys::signal::{self, SigSet};
+use crate::unistd;
+use crate::Result;
 pub use libc::signalfd_siginfo as siginfo;
 
-use std::os::unix::io::{RawFd, AsRawFd};
 use std::mem;
+use std::os::unix::io::{AsRawFd, RawFd};
 
-
-libc_bitflags!{
+libc_bitflags! {
     pub struct SfdFlags: libc::c_int {
         SFD_NONBLOCK;
         SFD_CLOEXEC;
@@ -34,7 +32,8 @@ libc_bitflags!{
 }
 
 pub const SIGNALFD_NEW: RawFd = -1;
-pub const SIGNALFD_SIGINFO_SIZE: usize = 128;
+#[deprecated(since = "0.23.0", note = "use mem::size_of::<siginfo>() instead")]
+pub const SIGNALFD_SIGINFO_SIZE: usize = mem::size_of::<siginfo>();
 
 /// Creates a new file descriptor for reading signals.
 ///
@@ -46,10 +45,14 @@ pub const SIGNALFD_SIGINFO_SIZE: usize = 128;
 /// A signal must be blocked on every thread in a process, otherwise it won't be visible from
 /// signalfd (the default handler will be invoked instead).
 ///
-/// See [the signalfd man page for more information](http://man7.org/linux/man-pages/man2/signalfd.2.html)
+/// See [the signalfd man page for more information](https://man7.org/linux/man-pages/man2/signalfd.2.html)
 pub fn signalfd(fd: RawFd, mask: &SigSet, flags: SfdFlags) -> Result<RawFd> {
     unsafe {
-        Errno::result(libc::signalfd(fd as libc::c_int, mask.as_ref(), flags.bits()))
+        Errno::result(libc::signalfd(
+            fd as libc::c_int,
+            mask.as_ref(),
+            flags.bits(),
+        ))
     }
 }
 
@@ -79,7 +82,7 @@ pub fn signalfd(fd: RawFd, mask: &SigSet, flags: SfdFlags) -> Result<RawFd> {
 ///     Err(err) => (), // some error happend
 /// }
 /// ```
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Debug, Eq, Hash, PartialEq)]
 pub struct SignalFd(RawFd);
 
 impl SignalFd {
@@ -98,20 +101,28 @@ impl SignalFd {
     }
 
     pub fn read_signal(&mut self) -> Result<Option<siginfo>> {
-        let mut buffer: [u8; SIGNALFD_SIGINFO_SIZE] = unsafe { mem::uninitialized() };
+        let mut buffer = mem::MaybeUninit::<siginfo>::uninit();
 
-        match unistd::read(self.0, &mut buffer) {
-            Ok(SIGNALFD_SIGINFO_SIZE) => Ok(Some(unsafe { mem::transmute(buffer) })),
+        let size = mem::size_of_val(&buffer);
+        let res = Errno::result(unsafe {
+            libc::read(self.0, buffer.as_mut_ptr() as *mut libc::c_void, size)
+        })
+        .map(|r| r as usize);
+        match res {
+            Ok(x) if x == size => Ok(Some(unsafe { buffer.assume_init() })),
             Ok(_) => unreachable!("partial read on signalfd"),
-            Err(Error::Sys(Errno::EAGAIN)) => Ok(None),
-            Err(error) => Err(error)
+            Err(Errno::EAGAIN) => Ok(None),
+            Err(error) => Err(error),
         }
     }
 }
 
 impl Drop for SignalFd {
     fn drop(&mut self) {
-        let _ = unistd::close(self.0);
+        let e = unistd::close(self.0);
+        if !std::thread::panicking() && e == Err(Errno::EBADF) {
+            panic!("Closing an invalid file descriptor!");
+        };
     }
 }
 
@@ -132,37 +143,31 @@ impl Iterator for SignalFd {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::mem;
-    use libc;
-
-
-    #[test]
-    fn check_siginfo_size() {
-        assert_eq!(mem::size_of::<libc::signalfd_siginfo>(), SIGNALFD_SIGINFO_SIZE);
-    }
 
     #[test]
     fn create_signalfd() {
         let mask = SigSet::empty();
-        let fd = SignalFd::new(&mask);
-        assert!(fd.is_ok());
+        SignalFd::new(&mask).unwrap();
     }
 
     #[test]
     fn create_signalfd_with_opts() {
         let mask = SigSet::empty();
-        let fd = SignalFd::with_flags(&mask, SfdFlags::SFD_CLOEXEC | SfdFlags::SFD_NONBLOCK);
-        assert!(fd.is_ok());
+        SignalFd::with_flags(
+            &mask,
+            SfdFlags::SFD_CLOEXEC | SfdFlags::SFD_NONBLOCK,
+        )
+        .unwrap();
     }
 
     #[test]
     fn read_empty_signalfd() {
         let mask = SigSet::empty();
-        let mut fd = SignalFd::with_flags(&mask, SfdFlags::SFD_NONBLOCK).unwrap();
+        let mut fd =
+            SignalFd::with_flags(&mask, SfdFlags::SFD_NONBLOCK).unwrap();
 
         let res = fd.read_signal();
         assert!(res.unwrap().is_none());

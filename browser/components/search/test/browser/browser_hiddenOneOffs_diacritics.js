@@ -7,14 +7,14 @@ const searchPopup = document.getElementById("PopupSearchAutoComplete");
 
 const diacritic_engine = "Foo \u2661";
 
-var Preferences = ChromeUtils.import(
-  "resource://gre/modules/Preferences.jsm",
-  {}
-).Preferences;
+var { Preferences } = ChromeUtils.importESModule(
+  "resource://gre/modules/Preferences.sys.mjs"
+);
 
 let searchIcon;
+let engine;
 
-add_task(async function init() {
+add_setup(async function () {
   let searchbar = await gCUITestUtils.addSearchBar();
   registerCleanupFunction(() => {
     gCUITestUtils.removeSearchBar();
@@ -22,17 +22,20 @@ add_task(async function init() {
   searchIcon = searchbar.querySelector(".searchbar-search-button");
 
   let defaultEngine = await Services.search.getDefault();
-  await SearchTestUtils.promiseNewSearchEngine(
-    getRootDirectory(gTestPath) + "testEngine_diacritics.xml"
-  );
+  engine = await SearchTestUtils.promiseNewSearchEngine({
+    url: getRootDirectory(gTestPath) + "testEngine_diacritics.xml",
+  });
   registerCleanupFunction(async () => {
-    await Services.search.setDefault(defaultEngine);
-    Services.prefs.clearUserPref("browser.search.hiddenOneOffs");
+    await Services.search.setDefault(
+      defaultEngine,
+      Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+    );
+    engine.hideOneOffButton = false;
   });
 });
 
 add_task(async function test_hidden() {
-  Preferences.set("browser.search.hiddenOneOffs", diacritic_engine);
+  engine.hideOneOffButton = true;
 
   let promise = promiseEvent(searchPopup, "popupshown");
   info("Opening search panel");
@@ -51,7 +54,7 @@ add_task(async function test_hidden() {
 });
 
 add_task(async function test_shown() {
-  Preferences.set("browser.search.hiddenOneOffs", "");
+  engine.hideOneOffButton = false;
 
   let oneOffsContainer = searchPopup.searchOneOffsContainer;
   let shownPromise = promiseEvent(searchPopup, "popupshown");

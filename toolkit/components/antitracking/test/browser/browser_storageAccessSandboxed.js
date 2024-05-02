@@ -1,5 +1,7 @@
-/* import-globals-from antitracking_head.js */
 /* import-globals-from storageAccessAPIHelpers.js */
+
+const APS_PREF =
+  "privacy.partition.always_partition_third_party_non_cookie_storage";
 
 AntiTracking.runTest(
   "Storage Access API called in a sandboxed iframe",
@@ -24,7 +26,10 @@ AntiTracking.runTest(
       );
     });
   },
-  [["dom.storage_access.enabled", true]], // extra prefs
+  [
+    ["dom.storage_access.enabled", true],
+    [APS_PREF, false],
+  ], // extra prefs
   false, // no window open test
   false, // no user-interaction test
   0, // no blocking notifications
@@ -65,6 +70,7 @@ AntiTracking.runTest(
     ["dom.serviceWorkers.exemptFromPerDomainMax", true],
     ["dom.serviceWorkers.enabled", true],
     ["dom.serviceWorkers.testing.enabled", true],
+    [APS_PREF, false],
   ], // extra prefs
   false, // no window open test
   false, // no user-interaction test
@@ -87,7 +93,10 @@ AntiTracking.runTest(
 
   null, // non-blocking callback
   null, // cleanup function
-  [["dom.storage_access.enabled", true]], // extra prefs
+  [
+    ["dom.storage_access.enabled", true],
+    [APS_PREF, false],
+  ], // extra prefs
   false, // no window open test
   false, // no user-interaction test
   Ci.nsIWebProgressListener.STATE_COOKIES_BLOCKED_TRACKER, // expect blocking notifications
@@ -112,7 +121,10 @@ AntiTracking.runTest(
 
   null, // non-blocking callback
   null, // cleanup function
-  [["dom.storage_access.enabled", true]], // extra prefs
+  [
+    ["dom.storage_access.enabled", true],
+    [APS_PREF, false],
+  ], // extra prefs
   false, // no window open test
   false, // no user-interaction test
   Ci.nsIWebProgressListener.STATE_COOKIES_BLOCKED_TRACKER, // expect blocking notifications
@@ -126,6 +138,9 @@ AntiTracking.runTest(
     " saved permission",
   // blocking callback
   async _ => {
+    await noStorageAccessInitially();
+    SpecialPowers.wrap(document).notifyUserGestureActivation();
+    await document.requestStorageAccess();
     await hasStorageAccessInitially();
 
     localStorage.foo = 42;
@@ -134,10 +149,13 @@ AntiTracking.runTest(
 
   null, // non-blocking callback
   null, // cleanup function
-  [["dom.storage_access.enabled", true]], // extra prefs
+  [
+    ["dom.storage_access.enabled", true],
+    [APS_PREF, false],
+  ], // extra prefs
   false, // no window open test
   false, // no user-interaction test
-  0, // no blocking notifications
+  Ci.nsIWebProgressListener.STATE_COOKIES_BLOCKED_TRACKER, // expect blocking notifications
   false, // run in normal window
   "allow-scripts allow-same-origin allow-popups allow-storage-access-by-user-activation"
 );
@@ -159,7 +177,10 @@ AntiTracking.runTest(
 
   null, // non-blocking callback
   null, // cleanup function
-  [["dom.storage_access.enabled", true]], // extra prefs
+  [
+    ["dom.storage_access.enabled", true],
+    [APS_PREF, false],
+  ], // extra prefs
   false, // no window open test
   false, // no user-interaction test
   Ci.nsIWebProgressListener.STATE_COOKIES_BLOCKED_TRACKER, // expect blocking notifications
@@ -171,6 +192,10 @@ AntiTracking.runTest(
   "Verify that non-sandboxed contexts get the saved permission",
   // blocking callback
   async _ => {
+    await noStorageAccessInitially();
+    // We request storage access because the permission itself does not cause storage access to be used
+    SpecialPowers.wrap(document).notifyUserGestureActivation();
+    await document.requestStorageAccess();
     await hasStorageAccessInitially();
 
     localStorage.foo = 42;
@@ -186,8 +211,48 @@ AntiTracking.runTest(
       );
     });
   },
-  [["dom.storage_access.enabled", true]], // extra prefs
+  [
+    ["dom.storage_access.enabled", true],
+    [APS_PREF, false],
+  ], // extra prefs
   false, // no window open test
   false, // no user-interaction test
-  0 // no blocking notifications
+  Ci.nsIWebProgressListener.STATE_COOKIES_BLOCKED_TRACKER // expect blocking notifications- the document is initially loaded without storage access
+);
+
+AntiTracking.runTest(
+  "Storage Access API called in a Permission Policy controlled iframe",
+  // blocking callback
+  async _ => {
+    let [threw, rejected] = await callRequestStorageAccess();
+    ok(!threw, "requestStorageAccess should not throw");
+    ok(rejected, "requestStorageAccess shouldn't be available");
+  },
+
+  null, // non-blocking callback
+  // cleanup function
+  async _ => {
+    // Only clear the user-interaction permissions for the tracker here so that
+    // the next test has a clean slate.
+    await new Promise(resolve => {
+      Services.clearData.deleteDataFromHost(
+        Services.io.newURI(TEST_3RD_PARTY_DOMAIN).host,
+        true,
+        Ci.nsIClearDataService.CLEAR_PERMISSIONS,
+        value => resolve()
+      );
+    });
+  },
+  [
+    ["dom.storage_access.enabled", true],
+    [APS_PREF, false],
+  ], // extra prefs
+  false, // no window open test
+  false, // no user-interaction test
+  Ci.nsIWebProgressListener.STATE_COOKIES_BLOCKED_TRACKER, // expected blocking notifications
+  false, // run in normal window
+  null,
+  null,
+  null,
+  "storage-access ()" // Disable the storage-access feature
 );

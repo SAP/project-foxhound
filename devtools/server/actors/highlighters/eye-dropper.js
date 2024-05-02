@@ -8,20 +8,16 @@
 // It basically displays a magnifier that tracks mouse moves and shows a magnified version
 // of the page. On click, it samples the color at the pixel being hovered.
 
-const { Ci, Cc } = require("chrome");
 const {
   CanvasFrameAnonymousContentHelper,
-} = require("devtools/server/actors/highlighters/utils/markup");
-const Services = require("Services");
-const EventEmitter = require("devtools/shared/event-emitter");
-const {
-  rgbToHsl,
-  rgbToColorName,
-} = require("devtools/shared/css/color").colorUtils;
+} = require("resource://devtools/server/actors/highlighters/utils/markup.js");
+const EventEmitter = require("resource://devtools/shared/event-emitter.js");
+const { rgbToHsl } =
+  require("resource://devtools/shared/css/color.js").colorUtils;
 const {
   getCurrentZoom,
   getFrameOffsets,
-} = require("devtools/shared/layout/utils");
+} = require("resource://devtools/shared/layout/utils.js");
 
 loader.lazyGetter(this, "clipboardHelper", () =>
   Cc["@mozilla.org/widget/clipboardhelper;1"].getService(Ci.nsIClipboardHelper)
@@ -590,7 +586,7 @@ function toColorString(rgb, format) {
       const [h, s, l] = rgbToHsl(rgb);
       return "hsl(" + h + ", " + s + "%, " + l + "%)";
     case "name":
-      const str = rgbToColorName(r, g, b) || hexString(rgb);
+      const str = InspectorUtils.rgbToColorName(r, g, b) || hexString(rgb);
       return str;
     default:
       return hexString(rgb);

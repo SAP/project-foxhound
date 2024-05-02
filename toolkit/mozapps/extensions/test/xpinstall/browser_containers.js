@@ -4,8 +4,8 @@
 
 "use strict";
 
-const { AddonTestUtils } = ChromeUtils.import(
-  "resource://testing-common/AddonTestUtils.jsm"
+const { AddonTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/AddonTestUtils.sys.mjs"
 );
 
 AddonTestUtils.initMochitest(this);
@@ -35,6 +35,9 @@ function check_channel(subject) {
 // ----------------------------------------------------------------------------
 // Tests we send the right cookies when installing through an InstallTrigger call
 function test() {
+  // This test depends on InstallTrigger.install availability.
+  setInstallTriggerPrefs();
+
   Harness.installConfirmCallback = confirm_install;
   Harness.installEndedCallback = install_ended;
   Harness.installsCompletedCallback = finish_test;
@@ -63,7 +66,7 @@ function test() {
     userContextId: MY_CONTEXT,
   });
   Services.obs.addObserver(check_channel, "http-on-before-connect");
-  BrowserTestUtils.loadURI(
+  BrowserTestUtils.startLoadingURIString(
     gBrowser,
     TESTROOT + "installtrigger.html?" + triggers
   );
@@ -83,7 +86,7 @@ function install_ended(install, addon) {
   return addon.uninstall();
 }
 
-const finish_test = async function(count) {
+const finish_test = async function (count) {
   ok(
     gDidSeeChannel,
     "Should have seen the request for the XPI and verified it was sent the right way."

@@ -4,7 +4,10 @@
 
 // Test that IDB transactions are not processed at microtask checkpoints
 // introduced by debugger hooks.
-add_task(async function() {
+
+"use strict";
+
+add_task(async function () {
   const dbg = await initDebugger("doc-idb-run-to-completion.html");
   invokeInTab("test", "doc-xhr-run-to-completion.html");
   await waitForPaused(dbg);

@@ -106,9 +106,15 @@ return `undefined`.)
 called `new WebAssembly.Module` with the string `"> wasm"` appended.
 
 ### `startLine`
-**If the instance refers to JavaScript source**, the start line of the
+**If the instance refers to JavaScript source**, the 1-origin start line of the
 source within the file or URL it was loaded from. This is normally `1`, but
 may have another value if the source is part of an HTML document.
+
+### `startColumn`
+**If the instance refers to JavaScript source**, the 0-origin start column in
+UTF-16 code units of the source within the file or URL it was loaded from. This
+is normally `0`, but may have another value if the source is part of an HTML
+document.
 
 ### `id`
 **If the instance refers to JavaScript source**, an int32 counter that identifies
@@ -176,12 +182,17 @@ one of the following values:
 
 * `"eval"`, for code passed to `eval`.
 
+* `"debugger eval"`, for code evaluated by debugger.
+
 * `"Function"`, for code passed to the `Function` constructor.
 
-* `"Function.prototype"`, for `Function.prototype` internally generated code.
+* `"GeneratorFunction"`, for code passed to the generator constructor.
 
-* `"Worker"`, for code loaded by calling the Web worker constructor—the
-  worker's main script.
+* `"AsyncFunction"`, for code passed to the async function constructor.
+
+* `"AsyncGenerator"`, for code passed to the async generator constructor.
+
+* `"Worklet"`, for code loaded by worklet.
 
 * `"importScripts"`, for code by calling `importScripts` in a web worker.
 
@@ -206,6 +217,8 @@ one of the following values:
 * `"javascriptURL"`, for code presented in `javascript:` URLs.
 
 * `"domTimer"`, for code passed to `setTimeout`/`setInterval` as a string.
+
+* `"self-hosted"`, for internal self-hosted JS code.
 
 * `undefined`, if the implementation doesn't know how the code was
   introduced.

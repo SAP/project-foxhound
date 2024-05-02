@@ -6,13 +6,13 @@ package org.mozilla.geckoview;
 
 import androidx.annotation.AnyThread;
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.util.LinkedList;
 import org.mozilla.gecko.annotation.WrapForJNI;
 import org.mozilla.gecko.mozglue.JNIObject;
-import org.mozilla.gecko.util.ThreadUtils;
 
 /**
  * This class provides an {@link InputStream} wrapper for a Gecko nsIChannel (or really,
@@ -37,7 +37,7 @@ import org.mozilla.gecko.util.ThreadUtils;
    *
    * @param support An instance of {@link Support}, used for native callbacks.
    */
-  private GeckoInputStream(final @NonNull Support support) {
+  /* package */ GeckoInputStream(final @Nullable Support support) {
     mSupport = support;
   }
 
@@ -112,7 +112,9 @@ import org.mozilla.gecko.util.ThreadUtils;
       // The underlying channel is suspended, so resume that before
       // waiting for a buffer.
       if (!mResumed) {
-        mSupport.resume();
+        if (mSupport != null) {
+          mSupport.resume();
+        }
         mResumed = true;
       }
 
@@ -167,14 +169,34 @@ import org.mozilla.gecko.util.ThreadUtils;
   }
 
   /**
+   * Called by native code to indicate that there was an issue during appending data to the stream.
+   * The writing stream should still report EoF. Setting this error during writing will cause an
+   * IOException if readers try to read from the stream.
+   */
+  @WrapForJNI(calledFrom = "gecko")
+  public synchronized void writeError() {
+    mHaveError = true;
+    notifyAll();
+  }
+
+  /**
+   * Called by native code to check if the stream is open.
+   *
+   * @return true if the stream is closed
+   */
+  @WrapForJNI(calledFrom = "gecko")
+  /* package */ synchronized boolean isStreamClosed() {
+    return mClosed || mEOF;
+  }
+
+  /**
    * Called by native code to provide data for this stream.
    *
    * @param buf the bytes
    * @throws IOException
    */
   @WrapForJNI(exceptionMode = "nsresult", calledFrom = "gecko")
-  private synchronized void appendBuffer(final byte[] buf) throws IOException {
-    ThreadUtils.assertOnGeckoThread();
+  /* package */ synchronized void appendBuffer(final byte[] buf) throws IOException {
 
     if (mClosed) {
       throw new IllegalStateException("Stream is closed");

@@ -133,8 +133,7 @@ static CellISizeInfo GetISizeInfo(gfxContext* aRenderingContext,
     // This is kept up-to-date with dynamic changes to nowrap by code in
     // nsTableCellFrame::AttributeChanged
     if (aIsCell && c > minCoord && isQuirks &&
-        aFrame->GetContent()->AsElement()->HasAttr(kNameSpaceID_None,
-                                                   nsGkAtoms::nowrap)) {
+        aFrame->GetContent()->AsElement()->HasAttr(nsGkAtoms::nowrap)) {
       minCoord = c;
     }
     prefCoord = std::max(c, minCoord);
@@ -603,23 +602,6 @@ void BasicTableLayoutStrategy::DistributePctISizeToColumns(float aSpanPrefPct,
   }
 }
 
-#ifdef DEBUG
-// Bypass some assertions for tables inside XUL which we're realistically not
-// going to investigate unless they cause havoc. Thunderbird hits these very
-// often.
-static bool IsCloseToXULBox(nsTableFrame* aTableFrame) {
-  // NOTE: GetParent() is guaranteed to be the table wrapper (thus non-null).
-  nsIFrame* f = aTableFrame->GetParent()->GetParent();
-  for (size_t i = 0; f && i < 2; ++i) {
-    if (f->IsXULBoxFrame()) {
-      return true;
-    }
-    f = f->GetParent();
-  }
-  return false;
-}
-#endif
-
 void BasicTableLayoutStrategy::DistributeISizeToColumns(
     nscoord aISize, int32_t aFirstCol, int32_t aColCount,
     BtlsISizeType aISizeType, bool aSpanHasSpecifiedISize) {
@@ -776,8 +758,7 @@ void BasicTableLayoutStrategy::DistributeISizeToColumns(
       // Return early -- we don't have any extra space to distribute.
       return;
     }
-    NS_ASSERTION(!(aISizeType == BTLS_FINAL_ISIZE && aISize < guess_min) ||
-                     IsCloseToXULBox(mTableFrame),
+    NS_ASSERTION(!(aISizeType == BTLS_FINAL_ISIZE && aISize < guess_min),
                  "Table inline-size is less than the "
                  "sum of its columns' min inline-sizes");
     if (aISize < guess_min_pct) {
@@ -868,7 +849,8 @@ void BasicTableLayoutStrategy::DistributeISizeToColumns(
             col_iSize = col_iSize_before_adjust = col_min;
             if (pref_minus_min != 0) {
               float c = float(space) / float(basis.c);
-              basis.c -= pref_minus_min;
+              basis.c = NSCoordSaturatingSubtract(basis.c, pref_minus_min,
+                                                  nscoord_MAX);
               col_iSize = NSCoordSaturatingAdd(
                   col_iSize, NSToCoordRound(float(pref_minus_min) * c));
             }
@@ -919,7 +901,8 @@ void BasicTableLayoutStrategy::DistributeISizeToColumns(
               col_iSize = nscoord_MAX;
             } else {
               float c = float(space) / float(basis.c);
-              basis.c -= col_iSize;
+              basis.c =
+                  NSCoordSaturatingSubtract(basis.c, col_iSize, nscoord_MAX);
               col_iSize = NSCoordSaturatingAdd(
                   col_iSize, NSToCoordRound(float(col_iSize) * c));
             }
@@ -947,7 +930,8 @@ void BasicTableLayoutStrategy::DistributeISizeToColumns(
               "wrong case");
           if (col_iSize != 0) {
             float c = float(space) / float(basis.c);
-            basis.c -= col_iSize;
+            basis.c =
+                NSCoordSaturatingSubtract(basis.c, col_iSize, nscoord_MAX);
             col_iSize = NSCoordSaturatingAdd(
                 col_iSize, NSToCoordRound(float(col_iSize) * c));
           }
@@ -1007,13 +991,9 @@ void BasicTableLayoutStrategy::DistributeISizeToColumns(
       } break;
     }
   }
-#ifdef DEBUG
-  if (!IsCloseToXULBox(mTableFrame)) {
-    NS_ASSERTION((space == 0 || space == nscoord_MAX) &&
-                     ((l2t == FLEX_PCT_LARGE)
-                          ? (-0.001f < basis.f && basis.f < 0.001f)
-                          : (basis.c == 0 || basis.c == nscoord_MAX)),
-                 "didn't subtract all that we added");
-  }
-#endif
+  NS_ASSERTION(
+      (space == 0 || space == nscoord_MAX) &&
+          ((l2t == FLEX_PCT_LARGE) ? (-0.001f < basis.f && basis.f < 0.001f)
+                                   : (basis.c == 0 || basis.c == nscoord_MAX)),
+      "didn't subtract all that we added");
 }

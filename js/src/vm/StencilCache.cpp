@@ -6,10 +6,9 @@
 
 #include "vm/StencilCache.h"
 
-#include "frontend/CompilationStencil.h"  // frontend::ExtensibleCompilationStencil
-                                          // frontend::CompilationStencil
-
-#include "vm/JSContext.h"  // JSContext
+#include "frontend/CompilationStencil.h"
+#include "js/experimental/JSStencil.h"
+#include "vm/MutexIDs.h"
 
 js::StencilCache::StencilCache()
     : cache(js::mutexid::StencilCache), enabled(false) {}
@@ -66,3 +65,5 @@ void js::StencilCache::clearAndDisable() {
   guard->watched.clearAndCompact();
   enabled = false;
 }
+
+/* static */ js::DelazificationCache js::DelazificationCache::singleton;

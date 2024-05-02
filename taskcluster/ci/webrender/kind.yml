@@ -26,17 +26,22 @@ job-defaults:
             RUSTFLAGS: '--deny warnings'
     run:
         sparse-profile: webrender
+    use-system-python: false
 
 jobs:
     lint-tidy:
         description: Runs linting checks on WebRender code
-        worker-type: b-linux
+        worker-type: b-linux-gcp
         worker:
             docker-image: {in-tree: webrender}
         run:
             using: run-task
             cwd: '{checkout}/gfx/wr'
             command: >-
+                pushd /tmp &&
+                python3 -m pip install six &&
+                python3 -m pip install -e 'git+https://github.com/servo/servo.git@65a4d1646da46c37fe748add6dcf24b62ebb602a#egg=servo_tidy&subdirectory=python/tidy' &&
+                popd &&
                 servo-tidy
         treeherder:
             platform: linux64-qr/opt
@@ -47,7 +52,7 @@ jobs:
 
     linux64-release:
         description: Runs release-mode WebRender CI tests on a Linux worker
-        worker-type: b-linux
+        worker-type: b-linux-gcp
         worker:
             docker-image: {in-tree: webrender}
         fetches:
@@ -71,7 +76,7 @@ jobs:
 
     linux64-debug:
         description: Runs debug-mode WebRender CI tests on a Linux worker
-        worker-type: b-linux
+        worker-type: b-linux-gcp
         worker:
             docker-image: {in-tree: webrender}
         fetches:
@@ -95,7 +100,7 @@ jobs:
 
     wrench-macos-build:
         description: Cross compilation of wrench for macOS on Linux
-        worker-type: b-linux
+        worker-type: b-linux-gcp
         worker:
             docker-image: {in-tree: webrender}
             chain-of-trust: true
@@ -107,15 +112,14 @@ jobs:
                   name: public/build/wrench-macos-headless.tar.bz2
                   path: /builds/worker/artifacts/wrench-macos-headless.tar.bz2
         dependencies:
-            macosx64-clang-13: toolchain-macosx64-clang-13
+            macosx64-clang-14: toolchain-macosx64-clang-14-raw
         fetches:
             toolchain:
                 - linux64-rust-macos
-                - linux64-cctools-port
-                - linux64-clang-13-macosx-cross
-                - macosx64-sdk-10.12
+                - linux64-clang-14
+                - macosx64-sdk
                 - wrench-deps
-            macosx64-clang-13:
+            macosx64-clang-14:
                 - artifact: clang.tar.zst
                   dest: clang-mac
         run:
@@ -160,7 +164,7 @@ jobs:
 
     cargotest-macos-build:
         description: Cross compilation of cargo tests for macOS on Linux
-        worker-type: b-linux
+        worker-type: b-linux-gcp
         worker:
             docker-image: {in-tree: webrender}
             chain-of-trust: true
@@ -171,9 +175,8 @@ jobs:
         fetches:
             toolchain:
                 - linux64-rust-macos
-                - linux64-cctools-port
                 - linux64-clang
-                - macosx64-sdk-10.12
+                - macosx64-sdk
                 - wrench-deps
         run:
             using: run-task
@@ -215,48 +218,50 @@ jobs:
 
     windows:
         description: Runs WebRender CI tests on a Windows worker
-        worker-type: win10-64-2004-ssd
+        worker-type: win11-64-2009-source
         worker:
             max-run-time: 5400
             env:
-                TOOLTOOL_MANIFEST: 'browser/config/tooltool-manifests/vs2017-15.9.manifest'
                 NODE_OPTIONS: '--max_old_space_size=4096'
         fetches:
             toolchain:
                 - win64-rust
+                - vs
                 - wrench-deps
         run:
             using: run-task
             use-caches: false
             command: '$GECKO_PATH/taskcluster/scripts/misc/wrench-windows-tests.sh'
-            tooltool-downloads: internal
         treeherder:
-            platform: windows10-64-2004-qr/release
+            platform: windows11-64-2009-qr/release
             symbol: WR(wrench)
         when:
             files-changed:
-                - 'build/win64/mozconfig.vs2017'
-                - 'browser/config/tooltool-manifests/win64/webrender.manifest'
+                - 'build/win64/mozconfig.vs2019'
                 - 'gfx/wr/**'
-                - 'taskcluster/scripts/misc/tooltool-download.sh'
                 - 'taskcluster/scripts/misc/wrench-windows-tests.sh'
 
     wrench-android-debug:
         description: Debug build of wrench for Android
-        worker-type: b-linux
+        attributes:
+            build_platform: android
+        worker-type: b-linux-gcp
         worker:
             max-run-time: 5400
             docker-image: {in-tree: webrender}
             artifacts:
                 - type: file
                   name: public/build/wrench-debug.apk
-                  path: /builds/worker/checkouts/gecko/gfx/wr/target/android-artifacts/debug/apk/wrench.apk
+                  path: /builds/worker/checkouts/gecko/gfx/wr/target/debug/apk/wrench.apk
                 - type: file
                   name: public/build/reftests.tar.gz
                   path: /builds/worker/checkouts/gecko/gfx/wr/wrench/reftests.tar.gz
                 - type: file
                   name: public/build/mozdevice.tar.gz
                   path: /builds/worker/checkouts/gecko/testing/mozbase/mozdevice.tar.gz
+                - type: file
+                  name: public/build/six.tar.gz
+                  path: /builds/worker/checkouts/gecko/third_party/python/six.tar.gz
         run:
             using: run-task
             cwd: '{checkout}/gfx/wr/wrench'
@@ -264,7 +269,9 @@ jobs:
                 $GECKO_PATH/taskcluster/scripts/misc/wrench-android-build.sh debug &&
                 tar czf reftests.tar.gz reftests/ &&
                 cd $GECKO_PATH/testing/mozbase &&
-                tar czf mozdevice.tar.gz mozdevice/
+                tar czf mozdevice.tar.gz mozdevice/ &&
+                cd $GECKO_PATH/third_party/python &&
+                tar czf six.tar.gz six/
         fetches:
             toolchain:
                 - android-gradle-dependencies
@@ -286,20 +293,25 @@ jobs:
 
     wrench-android-release:
         description: Release build of wrench for Android
-        worker-type: b-linux
+        attributes:
+            build_platform: android
+        worker-type: b-linux-gcp
         worker:
             max-run-time: 5400
             docker-image: {in-tree: webrender}
             artifacts:
                 - type: file
                   name: public/build/wrench-release.apk
-                  path: /builds/worker/checkouts/gecko/gfx/wr/target/android-artifacts/release/apk/wrench.apk
+                  path: /builds/worker/checkouts/gecko/gfx/wr/target/release/apk/wrench.apk
                 - type: file
                   name: public/build/reftests.tar.gz
                   path: /builds/worker/checkouts/gecko/gfx/wr/wrench/reftests.tar.gz
                 - type: file
                   name: public/build/mozdevice.tar.gz
                   path: /builds/worker/checkouts/gecko/testing/mozbase/mozdevice.tar.gz
+                - type: file
+                  name: public/build/six.tar.gz
+                  path: /builds/worker/checkouts/gecko/third_party/python/six.tar.gz
         run:
             using: run-task
             cwd: '{checkout}/gfx/wr/wrench'
@@ -307,7 +319,9 @@ jobs:
                 $GECKO_PATH/taskcluster/scripts/misc/wrench-android-build.sh release &&
                 tar czf reftests.tar.gz reftests/ &&
                 cd $GECKO_PATH/testing/mozbase &&
-                tar czf mozdevice.tar.gz mozdevice/
+                tar czf mozdevice.tar.gz mozdevice/ &&
+                cd $GECKO_PATH/third_party/python &&
+                tar czf six.tar.gz six/
         fetches:
             toolchain:
                 - android-gradle-dependencies
@@ -329,7 +343,9 @@ jobs:
 
     android-emulator-debug:
         description: Run debug wrench reftests on Android emulator
-        worker-type: t-linux-metal  # privileged:true doesn't work on b-linux
+        attributes:
+            build_platform: android
+        worker-type: t-linux-kvm  # privileged:true doesn't work on b-linux
         worker:
             max-run-time: 5400
             docker-image: {in-tree: ubuntu1804-test}
@@ -349,7 +365,8 @@ jobs:
             webrender-wrench-android-debug: webrender-wrench-android-debug
         fetches:
             webrender-wrench-android-debug:
-                - 'wrench-debug.apk'
+                - artifact: 'wrench-debug.apk'
+                  extract: false
             toolchain:
                 - android-sdk-linux
                 - android-system-image-x86_64-linux
@@ -374,7 +391,9 @@ jobs:
 
     android-emulator-release:
         description: Run release wrench reftests on Android emulator
-        worker-type: t-linux-metal  # privileged:true doesn't work on b-linux
+        attributes:
+            build_platform: android
+        worker-type: t-linux-kvm  # privileged:true doesn't work on b-linux
         worker:
             max-run-time: 5400
             docker-image: {in-tree: ubuntu1804-test}
@@ -394,7 +413,8 @@ jobs:
             webrender-wrench-android-release: webrender-wrench-android-release
         fetches:
             webrender-wrench-android-release:
-                - 'wrench-release.apk'
+                - artifact: 'wrench-release.apk'
+                  extract: false
             toolchain:
                 - android-sdk-linux
                 - android-system-image-x86_64-linux
@@ -417,9 +437,11 @@ jobs:
                 - 'testing/mozharness/scripts/android_*.py'
                 - 'testing/mozharness/configs/android/*.py'
 
-    android-hw-p2-debug:
-        description: Run debug wrench reftests on Android Pixel2
-        worker-type: t-bitbar-gw-unit-p2
+    android-hw-p5-debug:
+        description: Run debug wrench reftests on Android Pixel5
+        attributes:
+            build_platform: android
+        worker-type: t-bitbar-gw-unit-p5
         worker:
             max-run-time: 5400
             artifacts:
@@ -430,14 +452,17 @@ jobs:
                 MOZHARNESS_SCRIPT: android_wrench.py
                 MOZHARNESS_CONFIG: android/wrench.py
                 MOZ_FETCHES_DIR: fetches
+                PYTHONPATH: "fetches/mozdevice:fetches/six"
         dependencies:
             webrender-wrench-android-debug: webrender-wrench-android-debug
-            android-build: build-android-aarch64/debug
+            android-build: build-android-arm/debug
         fetches:
             webrender-wrench-android-debug:
-                - 'wrench-debug.apk'
+                - artifact: 'wrench-debug.apk'
+                  extract: false
                 - 'reftests.tar.gz'
                 - 'mozdevice.tar.gz'
+                - 'six.tar.gz'
             android-build:
                 - artifact: 'mozharness.zip'
                   dest: 'mozharness'
@@ -449,10 +474,9 @@ jobs:
                 export WRENCH_APK=$MOZ_FETCHES_DIR/wrench-debug.apk &&
                 export WRENCH_REFTESTS=$MOZ_FETCHES_DIR/reftests &&
                 export MOZHARNESS_PATH=$MOZ_FETCHES_DIR/mozharness &&
-                export PYTHONPATH=$MOZ_FETCHES_DIR/mozdevice:$PYTHONPATH &&
                 python3 ${MOZHARNESS_PATH}/scripts/${MOZHARNESS_SCRIPT} --config-file ${MOZHARNESS_PATH}/configs/${MOZHARNESS_CONFIG}
         treeherder:
-            platform: android-hw-p2-8-0-arm7/debug
+            platform: android-hw-p5-13-0-arm7/debug
             symbol: WR(wrench)
         when:
             files-changed:
@@ -461,9 +485,11 @@ jobs:
                 - 'testing/mozharness/configs/android/*.py'
                 - 'testing/mozbase/mozdevice/**'
 
-    android-hw-p2-opt:
-        description: Run opt wrench reftests on Android Pixel2
-        worker-type: t-bitbar-gw-unit-p2
+    android-hw-p5-opt:
+        description: Run opt wrench reftests on Android Pixel5
+        attributes:
+            build_platform: android
+        worker-type: t-bitbar-gw-unit-p5
         worker:
             max-run-time: 5400
             artifacts:
@@ -474,14 +500,17 @@ jobs:
                 MOZHARNESS_SCRIPT: android_wrench.py
                 MOZHARNESS_CONFIG: android/wrench.py
                 MOZ_FETCHES_DIR: fetches
+                PYTHONPATH: "fetches/mozdevice:fetches/six"
         dependencies:
             webrender-wrench-android-release: webrender-wrench-android-release
-            android-build: build-android-aarch64-shippable/opt
+            android-build: build-android-arm/opt
         fetches:
             webrender-wrench-android-release:
-                - 'wrench-release.apk'
+                - artifact: 'wrench-release.apk'
+                  extract: false
                 - 'reftests.tar.gz'
                 - 'mozdevice.tar.gz'
+                - 'six.tar.gz'
             android-build:
                 - artifact: 'mozharness.zip'
                   dest: 'mozharness'
@@ -493,10 +522,105 @@ jobs:
                 export WRENCH_APK=$MOZ_FETCHES_DIR/wrench-release.apk &&
                 export WRENCH_REFTESTS=$MOZ_FETCHES_DIR/reftests &&
                 export MOZHARNESS_PATH=$MOZ_FETCHES_DIR/mozharness &&
-                export PYTHONPATH=$MOZ_FETCHES_DIR/mozdevice:$PYTHONPATH &&
                 python3 ${MOZHARNESS_PATH}/scripts/${MOZHARNESS_SCRIPT} --config-file ${MOZHARNESS_PATH}/configs/${MOZHARNESS_CONFIG}
         treeherder:
-            platform: android-hw-p2-8-0-arm7/opt
+            platform: android-hw-p5-13-0-arm7/opt
+            symbol: WR(wrench)
+        when:
+            files-changed:
+                - 'gfx/wr/**'
+                - 'testing/mozharness/scripts/android_*.py'
+                - 'testing/mozharness/configs/android/*.py'
+                - 'testing/mozbase/mozdevice/**'
+
+    android-hw-a51-debug:
+        description: Run debug wrench reftests on Android Samsung Galaxy A51
+        attributes:
+            build_platform: android
+        worker-type: t-bitbar-gw-perf-a51
+        worker:
+            max-run-time: 5400
+            artifacts:
+                - type: directory
+                  name: public/build/logs
+                  path: build/logs
+            env:
+                MOZHARNESS_SCRIPT: android_wrench.py
+                MOZHARNESS_CONFIG: android/wrench.py
+                MOZ_FETCHES_DIR: fetches
+                PYTHONPATH: "fetches/mozdevice:fetches/six"
+        dependencies:
+            webrender-wrench-android-debug: webrender-wrench-android-debug
+            android-build: build-android-arm/debug
+        fetches:
+            webrender-wrench-android-debug:
+                - artifact: 'wrench-debug.apk'
+                  extract: false
+                - 'reftests.tar.gz'
+                - 'mozdevice.tar.gz'
+                - 'six.tar.gz'
+            android-build:
+                - artifact: 'mozharness.zip'
+                  dest: 'mozharness'
+        run:
+            using: run-task
+            checkout: false
+            run-as-root: true
+            command: >-
+                export WRENCH_APK=$MOZ_FETCHES_DIR/wrench-debug.apk &&
+                export WRENCH_REFTESTS=$MOZ_FETCHES_DIR/reftests &&
+                export MOZHARNESS_PATH=$MOZ_FETCHES_DIR/mozharness &&
+                python3 ${MOZHARNESS_PATH}/scripts/${MOZHARNESS_SCRIPT} --config-file ${MOZHARNESS_PATH}/configs/${MOZHARNESS_CONFIG}
+        treeherder:
+            platform: android-hw-a51-11-0-arm7/debug
+            symbol: WR(wrench)
+        when:
+            files-changed:
+                - 'gfx/wr/**'
+                - 'testing/mozharness/scripts/android_*.py'
+                - 'testing/mozharness/configs/android/*.py'
+                - 'testing/mozbase/mozdevice/**'
+
+    android-hw-a51-opt:
+        description: Run opt wrench reftests on Android Samsung Galaxy A51
+        attributes:
+            build_platform: android
+        worker-type: t-bitbar-gw-perf-a51
+        worker:
+            max-run-time: 5400
+            artifacts:
+                - type: directory
+                  name: public/build/logs
+                  path: build/logs
+            env:
+                MOZHARNESS_SCRIPT: android_wrench.py
+                MOZHARNESS_CONFIG: android/wrench.py
+                MOZ_FETCHES_DIR: fetches
+                PYTHONPATH: "fetches/mozdevice:fetches/six"
+        dependencies:
+            webrender-wrench-android-release: webrender-wrench-android-release
+            android-build: build-android-arm/opt
+        fetches:
+            webrender-wrench-android-release:
+                - artifact: 'wrench-release.apk'
+                  extract: false
+                - 'reftests.tar.gz'
+                - 'mozdevice.tar.gz'
+                - 'six.tar.gz'
+            android-build:
+                - artifact: 'mozharness.zip'
+                  dest: 'mozharness'
+        run:
+            using: run-task
+            checkout: false
+            run-as-root: true
+            command: >-
+                export WRENCH_APK=$MOZ_FETCHES_DIR/wrench-release.apk &&
+                export WRENCH_REFTESTS=$MOZ_FETCHES_DIR/reftests &&
+                export MOZHARNESS_PATH=$MOZ_FETCHES_DIR/mozharness &&
+                python3 ${MOZHARNESS_PATH}/scripts/${MOZHARNESS_SCRIPT} --config-file ${MOZHARNESS_PATH}/configs/${MOZHARNESS_CONFIG}
+        treeherder:
+            platform: android-hw-a51-11-0-arm7/opt
             symbol: WR(wrench)
         when:
             files-changed:

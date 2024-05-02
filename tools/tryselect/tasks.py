@@ -10,15 +10,14 @@ import sys
 from collections import defaultdict
 
 import mozpack.path as mozpath
+import taskgraph
 from mach.util import get_state_dir
 from mozbuild.base import MozbuildObject
 from mozpack.files import FileFinder
-from moztest.resolve import TestResolver, TestManifestLoader, get_suite_definition
+from moztest.resolve import TestManifestLoader, TestResolver, get_suite_definition
+from taskgraph.generator import TaskGraphGenerator
 from taskgraph.parameters import ParameterMismatch, parameters_loader
-
-import gecko_taskgraph
-from gecko_taskgraph.generator import TaskGraphGenerator
-from gecko_taskgraph.taskgraph import TaskGraph
+from taskgraph.taskgraph import TaskGraph
 
 here = os.path.abspath(os.path.dirname(__file__))
 build = MozbuildObject.from_environment(cwd=here)
@@ -80,8 +79,25 @@ def generate_tasks(params=None, full=False, disable_target_task_filter=False):
         },
     )
     root = os.path.join(build.topsrcdir, "taskcluster", "ci")
-    gecko_taskgraph.fast = True
+    taskgraph.fast = True
     generator = TaskGraphGenerator(root_dir=root, parameters=params)
+
+    def add_chunk_patterns(tg):
+        for task_name, task in tg.tasks.items():
+            chunks = task.task.get("extra", {}).get("chunks", {})
+            if isinstance(chunks, int):
+                task.chunk_pattern = "{}-*/{}".format(
+                    "-".join(task_name.split("-")[:-1]), chunks
+                )
+            else:
+                assert isinstance(chunks, dict)
+                if chunks.get("total", 1) == 1:
+                    task.chunk_pattern = task_name
+                else:
+                    task.chunk_pattern = "{}-*".format(
+                        "-".join(task_name.split("-")[:-1])
+                    )
+        return tg
 
     cache_dir = os.path.join(
         get_state_dir(specific_to_topsrcdir=True), "cache", "taskgraph"
@@ -92,7 +108,7 @@ def generate_tasks(params=None, full=False, disable_target_task_filter=False):
     invalidate(cache)
     if os.path.isfile(cache):
         with open(cache) as fh:
-            return TaskGraph.from_json(json.load(fh))[1]
+            return add_chunk_patterns(TaskGraph.from_json(json.load(fh))[1])
 
     if not os.path.isdir(cache_dir):
         os.makedirs(cache_dir)
@@ -113,7 +129,7 @@ def generate_tasks(params=None, full=False, disable_target_task_filter=False):
         key = cache_key(attr, generator.parameters, disable_target_task_filter)
         with open(os.path.join(cache_dir, key), "w") as fh:
             json.dump(tg.to_json(), fh)
-        return tg
+        return add_chunk_patterns(tg)
 
     # Cache both full_task_set and target_task_set regardless of whether or not
     # --full was requested. Caching is cheap and can potentially save a lot of
@@ -153,7 +169,9 @@ def filter_tasks_by_paths(tasks, paths):
     def match_task(task):
         return any(re.search(pattern, task) for pattern in task_regexes)
 
-    return filter(match_task, tasks)
+    return {
+        task_name: task for task_name, task in tasks.items() if match_task(task_name)
+    }
 
 
 def resolve_tests_by_suite(paths):

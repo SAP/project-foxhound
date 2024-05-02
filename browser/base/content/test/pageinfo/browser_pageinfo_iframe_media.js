@@ -2,13 +2,14 @@
 
 const TEST_PATH = getRootDirectory(gTestPath).replace(
   "chrome://mochitests/content",
+  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
   "http://example.com"
 );
 
 add_task(async function test_all_images_mentioned() {
   await BrowserTestUtils.withNewTab(
     TEST_PATH + "iframes.html",
-    async function() {
+    async function () {
       let pageInfo = BrowserPageInfo(
         gBrowser.selectedBrowser.currentURI.spec,
         "mediaTab"

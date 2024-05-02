@@ -12,8 +12,8 @@ pub type blksize_t = i32;
 pub type nlink_t = u32;
 pub type fsblkcnt_t = ::c_ulong;
 pub type fsfilcnt_t = ::c_ulong;
-pub type rlim_t = ::c_ulong;
 pub type __u64 = ::c_ulonglong;
+pub type __s64 = ::c_longlong;
 pub type fsblkcnt64_t = u64;
 pub type fsfilcnt64_t = u64;
 
@@ -264,8 +264,6 @@ pub const __SIZEOF_PTHREAD_RWLOCK_T: usize = 32;
 pub const __SIZEOF_PTHREAD_RWLOCKATTR_T: usize = 8;
 pub const __SIZEOF_PTHREAD_BARRIER_T: usize = 20;
 pub const __SIZEOF_PTHREAD_BARRIERATTR_T: usize = 4;
-
-pub const RLIM_INFINITY: ::rlim_t = 0x7fffffff;
 
 pub const SYS_syscall: ::c_long = 4000 + 0;
 pub const SYS_exit: ::c_long = 4000 + 1;
@@ -625,7 +623,34 @@ pub const SYS_pwritev2: ::c_long = 4000 + 362;
 pub const SYS_pkey_mprotect: ::c_long = 4000 + 363;
 pub const SYS_pkey_alloc: ::c_long = 4000 + 364;
 pub const SYS_pkey_free: ::c_long = 4000 + 365;
+pub const SYS_statx: ::c_long = 4000 + 366;
+pub const SYS_pidfd_send_signal: ::c_long = 4000 + 424;
+pub const SYS_io_uring_setup: ::c_long = 4000 + 425;
+pub const SYS_io_uring_enter: ::c_long = 4000 + 426;
+pub const SYS_io_uring_register: ::c_long = 4000 + 427;
+pub const SYS_open_tree: ::c_long = 4000 + 428;
+pub const SYS_move_mount: ::c_long = 4000 + 429;
+pub const SYS_fsopen: ::c_long = 4000 + 430;
+pub const SYS_fsconfig: ::c_long = 4000 + 431;
+pub const SYS_fsmount: ::c_long = 4000 + 432;
+pub const SYS_fspick: ::c_long = 4000 + 433;
+pub const SYS_pidfd_open: ::c_long = 4000 + 434;
 pub const SYS_clone3: ::c_long = 4000 + 435;
+pub const SYS_close_range: ::c_long = 4000 + 436;
+pub const SYS_openat2: ::c_long = 4000 + 437;
+pub const SYS_pidfd_getfd: ::c_long = 4000 + 438;
+pub const SYS_faccessat2: ::c_long = 4000 + 439;
+pub const SYS_process_madvise: ::c_long = 4000 + 440;
+pub const SYS_epoll_pwait2: ::c_long = 4000 + 441;
+pub const SYS_mount_setattr: ::c_long = 4000 + 442;
+pub const SYS_quotactl_fd: ::c_long = 4000 + 443;
+pub const SYS_landlock_create_ruleset: ::c_long = 4000 + 444;
+pub const SYS_landlock_add_rule: ::c_long = 4000 + 445;
+pub const SYS_landlock_restrict_self: ::c_long = 4000 + 446;
+pub const SYS_memfd_secret: ::c_long = 4000 + 447;
+pub const SYS_process_mrelease: ::c_long = 4000 + 448;
+pub const SYS_futex_waitv: ::c_long = 4000 + 449;
+pub const SYS_set_mempolicy_home_node: ::c_long = 4000 + 450;
 
 #[link(name = "util")]
 extern "C" {
@@ -637,7 +662,6 @@ extern "C" {
         newp: *mut ::c_void,
         newlen: ::size_t,
     ) -> ::c_int;
-    pub fn ioctl(fd: ::c_int, request: ::c_ulong, ...) -> ::c_int;
     pub fn glob64(
         pattern: *const ::c_char,
         flags: ::c_int,

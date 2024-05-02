@@ -77,6 +77,10 @@ class MP3TrackDemuxer : public MediaTrackDemuxer,
       const media::TimeUnit& aTimeThreshold) override;
   int64_t GetResourceOffset() const override;
   media::TimeIntervals GetBuffered() override;
+  // Return the duration in frames of the encoder delay.
+  uint32_t EncoderDelayFrames() const;
+  // Return the duration  in frames of the padding.
+  uint32_t PaddingFrames() const;
 
  private:
   // Destructor.
@@ -117,7 +121,7 @@ class MP3TrackDemuxer : public MediaTrackDemuxer,
 
   // Reads aSize bytes into aBuffer from the source starting at aOffset.
   // Returns the actual size read.
-  int32_t Read(uint8_t* aBuffer, int64_t aOffset, int32_t aSize);
+  uint32_t Read(uint8_t* aBuffer, int64_t aOffset, uint32_t aSize);
 
   // Returns the average frame length derived from the previously parsed frames.
   double AverageFrameLength() const;
@@ -125,6 +129,12 @@ class MP3TrackDemuxer : public MediaTrackDemuxer,
   // Returns the number of frames reported by the header if it's valid. Nothing
   // otherwise.
   Maybe<uint32_t> ValidNumAudioFrames() const;
+
+  // Return the duration of the encoder delay.
+  media::TimeUnit EncoderDelay() const;
+
+  // Return the duration of the padding.
+  media::TimeUnit Padding() const;
 
   // The (hopefully) MPEG resource.
   MediaResourceIndex mSource;
@@ -148,17 +158,17 @@ class MP3TrackDemuxer : public MediaTrackDemuxer,
   int64_t mFrameIndex;
 
   // Sum of parsed frames' lengths in bytes.
-  uint64_t mTotalFrameLen;
+  int64_t mTotalFrameLen;
 
   // Samples per frame metric derived from frame headers or 0 if none available.
-  int32_t mSamplesPerFrame;
+  uint32_t mSamplesPerFrame;
 
   // Samples per second metric derived from frame headers or 0 if none
   // available.
-  int32_t mSamplesPerSecond;
+  uint32_t mSamplesPerSecond;
 
   // Channel count derived from frame headers or 0 if none available.
-  int32_t mChannels;
+  uint32_t mChannels;
 
   // Audio track config info.
   UniquePtr<AudioInfo> mInfo;
@@ -167,6 +177,7 @@ class MP3TrackDemuxer : public MediaTrackDemuxer,
   uint32_t mEncoderDelay = 0;
   // Number of frames to skip at the end
   uint32_t mEncoderPadding = 0;
+  int32_t mRemainingEncoderPadding = 0;
   // End of stream has been found
   bool mEOS = false;
 };

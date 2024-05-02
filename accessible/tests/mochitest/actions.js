@@ -195,7 +195,7 @@ function checkerOfActionInvoker(aType, aTarget, aActionObj) {
     this.eventTarget = "element";
     // Normally, we only match an event fired directly on the target. Override
     // this to match a bubbled event.
-    this.match = function(aEvent) {
+    this.match = function (aEvent) {
       return aEvent.currentTarget == aTarget;
     };
   }
@@ -227,4 +227,5 @@ var gActionDescrMap = {
   expand: "Expand",
   activate: "Activate",
   cycle: "Cycle",
+  "click ancestor": "Click ancestor",
 };

@@ -1,10 +1,7 @@
 "use strict";
 
-const { PromiseUtils } = ChromeUtils.import(
-  "resource://gre/modules/PromiseUtils.jsm"
-);
-const { NormandyAddonManager } = ChromeUtils.import(
-  "resource://normandy/lib/NormandyAddonManager.jsm"
+const { NormandyAddonManager } = ChromeUtils.importESModule(
+  "resource://normandy/lib/NormandyAddonManager.sys.mjs"
 );
 
 decorate_task(ensureAddonCleanup(), async function download_and_install() {

@@ -53,6 +53,7 @@ class DNSPacket {
   virtual ~DNSPacket() = default;
 
   Result<uint8_t, nsresult> GetRCode() const;
+  Result<bool, nsresult> RecursionAvailable() const;
 
   // Called in order to feed data into the buffer.
   nsresult OnDataAvailable(nsIRequest* aRequest, nsIInputStream* aInputStream,
@@ -72,6 +73,7 @@ class DNSPacket {
       uint32_t& aTTL);
 
   DNSPacketStatus PacketStatus() const { return mStatus; }
+  void SetOriginHost(const Maybe<nsCString>& aHost) { mOriginHost = aHost; }
 
  protected:
   // Never accept larger DOH responses than this as that would indicate
@@ -101,39 +103,7 @@ class DNSPacket {
   unsigned char mResponse[MAX_SIZE]{};
   unsigned int mBodySize = 0;
   DNSPacketStatus mStatus = DNSPacketStatus::Unknown;
-};
-
-class ODoHDNSPacket final : public DNSPacket {
- public:
-  ODoHDNSPacket() = default;
-  virtual ~ODoHDNSPacket();
-
-  static bool ParseODoHConfigs(Span<const uint8_t> aData,
-                               nsTArray<ObliviousDoHConfig>& aOut);
-
-  virtual nsresult EncodeRequest(nsCString& aBody, const nsACString& aHost,
-                                 uint16_t aType, bool aDisableECS) override;
-
-  virtual nsresult Decode(
-      nsCString& aHost, enum TrrType aType, nsCString& aCname,
-      bool aAllowRFC1918, DOHresp& aResp, TypeRecordResultType& aTypeResult,
-      nsClassHashtable<nsCStringHashKey, DOHresp>& aAdditionalRecords,
-      uint32_t& aTTL) override;
-
- protected:
-  bool EncryptDNSQuery(const nsACString& aQuery, uint16_t aPaddingLen,
-                       const ObliviousDoHConfig& aConfig,
-                       ObliviousDoHMessage& aOut);
-  bool DecryptDNSResponse();
-
-  HpkeContext* mContext = nullptr;
-  UniqueSECItem mPlainQuery;
-  // This struct indicates the range of decrypted responses stored in mResponse.
-  struct DecryptedResponseRange {
-    uint16_t mStart = 0;
-    uint16_t mLength = 0;
-  };
-  Maybe<DecryptedResponseRange> mDecryptedResponseRange;
+  Maybe<nsCString> mOriginHost;
 };
 
 }  // namespace net

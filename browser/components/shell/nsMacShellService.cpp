@@ -21,6 +21,7 @@
 #include "nsILoadContext.h"
 #include "nsIPrefService.h"
 #include "mozilla/dom/Element.h"
+#include "mozilla/dom/ReferrerInfo.h"
 #include "DesktopBackgroundImage.h"
 
 #include <Carbon/Carbon.h>
@@ -67,7 +68,7 @@ nsMacShellService::IsDefaultBrowser(bool aForAllTypes,
 }
 
 NS_IMETHODIMP
-nsMacShellService::SetDefaultBrowser(bool aClaimAllTypes, bool aForAllUsers) {
+nsMacShellService::SetDefaultBrowser(bool aForAllUsers) {
   // Note: We don't support aForAllUsers on Mac OS X.
 
   CFStringRef firefoxID = ::CFBundleGetIdentifier(::CFBundleGetMainBundle());
@@ -82,11 +83,9 @@ nsMacShellService::SetDefaultBrowser(bool aClaimAllTypes, bool aForAllUsers) {
     return NS_ERROR_FAILURE;
   }
 
-  if (aClaimAllTypes) {
-    if (::LSSetDefaultRoleHandlerForContentType(kUTTypeHTML, kLSRolesAll,
-                                                firefoxID) != noErr) {
-      return NS_ERROR_FAILURE;
-    }
+  if (::LSSetDefaultRoleHandlerForContentType(kUTTypeHTML, kLSRolesAll,
+                                              firefoxID) != noErr) {
+    return NS_ERROR_FAILURE;
   }
 
   nsCOMPtr<nsIPrefBranch> prefs(do_GetService(NS_PREFSERVICE_CONTRACTID));
@@ -158,7 +157,8 @@ nsMacShellService::SetDesktopBackground(Element* aElement, int32_t aPosition,
       aElement->OwnerDoc()->CookieJarSettings();
   return wbp->SaveURI(imageURI, aElement->NodePrincipal(), 0, referrerInfo,
                       cookieJarSettings, nullptr, nullptr, mBackgroundFile,
-                      nsIContentPolicy::TYPE_IMAGE, loadContext);
+                      nsIContentPolicy::TYPE_IMAGE,
+                      loadContext->UsePrivateBrowsing());
 }
 
 NS_IMETHODIMP

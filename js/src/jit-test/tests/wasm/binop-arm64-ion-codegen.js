@@ -1,4 +1,4 @@
-// |jit-test| skip-if: !hasDisassembler() || wasmCompileMode() != "ion" || !getBuildConfiguration().arm64; include:codegen-arm64-test.js
+// |jit-test| skip-if: !hasDisassembler() || wasmCompileMode() != "ion" || !getBuildConfiguration("arm64"); include:codegen-arm64-test.js
 
 // Basic constant folding tests
 
@@ -119,7 +119,7 @@ let double32 =
 codegenTestARM64_adhoc(
     double32,
     'f',
-    '2b000000  adds w0, w0, w0'); // The ADDS is some legacy thing, likely unnecessary
+    '0b000000  add w0, w0, w0');
 assertEq(wasmEvalText(double32).exports.f(-37), -74)
 assertEq(wasmEvalText(double32).exports.f(42), 84)
 
@@ -298,9 +298,9 @@ codegenTestARM64_adhoc(
        (func (export "f") (param $a f64) (param $b f64) (param $c f64) (param $d f64) (result f64)
          (select (local.get $b) (local.get $d) (f64.lt (f64.const 0) (local.get $c)))))`,
     'f',
-    `9e6703e0  fmov    d0, xzr
+    `2f00e400  movi    d0, #0x0
      1e622000  fcmp    d0, d2
-     1e63bc20  fcsel   d0, d1, d3, lt`)
+     1e633c20  fcsel   d0, d1, d3, lo`)
 
 // FP ABS should not tie its input to its output.
 
@@ -329,12 +329,12 @@ for ( [ty, expect_tst] of
     `(module
        (func (export "f") (param $p1 ${ty}) (param $p2 ${ty}) (result i32)
          (local $x i32)
-         (set_local $x (i32.const 0x4D2))
+         (local.set $x (i32.const 0x4D2))
          (if (${ty}.eq (${ty}.and (local.get $p1) (local.get $p2))
                        (${ty}.const 0))
-           (set_local $x (i32.const 0x11D7))
+           (local.set $x (i32.const 0x11D7))
          )
-         (get_local $x)
+         (local.get $x)
        )
     )`,
     'f',
@@ -362,12 +362,12 @@ for ( [imm, expect1, expect2] of
     `(module
        (func (export "f") (param $p1 i64) (result i32)
          (local $x i32)
-         (set_local $x (i32.const 0x4D2))
+         (local.set $x (i32.const 0x4D2))
          (if (i64.eq (i64.and (i64.const ${imm}) (local.get $p1))
                      (i64.const 0))
-           (set_local $x (i32.const 0x11D7))
+           (local.set $x (i32.const 0x11D7))
          )
-         (get_local $x)
+         (local.get $x)
        )
     )`,
     'f',

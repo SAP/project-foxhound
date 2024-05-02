@@ -84,7 +84,7 @@ impl Header {
     #[inline]
     fn set_value<V: AsRef<str>>(&mut self, s: V) -> Result<(), crate::Error> {
         let value = s.as_ref();
-        if !is_valid_header_value(&value) {
+        if !is_valid_header_value(value) {
             Err(crate::Error::RequestHeaderError(self.name.clone()))
         } else {
             self.value.clear();
@@ -101,7 +101,7 @@ impl std::fmt::Display for Header {
 }
 
 /// A list of headers.
-#[derive(Clone, Debug, PartialEq, Default)]
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
 pub struct Headers {
     headers: Vec<Header>,
 }
@@ -330,7 +330,7 @@ impl<'a> std::iter::IntoIterator for &'a Headers {
     type IntoIter = <&'a [Header] as IntoIterator>::IntoIter;
     type Item = &'a Header;
     fn into_iter(self) -> Self::IntoIter {
-        (&self.headers[..]).iter()
+        self.headers[..].iter()
     }
 }
 

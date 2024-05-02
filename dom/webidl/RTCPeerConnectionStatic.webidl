@@ -16,12 +16,13 @@
 enum RTCLifecycleEvent {
     "initialized",
     "icegatheringstatechange",
-    "iceconnectionstatechange"
+    "iceconnectionstatechange",
+    "connectionstatechange",
 };
 
-callback PeerConnectionLifecycleCallback = void (RTCPeerConnection pc,
-                                                 unsigned long long windowId,
-                                                 RTCLifecycleEvent eventType);
+callback PeerConnectionLifecycleCallback = undefined (RTCPeerConnection pc,
+                                                      unsigned long long windowId,
+                                                      RTCLifecycleEvent eventType);
 
 [ChromeOnly,
  Pref="media.peerconnection.enabled",
@@ -35,7 +36,6 @@ interface RTCPeerConnectionStatic {
      automatically unregistered when window goes away.
      Fires when a PC is created, and whenever the ICE connection state or
      gathering state changes. */
-  void registerPeerConnectionLifecycleCallback(
+  undefined registerPeerConnectionLifecycleCallback(
     PeerConnectionLifecycleCallback cb);
 };
-

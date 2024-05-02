@@ -3,13 +3,8 @@
 
 "use strict";
 
-do_get_profile();
-
-ChromeUtils.import("resource://gre/modules/osfile.jsm");
-// OS.File doesn't like to be first imported during shutdown
-const { Sqlite } = ChromeUtils.import("resource://gre/modules/Sqlite.jsm");
-const { AsyncShutdown } = ChromeUtils.import(
-  "resource://gre/modules/AsyncShutdown.jsm"
+const { AsyncShutdown } = ChromeUtils.importESModule(
+  "resource://gre/modules/AsyncShutdown.sys.mjs"
 );
 
 function getConnection(dbName, extraOptions = {}) {
@@ -56,10 +51,10 @@ function sleep(ms) {
 }
 
 //
-// -----------  Don't add a test after this one, as it shuts down Sqlite.jsm
+// -----------  Don't add a test after this one, as it shuts down Sqlite.sys.mjs
 //
 add_task(async function test_shutdown_clients() {
-  info("Ensuring that Sqlite.jsm doesn't shutdown before its clients");
+  info("Ensuring that Sqlite.sys.mjs doesn't shutdown before its clients");
 
   let assertions = [];
 
@@ -67,7 +62,7 @@ add_task(async function test_shutdown_clients() {
   let sleepComplete = false;
   Sqlite.shutdown.addBlocker(
     "test_sqlite.js shutdown blocker (sleep)",
-    async function() {
+    async function () {
       sleepStarted = true;
       await sleep(100);
       sleepComplete = true;
@@ -86,24 +81,35 @@ add_task(async function test_shutdown_clients() {
 
   Sqlite.shutdown.addBlocker(
     "test_sqlite.js shutdown blocker (open a connection during shutdown)",
-    async function() {
+    async function () {
       let db = await getDummyDatabase("opened during shutdown");
       dbOpened = true;
-      db.close().then(() => (dbClosed = true)); // Don't wait for this task to complete, Sqlite.jsm must wait automatically
+      db.close().then(() => (dbClosed = true)); // Don't wait for this task to complete, Sqlite.sys.mjs must wait automatically
     }
   );
 
   assertions.push({ name: "dbOpened", value: () => dbOpened });
   assertions.push({ name: "dbClosed", value: () => dbClosed });
 
-  info("Now shutdown Sqlite.jsm synchronously");
+  info("Now shutdown Sqlite.sys.mjs synchronously");
   Services.prefs.setBoolPref("toolkit.asyncshutdown.testing", true);
-  AsyncShutdown.profileBeforeChange._trigger();
+  // Check opening a connection during shutdown fails.
+  let deferred = PromiseUtils.defer();
+  let conn = Sqlite.openConnection({
+    path: PathUtils.join(PathUtils.profileDir, "test_shutdown.sqlite"),
+    testDelayedOpenPromise: deferred.promise,
+  });
+  await AsyncShutdown.profileBeforeChange._trigger();
+  deferred.resolve();
+  await Assert.rejects(
+    conn,
+    /has been shutdown/,
+    "Should close the connection and not block"
+  );
   Services.prefs.clearUserPref("toolkit.asyncshutdown.testing");
 
   for (let { name, value } of assertions) {
-    info("Checking: " + name);
-    Assert.ok(value());
+    Assert.ok(value(), "Checking: " + name);
   }
 
   info("Ensure that we cannot open databases anymore");
@@ -113,6 +119,6 @@ add_task(async function test_shutdown_clients() {
   } catch (ex) {
     exn = ex;
   }
-  Assert.ok(!!exn);
-  Assert.ok(exn.message.includes("Sqlite.jsm has been shutdown"));
+  Assert.ok(!!exn, `exception: ${exn.message}`);
+  Assert.ok(exn.message.includes("Sqlite.sys.mjs has been shutdown"));
 });

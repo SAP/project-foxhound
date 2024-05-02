@@ -1,4 +1,4 @@
-// |jit-test| error: 42; skip-if: getBuildConfiguration()['wasi']
+// |jit-test| error: 42; skip-if: getBuildConfiguration("wasi")
 load(libdir + "immutable-prototype.js");
 
 // Suppress the large quantity of output on stdout (eg from calling
@@ -12,6 +12,9 @@ var ignorelist = {
     'terminate': true,
     'nukeAllCCWs': true,
     'cacheIRHealthReport': true,
+    'getInnerMostEnvironmentObject': true,
+    'getEnclosingEnvironmentObject': true,
+    'getEnvironmentObjectType' : true,
 };
 
 function f(y) {}

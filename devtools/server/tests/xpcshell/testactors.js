@@ -6,33 +6,40 @@
 const {
   LazyPool,
   createExtraActors,
-} = require("devtools/shared/protocol/lazy-pool");
-const { RootActor } = require("devtools/server/actors/root");
-const { ThreadActor } = require("devtools/server/actors/thread");
-const { DevToolsServer } = require("devtools/server/devtools-server");
+} = require("resource://devtools/shared/protocol/lazy-pool.js");
+const { RootActor } = require("resource://devtools/server/actors/root.js");
+const { ThreadActor } = require("resource://devtools/server/actors/thread.js");
+const {
+  DevToolsServer,
+} = require("resource://devtools/server/devtools-server.js");
 const {
   ActorRegistry,
-} = require("devtools/server/actors/utils/actor-registry");
+} = require("resource://devtools/server/actors/utils/actor-registry.js");
 const {
   SourcesManager,
-} = require("devtools/server/actors/utils/sources-manager");
-const makeDebugger = require("devtools/server/actors/utils/make-debugger");
-const protocol = require("devtools/shared/protocol");
+} = require("resource://devtools/server/actors/utils/sources-manager.js");
+const makeDebugger = require("resource://devtools/server/actors/utils/make-debugger.js");
+const protocol = require("resource://devtools/shared/protocol.js");
 const {
   windowGlobalTargetSpec,
-} = require("devtools/shared/specs/targets/window-global");
-const { tabDescriptorSpec } = require("devtools/shared/specs/descriptors/tab");
-const Targets = require("devtools/server/actors/targets/index");
+} = require("resource://devtools/shared/specs/targets/window-global.js");
+const {
+  tabDescriptorSpec,
+} = require("resource://devtools/shared/specs/descriptors/tab.js");
+const Targets = require("resource://devtools/server/actors/targets/index.js");
+const {
+  createContentProcessSessionContext,
+} = require("resource://devtools/server/actors/watcher/session-context.js");
 
 var gTestGlobals = new Set();
-DevToolsServer.addTestGlobal = function(global) {
+DevToolsServer.addTestGlobal = function (global) {
   gTestGlobals.add(global);
 };
-DevToolsServer.removeTestGlobal = function(global) {
+DevToolsServer.removeTestGlobal = function (global) {
   gTestGlobals.delete(global);
 };
 
-DevToolsServer.getTestGlobal = function(name) {
+DevToolsServer.getTestGlobal = function (name) {
   for (const g of gTestGlobals) {
     if (g.__name == name) {
       return g;
@@ -43,10 +50,10 @@ DevToolsServer.getTestGlobal = function(name) {
 };
 
 var gAllowNewThreadGlobals = false;
-DevToolsServer.allowNewThreadGlobals = function() {
+DevToolsServer.allowNewThreadGlobals = function () {
   gAllowNewThreadGlobals = true;
 };
-DevToolsServer.disallowNewThreadGlobals = function() {
+DevToolsServer.disallowNewThreadGlobals = function () {
   gAllowNewThreadGlobals = false;
 };
 
@@ -81,11 +88,11 @@ function TestTabList(connection) {
 TestTabList.prototype = {
   constructor: TestTabList,
   destroy() {},
-  getList: function() {
+  getList() {
     return Promise.resolve([...this._descriptorActors]);
   },
   // Helper method only available for the xpcshell implementation of tablist.
-  getTargetActorForTab: function(title) {
+  getTargetActorForTab(title) {
     const descriptorActor = this._descriptorActors.find(d => d.title === title);
     if (!descriptorActor) {
       return null;
@@ -109,21 +116,20 @@ exports.createRootActor = function createRootActor(connection) {
   return root;
 };
 
-const TestDescriptorActor = protocol.ActorClassWithSpec(tabDescriptorSpec, {
-  initialize: function(conn, targetActor) {
-    protocol.Actor.prototype.initialize.call(this, conn);
-    this.conn = conn;
+class TestDescriptorActor extends protocol.Actor {
+  constructor(conn, targetActor) {
+    super(conn, tabDescriptorSpec);
     this._targetActor = targetActor;
-  },
+  }
 
   // We don't exercise the selected tab in xpcshell tests.
   get selected() {
     return false;
-  },
+  }
 
   get title() {
     return this._targetActor.title;
-  },
+  }
 
   form() {
     const form = {
@@ -135,21 +141,22 @@ const TestDescriptorActor = protocol.ActorClassWithSpec(tabDescriptorSpec, {
     };
 
     return form;
-  },
+  }
 
   getFavicon() {
     return "";
-  },
+  }
 
   getTarget() {
     return this._targetActor.form();
-  },
-});
+  }
+}
 
-const TestTargetActor = protocol.ActorClassWithSpec(windowGlobalTargetSpec, {
-  initialize: function(conn, global) {
-    protocol.Actor.prototype.initialize.call(this, conn);
-    this.conn = conn;
+class TestTargetActor extends protocol.Actor {
+  constructor(conn, global) {
+    super(conn, windowGlobalTargetSpec);
+
+    this.sessionContext = createContentProcessSessionContext();
     this._global = global;
     this._global.wrappedJSObject = global;
     this.threadActor = new ThreadActor(this, this._global);
@@ -162,32 +169,32 @@ const TestTargetActor = protocol.ActorClassWithSpec(windowGlobalTargetSpec, {
       shouldAddNewGlobalAsDebuggee: g => gAllowNewThreadGlobals,
     });
     this.dbg = this.makeDebugger();
-    this.notifyResourceAvailable = this.notifyResourceAvailable.bind(this);
-  },
+    this.notifyResources = this.notifyResources.bind(this);
+  }
 
-  targetType: Targets.TYPES.FRAME,
+  targetType = Targets.TYPES.FRAME;
 
   get window() {
     return this._global;
-  },
+  }
 
   // Both title and url point to this._global.__name
   get title() {
     return this._global.__name;
-  },
+  }
 
   get url() {
     return this._global.__name;
-  },
+  }
 
   get sourcesManager() {
     if (!this._sourcesManager) {
       this._sourcesManager = new SourcesManager(this.threadActor);
     }
     return this._sourcesManager;
-  },
+  }
 
-  form: function() {
+  form() {
     const response = {
       actor: this.actorID,
       title: this.title,
@@ -207,29 +214,29 @@ const TestTargetActor = protocol.ActorClassWithSpec(windowGlobalTargetSpec, {
     }
 
     return { ...response, ...actors };
-  },
+  }
 
-  detach: function(request) {
+  detach(request) {
     this.threadActor.destroy();
     return { type: "detached" };
-  },
+  }
 
-  reload: function(request) {
+  reload(request) {
     this.sourcesManager.reset();
     this.threadActor.clearDebuggees();
     this.threadActor.dbg.addDebuggees();
     return {};
-  },
+  }
 
-  removeActorByName: function(name) {
+  removeActorByName(name) {
     const actor = this._extraActors[name];
     if (this._descriptorActorPool) {
       this._descriptorActorPool.removeActor(actor);
     }
     delete this._extraActors[name];
-  },
+  }
 
-  notifyResourceAvailable(resources) {
-    this.emit("resource-available-form", resources);
-  },
-});
+  notifyResources(updateType, resources) {
+    this.emit(`resource-${updateType}-form`, resources);
+  }
+}

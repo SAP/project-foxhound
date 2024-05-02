@@ -23,11 +23,14 @@ with Files("jsapi/**"):
     BUG_COMPONENT = ("Core", "WebRTC: Signaling")
 with Files("sdp/**"):
     BUG_COMPONENT = ("Core", "WebRTC: Signaling")
+with Files("third_party_build/**"):
+    BUG_COMPONENT = ("Core", "WebRTC")
+
 
 EXPORTS += [
     "CubebDeviceEnumerator.h",
     "MediaEngine.h",
-    "MediaEngineDefault.h",
+    "MediaEngineFake.h",
     "MediaEnginePrefs.h",
     "MediaEngineSource.h",
     "MediaTrackConstraints.h",
@@ -76,9 +79,19 @@ if CONFIG["MOZ_WEBRTC_SIGNALING"]:
         "jsep",
         "libwebrtcglue",
         "sdp",
-        "third_party_build",
         "transportbridge",
+        "/third_party/libwebrtc",
     ]
+
+    if CONFIG["MOZ_WIDGET_TOOLKIT"] == "gtk":
+        DIRS += [
+            "/third_party/drm/",
+            "/third_party/drm/libdrm",
+            "/third_party/gbm/",
+            "/third_party/gbm/libgbm",
+            "/third_party/libepoxy/",
+            "/third_party/pipewire/libpipewire",
+        ]
 
     # Avoid warnings from third-party code that we can not modify.
     if CONFIG["CC_TYPE"] == "clang-cl":
@@ -90,7 +103,7 @@ PREPROCESSED_IPDL_SOURCES += [
 ]
 
 UNIFIED_SOURCES += [
-    "MediaEngineDefault.cpp",
+    "MediaEngineFake.cpp",
     "MediaEngineSource.cpp",
     "MediaTrackConstraints.cpp",
     "PeerIdentity.cpp",
@@ -113,7 +126,6 @@ CXXFLAGS += [
     "-Wno-error=attributes",
 ]
 
-DEFINES["TRACING"] = True
 FINAL_LIBRARY = "xul"
 
 # Add libFuzzer configuration directives

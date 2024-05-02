@@ -2,30 +2,33 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
+import shutil
 import sys
+from datetime import date, timedelta
+from pathlib import Path
 from subprocess import CalledProcessError
+from unittest import mock
 
 import mozunit
-from unittest import mock
 import pytest
-from pathlib import Path
-import shutil
-from datetime import date, timedelta
 
+from mozperftest.tests.support import EXAMPLE_TESTS_DIR, requests_content, temp_file
 from mozperftest.utils import (
-    host_platform,
-    silence,
-    download_file,
-    install_package,
     build_test_list,
-    get_multi_tasks_url,
-    get_revision_namespace_url,
-    convert_day,
-    load_class,
     checkout_python_script,
+    convert_day,
+    create_path,
+    download_file,
+    get_multi_tasks_url,
     get_output_dir,
+    get_revision_namespace_url,
+    host_platform,
+    install_package,
+    install_requirements_file,
+    load_class,
+    load_class_from_path,
+    silence,
 )
-from mozperftest.tests.support import temp_file, requests_content, EXAMPLE_TESTS_DIR
 
 
 def test_silence():
@@ -40,7 +43,7 @@ def test_host_platform():
     if sys.platform.startswith("darwin"):
         assert plat == "darwin"
     else:
-        if sys.maxsize > 2 ** 32:
+        if sys.maxsize > 2**32:
             assert "64" in plat
         else:
             assert "64" not in plat
@@ -91,6 +94,29 @@ def test_install_package():
                 "pip",
                 "install",
                 "foo",
+            ]
+        )
+
+
+def test_install_requirements_file():
+    vem = mock.Mock()
+    vem.bin_path = "someplace"
+    with mock.patch("subprocess.check_call") as mock_check_call, mock.patch(
+        "mozperftest.utils.os"
+    ):
+        assert install_requirements_file(vem, "foo")
+        mock_check_call.assert_called_once_with(
+            [
+                vem.python_path,
+                "-m",
+                "pip",
+                "install",
+                "--no-deps",
+                "-r",
+                "foo",
+                "--no-index",
+                "--find-links",
+                "https://pypi.pub.build.mozilla.org/pub/",
             ]
         )
 
@@ -165,7 +191,6 @@ class ImportMe:
 
 
 def test_load_class():
-
     with pytest.raises(ImportError):
         load_class("notimportable")
 
@@ -180,6 +205,19 @@ def test_load_class():
 
     klass = load_class("mozperftest.tests.test_utils:ImportMe")
     assert klass is ImportMe
+
+
+def test_load_class_from_path():
+    with pytest.raises(ImportError) as exc:
+        load_class_from_path("nonexistent", __file__)
+    assert "found but it was not a valid class" in exc.value.args[0]
+
+    with pytest.raises(ImportError) as exc:
+        load_class_from_path("nonexistent", "nonexistent-file")
+    assert "does not exist." in exc.value.args[0]
+
+    klass = load_class_from_path("ImportMe", __file__)
+    assert klass.__name__ is ImportMe.__name__
 
 
 class _Venv:
@@ -214,6 +252,18 @@ def test_get_output_dir():
         assert output_dir.exists()
         assert output_dir.is_dir()
         assert "artifacts" == output_dir.parts[-1]
+
+
+def test_create_path():
+    path = Path("path/doesnt/exist").resolve()
+    if path.exists():
+        shutil.rmtree(path.parent.parent)
+    try:
+        path = create_path(path)
+
+        assert path.exists()
+    finally:
+        shutil.rmtree(path.parent.parent)
 
 
 if __name__ == "__main__":

@@ -11,7 +11,9 @@ var texts = [
   "To err is human; to forgive is not company policy.",
 ];
 
-var HasFindClipboard = Services.clipboard.supportsFindClipboard();
+var HasFindClipboard = Services.clipboard.isClipboardTypeSupported(
+  Services.clipboard.kFindClipboard
+);
 
 function addTabWithText(aText, aCallback) {
   let newTab = BrowserTestUtils.addTab(
@@ -34,7 +36,7 @@ var newWindow;
 
 function test() {
   waitForExplicitFinish();
-  registerCleanupFunction(function() {
+  registerCleanupFunction(function () {
     while (tabs.length) {
       gBrowser.removeTab(tabs.pop());
     }

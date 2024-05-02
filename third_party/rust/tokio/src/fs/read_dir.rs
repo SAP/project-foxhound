@@ -1,42 +1,64 @@
-use crate::fs::{asyncify, sys};
+use crate::fs::asyncify;
 
+use std::collections::VecDeque;
 use std::ffi::OsString;
 use std::fs::{FileType, Metadata};
 use std::future::Future;
 use std::io;
-#[cfg(unix)]
-use std::os::unix::fs::DirEntryExt;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::Context;
 use std::task::Poll;
 
+#[cfg(test)]
+use super::mocks::spawn_blocking;
+#[cfg(test)]
+use super::mocks::JoinHandle;
+#[cfg(not(test))]
+use crate::blocking::spawn_blocking;
+#[cfg(not(test))]
+use crate::blocking::JoinHandle;
+
+const CHUNK_SIZE: usize = 32;
+
 /// Returns a stream over the entries within a directory.
 ///
 /// This is an async version of [`std::fs::read_dir`](std::fs::read_dir)
+///
+/// This operation is implemented by running the equivalent blocking
+/// operation on a separate thread pool using [`spawn_blocking`].
+///
+/// [`spawn_blocking`]: crate::task::spawn_blocking
 pub async fn read_dir(path: impl AsRef<Path>) -> io::Result<ReadDir> {
     let path = path.as_ref().to_owned();
-    let std = asyncify(|| std::fs::read_dir(path)).await?;
+    asyncify(|| -> io::Result<ReadDir> {
+        let mut std = std::fs::read_dir(path)?;
+        let mut buf = VecDeque::with_capacity(CHUNK_SIZE);
+        let remain = ReadDir::next_chunk(&mut buf, &mut std);
 
-    Ok(ReadDir(State::Idle(Some(std))))
+        Ok(ReadDir(State::Idle(Some((buf, std, remain)))))
+    })
+    .await
 }
 
-/// Stream of the entries in a directory.
+/// Reads the entries in a directory.
 ///
-/// This stream is returned from the [`read_dir`] function of this module and
-/// will yield instances of [`DirEntry`]. Through a [`DirEntry`]
-/// information like the entry's path and possibly other metadata can be
-/// learned.
+/// This struct is returned from the [`read_dir`] function of this module and
+/// will yield instances of [`DirEntry`]. Through a [`DirEntry`] information
+/// like the entry's path and possibly other metadata can be learned.
+///
+/// A `ReadDir` can be turned into a `Stream` with [`ReadDirStream`].
+///
+/// [`ReadDirStream`]: https://docs.rs/tokio-stream/0.1/tokio_stream/wrappers/struct.ReadDirStream.html
 ///
 /// # Errors
 ///
-/// This [`Stream`] will return an [`Err`] if there's some sort of intermittent
+/// This stream will return an [`Err`] if there's some sort of intermittent
 /// IO error during iteration.
 ///
 /// [`read_dir`]: read_dir
 /// [`DirEntry`]: DirEntry
-/// [`Stream`]: crate::stream::Stream
 /// [`Err`]: std::result::Result::Err
 #[derive(Debug)]
 #[must_use = "streams do nothing unless polled"]
@@ -44,56 +66,123 @@ pub struct ReadDir(State);
 
 #[derive(Debug)]
 enum State {
-    Idle(Option<std::fs::ReadDir>),
-    Pending(sys::Blocking<(Option<io::Result<std::fs::DirEntry>>, std::fs::ReadDir)>),
+    Idle(Option<(VecDeque<io::Result<DirEntry>>, std::fs::ReadDir, bool)>),
+    Pending(JoinHandle<(VecDeque<io::Result<DirEntry>>, std::fs::ReadDir, bool)>),
 }
 
 impl ReadDir {
     /// Returns the next entry in the directory stream.
+    ///
+    /// # Cancel safety
+    ///
+    /// This method is cancellation safe.
     pub async fn next_entry(&mut self) -> io::Result<Option<DirEntry>> {
         use crate::future::poll_fn;
         poll_fn(|cx| self.poll_next_entry(cx)).await
     }
 
-    #[doc(hidden)]
+    /// Polls for the next directory entry in the stream.
+    ///
+    /// This method returns:
+    ///
+    ///  * `Poll::Pending` if the next directory entry is not yet available.
+    ///  * `Poll::Ready(Ok(Some(entry)))` if the next directory entry is available.
+    ///  * `Poll::Ready(Ok(None))` if there are no more directory entries in this
+    ///    stream.
+    ///  * `Poll::Ready(Err(err))` if an IO error occurred while reading the next
+    ///    directory entry.
+    ///
+    /// When the method returns `Poll::Pending`, the `Waker` in the provided
+    /// `Context` is scheduled to receive a wakeup when the next directory entry
+    /// becomes available on the underlying IO resource.
+    ///
+    /// Note that on multiple calls to `poll_next_entry`, only the `Waker` from
+    /// the `Context` passed to the most recent call is scheduled to receive a
+    /// wakeup.
     pub fn poll_next_entry(&mut self, cx: &mut Context<'_>) -> Poll<io::Result<Option<DirEntry>>> {
         loop {
             match self.0 {
-                State::Idle(ref mut std) => {
-                    let mut std = std.take().unwrap();
+                State::Idle(ref mut data) => {
+                    let (buf, _, ref remain) = data.as_mut().unwrap();
 
-                    self.0 = State::Pending(sys::run(move || {
-                        let ret = std.next();
-                        (ret, std)
+                    if let Some(ent) = buf.pop_front() {
+                        return Poll::Ready(ent.map(Some));
+                    } else if !remain {
+                        return Poll::Ready(Ok(None));
+                    }
+
+                    let (mut buf, mut std, _) = data.take().unwrap();
+
+                    self.0 = State::Pending(spawn_blocking(move || {
+                        let remain = ReadDir::next_chunk(&mut buf, &mut std);
+                        (buf, std, remain)
                     }));
                 }
                 State::Pending(ref mut rx) => {
-                    let (ret, std) = ready!(Pin::new(rx).poll(cx))?;
-                    self.0 = State::Idle(Some(std));
-
-                    let ret = match ret {
-                        Some(Ok(std)) => Ok(Some(DirEntry(Arc::new(std)))),
-                        Some(Err(e)) => Err(e),
-                        None => Ok(None),
-                    };
-
-                    return Poll::Ready(ret);
+                    self.0 = State::Idle(Some(ready!(Pin::new(rx).poll(cx))?));
                 }
             }
         }
     }
+
+    fn next_chunk(buf: &mut VecDeque<io::Result<DirEntry>>, std: &mut std::fs::ReadDir) -> bool {
+        for _ in 0..CHUNK_SIZE {
+            let ret = match std.next() {
+                Some(ret) => ret,
+                None => return false,
+            };
+
+            let success = ret.is_ok();
+
+            buf.push_back(ret.map(|std| DirEntry {
+                #[cfg(not(any(
+                    target_os = "solaris",
+                    target_os = "illumos",
+                    target_os = "haiku",
+                    target_os = "vxworks",
+                    target_os = "nto",
+                    target_os = "vita",
+                )))]
+                file_type: std.file_type().ok(),
+                std: Arc::new(std),
+            }));
+
+            if !success {
+                break;
+            }
+        }
+
+        true
+    }
 }
 
-#[cfg(feature = "stream")]
-impl crate::stream::Stream for ReadDir {
-    type Item = io::Result<DirEntry>;
+feature! {
+    #![unix]
 
-    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        Poll::Ready(match ready!(self.poll_next_entry(cx)) {
-            Ok(Some(entry)) => Some(Ok(entry)),
-            Ok(None) => None,
-            Err(err) => Some(Err(err)),
-        })
+    use std::os::unix::fs::DirEntryExt;
+
+    impl DirEntry {
+        /// Returns the underlying `d_ino` field in the contained `dirent`
+        /// structure.
+        ///
+        /// # Examples
+        ///
+        /// ```
+        /// use tokio::fs;
+        ///
+        /// # #[tokio::main]
+        /// # async fn main() -> std::io::Result<()> {
+        /// let mut entries = fs::read_dir(".").await?;
+        /// while let Some(entry) = entries.next_entry().await? {
+        ///     // Here, `entry` is a `DirEntry`.
+        ///     println!("{:?}: {}", entry.file_name(), entry.ino());
+        /// }
+        /// # Ok(())
+        /// # }
+        /// ```
+        pub fn ino(&self) -> u64 {
+            self.as_inner().ino()
+        }
     }
 }
 
@@ -108,7 +197,18 @@ impl crate::stream::Stream for ReadDir {
 /// filesystem. Each entry can be inspected via methods to learn about the full
 /// path or possibly other metadata through per-platform extension traits.
 #[derive(Debug)]
-pub struct DirEntry(Arc<std::fs::DirEntry>);
+pub struct DirEntry {
+    #[cfg(not(any(
+        target_os = "solaris",
+        target_os = "illumos",
+        target_os = "haiku",
+        target_os = "vxworks",
+        target_os = "nto",
+        target_os = "vita",
+    )))]
+    file_type: Option<FileType>,
+    std: Arc<std::fs::DirEntry>,
+}
 
 impl DirEntry {
     /// Returns the full path to the file that this entry represents.
@@ -141,7 +241,7 @@ impl DirEntry {
     ///
     /// The exact text, of course, depends on what files you have in `.`.
     pub fn path(&self) -> PathBuf {
-        self.0.path()
+        self.std.path()
     }
 
     /// Returns the bare file name of this directory entry without any other
@@ -162,7 +262,7 @@ impl DirEntry {
     /// # }
     /// ```
     pub fn file_name(&self) -> OsString {
-        self.0.file_name()
+        self.std.file_name()
     }
 
     /// Returns the metadata for the file that this entry points at.
@@ -196,7 +296,7 @@ impl DirEntry {
     /// # }
     /// ```
     pub async fn metadata(&self) -> io::Result<Metadata> {
-        let std = self.0.clone();
+        let std = self.std.clone();
         asyncify(move || std.metadata()).await
     }
 
@@ -231,14 +331,25 @@ impl DirEntry {
     /// # }
     /// ```
     pub async fn file_type(&self) -> io::Result<FileType> {
-        let std = self.0.clone();
+        #[cfg(not(any(
+            target_os = "solaris",
+            target_os = "illumos",
+            target_os = "haiku",
+            target_os = "vxworks",
+            target_os = "nto",
+            target_os = "vita",
+        )))]
+        if let Some(file_type) = self.file_type {
+            return Ok(file_type);
+        }
+
+        let std = self.std.clone();
         asyncify(move || std.file_type()).await
     }
-}
 
-#[cfg(unix)]
-impl DirEntryExt for DirEntry {
-    fn ino(&self) -> u64 {
-        self.0.ino()
+    /// Returns a reference to the underlying `std::fs::DirEntry`.
+    #[cfg(unix)]
+    pub(super) fn as_inner(&self) -> &std::fs::DirEntry {
+        &self.std
     }
 }

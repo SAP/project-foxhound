@@ -14,8 +14,7 @@
 #include "mozilla/SchedulerGroup.h"
 #include "mozilla/StaticPrefs_dom.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 namespace {
 
@@ -714,9 +713,7 @@ void ServiceWorkerRegistrationInfo::TransitionWaitingToActive() {
           swm->CheckPendingReadyPromises();
         }
       });
-  MOZ_ALWAYS_SUCCEEDS(
-      SchedulerGroup::Dispatch(TaskCategory::Other, r.forget()));
-
+  MOZ_ALWAYS_SUCCEEDS(SchedulerGroup::Dispatch(r.forget()));
   UpdateRegistrationState();
   NotifyChromeRegistrationListeners();
 }
@@ -905,5 +902,4 @@ void ServiceWorkerRegistrationInfo::CheckQuotaUsage() {
   swm->CheckPrincipalQuotaUsage(mPrincipal, Scope());
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

@@ -3,8 +3,8 @@ derive(Error)
 
 [<img alt="github" src="https://img.shields.io/badge/github-dtolnay/thiserror-8da0cb?style=for-the-badge&labelColor=555555&logo=github" height="20">](https://github.com/dtolnay/thiserror)
 [<img alt="crates.io" src="https://img.shields.io/crates/v/thiserror.svg?style=for-the-badge&color=fc8d62&logo=rust" height="20">](https://crates.io/crates/thiserror)
-[<img alt="docs.rs" src="https://img.shields.io/badge/docs.rs-thiserror-66c2a5?style=for-the-badge&labelColor=555555&logoColor=white&logo=data:image/svg+xml;base64,PHN2ZyByb2xlPSJpbWciIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyIgdmlld0JveD0iMCAwIDUxMiA1MTIiPjxwYXRoIGZpbGw9IiNmNWY1ZjUiIGQ9Ik00ODguNiAyNTAuMkwzOTIgMjE0VjEwNS41YzAtMTUtOS4zLTI4LjQtMjMuNC0zMy43bC0xMDAtMzcuNWMtOC4xLTMuMS0xNy4xLTMuMS0yNS4zIDBsLTEwMCAzNy41Yy0xNC4xIDUuMy0yMy40IDE4LjctMjMuNCAzMy43VjIxNGwtOTYuNiAzNi4yQzkuMyAyNTUuNSAwIDI2OC45IDAgMjgzLjlWMzk0YzAgMTMuNiA3LjcgMjYuMSAxOS45IDMyLjJsMTAwIDUwYzEwLjEgNS4xIDIyLjEgNS4xIDMyLjIgMGwxMDMuOS01MiAxMDMuOSA1MmMxMC4xIDUuMSAyMi4xIDUuMSAzMi4yIDBsMTAwLTUwYzEyLjItNi4xIDE5LjktMTguNiAxOS45LTMyLjJWMjgzLjljMC0xNS05LjMtMjguNC0yMy40LTMzLjd6TTM1OCAyMTQuOGwtODUgMzEuOXYtNjguMmw4NS0zN3Y3My4zek0xNTQgMTA0LjFsMTAyLTM4LjIgMTAyIDM4LjJ2LjZsLTEwMiA0MS40LTEwMi00MS40di0uNnptODQgMjkxLjFsLTg1IDQyLjV2LTc5LjFsODUtMzguOHY3NS40em0wLTExMmwtMTAyIDQxLjQtMTAyLTQxLjR2LS42bDEwMi0zOC4yIDEwMiAzOC4ydi42em0yNDAgMTEybC04NSA0Mi41di03OS4xbDg1LTM4Ljh2NzUuNHptMC0xMTJsLTEwMiA0MS40LTEwMi00MS40di0uNmwxMDItMzguMiAxMDIgMzguMnYuNnoiPjwvcGF0aD48L3N2Zz4K" height="20">](https://docs.rs/thiserror)
-[<img alt="build status" src="https://img.shields.io/github/workflow/status/dtolnay/thiserror/CI/master?style=for-the-badge" height="20">](https://github.com/dtolnay/thiserror/actions?query=branch%3Amaster)
+[<img alt="docs.rs" src="https://img.shields.io/badge/docs.rs-thiserror-66c2a5?style=for-the-badge&labelColor=555555&logo=docs.rs" height="20">](https://docs.rs/thiserror)
+[<img alt="build status" src="https://img.shields.io/github/actions/workflow/status/dtolnay/thiserror/ci.yml?branch=master&style=for-the-badge" height="20">](https://github.com/dtolnay/thiserror/actions?query=branch%3Amaster)
 
 This library provides a convenient derive macro for the standard library's
 [`std::error::Error`] trait.
@@ -16,7 +16,7 @@ This library provides a convenient derive macro for the standard library's
 thiserror = "1.0"
 ```
 
-*Compiler support: requires rustc 1.31+*
+*Compiler support: requires rustc 1.56+*
 
 <br>
 
@@ -124,8 +124,8 @@ pub enum DataStoreError {
   }
   ```
 
-- The Error trait's `backtrace()` method is implemented to return whichever
-  field has a type named `Backtrace`, if any.
+- The Error trait's `provide()` method is implemented to provide whichever field
+  has a type named `Backtrace`, if any, as a `std::backtrace::Backtrace`.
 
   ```rust
   use std::backtrace::Backtrace;
@@ -138,8 +138,9 @@ pub enum DataStoreError {
   ```
 
 - If a field is both a source (named `source`, or has `#[source]` or `#[from]`
-  attribute) *and* is marked `#[backtrace]`, then the Error trait's
-  `backtrace()` method is forwarded to the source's backtrace.
+  attribute) *and* is marked `#[backtrace]`, then the Error trait's `provide()`
+  method is forwarded to the source's `provide` so that both layers of the error
+  share the same backtrace.
 
   ```rust
   #[derive(Error, Debug)]
@@ -162,6 +163,27 @@ pub enum DataStoreError {
 
       #[error(transparent)]
       Other(#[from] anyhow::Error),  // source and Display delegate to anyhow::Error
+  }
+  ```
+
+  Another use case is hiding implementation details of an error representation
+  behind an opaque error type, so that the representation is able to evolve
+  without breaking the crate's public API.
+
+  ```rust
+  // PublicError is public, but opaque and easy to keep compatible.
+  #[derive(Error, Debug)]
+  #[error(transparent)]
+  pub struct PublicError(#[from] ErrorRepr);
+
+  impl PublicError {
+      // Accessors for anything we do want to expose publicly.
+  }
+
+  // Private and free to change across minor version of the crate.
+  #[derive(Error, Debug)]
+  enum ErrorRepr {
+      ...
   }
   ```
 

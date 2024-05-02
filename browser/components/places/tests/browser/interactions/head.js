@@ -2,11 +2,14 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const { Interactions } = ChromeUtils.import(
-  "resource:///modules/Interactions.jsm"
+const { Interactions } = ChromeUtils.importESModule(
+  "resource:///modules/Interactions.sys.mjs"
 );
 
-const { sinon } = ChromeUtils.import("resource://testing-common/Sinon.jsm");
+ChromeUtils.defineESModuleGetters(this, {
+  PlacesTestUtils: "resource://testing-common/PlacesTestUtils.sys.mjs",
+  sinon: "resource://testing-common/Sinon.sys.mjs",
+});
 
 XPCOMUtils.defineLazyPreferenceGetter(
   this,
@@ -15,7 +18,7 @@ XPCOMUtils.defineLazyPreferenceGetter(
   60
 );
 
-add_task(async function global_setup() {
+add_setup(async function global_setup() {
   // Disable idle management because it interacts with our code, causing
   // unexpected intermittent failures, we'll fake idle notifications when
   // we need to test it.
@@ -36,11 +39,15 @@ add_task(async function global_setup() {
 
 /**
  * Ensures that a list of interactions have been permanently stored.
+ *
  * @param {Array} expected list of interactions to be found.
+ * @param {boolean} [dontFlush] Avoid flushing pending data.
  */
-async function assertDatabaseValues(expected) {
+async function assertDatabaseValues(expected, { dontFlush = false } = {}) {
   await Interactions.interactionUpdatePromise;
-  await Interactions.store.flush();
+  if (!dontFlush) {
+    await Interactions.store.flush();
+  }
 
   let interactions = await PlacesUtils.withConnectionWrapper(
     "head.js::assertDatabaseValues",
@@ -73,7 +80,7 @@ async function assertDatabaseValues(expected) {
     expected.length,
     "Found the expected number of entries"
   );
-  for (let i = 0; i < expected.length; i++) {
+  for (let i = 0; i < Math.min(expected.length, interactions.length); i++) {
     let actual = interactions[i];
     Assert.equal(
       actual.url,
@@ -163,6 +170,7 @@ async function assertDatabaseValues(expected) {
 
 /**
  * Ensures that a list of interactions have been permanently stored.
+ *
  * @param {string} url The url to query.
  * @param {string} property The property to extract.
  */

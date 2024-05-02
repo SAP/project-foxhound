@@ -8,13 +8,8 @@
 # Additionally a field can have the following optional fields:
 # - altname: A string that will be used when writing out the annotation to the
 #   .extra file instead of the annotation name
-# - ping: A boolean that indicates whether the annotation is whitelisted for
+# - ping: A boolean that indicates whether the annotation is allowlisted for
 #   going into the crash ping, if not specified this defaults to false
-
-A11yHandlerRegistered:
-  description: >
-    Set to "true" if the accessibility handler is registered, "false" otherwise.
-  type: string
 
 AbortMessage:
   description: >
@@ -36,11 +31,6 @@ AccessibilityInProcClient:
     Hexadecimal mask of in-process accessibility consumers, see
     accessible/windows/msaa/Compatibility.h for the mappings.
   type: string
-
-ActualStreamLen:
-  description: >
-    Actual length of an IPC proxy stream.
-  type: integer
 
 AdapterDeviceID:
   description: >
@@ -178,28 +168,6 @@ BuildID:
   type: string
   ping: true
 
-ClassRegistrationInfoChild:
-  description: >
-    Microsoft COM class registration annotation for the child process.
-  type: string
-
-ClassRegistrationInfoParent:
-  description: >
-    Microsoft COM class registration annotation for the parent process.
-  type: string
-
-CoMarshalInterfaceFailure:
-  description: >
-    Annotation describing the error returned by trying to marshal an object
-    via CoMarshalInterface during the creation of an IPC proxy stream.
-  type: string
-
-ContainsMemoryReport:
-  description: >
-    Indicates that the crash dump contains a memory report.
-  type: boolean
-  ping: true
-
 ContentSandboxCapabilities:
   description: >
     List of capabilities of the content process sandbox.
@@ -225,10 +193,9 @@ ContentSandboxWin32kState:
     Content sandbox Win32k state
   type: string
 
-CoUnmarshalInterfaceResult:
+GpuSandboxLevel:
   description: >
-    Annotation describing the error returned by trying to unmarshal an object
-    via CoUnmarshalInterface during the creation of an IPC proxy stream.
+    GPU sandbox level.
   type: integer
 
 CPUMicrocodeVersion:
@@ -236,23 +203,11 @@ CPUMicrocodeVersion:
     Version of the CPU microcode.
   type: string
 
-CrashAddressLikelyWrong:
-  description: >
-    Set to 1 if signal handling is broken, in which case the crash address is
-    likely to be wrong.
-  type: boolean
-
 CrashTime:
   description: >
     Crash time in seconds since the Epoch.
   type: string
   ping: true
-
-CreateStreamOnHGlobalFailure:
-  description: >
-    Set when failing to obtain a global memory handle during the creation of an
-    IPC proxy stream.
-  type: string
 
 CycleCollector:
   description: >
@@ -303,11 +258,6 @@ EventLoopNestingLevel:
   type: integer
   ping: true
 
-ExpectedStreamLen:
-  description: >
-    Expected length of an IPC proxy stream.
-  type: integer
-
 ExperimentalFeatures:
   description: >
     Comma-separated list of enabled experimental features from about:preferences#experimental.
@@ -319,12 +269,6 @@ FontName:
     Set before attempting to load a font to help diagnose crashes during loading.
   type: string
   ping: true
-
-GetHGlobalFromStreamFailure:
-  description: >
-    Error returned when invoking GetHGlobalFromStreamFailure() during the
-    creation of an IPC stream proxy.
-  type: string
 
 GMPLibraryPath:
   description: >
@@ -363,6 +307,16 @@ GraphicsDrawShader:
     Name of the shader that is currently bound for a draw call, if applicable.
     See file names in gfx/wr/webrender/res/* for the possible values.
   type: string
+
+GraphicsNumActiveRenderers:
+  description: >
+    Number of webrender renderer instances that are not in a paused state.
+  type: integer
+
+GraphicsNumRenderers:
+  description: >
+    Total number of webrender renderer instances.
+  type: integer
 
 GraphicsStartupTest:
   description: >
@@ -425,16 +379,6 @@ InstallTime:
   description: >
     The time when Firefox was installed expressed as seconds since the Epoch
   type: integer
-
-InterfaceRegistrationInfoChild:
-  description: >
-    Microsoft COM interface registration annotation for the child process.
-  type: string
-
-InterfaceRegistrationInfoParent:
-  description: >
-    Microsoft COM interface registration annotation for the parent process.
-  type: string
 
 ipc_channel_error:
   description: >
@@ -512,6 +456,13 @@ IPCTransportFailureReason:
     Reason why creating an IPC channel failed.
   type: string
 
+Hang:
+  description: >
+    Set if the crash was the result of a hang, with a value which describes the
+    type of hang (e.g. "ui" or "shutdown").
+  type: string
+  ping: true
+
 IsGarbageCollecting:
   description: >
     If true then the JavaScript garbage collector was running when the crash
@@ -574,12 +525,18 @@ JSOutOfMemory:
     to satisfy the allocation.
   type: string
 
+
 LastInteractionDuration:
   description: >
     How long the user had been inactive in seconds if the user was inactive
     at crash.  The value is not set if the user state was active.
   type: integer
   ping: true
+
+LastStartupWasCrash:
+  description: >
+    True if the last startup was detected to have been a crash.
+  type: boolean
 
 MacMemoryPressure:
   description: >
@@ -648,11 +605,6 @@ MainThreadRunnableName:
   type: string
   ping: true
 
-MarshalActCtxManifestPath:
-  description: >
-    Proxy stream marshalling current activation context manifest path.
-  type: string
-
 MozCrashReason:
   description: >
     Plaintext description of why Firefox crashed, this is usually set by
@@ -712,28 +664,6 @@ ProfilerChildShutdownPhase:
     and the point the profiler shutdown sequence has reached.
   type: string
   ping: true
-
-ProxyStreamSize:
-  description: >
-    Size of an IPC proxy stream.
-  type: integer
-
-ProxyStreamSizeFrom:
-  description: >
-    Describes how the size of a proxy stream was obtained. It can be set to
-    either Stream::Stat or GlobalSize.
-  type: string
-
-ProxyStreamUnmarshalStatus:
-  description: >
-    Status of the proxy stream unmarshalling, see ipc/mscom/ProxyStream.cpp for
-    the various value this annotation can take.
-  type: string
-
-ProxyStreamValid:
-  description: >
-    Set to "false" when encountering an invalid IPC proxy stream.
-  type: string
 
 PurgeablePhysicalMemory:
   description: >
@@ -815,6 +745,19 @@ ShutdownProgress:
   type: string
   ping: true
 
+ShutdownReason:
+  description: >
+    One out of "Unknown", "AppClose", "AppRestart", "OSForceClose",
+    "OSSessionEnd", "OSShutdown" or "WinUnexpectedMozQuit".
+  type: string
+  ping: true
+
+StartupCacheValid:
+  description: >
+    True if the startup cache was deemed valid and usable. Will be false if the
+    last session used a different browser version or had a startup cache.
+  type: boolean
+
 StartupCrash:
   description: >
     If set to 1 then this crash occurred during startup.
@@ -826,12 +769,6 @@ StartupTime:
     The time when Firefox was launched expressed in seconds since the Epoch.
   type: integer
 
-StatFailure:
-  description: >
-    Error returned when invoking IStream's Stat function during the creation
-    of an IPC proxy stream.
-  type: string
-
 StorageConnectionNotClosed:
   description: >
     This annotation is added when a mozStorage connection has not been properly
@@ -839,12 +776,16 @@ StorageConnectionNotClosed:
     associated with the connection.
   type: string
 
-SubmittedFromInfobar:
+SubmittedFrom:
   description: >
-    This annotation is set to 1 when the crash report has been manually
-    submitted from Firefox info-bar or has been automatically submitted after
-    the user opted-in to auto-submission.
-  type: boolean
+    This annotation can hold one of the following five values depending on how
+    this crash was submitted by the user:
+    * Auto: the user had opted-in to auto-submission
+    * Infobar: the user clicked on the infobar to submit the crash
+    * AboutCrashes: the user sent the crash from the about:crashes page
+    * CrashedTab: the user sent the crash from a crashed tab page
+    * Client: the user sent the crash using the crash reporter client
+  type: string
 
 SystemMemoryUsePercentage:
   description: >
@@ -891,10 +832,13 @@ TextureUsage:
   type: string
   ping: true
 
-ThreadIdNameMapping:
+Throttleable:
   description: >
-    List of thread names with their corresponding thread IDs.
-  type: string
+    Whether Socorro can selectively discard this crash report or not. If set
+    to "0" the crash report will always be processed by Socorro. Do not set
+    this annotation within Gecko code, it's only supposed to be used by the
+    crash reporting machinery.
+  type: boolean
 
 TotalPageFile:
   description: >
@@ -933,16 +877,6 @@ UnknownNetAddrSocketFamily:
     requested family number.
   type: integer
 
-UnmarshalActCtx:
-  description: >
-    Proxy stream unmarshalling current activation context.
-  type: string
-
-UnmarshalActCtxManifestPath:
-  description: >
-    Proxy stream unmarshalling current activation context manifest path.
-  type: string
-
 UptimeTS:
   description: >
     Uptime in seconds. This annotation uses a string instead of an integer
@@ -976,6 +910,12 @@ UtilityProcessStatus:
     Status of the Utility process, can be set to "Running" or "Destroyed"
   type: string
 
+UtilityActorsName:
+  description: >
+    Comma-separated list of IPC actors name running on this Utility process instance
+  type: string
+  ping: true
+
 Vendor:
   description: >
     Application vendor (e.g. Mozilla).
@@ -996,6 +936,14 @@ WasmLibrarySandboxMallocFailed:
     Set to 1 if a rlbox wasm library sandbox ran out of memory, causing a
     malloc inside the sandbox to fail.
   type: boolean
+
+WindowsFileDialogErrorCode:
+  description: >
+    The HRESULT returned from a Win32 system call leading to termination of the
+    file-dialog utility process. MozCrashReason is expected to provide context
+    for the value.
+  type: integer
+  ping: true
 
 WindowsPackageFamilyName:
   description: >

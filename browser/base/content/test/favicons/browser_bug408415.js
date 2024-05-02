@@ -3,19 +3,19 @@ add_task(async function test() {
 
   await BrowserTestUtils.withNewTab(
     { gBrowser, url: "about:blank" },
-    async function(tabBrowser) {
+    async function (tabBrowser) {
       const URI = testPath + "file_with_favicon.html";
       const expectedIcon = testPath + "file_generic_favicon.ico";
       let faviconPromise = waitForLinkAvailable(tabBrowser);
 
-      BrowserTestUtils.loadURI(tabBrowser, URI);
+      BrowserTestUtils.startLoadingURIString(tabBrowser, URI);
 
       let iconURI = await faviconPromise;
       is(iconURI, expectedIcon, "Correct icon before pushState.");
 
       faviconPromise = waitForLinkAvailable(tabBrowser);
 
-      await SpecialPowers.spawn(tabBrowser, [], function() {
+      await SpecialPowers.spawn(tabBrowser, [], function () {
         content.location.href += "#foo";
       });
 

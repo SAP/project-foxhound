@@ -15,6 +15,7 @@
 #include <memory>
 #include <string>
 
+#include "api/array_view.h"
 #include "logging/rtc_event_log/encoder/rtc_event_log_encoder.h"
 #include "rtc_base/buffer.h"
 
@@ -24,6 +25,7 @@ namespace rtclog {
 class Event;  // Auto-generated from protobuf.
 }  // namespace rtclog
 
+class RtcEventAlrState;
 class RtcEventAudioNetworkAdaptation;
 class RtcEventAudioPlayout;
 class RtcEventAudioReceiveStreamConfig;
@@ -37,13 +39,13 @@ class RtcEventLoggingStopped;
 class RtcEventProbeClusterCreated;
 class RtcEventProbeResultFailure;
 class RtcEventProbeResultSuccess;
+class RtcEventRemoteEstimate;
 class RtcEventRtcpPacketIncoming;
 class RtcEventRtcpPacketOutgoing;
 class RtcEventRtpPacketIncoming;
 class RtcEventRtpPacketOutgoing;
 class RtcEventVideoReceiveStreamConfig;
 class RtcEventVideoSendStreamConfig;
-class RtcEventAlrState;
 class RtpPacket;
 
 class RtcEventLogEncoderLegacy final : public RtcEventLogEncoder {
@@ -80,6 +82,7 @@ class RtcEventLogEncoderLegacy final : public RtcEventLogEncoder {
       const RtcEventProbeClusterCreated& event);
   std::string EncodeProbeResultFailure(const RtcEventProbeResultFailure& event);
   std::string EncodeProbeResultSuccess(const RtcEventProbeResultSuccess&);
+  std::string EncodeRemoteEstimate(const RtcEventRemoteEstimate& event);
   std::string EncodeRtcpPacketIncoming(const RtcEventRtcpPacketIncoming& event);
   std::string EncodeRtcpPacketOutgoing(const RtcEventRtcpPacketOutgoing& event);
   std::string EncodeRtpPacketIncoming(const RtcEventRtpPacketIncoming& event);
@@ -94,7 +97,7 @@ class RtcEventLogEncoderLegacy final : public RtcEventLogEncoder {
                                const rtc::Buffer& packet,
                                bool is_incoming);
   std::string EncodeRtpPacket(int64_t timestamp_us,
-                              const RtpPacket& header,
+                              rtc::ArrayView<const uint8_t> header,
                               size_t packet_length,
                               int probe_cluster_id,
                               bool is_incoming);

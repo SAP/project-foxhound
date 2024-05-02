@@ -28,10 +28,6 @@
 #include "nss.h"
 #include "ssl.h"
 
-#ifndef PORT_Sprintf
-#define PORT_Sprintf sprintf
-#endif
-
 #ifndef PORT_Strstr
 #define PORT_Strstr strstr
 #endif
@@ -550,7 +546,7 @@ lockedVars_WaitForDone(lockedVars *lv)
 }
 
 int /* returns count */
-    lockedVars_AddToCount(lockedVars *lv, int addend)
+lockedVars_AddToCount(lockedVars *lv, int addend)
 {
     int rv;
 

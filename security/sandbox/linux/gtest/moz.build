@@ -10,6 +10,7 @@ UNIFIED_SOURCES = [
     "../SandboxBrokerClient.cpp",
     "TestBroker.cpp",
     "TestBrokerPolicy.cpp",
+    "TestLogging.cpp",
 ]
 
 LOCAL_INCLUDES += [
@@ -23,5 +24,3 @@ LOCAL_INCLUDES += [
 ]
 
 FINAL_LIBRARY = "xul-gtest"
-
-REQUIRES_UNIFIED_BUILD = True

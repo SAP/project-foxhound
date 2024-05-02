@@ -1,6 +1,6 @@
 AC_PREREQ([2.64])
 AC_INIT([HarfBuzz],
-        [3.1.2],
+        [8.2.2],
         [https://github.com/harfbuzz/harfbuzz/issues/new],
         [harfbuzz],
         [http://harfbuzz.org/])
@@ -45,7 +45,7 @@ AC_SUBST(HB_VERSION)
 
 # Libtool version
 m4_define([hb_version_int],
-	  m4_eval(hb_version_major*10000 + hb_version_minor*100 + hb_version_micro))
+	  m4_eval(60000 + hb_version_major*100 + hb_version_minor*10 + hb_version_micro))
 HB_LIBTOOL_VERSION_INFO=hb_version_int:0:hb_version_int
 AC_SUBST(HB_LIBTOOL_VERSION_INFO)
 
@@ -68,8 +68,8 @@ GTK_DOC_CHECK([1.15],[--flavour no-tmpl])
 ])
 
 # Functions and headers
-AC_CHECK_FUNCS(atexit mprotect sysconf getpagesize mmap isatty)
-AC_CHECK_HEADERS(unistd.h sys/mman.h stdbool.h)
+AC_CHECK_FUNCS(atexit mprotect sysconf getpagesize mmap isatty newlocale uselocale sincosf)
+AC_CHECK_HEADERS(unistd.h sys/mman.h stdbool.h xlocale.h)
 
 # Compiler flags
 AC_CANONICAL_HOST
@@ -194,6 +194,10 @@ AC_ARG_WITH(cairo,
 have_cairo=false
 if test "x$with_cairo" = "xyes" -o "x$with_cairo" = "xauto"; then
 	PKG_CHECK_MODULES(CAIRO, cairo >= 1.8.0, have_cairo=true, :)
+	save_libs=$LIBS
+	LIBS="$LIBS $CAIRO_LIBS"
+	AC_CHECK_FUNCS(cairo_user_font_face_set_render_color_glyph_func)
+	LIBS=$save_libs
 fi
 if test "x$with_cairo" = "xyes" -a "x$have_cairo" != "xtrue"; then
 	AC_MSG_ERROR([cairo support requested but not found])
@@ -304,7 +308,7 @@ if $have_freetype; then
 	AC_DEFINE(HAVE_FREETYPE, 1, [Have FreeType 2 library])
 	save_libs=$LIBS
 	LIBS="$LIBS $FREETYPE_LIBS"
-	AC_CHECK_FUNCS(FT_Get_Var_Blend_Coordinates FT_Set_Var_Blend_Coordinates FT_Done_MM_Var)
+	AC_CHECK_FUNCS(FT_Get_Var_Blend_Coordinates FT_Set_Var_Blend_Coordinates FT_Done_MM_Var FT_Get_Transform)
 	LIBS=$save_libs
 fi
 AM_CONDITIONAL(HAVE_FREETYPE, $have_freetype)
@@ -362,17 +366,13 @@ AC_ARG_WITH(directwrite,
 have_directwrite=false
 AC_LANG_PUSH([C++])
 if test "x$with_directwrite" = "xyes" -o "x$with_directwrite" = "xauto"; then
-	AC_CHECK_HEADERS(dwrite.h, have_directwrite=true)
+	AC_CHECK_HEADERS(dwrite_1.h, have_directwrite=true)
 fi
 AC_LANG_POP([C++])
 if test "x$with_directwrite" = "xyes" -a "x$have_directwrite" != "xtrue"; then
 	AC_MSG_ERROR([directwrite support requested but not found])
 fi
 if $have_directwrite; then
-	DIRECTWRITE_CXXFLAGS=
-	DIRECTWRITE_LIBS=
-	AC_SUBST(DIRECTWRITE_CXXFLAGS)
-	AC_SUBST(DIRECTWRITE_LIBS)
 	AC_DEFINE(HAVE_DIRECTWRITE, 1, [Have DirectWrite library])
 fi
 AM_CONDITIONAL(HAVE_DIRECTWRITE, $have_directwrite)
@@ -417,6 +417,28 @@ AM_CONDITIONAL(HAVE_CORETEXT, $have_coretext)
 
 dnl ===========================================================================
 
+AC_ARG_WITH(wasm,
+	[AS_HELP_STRING([--with-wasm=@<:@yes/no/auto@:>@],
+			[Use the wasm-micro-runtime library @<:@default=no@:>@])],,
+	[with_wasm=no])
+have_wasm=false
+if test "x$with_wasm" = "xyes" -o "x$with_wasm" = "xauto"; then
+	AC_CHECK_HEADERS(wasm_export.h, have_wasm=true)
+fi
+if test "x$with_wasm" = "xyes" -a "x$have_wasm" != "xtrue"; then
+	AC_MSG_ERROR([wasm support requested but not found])
+fi
+if $have_wasm; then
+	WASM_CFLAGS=
+	WASM_LIBS="-liwasm"
+	AC_SUBST(WASM_CFLAGS)
+	AC_SUBST(WASM_LIBS)
+	AC_DEFINE(HAVE_WASM, 1, [Have wasm-micro-runtime library])
+fi
+AM_CONDITIONAL(HAVE_WASM, $have_wasm)
+
+dnl ===========================================================================
+
 AC_CONFIG_FILES([
 Makefile
 src/Makefile
@@ -433,6 +455,8 @@ test/shape/data/text-rendering-tests/Makefile
 test/subset/Makefile
 test/subset/data/Makefile
 test/subset/data/repack_tests/Makefile
+test/threads/Makefile
+perf/Makefile
 docs/Makefile
 docs/version.xml
 ])
@@ -476,6 +500,7 @@ Platform shapers (not normally needed):
 	DirectWrite:		${have_directwrite}
 	GDI:			${have_gdi}
 	Uniscribe:		${have_uniscribe}
+	WebAssembly:		${have_wasm}
 
 Other features:
 	Documentation:		${enable_gtk_doc}

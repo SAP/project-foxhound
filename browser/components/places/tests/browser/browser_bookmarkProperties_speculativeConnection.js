@@ -7,13 +7,15 @@
  * Test to ensure that on "mousedown" in Toolbar we set Speculative Connection
  */
 
-const { sinon } = ChromeUtils.import("resource://testing-common/Sinon.jsm");
+const { sinon } = ChromeUtils.importESModule(
+  "resource://testing-common/Sinon.sys.mjs"
+);
 const sandbox = sinon.createSandbox();
 let spy = sandbox
   .stub(PlacesUIUtils, "setupSpeculativeConnection")
   .returns(Promise.resolve());
 
-add_task(async function setup() {
+add_setup(async function () {
   await PlacesUtils.bookmarks.eraseEverything();
 
   let toolbar = document.getElementById("PersonalToolbar");
@@ -21,7 +23,7 @@ add_task(async function setup() {
 
   if (toolbar.collapsed) {
     await promiseSetToolbarVisibility(toolbar, true);
-    registerCleanupFunction(function() {
+    registerCleanupFunction(function () {
       return promiseSetToolbarVisibility(toolbar, false);
     });
   }
@@ -66,7 +68,7 @@ add_task(async function checkMenuSpeculativeConnection() {
     );
   }
 
-  registerCleanupFunction(async function() {
+  registerCleanupFunction(async function () {
     await PlacesUtils.bookmarks.eraseEverything();
     // if BMB was not originally in UI, remove it.
     if (!origBMBlocation) {

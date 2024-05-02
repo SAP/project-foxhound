@@ -30,7 +30,7 @@ endif
 #       one for each OS release.                                      #
 #######################################################################
 
-TARGET_OSES = FreeBSD BSD_OS NetBSD OpenUNIX OS2 QNX Darwin BeOS OpenBSD \
+TARGET_OSES = FreeBSD BSD_OS NetBSD OpenUNIX OS2 QNX Darwin OpenBSD \
               AIX RISCOS WINNT WIN95 Linux Android
 
 ifeq (,$(filter-out $(TARGET_OSES),$(OS_TARGET)))
@@ -131,6 +131,19 @@ endif
 #######################################################################
 # Master "Core Components" macros for Hardware features               #
 #######################################################################
+
+ifndef NSS_DISABLE_SSE3
+    NSS_DISABLE_SSE3 = 0
+    ifndef CC_IS_CLANG
+        ifeq (,$(filter 0 1 2 3 4,$(word 1,$(GCC_VERSION))))
+            NSS_DISABLE_SSE3 = 1
+        endif
+    endif
+    ifeq (1,$(NSS_DISABLE_SSE3))
+        export NSS_DISABLE_SSE3
+    endif
+endif #ndef NSS_DISABLE_SSE3
+
 ifndef NSS_DISABLE_AVX2
     ifneq ($(CPU_ARCH),x86_64)
         # Disable AVX2 entirely on non-Intel platforms
@@ -139,13 +152,8 @@ ifndef NSS_DISABLE_AVX2
     else
         # Clang reports its version as an older gcc, but it's OK
         ifndef CC_IS_CLANG
-            ifneq (,$(filter 0 1 2 3,$(word 1,$(GCC_VERSION))))
+            ifneq (,$(filter 0 1 2 3 4,$(word 1,$(GCC_VERSION))))
                 NSS_DISABLE_AVX2 = 1
-            endif
-            ifeq (4,$(word 1,$(GCC_VERSION)))
-                ifeq (,$(filter 8 9,$(word 2,$(GCC_VERSION))))
-                    NSS_DISABLE_AVX2 = 1
-                endif
             endif
         endif
         ifeq (1,$(NSS_DISABLE_AVX2))
@@ -177,6 +185,10 @@ endif
 
 ifdef NSS_DISABLE_AVX2
 DEFINES += -DNSS_DISABLE_AVX2
+endif
+
+ifdef NSS_DISABLE_SSE3
+DEFINES += -DNSS_DISABLE_SSE3
 endif
 
 ifdef NSS_DISABLE_CHACHAPOLY

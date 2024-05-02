@@ -1,5 +1,5 @@
-const { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
 
 var isWin = AppConstants.platform == "win";
@@ -57,9 +57,8 @@ var data = [
     fixed: "http://user:pass@example.com:8080/this/is/a/test.html",
   },
   {
-    wrong: "gobbledygook:user:pass@example.com:8080/this/is/a/test.html",
-    fixed:
-      "http://gobbledygook:user%3Apass@example.com:8080/this/is/a/test.html",
+    wrong: "nonsense:user:pass@example.com:8080/this/is/a/test.html",
+    fixed: "http://nonsense:user%3Apass@example.com:8080/this/is/a/test.html",
   },
   {
     wrong: "user:@example.com:8080/this/is/a/test.html",
@@ -121,10 +120,12 @@ add_task(async function setup() {
   );
 
   await Services.search.setDefault(
-    Services.search.getEngineByName(kSearchEngineID)
+    Services.search.getEngineByName(kSearchEngineID),
+    Ci.nsISearchService.CHANGE_REASON_UNKNOWN
   );
   await Services.search.setDefaultPrivate(
-    Services.search.getEngineByName(kPrivateSearchEngineID)
+    Services.search.getEngineByName(kPrivateSearchEngineID),
+    Ci.nsISearchService.CHANGE_REASON_UNKNOWN
   );
 });
 

@@ -2,11 +2,10 @@
   "$schema": "http://json-schema.org/draft-04/schema#",
   "type": "object",
   "properties": {
-
     "3rdparty": {
       "type": "object",
       "properties": {
-        "Extensions" : {
+        "Extensions": {
           "type": "object",
           "patternProperties": {
             "^.*$": {
@@ -25,6 +24,10 @@
       "type": "boolean"
     },
 
+    "AppUpdatePin": {
+      "type": "string"
+    },
+
     "AppUpdateURL": {
       "type": "URL"
     },
@@ -32,19 +35,19 @@
     "Authentication": {
       "type": "object",
       "properties": {
-        "SPNEGO" : {
+        "SPNEGO": {
           "type": "array",
           "items": {
             "type": "string"
           }
         },
-        "Delegated" : {
+        "Delegated": {
           "type": "array",
           "items": {
             "type": "string"
           }
         },
-        "NTLM" : {
+        "NTLM": {
           "type": "array",
           "items": {
             "type": "string"
@@ -171,6 +174,55 @@
       }
     },
 
+    "Containers": {
+      "type": "object",
+      "properties": {
+        "Default": {
+          "type": ["array", "JSON"],
+          "items": {
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "icon": {
+                "type": "string",
+                "enum": [
+                  "fingerprint",
+                  "briefcase",
+                  "dollar",
+                  "cart",
+                  "vacation",
+                  "gift",
+                  "food",
+                  "fruit",
+                  "pet",
+                  "tree",
+                  "chill",
+                  "circle",
+                  "fence"
+                ]
+              },
+              "color": {
+                "type": "string",
+                "enum": [
+                  "blue",
+                  "turquoise",
+                  "green",
+                  "yellow",
+                  "orange",
+                  "red",
+                  "pink",
+                  "purple",
+                  "toolbar"
+                ]
+              }
+            },
+            "type": "object"
+          }
+        }
+      }
+    },
+
     "Cookies": {
       "type": "object",
       "properties": {
@@ -221,19 +273,36 @@
 
         "Behavior": {
           "type": "string",
-          "enum": ["accept", "reject-foreign", "reject", "limit-foreign", "reject-tracker", "reject-tracker-and-partition-foreign"]
+          "enum": [
+            "accept",
+            "reject-foreign",
+            "reject",
+            "limit-foreign",
+            "reject-tracker",
+            "reject-tracker-and-partition-foreign"
+          ]
         },
 
         "BehaviorPrivateBrowsing": {
           "type": "string",
-          "enum": ["accept", "reject-foreign", "reject", "limit-foreign", "reject-tracker", "reject-tracker-and-partition-foreign"]
+          "enum": [
+            "accept",
+            "reject-foreign",
+            "reject",
+            "limit-foreign",
+            "reject-tracker",
+            "reject-tracker-and-partition-foreign"
+          ]
         }
-
       }
     },
 
     "DefaultDownloadDirectory": {
       "type": "string"
+    },
+
+    "DisableAccounts": {
+      "type": "boolean"
     },
 
     "DisableAppUpdate": {
@@ -386,8 +455,13 @@
       "type": "boolean"
     },
 
-    "DisplayBookmarksToolbar": {
+    "DisableThirdPartyModuleBlocking": {
       "type": "boolean"
+    },
+
+    "DisplayBookmarksToolbar": {
+      "type": ["boolean", "string"],
+      "enum": ["always", "never", "newtab"]
     },
 
     "DisplayMenuBar": {
@@ -439,6 +513,9 @@
         "Fingerprinting": {
           "type": "boolean"
         },
+        "EmailTracking": {
+          "type": "boolean"
+        },
         "Exceptions": {
           "type": "array",
           "strict": false,
@@ -461,22 +538,40 @@
       }
     },
 
+    "ExemptDomainFileTypePairsFromFileTypeDownloadWarnings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "file_extension": {
+            "type": "string"
+          },
+          "domains": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+
     "Extensions": {
       "type": "object",
       "properties": {
-        "Install" : {
+        "Install": {
           "type": "array",
           "items": {
             "type": "string"
           }
         },
-        "Uninstall" : {
+        "Uninstall": {
           "type": "array",
           "items": {
             "type": "string"
           }
         },
-        "Locked" : {
+        "Locked": {
           "type": "array",
           "items": {
             "type": "string"
@@ -499,7 +594,13 @@
               "type": "array",
               "items": {
                 "type": "string",
-                "enum": ["extension", "dictionary", "locale", "theme", "sitepermission"]
+                "enum": [
+                  "extension",
+                  "dictionary",
+                  "locale",
+                  "theme",
+                  "sitepermission"
+                ]
               }
             },
             "blocked_install_message": {
@@ -526,7 +627,12 @@
           "properties": {
             "installation_mode": {
               "type": "string",
-              "enum": ["allowed", "blocked", "force_installed", "normal_installed"]
+              "enum": [
+                "allowed",
+                "blocked",
+                "force_installed",
+                "normal_installed"
+              ]
             },
             "install_url": {
               "type": "string"
@@ -536,6 +642,10 @@
             },
             "updates_disabled": {
               "type": "boolean"
+            },
+            "default_area": {
+              "type": "string",
+              "enum": ["navbar", "menupanel"]
             }
           }
         }
@@ -576,33 +686,26 @@
       }
     },
 
-    "FlashPlugin": {
+    "FirefoxSuggest": {
       "type": "object",
       "properties": {
-        "Allow": {
-          "type": "array",
-          "strict": false,
-          "items": {
-            "type": "origin"
-          }
-        },
-
-        "Block": {
-          "type": "array",
-          "strict": false,
-          "items": {
-            "type": "origin"
-          }
-        },
-
-        "Default": {
+        "WebSuggestions": {
           "type": "boolean"
         },
-
+        "SponsoredSuggestions": {
+          "type": "boolean"
+        },
+        "ImproveSuggest": {
+          "type": "boolean"
+        },
         "Locked": {
           "type": "boolean"
         }
       }
+    },
+
+    "GoToIntranetSiteForSingleWordEntryInAddressBar": {
+      "type": "boolean"
     },
 
     "Handlers": {
@@ -752,7 +855,7 @@
     },
 
     "ManualAppUpdateOnly": {
-        "type": "boolean"
+      "type": "boolean"
     },
 
     "NetworkPrediction": {
@@ -776,7 +879,7 @@
     },
 
     "OverrideFirstRunPage": {
-      "type": "string",
+      "type": "string"
     },
 
     "OverridePostUpdatePage": {
@@ -785,6 +888,14 @@
 
     "PasswordManagerEnabled": {
       "type": "boolean"
+    },
+
+    "PasswordManagerExceptions": {
+      "type": "array",
+      "strict": false,
+      "items": {
+        "type": "origin"
+      }
     },
 
     "PDFjs": {
@@ -1034,6 +1145,10 @@
       "type": "boolean"
     },
 
+    "PrintingEnabled": {
+      "type": "boolean"
+    },
+
     "PromptForDownloadLocation": {
       "type": "boolean"
     },
@@ -1207,6 +1322,20 @@
       "type": "object",
       "patternProperties": {
         "^.*$": { "type": "string" }
+      },
+      "properties": {
+        "Add": {
+          "type": "object",
+          "patternProperties": {
+            "^.*$": { "type": "string" }
+          }
+        },
+        "Delete": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
       }
     },
 
@@ -1224,6 +1353,10 @@
       "enum": ["tls1", "tls1.1", "tls1.2", "tls1.3"]
     },
 
+    "StartDownloadsInTempDirectory": {
+      "type": "boolean"
+    },
+
     "SupportMenu": {
       "type": "object",
       "properties": {
@@ -1237,7 +1370,7 @@
           "type": "string"
         }
       },
-      "required": ["Title", "URL"],
+      "required": ["Title", "URL"]
     },
 
     "UserMessaging": {
@@ -1267,8 +1400,12 @@
       }
     },
 
+    "UseSystemPrintDialog": {
+      "type": "boolean"
+    },
+
     "WebsiteFilter": {
-      "type": "object",
+      "type": ["object", "JSON"],
       "properties": {
         "Block": {
           "type": "array",

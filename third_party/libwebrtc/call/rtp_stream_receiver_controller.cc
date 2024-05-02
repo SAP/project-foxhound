@@ -31,17 +31,11 @@ RtpStreamReceiverController::Receiver::Receiver(
 }
 
 RtpStreamReceiverController::Receiver::~Receiver() {
-  // Don't require return value > 0, since for RTX we currently may
-  // have multiple Receiver objects with the same sink.
-  // TODO(nisse): Consider adding a DCHECK when RtxReceiveStream is wired up.
+  // This may fail, if corresponding AddSink in the constructor failed.
   controller_->RemoveSink(sink_);
 }
 
-RtpStreamReceiverController::RtpStreamReceiverController() {
-  // At this level the demuxer is only configured to demux by SSRC, so don't
-  // worry about MIDs (MIDs are handled by upper layers).
-  demuxer_.set_use_mid(false);
-}
+RtpStreamReceiverController::RtpStreamReceiverController() {}
 
 RtpStreamReceiverController::~RtpStreamReceiverController() = default;
 
@@ -52,19 +46,25 @@ RtpStreamReceiverController::CreateReceiver(uint32_t ssrc,
 }
 
 bool RtpStreamReceiverController::OnRtpPacket(const RtpPacketReceived& packet) {
-  rtc::CritScope cs(&lock_);
+  RTC_DCHECK_RUN_ON(&demuxer_sequence_);
   return demuxer_.OnRtpPacket(packet);
+}
+
+void RtpStreamReceiverController::OnRecoveredPacket(
+    const RtpPacketReceived& packet) {
+  RTC_DCHECK_RUN_ON(&demuxer_sequence_);
+  demuxer_.OnRtpPacket(packet);
 }
 
 bool RtpStreamReceiverController::AddSink(uint32_t ssrc,
                                           RtpPacketSinkInterface* sink) {
-  rtc::CritScope cs(&lock_);
+  RTC_DCHECK_RUN_ON(&demuxer_sequence_);
   return demuxer_.AddSink(ssrc, sink);
 }
 
-size_t RtpStreamReceiverController::RemoveSink(
+bool RtpStreamReceiverController::RemoveSink(
     const RtpPacketSinkInterface* sink) {
-  rtc::CritScope cs(&lock_);
+  RTC_DCHECK_RUN_ON(&demuxer_sequence_);
   return demuxer_.RemoveSink(sink);
 }
 

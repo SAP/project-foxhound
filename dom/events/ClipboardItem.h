@@ -9,8 +9,13 @@
 
 #include "mozilla/dom/Blob.h"
 #include "mozilla/dom/ClipboardBinding.h"
+#include "mozilla/dom/PromiseNativeHandler.h"
+#include "mozilla/MozPromise.h"
 
+#include "nsIClipboard.h"
 #include "nsWrapperCache.h"
+
+class nsITransferable;
 
 namespace mozilla::dom {
 
@@ -21,20 +26,85 @@ class Promise;
 
 class ClipboardItem final : public nsWrapperCache {
  public:
-  struct ItemEntry {
+  class ItemEntry final : public PromiseNativeHandler,
+                          public nsIAsyncClipboardRequestCallback {
+   public:
+    using GetDataPromise =
+        MozPromise<OwningStringOrBlob, nsresult, /* IsExclusive = */ true>;
+
+    NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+    NS_DECL_NSIASYNCCLIPBOARDREQUESTCALLBACK
+    NS_DECL_CYCLE_COLLECTION_CLASS_AMBIGUOUS(ItemEntry, PromiseNativeHandler)
+
+    explicit ItemEntry(nsIGlobalObject* aGlobal, const nsAString& aType)
+        : mGlobal(aGlobal), mType(aType) {
+      MOZ_ASSERT(mGlobal);
+    }
+    ItemEntry(nsIGlobalObject* aGlobal, const nsAString& aType,
+              const nsAString& aData)
+        : ItemEntry(aGlobal, aType) {
+      mLoadResult.emplace(NS_OK);
+      mData.SetAsString() = aData;
+    }
+
+    // PromiseNativeHandler
+    void ResolvedCallback(JSContext* aCx, JS::Handle<JS::Value> aValue,
+                          ErrorResult& aRv) override;
+    void RejectedCallback(JSContext* aCx, JS::Handle<JS::Value> aValue,
+                          ErrorResult& aRv) override;
+
+    const nsString& Type() const { return mType; }
+    RefPtr<GetDataPromise> GetData();
+
+    //  Load data from system clipboard.
+    void LoadDataFromSystemClipboard(nsIAsyncGetClipboardData* aDataGetter);
+    void LoadDataFromDataPromise(Promise& aDataPromise);
+
+    // If clipboard data is in the process of loading from either system
+    // clipboard or data promise, add `aPromise` to the pending list which will
+    // be resolved/rejected later when process is finished. Otherwise,
+    // resolve/reject `aPromise` based on cached result and data.
+    void ReactGetTypePromise(Promise& aPromise);
+
+   private:
+    ~ItemEntry() {
+      if (!mPendingGetDataRequests.IsEmpty()) {
+        RejectPendingPromises(NS_ERROR_FAILURE);
+      }
+    };
+
+    void MaybeResolveGetTypePromise(const OwningStringOrBlob& aData,
+                                    Promise& aPromise);
+    void MaybeResolvePendingPromises(OwningStringOrBlob&& aData);
+    void RejectPendingPromises(nsresult rv);
+
+    nsCOMPtr<nsIGlobalObject> mGlobal;
+
+    // MIME type of this entry.
     nsString mType;
+
+    // Cache the loading result.
     OwningStringOrBlob mData;
+    Maybe<nsresult> mLoadResult;
+
+    // Indicates if the data is still being loaded.
+    bool mIsLoadingData = false;
+    nsCOMPtr<nsITransferable> mTransferable;
+
+    // Pending promises for data retrieval requests.
+    nsTArray<MozPromiseHolder<GetDataPromise>> mPendingGetDataRequests;
+    nsTArray<RefPtr<Promise>> mPendingGetTypeRequests;
   };
 
   NS_INLINE_DECL_CYCLE_COLLECTING_NATIVE_REFCOUNTING(ClipboardItem)
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_NATIVE_CLASS(ClipboardItem)
+  NS_DECL_CYCLE_COLLECTION_NATIVE_WRAPPERCACHE_CLASS(ClipboardItem)
 
   ClipboardItem(nsISupports* aOwner, dom::PresentationStyle aPresentationStyle,
-                nsTArray<ItemEntry>&& aItems);
+                nsTArray<RefPtr<ItemEntry>>&& aItems);
 
   static already_AddRefed<ClipboardItem> Constructor(
       const GlobalObject& aGlobal,
-      const Record<nsString, OwningStringOrBlob>& aItems,
+      const Record<nsString, OwningNonNull<Promise>>& aItems,
       const ClipboardItemOptions& aOptions, ErrorResult& aRv);
 
   dom::PresentationStyle PresentationStyle() const {
@@ -49,14 +119,14 @@ class ClipboardItem final : public nsWrapperCache {
   JSObject* WrapObject(JSContext* aCx,
                        JS::Handle<JSObject*> aGivenProto) override;
 
-  const nsTArray<ItemEntry>& Entries() const { return mItems; }
+  const nsTArray<RefPtr<ItemEntry>>& Entries() const { return mItems; }
 
  private:
   ~ClipboardItem() = default;
 
   nsCOMPtr<nsISupports> mOwner;
   dom::PresentationStyle mPresentationStyle;
-  nsTArray<ItemEntry> mItems;
+  nsTArray<RefPtr<ItemEntry>> mItems;
 };
 
 }  // namespace mozilla::dom

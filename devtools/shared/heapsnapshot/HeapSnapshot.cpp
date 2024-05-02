@@ -10,6 +10,7 @@
 #include <google/protobuf/io/zero_copy_stream_impl_lite.h>
 
 #include "js/Array.h"  // JS::NewArrayObject
+#include "js/ColumnNumber.h"  // JS::LimitedColumnNumberOneOrigin, JS::TaggedColumnNumberOneOrigin
 #include "js/Debug.h"
 #include "js/PropertyAndElement.h"  // JS_DefineProperty
 #include "js/TypeDecls.h"
@@ -36,7 +37,8 @@
 #include "jsapi.h"
 #include "jsfriendapi.h"
 #include "js/MapAndSet.h"
-#include "js/Object.h"  // JS::GetCompartment
+#include "js/Object.h"                // JS::GetCompartment
+#include "nsComponentManagerUtils.h"  // do_CreateInstance
 #include "nsCycleCollectionParticipant.h"
 #include "nsCRTGlue.h"
 #include "nsIFile.h"
@@ -86,7 +88,8 @@ NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(HeapSnapshot)
 NS_INTERFACE_MAP_END
 
 /* virtual */
-JSObject* HeapSnapshot::WrapObject(JSContext* aCx, HandleObject aGivenProto) {
+JSObject* HeapSnapshot::WrapObject(JSContext* aCx,
+                                   JS::Handle<JSObject*> aGivenProto) {
   return HeapSnapshot_Binding::Wrap(aCx, this, aGivenProto);
 }
 
@@ -322,7 +325,8 @@ bool HeapSnapshot::saveStackFrame(const protobuf::StackFrame& frame,
   uint32_t line = data.line();
 
   if (!data.has_column()) return false;
-  uint32_t column = data.column();
+  JS::TaggedColumnNumberOneOrigin column(
+      JS::LimitedColumnNumberOneOrigin(data.column()));
 
   if (!data.has_issystem()) return false;
   bool isSystem = data.issystem();
@@ -430,8 +434,9 @@ bool HeapSnapshot::init(JSContext* cx, const uint8_t* buffer, uint32_t size) {
 
 /*** Heap Snapshot Analyses ***************************************************/
 
-void HeapSnapshot::TakeCensus(JSContext* cx, JS::HandleObject options,
-                              JS::MutableHandleValue rval, ErrorResult& rv) {
+void HeapSnapshot::TakeCensus(JSContext* cx, JS::Handle<JSObject*> options,
+                              JS::MutableHandle<JS::Value> rval,
+                              ErrorResult& rv) {
   JS::ubi::Census census(cx);
 
   JS::ubi::CountTypePtr rootType;
@@ -471,11 +476,12 @@ void HeapSnapshot::TakeCensus(JSContext* cx, JS::HandleObject options,
   }
 }
 
-void HeapSnapshot::DescribeNode(JSContext* cx, JS::HandleObject breakdown,
-                                uint64_t nodeId, JS::MutableHandleValue rval,
+void HeapSnapshot::DescribeNode(JSContext* cx, JS::Handle<JSObject*> breakdown,
+                                uint64_t nodeId,
+                                JS::MutableHandle<JS::Value> rval,
                                 ErrorResult& rv) {
   MOZ_ASSERT(breakdown);
-  JS::RootedValue breakdownVal(cx, JS::ObjectValue(*breakdown));
+  JS::Rooted<JS::Value> breakdownVal(cx, JS::ObjectValue(*breakdown));
   JS::ubi::CountTypePtr rootType = JS::ubi::ParseBreakdown(cx, breakdownVal);
   if (NS_WARN_IF(!rootType)) {
     rv.Throw(NS_ERROR_UNEXPECTED);
@@ -530,7 +536,7 @@ already_AddRefed<DominatorTree> HeapSnapshot::ComputeDominatorTree(
 void HeapSnapshot::ComputeShortestPaths(JSContext* cx, uint64_t start,
                                         const Sequence<uint64_t>& targets,
                                         uint64_t maxNumPaths,
-                                        JS::MutableHandleObject results,
+                                        JS::MutableHandle<JSObject*> results,
                                         ErrorResult& rv) {
   // First ensure that our inputs are valid.
 
@@ -587,35 +593,36 @@ void HeapSnapshot::ComputeShortestPaths(JSContext* cx, uint64_t start,
   // Convert the results into a Map object mapping target node IDs to arrays of
   // paths found.
 
-  RootedObject resultsMap(cx, JS::NewMapObject(cx));
+  JS::Rooted<JSObject*> resultsMap(cx, JS::NewMapObject(cx));
   if (NS_WARN_IF(!resultsMap)) {
     rv.Throw(NS_ERROR_OUT_OF_MEMORY);
     return;
   }
 
   for (auto iter = shortestPaths.targetIter(); !iter.done(); iter.next()) {
-    JS::RootedValue key(cx, JS::NumberValue(iter.get().identifier()));
-    JS::RootedValueVector paths(cx);
+    JS::Rooted<JS::Value> key(cx, JS::NumberValue(iter.get().identifier()));
+    JS::RootedVector<JS::Value> paths(cx);
 
     bool ok = shortestPaths.forEachPath(iter.get(), [&](JS::ubi::Path& path) {
-      JS::RootedValueVector pathValues(cx);
+      JS::RootedVector<JS::Value> pathValues(cx);
 
       for (JS::ubi::BackEdge* edge : path) {
-        JS::RootedObject pathPart(cx, JS_NewPlainObject(cx));
+        JS::Rooted<JSObject*> pathPart(cx, JS_NewPlainObject(cx));
         if (!pathPart) {
           return false;
         }
 
-        JS::RootedValue predecessor(
+        JS::Rooted<JS::Value> predecessor(
             cx, NumberValue(edge->predecessor().identifier()));
         if (!JS_DefineProperty(cx, pathPart, "predecessor", predecessor,
                                JSPROP_ENUMERATE)) {
           return false;
         }
 
-        RootedValue edgeNameVal(cx, NullValue());
+        JS::Rooted<JS::Value> edgeNameVal(cx, NullValue());
         if (edge->name()) {
-          RootedString edgeName(cx, JS_AtomizeUCString(cx, edge->name().get()));
+          JS::Rooted<JSString*> edgeName(
+              cx, JS_AtomizeUCString(cx, edge->name().get()));
           if (!edgeName) {
             return false;
           }
@@ -632,7 +639,7 @@ void HeapSnapshot::ComputeShortestPaths(JSContext* cx, uint64_t start,
         }
       }
 
-      RootedObject pathObj(cx, JS::NewArrayObject(cx, pathValues));
+      JS::Rooted<JSObject*> pathObj(cx, JS::NewArrayObject(cx, pathValues));
       return pathObj && paths.append(ObjectValue(*pathObj));
     });
 
@@ -641,13 +648,13 @@ void HeapSnapshot::ComputeShortestPaths(JSContext* cx, uint64_t start,
       return;
     }
 
-    JS::RootedObject pathsArray(cx, JS::NewArrayObject(cx, paths));
+    JS::Rooted<JSObject*> pathsArray(cx, JS::NewArrayObject(cx, paths));
     if (NS_WARN_IF(!pathsArray)) {
       rv.Throw(NS_ERROR_OUT_OF_MEMORY);
       return;
     }
 
-    JS::RootedValue pathsVal(cx, ObjectValue(*pathsArray));
+    JS::Rooted<JS::Value> pathsVal(cx, ObjectValue(*pathsArray));
     if (NS_WARN_IF(!JS::MapSet(cx, resultsMap, key, pathsVal))) {
       rv.Throw(NS_ERROR_OUT_OF_MEMORY);
       return;
@@ -662,8 +669,8 @@ void HeapSnapshot::ComputeShortestPaths(JSContext* cx, uint64_t start,
 // If we are only taking a snapshot of the heap affected by the given set of
 // globals, find the set of compartments the globals are allocated
 // within. Returns false on OOM failure.
-static bool PopulateCompartmentsWithGlobals(CompartmentSet& compartments,
-                                            HandleObjectVector globals) {
+static bool PopulateCompartmentsWithGlobals(
+    CompartmentSet& compartments, JS::HandleVector<JSObject*> globals) {
   unsigned length = globals.length();
   for (unsigned i = 0; i < length; i++) {
     if (!compartments.put(JS::GetCompartment(globals[i]))) return false;
@@ -674,7 +681,7 @@ static bool PopulateCompartmentsWithGlobals(CompartmentSet& compartments,
 
 // Add the given set of globals as explicit roots in the given roots
 // list. Returns false on OOM failure.
-static bool AddGlobalsAsRoots(HandleObjectVector globals,
+static bool AddGlobalsAsRoots(JS::HandleVector<JSObject*> globals,
                               ubi::RootList& roots) {
   unsigned length = globals.length();
   for (unsigned i = 0; i < length; i++) {
@@ -735,7 +742,7 @@ static std::pair<bool, AutoCheckCannotGC> EstablishBoundaries(
       return {false, AutoCheckCannotGC(cx)};
     }
 
-    RootedObjectVector globals(cx);
+    JS::RootedVector<JSObject*> globals(cx);
     if (!dbg::GetDebuggeeGlobals(cx, *dbgObj, &globals) ||
         !PopulateCompartmentsWithGlobals(compartments, globals) ||
         !roots.init(compartments).first || !AddGlobalsAsRoots(globals, roots)) {
@@ -757,7 +764,7 @@ static std::pair<bool, AutoCheckCannotGC> EstablishBoundaries(
       return {false, AutoCheckCannotGC(cx)};
     }
 
-    RootedObjectVector globals(cx);
+    JS::RootedVector<JSObject*> globals(cx);
     for (uint32_t i = 0; i < length; i++) {
       JSObject* global = boundaries.mGlobals.Value().ElementAt(i);
       if (!JS_IsGlobalObject(global)) {
@@ -1094,7 +1101,7 @@ class MOZ_STACK_CLASS StreamWriter : public CoreDumpWriter {
 
     data->set_id(id);
     data->set_line(frame.line());
-    data->set_column(frame.column());
+    data->set_column(frame.column().oneOriginValue());
     data->set_issystem(frame.isSystem());
     data->set_isselfhosted(frame.isSelfHosted(cx));
 
@@ -1513,8 +1520,8 @@ void ChromeUtils::SaveHeapSnapshotShared(
 
 /* static */
 uint64_t ChromeUtils::GetObjectNodeId(GlobalObject& global,
-                                      JS::HandleObject val) {
-  JS::RootedObject obj(global.Context(), val);
+                                      JS::Handle<JSObject*> val) {
+  JS::Rooted<JSObject*> obj(global.Context(), val);
 
   JS::ubi::Node node(obj);
   return node.identifier();
@@ -1541,14 +1548,22 @@ already_AddRefed<HeapSnapshot> ChromeUtils::ReadHeapSnapshot(
     GlobalObject& global, const nsAString& filePath, ErrorResult& rv) {
   auto start = TimeStamp::Now();
 
-  UniquePtr<char[]> path(ToNewCString(filePath, mozilla::fallible));
-  if (!path) {
-    rv.Throw(NS_ERROR_OUT_OF_MEMORY);
+  nsresult nsrv;
+  nsCOMPtr<nsIFile> snapshotFile =
+      do_CreateInstance("@mozilla.org/file/local;1", &nsrv);
+
+  if (NS_FAILED(nsrv)) {
+    rv = nsrv;
+    return nullptr;
+  }
+
+  rv = snapshotFile->InitWithPath(filePath);
+  if (rv.Failed()) {
     return nullptr;
   }
 
   AutoMemMap mm;
-  rv = mm.init(path.get());
+  rv = mm.init(snapshotFile);
   if (rv.Failed()) return nullptr;
 
   RefPtr<HeapSnapshot> snapshot = HeapSnapshot::Create(

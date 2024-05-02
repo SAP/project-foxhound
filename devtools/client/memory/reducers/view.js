@@ -3,12 +3,15 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-const { assert } = require("devtools/shared/DevToolsUtils");
-const { actions, viewState } = require("devtools/client/memory/constants");
+const { assert } = require("resource://devtools/shared/DevToolsUtils.js");
+const {
+  actions,
+  viewState,
+} = require("resource://devtools/client/memory/constants.js");
 
 const handlers = Object.create(null);
 
-handlers[actions.POP_VIEW] = function(view, _) {
+handlers[actions.POP_VIEW] = function (view, _) {
   assert(view.previous, "Had better have a previous view state when POP_VIEW");
   return Object.freeze({
     state: view.previous.state,
@@ -16,7 +19,7 @@ handlers[actions.POP_VIEW] = function(view, _) {
   });
 };
 
-handlers[actions.CHANGE_VIEW] = function(view, action) {
+handlers[actions.CHANGE_VIEW] = function (view, action) {
   const { newViewState, oldDiffing, oldSelected } = action;
   assert(newViewState);
 
@@ -43,7 +46,7 @@ const DEFAULT_VIEW = {
   previous: null,
 };
 
-module.exports = function(view = DEFAULT_VIEW, action) {
+module.exports = function (view = DEFAULT_VIEW, action) {
   const handler = handlers[action.type];
   return handler ? handler(view, action) : view;
 };

@@ -11,7 +11,6 @@ EXPORTS += [
 EXPORTS.mozilla.a11y += [
     "AccessibleWrap.h",
     "Compatibility.h",
-    "HyperTextAccessibleWrap.h",
     "LazyInstantiator.h",
     "MsaaAccessible.h",
     "MsaaIdGenerator.h",
@@ -25,9 +24,8 @@ UNIFIED_SOURCES += [
     "CompatibilityUIA.cpp",
     "DocAccessibleWrap.cpp",
     "EnumVariant.cpp",
-    "GeckoCustom.cpp",
-    "HyperTextAccessibleWrap.cpp",
     "IUnknownImpl.cpp",
+    "LazyInstantiator.cpp",
     "MsaaAccessible.cpp",
     "MsaaDocAccessible.cpp",
     "MsaaIdGenerator.cpp",
@@ -36,12 +34,9 @@ UNIFIED_SOURCES += [
     "nsWinUtils.cpp",
     "Platform.cpp",
     "RootAccessibleWrap.cpp",
-    "XULMenuAccessibleWrap.cpp",
 ]
 
 SOURCES += [
-    # This file cannot be built in unified mode because it redefines _WIN32_WINNT
-    "LazyInstantiator.cpp",
     # This file cannot be built in unified mode because it includes ISimpleDOMNode_i.c.
     "ServiceProvider.cpp",
 ]
@@ -55,7 +50,6 @@ LOCAL_INCLUDES += [
     "/accessible/generic",
     "/accessible/html",
     "/accessible/ipc",
-    "/accessible/ipc/win",
     "/accessible/windows",
     "/accessible/windows/ia2",
     "/accessible/windows/sdn",
@@ -77,5 +71,3 @@ if CONFIG["CC_TYPE"] == "clang-cl":
 include("/ipc/chromium/chromium-config.mozbuild")
 
 FINAL_LIBRARY = "xul"
-
-REQUIRES_UNIFIED_BUILD = True

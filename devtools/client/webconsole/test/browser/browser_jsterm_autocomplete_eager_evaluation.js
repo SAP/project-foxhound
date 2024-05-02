@@ -11,7 +11,7 @@ const TEST_URI = `data:text/html;charset=utf8,<!DOCTYPE html>Test autocompletion
     };
   </script>`;
 
-add_task(async function() {
+add_task(async function () {
   const hud = await openNewTabAndConsole(TEST_URI);
   const { jsterm } = hud;
   const { autocompletePopup } = jsterm;
@@ -19,7 +19,7 @@ add_task(async function() {
   const cases = [
     { input: "testObj.fun().y", results: ["yay", "yo"] },
     {
-      input: `Array.from([1,2,3]).reduce((i, agg) => agg + i).toS`,
+      input: `Array.of(1,2,3).reduce((i, agg) => agg + i).toS`,
       results: ["toString"],
     },
     { input: `1..toE`, results: ["toExponential"] },

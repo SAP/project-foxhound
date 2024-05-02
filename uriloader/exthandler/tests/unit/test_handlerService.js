@@ -18,10 +18,6 @@ function run_test() {
 
   const prefSvc = Services.prefs;
 
-  const env = Cc["@mozilla.org/process/environment;1"].getService(
-    Ci.nsIEnvironment
-  );
-
   let noMailto = false;
   if (mozinfo.os == "win") {
     // Check mailto handler from registry.
@@ -105,8 +101,8 @@ function run_test() {
   Assert.equal(handlerInfo.possibleApplicationHandlers.length, 0);
   Assert.equal(
     handlerInfo.alwaysAskBeforeHandling,
-    !prefSvc.getBoolPref(
-      "browser.download.improvements_to_download_panel",
+    prefSvc.getBoolPref(
+      "browser.download.always_ask_before_handling_new_types",
       false
     )
   );
@@ -312,14 +308,16 @@ function run_test() {
   // Figure out which is the local and which is the web handler and the index
   // in the array of the local handler, which is the one we're going to remove
   // to test removal of a handler.
-  var handler1 = possibleHandlersInfo.possibleApplicationHandlers.queryElementAt(
-    0,
-    Ci.nsIHandlerApp
-  );
-  var handler2 = possibleHandlersInfo.possibleApplicationHandlers.queryElementAt(
-    1,
-    Ci.nsIHandlerApp
-  );
+  var handler1 =
+    possibleHandlersInfo.possibleApplicationHandlers.queryElementAt(
+      0,
+      Ci.nsIHandlerApp
+    );
+  var handler2 =
+    possibleHandlersInfo.possibleApplicationHandlers.queryElementAt(
+      1,
+      Ci.nsIHandlerApp
+    );
   var localPossibleHandler, webPossibleHandler, localIndex;
   if (handler1 instanceof Ci.nsILocalHandlerApp) {
     [localPossibleHandler, webPossibleHandler, localIndex] = [
@@ -354,10 +352,11 @@ function run_test() {
   Assert.equal(possibleHandlersInfo.possibleApplicationHandlers.length, 1);
 
   // Make sure the handler is the one we didn't remove.
-  webPossibleHandler = possibleHandlersInfo.possibleApplicationHandlers.queryElementAt(
-    0,
-    Ci.nsIWebHandlerApp
-  );
+  webPossibleHandler =
+    possibleHandlersInfo.possibleApplicationHandlers.queryElementAt(
+      0,
+      Ci.nsIWebHandlerApp
+    );
   Assert.equal(webPossibleHandler.name, webHandler.name);
   Assert.ok(webPossibleHandler.equals(webHandler));
 
@@ -457,17 +456,12 @@ function run_test() {
 
   // test mailcap entries with needsterminal are ignored on non-Windows non-Mac.
   if (mozinfo.os != "win" && mozinfo.os != "mac") {
-    env.set("PERSONAL_MAILCAP", do_get_file("mailcap").path);
-    handlerInfo = mimeSvc.getFromTypeAndExtension("text/plain", null);
-    Assert.equal(
-      handlerInfo.preferredAction,
-      prefSvc.getBoolPref(
-        "browser.download.improvements_to_download_panel",
-        false
-      )
-        ? Ci.nsIHandlerInfo.saveToDisk
-        : Ci.nsIHandlerInfo.useSystemDefault
+    prefSvc.setStringPref(
+      "helpers.private_mailcap_file",
+      do_get_file("mailcap").path
     );
+    handlerInfo = mimeSvc.getFromTypeAndExtension("text/plain", null);
+    Assert.equal(handlerInfo.preferredAction, Ci.nsIHandlerInfo.saveToDisk);
     Assert.equal(handlerInfo.defaultDescription, "sed");
   }
 }

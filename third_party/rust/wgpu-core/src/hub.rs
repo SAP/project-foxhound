@@ -1,321 +1,331 @@
+/*! Allocating resource ids, and tracking the resources they refer to.
+
+The `wgpu_core` API uses identifiers of type [`Id<R>`] to refer to
+resources of type `R`. For example, [`id::DeviceId`] is an alias for
+`Id<Device<Empty>>`, and [`id::BufferId`] is an alias for
+`Id<Buffer<Empty>>`. `Id` implements `Copy`, `Hash`, `Eq`, `Ord`, and
+of course `Debug`.
+
+Each `Id` contains not only an index for the resource it denotes but
+also a [`Backend`] indicating which `wgpu` backend it belongs to. You
+can use the [`gfx_select`] macro to dynamically dispatch on an id's
+backend to a function specialized at compile time for a specific
+backend. See that macro's documentation for details.
+
+`Id`s also incorporate a generation number, for additional validation.
+
+The resources to which identifiers refer are freed explicitly.
+Attempting to use an identifier for a resource that has been freed
+elicits an error result.
+
+## Assigning ids to resources
+
+The users of `wgpu_core` generally want resource ids to be assigned
+in one of two ways:
+
+- Users like `wgpu` want `wgpu_core` to assign ids to resources itself.
+  For example, `wgpu` expects to call `Global::device_create_buffer`
+  and have the return value indicate the newly created buffer's id.
+
+- Users like `player` and Firefox want to allocate ids themselves, and
+  pass `Global::device_create_buffer` and friends the id to assign the
+  new resource.
+
+To accommodate either pattern, `wgpu_core` methods that create
+resources all expect an `id_in` argument that the caller can use to
+specify the id, and they all return the id used. For example, the
+declaration of `Global::device_create_buffer` looks like this:
+
+```ignore
+impl<G: GlobalIdentityHandlerFactory> Global<G> {
+    /* ... */
+    pub fn device_create_buffer<A: HalApi>(
+        &self,
+        device_id: id::DeviceId,
+        desc: &resource::BufferDescriptor,
+        id_in: Input<G, id::BufferId>,
+    ) -> (id::BufferId, Option<resource::CreateBufferError>) {
+        /* ... */
+    }
+    /* ... */
+}
+```
+
+Users that want to assign resource ids themselves pass in the id they
+want as the `id_in` argument, whereas users that want `wgpu_core`
+itself to choose ids always pass `()`. In either case, the id
+ultimately assigned is returned as the first element of the tuple.
+
+Producing true identifiers from `id_in` values is the job of an
+[`IdentityHandler`] implementation, which has an associated type
+[`Input`] saying what type of `id_in` values it accepts, and a
+[`process`] method that turns such values into true identifiers of
+type `I`. There are two kinds of `IdentityHandler`s:
+
+- Users that want `wgpu_core` to assign ids generally use
+  [`IdentityManager`] ([wrapped in a mutex]). Its `Input` type is
+  `()`, and it tracks assigned ids and generation numbers as
+  necessary. (This is what `wgpu` does.)
+
+- Users that want to assign ids themselves use an `IdentityHandler`
+  whose `Input` type is `I` itself, and whose `process` method simply
+  passes the `id_in` argument through unchanged. For example, the
+  `player` crate uses an `IdentityPassThrough` type whose `process`
+  method simply adjusts the id's backend (since recordings can be
+  replayed on a different backend than the one they were created on)
+  but passes the rest of the id's content through unchanged.
+
+Because an `IdentityHandler<I>` can only create ids for a single
+resource type `I`, constructing a [`Global`] entails constructing a
+separate `IdentityHandler<I>` for each resource type `I` that the
+`Global` will manage: an `IdentityHandler<DeviceId>`, an
+`IdentityHandler<TextureId>`, and so on.
+
+The [`Global::new`] function could simply take a large collection of
+`IdentityHandler<I>` implementations as arguments, but that would be
+ungainly. Instead, `Global::new` expects a `factory` argument that
+implements the [`GlobalIdentityHandlerFactory`] trait, which extends
+[`IdentityHandlerFactory<I>`] for each resource id type `I`. This
+trait, in turn, has a `spawn` method that constructs an
+`IdentityHandler<I>` for the `Global` to use.
+
+What this means is that the types of resource creation functions'
+`id_in` arguments depend on the `Global`'s `G` type parameter. A
+`Global<G>`'s `IdentityHandler<I>` implementation is:
+
+```ignore
+<G as IdentityHandlerFactory<I>>::Filter
+```
+
+where `Filter` is an associated type of the `IdentityHandlerFactory` trait.
+Thus, its `id_in` type is:
+
+```ignore
+<<G as IdentityHandlerFactory<I>>::Filter as IdentityHandler<I>>::Input
+```
+
+The [`Input<G, I>`] type is an alias for this construction.
+
+## Id allocation and streaming
+
+Perhaps surprisingly, allowing users to assign resource ids themselves
+enables major performance improvements in some applications.
+
+The `wgpu_core` API is designed for use by Firefox's [WebGPU]
+implementation. For security, web content and GPU use must be kept
+segregated in separate processes, with all interaction between them
+mediated by an inter-process communication protocol. As web content uses
+the WebGPU API, the content process sends messages to the GPU process,
+which interacts with the platform's GPU APIs on content's behalf,
+occasionally sending results back.
+
+In a classic Rust API, a resource allocation function takes parameters
+describing the resource to create, and if creation succeeds, it returns
+the resource id in a `Result::Ok` value. However, this design is a poor
+fit for the split-process design described above: content must wait for
+the reply to its buffer-creation message (say) before it can know which
+id it can use in the next message that uses that buffer. On a common
+usage pattern, the classic Rust design imposes the latency of a full
+cross-process round trip.
+
+We can avoid incurring these round-trip latencies simply by letting the
+content process assign resource ids itself. With this approach, content
+can choose an id for the new buffer, send a message to create the
+buffer, and then immediately send the next message operating on that
+buffer, since it already knows its id. Allowing content and GPU process
+activity to be pipelined greatly improves throughput.
+
+To help propagate errors correctly in this style of usage, when resource
+creation fails, the id supplied for that resource is marked to indicate
+as much, allowing subsequent operations using that id to be properly
+flagged as errors as well.
+
+[`Backend`]: wgt::Backend
+[`Global`]: crate::global::Global
+[`Global::new`]: crate::global::Global::new
+[`gfx_select`]: crate::gfx_select
+[`IdentityHandler`]: crate::identity::IdentityHandler
+[`Input`]: crate::identity::IdentityHandler::Input
+[`process`]: crate::identity::IdentityHandler::process
+[`Id<R>`]: crate::id::Id
+[wrapped in a mutex]: ../identity/trait.IdentityHandler.html#impl-IdentityHandler%3CI%3E-for-Mutex%3CIdentityManager%3E
+[WebGPU]: https://www.w3.org/TR/webgpu/
+[`IdentityManager`]: crate::identity::IdentityManager
+[`Input<G, I>`]: crate::identity::Input
+[`IdentityHandlerFactory<I>`]: crate::identity::IdentityHandlerFactory
+*/
+
 use crate::{
     binding_model::{BindGroup, BindGroupLayout, PipelineLayout},
     command::{CommandBuffer, RenderBundle},
     device::Device,
+    hal_api::HalApi,
     id,
+    identity::GlobalIdentityHandlerFactory,
     instance::{Adapter, HalSurface, Instance, Surface},
     pipeline::{ComputePipeline, RenderPipeline, ShaderModule},
-    resource::{Buffer, QuerySet, Sampler, Texture, TextureClearMode, TextureView},
-    Epoch, Index,
+    registry::Registry,
+    resource::{Buffer, QuerySet, Sampler, StagingBuffer, Texture, TextureClearMode, TextureView},
+    storage::{Element, Storage, StorageReport},
 };
 
-use parking_lot::{Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
-use wgt::Backend;
+use wgt::{strict_assert_eq, strict_assert_ne};
 
-#[cfg(debug_assertions)]
+#[cfg(any(debug_assertions, feature = "strict_asserts"))]
 use std::cell::Cell;
-use std::{fmt::Debug, marker::PhantomData, mem, ops};
+use std::{fmt::Debug, marker::PhantomData};
 
-/// A simple structure to manage identities of objects.
-#[derive(Debug, Default)]
-pub struct IdentityManager {
-    free: Vec<Index>,
-    epochs: Vec<Epoch>,
-}
-
-impl IdentityManager {
-    pub fn from_index(min_index: u32) -> Self {
-        Self {
-            free: (0..min_index).collect(),
-            epochs: vec![1; min_index as usize],
-        }
-    }
-
-    pub fn alloc<I: id::TypedId>(&mut self, backend: Backend) -> I {
-        match self.free.pop() {
-            Some(index) => I::zip(index, self.epochs[index as usize], backend),
-            None => {
-                let epoch = 1;
-                let id = I::zip(self.epochs.len() as Index, epoch, backend);
-                self.epochs.push(epoch);
-                id
-            }
-        }
-    }
-
-    pub fn free<I: id::TypedId + Debug>(&mut self, id: I) {
-        let (index, epoch, _backend) = id.unzip();
-        let pe = &mut self.epochs[index as usize];
-        assert_eq!(*pe, epoch);
-        *pe += 1;
-        self.free.push(index);
-    }
-}
-
-#[derive(Debug)]
-enum Element<T> {
-    Vacant,
-    Occupied(T, Epoch),
-    Error(Epoch, String),
-}
-
-#[derive(Clone, Debug, Default)]
-pub struct StorageReport {
-    pub num_occupied: usize,
-    pub num_vacant: usize,
-    pub num_error: usize,
-    pub element_size: usize,
-}
-
-impl StorageReport {
-    pub fn is_empty(&self) -> bool {
-        self.num_occupied + self.num_vacant + self.num_error == 0
-    }
-}
-
-#[derive(Clone, Debug)]
-pub(crate) struct InvalidId;
-
-#[derive(Debug)]
-pub struct Storage<T, I: id::TypedId> {
-    map: Vec<Element<T>>,
-    kind: &'static str,
-    _phantom: PhantomData<I>,
-}
-
-impl<T, I: id::TypedId> ops::Index<id::Valid<I>> for Storage<T, I> {
-    type Output = T;
-    fn index(&self, id: id::Valid<I>) -> &T {
-        self.get(id.0).unwrap()
-    }
-}
-
-impl<T, I: id::TypedId> ops::IndexMut<id::Valid<I>> for Storage<T, I> {
-    fn index_mut(&mut self, id: id::Valid<I>) -> &mut T {
-        self.get_mut(id.0).unwrap()
-    }
-}
-
-impl<T, I: id::TypedId> Storage<T, I> {
-    pub(crate) fn contains(&self, id: I) -> bool {
-        let (index, epoch, _) = id.unzip();
-        match self.map[index as usize] {
-            Element::Vacant => false,
-            Element::Occupied(_, storage_epoch) | Element::Error(storage_epoch, ..) => {
-                epoch == storage_epoch
-            }
-        }
-    }
-
-    /// Get a reference to an item behind a potentially invalid ID.
-    /// Panics if there is an epoch mismatch, or the entry is empty.
-    pub(crate) fn get(&self, id: I) -> Result<&T, InvalidId> {
-        let (index, epoch, _) = id.unzip();
-        let (result, storage_epoch) = match self.map[index as usize] {
-            Element::Occupied(ref v, epoch) => (Ok(v), epoch),
-            Element::Vacant => panic!("{}[{}] does not exist", self.kind, index),
-            Element::Error(epoch, ..) => (Err(InvalidId), epoch),
-        };
-        assert_eq!(
-            epoch, storage_epoch,
-            "{}[{}] is no longer alive",
-            self.kind, index
-        );
-        result
-    }
-
-    /// Get a mutable reference to an item behind a potentially invalid ID.
-    /// Panics if there is an epoch mismatch, or the entry is empty.
-    pub(crate) fn get_mut(&mut self, id: I) -> Result<&mut T, InvalidId> {
-        let (index, epoch, _) = id.unzip();
-        let (result, storage_epoch) = match self.map[index as usize] {
-            Element::Occupied(ref mut v, epoch) => (Ok(v), epoch),
-            Element::Vacant => panic!("{}[{}] does not exist", self.kind, index),
-            Element::Error(epoch, ..) => (Err(InvalidId), epoch),
-        };
-        assert_eq!(
-            epoch, storage_epoch,
-            "{}[{}] is no longer alive",
-            self.kind, index
-        );
-        result
-    }
-
-    pub(crate) fn label_for_invalid_id(&self, id: I) -> &str {
-        let (index, _, _) = id.unzip();
-        match self.map[index as usize] {
-            Element::Error(_, ref label) => label,
-            _ => "",
-        }
-    }
-
-    fn insert_impl(&mut self, index: usize, element: Element<T>) {
-        if index >= self.map.len() {
-            self.map.resize_with(index + 1, || Element::Vacant);
-        }
-        match std::mem::replace(&mut self.map[index], element) {
-            Element::Vacant => {}
-            _ => panic!("Index {:?} is already occupied", index),
-        }
-    }
-
-    pub(crate) fn insert(&mut self, id: I, value: T) {
-        let (index, epoch, _) = id.unzip();
-        self.insert_impl(index as usize, Element::Occupied(value, epoch))
-    }
-
-    pub(crate) fn insert_error(&mut self, id: I, label: &str) {
-        let (index, epoch, _) = id.unzip();
-        self.insert_impl(index as usize, Element::Error(epoch, label.to_string()))
-    }
-
-    pub(crate) fn force_replace(&mut self, id: I, value: T) {
-        let (index, epoch, _) = id.unzip();
-        self.map[index as usize] = Element::Occupied(value, epoch);
-    }
-
-    pub(crate) fn remove(&mut self, id: I) -> Option<T> {
-        let (index, epoch, _) = id.unzip();
-        match std::mem::replace(&mut self.map[index as usize], Element::Vacant) {
-            Element::Occupied(value, storage_epoch) => {
-                assert_eq!(epoch, storage_epoch);
-                Some(value)
-            }
-            Element::Error(..) => None,
-            Element::Vacant => panic!("Cannot remove a vacant resource"),
-        }
-    }
-
-    // Prevents panic on out of range access, allows Vacant elements.
-    pub(crate) fn _try_remove(&mut self, id: I) -> Option<T> {
-        let (index, epoch, _) = id.unzip();
-        if index as usize >= self.map.len() {
-            None
-        } else if let Element::Occupied(value, storage_epoch) =
-            std::mem::replace(&mut self.map[index as usize], Element::Vacant)
-        {
-            assert_eq!(epoch, storage_epoch);
-            Some(value)
-        } else {
-            None
-        }
-    }
-
-    pub(crate) fn iter(&self, backend: Backend) -> impl Iterator<Item = (I, &T)> {
-        self.map
-            .iter()
-            .enumerate()
-            .filter_map(move |(index, x)| match *x {
-                Element::Occupied(ref value, storage_epoch) => {
-                    Some((I::zip(index as Index, storage_epoch, backend), value))
-                }
-                _ => None,
-            })
-    }
-
-    fn generate_report(&self) -> StorageReport {
-        let mut report = StorageReport {
-            element_size: mem::size_of::<T>(),
-            ..Default::default()
-        };
-        for element in self.map.iter() {
-            match *element {
-                Element::Occupied(..) => report.num_occupied += 1,
-                Element::Vacant => report.num_vacant += 1,
-                Element::Error(..) => report.num_error += 1,
-            }
-        }
-        report
-    }
-}
-
-/// Type system for enforcing the lock order on shared HUB structures.
-/// If type A implements `Access<A>`, that means we are allowed to proceed
-/// with locking resource `B` after we lock `A`.
+/// Type system for enforcing the lock order on [`Hub`] fields.
 ///
-/// The implenentations basically describe the edges in a directed graph
-/// of lock transitions. As long as it doesn't have loops, we can have
-/// multiple concurrent paths on this graph (from multiple threads) without
-/// deadlocks, i.e. there is always a path whose next resource is not locked
-/// by some other path, at any time.
+/// If type `A` implements `Access<B>`, that means we are allowed to
+/// proceed with locking resource `B` after we lock `A`.
+///
+/// The implementations of `Access` basically describe the edges in an
+/// acyclic directed graph of lock transitions. As long as it doesn't have
+/// cycles, any number of threads can acquire locks along paths through
+/// the graph without deadlock. That is, if you look at each thread's
+/// lock acquisitions as steps along a path in the graph, then because
+/// there are no cycles in the graph, there must always be some thread
+/// that is able to acquire its next lock, or that is about to release
+/// a lock. (Assume that no thread just sits on its locks forever.)
+///
+/// Locks must be acquired in the following order:
+///
+/// - [`Adapter`]
+/// - [`Device`]
+/// - [`CommandBuffer`]
+/// - [`RenderBundle`]
+/// - [`PipelineLayout`]
+/// - [`BindGroupLayout`]
+/// - [`BindGroup`]
+/// - [`ComputePipeline`]
+/// - [`RenderPipeline`]
+/// - [`ShaderModule`]
+/// - [`Buffer`]
+/// - [`StagingBuffer`]
+/// - [`Texture`]
+/// - [`TextureView`]
+/// - [`Sampler`]
+/// - [`QuerySet`]
+///
+/// That is, you may only acquire a new lock on a `Hub` field if it
+/// appears in the list after all the other fields you're already
+/// holding locks for. When you are holding no locks, you can start
+/// anywhere.
+///
+/// It's fine to add more `Access` implementations as needed, as long
+/// as you do not introduce a cycle. In other words, as long as there
+/// is some ordering you can put the resource types in that respects
+/// the extant `Access` implementations, that's fine.
+///
+/// See the documentation for [`Hub`] for more details.
 pub trait Access<A> {}
 
 pub enum Root {}
-//TODO: establish an order instead of declaring all the pairs.
+
+// These impls are arranged so that the target types (that is, the `T`
+// in `Access<T>`) appear in locking order.
+//
+// TODO: establish an order instead of declaring all the pairs.
 impl Access<Instance> for Root {}
 impl Access<Surface> for Root {}
 impl Access<Surface> for Instance {}
-impl<A: hal::Api> Access<Adapter<A>> for Root {}
-impl<A: hal::Api> Access<Adapter<A>> for Surface {}
-impl<A: hal::Api> Access<Device<A>> for Root {}
-impl<A: hal::Api> Access<Device<A>> for Surface {}
-impl<A: hal::Api> Access<Device<A>> for Adapter<A> {}
-impl<A: hal::Api> Access<PipelineLayout<A>> for Root {}
-impl<A: hal::Api> Access<PipelineLayout<A>> for Device<A> {}
-impl<A: hal::Api> Access<PipelineLayout<A>> for RenderBundle {}
-impl<A: hal::Api> Access<BindGroupLayout<A>> for Root {}
-impl<A: hal::Api> Access<BindGroupLayout<A>> for Device<A> {}
-impl<A: hal::Api> Access<BindGroupLayout<A>> for PipelineLayout<A> {}
-impl<A: hal::Api> Access<BindGroup<A>> for Root {}
-impl<A: hal::Api> Access<BindGroup<A>> for Device<A> {}
-impl<A: hal::Api> Access<BindGroup<A>> for BindGroupLayout<A> {}
-impl<A: hal::Api> Access<BindGroup<A>> for PipelineLayout<A> {}
-impl<A: hal::Api> Access<BindGroup<A>> for CommandBuffer<A> {}
-impl<A: hal::Api> Access<CommandBuffer<A>> for Root {}
-impl<A: hal::Api> Access<CommandBuffer<A>> for Device<A> {}
-impl<A: hal::Api> Access<RenderBundle> for Device<A> {}
-impl<A: hal::Api> Access<RenderBundle> for CommandBuffer<A> {}
-impl<A: hal::Api> Access<ComputePipeline<A>> for Device<A> {}
-impl<A: hal::Api> Access<ComputePipeline<A>> for BindGroup<A> {}
-impl<A: hal::Api> Access<RenderPipeline<A>> for Device<A> {}
-impl<A: hal::Api> Access<RenderPipeline<A>> for BindGroup<A> {}
-impl<A: hal::Api> Access<RenderPipeline<A>> for ComputePipeline<A> {}
-impl<A: hal::Api> Access<QuerySet<A>> for Root {}
-impl<A: hal::Api> Access<QuerySet<A>> for Device<A> {}
-impl<A: hal::Api> Access<QuerySet<A>> for CommandBuffer<A> {}
-impl<A: hal::Api> Access<QuerySet<A>> for RenderPipeline<A> {}
-impl<A: hal::Api> Access<QuerySet<A>> for ComputePipeline<A> {}
-impl<A: hal::Api> Access<QuerySet<A>> for Sampler<A> {}
-impl<A: hal::Api> Access<ShaderModule<A>> for Device<A> {}
-impl<A: hal::Api> Access<ShaderModule<A>> for BindGroupLayout<A> {}
-impl<A: hal::Api> Access<Buffer<A>> for Root {}
-impl<A: hal::Api> Access<Buffer<A>> for Device<A> {}
-impl<A: hal::Api> Access<Buffer<A>> for BindGroupLayout<A> {}
-impl<A: hal::Api> Access<Buffer<A>> for BindGroup<A> {}
-impl<A: hal::Api> Access<Buffer<A>> for CommandBuffer<A> {}
-impl<A: hal::Api> Access<Buffer<A>> for ComputePipeline<A> {}
-impl<A: hal::Api> Access<Buffer<A>> for RenderPipeline<A> {}
-impl<A: hal::Api> Access<Buffer<A>> for QuerySet<A> {}
-impl<A: hal::Api> Access<Texture<A>> for Root {}
-impl<A: hal::Api> Access<Texture<A>> for Device<A> {}
-impl<A: hal::Api> Access<Texture<A>> for Buffer<A> {}
-impl<A: hal::Api> Access<TextureView<A>> for Root {}
-impl<A: hal::Api> Access<TextureView<A>> for Device<A> {}
-impl<A: hal::Api> Access<TextureView<A>> for Texture<A> {}
-impl<A: hal::Api> Access<Sampler<A>> for Root {}
-impl<A: hal::Api> Access<Sampler<A>> for Device<A> {}
-impl<A: hal::Api> Access<Sampler<A>> for TextureView<A> {}
+impl<A: HalApi> Access<Adapter<A>> for Root {}
+impl<A: HalApi> Access<Adapter<A>> for Surface {}
+impl<A: HalApi> Access<Device<A>> for Root {}
+impl<A: HalApi> Access<Device<A>> for Surface {}
+impl<A: HalApi> Access<Device<A>> for Adapter<A> {}
+impl<A: HalApi> Access<CommandBuffer<A>> for Root {}
+impl<A: HalApi> Access<CommandBuffer<A>> for Device<A> {}
+impl<A: HalApi> Access<RenderBundle<A>> for Device<A> {}
+impl<A: HalApi> Access<RenderBundle<A>> for CommandBuffer<A> {}
+impl<A: HalApi> Access<PipelineLayout<A>> for Root {}
+impl<A: HalApi> Access<PipelineLayout<A>> for Device<A> {}
+impl<A: HalApi> Access<PipelineLayout<A>> for RenderBundle<A> {}
+impl<A: HalApi> Access<BindGroupLayout<A>> for Root {}
+impl<A: HalApi> Access<BindGroupLayout<A>> for Device<A> {}
+impl<A: HalApi> Access<BindGroupLayout<A>> for PipelineLayout<A> {}
+impl<A: HalApi> Access<BindGroupLayout<A>> for QuerySet<A> {}
+impl<A: HalApi> Access<BindGroup<A>> for Root {}
+impl<A: HalApi> Access<BindGroup<A>> for Device<A> {}
+impl<A: HalApi> Access<BindGroup<A>> for BindGroupLayout<A> {}
+impl<A: HalApi> Access<BindGroup<A>> for PipelineLayout<A> {}
+impl<A: HalApi> Access<BindGroup<A>> for CommandBuffer<A> {}
+impl<A: HalApi> Access<ComputePipeline<A>> for Device<A> {}
+impl<A: HalApi> Access<ComputePipeline<A>> for BindGroup<A> {}
+impl<A: HalApi> Access<RenderPipeline<A>> for Device<A> {}
+impl<A: HalApi> Access<RenderPipeline<A>> for BindGroup<A> {}
+impl<A: HalApi> Access<RenderPipeline<A>> for ComputePipeline<A> {}
+impl<A: HalApi> Access<ShaderModule<A>> for Device<A> {}
+impl<A: HalApi> Access<ShaderModule<A>> for BindGroupLayout<A> {}
+impl<A: HalApi> Access<Buffer<A>> for Root {}
+impl<A: HalApi> Access<Buffer<A>> for Device<A> {}
+impl<A: HalApi> Access<Buffer<A>> for BindGroupLayout<A> {}
+impl<A: HalApi> Access<Buffer<A>> for BindGroup<A> {}
+impl<A: HalApi> Access<Buffer<A>> for CommandBuffer<A> {}
+impl<A: HalApi> Access<Buffer<A>> for ComputePipeline<A> {}
+impl<A: HalApi> Access<Buffer<A>> for RenderPipeline<A> {}
+impl<A: HalApi> Access<Buffer<A>> for QuerySet<A> {}
+impl<A: HalApi> Access<StagingBuffer<A>> for Device<A> {}
+impl<A: HalApi> Access<Texture<A>> for Root {}
+impl<A: HalApi> Access<Texture<A>> for Device<A> {}
+impl<A: HalApi> Access<Texture<A>> for Buffer<A> {}
+impl<A: HalApi> Access<TextureView<A>> for Root {}
+impl<A: HalApi> Access<TextureView<A>> for Device<A> {}
+impl<A: HalApi> Access<TextureView<A>> for Texture<A> {}
+impl<A: HalApi> Access<Sampler<A>> for Root {}
+impl<A: HalApi> Access<Sampler<A>> for Device<A> {}
+impl<A: HalApi> Access<Sampler<A>> for TextureView<A> {}
+impl<A: HalApi> Access<QuerySet<A>> for Root {}
+impl<A: HalApi> Access<QuerySet<A>> for Device<A> {}
+impl<A: HalApi> Access<QuerySet<A>> for CommandBuffer<A> {}
+impl<A: HalApi> Access<QuerySet<A>> for RenderPipeline<A> {}
+impl<A: HalApi> Access<QuerySet<A>> for ComputePipeline<A> {}
+impl<A: HalApi> Access<QuerySet<A>> for Sampler<A> {}
 
-#[cfg(debug_assertions)]
+#[cfg(any(debug_assertions, feature = "strict_asserts"))]
 thread_local! {
+    /// Per-thread state checking `Token<Root>` creation in debug builds.
+    ///
+    /// This is the number of `Token` values alive on the current
+    /// thread. Since `Token` creation respects the [`Access`] graph,
+    /// there can never be more tokens alive than there are fields of
+    /// [`Hub`], so a `u8` is plenty.
     static ACTIVE_TOKEN: Cell<u8> = Cell::new(0);
 }
 
-/// A permission token to lock resource `T` or anything after it,
-/// as defined by the `Access` implementations.
+/// A zero-size permission token to lock some fields of [`Hub`].
 ///
-/// Note: there can only be one non-borrowed `Token` alive on a thread
-/// at a time, which is enforced by `ACTIVE_TOKEN`.
+/// Access to a `Token<T>` grants permission to lock any field of
+/// [`Hub`] following the one of type [`Registry<T, ...>`], where
+/// "following" is as defined by the [`Access`] implementations.
+///
+/// Calling [`Token::root()`] returns a `Token<Root>`, which grants
+/// permission to lock any field. Dynamic checks ensure that each
+/// thread has at most one `Token<Root>` live at a time, in debug
+/// builds.
+///
+/// The locking methods on `Registry<T, ...>` take a `&'t mut
+/// Token<A>`, and return a fresh `Token<'t, T>` and a lock guard with
+/// lifetime `'t`, so the caller cannot access their `Token<A>` again
+/// until they have dropped both the `Token<T>` and the lock guard.
+///
+/// Tokens are `!Send`, so one thread can't send its permissions to
+/// another.
 pub(crate) struct Token<'a, T: 'a> {
-    level: PhantomData<&'a T>,
+    // The `*const` makes us `!Send` and `!Sync`.
+    level: PhantomData<&'a *const T>,
 }
 
 impl<'a, T> Token<'a, T> {
-    fn new() -> Self {
-        #[cfg(debug_assertions)]
+    /// Return a new token for a locked field.
+    ///
+    /// This should only be used by `Registry` locking methods.
+    pub(crate) fn new() -> Self {
+        #[cfg(any(debug_assertions, feature = "strict_asserts"))]
         ACTIVE_TOKEN.with(|active| {
             let old = active.get();
-            assert_ne!(old, 0, "Root token was dropped");
+            strict_assert_ne!(old, 0, "Root token was dropped");
             active.set(old + 1);
         });
         Self { level: PhantomData }
@@ -323,10 +333,14 @@ impl<'a, T> Token<'a, T> {
 }
 
 impl Token<'static, Root> {
+    /// Return a `Token<Root>`, granting permission to lock any [`Hub`] field.
+    ///
+    /// Debug builds check dynamically that each thread has at most
+    /// one root token at a time.
     pub fn root() -> Self {
-        #[cfg(debug_assertions)]
+        #[cfg(any(debug_assertions, feature = "strict_asserts"))]
         ACTIVE_TOKEN.with(|active| {
-            assert_eq!(0, active.replace(1), "Root token is already active");
+            strict_assert_eq!(0, active.replace(1), "Root token is already active");
         });
 
         Self { level: PhantomData }
@@ -335,204 +349,11 @@ impl Token<'static, Root> {
 
 impl<'a, T> Drop for Token<'a, T> {
     fn drop(&mut self) {
-        #[cfg(debug_assertions)]
+        #[cfg(any(debug_assertions, feature = "strict_asserts"))]
         ACTIVE_TOKEN.with(|active| {
             let old = active.get();
             active.set(old - 1);
         });
-    }
-}
-
-pub trait IdentityHandler<I>: Debug {
-    type Input: Clone + Debug;
-    fn process(&self, id: Self::Input, backend: Backend) -> I;
-    fn free(&self, id: I);
-}
-
-impl<I: id::TypedId + Debug> IdentityHandler<I> for Mutex<IdentityManager> {
-    type Input = PhantomData<I>;
-    fn process(&self, _id: Self::Input, backend: Backend) -> I {
-        self.lock().alloc(backend)
-    }
-    fn free(&self, id: I) {
-        self.lock().free(id)
-    }
-}
-
-pub trait IdentityHandlerFactory<I> {
-    type Filter: IdentityHandler<I>;
-    fn spawn(&self, min_index: Index) -> Self::Filter;
-}
-
-#[derive(Debug)]
-pub struct IdentityManagerFactory;
-
-impl<I: id::TypedId + Debug> IdentityHandlerFactory<I> for IdentityManagerFactory {
-    type Filter = Mutex<IdentityManager>;
-    fn spawn(&self, min_index: Index) -> Self::Filter {
-        Mutex::new(IdentityManager::from_index(min_index))
-    }
-}
-
-pub trait GlobalIdentityHandlerFactory:
-    IdentityHandlerFactory<id::AdapterId>
-    + IdentityHandlerFactory<id::DeviceId>
-    + IdentityHandlerFactory<id::PipelineLayoutId>
-    + IdentityHandlerFactory<id::ShaderModuleId>
-    + IdentityHandlerFactory<id::BindGroupLayoutId>
-    + IdentityHandlerFactory<id::BindGroupId>
-    + IdentityHandlerFactory<id::CommandBufferId>
-    + IdentityHandlerFactory<id::RenderBundleId>
-    + IdentityHandlerFactory<id::RenderPipelineId>
-    + IdentityHandlerFactory<id::ComputePipelineId>
-    + IdentityHandlerFactory<id::QuerySetId>
-    + IdentityHandlerFactory<id::BufferId>
-    + IdentityHandlerFactory<id::TextureId>
-    + IdentityHandlerFactory<id::TextureViewId>
-    + IdentityHandlerFactory<id::SamplerId>
-    + IdentityHandlerFactory<id::SurfaceId>
-{
-}
-
-impl GlobalIdentityHandlerFactory for IdentityManagerFactory {}
-
-pub type Input<G, I> = <<G as IdentityHandlerFactory<I>>::Filter as IdentityHandler<I>>::Input;
-
-pub trait Resource {
-    const TYPE: &'static str;
-    fn life_guard(&self) -> &crate::LifeGuard;
-    fn label(&self) -> &str {
-        #[cfg(debug_assertions)]
-        return &self.life_guard().label;
-        #[cfg(not(debug_assertions))]
-        return "";
-    }
-}
-
-#[derive(Debug)]
-pub struct Registry<T: Resource, I: id::TypedId, F: IdentityHandlerFactory<I>> {
-    identity: F::Filter,
-    data: RwLock<Storage<T, I>>,
-    backend: Backend,
-}
-
-impl<T: Resource, I: id::TypedId, F: IdentityHandlerFactory<I>> Registry<T, I, F> {
-    fn new(backend: Backend, factory: &F) -> Self {
-        Self {
-            identity: factory.spawn(0),
-            data: RwLock::new(Storage {
-                map: Vec::new(),
-                kind: T::TYPE,
-                _phantom: PhantomData,
-            }),
-            backend,
-        }
-    }
-
-    fn without_backend(factory: &F, kind: &'static str) -> Self {
-        Self {
-            identity: factory.spawn(1),
-            data: RwLock::new(Storage {
-                map: Vec::new(),
-                kind,
-                _phantom: PhantomData,
-            }),
-            backend: Backend::Empty,
-        }
-    }
-}
-
-#[must_use]
-pub(crate) struct FutureId<'a, I: id::TypedId, T> {
-    id: I,
-    data: &'a RwLock<Storage<T, I>>,
-}
-
-impl<I: id::TypedId + Copy, T> FutureId<'_, I, T> {
-    #[cfg(feature = "trace")]
-    pub fn id(&self) -> I {
-        self.id
-    }
-
-    pub fn into_id(self) -> I {
-        self.id
-    }
-
-    pub fn assign<'a, A: Access<T>>(self, value: T, _: &'a mut Token<A>) -> id::Valid<I> {
-        self.data.write().insert(self.id, value);
-        id::Valid(self.id)
-    }
-
-    pub fn assign_error<'a, A: Access<T>>(self, label: &str, _: &'a mut Token<A>) -> I {
-        self.data.write().insert_error(self.id, label);
-        self.id
-    }
-}
-
-impl<T: Resource, I: id::TypedId + Copy, F: IdentityHandlerFactory<I>> Registry<T, I, F> {
-    pub(crate) fn prepare(
-        &self,
-        id_in: <F::Filter as IdentityHandler<I>>::Input,
-    ) -> FutureId<I, T> {
-        FutureId {
-            id: self.identity.process(id_in, self.backend),
-            data: &self.data,
-        }
-    }
-
-    pub(crate) fn read<'a, A: Access<T>>(
-        &'a self,
-        _token: &'a mut Token<A>,
-    ) -> (RwLockReadGuard<'a, Storage<T, I>>, Token<'a, T>) {
-        (self.data.read(), Token::new())
-    }
-
-    pub(crate) fn write<'a, A: Access<T>>(
-        &'a self,
-        _token: &'a mut Token<A>,
-    ) -> (RwLockWriteGuard<'a, Storage<T, I>>, Token<'a, T>) {
-        (self.data.write(), Token::new())
-    }
-
-    pub fn unregister_locked(&self, id: I, guard: &mut Storage<T, I>) -> Option<T> {
-        let value = guard.remove(id);
-        //Note: careful about the order here!
-        self.identity.free(id);
-        //Returning None is legal if it's an error ID
-        value
-    }
-
-    pub(crate) fn unregister<'a, A: Access<T>>(
-        &self,
-        id: I,
-        _token: &'a mut Token<A>,
-    ) -> (Option<T>, Token<'a, T>) {
-        let value = self.data.write().remove(id);
-        //Note: careful about the order here!
-        self.identity.free(id);
-        //Returning None is legal if it's an error ID
-        (value, Token::new())
-    }
-
-    pub fn label_for_resource(&self, id: I) -> String {
-        let guard = self.data.read();
-
-        let type_name = guard.kind;
-        match guard.get(id) {
-            Ok(res) => {
-                let label = res.label();
-                if label.is_empty() {
-                    format!("<{}-{:?}>", type_name, id.unzip())
-                } else {
-                    label.to_string()
-                }
-            }
-            Err(_) => format!(
-                "<Invalid-{} label={}>",
-                type_name,
-                guard.label_for_invalid_id(id)
-            ),
-        }
     }
 }
 
@@ -561,7 +382,73 @@ impl HubReport {
     }
 }
 
-pub struct Hub<A: hal::Api, F: GlobalIdentityHandlerFactory> {
+#[allow(rustdoc::private_intra_doc_links)]
+/// All the resources for a particular backend in a [`Global`].
+///
+/// To obtain `global`'s `Hub` for some [`HalApi`] backend type `A`,
+/// call [`A::hub(global)`].
+///
+/// ## Locking
+///
+/// Each field in `Hub` is a [`Registry`] holding all the values of a
+/// particular type of resource, all protected by a single [`RwLock`].
+/// So for example, to access any [`Buffer`], you must acquire a read
+/// lock on the `Hub`s entire [`buffers`] registry. The lock guard
+/// gives you access to the `Registry`'s [`Storage`], which you can
+/// then index with the buffer's id. (Yes, this design causes
+/// contention; see [#2272].)
+///
+/// But most `wgpu` operations require access to several different
+/// kinds of resource, so you often need to hold locks on several
+/// different fields of your [`Hub`] simultaneously. To avoid
+/// deadlock, there is an ordering imposed on the fields, and you may
+/// only acquire new locks on fields that come *after* all those you
+/// are already holding locks on, in this ordering. (The ordering is
+/// described in the documentation for the [`Access`] trait.)
+///
+/// We use Rust's type system to statically check that `wgpu_core` can
+/// only ever acquire locks in the correct order:
+///
+/// - A value of type [`Token<T>`] represents proof that the owner
+///   only holds locks on the `Hub` fields holding resources of type
+///   `T` or earlier in the lock ordering. A special value of type
+///   `Token<Root>`, obtained by calling [`Token::root`], represents
+///   proof that no `Hub` field locks are held.
+///
+/// - To lock the `Hub` field holding resources of type `T`, you must
+///   call its [`read`] or [`write`] methods. These require you to
+///   pass in a `&mut Token<A>`, for some `A` that implements
+///   [`Access<T>`]. This implementation exists only if `T` follows `A`
+///   in the field ordering, which statically ensures that you are
+///   indeed allowed to lock this new `Hub` field.
+///
+/// - The locking methods return both an [`RwLock`] guard that you can
+///   use to access the field's resources, and a new `Token<T>` value.
+///   These both borrow from the lifetime of your `Token<A>`, so since
+///   you passed that by mutable reference, you cannot access it again
+///   until you drop the new token and lock guard.
+///
+/// Because a thread only ever has access to the `Token<T>` for the
+/// last resource type `T` it holds a lock for, and the `Access` trait
+/// implementations only permit acquiring locks for types `U` that
+/// follow `T` in the lock ordering, it is statically impossible for a
+/// program to violate the locking order.
+///
+/// This does assume that threads cannot call `Token<Root>` when they
+/// already hold locks (dynamically enforced in debug builds) and that
+/// threads cannot send their `Token`s to other threads (enforced by
+/// making `Token` neither `Send` nor `Sync`).
+///
+/// [`Global`]: crate::global::Global
+/// [`A::hub(global)`]: HalApi::hub
+/// [`RwLock`]: parking_lot::RwLock
+/// [`buffers`]: Hub::buffers
+/// [`read`]: Registry::read
+/// [`write`]: Registry::write
+/// [`Token<T>`]: Token
+/// [`Access<T>`]: Access
+/// [#2272]: https://github.com/gfx-rs/wgpu/pull/2272
+pub struct Hub<A: HalApi, F: GlobalIdentityHandlerFactory> {
     pub adapters: Registry<Adapter<A>, id::AdapterId, F>,
     pub devices: Registry<Device<A>, id::DeviceId, F>,
     pub pipeline_layouts: Registry<PipelineLayout<A>, id::PipelineLayoutId, F>,
@@ -569,11 +456,12 @@ pub struct Hub<A: hal::Api, F: GlobalIdentityHandlerFactory> {
     pub bind_group_layouts: Registry<BindGroupLayout<A>, id::BindGroupLayoutId, F>,
     pub bind_groups: Registry<BindGroup<A>, id::BindGroupId, F>,
     pub command_buffers: Registry<CommandBuffer<A>, id::CommandBufferId, F>,
-    pub render_bundles: Registry<RenderBundle, id::RenderBundleId, F>,
+    pub render_bundles: Registry<RenderBundle<A>, id::RenderBundleId, F>,
     pub render_pipelines: Registry<RenderPipeline<A>, id::RenderPipelineId, F>,
     pub compute_pipelines: Registry<ComputePipeline<A>, id::ComputePipelineId, F>,
     pub query_sets: Registry<QuerySet<A>, id::QuerySetId, F>,
     pub buffers: Registry<Buffer<A>, id::BufferId, F>,
+    pub staging_buffers: Registry<StagingBuffer<A>, id::StagingBufferId, F>,
     pub textures: Registry<Texture<A>, id::TextureId, F>,
     pub texture_views: Registry<TextureView<A>, id::TextureViewId, F>,
     pub samplers: Registry<Sampler<A>, id::SamplerId, F>,
@@ -594,6 +482,7 @@ impl<A: HalApi, F: GlobalIdentityHandlerFactory> Hub<A, F> {
             compute_pipelines: Registry::new(A::VARIANT, factory),
             query_sets: Registry::new(A::VARIANT, factory),
             buffers: Registry::new(A::VARIANT, factory),
+            staging_buffers: Registry::new(A::VARIANT, factory),
             textures: Registry::new(A::VARIANT, factory),
             texture_views: Registry::new(A::VARIANT, factory),
             samplers: Registry::new(A::VARIANT, factory),
@@ -603,7 +492,11 @@ impl<A: HalApi, F: GlobalIdentityHandlerFactory> Hub<A, F> {
     //TODO: instead of having a hacky `with_adapters` parameter,
     // we should have `clear_device(device_id)` that specifically destroys
     // everything related to a logical device.
-    fn clear(&self, surface_guard: &mut Storage<Surface, id::SurfaceId>, with_adapters: bool) {
+    pub(crate) fn clear(
+        &self,
+        surface_guard: &mut Storage<Surface, id::SurfaceId>,
+        with_adapters: bool,
+    ) {
         use crate::resource::TextureInner;
         use hal::{Device as _, Surface as _};
 
@@ -684,8 +577,10 @@ impl<A: HalApi, F: GlobalIdentityHandlerFactory> Hub<A, F> {
         for element in self.bind_group_layouts.data.write().map.drain(..) {
             if let Element::Occupied(bgl, _) = element {
                 let device = &devices[bgl.device_id.value];
-                unsafe {
-                    device.raw.destroy_bind_group_layout(bgl.raw);
+                if let Some(inner) = bgl.into_inner() {
+                    unsafe {
+                        device.raw.destroy_bind_group_layout(inner.raw);
+                    }
                 }
             }
         }
@@ -728,7 +623,7 @@ impl<A: HalApi, F: GlobalIdentityHandlerFactory> Hub<A, F> {
                     let device = &devices[present.device_id.value];
                     let suf = A::get_surface_mut(surface);
                     unsafe {
-                        suf.raw.unconfigure(&device.raw);
+                        suf.unwrap().raw.unconfigure(&device.raw);
                         //TODO: we could destroy the surface here
                     }
                 }
@@ -756,6 +651,20 @@ impl<A: HalApi, F: GlobalIdentityHandlerFactory> Hub<A, F> {
         }
     }
 
+    pub(crate) fn surface_unconfigure(
+        &self,
+        device_id: id::Valid<id::DeviceId>,
+        surface: &mut HalSurface<A>,
+    ) {
+        use hal::Surface as _;
+
+        let devices = self.devices.data.read();
+        let device = &devices[device_id];
+        unsafe {
+            surface.raw.unconfigure(&device.raw);
+        }
+    }
+
     pub fn generate_report(&self) -> HubReport {
         HubReport {
             adapters: self.adapters.data.read().generate_report(),
@@ -778,274 +687,47 @@ impl<A: HalApi, F: GlobalIdentityHandlerFactory> Hub<A, F> {
 }
 
 pub struct Hubs<F: GlobalIdentityHandlerFactory> {
-    #[cfg(vulkan)]
-    vulkan: Hub<hal::api::Vulkan, F>,
-    #[cfg(metal)]
-    metal: Hub<hal::api::Metal, F>,
-    #[cfg(dx12)]
-    dx12: Hub<hal::api::Dx12, F>,
-    #[cfg(dx11)]
-    dx11: Hub<hal::api::Dx11, F>,
-    #[cfg(gl)]
-    gl: Hub<hal::api::Gles, F>,
+    #[cfg(all(feature = "vulkan", not(target_arch = "wasm32")))]
+    pub(crate) vulkan: Hub<hal::api::Vulkan, F>,
+    #[cfg(all(feature = "metal", any(target_os = "macos", target_os = "ios")))]
+    pub(crate) metal: Hub<hal::api::Metal, F>,
+    #[cfg(all(feature = "dx12", windows))]
+    pub(crate) dx12: Hub<hal::api::Dx12, F>,
+    #[cfg(all(feature = "dx11", windows))]
+    pub(crate) dx11: Hub<hal::api::Dx11, F>,
+    #[cfg(feature = "gles")]
+    pub(crate) gl: Hub<hal::api::Gles, F>,
+    #[cfg(all(
+        not(all(feature = "vulkan", not(target_arch = "wasm32"))),
+        not(all(feature = "metal", any(target_os = "macos", target_os = "ios"))),
+        not(all(feature = "dx12", windows)),
+        not(all(feature = "dx11", windows)),
+        not(feature = "gles"),
+    ))]
+    pub(crate) empty: Hub<hal::api::Empty, F>,
 }
 
 impl<F: GlobalIdentityHandlerFactory> Hubs<F> {
-    fn new(factory: &F) -> Self {
+    pub(crate) fn new(factory: &F) -> Self {
         Self {
-            #[cfg(vulkan)]
+            #[cfg(all(feature = "vulkan", not(target_arch = "wasm32")))]
             vulkan: Hub::new(factory),
-            #[cfg(metal)]
+            #[cfg(all(feature = "metal", any(target_os = "macos", target_os = "ios")))]
             metal: Hub::new(factory),
-            #[cfg(dx12)]
+            #[cfg(all(feature = "dx12", windows))]
             dx12: Hub::new(factory),
-            #[cfg(dx11)]
+            #[cfg(all(feature = "dx11", windows))]
             dx11: Hub::new(factory),
-            #[cfg(gl)]
+            #[cfg(feature = "gles")]
             gl: Hub::new(factory),
+            #[cfg(all(
+                not(all(feature = "vulkan", not(target_arch = "wasm32"))),
+                not(all(feature = "metal", any(target_os = "macos", target_os = "ios"))),
+                not(all(feature = "dx12", windows)),
+                not(all(feature = "dx11", windows)),
+                not(feature = "gles"),
+            ))]
+            empty: Hub::new(factory),
         }
     }
-}
-
-#[derive(Debug)]
-pub struct GlobalReport {
-    pub surfaces: StorageReport,
-    #[cfg(vulkan)]
-    pub vulkan: Option<HubReport>,
-    #[cfg(metal)]
-    pub metal: Option<HubReport>,
-    #[cfg(dx12)]
-    pub dx12: Option<HubReport>,
-    #[cfg(dx11)]
-    pub dx11: Option<HubReport>,
-    #[cfg(gl)]
-    pub gl: Option<HubReport>,
-}
-
-pub struct Global<G: GlobalIdentityHandlerFactory> {
-    pub instance: Instance,
-    pub surfaces: Registry<Surface, id::SurfaceId, G>,
-    hubs: Hubs<G>,
-}
-
-impl<G: GlobalIdentityHandlerFactory> Global<G> {
-    pub fn new(name: &str, factory: G, backends: wgt::Backends) -> Self {
-        profiling::scope!("new", "Global");
-        Self {
-            instance: Instance::new(name, backends),
-            surfaces: Registry::without_backend(&factory, "Surface"),
-            hubs: Hubs::new(&factory),
-        }
-    }
-
-    /// # Safety
-    ///
-    /// Refer to the creation of wgpu-hal Instance for every backend.
-    pub unsafe fn from_hal_instance<A: HalApi>(
-        name: &str,
-        factory: G,
-        hal_instance: A::Instance,
-    ) -> Self {
-        profiling::scope!("new", "Global");
-        Self {
-            instance: A::create_instance_from_hal(name, hal_instance),
-            surfaces: Registry::without_backend(&factory, "Surface"),
-            hubs: Hubs::new(&factory),
-        }
-    }
-
-    pub fn clear_backend<A: HalApi>(&self, _dummy: ()) {
-        let mut surface_guard = self.surfaces.data.write();
-        let hub = A::hub(self);
-        // this is used for tests, which keep the adapter
-        hub.clear(&mut *surface_guard, false);
-    }
-
-    pub fn generate_report(&self) -> GlobalReport {
-        GlobalReport {
-            surfaces: self.surfaces.data.read().generate_report(),
-            #[cfg(vulkan)]
-            vulkan: if self.instance.vulkan.is_some() {
-                Some(self.hubs.vulkan.generate_report())
-            } else {
-                None
-            },
-            #[cfg(metal)]
-            metal: if self.instance.metal.is_some() {
-                Some(self.hubs.metal.generate_report())
-            } else {
-                None
-            },
-            #[cfg(dx12)]
-            dx12: if self.instance.dx12.is_some() {
-                Some(self.hubs.dx12.generate_report())
-            } else {
-                None
-            },
-            #[cfg(dx11)]
-            dx11: if self.instance.dx11.is_some() {
-                Some(self.hubs.dx11.generate_report())
-            } else {
-                None
-            },
-            #[cfg(gl)]
-            gl: if self.instance.gl.is_some() {
-                Some(self.hubs.gl.generate_report())
-            } else {
-                None
-            },
-        }
-    }
-}
-
-impl<G: GlobalIdentityHandlerFactory> Drop for Global<G> {
-    fn drop(&mut self) {
-        profiling::scope!("drop", "Global");
-        log::info!("Dropping Global");
-        let mut surface_guard = self.surfaces.data.write();
-
-        // destroy hubs before the instance gets dropped
-        #[cfg(vulkan)]
-        {
-            self.hubs.vulkan.clear(&mut *surface_guard, true);
-        }
-        #[cfg(metal)]
-        {
-            self.hubs.metal.clear(&mut *surface_guard, true);
-        }
-        #[cfg(dx12)]
-        {
-            self.hubs.dx12.clear(&mut *surface_guard, true);
-        }
-        #[cfg(dx11)]
-        {
-            self.hubs.dx11.clear(&mut *surface_guard, true);
-        }
-        #[cfg(gl)]
-        {
-            self.hubs.gl.clear(&mut *surface_guard, true);
-        }
-
-        // destroy surfaces
-        for element in surface_guard.map.drain(..) {
-            if let Element::Occupied(surface, _) = element {
-                self.instance.destroy_surface(surface);
-            }
-        }
-    }
-}
-
-pub trait HalApi: hal::Api {
-    const VARIANT: Backend;
-    fn create_instance_from_hal(name: &str, hal_instance: Self::Instance) -> Instance;
-    fn hub<G: GlobalIdentityHandlerFactory>(global: &Global<G>) -> &Hub<Self, G>;
-    fn get_surface(surface: &Surface) -> &HalSurface<Self>;
-    fn get_surface_mut(surface: &mut Surface) -> &mut HalSurface<Self>;
-}
-
-#[cfg(vulkan)]
-impl HalApi for hal::api::Vulkan {
-    const VARIANT: Backend = Backend::Vulkan;
-    fn create_instance_from_hal(name: &str, hal_instance: Self::Instance) -> Instance {
-        Instance {
-            name: name.to_owned(),
-            vulkan: Some(hal_instance),
-            ..Default::default()
-        }
-    }
-    fn hub<G: GlobalIdentityHandlerFactory>(global: &Global<G>) -> &Hub<Self, G> {
-        &global.hubs.vulkan
-    }
-    fn get_surface(surface: &Surface) -> &HalSurface<Self> {
-        surface.vulkan.as_ref().unwrap()
-    }
-    fn get_surface_mut(surface: &mut Surface) -> &mut HalSurface<Self> {
-        surface.vulkan.as_mut().unwrap()
-    }
-}
-
-#[cfg(metal)]
-impl HalApi for hal::api::Metal {
-    const VARIANT: Backend = Backend::Metal;
-    fn create_instance_from_hal(name: &str, hal_instance: Self::Instance) -> Instance {
-        Instance {
-            name: name.to_owned(),
-            metal: Some(hal_instance),
-            ..Default::default()
-        }
-    }
-    fn hub<G: GlobalIdentityHandlerFactory>(global: &Global<G>) -> &Hub<Self, G> {
-        &global.hubs.metal
-    }
-    fn get_surface(surface: &Surface) -> &HalSurface<Self> {
-        surface.metal.as_ref().unwrap()
-    }
-    fn get_surface_mut(surface: &mut Surface) -> &mut HalSurface<Self> {
-        surface.metal.as_mut().unwrap()
-    }
-}
-
-#[cfg(dx12)]
-impl HalApi for hal::api::Dx12 {
-    const VARIANT: Backend = Backend::Dx12;
-    fn create_instance_from_hal(name: &str, hal_instance: Self::Instance) -> Instance {
-        Instance {
-            name: name.to_owned(),
-            dx12: Some(hal_instance),
-            ..Default::default()
-        }
-    }
-    fn hub<G: GlobalIdentityHandlerFactory>(global: &Global<G>) -> &Hub<Self, G> {
-        &global.hubs.dx12
-    }
-    fn get_surface(surface: &Surface) -> &HalSurface<Self> {
-        surface.dx12.as_ref().unwrap()
-    }
-    fn get_surface_mut(surface: &mut Surface) -> &mut HalSurface<Self> {
-        surface.dx12.as_mut().unwrap()
-    }
-}
-
-/*
-#[cfg(dx11)]
-impl HalApi for hal::api::Dx11 {
-    const VARIANT: Backend = Backend::Dx11;
-    fn hub<G: GlobalIdentityHandlerFactory>(global: &Global<G>) -> &Hub<Self, G> {
-        &global.hubs.dx11
-    }
-    fn get_surface(surface: &Surface) -> &HalSurface<Self> {
-        surface.dx11.as_ref().unwrap()
-    }
-    fn get_surface_mut(surface: &mut Surface) -> &mut HalSurface<Self> {
-        surface.dx11.as_mut().unwrap()
-    }
-}
-*/
-
-#[cfg(gl)]
-impl HalApi for hal::api::Gles {
-    const VARIANT: Backend = Backend::Gl;
-    fn create_instance_from_hal(name: &str, hal_instance: Self::Instance) -> Instance {
-        #[allow(clippy::needless_update)]
-        Instance {
-            name: name.to_owned(),
-            gl: Some(hal_instance),
-            ..Default::default()
-        }
-    }
-    fn hub<G: GlobalIdentityHandlerFactory>(global: &Global<G>) -> &Hub<Self, G> {
-        &global.hubs.gl
-    }
-    fn get_surface(surface: &Surface) -> &HalSurface<Self> {
-        surface.gl.as_ref().unwrap()
-    }
-    fn get_surface_mut(surface: &mut Surface) -> &mut HalSurface<Self> {
-        surface.gl.as_mut().unwrap()
-    }
-}
-
-#[cfg(test)]
-fn _test_send_sync(global: &Global<IdentityManagerFactory>) {
-    fn test_internal<T: Send + Sync>(_: T) {}
-    test_internal(global)
 }

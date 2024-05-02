@@ -4,7 +4,9 @@
 
 "use strict";
 
-const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
+const { HttpServer } = ChromeUtils.importESModule(
+  "resource://testing-common/httpd.sys.mjs"
+);
 
 var httpserver = new HttpServer();
 httpserver.start(-1);
@@ -25,10 +27,11 @@ function test_handler(metadata, response) {
   response.setHeader("Cache-Control", "no-cache");
   response.setHeader("ETag", "test-etag1");
 
+  let etag;
   try {
-    var etag = metadata.getHeader("If-None-Match");
+    etag = metadata.getHeader("If-None-Match");
   } catch (ex) {
-    var etag = "";
+    etag = "";
   }
 
   if (etag == "test-etag1") {
@@ -97,7 +100,7 @@ function* testSteps() {
     20000
   );
 
-  registerCleanupFunction(function() {
+  registerCleanupFunction(function () {
     Services.prefs.clearUserPref("privacy.reduceTimerPrecision");
     Services.prefs.clearUserPref(
       "privacy.resistFingerprinting.reduceTimerPrecision.microseconds"
@@ -105,7 +108,7 @@ function* testSteps() {
   });
 
   // Initial request. Stores the response in the cache.
-  var channel = make_channel("http://localhost:" + PORT + "/rcwn");
+  let channel = make_channel("http://localhost:" + PORT + "/rcwn");
   channel.asyncOpen(new ChannelListener(checkContent, null));
   yield undefined;
   equal(gResponseCounter, 1);
@@ -113,7 +116,7 @@ function* testSteps() {
   equal(g304Counter, 0, "check number of 304 responses");
 
   // Checks that response is returned from the cache, after a 304 response.
-  var channel = make_channel("http://localhost:" + PORT + "/rcwn");
+  channel = make_channel("http://localhost:" + PORT + "/rcwn");
   channel.asyncOpen(new ChannelListener(checkContent, null));
   yield undefined;
   equal(gResponseCounter, 2);
@@ -121,7 +124,7 @@ function* testSteps() {
   equal(g304Counter, 1, "check number of 304 responses");
 
   // Checks that delaying the response from the cache works.
-  var channel = make_channel("http://localhost:" + PORT + "/rcwn");
+  channel = make_channel("http://localhost:" + PORT + "/rcwn");
   channel
     .QueryInterface(Ci.nsIRaceCacheWithNetwork)
     .test_delayCacheEntryOpeningBy(200);
@@ -138,12 +141,12 @@ function* testSteps() {
   equal(g304Counter, 2, "check number of 304 responses");
 
   // Checks that we can trigger the cache open immediately, even if the cache delay is set very high.
-  var channel = make_channel("http://localhost:" + PORT + "/rcwn");
+  channel = make_channel("http://localhost:" + PORT + "/rcwn");
   channel
     .QueryInterface(Ci.nsIRaceCacheWithNetwork)
     .test_delayCacheEntryOpeningBy(100000);
   channel.asyncOpen(new ChannelListener(checkContent, null));
-  do_timeout(50, function() {
+  do_timeout(50, function () {
     channel
       .QueryInterface(Ci.nsIRaceCacheWithNetwork)
       .test_triggerDelayedOpenCacheEntry();
@@ -154,13 +157,13 @@ function* testSteps() {
   equal(g304Counter, 3, "check number of 304 responses");
 
   // Sets a high delay for the cache fetch, and triggers the network activity.
-  var channel = make_channel("http://localhost:" + PORT + "/rcwn");
+  channel = make_channel("http://localhost:" + PORT + "/rcwn");
   channel
     .QueryInterface(Ci.nsIRaceCacheWithNetwork)
     .test_delayCacheEntryOpeningBy(100000);
+  channel.QueryInterface(Ci.nsIRaceCacheWithNetwork).test_triggerNetwork(50);
   channel.asyncOpen(new ChannelListener(checkContent, null));
   // Trigger network after 50 ms.
-  channel.QueryInterface(Ci.nsIRaceCacheWithNetwork).test_triggerNetwork(50);
   yield undefined;
   equal(gResponseCounter, 5);
   equal(g200Counter, 2, "check number of 200 responses");
@@ -169,43 +172,42 @@ function* testSteps() {
   // Sets a high delay for the cache fetch, and triggers the network activity.
   // While the network response is produced, we trigger the cache fetch.
   // Because the network response was the first, a non-conditional request is sent.
-  var channel = make_channel("http://localhost:" + PORT + "/rcwn");
+  channel = make_channel("http://localhost:" + PORT + "/rcwn");
   channel
     .QueryInterface(Ci.nsIRaceCacheWithNetwork)
     .test_delayCacheEntryOpeningBy(100000);
+  channel.QueryInterface(Ci.nsIRaceCacheWithNetwork).test_triggerNetwork(50);
   channel.asyncOpen(new ChannelListener(checkContent, null));
-  do_timeout(50, function() {
-    channel.QueryInterface(Ci.nsIRaceCacheWithNetwork).test_triggerNetwork(0);
-    executeSoon(() => {
-      channel
-        .QueryInterface(Ci.nsIRaceCacheWithNetwork)
-        .test_triggerDelayedOpenCacheEntry();
-    });
-  });
   yield undefined;
   equal(gResponseCounter, 6);
   equal(g200Counter, 3, "check number of 200 responses");
   equal(g304Counter, 3, "check number of 304 responses");
 
   // Triggers cache open before triggering network.
-  var channel = make_channel("http://localhost:" + PORT + "/rcwn");
+  channel = make_channel("http://localhost:" + PORT + "/rcwn");
   channel
     .QueryInterface(Ci.nsIRaceCacheWithNetwork)
     .test_delayCacheEntryOpeningBy(100000);
+  channel.QueryInterface(Ci.nsIRaceCacheWithNetwork).test_triggerNetwork(5000);
   channel.asyncOpen(new ChannelListener(checkContent, null));
-  do_timeout(50, function() {
-    channel
-      .QueryInterface(Ci.nsIRaceCacheWithNetwork)
-      .test_triggerDelayedOpenCacheEntry();
-    channel.QueryInterface(Ci.nsIRaceCacheWithNetwork).test_triggerNetwork(0);
-  });
+  channel
+    .QueryInterface(Ci.nsIRaceCacheWithNetwork)
+    .test_triggerDelayedOpenCacheEntry();
   yield undefined;
   equal(gResponseCounter, 7);
-  equal(g200Counter, 3, "check number of 200 responses");
-  equal(g304Counter, 4, "check number of 304 responses");
+  equal(
+    g200Counter,
+    3,
+    `check number of 200 responses | 200: ${g200Counter}, 304: ${g304Counter}`
+  );
+  equal(
+    g304Counter,
+    4,
+    `check number of 304 responses | 200: ${g200Counter}, 304: ${g304Counter}`
+  );
 
   // Load the cached handler so we don't need to revalidate
-  var channel = make_channel("http://localhost:" + PORT + "/rcwn_cached");
+  channel = make_channel("http://localhost:" + PORT + "/rcwn_cached");
   channel.asyncOpen(new ChannelListener(checkContent, null));
   yield undefined;
   equal(gResponseCounter, 8);
@@ -213,7 +215,7 @@ function* testSteps() {
   equal(g304Counter, 4, "check number of 304 responses");
 
   // Make sure response is loaded from the cache, not the network
-  var channel = make_channel("http://localhost:" + PORT + "/rcwn_cached");
+  channel = make_channel("http://localhost:" + PORT + "/rcwn_cached");
   channel.asyncOpen(new ChannelListener(checkContent, null));
   yield undefined;
   equal(gResponseCounter, 9);
@@ -222,13 +224,13 @@ function* testSteps() {
 
   // Cache times out, so we trigger the network
   gIsFromCache = 0;
-  var channel = make_channel("http://localhost:" + PORT + "/rcwn_cached");
+  channel = make_channel("http://localhost:" + PORT + "/rcwn_cached");
   channel
     .QueryInterface(Ci.nsIRaceCacheWithNetwork)
     .test_delayCacheEntryOpeningBy(100000);
-  channel.asyncOpen(new ChannelListener(checkContent, null));
   // trigger network after 50 ms
   channel.QueryInterface(Ci.nsIRaceCacheWithNetwork).test_triggerNetwork(50);
+  channel.asyncOpen(new ChannelListener(checkContent, null));
   yield undefined;
   equal(gResponseCounter, 10);
   equal(gIsFromCache, 0, "should be from the network");
@@ -236,17 +238,12 @@ function* testSteps() {
   equal(g304Counter, 4, "check number of 304 responses");
 
   // Cache callback comes back right after network is triggered.
-  var channel = make_channel("http://localhost:" + PORT + "/rcwn_cached");
+  channel = make_channel("http://localhost:" + PORT + "/rcwn_cached");
   channel
     .QueryInterface(Ci.nsIRaceCacheWithNetwork)
-    .test_delayCacheEntryOpeningBy(100000);
+    .test_delayCacheEntryOpeningBy(55);
+  channel.QueryInterface(Ci.nsIRaceCacheWithNetwork).test_triggerNetwork(50);
   channel.asyncOpen(new ChannelListener(checkContent, null));
-  do_timeout(50, function() {
-    channel.QueryInterface(Ci.nsIRaceCacheWithNetwork).test_triggerNetwork(0);
-    channel
-      .QueryInterface(Ci.nsIRaceCacheWithNetwork)
-      .test_triggerDelayedOpenCacheEntry();
-  });
   yield undefined;
   equal(gResponseCounter, 11);
   info("IsFromCache: " + gIsFromCache + "\n");
@@ -258,22 +255,14 @@ function* testSteps() {
   // and some we will get from the cache.
   gIsFromCache = 0;
   for (var i = 0; i < 50; i++) {
-    var channel = make_channel("http://localhost:" + PORT + "/rcwn_cached");
+    channel = make_channel("http://localhost:" + PORT + "/rcwn_cached");
     channel
       .QueryInterface(Ci.nsIRaceCacheWithNetwork)
-      .test_delayCacheEntryOpeningBy(100000);
-    channel.asyncOpen(new ChannelListener(checkContent, null));
+      .test_delayCacheEntryOpeningBy(i * 100);
     channel.QueryInterface(Ci.nsIRaceCacheWithNetwork).test_triggerNetwork(10);
+    channel.asyncOpen(new ChannelListener(checkContent, null));
     // This may be racy. The delay was chosen because the distribution of net-cache
     // results was around 25-25 on my machine.
-    do_timeout(i * 100, function() {
-      try {
-        channel
-          .QueryInterface(Ci.nsIRaceCacheWithNetwork)
-          .test_triggerDelayedOpenCacheEntry();
-      } catch (e) {}
-    });
-
     yield undefined;
   }
 

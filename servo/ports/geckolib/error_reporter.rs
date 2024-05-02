@@ -18,7 +18,7 @@ use style::gecko_bindings::structs::URLExtraData as RawUrlExtraData;
 use style::gecko_bindings::structs::{nsIURI, Loader, StyleSheet as DomStyleSheet};
 use style::selector_parser::SelectorImpl;
 use style::stylesheets::UrlExtraData;
-use style_traits::{StyleParseErrorKind, ValueParseErrorKind};
+use style_traits::{PropertySyntaxParseError, StyleParseErrorKind, ValueParseErrorKind};
 
 pub type ErrorKind<'i> = ParseErrorKind<'i, StyleParseErrorKind<'i>>;
 
@@ -48,7 +48,7 @@ impl ErrorReporter {
         let uri = unsafe {
             extra_data
                 .as_ref()
-                .map(|d| d.mBaseURI.raw::<nsIURI>())
+                .map(|d| d.mBaseURI.raw())
                 .unwrap_or(ptr::null_mut())
         };
 
@@ -86,7 +86,7 @@ enum Action {
 trait ErrorHelpers<'a> {
     fn error_data(self) -> (CowRcStr<'a>, ErrorKind<'a>);
     fn error_params(self) -> ErrorParams<'a>;
-    fn selector_list(&self) -> Option<&'a SelectorList<SelectorImpl>>;
+    fn selectors(&self) -> &'a [SelectorList<SelectorImpl>];
     fn to_gecko_message(&self) -> (Option<&'static CStr>, &'static CStr, Action);
 }
 
@@ -96,8 +96,7 @@ fn extract_error_param<'a>(err: ErrorKind<'a>) -> Option<ErrorString<'a>> {
             ErrorString::UnexpectedToken(t)
         },
 
-        ParseErrorKind::Basic(BasicParseErrorKind::AtRuleInvalid(i)) |
-        ParseErrorKind::Custom(StyleParseErrorKind::UnsupportedAtRule(i)) => {
+        ParseErrorKind::Basic(BasicParseErrorKind::AtRuleInvalid(i)) => {
             let mut s = String::from("@");
             serialize_identifier(&i, &mut s).unwrap();
             ErrorString::Snippet(s.into())
@@ -191,8 +190,10 @@ impl<'a> ErrorHelpers<'a> for ContextualParseError<'a> {
     fn error_data(self) -> (CowRcStr<'a>, ErrorKind<'a>) {
         match self {
             ContextualParseError::UnsupportedPropertyDeclaration(s, err, _) |
+            ContextualParseError::UnsupportedPropertyDescriptor(s, err) |
             ContextualParseError::UnsupportedFontFaceDescriptor(s, err) |
             ContextualParseError::UnsupportedFontFeatureValuesDescriptor(s, err) |
+            ContextualParseError::UnsupportedFontPaletteValuesDescriptor(s, err) |
             ContextualParseError::InvalidKeyframeRule(s, err) |
             ContextualParseError::InvalidFontFeatureValuesRule(s, err) |
             ContextualParseError::UnsupportedKeyframePropertyDeclaration(s, err) |
@@ -225,10 +226,10 @@ impl<'a> ErrorHelpers<'a> for ContextualParseError<'a> {
         })
     }
 
-    fn selector_list(&self) -> Option<&'a SelectorList<SelectorImpl>> {
+    fn selectors(&self) -> &'a [SelectorList<SelectorImpl>] {
         match *self {
             ContextualParseError::UnsupportedPropertyDeclaration(_, _, selectors) => selectors,
-            _ => None,
+            _ => &[],
         }
     }
 
@@ -308,13 +309,6 @@ impl<'a> ErrorHelpers<'a> for ContextualParseError<'a> {
                 _,
                 ParseError {
                     kind: ParseErrorKind::Basic(BasicParseErrorKind::AtRuleInvalid(_)),
-                    ..
-                },
-            ) |
-            ContextualParseError::InvalidRule(
-                _,
-                ParseError {
-                    kind: ParseErrorKind::Custom(StyleParseErrorKind::UnsupportedAtRule(_)),
                     ..
                 },
             ) => (cstr!("PEUnknownAtRule"), Action::Nothing),
@@ -400,7 +394,9 @@ impl<'a> ErrorHelpers<'a> for ContextualParseError<'a> {
             ContextualParseError::InvalidCounterStyleWithoutAdditiveSymbols |
             ContextualParseError::InvalidCounterStyleExtendsWithSymbols |
             ContextualParseError::InvalidCounterStyleExtendsWithAdditiveSymbols |
+            ContextualParseError::UnsupportedPropertyDescriptor(..) |
             ContextualParseError::UnsupportedFontFeatureValuesDescriptor(..) |
+            ContextualParseError::UnsupportedFontPaletteValuesDescriptor(..) |
             ContextualParseError::InvalidFontFeatureValuesRule(..) => {
                 (cstr!("PEUnknownAtRule"), Action::Skip)
             },
@@ -409,6 +405,32 @@ impl<'a> ErrorHelpers<'a> for ContextualParseError<'a> {
                     ParseErrorKind::Custom(StyleParseErrorKind::ValueError(
                         ValueParseErrorKind::InvalidColor(..),
                     )) => (cstr!("PEColorNotColor"), Action::Nothing),
+                    ParseErrorKind::Custom(StyleParseErrorKind::PropertySyntaxField(ref kind)) => {
+                        let name = match kind {
+                            PropertySyntaxParseError::EmptyInput => {
+                                cstr!("PEPRSyntaxFieldEmptyInput")
+                            },
+                            PropertySyntaxParseError::ExpectedPipeBetweenComponents => {
+                                cstr!("PEPRSyntaxFieldExpectedPipe")
+                            },
+                            PropertySyntaxParseError::InvalidNameStart => {
+                                cstr!("PEPRSyntaxFieldInvalidNameStart")
+                            },
+                            PropertySyntaxParseError::InvalidName => {
+                                cstr!("PEPRSyntaxFieldInvalidName")
+                            },
+                            PropertySyntaxParseError::UnclosedDataTypeName => {
+                                cstr!("PEPRSyntaxFieldUnclosedDataTypeName")
+                            },
+                            PropertySyntaxParseError::UnexpectedEOF => {
+                                cstr!("PEPRSyntaxFieldUnexpectedEOF")
+                            },
+                            PropertySyntaxParseError::UnknownDataTypeName => {
+                                cstr!("PEPRSyntaxFieldUnknownDataTypeName")
+                            },
+                        };
+                        (name, Action::Nothing)
+                    },
                     _ => {
                         // Not the best error message, since we weren't parsing
                         // a declaration, just a value. But we don't produce
@@ -432,9 +454,20 @@ impl ErrorReporter {
             Action::Skip => cstr!("PEDeclSkipped").as_ptr(),
             Action::Drop => cstr!("PEDeclDropped").as_ptr(),
         };
-        let selector_list = error.selector_list().map(|l| l.to_css_string());
+        let selectors = error.selectors();
+        let desugared_selector_list = match selectors.len() {
+            0 => None,
+            1 => Some(selectors[0].to_css_string()),
+            _ => {
+                let mut desugared = selectors.last().unwrap().clone();
+                for parent in selectors.iter().rev().skip(1) {
+                    desugared = desugared.replace_parent_selector(&parent);
+                }
+                Some(desugared.to_css_string())
+            },
+        };
         let selector_list_ptr =
-            selector_list.as_ref().map_or(ptr::null(), |s| s.as_ptr()) as *const _;
+            desugared_selector_list.as_ref().map_or(ptr::null(), |s| s.as_ptr()) as *const _;
         let params = error.error_params();
         let param = params.main_param;
         let pre_param = params.prefix_param;
@@ -458,7 +491,7 @@ impl ErrorReporter {
                 source.as_ptr() as *const _,
                 source.len() as u32,
                 selector_list_ptr,
-                selector_list.as_ref().map_or(0, |string| string.len()) as u32,
+                desugared_selector_list.as_ref().map_or(0, |string| string.len()) as u32,
                 location.line,
                 location.column,
             );

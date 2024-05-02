@@ -5,12 +5,12 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=877690
 -->
 <head>
 <meta charset="utf-8">
-<title>Test for Bug 877690</title>
+<title>Test for InspectorUtils.getCSSValuesForProperty</title>
 <script src="/tests/SimpleTest/SimpleTest.js"></script>
 <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
-<script type="application/javascript">
+<script>
 
-/** Test for Bug 877690 **/
+/** Test for InspectorUtils.getCSSValuesForProperty **/
 
 const InspectorUtils = SpecialPowers.InspectorUtils;
 
@@ -18,6 +18,9 @@ const InspectorUtils = SpecialPowers.InspectorUtils;
 function testValues(values, expected) {
   values.sort();
   expected.sort();
+
+  info(JSON.stringify([...values]));
+  info(JSON.stringify(expected));
 
   if (values.length !== expected.length) {
     return false;
@@ -33,6 +36,12 @@ function testValues(values, expected) {
 
 function do_test() {
   var allColors = [ "COLOR", "currentColor", "transparent", "rgb", "rgba", "hsl", "hsla", "hwb" ];
+  if (SpecialPowers.getBoolPref("layout.css.color-mix.enabled")) {
+    allColors.push("color-mix");
+  }
+  if (SpecialPowers.getBoolPref("layout.css.more_color_4.enabled", true)) {
+    allColors.push("color", "lab", "lch", "oklab", "oklch");
+  }
   var allGradients = [
     "linear-gradient",
     "-webkit-linear-gradient",
@@ -63,7 +72,7 @@ function do_test() {
   var expected = [ "auto", "initial", "inherit", "unset", "revert", "revert-layer", ...allColors, "no-repeat", "repeat",
       "repeat-x", "repeat-y", "space", "round", "fixed", "scroll", "local", "center", "top", "bottom", "left", "right",
       "border-box", "padding-box", "content-box", "text", "contain",
-      "cover", "none", "-moz-element", "-moz-image-rect", "url", ...allGradients, "image-set" ];
+      "cover", "none", "-moz-element", "url", ...allGradients, "image-set" ];
 
   if(SpecialPowers.getBoolPref("layout.css.cross-fade.enabled")) {
     expected.push("cross-fade");
@@ -143,7 +152,7 @@ function do_test() {
   var prop = "border-image";
   var values = InspectorUtils.getCSSValuesForProperty(prop);
   var expected = [ "auto", "inherit", "revert", "revert-layer", "initial", "unset", "repeat", "stretch",
-                   "-moz-element", "-moz-image-rect", "url", ...allGradients,
+                   "-moz-element", "url", ...allGradients,
                    "fill", "none", "round", "space", "image-set" ];
 
   if(SpecialPowers.getBoolPref("layout.css.cross-fade.enabled")) {
@@ -198,10 +207,10 @@ function do_test() {
   ok(testValues(values, expected), "property box-shadow's values");
 
   // Regression test for bug 1255379.
-  var expected = [ "inherit", "initial", "unset", "revert", "revert-layer", "none", "url",
-                   "polygon", "circle", "ellipse", "inset", "path",
-                   "fill-box", "stroke-box", "view-box", "margin-box",
-                   "border-box", "padding-box", "content-box" ];
+  var expected = [ "inherit", "initial", "unset", "revert", "revert-layer",
+                   "none", "url", "polygon", "circle", "ellipse", "inset",
+                   "path", "rect", "xywh", "fill-box", "stroke-box", "view-box",
+                   "margin-box", "border-box", "padding-box", "content-box" ];
   var values = InspectorUtils.getCSSValuesForProperty("clip-path");
   ok(testValues(values, expected), "property clip-path's values");
 
@@ -213,9 +222,10 @@ function do_test() {
   var expected = [ "normal", "none", "counter", "counters",
                    "attr", "open-quote", "close-quote", "no-open-quote",
                    "no-close-quote", "inherit", "initial", "unset", "revert",
-                   "revert-layer", "-moz-alt-content", "image-set", "url" ];
+                   "revert-layer", "-moz-alt-content", "-moz-label-content", "image-set", "url", "-moz-element" ]
+    .concat(allGradients);
   var values = InspectorUtils.getCSSValuesForProperty("content");
-  ok(testValues(values, expected), "property counter's values");
+  ok(testValues(values, expected), "property content's values");
 
   // Regression test for bug 1255369.
   var expected = ["none", "decimal", "decimal-leading-zero", "arabic-indic", "armenian",

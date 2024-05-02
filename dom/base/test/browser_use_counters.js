@@ -4,58 +4,40 @@ requestLongerTimeout(2);
 
 const gHttpTestRoot = "https://example.com/browser/dom/base/test/";
 
-/**
- * Enable local telemetry recording for the duration of the tests.
- */
-var gOldContentCanRecord = false;
-var gOldParentCanRecord = false;
 add_task(async function test_initialize() {
-  let Telemetry = Cc["@mozilla.org/base/telemetry;1"].getService(
-    Ci.nsITelemetry
-  );
-  gOldParentCanRecord = Telemetry.canRecordExtended;
-  Telemetry.canRecordExtended = true;
-
   await SpecialPowers.pushPrefEnv({
     set: [
-      // Because canRecordExtended is a per-process variable, we need to make sure
-      // that all of the pages load in the same content process. Limit the number
-      // of content processes to at most 1 (or 0 if e10s is off entirely).
-      ["dom.ipc.processCount", 1],
       ["layout.css.use-counters.enabled", true],
       ["layout.css.use-counters-unimplemented.enabled", true],
     ],
   });
-
-  gOldContentCanRecord = await SpecialPowers.spawn(
-    gBrowser.selectedBrowser,
-    [],
-    function() {
-      let telemetry = Cc["@mozilla.org/base/telemetry;1"].getService(
-        Ci.nsITelemetry
-      );
-      let old = telemetry.canRecordExtended;
-      telemetry.canRecordExtended = true;
-      return old;
-    }
-  );
-  info("canRecord for content: " + gOldContentCanRecord);
 });
 
-add_task(async function() {
+add_task(async function () {
   const TESTS = [
     // Check that use counters are incremented by SVGs loaded directly in iframes.
     {
       type: "iframe",
       filename: "file_use_counter_svg_getElementById.svg",
-      counters: [{ name: "SVGSVGELEMENT_GETELEMENTBYID" }],
+      counters: [
+        {
+          name: "SVGSVGELEMENT_GETELEMENTBYID",
+          glean: ["", "svgsvgelementGetelementbyid"],
+        },
+      ],
     },
     {
       type: "iframe",
       filename: "file_use_counter_svg_currentScale.svg",
       counters: [
-        { name: "SVGSVGELEMENT_CURRENTSCALE_getter" },
-        { name: "SVGSVGELEMENT_CURRENTSCALE_setter" },
+        {
+          name: "SVGSVGELEMENT_CURRENTSCALE_getter",
+          glean: ["", "svgsvgelementCurrentscaleGetter"],
+        },
+        {
+          name: "SVGSVGELEMENT_CURRENTSCALE_setter",
+          glean: ["", "svgsvgelementCurrentscaleSetter"],
+        },
       ],
     },
 
@@ -64,13 +46,22 @@ add_task(async function() {
       filename: "file_use_counter_style.html",
       counters: [
         // Check for longhands.
-        { name: "CSS_PROPERTY_BackgroundImage" },
+        {
+          name: "CSS_PROPERTY_BackgroundImage",
+          glean: ["Css", "cssBackgroundImage"],
+        },
         // Check for shorthands.
-        { name: "CSS_PROPERTY_Padding" },
+        { name: "CSS_PROPERTY_Padding", glean: ["Css", "cssPadding"] },
         // Check for aliases.
-        { name: "CSS_PROPERTY_MozTransform" },
+        {
+          name: "CSS_PROPERTY_MozAppearance",
+          glean: ["Css", "cssMozAppearance"],
+        },
         // Check for counted unknown properties.
-        { name: "CSS_PROPERTY_WebkitPaddingStart" },
+        {
+          name: "CSS_PROPERTY_WebkitPaddingStart",
+          glean: ["Css", "webkitPaddingStart"],
+        },
       ],
     },
 
@@ -81,17 +72,26 @@ add_task(async function() {
     {
       type: "iframe",
       filename: "file_use_counter_svg_getElementById.svg",
-      counters: [{ name: "SVGSVGELEMENT_GETELEMENTBYID" }],
-      check_documents: false,
+      counters: [
+        {
+          name: "SVGSVGELEMENT_GETELEMENTBYID",
+          glean: ["", "svgsvgelementGetelementbyid"],
+        },
+      ],
     },
     {
       type: "iframe",
       filename: "file_use_counter_svg_currentScale.svg",
       counters: [
-        { name: "SVGSVGELEMENT_CURRENTSCALE_getter" },
-        { name: "SVGSVGELEMENT_CURRENTSCALE_setter" },
+        {
+          name: "SVGSVGELEMENT_CURRENTSCALE_getter",
+          glean: ["", "svgsvgelementCurrentscaleGetter"],
+        },
+        {
+          name: "SVGSVGELEMENT_CURRENTSCALE_setter",
+          glean: ["", "svgsvgelementCurrentscaleSetter"],
+        },
       ],
-      check_documents: false,
     },
 
     // Check that use counters are incremented by SVGs loaded as images.
@@ -100,12 +100,12 @@ add_task(async function() {
     {
       type: "img",
       filename: "file_use_counter_svg_getElementById.svg",
-      counters: [{ name: "CSS_PROPERTY_Fill" }],
+      counters: [{ name: "CSS_PROPERTY_Fill", glean: ["Css", "cssFill"] }],
     },
     {
       type: "img",
       filename: "file_use_counter_svg_currentScale.svg",
-      counters: [{ name: "CSS_PROPERTY_Fill" }],
+      counters: [{ name: "CSS_PROPERTY_Fill", glean: ["Css", "cssFill"] }],
     },
 
     // Check that use counters are incremented by directly loading SVGs
@@ -113,7 +113,13 @@ add_task(async function() {
     {
       type: "direct",
       filename: "file_use_counter_svg_fill_pattern.svg",
-      counters: [{ name: "CSS_PROPERTY_FillOpacity", xfail: true }],
+      counters: [
+        {
+          name: "CSS_PROPERTY_FillOpacity",
+          glean: ["Css", "cssFillOpacity"],
+          xfail: true,
+        },
+      ],
     },
 
     // Check that use counters are incremented by directly loading SVGs
@@ -121,14 +127,21 @@ add_task(async function() {
     {
       type: "direct",
       filename: "file_use_counter_svg_fill_pattern_internal.svg",
-      counters: [{ name: "CSS_PROPERTY_FillOpacity" }],
+      counters: [
+        { name: "CSS_PROPERTY_FillOpacity", glean: ["Css", "cssFillOpacity"] },
+      ],
     },
 
     // Check that use counters are incremented in a display:none iframe.
     {
       type: "undisplayed-iframe",
       filename: "file_use_counter_svg_currentScale.svg",
-      counters: [{ name: "SVGSVGELEMENT_CURRENTSCALE_getter" }],
+      counters: [
+        {
+          name: "SVGSVGELEMENT_CURRENTSCALE_getter",
+          glean: ["", "svgsvgelementCurrentscaleGetter"],
+        },
+      ],
     },
 
     // Check that a document that comes out of the bfcache reports any new use
@@ -137,7 +150,12 @@ add_task(async function() {
       type: "direct",
       filename: "file_use_counter_bfcache.html",
       waitForExplicitFinish: true,
-      counters: [{ name: "SVGSVGELEMENT_GETELEMENTBYID" }],
+      counters: [
+        {
+          name: "SVGSVGELEMENT_GETELEMENTBYID",
+          glean: ["", "svgsvgelementGetelementbyid"],
+        },
+      ],
     },
 
     // // data: URLs don't correctly propagate to their referring document yet.
@@ -154,15 +172,29 @@ add_task(async function() {
     let file = test.filename;
     info(`checking ${file} (${test.type})`);
 
-    let newTab = BrowserTestUtils.addTab(gBrowser, "about:blank");
-    gBrowser.selectedTab = newTab;
-    newTab.linkedBrowser.stop();
-
     // Hold on to the current values of the telemetry histograms we're
-    // interested in.
+    // interested in. Opening an about:blank tab shouldn't change those.
     let before = await grabHistogramsFromContent(
       test.counters.map(c => c.name)
     );
+
+    await Services.fog.testFlushAllChildren();
+    before.gleanPage = Object.fromEntries(
+      test.counters.map(c => [
+        c.name,
+        Glean[`useCounter${c.glean[0]}Page`][c.glean[1]].testGetValue() ?? 0,
+      ])
+    );
+    before.gleanDoc = Object.fromEntries(
+      test.counters.map(c => [
+        c.name,
+        Glean[`useCounter${c.glean[0]}Doc`][c.glean[1]].testGetValue() ?? 0,
+      ])
+    );
+    before.glean_docs_destroyed =
+      Glean.useCounter.contentDocumentsDestroyed.testGetValue();
+    before.glean_toplevel_destroyed =
+      Glean.useCounter.topLevelContentDocumentsDestroyed.testGetValue();
 
     // Load the test file in the new tab, either directly or via
     // file_use_counter_outer{,_display_none}.html, depending on the test type.
@@ -188,18 +220,23 @@ add_task(async function() {
         throw `unexpected type ${test.type}`;
     }
 
-    BrowserTestUtils.loadURI(gBrowser.selectedBrowser, url);
-    await BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser);
-
+    let waitForFinish = null;
     if (test.waitForExplicitFinish) {
-      if (test.type != "direct") {
-        throw new Error(
-          `cannot use waitForExplicitFinish with test type ${test.type}`
-        );
-      }
-
+      is(
+        test.type,
+        "direct",
+        `cannot use waitForExplicitFinish with test type ${test.type}`
+      );
       // Wait until the tab changes its hash to indicate it has finished.
-      await BrowserTestUtils.waitForLocationChange(gBrowser, url + "#finished");
+      waitForFinish = BrowserTestUtils.waitForLocationChange(
+        gBrowser,
+        url + "#finished"
+      );
+    }
+
+    let newTab = await BrowserTestUtils.openNewForegroundTab(gBrowser, url);
+    if (waitForFinish) {
+      await waitForFinish;
     }
 
     if (targetElement) {
@@ -207,7 +244,7 @@ add_task(async function() {
       await SpecialPowers.spawn(
         gBrowser.selectedBrowser,
         [{ file, targetElement }],
-        function(opts) {
+        function (opts) {
           let target = content.document.getElementById(opts.targetElement);
           target.src = opts.file;
 
@@ -223,15 +260,30 @@ add_task(async function() {
     }
 
     // Tear down the page.
-    let tabClosed = BrowserTestUtils.waitForTabClosing(newTab);
-    gBrowser.removeTab(newTab);
-    await tabClosed;
+    await BrowserTestUtils.removeTab(newTab);
 
     // Grab histograms again.
     let after = await grabHistogramsFromContent(
       test.counters.map(c => c.name),
       before.sentinel
     );
+    await Services.fog.testFlushAllChildren();
+    after.gleanPage = Object.fromEntries(
+      test.counters.map(c => [
+        c.name,
+        Glean[`useCounter${c.glean[0]}Page`][c.glean[1]].testGetValue() ?? 0,
+      ])
+    );
+    after.gleanDoc = Object.fromEntries(
+      test.counters.map(c => [
+        c.name,
+        Glean[`useCounter${c.glean[0]}Doc`][c.glean[1]].testGetValue() ?? 0,
+      ])
+    );
+    after.glean_docs_destroyed =
+      Glean.useCounter.contentDocumentsDestroyed.testGetValue();
+    after.glean_toplevel_destroyed =
+      Glean.useCounter.topLevelContentDocumentsDestroyed.testGetValue();
 
     // Compare before and after.
     for (let counter of test.counters) {
@@ -248,43 +300,60 @@ add_task(async function() {
           before.document[name] + value,
           `document counts for ${name} after are correct`
         );
+        is(
+          after.gleanPage[name],
+          before.gleanPage[name] + value,
+          `Glean page counts for ${name} are correct`
+        );
+        is(
+          after.gleanDoc[name],
+          before.gleanDoc[name] + value,
+          `Glean document counts for ${name} are correct`
+        );
       }
     }
 
-    if (test.check_documents ?? true) {
+    if (test.filename == "file_use_counter_bfcache.html") {
+      // This test navigates a bunch of times and thus creates multiple top
+      // level document entries, as expected.
+      // Whether the last document is destroyed is a bit racy, see bug 1842800,
+      // so for now we allow it with +/- 1.
       ok(
-        after.toplevel_docs >= before.toplevel_docs + 1,
+        after.toplevel_docs == before.toplevel_docs + 5 ||
+          after.toplevel_docs == before.toplevel_docs + 6,
+        `top level destroyed document counts are correct: ${before.toplevel_docs} vs ${after.toplevel_docs}`
+      );
+      ok(
+        after.glean_toplevel_destroyed == before.glean_toplevel_destroyed + 5 ||
+          after.glean_toplevel_destroyed == before.glean_toplevel_destroyed + 6,
+        `Glean top level destroyed docs counts are correct: ${before.glean_toplevel_destroyed} vs ${after.glean_toplevel_destroyed}`
+      );
+    } else {
+      is(
+        after.toplevel_docs,
+        before.toplevel_docs + 1,
         "top level destroyed document counts are correct"
       );
-      // 2 documents for "img" tests: one for the outer html page containing the
-      // <img> element, and one for the SVG image itself.
-      ok(
-        after.docs >= before.docs + (test.type == "img" ? 2 : 1),
-        "destroyed document counts are correct"
+      is(
+        after.glean_toplevel_destroyed,
+        before.glean_toplevel_destroyed + 1,
+        "Glean top level destroyed document counts are correct"
       );
     }
+
+    // 2 documents for "img" tests: one for the outer html page containing the
+    // <img> element, and one for the SVG image itself.
+    // FIXME: iframe tests and so on probably should get two at least.
+    ok(
+      after.docs >= before.docs + (test.type == "img" ? 2 : 1),
+      "destroyed document counts are correct"
+    );
+    Assert.greaterOrEqual(
+      after.glean_docs_destroyed,
+      before.glean_docs_destroyed + (test.type == "img" ? 2 : 1),
+      "Glean destroyed doc counts are correct"
+    );
   }
-});
-
-add_task(async function() {
-  let Telemetry = Cc["@mozilla.org/base/telemetry;1"].getService(
-    Ci.nsITelemetry
-  );
-  Telemetry.canRecordExtended = gOldParentCanRecord;
-
-  await SpecialPowers.spawn(
-    gBrowser.selectedBrowser,
-    [{ oldCanRecord: gOldContentCanRecord }],
-    async function(arg) {
-      await new Promise(resolve => {
-        let telemetry = Cc["@mozilla.org/base/telemetry;1"].getService(
-          Ci.nsITelemetry
-        );
-        telemetry.canRecordExtended = arg.oldCanRecord;
-        resolve();
-      });
-    }
-  );
 });
 
 async function grabHistogramsFromContent(names, prev_sentinel = null) {
@@ -298,7 +367,7 @@ async function grabHistogramsFromContent(names, prev_sentinel = null) {
   );
   let gatheredHistograms;
   return BrowserTestUtils.waitForCondition(
-    function() {
+    function () {
       // Document use counters are reported in the content process (when e10s
       // is enabled), and page use counters are reported in the parent process.
       let snapshots = telemetry.getSnapshotForHistograms("main", false);
@@ -341,7 +410,7 @@ async function grabHistogramsFromContent(names, prev_sentinel = null) {
     Infinity
   ).then(
     () => gatheredHistograms,
-    function(msg) {
+    function (msg) {
       throw msg;
     }
   );

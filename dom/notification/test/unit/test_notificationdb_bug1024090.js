@@ -7,12 +7,11 @@ function run_test() {
 
 // For bug 1024090: test edge case of notificationstore.json
 add_test(function test_bug1024090_purge() {
-  const { OS } = ChromeUtils.import("resource://gre/modules/osfile.jsm");
-  const NOTIFICATION_STORE_PATH = OS.Path.join(
-    OS.Constants.Path.profileDir,
+  const NOTIFICATION_STORE_PATH = PathUtils.join(
+    PathUtils.profileDir,
     "notificationstore"
   );
-  let cleanup = OS.File.removeDir(NOTIFICATION_STORE_PATH);
+  let cleanup = IOUtils.remove(NOTIFICATION_STORE_PATH, { recursive: true });
   cleanup
     .then(
       function onSuccess() {
@@ -33,7 +32,7 @@ add_test(function test_bug1024090_purge() {
 add_test(function test_bug1024090_send_one() {
   let requestID = 1;
   let msgReply = "Notification:Save:Return:OK";
-  let msgHandler = function(message) {
+  let msgHandler = function (message) {
     equal(requestID, message.data.requestID, "Checking requestID");
   };
 
@@ -48,7 +47,7 @@ add_test(function test_bug1024090_send_one() {
 add_test(function test_bug1024090_get_one() {
   let requestID = 2;
   let msgReply = "Notification:GetAll:Return:OK";
-  let msgHandler = function(message) {
+  let msgHandler = function (message) {
     equal(requestID, message.data.requestID, "Checking requestID");
     equal(1, message.data.notifications.length, "One notification stored");
   };

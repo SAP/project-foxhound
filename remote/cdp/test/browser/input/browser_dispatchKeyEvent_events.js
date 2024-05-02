@@ -30,7 +30,7 @@ add_task(async function testShiftEvents({ client }) {
   await withModifier(Input, "Shift", "shift", "Tab");
   events = await getEvents();
   checkEvent(events[1], "keydown", "Tab", "shift", true);
-  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], function() {
+  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], function () {
     const input = content.document.querySelector("input");
     isnot(input, content.document.activeElement, "input should lose focus");
   });
@@ -41,7 +41,7 @@ add_task(async function testAltEvents({ client }) {
   const { Input } = client;
 
   await withModifier(Input, "Alt", "alt", "a");
-  if (isMac) {
+  if (AppInfo.isMac) {
     await checkInputContent("a", 1);
   } else {
     await checkInputContent("", 0);
@@ -63,7 +63,7 @@ add_task(async function testControlEvents({ client }) {
 });
 
 add_task(async function testMetaEvents({ client }) {
-  if (!isMac) {
+  if (!AppInfo.isMac) {
     return;
   }
   await setupForInput(PAGE_URL);

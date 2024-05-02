@@ -61,7 +61,7 @@ class Parser:
 
         if self.tu.name in Parser.parsed:
             priorTU = Parser.parsed[self.tu.name].tu
-            if priorTU.filename != filename:
+            if os.path.normcase(priorTU.filename) != os.path.normcase(filename):
                 _error(
                     Loc(filename),
                     "Trying to load `%s' from a file when we'd already seen it in file `%s'"
@@ -177,7 +177,7 @@ def t_ID(t):
 
 def t_STRING(t):
     r'"[^"\n]*"'
-    t.value = t.value[1:-1]
+    t.value = StringLiteral(Loc(Parser.current.filename, t.lineno), t.value[1:-1])
     return t
 
 
@@ -259,7 +259,7 @@ def p_PreambleStmt(p):
 
 def p_CxxIncludeStmt(p):
     """CxxIncludeStmt : INCLUDE STRING"""
-    p[0] = CxxInclude(locFromTok(p, 1), p[2])
+    p[0] = CxxInclude(locFromTok(p, 1), p[2].value)
 
 
 def p_IncludeStmt(p):
@@ -298,7 +298,7 @@ def p_UsingStmt(p):
         attributes=p[1],
         kind=p[3],
         cxxTypeSpec=p[4],
-        cxxHeader=p[6],
+        cxxHeader=p[6].value,
     )
 
 
@@ -542,6 +542,7 @@ def p_Attribute(p):
 
 def p_AttributeValue(p):
     """AttributeValue : '=' ID
+    | '=' STRING
     |"""
     if 1 == len(p):
         p[0] = None
@@ -595,7 +596,7 @@ def p_Param(p):
 
 def p_Type(p):
     """Type : MaybeNullable BasicType"""
-    # only actor types are nullable; we check this in the type checker
+    # only some types are nullable; we check this in the type checker
     p[2].nullable = p[1]
     p[0] = p[2]
 
@@ -613,7 +614,7 @@ def p_BasicType(p):
             # p[1] is CxxID. isunique = False
             p[1] = p[1] + (False,)
         loc, id, isunique = p[1]
-        p[1] = TypeSpec(loc, QualifiedId(loc, id))
+        p[1] = TypeSpec(loc, id)
         p[1].uniqueptr = isunique
     if 4 == len(p):
         p[1].array = True
@@ -636,10 +637,10 @@ def p_CxxType(p):
     """CxxType : QualifiedID
     | CxxID"""
     if isinstance(p[1], QualifiedId):
-        p[0] = TypeSpec(p[1].loc, p[1])
+        p[0] = p[1]
     else:
         loc, id = p[1]
-        p[0] = TypeSpec(loc, QualifiedId(loc, id))
+        p[0] = QualifiedId(loc, id)
 
 
 def p_QualifiedID(p):

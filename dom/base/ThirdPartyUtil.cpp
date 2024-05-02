@@ -13,12 +13,12 @@
 #include "mozilla/Assertions.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/ClearOnShutdown.h"
-#include "mozilla/ContentBlocking.h"
 #include "mozilla/ContentBlockingNotifier.h"
 #include "mozilla/Logging.h"
 #include "mozilla/MacroForEach.h"
 #include "mozilla/Components.h"
 #include "mozilla/StaticPtr.h"
+#include "mozilla/StorageAccess.h"
 #include "mozilla/TextUtils.h"
 #include "mozilla/Unused.h"
 #include "mozilla/dom/BrowsingContext.h"
@@ -30,7 +30,7 @@
 #include "nsDebug.h"
 #include "nsEffectiveTLDService.h"
 #include "nsError.h"
-#include "nsGlobalWindowInner.h"
+#include "nsGlobalWindowOuter.h"
 #include "nsIChannel.h"
 #include "nsIClassifiedChannel.h"
 #include "nsIContentPolicy.h"
@@ -418,7 +418,10 @@ ThirdPartyUtil::GetBaseDomain(nsIURI* aHostURI, nsACString& aBaseDomain) {
     // cases.
     rv = aHostURI->GetAsciiHost(aBaseDomain);
   }
-  NS_ENSURE_SUCCESS(rv, rv);
+
+  if (NS_FAILED(rv)) {
+    return rv;
+  }
 
   // aHostURI (and thus aBaseDomain) may be the string '.'. If so, fail.
   if (aBaseDomain.Length() == 1 && aBaseDomain.Last() == '.')
@@ -512,8 +515,8 @@ ThirdPartyUtil::AnalyzeChannel(nsIChannel* aChannel, bool aNotify, nsIURI* aURI,
         aRequireThirdPartyCheck ? result.contains(ThirdPartyAnalysis::IsForeign)
                                 : true;
     if (performStorageChecks &&
-        ContentBlocking::ShouldAllowAccessFor(aChannel, aURI ? aURI : uri.get(),
-                                              aRejectedReason)) {
+        ShouldAllowAccessFor(aChannel, aURI ? aURI : uri.get(),
+                             aRejectedReason)) {
       result += ThirdPartyAnalysis::IsStorageAccessPermissionGranted;
     }
 

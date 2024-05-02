@@ -1,13 +1,17 @@
 /* eslint max-len: ["error", 80] */
 
-const { AddonTestUtils } = ChromeUtils.import(
-  "resource://testing-common/AddonTestUtils.jsm",
-  {}
+"use strict";
+
+const { AddonTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/AddonTestUtils.sys.mjs"
 );
 
-const { ExtensionPermissions } = ChromeUtils.import(
-  "resource://gre/modules/ExtensionPermissions.jsm",
-  {}
+const { ExtensionPermissions } = ChromeUtils.importESModule(
+  "resource://gre/modules/ExtensionPermissions.sys.mjs"
+);
+
+const { QuarantinedDomains } = ChromeUtils.importESModule(
+  "resource://gre/modules/ExtensionPermissions.sys.mjs"
 );
 
 const SUPPORT_URL = Services.urlFormatter.formatURL(
@@ -28,7 +32,7 @@ function getDetailRows(card) {
   );
 }
 
-function checkLabel(row, name) {
+async function checkLabel(row, name) {
   let id;
   if (name == "private-browsing") {
     // This id is carried over from the old about:addons.
@@ -36,11 +40,85 @@ function checkLabel(row, name) {
   } else {
     id = `addon-detail-${name}-label`;
   }
+  const doc = row.ownerDocument;
+  await doc.l10n.translateElements([row]);
+  const rowHeaderEl = row.firstElementChild;
+  is(doc.l10n.getAttributes(rowHeaderEl).id, id, `The ${name} label is set`);
+  if (row.getAttribute("role") === "group") {
+    // For the rows on which the role="group" attribute is set,
+    // let's make sure that the element itself includes an aria-label
+    // which provides to the screen reader a label similar to the one
+    // rendered as the visual section header.
+    //
+    // NOTE: more screen reader accessibility assertions are being
+    // covered by the checkRowScreenReaderAccessibility test helper.
+    is(
+      row.getAttribute("aria-label"),
+      rowHeaderEl.textContent,
+      "expect an aria-label from role=group row to match row header el text"
+    );
+    // For these rows we expect rowHeaderEl to be a span.
+    is(rowHeaderEl.tagName, "SPAN", "row header element should be a span");
+  } else {
+    // For the other rows which we have not set a role="group" attribute
+    // on, we expect the rowHeaderEl to still be a label.
+    is(
+      rowHeaderEl.tagName,
+      "LABEL",
+      "row header element expected to be a label"
+    );
+  }
+}
+
+async function checkRowScreenReaderAccessibility(
+  row,
+  { groupName, expectedFluentId }
+) {
+  const doc = row.ownerDocument;
+  // Make sure the row isn't missing any strings expected to be associated
+  // to the fluent ids (which would make translateElements to reject
+  // and the test to fail explicitly).
+  await doc.l10n.translateElements([row]);
   is(
-    row.ownerDocument.l10n.getAttributes(row.querySelector("label")).id,
-    id,
-    `The ${name} label is set`
+    row.getAttribute("role"),
+    "group",
+    `Expect ${groupName} row to have role group`
   );
+  is(
+    doc.l10n.getAttributes(row).id,
+    expectedFluentId,
+    `Got expected fluent id associated to the ${groupName} row`
+  );
+  // Make sure that screen readers will be able to announce to the
+  // user what is the group of controls being entered.
+  ok(
+    !!row.getAttribute("aria-label")?.length,
+    `Expect non empty aria-label on the ${groupName} row`
+  );
+}
+
+async function checkQuarantinedDomainsUserAllowedRows(card, rows) {
+  // Account for the rows related to per-addon quarantineIgnoredByUser UI,
+  // underling functionality of the UI is checked in its own test task.
+  const doc = card.ownerDocument;
+  if (card.addon.canChangeQuarantineIgnored) {
+    let row = rows.shift();
+    await checkLabel(row, "quarantined-domains");
+    await checkRowScreenReaderAccessibility(row, {
+      groupName: "quarantined domains exempt controls",
+      expectedFluentId: "addon-detail-group-label-quarantined-domains",
+    });
+
+    // quarantineIgnoredByUser UI help text.
+    row = rows.shift();
+    ok(row.classList.contains("addon-detail-help-row"), "There's a help row");
+    ok(!row.hidden, "The help row is shown");
+    is(
+      doc.l10n.getAttributes(row.firstElementChild).id,
+      "addon-detail-quarantined-domains-help",
+      "The help row is for quarantined domains"
+    );
+  }
 }
 
 function formatUrl(contentAttribute, url) {
@@ -130,8 +208,8 @@ async function assertBackButtonIsDisabled(win) {
   ok(backButton.disabled, "back button is disabled");
 }
 
-add_task(async function enableHtmlViews() {
-  gProvider = new MockProvider();
+add_setup(async function enableHtmlViews() {
+  gProvider = new MockProvider(["extension", "sitepermission"]);
   gProvider.createAddons([
     {
       id: "addon1@mochi.test",
@@ -165,14 +243,46 @@ add_task(async function enableHtmlViews() {
       type: "extension",
     },
     {
+      id: "addon3@mochi.test",
+      name: "Test add-on 3",
+      creator: { name: "Look a super long description" },
+      description: "Short description",
+      fullDescription: "Mozilla\n".repeat(100),
+      userPermissions: {
+        origins: [],
+        permissions: ["alarms", "contextMenus"],
+      },
+      type: "extension",
+      contributionURL: "http://example.com/contribute",
+      updateDate: new Date("2022-03-07T01:00:00"),
+    },
+    {
+      id: "addon4@mochi.test",
+      name: "Test add-on 4",
+      creator: { name: "Some name" },
+      description: "Short description",
+      userPermissions: {
+        origins: [],
+        permissions: ["alarms", "contextMenus"],
+      },
+      type: "extension",
+      reviewCount: 0,
+      reviewURL: "http://addons.mozilla.org/reviews",
+      averageRating: 0,
+    },
+    {
+      // NOTE: Keep the mock properties in sync with the one that
+      // SitePermsAddonWrapper would be providing in real synthetic
+      // addon entries managed by the SitePermsAddonProvider.
       id: "sitepermission@mochi.test",
+      version: "2.0",
       name: "Test site permission add-on",
-      creator: { name: "you got it" },
       description: "permission description",
       fullDescription: "detailed description",
       siteOrigin: "http://mochi.test",
       sitePermissions: ["midi"],
       type: "sitepermission",
+      permissions: AddonManager.PERM_CAN_UNINSTALL,
     },
     {
       id: "theme1@mochi.test",
@@ -199,12 +309,11 @@ add_task(async function enableHtmlViews() {
 });
 
 add_task(async function testOpenDetailView() {
-  Services.telemetry.clearEvents();
   let id = "test@mochi.test";
   let extension = ExtensionTestUtils.loadExtension({
     manifest: {
       name: "Test",
-      applications: { gecko: { id } },
+      browser_specific_settings: { gecko: { id } },
     },
     useAddonManager: "temporary",
   });
@@ -212,7 +321,7 @@ add_task(async function testOpenDetailView() {
   let extension2 = ExtensionTestUtils.loadExtension({
     manifest: {
       name: "Test",
-      applications: { gecko: { id: id2 } },
+      browser_specific_settings: { gecko: { id: id2 } },
     },
     useAddonManager: "temporary",
   });
@@ -273,50 +382,14 @@ add_task(async function testOpenDetailView() {
   await closeView(win);
   await extension.unload();
   await extension2.unload();
-
-  assertAboutAddonsTelemetryEvents([
-    ["addonsManager", "view", "aboutAddons", "list", { type: "extension" }],
-    [
-      "addonsManager",
-      "view",
-      "aboutAddons",
-      "detail",
-      { type: "extension", addonId: id },
-    ],
-    ["addonsManager", "view", "aboutAddons", "list", { type: "extension" }],
-    [
-      "addonsManager",
-      "view",
-      "aboutAddons",
-      "detail",
-      { type: "extension", addonId: id },
-    ],
-    ["addonsManager", "view", "aboutAddons", "list", { type: "extension" }],
-    [
-      "addonsManager",
-      "view",
-      "aboutAddons",
-      "detail",
-      { type: "extension", addonId: id2 },
-    ],
-    ["addonsManager", "view", "aboutAddons", "list", { type: "extension" }],
-    [
-      "addonsManager",
-      "view",
-      "aboutAddons",
-      "detail",
-      { type: "extension", addonId: id2 },
-    ],
-  ]);
 });
 
 add_task(async function testDetailOperations() {
-  Services.telemetry.clearEvents();
   let id = "test@mochi.test";
   let extension = ExtensionTestUtils.loadExtension({
     manifest: {
       name: "Test",
-      applications: { gecko: { id } },
+      browser_specific_settings: { gecko: { id } },
     },
     useAddonManager: "temporary",
   });
@@ -342,7 +415,7 @@ add_task(async function testDetailOperations() {
   let removeButton = panel.querySelector('[action="remove"]');
   ok(!removeButton.hidden, "The remove button is visible");
 
-  let separator = panel.querySelector("panel-item-separator:last-of-type");
+  let separator = panel.querySelector("hr:last-of-type");
   ok(separator.hidden, "The separator is hidden");
 
   let expandButton = panel.querySelector('[action="expand"]');
@@ -413,57 +486,9 @@ add_task(async function testDetailOperations() {
 
   await closeView(win);
   await extension.unload();
-
-  assertAboutAddonsTelemetryEvents([
-    ["addonsManager", "view", "aboutAddons", "list", { type: "extension" }],
-    [
-      "addonsManager",
-      "view",
-      "aboutAddons",
-      "detail",
-      { type: "extension", addonId: id },
-    ],
-    [
-      "addonsManager",
-      "action",
-      "aboutAddons",
-      null,
-      { type: "extension", addonId: id, action: "disable", view: "detail" },
-    ],
-    [
-      "addonsManager",
-      "action",
-      "aboutAddons",
-      null,
-      { type: "extension", addonId: id, action: "enable" },
-    ],
-    [
-      "addonsManager",
-      "action",
-      "aboutAddons",
-      "cancelled",
-      { type: "extension", addonId: id, action: "uninstall", view: "detail" },
-    ],
-    [
-      "addonsManager",
-      "action",
-      "aboutAddons",
-      "accepted",
-      { type: "extension", addonId: id, action: "uninstall", view: "detail" },
-    ],
-    ["addonsManager", "view", "aboutAddons", "list", { type: "extension" }],
-    [
-      "addonsManager",
-      "action",
-      "aboutAddons",
-      null,
-      { type: "extension", addonId: id, action: "undo", view: "list" },
-    ],
-  ]);
 });
 
 add_task(async function testFullDetails() {
-  Services.telemetry.clearEvents();
   let id = "addon1@mochi.test";
   let headingId = "addon1_mochi_test-heading";
   let win = await loadInitialView("extension");
@@ -512,6 +537,19 @@ add_task(async function testFullDetails() {
     "The full description replaces newlines with <br>"
   );
 
+  let sitepermissionsRow = details.querySelector(
+    ".addon-detail-sitepermissions"
+  );
+  is(
+    sitepermissionsRow.hidden,
+    true,
+    "AddonSitePermissionsList should be hidden for this addon type"
+  );
+
+  // Check the show more button is not there
+  const showMoreBtn = card.querySelector(".addon-detail-description-toggle");
+  ok(showMoreBtn.hidden, "The show more button is not visible");
+
   let contrib = details.querySelector(".addon-detail-contribute");
   ok(contrib, "The contribution section is visible");
 
@@ -526,7 +564,13 @@ add_task(async function testFullDetails() {
 
   // Auto updates.
   let row = rows.shift();
-  checkLabel(row, "updates");
+
+  await checkLabel(row, "updates");
+  await checkRowScreenReaderAccessibility(row, {
+    groupName: "updates controls",
+    expectedFluentId: "addon-detail-group-label-updates",
+  });
+
   let expectedOptions = [
     { value: "1", label: "addon-detail-updates-radio-default", checked: false },
     { value: "2", label: "addon-detail-updates-radio-on", checked: true },
@@ -537,7 +581,11 @@ add_task(async function testFullDetails() {
 
   // Private browsing, functionality checked in another test.
   row = rows.shift();
-  checkLabel(row, "private-browsing");
+  await checkLabel(row, "private-browsing");
+  await checkRowScreenReaderAccessibility(row, {
+    groupName: "private browsing controls",
+    expectedFluentId: "addon-detail-group-label-private-browsing",
+  });
 
   // Private browsing help text.
   row = rows.shift();
@@ -549,9 +597,11 @@ add_task(async function testFullDetails() {
     "The help row is for private browsing"
   );
 
+  await checkQuarantinedDomainsUserAllowedRows(card, rows);
+
   // Author.
   row = rows.shift();
-  checkLabel(row, "author");
+  await checkLabel(row, "author");
   let link = row.querySelector("a");
   let authorLink = formatUrl(
     "addons-manager-user-profile-link",
@@ -561,30 +611,30 @@ add_task(async function testFullDetails() {
 
   // Version.
   row = rows.shift();
-  checkLabel(row, "version");
+  await checkLabel(row, "version");
   let text = row.lastChild;
   is(text.textContent, "3.1", "The version is set");
 
   // Last updated.
   row = rows.shift();
-  checkLabel(row, "last-updated");
+  await checkLabel(row, "last-updated");
   text = row.lastChild;
   is(text.textContent, "March 7, 2019", "The last updated date is set");
 
   // Homepage.
   row = rows.shift();
-  checkLabel(row, "homepage");
+  await checkLabel(row, "homepage");
   link = row.querySelector("a");
   checkLink(link, "http://example.com/addon1");
 
   // Reviews.
   row = rows.shift();
-  checkLabel(row, "rating");
+  await checkLabel(row, "rating");
   let rating = row.lastElementChild;
   ok(rating.classList.contains("addon-detail-rating"), "Found the rating el");
-  let starsElem = rating.querySelector("five-star-rating");
-  is(starsElem.rating, 4.279, "Exact rating used for calculations");
-  let stars = Array.from(starsElem.shadowRoot.querySelectorAll(".rating-star"));
+  let mozFiveStar = rating.querySelector("moz-five-star");
+  is(mozFiveStar.rating, 4.279, "Exact rating used for calculations");
+  let stars = Array.from(mozFiveStar.starEls);
   let fullAttrs = stars.map(star => star.getAttribute("fill")).join(",");
   is(fullAttrs, "full,full,full,full,half", "Four and a half stars are full");
   link = rating.querySelector("a");
@@ -599,16 +649,21 @@ add_task(async function testFullDetails() {
 
   // While we are here, let's test edge cases of star ratings.
   async function testRating(rating, ratingRounded, expectation) {
-    starsElem.rating = rating;
-    await starsElem.ownerDocument.l10n.translateElements([starsElem]);
-    is(
-      starsElem.ratingBuckets.join(","),
-      expectation,
-      `Rendering of rating ${rating}`
-    );
+    mozFiveStar.rating = rating;
+    await mozFiveStar.updateComplete;
+    if (mozFiveStar.ownerDocument.hasPendingL10nMutations) {
+      await BrowserTestUtils.waitForEvent(
+        mozFiveStar.ownerDocument,
+        "L10nMutationsFinished"
+      );
+    }
+    let starsString = Array.from(mozFiveStar.starEls)
+      .map(star => star.getAttribute("fill"))
+      .join(",");
+    is(starsString, expectation, `Rendering of rating ${rating}`);
 
     is(
-      starsElem.title,
+      mozFiveStar.starsWrapperEl.title,
       `Rated ${ratingRounded} out of 5`,
       "Rendered title must contain at most one fractional digit"
     );
@@ -629,24 +684,41 @@ add_task(async function testFullDetails() {
   is(rows.length, 0, "There are no more rows left");
 
   await closeView(win);
+});
 
-  assertAboutAddonsTelemetryEvents([
-    ["addonsManager", "view", "aboutAddons", "list", { type: "extension" }],
-    [
-      "addonsManager",
-      "view",
-      "aboutAddons",
-      "detail",
-      { type: "extension", addonId: id },
-    ],
-    [
-      "addonsManager",
-      "action",
-      "aboutAddons",
-      null,
-      { type: "extension", addonId: id, action: "contribute", view: "detail" },
-    ],
-  ]);
+add_task(async function testFullDetailsShowMoreButton() {
+  const id = "addon3@mochi.test";
+  const win = await loadInitialView("extension");
+
+  // The list card.
+  let card = getAddonCard(win, id);
+  const loaded = waitForViewLoad(win);
+  card.querySelector('[action="expand"]').click();
+  await loaded;
+
+  // This is now the detail card.
+  card = getAddonCard(win, id);
+
+  // Check the show more button is there
+  const showMoreBtn = card.querySelector(".addon-detail-description-toggle");
+  ok(!showMoreBtn.hidden, "The show more button is visible");
+
+  const descriptionWrapper = card.querySelector(
+    ".addon-detail-description-wrapper"
+  );
+  ok(
+    descriptionWrapper.classList.contains("addon-detail-description-collapse"),
+    "The long description is collapsed"
+  );
+
+  // After click the description should be expanded
+  showMoreBtn.click();
+  ok(
+    !descriptionWrapper.classList.contains("addon-detail-description-collapse"),
+    "The long description is expanded"
+  );
+
+  await closeView(win);
 });
 
 add_task(async function testMinimalExtension() {
@@ -675,11 +747,11 @@ add_task(async function testMinimalExtension() {
 
   // Automatic updates.
   let row = rows.shift();
-  checkLabel(row, "updates");
+  await checkLabel(row, "updates");
 
   // Private browsing settings.
   row = rows.shift();
-  checkLabel(row, "private-browsing");
+  await checkLabel(row, "private-browsing");
 
   // Private browsing help text.
   row = rows.shift();
@@ -691,12 +763,14 @@ add_task(async function testMinimalExtension() {
     "The help row is for private browsing"
   );
 
+  await checkQuarantinedDomainsUserAllowedRows(card, rows);
+
   // Author.
   row = rows.shift();
-  checkLabel(row, "author");
+  await checkLabel(row, "author");
   let text = row.lastChild;
   is(text.textContent, "I made it", "The author is set");
-  ok(text instanceof Text, "The author is a text node");
+  ok(Text.isInstance(text), "The author is a text node");
 
   is(rows.length, 0, "There are no more rows");
 
@@ -731,18 +805,18 @@ add_task(async function testDefaultTheme() {
 
   // Author.
   let author = rows.shift();
-  checkLabel(author, "author");
+  await checkLabel(author, "author");
   let text = author.lastChild;
   is(text.textContent, "Mozilla", "The author is set");
 
   // Version.
   let version = rows.shift();
-  checkLabel(version, "version");
+  await checkLabel(version, "version");
   is(version.lastChild.textContent, "1.3", "It's always version 1.3");
 
   // Last updated.
   let lastUpdated = rows.shift();
-  checkLabel(lastUpdated, "last-updated");
+  await checkLabel(lastUpdated, "last-updated");
   let dateText = lastUpdated.lastChild.textContent;
   ok(dateText, "There is a date set");
   ok(!dateText.includes("Invalid Date"), `"${dateText}" should be a date`);
@@ -789,11 +863,11 @@ add_task(async function testStaticTheme() {
 
   // Automatic updates.
   let row = rows.shift();
-  checkLabel(row, "updates");
+  await checkLabel(row, "updates");
 
   // Author.
   let author = rows.shift();
-  checkLabel(author, "author");
+  await checkLabel(author, "author");
   let text = author.lastElementChild;
   is(text.textContent, "Artist", "The author is set");
 
@@ -804,7 +878,6 @@ add_task(async function testStaticTheme() {
 
 add_task(async function testSitePermission() {
   let win = await loadInitialView("sitepermission");
-  let doc = win.document;
 
   // The list card.
   let card = getAddonCard(win, "sitepermission@mochi.test");
@@ -820,31 +893,21 @@ add_task(async function testSitePermission() {
   // Check all the deck buttons are hidden.
   assertDeckHeadingHidden(card.details.tabGroup);
 
-  let rows = getDetailRows(card);
-  is(rows.length, 4, "There are 4 rows");
-
-  // Automatic updates.
-  let row = rows.shift();
-  checkLabel(row, "updates");
-
-  // Private browsing.
-  let private = rows.shift();
-  checkLabel(private, "private-browsing");
-
-  let help = rows.shift();
-  ok(help.classList.contains("addon-detail-help-row"), "There's a help row");
-  ok(!row.hidden, "The help row is shown");
+  let sitepermissionsRow = card.querySelector(".addon-detail-sitepermissions");
   is(
-    doc.l10n.getAttributes(help).id,
-    "addon-detail-private-browsing-help",
-    "The help row is for private browsing"
+    BrowserTestUtils.is_visible(sitepermissionsRow),
+    true,
+    "AddonSitePermissionsList should be visible for this addon type"
   );
 
-  // Author.
-  let author = rows.shift();
-  checkLabel(author, "author");
+  let [versionRow, ...restRows] = getDetailRows(card);
+  await checkLabel(versionRow, "version");
 
-  is(rows.length, 0, "There was only 1 row");
+  Assert.deepEqual(
+    restRows.map(row => row.getAttribute("class")),
+    [],
+    "All other details row are hidden as expected"
+  );
 
   let permissions = Array.from(
     card.querySelectorAll(".addon-permissions-list .permission-info")
@@ -856,12 +919,11 @@ add_task(async function testSitePermission() {
 });
 
 add_task(async function testPrivateBrowsingExtension() {
-  Services.telemetry.clearEvents();
   let id = "pb@mochi.test";
   let extension = ExtensionTestUtils.loadExtension({
     manifest: {
       name: "My PB extension",
-      applications: { gecko: { id } },
+      browser_specific_settings: { gecko: { id } },
     },
     useAddonManager: "permanent",
   });
@@ -907,6 +969,10 @@ add_task(async function testPrivateBrowsingExtension() {
 
   // Check the PB stuff.
   await updated;
+
+  // Not sure what better to await here.
+  await TestUtils.waitForCondition(() => !badge.hidden);
+
   ok(!badge.hidden, "The PB badge is now shown");
   ok(await hasPrivateAllowed(id), "PB is allowed");
   is(
@@ -948,60 +1014,6 @@ add_task(async function testPrivateBrowsingExtension() {
 
   await closeView(win);
   await extension.unload();
-
-  assertAboutAddonsTelemetryEvents([
-    ["addonsManager", "view", "aboutAddons", "list", { type: "extension" }],
-    [
-      "addonsManager",
-      "view",
-      "aboutAddons",
-      "detail",
-      { type: "extension", addonId: id },
-    ],
-    [
-      "addonsManager",
-      "action",
-      "aboutAddons",
-      "on",
-      {
-        type: "extension",
-        addonId: id,
-        action: "privateBrowsingAllowed",
-        view: "detail",
-      },
-    ],
-    [
-      "addonsManager",
-      "action",
-      "aboutAddons",
-      null,
-      { type: "extension", addonId: id, action: "disable" },
-    ],
-    [
-      "addonsManager",
-      "action",
-      "aboutAddons",
-      "off",
-      {
-        type: "extension",
-        addonId: id,
-        action: "privateBrowsingAllowed",
-        view: "detail",
-      },
-    ],
-    [
-      "addonsManager",
-      "action",
-      "aboutAddons",
-      "on",
-      {
-        type: "extension",
-        addonId: id,
-        action: "privateBrowsingAllowed",
-        view: "detail",
-      },
-    ],
-  ]);
 });
 
 add_task(async function testInvalidExtension() {
@@ -1042,7 +1054,7 @@ add_task(async function testExternalUninstall() {
   let extension = ExtensionTestUtils.loadExtension({
     manifest: {
       name: "Remove me",
-      applications: { gecko: { id } },
+      browser_specific_settings: { gecko: { id } },
     },
     useAddonManager: "temporary",
   });
@@ -1078,7 +1090,7 @@ add_task(async function testExternalThemeUninstall() {
   let id = "remove-theme@mochi.test";
   let extension = ExtensionTestUtils.loadExtension({
     manifest: {
-      applications: { gecko: { id } },
+      browser_specific_settings: { gecko: { id } },
       name: "Remove theme",
       theme: {},
     },
@@ -1116,7 +1128,7 @@ add_task(async function testPrivateBrowsingAllowedListView() {
   let extension = ExtensionTestUtils.loadExtension({
     manifest: {
       name: "Allowed PB extension",
-      applications: { gecko: { id: "allowed@mochi.test" } },
+      browser_specific_settings: { gecko: { id: "allowed@mochi.test" } },
     },
     useAddonManager: "permanent",
   });
@@ -1152,9 +1164,7 @@ add_task(async function testGoBackButton() {
 
   let loadDetailView = () => {
     let loaded = waitForViewLoad(win);
-    getAddonCard(win, id)
-      .querySelector("[action=expand]")
-      .click();
+    getAddonCard(win, id).querySelector("[action=expand]").click();
     return loaded;
   };
 
@@ -1296,4 +1306,355 @@ add_task(async function testGoBackButtonIsDisabledAfterBrowserBackButton() {
 
   BrowserTestUtils.removeTab(tab);
   await extension.unload();
+});
+
+add_task(async function testQuarantinedDomainsUserAllowedUI() {
+  let regularExtId = "regular@mochi.test";
+  let privilegedExtId = "privileged@mochi.test";
+  let recommendedExtId = "recommended@mochi.test";
+  let themeId = "theme@mochi.test";
+  let provider = new MockProvider();
+  provider.createAddons([
+    {
+      id: privilegedExtId,
+      isPrivileged: true,
+      name: "A privileged extension",
+      type: "extension",
+      quarantineIgnoredByApp: true,
+      quarantineIgnoredByUser: false,
+      canChangeQuarantineIgnored: false,
+    },
+    {
+      id: recommendedExtId,
+      isRecommended: true,
+      recommendationStates: ["recommended"],
+      name: "A Recommended extension",
+      type: "extension",
+      quarantineIgnoredByApp: true,
+      quarantineIgnoredByUser: false,
+      canChangeQuarantineIgnored: false,
+    },
+    {
+      id: themeId,
+      name: "A fake regular theme",
+      type: "theme",
+      canChangeQuarantineIgnored: false,
+    },
+  ]);
+
+  let regularExtension = ExtensionTestUtils.loadExtension({
+    manifest: {
+      name: "Some regular extension",
+      browser_specific_settings: { gecko: { id: regularExtId } },
+    },
+    useAddonManager: "permanent",
+  });
+
+  async function testQuarantinedUserAllowedUIRows(id, { expectVisible }) {
+    const perAddonPref = QuarantinedDomains.getUserAllowedAddonIdPrefName(id);
+    Services.prefs.clearUserPref(perAddonPref);
+
+    let card = getAddonCard(win, id);
+
+    const cardDetails = card.querySelector("addon-details");
+    ok(cardDetails, "Card details found");
+    const quarantinedUserAllowedControlsRow = cardDetails.querySelector(
+      ".addon-detail-row-quarantined-domains"
+    );
+
+    ok(
+      quarantinedUserAllowedControlsRow,
+      "Found quarantine domains controls row element"
+    );
+
+    is(
+      BrowserTestUtils.is_visible(quarantinedUserAllowedControlsRow),
+      expectVisible,
+      `Expect quarantineIgnoreByUser UI to ${
+        expectVisible ? "be" : "NOT be"
+      } visible`
+    );
+    const helpRow = quarantinedUserAllowedControlsRow.nextElementSibling;
+    is(
+      helpRow.classList.contains("addon-detail-help-row"),
+      true,
+      "Expect next sibling to be an addon-detail-help-row"
+    );
+    is(
+      BrowserTestUtils.is_visible(helpRow),
+      expectVisible,
+      `Expect quarantineIgnoredByUser UI help to ${
+        expectVisible ? "be" : "NOT be"
+      } visible`
+    );
+
+    if (!expectVisible) {
+      // The assertion that follows are going to be executed when the
+      // test helper function is called for an addon card detail view
+      // for which the quarantined domains rows are expected to be
+      // visible.
+      return;
+    }
+
+    is(
+      doc.l10n.getAttributes(helpRow.firstElementChild).id,
+      "addon-detail-quarantined-domains-help",
+      "Expect addon-detail-help-row to be localized"
+    );
+    const helpSupportLink = helpRow.querySelector("[is=moz-support-link]");
+    ok(helpSupportLink, "Expect a moz-support-link");
+    is(
+      helpSupportLink?.getAttribute("support-page"),
+      "quarantined-domains",
+      "Expect support link to point to SUMO quarantined-domains page"
+    );
+    // Make sure none of the elements in the help row are missing
+    // the expected strings associated to the fluent ids being set
+    // (if any is missing, l10n.translateElements will reject and
+    // trigger an explicit test failure);
+    await doc.l10n.translateElements([helpRow]);
+
+    const radioInputs = Array.from(
+      quarantinedUserAllowedControlsRow.querySelectorAll(
+        "input[name=quarantined-domains-user-allowed]"
+      )
+    );
+
+    Assert.deepEqual(
+      radioInputs.map(el => el.value),
+      ["1", "0"],
+      "Got the expected radio inputs values"
+    );
+
+    Assert.deepEqual(
+      radioInputs.map(el => doc.l10n.getAttributes(el.nextElementSibling).id),
+      ["allow", "disallow"].map(
+        txt => `addon-detail-quarantined-domains-${txt}`
+      ),
+      "Got the expected fluent ids on the radio input text"
+    );
+
+    const checkRadioInputsState = ({ expectUserAllowed }) => {
+      is(
+        card.addon.quarantineIgnoredByUser,
+        expectUserAllowed,
+        `Expect the test extension to ${
+          expectUserAllowed ? "be" : "NOT be"
+        } quarantineIgnoredByUser`
+      );
+      is(
+        radioInputs[0].checked,
+        expectUserAllowed,
+        `Expect 'allow' radio button to ${
+          expectUserAllowed ? "be" : "NOT be"
+        } checked`
+      );
+      is(
+        radioInputs[1].checked,
+        !expectUserAllowed,
+        `Expect 'disallow' radio button ${
+          expectUserAllowed ? "NOT be" : "be"
+        } checked`
+      );
+    };
+
+    info("Verify initially NOT allowed to access quarantine domains");
+    checkRadioInputsState({ expectUserAllowed: false });
+
+    info("Click 'allow' radio input");
+    radioInputs[0].click();
+    checkRadioInputsState({ expectUserAllowed: true });
+
+    info("Click 'disallow' radio input");
+    radioInputs[1].click();
+    checkRadioInputsState({ expectUserAllowed: false });
+
+    info("Verify quarantineIgnoredByUser changes reflected in about:addons UI");
+
+    info("Allow test extension on quarantined domains");
+    let promisePropertyChanged =
+      AddonTestUtils.promiseAddonEvent("onPropertyChanged");
+    card.addon.quarantineIgnoredByUser = true;
+    await promisePropertyChanged;
+    checkRadioInputsState({ expectUserAllowed: true });
+
+    info("Disallow test extension on quarantined domains");
+    promisePropertyChanged =
+      AddonTestUtils.promiseAddonEvent("onPropertyChanged");
+    card.addon.quarantineIgnoredByUser = false;
+    await promisePropertyChanged;
+    checkRadioInputsState({ expectUserAllowed: false });
+  }
+
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      // Make sure the quarantined domains feature is initially enabled
+      // otherwise the "quarantineIgnoredByUser UI" rows are
+      // going to be hidden.
+      ["extensions.quarantinedDomains.enabled", true],
+      // Make sure this test is always running with the
+      // "per-addon quarantineIgnoredByUser UI" feature enabled.
+      ["extensions.quarantinedDomains.uiDisabled", false],
+    ],
+  });
+
+  // Clear any per-addon pref once this test file is exiting.
+  registerCleanupFunction(() => {
+    const prefBranch = Services.prefs.getBranch(
+      QuarantinedDomains.PREF_ADDONS_BRANCH_NAME
+    );
+    for (const leafName of prefBranch.getChildList("")) {
+      const prefName = QuarantinedDomains.PREF_ADDONS_BRANCH_NAME + leafName;
+      info(`Clearing user pref ${prefName}`);
+      Services.prefs.clearUserPref(prefName);
+    }
+  });
+
+  await regularExtension.startup();
+
+  let win = await loadInitialView("extension");
+  let doc = win.document;
+
+  info("Test quarantineIgnoredByUser UI on a regular extension");
+  let loaded = waitForViewLoad(win);
+  getAddonCard(win, regularExtId).querySelector('[action="expand"]').click();
+  await loaded;
+
+  await testQuarantinedUserAllowedUIRows(regularExtId, { expectVisible: true });
+
+  info("Go back to extensions list view");
+  loaded = waitForViewLoad(win);
+  win.history.back();
+  await loaded;
+
+  info("Test quarantineIgnoredByUser UI on a privileged extension");
+  loaded = waitForViewLoad(win);
+  getAddonCard(win, privilegedExtId).querySelector('[action="expand"]').click();
+  await loaded;
+
+  await testQuarantinedUserAllowedUIRows(privilegedExtId, {
+    expectVisible: false,
+  });
+
+  info("Go back to extensions list view");
+  loaded = waitForViewLoad(win);
+  win.history.back();
+  await loaded;
+
+  info("Test quarantineIgnoredByUser UI on a recommended extension");
+  loaded = waitForViewLoad(win);
+  getAddonCard(win, recommendedExtId)
+    .querySelector('[action="expand"]')
+    .click();
+  await loaded;
+
+  await testQuarantinedUserAllowedUIRows(recommendedExtId, {
+    expectVisible: false,
+  });
+
+  info("Switch to theme list view");
+  loaded = waitForViewLoad(win);
+  doc.querySelector("#categories > [name=theme]").click();
+  await loaded;
+
+  info("Test quarantineIgnoredByUser UI on a non extension addon type (theme)");
+  loaded = waitForViewLoad(win);
+  getAddonCard(win, themeId).querySelector('[action="expand"]').click();
+  await loaded;
+
+  await testQuarantinedUserAllowedUIRows(themeId, { expectVisible: false });
+
+  info("Verify regular extension card on quarantined domains feature disabled");
+  await SpecialPowers.pushPrefEnv({
+    set: [["extensions.quarantinedDomains.enabled", false]],
+  });
+
+  info("Switch to extension list view");
+  loaded = waitForViewLoad(win);
+  doc.querySelector("#categories > [name=extension]").click();
+  await loaded;
+
+  loaded = waitForViewLoad(win);
+  getAddonCard(win, regularExtId).querySelector('[action="expand"]').click();
+  await loaded;
+
+  await testQuarantinedUserAllowedUIRows(regularExtId, {
+    expectVisible: false,
+  });
+
+  await SpecialPowers.popPrefEnv();
+
+  info("Verify regular extenson card uiDisabled pref set to true");
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      // Make sure the quarantineIgnoredByUser UI is also hidden
+      // when the quarantine domains feature is enabled but the
+      // "per-addon quarantineIgnoredByUser UI" feature is disabled.
+      ["extensions.quarantinedDomains.uiDisabled", true],
+    ],
+  });
+
+  info("Switch to extension list view");
+  loaded = waitForViewLoad(win);
+  doc.querySelector("#categories > [name=extension]").click();
+  await loaded;
+
+  loaded = waitForViewLoad(win);
+  getAddonCard(win, regularExtId).querySelector('[action="expand"]').click();
+  await loaded;
+
+  await testQuarantinedUserAllowedUIRows(regularExtId, {
+    expectVisible: false,
+  });
+
+  await closeView(win);
+  await regularExtension.unload();
+  await SpecialPowers.popPrefEnv();
+  await SpecialPowers.popPrefEnv();
+});
+
+add_task(async function testRatingsElementVisibleIfReviewURLExists() {
+  let win = await loadInitialView("extension");
+  let id = "addon4@mochi.test";
+  let card = getAddonCard(win, id);
+
+  let loaded = waitForViewLoad(win);
+  card.querySelector('[action="expand"]').click();
+  await loaded;
+
+  card = getAddonCard(win, id);
+
+  let rows = getDetailRows(card);
+
+  let expectedRowCount = 5;
+  if (card.addon.canChangeQuarantineIgnored) {
+    expectedRowCount += 2;
+  }
+  is(rows.length, expectedRowCount, "Expected row count");
+
+  // Reviews.
+  // addon4@mochi.test is similar to addon1@mochi.test whose rows have already
+  // been checked in testFullDetails. Here we only check the last row
+  // which is unique to this test case due to the presence of "reviewURL".
+  let row = rows.pop();
+  await checkLabel(row, "rating");
+  let rating = row.lastElementChild;
+  ok(rating.classList.contains("addon-detail-rating"), "Found the rating el");
+  ok(!row.hidden, "The rating row is shown");
+  let mozFiveStar = rating.querySelector("moz-five-star");
+  is(mozFiveStar.rating, 0, "0 rating when there are no reviews");
+  let stars = Array.from(mozFiveStar.starEls);
+  let fullAttrs = stars.map(star => star.getAttribute("fill")).join(",");
+  is(fullAttrs, "empty,empty,empty,empty,empty", "All stars are empty");
+  let link = rating.querySelector("a");
+  let reviewsLink = formatUrl(
+    "addons-manager-reviews-link",
+    "http://addons.mozilla.org/reviews"
+  );
+  checkLink(link, reviewsLink, {
+    id: "addon-detail-reviews-link",
+    args: { numberOfReviews: 0 },
+  });
+
+  await closeView(win);
 });

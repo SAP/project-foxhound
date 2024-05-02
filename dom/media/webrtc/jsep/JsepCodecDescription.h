@@ -5,12 +5,14 @@
 #ifndef _JSEPCODECDESCRIPTION_H_
 #define _JSEPCODECDESCRIPTION_H_
 
+#include <cmath>
 #include <string>
 #include "sdp/SdpMediaSection.h"
 #include "sdp/SdpHelper.h"
 #include "nsCRT.h"
 #include "nsString.h"
 #include "mozilla/net/DataChannelProtocol.h"
+#include "mozilla/Preferences.h"
 
 namespace mozilla {
 
@@ -109,6 +111,9 @@ class JsepCodecDescription {
     }
     return true;
   }
+
+  virtual void ApplyConfigToFmtp(
+      UniquePtr<SdpFmtpAttributeList::Parameters>& aFmtp) const = 0;
 
   virtual void AddToMediaSection(SdpMediaSection& msection) const {
     if (mEnabled && msection.GetMediaType() == Type()) {
@@ -266,23 +271,13 @@ class JsepAudioCodecDescription : public JsepCodecDescription {
     }
 
     if (mName == "opus") {
-      SdpFmtpAttributeList::OpusParameters opusParams(
-          GetOpusParameters(mDefaultPt, msection));
-      if (mMaxPlaybackRate) {
-        opusParams.maxplaybackrate = mMaxPlaybackRate;
-      }
-      opusParams.maxAverageBitrate = mMaxAverageBitrate;
-      if (mChannels == 2 && !mForceMono) {
-        // We prefer to receive stereo, if available.
-        opusParams.stereo = 1;
-      }
-      opusParams.useInBandFec = mFECEnabled ? 1 : 0;
-      opusParams.useDTX = mDTXEnabled;
-      opusParams.frameSizeMs = mFrameSizeMs;
-      opusParams.minFrameSizeMs = mMinFrameSizeMs;
-      opusParams.maxFrameSizeMs = mMaxFrameSizeMs;
-      opusParams.useCbr = mCbrEnabled;
-      msection.SetFmtp(SdpFmtpAttributeList::Fmtp(mDefaultPt, opusParams));
+      UniquePtr<SdpFmtpAttributeList::Parameters> opusParams =
+          MakeUnique<SdpFmtpAttributeList::OpusParameters>(
+              GetOpusParameters(mDefaultPt, msection));
+
+      ApplyConfigToFmtp(opusParams);
+
+      msection.SetFmtp(SdpFmtpAttributeList::Fmtp(mDefaultPt, *opusParams));
     } else if (mName == "telephone-event") {
       // add the default dtmf tones
       SdpFmtpAttributeList::TelephoneEventParameters teParams(
@@ -320,7 +315,7 @@ class JsepAudioCodecDescription : public JsepCodecDescription {
       mMinFrameSizeMs = opusParams.minFrameSizeMs;
       if (remoteMsection.GetAttributeList().HasAttribute(
               SdpAttribute::kMaxptimeAttribute)) {
-        mFrameSizeMs = remoteMsection.GetAttributeList().GetMaxptime();
+        mMaxFrameSizeMs = remoteMsection.GetAttributeList().GetMaxptime();
       } else {
         mMaxFrameSizeMs = opusParams.maxFrameSizeMs;
       }
@@ -329,6 +324,41 @@ class JsepAudioCodecDescription : public JsepCodecDescription {
 
     return true;
   }
+
+  void ApplyConfigToFmtp(
+      UniquePtr<SdpFmtpAttributeList::Parameters>& aFmtp) const override {
+    if (mName == "opus") {
+      SdpFmtpAttributeList::OpusParameters opusParams;
+      if (aFmtp) {
+        MOZ_RELEASE_ASSERT(aFmtp->codec_type == SdpRtpmapAttributeList::kOpus);
+        opusParams =
+            static_cast<const SdpFmtpAttributeList::OpusParameters&>(*aFmtp);
+        opusParams.useInBandFec = mFECEnabled ? 1 : 0;
+      } else {
+        // If we weren't passed a fmtp to use then show we can do in band FEC
+        // for getCapabilities queries.
+        opusParams.useInBandFec = 1;
+      }
+      if (mMaxPlaybackRate) {
+        opusParams.maxplaybackrate = mMaxPlaybackRate;
+      }
+      opusParams.maxAverageBitrate = mMaxAverageBitrate;
+
+      if (mChannels == 2 &&
+          !Preferences::GetBool("media.peerconnection.sdp.disable_stereo_fmtp",
+                                false) &&
+          !mForceMono) {
+        // We prefer to receive stereo, if available.
+        opusParams.stereo = 1;
+      }
+      opusParams.useDTX = mDTXEnabled;
+      opusParams.frameSizeMs = mFrameSizeMs;
+      opusParams.minFrameSizeMs = mMinFrameSizeMs;
+      opusParams.maxFrameSizeMs = mMaxFrameSizeMs;
+      opusParams.useCbr = mCbrEnabled;
+      aFmtp.reset(opusParams.Clone());
+    }
+  };
 
   uint32_t mMaxPlaybackRate;
   bool mForceMono;
@@ -369,7 +399,7 @@ class JsepVideoCodecDescription : public JsepCodecDescription {
     auto codec = MakeUnique<JsepVideoCodecDescription>("120", "VP8", 90000);
     // Defaults for mandatory params
     codec->mConstraints.maxFs = 12288;  // Enough for 2048x1536
-    codec->mConstraints.maxFps = 60;
+    codec->mConstraints.maxFps = Some(60);
     if (aUseRtx) {
       codec->EnableRtx("124");
     }
@@ -380,7 +410,7 @@ class JsepVideoCodecDescription : public JsepCodecDescription {
     auto codec = MakeUnique<JsepVideoCodecDescription>("121", "VP9", 90000);
     // Defaults for mandatory params
     codec->mConstraints.maxFs = 12288;  // Enough for 2048x1536
-    codec->mConstraints.maxFps = 60;
+    codec->mConstraints.maxFps = Some(60);
     if (aUseRtx) {
       codec->EnableRtx("125");
     }
@@ -392,7 +422,7 @@ class JsepVideoCodecDescription : public JsepCodecDescription {
     auto codec = MakeUnique<JsepVideoCodecDescription>("97", "H264", 90000);
     codec->mPacketizationMode = 0;
     // Defaults for mandatory params
-    codec->mProfileLevelId = 0x42E00D;
+    codec->mProfileLevelId = 0x42E01F;
     if (aUseRtx) {
       codec->EnableRtx("98");
     }
@@ -404,7 +434,7 @@ class JsepVideoCodecDescription : public JsepCodecDescription {
     auto codec = MakeUnique<JsepVideoCodecDescription>("126", "H264", 90000);
     codec->mPacketizationMode = 1;
     // Defaults for mandatory params
-    codec->mProfileLevelId = 0x42E00D;
+    codec->mProfileLevelId = 0x42E01F;
     if (aUseRtx) {
       codec->EnableRtx("127");
     }
@@ -420,74 +450,24 @@ class JsepVideoCodecDescription : public JsepCodecDescription {
   }
 
   static UniquePtr<JsepVideoCodecDescription> CreateDefaultRed() {
-    return MakeUnique<JsepVideoCodecDescription>(
+    auto codec = MakeUnique<JsepVideoCodecDescription>(
         "122",  // payload type
         "red",  // codec name
         90000   // clock rate (match other video codecs)
     );
+    codec->EnableRtx("119");
+    return codec;
   }
 
-  virtual void EnableTmmbr() {
-    // EnableTmmbr can be called multiple times due to multiple calls to
-    // PeerConnectionImpl::ConfigureJsepSessionCodecs
-    if (!mTmmbrEnabled) {
-      mTmmbrEnabled = true;
-      mCcmFbTypes.push_back(SdpRtcpFbAttributeList::tmmbr);
-    }
-  }
-
-  virtual void EnableRemb() {
-    // EnableRemb can be called multiple times due to multiple calls to
-    // PeerConnectionImpl::ConfigureJsepSessionCodecs
-    if (!mRembEnabled) {
-      mRembEnabled = true;
-      mOtherFbTypes.push_back({"", SdpRtcpFbAttributeList::kRemb, "", ""});
-    }
-  }
-
-  virtual void EnableFec(std::string redPayloadType,
-                         std::string ulpfecPayloadType) {
-    // Enabling FEC for video works a little differently than enabling
-    // REMB or TMMBR.  Support for FEC is indicated by the presence of
-    // particular codes (red and ulpfec) instead of using rtcpfb
-    // attributes on a given codec.  There is no rtcpfb to push for FEC
-    // as can be seen above when REMB or TMMBR are enabled.
-
-    // Ensure we have valid payload types. This returns zero on failure, which
-    // is a valid payload type.
-    uint16_t redPt, ulpfecPt;
-    if (!SdpHelper::GetPtAsInt(redPayloadType, &redPt) ||
-        !SdpHelper::GetPtAsInt(ulpfecPayloadType, &ulpfecPt)) {
-      return;
-    }
-
-    mFECEnabled = true;
-    mREDPayloadType = redPayloadType;
-    mULPFECPayloadType = ulpfecPayloadType;
-  }
-
-  virtual void EnableTransportCC() {
-    if (!mTransportCCEnabled) {
-      mTransportCCEnabled = true;
-      mOtherFbTypes.push_back(
-          {"", SdpRtcpFbAttributeList::kTransportCC, "", ""});
-    }
-  }
-
-  void EnableRtx(const std::string& rtxPayloadType) {
-    mRtxEnabled = true;
-    mRtxPayloadType = rtxPayloadType;
-  }
-
-  void AddParametersToMSection(SdpMediaSection& msection) const override {
-    AddFmtpsToMSection(msection);
-    AddRtcpFbsToMSection(msection);
-  }
-
-  void AddFmtpsToMSection(SdpMediaSection& msection) const {
+  void ApplyConfigToFmtp(
+      UniquePtr<SdpFmtpAttributeList::Parameters>& aFmtp) const override {
     if (mName == "H264") {
-      SdpFmtpAttributeList::H264Parameters h264Params(
-          GetH264Parameters(mDefaultPt, msection));
+      SdpFmtpAttributeList::H264Parameters h264Params;
+      if (aFmtp) {
+        MOZ_RELEASE_ASSERT(aFmtp->codec_type == SdpRtpmapAttributeList::kH264);
+        h264Params =
+            static_cast<const SdpFmtpAttributeList::H264Parameters&>(*aFmtp);
+      }
 
       if (mDirection == sdp::kSend) {
         if (!h264Params.level_asymmetry_allowed) {
@@ -513,21 +493,111 @@ class JsepVideoCodecDescription : public JsepCodecDescription {
       // Hard-coded, may need to change someday?
       h264Params.level_asymmetry_allowed = true;
 
-      msection.SetFmtp(SdpFmtpAttributeList::Fmtp(mDefaultPt, h264Params));
-    } else if (mName == "red" && !mRedundantEncodings.empty()) {
-      SdpFmtpAttributeList::RedParameters redParams(
-          GetRedParameters(mDefaultPt, msection));
-      redParams.encodings = mRedundantEncodings;
-      msection.SetFmtp(SdpFmtpAttributeList::Fmtp(mDefaultPt, redParams));
+      // Parameters that apply to both the send and recv directions
+      h264Params.packetization_mode = mPacketizationMode;
+      // Hard-coded, may need to change someday?
+      h264Params.level_asymmetry_allowed = true;
+      aFmtp.reset(h264Params.Clone());
+    } else if (mName == "VP8" || mName == "VP9") {
+      SdpRtpmapAttributeList::CodecType type =
+          mName == "VP8" ? SdpRtpmapAttributeList::CodecType::kVP8
+                         : SdpRtpmapAttributeList::CodecType::kVP9;
+      auto vp8Params = SdpFmtpAttributeList::VP8Parameters(type);
+
+      if (aFmtp) {
+        MOZ_RELEASE_ASSERT(aFmtp->codec_type == type);
+        vp8Params =
+            static_cast<const SdpFmtpAttributeList::VP8Parameters&>(*aFmtp);
+      }
+      // VP8 and VP9 share the same SDP parameters thus far
+      vp8Params.max_fs = mConstraints.maxFs;
+      if (mConstraints.maxFps.isSome()) {
+        vp8Params.max_fr =
+            static_cast<unsigned int>(std::round(*mConstraints.maxFps));
+      } else {
+        vp8Params.max_fr = 60;
+      }
+      aFmtp.reset(vp8Params.Clone());
+    }
+  }
+
+  virtual void EnableTmmbr() {
+    // EnableTmmbr can be called multiple times due to multiple calls to
+    // PeerConnectionImpl::ConfigureJsepSessionCodecs
+    if (!mTmmbrEnabled) {
+      mTmmbrEnabled = true;
+      mCcmFbTypes.push_back(SdpRtcpFbAttributeList::tmmbr);
+    }
+  }
+
+  virtual void EnableRemb() {
+    // EnableRemb can be called multiple times due to multiple calls to
+    // PeerConnectionImpl::ConfigureJsepSessionCodecs
+    if (!mRembEnabled) {
+      mRembEnabled = true;
+      mOtherFbTypes.push_back({"", SdpRtcpFbAttributeList::kRemb, "", ""});
+    }
+  }
+
+  virtual void EnableFec(std::string redPayloadType,
+                         std::string ulpfecPayloadType,
+                         std::string redRtxPayloadType) {
+    // Enabling FEC for video works a little differently than enabling
+    // REMB or TMMBR.  Support for FEC is indicated by the presence of
+    // particular codes (red and ulpfec) instead of using rtcpfb
+    // attributes on a given codec.  There is no rtcpfb to push for FEC
+    // as can be seen above when REMB or TMMBR are enabled.
+
+    // Ensure we have valid payload types. This returns zero on failure, which
+    // is a valid payload type.
+    uint16_t redPt, ulpfecPt, redRtxPt;
+    if (!SdpHelper::GetPtAsInt(redPayloadType, &redPt) ||
+        !SdpHelper::GetPtAsInt(ulpfecPayloadType, &ulpfecPt) ||
+        !SdpHelper::GetPtAsInt(redRtxPayloadType, &redRtxPt)) {
+      return;
+    }
+
+    mFECEnabled = true;
+    mREDPayloadType = redPayloadType;
+    mULPFECPayloadType = ulpfecPayloadType;
+    mREDRTXPayloadType = redRtxPayloadType;
+  }
+
+  virtual void EnableTransportCC() {
+    if (!mTransportCCEnabled) {
+      mTransportCCEnabled = true;
+      mOtherFbTypes.push_back(
+          {"", SdpRtcpFbAttributeList::kTransportCC, "", ""});
+    }
+  }
+
+  void EnableRtx(const std::string& rtxPayloadType) {
+    mRtxEnabled = true;
+    mRtxPayloadType = rtxPayloadType;
+  }
+
+  void AddParametersToMSection(SdpMediaSection& msection) const override {
+    AddFmtpsToMSection(msection);
+    AddRtcpFbsToMSection(msection);
+  }
+
+  void AddFmtpsToMSection(SdpMediaSection& msection) const {
+    if (mName == "H264") {
+      UniquePtr<SdpFmtpAttributeList::Parameters> h264Params =
+          MakeUnique<SdpFmtpAttributeList::H264Parameters>(
+              GetH264Parameters(mDefaultPt, msection));
+
+      ApplyConfigToFmtp(h264Params);
+
+      msection.SetFmtp(SdpFmtpAttributeList::Fmtp(mDefaultPt, *h264Params));
     } else if (mName == "VP8" || mName == "VP9") {
       if (mDirection == sdp::kRecv) {
         // VP8 and VP9 share the same SDP parameters thus far
-        SdpFmtpAttributeList::VP8Parameters vp8Params(
-            GetVP8Parameters(mDefaultPt, msection));
-
-        vp8Params.max_fs = mConstraints.maxFs;
-        vp8Params.max_fr = mConstraints.maxFps;
-        msection.SetFmtp(SdpFmtpAttributeList::Fmtp(mDefaultPt, vp8Params));
+        UniquePtr<SdpFmtpAttributeList::Parameters> vp8Params =
+            MakeUnique<SdpFmtpAttributeList::VP8Parameters>(
+                GetVP8Parameters(mDefaultPt, msection));
+        ApplyConfigToFmtp(vp8Params);
+        msection.SetFmtp(SdpFmtpAttributeList::Fmtp(mDefaultPt, *vp8Params));
       }
     }
 
@@ -726,17 +796,17 @@ class JsepVideoCodecDescription : public JsepCodecDescription {
       } else {
         // TODO(bug 1143709): max-recv-level support
       }
-    } else if (mName == "red") {
-      SdpFmtpAttributeList::RedParameters redParams(
-          GetRedParameters(mDefaultPt, remoteMsection));
-      mRedundantEncodings = redParams.encodings;
     } else if (mName == "VP8" || mName == "VP9") {
       if (mDirection == sdp::kSend) {
         SdpFmtpAttributeList::VP8Parameters vp8Params(
             GetVP8Parameters(mDefaultPt, remoteMsection));
 
         mConstraints.maxFs = vp8Params.max_fs;
-        mConstraints.maxFps = vp8Params.max_fr;
+        // Right now, we treat max-fr=0 (or the absence of max-fr) as no limit.
+        // We will eventually want to stop doing this (bug 1762600).
+        if (vp8Params.max_fr) {
+          mConstraints.maxFps = Some(vp8Params.max_fr);
+        }
       }
     }
 
@@ -961,19 +1031,6 @@ class JsepVideoCodecDescription : public JsepCodecDescription {
     return false;
   }
 
-  virtual void UpdateRedundantEncodings(
-      const std::vector<UniquePtr<JsepCodecDescription>>& codecs) {
-    for (const auto& codec : codecs) {
-      if (codec->Type() == type && codec->mEnabled && codec->mName != "red") {
-        uint16_t pt;
-        if (!SdpHelper::GetPtAsInt(codec->mDefaultPt, &pt)) {
-          continue;
-        }
-        mRedundantEncodings.push_back(pt);
-      }
-    }
-  }
-
   void EnsureNoDuplicatePayloadTypes(std::set<std::string>& aUsedPts) override {
     JsepCodecDescription::EnsureNoDuplicatePayloadTypes(aUsedPts);
     if (mFECEnabled) {
@@ -997,9 +1054,9 @@ class JsepVideoCodecDescription : public JsepCodecDescription {
   bool mTransportCCEnabled;
   bool mRtxEnabled;
   std::string mREDPayloadType;
+  std::string mREDRTXPayloadType;
   std::string mULPFECPayloadType;
   std::string mRtxPayloadType;
-  std::vector<uint8_t> mRedundantEncodings;
 
   // H264-specific stuff
   uint32_t mProfileLevelId;
@@ -1106,6 +1163,9 @@ class JsepApplicationCodecDescription : public JsepCodecDescription {
   // We only support one datachannel per m-section
   void EnsureNoDuplicatePayloadTypes(std::set<std::string>& aUsedPts) override {
   }
+
+  void ApplyConfigToFmtp(
+      UniquePtr<SdpFmtpAttributeList::Parameters>& aFmtp) const override{};
 
   uint16_t mLocalPort;
   uint32_t mLocalMaxMessageSize;

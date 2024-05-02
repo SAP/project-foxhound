@@ -12,11 +12,9 @@ const {
   testSetup,
   testTeardown,
 } = require("damp-test/tests/head");
-const { OS } = require("resource://gre/modules/osfile.jsm");
 const { Downloads } = require("resource://gre/modules/Downloads.jsm");
-const Services = require("Services");
 
-module.exports = async function() {
+module.exports = async function () {
   await testSetup(COMPLICATED_URL);
   // Enable the screenshot button
   Services.prefs.setBoolPref(
@@ -32,8 +30,8 @@ module.exports = async function() {
   const filePath = await onScreenshotDownloaded;
   test.done();
 
-  //Remove the downloaded screenshot file
-  await OS.File.remove(filePath);
+  // Remove the downloaded screenshot file
+  await IOUtils.remove(filePath);
 
   // ⚠️ Even after removing the file, the test could still manage to reuse files from the
   // previous test run if they have the same name. Since the screenshot file name is based
@@ -51,7 +49,7 @@ const allDownloads = new Set();
 async function waitUntilScreenshotDownloaded() {
   const list = await Downloads.getList(Downloads.ALL);
 
-  return new Promise(function(resolve) {
+  return new Promise(function (resolve) {
     const view = {
       onDownloadAdded: async download => {
         await download.whenSucceeded();

@@ -24,14 +24,6 @@ function write_and_check(str, data, len) {
   }
 }
 
-function make_input_stream_scriptable(input) {
-  var wrapper = Cc["@mozilla.org/scriptableinputstream;1"].createInstance(
-    Ci.nsIScriptableInputStream
-  );
-  wrapper.init(input);
-  return wrapper;
-}
-
 function write_datafile(status, entry) {
   Assert.equal(status, Cr.NS_OK);
   var data = gen_1MiB();
@@ -63,7 +55,7 @@ function test_read_after_doom(status, entry) {
   os.close();
 
   var is = entry.openInputStream(0);
-  pumpReadStream(is, function(read) {
+  pumpReadStream(is, function (read) {
     Assert.equal(read.length, 2 * 1024 * 1024);
     is.close();
 

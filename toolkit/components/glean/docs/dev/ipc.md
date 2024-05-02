@@ -81,10 +81,11 @@ These do not await a flush of child process metric values.
 You can use the test-only method `testFlushAllChildren` on the `FOG`
 XPCOM component to await child data's arrival:
 ```js
-let FOG = Cc["@mozilla.org/toolkit/glean;1"].createInstance(Ci.nsIFOG);
-await FOG.testFlushAllChildren();
+await Services.fog.testFlushAllChildren();
 ```
-See [the test documentation](testing.md) for more details on testing.
+See [the test documentation](testing.md) for more details on testing FOG.
+For writing tests about instrumentation, see
+[the instrumentation test documentation](../user/instrumentation_tests).
 
 #### Pings
 
@@ -129,7 +130,7 @@ handed off to C++, passed over IPC,
 then given back to `bincode` in Rust on the Parent.
 
 Rust is then responsible for turning the pending data into
-[metric API](../user/api.md) calls on the metrics in the parent process.
+[metrics API][glean-metrics] calls on the metrics in the parent process.
 
 #### Supported Process Types
 
@@ -140,6 +141,7 @@ FOG supports messaging between the following types of child process and the pare
 * gpu children (via `PGPU`)
 * rdd children (via `PRDD`)
 * socket children (via `PSocketProcess`)
+* utility children (via `PUtilityProcess`)
 
 See
 [the process model docs](/dom/ipc/process_model.rst)
@@ -178,3 +180,5 @@ mentioned above in "Mechanics" to another process type's protocol (ipdl file).
       (like `PROCESS_TYPE_CONTENT`'s)
 6. Add to the documented [list of supported process types](#supported-process-types)
    the process type you added support for.
+
+[glean-metrics]: https://mozilla.github.io/glean/book/reference/metrics/index.html

@@ -39,7 +39,7 @@ void LSPAnnotationGatherer::Annotate() {
   nsCOMPtr<nsICrashReporter> cr =
       do_GetService("@mozilla.org/toolkit/crash-reporter;1");
   bool enabled;
-  if (cr && NS_SUCCEEDED(cr->GetEnabled(&enabled)) && enabled) {
+  if (cr && NS_SUCCEEDED(cr->GetCrashReporterEnabled(&enabled)) && enabled) {
     cr->AnnotateCrashReport("Winsock_LSP"_ns, mString);
   }
 }
@@ -81,9 +81,9 @@ LSPAnnotationGatherer::Run() {
     str.AppendLiteral(" : ");
     str.AppendInt(providers[i].iProtocol);
     str.AppendLiteral(" : ");
-    str.AppendPrintf("0x%x", providers[i].dwServiceFlags1);
+    str.AppendPrintf("0x%lx", providers[i].dwServiceFlags1);
     str.AppendLiteral(" : ");
-    str.AppendPrintf("0x%x", providers[i].dwProviderFlags);
+    str.AppendPrintf("0x%lx", providers[i].dwProviderFlags);
     str.AppendLiteral(" : ");
 
     wchar_t path[MAX_PATH];

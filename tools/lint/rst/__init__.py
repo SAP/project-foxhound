@@ -6,9 +6,9 @@ import os
 import re
 import subprocess
 
+from mozfile import which
 from mozlint import result
 from mozlint.pathutils import expand_exclusions
-from mozfile import which
 
 # Error Levels
 # (0, 'debug')
@@ -39,6 +39,9 @@ Try to install it manually with:
 )
 
 RSTCHECK_FORMAT_REGEX = re.compile(r"(.*):(.*): \(.*/([0-9]*)\) (.*)$")
+IGNORE_NOT_REF_LINK_UPSTREAM_BUG = re.compile(
+    r"Hyperlink target (.*) is not referenced."
+)
 
 
 def setup(root, **lintargs):
@@ -78,10 +81,13 @@ def lint(files, config, **lintargs):
     paths = list(paths)
     chunk_size = 50
     binary = get_rstcheck_binary()
-    rstcheck_options = "--ignore-language=cpp,json"
+    rstcheck_options = [
+        "--ignore-language=cpp,json",
+        "--ignore-roles=searchfox",
+    ]
 
     while paths:
-        cmdargs = [which("python"), binary, rstcheck_options] + paths[:chunk_size]
+        cmdargs = [which("python"), binary] + rstcheck_options + paths[:chunk_size]
         log.debug("Command: {}".format(" ".join(cmdargs)))
 
         proc = subprocess.Popen(
@@ -95,13 +101,16 @@ def lint(files, config, **lintargs):
         for errors in all_errors.split("\n"):
             if len(errors) > 1:
                 filename, lineno, level, message = parse_with_split(errors)
-                res = {
-                    "path": filename,
-                    "message": message,
-                    "lineno": lineno,
-                    "level": "error" if int(level) >= 2 else "warning",
-                }
-                results.append(result.from_config(config, **res))
+                if not IGNORE_NOT_REF_LINK_UPSTREAM_BUG.match(message):
+                    # Ignore an upstream bug
+                    # https://github.com/myint/rstcheck/issues/19
+                    res = {
+                        "path": filename,
+                        "message": message,
+                        "lineno": lineno,
+                        "level": "error" if int(level) >= 2 else "warning",
+                    }
+                    results.append(result.from_config(config, **res))
         paths = paths[chunk_size:]
 
     return results

@@ -4,16 +4,17 @@
 const XULRUNTIME_CONTRACTID = "@mozilla.org/xre/runtime;1";
 const XULRUNTIME_CID = Components.ID("7685dac8-3637-4660-a544-928c5ec0e714}");
 
-var { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+var { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 
 var gAppInfo = null;
 
 function createAppInfo(ID, name, version, platformVersion = "1.0") {
-  let tmp = {};
-  ChromeUtils.import("resource://testing-common/AppInfo.jsm", tmp);
-  gAppInfo = tmp.newAppInfo({
+  let { newAppInfo } = ChromeUtils.importESModule(
+    "resource://testing-common/AppInfo.sys.mjs"
+  );
+  gAppInfo = newAppInfo({
     ID,
     name,
     version,
@@ -23,10 +24,7 @@ function createAppInfo(ID, name, version, platformVersion = "1.0") {
   });
 
   let XULAppInfoFactory = {
-    createInstance(outer, iid) {
-      if (outer != null) {
-        throw Components.Exception("", Cr.NS_ERROR_NO_AGGREGATION);
-      }
+    createInstance(iid) {
       return gAppInfo.QueryInterface(iid);
     },
   };

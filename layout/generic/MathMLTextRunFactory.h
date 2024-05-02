@@ -25,14 +25,13 @@ class MathMLTextRunFactory : public nsTransformingTextRunFactory {
         mFontInflation(aFontInflation),
         mSSTYScriptLevel(aSSTYScriptLevel) {}
 
+  static uint32_t MathVariant(uint32_t aCh, mozilla::StyleMathVariant aMathVar);
   virtual void RebuildTextRun(nsTransformedTextRun* aTextRun,
                               mozilla::gfx::DrawTarget* aRefDrawTarget,
                               gfxMissingFontRecorder* aMFR) override;
   enum {
     // Style effects which may override single character <mi> behaviour
-    MATH_FONT_STYLING_NORMAL = 0x1,  // fontstyle="normal" has been set.
-    MATH_FONT_WEIGHT_BOLD = 0x2,     // fontweight="bold" has been set.
-    MATH_FONT_FEATURE_DTLS = 0x4,    // font feature dtls should be set
+    MATH_FONT_FEATURE_DTLS = 0x4,  // font feature dtls should be set
   };
 
  protected:

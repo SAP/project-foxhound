@@ -7,9 +7,9 @@
 #[cfg(feature = "servo")]
 use crate::animation::DocumentAnimationSet;
 use crate::bloom::StyleBloom;
+use crate::computed_value_flags::ComputedValueFlags;
 use crate::data::{EagerPseudoStyles, ElementData};
 use crate::dom::{SendElement, TElement};
-use crate::font_metrics::FontMetricsProvider;
 #[cfg(feature = "gecko")]
 use crate::gecko_bindings::structs;
 use crate::parallel::{STACK_SAFETY_MARGIN_KB, STYLE_THREAD_STACK_SIZE_KB};
@@ -28,9 +28,9 @@ use crate::traversal_flags::TraversalFlags;
 use app_units::Au;
 use euclid::default::Size2D;
 use euclid::Scale;
+#[cfg(feature = "servo")]
 use fxhash::FxHashMap;
-use selectors::matching::ElementSelectorFlags;
-use selectors::NthIndexCache;
+use selectors::context::SelectorCaches;
 #[cfg(feature = "gecko")]
 use servo_arc::Arc;
 #[cfg(feature = "servo")]
@@ -42,7 +42,6 @@ use style_traits::DevicePixel;
 #[cfg(feature = "servo")]
 use style_traits::SpeculativePainter;
 use time;
-use uluru::{Entry, LRUCache};
 
 pub use selectors::matching::QuirksMode;
 
@@ -191,14 +190,18 @@ pub struct CascadeInputs {
     /// element. A element's "relevant link" is the element being matched if it
     /// is a link or the nearest ancestor link.
     pub visited_rules: Option<StrongRuleNode>,
+
+    /// The set of flags from container queries that we need for invalidation.
+    pub flags: ComputedValueFlags,
 }
 
 impl CascadeInputs {
     /// Construct inputs from previous cascade results, if any.
     pub fn new_from_style(style: &ComputedValues) -> Self {
-        CascadeInputs {
+        Self {
             rules: style.rules.clone(),
             visited_rules: style.visited_style().and_then(|v| v.rules.clone()),
+            flags: style.flags.for_cascade_inputs(),
         }
     }
 }
@@ -416,6 +419,10 @@ bitflags! {
         /// the second animation restyles for the script animations in the case where
         /// the display property was changed from 'none' to others.
         const DISPLAY_CHANGED_FROM_NONE = structs::UpdateAnimationsTasks_DisplayChangedFromNone;
+        /// Update CSS named scroll progress timelines.
+        const SCROLL_TIMELINES = structs::UpdateAnimationsTasks_ScrollTimelines;
+        /// Update CSS named view progress timelines.
+        const VIEW_TIMELINES = structs::UpdateAnimationsTasks_ViewTimelines;
     }
 }
 
@@ -514,65 +521,6 @@ impl<E: TElement> SequentialTask<E> {
         PostAnimation {
             el: unsafe { SendElement::new(el) },
             tasks,
-        }
-    }
-}
-
-type CacheItem<E> = (SendElement<E>, ElementSelectorFlags);
-
-/// Map from Elements to ElementSelectorFlags. Used to defer applying selector
-/// flags until after the traversal.
-pub struct SelectorFlagsMap<E: TElement> {
-    /// The hashmap storing the flags to apply.
-    map: FxHashMap<SendElement<E>, ElementSelectorFlags>,
-    /// An LRU cache to avoid hashmap lookups, which can be slow if the map
-    /// gets big.
-    cache: LRUCache<[Entry<CacheItem<E>>; 4 + 1]>,
-}
-
-#[cfg(debug_assertions)]
-impl<E: TElement> Drop for SelectorFlagsMap<E> {
-    fn drop(&mut self) {
-        debug_assert!(self.map.is_empty());
-    }
-}
-
-impl<E: TElement> SelectorFlagsMap<E> {
-    /// Creates a new empty SelectorFlagsMap.
-    pub fn new() -> Self {
-        SelectorFlagsMap {
-            map: FxHashMap::default(),
-            cache: LRUCache::default(),
-        }
-    }
-
-    /// Inserts some flags into the map for a given element.
-    pub fn insert_flags(&mut self, element: E, flags: ElementSelectorFlags) {
-        let el = unsafe { SendElement::new(element) };
-        // Check the cache. If the flags have already been noted, we're done.
-        if let Some(item) = self.cache.find(|x| x.0 == el) {
-            if !item.1.contains(flags) {
-                item.1.insert(flags);
-                self.map.get_mut(&el).unwrap().insert(flags);
-            }
-            return;
-        }
-
-        let f = self.map.entry(el).or_insert(ElementSelectorFlags::empty());
-        *f |= flags;
-
-        self.cache
-            .insert((unsafe { SendElement::new(element) }, *f))
-    }
-
-    /// Applies the flags. Must be called on the main thread.
-    fn apply_flags(&mut self) {
-        debug_assert_eq!(thread_state::get(), ThreadState::LAYOUT);
-        self.cache.clear();
-        for (el, flags) in self.map.drain() {
-            unsafe {
-                el.set_selector_flags(flags);
-            }
         }
     }
 }
@@ -698,67 +646,29 @@ pub struct ThreadLocalStyleContext<E: TElement> {
     /// filter, to ensure they're dropped before we execute the tasks, which
     /// could create another ThreadLocalStyleContext for style computation.
     pub tasks: SequentialTaskList<E>,
-    /// ElementSelectorFlags that need to be applied after the traversal is
-    /// complete. This map is used in cases where the matching algorithm needs
-    /// to set flags on elements it doesn't have exclusive access to (i.e. other
-    /// than the current element).
-    pub selector_flags: SelectorFlagsMap<E>,
     /// Statistics about the traversal.
     pub statistics: PerThreadTraversalStatistics,
-    /// The struct used to compute and cache font metrics from style
-    /// for evaluation of the font-relative em/ch units and font-size
-    pub font_metrics_provider: E::FontMetricsProvider,
     /// A checker used to ensure that parallel.rs does not recurse indefinitely
     /// even on arbitrarily deep trees.  See Gecko bug 1376883.
     pub stack_limit_checker: StackLimitChecker,
-    /// A cache for nth-index-like selectors.
-    pub nth_index_cache: NthIndexCache,
+    /// Collection of caches (And cache-likes) for speeding up expensive selector matches.
+    pub selector_caches: SelectorCaches,
 }
 
 impl<E: TElement> ThreadLocalStyleContext<E> {
-    /// Creates a new `ThreadLocalStyleContext` from a shared one.
-    #[cfg(feature = "servo")]
-    pub fn new(shared: &SharedStyleContext) -> Self {
+    /// Creates a new `ThreadLocalStyleContext`
+    pub fn new() -> Self {
         ThreadLocalStyleContext {
             sharing_cache: StyleSharingCache::new(),
             rule_cache: RuleCache::new(),
             bloom_filter: StyleBloom::new(),
             tasks: SequentialTaskList(Vec::new()),
-            selector_flags: SelectorFlagsMap::new(),
             statistics: PerThreadTraversalStatistics::default(),
-            font_metrics_provider: E::FontMetricsProvider::create_from(shared),
             stack_limit_checker: StackLimitChecker::new(
                 (STYLE_THREAD_STACK_SIZE_KB - STACK_SAFETY_MARGIN_KB) * 1024,
             ),
-            nth_index_cache: NthIndexCache::default(),
+            selector_caches: SelectorCaches::default(),
         }
-    }
-
-    #[cfg(feature = "gecko")]
-    /// Creates a new `ThreadLocalStyleContext` from a shared one.
-    pub fn new(shared: &SharedStyleContext) -> Self {
-        ThreadLocalStyleContext {
-            sharing_cache: StyleSharingCache::new(),
-            rule_cache: RuleCache::new(),
-            bloom_filter: StyleBloom::new(),
-            tasks: SequentialTaskList(Vec::new()),
-            selector_flags: SelectorFlagsMap::new(),
-            statistics: PerThreadTraversalStatistics::default(),
-            font_metrics_provider: E::FontMetricsProvider::create_from(shared),
-            stack_limit_checker: StackLimitChecker::new(
-                (STYLE_THREAD_STACK_SIZE_KB - STACK_SAFETY_MARGIN_KB) * 1024,
-            ),
-            nth_index_cache: NthIndexCache::default(),
-        }
-    }
-}
-
-impl<E: TElement> Drop for ThreadLocalStyleContext<E> {
-    fn drop(&mut self) {
-        debug_assert_eq!(thread_state::get(), ThreadState::LAYOUT);
-
-        // Apply any slow selector flags that need to be set on parents.
-        self.selector_flags.apply_flags();
     }
 }
 

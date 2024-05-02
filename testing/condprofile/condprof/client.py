@@ -4,34 +4,34 @@
 #
 # This module needs to stay Python 2 and 3 compatible
 #
-from __future__ import absolute_import
-import os
-import tarfile
+import datetime
 import functools
-import tempfile
+import os
 import shutil
+import tarfile
+import tempfile
 import time
 
 from mozprofile.prefs import Preferences
 
-from condprof import check_install  # NOQA
 from condprof import progress
-from condprof.util import (
-    download_file,
-    TASK_CLUSTER,
-    logger,
-    check_exists,
-    ArchiveNotFound,
-)
 from condprof.changelog import Changelog
-
+from condprof.util import (
+    TASK_CLUSTER,
+    ArchiveNotFound,
+    check_exists,
+    download_file,
+    logger,
+)
 
 TC_SERVICE = "https://firefox-ci-tc.services.mozilla.com"
 ROOT_URL = TC_SERVICE + "/api/index"
-INDEX_PATH = "gecko.v2.%(repo)s.latest.firefox.condprof-%(platform)s"
+INDEX_PATH = "gecko.v2.%(repo)s.latest.firefox.condprof-%(platform)s-%(scenario)s"
+INDEX_BY_DATE_PATH = "gecko.v2.%(repo)s.pushdate.%(date)s.latest.firefox.condprof-%(platform)s-%(scenario)s"
 PUBLIC_DIR = "artifacts/public/condprof"
 TC_LINK = ROOT_URL + "/v1/task/" + INDEX_PATH + "/" + PUBLIC_DIR + "/"
-ARTIFACT_NAME = "profile-%(platform)s-%(scenario)s-%(customization)s.tgz"
+TC_LINK_BY_DATE = ROOT_URL + "/v1/task/" + INDEX_BY_DATE_PATH + "/" + PUBLIC_DIR + "/"
+ARTIFACT_NAME = "profile%(version)s-%(platform)s-%(scenario)s-%(customization)s.tgz"
 CHANGELOG_LINK = (
     ROOT_URL + "/v1/task/" + INDEX_PATH + "/" + PUBLIC_DIR + "/changelog.json"
 )
@@ -100,23 +100,26 @@ def _check_profile(profile_dir):
     _clean_pref_file("user.js")
 
 
-def _retries(callable, onerror=None):
-    retries = 0
+def _retries(callable, onerror=None, retries=RETRIES):
+    _retry_count = 0
     pause = RETRY_PAUSE
 
-    while retries < RETRIES:
+    while _retry_count < retries:
         try:
             return callable()
         except Exception as e:
             if onerror is not None:
                 onerror(e)
             logger.info("Failed, retrying")
-            retries += 1
+            _retry_count += 1
             time.sleep(pause)
             pause *= 1.5
 
     # If we reach that point, it means all attempts failed
-    logger.error("All attempt failed")
+    if _retry_count >= RETRIES:
+        logger.error("All attempt failed")
+    else:
+        logger.info("Retried %s attempts and failed" % _retry_count)
     raise RetriesError()
 
 
@@ -128,19 +131,33 @@ def get_profile(
     task_id=None,
     download_cache=True,
     repo="mozilla-central",
+    remote_test_root="/sdcard/test_root/",
+    version=None,
+    retries=RETRIES,
 ):
     """Extract a conditioned profile in the target directory.
 
     If task_id is provided, will grab the profile from that task. when not
     provided (default) will grab the latest profile.
     """
+
     # XXX assert values
+    if version:
+        version = "-v%s" % version
+    else:
+        version = ""
+
+    # when we bump the Firefox version on trunk, autoland still needs to catch up
+    # in this case we want to download an older profile- 2 days to account for closures/etc.
+    oldday = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=2)
     params = {
         "platform": platform,
         "scenario": scenario,
         "customization": customization,
         "task_id": task_id,
         "repo": repo,
+        "version": version,
+        "date": str(oldday.date()).replace("-", "."),
     }
     logger.info("Getting conditioned profile with arguments: %s" % params)
     filename = ARTIFACT_NAME % params
@@ -206,13 +223,19 @@ def get_profile(
                 logger.error("Could not remove the file")
 
     try:
-        return _retries(_get_profile, onerror)
+        return _retries(_get_profile, onerror, retries)
     except RetriesError:
-        raise ProfileNotFoundError(url)
+        # look for older profile 2 days previously
+        filename = ARTIFACT_NAME % params
+        url = TC_LINK_BY_DATE % params + filename
+        try:
+            return _retries(_get_profile, onerror, retries)
+        except RetriesError:
+            raise ProfileNotFoundError(url)
 
 
-def read_changelog(platform, repo="mozilla-central"):
-    params = {"platform": platform, "repo": repo}
+def read_changelog(platform, repo="mozilla-central", scenario="settled"):
+    params = {"platform": platform, "repo": repo, "scenario": scenario}
     changelog_url = CHANGELOG_LINK % params
     logger.info("Getting %s" % changelog_url)
     download_dir = tempfile.mkdtemp()

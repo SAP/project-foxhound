@@ -8,9 +8,9 @@
 
 const URL = "data:text/html;charset=utf-8,Toggling devtools using shortcuts";
 
-var { Toolbox } = require("devtools/client/framework/toolbox");
+var { Toolbox } = require("resource://devtools/client/framework/toolbox.js");
 
-add_task(async function() {
+add_task(async function () {
   // Make sure this test starts with the selectedTool pref cleared. Previous
   // tests select various tools, and that sets this pref.
   Services.prefs.clearUserPref("devtools.toolbox.selectedTool");
@@ -41,7 +41,7 @@ async function testToggle(key, modifiers) {
 }
 
 async function testToggleDockedToolbox(tab, key, modifiers) {
-  const toolbox = await gDevTools.getToolboxForTab(tab);
+  const toolbox = gDevTools.getToolboxForTab(tab);
 
   isnot(
     toolbox.hostType,
@@ -63,7 +63,7 @@ async function testToggleDockedToolbox(tab, key, modifiers) {
 }
 
 async function testToggleDetachedToolbox(tab, key, modifiers) {
-  const toolbox = await gDevTools.getToolboxForTab(tab);
+  const toolbox = gDevTools.getToolboxForTab(tab);
 
   info("change the toolbox hostType to WINDOW");
 

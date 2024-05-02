@@ -28,7 +28,7 @@ const executorPath =
 async function assert_bfcached(target) {
   const status = await getBFCachedStatus(target);
   assert_implements_optional(status === 'BFCached',
-      "Should be BFCached but actually wasn't");
+      "Could have been BFCached but actually wasn't");
 }
 
 async function assert_not_bfcached(target) {
@@ -105,7 +105,9 @@ function runEventTest(params, description) {
   runBfcacheTest(params, description);
 }
 
-async function navigateAndThenBack(pageA, pageB, urlB, funcBeforeBackNavigation) {
+async function navigateAndThenBack(pageA, pageB, urlB,
+                                   funcBeforeBackNavigation,
+                                   argsBeforeBackNavigation) {
   await pageA.execute_script(
     (url) => {
       prepareNavigation(() => {
@@ -117,7 +119,8 @@ async function navigateAndThenBack(pageA, pageB, urlB, funcBeforeBackNavigation)
 
   await pageB.execute_script(waitForPageShow);
   if (funcBeforeBackNavigation) {
-    await pageB.execute_script(funcBeforeBackNavigation);
+    await pageB.execute_script(funcBeforeBackNavigation,
+                               argsBeforeBackNavigation);
   }
   await pageB.execute_script(
     () => {
@@ -136,6 +139,7 @@ function runBfcacheTest(params, description) {
     argsBeforeNavigation: [],
     targetOrigin: originCrossSite,
     funcBeforeBackNavigation: () => {},
+    argsBeforeBackNavigation: [],
     shouldBeCached: true,
     funcAfterAssertion: () => {},
   }
@@ -148,6 +152,10 @@ function runBfcacheTest(params, description) {
 
     const urlA = executorPath + pageA.context_id;
     const urlB = params.targetOrigin + executorPath + pageB.context_id;
+
+    // So that tests can refer to these URLs for assertions if necessary.
+    pageA.url = originSameOrigin + urlA;
+    pageB.url = urlB;
 
     params.openFunc(urlA);
 
@@ -165,7 +173,8 @@ function runBfcacheTest(params, description) {
     await pageA.execute_script(params.funcBeforeNavigation,
                                params.argsBeforeNavigation);
     await navigateAndThenBack(pageA, pageB, urlB,
-                              params.funcBeforeBackNavigation);
+                              params.funcBeforeBackNavigation,
+                              params.argsBeforeBackNavigation);
 
     if (params.shouldBeCached) {
       await assert_bfcached(pageA);
@@ -177,4 +186,44 @@ function runBfcacheTest(params, description) {
       await params.funcAfterAssertion(pageA, pageB, t);
     }
   }, description);
+}
+
+// Call clients.claim() on the service worker
+async function claim(t, worker) {
+  const channel = new MessageChannel();
+  const saw_message = new Promise(function(resolve) {
+    channel.port1.onmessage = t.step_func(function(e) {
+      assert_equals(e.data, 'PASS', 'Worker call to claim() should fulfill.');
+      resolve();
+    });
+  });
+  worker.postMessage({type: "claim", port: channel.port2}, [channel.port2]);
+  await saw_message;
+}
+
+// Assigns the current client to a local variable on the service worker.
+async function storeClients(t, worker) {
+  const channel = new MessageChannel();
+  const saw_message = new Promise(function(resolve) {
+    channel.port1.onmessage = t.step_func(function(e) {
+      assert_equals(e.data, 'PASS', 'storeClients');
+      resolve();
+    });
+  });
+  worker.postMessage({type: "storeClients", port: channel.port2}, [channel.port2]);
+  await saw_message;
+}
+
+// Call storedClients.postMessage("") on the service worker
+async function postMessageToStoredClients(t, worker) {
+  const channel = new MessageChannel();
+  const saw_message = new Promise(function(resolve) {
+    channel.port1.onmessage = t.step_func(function(e) {
+      assert_equals(e.data, 'PASS', 'postMessageToStoredClients');
+      resolve();
+    });
+  });
+  worker.postMessage({type: "postMessageToStoredClients",
+                      port: channel.port2}, [channel.port2]);
+  await saw_message;
 }

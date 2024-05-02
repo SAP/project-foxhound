@@ -3,26 +3,15 @@
 
 "use strict";
 
-const { FxAccountsPairingFlow } = ChromeUtils.import(
-  "resource://gre/modules/FxAccountsPairing.jsm",
-  {}
+const { FxAccountsPairingFlow } = ChromeUtils.importESModule(
+  "resource://gre/modules/FxAccountsPairing.sys.mjs"
 );
-const { EventEmitter } = ChromeUtils.import(
-  "resource://gre/modules/EventEmitter.jsm",
-  {}
+const { EventEmitter } = ChromeUtils.importESModule(
+  "resource://gre/modules/EventEmitter.sys.mjs"
 );
-const { PromiseUtils } = ChromeUtils.import(
-  "resource://gre/modules/PromiseUtils.jsm",
-  {}
-);
-const { CryptoUtils } = ChromeUtils.import(
-  "resource://services-crypto/utils.js",
-  {}
-);
-XPCOMUtils.defineLazyModuleGetters(this, {
-  jwcrypto: "resource://services-crypto/jwcrypto.jsm",
+ChromeUtils.defineESModuleGetters(this, {
+  jwcrypto: "resource://services-crypto/jwcrypto.sys.mjs",
 });
-XPCOMUtils.defineLazyGlobalGetters(this, ["URL", "crypto"]);
 
 const CHANNEL_ID = "sW-UA97Q6Dljqen7XRlYPw";
 const CHANNEL_KEY = crypto.getRandomValues(new Uint8Array(32));

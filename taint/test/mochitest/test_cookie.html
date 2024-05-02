@@ -1,0 +1,31 @@
+<!DOCTYPE HTML>
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta charset="utf-8">
+    <title>Check Cookies</title>
+    <script src="/tests/SimpleTest/SimpleTest.js"></script>
+    <link rel="stylesheet" href="/tests/SimpleTest/test.css"/>
+    <script "text/javascript">
+
+      function check_tainted(str) {
+          ok(str.taint.length > 0, "Check tainted");
+      }
+
+      function check_untainted(str) {
+          ok(str.taint.length == 0, "Check untainted");
+      }
+
+      function startTest() {
+	  document.cookie = "c=untainted";
+	  check_tainted(document.cookie);
+	  SimpleTest.finish();
+      }
+
+      SimpleTest.waitForExplicitFinish();
+      
+    </script>
+  </head>
+
+  <body onload="startTest();">
+
+</html>

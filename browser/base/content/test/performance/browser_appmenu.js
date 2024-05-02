@@ -1,8 +1,8 @@
 "use strict";
 /* global PanelUI */
 
-const { CustomizableUITestUtils } = ChromeUtils.import(
-  "resource://testing-common/CustomizableUITestUtils.jsm"
+const { CustomizableUITestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/CustomizableUITestUtils.sys.mjs"
 );
 let gCUITestUtils = new CustomizableUITestUtils(window);
 
@@ -18,21 +18,21 @@ let gCUITestUtils = new CustomizableUITestUtils(window);
 const EXPECTED_APPMENU_OPEN_REFLOWS = [
   {
     stack: [
-      "openPopup/this._openPopupPromise<@resource:///modules/PanelMultiView.jsm",
+      "openPopup/this._openPopupPromise<@resource:///modules/PanelMultiView.sys.mjs",
     ],
   },
 
   {
     stack: [
-      "_calculateMaxHeight@resource:///modules/PanelMultiView.jsm",
-      "handleEvent@resource:///modules/PanelMultiView.jsm",
+      "_calculateMaxHeight@resource:///modules/PanelMultiView.sys.mjs",
+      "handleEvent@resource:///modules/PanelMultiView.sys.mjs",
     ],
 
     maxCount: 7, // This number should only ever go down - never up.
   },
 ];
 
-add_task(async function() {
+add_task(async function () {
   await ensureNoPreloadedBrowser();
   await disableFxaBadge();
 
@@ -44,37 +44,21 @@ add_task(async function() {
     .getBoundingClientRect();
   let firstTabRect = gBrowser.selectedTab.getBoundingClientRect();
   let frameExpectations = {
-    filter: rects =>
-      rects.filter(
-        r =>
-          !(
-            // We expect the menu button to get into the active state.
-            (
-              r.y1 >= menuButtonRect.top &&
-              r.y2 <= menuButtonRect.bottom &&
-              r.x1 >= menuButtonRect.left &&
-              r.x2 <= menuButtonRect.right
-            )
-          )
-        // XXX For some reason the menu panel isn't in our screenshots,
-        // but that's where we actually expect many changes.
-      ),
+    filter: rects => {
+      // We expect the menu button to get into the active state.
+      //
+      // XXX For some reason the menu panel isn't in our screenshots, but
+      // that's where we actually expect many changes.
+      return rects.filter(r => !rectInBoundingClientRect(r, menuButtonRect));
+    },
     exceptions: [
       {
         name: "the urlbar placeholder moves up and down by a few pixels",
-        condition: r =>
-          r.x1 >= textBoxRect.left &&
-          r.x2 <= textBoxRect.right &&
-          r.y1 >= textBoxRect.top &&
-          r.y2 <= textBoxRect.bottom,
+        condition: r => rectInBoundingClientRect(r, textBoxRect),
       },
       {
         name: "bug 1547341 - a first tab gets drawn early",
-        condition: r =>
-          r.x1 >= firstTabRect.left &&
-          r.x2 <= firstTabRect.right &&
-          r.y1 >= firstTabRect.top &&
-          r.y2 <= firstTabRect.bottom,
+        condition: r => rectInBoundingClientRect(r, firstTabRect),
       },
     ],
   };
@@ -88,7 +72,7 @@ add_task(async function() {
   // Now open a series of subviews, and then close the appmenu. We
   // should not reflow during any of this.
   await withPerfObserver(
-    async function() {
+    async function () {
       // This recursive function will take the current main or subview,
       // find all of the buttons that navigate to subviews inside it,
       // and click each one individually. Upon entering the new view,

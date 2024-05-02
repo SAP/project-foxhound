@@ -4,8 +4,6 @@
 
 "use strict";
 
-const Services = require("Services");
-
 exports.DOMHelpers = {
   /**
    * A simple way to be notified (once) when a window becomes
@@ -23,12 +21,12 @@ exports.DOMHelpers = {
    *        (optional) Check that the frame URL corresponds to the provided URL
    *        before calling the callback.
    */
-  onceDOMReady: function(win, callback, targetURL) {
+  onceDOMReady(win, callback, targetURL) {
     if (!win) {
       throw new Error("window can't be null or undefined");
     }
     const docShell = win.docShell;
-    const onReady = function(event) {
+    const onReady = function (event) {
       if (event.target == win.document) {
         docShell.chromeEventHandler.removeEventListener(
           "DOMContentLoaded",

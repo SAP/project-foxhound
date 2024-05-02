@@ -15,6 +15,7 @@
 #include "vm/Interpreter.h"
 #include "vm/JitActivation.h"
 #include "vm/JSContext.h"
+#include "vm/PortableBaselineInterpret.h"
 #include "vm/Realm.h"
 
 #include "vm/Activation-inl.h"
@@ -29,13 +30,23 @@ static EnterJitStatus JS_HAZ_JSNATIVE_CALLER EnterJit(JSContext* cx,
   // We don't want to call the interpreter stub here (because
   // C++ -> interpreterStub -> C++ is slower than staying in C++).
   MOZ_ASSERT(code);
+#ifndef ENABLE_PORTABLE_BASELINE_INTERP
   MOZ_ASSERT(code != cx->runtime()->jitRuntime()->interpreterStub().value);
   MOZ_ASSERT(IsBaselineInterpreterEnabled());
+#else
+  MOZ_ASSERT(IsBaselineInterpreterEnabled() ||
+             IsPortableBaselineInterpreterEnabled());
+#endif
 
   AutoCheckRecursionLimit recursion(cx);
   if (!recursion.check(cx)) {
     return EnterJitStatus::Error;
   }
+
+  // jit::Bailout(), jit::InvalidationBailout(), and jit::HandleException()
+  // reset the counter to zero, so assert here it's also zero when we enter
+  // JIT code.
+  MOZ_ASSERT(!cx->isInUnsafeRegion());
 
 #ifdef DEBUG
   // Assert we don't GC before entering JIT code. A GC could discard JIT code
@@ -54,21 +65,14 @@ static EnterJitStatus JS_HAZ_JSNATIVE_CALLER EnterJit(JSContext* cx,
   JSObject* envChain;
   CalleeToken calleeToken;
 
+  unsigned numFormals = 0;
   if (state.isInvoke()) {
     const CallArgs& args = state.asInvoke()->args();
     numActualArgs = args.length();
 
     if (TooManyActualArguments(numActualArgs)) {
-      // Too many arguments for Ion. Baseline supports more actual
-      // arguments, so in that case force Baseline code.
-      if (numActualArgs > BASELINE_MAX_ARGS_LENGTH) {
-        return EnterJitStatus::NotEntered;
-      }
-      if (script->hasBaselineScript()) {
-        code = script->baselineScript()->method()->raw();
-      } else {
-        code = cx->runtime()->jitRuntime()->baselineInterpreter().codeRaw();
-      }
+      // Fall back to the C++ interpreter to avoid running out of stack space.
+      return EnterJitStatus::NotEntered;
     }
 
     constructing = state.asInvoke()->constructing();
@@ -77,20 +81,17 @@ static EnterJitStatus JS_HAZ_JSNATIVE_CALLER EnterJit(JSContext* cx,
     envChain = nullptr;
     calleeToken = CalleeToToken(&args.callee().as<JSFunction>(), constructing);
 
-    unsigned numFormals = script->function()->nargs();
+    numFormals = script->function()->nargs();
     if (numFormals > numActualArgs) {
+#ifndef ENABLE_PORTABLE_BASELINE_INTERP
       code = cx->runtime()->jitRuntime()->getArgumentsRectifier().value;
+#endif
     }
   } else {
     numActualArgs = 0;
     constructing = false;
-    if (script->isDirectEvalInFunction()) {
-      maxArgc = 1;
-      maxArgv = state.asExecute()->addressOfNewTarget();
-    } else {
-      maxArgc = 0;
-      maxArgv = nullptr;
-    }
+    maxArgc = 0;
+    maxArgv = nullptr;
     envChain = state.asExecute()->environmentChain();
     calleeToken = CalleeToToken(state.script());
   }
@@ -104,18 +105,39 @@ static EnterJitStatus JS_HAZ_JSNATIVE_CALLER EnterJit(JSContext* cx,
     AssertRealmUnchanged aru(cx);
     ActivationEntryMonitor entryMonitor(cx, calleeToken);
     JitActivation activation(cx);
+
+#ifndef ENABLE_PORTABLE_BASELINE_INTERP
     EnterJitCode enter = cx->runtime()->jitRuntime()->enterJit();
 
-#ifdef DEBUG
+#  ifdef DEBUG
     nogc.reset();
-#endif
+#  endif
     CALL_GENERATED_CODE(enter, code, maxArgc, maxArgv, /* osrFrame = */ nullptr,
                         calleeToken, envChain, /* osrNumStackValues = */ 0,
                         result.address());
+#else  // !ENABLE_PORTABLE_BASELINE_INTERP
+    (void)code;
+#  ifdef DEBUG
+    nogc.reset();
+#  endif
+    if (!pbl::PortablebaselineInterpreterStackCheck(cx, state, numActualArgs)) {
+      return EnterJitStatus::NotEntered;
+    }
+    if (!pbl::PortableBaselineTrampoline(cx, maxArgc, maxArgv, numFormals,
+                                         numActualArgs, calleeToken, envChain,
+                                         result.address())) {
+      return EnterJitStatus::Error;
+    }
+#endif  // ENABLE_PORTABLE_BASELINE_INTERP
   }
 
+  // Ensure the counter was reset to zero after exiting from JIT code.
+  MOZ_ASSERT(!cx->isInUnsafeRegion());
+
   // Release temporary buffer used for OSR into Ion.
-  cx->runtime()->jitRuntime()->freeIonOsrTempData();
+  if (!IsPortableBaselineInterpreterEnabled()) {
+    cx->runtime()->jitRuntime()->freeIonOsrTempData();
+  }
 
   if (result.isMagic()) {
     MOZ_ASSERT(result.isMagic(JS_ION_ERROR));
@@ -133,8 +155,20 @@ static EnterJitStatus JS_HAZ_JSNATIVE_CALLER EnterJit(JSContext* cx,
   return EnterJitStatus::Ok;
 }
 
+// Call the per-script interpreter entry trampoline.
+bool js::jit::EnterInterpreterEntryTrampoline(uint8_t* code, JSContext* cx,
+                                              RunState* state) {
+  using EnterTrampolineCodePtr = bool (*)(JSContext* cx, RunState*);
+  auto funcPtr = JS_DATA_TO_FUNC_PTR(EnterTrampolineCodePtr, code);
+  return CALL_GENERATED_2(funcPtr, cx, state);
+}
+
 EnterJitStatus js::jit::MaybeEnterJit(JSContext* cx, RunState& state) {
-  if (!IsBaselineInterpreterEnabled()) {
+  if (!IsBaselineInterpreterEnabled()
+#ifdef ENABLE_PORTABLE_BASELINE_INTERP
+      && !IsPortableBaselineInterpreterEnabled()
+#endif
+  ) {
     // All JITs are disabled.
     return EnterJitStatus::NotEntered;
   }
@@ -156,12 +190,13 @@ EnterJitStatus js::jit::MaybeEnterJit(JSContext* cx, RunState& state) {
   do {
     // Make sure we can enter Baseline Interpreter code. Note that the prologue
     // has warm-up checks to tier up if needed.
-    if (script->hasJitScript()) {
+    if (script->hasJitScript() && code) {
       break;
     }
 
     script->incWarmUpCounter();
 
+#ifndef ENABLE_PORTABLE_BASELINE_INTERP
     // Try to Ion-compile.
     if (jit::IsIonEnabled(cx)) {
       jit::MethodStatus status = jit::CanEnterIon(cx, state);
@@ -199,6 +234,22 @@ EnterJitStatus js::jit::MaybeEnterJit(JSContext* cx, RunState& state) {
         break;
       }
     }
+
+#else  // !ENABLE_PORTABLE_BASELINE_INTERP
+
+    // Try to enter the Portable Baseline Interpreter.
+    if (IsPortableBaselineInterpreterEnabled()) {
+      jit::MethodStatus status =
+          pbl::CanEnterPortableBaselineInterpreter(cx, state);
+      if (status == jit::Method_Error) {
+        return EnterJitStatus::Error;
+      }
+      if (status == jit::Method_Compiled) {
+        code = script->jitCodeRaw();
+        break;
+      }
+    }
+#endif
 
     return EnterJitStatus::NotEntered;
   } while (false);

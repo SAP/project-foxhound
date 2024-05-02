@@ -3,16 +3,19 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/TextEditor.h"
+#include "TextEditor.h"
+
+#include "EditorUtils.h"
+#include "HTMLEditor.h"
+#include "SelectionState.h"
 
 #include "mozilla/ArrayUtils.h"
-#include "mozilla/HTMLEditor.h"
 #include "mozilla/MouseEvents.h"
-#include "mozilla/SelectionState.h"
 #include "mozilla/dom/DataTransfer.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/DocumentInlines.h"
 #include "mozilla/dom/Selection.h"
+
 #include "nsAString.h"
 #include "nsCOMPtr.h"
 #include "nsContentUtils.h"
@@ -50,7 +53,7 @@ nsresult TextEditor::InsertTextFromTransferable(
   NS_WARNING_ASSERTION(
       NS_SUCCEEDED(rv),
       "nsITransferable::GetAnyDataTransferData() failed, but ignored");
-  if (NS_SUCCEEDED(rv) && (bestFlavor.EqualsLiteral(kUnicodeMime) ||
+  if (NS_SUCCEEDED(rv) && (bestFlavor.EqualsLiteral(kTextMime) ||
                            bestFlavor.EqualsLiteral(kMozTextInternal))) {
     AutoTransactionsConserveSelection dontChangeMySelection(*this);
 
@@ -76,8 +79,8 @@ nsresult TextEditor::InsertTextFromTransferable(
       // Sanitize possible carriage returns in the string to be inserted
       nsContentUtils::PlatformToDOMLineBreaks(stuffToPaste);
 
-      AutoPlaceholderBatch treatAsOneTransaction(*this,
-                                                 ScrollSelectionIntoView::Yes);
+      AutoPlaceholderBatch treatAsOneTransaction(
+          *this, ScrollSelectionIntoView::Yes, __FUNCTION__);
       nsresult rv =
           InsertTextAsSubAction(stuffToPaste, SelectionHandling::Delete);
       if (NS_FAILED(rv)) {
@@ -147,35 +150,19 @@ nsresult TextEditor::InsertDroppedDataTransferAsAction(
   // anymore because nobody should listen to mutation events of anonymous
   // text node in <input>/<textarea>.
   nsContentUtils::PlatformToDOMLineBreaks(data);
-  rv = InsertTextAt(data, aDroppedAt, false);
+  rv = InsertTextAt(data, aDroppedAt, DeleteSelectedContent::No);
   if (NS_WARN_IF(Destroyed())) {
     return NS_ERROR_EDITOR_DESTROYED;
   }
   NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
-                       "EditorBase::InsertTextAt() failed, but ignored");
+                       "EditorBase::InsertTextAt(DeleteSelectedContent::No) "
+                       "failed, but ignored");
   return rv;
 }
 
-nsresult TextEditor::PasteAsAction(int32_t aClipboardType,
-                                   bool aDispatchPasteEvent,
-                                   nsIPrincipal* aPrincipal) {
-  AutoEditActionDataSetter editActionData(*this, EditAction::ePaste,
-                                          aPrincipal);
-  if (NS_WARN_IF(!editActionData.CanHandle())) {
-    return NS_ERROR_NOT_INITIALIZED;
-  }
-
-  if (aDispatchPasteEvent) {
-    if (!FireClipboardEvent(ePaste, aClipboardType)) {
-      return EditorBase::ToGenericNSResult(NS_ERROR_EDITOR_ACTION_CANCELED);
-    }
-  } else {
-    // The caller must already have dispatched a "paste" event.
-    editActionData.NotifyOfDispatchingClipboardEvent();
-  }
-
-  if (!GetDocument()) {
-    NS_WARNING("The editor didn't have document, but ignored");
+nsresult TextEditor::HandlePaste(AutoEditActionDataSetter& aEditActionData,
+                                 int32_t aClipboardType) {
+  if (NS_WARN_IF(!GetDocument())) {
     return NS_OK;
   }
 
@@ -196,7 +183,7 @@ nsresult TextEditor::PasteAsAction(int32_t aClipboardType,
       EditorUtils::CreateTransferableForPlainText(*GetDocument());
   if (maybeTransferable.isErr()) {
     NS_WARNING("EditorUtils::CreateTransferableForPlainText() failed");
-    return EditorBase::ToGenericNSResult(maybeTransferable.unwrapErr());
+    return maybeTransferable.unwrapErr();
   }
   nsCOMPtr<nsITransferable> transferable(maybeTransferable.unwrap());
   if (NS_WARN_IF(!transferable)) {
@@ -218,34 +205,22 @@ nsresult TextEditor::PasteAsAction(int32_t aClipboardType,
   rv = InsertTextFromTransferable(transferable);
   NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
                        "TextEditor::InsertTextFromTransferable() failed");
-  return EditorBase::ToGenericNSResult(rv);
+  return rv;
 }
 
-nsresult TextEditor::PasteTransferableAsAction(nsITransferable* aTransferable,
-                                               nsIPrincipal* aPrincipal) {
-  AutoEditActionDataSetter editActionData(*this, EditAction::ePaste,
-                                          aPrincipal);
-  // The data will be initialized in InsertTextFromTransferable().  Therefore,
-  // we cannot dispatch "beforeinput" here.
-  if (NS_WARN_IF(!editActionData.CanHandle())) {
-    return NS_ERROR_NOT_INITIALIZED;
-  }
-
-  // Use an invalid value for the clipboard type as data comes from
-  // aTransferable and we don't currently implement a way to put that in the
-  // data transfer yet.
-  if (!FireClipboardEvent(ePaste, -1)) {
-    return EditorBase::ToGenericNSResult(NS_ERROR_EDITOR_ACTION_CANCELED);
-  }
-
+nsresult TextEditor::HandlePasteTransferable(
+    AutoEditActionDataSetter& aEditActionData, nsITransferable& aTransferable) {
   if (!IsModifiable()) {
     return NS_OK;
   }
 
-  nsresult rv = InsertTextFromTransferable(aTransferable);
+  // FYI: The data of beforeinput will be initialized in
+  // InsertTextFromTransferable().  Therefore, here does not touch
+  // aEditActionData.
+  nsresult rv = InsertTextFromTransferable(&aTransferable);
   NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
                        "TextEditor::InsertTextFromTransferable() failed");
-  return EditorBase::ToGenericNSResult(rv);
+  return rv;
 }
 
 bool TextEditor::CanPaste(int32_t aClipboardType) const {
@@ -267,8 +242,7 @@ bool TextEditor::CanPaste(int32_t aClipboardType) const {
   }
 
   // the flavors that we can deal with
-  AutoTArray<nsCString, 1> textEditorFlavors = {
-      nsDependentCString(kUnicodeMime)};
+  AutoTArray<nsCString, 1> textEditorFlavors = {nsDependentCString(kTextMime)};
 
   bool haveFlavors;
   rv = clipboard->HasDataMatchingFlavors(textEditorFlavors, aClipboardType,
@@ -290,10 +264,9 @@ bool TextEditor::CanPasteTransferable(nsITransferable* aTransferable) {
   }
 
   nsCOMPtr<nsISupports> data;
-  nsresult rv =
-      aTransferable->GetTransferData(kUnicodeMime, getter_AddRefs(data));
+  nsresult rv = aTransferable->GetTransferData(kTextMime, getter_AddRefs(data));
   NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
-                       "nsITransferable::GetTransferData(kUnicodeMime) failed");
+                       "nsITransferable::GetTransferData(kTextMime) failed");
   return NS_SUCCEEDED(rv) && data;
 }
 

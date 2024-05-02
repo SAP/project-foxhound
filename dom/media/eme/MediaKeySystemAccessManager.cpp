@@ -18,9 +18,6 @@
 #ifdef XP_WIN
 #  include "mozilla/WindowsVersion.h"
 #endif
-#ifdef XP_MACOSX
-#  include "nsCocoaFeatures.h"
-#endif
 #include "nsComponentManagerUtils.h"
 #include "nsContentUtils.h"
 #include "nsTHashMap.h"
@@ -376,6 +373,10 @@ void MediaKeySystemAccessManager::RequestMediaKeySystemAccess(
   //   agent, reject promise with a NotSupportedError. String comparison is
   //   case-sensitive.
   if (!IsWidevineKeySystem(aRequest->mKeySystem) &&
+#ifdef MOZ_WMF_CDM
+      !IsPlayReadyKeySystemAndSupported(aRequest->mKeySystem) &&
+      !IsWidevineExperimentKeySystemAndSupported(aRequest->mKeySystem) &&
+#endif
       !IsClearkeyKeySystem(aRequest->mKeySystem)) {
     // Not to inform user, because nothing to do if the keySystem is not
     // supported.

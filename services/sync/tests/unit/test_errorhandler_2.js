@@ -1,23 +1,29 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
-const { Service } = ChromeUtils.import("resource://services-sync/service.js");
-const { Status } = ChromeUtils.import("resource://services-sync/status.js");
-const { FileUtils } = ChromeUtils.import(
-  "resource://gre/modules/FileUtils.jsm"
+const { Service } = ChromeUtils.importESModule(
+  "resource://services-sync/service.sys.mjs"
+);
+const { Status } = ChromeUtils.importESModule(
+  "resource://services-sync/status.sys.mjs"
+);
+const { FileUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/FileUtils.sys.mjs"
 );
 
 const fakeServer = new SyncServer();
 fakeServer.start();
-const fakeServerUrl = "http://localhost:" + fakeServer.port;
 
-registerCleanupFunction(function() {
+registerCleanupFunction(function () {
   return promiseStopServer(fakeServer).finally(() => {
-    Svc.Prefs.resetBranch("");
+    for (const pref of Svc.PrefBranch.getChildList("")) {
+      Svc.PrefBranch.clearUserPref(pref);
+    }
   });
 });
 
-const logsdir = FileUtils.getDir("ProfD", ["weave", "logs"], true);
+const logsdir = FileUtils.getDir("ProfD", ["weave", "logs"]);
+logsdir.create(Ci.nsIFile.DIRECTORY_TYPE, FileUtils.PERMS_DIRECTORY);
 
 function removeLogFiles() {
   let entries = logsdir.directoryEntries;
@@ -68,13 +74,13 @@ add_task(async function test_crypto_keys_login_server_maintenance_error() {
   Service.collectionKeys.clear();
 
   let backoffInterval;
-  Svc.Obs.add("weave:service:backoff:interval", function observe(
-    subject,
-    data
-  ) {
-    Svc.Obs.remove("weave:service:backoff:interval", observe);
-    backoffInterval = subject;
-  });
+  Svc.Obs.add(
+    "weave:service:backoff:interval",
+    function observe(subject, data) {
+      Svc.Obs.remove("weave:service:backoff:interval", observe);
+      backoffInterval = subject;
+    }
+  );
 
   Assert.ok(!Status.enforceBackoff);
   Assert.equal(Status.service, STATUS_OK);
@@ -109,7 +115,7 @@ add_task(async function test_lastSync_not_updated_on_complete_failure() {
   Assert.equal(Status.service, STATUS_OK);
   Assert.equal(Status.sync, SYNC_SUCCEEDED);
 
-  let lastSync = Svc.Prefs.get("lastSync");
+  let lastSync = Svc.PrefBranch.getCharPref("lastSync");
 
   Assert.ok(lastSync);
 
@@ -127,7 +133,7 @@ add_task(async function test_lastSync_not_updated_on_complete_failure() {
   Assert.equal(Status.service, SYNC_FAILED);
 
   // We shouldn't update lastSync on complete failure.
-  Assert.equal(lastSync, Svc.Prefs.get("lastSync"));
+  Assert.equal(lastSync, Svc.PrefBranch.getCharPref("lastSync"));
 
   await clean();
   await promiseStopServer(server);
@@ -172,13 +178,13 @@ add_task(
     await configureIdentity({ username: "broken.info" }, server);
 
     let backoffInterval;
-    Svc.Obs.add("weave:service:backoff:interval", function observe(
-      subject,
-      data
-    ) {
-      Svc.Obs.remove("weave:service:backoff:interval", observe);
-      backoffInterval = subject;
-    });
+    Svc.Obs.add(
+      "weave:service:backoff:interval",
+      function observe(subject, data) {
+        Svc.Obs.remove("weave:service:backoff:interval", observe);
+        backoffInterval = subject;
+      }
+    );
 
     Assert.ok(!Status.enforceBackoff);
     Assert.equal(Status.service, STATUS_OK);
@@ -209,13 +215,13 @@ add_task(
     await configureIdentity({ username: "broken.meta" }, server);
 
     let backoffInterval;
-    Svc.Obs.add("weave:service:backoff:interval", function observe(
-      subject,
-      data
-    ) {
-      Svc.Obs.remove("weave:service:backoff:interval", observe);
-      backoffInterval = subject;
-    });
+    Svc.Obs.add(
+      "weave:service:backoff:interval",
+      function observe(subject, data) {
+        Svc.Obs.remove("weave:service:backoff:interval", observe);
+        backoffInterval = subject;
+      }
+    );
 
     Assert.ok(!Status.enforceBackoff);
     Assert.equal(Status.service, STATUS_OK);
@@ -248,13 +254,13 @@ add_task(
     Service.collectionKeys.clear();
 
     let backoffInterval;
-    Svc.Obs.add("weave:service:backoff:interval", function observe(
-      subject,
-      data
-    ) {
-      Svc.Obs.remove("weave:service:backoff:interval", observe);
-      backoffInterval = subject;
-    });
+    Svc.Obs.add(
+      "weave:service:backoff:interval",
+      function observe(subject, data) {
+        Svc.Obs.remove("weave:service:backoff:interval", observe);
+        backoffInterval = subject;
+      }
+    );
 
     Assert.ok(!Status.enforceBackoff);
     Assert.equal(Status.service, STATUS_OK);
@@ -285,13 +291,13 @@ add_task(
     await configureIdentity({ username: "broken.keys" }, server);
 
     let backoffInterval;
-    Svc.Obs.add("weave:service:backoff:interval", function observe(
-      subject,
-      data
-    ) {
-      Svc.Obs.remove("weave:service:backoff:interval", observe);
-      backoffInterval = subject;
-    });
+    Svc.Obs.add(
+      "weave:service:backoff:interval",
+      function observe(subject, data) {
+        Svc.Obs.remove("weave:service:backoff:interval", observe);
+        backoffInterval = subject;
+      }
+    );
 
     Assert.ok(!Status.enforceBackoff);
     Assert.equal(Status.service, STATUS_OK);
@@ -322,13 +328,13 @@ add_task(
     await configureIdentity({ username: "broken.wipe" }, server);
 
     let backoffInterval;
-    Svc.Obs.add("weave:service:backoff:interval", function observe(
-      subject,
-      data
-    ) {
-      Svc.Obs.remove("weave:service:backoff:interval", observe);
-      backoffInterval = subject;
-    });
+    Svc.Obs.add(
+      "weave:service:backoff:interval",
+      function observe(subject, data) {
+        Svc.Obs.remove("weave:service:backoff:interval", observe);
+        backoffInterval = subject;
+      }
+    );
 
     Assert.ok(!Status.enforceBackoff);
     Assert.equal(Status.service, STATUS_OK);
@@ -362,18 +368,18 @@ add_task(
     engine.enabled = true;
 
     let backoffInterval;
-    Svc.Obs.add("weave:service:backoff:interval", function observe(
-      subject,
-      data
-    ) {
-      Svc.Obs.remove("weave:service:backoff:interval", observe);
-      backoffInterval = subject;
-    });
+    Svc.Obs.add(
+      "weave:service:backoff:interval",
+      function observe(subject, data) {
+        Svc.Obs.remove("weave:service:backoff:interval", observe);
+        backoffInterval = subject;
+      }
+    );
 
     Assert.ok(!Status.enforceBackoff);
     Assert.equal(Status.service, STATUS_OK);
 
-    Svc.Prefs.set("firstSync", "wipeRemote");
+    Svc.PrefBranch.setCharPref("firstSync", "wipeRemote");
 
     let promiseObserved = promiseOneObserver("weave:service:reset-file-log");
     await Service.sync();
@@ -383,7 +389,7 @@ add_task(
     Assert.equal(backoffInterval, 42);
     Assert.equal(Status.service, SYNC_FAILED);
     Assert.equal(Status.sync, SERVER_MAINTENANCE);
-    Assert.equal(Svc.Prefs.get("firstSync"), "wipeRemote");
+    Assert.equal(Svc.PrefBranch.getCharPref("firstSync"), "wipeRemote");
 
     await clean();
     await promiseStopServer(server);
@@ -400,9 +406,9 @@ add_task(async function test_sync_engine_generic_fail() {
   engine.sync = async function sync() {
     Svc.Obs.notify("weave:engine:sync:error", ENGINE_UNKNOWN_FAIL, "catapult");
   };
-  let lastSync = Svc.Prefs.get("lastSync");
+  let lastSync = Svc.PrefBranch.getCharPref("lastSync", null);
   let log = Log.repository.getLogger("Sync.ErrorHandler");
-  Svc.Prefs.set("log.appender.file.logOnError", true);
+  Svc.PrefBranch.setBoolPref("log.appender.file.logOnError", true);
 
   Assert.equal(Status.engines.catapult, undefined);
 
@@ -431,7 +437,7 @@ add_task(async function test_sync_engine_generic_fail() {
   Assert.equal(Status.service, SYNC_FAILED_PARTIAL);
 
   // lastSync should update on partial failure.
-  Assert.notEqual(lastSync, Svc.Prefs.get("lastSync"));
+  Assert.notEqual(lastSync, Svc.PrefBranch.getCharPref("lastSync"));
 
   // Test Error log was written on SYNC_FAILED_PARTIAL.
   let logFiles = getLogFiles();
@@ -455,7 +461,7 @@ add_task(async function test_logs_on_sync_error() {
   );
 
   let log = Log.repository.getLogger("Sync.ErrorHandler");
-  Svc.Prefs.set("log.appender.file.logOnError", true);
+  Svc.PrefBranch.setBoolPref("log.appender.file.logOnError", true);
   log.info("TESTING");
 
   // Ensure that we report no error.
@@ -485,7 +491,7 @@ add_task(async function test_logs_on_login_error() {
   );
 
   let log = Log.repository.getLogger("Sync.ErrorHandler");
-  Svc.Prefs.set("log.appender.file.logOnError", true);
+  Svc.PrefBranch.setBoolPref("log.appender.file.logOnError", true);
   log.info("TESTING");
 
   // Ensure that we report no error.
@@ -519,7 +525,7 @@ add_task(async function test_engine_applyFailed() {
     Svc.Obs.notify("weave:engine:sync:applied", { newFailed: 1 }, "catapult");
   };
 
-  Svc.Prefs.set("log.appender.file.logOnError", true);
+  Svc.PrefBranch.setBoolPref("log.appender.file.logOnError", true);
 
   let promiseObserved = promiseOneObserver("weave:service:reset-file-log");
 

@@ -1,12 +1,5 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
-// Instead of loading EventUtils.js into the test scope in browser-test.js for all tests,
-// we only need EventUtils.js for a few files which is why we are using loadSubScript.
-var EventUtils = {};
-Services.scriptloader.loadSubScript(
-  "chrome://mochikit/content/tests/SimpleTest/EventUtils.js",
-  EventUtils
-);
 
 add_task(async function test() {
   // Make sure the bookmarks bar is visible and restore its state on cleanup.
@@ -15,7 +8,7 @@ add_task(async function test() {
 
   if (toolbar.collapsed) {
     await promiseSetToolbarVisibility(toolbar, true);
-    registerCleanupFunction(function() {
+    registerCleanupFunction(function () {
       return promiseSetToolbarVisibility(toolbar, false);
     });
   }
@@ -37,12 +30,11 @@ add_task(async function test() {
    * @param {string} aMimeType
    *        The mime type to use for the drop operation.
    */
-  let simulateDragDrop = async function(aEffect, aMimeType) {
+  let simulateDragDrop = async function (aEffect, aMimeType) {
     const url = "http://www.mozilla.org/D1995729-A152-4e30-8329-469B01F30AA7";
     let promiseItemAddedNotification = PlacesTestUtils.waitForNotification(
       "bookmark-added",
-      events => events.some(({ url: eventUrl }) => eventUrl == url),
-      "places"
+      events => events.some(({ url: eventUrl }) => eventUrl == url)
     );
 
     // We use the toolbar as the drag source, as we just need almost any node
@@ -82,7 +74,7 @@ add_task(async function test() {
    * @param {string} aMimeType
    *        The mime type to use for the drop operation.
    */
-  let simulateDragDropMultiple = async function(aEffect, aMimeType) {
+  let simulateDragDropMultiple = async function (aEffect, aMimeType) {
     const urls = [
       "http://www.mozilla.org/C54263C6-A484-46CF-8E2B-FE131586348A",
       "http://www.mozilla.org/71381257-61E6-4376-AF7C-BF3C5FD8870D",
@@ -97,8 +89,7 @@ add_task(async function test() {
 
     let promiseItemAddedNotification = PlacesTestUtils.waitForNotification(
       "bookmark-added",
-      events => events.some(({ url }) => url == urls[2]),
-      "places"
+      events => events.some(({ url }) => url == urls[2])
     );
 
     // See notes for EventUtils.synthesizeDrop in simulateDragDrop().
@@ -133,7 +124,7 @@ add_task(async function test() {
   };
 
   // Simulate a bookmark drop for all of the mime types and effects.
-  let mimeTypes = ["text/plain", "text/unicode", "text/x-moz-url"];
+  let mimeTypes = ["text/plain", "text/x-moz-url"];
   let effects = ["move", "copy", "link"];
   for (let effect of effects) {
     for (let mimeType of mimeTypes) {

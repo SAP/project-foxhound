@@ -30,8 +30,7 @@ interface IChildProcess {
               in ParcelFileDescriptor prefsPfd,
               in ParcelFileDescriptor prefMapPfd,
               in ParcelFileDescriptor ipcPfd,
-              in ParcelFileDescriptor crashReporterPfd,
-              in ParcelFileDescriptor crashAnnotationPfd);
+              in ParcelFileDescriptor crashReporterPfd);
 
     void crash();
 
@@ -41,6 +40,8 @@ interface IChildProcess {
     /**
      * Returns the interface that other processes should use to allocate Surfaces to be
      * consumed by the GPU process. Must only be called for a GPU child process type.
+     * @param allocatorId A unique ID used to identify the GPU process instance the allocator
+     *     belongs to.
      */
-    ISurfaceAllocator getSurfaceAllocator();
+    ISurfaceAllocator getSurfaceAllocator(int allocatorId);
 }

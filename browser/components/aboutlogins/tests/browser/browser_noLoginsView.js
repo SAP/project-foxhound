@@ -1,7 +1,7 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
-add_task(async function setup() {
+add_setup(async function () {
   await BrowserTestUtils.openNewForegroundTab({
     gBrowser,
     url: "about:logins",
@@ -13,17 +13,25 @@ add_task(async function setup() {
 
 add_task(async function test_no_logins_class() {
   let { platform } = AppConstants;
+  let wizardPromise;
+
+  // The import link is hidden on Linux, so we don't wait for the migration
+  // wizard to open on that platform.
+  if (AppConstants.platform != "linux") {
+    wizardPromise = BrowserTestUtils.waitForMigrationWizard(window);
+  }
+
   await SpecialPowers.spawn(
     gBrowser.selectedBrowser,
     [platform],
     async aPlatform => {
       let loginList = content.document.querySelector("login-list");
 
-      ok(
+      Assert.ok(
         content.document.documentElement.classList.contains("no-logins"),
         "root should be in no logins view"
       );
-      ok(
+      Assert.ok(
         loginList.classList.contains("no-logins"),
         "login-list should be in no logins view"
       );
@@ -35,31 +43,31 @@ add_task(async function test_no_logins_class() {
       let loginListIntro = loginList.shadowRoot.querySelector(".intro");
       let loginListList = loginList.shadowRoot.querySelector("ol");
 
-      ok(
+      Assert.ok(
         !ContentTaskUtils.is_hidden(loginIntro),
         "login-intro should be shown in no logins view"
       );
-      ok(
+      Assert.ok(
         !ContentTaskUtils.is_hidden(loginListIntro),
         "login-list intro should be shown in no logins view"
       );
 
-      ok(
+      Assert.ok(
         ContentTaskUtils.is_hidden(loginItem),
         "login-item should be hidden in no logins view"
       );
-      ok(
+      Assert.ok(
         ContentTaskUtils.is_hidden(loginListList),
         "login-list logins list should be hidden in no logins view"
       );
-      is(
+      Assert.equal(
         content.document.l10n.getAttributes(
           loginIntro.shadowRoot.querySelector(".heading")
         ).id,
         "about-logins-login-intro-heading-logged-out2",
         "The default message should be the non-logged-in message"
       );
-      ok(
+      Assert.ok(
         loginIntro.shadowRoot
           .querySelector("a.intro-help-link")
           .href.includes("password-manager-remember-delete-edit-logins"),
@@ -68,7 +76,7 @@ add_task(async function test_no_logins_class() {
 
       loginIntro.updateState(Cu.cloneInto({ loggedIn: true }, content));
 
-      is(
+      Assert.equal(
         content.document.l10n.getAttributes(
           loginIntro.shadowRoot.querySelector(".heading")
         ).id,
@@ -81,7 +89,7 @@ add_task(async function test_no_logins_class() {
       )
         ? ".intro-import-text.file-import"
         : ".intro-import-text.no-file-import";
-      is(
+      Assert.equal(
         ContentTaskUtils.is_hidden(
           loginIntro.shadowRoot.querySelector(importClass)
         ),
@@ -100,15 +108,9 @@ add_task(async function test_no_logins_class() {
     // End the test now for Linux since the link is hidden.
     return;
   }
-  await TestUtils.waitForCondition(() => {
-    let win = Services.wm.getMostRecentWindow("Browser:MigrationWizard");
-    return win && win.document && win.document.readyState == "complete";
-  }, "Migrator window loaded");
-  let migratorWindow = Services.wm.getMostRecentWindow(
-    "Browser:MigrationWizard"
-  );
-  ok(migratorWindow, "Migrator window opened");
-  await BrowserTestUtils.closeWindow(migratorWindow);
+  let wizardTab = await wizardPromise;
+  Assert.ok(wizardTab, "Migrator wizard tab opened");
+  await BrowserTestUtils.removeTab(wizardTab);
 });
 
 add_task(
@@ -117,24 +119,27 @@ add_task(
       let loginList = content.document.querySelector("login-list");
       let loginItem = content.document.querySelector("login-item");
       let loginIntro = content.document.querySelector("login-intro");
-      ok(
+      Assert.ok(
         loginList.classList.contains("empty-search"),
         "login-list should be showing no logins view from a search with no results"
       );
-      ok(
+      Assert.ok(
         loginList.classList.contains("no-logins"),
         "login-list should be showing no logins view since there are no saved logins"
       );
-      ok(
+      Assert.ok(
         !loginList.classList.contains("create-login-selected"),
         "login-list should not be in create-login-selected mode"
       );
-      ok(
+      Assert.ok(
         loginItem.classList.contains("no-logins"),
         "login-item should be marked as having no-logins"
       );
-      ok(ContentTaskUtils.is_hidden(loginItem), "login-item should be hidden");
-      ok(
+      Assert.ok(
+        ContentTaskUtils.is_hidden(loginItem),
+        "login-item should be hidden"
+      );
+      Assert.ok(
         !ContentTaskUtils.is_hidden(loginIntro),
         "login-intro should be visible"
       );
@@ -152,39 +157,39 @@ add_task(
         await ContentTaskUtils.waitForCondition(() => {
           return !loginList.classList.contains("no-logins");
         }, "waiting for login-list to leave the no-logins view");
-        ok(
+        Assert.ok(
           !loginList.classList.contains("empty-search"),
           "login-list should not be showing no logins view since one login exists"
         );
-        ok(
+        Assert.ok(
           !loginList.classList.contains("no-logins"),
           "login-list should not be showing no logins view since one login exists"
         );
-        ok(
+        Assert.ok(
           !loginList.classList.contains("create-login-selected"),
           "login-list should not be in create-login-selected mode"
         );
-        is(
+        Assert.equal(
           loginList.shadowRoot.querySelector(
-            ".login-list-item.selected[data-guid]"
+            "login-list-item.selected[data-guid]"
           ).dataset.guid,
           testLogin1Guid,
           "the login that was just added should be selected"
         );
-        ok(
+        Assert.ok(
           !loginItem.classList.contains("no-logins"),
           "login-item should not be marked as having no-logins"
         );
-        is(
+        Assert.equal(
           Cu.waiveXrays(loginItem)._login.guid,
           testLogin1Guid,
           "the login-item should have the newly added login selected"
         );
-        ok(
+        Assert.ok(
           !ContentTaskUtils.is_hidden(loginItem),
           "login-item should be visible"
         );
-        ok(
+        Assert.ok(
           ContentTaskUtils.is_hidden(loginIntro),
           "login-intro should be hidden"
         );

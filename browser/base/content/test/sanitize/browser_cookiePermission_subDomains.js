@@ -1,8 +1,23 @@
-const { Sanitizer } = ChromeUtils.import("resource:///modules/Sanitizer.jsm");
-const { SiteDataTestUtils } = ChromeUtils.import(
-  "resource://testing-common/SiteDataTestUtils.jsm"
+const { SiteDataTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/SiteDataTestUtils.sys.mjs"
 );
 
+add_setup(async function () {
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["privacy.sanitize.sanitizeOnShutdown", true],
+      ["privacy.clearOnShutdown.cookies", true],
+      ["privacy.clearOnShutdown.offlineApps", true],
+      ["privacy.clearOnShutdown.cache", false],
+      ["privacy.clearOnShutdown.sessions", false],
+      ["privacy.clearOnShutdown.history", false],
+      ["privacy.clearOnShutdown.formdata", false],
+      ["privacy.clearOnShutdown.downloads", false],
+      ["privacy.clearOnShutdown.siteSettings", false],
+      ["browser.sanitizer.loglevel", "All"],
+    ],
+  });
+});
 // 2 domains: www.mozilla.org (session-only) mozilla.org (allowed) - after the
 // cleanp, mozilla.org must have data.
 add_task(async function subDomains1() {
@@ -11,13 +26,6 @@ add_task(async function subDomains1() {
   // Let's clean up all the data.
   await new Promise(resolve => {
     Services.clearData.deleteData(Ci.nsIClearDataService.CLEAR_ALL, resolve);
-  });
-
-  await SpecialPowers.pushPrefEnv({
-    set: [
-      ["network.cookie.lifetimePolicy", Ci.nsICookieService.ACCEPT_NORMALLY],
-      ["browser.sanitizer.loglevel", "All"],
-    ],
   });
 
   // Domains and data
@@ -86,13 +94,6 @@ add_task(async function subDomains2() {
     Services.clearData.deleteData(Ci.nsIClearDataService.CLEAR_ALL, resolve);
   });
 
-  await SpecialPowers.pushPrefEnv({
-    set: [
-      ["network.cookie.lifetimePolicy", Ci.nsICookieService.ACCEPT_SESSION],
-      ["browser.sanitizer.loglevel", "All"],
-    ],
-  });
-
   // Domains and data
   let originA = "https://sub.mozilla.org";
   PermissionTestUtils.add(
@@ -156,13 +157,6 @@ add_task(async function subDomains3() {
     Services.clearData.deleteData(Ci.nsIClearDataService.CLEAR_ALL, resolve);
   });
 
-  await SpecialPowers.pushPrefEnv({
-    set: [
-      ["network.cookie.lifetimePolicy", Ci.nsICookieService.ACCEPT_SESSION],
-      ["browser.sanitizer.loglevel", "All"],
-    ],
-  });
-
   // Domains and data
   let originA = "https://sub.mozilla.org";
   PermissionTestUtils.add(
@@ -219,6 +213,76 @@ add_task(async function subDomains3() {
   ok(
     !(await SiteDataTestUtils.hasIndexedDB(originC)),
     "We should not have IDB for " + originC
+  );
+
+  // Cleaning up permissions
+  PermissionTestUtils.remove(originA, "cookie");
+});
+
+// clear on shutdown, 3 domains (sub.sub.mozilla.org, sub.mozilla.org, mozilla.org),
+// only the former has a cookie permission. Both sub.mozilla.org and mozilla.org should
+// be sustained due to Permission of sub.sub.mozilla.org
+add_task(async function subDomains4() {
+  info("Test subdomain cookie permission inheritance with two subdomains");
+
+  // Let's clean up all the data.
+  await new Promise(resolve => {
+    Services.clearData.deleteData(Ci.nsIClearDataService.CLEAR_ALL, resolve);
+  });
+
+  // Domains and data
+  let originA = "https://sub.sub.mozilla.org";
+  PermissionTestUtils.add(
+    originA,
+    "cookie",
+    Ci.nsICookiePermission.ACCESS_ALLOW
+  );
+  SiteDataTestUtils.addToCookies({ origin: originA });
+  await SiteDataTestUtils.addToIndexedDB(originA);
+
+  let originB = "https://sub.mozilla.org";
+  SiteDataTestUtils.addToCookies({ origin: originB });
+  await SiteDataTestUtils.addToIndexedDB(originB);
+
+  let originC = "https://mozilla.org";
+  SiteDataTestUtils.addToCookies({ origin: originC });
+  await SiteDataTestUtils.addToIndexedDB(originC);
+
+  // Check
+  ok(SiteDataTestUtils.hasCookies(originA), "We have cookies for " + originA);
+  ok(
+    await SiteDataTestUtils.hasIndexedDB(originA),
+    "We have IDB for " + originA
+  );
+  ok(SiteDataTestUtils.hasCookies(originB), "We have cookies for " + originB);
+  ok(
+    await SiteDataTestUtils.hasIndexedDB(originB),
+    "We have IDB for " + originB
+  );
+  ok(SiteDataTestUtils.hasCookies(originC), "We have cookies for " + originC);
+  ok(
+    await SiteDataTestUtils.hasIndexedDB(originC),
+    "We have IDB for " + originC
+  );
+
+  // Cleaning up
+  await Sanitizer.runSanitizeOnShutdown();
+
+  // Check again
+  ok(SiteDataTestUtils.hasCookies(originA), "We have cookies for " + originA);
+  ok(
+    await SiteDataTestUtils.hasIndexedDB(originA),
+    "We have IDB for " + originA
+  );
+  ok(SiteDataTestUtils.hasCookies(originB), "We have cookies for " + originB);
+  ok(
+    await SiteDataTestUtils.hasIndexedDB(originB),
+    "We have IDB for " + originB
+  );
+  ok(SiteDataTestUtils.hasCookies(originC), "We have cookies for " + originC);
+  ok(
+    await SiteDataTestUtils.hasIndexedDB(originC),
+    "We have IDB for " + originC
   );
 
   // Cleaning up permissions

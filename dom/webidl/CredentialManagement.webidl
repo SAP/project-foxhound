@@ -4,35 +4,55 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/.
  *
  * The origin of this IDL file is
- * https://www.w3.org/TR/credential-management-1/
+ * https://w3c.github.io/webappsec-credential-management/
+ * and
+ * https://w3c.github.io/webauthn/
+ * and
+ * https://fedidcg.github.io/FedCM/
  */
 
-[Exposed=Window, SecureContext, Pref="security.webauth.webauthn"]
+[Exposed=Window, SecureContext]
 interface Credential {
   readonly attribute USVString id;
   readonly attribute DOMString type;
 };
 
-[Exposed=Window, SecureContext, Pref="security.webauth.webauthn"]
+[Exposed=Window, SecureContext]
 interface CredentialsContainer {
-  [Throws]
+  [NewObject]
   Promise<Credential?> get(optional CredentialRequestOptions options = {});
-  [Throws]
+  [NewObject]
   Promise<Credential?> create(optional CredentialCreationOptions options = {});
-  [Throws]
+  [NewObject]
   Promise<Credential> store(Credential credential);
-  [Throws]
-  Promise<void> preventSilentAccess();
+  [NewObject]
+  Promise<undefined> preventSilentAccess();
 };
 
 dictionary CredentialRequestOptions {
-  // FIXME: bug 1493860: should this "= {}" be here?
-  PublicKeyCredentialRequestOptions publicKey = {};
+  CredentialMediationRequirement mediation = "optional";
   AbortSignal signal;
+  // This is taken from the partial definition in
+  // https://w3c.github.io/webauthn/#sctn-credentialrequestoptions-extension
+  [Pref="security.webauth.webauthn"]
+  PublicKeyCredentialRequestOptions publicKey;
+  // This is taken from the partial definition in
+  // https://fedidcg.github.io/FedCM/#browser-api-credential-request-options
+  [Pref="dom.security.credentialmanagement.identity.enabled"]
+  IdentityCredentialRequestOptions identity;
+};
+
+enum CredentialMediationRequirement {
+  "silent",
+  "optional",
+  "conditional",
+  "required"
 };
 
 dictionary CredentialCreationOptions {
-  // FIXME: bug 1493860: should this "= {}" be here?
-  PublicKeyCredentialCreationOptions publicKey = {};
+  // This is taken from the partial definition in
+  // https://w3c.github.io/webauthn/#sctn-credentialcreationoptions-extension
+  [Pref="security.webauth.webauthn"]
+  PublicKeyCredentialCreationOptions publicKey;
   AbortSignal signal;
 };

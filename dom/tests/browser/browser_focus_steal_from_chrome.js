@@ -1,58 +1,49 @@
-add_task(async function() {
+add_task(async function () {
   requestLongerTimeout(2);
 
   let testingList = [
     {
-      uri:
-        "data:text/html,<body onload=\"setTimeout(function () { document.getElementById('target').focus(); }, 10);\"><input id='target'></body>",
+      uri: "data:text/html,<body onload=\"setTimeout(function () { document.getElementById('target').focus(); }, 10);\"><input id='target'></body>",
       tagName: "INPUT",
       methodName: "focus",
     },
     {
-      uri:
-        "data:text/html,<body onload=\"setTimeout(function () { document.getElementById('target').select(); }, 10);\"><input id='target'></body>",
+      uri: "data:text/html,<body onload=\"setTimeout(function () { document.getElementById('target').select(); }, 10);\"><input id='target'></body>",
       tagName: "INPUT",
       methodName: "select",
     },
     {
-      uri:
-        "data:text/html,<body onload=\"setTimeout(function () { document.getElementById('target').focus(); }, 10);\"><a href='about:blank' id='target'>anchor</a></body>",
+      uri: "data:text/html,<body onload=\"setTimeout(function () { document.getElementById('target').focus(); }, 10);\"><a href='about:blank' id='target'>anchor</a></body>",
       tagName: "A",
       methodName: "focus",
     },
     {
-      uri:
-        "data:text/html,<body onload=\"setTimeout(function () { document.getElementById('target').focus(); }, 10);\"><button id='target'>button</button></body>",
+      uri: "data:text/html,<body onload=\"setTimeout(function () { document.getElementById('target').focus(); }, 10);\"><button id='target'>button</button></body>",
       tagName: "BUTTON",
       methodName: "focus",
     },
     {
-      uri:
-        "data:text/html,<body onload=\"setTimeout(function () { document.getElementById('target').focus(); }, 10);\"><select id='target'><option>item1</option></select></body>",
+      uri: "data:text/html,<body onload=\"setTimeout(function () { document.getElementById('target').focus(); }, 10);\"><select id='target'><option>item1</option></select></body>",
       tagName: "SELECT",
       methodName: "focus",
     },
     {
-      uri:
-        "data:text/html,<body onload=\"setTimeout(function () { document.getElementById('target').focus(); }, 10);\"><textarea id='target'>textarea</textarea></body>",
+      uri: "data:text/html,<body onload=\"setTimeout(function () { document.getElementById('target').focus(); }, 10);\"><textarea id='target'>textarea</textarea></body>",
       tagName: "TEXTAREA",
       methodName: "focus",
     },
     {
-      uri:
-        "data:text/html,<body onload=\"setTimeout(function () { document.getElementById('target').select(); }, 10);\"><textarea id='target'>textarea</textarea></body>",
+      uri: "data:text/html,<body onload=\"setTimeout(function () { document.getElementById('target').select(); }, 10);\"><textarea id='target'>textarea</textarea></body>",
       tagName: "TEXTAREA",
       methodName: "select",
     },
     {
-      uri:
-        "data:text/html,<body onload=\"setTimeout(function () { document.getElementById('target').focus(); }, 10);\"><label id='target'><input></label></body>",
+      uri: "data:text/html,<body onload=\"setTimeout(function () { document.getElementById('target').focus(); }, 10);\"><label id='target'><input></label></body>",
       tagName: "INPUT",
       methodName: "focus of label element",
     },
     {
-      uri:
-        "data:text/html,<body onload=\"setTimeout(function () { document.getElementById('target').focus(); }, 10);\"><fieldset><legend id='target'>legend</legend><input></fieldset></body>",
+      uri: "data:text/html,<body onload=\"setTimeout(function () { document.getElementById('target').focus(); }, 10);\"><fieldset><legend id='target'>legend</legend><input></fieldset></body>",
       tagName: "INPUT",
       methodName: "focus of legend element",
     },
@@ -70,16 +61,16 @@ add_task(async function() {
     },
   ];
 
-  await BrowserTestUtils.withNewTab("about:blank", async function(bg) {
-    await BrowserTestUtils.withNewTab("about:blank", async function(fg) {
+  await BrowserTestUtils.withNewTab("about:blank", async function (bg) {
+    await BrowserTestUtils.withNewTab("about:blank", async function (fg) {
       for (let test of testingList) {
         // Focus the foreground tab's content
         fg.focus();
 
         // Load the URIs.
-        BrowserTestUtils.loadURI(bg, test.uri);
+        BrowserTestUtils.startLoadingURIString(bg, test.uri);
         await BrowserTestUtils.browserLoaded(bg);
-        BrowserTestUtils.loadURI(fg, test.uri);
+        BrowserTestUtils.startLoadingURIString(fg, test.uri);
         await BrowserTestUtils.browserLoaded(fg);
 
         ok(true, "Test1: Both of the tabs are loaded");
@@ -146,15 +137,15 @@ add_task(async function() {
         let originalFocus = Services.focus.focusedElement;
 
         // Load about:blank just to make sure that everything works nicely
-        BrowserTestUtils.loadURI(bg, "about:blank");
+        BrowserTestUtils.startLoadingURIString(bg, "about:blank");
         await BrowserTestUtils.browserLoaded(bg);
-        BrowserTestUtils.loadURI(fg, "about:blank");
+        BrowserTestUtils.startLoadingURIString(fg, "about:blank");
         await BrowserTestUtils.browserLoaded(fg);
 
         // Load the URIs.
-        BrowserTestUtils.loadURI(bg, test.uri);
+        BrowserTestUtils.startLoadingURIString(bg, test.uri);
         await BrowserTestUtils.browserLoaded(bg);
-        BrowserTestUtils.loadURI(fg, test.uri);
+        BrowserTestUtils.startLoadingURIString(fg, test.uri);
         await BrowserTestUtils.browserLoaded(fg);
 
         ok(true, "Test2: Both of the tabs are loaded");

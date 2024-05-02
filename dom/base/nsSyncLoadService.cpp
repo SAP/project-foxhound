@@ -110,7 +110,8 @@ nsForceXMLListener::OnStopRequest(nsIRequest* aRequest, nsresult aStatusCode) {
 
 nsSyncLoader::~nsSyncLoader() {
   if (mLoading && mChannel) {
-    mChannel->Cancel(NS_BINDING_ABORTED);
+    mChannel->CancelWithReason(NS_BINDING_ABORTED,
+                               "nsSyncLoader::~nsSyncLoader"_ns);
   }
 }
 
@@ -158,7 +159,7 @@ nsresult nsSyncLoader::LoadDocument(nsIChannel* aChannel, bool aChannelIsSync,
 
   // Create document
   nsCOMPtr<Document> document;
-  rv = NS_NewXMLDocument(getter_AddRefs(document));
+  rv = NS_NewXMLDocument(getter_AddRefs(document), nullptr, nullptr);
   NS_ENSURE_SUCCESS(rv, rv);
 
   // Start the document load. Do this before we attach the load listener
@@ -345,9 +346,8 @@ nsresult nsSyncLoadService::PushSyncStreamToListener(
 
       if (readCount > UINT32_MAX) readCount = UINT32_MAX;
 
-      rv = aListener->OnDataAvailable(
-          aChannel, in, (uint32_t)std::min(sourceOffset, (uint64_t)UINT32_MAX),
-          (uint32_t)readCount);
+      rv = aListener->OnDataAvailable(aChannel, in, sourceOffset,
+                                      (uint32_t)readCount);
       if (NS_FAILED(rv)) {
         break;
       }

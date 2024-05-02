@@ -2,7 +2,7 @@
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
 /**
- * Tests that the default nsILoginManagerStorage module attached to the Login
+ * Tests that the default storage module attached to the Login
  * Manager service is able to save and reload nsILoginInfo properties correctly,
  * even when they include special characters.
  */
@@ -13,7 +13,7 @@
 
 async function reloadAndCheckLoginsGen(aExpectedLogins) {
   await LoginTestUtils.reloadData();
-  LoginTestUtils.checkLogins(aExpectedLogins);
+  await LoginTestUtils.checkLogins(aExpectedLogins);
   LoginTestUtils.clearData();
 }
 
@@ -34,14 +34,14 @@ add_task(async function test_storage_addLogin_nonascii() {
     usernameField: "field_" + String.fromCharCode(533, 537, 7570, 345),
     passwordField: "field_" + String.fromCharCode(421, 259, 349, 537),
   });
-  Services.logins.addLogin(loginInfo);
+  await Services.logins.addLoginAsync(loginInfo);
   await reloadAndCheckLoginsGen([loginInfo]);
 
   // Store the string "test" using similarly looking glyphs.
   loginInfo = TestData.authLogin({
     httpRealm: String.fromCharCode(355, 277, 349, 357),
   });
-  Services.logins.addLogin(loginInfo);
+  await Services.logins.addLoginAsync(loginInfo);
   await reloadAndCheckLoginsGen([loginInfo]);
 });
 
@@ -53,7 +53,7 @@ add_task(async function test_storage_addLogin_newlines() {
     username: "user\r\nname",
     password: "password\r\n",
   });
-  Services.logins.addLogin(loginInfo);
+  await Services.logins.addLoginAsync(loginInfo);
   await reloadAndCheckLoginsGen([loginInfo]);
 });
 
@@ -64,11 +64,11 @@ add_task(async function test_storage_addLogin_newlines() {
  */
 add_task(async function test_storage_addLogin_dot() {
   let loginInfo = TestData.formLogin({ origin: ".", passwordField: "." });
-  Services.logins.addLogin(loginInfo);
+  await Services.logins.addLoginAsync(loginInfo);
   await reloadAndCheckLoginsGen([loginInfo]);
 
   loginInfo = TestData.authLogin({ httpRealm: "." });
-  Services.logins.addLogin(loginInfo);
+  await Services.logins.addLoginAsync(loginInfo);
   await reloadAndCheckLoginsGen([loginInfo]);
 });
 
@@ -88,8 +88,6 @@ add_task(async function test_storage_addLogin_parentheses() {
     TestData.authLogin({ origin: "http://parens(example).example.com" }),
     TestData.authLogin({ origin: "http://parens)example(.example.com" }),
   ];
-  for (let loginInfo of loginList) {
-    Services.logins.addLogin(loginInfo);
-  }
+  await Services.logins.addLogins(loginList);
   await reloadAndCheckLoginsGen(loginList);
 });

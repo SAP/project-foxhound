@@ -9,11 +9,14 @@
 #include "nsHttp.h"
 #include "nsISupports.h"
 #include "nsAHttpTransaction.h"
+#include "Http3WebTransportSession.h"
 #include "HttpTrafficAnalyzer.h"
+#include "nsIRequest.h"
 
-class nsISocketTransport;
 class nsIAsyncInputStream;
 class nsIAsyncOutputStream;
+class nsISocketTransport;
+class nsITLSSocketControl;
 
 namespace mozilla {
 namespace net {
@@ -105,8 +108,11 @@ class nsAHttpConnection : public nsISupports {
                                                nsIAsyncInputStream**,
                                                nsIAsyncOutputStream**) = 0;
 
-  // called by a transaction to get the security info from the socket.
-  virtual void GetSecurityInfo(nsISupports**) = 0;
+  [[nodiscard]] virtual Http3WebTransportSession* GetWebTransportSession(
+      nsAHttpTransaction* aTransaction) = 0;
+
+  // called by a transaction to get the TLS socket control from the socket.
+  virtual void GetTLSSocketControl(nsITLSSocketControl**) = 0;
 
   // called by a transaction to determine whether or not the connection is
   // persistent... important in determining the end of a response.
@@ -154,7 +160,7 @@ class nsAHttpConnection : public nsISupports {
   virtual HttpVersion Version() = 0;
 
   // A notification of the current active tab id change.
-  virtual void TopBrowsingContextIdChanged(uint64_t id) = 0;
+  virtual void CurrentBrowserIdChanged(uint64_t id) = 0;
 
   // categories set by nsHttpTransaction to identify how this connection is
   // being used.
@@ -163,7 +169,11 @@ class nsAHttpConnection : public nsISupports {
   virtual nsresult GetSelfAddr(NetAddr* addr) = 0;
   virtual nsresult GetPeerAddr(NetAddr* addr) = 0;
   virtual bool ResolvedByTRR() = 0;
+  virtual nsIRequest::TRRMode EffectiveTRRMode() = 0;
+  virtual nsITRRSkipReason::value TRRSkipReason() = 0;
   virtual bool GetEchConfigUsed() = 0;
+  virtual PRIntervalTime LastWriteTime() = 0;
+  virtual void SetCloseReason(ConnectionCloseReason aReason) = 0;
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(nsAHttpConnection, NS_AHTTPCONNECTION_IID)
@@ -176,13 +186,15 @@ NS_DEFINE_STATIC_IID_ACCESSOR(nsAHttpConnection, NS_AHTTPCONNECTION_IID)
   [[nodiscard]] nsresult TakeTransport(                                      \
       nsISocketTransport**, nsIAsyncInputStream**, nsIAsyncOutputStream**)   \
       override;                                                              \
+  [[nodiscard]] Http3WebTransportSession* GetWebTransportSession(            \
+      nsAHttpTransaction* aTransaction) override;                            \
   bool IsPersistent() override;                                              \
   bool IsReused() override;                                                  \
   void DontReuse() override;                                                 \
   [[nodiscard]] nsresult PushBack(const char*, uint32_t) override;           \
   already_AddRefed<HttpConnectionBase> TakeHttpConnection() override;        \
   already_AddRefed<HttpConnectionBase> HttpConnection() override;            \
-  void TopBrowsingContextIdChanged(uint64_t id) override;                    \
+  void CurrentBrowserIdChanged(uint64_t id) override;                        \
   /*                                                                         \
      Thes methods below have automatic definitions that just forward the     \
      function to a lower level connection object                             \
@@ -194,12 +206,12 @@ NS_DEFINE_STATIC_IID_ACCESSOR(nsAHttpConnection, NS_AHTTPCONNECTION_IID)
     }                                                                        \
     return (fwdObject)->GetConnectionInfo(result);                           \
   }                                                                          \
-  void GetSecurityInfo(nsISupports** result) override {                      \
+  void GetTLSSocketControl(nsITLSSocketControl** result) override {          \
     if (!(fwdObject)) {                                                      \
       *result = nullptr;                                                     \
       return;                                                                \
     }                                                                        \
-    return (fwdObject)->GetSecurityInfo(result);                             \
+    return (fwdObject)->GetTLSSocketControl(result);                         \
   }                                                                          \
   [[nodiscard]] nsresult ResumeSend() override {                             \
     if (!(fwdObject)) return NS_ERROR_FAILURE;                               \
@@ -255,9 +267,21 @@ NS_DEFINE_STATIC_IID_ACCESSOR(nsAHttpConnection, NS_AHTTPCONNECTION_IID)
   bool ResolvedByTRR() override {                                            \
     return (!(fwdObject)) ? false : (fwdObject)->ResolvedByTRR();            \
   }                                                                          \
+  nsIRequest::TRRMode EffectiveTRRMode() override {                          \
+    return (!(fwdObject)) ? nsIRequest::TRR_DEFAULT_MODE                     \
+                          : (fwdObject)->EffectiveTRRMode();                 \
+  }                                                                          \
+  nsITRRSkipReason::value TRRSkipReason() override {                         \
+    return (!(fwdObject)) ? nsITRRSkipReason::TRR_UNSET                      \
+                          : (fwdObject)->TRRSkipReason();                    \
+  }                                                                          \
   bool GetEchConfigUsed() override {                                         \
     return (!(fwdObject)) ? false : (fwdObject)->GetEchConfigUsed();         \
-  }
+  }                                                                          \
+  void SetCloseReason(ConnectionCloseReason aReason) override {              \
+    if (fwdObject) (fwdObject)->SetCloseReason(aReason);                     \
+  }                                                                          \
+  PRIntervalTime LastWriteTime() override;
 
 // ThrottleResponse deliberately ommited since we want different implementation
 // for h1 and h2 connections.

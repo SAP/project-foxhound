@@ -5,13 +5,14 @@ import sys
 
 def main():
     if len(sys.argv) < 2:
-        raise Exception('Specify either "asan", "msan", "sancov" or "ubsan" as argument.')
+        raise Exception('Specify either "asan", "fuzzer", "msan", "sancov", "sourcecov" or "ubsan" as argument.')
 
     sanitizer = sys.argv[1]
     if sanitizer == "ubsan":
         if len(sys.argv) < 3:
             raise Exception('ubsan requires another argument.')
-        print('-fsanitize='+sys.argv[2]+' -fno-sanitize-recover=undefined ', end='')
+        print('-fsanitize='+sys.argv[2]+' -fno-sanitize-recover='+sys.argv[2] + ' ', end='')
+        print('-fno-sanitize=nonnull-attribute -fno-sanitize=enum ', end='')
         return
     if sanitizer == "asan":
         print('-fsanitize=address -fsanitize-address-use-after-scope ', end='')
@@ -26,8 +27,14 @@ def main():
             raise Exception('sancov requires another argument (edge|bb|func).')
         print('-fsanitize-coverage='+sys.argv[2]+' ', end='')
         return
+    if sanitizer == "sourcecov":
+        print('-fprofile-instr-generate -fcoverage-mapping', end='')
+        return
+    if sanitizer == "fuzzer":
+        print('-fsanitize=fuzzer-no-link ', end='')
+        return
 
-    raise Exception('Specify either "asan", "msan", "sancov" or "ubsan" as argument.')
+    raise Exception('Specify either "asan", "fuzzer", "msan", "sancov", "sourcecov" or "ubsan" as argument.')
 
 if __name__ == '__main__':
     main()

@@ -21,47 +21,46 @@ function checkPopup(autoCompletePopup) {
 }
 
 add_task(async function setup_storage() {
-  await saveAddress(TEST_ADDRESS_1);
-  await saveAddress(TEST_ADDRESS_2);
-  await saveAddress(TEST_ADDRESS_3);
+  await setStorage(TEST_ADDRESS_1, TEST_ADDRESS_2, TEST_ADDRESS_3);
 });
 
 add_task(async function test_back_forward() {
-  await BrowserTestUtils.withNewTab({ gBrowser, url: URL }, async function(
-    browser
-  ) {
-    const { autoCompletePopup } = browser;
+  await BrowserTestUtils.withNewTab(
+    { gBrowser, url: URL },
+    async function (browser) {
+      const { autoCompletePopup } = browser;
 
-    // Check the page after the initial load
-    await openPopupOn(browser, "#street-address");
-    checkPopup(autoCompletePopup);
+      // Check the page after the initial load
+      await openPopupOn(browser, "#street-address");
+      checkPopup(autoCompletePopup);
 
-    // Now navigate forward and make sure autofill autocomplete results are still attached
-    let loadPromise = BrowserTestUtils.browserLoaded(browser);
-    BrowserTestUtils.loadURI(browser, `${URL}?load=2`);
-    info("expecting browser loaded");
-    await loadPromise;
+      // Now navigate forward and make sure autofill autocomplete results are still attached
+      let loadPromise = BrowserTestUtils.browserLoaded(browser);
+      BrowserTestUtils.startLoadingURIString(browser, `${URL}?load=2`);
+      info("expecting browser loaded");
+      await loadPromise;
 
-    // Check the second page
-    await openPopupOn(browser, "#street-address");
-    checkPopup(autoCompletePopup);
+      // Check the second page
+      await openPopupOn(browser, "#street-address");
+      checkPopup(autoCompletePopup);
 
-    // Check after hitting back to the first page
-    let stoppedPromise = BrowserTestUtils.browserStopped(browser);
-    browser.goBack();
-    info("expecting browser stopped");
-    await stoppedPromise;
-    await openPopupOn(browser, "#street-address");
-    checkPopup(autoCompletePopup);
+      // Check after hitting back to the first page
+      let stoppedPromise = BrowserTestUtils.browserStopped(browser);
+      browser.goBack();
+      info("expecting browser stopped");
+      await stoppedPromise;
+      await openPopupOn(browser, "#street-address");
+      checkPopup(autoCompletePopup);
 
-    // Check after hitting forward to the second page
-    stoppedPromise = BrowserTestUtils.browserStopped(browser);
-    browser.goForward();
-    info("expecting browser stopped");
-    await stoppedPromise;
-    await openPopupOn(browser, "#street-address");
-    checkPopup(autoCompletePopup);
+      // Check after hitting forward to the second page
+      stoppedPromise = BrowserTestUtils.browserStopped(browser);
+      browser.goForward();
+      info("expecting browser stopped");
+      await stoppedPromise;
+      await openPopupOn(browser, "#street-address");
+      checkPopup(autoCompletePopup);
 
-    await closePopup(browser);
-  });
+      await closePopup(browser);
+    }
+  );
 });

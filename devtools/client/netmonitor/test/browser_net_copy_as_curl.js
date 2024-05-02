@@ -9,7 +9,7 @@
 
 const POST_PAYLOAD = "Plaintext value as a payload";
 
-add_task(async function() {
+add_task(async function () {
   const { tab, monitor } = await initNetMonitor(HTTPS_CURL_URL, {
     requestCount: 1,
   });
@@ -128,11 +128,13 @@ async function testForPlatform(tab, monitor, testData) {
 
   // Unfinished request (bug#1378464, bug#1420513)
   const waitSlow = waitForNetworkEvents(monitor, 0);
-  await SpecialPowers.spawn(tab.linkedBrowser, [HTTPS_SLOW_SJS], async function(
-    url
-  ) {
-    content.wrappedJSObject.performRequest(url, "GET", null);
-  });
+  await SpecialPowers.spawn(
+    tab.linkedBrowser,
+    [HTTPS_SLOW_SJS],
+    async function (url) {
+      content.wrappedJSObject.performRequest(url, "GET", null);
+    }
+  );
   await waitSlow;
   for (const test of testData) {
     await testClipboardContent(test.menuItemId, [
@@ -176,7 +178,7 @@ async function testForPlatform(tab, monitor, testData) {
           payload_: payload,
         },
       ],
-      async function({ url, method_, payload_ }) {
+      async function ({ url, method_, payload_ }) {
         content.wrappedJSObject.performRequest(url, method_, payload_);
       }
     );
@@ -195,16 +197,15 @@ async function testForPlatform(tab, monitor, testData) {
     );
 
     /* Ensure that the copy as cURL option is always visible */
-    const copyUrlParamsNode = getContextMenuItem(monitor, menuItemId);
     is(
-      !!copyUrlParamsNode,
+      !!getContextMenuItem(monitor, menuItemId),
       true,
       `The "Copy as cURL" context menu item "${menuItemId}" should not be hidden.`
     );
 
     await waitForClipboardPromise(
-      function setup() {
-        copyUrlParamsNode.click();
+      async function setup() {
+        await selectContextMenuItem(monitor, menuItemId);
       },
       function validate(result) {
         if (typeof result !== "string") {

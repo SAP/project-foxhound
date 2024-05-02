@@ -1,5 +1,3 @@
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-
 function createSandbox() {
   const uri = Services.io.newURI("https://example.com");
   const principal = Services.scriptSecurityManager.createContentPrincipal(
@@ -116,7 +114,7 @@ add_task(async function testThenableJob() {
   const p = new Promise(resolve => {
     // Create a bound function where its realm is privileged realm, and
     // its target is from sandbox realm.
-    sandbox.then = function(onFulfilled, onRejected) {
+    sandbox.then = function (onFulfilled, onRejected) {
       resolve(10);
     };
   });
@@ -140,7 +138,7 @@ add_task(async function testThenableJobNuked() {
   const sandbox = createSandbox();
 
   let called = false;
-  sandbox.then = function(onFulfilled, onRejected) {
+  sandbox.then = function (onFulfilled, onRejected) {
     called = true;
   };
 

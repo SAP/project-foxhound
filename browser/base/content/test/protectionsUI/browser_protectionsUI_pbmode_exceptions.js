@@ -6,13 +6,14 @@
 
 const TP_PB_PREF = "privacy.trackingprotection.enabled";
 const TRACKING_PAGE =
+  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
   "http://tracking.example.org/browser/browser/base/content/test/protectionsUI/trackingPage.html";
 const DTSCBN_PREF = "dom.testing.sync-content-blocking-notifications";
 var TrackingProtection = null;
 var gProtectionsHandler = null;
 var browser = null;
 
-registerCleanupFunction(function() {
+registerCleanupFunction(function () {
   Services.prefs.clearUserPref(TP_PB_PREF);
   Services.prefs.clearUserPref(DTSCBN_PREF);
   gProtectionsHandler = TrackingProtection = browser = null;
@@ -52,8 +53,10 @@ function testTrackingPage() {
     "icon box shows no exception"
   );
   is(
-    gProtectionsHandler._trackingProtectionIconTooltipLabel.textContent,
-    gNavigatorBundle.getString("trackingProtection.icon.activeTooltip2"),
+    gProtectionsHandler._trackingProtectionIconTooltipLabel.getAttribute(
+      "data-l10n-id"
+    ),
+    "tracking-protection-icon-active",
     "correct tooltip"
   );
 }
@@ -69,8 +72,10 @@ function testTrackingPageUnblocked() {
     "shield shows exception"
   );
   is(
-    gProtectionsHandler._trackingProtectionIconTooltipLabel.textContent,
-    gNavigatorBundle.getString("trackingProtection.icon.disabledTooltip2"),
+    gProtectionsHandler._trackingProtectionIconTooltipLabel.getAttribute(
+      "data-l10n-id"
+    ),
+    "tracking-protection-icon-disabled",
     "correct tooltip"
   );
 

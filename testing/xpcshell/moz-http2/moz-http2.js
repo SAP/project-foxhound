@@ -16,11 +16,10 @@ var fs = require("fs");
 var url = require("url");
 var crypto = require("crypto");
 const dnsPacket = require(`${node_http2_root}/../dns-packet`);
-const ip = require(`${node_http2_root}/../node-ip`);
+const ip = require(`${node_http2_root}/../node_ip`);
 const { fork } = require("child_process");
 const path = require("path");
 const zlib = require("zlib");
-const odoh = require(`${node_http2_root}/../odoh-wasm/pkg`);
 
 // Hook into the decompression code to log the decompressed name-value pairs
 var compression_module = node_http2_root + "/lib/protocol/compressor";
@@ -29,7 +28,7 @@ var HeaderSetDecompressor = http2_compression.HeaderSetDecompressor;
 var originalRead = HeaderSetDecompressor.prototype.read;
 var lastDecompressor;
 var decompressedPairs;
-HeaderSetDecompressor.prototype.read = function() {
+HeaderSetDecompressor.prototype.read = function () {
   if (this != lastDecompressor) {
     lastDecompressor = this;
     decompressedPairs = [];
@@ -45,7 +44,7 @@ var connection_module = node_http2_root + "/lib/protocol/connection";
 var http2_connection = require(connection_module);
 var Connection = http2_connection.Connection;
 var originalClose = Connection.prototype.close;
-Connection.prototype.close = function(error, lastId) {
+Connection.prototype.close = function (error, lastId) {
   if (lastId !== undefined) {
     this._lastIncomingStream = lastId;
   }
@@ -57,7 +56,7 @@ var framer_module = node_http2_root + "/lib/protocol/framer";
 var http2_framer = require(framer_module);
 var Serializer = http2_framer.Serializer;
 var originalTransform = Serializer.prototype._transform;
-var newTransform = function(frame, encoding, done) {
+var newTransform = function (frame, encoding, done) {
   if (frame.type == "DATA") {
     // Insert our empty DATA frame
     const emptyFrame = {};
@@ -135,18 +134,38 @@ var m = {
   },
 };
 
-var runlater = function() {};
+var runlater = function () {};
 runlater.prototype = {
   req: null,
   resp: null,
+  fin: true,
 
   onTimeout: function onTimeout() {
     this.resp.writeHead(200);
-    this.resp.end("It's all good 750ms.");
+    if (this.fin) {
+      this.resp.end("It's all good 750ms.");
+    }
   },
 };
 
-var moreData = function() {};
+var runConnectLater = function () {};
+runConnectLater.prototype = {
+  req: null,
+  resp: null,
+  connect: false,
+
+  onTimeout: function onTimeout() {
+    if (this.connect) {
+      this.resp.writeHead(200);
+      this.connect = true;
+      setTimeout(executeRunLaterCatchError, 50, this);
+    } else {
+      this.resp.end("HTTP/1.1 200\n\r\n\r");
+    }
+  },
+};
+
+var moreData = function () {};
 moreData.prototype = {
   req: null,
   resp: null,
@@ -169,63 +188,8 @@ function executeRunLater(arg) {
   arg.onTimeout();
 }
 
-var Compressor = http2_compression.Compressor;
-var HeaderSetCompressor = http2_compression.HeaderSetCompressor;
-var originalCompressHeaders = Compressor.prototype.compress;
-
-function insertSoftIllegalHpack(headers) {
-  var originalCompressed = originalCompressHeaders.apply(this, headers);
-  var illegalLiteral = Buffer.from([
-    0x00, // Literal, no index
-    0x08, // Name: not huffman encoded, 8 bytes long
-    0x3a,
-    0x69,
-    0x6c,
-    0x6c,
-    0x65,
-    0x67,
-    0x61,
-    0x6c, // :illegal
-    0x10, // Value: not huffman encoded, 16 bytes long
-    // REALLY NOT LEGAL
-    0x52,
-    0x45,
-    0x41,
-    0x4c,
-    0x4c,
-    0x59,
-    0x20,
-    0x4e,
-    0x4f,
-    0x54,
-    0x20,
-    0x4c,
-    0x45,
-    0x47,
-    0x41,
-    0x4c,
-  ]);
-  var newBufferLength = originalCompressed.length + illegalLiteral.length;
-  var concatenated = Buffer.alloc(newBufferLength);
-  originalCompressed.copy(concatenated, 0);
-  illegalLiteral.copy(concatenated, originalCompressed.length);
-  return concatenated;
-}
-
-function insertHardIllegalHpack(headers) {
-  var originalCompressed = originalCompressHeaders.apply(this, headers);
-  // Now we have to add an invalid header
-  var illegalIndexed = HeaderSetCompressor.integer(5000, 7);
-  // The above returns an array of buffers, but there's only one buffer, so
-  // get rid of the array.
-  illegalIndexed = illegalIndexed[0];
-  // Set the first bit to 1 to signal this is an indexed representation
-  illegalIndexed[0] |= 0x80;
-  var newBufferLength = originalCompressed.length + illegalIndexed.length;
-  var concatenated = Buffer.alloc(newBufferLength);
-  originalCompressed.copy(concatenated, 0);
-  illegalIndexed.copy(concatenated, originalCompressed.length);
-  return concatenated;
+function executeRunLaterCatchError(arg) {
+  arg.onTimeout();
 }
 
 var h11required_conn = null;
@@ -236,14 +200,14 @@ var illegalheader_conn = null;
 
 var gDoHPortsLog = [];
 var gDoHNewConnLog = {};
+var gDoHRequestCount = 0;
 
 // eslint-disable-next-line complexity
 function handleRequest(req, res) {
-  // We do this first to ensure nothing goes wonky in our tests that don't want
-  // the headers to have something illegal in them
-  Compressor.prototype.compress = originalCompressHeaders;
-
-  var u = url.parse(req.url, true);
+  var u = "";
+  if (req.url != undefined) {
+    u = url.parse(req.url, true);
+  }
   var content = getHttpContent(u.pathname);
   var push, push1, push1a, push2, push3;
 
@@ -316,28 +280,28 @@ function handleRequest(req, res) {
 
     rContent = Buffer.from(
       "0000" +
-      "0100" +
-      "0001" + // QDCOUNT
-      "0002" + // ANCOUNT
-      "00000000" + // NSCOUNT + ARCOUNT
-      "07636E616D652d61" + // cname-a
-      "076578616D706C6503636F6D00" + // .example.com
-      "00010001" + // question type (A) + question class (IN)
-      // answer record 1
-      "C00C" + // name pointer to cname-a.example.com
-      "0005" + // type (CNAME)
-      "0001" + // class
-      "00000037" + // TTL
-      "0012" + // RDLENGTH
-      "0468657265" + // here
-      "076578616D706C6503636F6D00" + // .example.com
-      // answer record 2, the A entry for the CNAME above
-      "0468657265" + // here
-      "076578616D706C6503636F6D00" + // .example.com
-      "0001" + // type (A)
-      "0001" + // class
-      "00000037" + // TTL
-      "0004" + // RDLENGTH
+        "0100" +
+        "0001" + // QDCOUNT
+        "0002" + // ANCOUNT
+        "00000000" + // NSCOUNT + ARCOUNT
+        "07636E616D652d61" + // cname-a
+        "076578616D706C6503636F6D00" + // .example.com
+        "00010001" + // question type (A) + question class (IN)
+        // answer record 1
+        "C00C" + // name pointer to cname-a.example.com
+        "0005" + // type (CNAME)
+        "0001" + // class
+        "00000037" + // TTL
+        "0012" + // RDLENGTH
+        "0468657265" + // here
+        "076578616D706C6503636F6D00" + // .example.com
+        // answer record 2, the A entry for the CNAME above
+        "0468657265" + // here
+        "076578616D706C6503636F6D00" + // .example.com
+        "0001" + // type (A)
+        "0001" + // class
+        "00000037" + // TTL
+        "0004" + // RDLENGTH
         "09080706", // IPv4 address
       "hex"
     );
@@ -347,7 +311,7 @@ function handleRequest(req, res) {
 
   function responseType(packet, responseIP) {
     if (
-      packet.questions.length > 0 &&
+      !!packet.questions.length &&
       packet.questions[0].name == "confirm.example.com" &&
       packet.questions[0].type == "NS"
     ) {
@@ -378,27 +342,32 @@ function handleRequest(req, res) {
 
   function createDNSAnswer(response, packet, responseIP, requestPayload) {
     // This shuts down the connection so we can test if the client reconnects
-    if (
-      packet.questions.length > 0 &&
-      packet.questions[0].name == "closeme.com"
-    ) {
+    if (packet.questions.length && packet.questions[0].name == "closeme.com") {
       response.stream.connection.close("INTERNAL_ERROR", response.stream.id);
       return null;
     }
 
-    if (
-      packet.questions.length > 0 &&
-      packet.questions[0].name.endsWith(".pd")
-    ) {
+    let answers = [];
+    if (packet.questions.length && packet.questions[0].name.endsWith(".pd")) {
       // Bug 1543811: test edns padding extension. Return whether padding was
       // included via the first half of the ip address (1.1 vs 2.2) and the
       // size of the request in the second half of the ip address allowing to
       // verify that the correct amount of padding was added.
       if (
-        packet.additionals.length > 0 &&
+        !!packet.additionals.length &&
         packet.additionals[0].type == "OPT" &&
         packet.additionals[0].options.some(o => o.type === "PADDING")
       ) {
+        // add padding to the response, because the client must be able ignore it
+        answers.push({
+          name: ".",
+          type: "PADDING",
+          data: Buffer.from(
+            // PADDING_PADDING_PADDING
+            "50414444494e475f50414444494e475f50414444494e47",
+            "hex"
+          ),
+        });
         responseIP =
           "1.1." +
           ((requestPayload.length >> 8) & 0xff) +
@@ -417,12 +386,19 @@ function handleRequest(req, res) {
       // DNS response header is 12 bytes, we check for this minimum length
       // at the start of decoding so this is the simplest way to force
       // a decode error.
-      return "<12bytes";
+      return "\xFF\xFF\xFF\xFF";
+    }
+
+    // Because we send two TRR requests (A and AAAA), skip the first two
+    // requests when testing retry.
+    if (u.query.retryOnDecodeFailure && gDoHRequestCount < 2) {
+      gDoHRequestCount++;
+      return "\xFF\xFF\xFF\xFF";
     }
 
     function responseData() {
       if (
-        packet.questions.length > 0 &&
+        !!packet.questions.length &&
         packet.questions[0].name == "confirm.example.com" &&
         packet.questions[0].type == "NS"
       ) {
@@ -432,7 +408,6 @@ function handleRequest(req, res) {
       return responseIP;
     }
 
-    let answers = [];
     if (
       responseIP != "none" &&
       responseType(packet, responseIP) == packet.questions[0].type
@@ -510,7 +485,7 @@ function handleRequest(req, res) {
       resp.setHeader("Set-Cookie", "trackyou=yes; path=/; max-age=100000;");
       resp.setHeader("Content-Type", contentType);
       if (req.headers["accept-encoding"].includes("gzip")) {
-        zlib.gzip(buffer, function(err, result) {
+        zlib.gzip(buffer, function (err, result) {
           resp.setHeader("Content-Encoding", "gzip");
           resp.setHeader("Content-Length", result.length);
           try {
@@ -521,10 +496,11 @@ function handleRequest(req, res) {
           }
         });
       } else {
-        resp.setHeader("Content-Length", buffer.length);
+        const output = Buffer.from(buffer, "utf-8");
+        resp.setHeader("Content-Length", output.length);
         try {
           resp.writeHead(200);
-          resp.write(buffer);
+          resp.write(output);
           resp.end("");
         } catch (e) {
           // connection was closed by the time we started writing.
@@ -561,10 +537,46 @@ function handleRequest(req, res) {
     process.exit();
   }
 
-  if (u.pathname === "/750ms") {
+  if (req.method == "CONNECT") {
+    if (req.headers.host == "illegalhpacksoft.example.com:80") {
+      illegalheader_conn = req.stream.connection;
+      res.setHeader("Content-Type", "text/html");
+      res.setHeader("x-softillegalhpack", "true");
+      res.writeHead(200);
+      res.end(content);
+      return;
+    } else if (req.headers.host == "illegalhpackhard.example.com:80") {
+      res.setHeader("Content-Type", "text/html");
+      res.setHeader("x-hardillegalhpack", "true");
+      res.writeHead(200);
+      res.end(content);
+      return;
+    } else if (req.headers.host == "750.example.com:80") {
+      // This response will mock a response through a proxy to a HTTP server.
+      // After 750ms , a 200 response for the proxy will be sent then
+      // after additional 50ms a 200 response for the HTTP GET request.
+      let rl = new runConnectLater();
+      rl.req = req;
+      rl.resp = res;
+      setTimeout(executeRunLaterCatchError, 750, rl);
+      return;
+    } else if (req.headers.host == "h11required.com:80") {
+      if (req.httpVersionMajor === 2) {
+        res.stream.reset("HTTP_1_1_REQUIRED");
+      }
+      return;
+    }
+  } else if (u.pathname === "/750ms") {
     let rl = new runlater();
     rl.req = req;
     rl.resp = res;
+    setTimeout(executeRunLater, 750, rl);
+    return;
+  } else if (u.pathname === "/750msNoData") {
+    let rl = new runlater();
+    rl.req = req;
+    rl.resp = res;
+    rl.fin = false;
     setTimeout(executeRunLater, 750, rl);
     return;
   } else if (u.pathname === "/multiplex1" && req.httpVersionMajor === 2) {
@@ -715,11 +727,13 @@ function handleRequest(req, res) {
     }
 
     var post_hash = crypto.createHash("md5");
+    var received_data = false;
     req.on("data", function receivePostData(chunk) {
+      received_data = true;
       post_hash.update(chunk.toString());
     });
     req.on("end", function finishPost() {
-      let md5 = post_hash.digest("hex");
+      let md5 = received_data ? post_hash.digest("hex") : "0";
       res.setHeader("X-Calculated-MD5", md5);
       res.writeHead(200);
       res.end(content);
@@ -806,10 +820,7 @@ function handleRequest(req, res) {
     };
     var pushHdrTxt =
       "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-    var pullHdrTxt = pushHdrTxt
-      .split("")
-      .reverse()
-      .join("");
+    var pullHdrTxt = pushHdrTxt.split("").reverse().join("");
     for (let i = 0; i < 265; i++) {
       pushRequestHeaders["X-Push-Test-Header-" + i] = pushHdrTxt;
       res.setHeader("X-Pull-Test-Header-" + i, pullHdrTxt);
@@ -901,6 +912,14 @@ function handleRequest(req, res) {
     res.writeHead(400);
     res.end(rContent);
     return;
+  } else if (u.pathname == "/reset-doh-request-count") {
+    gDoHRequestCount = 0;
+    res.setHeader("Content-Type", "text/plain");
+    res.setHeader("Content-Length", "ok".length);
+    res.writeHead(200);
+    res.write("ok");
+    res.end("");
+    return;
   } else if (u.pathname == "/doh") {
     let responseIP = u.query.responseIP;
     if (!responseIP) {
@@ -962,8 +981,7 @@ function handleRequest(req, res) {
       push = res.push({
         hostname: "foo.example.com:" + serverPort,
         port: serverPort,
-        path:
-          "/dns-pushed-response?dns=AAAAAAABAAAAAAAABHB1c2gHZXhhbXBsZQNvcmcAABwAAQ",
+        path: "/dns-pushed-response?dns=AAAAAAABAAAAAAAABHB1c2gHZXhhbXBsZQNvcmcAABwAAQ",
         method: "GET",
         headers: {
           accept: "application/dns-message",
@@ -1112,174 +1130,6 @@ function handleRequest(req, res) {
       res.end("");
     });
     return;
-  } else if (u.pathname === "/odohconfig") {
-    let payload = Buffer.from("");
-    req.on("data", function receiveData(chunk) {
-      payload = Buffer.concat([payload, chunk]);
-    });
-    req.on("end", function finishedData() {
-      let answers = [];
-      let odohconfig;
-      if (u.query.invalid) {
-        if (u.query.invalid === "empty") {
-          odohconfig = Buffer.from("");
-        } else if (u.query.invalid === "version") {
-          odohconfig = Buffer.from(
-            "002cff030028002000010001002021c8c16355091b28d521cb196627297955c1b607a3dcf1f136534578460d077d",
-            "hex"
-          );
-        } else if (u.query.invalid === "configLength") {
-          odohconfig = Buffer.from(
-            "002cff040028002000010001002021c8c16355091b28d521cb196627297955c1b607a3dcf1f136534578460d07",
-            "hex"
-          );
-        } else if (u.query.invalid === "totalLength") {
-          odohconfig = Buffer.from(
-            "012cff030028002000010001002021c8c16355091b28d521cb196627297955c1b607a3dcf1f136534578460d077d",
-            "hex"
-          );
-        } else if (u.query.invalid === "kemId") {
-          odohconfig = Buffer.from(
-            "002cff040028002100010001002021c8c16355091b28d521cb196627297955c1b607a3dcf1f136534578460d077d",
-            "hex"
-          );
-        }
-      } else {
-        odohconfig = odoh.get_odoh_config();
-      }
-
-      if (u.query.downloadFrom === "http") {
-        res.writeHead(200);
-        res.write(odohconfig);
-        res.end("");
-      } else {
-        var b64encoded = Buffer.from(odohconfig).toString("base64");
-        let packet = dnsPacket.decode(payload);
-        if (
-          u.query.failConfirmation == "true" &&
-          packet.questions[0].type == "NS" &&
-          packet.questions[0].name == "example.com"
-        ) {
-          res.writeHead(200);
-          res.write("<12bytes");
-          res.end("");
-          return;
-        }
-        if (packet.questions[0].type == "HTTPS") {
-          answers.push({
-            name: packet.questions[0].name,
-            type: packet.questions[0].type,
-            ttl: u.query.ttl ? u.query.ttl : 55,
-            class: "IN",
-            flush: false,
-            data: {
-              priority: 1,
-              name: packet.questions[0].name,
-              values: [
-                {
-                  key: "odoh",
-                  value: b64encoded,
-                  needBase64Decode: true,
-                },
-              ],
-            },
-          });
-        }
-
-        let buf = dnsPacket.encode({
-          type: "response",
-          id: packet.id,
-          flags: dnsPacket.RECURSION_DESIRED,
-          questions: packet.questions,
-          answers,
-        });
-
-        res.setHeader("Content-Type", "application/dns-message");
-        res.setHeader("Content-Length", buf.length);
-        res.writeHead(200);
-        res.write(buf);
-        res.end("");
-      }
-    });
-    return;
-  } else if (u.pathname === "/odoh") {
-    let responseIP = u.query.responseIP;
-    if (!responseIP) {
-      responseIP = "5.5.5.5";
-    }
-
-    if (u.query.auth) {
-      if (!handleAuth()) {
-        return;
-      }
-    }
-
-    if (u.query.noResponse) {
-      return;
-    }
-
-    let payload = Buffer.from("");
-
-    function emitResponse(response, requestPayload) {
-      let decryptedQuery = odoh.decrypt_query(requestPayload);
-      let packet = dnsPacket.decode(Buffer.from(decryptedQuery.buffer));
-      let answer = createDNSAnswer(
-        response,
-        packet,
-        responseIP,
-        requestPayload
-      );
-      if (!answer) {
-        return;
-      }
-
-      let encryptedResponse = odoh.create_response(answer);
-      writeDNSResponse(
-        response,
-        encryptedResponse,
-        getDelayFromPacket(packet, responseType(packet, responseIP)),
-        "application/oblivious-dns-message"
-      );
-    }
-
-    if (u.query.dns) {
-      payload = Buffer.from(u.query.dns, "base64");
-      emitResponse(res, payload);
-      return;
-    }
-
-    req.on("data", function receiveData(chunk) {
-      payload = Buffer.concat([payload, chunk]);
-    });
-    req.on("end", function finishedData() {
-      if (u.query.httpError) {
-        res.writeHead(404);
-        res.end("Not Found");
-        return;
-      }
-
-      if (u.query.cname) {
-        let decryptedQuery = odoh.decrypt_query(payload);
-        let rContent;
-        if (u.query.cname === "ARecord") {
-          rContent = createCNameARecord();
-        } else {
-          rContent = createCNameContent(Buffer.from(decryptedQuery.buffer));
-        }
-        let encryptedResponse = odoh.create_response(rContent);
-        res.setHeader("Content-Type", "application/oblivious-dns-message");
-        res.setHeader("Content-Length", encryptedResponse.length);
-        res.writeHead(200);
-        res.write(encryptedResponse);
-        res.end("");
-        return;
-      }
-      // parload is empty when we send redirect response.
-      if (payload.length) {
-        emitResponse(res, payload);
-      }
-    });
-    return;
   } else if (u.pathname === "/httpssvc_as_altsvc") {
     let payload = Buffer.from("");
     req.on("data", function receiveData(chunk) {
@@ -1413,8 +1263,7 @@ function handleRequest(req, res) {
     push = res.push({
       hostname: "foo.example.com:" + serverPort,
       port: serverPort,
-      path:
-        "/dns-pushed-response?dns=AAABAAABAAAAAAABCl9lc25pX3B1c2gHZXhhbXBsZQNjb20AABAAAQAAKRAAAAAAAAAIAAgABAABAAA",
+      path: "/dns-pushed-response?dns=AAABAAABAAAAAAABCl9lc25pX3B1c2gHZXhhbXBsZQNjb20AABAAAQAAKRAAAAAAAAAIAAgABAABAAA",
       method: "GET",
       headers: {
         accept: "application/dns-message",
@@ -1637,13 +1486,19 @@ function handleRequest(req, res) {
     // This will cause the compressor to compress a header that is not legal,
     // but only affects the stream, not the session.
     illegalheader_conn = req.stream.connection;
-    Compressor.prototype.compress = insertSoftIllegalHpack;
-    // Fall through to the default response behavior
+    res.setHeader("Content-Type", "text/html");
+    res.setHeader("x-softillegalhpack", "true");
+    res.writeHead(200);
+    res.end(content);
+    return;
   } else if (u.pathname === "/illegalhpackhard") {
     // This will cause the compressor to insert an HPACK instruction that will
     // cause a session failure.
-    Compressor.prototype.compress = insertHardIllegalHpack;
-    // Fall through to default response behavior
+    res.setHeader("Content-Type", "text/html");
+    res.setHeader("x-hardillegalhpack", "true");
+    res.writeHead(200);
+    res.end(content);
+    return;
   } else if (u.pathname === "/illegalhpack_validate") {
     if (req.stream.connection === illegalheader_conn) {
       res.setHeader("X-Did-Goaway", "no");
@@ -1676,6 +1531,25 @@ function handleRequest(req, res) {
       res.setHeader("x-conditional", "true");
     }
     // default response from here
+  } else if (u.pathname === "/immutable-test-expired-with-Expires-header") {
+    res.setHeader("Cache-Control", "immutable");
+    res.setHeader("Expires", "Mon, 01 Jan 1990 00:00:00 GMT");
+    res.setHeader("Etag", "3");
+
+    if (req.headers["if-none-match"]) {
+      res.setHeader("x-conditional", "true");
+    }
+  } else if (
+    u.pathname === "/immutable-test-expired-with-last-modified-header"
+  ) {
+    res.setHeader("Cache-Control", "public, max-age=3600, immutable");
+    res.setHeader("Date", "Mon, 01 Jan 1990 00:00:00 GMT");
+    res.setHeader("Last-modified", "Mon, 01 Jan 1990 00:00:00 GMT");
+    res.setHeader("Etag", "4");
+
+    if (req.headers["if-none-match"]) {
+      res.setHeader("x-conditional", "true");
+    }
   } else if (u.pathname === "/origin-4") {
     let originList = [];
     req.stream.connection.originFrame(originList);
@@ -1823,14 +1697,29 @@ function handleRequest(req, res) {
     res.write("data reached");
     res.end();
     return;
-  }
+  } else if (u.pathname.startsWith("/invalid_response_header/")) {
+    // response headers with invalid characters in the name / value (RFC7540 Sec 10.3)
+    let kind = u.pathname.slice("/invalid_response_header/".length);
+    if (kind === "name_spaces") {
+      res.setHeader("With Spaces", "Hello");
+    } else if (kind === "value_line_feed") {
+      res.setHeader("invalid-header", "line\nfeed");
+    } else if (kind === "value_carriage_return") {
+      res.setHeader("invalid-header", "carriage\rreturn");
+    } else if (kind === "value_null") {
+      res.setHeader("invalid-header", "null\0");
+    }
 
-  // response headers with invalid characters in the name
-  else if (u.pathname === "/invalid_response_header") {
-    res.setHeader("With Spaces", "Hello");
-    res.setHeader("Without-Spaces", "World");
     res.writeHead(200);
     res.end("");
+    return;
+  } else if (u.pathname === "/origin_header") {
+    let originHeader = req.headers.origin;
+    res.setHeader("Content-Length", originHeader.length);
+    res.setHeader("Content-Type", "text/plain");
+    res.writeHead(200);
+    res.write(originHeader);
+    res.end();
     return;
   }
 
@@ -1856,12 +1745,19 @@ if (process.env.HTTP2_LOG !== undefined) {
 
 var server = http2.createServer(options, handleRequest);
 
-server.on("connection", function(socket) {
-  socket.on("error", function() {
+server.on("connection", function (socket) {
+  socket.on("error", function () {
     // Ignoring SSL socket errors, since they usually represent a connection that was tore down
     // by the browser because of an untrusted certificate. And this happens at least once, when
     // the first test case if done.
   });
+});
+
+server.on("connect", function (req, clientSocket, head) {
+  clientSocket.write(
+    "HTTP/1.1 404 Not Found\r\nProxy-agent: Node.js-Proxy\r\n\r\n"
+  );
+  clientSocket.destroy();
 });
 
 function makeid(length) {

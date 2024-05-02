@@ -13,7 +13,6 @@ var FullZoom = {
   name: "browser.content.full-zoom",
 
   // browser.zoom.siteSpecific preference cache
-  // Enabling privacy.resistFingerprinting implies disabling browser.zoom.siteSpecific.
   _siteSpecificPref: undefined,
 
   // browser.zoom.updateBackgroundTabs preference cache
@@ -30,9 +29,9 @@ var FullZoom = {
 
   get siteSpecific() {
     if (this._siteSpecificPref === undefined) {
-      this._siteSpecificPref =
-        !Services.prefs.getBoolPref("privacy.resistFingerprinting") &&
-        Services.prefs.getBoolPref("browser.zoom.siteSpecific");
+      this._siteSpecificPref = Services.prefs.getBoolPref(
+        "browser.zoom.siteSpecific"
+      );
     }
     return this._siteSpecificPref;
   },
@@ -50,6 +49,7 @@ var FullZoom = {
   init: function FullZoom_init() {
     gBrowser.addEventListener("DoZoomEnlargeBy10", this);
     gBrowser.addEventListener("DoZoomReduceBy10", this);
+    window.addEventListener("MozScaleGestureComplete", this);
 
     // Register ourselves with the service so we know when our pref changes.
     this._cps2 = Cc["@mozilla.org/content-pref/service;1"].getService(
@@ -64,10 +64,6 @@ var FullZoom = {
     // Listen for changes to the browser.zoom branch so we can enable/disable
     // updating background tabs and per-site saving and restoring of zoom levels.
     Services.prefs.addObserver("browser.zoom.", this, true);
-
-    // Also need to listen to privacy.resistFingerprinting in order to update
-    // this._siteSpecificPref.
-    Services.prefs.addObserver("privacy.resistFingerprinting", this, true);
 
     // If we received onLocationChange events for any of the current browsers
     // before we were initialized we want to replay those upon initialization.
@@ -86,6 +82,7 @@ var FullZoom = {
     this._cps2.removeObserverForName(this.name, this);
     gBrowser.removeEventListener("DoZoomEnlargeBy10", this);
     gBrowser.removeEventListener("DoZoomReduceBy10", this);
+    window.removeEventListener("MozScaleGestureComplete", this);
   },
 
   // Event Handlers
@@ -100,6 +97,11 @@ var FullZoom = {
       case "DoZoomReduceBy10":
         this.changeZoomBy(this._getTargetedBrowser(event), -0.1);
         break;
+      case "MozScaleGestureComplete": {
+        let nonDefaultScalingZoom = event.detail != 1.0;
+        this.updateCommands(nonDefaultScalingZoom);
+        break;
+      }
     }
   },
 
@@ -109,8 +111,6 @@ var FullZoom = {
     switch (aTopic) {
       case "nsPref:changed":
         switch (aData) {
-          case "privacy.resistFingerprinting":
-          // fall through
           case "browser.zoom.siteSpecific":
             // Invalidate pref cache.
             this._siteSpecificPref = undefined;
@@ -120,6 +120,10 @@ var FullZoom = {
               "browser.zoom.updateBackgroundTabs"
             );
             break;
+          case "browser.zoom.full": {
+            this.updateCommands();
+            break;
+          }
         }
         break;
     }
@@ -232,7 +236,7 @@ var FullZoom = {
     // to the new location.
     this._ignorePendingZoomAccesses(browser);
 
-    if (!aURI || (aIsTabSwitch && !this.siteSpecific)) {
+    if (!aURI || (aIsTabSwitch && !this._isSiteSpecific(browser))) {
       this._notifyOnLocationChange(browser);
       return;
     }
@@ -317,12 +321,52 @@ var FullZoom = {
     });
   },
 
-  // update state of zoom type menu item
+  // update state of zoom menu items
 
-  updateMenu: function FullZoom_updateMenu() {
-    var menuItem = document.getElementById("toggle_zoom");
+  /**
+   * Updates the current windows Zoom commands for zooming in, zooming out
+   * and resetting the zoom level.
+   *
+   * @param {boolean} [forceResetEnabled=false]
+   *   Set to true if the zoom reset command should be enabled regardless of
+   *   whether or not the ZoomManager.zoom level is at 1.0. This is specifically
+   *   for when using scaling zoom via the pinch gesture which doesn't cause
+   *   the ZoomManager.zoom level to change.
+   * @returns Promise
+   * @resolves undefined
+   */
+  updateCommands: async function FullZoom_updateCommands(
+    forceResetEnabled = false
+  ) {
+    let zoomLevel = ZoomManager.zoom;
+    let defaultZoomLevel = await ZoomUI.getGlobalValue();
+    let reduceCmd = document.getElementById("cmd_fullZoomReduce");
+    if (zoomLevel == ZoomManager.MIN) {
+      reduceCmd.setAttribute("disabled", "true");
+    } else {
+      reduceCmd.removeAttribute("disabled");
+    }
 
-    menuItem.setAttribute("checked", !ZoomManager.useFullZoom);
+    let enlargeCmd = document.getElementById("cmd_fullZoomEnlarge");
+    if (zoomLevel == ZoomManager.MAX) {
+      enlargeCmd.setAttribute("disabled", "true");
+    } else {
+      enlargeCmd.removeAttribute("disabled");
+    }
+
+    let resetCmd = document.getElementById("cmd_fullZoomReset");
+    if (zoomLevel == defaultZoomLevel && !forceResetEnabled) {
+      resetCmd.setAttribute("disabled", "true");
+    } else {
+      resetCmd.removeAttribute("disabled");
+    }
+
+    let fullZoomCmd = document.getElementById("cmd_fullZoomToggle");
+    if (!ZoomManager.useFullZoom) {
+      fullZoomCmd.setAttribute("checked", "true");
+    } else {
+      fullZoomCmd.setAttribute("checked", "false");
+    }
   },
 
   // Setting & Pref Manipulation
@@ -331,7 +375,7 @@ var FullZoom = {
     try {
       browser.sendMessageToActor(name, {}, "Pdfjs");
     } catch (ex) {
-      Cu.reportError(ex);
+      console.error(ex);
     }
   },
 
@@ -438,6 +482,19 @@ var FullZoom = {
     return result;
   },
 
+  /**
+   * Called from the URL bar's inline zoom reset indicator button.
+   *
+   * @param {Event} event the click/keyboard event that triggered the call.
+   */
+  resetFromURLBar(event) {
+    if (event.button > 0) {
+      return;
+    }
+    this.reset();
+    this.resetScalingZoom();
+  },
+
   resetScalingZoom: function FullZoom_resetScaling(
     browser = gBrowser.selectedBrowser
   ) {
@@ -478,13 +535,13 @@ var FullZoom = {
     if (
       !aBrowser.mInitialized ||
       aBrowser.isSyntheticDocument ||
-      (!this.siteSpecific && aBrowser.tabHasCustomZoom)
+      (!this._isSiteSpecific(aBrowser) && aBrowser.tabHasCustomZoom)
     ) {
       this._executeSoon(aCallback);
       return;
     }
 
-    if (aValue !== undefined && this.siteSpecific) {
+    if (aValue !== undefined && this._isSiteSpecific(aBrowser)) {
       ZoomManager.setZoomForBrowser(aBrowser, this._ensureValid(aValue));
       this._ignorePendingZoomAccesses(aBrowser);
       this._executeSoon(aCallback);
@@ -511,11 +568,11 @@ var FullZoom = {
    * @param browser  The zoom of this browser will be saved.  Required.
    */
   _applyZoomToPref: function FullZoom__applyZoomToPref(browser) {
-    if (!this.siteSpecific || browser.isSyntheticDocument) {
+    if (!this._isSiteSpecific(browser) || browser.isSyntheticDocument) {
       // If site-specific zoom is disabled, we have called this function
       // to adjust our tab's zoom level. It is now considered "custom"
       // and we mark that here.
-      browser.tabHasCustomZoom = !this.siteSpecific;
+      browser.tabHasCustomZoom = !this._isSiteSpecific(browser);
       return null;
     }
 
@@ -597,7 +654,7 @@ var FullZoom = {
     const XUL_NS =
       "http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul";
     if (
-      target instanceof window.XULElement &&
+      window.XULElement.isInstance(target) &&
       target.localName == "browser" &&
       target.namespaceURI == XUL_NS
     ) {
@@ -645,6 +702,23 @@ var FullZoom = {
     return aValue;
   },
 
+  // Whether to remember the site specific zoom level for this browser.
+  // This returns false when `browser.zoom.siteSpecific` is false or
+  // the browser has content loaded that should resist fingerprinting.
+  _isSiteSpecific(aBrowser) {
+    if (!this.siteSpecific) {
+      return false;
+    }
+    return (
+      !aBrowser?.browsingContext?.topWindowContext.shouldResistFingerprinting ||
+      !ChromeUtils.shouldResistFingerprinting(
+        "SiteSpecificZoom",
+        aBrowser?.browsingContext?.topWindowContext
+          .overriddenFingerprintingSettings
+      )
+    );
+  },
+
   /**
    * Gets the load context from the given Browser.
    *
@@ -662,7 +736,7 @@ var FullZoom = {
    * consistent behavior.
    */
   _notifyOnLocationChange: function FullZoom__notifyOnLocationChange(browser) {
-    this._executeSoon(function() {
+    this._executeSoon(function () {
       Services.obs.notifyObservers(browser, "browser-fullZoom:location-change");
     });
   },

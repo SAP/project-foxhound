@@ -3,6 +3,7 @@
  * http://creativecommons.org/publicdomain/zero/1.0/
  */
 
+/* exported testGenerator */
 var testGenerator = testSteps();
 
 function* testSteps() {
@@ -70,7 +71,7 @@ function* testSteps() {
 
   objectStore2 = db.transaction(objName2, "readonly").objectStore(objName2);
   request = objectStore2.getAll();
-  request.onsuccess = function(event) {
+  request.onsuccess = function (event) {
     readResult = event.target.result;
     is(
       readResult.length,
@@ -84,7 +85,7 @@ function* testSteps() {
       continueToNextStep();
     }
   };
-  request.onerror = function(event) {
+  request.onerror = function (event) {
     readResult = null;
     readError = event.target.error;
 

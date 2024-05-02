@@ -13,6 +13,8 @@
 #include "mozilla/Logging.h"
 #include "mozilla/Telemetry.h"
 #include "nsTArray.h"
+#include "BufferReader.h"
+#include "mozilla/ScopeExit.h"
 
 #define LOG(...) MOZ_LOG(sPDMLog, mozilla::LogLevel::Debug, (__VA_ARGS__))
 
@@ -20,82 +22,41 @@ namespace mozilla {
 
 using media::TimeUnit;
 
-static void AACAudioSpecificConfigToUserData(uint8_t aAACProfileLevelIndication,
-                                             const uint8_t* aAudioSpecConfig,
-                                             uint32_t aConfigLength,
-                                             nsTArray<BYTE>& aOutUserData) {
-  MOZ_ASSERT(aOutUserData.IsEmpty());
-
-  // The MF_MT_USER_DATA for AAC is defined here:
-  // http://msdn.microsoft.com/en-us/library/windows/desktop/dd742784%28v=vs.85%29.aspx
-  //
-  // For MFAudioFormat_AAC, MF_MT_USER_DATA contains the portion of
-  // the HEAACWAVEINFO structure that appears after the WAVEFORMATEX
-  // structure (that is, after the wfx member). This is followed by
-  // the AudioSpecificConfig() data, as defined by ISO/IEC 14496-3.
-  // [...]
-  // The length of the AudioSpecificConfig() data is 2 bytes for AAC-LC
-  // or HE-AAC with implicit signaling of SBR/PS. It is more than 2 bytes
-  // for HE-AAC with explicit signaling of SBR/PS.
-  //
-  // The value of audioObjectType as defined in AudioSpecificConfig()
-  // must be 2, indicating AAC-LC. The value of extensionAudioObjectType
-  // must be 5 for SBR or 29 for PS.
-  //
-  // HEAACWAVEINFO structure:
-  //    typedef struct heaacwaveinfo_tag {
-  //      WAVEFORMATEX wfx;
-  //      WORD         wPayloadType;
-  //      WORD         wAudioProfileLevelIndication;
-  //      WORD         wStructType;
-  //      WORD         wReserved1;
-  //      DWORD        dwReserved2;
-  //    }
-  const UINT32 heeInfoLen = 4 * sizeof(WORD) + sizeof(DWORD);
-
-  // The HEAACWAVEINFO must have payload and profile set,
-  // the rest can be all 0x00.
-  BYTE heeInfo[heeInfoLen] = {0};
-  WORD* w = (WORD*)heeInfo;
-  w[0] = 0x0;  // Payload type raw AAC packet
-  w[1] = aAACProfileLevelIndication;
-
-  aOutUserData.AppendElements(heeInfo, heeInfoLen);
-
-  if (aAACProfileLevelIndication == 2 && aConfigLength > 2) {
-    // The AudioSpecificConfig is TTTTTFFF|FCCCCGGG
-    // (T=ObjectType, F=Frequency, C=Channel, G=GASpecificConfig)
-    // If frequency = 0xf, then the frequency is explicitly defined on 24 bits.
-    int8_t frequency =
-        (aAudioSpecConfig[0] & 0x7) << 1 | (aAudioSpecConfig[1] & 0x80) >> 7;
-    int8_t channels = (aAudioSpecConfig[1] & 0x78) >> 3;
-    int8_t gasc = aAudioSpecConfig[1] & 0x7;
-    if (frequency != 0xf && channels && !gasc) {
-      // We enter this condition if the AudioSpecificConfig should theorically
-      // be 2 bytes long but it's not.
-      // The WMF AAC decoder will error if unknown extensions are found,
-      // so remove them.
-      aConfigLength = 2;
-    }
-  }
-  aOutUserData.AppendElements(aAudioSpecConfig, aConfigLength);
-}
-
 WMFAudioMFTManager::WMFAudioMFTManager(const AudioInfo& aConfig)
     : mAudioChannels(aConfig.mChannels),
       mChannelsMap(AudioConfig::ChannelLayout::UNKNOWN_MAP),
-      mAudioRate(aConfig.mRate) {
+      mAudioRate(aConfig.mRate),
+      mStreamType(GetStreamTypeFromMimeType(aConfig.mMimeType)) {
   MOZ_COUNT_CTOR(WMFAudioMFTManager);
 
-  if (aConfig.mMimeType.EqualsLiteral("audio/mpeg")) {
-    mStreamType = MP3;
-  } else if (aConfig.mMimeType.EqualsLiteral("audio/mp4a-latm")) {
-    mStreamType = AAC;
-    AACAudioSpecificConfigToUserData(
-        aConfig.mExtendedProfile, aConfig.mCodecSpecificConfig->Elements(),
-        aConfig.mCodecSpecificConfig->Length(), mUserData);
-  } else {
-    mStreamType = Unknown;
+  if (mStreamType == WMFStreamType::AAC) {
+    const uint8_t* audioSpecConfig;
+    uint32_t configLength;
+    if (aConfig.mCodecSpecificConfig.is<AacCodecSpecificData>()) {
+      const AacCodecSpecificData& aacCodecSpecificData =
+          aConfig.mCodecSpecificConfig.as<AacCodecSpecificData>();
+      audioSpecConfig =
+          aacCodecSpecificData.mDecoderConfigDescriptorBinaryBlob->Elements();
+      configLength =
+          aacCodecSpecificData.mDecoderConfigDescriptorBinaryBlob->Length();
+
+      mRemainingEncoderDelay = mEncoderDelay =
+          aacCodecSpecificData.mEncoderDelayFrames;
+      mTotalMediaFrames = aacCodecSpecificData.mMediaFrameCount;
+      LOG("AudioMFT decoder: Found AAC decoder delay (%" PRIu32
+          "frames) and total media frames (%" PRIu64 " frames)\n",
+          mEncoderDelay, mTotalMediaFrames);
+    } else {
+      // Gracefully handle failure to cover all codec specific cases above. Once
+      // we're confident there is no fall through from these cases above, we
+      // should remove this code.
+      RefPtr<MediaByteBuffer> audioCodecSpecificBinaryBlob =
+          GetAudioCodecSpecificBlob(aConfig.mCodecSpecificConfig);
+      audioSpecConfig = audioCodecSpecificBinaryBlob->Elements();
+      configLength = audioCodecSpecificBinaryBlob->Length();
+    }
+    AACAudioSpecificConfigToUserData(aConfig.mExtendedProfile, audioSpecConfig,
+                                     configLength, mUserData);
   }
 }
 
@@ -103,24 +64,12 @@ WMFAudioMFTManager::~WMFAudioMFTManager() {
   MOZ_COUNT_DTOR(WMFAudioMFTManager);
 }
 
-const GUID& WMFAudioMFTManager::GetMFTGUID() {
-  MOZ_ASSERT(mStreamType != Unknown);
-  switch (mStreamType) {
-    case AAC:
-      return CLSID_CMSAACDecMFT;
-    case MP3:
-      return CLSID_CMP3DecMediaObject;
-    default:
-      return GUID_NULL;
-  };
-}
-
 const GUID& WMFAudioMFTManager::GetMediaSubtypeGUID() {
-  MOZ_ASSERT(mStreamType != Unknown);
+  MOZ_ASSERT(StreamTypeIsAudio(mStreamType));
   switch (mStreamType) {
-    case AAC:
+    case WMFStreamType::AAC:
       return MFAudioFormat_AAC;
-    case MP3:
+    case WMFStreamType::MP3:
       return MFAudioFormat_MP3;
     default:
       return GUID_NULL;
@@ -128,11 +77,12 @@ const GUID& WMFAudioMFTManager::GetMediaSubtypeGUID() {
 }
 
 bool WMFAudioMFTManager::Init() {
-  NS_ENSURE_TRUE(mStreamType != Unknown, false);
+  NS_ENSURE_TRUE(StreamTypeIsAudio(mStreamType), false);
 
   RefPtr<MFTDecoder> decoder(new MFTDecoder());
-
-  HRESULT hr = decoder->Create(GetMFTGUID());
+  // Note: MP3 MFT isn't registered as supporting Float output, but it works.
+  // Find PCM output MFTs as this is the common type.
+  HRESULT hr = WMFDecoderModule::CreateMFTDecoder(mStreamType, decoder);
   NS_ENSURE_TRUE(SUCCEEDED(hr), false);
 
   // Setup input/output media types
@@ -153,7 +103,7 @@ bool WMFAudioMFTManager::Init() {
   hr = inputType->SetUINT32(MF_MT_AUDIO_NUM_CHANNELS, mAudioChannels);
   NS_ENSURE_TRUE(SUCCEEDED(hr), false);
 
-  if (mStreamType == AAC) {
+  if (mStreamType == WMFStreamType::AAC) {
     hr = inputType->SetUINT32(MF_MT_AAC_PAYLOAD_TYPE, 0x0);  // Raw AAC packet
     NS_ENSURE_TRUE(SUCCEEDED(hr), false);
 
@@ -189,6 +139,15 @@ WMFAudioMFTManager::Input(MediaRawData* aSample) {
   return mDecoder->Input(aSample->Data(), uint32_t(aSample->Size()),
                          aSample->mTime.ToMicroseconds(),
                          aSample->mDuration.ToMicroseconds());
+}
+
+nsCString WMFAudioMFTManager::GetCodecName() const {
+  if (mStreamType == WMFStreamType::AAC) {
+    return "aac"_ns;
+  } else if (mStreamType == WMFStreamType::MP3) {
+    return "mp3"_ns;
+  }
+  return "unknown"_ns;
 }
 
 HRESULT
@@ -263,7 +222,12 @@ WMFAudioMFTManager::Output(int64_t aStreamOffset, RefPtr<MediaData>& aOutData) {
     mFirstFrame = false;
   }
 
-  TimeUnit pts = GetSampleTime(sample);
+  LONGLONG hns;
+  hr = sample->GetSampleTime(&hns);
+  if (FAILED(hr)) {
+    return E_FAIL;
+  }
+  TimeUnit pts = TimeUnit::FromHns(hns, mAudioRate);
   NS_ENSURE_TRUE(pts.IsValid(), E_FAIL);
 
   RefPtr<IMFMediaBuffer> buffer;
@@ -274,6 +238,7 @@ WMFAudioMFTManager::Output(int64_t aStreamOffset, RefPtr<MediaData>& aOutData) {
                          // don't need to free it.
   DWORD maxLength = 0, currentLength = 0;
   hr = buffer->Lock(&data, &maxLength, &currentLength);
+  ScopeExit exit([buffer] { buffer->Unlock(); });
   NS_ENSURE_TRUE(SUCCEEDED(hr), hr);
 
   // Output is made of floats.
@@ -297,18 +262,16 @@ WMFAudioMFTManager::Output(int64_t aStreamOffset, RefPtr<MediaData>& aOutData) {
     return E_OUTOFMEMORY;
   }
 
-  PodCopy(audioData.Data(), reinterpret_cast<float*>(data), numSamples);
+  float* floatData = reinterpret_cast<float*>(data);
+  PodCopy(audioData.Data(), floatData, numSamples);
 
-  buffer->Unlock();
-
-  TimeUnit duration = FramesToTimeUnit(numFrames, mAudioRate);
+  TimeUnit duration(numFrames, mAudioRate);
   NS_ENSURE_TRUE(duration.IsValid(), E_FAIL);
 
   const bool isAudioRateChangedToHigher = oldAudioRate < mAudioRate;
   if (IsPartialOutput(duration, isAudioRateChangedToHigher)) {
-    LOG("Encounter a partial frame?! duration shrinks from %" PRId64
-        " to %" PRId64,
-        mLastOutputDuration.ToMicroseconds(), duration.ToMicroseconds());
+    LOG("Encounter a partial frame?! duration shrinks from %s to %s",
+        mLastOutputDuration.ToString().get(), duration.ToString().get());
     return MF_E_TRANSFORM_NEED_MORE_INPUT;
   }
 
@@ -336,7 +299,7 @@ bool WMFAudioMFTManager::IsPartialOutput(
   // then new output is possible an incorrect partial output.
   // [1]
   // https://docs.microsoft.com/en-us/windows/win32/medfound/mft-message-command-drain
-  if (mStreamType != AAC) {
+  if (mStreamType != WMFStreamType::AAC) {
     return false;
   }
   if (mLastOutputDuration > aNewOutputDuration && !aIsRateChangedToHigher) {

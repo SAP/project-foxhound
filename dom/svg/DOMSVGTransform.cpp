@@ -22,8 +22,7 @@ namespace {
 const double kRadPerDegree = 2.0 * M_PI / 360.0;
 }  // namespace
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 using namespace SVGTransform_Binding;
 
@@ -59,9 +58,6 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN(DOMSVGTransform)
   NS_IMPL_CYCLE_COLLECTION_TRACE_PRESERVED_WRAPPER
 NS_IMPL_CYCLE_COLLECTION_TRACE_END
-
-NS_IMPL_CYCLE_COLLECTION_ROOT_NATIVE(DOMSVGTransform, AddRef)
-NS_IMPL_CYCLE_COLLECTION_UNROOT_NATIVE(DOMSVGTransform, Release)
 
 JSObject* DOMSVGTransform::WrapObject(JSContext* aCx,
                                       JS::Handle<JSObject*> aGivenProto) {
@@ -218,7 +214,7 @@ void DOMSVGTransform::SetSkewX(float angle, ErrorResult& rv) {
     return;
   }
 
-  if (!IsFinite(tan(angle * kRadPerDegree))) {
+  if (!std::isfinite(tan(angle * kRadPerDegree))) {
     rv.ThrowRangeError<MSG_INVALID_TRANSFORM_ANGLE_ERROR>();
     return;
   }
@@ -239,7 +235,7 @@ void DOMSVGTransform::SetSkewY(float angle, ErrorResult& rv) {
     return;
   }
 
-  if (!IsFinite(tan(angle * kRadPerDegree))) {
+  if (!std::isfinite(tan(angle * kRadPerDegree))) {
     rv.ThrowRangeError<MSG_INVALID_TRANSFORM_ANGLE_ERROR>();
     return;
   }
@@ -307,5 +303,4 @@ void DOMSVGTransform::SetMatrix(const gfxMatrix& aMatrix) {
   Transform().SetMatrix(aMatrix);
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

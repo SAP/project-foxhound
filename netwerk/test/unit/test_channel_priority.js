@@ -4,9 +4,9 @@
 
 "use strict";
 
-/* globals NetUtil*/
-/* globals HttpServer */
-const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
+const { HttpServer } = ChromeUtils.importESModule(
+  "resource://testing-common/httpd.sys.mjs"
+);
 
 let httpserver;
 let port;
@@ -75,7 +75,7 @@ function run_test() {
   if (!runningInParent) {
     // add a task to report test finished to parent process at the end of test queue,
     // since do_register_cleanup is not available in child xpcshell test script.
-    add_test(function() {
+    add_test(function () {
       do_send_remote_message("finished");
       run_next_test();
     });
@@ -90,6 +90,7 @@ function run_test() {
 }
 
 // This is used by unit_ipc/test_channel_priority_wrap.js for e10s XPCShell test
+/* exported configPort */
 function configPort(serverPort) {
   // jshint ignore:line
   port = serverPort;

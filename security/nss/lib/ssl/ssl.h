@@ -175,7 +175,7 @@ SSL_IMPORT PRFileDesc *DTLS_ImportFD(PRFileDesc *model, PRFileDesc *fd);
 
 /* SSL_REUSE_SERVER_ECDHE_KEY controls whether the ECDHE server key is
  * reused for multiple handshakes or generated each time.
- * SSL_REUSE_SERVER_ECDHE_KEY is currently enabled by default.
+ * SSL_REUSE_SERVER_ECDHE_KEY is currently disabled by default.
  * This socket option is for ECDHE, only. It is unrelated to DHE.
  */
 #define SSL_REUSE_SERVER_ECDHE_KEY 27
@@ -345,6 +345,40 @@ SSL_IMPORT PRFileDesc *DTLS_ImportFD(PRFileDesc *model, PRFileDesc *fd);
  * and the peer expects this message.
  */
 #define SSL_SUPPRESS_END_OF_EARLY_DATA 41
+
+/* Enables TLS GREASE (specified in RFC8701, following Chrome 55 implementation
+ * decisions).
+ *
+ * If enabled and the client's ss->vrange.max >= SSL_LIBRARY_VERSION_TLS_1_3 or
+ * the server's ss->version >= SSL_LIBRARY_VERSION_TLS_1_3, this adds random
+ * GREASE values to:
+ *  - ClientHello (Client):
+ *      - A cipher_suite value to the cipher_suites field.
+ *      - An empty and a 1B zeroed payload extension.
+ *      - A named group value to the supported_groups extension and a
+ *        KeyShareEntry value for the added named group.
+ *      - A signature algorithm value to the signature_algorithms extension.
+ *      - A version value to the supported_versions extension.
+ *      - A PskKeyExchangeMode value to the psk_key_exchange_modes extension.
+ *      - A alpn value to the application_layer_protocol_negotiation extension.
+ *
+ *  - CertificateRequest (Server):
+ *      - An empty extension.
+ *      - A signature algorithm value to the signature_algorithms extension.
+ *
+ *  - NewSessionTicket (Server):
+ *      - An empty extension.
+ *
+ * GREASE values MUST nerver be negotiated but ignored.
+ */
+#define SSL_ENABLE_GREASE 42
+
+/* Enables TLS ClientHello Extension Permutation.
+ *
+ * On a TLS ClientHello all extensions but the Psk extension
+ * (which MUST be last) will be sent in randomly shuffeld order.
+ */
+#define SSL_ENABLE_CH_EXTENSION_PERMUTATION 43
 
 #ifdef SSL_DEPRECATED_FUNCTION
 /* Old deprecated function names */
@@ -856,6 +890,20 @@ SSL_IMPORT SECStatus SSL_AuthCertificate(void *arg, PRFileDesc *fd,
  *  caNames - pointer to distinguished names of CAs that the server likes
  *  pRetCert - pointer to pointer to cert, for return of cert
  *  pRetKey - pointer to key pointer, for return of key
+ *  Return value can be one of {SECSuccess, SECFailure, SECWouldBlock}
+ *
+ *  If SECSuccess, pRetCert and pRetKey should be set to the selected
+ *  client cert and private key respectively. If SECFailure or SECWouldBlock
+ *  they should not be changed.
+ *
+ * Ownership of pRetCert and pRetKey passes to NSS. The application must not
+ * mutate or free the structures after passing them to NSS.
+ *
+ *  Returning SECWouldBlock will block the handshake until SSL_ClientCertCallbackComplete
+ *  is called. Note that references to *caNames should not be kept after SSLGetClientAuthData
+ *  returns. Instead, take a copy of the data.
+ *
+ * See also the comments for SSL_ClientCertCallbackComplete.
  */
 typedef SECStatus(PR_CALLBACK *SSLGetClientAuthData)(void *arg,
                                                      PRFileDesc *fd,
@@ -1259,6 +1307,20 @@ NSS_GetClientAuthData(void *arg,
                       struct CERTCertificateStr **pRetCert,
                       struct SECKEYPrivateKeyStr **pRetKey);
 
+/* This function can be called by the appliation's custom GetClientAuthHook
+ * to filter out any certs in the cert list that doesn't match the negotiated
+ * requirements of the current SSL connection.
+ */
+SSL_IMPORT SECStatus
+SSL_FilterClientCertListBySocket(PRFileDesc *socket, CERTCertList *certlist);
+
+/* This function can be called by the application's custom GetClientAuthHook
+ * to determine if a single certificate matches the negotiated requirements of
+ * the current SSL connection.
+ */
+SSL_IMPORT PRBool
+SSL_CertIsUsable(PRFileDesc *socket, CERTCertificate *cert);
+
 /*
 ** Configure DTLS-SRTP (RFC 5764) cipher suite preferences.
 ** Input is a list of ciphers in descending preference order and a length
@@ -1490,6 +1552,50 @@ extern const char *NSSSSL_GetVersion(void);
  */
 SSL_IMPORT SECStatus SSL_AuthCertificateComplete(PRFileDesc *fd,
                                                  PRErrorCode error);
+
+/* Restart an SSL connection which was paused to do asynchronous client
+ * certificate selection (when the client certificate hook returned SECWouldBlock).
+ *
+ * This function only works for non-blocking sockets; Do not use it for
+ * blocking sockets. This function works only for the client role of
+ * a connection; it does not work for the server role.
+ *
+ * If a certificate has been sucessfully selected, the application must call
+ * SSL_ClientCertCallbackComplete with:
+ *  - SECSuccess (0) as the value of outcome
+ *  - a valid SECKEYPrivateKey located at *clientPrivateKey
+ *  - a valid CERTCertificate located at *clientCertificate
+ * The ownership of these latter structures will pass to NSS and the application
+ * MUST not retain any references to them or invalidate them. 
+ *
+ * If a certificate has not been selected, the application must call
+ * SSL_ClientCertCallbackComplete with:
+ *  - SECFailure (-1) as the value of outcome
+ *  - *clientPrivateKey set to NULL.
+ *  - *clientCertificate set to NULL
+ *
+ * Once the application has returned SECWouldBlock to getClientAuthData
+ * the handshake will not proceed until this function is called. It is an
+ * error to call this function when the handshake is not waiting on client
+ * certificate selection, or to call this function more than once.
+
+ * This function will not complete the entire handshake. The application must
+ * call SSL_ForceHandshake, PR_Recv, PR_Send, etc. after calling this function
+ * to force the handshake to complete.
+ *
+ * Be careful about converting an application from synchronous cert selection
+ * to asynchronous certificate selection. A naive conversion is likely to
+ * result in deadlocks; e.g. the application will wait in PR_Poll for network
+ * I/O on the connection while all network I/O on the connection is blocked
+ * waiting for this function to be called.
+ *
+ * Note that SSL_ClientCertCallbackComplete will (usually) return
+ * SECSuccess; SECFailure indicates that the function was invoked incorrectly or
+ * an error whilst processing the handshake. The return code does not indicate
+ * whether or not the provided private key and certificate were sucessfully loaded
+ * or accepted by the server.
+ */
+SSL_IMPORT SECStatus SSL_ClientCertCallbackComplete(PRFileDesc *fd, SECStatus outcome, SECKEYPrivateKey *clientPrivateKey, CERTCertificate *clientCertificate);
 
 /*
  * This is used to access experimental APIs.  Don't call this directly.  This is

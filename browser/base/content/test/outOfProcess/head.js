@@ -68,10 +68,8 @@ async function initChildFrames(browser, insertHTML) {
         root.insertBefore(pre, root.firstChild);
 
         if (insertHTMLChild) {
-          // eslint-disable-next-line no-unsanitized/property
-          content.document.getElementById(
-            "insertPoint"
-          ).innerHTML = insertHTMLChild;
+          content.document.getElementById("insertPoint").innerHTML =
+            insertHTMLChild;
         }
       }
     );

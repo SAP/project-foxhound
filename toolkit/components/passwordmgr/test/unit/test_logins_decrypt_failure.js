@@ -11,9 +11,9 @@
 
 /**
  * Resets the token used to decrypt logins.  This is equivalent to resetting the
- * master password when it is not known.
+ * primary password when it is not known.
  */
-function resetMasterPassword() {
+function resetPrimaryPassword() {
   let token = Cc["@mozilla.org/security/pk11tokendb;1"]
     .getService(Ci.nsIPK11TokenDB)
     .getInternalKeyToken();
@@ -24,25 +24,19 @@ function resetMasterPassword() {
 // Tests
 
 /**
- * Resets the master password after some logins were added to the database.
+ * Resets the primary password after some logins were added to the database.
  */
 add_task(async function test_logins_decrypt_failure() {
   let logins = TestData.loginList();
-  for (let loginInfo of logins) {
-    Services.logins.addLogin(loginInfo);
-  }
+  await Services.logins.addLogins(logins);
 
   // This makes the existing logins non-decryptable.
-  resetMasterPassword();
+  resetPrimaryPassword();
 
   // These functions don't see the non-decryptable entries anymore.
-  Assert.equal(Services.logins.getAllLogins().length, 0);
-  Assert.equal(
-    (await Services.logins.getAllLoginsAsync()).length,
-    0,
-    "getAllLoginsAsync length"
-  );
-  Assert.equal(Services.logins.findLogins("", "", "").length, 0);
+  let savedLogins = await Services.logins.getAllLogins();
+  Assert.equal(savedLogins.length, 0, "getAllLogins length");
+  await Assert.rejects(Services.logins.searchLoginsAsync({}), /is required/);
   Assert.equal(Services.logins.searchLogins(newPropertyBag()).length, 0);
   Assert.throws(
     () => Services.logins.modifyLogin(logins[0], newPropertyBag()),
@@ -57,20 +51,22 @@ add_task(async function test_logins_decrypt_failure() {
   Assert.equal(Services.logins.countLogins("", "", ""), logins.length);
 
   // Equivalent logins can be added.
-  for (let loginInfo of logins) {
-    Services.logins.addLogin(loginInfo);
-  }
-  LoginTestUtils.checkLogins(logins);
+  await Services.logins.addLogins(logins);
+  await LoginTestUtils.checkLogins(logins);
   Assert.equal(
-    (await Services.logins.getAllLoginsAsync()).length,
+    (await Services.logins.getAllLogins()).length,
     logins.length,
-    "getAllLoginsAsync length"
+    "getAllLogins length"
   );
   Assert.equal(Services.logins.countLogins("", "", ""), logins.length * 2);
 
   // Finding logins doesn't return the non-decryptable duplicates.
   Assert.equal(
-    Services.logins.findLogins("http://www.example.com", "", "").length,
+    (
+      await Services.logins.searchLoginsAsync({
+        origin: "http://www.example.com",
+      })
+    ).length,
     1
   );
   let matchData = newPropertyBag({ origin: "http://www.example.com" });
@@ -80,19 +76,19 @@ add_task(async function test_logins_decrypt_failure() {
   for (let loginInfo of TestData.loginList()) {
     Services.logins.removeLogin(loginInfo);
   }
-  Assert.equal(Services.logins.getAllLogins().length, 0);
+  Assert.equal((await Services.logins.getAllLogins()).length, 0);
   Assert.equal(Services.logins.countLogins("", "", ""), logins.length);
 
   // Removing all logins removes the non-decryptable entries also.
   Services.logins.removeAllUserFacingLogins();
-  Assert.equal(Services.logins.getAllLogins().length, 0);
+  Assert.equal((await Services.logins.getAllLogins()).length, 0);
   Assert.equal(Services.logins.countLogins("", "", ""), 0);
 });
 
 // Bug 621846 - If a login has a GUID but can't be decrypted, a search for
 // that GUID will (correctly) fail. Ensure we can add a new login with that
 // same GUID.
-add_task(function test_add_logins_with_decrypt_failure() {
+add_task(async function test_add_logins_with_decrypt_failure() {
   // a login with a GUID.
   let login = new LoginInfo(
     "http://www.example2.com",
@@ -120,7 +116,7 @@ add_task(function test_add_logins_with_decrypt_failure() {
   loginDupeGuid.QueryInterface(Ci.nsILoginMetaInfo);
   loginDupeGuid.guid = login.guid;
 
-  Services.logins.addLogin(login);
+  await Services.logins.addLoginAsync(login);
 
   // We can search for this login by GUID.
   let searchProp = Cc["@mozilla.org/hash-property-bag;1"].createInstance(
@@ -131,24 +127,24 @@ add_task(function test_add_logins_with_decrypt_failure() {
   equal(Services.logins.searchLogins(searchProp).length, 1);
 
   // We should fail to re-add it as it remains good.
-  Assert.throws(
-    () => Services.logins.addLogin(login),
+  await Assert.rejects(
+    Services.logins.addLoginAsync(login),
     /This login already exists./
   );
   // We should fail to re-add a different login with the same GUID.
-  Assert.throws(
-    () => Services.logins.addLogin(loginDupeGuid),
+  await Assert.rejects(
+    Services.logins.addLoginAsync(loginDupeGuid),
     /specified GUID already exists/
   );
 
   // This makes the existing login non-decryptable.
-  resetMasterPassword();
+  resetPrimaryPassword();
 
   // We can no longer find it in our search.
   equal(Services.logins.searchLogins(searchProp).length, 0);
 
   // So we should be able to re-add a login with that same GUID.
-  Services.logins.addLogin(login);
+  await Services.logins.addLoginAsync(login);
   equal(Services.logins.searchLogins(searchProp).length, 1);
 
   Services.logins.removeAllUserFacingLogins();
@@ -163,7 +159,7 @@ add_task(async function test_sync_metadata_with_decrypt_failure() {
   equal(await Services.logins.getLastSync(), 123);
 
   // This makes the existing login and syncID non-decryptable.
-  resetMasterPassword();
+  resetPrimaryPassword();
 
   // The syncID is now null.
   equal(await Services.logins.getSyncID(), null);

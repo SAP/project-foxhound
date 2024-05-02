@@ -560,6 +560,29 @@ final class BasicGeckoViewPrompt implements GeckoSession.PromptDelegate {
       throw new UnsupportedOperationException();
     }
     dialog.show();
+
+    prompt.setDelegate(
+        new PromptInstanceDelegate() {
+          @Override
+          public void onPromptDismiss(final BasePrompt prompt) {
+            dialog.dismiss();
+          }
+
+          @Override
+          public void onPromptUpdate(final BasePrompt prompt) {
+            dialog.setOnDismissListener(null);
+            dialog.dismiss();
+            final ChoicePrompt newPrompt = (ChoicePrompt) prompt;
+            onChoicePromptImpl(
+                session,
+                newPrompt.title,
+                newPrompt.message,
+                newPrompt.type,
+                newPrompt.choices,
+                newPrompt,
+                res);
+          }
+        });
   }
 
   @Override
@@ -820,8 +843,17 @@ final class BasicGeckoViewPrompt implements GeckoSession.PromptDelegate {
         .setNegativeButton(android.R.string.cancel, /* listener */ null)
         .setNeutralButton(R.string.clear_field, listener)
         .setPositiveButton(android.R.string.ok, listener);
-    createStandardDialog(builder, prompt, res).show();
 
+    final AlertDialog dialog = createStandardDialog(builder, prompt, res);
+    dialog.show();
+
+    prompt.setDelegate(
+        new PromptInstanceDelegate() {
+          @Override
+          public void onPromptDismiss(final BasePrompt prompt) {
+            dialog.dismiss();
+          }
+        });
     return res;
   }
 
@@ -864,10 +896,10 @@ final class BasicGeckoViewPrompt implements GeckoSession.PromptDelegate {
         (mimeType != null ? mimeType : "*") + '/' + (mimeSubtype != null ? mimeSubtype : "*"));
     intent.addCategory(Intent.CATEGORY_OPENABLE);
     intent.putExtra(Intent.EXTRA_LOCAL_ONLY, true);
-    if (Build.VERSION.SDK_INT >= 18 && prompt.type == FilePrompt.Type.MULTIPLE) {
+    if (prompt.type == FilePrompt.Type.MULTIPLE) {
       intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
     }
-    if (Build.VERSION.SDK_INT >= 19 && prompt.mimeTypes.length > 0) {
+    if (prompt.mimeTypes.length > 0) {
       intent.putExtra(Intent.EXTRA_MIME_TYPES, prompt.mimeTypes);
     }
 

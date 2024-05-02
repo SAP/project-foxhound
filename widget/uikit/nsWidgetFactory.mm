@@ -20,8 +20,8 @@ namespace mozilla {
 namespace widget {
 // This constructor should really be shared with all platforms.
 NS_GENERIC_FACTORY_CONSTRUCTOR_INIT(GfxInfo, Init)
-}
-}
+}  // namespace widget
+}  // namespace mozilla
 
 NS_DEFINE_NAMED_CID(NS_APPSHELL_CID);
 NS_DEFINE_NAMED_CID(NS_SCREENMANAGER_CID);
@@ -44,6 +44,10 @@ static void nsWidgetUIKitModuleDtor() {
   nsAppShellShutdown();
 }
 
-extern const mozilla::Module kWidgetModule = {
-    mozilla::Module::kVersion, kWidgetCIDs, kWidgetContracts, nullptr, nullptr, nsAppShellInit,
-    nsWidgetUIKitModuleDtor};
+extern const mozilla::Module kWidgetModule = {mozilla::Module::kVersion,
+                                              kWidgetCIDs,
+                                              kWidgetContracts,
+                                              nullptr,
+                                              nullptr,
+                                              nsAppShellInit,
+                                              nsWidgetUIKitModuleDtor};

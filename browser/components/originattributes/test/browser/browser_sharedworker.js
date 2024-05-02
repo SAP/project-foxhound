@@ -8,15 +8,14 @@ const TEST_PATH =
 const TEST_PAGE = TEST_PATH + "file_sharedworker.html";
 
 async function getResultFromSharedworker(aBrowser) {
-  let response = await SpecialPowers.spawn(aBrowser, [], async function() {
+  let response = await SpecialPowers.spawn(aBrowser, [], async function () {
     let worker = new content.SharedWorker(
-      "file_sharedworker.js",
+      "file_shared.worker.js",
       "isolationSharedWorkerTest"
     );
 
     let result = await new content.Promise(resolve => {
-      worker.port.onmessage = function(e) {
-        // eslint-disable-next-line no-unsanitized/property
+      worker.port.onmessage = function (e) {
         content.document.getElementById("display").innerHTML = e.data;
         resolve(e.data);
       };

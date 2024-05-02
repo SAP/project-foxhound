@@ -5,7 +5,6 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "ServiceWorkerManager.h"
-#include "ServiceWorkerPrivateImpl.h"
 
 #include <algorithm>
 
@@ -108,30 +107,12 @@ using namespace mozilla;
 using namespace mozilla::dom;
 using namespace mozilla::ipc;
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 // Counts the number of registered ServiceWorkers, and the number that
 // handle Fetch, for reporting in Telemetry
 uint32_t gServiceWorkersRegistered = 0;
 uint32_t gServiceWorkersRegisteredFetch = 0;
-
-static_assert(
-    nsIHttpChannelInternal::CORS_MODE_SAME_ORIGIN ==
-        static_cast<uint32_t>(RequestMode::Same_origin),
-    "RequestMode enumeration value should match Necko CORS mode value.");
-static_assert(
-    nsIHttpChannelInternal::CORS_MODE_NO_CORS ==
-        static_cast<uint32_t>(RequestMode::No_cors),
-    "RequestMode enumeration value should match Necko CORS mode value.");
-static_assert(
-    nsIHttpChannelInternal::CORS_MODE_CORS ==
-        static_cast<uint32_t>(RequestMode::Cors),
-    "RequestMode enumeration value should match Necko CORS mode value.");
-static_assert(
-    nsIHttpChannelInternal::CORS_MODE_NAVIGATE ==
-        static_cast<uint32_t>(RequestMode::Navigate),
-    "RequestMode enumeration value should match Necko CORS mode value.");
 
 static_assert(
     nsIHttpChannelInternal::REDIRECT_MODE_FOLLOW ==
@@ -487,10 +468,6 @@ void ServiceWorkerManager::Init(ServiceWorkerRegistrar* aRegistrar) {
 
   MOZ_DIAGNOSTIC_ASSERT(aRegistrar);
 
-  nsTArray<ServiceWorkerRegistrationData> data;
-  aRegistrar->GetRegistrations(data);
-  LoadRegistrations(data);
-
   PBackgroundChild* actorChild = BackgroundChild::GetOrCreateForCurrentThread();
   if (NS_WARN_IF(!actorChild)) {
     MaybeStartShutdown();
@@ -505,6 +482,12 @@ void ServiceWorkerManager::Init(ServiceWorkerRegistrar* aRegistrar) {
   }
 
   mActor = static_cast<ServiceWorkerManagerChild*>(actor);
+
+  // mActor must be set before LoadRegistrations is called because it can purge
+  // service workers if preferences are disabled.
+  nsTArray<ServiceWorkerRegistrationData> data;
+  aRegistrar->GetRegistrations(data);
+  LoadRegistrations(data);
 
   mTelemetryLastChange = TimeStamp::Now();
 }
@@ -720,7 +703,7 @@ void ServiceWorkerManager::MaybeFinishShutdown() {
   mActor = nullptr;
 
   // This also submits final telemetry
-  ServiceWorkerPrivateImpl::RunningShutdown();
+  ServiceWorkerPrivate::RunningShutdown();
 }
 
 class ServiceWorkerResolveWindowPromiseOnRegisterCallback final
@@ -1384,8 +1367,8 @@ ServiceWorkerManager::Unregister(nsIPrincipal* aPrincipal,
   NS_ConvertUTF16toUTF8 scope(aScope);
   RefPtr<ServiceWorkerJobQueue> queue = GetOrCreateJobQueue(scopeKey, scope);
 
-  RefPtr<ServiceWorkerUnregisterJob> job = new ServiceWorkerUnregisterJob(
-      aPrincipal, scope, true /* send to parent */);
+  RefPtr<ServiceWorkerUnregisterJob> job =
+      new ServiceWorkerUnregisterJob(aPrincipal, scope);
 
   if (aCallback) {
     RefPtr<UnregisterJobCallback> cb = new UnregisterJobCallback(aCallback);
@@ -1517,6 +1500,14 @@ void ServiceWorkerManager::HandleError(
                      aColumnNumber, aFlags);
 }
 
+void ServiceWorkerManager::PurgeServiceWorker(
+    const ServiceWorkerRegistrationData& aRegistration,
+    nsIPrincipal* aPrincipal) {
+  MOZ_ASSERT(mActor);
+  serviceWorkerScriptCache::PurgeCache(aPrincipal, aRegistration.cacheName());
+  MaybeSendUnregister(aPrincipal, aRegistration.scope());
+}
+
 void ServiceWorkerManager::LoadRegistration(
     const ServiceWorkerRegistrationData& aRegistration) {
   MOZ_ASSERT(NS_IsMainThread());
@@ -1527,6 +1518,13 @@ void ServiceWorkerManager::LoadRegistration(
   }
   nsCOMPtr<nsIPrincipal> principal = principalOrErr.unwrap();
 
+  if (!StaticPrefs::dom_serviceWorkers_enabled()) {
+    // If service workers are disabled, remove the registration from disk
+    // instead of loading.
+    PurgeServiceWorker(aRegistration, principal);
+    return;
+  }
+
   // Purge extensions registrations if they are disabled by prefs.
   if (!StaticPrefs::extensions_backgroundServiceWorker_enabled_AtStartup()) {
     nsCOMPtr<nsIURI> uri = principal->GetURI();
@@ -1535,8 +1533,7 @@ void ServiceWorkerManager::LoadRegistration(
     // the extension may not have been loaded yet and the WebExtensionPolicy
     // may not exist yet.
     if (uri->SchemeIs("moz-extension")) {
-      const auto& cacheName = aRegistration.cacheName();
-      serviceWorkerScriptCache::PurgeCache(principal, cacheName);
+      PurgeServiceWorker(aRegistration, principal);
       return;
     }
   }
@@ -2064,6 +2061,7 @@ void ServiceWorkerManager::DispatchFetchEvent(nsIInterceptedChannel* aChannel,
                                               ErrorResult& aRv) {
   MOZ_ASSERT(aChannel);
   MOZ_ASSERT(NS_IsMainThread());
+  MOZ_ASSERT(XRE_IsParentProcess());
 
   nsCOMPtr<nsIChannel> internalChannel;
   aRv = aChannel->GetChannel(getter_AddRefs(internalChannel));
@@ -2232,28 +2230,13 @@ void ServiceWorkerManager::DispatchFetchEvent(nsIInterceptedChannel* aChannel,
   // When this service worker was registered, we also sent down the permissions
   // for the runnable. They should have arrived by now, but we still need to
   // wait for them if they have not.
-  nsCOMPtr<nsIRunnable> permissionsRunnable = NS_NewRunnableFunction(
-      "dom::ServiceWorkerManager::DispatchFetchEvent", [=]() {
-        RefPtr<PermissionManager> permMgr = PermissionManager::GetInstance();
-        if (permMgr) {
-          permMgr->WhenPermissionsAvailable(serviceWorker->Principal(),
-                                            continueRunnable);
-        } else {
-          continueRunnable->HandleError();
-        }
-      });
-
-  nsCOMPtr<nsIUploadChannel2> uploadChannel =
-      do_QueryInterface(internalChannel);
-
-  // If there is no upload stream, then continue immediately
-  if (!uploadChannel) {
-    MOZ_ALWAYS_SUCCEEDS(permissionsRunnable->Run());
-    return;
+  RefPtr<PermissionManager> permMgr = PermissionManager::GetInstance();
+  if (permMgr) {
+    permMgr->WhenPermissionsAvailable(serviceWorker->Principal(),
+                                      continueRunnable);
+  } else {
+    continueRunnable->HandleError();
   }
-  // Otherwise, ensure the upload stream can be cloned directly.  This may
-  // require some async copying, so provide a callback.
-  aRv = uploadChannel->EnsureUploadStreamIsCloneable(permissionsRunnable);
 }
 
 bool ServiceWorkerManager::IsAvailable(nsIPrincipal* aPrincipal, nsIURI* aURI,
@@ -2675,6 +2658,16 @@ void ServiceWorkerManager::UpdateClientControllers(
           // failed to control, forget about this client
           self->StopControllingClient(clientInfo);
         });
+  }
+}
+
+void ServiceWorkerManager::EvictFromBFCache(
+    ServiceWorkerRegistrationInfo* aRegistration) {
+  MOZ_ASSERT(NS_IsMainThread());
+  for (const auto& client : mControlledClients.Values()) {
+    if (client->mRegistrationInfo == aRegistration) {
+      client->mClientHandle->EvictFromBFCache();
+    }
   }
 }
 
@@ -3157,7 +3150,7 @@ ServiceWorkerManager::PropagateUnregister(
     return NS_ERROR_FAILURE;
   }
 
-  mActor->SendPropagateUnregister(principalInfo, nsString(aScope));
+  mActor->SendPropagateUnregister(principalInfo, aScope);
 
   nsresult rv = Unregister(aPrincipal, aCallback, aScope);
   if (NS_WARN_IF(NS_FAILED(rv))) {
@@ -3384,5 +3377,4 @@ void ServiceWorkerManager::ReportServiceWorkerShutdownProgress(
   mShutdownBlocker->ReportShutdownProgress(aShutdownStateId, aProgress);
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

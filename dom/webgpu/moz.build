@@ -9,7 +9,7 @@ with Files("**"):
 
 MOCHITEST_MANIFESTS += [
     "mochitest/mochitest-no-pref.ini",
-    "mochitest/mochitest.ini",
+    "mochitest/mochitest.toml",
 ]
 
 DIRS += []
@@ -28,7 +28,10 @@ h_and_cpp = [
     "ComputePipeline",
     "Device",
     "DeviceLostInfo",
+    "Error",
+    "ExternalTexture",
     "Instance",
+    "InternalError",
     "ObjectModel",
     "OutOfMemoryError",
     "PipelineLayout",
@@ -44,6 +47,7 @@ h_and_cpp = [
     "SupportedLimits",
     "Texture",
     "TextureView",
+    "Utility",
     "ValidationError",
 ]
 EXPORTS.mozilla.webgpu += [x + ".h" for x in h_and_cpp]
@@ -51,6 +55,7 @@ UNIFIED_SOURCES += [x + ".cpp" for x in h_and_cpp]
 
 IPDL_SOURCES += [
     "ipc/PWebGPU.ipdl",
+    "ipc/PWebGPUTypes.ipdlh",
 ]
 
 EXPORTS.mozilla.webgpu += [
@@ -65,8 +70,18 @@ UNIFIED_SOURCES += [
     "ipc/WebGPUParent.cpp",
 ]
 
+if CONFIG["MOZ_ENABLE_D3D10_LAYER"]:
+    DEFINES["MOZ_ENABLE_D3D10_LAYER"] = True
+    EXPORTS.mozilla.webgpu += [
+        "ExternalTextureD3D11.h",
+    ]
+    UNIFIED_SOURCES += [
+        "ExternalTextureD3D11.cpp",
+    ]
+
 if CONFIG["CC_TYPE"] in ("clang", "clang-cl"):
     CXXFLAGS += ["-Werror=implicit-int-conversion"]
+    CXXFLAGS += ["-Werror=switch"]
 
 include("/ipc/chromium/chromium-config.mozbuild")
 

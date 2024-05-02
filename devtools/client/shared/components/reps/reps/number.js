@@ -5,7 +5,7 @@
 "use strict";
 
 // Make this available to both AMD and CJS environments
-define(function(require, exports, module) {
+define(function (require, exports, module) {
   // Dependencies
   const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
   const { span } = require("devtools/client/shared/vendor/react-dom-factories");
@@ -49,8 +49,9 @@ define(function(require, exports, module) {
     };
   }
 
+  const SUPPORTED_TYPES = new Set(["boolean", "number", "-0"]);
   function supportsObject(object, noGrip = false) {
-    return ["boolean", "number", "-0"].includes(getGripType(object, noGrip));
+    return SUPPORTED_TYPES.has(getGripType(object, noGrip));
   }
 
   // Exports from this module

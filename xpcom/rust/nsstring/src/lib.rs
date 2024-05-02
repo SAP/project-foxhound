@@ -25,12 +25,12 @@
 //! Use `*{const,mut} nsA[C]String` (`{const,} nsA[C]String*` in C++) for
 //! function arguments passed across the rust/C++ language boundary.
 //!
-//! There is currently no Rust equivalent to nsAuto[C]String. Implementing a
+//! There is currently no Rust equivalent to `nsAuto[C]String`. Implementing a
 //! type that contains a pointer to an inline buffer is difficult in Rust due
 //! to its move semantics, which require that it be safe to move a value by
 //! copying its bits. If such a type is genuinely needed at some point,
-//! https://bugzilla.mozilla.org/show_bug.cgi?id=1403506#c6 has a sketch of how
-//! to emulate it via macros.
+//! <https://bugzilla.mozilla.org/show_bug.cgi?id=1403506#c6> has a sketch of
+//! how to emulate it via macros.
 //!
 //! # String Types
 //!
@@ -157,6 +157,7 @@ bitflags! {
     // While this has the same layout as u16, it cannot be passed
     // over FFI safely as a u16.
     #[repr(C)]
+    #[derive(Debug, Copy, PartialEq, Eq, Clone, PartialOrd, Ord, Hash)]
     struct DataFlags: u16 {
         const TERMINATED = 1 << 0; // IsTerminated returns true
         const VOIDED = 1 << 1; // IsVoid returns true
@@ -172,6 +173,7 @@ bitflags! {
     // While this has the same layout as u16, it cannot be passed
     // over FFI safely as a u16.
     #[repr(C)]
+    #[derive(Debug, Copy, PartialEq, Eq, Clone, PartialOrd, Ord, Hash)]
     struct ClassFlags: u16 {
         const INLINE = 1 << 0; // |this|'s buffer is inline
         const NULL_TERMINATED = 1 << 1; // |this| requires its buffer is null-terminated
@@ -346,13 +348,13 @@ macro_rules! define_string_types {
         begin_writing = $begin_writing: ident, $fallible_begin_writing: ident;
         start_bulk_write = $start_bulk_write: ident;
     } => {
-        /// The representation of a ns[C]String type in C++. This type is
-        /// used internally by our definition of ns[C]String to ensure layout
-        /// compatibility with the C++ ns[C]String type.
+        /// The representation of a `ns[C]String` type in C++. This type is
+        /// used internally by our definition of `ns[C]String` to ensure layout
+        /// compatibility with the C++ `ns[C]String` type.
         ///
-        /// This type may also be used in place of a C++ ns[C]String inside of
+        /// This type may also be used in place of a C++ `ns[C]String` inside of
         /// struct definitions which are shared with C++, as it has identical
-        /// layout to our ns[C]String type.
+        /// layout to our `ns[C]String` type.
         ///
         /// This struct will leak its data if dropped from rust. See the module
         /// documentation for more information on this type.

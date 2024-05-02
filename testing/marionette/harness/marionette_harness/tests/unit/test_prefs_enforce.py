@@ -2,8 +2,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import
-
 import six
 
 from marionette_harness import MarionetteTestCase
@@ -15,7 +13,7 @@ class TestEnforcePreferences(MarionetteTestCase):
         self.marionette.set_context("chrome")
 
     def tearDown(self):
-        self.marionette.restart(clean=True)
+        self.marionette.restart(in_app=False, clean=True)
 
         super(TestEnforcePreferences, self).tearDown()
 
@@ -45,12 +43,12 @@ class TestEnforcePreferences(MarionetteTestCase):
         self.enforce_prefs()
         self.assertTrue(self.marionette.get_pref("marionette.test.bool"))
 
-        self.marionette.restart(clean=True)
+        self.marionette.restart(in_app=False, clean=True)
         self.assertEqual(self.marionette.get_pref("marionette.test.bool"), None)
 
     def test_restart_preserves_requested_capabilities(self):
         self.marionette.delete_session()
-        self.marionette.start_session(capabilities={"moz:fooBar": True})
+        self.marionette.start_session(capabilities={"test:fooBar": True})
 
         self.enforce_prefs()
-        self.assertEqual(self.marionette.session.get("moz:fooBar"), True)
+        self.assertEqual(self.marionette.session.get("test:fooBar"), True)

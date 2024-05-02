@@ -46,6 +46,14 @@ class SVGAnimatedPointList {
  public:
   SVGAnimatedPointList() = default;
 
+  SVGAnimatedPointList& operator=(const SVGAnimatedPointList& aOther) {
+    mBaseVal = aOther.mBaseVal;
+    if (aOther.mAnimVal) {
+      mAnimVal = MakeUnique<SVGPointList>(*aOther.mAnimVal);
+    }
+    return *this;
+  }
+
   /**
    * Because it's so important that mBaseVal and its DOMSVGPointList wrapper
    * (if any) be kept in sync (see the comment in
@@ -102,12 +110,13 @@ class SVGAnimatedPointList {
     dom::SVGElement* mElement;
 
     // SMILAttr methods
-    virtual nsresult ValueFromString(
-        const nsAString& aStr, const dom::SVGAnimationElement* aSrcElement,
-        SMILValue& aValue, bool& aPreventCachingOfSandwich) const override;
-    virtual SMILValue GetBaseValue() const override;
-    virtual void ClearAnimValue() override;
-    virtual nsresult SetAnimValue(const SMILValue& aValue) override;
+    nsresult ValueFromString(const nsAString& aStr,
+                             const dom::SVGAnimationElement* aSrcElement,
+                             SMILValue& aValue,
+                             bool& aPreventCachingOfSandwich) const override;
+    SMILValue GetBaseValue() const override;
+    void ClearAnimValue() override;
+    nsresult SetAnimValue(const SMILValue& aValue) override;
   };
 };
 

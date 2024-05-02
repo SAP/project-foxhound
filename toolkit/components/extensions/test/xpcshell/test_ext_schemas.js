@@ -243,6 +243,11 @@ let json = [
             type: "object",
             properties: {
               hostname: { type: "string", format: "hostname", optional: true },
+              canonicalDomain: {
+                type: "string",
+                format: "canonicalDomain",
+                optional: "omit-key-if-missing",
+              },
               url: { type: "string", format: "url", optional: true },
               origin: { type: "string", format: "origin", optional: true },
               relativeUrl: {
@@ -428,7 +433,7 @@ let json = [
   },
 ];
 
-add_task(async function() {
+add_task(async function () {
   let wrapper = getContextWrapper();
   let url = "data:," + JSON.stringify(json);
   Schemas._rootSchema = null;
@@ -660,6 +665,43 @@ add_task(async function() {
       /Invalid hostname/,
       "should throw for invalid hostname"
     );
+    Assert.throws(
+      () => root.testing.format({ canonicalDomain: invalid }),
+      /Invalid domain /,
+      `should throw for invalid canonicalDomain (${invalid})`
+    );
+  }
+
+  for (let invalid of [
+    "%61", // ASCII should not be URL-encoded.
+    "foo:12345", // It is a common mistake to use .host instead of .hostname.
+    "2", // Single digit is an IPv4 address, but should be written as 0.0.0.2.
+    "::1", // IPv6 addresses should have brackets.
+    "[::1A]", // not lowercase.
+    "[::ffff:127.0.0.1]", // not a canonical IPv6 representation.
+    "UPPERCASE", // not lowercase.
+    "straß.de", // not punycode.
+  ]) {
+    Assert.throws(
+      () => root.testing.format({ canonicalDomain: invalid }),
+      /Invalid domain /,
+      `should throw for invalid canonicalDomain (${invalid})`
+    );
+  }
+
+  for (let valid of ["0.0.0.2", "[::1]", "[::1a]", "lowercase", "."]) {
+    root.testing.format({ canonicalDomain: valid });
+    wrapper.verify("call", "testing", "format", [
+      {
+        canonicalDomain: valid,
+        hostname: null,
+        imageDataOrStrictRelativeUrl: null,
+        origin: null,
+        relativeUrl: null,
+        strictRelativeUrl: null,
+        url: null,
+      },
+    ]);
   }
 
   for (let valid of [
@@ -1840,7 +1882,7 @@ add_task(async function testDefaults() {
   await Schemas.load(url);
 
   let testingApiObj = {
-    defaultFoo: function(arg) {
+    defaultFoo: function (arg) {
       if (Object.keys(arg) != "prop1") {
         throw new Error(
           `Received the expected default object, default: ${JSON.stringify(

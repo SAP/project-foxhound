@@ -17,9 +17,10 @@ const EXPECTED = {
   file: "simple.html",
   sourceURL: SIMPLE_URL,
   text: "This is a simple page",
+  threadsCount: 1,
 };
 
-module.exports = async function() {
+module.exports = async function () {
   await testSetup(SIMPLE_URL);
   await openDebuggerAndLog("cold", EXPECTED);
   await closeToolbox();

@@ -9,22 +9,20 @@
 
 #include "nsTArray.h"
 
-namespace mozilla {
-namespace net {
+namespace mozilla::net {
 
 class WebrtcTCPSocketCallback {
  public:
   NS_INLINE_DECL_PURE_VIRTUAL_REFCOUNTING
 
   virtual void OnClose(nsresult aReason) = 0;
-  virtual void OnConnected(const nsCString& aProxyType) = 0;
+  virtual void OnConnected(const nsACString& aProxyType) = 0;
   virtual void OnRead(nsTArray<uint8_t>&& aReadData) = 0;
 
  protected:
   virtual ~WebrtcTCPSocketCallback() = default;
 };
 
-}  // namespace net
-}  // namespace mozilla
+}  // namespace mozilla::net
 
 #endif  // webrtc_tcp_socket_callback_h__

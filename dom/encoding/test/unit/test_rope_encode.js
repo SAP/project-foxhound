@@ -137,31 +137,47 @@ var concat = [
 ];
 
 var testingFunctions = Cu.getJSTestingFunctions();
-concat.forEach(function(t) {
-  test(function() {
+concat.forEach(function (t) {
+  test(function () {
     assert_true(
       testingFunctions.isSameCompartment(testingFunctions.newRope, this),
       "Must be in the same compartment"
     );
-    var rope = testingFunctions.newRope(t.head, t.tail);
+    var filler = "012345678901234567890123456789";
+    var rope = testingFunctions.newRope(
+      t.head,
+      testingFunctions.newRope(t.tail, filler)
+    );
     var encoded = new TextEncoder().encode(rope);
     var decoded = new TextDecoder().decode(encoded);
-    assert_equals(decoded, t.expected, "Must round-trip");
+    assert_equals(decoded, t.expected + filler, "Must round-trip");
   }, t.name);
 });
 
-test(function() {
+test(function () {
   assert_true(
     testingFunctions.isSameCompartment(testingFunctions.newRope, this),
     "Must be in the same compartment"
   );
-  var ab = testingFunctions.newRope("a", "b");
+
+  var filler = "012345678901234567890123456789";
+
+  var a = testingFunctions.newRope(filler, "a");
+  var ab = testingFunctions.newRope(a, "b");
   var abc = testingFunctions.newRope(ab, "c");
-  var ef = testingFunctions.newRope("e", "f");
+
+  var e = testingFunctions.newRope(filler, "e");
+  var ef = testingFunctions.newRope(e, "f");
   var def = testingFunctions.newRope("d", ef);
+
   var abcdef = testingFunctions.newRope(abc, def);
   var abcdefab = testingFunctions.newRope(abcdef, ab);
+
   var encoded = new TextEncoder().encode(abcdefab);
   var decoded = new TextDecoder().decode(encoded);
-  assert_equals(decoded, "abcdefab", "Must walk the DAG correctly");
+  assert_equals(
+    decoded,
+    "012345678901234567890123456789abcd012345678901234567890123456789ef012345678901234567890123456789ab",
+    "Must walk the DAG correctly"
+  );
 }, "Complex rope DAG");

@@ -1,11 +1,7 @@
 "use strict";
 
-const { AddonTestUtils } = ChromeUtils.import(
-  "resource://testing-common/AddonTestUtils.jsm"
-);
-
-const { ProductAddonCheckerTestUtils } = ChromeUtils.import(
-  "resource://gre/modules/addons/ProductAddonChecker.jsm"
+const { AddonTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/AddonTestUtils.sys.mjs"
 );
 
 AddonTestUtils.initMochitest(this);
@@ -25,6 +21,7 @@ add_task(async function test_management_install() {
     manifest: {
       browser_action: {
         browser_style: false,
+        default_area: "navbar",
       },
       permissions: ["management"],
     },
@@ -56,7 +53,7 @@ add_task(async function test_management_install() {
       manifest_version: 2,
       name: "Tigers Matter",
       version: "1.0",
-      applications: {
+      browser_specific_settings: {
         gecko: {
           id: "tiger@persona.beard",
         },
@@ -69,9 +66,9 @@ add_task(async function test_management_install() {
     },
   });
 
-  let themeXPIFileHash = await ProductAddonCheckerTestUtils.computeHash(
-    "sha256",
-    themeXPIFile.path
+  let themeXPIFileHash = await IOUtils.computeHexDigest(
+    themeXPIFile.path,
+    "sha256"
   );
 
   const otherXPIFile = AddonTestUtils.createTempWebExtensionFile({
@@ -79,7 +76,7 @@ add_task(async function test_management_install() {
       manifest_version: 2,
       name: "Tigers Don't Matter",
       version: "1.0",
-      applications: {
+      browser_specific_settings: {
         gecko: {
           id: "other@web.extension",
         },

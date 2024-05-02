@@ -7,12 +7,11 @@
 
 """Print a C++ header file for the IDL files specified on the command line"""
 
-from __future__ import absolute_import
-
+import itertools
 import os.path
 import re
+
 from xpidl import xpidl
-import itertools
 
 printdoccomments = False
 
@@ -21,7 +20,6 @@ if printdoccomments:
     def printComments(fd, clist, indent):
         for c in clist:
             fd.write("%s%s\n" % (indent, c))
-
 
 else:
 
@@ -195,7 +193,7 @@ def paramlistAsNative(m, empty="void", return_param=True):
         while (
             paramIter >= 0
             and m.params[paramIter].optional
-            and m.params[paramIter].paramtype == "out"
+            and "out" in m.params[paramIter].paramtype
         ):
             t = m.params[paramIter].type
             # Strings can't be optional, so this shouldn't happen, but let's make sure:
@@ -252,9 +250,7 @@ header = """/*
 """
 
 include = """
-#ifndef __gen_%(basename)s_h__
 #include "%(basename)s.h"
-#endif
 """
 
 jsvalue_include = """
@@ -393,7 +389,9 @@ iface_scriptable = """\
 
 iface_epilog = """};
 
-  NS_DEFINE_STATIC_IID_ACCESSOR(%(name)s, %(defname)s_IID)
+  NS_DEFINE_STATIC_IID_ACCESSOR(%(name)s, %(defname)s_IID)"""
+
+iface_decl = """
 
 /* Use this macro when declaring classes that implement this interface. */
 #define NS_DECL_%(macroname)s """
@@ -435,6 +433,13 @@ refcnt_infallible_tmpl = """\
     MOZ_ASSERT(NS_SUCCEEDED(rv));
     return already_AddRefed<%(realtype)s>(result);
   }
+"""
+
+iface_threadsafe_tmpl = """\
+namespace mozilla::detail {
+template <>
+class InterfaceNeedsThreadSafeRefCnt<%(name)s> : public std::true_type {};
+}
 """
 
 
@@ -603,6 +608,11 @@ def write_interface(iface, fd):
                     raise Exception("Unexpected interface member: %s" % member)
 
     fd.write(iface_epilog % names)
+
+    if iface.attributes.rust_sync:
+        fd.write(iface_threadsafe_tmpl % names)
+
+    fd.write(iface_decl % names)
 
     def writeDeclaration(fd, iface, virtual):
         declType = "NS_IMETHOD" if virtual else "nsresult"

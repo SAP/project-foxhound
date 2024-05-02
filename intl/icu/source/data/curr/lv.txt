@@ -938,7 +938,6 @@ lv{
         ZMW{"ZK"}
     }
     Currencies%variant{
-        GEL{"₾"}
         TRY{"TL"}
     }
     CurrencyPlurals{
@@ -1366,6 +1365,11 @@ lv{
             one{"Libērijas dolārs"}
             other{"Libērijas dolāri"}
             zero{"Libērijas dolāri"}
+        }
+        LSL{
+            one{"Lesoto loti"}
+            other{"Lesoto loti"}
+            zero{"Lesoto loti"}
         }
         LTL{
             one{"Lietuvas lits"}

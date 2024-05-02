@@ -1,8 +1,5 @@
 "use strict";
 
-const dns = Cc["@mozilla.org/network/dns-service;1"].getService(
-  Ci.nsIDNSService
-);
 const override = Cc["@mozilla.org/network/native-dns-override;1"].getService(
   Ci.nsINativeDNSResolverOverride
 );
@@ -39,7 +36,13 @@ class Listener {
 }
 Listener.prototype.QueryInterface = ChromeUtils.generateQI(["nsIDNSListener"]);
 
-["localhost", "vhost.localhost"].forEach(domain => {
+const DOMAINS = [
+  "localhost",
+  "localhost.",
+  "vhost.localhost",
+  "vhost.localhost.",
+];
+DOMAINS.forEach(domain => {
   add_task(async function test_() {
     let listener1 = new Listener();
     const overrides = ["1.2.3.4", "5.6.7.8"];
@@ -48,7 +51,7 @@ Listener.prototype.QueryInterface = ChromeUtils.generateQI(["nsIDNSListener"]);
     });
 
     // Verify that loopback host names are not overridden.
-    dns.asyncResolve(
+    Services.dns.asyncResolve(
       domain,
       Ci.nsIDNSService.RESOLVE_TYPE_DEFAULT,
       0,
@@ -67,7 +70,7 @@ Listener.prototype.QueryInterface = ChromeUtils.generateQI(["nsIDNSListener"]);
     // registered above are taken into account.
     Services.prefs.setBoolPref("network.proxy.allow_hijacking_localhost", true);
     let listener2 = new Listener();
-    dns.asyncResolve(
+    Services.dns.asyncResolve(
       domain,
       Ci.nsIDNSService.RESOLVE_TYPE_DEFAULT,
       0,
@@ -83,7 +86,7 @@ Listener.prototype.QueryInterface = ChromeUtils.generateQI(["nsIDNSListener"]);
     );
     Services.prefs.clearUserPref("network.proxy.allow_hijacking_localhost");
 
-    dns.clearCache(false);
+    Services.dns.clearCache(false);
     override.clearOverrides();
   });
 });

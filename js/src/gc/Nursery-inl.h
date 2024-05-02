@@ -10,13 +10,11 @@
 
 #include "gc/Nursery.h"
 
-#include "gc/Heap.h"
+#include "gc/GCRuntime.h"
 #include "gc/RelocationOverlay.h"
-#include "gc/Zone.h"
 #include "js/TracingAPI.h"
 #include "vm/JSContext.h"
-#include "vm/Runtime.h"
-#include "vm/SharedMem.h"
+#include "vm/NativeObject.h"
 
 inline JSRuntime* js::Nursery::runtime() const { return gc->rt; }
 
@@ -87,6 +85,95 @@ inline void js::Nursery::setDirectForwardingPointer(void* oldData,
   new (oldData) BufferRelocationOverlay{newData};
 }
 
+inline void* js::Nursery::tryAllocateCell(gc::AllocSite* site, size_t size,
+                                          JS::TraceKind kind) {
+  // Ensure there's enough space to replace the contents with a
+  // RelocationOverlay.
+  // MOZ_ASSERT(size >= sizeof(RelocationOverlay));
+  MOZ_ASSERT(size % gc::CellAlignBytes == 0);
+  MOZ_ASSERT(size_t(kind) < gc::NurseryTraceKinds);
+  MOZ_ASSERT_IF(kind == JS::TraceKind::String, canAllocateStrings());
+  MOZ_ASSERT_IF(kind == JS::TraceKind::BigInt, canAllocateBigInts());
+
+  void* ptr = tryAllocate(sizeof(gc::NurseryCellHeader) + size);
+  if (MOZ_UNLIKELY(!ptr)) {
+    return nullptr;
+  }
+
+  new (ptr) gc::NurseryCellHeader(site, kind);
+
+  void* cell =
+      reinterpret_cast<void*>(uintptr_t(ptr) + sizeof(gc::NurseryCellHeader));
+  if (!cell) {
+    MOZ_MAKE_COMPILER_ASSUME_IS_UNREACHABLE(
+        "Successful allocation cannot result in nullptr");
+  }
+
+  // Update the allocation site. This code is also inlined in
+  // MacroAssembler::updateAllocSite.
+  uint32_t allocCount = site->incAllocCount();
+  if (allocCount == 1) {
+    pretenuringNursery.insertIntoAllocatedList(site);
+  }
+  MOZ_ASSERT_IF(site->isNormal(), site->isInAllocatedList());
+
+  gc::gcprobes::NurseryAlloc(cell, kind);
+  return cell;
+}
+
+inline void* js::Nursery::tryAllocate(size_t size) {
+  MOZ_ASSERT(isEnabled());
+  MOZ_ASSERT(!JS::RuntimeHeapIsBusy());
+  MOZ_ASSERT_IF(currentChunk_ == startChunk_, position() >= startPosition_);
+  MOZ_ASSERT(size % gc::CellAlignBytes == 0);
+  MOZ_ASSERT(position() % gc::CellAlignBytes == 0);
+
+  if (MOZ_UNLIKELY(currentEnd() < position() + size)) {
+    return nullptr;
+  }
+
+  void* ptr = reinterpret_cast<void*>(position());
+  if (!ptr) {
+    MOZ_MAKE_COMPILER_ASSUME_IS_UNREACHABLE(
+        "Successful allocation cannot result in nullptr");
+  }
+
+  position_ = position() + size;
+
+  DebugOnlyPoison(ptr, JS_ALLOCATED_NURSERY_PATTERN, size,
+                  MemCheckKind::MakeUndefined);
+
+  return ptr;
+}
+
+inline bool js::Nursery::registerTrailer(PointerAndUint7 blockAndListID,
+                                         size_t nBytes) {
+  MOZ_ASSERT(trailersAdded_.length() == trailersRemoved_.length());
+  MOZ_ASSERT(nBytes > 0);
+  if (MOZ_UNLIKELY(!trailersAdded_.append(blockAndListID))) {
+    return false;
+  }
+  if (MOZ_UNLIKELY(!trailersRemoved_.append(nullptr))) {
+    trailersAdded_.popBack();
+    return false;
+  }
+
+  // This is a clone of the logic in ::registerMallocedBuffer.  It may be
+  // that some other heuristic is better, once we know more about the
+  // typical behaviour of wasm-GC applications.
+  trailerBytes_ += nBytes;
+  if (MOZ_UNLIKELY(trailerBytes_ > capacity() * 8)) {
+    requestMinorGC(JS::GCReason::NURSERY_TRAILERS);
+  }
+  return true;
+}
+
+inline void js::Nursery::unregisterTrailer(void* block) {
+  MOZ_ASSERT(trailersRemovedUsed_ < trailersRemoved_.length());
+  trailersRemoved_[trailersRemovedUsed_] = block;
+  trailersRemovedUsed_++;
+}
+
 namespace js {
 
 // The allocation methods below will not run the garbage collector. If the
@@ -94,93 +181,33 @@ namespace js {
 // instead.
 
 template <typename T>
-static inline T* AllocateObjectBuffer(JSContext* cx, uint32_t count) {
+static inline T* AllocateCellBuffer(JSContext* cx, gc::Cell* cell,
+                                    uint32_t count) {
   size_t nbytes = RoundUp(count * sizeof(T), sizeof(Value));
   auto* buffer =
-      static_cast<T*>(cx->nursery().allocateBuffer(cx->zone(), nbytes));
+      static_cast<T*>(cx->nursery().allocateBuffer(cell->zone(), cell, nbytes));
   if (!buffer) {
     ReportOutOfMemory(cx);
   }
-  return buffer;
-}
 
-template <typename T>
-static inline T* AllocateObjectBuffer(JSContext* cx, JSObject* obj,
-                                      uint32_t count) {
-  if (cx->isHelperThreadContext()) {
-    return cx->pod_malloc<T>(count);
-  }
-  size_t nbytes = RoundUp(count * sizeof(T), sizeof(Value));
-  auto* buffer = static_cast<T*>(cx->nursery().allocateBuffer(obj, nbytes));
-  if (!buffer) {
-    ReportOutOfMemory(cx);
-  }
   return buffer;
 }
 
 // If this returns null then the old buffer will be left alone.
 template <typename T>
-static inline T* ReallocateObjectBuffer(JSContext* cx, JSObject* obj,
-                                        T* oldBuffer, uint32_t oldCount,
-                                        uint32_t newCount) {
-  T* buffer;
-  if (cx->isHelperThreadContext()) {
-    buffer = obj->zone()->pod_realloc<T>(oldBuffer, oldCount, newCount);
-  } else {
-    buffer = static_cast<T*>(cx->nursery().reallocateBuffer(
-        obj->zone(), obj, oldBuffer, oldCount * sizeof(T),
-        newCount * sizeof(T)));
-  }
+static inline T* ReallocateCellBuffer(JSContext* cx, gc::Cell* cell,
+                                      T* oldBuffer, uint32_t oldCount,
+                                      uint32_t newCount) {
+  size_t oldBytes = RoundUp(oldCount * sizeof(T), sizeof(Value));
+  size_t newBytes = RoundUp(newCount * sizeof(T), sizeof(Value));
 
+  T* buffer = static_cast<T*>(cx->nursery().reallocateBuffer(
+      cell->zone(), cell, oldBuffer, oldBytes, newBytes));
   if (!buffer) {
     ReportOutOfMemory(cx);
   }
 
   return buffer;
-}
-
-static inline JS::BigInt::Digit* AllocateBigIntDigits(JSContext* cx,
-                                                      JS::BigInt* bi,
-                                                      uint32_t length) {
-  JS::BigInt::Digit* digits;
-  if (cx->isHelperThreadContext()) {
-    digits = cx->pod_malloc<JS::BigInt::Digit>(length);
-  } else {
-    size_t nbytes = RoundUp(length * sizeof(JS::BigInt::Digit), sizeof(Value));
-    digits = static_cast<JS::BigInt::Digit*>(
-        cx->nursery().allocateBuffer(bi, nbytes));
-  }
-
-  if (!digits) {
-    ReportOutOfMemory(cx);
-  }
-
-  return digits;
-}
-
-static inline JS::BigInt::Digit* ReallocateBigIntDigits(
-    JSContext* cx, JS::BigInt* bi, JS::BigInt::Digit* oldDigits,
-    uint32_t oldLength, uint32_t newLength) {
-  JS::BigInt::Digit* digits;
-  if (cx->isHelperThreadContext()) {
-    MOZ_ASSERT(!cx->nursery().isInside(oldDigits));
-    digits = bi->zone()->pod_realloc<JS::BigInt::Digit>(oldDigits, oldLength,
-                                                        newLength);
-  } else {
-    size_t oldBytes =
-        RoundUp(oldLength * sizeof(JS::BigInt::Digit), sizeof(Value));
-    size_t newBytes =
-        RoundUp(newLength * sizeof(JS::BigInt::Digit), sizeof(Value));
-
-    digits = static_cast<JS::BigInt::Digit*>(cx->nursery().reallocateBuffer(
-        bi->zone(), bi, oldDigits, oldBytes, newBytes));
-  }
-
-  if (!digits) {
-    ReportOutOfMemory(cx);
-  }
-
-  return digits;
 }
 
 }  // namespace js

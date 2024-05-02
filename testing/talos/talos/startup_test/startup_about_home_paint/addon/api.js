@@ -4,10 +4,10 @@
 
 /* globals ExtensionAPI, Services, XPCOMUtils */
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.jsm",
-  setTimeout: "resource://gre/modules/Timer.jsm",
-  TalosParentProfiler: "resource://talos-powers/TalosParentProfiler.jsm",
+ChromeUtils.defineESModuleGetters(this, {
+  BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.sys.mjs",
+  TalosParentProfiler: "resource://talos-powers/TalosParentProfiler.sys.mjs",
+  setTimeout: "resource://gre/modules/Timer.sys.mjs",
 });
 
 const SCALAR_KEY = "timestamps.about_home_topsites_first_paint";
@@ -54,12 +54,8 @@ this.startup_about_home_paint = class extends ExtensionAPI {
       dump("__start_report" + measurement + "__end_report\n\n");
       dump("__startTimestamp" + win.performance.now() + "__endTimestamp\n");
 
-      let env = Cc["@mozilla.org/process/environment;1"].getService(
-        Ci.nsIEnvironment
-      );
-
-      if (env.exists("TPPROFILINGINFO")) {
-        let profilingInfo = env.get("TPPROFILINGINFO");
+      if (Services.env.exists("TPPROFILINGINFO")) {
+        let profilingInfo = Services.env.get("TPPROFILINGINFO");
         if (profilingInfo !== null) {
           TalosParentProfiler.initFromObject(JSON.parse(profilingInfo));
           await TalosParentProfiler.finishStartupProfiling();

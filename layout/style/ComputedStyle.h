@@ -14,7 +14,6 @@
 #include "mozilla/Maybe.h"
 #include "mozilla/PseudoStyleType.h"
 #include "mozilla/ServoComputedData.h"
-#include "mozilla/ServoComputedDataInlines.h"
 #include "mozilla/ServoStyleConsts.h"
 #include "nsCSSPseudoElements.h"
 #include "nsColor.h"
@@ -33,6 +32,9 @@ void Gecko_ComputedStyle_Destroy(mozilla::ComputedStyle*);
 }
 
 namespace mozilla {
+
+enum class StylePointerEvents : uint8_t;
+enum class StyleUserSelect : uint8_t;
 
 namespace dom {
 class Document;
@@ -66,7 +68,7 @@ class ComputedStyle {
 
   // Returns the computed (not resolved) value of the given property.
   void GetComputedPropertyValue(nsCSSPropertyID aId, nsACString& aOut) const {
-    Servo_GetPropertyValue(this, aId, &aOut);
+    Servo_GetComputedValue(this, aId, &aOut);
   }
 
   // Return the ComputedStyle whose style data should be used for the R,
@@ -83,8 +85,8 @@ class ComputedStyle {
   // examining the corresponding struct on |this|.  Doing so will likely
   // both (1) lead to a privacy leak and (2) lead to dynamic change bugs
   // related to the Peek code in ComputedStyle::CalcStyleDifference.
-  ComputedStyle* GetStyleIfVisited() const {
-    return mSource.visited_style.mPtr;
+  const ComputedStyle* GetStyleIfVisited() const {
+    return mSource.visited_style;
   }
 
   bool IsLazilyCascadedPseudoElement() const {
@@ -121,6 +123,11 @@ class ComputedStyle {
   // Only returns something meaningful if the appearance property is not `none`.
   bool HasAuthorSpecifiedBorderOrBackground() const {
     return bool(Flags() & Flag::HAS_AUTHOR_SPECIFIED_BORDER_BACKGROUND);
+  }
+
+  // Whether there are author-specific rules for text color.
+  bool HasAuthorSpecifiedTextColor() const {
+    return bool(Flags() & Flag::HAS_AUTHOR_SPECIFIED_TEXT_COLOR);
   }
 
   // Does this ComputedStyle or any of its ancestors have text
@@ -163,6 +170,10 @@ class ComputedStyle {
   // non-null for IsPseudoElement().
   bool HasPseudoElementData() const {
     return bool(Flags() & Flag::IS_IN_PSEUDO_ELEMENT_SUBTREE);
+  }
+
+  bool SelfOrAncestorHasContainStyle() const {
+    return bool(Flags() & Flag::SELF_OR_ANCESTOR_HAS_CONTAIN_STYLE);
   }
 
   // Is the only link whose visitedness is allowed to influence the
@@ -217,13 +228,39 @@ class ComputedStyle {
 
 #define STYLE_STRUCT(name_)                                              \
   inline const nsStyle##name_* Style##name_() const MOZ_NONNULL_RETURN { \
-    return mSource.GetStyle##name_();                                    \
+    return mSource.Style##name_();                                       \
   }
 #include "nsStyleStructList.h"
 #undef STYLE_STRUCT
 
   inline mozilla::StylePointerEvents PointerEvents() const;
   inline mozilla::StyleUserSelect UserSelect() const;
+
+  /**
+   * Returns whether the element is a containing block for its absolutely
+   * positioned descendants.
+   * aContextFrame is the frame for which this is the style (or an old style).
+   */
+  inline bool IsAbsPosContainingBlock(const nsIFrame*) const;
+
+  /**
+   * Returns true when the element is a containing block for its fixed-pos
+   * descendants.
+   * aContextFrame is the frame for which this is the style (or an old style).
+   */
+  inline bool IsFixedPosContainingBlock(const nsIFrame*) const;
+
+  /**
+   * Tests for only the sub-parts of IsFixedPosContainingBlock that apply to:
+   *  - nearly all frames, except those that are in SVG text subtrees.
+   *  - frames that support CSS contain:layout and contain:paint and are not
+   *    in SVG text subtrees.
+   *  - frames that support CSS transforms and are not in SVG text subtrees.
+   *
+   * This should be used only when the caller has the style but not the
+   * frame (i.e., when calculating style changes).
+   */
+  inline bool IsFixedPosContainingBlockForNonSVGTextFrames() const;
 
   /**
    * Compute the style changes needed during restyling when this style
@@ -249,7 +286,10 @@ class ComputedStyle {
   bool EqualForCachedAnonymousContentStyle(const ComputedStyle&) const;
 #endif
 
- public:
+#ifdef DEBUG
+  void DumpMatchedRules() const;
+#endif
+
   /**
    * Get a color that depends on link-visitedness using this and
    * this->GetStyleIfVisited().
@@ -291,6 +331,8 @@ class ComputedStyle {
   void AddSizeOfIncludingThis(nsWindowSizes& aSizes, size_t* aCVsSize) const;
 
   StyleWritingMode WritingMode() const { return {mSource.WritingMode().mBits}; }
+
+  const StyleZoom& EffectiveZoom() const { return mSource.effective_zoom; }
 
  protected:
   // Needs to be friend so that it can call the destructor without making it

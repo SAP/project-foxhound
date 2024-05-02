@@ -5,7 +5,9 @@
 
 "use strict";
 
-const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
+const { HttpServer } = ChromeUtils.importESModule(
+  "resource://testing-common/httpd.sys.mjs"
+);
 
 do_get_profile();
 
@@ -35,7 +37,7 @@ function setupChannel(suffix, value) {
 var tests = [
   new InitializeCacheDevices(true, false), // enable and create mem-device
   new TestCacheEntrySize(
-    function() {
+    function () {
       prefService.setIntPref("browser.cache.memory.max_entry_size", 1);
     },
     "012345",
@@ -43,7 +45,7 @@ var tests = [
     "012345"
   ), // expect cached value
   new TestCacheEntrySize(
-    function() {
+    function () {
       prefService.setIntPref("browser.cache.memory.max_entry_size", 1);
     },
     "0123456789a",
@@ -51,7 +53,7 @@ var tests = [
     "9876543210"
   ), // expect fresh value
   new TestCacheEntrySize(
-    function() {
+    function () {
       prefService.setIntPref("browser.cache.memory.max_entry_size", -1);
     },
     "0123456789a",
@@ -61,7 +63,7 @@ var tests = [
 
   new InitializeCacheDevices(false, true), // enable and create disk-device
   new TestCacheEntrySize(
-    function() {
+    function () {
       prefService.setIntPref("browser.cache.disk.max_entry_size", 1);
     },
     "012345",
@@ -69,7 +71,7 @@ var tests = [
     "012345"
   ), // expect cached value
   new TestCacheEntrySize(
-    function() {
+    function () {
       prefService.setIntPref("browser.cache.disk.max_entry_size", 1);
     },
     "0123456789a",
@@ -77,7 +79,7 @@ var tests = [
     "9876543210"
   ), // expect fresh value
   new TestCacheEntrySize(
-    function() {
+    function () {
       prefService.setIntPref("browser.cache.disk.max_entry_size", -1);
     },
     "0123456789a",
@@ -89,7 +91,7 @@ var tests = [
 function nextTest() {
   // We really want each test to be self-contained. Make sure cache is
   // cleared and also let all operations finish before starting a new test
-  syncWithCacheIOThread(function() {
+  syncWithCacheIOThread(function () {
     Services.cache2.clear();
     syncWithCacheIOThread(runNextTest);
   });
@@ -101,14 +103,14 @@ function runNextTest() {
     httpserver.stop(do_test_finished);
     return;
   }
-  executeSoon(function() {
+  executeSoon(function () {
     aTest.start();
   });
 }
 
 // Just make sure devices are created
 function InitializeCacheDevices(memDevice, diskDevice) {
-  this.start = function() {
+  this.start = function () {
     prefService.setBoolPref("browser.cache.memory.enable", memDevice);
     if (memDevice) {
       let cap = prefService.getIntPref("browser.cache.memory.capacity", 0);
@@ -144,19 +146,19 @@ function TestCacheEntrySize(
     secondExpectedReply = repeatToLargerThan1K(secondExpectedReply);
   }
 
-  this.start = function() {
+  this.start = function () {
     setSizeFunc();
     var channel = setupChannel("/bug650995", firstRequest);
     channel.asyncOpen(new ChannelListener(this.initialLoad, this));
   };
-  this.initialLoad = function(request, data, ctx) {
+  this.initialLoad = function (request, data, ctx) {
     Assert.equal(firstRequest, data);
     var channel = setupChannel("/bug650995", secondRequest);
-    executeSoon(function() {
+    executeSoon(function () {
       channel.asyncOpen(new ChannelListener(ctx.testAndTriggerNext, ctx));
     });
   };
-  this.testAndTriggerNext = function(request, data, ctx) {
+  this.testAndTriggerNext = function (request, data, ctx) {
     Assert.equal(secondExpectedReply, data);
     executeSoon(nextTest);
   };
@@ -166,7 +168,6 @@ function run_test() {
   httpserver.registerPathHandler("/bug650995", handler);
   httpserver.start(-1);
 
-  prefService.setBoolPref("browser.cache.offline.enable", false);
   prefService.setBoolPref("network.http.rcwn.enabled", false);
 
   nextTest();

@@ -18,7 +18,7 @@ const TEST_URI = `
   <div id="testid2">Styled Node</div>
 `;
 
-add_task(async function() {
+add_task(async function () {
   await addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
   const { inspector, view } = await openRuleView();
   await selectNode("#testid", inspector);
@@ -94,7 +94,7 @@ async function testEditProperty(inspector, ruleView) {
   is(newValue, "red", "border-color should have been set.");
 
   ruleView.styleDocument.activeElement.blur();
-  await addProperty(ruleView, 1, "color", "red", ";");
+  await addProperty(ruleView, 1, "color", "red", { commitValueWith: ";" });
 
   const props = ruleView.element.querySelectorAll(".ruleview-property");
   for (let i = 0; i < props.length; i++) {

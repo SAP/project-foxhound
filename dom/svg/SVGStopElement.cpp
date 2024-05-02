@@ -9,16 +9,14 @@
 
 NS_IMPL_NS_NEW_SVG_ELEMENT(Stop)
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 JSObject* SVGStopElement::WrapNode(JSContext* aCx,
                                    JS::Handle<JSObject*> aGivenProto) {
   return SVGStopElement_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-SVGElement::NumberInfo SVGStopElement::sNumberInfo = {nsGkAtoms::offset, 0,
-                                                      true};
+SVGElement::NumberInfo SVGStopElement::sNumberInfo = {nsGkAtoms::offset, 0};
 
 //----------------------------------------------------------------------
 // Implementation
@@ -45,17 +43,4 @@ SVGElement::NumberAttributesInfo SVGStopElement::GetNumberInfo() {
   return NumberAttributesInfo(&mOffset, &sNumberInfo, 1);
 }
 
-//----------------------------------------------------------------------
-// nsIContent methods
-
-NS_IMETHODIMP_(bool)
-SVGStopElement::IsAttributeMapped(const nsAtom* name) const {
-  static const MappedAttributeEntry* const map[] = {sColorMap,
-                                                    sGradientStopMap};
-
-  return FindAttributeDependence(name, map) ||
-         SVGStopElementBase::IsAttributeMapped(name);
-}
-
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

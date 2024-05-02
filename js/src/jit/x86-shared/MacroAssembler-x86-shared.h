@@ -13,6 +13,8 @@
 #  include "jit/x64/Assembler-x64.h"
 #endif
 
+using js::wasm::FaultingCodeOffset;
+
 namespace js {
 namespace jit {
 
@@ -154,6 +156,7 @@ class MacroAssemblerX86Shared : public Assembler {
 
   void cmp8(const Address& lhs, Imm32 rhs) { cmp8(Operand(lhs), rhs); }
   void cmp8(const Operand& lhs, Imm32 rhs) { cmpb(rhs, lhs); }
+  void cmp8(const Operand& lhs, Register rhs) { cmpb(rhs, lhs); }
 
   void atomic_inc32(const Operand& addr) { lock_incl(addr); }
   void atomic_dec32(const Operand& addr) { lock_decl(addr); }
@@ -265,44 +268,63 @@ class MacroAssemblerX86Shared : public Assembler {
   };
 
   void load8ZeroExtend(const Operand& src, Register dest) { movzbl(src, dest); }
-  void load8ZeroExtend(const Address& src, Register dest) {
+  FaultingCodeOffset load8ZeroExtend(const Address& src, Register dest) {
+    FaultingCodeOffset fco = FaultingCodeOffset(currentOffset());
     movzbl(Operand(src), dest);
+    return fco;
   }
-  void load8ZeroExtend(const BaseIndex& src, Register dest) {
+  FaultingCodeOffset load8ZeroExtend(const BaseIndex& src, Register dest) {
+    FaultingCodeOffset fco = FaultingCodeOffset(currentOffset());
     movzbl(Operand(src), dest);
+    return fco;
   }
   void load8SignExtend(const Operand& src, Register dest) { movsbl(src, dest); }
-  void load8SignExtend(const Address& src, Register dest) {
+  FaultingCodeOffset load8SignExtend(const Address& src, Register dest) {
+    FaultingCodeOffset fco = FaultingCodeOffset(currentOffset());
     movsbl(Operand(src), dest);
+    return fco;
   }
-  void load8SignExtend(const BaseIndex& src, Register dest) {
+  FaultingCodeOffset load8SignExtend(const BaseIndex& src, Register dest) {
+    FaultingCodeOffset fco = FaultingCodeOffset(currentOffset());
     movsbl(Operand(src), dest);
+    return fco;
   }
   template <typename T>
   void store8(Imm32 src, const T& dest) {
     movb(src, Operand(dest));
   }
   template <typename T>
-  void store8(Register src, const T& dest) {
+  FaultingCodeOffset store8(Register src, const T& dest) {
     AutoEnsureByteRegister ensure(this, dest, src);
+    // We must read the current offset only after AutoEnsureByteRegister's
+    // constructor has done its thing, since it may insert instructions, and
+    // we want to get the offset for the `movb` itself.
+    FaultingCodeOffset fco = FaultingCodeOffset(currentOffset());
     movb(ensure.reg(), Operand(dest));
+    return fco;
   }
   void load16ZeroExtend(const Operand& src, Register dest) {
     movzwl(src, dest);
   }
-  void load16ZeroExtend(const Address& src, Register dest) {
+  FaultingCodeOffset load16ZeroExtend(const Address& src, Register dest) {
+    FaultingCodeOffset fco = FaultingCodeOffset(currentOffset());
     movzwl(Operand(src), dest);
+    return fco;
   }
-  void load16ZeroExtend(const BaseIndex& src, Register dest) {
+  FaultingCodeOffset load16ZeroExtend(const BaseIndex& src, Register dest) {
+    FaultingCodeOffset fco = FaultingCodeOffset(currentOffset());
     movzwl(Operand(src), dest);
+    return fco;
   }
   template <typename S>
   void load16UnalignedZeroExtend(const S& src, Register dest) {
     load16ZeroExtend(src, dest);
   }
   template <typename S, typename T>
-  void store16(const S& src, const T& dest) {
+  FaultingCodeOffset store16(const S& src, const T& dest) {
+    FaultingCodeOffset fco = FaultingCodeOffset(currentOffset());
     movw(src, Operand(dest));
+    return fco;
   }
   template <typename S, typename T>
   void store16Unaligned(const S& src, const T& dest) {
@@ -311,40 +333,54 @@ class MacroAssemblerX86Shared : public Assembler {
   void load16SignExtend(const Operand& src, Register dest) {
     movswl(src, dest);
   }
-  void load16SignExtend(const Address& src, Register dest) {
+  FaultingCodeOffset load16SignExtend(const Address& src, Register dest) {
+    FaultingCodeOffset fco = FaultingCodeOffset(currentOffset());
     movswl(Operand(src), dest);
+    return fco;
   }
-  void load16SignExtend(const BaseIndex& src, Register dest) {
+  FaultingCodeOffset load16SignExtend(const BaseIndex& src, Register dest) {
+    FaultingCodeOffset fco = FaultingCodeOffset(currentOffset());
     movswl(Operand(src), dest);
+    return fco;
   }
   template <typename S>
   void load16UnalignedSignExtend(const S& src, Register dest) {
     load16SignExtend(src, dest);
   }
-  void load32(const Address& address, Register dest) {
+  FaultingCodeOffset load32(const Address& address, Register dest) {
+    FaultingCodeOffset fco = FaultingCodeOffset(currentOffset());
     movl(Operand(address), dest);
+    return fco;
   }
-  void load32(const BaseIndex& src, Register dest) { movl(Operand(src), dest); }
+  FaultingCodeOffset load32(const BaseIndex& src, Register dest) {
+    FaultingCodeOffset fco = FaultingCodeOffset(currentOffset());
+    movl(Operand(src), dest);
+    return fco;
+  }
   void load32(const Operand& src, Register dest) { movl(src, dest); }
   template <typename S>
   void load32Unaligned(const S& src, Register dest) {
     load32(src, dest);
   }
   template <typename S, typename T>
-  void store32(const S& src, const T& dest) {
+  FaultingCodeOffset store32(const S& src, const T& dest) {
+    FaultingCodeOffset fco = FaultingCodeOffset(currentOffset());
     movl(src, Operand(dest));
-  }
-  template <typename S, typename T>
-  void store32_NoSecondScratch(const S& src, const T& dest) {
-    store32(src, dest);
+    return fco;
   }
   template <typename S, typename T>
   void store32Unaligned(const S& src, const T& dest) {
     store32(src, dest);
   }
-  void loadDouble(const Address& src, FloatRegister dest) { vmovsd(src, dest); }
-  void loadDouble(const BaseIndex& src, FloatRegister dest) {
+  FaultingCodeOffset loadDouble(const Address& src, FloatRegister dest) {
+    FaultingCodeOffset fco = FaultingCodeOffset(currentOffset());
     vmovsd(src, dest);
+    return fco;
+  }
+  FaultingCodeOffset loadDouble(const BaseIndex& src, FloatRegister dest) {
+    FaultingCodeOffset fco = FaultingCodeOffset(currentOffset());
+    vmovsd(src, dest);
+    return fco;
   }
   void loadDouble(const Operand& src, FloatRegister dest) {
     switch (src.kind()) {
@@ -422,14 +458,14 @@ class MacroAssemblerX86Shared : public Assembler {
   void truncSatFloat32x4ToInt32x4(FloatRegister src, FloatRegister dest);
   void unsignedTruncSatFloat32x4ToInt32x4(FloatRegister src, FloatRegister temp,
                                           FloatRegister dest);
-  void unsignedTruncSatFloat32x4ToInt32x4Relaxed(FloatRegister src,
-                                                 FloatRegister dest);
+  void unsignedTruncFloat32x4ToInt32x4Relaxed(FloatRegister src,
+                                              FloatRegister dest);
   void truncSatFloat64x2ToInt32x4(FloatRegister src, FloatRegister temp,
                                   FloatRegister dest);
   void unsignedTruncSatFloat64x2ToInt32x4(FloatRegister src, FloatRegister temp,
                                           FloatRegister dest);
-  void unsignedTruncSatFloat64x2ToInt32x4Relaxed(FloatRegister src,
-                                                 FloatRegister dest);
+  void unsignedTruncFloat64x2ToInt32x4Relaxed(FloatRegister src,
+                                              FloatRegister dest);
 
   void splatX16(Register input, FloatRegister output);
   void splatX8(Register input, FloatRegister output);
@@ -447,10 +483,10 @@ class MacroAssemblerX86Shared : public Assembler {
   void extractLaneInt8x16(FloatRegister input, Register output, unsigned lane,
                           SimdSign sign);
 
-  void replaceLaneFloat32x4(FloatRegister rhs, FloatRegister lhsDest,
-                            unsigned lane);
-  void replaceLaneFloat64x2(FloatRegister rhs, FloatRegister lhsDest,
-                            unsigned lane);
+  void replaceLaneFloat32x4(unsigned lane, FloatRegister lhs, FloatRegister rhs,
+                            FloatRegister dest);
+  void replaceLaneFloat64x2(unsigned lane, FloatRegister lhs, FloatRegister rhs,
+                            FloatRegister dest);
 
   void shuffleInt8x16(FloatRegister lhs, FloatRegister rhs,
                       FloatRegister output, const uint8_t lanes[16]);
@@ -458,8 +494,8 @@ class MacroAssemblerX86Shared : public Assembler {
                     FloatRegister temp, const uint8_t lanes[16]);
   void blendInt16x8(FloatRegister lhs, FloatRegister rhs, FloatRegister output,
                     const uint16_t lanes[8]);
-  void laneSelectSimd128(FloatRegister lhs, FloatRegister rhs,
-                         FloatRegister mask, FloatRegister output);
+  void laneSelectSimd128(FloatRegister mask, FloatRegister lhs,
+                         FloatRegister rhs, FloatRegister output);
 
   void compareInt8x16(FloatRegister lhs, Operand rhs, Assembler::Condition cond,
                       FloatRegister output);
@@ -479,6 +515,9 @@ class MacroAssemblerX86Shared : public Assembler {
   void compareForOrderingInt64x2(FloatRegister lhs, Operand rhs,
                                  Assembler::Condition cond, FloatRegister temp1,
                                  FloatRegister temp2, FloatRegister output);
+  void compareForOrderingInt64x2AVX(FloatRegister lhs, FloatRegister rhs,
+                                    Assembler::Condition cond,
+                                    FloatRegister output);
   void compareFloat32x4(FloatRegister lhs, Operand rhs,
                         Assembler::Condition cond, FloatRegister output);
   void compareFloat32x4(Assembler::Condition cond, FloatRegister lhs,
@@ -491,17 +530,23 @@ class MacroAssemblerX86Shared : public Assembler {
   void minMaxFloat32x4(bool isMin, FloatRegister lhs, Operand rhs,
                        FloatRegister temp1, FloatRegister temp2,
                        FloatRegister output);
+  void minMaxFloat32x4AVX(bool isMin, FloatRegister lhs, FloatRegister rhs,
+                          FloatRegister temp1, FloatRegister temp2,
+                          FloatRegister output);
   void minMaxFloat64x2(bool isMin, FloatRegister lhs, Operand rhs,
                        FloatRegister temp1, FloatRegister temp2,
                        FloatRegister output);
-  void minFloat32x4(FloatRegister lhs, Operand rhs, FloatRegister temp1,
+  void minMaxFloat64x2AVX(bool isMin, FloatRegister lhs, FloatRegister rhs,
+                          FloatRegister temp1, FloatRegister temp2,
+                          FloatRegister output);
+  void minFloat32x4(FloatRegister lhs, FloatRegister rhs, FloatRegister temp1,
                     FloatRegister temp2, FloatRegister output);
-  void maxFloat32x4(FloatRegister lhs, Operand rhs, FloatRegister temp1,
+  void maxFloat32x4(FloatRegister lhs, FloatRegister rhs, FloatRegister temp1,
                     FloatRegister temp2, FloatRegister output);
 
-  void minFloat64x2(FloatRegister lhs, Operand rhs, FloatRegister temp1,
+  void minFloat64x2(FloatRegister lhs, FloatRegister rhs, FloatRegister temp1,
                     FloatRegister temp2, FloatRegister output);
-  void maxFloat64x2(FloatRegister lhs, Operand rhs, FloatRegister temp1,
+  void maxFloat64x2(FloatRegister lhs, FloatRegister rhs, FloatRegister temp1,
                     FloatRegister temp2, FloatRegister output);
 
   void packedShiftByScalarInt8x16(
@@ -553,9 +598,6 @@ class MacroAssemblerX86Shared : public Assembler {
 
   // SIMD inline methods private to the implementation, that appear to be used.
 
-  void zeroSimd128Float(FloatRegister dest) { vxorps(dest, dest, dest); }
-  void zeroSimd128Int(FloatRegister dest) { vpxor(dest, dest, dest); }
-
   template <class T, class Reg>
   inline void loadScalar(const Operand& src, Reg dest);
   template <class T, class Reg>
@@ -587,20 +629,36 @@ class MacroAssemblerX86Shared : public Assembler {
     moveSimd128Int(src, dest);
     return dest;
   }
-  void loadUnalignedSimd128Int(const Address& src, FloatRegister dest) {
-    vmovdqu(Operand(src), dest);
+  FloatRegister selectDestIfAVX(FloatRegister src, FloatRegister dest) {
+    MOZ_ASSERT(src.isSimd128() && dest.isSimd128());
+    return HasAVX() ? dest : src;
   }
-  void loadUnalignedSimd128Int(const BaseIndex& src, FloatRegister dest) {
+  FaultingCodeOffset loadUnalignedSimd128Int(const Address& src,
+                                             FloatRegister dest) {
+    FaultingCodeOffset fco = FaultingCodeOffset(currentOffset());
     vmovdqu(Operand(src), dest);
+    return fco;
+  }
+  FaultingCodeOffset loadUnalignedSimd128Int(const BaseIndex& src,
+                                             FloatRegister dest) {
+    FaultingCodeOffset fco = FaultingCodeOffset(currentOffset());
+    vmovdqu(Operand(src), dest);
+    return fco;
   }
   void loadUnalignedSimd128Int(const Operand& src, FloatRegister dest) {
     vmovdqu(src, dest);
   }
-  void storeUnalignedSimd128Int(FloatRegister src, const Address& dest) {
+  FaultingCodeOffset storeUnalignedSimd128Int(FloatRegister src,
+                                              const Address& dest) {
+    FaultingCodeOffset fco = FaultingCodeOffset(currentOffset());
     vmovdqu(src, Operand(dest));
+    return fco;
   }
-  void storeUnalignedSimd128Int(FloatRegister src, const BaseIndex& dest) {
+  FaultingCodeOffset storeUnalignedSimd128Int(FloatRegister src,
+                                              const BaseIndex& dest) {
+    FaultingCodeOffset fco = FaultingCodeOffset(currentOffset());
     vmovdqu(src, Operand(dest));
+    return fco;
   }
   void storeUnalignedSimd128Int(FloatRegister src, const Operand& dest) {
     vmovdqu(src, dest);
@@ -654,6 +712,15 @@ class MacroAssemblerX86Shared : public Assembler {
     moveSimd128Float(src, dest);
     return dest;
   }
+  FloatRegister moveSimd128FloatIfEqual(FloatRegister src, FloatRegister dest,
+                                        FloatRegister other) {
+    MOZ_ASSERT(src.isSimd128() && dest.isSimd128());
+    if (src != other) {
+      return src;
+    }
+    moveSimd128Float(src, dest);
+    return dest;
+  }
   FloatRegister moveSimd128FloatIfNotAVXOrOther(FloatRegister src,
                                                 FloatRegister dest,
                                                 FloatRegister other) {
@@ -665,11 +732,17 @@ class MacroAssemblerX86Shared : public Assembler {
     return dest;
   }
 
-  void loadUnalignedSimd128(const Operand& src, FloatRegister dest) {
+  FaultingCodeOffset loadUnalignedSimd128(const Operand& src,
+                                          FloatRegister dest) {
+    FaultingCodeOffset fco = FaultingCodeOffset(currentOffset());
     vmovups(src, dest);
+    return fco;
   }
-  void storeUnalignedSimd128(FloatRegister src, const Operand& dest) {
+  FaultingCodeOffset storeUnalignedSimd128(FloatRegister src,
+                                           const Operand& dest) {
+    FaultingCodeOffset fco = FaultingCodeOffset(currentOffset());
     vmovups(src, dest);
+    return fco;
   }
 
   static uint32_t ComputeShuffleMask(uint32_t x = 0, uint32_t y = 1,
@@ -704,11 +777,15 @@ class MacroAssemblerX86Shared : public Assembler {
     loadFloat32(src, dest);
     vcvtss2sd(dest, dest, dest);
   }
-  void loadFloat32(const Address& src, FloatRegister dest) {
+  FaultingCodeOffset loadFloat32(const Address& src, FloatRegister dest) {
+    FaultingCodeOffset fco = FaultingCodeOffset(currentOffset());
     vmovss(src, dest);
+    return fco;
   }
-  void loadFloat32(const BaseIndex& src, FloatRegister dest) {
+  FaultingCodeOffset loadFloat32(const BaseIndex& src, FloatRegister dest) {
+    FaultingCodeOffset fco = FaultingCodeOffset(currentOffset());
     vmovss(src, dest);
+    return fco;
   }
   void loadFloat32(const Operand& src, FloatRegister dest) {
     switch (src.kind()) {
@@ -810,7 +887,7 @@ class MacroAssemblerX86Shared : public Assembler {
 
   bool maybeInlineSimd128Int(const SimdConstant& v, const FloatRegister& dest) {
     if (v.isZeroBits()) {
-      zeroSimd128Int(dest);
+      vpxor(dest, dest, dest);
       return true;
     }
     if (v.isOneBits()) {
@@ -822,7 +899,7 @@ class MacroAssemblerX86Shared : public Assembler {
   bool maybeInlineSimd128Float(const SimdConstant& v,
                                const FloatRegister& dest) {
     if (v.isZeroBits()) {
-      zeroSimd128Float(dest);
+      vxorps(dest, dest, dest);
       return true;
     }
     return false;
@@ -871,16 +948,16 @@ class MacroAssemblerX86Shared : public Assembler {
     }
   }
 
-  void emitSetRegisterIfZero(Register dest) {
+  void emitSetRegisterIf(AssemblerX86Shared::Condition cond, Register dest) {
     if (AllocatableGeneralRegisterSet(Registers::SingleByteRegs).has(dest)) {
       // If the register we're defining is a single byte register,
       // take advantage of the setCC instruction
-      setCC(AssemblerX86Shared::Zero, dest);
+      setCC(cond, dest);
       movzbl(dest, dest);
     } else {
       Label end;
       movl(Imm32(1), dest);
-      j(AssemblerX86Shared::Zero, &end);
+      j(cond, &end);
       mov(ImmWord(0), dest);
       bind(&end);
     }

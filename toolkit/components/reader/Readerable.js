@@ -5,19 +5,14 @@
 "use strict";
 
 // This file and Readability-readerable.js are merged together into
-// Readerable.jsm.
+// Readerable.sys.mjs.
 
 /* exported Readerable */
 /* import-globals-from Readability-readerable.js */
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-
-function isNodeVisible(node) {
-  return node.clientHeight > 0 && node.clientWidth > 0;
-}
 
 var Readerable = {
   get isEnabledForParseOnLoad() {
@@ -34,7 +29,7 @@ var Readerable = {
     // Only care about 'real' HTML documents:
     if (
       doc.mozSyntheticDocument ||
-      !(doc instanceof doc.defaultView.HTMLDocument)
+      !doc.defaultView.HTMLDocument.isInstance(doc)
     ) {
       return false;
     }
@@ -44,7 +39,11 @@ var Readerable = {
       return false;
     }
 
-    return isProbablyReaderable(doc, isNodeVisible);
+    return isProbablyReaderable(doc, this._isNodeVisible);
+  },
+
+  _isNodeVisible(node) {
+    return node.clientHeight > 0 && node.clientWidth > 0;
   },
 
   _blockedHosts: [
@@ -58,7 +57,7 @@ var Readerable = {
   ],
 
   shouldCheckUri(uri, isBaseUri = false) {
-    if (!["http", "https", "file"].includes(uri.scheme)) {
+    if (!["http", "https", "file", "moz-nullprincipal"].includes(uri.scheme)) {
       return false;
     }
 
@@ -66,6 +65,14 @@ var Readerable = {
       // Sadly, some high-profile pages have false positives, so bail early for those:
       let { host } = uri;
       if (this._blockedHosts.some(blockedHost => host.endsWith(blockedHost))) {
+        // Allow github on non-project pages
+        if (
+          host == "github.com" &&
+          !uri.filePath.includes("/projects") &&
+          !uri.filePath.includes("/issues")
+        ) {
+          return true;
+        }
         return false;
       }
 

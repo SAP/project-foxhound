@@ -15,9 +15,7 @@
 #include "nsDisplayList.h"
 #include "nsITheme.h"
 #include "nsIFrame.h"
-#include "mozilla/EventStates.h"
 #include "mozilla/dom/Element.h"
-#include "Layers.h"
 
 #include "gfxUtils.h"
 #include "mozilla/layers/RenderRootStateManager.h"
@@ -83,12 +81,9 @@ nsresult nsButtonFrameRenderer::DisplayButton(nsDisplayListBuilder* aBuilder,
 
   // Only display focus rings if we actually have them. Since at most one
   // button would normally display a focus ring, most buttons won't have them.
-  const auto* disp = mFrame->StyleDisplay();
-  nsPresContext* pc = mFrame->PresContext();
   if (mInnerFocusStyle && mInnerFocusStyle->StyleBorder()->HasBorder() &&
-      mFrame->IsThemed(disp) &&
-      pc->Theme()->ThemeWantsButtonInnerFocusRing(
-          mFrame, disp->EffectiveAppearance())) {
+      mFrame->IsThemed() &&
+      mFrame->PresContext()->Theme()->ThemeWantsButtonInnerFocusRing()) {
     aForeground->AppendNewToTop<nsDisplayButtonForeground>(aBuilder, GetFrame(),
                                                            this);
   }
@@ -196,7 +191,7 @@ void nsButtonFrameRenderer::ReResolveStyles(nsPresContext* aPresContext) {
   // get styles assigned to -moz-focus-inner (ie dotted border on Windows)
   mInnerFocusStyle = styleSet->ProbePseudoElementStyle(
       *mFrame->GetContent()->AsElement(), PseudoStyleType::mozFocusInner,
-      mFrame->Style());
+      nullptr, mFrame->Style());
 }
 
 ComputedStyle* nsButtonFrameRenderer::GetComputedStyle(int32_t aIndex) const {
@@ -345,8 +340,6 @@ class nsDisplayButtonBorder final : public nsPaintedDisplayItem {
   }
   MOZ_COUNTED_DTOR_OVERRIDE(nsDisplayButtonBorder)
 
-  virtual bool MustPaintOnContentSide() const override { return true; }
-
   virtual void HitTest(nsDisplayListBuilder* aBuilder, const nsRect& aRect,
                        HitTestState* aState,
                        nsTArray<nsIFrame*>* aOutFrames) override {
@@ -355,11 +348,6 @@ class nsDisplayButtonBorder final : public nsPaintedDisplayItem {
   virtual void Paint(nsDisplayListBuilder* aBuilder, gfxContext* aCtx) override;
   virtual nsRect GetBounds(nsDisplayListBuilder* aBuilder,
                            bool* aSnap) const override;
-  virtual nsDisplayItemGeometry* AllocateGeometry(
-      nsDisplayListBuilder* aBuilder) override;
-  virtual void ComputeInvalidationRegion(
-      nsDisplayListBuilder* aBuilder, const nsDisplayItemGeometry* aGeometry,
-      nsRegion* aInvalidRegion) const override;
   virtual bool CreateWebRenderCommands(
       mozilla::wr::DisplayListBuilder& aBuilder,
       mozilla::wr::IpcResourceUpdateQueue& aResources,
@@ -370,11 +358,6 @@ class nsDisplayButtonBorder final : public nsPaintedDisplayItem {
  private:
   nsButtonFrameRenderer* mBFR;
 };
-
-nsDisplayItemGeometry* nsDisplayButtonBorder::AllocateGeometry(
-    nsDisplayListBuilder* aBuilder) {
-  return new nsDisplayItemGenericImageGeometry(this, aBuilder);
-}
 
 bool nsDisplayButtonBorder::CreateWebRenderCommands(
     mozilla::wr::DisplayListBuilder& aBuilder,
@@ -411,21 +394,6 @@ bool nsDisplayButtonBorder::CreateWebRenderCommands(
   return true;
 }
 
-void nsDisplayButtonBorder::ComputeInvalidationRegion(
-    nsDisplayListBuilder* aBuilder, const nsDisplayItemGeometry* aGeometry,
-    nsRegion* aInvalidRegion) const {
-  auto geometry =
-      static_cast<const nsDisplayItemGenericImageGeometry*>(aGeometry);
-
-  if (aBuilder->ShouldSyncDecodeImages() &&
-      geometry->ShouldInvalidateToSyncDecodeImages()) {
-    bool snap;
-    aInvalidRegion->Or(*aInvalidRegion, GetBounds(aBuilder, &snap));
-  }
-
-  nsDisplayItem::ComputeInvalidationRegion(aBuilder, aGeometry, aInvalidRegion);
-}
-
 void nsDisplayButtonBorder::Paint(nsDisplayListBuilder* aBuilder,
                                   gfxContext* aCtx) {
   NS_ASSERTION(mFrame, "No frame?");
@@ -433,10 +401,8 @@ void nsDisplayButtonBorder::Paint(nsDisplayListBuilder* aBuilder,
   nsRect r = nsRect(ToReferenceFrame(), mFrame->GetSize());
 
   // draw the border and background inside the focus and outline borders
-  ImgDrawResult result =
-      mBFR->PaintBorder(aBuilder, pc, *aCtx, GetPaintRect(aBuilder, aCtx), r);
-
-  nsDisplayItemGenericImageGeometry::UpdateDrawResult(this, result);
+  Unused << mBFR->PaintBorder(aBuilder, pc, *aCtx, GetPaintRect(aBuilder, aCtx),
+                              r);
 }
 
 nsRect nsDisplayButtonBorder::GetBounds(nsDisplayListBuilder* aBuilder,
@@ -456,11 +422,6 @@ class nsDisplayButtonForeground final : public nsPaintedDisplayItem {
   }
   MOZ_COUNTED_DTOR_OVERRIDE(nsDisplayButtonForeground)
 
-  nsDisplayItemGeometry* AllocateGeometry(
-      nsDisplayListBuilder* aBuilder) override;
-  void ComputeInvalidationRegion(nsDisplayListBuilder* aBuilder,
-                                 const nsDisplayItemGeometry* aGeometry,
-                                 nsRegion* aInvalidRegion) const override;
   void Paint(nsDisplayListBuilder* aBuilder, gfxContext* aCtx) override;
   bool CreateWebRenderCommands(
       mozilla::wr::DisplayListBuilder& aBuilder,
@@ -473,35 +434,13 @@ class nsDisplayButtonForeground final : public nsPaintedDisplayItem {
   nsButtonFrameRenderer* mBFR;
 };
 
-nsDisplayItemGeometry* nsDisplayButtonForeground::AllocateGeometry(
-    nsDisplayListBuilder* aBuilder) {
-  return new nsDisplayItemGenericImageGeometry(this, aBuilder);
-}
-
-void nsDisplayButtonForeground::ComputeInvalidationRegion(
-    nsDisplayListBuilder* aBuilder, const nsDisplayItemGeometry* aGeometry,
-    nsRegion* aInvalidRegion) const {
-  auto geometry =
-      static_cast<const nsDisplayItemGenericImageGeometry*>(aGeometry);
-
-  if (aBuilder->ShouldSyncDecodeImages() &&
-      geometry->ShouldInvalidateToSyncDecodeImages()) {
-    bool snap;
-    aInvalidRegion->Or(*aInvalidRegion, GetBounds(aBuilder, &snap));
-  }
-
-  nsDisplayItem::ComputeInvalidationRegion(aBuilder, aGeometry, aInvalidRegion);
-}
-
 void nsDisplayButtonForeground::Paint(nsDisplayListBuilder* aBuilder,
                                       gfxContext* aCtx) {
   nsRect r = nsRect(ToReferenceFrame(), mFrame->GetSize());
 
   // Draw the -moz-focus-inner border
-  ImgDrawResult result = mBFR->PaintInnerFocusBorder(
-      aBuilder, mFrame->PresContext(), *aCtx, GetPaintRect(aBuilder, aCtx), r);
-
-  nsDisplayItemGenericImageGeometry::UpdateDrawResult(this, result);
+  Unused << mBFR->PaintInnerFocusBorder(aBuilder, mFrame->PresContext(), *aCtx,
+                                        GetPaintRect(aBuilder, aCtx), r);
 }
 
 bool nsDisplayButtonForeground::CreateWebRenderCommands(

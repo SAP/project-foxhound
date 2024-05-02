@@ -53,8 +53,13 @@ pub(crate) enum Http3ServerConnEvent {
         connect_type: ExtendedConnectType,
         stream_id: StreamId,
         reason: SessionCloseReason,
+        headers: Option<Vec<Header>>,
     },
     ExtendedConnectNewStream(Http3StreamInfo),
+    ExtendedConnectDatagram {
+        session_id: StreamId,
+        datagram: Vec<u8>,
+    },
 }
 
 #[derive(Debug, Default, Clone)]
@@ -121,6 +126,7 @@ impl ExtendedConnectEvents for Http3ServerConnEvents {
         _connect_type: ExtendedConnectType,
         _stream_id: StreamId,
         _status: u16,
+        _headers: Vec<Header>,
     ) {
     }
 
@@ -129,16 +135,25 @@ impl ExtendedConnectEvents for Http3ServerConnEvents {
         connect_type: ExtendedConnectType,
         stream_id: StreamId,
         reason: SessionCloseReason,
+        headers: Option<Vec<Header>>,
     ) {
         self.insert(Http3ServerConnEvent::ExtendedConnectClosed {
             connect_type,
             stream_id,
             reason,
+            headers,
         });
     }
 
     fn extended_connect_new_stream(&self, stream_info: Http3StreamInfo) {
         self.insert(Http3ServerConnEvent::ExtendedConnectNewStream(stream_info));
+    }
+
+    fn new_datagram(&self, session_id: StreamId, datagram: Vec<u8>) {
+        self.insert(Http3ServerConnEvent::ExtendedConnectDatagram {
+            session_id,
+            datagram,
+        });
     }
 }
 

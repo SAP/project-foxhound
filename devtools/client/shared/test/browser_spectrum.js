@@ -5,17 +5,17 @@
 
 // Tests that the spectrum color picker works correctly
 
-const Spectrum = require("devtools/client/shared/widgets/Spectrum");
+const Spectrum = require("resource://devtools/client/shared/widgets/Spectrum.js");
 const {
   accessibility: {
     SCORES: { FAIL, AAA, AA },
   },
-} = require("devtools/shared/constants");
+} = require("resource://devtools/shared/constants.js");
 
 loader.lazyRequireGetter(
   this,
   "cssColors",
-  "devtools/shared/css/color-db",
+  "resource://devtools/shared/css/color-db.js",
   true
 );
 
@@ -30,7 +30,7 @@ const SINGLE_BG_COLOR = {
 };
 const ZERO_ALPHA_COLOR = [0, 255, 255, 0];
 
-add_task(async function() {
+add_task(async function () {
   const { host, doc } = await createHost("bottom", TEST_URI);
 
   const container = doc.getElementById("spectrum-container");
@@ -80,9 +80,8 @@ function testColorPreviewDisplay(
   spectrum.updateUI();
 
   // Extract the first rgba value from the linear gradient
-  const linearGradientStr = colorPreviewStyle.getPropertyValue(
-    "background-image"
-  );
+  const linearGradientStr =
+    colorPreviewStyle.getPropertyValue("background-image");
   const colorPreviewValue = extractRgbaOverlayString(linearGradientStr);
 
   is(

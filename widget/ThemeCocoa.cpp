@@ -14,43 +14,15 @@
 
 namespace mozilla::widget {
 
-NS_IMETHODIMP
-ThemeCocoa::GetMinimumWidgetSize(nsPresContext* aPresContext, nsIFrame* aFrame,
-                                 StyleAppearance aAppearance,
-                                 LayoutDeviceIntSize* aResult,
-                                 bool* aIsOverridable) {
+LayoutDeviceIntSize ThemeCocoa::GetMinimumWidgetSize(
+    nsPresContext* aPresContext, nsIFrame* aFrame,
+    StyleAppearance aAppearance) {
   if (aAppearance == StyleAppearance::MozMenulistArrowButton) {
-    auto size = ScrollbarDrawingCocoa::GetScrollbarSize(
-        StyleScrollbarWidth::Auto, /* aOverlay = */ false,
-        GetDPIRatio(aFrame, aAppearance));
-    aResult->SizeTo(size, size);
-    return NS_OK;
+    auto size =
+        GetScrollbarSize(aPresContext, StyleScrollbarWidth::Auto, Overlay::No);
+    return {size, size};
   }
-
-  return Theme::GetMinimumWidgetSize(aPresContext, aFrame, aAppearance, aResult,
-                                     aIsOverridable);
-}
-
-nsITheme::ThemeGeometryType ThemeCocoa::ThemeGeometryTypeForWidget(
-    nsIFrame* aFrame, StyleAppearance aAppearance) {
-  switch (aAppearance) {
-    case StyleAppearance::Tooltip:
-      return eThemeGeometryTypeTooltip;
-    default:
-      break;
-  }
-  return Theme::ThemeGeometryTypeForWidget(aFrame, aAppearance);
-}
-
-bool ThemeCocoa::ThemeSupportsWidget(nsPresContext* aPc, nsIFrame* aFrame,
-                                     StyleAppearance aAppearance) {
-  switch (aAppearance) {
-    case StyleAppearance::Tooltip:
-      return true;
-    default:
-      break;
-  }
-  return Theme::ThemeSupportsWidget(aPc, aFrame, aAppearance);
+  return Theme::GetMinimumWidgetSize(aPresContext, aFrame, aAppearance);
 }
 
 }  // namespace mozilla::widget

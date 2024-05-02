@@ -14,6 +14,7 @@
 #include "WebMDemuxer.h"
 #include "WebMBufferedParser.h"
 #include "gfx2DGlue.h"
+#include "gfxUtils.h"
 #include "mozilla/EndianUtils.h"
 #include "mozilla/SharedThreadPool.h"
 #include "MediaDataDemuxer.h"
@@ -234,6 +235,7 @@ already_AddRefed<MediaTrackDemuxer> WebMDemuxer::GetTrackDemuxer(
 }
 
 void WebMDemuxer::Reset(TrackInfo::TrackType aType) {
+  mProcessedDiscardPadding = false;
   if (aType == TrackInfo::kVideoTrack) {
     mVideoPackets.Reset();
   } else {
@@ -244,9 +246,11 @@ void WebMDemuxer::Reset(TrackInfo::TrackType aType) {
 nsresult WebMDemuxer::ReadMetadata() {
   int r = mVideoContext.Init();
   if (r == -1) {
+    WEBM_DEBUG("mVideoContext::Init failure");
     return NS_ERROR_FAILURE;
   }
   if (mAudioContext.Init() == -1) {
+    WEBM_DEBUG("mAudioContext::Init failure");
     return NS_ERROR_FAILURE;
   }
 
@@ -258,10 +262,12 @@ nsresult WebMDemuxer::ReadMetadata() {
     // Check how much data nestegg read and force feed it to BufferedState.
     RefPtr<MediaByteBuffer> buffer = resource.MediaReadAt(0, resource.Tell());
     if (!buffer) {
+      WEBM_DEBUG("resource.MediaReadAt error");
       return NS_ERROR_FAILURE;
     }
     mBufferedState->NotifyDataArrived(buffer->Elements(), buffer->Length(), 0);
     if (mBufferedState->GetInitEndOffset() < 0) {
+      WEBM_DEBUG("Couldn't find init end");
       return NS_ERROR_FAILURE;
     }
     MOZ_ASSERT(mBufferedState->GetInitEndOffset() <= resource.Tell());
@@ -269,18 +275,21 @@ nsresult WebMDemuxer::ReadMetadata() {
   mInitData = resource.MediaReadAt(0, mBufferedState->GetInitEndOffset());
   if (!mInitData ||
       mInitData->Length() != size_t(mBufferedState->GetInitEndOffset())) {
+    WEBM_DEBUG("Couldn't read init data");
     return NS_ERROR_FAILURE;
   }
 
   unsigned int ntracks = 0;
   r = nestegg_track_count(context, &ntracks);
   if (r == -1) {
+    WEBM_DEBUG("nestegg_track_count error");
     return NS_ERROR_FAILURE;
   }
 
   for (unsigned int track = 0; track < ntracks; ++track) {
     int id = nestegg_track_codec_id(context, track);
     if (id == -1) {
+      WEBM_DEBUG("nestegg_track_codec_id error");
       return NS_ERROR_FAILURE;
     }
     int type = nestegg_track_type(context, track);
@@ -288,6 +297,7 @@ nsresult WebMDemuxer::ReadMetadata() {
       nestegg_video_params params;
       r = nestegg_track_video_params(context, track, &params);
       if (r == -1) {
+        WEBM_DEBUG("nestegg_track_video_params error");
         return NS_ERROR_FAILURE;
       }
       mVideoCodec = nestegg_track_codec_id(context, track);
@@ -305,6 +315,19 @@ nsresult WebMDemuxer::ReadMetadata() {
           NS_WARNING("Unknown WebM video codec");
           return NS_ERROR_FAILURE;
       }
+
+      mInfo.mVideo.mColorPrimaries = gfxUtils::CicpToColorPrimaries(
+          static_cast<gfx::CICP::ColourPrimaries>(params.primaries),
+          gMediaDemuxerLog);
+
+      // For VPX, this is our only chance to capture the transfer
+      // characteristics, which we can't get from a VPX bitstream later.
+      // We only need this value if the video is using the BT2020
+      // colorspace, which will be determined on a per-frame basis later.
+      mInfo.mVideo.mTransferFunction = gfxUtils::CicpToTransferFunction(
+          static_cast<gfx::CICP::TransferCharacteristics>(
+              params.transfer_characteristics));
+
       // Picture region, taking into account cropping, before scaling
       // to the display size.
       unsigned int cropH = params.crop_right + params.crop_left;
@@ -360,6 +383,7 @@ nsresult WebMDemuxer::ReadMetadata() {
       if (!r) {
         mInfo.mVideo.mDuration = TimeUnit::FromNanoseconds(duration);
       }
+      WEBM_DEBUG("stream duration: %lf\n", mInfo.mVideo.mDuration.ToSeconds());
       mInfo.mVideo.mCrypto = GetTrackCrypto(TrackInfo::kVideoTrack, track);
       if (mInfo.mVideo.mCrypto.IsEncrypted()) {
         MOZ_ASSERT(mInfo.mVideo.mCrypto.mCryptoScheme == CryptoScheme::Cenc,
@@ -370,10 +394,15 @@ nsresult WebMDemuxer::ReadMetadata() {
       nestegg_audio_params params;
       r = nestegg_track_audio_params(context, track, &params);
       if (r == -1) {
+        WEBM_DEBUG("nestegg_track_audio_params error");
         return NS_ERROR_FAILURE;
       }
-      if (params.rate > AudioInfo::MAX_RATE ||
+      if (params.rate >
+              static_cast<decltype(params.rate)>(AudioInfo::MAX_RATE) ||
+          params.rate <= static_cast<decltype(params.rate)>(0) ||
           params.channels > AudioConfig::ChannelLayout::MAX_CHANNELS) {
+        WEBM_DEBUG("Invalid audio param rate: %lf channel count: %d",
+                   params.rate, params.channels);
         return NS_ERROR_DOM_MEDIA_METADATA_ERR;
       }
 
@@ -381,20 +410,28 @@ nsresult WebMDemuxer::ReadMetadata() {
       mHasAudio = true;
       mAudioCodec = nestegg_track_codec_id(context, track);
       if (mAudioCodec == NESTEGG_CODEC_VORBIS) {
+        mInfo.mAudio.mCodecSpecificConfig =
+            AudioCodecSpecificVariant{VorbisCodecSpecificData{}};
         mInfo.mAudio.mMimeType = "audio/vorbis";
       } else if (mAudioCodec == NESTEGG_CODEC_OPUS) {
+        uint64_t codecDelayUs = params.codec_delay / 1000;
         mInfo.mAudio.mMimeType = "audio/opus";
-        OpusDataDecoder::AppendCodecDelay(
-            mInfo.mAudio.mCodecSpecificConfig,
-            TimeUnit::FromNanoseconds(params.codec_delay).ToMicroseconds());
+        OpusCodecSpecificData opusCodecSpecificData;
+        opusCodecSpecificData.mContainerCodecDelayFrames =
+            AssertedCast<int64_t>(USECS_PER_S * codecDelayUs / 48000);
+        WEBM_DEBUG("Preroll for Opus: %" PRIu64 " frames",
+                   opusCodecSpecificData.mContainerCodecDelayFrames);
+        mInfo.mAudio.mCodecSpecificConfig =
+            AudioCodecSpecificVariant{std::move(opusCodecSpecificData)};
       }
       mSeekPreroll = params.seek_preroll;
-      mInfo.mAudio.mRate = params.rate;
+      mInfo.mAudio.mRate = AssertedCast<uint32_t>(params.rate);
       mInfo.mAudio.mChannels = params.channels;
 
       unsigned int nheaders = 0;
       r = nestegg_track_codec_data_count(context, track, &nheaders);
       if (r == -1) {
+        WEBM_DEBUG("nestegg_track_codec_data_count error");
         return NS_ERROR_FAILURE;
       }
 
@@ -405,6 +442,7 @@ nsresult WebMDemuxer::ReadMetadata() {
         size_t length = 0;
         r = nestegg_track_codec_data(context, track, header, &data, &length);
         if (r == -1) {
+          WEBM_DEBUG("nestegg_track_codec_data error");
           return NS_ERROR_FAILURE;
         }
         headers.AppendElement(data);
@@ -416,19 +454,23 @@ nsresult WebMDemuxer::ReadMetadata() {
       // TODO: This is already the format WebM stores them in. Would be nice
       // to avoid having libnestegg split them only for us to pack them again,
       // but libnestegg does not give us an API to access this data directly.
+      RefPtr<MediaByteBuffer> audioCodecSpecificBlob =
+          GetAudioCodecSpecificBlob(mInfo.mAudio.mCodecSpecificConfig);
       if (nheaders > 1) {
-        if (!XiphHeadersToExtradata(mInfo.mAudio.mCodecSpecificConfig, headers,
+        if (!XiphHeadersToExtradata(audioCodecSpecificBlob, headers,
                                     headerLens)) {
+          WEBM_DEBUG("Couldn't parse Xiph headers");
           return NS_ERROR_FAILURE;
         }
       } else {
-        mInfo.mAudio.mCodecSpecificConfig->AppendElements(headers[0],
-                                                          headerLens[0]);
+        audioCodecSpecificBlob->AppendElements(headers[0], headerLens[0]);
       }
       uint64_t duration = 0;
       r = nestegg_duration(context, &duration);
       if (!r) {
         mInfo.mAudio.mDuration = TimeUnit::FromNanoseconds(duration);
+        WEBM_DEBUG("audio track duration: %lf",
+                   mInfo.mAudio.mDuration.ToSeconds());
       }
       mInfo.mAudio.mCrypto = GetTrackCrypto(TrackInfo::kAudioTrack, track);
       if (mInfo.mAudio.mCrypto.IsEncrypted()) {
@@ -438,6 +480,7 @@ nsresult WebMDemuxer::ReadMetadata() {
       }
     }
   }
+  WEBM_DEBUG("Read metadata OK");
   return NS_OK;
 }
 
@@ -541,6 +584,7 @@ nsresult WebMDemuxer::GetNextPacket(TrackInfo::TrackType aType,
   unsigned int count = 0;
   r = nestegg_packet_count(holder->Packet(), &count);
   if (r == -1) {
+    WEBM_DEBUG("nestegg_packet_count: error");
     return NS_ERROR_DOM_MEDIA_DEMUXER_ERR;
   }
   int64_t tstamp = holder->Timestamp();
@@ -553,6 +597,7 @@ nsresult WebMDemuxer::GetNextPacket(TrackInfo::TrackType aType,
   RefPtr<NesteggPacketHolder> next_holder;
   rv = NextPacket(aType, next_holder);
   if (NS_FAILED(rv) && rv != NS_ERROR_DOM_MEDIA_END_OF_STREAM) {
+    WEBM_DEBUG("NextPacket: error");
     return rv;
   }
 
@@ -594,6 +639,7 @@ nsresult WebMDemuxer::GetNextPacket(TrackInfo::TrackType aType,
   }
 
   if (mIsMediaSource && next_tstamp == INT64_MIN) {
+    WEBM_DEBUG("WebM is a media source, and next timestamp computation filed.");
     return NS_ERROR_DOM_MEDIA_END_OF_STREAM;
   }
 
@@ -680,13 +726,13 @@ nsresult WebMDemuxer::GetNextPacket(TrackInfo::TrackType aType,
       sample = new MediaRawData(data, length, alphaData, alphaLength);
       if ((length && !sample->Data()) ||
           (alphaLength && !sample->AlphaData())) {
-        // OOM.
+        WEBM_DEBUG("Couldn't allocate MediaRawData: OOM");
         return NS_ERROR_OUT_OF_MEMORY;
       }
     } else {
       sample = new MediaRawData(data, length);
       if (length && !sample->Data()) {
-        // OOM.
+        WEBM_DEBUG("Couldn't allocate MediaRawData: OOM");
         return NS_ERROR_OUT_OF_MEMORY;
       }
     }
@@ -698,20 +744,25 @@ nsresult WebMDemuxer::GetNextPacket(TrackInfo::TrackType aType,
     sample->mOffset = holder->Offset();
     sample->mKeyframe = isKeyframe;
     if (discardPadding && i == count - 1) {
-      CheckedInt64 discardFrames;
+      sample->mOriginalPresentationWindow =
+          Some(media::TimeInterval{sample->mTime, sample->GetEndTime()});
       if (discardPadding < 0) {
-        // This is an invalid value as discard padding should never be negative.
-        // Set to maximum value so that the decoder will reject it as it's
-        // greater than the number of frames available.
-        discardFrames = INT32_MAX;
-        WEBM_DEBUG("Invalid negative discard padding");
+        // This will ensure decoding will error out, and the file is rejected.
+        sample->mDuration = TimeUnit::Invalid();
       } else {
-        discardFrames = TimeUnitToFrames(
-            TimeUnit::FromNanoseconds(discardPadding), mInfo.mAudio.mRate);
+        TimeUnit padding = TimeUnit::FromNanoseconds(discardPadding);
+        if (padding > sample->mDuration || mProcessedDiscardPadding) {
+          WEBM_DEBUG(
+              "Padding frames larger than packet size, flagging the packet for "
+              "error (padding: %s, duration: %s, already processed: %s)",
+              padding.ToString().get(), sample->mDuration.ToString().get(),
+              mProcessedDiscardPadding ? "true" : "false");
+          sample->mDuration = TimeUnit::Invalid();
+        } else {
+          sample->mDuration -= padding;
+        }
       }
-      if (discardFrames.isValid()) {
-        sample->mDiscardPadding = discardFrames.value();
-      }
+      mProcessedDiscardPadding = true;
     }
 
     if (packetEncryption == NESTEGG_PACKET_HAS_SIGNAL_BYTE_ENCRYPTED ||
@@ -825,6 +876,7 @@ nsresult WebMDemuxer::NextPacket(TrackInfo::TrackType aType,
   bool hasType = isVideo ? mHasVideo : mHasAudio;
 
   if (!hasType) {
+    WEBM_DEBUG("No media type found");
     return NS_ERROR_DOM_MEDIA_DEMUXER_ERR;
   }
 
@@ -846,6 +898,7 @@ nsresult WebMDemuxer::NextPacket(TrackInfo::TrackType aType,
       return rv;
     }
     if (!holder) {
+      WEBM_DEBUG("Couldn't demux packet");
       return NS_ERROR_DOM_MEDIA_DEMUXER_ERR;
     }
 
@@ -862,20 +915,24 @@ nsresult WebMDemuxer::DemuxPacket(TrackInfo::TrackType aType,
   int r = nestegg_read_packet(Context(aType), &packet);
   if (r == 0) {
     nestegg_read_reset(Context(aType));
+    WEBM_DEBUG("EOS");
     return NS_ERROR_DOM_MEDIA_END_OF_STREAM;
   } else if (r < 0) {
+    WEBM_DEBUG("nestegg_read_packet: error");
     return NS_ERROR_DOM_MEDIA_DEMUXER_ERR;
   }
 
   unsigned int track = 0;
   r = nestegg_packet_track(packet, &track);
   if (r == -1) {
+    WEBM_DEBUG("nestegg_packet_track: error");
     return NS_ERROR_DOM_MEDIA_DEMUXER_ERR;
   }
 
   int64_t offset = Resource(aType).Tell();
   RefPtr<NesteggPacketHolder> holder = new NesteggPacketHolder();
   if (!holder->Init(packet, offset, track, false)) {
+    WEBM_DEBUG("NesteggPacketHolder::Init: error");
     return NS_ERROR_DOM_MEDIA_DEMUXER_ERR;
   }
 
@@ -895,7 +952,9 @@ nsresult WebMDemuxer::SeekInternal(TrackInfo::TrackType aType,
                                    const TimeUnit& aTarget) {
   EnsureUpToDateIndex();
   uint32_t trackToSeek = mHasVideo ? mVideoTrack : mAudioTrack;
-  uint64_t target = aTarget.ToNanoseconds();
+  MOZ_ASSERT(aTarget.ToNanoseconds() >= 0, "Seek time can't be negative");
+  uint64_t target = static_cast<uint64_t>(aTarget.ToNanoseconds());
+  WEBM_DEBUG("Seeking to %lf", aTarget.ToSeconds());
 
   Reset(aType);
 
@@ -928,7 +987,13 @@ nsresult WebMDemuxer::SeekInternal(TrackInfo::TrackType aType,
       return NS_ERROR_FAILURE;
     }
 
-    r = nestegg_offset_seek(Context(aType), offset);
+    if (offset < 0) {
+      WEBM_DEBUG("Unknow byte offset time for seek target %" PRIu64 "ns",
+                 target);
+      return NS_ERROR_FAILURE;
+    }
+
+    r = nestegg_offset_seek(Context(aType), static_cast<uint64_t>(offset));
     if (r == -1) {
       WEBM_DEBUG("and nestegg_offset_seek to %" PRIu64 " failed", offset);
       return NS_ERROR_FAILURE;
@@ -1107,6 +1172,7 @@ nsresult WebMTrackDemuxer::NextSample(RefPtr<MediaRawData>& aData) {
     aData = mSamples.PopFront();
     return NS_OK;
   }
+  WEBM_DEBUG("WebMTrackDemuxer::NextSample: error");
   return rv;
 }
 
@@ -1283,7 +1349,9 @@ void WebMTrackDemuxer::BreakCycles() { mParent = nullptr; }
 
 int64_t WebMTrackDemuxer::GetEvictionOffset(const TimeUnit& aTime) {
   int64_t offset;
-  if (!mParent->GetOffsetForTime(aTime.ToNanoseconds(), &offset)) {
+  int64_t nanos = aTime.ToNanoseconds();
+  if (nanos < 0 ||
+      !mParent->GetOffsetForTime(static_cast<uint64_t>(nanos), &offset)) {
     return 0;
   }
 

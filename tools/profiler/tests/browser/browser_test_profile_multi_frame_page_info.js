@@ -19,12 +19,12 @@ add_task(async function test_profile_multi_frame_page_info() {
   info(
     "Start the profiler to test the page information with multi frame page."
   );
-  startProfiler();
+  await startProfiler();
 
   info("Open a tab with multi_frame.html in it.");
   // multi_frame.html embeds single_frame.html inside an iframe.
   const url = BASE_URL + "multi_frame.html";
-  await BrowserTestUtils.withNewTab(url, async function(contentBrowser) {
+  await BrowserTestUtils.withNewTab(url, async function (contentBrowser) {
     const contentPid = await SpecialPowers.spawn(contentBrowser, [], () => {
       return Services.appinfo.processID;
     });
@@ -34,26 +34,14 @@ add_task(async function test_profile_multi_frame_page_info() {
     const activeTabID = win.gBrowser.selectedBrowser.browsingContext.browserId;
 
     info("Capture the profile data.");
-    const profile = await Services.profiler.getProfileDataAsync();
-    Services.profiler.StopProfiler();
-
-    let foundPage = 0;
-    // We need to find the correct content process for that tab.
-    let contentProcess = profile.processes.find(
-      p => p.threads[0].pid == contentPid
-    );
-
-    if (!contentProcess) {
-      throw new Error(
-        `Could not find the content process with given pid: ${contentPid}`
-      );
-    }
+    const { contentProcess } = await stopProfilerNowAndGetThreads(contentPid);
 
     info(
       "Check if the captured pages are the ones with correct values we created."
     );
 
     let parentPage;
+    let foundPage = 0;
     for (const page of contentProcess.pages) {
       // Parent page
       if (page.url == url) {

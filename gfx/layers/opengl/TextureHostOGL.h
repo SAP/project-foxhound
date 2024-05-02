@@ -347,7 +347,7 @@ class SurfaceTextureSource : public TextureSource, public TextureSourceOGL {
                        java::GeckoSurfaceTexture::Ref& aSurfTex,
                        gfx::SurfaceFormat aFormat, GLenum aTarget,
                        GLenum aWrapMode, gfx::IntSize aSize,
-                       bool aIgnoreTransform);
+                       Maybe<gfx::Matrix4x4> aTransformOverride);
 
   const char* Name() const override { return "SurfaceTextureSource"; }
 
@@ -379,7 +379,7 @@ class SurfaceTextureSource : public TextureSource, public TextureSourceOGL {
   const GLenum mTextureTarget;
   const GLenum mWrapMode;
   const gfx::IntSize mSize;
-  const bool mIgnoreTransform;
+  const Maybe<gfx::Matrix4x4> mTransformOverride;
 };
 
 class SurfaceTextureHost : public TextureHost {
@@ -387,15 +387,14 @@ class SurfaceTextureHost : public TextureHost {
   SurfaceTextureHost(TextureFlags aFlags,
                      mozilla::java::GeckoSurfaceTexture::Ref& aSurfTex,
                      gfx::IntSize aSize, gfx::SurfaceFormat aFormat,
-                     bool aContinuousUpdate, bool aIgnoreTransform);
+                     bool aContinuousUpdate,
+                     Maybe<gfx::Matrix4x4> aTransformOverride);
 
   virtual ~SurfaceTextureHost();
 
   void DeallocateDeviceData() override;
 
   gfx::SurfaceFormat GetFormat() const override;
-
-  void NotifyNotUsed() override;
 
   already_AddRefed<gfx::DataSourceSurface> GetAsSurface() override {
     return nullptr;  // XXX - implement this (for MOZ_DUMP_PAINTING)
@@ -408,6 +407,8 @@ class SurfaceTextureHost : public TextureHost {
   const char* Name() override { return "SurfaceTextureHost"; }
 
   SurfaceTextureHost* AsSurfaceTextureHost() override { return this; }
+
+  bool IsWrappingSurfaceTextureHost() override { return true; }
 
   void CreateRenderTexture(
       const wr::ExternalImageId& aExternalImageId) override;
@@ -433,15 +434,60 @@ class SurfaceTextureHost : public TextureHost {
   bool NeedsDeferredDeletion() const override { return false; }
 
  protected:
-  bool EnsureAttached();
-
   mozilla::java::GeckoSurfaceTexture::GlobalRef mSurfTex;
   const gfx::IntSize mSize;
   const gfx::SurfaceFormat mFormat;
   bool mContinuousUpdate;
-  const bool mIgnoreTransform;
+  const Maybe<gfx::Matrix4x4> mTransformOverride;
   RefPtr<CompositorOGL> mCompositor;
   RefPtr<SurfaceTextureSource> mTextureSource;
+};
+
+class AndroidHardwareBufferTextureSource : public TextureSource,
+                                           public TextureSourceOGL {
+ public:
+  AndroidHardwareBufferTextureSource(
+      TextureSourceProvider* aProvider,
+      AndroidHardwareBuffer* aAndroidHardwareBuffer, gfx::SurfaceFormat aFormat,
+      GLenum aTarget, GLenum aWrapMode, gfx::IntSize aSize);
+
+  const char* Name() const override { return "SurfaceTextureSource"; }
+
+  TextureSourceOGL* AsSourceOGL() override { return this; }
+
+  void BindTexture(GLenum activetex,
+                   gfx::SamplingFilter aSamplingFilter) override;
+
+  bool IsValid() const override;
+
+  gfx::IntSize GetSize() const override { return mSize; }
+
+  gfx::SurfaceFormat GetFormat() const override { return mFormat; }
+
+  GLenum GetTextureTarget() const override { return mTextureTarget; }
+
+  GLenum GetWrapMode() const override { return mWrapMode; }
+
+  void DeallocateDeviceData() override;
+
+  gl::GLContext* gl() const { return mGL; }
+
+ protected:
+  virtual ~AndroidHardwareBufferTextureSource();
+
+  bool EnsureEGLImage();
+  void DestroyEGLImage();
+  void DeleteTextureHandle();
+
+  RefPtr<gl::GLContext> mGL;
+  RefPtr<AndroidHardwareBuffer> mAndroidHardwareBuffer;
+  const gfx::SurfaceFormat mFormat;
+  const GLenum mTextureTarget;
+  const GLenum mWrapMode;
+  const gfx::IntSize mSize;
+
+  EGLImage mEGLImage;
+  GLuint mTextureHandle;
 };
 
 class AndroidHardwareBufferTextureHost : public TextureHost {
@@ -501,16 +547,14 @@ class AndroidHardwareBufferTextureHost : public TextureHost {
     return mAndroidHardwareBuffer;
   }
 
+  bool SupportsExternalCompositing(WebRenderBackend aBackend) override;
+
   // gecko does not need deferred deletion with WebRender
   // GPU/hardware task end could be checked by android fence.
   bool NeedsDeferredDeletion() const override { return false; }
 
  protected:
-  void DestroyEGLImage();
-
   RefPtr<AndroidHardwareBuffer> mAndroidHardwareBuffer;
-  RefPtr<GLTextureSource> mTextureSource;
-  EGLImage mEGLImage;
 };
 
 #endif  // MOZ_WIDGET_ANDROID

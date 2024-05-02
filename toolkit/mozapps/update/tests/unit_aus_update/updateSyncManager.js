@@ -7,8 +7,8 @@
 // b) starting a second copy of the same binary and making sure we can tell we
 //    are no longer the only one that's opened it.
 
-const { Subprocess } = ChromeUtils.import(
-  "resource://gre/modules/Subprocess.jsm"
+const { Subprocess } = ChromeUtils.importESModule(
+  "resource://gre/modules/Subprocess.sys.mjs"
 );
 
 // Save off the real GRE directory and binary path before we register our
@@ -16,7 +16,7 @@ const { Subprocess } = ChromeUtils.import(
 const thisBinary = Services.dirsvc.get("XREExeF", Ci.nsIFile);
 const greDir = Services.dirsvc.get("GreD", Ci.nsIFile);
 
-add_task(async function() {
+add_task(async function () {
   setupTestCommon();
 
   // First check that we believe we exclusively hold the lock.

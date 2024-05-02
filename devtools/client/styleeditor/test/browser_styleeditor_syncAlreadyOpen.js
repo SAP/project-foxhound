@@ -18,10 +18,11 @@ const expectedText = `
   }
   `;
 
-add_task(async function() {
+add_task(async function () {
   await addTab(TESTCASE_URI);
 
   const { inspector, view, toolbox } = await openRuleView();
+  await selectNode("#testid", inspector);
 
   // In this test, make sure the style editor is open before making
   // changes in the inspector.
@@ -32,8 +33,7 @@ add_task(async function() {
     editor.sourceEditor.on("change", resolve);
   });
 
-  await toolbox.getPanel("inspector");
-  await selectNode("#testid", inspector);
+  await toolbox.selectTool("inspector");
   const ruleEditor = getRuleViewRuleEditor(view, 1);
 
   // Disable the "font-size" property.

@@ -21,7 +21,7 @@ int main(int argc, const char *argv[]) {
   UErrorCode errorCode = U_ZERO_ERROR;
 #if defined (COLLUNSAFE_PATTERN)
   puts("verify pattern");
-  const UnicodeString unsafeBackwardPattern(FALSE, collunsafe_pattern, collunsafe_len);
+  const UnicodeString unsafeBackwardPattern(false, collunsafe_pattern, collunsafe_len);
   fprintf(stderr, "\n -- pat '%c%c%c%c%c'\n",
           collunsafe_pattern[0],
           collunsafe_pattern[1],
@@ -53,7 +53,7 @@ int main(int argc, const char *argv[]) {
     printf("Finished deserialize with %d ranges\n", u.getRangeCount());
   }
 #endif
-// if(tailoring.unsafeBackwardSet == NULL) {
+// if(tailoring.unsafeBackwardSet == nullptr) {
   //   errorCode = U_MEMORY_ALLOCATION_ERROR;
   //   fprintf(stderr, "\n%s:%d: err %s\n", __FILE__, __LINE__, u_errorName(errorCode));
   // }

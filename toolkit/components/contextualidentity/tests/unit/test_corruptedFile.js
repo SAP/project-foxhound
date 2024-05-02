@@ -2,10 +2,9 @@
 
 const profileDir = do_get_profile();
 
-const { ContextualIdentityService } = ChromeUtils.import(
-  "resource://gre/modules/ContextualIdentityService.jsm"
+const { ContextualIdentityService } = ChromeUtils.importESModule(
+  "resource://gre/modules/ContextualIdentityService.sys.mjs"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 const TEST_STORE_FILE_PATH = PathUtils.join(
   profileDir.path,
@@ -94,15 +93,20 @@ add_task(async function corruptedFile() {
     tmpPath: TEST_STORE_FILE_PATH + ".tmp",
   });
 
-  let cis = ContextualIdentityService.createNewInstanceForTesting(
-    TEST_STORE_FILE_PATH
-  );
+  let cis =
+    ContextualIdentityService.createNewInstanceForTesting(TEST_STORE_FILE_PATH);
   ok(!!cis, "We have our instance of ContextualIdentityService");
 
   equal(
     cis.getPublicIdentities().length,
     4,
     "We should have the default public identities"
+  );
+
+  Assert.deepEqual(
+    cis.getPublicUserContextIds(),
+    cis.getPublicIdentities().map(identity => identity.userContextId),
+    "getPublicUserContextIds has matching user context IDs"
   );
 
   // Verify that when the containers.json file is being rebuilt, the computed lastUserContextId

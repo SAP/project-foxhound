@@ -54,12 +54,12 @@ nsresult DNSUtils::CreateChannelHelper(nsIURI* aUri, nsIChannel** aResult) {
 
   // Unfortunately, we can only initialize gHttpHandler on main thread.
   if (!gHttpHandler) {
-    nsCOMPtr<nsIEventTarget> main = GetMainThreadEventTarget();
+    nsCOMPtr<nsIEventTarget> main = GetMainThreadSerialEventTarget();
     if (main) {
       // Forward to the main thread synchronously.
       SyncRunnable::DispatchToThread(
-          main, new SyncRunnable(NS_NewRunnableFunction(
-                    "InitHttpHandler", []() { InitHttpHandler(); })));
+          main, NS_NewRunnableFunction("InitHttpHandler",
+                                       []() { InitHttpHandler(); }));
     }
   }
 

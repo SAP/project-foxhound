@@ -666,7 +666,7 @@ ResultCode BrokerServicesBase::SpawnTarget(const wchar_t* exe_path,
     if (result != SBOX_ALL_OK) {
       // This may fail in the same way as Job associated processes.
       // crbug.com/480639.
-      SpawnCleanup(target);
+      target->Terminate();
       return result;
     }
   }
@@ -733,6 +733,13 @@ ResultCode BrokerServicesBase::GetPolicyDiagnostics(
   // Ownership has passed to tracker thread.
   receiver.release();
   return SBOX_ALL_OK;
+}
+
+bool BrokerServicesBase::DeriveCapabilitySidFromName(const wchar_t* name,
+                                                     PSID derived_sid,
+                                                     DWORD sid_buffer_length) {
+  return ::CopySid(sid_buffer_length, derived_sid,
+                   Sid::FromNamedCapability(name).GetPSID());
 }
 
 }  // namespace sandbox

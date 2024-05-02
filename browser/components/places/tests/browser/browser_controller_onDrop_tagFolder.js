@@ -4,7 +4,9 @@
 
 "use strict";
 
-const { sinon } = ChromeUtils.import("resource://testing-common/Sinon.jsm");
+const { sinon } = ChromeUtils.importESModule(
+  "resource://testing-common/Sinon.sys.mjs"
+);
 
 const sandbox = sinon.createSandbox();
 const TAG_NAME = "testTag";
@@ -12,8 +14,8 @@ const TAG_NAME = "testTag";
 var bookmarks;
 var bookmarkId;
 
-add_task(async function setup() {
-  registerCleanupFunction(async function() {
+add_setup(async function () {
+  registerCleanupFunction(async function () {
     sandbox.restore();
     await PlacesUtils.bookmarks.eraseEverything();
     await PlacesUtils.history.clear();
@@ -36,7 +38,7 @@ add_task(async function setup() {
       },
     ],
   });
-  bookmarkId = await PlacesUtils.promiseItemId(bookmarks[0].guid);
+  bookmarkId = await PlacesTestUtils.promiseItemId(bookmarks[0].guid);
 });
 
 async function run_drag_test(startBookmarkIndex, newParentGuid) {

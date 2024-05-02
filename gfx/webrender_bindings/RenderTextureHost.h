@@ -13,7 +13,7 @@
 #include "mozilla/gfx/2D.h"
 #include "mozilla/layers/LayersSurfaces.h"
 #include "mozilla/RefPtr.h"
-#include "mozilla/webrender/webrender_ffi.h"  // for wr::ImageRendering
+#include "mozilla/webrender/webrender_ffi.h"
 #include "mozilla/webrender/WebRenderTypes.h"
 
 namespace mozilla {
@@ -24,17 +24,19 @@ class GLContext;
 
 namespace wr {
 
+class RenderAndroidHardwareBufferTextureHost;
 class RenderAndroidSurfaceTextureHost;
 class RenderCompositor;
 class RenderDXGITextureHost;
 class RenderDXGIYCbCrTextureHost;
+class RenderDcompSurfaceTextureHost;
 class RenderMacIOSurfaceTextureHost;
 class RenderBufferTextureHost;
 class RenderTextureHostSWGL;
+class RenderTextureHostWrapper;
 
 void ActivateBindAndTexParameteri(gl::GLContext* aGL, GLenum aActiveTexture,
-                                  GLenum aBindTarget, GLuint aBindTexture,
-                                  wr::ImageRendering aRendering);
+                                  GLenum aBindTarget, GLuint aBindTexture);
 
 class RenderTextureHost {
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(RenderTextureHost)
@@ -42,14 +44,20 @@ class RenderTextureHost {
  public:
   RenderTextureHost();
 
-  virtual wr::WrExternalImage Lock(uint8_t aChannelIndex, gl::GLContext* aGL,
-                                   wr::ImageRendering aRendering);
+  virtual gfx::SurfaceFormat GetFormat() const {
+    return gfx::SurfaceFormat::UNKNOWN;
+  }
+
+  virtual gfx::YUVRangedColorSpace GetYUVColorSpace() const {
+    return gfx::YUVRangedColorSpace::Default;
+  }
+
+  virtual wr::WrExternalImage Lock(uint8_t aChannelIndex, gl::GLContext* aGL);
 
   virtual void Unlock() {}
 
   virtual wr::WrExternalImage LockSWGL(uint8_t aChannelIndex, void* aContext,
-                                       RenderCompositor* aCompositor,
-                                       wr::ImageRendering aRendering);
+                                       RenderCompositor* aCompositor);
 
   virtual void UnlockSWGL() {}
 
@@ -70,6 +78,11 @@ class RenderTextureHost {
   // Returns true when RenderTextureHost needs SyncObjectHost::Synchronize()
   // call, before its usage.
   virtual bool SyncObjectNeeded() { return false; }
+  // Returns true when this texture was generated from a DRM-protected source.
+  bool IsFromDRMSource() { return mIsFromDRMSource; }
+  void SetIsFromDRMSource(bool aIsFromDRMSource) {
+    mIsFromDRMSource = aIsFromDRMSource;
+  }
 
   virtual size_t Bytes() = 0;
 
@@ -82,18 +95,46 @@ class RenderTextureHost {
     return nullptr;
   }
 
+  virtual RenderAndroidHardwareBufferTextureHost*
+  AsRenderAndroidHardwareBufferTextureHost() {
+    return nullptr;
+  }
+
   virtual RenderAndroidSurfaceTextureHost* AsRenderAndroidSurfaceTextureHost() {
     return nullptr;
   }
 
   virtual RenderTextureHostSWGL* AsRenderTextureHostSWGL() { return nullptr; }
 
+  virtual RenderDcompSurfaceTextureHost* AsRenderDcompSurfaceTextureHost() {
+    return nullptr;
+  }
+
+  virtual bool IsWrappingAsyncRemoteTexture() { return false; }
+
+  virtual void Destroy();
+
+  virtual void SetIsSoftwareDecodedVideo() {
+    MOZ_ASSERT_UNREACHABLE("unexpected to be called");
+  }
+  virtual bool IsSoftwareDecodedVideo() {
+    MOZ_ASSERT_UNREACHABLE("unexpected to be called");
+    return false;
+  }
+
  protected:
   virtual ~RenderTextureHost();
 
-  bool IsFilterUpdateNecessary(wr::ImageRendering aRendering);
+  // Returns the UV coordinates to be used when sampling the texture, in pixels.
+  // For most implementations these will be (0, 0) and (size.x, size.y), but
+  // some texture types (such as RenderAndroidSurfaceTextureHost) require an
+  // additional transform to be applied to the coordinates.
+  virtual std::pair<gfx::Point, gfx::Point> GetUvCoords(
+      gfx::IntSize aTextureSize) const;
 
-  wr::ImageRendering mCachedRendering;
+  bool mIsFromDRMSource;
+
+  friend class RenderTextureHostWrapper;
 };
 
 }  // namespace wr

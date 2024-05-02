@@ -23,6 +23,17 @@ using mozilla::dom::ContentParentId
   from "mozilla/dom/ipc/IdType.h";
 
 namespace mozilla {
+
+namespace ipc {
+
+union BoolResponse
+{
+  nsresult;
+  bool;
+};
+
+} // namespace ipc
+
 namespace dom {
 namespace quota {
 
@@ -35,10 +46,6 @@ struct StorageInitializedParams
 };
 
 struct TemporaryStorageInitializedParams
-{
-};
-
-struct InitParams
 {
 };
 
@@ -89,28 +96,9 @@ struct ClearResetOriginParams
   bool clientTypeIsExplicit;
 };
 
-struct ClearOriginParams
-{
-  ClearResetOriginParams commonParams;
-  bool matchAll;
-};
-
 struct ResetOriginParams
 {
   ClearResetOriginParams commonParams;
-};
-
-struct ClearDataParams
-{
-  OriginAttributesPattern pattern;
-};
-
-struct ClearAllParams
-{
-};
-
-struct ResetAllParams
-{
 };
 
 struct PersistedParams
@@ -137,22 +125,18 @@ union RequestParams
   StorageNameParams;
   StorageInitializedParams;
   TemporaryStorageInitializedParams;
-  InitParams;
   InitTemporaryStorageParams;
   InitializePersistentOriginParams;
   InitializeTemporaryOriginParams;
   GetFullOriginMetadataParams;
-  ClearOriginParams;
   ResetOriginParams;
-  ClearDataParams;
-  ClearAllParams;
-  ResetAllParams;
   PersistedParams;
   PersistParams;
   EstimateParams;
   ListOriginsParams;
 };
 
+[ManualDealloc, ChildImpl=virtual, ParentImpl=virtual]
 protocol PQuota
 {
   manager PBackground;
@@ -166,6 +150,40 @@ parent:
   async PQuotaUsageRequest(UsageRequestParams params);
 
   async PQuotaRequest(RequestParams params);
+
+  async InitializeStorage()
+      returns(BoolResponse response);
+
+  async InitializePersistentClient(PrincipalInfo principalInfo,
+                                   Type clientType)
+      returns(BoolResponse response);
+
+  async InitializeTemporaryClient(PersistenceType persistenceType,
+                                  PrincipalInfo principalInfo,
+                                  Type clientType)
+      returns(BoolResponse response);
+
+  async ClearStoragesForOrigin(PersistenceType? persistenceType,
+                               PrincipalInfo principalInfo,
+                               Type? clientType)
+      returns(BoolResponse response);
+
+  async ClearStoragesForOriginPrefix(PersistenceType? persistenceType,
+                                     PrincipalInfo principalInfo)
+      returns(BoolResponse response);
+
+  // This can only be called from some other thread in the parent process!
+  async ClearStoragesForOriginAttributesPattern(OriginAttributesPattern pattern)
+      returns(BoolResponse response);
+
+  async ClearStoragesForPrivateBrowsing()
+      returns(BoolResponse response);
+
+  async ClearStorage()
+      returns(BoolResponse response);
+
+  async ShutdownStorage()
+      returns(BoolResponse response);
 
   async StartIdleMaintenance();
 

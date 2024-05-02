@@ -3,8 +3,9 @@
 
 "use strict";
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  SearchEngineSelector: "resource://gre/modules/SearchEngineSelector.jsm",
+ChromeUtils.defineESModuleGetters(this, {
+  SearchEngineSelectorOld:
+    "resource://gre/modules/SearchEngineSelectorOld.sys.mjs",
 });
 
 /**
@@ -102,10 +103,10 @@ function getConfigData(testInput) {
   }));
 }
 
-const engineSelector = new SearchEngineSelector();
+const engineSelector = new SearchEngineSelectorOld();
 
-add_task(async function() {
-  const settings = await RemoteSettings(SearchUtils.SETTINGS_KEY);
+add_task(async function () {
+  const settings = await RemoteSettings(SearchUtils.OLD_SETTINGS_KEY);
   const getStub = sinon.stub(settings, "get");
 
   let i = 0;
@@ -115,13 +116,11 @@ add_task(async function() {
     delete engineSelector._configuration;
     getStub.returns(getConfigData(test.input));
 
-    const {
-      engines,
-      privateDefault,
-    } = await engineSelector.fetchEngineConfiguration({
-      locale: "en-US",
-      region: "us",
-    });
+    const { engines, privateDefault } =
+      await engineSelector.fetchEngineConfiguration({
+        locale: "en-US",
+        region: "us",
+      });
 
     let names = engines.map(obj => obj.engineName);
     Assert.deepEqual(

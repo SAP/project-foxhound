@@ -44,7 +44,7 @@ include backend.mk
 
 # Add e.g. `export:: $(EXPORT_TARGETS)` rules. The *_TARGETS variables are defined
 # in backend.mk.
-$(foreach tier,$(RUNNABLE_TIERS),$(eval $(tier):: $($(call varize,$(tier))_TARGETS)))
+$(foreach tier,$(RUNNABLE_TIERS),$(eval $(if $(filter .,$(DEPTH)),recurse_$(tier):,$(tier)::) $($(call varize,$(tier))_TARGETS)))
 endif
 
 endif
@@ -225,7 +225,6 @@ color_flags_vars := \
   COMPILE_CXXFLAGS \
   COMPILE_CMFLAGS \
   COMPILE_CMMFLAGS \
-  LDFLAGS \
   WASM_CFLAGS \
   WASM_CXXFLAGS \
   $(NULL)

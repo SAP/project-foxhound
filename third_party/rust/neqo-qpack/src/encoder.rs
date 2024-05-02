@@ -376,7 +376,7 @@ impl QPackEncoder {
 
         let mut ref_entries = HashSet::new();
 
-        for iter in h.iter() {
+        for iter in h {
             let name = iter.name().as_bytes().to_vec();
             let value = iter.value().as_bytes().to_vec();
             qtrace!("encoding {:x?} {:x?}.", name, value);
@@ -450,7 +450,7 @@ impl QPackEncoder {
         if !ref_entries.is_empty() {
             self.unacked_header_blocks
                 .entry(stream_id)
-                .or_insert_with(VecDeque::new)
+                .or_default()
                 .push_front(ref_entries);
             self.stats.dynamic_table_references += 1;
         }
@@ -516,7 +516,7 @@ mod tests {
     use crate::QpackSettings;
     use neqo_transport::{ConnectionParameters, StreamId, StreamType};
     use std::mem;
-    use test_fixture::{configure_server, default_client, default_server, handshake, now};
+    use test_fixture::{default_client, default_server, handshake, new_server, now, DEFAULT_ALPN};
 
     struct TestEncoder {
         encoder: QPackEncoder,
@@ -571,7 +571,8 @@ mod tests {
     fn connect_generic(huffman: bool, max_data: Option<u64>) -> TestEncoder {
         let mut conn = default_client();
         let mut peer_conn = max_data.map_or_else(default_server, |max| {
-            configure_server(
+            new_server(
+                DEFAULT_ALPN,
                 ConnectionParameters::default()
                     .max_stream_data(StreamType::UniDi, true, max)
                     .max_stream_data(StreamType::BiDi, true, max)

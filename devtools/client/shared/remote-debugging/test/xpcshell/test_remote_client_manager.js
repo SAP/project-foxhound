@@ -5,10 +5,10 @@
 
 const {
   remoteClientManager,
-} = require("devtools/client/shared/remote-debugging/remote-client-manager");
+} = require("resource://devtools/client/shared/remote-debugging/remote-client-manager.js");
 const {
   CONNECTION_TYPES,
-} = require("devtools/client/shared/remote-debugging/constants");
+} = require("resource://devtools/client/shared/remote-debugging/constants.js");
 
 add_task(async function testRemoteClientManager() {
   for (const type of Object.values(CONNECTION_TYPES)) {
@@ -17,9 +17,8 @@ add_task(async function testRemoteClientManager() {
     const clientId = "clientId";
     const remoteId = remoteClientManager.getRemoteId(clientId, type);
 
-    const connectionType = remoteClientManager.getConnectionTypeByRemoteId(
-      remoteId
-    );
+    const connectionType =
+      remoteClientManager.getConnectionTypeByRemoteId(remoteId);
     equal(
       connectionType,
       type,
@@ -136,9 +135,8 @@ add_task(async function testRemoteClientManagerWithUnknownType() {
     "someClientId",
     "NotARealType"
   );
-  const connectionType = remoteClientManager.getConnectionTypeByRemoteId(
-    remoteId
-  );
+  const connectionType =
+    remoteClientManager.getConnectionTypeByRemoteId(remoteId);
   equal(
     connectionType,
     CONNECTION_TYPES.UNKNOWN,
@@ -147,7 +145,7 @@ add_task(async function testRemoteClientManagerWithUnknownType() {
 });
 
 function createFakeClient() {
-  const EventEmitter = require("devtools/shared/event-emitter");
+  const EventEmitter = require("resource://devtools/shared/event-emitter.js");
 
   const client = {};
   EventEmitter.decorate(client);

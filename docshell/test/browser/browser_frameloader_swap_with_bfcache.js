@@ -20,14 +20,14 @@ add_task(async function test() {
 
   let tab2 = await BrowserTestUtils.openNewForegroundTab(gBrowser, uri, true);
   let browser2 = tab2.linkedBrowser;
-  BrowserTestUtils.loadURI(browser2, uri + "nextpage");
+  BrowserTestUtils.startLoadingURIString(browser2, uri + "nextpage");
   await BrowserTestUtils.browserLoaded(browser2, false);
 
   gBrowser.swapBrowsersAndCloseOther(tab1, tab2);
   is(tab1.linkedBrowser, browser1, "Tab's browser should stay the same.");
   browser1.goBack(false);
   await BrowserTestUtils.browserLoaded(browser1, false);
-  let persisted = await SpecialPowers.spawn(browser1, [], async function() {
+  let persisted = await SpecialPowers.spawn(browser1, [], async function () {
     return content.document.documentElement.getAttribute("persisted");
   });
 

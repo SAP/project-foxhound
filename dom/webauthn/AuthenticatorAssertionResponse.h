@@ -11,12 +11,11 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/dom/AuthenticatorResponse.h"
 #include "mozilla/dom/BindingDeclarations.h"
-#include "mozilla/dom/CryptoBuffer.h"
+#include "mozilla/dom/WebAuthenticationBinding.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsWrapperCache.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class AuthenticatorAssertionResponse final : public AuthenticatorResponse {
  public:
@@ -33,29 +32,32 @@ class AuthenticatorAssertionResponse final : public AuthenticatorResponse {
   virtual JSObject* WrapObject(JSContext* aCx,
                                JS::Handle<JSObject*> aGivenProto) override;
 
-  void GetAuthenticatorData(JSContext* aCx,
-                            JS::MutableHandle<JSObject*> aRetVal);
+  void GetAuthenticatorData(JSContext* aCx, JS::MutableHandle<JSObject*> aValue,
+                            ErrorResult& aRv);
 
-  nsresult SetAuthenticatorData(CryptoBuffer& aBuffer);
+  void SetAuthenticatorData(const nsTArray<uint8_t>& aBuffer);
 
-  void GetSignature(JSContext* aCx, JS::MutableHandle<JSObject*> aRetVal);
+  void GetSignature(JSContext* aCx, JS::MutableHandle<JSObject*> aValue,
+                    ErrorResult& aRv);
 
-  nsresult SetSignature(CryptoBuffer& aBuffer);
+  void SetSignature(const nsTArray<uint8_t>& aBuffer);
 
-  void GetUserHandle(JSContext* aCx, JS::MutableHandle<JSObject*> aRetVal);
+  void GetUserHandle(JSContext* aCx, JS::MutableHandle<JSObject*> aValue,
+                     ErrorResult& aRv);
 
-  nsresult SetUserHandle(CryptoBuffer& aUserHandle);
+  void SetUserHandle(const nsTArray<uint8_t>& aBuffer);
+
+  void ToJSON(AuthenticatorAssertionResponseJSON& aJSON, ErrorResult& aError);
 
  private:
-  CryptoBuffer mAuthenticatorData;
+  nsTArray<uint8_t> mAuthenticatorData;
   JS::Heap<JSObject*> mAuthenticatorDataCachedObj;
-  CryptoBuffer mSignature;
+  nsTArray<uint8_t> mSignature;
   JS::Heap<JSObject*> mSignatureCachedObj;
-  CryptoBuffer mUserHandle;
+  nsTArray<uint8_t> mUserHandle;
   JS::Heap<JSObject*> mUserHandleCachedObj;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_AuthenticatorAssertionResponse_h

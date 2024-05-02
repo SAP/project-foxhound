@@ -4,20 +4,27 @@
 
 "use strict";
 
-const EventEmitter = require("devtools/shared/event-emitter");
-const { MultiLocalizationHelper } = require("devtools/shared/l10n");
+const EventEmitter = require("resource://devtools/shared/event-emitter.js");
+const {
+  MultiLocalizationHelper,
+} = require("resource://devtools/shared/l10n.js");
 
-loader.lazyRequireGetter(this, "colorUtils", "devtools/shared/css/color", true);
+loader.lazyRequireGetter(
+  this,
+  "colorUtils",
+  "resource://devtools/shared/css/color.js",
+  true
+);
 loader.lazyRequireGetter(
   this,
   "labColors",
-  "devtools/shared/css/color-db",
+  "resource://devtools/shared/css/color-db.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   ["getTextProperties", "getContrastRatioAgainstBackground"],
-  "devtools/shared/accessibility",
+  "resource://devtools/shared/accessibility.js",
   true
 );
 
@@ -152,11 +159,8 @@ class Spectrum {
       ".spectrum-color-contrast"
     );
     this.contrastLabel = this.element.querySelector(".contrast-ratio-label");
-    [
-      this.contrastValue,
-      this.contrastValueMin,
-      this.contrastValueMax,
-    ] = this.element.querySelectorAll(".accessibility-contrast-value");
+    [this.contrastValue, this.contrastValueMin, this.contrastValueMax] =
+      this.element.querySelectorAll(".accessibility-contrast-value");
 
     // Create the learn more info button
     const learnMore = this.document.createElementNS(XHTML_NS, "button");
@@ -473,8 +477,10 @@ class Spectrum {
     this.spectrumContrast.classList.toggle("range", false);
     this.spectrumContrast.classList.toggle("error", false);
     // Assign only base class to all contrastValues, removing any score class
-    this.contrastValue.className = this.contrastValueMin.className = this.contrastValueMax.className =
-      "accessibility-contrast-value";
+    this.contrastValue.className =
+      this.contrastValueMin.className =
+      this.contrastValueMax.className =
+        "accessibility-contrast-value";
 
     if (!this.contrastEnabled) {
       return;
@@ -657,7 +663,7 @@ function rgbToHsv(r, g, b, a) {
 }
 
 function draggable(element, dragHelper, onmove) {
-  onmove = onmove || function() {};
+  onmove = onmove || function () {};
 
   const doc = element.ownerDocument;
   let dragging = false;

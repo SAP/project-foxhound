@@ -8,9 +8,16 @@
 #define _mozilla_a11y_style_h_
 
 #include "mozilla/gfx/Types.h"
-#include "mozilla/ComputedStyle.h"
+#include "mozilla/AlreadyAddRefed.h"
+#include "nsStringFwd.h"
+#include "nsColor.h"
+
+class nsAtom;
 
 namespace mozilla {
+
+enum class StyleTextDecorationStyle : uint8_t;
+
 namespace dom {
 class Element;
 }  // namespace dom
@@ -18,29 +25,9 @@ namespace a11y {
 
 class StyleInfo {
  public:
-  explicit StyleInfo(dom::Element* aElement);
-  ~StyleInfo() {}
-
-  already_AddRefed<nsAtom> Display();
-  already_AddRefed<nsAtom> TextAlign();
-  mozilla::LengthPercentage TextIndent();
-  CSSCoord MarginLeft() { return Margin(eSideLeft); }
-  CSSCoord MarginRight() { return Margin(eSideRight); }
-  CSSCoord MarginTop() { return Margin(eSideTop); }
-  CSSCoord MarginBottom() { return Margin(eSideBottom); }
-
   static void FormatColor(const nscolor& aValue, nsAString& aFormattedValue);
-  static already_AddRefed<nsAtom> TextDecorationStyleToAtom(uint8_t aValue);
-
- private:
-  StyleInfo() = delete;
-  StyleInfo(const StyleInfo&) = delete;
-  StyleInfo& operator=(const StyleInfo&) = delete;
-
-  CSSCoord Margin(Side aSide);
-
-  dom::Element* mElement;
-  RefPtr<ComputedStyle> mComputedStyle;
+  static already_AddRefed<nsAtom> TextDecorationStyleToAtom(
+      StyleTextDecorationStyle aValue);
 };
 
 }  // namespace a11y

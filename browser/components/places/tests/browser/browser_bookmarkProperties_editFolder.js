@@ -5,7 +5,7 @@
 
 // Tests the Properties dialog on a folder.
 
-add_task(async function() {
+add_task(async function test_bookmark_properties_dialog_on_folder() {
   info("Bug 479348 - Properties on a root should be read-only.");
 
   let bm = await PlacesUtils.bookmarks.insert({
@@ -13,11 +13,11 @@ add_task(async function() {
     type: PlacesUtils.bookmarks.TYPE_FOLDER,
     parentGuid: PlacesUtils.bookmarks.unfiledGuid,
   });
-  registerCleanupFunction(async function() {
+  registerCleanupFunction(async function () {
     await PlacesUtils.bookmarks.remove(bm);
   });
 
-  await withSidebarTree("bookmarks", async function(tree) {
+  await withSidebarTree("bookmarks", async function (tree) {
     // Select the new bookmark in the sidebar.
     tree.selectItems([bm.guid]);
     let folder = tree.selectedNode;
@@ -27,14 +27,8 @@ add_task(async function() {
       "'placesCmd_show:info' on folder is enabled"
     );
 
-    let promiseTitleResetNotification = PlacesTestUtils.waitForNotification(
-      "bookmark-title-changed",
-      events => events.some(e => e.title === "folder"),
-      "places"
-    );
-
     await withBookmarksDialog(
-      true,
+      false,
       function openDialog() {
         tree.controller.doCommand("placesCmd_show:info");
       },
@@ -42,41 +36,43 @@ add_task(async function() {
         // Check that the dialog is not read-only.
         Assert.ok(
           !dialogWin.gEditItemOverlay.readOnly,
-          "Dialog should not be read-only"
+          "EditBookmark: Dialog should not be read-only"
         );
 
         // Check that name picker is not read only
         let namepicker = dialogWin.document.getElementById(
           "editBMPanel_namePicker"
         );
-        Assert.ok(!namepicker.readOnly, "Name field should not be read-only");
-        Assert.equal(namepicker.value, "folder", "Node title is correct");
-        let promiseTitleChangeNotification = PlacesTestUtils.waitForNotification(
-          "bookmark-title-changed",
-          events => events.some(e => e.title === "newname"),
-          "places"
+        Assert.ok(
+          !namepicker.readOnly,
+          "EditBookmark: Name field should not be read-only"
+        );
+        Assert.equal(
+          namepicker.value,
+          "folder",
+          "EditBookmark:Node title is correct"
         );
 
         fillBookmarkTextField("editBMPanel_namePicker", "newname", dialogWin);
-
-        await promiseTitleChangeNotification;
+        namepicker.blur();
 
         Assert.equal(
           namepicker.value,
           "newname",
-          "The title field has been changed"
-        );
-        Assert.equal(
-          tree.selectedNode.title,
-          "newname",
-          "The node has the correct title"
+          "EditBookmark: The title field has been changed"
         );
 
+        // Confirm and close the dialog.
+        namepicker.focus();
+        EventUtils.synthesizeKey("VK_RETURN", {}, dialogWin);
         // Ensure that the edit is finished before we hit cancel.
-        await PlacesTestUtils.promiseAsyncUpdates();
       }
     );
 
-    await promiseTitleResetNotification;
+    Assert.equal(
+      tree.selectedNode.title,
+      "newname",
+      "EditBookmark: The node has the correct title"
+    );
   });
 });

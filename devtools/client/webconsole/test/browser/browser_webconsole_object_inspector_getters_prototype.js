@@ -7,10 +7,10 @@
 const TEST_URI =
   "data:text/html;charset=utf8,<!DOCTYPE html><h1>Object Inspector on Getters</h1>";
 
-add_task(async function() {
+add_task(async function () {
   const hud = await openNewTabAndConsole(TEST_URI);
 
-  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], function() {
+  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], function () {
     class A {
       constructor() {
         this.myValue = "foo";
@@ -43,7 +43,7 @@ add_task(async function() {
     content.wrappedJSObject.console.log("oi-test", a, b, c, d);
   });
 
-  const node = await waitFor(() => findMessage(hud, "oi-test"));
+  const node = await waitFor(() => findConsoleAPIMessage(hud, "oi-test"));
   const [a, b, c, d] = node.querySelectorAll(".tree");
 
   await testObject(a, {
@@ -97,9 +97,7 @@ async function testObject(oi, { myValue, value }) {
 async function getValueNode(prototypeNode) {
   expandObjectInspectorNode(prototypeNode);
 
-  await waitFor(
-    () => getObjectInspectorChildrenNodes(prototypeNode).length > 0
-  );
+  await waitFor(() => !!getObjectInspectorChildrenNodes(prototypeNode).length);
 
   const children = getObjectInspectorChildrenNodes(prototypeNode);
   const valueNode = children.find(

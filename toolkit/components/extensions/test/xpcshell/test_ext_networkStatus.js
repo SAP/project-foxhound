@@ -4,6 +4,8 @@ const Cm = Components.manager;
 
 const uuidGenerator = Services.uuid;
 
+AddonTestUtils.init(this);
+
 var mockNetworkStatusService = {
   contractId: "@mozilla.org/network/network-link-service;1",
 
@@ -13,10 +15,7 @@ var mockNetworkStatusService = {
 
   QueryInterface: ChromeUtils.generateQI(["nsINetworkLinkService"]),
 
-  createInstance(outer, iiD) {
-    if (outer) {
-      throw Components.Exception("", Cr.NS_ERROR_NO_AGGREGATION);
-    }
+  createInstance(iiD) {
     return this.QueryInterface(iiD);
   },
 
@@ -104,7 +103,9 @@ add_task(async function test_networkStatus() {
   mockNetworkStatusService.register();
   let extension = ExtensionTestUtils.loadExtension({
     manifest: {
-      applications: { gecko: { id: "networkstatus@tests.mozilla.org" } },
+      browser_specific_settings: {
+        gecko: { id: "networkstatus@tests.mozilla.org" },
+      },
       permissions: ["networkStatus"],
     },
     isPrivileged: true,
@@ -167,22 +168,42 @@ add_task(async function test_networkStatus() {
   mockNetworkStatusService.unregister();
 });
 
-add_task(async function test_networkStatus_permission() {
-  let extension = ExtensionTestUtils.loadExtension({
-    manifest: {
-      applications: {
-        gecko: { id: "networkstatus-permission@tests.mozilla.org" },
+add_task(
+  {
+    // Some builds (e.g. thunderbird) have experiments enabled by default.
+    pref_set: [["extensions.experiments.enabled", false]],
+  },
+  async function test_networkStatus_permission() {
+    let extension = ExtensionTestUtils.loadExtension({
+      temporarilyInstalled: true,
+      isPrivileged: false,
+      manifest: {
+        browser_specific_settings: {
+          gecko: { id: "networkstatus-permission@tests.mozilla.org" },
+        },
+        permissions: ["networkStatus"],
       },
-      permissions: ["networkStatus"],
-    },
-    async background() {
-      browser.test.assertEq(
-        undefined,
-        browser.networkStatus,
-        "networkStatus is privileged"
+    });
+    ExtensionTestUtils.failOnSchemaWarnings(false);
+    let { messages } = await promiseConsoleOutput(async () => {
+      await Assert.rejects(
+        extension.startup(),
+        /Using the privileged permission/,
+        "Startup failed with privileged permission"
       );
-    },
-  });
-  await extension.startup();
-  await extension.unload();
-});
+    });
+    ExtensionTestUtils.failOnSchemaWarnings(true);
+    AddonTestUtils.checkMessages(
+      messages,
+      {
+        expected: [
+          {
+            message:
+              /Using the privileged permission 'networkStatus' requires a privileged add-on/,
+          },
+        ],
+      },
+      true
+    );
+  }
+);

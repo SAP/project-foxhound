@@ -13,12 +13,12 @@ const TEST_ENGINE_DOMAIN = "example.com";
 
 const DYNAMIC_RESULT_TYPE = "onboardTabToSearch";
 
-XPCOMUtils.defineLazyModuleGetters(this, {
+ChromeUtils.defineESModuleGetters(this, {
   UrlbarProviderTabToSearch:
-    "resource:///modules/UrlbarProviderTabToSearch.jsm",
+    "resource:///modules/UrlbarProviderTabToSearch.sys.mjs",
 });
 
-add_task(async function setup() {
+add_setup(async function () {
   await PlacesUtils.history.clear();
   await SpecialPowers.pushPrefEnv({
     set: [
@@ -36,7 +36,7 @@ add_task(async function setup() {
   for (let i = 0; i < 3; i++) {
     await PlacesTestUtils.addVisits([`https://${TEST_ENGINE_DOMAIN}/`]);
   }
-
+  await PlacesFrecencyRecalculator.recalculateAnyOutdatedFrecencies();
   registerCleanupFunction(async () => {
     await PlacesUtils.history.clear();
   });
@@ -97,7 +97,7 @@ add_task(async function basic() {
     "The correct action text is displayed in the tab-to-search result."
   );
 
-  EventUtils.synthesizeKey("KEY_Tab");
+  EventUtils.synthesizeKey("KEY_ArrowDown");
   Assert.equal(
     UrlbarTestUtils.getSelectedRowIndex(window),
     1,
@@ -150,7 +150,7 @@ add_task(async function activedescendant_tab() {
     isPreview: true,
   });
   let aadID = gURLBar.inputField.getAttribute("aria-activedescendant");
-  Assert.ok(!aadID, "aria-activedescendant was not set.");
+  Assert.equal(aadID, null, "aria-activedescendant was not set.");
 
   // Cycle through all the results then return to the tab-to-search result. It
   // should be announced.
@@ -159,14 +159,14 @@ add_task(async function activedescendant_tab() {
   let firstRow = await UrlbarTestUtils.waitForAutocompleteResultAt(window, 0);
   Assert.equal(
     aadID,
-    firstRow.id,
+    firstRow._content.id,
     "aria-activedescendant was set to the row after the tab-to-search result."
   );
   EventUtils.synthesizeKey("KEY_Tab");
   aadID = gURLBar.inputField.getAttribute("aria-activedescendant");
   Assert.equal(
     aadID,
-    tabToSearchRow.id,
+    tabToSearchRow._content.id,
     "aria-activedescendant was set to the tab-to-search result."
   );
 
@@ -194,7 +194,7 @@ add_task(async function activedescendant_tab() {
     isPreview: true,
   });
   aadID = gURLBar.inputField.getAttribute("aria-activedescendant");
-  Assert.ok(!aadID, "aria-activedescendant was not set.");
+  Assert.equal(aadID, null, "aria-activedescendant was not set.");
 
   await UrlbarTestUtils.exitSearchMode(window);
   await UrlbarTestUtils.promisePopupClose(window, () => gURLBar.blur());
@@ -229,7 +229,7 @@ add_task(async function activedescendant_arrow() {
   let aadID = gURLBar.inputField.getAttribute("aria-activedescendant");
   Assert.equal(
     aadID,
-    tabToSearchRow.id,
+    tabToSearchRow._content.id,
     "aria-activedescendant was set to the tab-to-search result."
   );
 
@@ -240,14 +240,13 @@ add_task(async function activedescendant_arrow() {
   Assert.equal(
     aadID,
     UrlbarTestUtils.getOneOffSearchButtons(window).selectedButton.id,
-    tabToSearchRow.id,
     "aria-activedescendant was moved to the first one-off."
   );
   EventUtils.synthesizeKey("KEY_ArrowUp");
   aadID = gURLBar.inputField.getAttribute("aria-activedescendant");
   Assert.equal(
     aadID,
-    tabToSearchRow.id,
+    tabToSearchRow._content.id,
     "aria-activedescendant was set to the tab-to-search result."
   );
 
@@ -262,7 +261,7 @@ add_task(async function tab_key_race() {
     return;
   }
   info(
-    "Test typing a letter followed shortly by Tab consistently selects a tab-to-search result"
+    "Test typing a letter followed shortly by down arrow consistently selects a tab-to-search result"
   );
   Assert.equal(gURLBar.value, "", "Sanity check urlbar is empty");
   let promiseQueryStarted = new Promise(resolve => {
@@ -298,7 +297,7 @@ add_task(async function tab_key_race() {
     }
     let provider = new ListeningTestProvider();
     UrlbarProvidersManager.registerProvider(provider);
-    registerCleanupFunction(async function() {
+    registerCleanupFunction(async function () {
       UrlbarProvidersManager.unregisterProvider(provider);
     });
   });
@@ -307,11 +306,11 @@ add_task(async function tab_key_race() {
   EventUtils.synthesizeKey(TEST_ENGINE_DOMAIN.slice(0, 1));
   info("Awaiting for the query to start");
   await promiseQueryStarted;
-  EventUtils.synthesizeKey("KEY_Tab");
+  EventUtils.synthesizeKey("KEY_ArrowDown");
   await UrlbarTestUtils.promiseSearchComplete(window);
   await TestUtils.waitForCondition(
     () => UrlbarTestUtils.getSelectedRowIndex(window) == 1,
-    "Wait for tab key to be handled"
+    "Wait for down arrow key to be handled"
   );
   await UrlbarTestUtils.assertSearchMode(window, {
     engineName: TEST_ENGINE_NAME,
@@ -342,7 +341,7 @@ add_task(async function onboard() {
     `https://${TEST_ENGINE_DOMAIN}/`,
     "The autofilled URL matches the engine domain."
   );
-  EventUtils.synthesizeKey("KEY_Tab");
+  EventUtils.synthesizeKey("KEY_ArrowDown");
   Assert.equal(
     UrlbarTestUtils.getSelectedRowIndex(window),
     1,
@@ -371,29 +370,26 @@ add_task(async function onboard() {
     "The onboarding element set the selected attribute."
   );
 
-  let [
-    titleOnboarding,
-    actionOnboarding,
-    descriptionOnboarding,
-  ] = await document.l10n.formatValues([
-    {
-      id: "urlbar-result-action-search-w-engine",
-      args: {
-        engine: onboardingElement.result.payload.engine,
+  let [titleOnboarding, actionOnboarding, descriptionOnboarding] =
+    await document.l10n.formatValues([
+      {
+        id: "urlbar-result-action-search-w-engine",
+        args: {
+          engine: onboardingElement.result.payload.engine,
+        },
       },
-    },
-    {
-      id: Services.search.getEngineByName(
-        onboardingElement.result.payload.engine
-      ).isGeneralPurposeEngine
-        ? "urlbar-result-action-tabtosearch-web"
-        : "urlbar-result-action-tabtosearch-other-engine",
-      args: { engine: onboardingElement.result.payload.engine },
-    },
-    {
-      id: "urlbar-tabtosearch-onboard",
-    },
-  ]);
+      {
+        id: Services.search.getEngineByName(
+          onboardingElement.result.payload.engine
+        ).isGeneralPurposeEngine
+          ? "urlbar-result-action-tabtosearch-web"
+          : "urlbar-result-action-tabtosearch-other-engine",
+        args: { engine: onboardingElement.result.payload.engine },
+      },
+      {
+        id: "urlbar-tabtosearch-onboard",
+      },
+    ]);
   let onboardingDetails = await UrlbarTestUtils.getDetailsOfResultAt(window, 1);
   Assert.equal(
     onboardingDetails.displayed.title,
@@ -411,6 +407,12 @@ add_task(async function onboard() {
     ).textContent,
     descriptionOnboarding,
     "The correct description was set."
+  );
+  Assert.ok(
+    BrowserTestUtils.is_visible(
+      onboardingDetails.element.row.querySelector(".urlbarView-title-separator")
+    ),
+    "The title separator should be visible."
   );
 
   // Check that the onboarding result enters search mode.
@@ -602,7 +604,7 @@ add_task(async function onboard_multipleEnginesForHostname() {
       name: `${TEST_ENGINE_NAME}Maps`,
       search_url: `https://${TEST_ENGINE_DOMAIN}/maps/`,
     },
-    true
+    { skipUnload: true }
   );
 
   await UrlbarTestUtils.promiseAutocompleteResultPopup({

@@ -4,7 +4,7 @@
 
 "use strict";
 
-this.ContentSearchUIController = (function() {
+this.ContentSearchUIController = (function () {
   const MAX_DISPLAYED_SUGGESTIONS = 6;
   const SUGGESTION_ID_PREFIX = "searchSuggestion";
   const ONE_OFF_ID_PREFIX = "oneOff";
@@ -587,10 +587,7 @@ this.ContentSearchUIController = (function() {
 
       // Add the suggestions to the table.
       let searchWords = new Set(
-        suggestions.searchString
-          .trim()
-          .toLowerCase()
-          .split(/\s+/)
+        suggestions.searchString.trim().toLowerCase().split(/\s+/)
       );
       for (let i = 0; i < MAX_DISPLAYED_SUGGESTIONS; i++) {
         let type, idx;
@@ -620,10 +617,6 @@ this.ContentSearchUIController = (function() {
         );
         this._table.hidden = false;
         this.input.setAttribute("aria-expanded", "true");
-        this._originalDefaultEngine = {
-          name: this.defaultEngine.name,
-          icon: this.defaultEngine.icon,
-        };
       }
     },
 
@@ -681,9 +674,8 @@ this.ContentSearchUIController = (function() {
       this._strings = strings;
       this._updateDefaultEngineHeader();
       this._updateSearchWithHeader();
-      document.getElementById(
-        "contentSearchSettingsButton"
-      ).textContent = this._strings.searchSettings;
+      document.getElementById("contentSearchSettingsButton").textContent =
+        this._strings.searchSettings;
     },
 
     _updateDefaultEngineIcon() {
@@ -761,10 +753,7 @@ this.ContentSearchUIController = (function() {
       entry.id = this._idPrefix + SUGGESTION_ID_PREFIX + currentRow;
       entry.setAttribute("aria-selected", "false");
 
-      let suggestionWords = suggestionStr
-        .trim()
-        .toLowerCase()
-        .split(/\s+/);
+      let suggestionWords = suggestionStr.trim().toLowerCase().split(/\s+/);
       for (let i = 0; i < suggestionWords.length; i++) {
         let word = suggestionWords[i];
         let wordSpan = document.createElementNS(HTML_NS, "span");
@@ -986,7 +975,7 @@ this.ContentSearchUIController = (function() {
         img.setAttribute("src", uri);
         img.addEventListener(
           "load",
-          function() {
+          function () {
             URL.revokeObjectURL(uri);
           },
           { once: true }

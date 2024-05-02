@@ -9,8 +9,7 @@ http://creativecommons.org/publicdomain/zero/1.0/ */
  * with the size. It adjusts for aspect ratio by keeping the same height and
  * adjusting the width of the PiP window.
  */
-
-add_task(async () => {
+async function doTest() {
   await BrowserTestUtils.withNewTab(
     {
       url: TEST_PAGE,
@@ -27,31 +26,6 @@ add_task(async () => {
         });
         await videoResized;
       }
-      // This function is used because the rounding of the width can be off
-      // by about 1 pixel sometimes so this checks that val1 and val2 are
-      // within 1 pixel
-      function checkIfEqual(val1, val2, str) {
-        let equal = Math.abs(val1 - val2);
-        if (equal <= 1) {
-          is(equal <= 1, true, str);
-        } else {
-          is(val1, val2, str);
-        }
-      }
-
-      // Used for clearing the size and location of the PiP window
-      const PLAYER_URI =
-        "chrome://global/content/pictureinpicture/player.xhtml";
-
-      // The PiP window now stores information between tests and needs to be
-      // cleared before the test begins
-      function clearSaved() {
-        let xulStore = Services.xulStore;
-        xulStore.setValue(PLAYER_URI, "picture-in-picture", "left", NaN);
-        xulStore.setValue(PLAYER_URI, "picture-in-picture", "top", NaN);
-        xulStore.setValue(PLAYER_URI, "picture-in-picture", "width", NaN);
-        xulStore.setValue(PLAYER_URI, "picture-in-picture", "height", NaN);
-      }
 
       function getAvailScreenSize(screen) {
         let screenLeft = {},
@@ -64,11 +38,6 @@ add_task(async () => {
           screenWidth,
           screenHeight
         );
-        let fullLeft = {},
-          fullTop = {},
-          fullWidth = {},
-          fullHeight = {};
-        screen.GetRectDisplayPix(fullLeft, fullTop, fullWidth, fullHeight);
 
         // We have to divide these dimensions by the CSS scale factor for the
         // display in order for the video to be positioned correctly on displays
@@ -77,10 +46,8 @@ add_task(async () => {
           screen.contentsScaleFactor / screen.defaultCSSScaleFactor;
         screenWidth.value *= scaleFactor;
         screenHeight.value *= scaleFactor;
-        screenLeft.value =
-          (screenLeft.value - fullLeft.value) * scaleFactor + fullLeft.value;
-        screenTop.value =
-          (screenTop.value - fullTop.value) * scaleFactor + fullTop.value;
+        screenLeft.value *= scaleFactor;
+        screenTop.value *= scaleFactor;
 
         return [
           screenLeft.value,
@@ -94,12 +61,8 @@ add_task(async () => {
         .getService(Ci.nsIScreenManager)
         .screenForRect(1, 1, 1, 1);
 
-      let [
-        defaultX,
-        defaultY,
-        defaultWidth,
-        defaultHeight,
-      ] = getAvailScreenSize(screen);
+      let [defaultX, defaultY, defaultWidth, defaultHeight] =
+        getAvailScreenSize(screen);
 
       // Default size of PiP window
       let rightEdge = defaultX + defaultWidth;
@@ -110,7 +73,7 @@ add_task(async () => {
       let tabHeight = 35;
 
       // clear already saved information
-      clearSaved();
+      clearSavedPosition();
 
       // Open PiP
       let pipWin = await triggerPictureInPicture(browser, "with-controls");
@@ -120,26 +83,39 @@ add_task(async () => {
       let defaultPiPHeight = pipWin.innerHeight;
 
       // Check that it is opened at default location
-      checkIfEqual(
+      isfuzzy(
         pipWin.screenX,
         rightEdge - defaultPiPWidth,
+        ACCEPTABLE_DIFFERENCE,
         "Default PiP X location"
       );
       if (AppConstants.platform == "linux") {
-        checkIfEqual(
+        isfuzzy(
           pipWin.screenY,
           bottomEdge - defaultPiPHeight - tabHeight,
+          ACCEPTABLE_DIFFERENCE,
           "Default PiP Y location"
         );
       } else {
-        checkIfEqual(
+        isfuzzy(
           pipWin.screenY,
           bottomEdge - defaultPiPHeight,
+          ACCEPTABLE_DIFFERENCE,
           "Default PiP Y location"
         );
       }
-      checkIfEqual(pipWin.innerHeight, defaultPiPHeight, "Default PiP height");
-      checkIfEqual(pipWin.innerWidth, defaultPiPWidth, "Default PiP width");
+      isfuzzy(
+        pipWin.innerHeight,
+        defaultPiPHeight,
+        ACCEPTABLE_DIFFERENCE,
+        "Default PiP height"
+      );
+      isfuzzy(
+        pipWin.innerWidth,
+        defaultPiPWidth,
+        ACCEPTABLE_DIFFERENCE,
+        "Default PiP width"
+      );
 
       let top = defaultY;
       let left = defaultX;
@@ -154,14 +130,30 @@ add_task(async () => {
       ok(pipWin, "Got Picture-in-Picture window.");
 
       // PiP is opened at 0, 0 with size 1/4 default width and 1/4 default height
-      checkIfEqual(pipWin.screenX, left, "Opened at last X location");
-      checkIfEqual(pipWin.screenY, top, "Opened at last Y location");
-      checkIfEqual(
+      isfuzzy(
+        pipWin.screenX,
+        left,
+        ACCEPTABLE_DIFFERENCE,
+        "Opened at last X location"
+      );
+      isfuzzy(
+        pipWin.screenY,
+        top,
+        ACCEPTABLE_DIFFERENCE,
+        "Opened at last Y location"
+      );
+      isfuzzy(
         pipWin.innerHeight,
         height,
+        ACCEPTABLE_DIFFERENCE,
         "Opened with 1/2 default height"
       );
-      checkIfEqual(pipWin.innerWidth, width, "Opened with 1/2 default width");
+      isfuzzy(
+        pipWin.innerWidth,
+        width,
+        ACCEPTABLE_DIFFERENCE,
+        "Opened with 1/2 default width"
+      );
 
       // Mac and Linux did not allow moving to coordinates offscreen so this
       // test is skipped on those platforms
@@ -177,24 +169,28 @@ add_task(async () => {
         ok(pipWin, "Got Picture-in-Picture window.");
 
         // because the coordinates are off screen, the default size and location will be used
-        checkIfEqual(
+        isfuzzy(
           pipWin.screenX,
           rightEdge - defaultPiPWidth,
+          ACCEPTABLE_DIFFERENCE,
           "Opened at default X location"
         );
-        checkIfEqual(
+        isfuzzy(
           pipWin.screenY,
           bottomEdge - defaultPiPHeight,
+          ACCEPTABLE_DIFFERENCE,
           "Opened at default Y location"
         );
-        checkIfEqual(
+        isfuzzy(
           pipWin.innerWidth,
           defaultPiPWidth,
+          ACCEPTABLE_DIFFERENCE,
           "Opened at default PiP width"
         );
-        checkIfEqual(
+        isfuzzy(
           pipWin.innerHeight,
           defaultPiPHeight,
+          ACCEPTABLE_DIFFERENCE,
           "Opened at default PiP height"
         );
       }
@@ -217,16 +213,28 @@ add_task(async () => {
         pipWin = await triggerPictureInPicture(browser, "with-controls");
         ok(pipWin, "Got Picture-in-Picture window.");
 
-        checkIfEqual(pipWin.screenX, left, "Opened at last X location");
-        checkIfEqual(pipWin.screenY, top, "Opened at last Y location");
-        checkIfEqual(
+        isfuzzy(
+          pipWin.screenX,
+          left,
+          ACCEPTABLE_DIFFERENCE,
+          "Opened at last X location"
+        );
+        isfuzzy(
+          pipWin.screenY,
+          top,
+          ACCEPTABLE_DIFFERENCE,
+          "Opened at last Y location"
+        );
+        isfuzzy(
           pipWin.innerHeight,
           height,
+          ACCEPTABLE_DIFFERENCE,
           "Opened height with previous width"
         );
-        checkIfEqual(
+        isfuzzy(
           pipWin.innerWidth,
           height * (pipWin.innerWidth / pipWin.innerHeight),
+          ACCEPTABLE_DIFFERENCE,
           "Width is changed to adjust for aspect ration"
         );
 
@@ -244,12 +252,28 @@ add_task(async () => {
         pipWin = await triggerPictureInPicture(browser, "with-controls");
         ok(pipWin, "Got Picture-in-Picture window.");
 
-        checkIfEqual(pipWin.screenX, left, "Opened at last X location");
-        checkIfEqual(pipWin.screenY, top, "Opened at last Y location");
-        checkIfEqual(pipWin.innerHeight, height, "Opened with previous height");
-        checkIfEqual(
+        isfuzzy(
+          pipWin.screenX,
+          left,
+          ACCEPTABLE_DIFFERENCE,
+          "Opened at last X location"
+        );
+        isfuzzy(
+          pipWin.screenY,
+          top,
+          ACCEPTABLE_DIFFERENCE,
+          "Opened at last Y location"
+        );
+        isfuzzy(
+          pipWin.innerHeight,
+          height,
+          ACCEPTABLE_DIFFERENCE,
+          "Opened with previous height"
+        );
+        isfuzzy(
           pipWin.innerWidth,
           height * (pipWin.innerWidth / pipWin.innerHeight),
+          ACCEPTABLE_DIFFERENCE,
           "Width is changed to adjust for aspect ration"
         );
       }
@@ -276,21 +300,24 @@ add_task(async () => {
 
       // await new Promise(r => setTimeout(r, 5000));
       // PiP is opened bottom right but not off screen
-      checkIfEqual(
+      isfuzzy(
         pipWin.screenX,
         left,
+        ACCEPTABLE_DIFFERENCE,
         "Opened at last X location but shifted back on screen"
       );
       if (AppConstants.platform == "linux") {
-        checkIfEqual(
+        isfuzzy(
           pipWin.screenY,
           top - tabHeight,
+          ACCEPTABLE_DIFFERENCE,
           "Opened at last Y location but shifted back on screen"
         );
       } else {
-        checkIfEqual(
+        isfuzzy(
           pipWin.screenY,
           top,
+          ACCEPTABLE_DIFFERENCE,
           "Opened at last Y location but shifted back on screen"
         );
       }
@@ -311,14 +338,16 @@ add_task(async () => {
       ok(pipWin, "Got Picture-in-Picture window.");
 
       // PiP is opened top left on screen
-      checkIfEqual(
+      isfuzzy(
         pipWin.screenX,
         defaultX,
+        ACCEPTABLE_DIFFERENCE,
         "Opened at last X location but shifted back on screen"
       );
-      checkIfEqual(
+      isfuzzy(
         pipWin.screenY,
         defaultY,
+        ACCEPTABLE_DIFFERENCE,
         "Opened at last Y location but shifted back on screen"
       );
 
@@ -332,9 +361,10 @@ add_task(async () => {
 
         // Used to ensure that video width decreases for next PiP window
         width = pipWin.innerWidth;
-        checkIfEqual(
+        isfuzzy(
           pipWin.innerWidth + pipWin.screenX,
           rightEdge,
+          ACCEPTABLE_DIFFERENCE,
           "Video is on right edge before video is changed"
         );
 
@@ -344,14 +374,11 @@ add_task(async () => {
         pipWin = await triggerPictureInPicture(browser, "with-controls");
         ok(pipWin, "Got Picture-in-Picture window.");
 
-        checkIfEqual(
-          pipWin.innerWidth < width,
-          true,
-          "New video width is smaller"
-        );
-        checkIfEqual(
+        ok(pipWin.innerWidth < width, "New video width is smaller");
+        isfuzzy(
           pipWin.innerWidth + pipWin.screenX,
           rightEdge,
+          ACCEPTABLE_DIFFERENCE,
           "Video is on right edge after video is changed"
         );
       }
@@ -359,4 +386,13 @@ add_task(async () => {
       await ensureMessageAndClosePiP(browser, "with-controls", pipWin, true);
     }
   );
+}
+
+add_task(async function test_pip_save_last_loc() {
+  await doTest();
+});
+
+add_task(async function test_pip_save_last_loc_with_os_zoom() {
+  await SpecialPowers.pushPrefEnv({ set: [["ui.textScaleFactor", 120]] });
+  await doTest();
 });

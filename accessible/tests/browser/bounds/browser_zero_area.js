@@ -30,7 +30,7 @@ addAccessibleTask(
   <div id="a2" style="height:100px; width:100px; background:green;"><div style="height:300px; max-width: 300px; background:blue;"></div></div>
   <div id="a3" style="height:0; width:0;"><div style="height:200px; width:200px; background:green;"></div></div>
   `,
-  async function(browser, accDoc) {
+  async function (browser, accDoc) {
     const a1 = findAccessibleChildByID(accDoc, "a1");
     const a2 = findAccessibleChildByID(accDoc, "a2");
     const a3 = findAccessibleChildByID(accDoc, "a3");
@@ -49,7 +49,7 @@ addAccessibleTask(
 <br>
 <div id="a" style="height:0; width:0;"></div>
 `,
-  async function(browser, accDoc) {
+  async function (browser, accDoc) {
     const a = findAccessibleChildByID(accDoc, "a");
     await testContentBounds(browser, a, 0, 0);
   }
@@ -63,7 +63,7 @@ addAccessibleTask(
   `
 <input type="radio" id="radio" style="left: -671091em; position: absolute;">
 `,
-  async function(browser, accDoc) {
+  async function (browser, accDoc) {
     const radio = findAccessibleChildByID(accDoc, "radio");
     const contentDPR = await getContentDPR(browser);
     const [x, y, width, height] = getBounds(radio, contentDPR);
@@ -78,4 +78,41 @@ addAccessibleTask(
     // positive height, and a slightly different (+/- 20)
     // x and y.
   }
+);
+
+/**
+ * Test height: 0 with align-items: flex-end. This causes the content to
+ * overflow above the frame's main rect.
+ */
+addAccessibleTask(
+  `
+<aside style="height: 0; display: flex; align-items: flex-end;">
+  <div id="inner0">testing</div>
+</aside>
+<aside style="height: 1; display: flex; align-items: flex-end;">
+  <div id="inner1">testing</div>
+</aside>
+  `,
+  async function (browser, docAcc) {
+    await testBoundsWithContent(docAcc, "inner0", browser);
+    await testBoundsWithContent(docAcc, "inner1", browser);
+  },
+  { chrome: true, topLevel: true, remoteIframe: true }
+);
+
+/**
+ * Test a div (block) inside a span (inline). This causes the span's primary
+ * frame to have an empty rect offset from its visible content.
+ */
+addAccessibleTask(
+  `
+<span id="span" tabindex="-1">
+  <div id="div">Testing</div>
+</span>
+  `,
+  async function (browser, docAcc) {
+    await testBoundsWithContent(docAcc, "span", browser);
+    await testBoundsWithContent(docAcc, "div", browser);
+  },
+  { chrome: true, topLevel: true, remoteIframe: true }
 );

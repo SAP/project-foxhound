@@ -3,6 +3,7 @@
  * http://creativecommons.org/publicdomain/zero/1.0/
  */
 
+/* exported testGenerator, disableWorkerTest */
 var disableWorkerTest = "This test uses SpecialPowers";
 
 var testGenerator = testSteps();
@@ -31,7 +32,7 @@ function* testSteps() {
 
   let tm = SpecialPowers.Services ? SpecialPowers.Services.tm : Services.tm;
 
-  tm.dispatchToMainThread(function() {
+  tm.dispatchToMainThread(function () {
     eventHasRun = true;
 
     transaction2 = db.transaction("foo");

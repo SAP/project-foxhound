@@ -92,7 +92,7 @@ function addContentEventListenerWithMessageManager(
 
   let needCleanup = true;
 
-  let unregisterFunction = function() {
+  let unregisterFunction = function () {
     if (!needCleanup) {
       return;
     }
@@ -138,15 +138,14 @@ function prepareForVisibilityEvents(browser, expectedOrder) {
       if (order.length < expectedOrder.length) {
         // We're still waiting...
         return;
-      } else {
-        rmvHide();
-        rmvShow();
-
-        for (let i = 0; i < expectedOrder.length; ++i) {
-          is(order[i], expectedOrder[i], "Got expected event");
-        }
-        resolve();
       }
+      rmvHide();
+      rmvShow();
+
+      for (let i = 0; i < expectedOrder.length; ++i) {
+        is(order[i], expectedOrder[i], "Got expected event");
+      }
+      resolve();
     };
 
     let eventListener = type => {

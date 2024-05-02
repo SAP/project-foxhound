@@ -17,6 +17,12 @@
 
 namespace mozilla {
 
+// A mapping of the ByteBuffer repr(C) Rust struct.
+struct ViaductByteBuffer {
+  int64_t len;
+  uint8_t* data;
+};
+
 class ViaductRequest final : public nsIStreamListener,
                              public nsITimerCallback,
                              public nsINamed,
@@ -43,7 +49,7 @@ class ViaductRequest final : public nsIStreamListener,
   nsCOMPtr<nsITimer> mConnectTimeoutTimer;
   nsCOMPtr<nsITimer> mReadTimeoutTimer;
   appservices::httpconfig::protobuf::Response mResponse;
-  Monitor mMonitor;
+  Monitor mMonitor MOZ_UNANNOTATED;
   ~ViaductRequest();
 };
 

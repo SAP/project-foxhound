@@ -208,6 +208,8 @@
 #include "frontend/ParserAtom.h"  // ParserAtom, ParserAtomsTable, TaggedParserAtomIndex
 #include "frontend/Token.h"
 #include "frontend/TokenKind.h"
+#include "js/CharacterEncoding.h"  // JS::ConstUTF8CharsZ
+#include "js/ColumnNumber.h"  // JS::LimitedColumnNumberOneOrigin, JS::ColumnNumberOneOrigin, JS::ColumnNumberUnsignedOffset
 #include "js/CompileOptions.h"
 #include "js/friend/ErrorMessages.h"  // JSMSG_*
 #include "js/HashTable.h"             // js::HashMap
@@ -217,22 +219,16 @@
 #include "util/Unicode.h"
 #include "vm/ErrorReporting.h"
 
-struct JS_PUBLIC_API JSContext;
 struct KeywordInfo;
 
 namespace js {
 
+class FrontendContext;
+
 namespace frontend {
 
-// Saturate column number at a limit that can be represented in various parts of
-// the engine. Source locations beyond this point will report at the limit
-// column instead.
-//
-// See:
-//  - TokenStreamAnyChars::checkOptions
-//  - ColSpan::isRepresentable
-//  - WasmFrameIter::computeLine
-static constexpr uint32_t ColumnLimit = std::numeric_limits<int32_t>::max() / 2;
+// True if str is a keyword.
+bool IsKeyword(TaggedParserAtomIndex atom);
 
 // If `name` is reserved word, returns the TokenKind of it.
 // TokenKind::Limit otherwise.
@@ -362,12 +358,12 @@ class SourceUnits;
  *
  * for either |Unit = Utf8Unit| or |Unit = char16_t|.
  *
- * Note that the latter quantity is *not* the same as a column number, which is
- * a count of code *points*.  Computing a column number requires the offset
- * within the line and the source units of that line (including what type |Unit|
- * is, to know how to decode them).  If you need a column number, functions in
- * |GeneralTokenStreamChars<Unit>| will consult this and source units to compute
- * it.
+ * Note that, if |Unit = Utf8Unit|, the latter quantity is *not* the same as a
+ * column number, which is a count of UTF-16 code units.  Computing a column
+ * number requires the offset within the line and the source units of that line
+ * (including what type |Unit| is, to know how to decode them).  If you need a
+ * column number, functions in |GeneralTokenStreamChars<Unit>| will consult
+ * this and source units to compute it.
  */
 class SourceCoords {
   // For a given buffer holding source code, |lineStartOffsets_| has one
@@ -431,20 +427,19 @@ class SourceCoords {
   }
 
  public:
-  SourceCoords(JSContext* cx, uint32_t initialLineNumber,
+  SourceCoords(FrontendContext* fc, uint32_t initialLineNumber,
                uint32_t initialOffset);
 
   [[nodiscard]] bool add(uint32_t lineNum, uint32_t lineStartOffset);
   [[nodiscard]] bool fill(const SourceCoords& other);
 
-  bool isOnThisLine(uint32_t offset, uint32_t lineNum, bool* onThisLine) const {
+  std::optional<bool> isOnThisLine(uint32_t offset, uint32_t lineNum) const {
     uint32_t index = indexFromLineNumber(lineNum);
     if (index + 1 >= lineStartOffsets_.length()) {  // +1 due to sentinel
-      return false;
+      return std::nullopt;
     }
-    *onThisLine = lineStartOffsets_[index] <= offset &&
-                  offset < lineStartOffsets_[index + 1];
-    return true;
+    return (lineStartOffsets_[index] <= offset &&
+            offset < lineStartOffsets_[index + 1]);
   }
 
   /**
@@ -515,20 +510,22 @@ enum class UnitsType : unsigned char {
 
 class ChunkInfo {
  private:
+  // Column number offset in UTF-16 code units.
   // Store everything in |unsigned char|s so everything packs.
-  unsigned char column_[sizeof(uint32_t)];
+  unsigned char columnOffset_[sizeof(uint32_t)];
   unsigned char unitsType_;
 
  public:
-  ChunkInfo(uint32_t col, UnitsType type)
+  ChunkInfo(JS::ColumnNumberUnsignedOffset offset, UnitsType type)
       : unitsType_(static_cast<unsigned char>(type)) {
-    memcpy(column_, &col, sizeof(col));
+    memcpy(columnOffset_, offset.addressOfValueForTranscode(), sizeof(offset));
   }
 
-  uint32_t column() const {
-    uint32_t col;
-    memcpy(&col, column_, sizeof(uint32_t));
-    return col;
+  JS::ColumnNumberUnsignedOffset columnOffset() const {
+    JS::ColumnNumberUnsignedOffset offset;
+    memcpy(offset.addressOfValueForTranscode(), columnOffset_,
+           sizeof(uint32_t));
+    return offset;
   }
 
   UnitsType unitsType() const {
@@ -564,7 +561,7 @@ class TokenStreamAnyChars : public TokenStreamShared {
  private:
   // Constant-at-construction fields.
 
-  JSContext* const cx;
+  FrontendContext* const fc;
 
   /** Options used for parsing/tokenizing. */
   const JS::ReadOnlyCompileOptions& options_;
@@ -576,14 +573,15 @@ class TokenStreamAnyChars : public TokenStreamShared {
   StrictModeGetter* const strictModeGetter_;
 
   /** Input filename or null. */
-  const char* const filename_;
+  JS::ConstUTF8CharsZ filename_;
 
   // Column number computation fields.
+  // Used only for UTF-8 case.
 
   /**
    * A map of (line number => sequence of the column numbers at
    * |ColumnChunkLength|-unit boundaries rewound [if needed] to the nearest code
-   * point boundary).  (|TokenStreamAnyChars::computePartialColumn| is the sole
+   * point boundary).  (|TokenStreamAnyChars::computeColumnOffset| is the sole
    * user of |ColumnChunkLength| and therefore contains its definition.)
    *
    * Entries appear in this map only when a column computation of sufficient
@@ -629,10 +627,10 @@ class TokenStreamAnyChars : public TokenStreamShared {
   mutable uint32_t lastOffsetOfComputedColumn_ = UINT32_MAX;
 
   /**
-   * The column number for the offset (in code units) of the last column
-   * computation performed, relative to source start.
+   * The column number offset from the 1st column for the offset (in code units)
+   * of the last column computation performed, relative to source start.
    */
-  mutable uint32_t lastComputedColumn_ = 0;
+  mutable JS::ColumnNumberUnsignedOffset lastComputedColumnOffset_;
 
   // Intra-token fields.
 
@@ -723,7 +721,8 @@ class TokenStreamAnyChars : public TokenStreamShared {
   // End of fields.
 
  public:
-  TokenStreamAnyChars(JSContext* cx, const JS::ReadOnlyCompileOptions& options,
+  TokenStreamAnyChars(FrontendContext* fc,
+                      const JS::ReadOnlyCompileOptions& options,
                       StrictModeGetter* smg);
 
   template <typename Unit, class AnyCharsAccess>
@@ -876,7 +875,7 @@ class TokenStreamAnyChars : public TokenStreamShared {
 
   char16_t* sourceMapURL() { return sourceMapURL_.get(); }
 
-  JSContext* context() const { return cx; }
+  FrontendContext* context() const { return fc; }
 
   using LineToken = SourceCoords::LineToken;
 
@@ -903,21 +902,27 @@ class TokenStreamAnyChars : public TokenStreamShared {
    * 2) line-of-context-related fields and return true.  The caller *must*
    * fill in the line/column number; filling the line of context is optional.
    */
-  bool fillExceptingContext(ErrorMetadata* err, uint32_t offset);
+  bool fillExceptingContext(ErrorMetadata* err, uint32_t offset) const;
 
   MOZ_ALWAYS_INLINE void updateFlagsForEOL() { flags.isDirtyLine = false; }
 
  private:
   /**
-   * Compute the "partial" column number in Unicode code points of the absolute
-   * |offset| within source text on the line of |lineToken| (which must have
-   * been computed from |offset|).
+   * Compute the column number offset from the 1st code unit in the line in
+   * UTF-16 code units, for given absolute |offset| within source text on the
+   * line of |lineToken| (which must have been computed from |offset|).
    *
-   * A partial column number on a line that isn't the first line is just the
-   * actual column number.  But a partial column number on the first line is the
-   * column number *ignoring the initial line/column of the script*.  For
-   * example, consider this HTML with line/column number keys:
+   * A column number offset on a line that isn't the first line is just
+   * the actual column number in 0-origin.  But a column number offset
+   * on the first line is the column number offset from the initial
+   * line/column of the script.  For example, consider this HTML with
+   * line/column number keys:
    *
+   *     Column number in 1-origin
+   *                1         2            3
+   *       123456789012345678901234   567890
+   *
+   *     Column number in 0-origin, and the offset from 1st column
    *                 1         2            3
    *       0123456789012345678901234   567890
    *     ------------------------------------
@@ -930,25 +935,26 @@ class TokenStreamAnyChars : public TokenStreamShared {
    *   7 | </html>
    *
    * The script would be compiled specifying initial (line, column) of (3, 10)
-   * using |JS::ReadOnlyCompileOptions::{lineno,column}|.  And the column
-   * reported by |computeColumn| for the "v" of |var| would be 10.  But the
-   * partial column number of the "v" in |var|, that this function returns,
-   * would be 0.  On the other hand, the column reported by |computeColumn| and
-   * the partial column number returned by this function for the "c" in |const|
-   * would both be 0, because it's not in the first line of source text.
+   * using |JS::ReadOnlyCompileOptions::{lineno,column}|, which is 0-origin.
+   * And the column reported by |computeColumn| for the "v" of |var| would be
+   * 11 (in 1-origin).  But the column number offset of the "v" in |var|, that
+   * this function returns, would be 0.  On the other hand, the column reported
+   * by |computeColumn| would be 1 (in 1-origin) and the column number offset
+   * returned by this function for the "c" in |const| would be 0, because it's
+   * not in the first line of source text.
    *
-   * The partial column is with respect *only* to the JavaScript source text as
-   * SpiderMonkey sees it.  In the example, the "&lt;" is converted to "<" by
-   * the browser before SpiderMonkey would see it.  So the partial column of the
-   * "4" in the inequality would be 16, not 19.
+   * The column number offset is with respect *only* to the JavaScript source
+   * text as SpiderMonkey sees it.  In the example, the "&lt;" is converted to
+   * "<" by the browser before SpiderMonkey would see it.  So the column number
+   * offset of the "4" in the inequality would be 16, not 19.
    *
-   * Code points are not all equal length, so counting requires *some* kind of
-   * linear-time counting from the start of the line.  This function attempts
-   * various tricks to reduce this cost.  If these optimizations succeed,
-   * repeated calls to this function on a line will pay a one-time cost linear
-   * in the length of the line, then each call pays a separate constant-time
-   * cost.  If the optimizations do not succeed, this function works in time
-   * linear in the length of the line.
+   * UTF-16 code units are not all equal length in UTF-8 source, so counting
+   * requires *some* kind of linear-time counting from the start of the line.
+   * This function attempts various tricks to reduce this cost.  If these
+   * optimizations succeed, repeated calls to this function on a line will pay
+   * a one-time cost linear in the length of the line, then each call pays a
+   * separate constant-time cost.  If the optimizations do not succeed, this
+   * function works in time linear in the length of the line.
    *
    * It's unusual for a function in *this* class to be |Unit|-templated, but
    * while this operation manages |Unit|-agnostic fields in this class and in
@@ -956,9 +962,14 @@ class TokenStreamAnyChars : public TokenStreamShared {
    * And this is the best place to do that.
    */
   template <typename Unit>
-  uint32_t computePartialColumn(const LineToken lineToken,
-                                const uint32_t offset,
-                                const SourceUnits<Unit>& sourceUnits) const;
+  JS::ColumnNumberUnsignedOffset computeColumnOffset(
+      const LineToken lineToken, const uint32_t offset,
+      const SourceUnits<Unit>& sourceUnits) const;
+
+  template <typename Unit>
+  JS::ColumnNumberUnsignedOffset computeColumnOffsetForUTF8(
+      const LineToken lineToken, const uint32_t offset, const uint32_t start,
+      const uint32_t offsetInLine, const SourceUnits<Unit>& sourceUnits) const;
 
   /**
    * Update line/column information for the start of a new line at
@@ -1010,20 +1021,19 @@ class TokenStreamAnyChars : public TokenStreamShared {
   }
 
   // Compute error metadata for an error at no offset.
-  void computeErrorMetadataNoOffset(ErrorMetadata* err);
+  void computeErrorMetadataNoOffset(ErrorMetadata* err) const;
 
   // ErrorReporter API Helpers
 
   // Provide minimal set of error reporting API given we cannot use
   // ErrorReportMixin here. "report" prefix is added to avoid conflict with
   // ErrorReportMixin methods in TokenStream class.
-  void reportErrorNoOffset(unsigned errorNumber, ...);
-  void reportErrorNoOffsetVA(unsigned errorNumber, va_list* args);
+  void reportErrorNoOffset(unsigned errorNumber, ...) const;
+  void reportErrorNoOffsetVA(unsigned errorNumber, va_list* args) const;
 
   const JS::ReadOnlyCompileOptions& options() const { return options_; }
 
-  const char* getFilename() const { return filename_; }
-
+  JS::ConstUTF8CharsZ getFilename() const { return filename_; }
 };
 
 constexpr char16_t CodeUnitValue(char16_t unit) { return unit; }
@@ -1262,7 +1272,7 @@ class SourceUnits {
     return *(ptr - 1);
   }
 
-  Unit getCodeUnit() {
+  MOZ_ALWAYS_INLINE Unit getCodeUnit() {
     return *ptr++;  // this will nullptr-crash if poisoned
   }
 
@@ -1501,7 +1511,7 @@ class SourceUnits {
                                            size_t encodingSpecificTokenOffset,
                                            size_t* utf16TokenOffset,
                                            size_t encodingSpecificWindowLength,
-                                           size_t* utf16WindowLength);
+                                           size_t* utf16WindowLength) const;
 };
 
 template <>
@@ -1547,7 +1557,7 @@ using CharBuffer = Vector<char16_t, 32>;
  * code points included) to the buffer.
  */
 [[nodiscard]] extern bool AppendCodePointToCharBuffer(CharBuffer& charBuffer,
-                                                      uint32_t codePoint);
+                                                      char32_t codePoint);
 
 /**
  * Accumulate the range of UTF-16 text (lone surrogates permitted, because JS
@@ -1567,7 +1577,7 @@ using CharBuffer = Vector<char16_t, 32>;
 
 class TokenStreamCharsShared {
  protected:
-  JSContext* cx;
+  FrontendContext* fc;
 
   /**
    * Buffer transiently used to store sequences of identifier or string code
@@ -1580,14 +1590,15 @@ class TokenStreamCharsShared {
   ParserAtomsTable* parserAtoms;
 
   // Taintfox: TODO: link this taint to the charBuffer
-  StringTaint _taint;
+  SafeStringTaint _taint;
 
  protected:
-  explicit TokenStreamCharsShared(JSContext* cx, ParserAtomsTable* parserAtoms, const StringTaint& taint)
-    : cx(cx), charBuffer(cx), parserAtoms(parserAtoms), _taint(taint) {}
+  explicit TokenStreamCharsShared(FrontendContext* fc,
+                                  ParserAtomsTable* parserAtoms, const StringTaint& taint)
+      : fc(fc), charBuffer(fc), parserAtoms(parserAtoms), _taint(taint) {}
 
   [[nodiscard]] bool copyCharBufferTo(
-      JSContext* cx, UniquePtr<char16_t[], JS::FreePolicy>* destination);
+      UniquePtr<char16_t[], JS::FreePolicy>* destination);
 
   /**
    * Determine whether a code unit constitutes a complete ASCII code point.
@@ -1601,7 +1612,7 @@ class TokenStreamCharsShared {
 
   TaggedParserAtomIndex drainCharBufferIntoAtom() {
     // Add to parser atoms table.
-    auto atom = this->parserAtoms->internChar16(cx, charBuffer.begin(),
+    auto atom = this->parserAtoms->internChar16(fc, charBuffer.begin(),
                                                 charBuffer.length());
     charBuffer.clear();
     return atom;
@@ -1630,7 +1641,7 @@ class TokenStreamCharsBase : public TokenStreamCharsShared {
   // End of fields.
 
  protected:
-  TokenStreamCharsBase(JSContext* cx, ParserAtomsTable* parserAtoms,
+  TokenStreamCharsBase(FrontendContext* fc, ParserAtomsTable* parserAtoms,
                        const Unit* units, size_t length, const StringTaint& taint, size_t startOffset);
 
   /**
@@ -1641,9 +1652,11 @@ class TokenStreamCharsBase : public TokenStreamCharsShared {
 
   void ungetCodeUnit(int32_t c) {
     if (c == EOF) {
+      MOZ_ASSERT(sourceUnits.atEnd());
       return;
     }
 
+    MOZ_ASSERT(sourceUnits.previousCodeUnit() == toUnit(c));
     sourceUnits.ungetCodeUnit();
   }
 
@@ -1665,7 +1678,7 @@ class TokenStreamCharsBase : public TokenStreamCharsShared {
    * Try to match an ASCII LineTerminator code point.  Return true iff it was
    * matched.
    */
-  bool matchLineTerminator(char expect) {
+  MOZ_NEVER_INLINE bool matchLineTerminator(char expect) {
     MOZ_ASSERT(expect == '\r' || expect == '\n');
     return this->sourceUnits.internalMatchCodeUnit(Unit(expect));
   }
@@ -1704,7 +1717,8 @@ class TokenStreamCharsBase : public TokenStreamCharsShared {
    * This function is quite internal, and you probably should be calling one
    * of its existing callers instead.
    */
-  [[nodiscard]] bool addLineOfContext(ErrorMetadata* err, uint32_t offset);
+  [[nodiscard]] bool addLineOfContext(ErrorMetadata* err,
+                                      uint32_t offset) const;
 };
 
 template <>
@@ -1729,14 +1743,14 @@ template <>
 MOZ_ALWAYS_INLINE TaggedParserAtomIndex
 TokenStreamCharsBase<char16_t>::atomizeSourceChars(
     mozilla::Span<const char16_t> units) {
-  return this->parserAtoms->internChar16(cx, units.data(), units.size());
+  return this->parserAtoms->internChar16(fc, units.data(), units.size());
 }
 
 template <>
 /* static */ MOZ_ALWAYS_INLINE TaggedParserAtomIndex
 TokenStreamCharsBase<mozilla::Utf8Unit>::atomizeSourceChars(
     mozilla::Span<const mozilla::Utf8Unit> units) {
-  return this->parserAtoms->internUtf8(cx, units.data(), units.size());
+  return this->parserAtoms->internUtf8(fc, units.data(), units.size());
 }
 
 template <typename Unit>
@@ -1940,8 +1954,8 @@ class GeneralTokenStreamChars : public SpecializedTokenStreamCharsBase<Unit> {
     return token;
   }
 
-  uint32_t matchUnicodeEscape(uint32_t* codePoint);
-  uint32_t matchExtendedUnicodeEscape(uint32_t* codePoint);
+  uint32_t matchUnicodeEscape(char32_t* codePoint);
+  uint32_t matchExtendedUnicodeEscape(char32_t* codePoint);
 
  protected:
   using CharsBase::addLineOfContext;
@@ -1985,9 +1999,10 @@ class GeneralTokenStreamChars : public SpecializedTokenStreamCharsBase<Unit> {
    * |offset| must be a code point boundary, preceded only by validly-encoded
    * source units.  (It doesn't have to be *followed* by valid source units.)
    */
-  uint32_t computeColumn(LineToken lineToken, uint32_t offset) const;
+  JS::LimitedColumnNumberOneOrigin computeColumn(LineToken lineToken,
+                                                 uint32_t offset) const;
   void computeLineAndColumn(uint32_t offset, uint32_t* line,
-                            uint32_t* column) const;
+                            JS::LimitedColumnNumberOneOrigin* column) const;
 
   /**
    * Fill in |err| completely, except for line-of-context information.
@@ -1995,9 +2010,12 @@ class GeneralTokenStreamChars : public SpecializedTokenStreamCharsBase<Unit> {
    * Return true if the caller can compute a line of context from the token
    * stream.  Otherwise return false.
    */
-  [[nodiscard]] bool fillExceptingContext(ErrorMetadata* err, uint32_t offset) {
+  [[nodiscard]] bool fillExceptingContext(ErrorMetadata* err,
+                                          uint32_t offset) const {
     if (anyCharsAccess().fillExceptingContext(err, offset)) {
-      computeLineAndColumn(offset, &err->lineNumber, &err->columnNumber);
+      JS::LimitedColumnNumberOneOrigin columnNumber;
+      computeLineAndColumn(offset, &err->lineNumber, &columnNumber);
+      err->columnNumber = JS::ColumnNumberOneOrigin(columnNumber);
       return true;
     }
     return false;
@@ -2079,15 +2097,14 @@ class GeneralTokenStreamChars : public SpecializedTokenStreamCharsBase<Unit> {
 
   /**
    * Given a just-consumed ASCII code unit/point |lead|, consume a full code
-   * point or LineTerminatorSequence (normalizing it to '\n') and store it in
-   * |*codePoint|.  Return true on success, otherwise return false and leave
-   * |*codePoint| undefined on failure.
+   * point or LineTerminatorSequence (normalizing it to '\n'). Return true on
+   * success, otherwise return false.
    *
    * If a LineTerminatorSequence was consumed, also update line/column info.
    *
    * This may change the current |sourceUnits| offset.
    */
-  [[nodiscard]] bool getFullAsciiCodePoint(int32_t lead, int32_t* codePoint) {
+  [[nodiscard]] MOZ_ALWAYS_INLINE bool getFullAsciiCodePoint(int32_t lead) {
     MOZ_ASSERT(isAsciiCodePoint(lead),
                "non-ASCII code units must be handled separately");
     MOZ_ASSERT(toUnit(lead) == this->sourceUnits.previousCodeUnit(),
@@ -2096,28 +2113,18 @@ class GeneralTokenStreamChars : public SpecializedTokenStreamCharsBase<Unit> {
     if (MOZ_UNLIKELY(lead == '\r')) {
       matchLineTerminator('\n');
     } else if (MOZ_LIKELY(lead != '\n')) {
-      *codePoint = lead;
       return true;
     }
-
-    *codePoint = '\n';
-    bool ok = updateLineInfoForEOL();
-    if (!ok) {
-#ifdef DEBUG
-      *codePoint = EOF;  // sentinel value to hopefully cause errors
-#endif
-      MOZ_MAKE_MEM_UNDEFINED(codePoint, sizeof(*codePoint));
-    }
-    return ok;
+    return updateLineInfoForEOL();
   }
 
-  [[nodiscard]] MOZ_ALWAYS_INLINE bool updateLineInfoForEOL() {
+  [[nodiscard]] MOZ_NEVER_INLINE bool updateLineInfoForEOL() {
     return anyCharsAccess().internalUpdateLineInfoForEOL(
         this->sourceUnits.offset());
   }
 
-  uint32_t matchUnicodeEscapeIdStart(uint32_t* codePoint);
-  bool matchUnicodeEscapeIdent(uint32_t* codePoint);
+  uint32_t matchUnicodeEscapeIdStart(char32_t* codePoint);
+  bool matchUnicodeEscapeIdent(char32_t* codePoint);
   bool matchIdentifierStart();
 
   /**
@@ -2129,7 +2136,7 @@ class GeneralTokenStreamChars : public SpecializedTokenStreamCharsBase<Unit> {
    * more readable.
    */
   [[nodiscard]] bool internalComputeLineOfContext(ErrorMetadata* err,
-                                                  uint32_t offset) {
+                                                  uint32_t offset) const {
     // We only have line-start information for the current line.  If the error
     // is on a different line, we can't easily provide context.  (This means
     // any error in a multi-line token, e.g. an unterminated multiline string
@@ -2162,7 +2169,7 @@ class GeneralTokenStreamChars : public SpecializedTokenStreamCharsBase<Unit> {
       end =
           this->sourceUnits.codeUnitPtrAt(anyChars.currentToken().pos.end - 2);
     } else {
-      // NO_SUBS_TEMPLATE is of the form   |`...`|   or   |}...`|
+      // NoSubsTemplate is of the form   |`...`|   or   |}...`|
       end =
           this->sourceUnits.codeUnitPtrAt(anyChars.currentToken().pos.end - 1);
     }
@@ -2235,7 +2242,7 @@ class TokenStreamChars<char16_t, AnyCharsAccess>
    *
    * This may change the current |sourceUnits| offset.
    */
-  [[nodiscard]] bool getNonAsciiCodePoint(int32_t lead, int32_t* codePoint);
+  [[nodiscard]] bool getNonAsciiCodePoint(int32_t lead, char32_t* codePoint);
 };
 
 template <class AnyCharsAccess>
@@ -2329,7 +2336,7 @@ class TokenStreamChars<mozilla::Utf8Unit, AnyCharsAccess>
   // that have all the requisite high bits set/unset in a manner that *could*
   // encode a valid code point, but the remaining bits encoding its actual
   // value do not define a permitted value.
-  MOZ_COLD void badStructurallyValidCodePoint(uint32_t codePoint,
+  MOZ_COLD void badStructurallyValidCodePoint(char32_t codePoint,
                                               uint8_t codePointLength,
                                               const char* reason);
 
@@ -2337,7 +2344,7 @@ class TokenStreamChars<mozilla::Utf8Unit, AnyCharsAccess>
    * Report an error for UTF-8 that encodes a UTF-16 surrogate or a number
    * outside the Unicode range.
    */
-  MOZ_COLD void badCodePoint(uint32_t codePoint, uint8_t codePointLength) {
+  MOZ_COLD void badCodePoint(char32_t codePoint, uint8_t codePointLength) {
     MOZ_ASSERT(unicode::IsSurrogate(codePoint) ||
                codePoint > unicode::NonBMPMax);
 
@@ -2351,7 +2358,7 @@ class TokenStreamChars<mozilla::Utf8Unit, AnyCharsAccess>
    * Report an error for UTF-8 that encodes a code point not in its shortest
    * form.
    */
-  MOZ_COLD void notShortestForm(uint32_t codePoint, uint8_t codePointLength) {
+  MOZ_COLD void notShortestForm(char32_t codePoint, uint8_t codePointLength) {
     MOZ_ASSERT(!unicode::IsSurrogate(codePoint));
     MOZ_ASSERT(codePoint <= unicode::NonBMPMax);
 
@@ -2383,7 +2390,7 @@ class TokenStreamChars<mozilla::Utf8Unit, AnyCharsAccess>
    *
    * This function will change the current |sourceUnits| offset.
    */
-  [[nodiscard]] bool getNonAsciiCodePoint(int32_t lead, int32_t* codePoint);
+  [[nodiscard]] bool getNonAsciiCodePoint(int32_t lead, char32_t* codePoint);
 };
 
 // TokenStream is the lexical scanner for JavaScript source text.
@@ -2496,17 +2503,30 @@ class MOZ_STACK_CLASS TokenStreamSpecific
   friend class TokenStreamPosition;
 
  public:
-  TokenStreamSpecific(JSContext* cx, ParserAtomsTable* parserAtoms,
+  TokenStreamSpecific(FrontendContext* fc, ParserAtomsTable* parserAtoms,
                       const JS::ReadOnlyCompileOptions& options,
                       const Unit* units, size_t length, const StringTaint& taint);
 
   /**
    * Get the next code point, converting LineTerminatorSequences to '\n' and
-   * updating internal line-counter state if needed.  Return true on success
-   * and store the code point in |*cp|.  Return false and leave |*cp|
-   * undefined on failure.
+   * updating internal line-counter state if needed. Return true on success.
+   * Return false on failure.
    */
-  [[nodiscard]] bool getCodePoint(int32_t* cp);
+  [[nodiscard]] MOZ_ALWAYS_INLINE bool getCodePoint() {
+    int32_t unit = getCodeUnit();
+    if (MOZ_UNLIKELY(unit == EOF)) {
+      MOZ_ASSERT(anyCharsAccess().flags.isEOF,
+                 "flags.isEOF should have been set by getCodeUnit()");
+      return true;
+    }
+
+    if (isAsciiCodePoint(unit)) {
+      return getFullAsciiCodePoint(unit);
+    }
+
+    char32_t cp;
+    return getNonAsciiCodePoint(unit, &cp);
+  }
 
   // If there is an invalid escape in a template, report it and return false,
   // otherwise return true.
@@ -2523,19 +2543,9 @@ class MOZ_STACK_CLASS TokenStreamSpecific
  public:
   // Implement ErrorReporter.
 
-  void lineAndColumnAt(size_t offset, uint32_t* line,
-                       uint32_t* column) const final {
-    computeLineAndColumn(offset, line, column);
-  }
-
-  void currentLineAndColumn(uint32_t* line, uint32_t* column) const final {
-    computeLineAndColumn(anyCharsAccess().currentToken().pos.begin, line,
-                         column);
-  }
-
-  bool isOnThisLine(size_t offset, uint32_t lineNum,
-                    bool* onThisLine) const final {
-    return anyCharsAccess().srcCoords.isOnThisLine(offset, lineNum, onThisLine);
+  std::optional<bool> isOnThisLine(size_t offset,
+                                   uint32_t lineNum) const final {
+    return anyCharsAccess().srcCoords.isOnThisLine(offset, lineNum);
   }
 
   uint32_t lineAt(size_t offset) const final {
@@ -2544,20 +2554,16 @@ class MOZ_STACK_CLASS TokenStreamSpecific
     return anyChars.lineNumber(lineToken);
   }
 
-  uint32_t columnAt(size_t offset) const final {
+  JS::LimitedColumnNumberOneOrigin columnAt(size_t offset) const final {
     return computeColumn(anyCharsAccess().lineToken(offset), offset);
-  }
-
-  bool hasTokenizationStarted() const final;
-
-  const char* getFilename() const final {
-    return anyCharsAccess().getFilename();
   }
 
  private:
   // Implement ErrorReportMixin.
 
-  JSContext* getContext() const override { return anyCharsAccess().cx; }
+  FrontendContext* getContext() const override {
+    return anyCharsAccess().context();
+  }
 
   [[nodiscard]] bool strictMode() const override {
     return anyCharsAccess().strictMode();
@@ -2571,7 +2577,7 @@ class MOZ_STACK_CLASS TokenStreamSpecific
   }
 
   [[nodiscard]] bool computeErrorMetadata(
-      ErrorMetadata* err, const ErrorOffset& errorOffset) override;
+      ErrorMetadata* err, const ErrorOffset& errorOffset) const override;
 
  private:
   void reportInvalidEscapeError(uint32_t offset, InvalidEscapeType type) {
@@ -2614,32 +2620,24 @@ class MOZ_STACK_CLASS TokenStreamSpecific
    * |unit| must be one of these values:
    *
    *   1. The first decimal digit in the integral part of a decimal number
-   *      not starting with '0' or '.', e.g. '1' for "17", '3' for "3.14", or
+   *      not starting with '.', e.g. '1' for "17", '0' for "0.14", or
    *      '8' for "8.675309e6".
    *
    *   In this case, the next |getCodeUnit()| must return the code unit after
    *   |unit| in the overall number.
    *
-   *   2. The '.' in a "."/"0."-prefixed decimal number or the 'e'/'E' in a
-   *      "0e"/"0E"-prefixed decimal number, e.g. ".17", "0.42", or "0.1e3".
+   *   2. The '.' in a "."-prefixed decimal number, e.g. ".17" or ".1e3".
    *
    *   In this case, the next |getCodeUnit()| must return the code unit
-   *   *after* the first decimal digit *after* the '.'.  So the next code
-   *   unit would be '7' in ".17", '2' in "0.42", 'e' in "0.4e+8", or '/' in
-   *   "0.5/2" (three separate tokens).
+   *   *after* the '.'.
    *
-   *   3. The code unit after the '0' where "0" is the entire number token.
-   *
-   *   In this case, the next |getCodeUnit()| would return the code unit
-   *   after |unit|, but this function will never perform such call.
-   *
-   *   4. (Non-strict mode code only)  The first '8' or '9' in a "noctal"
-   *      number that begins with a '0' but contains a non-octal digit in its
-   *      integer part so is interpreted as decimal, e.g. '9' in "09.28" or
-   *      '8' in "0386" or '9' in "09+7" (three separate tokens").
+   *   3. (Non-strict mode code only)  The first non-ASCII-digit unit for a
+   *      "noctal" number that begins with a '0' but contains a non-octal digit
+   *      in its integer part so is interpreted as decimal, e.g. '.' in "09.28"
+   *      or EOF for "0386" or '+' in "09+7" (three separate tokens).
    *
    *   In this case, the next |getCodeUnit()| returns the code unit after
-   *   |unit|: '.', '6', or '+' in the examples above.
+   *   |unit|: '2', 'EOF', or '7' in the examples above.
    *
    * This interface is super-hairy and horribly stateful.  Unfortunately, its
    * hair merely reflects the intricacy of ECMAScript numeric literal syntax.
@@ -2739,13 +2737,14 @@ class MOZ_STACK_CLASS TokenStreamSpecific
     // stronger condition than what we are looking for, and we don't need
     // to return Eol.
     if (anyChars.lookahead != 0) {
-      bool onThisLine;
-      if (!anyChars.srcCoords.isOnThisLine(curr.pos.end, anyChars.lineno,
-                                           &onThisLine)) {
+      std::optional<bool> onThisLineStatus =
+          anyChars.srcCoords.isOnThisLine(curr.pos.end, anyChars.lineno);
+      if (!onThisLineStatus.has_value()) {
         error(JSMSG_OUT_OF_MEMORY);
         return false;
       }
 
+      bool onThisLine = *onThisLineStatus;
       if (onThisLine) {
         MOZ_ASSERT(!anyChars.flags.hadError);
         verifyConsistentModifier(modifier, anyChars.nextToken());
@@ -2944,18 +2943,19 @@ class MOZ_STACK_CLASS TokenStream
   using Unit = char16_t;
 
  public:
-  TokenStream(JSContext* cx, ParserAtomsTable* parserAtoms,
+  TokenStream(FrontendContext* fc, ParserAtomsTable* parserAtoms,
               const JS::ReadOnlyCompileOptions& options, const Unit* units,
               size_t length, const StringTaint& taint, StrictModeGetter* smg)
-      : TokenStreamAnyChars(cx, options, smg),
+      : TokenStreamAnyChars(fc, options, smg),
         TokenStreamSpecific<Unit, TokenStreamAnyCharsAccess>(
-          cx, parserAtoms, options, units, length, taint) {}
+            fc, parserAtoms, options, units, length, taint) {}
 };
 
 class MOZ_STACK_CLASS DummyTokenStream final : public TokenStream {
-public:
-  DummyTokenStream(JSContext* cx, const JS::ReadOnlyCompileOptions& options)
-    : TokenStream(cx, nullptr, options, nullptr, 0, EmptyTaint, nullptr) {}
+ public:
+  DummyTokenStream(FrontendContext* fc,
+                   const JS::ReadOnlyCompileOptions& options)
+      : TokenStream(fc, nullptr, options, nullptr, 0, EmptyTaint, nullptr) {}
 };
 
 template <class TokenStreamSpecific>

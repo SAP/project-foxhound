@@ -2,16 +2,11 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this,
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, print_function, unicode_literals
-
 import platform as platform_mod
 import sys
 
-
 # Base url for pulling the rustup installer.
-# Use the no-CNAME host for compatibilty with Python 2.7
-# which doesn't support SNI.
-RUSTUP_URL_BASE = "https://static-rust-lang-org.s3.amazonaws.com/rustup"
+RUSTUP_URL_BASE = "https://static.rust-lang.org/rustup"
 
 # Pull this to get the lastest stable version number.
 RUSTUP_MANIFEST = RUSTUP_URL_BASE + "/release-stable.toml"
@@ -26,6 +21,7 @@ RUSTUP_HASHES = {
     "x86_64-apple-darwin": "39101feb178a7e3e4443b09b36338e794a9e00385e5f44a2f7789aefb91354a9",
     "x86_64-unknown-linux-gnu": "ed7773edaf1d289656bdec2aacad12413b38ad0193fff54b2231f5140a4b07c5",
     "x86_64-pc-windows-msvc": "a586cf9de3e4aa791fd5796b6a5f99ca05591ccef8bb94e53af5b69f0261fb03",
+    "x86_64-unknown-netbsd": "8b29918e765f2cec3b81a911652b164471c42f8f31241f7401bb89582d6a3ed5",
 }
 
 NO_PLATFORM = """
@@ -64,6 +60,8 @@ def platform():
         return "x86_64-unknown-linux-gnu"
     elif sys.platform.startswith("freebsd"):
         return "x86_64-unknown-freebsd"
+    elif sys.platform.startswith("netbsd"):
+        return "x86_64-unknown-netbsd"
 
     return None
 
@@ -120,6 +118,7 @@ def rustup_latest_version():
 
 def http_download_and_hash(url):
     import hashlib
+
     import requests
 
     h = hashlib.sha256()

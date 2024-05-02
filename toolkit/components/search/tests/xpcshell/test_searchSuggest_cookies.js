@@ -8,8 +8,8 @@
 
 "use strict";
 
-const { SearchSuggestionController } = ChromeUtils.import(
-  "resource://gre/modules/SearchSuggestionController.jsm"
+const { SearchSuggestionController } = ChromeUtils.importESModule(
+  "resource://gre/modules/SearchSuggestionController.sys.mjs"
 );
 
 // We must make sure the FormHistoryStartup component is
@@ -57,7 +57,9 @@ function countCookieEntries() {
   return cookieCount;
 }
 
-add_task(async function setup() {
+let engines;
+
+add_setup(async function () {
   await AddonTestUtils.promiseStartupManager();
 
   Services.prefs.setBoolPref("browser.search.suggest.enabled", true);
@@ -76,21 +78,21 @@ add_task(async function setup() {
   server.registerContentType("sjs", "sjs");
 
   let unicodeName = ["\u30a8", "\u30c9"].join("");
-  let engines = [
-    await SearchTestUtils.promiseNewSearchEngine(
-      `${gDataUrl}engineMaker.sjs?${JSON.stringify({
+  engines = [
+    await SearchTestUtils.promiseNewSearchEngine({
+      url: `${gDataUrl}engineMaker.sjs?${JSON.stringify({
         baseURL: gDataUrl,
         name: unicodeName,
         method: "GET",
-      })}`
-    ),
-    await SearchTestUtils.promiseNewSearchEngine(
-      `${gDataUrl}engineMaker.sjs?${JSON.stringify({
+      })}`,
+    }),
+    await SearchTestUtils.promiseNewSearchEngine({
+      url: `${gDataUrl}engineMaker.sjs?${JSON.stringify({
         baseURL: gDataUrl,
         name: "engine two",
         method: "GET",
-      })}`
-    ),
+      })}`,
+    }),
   ];
 
   // Clean up all the data.
@@ -99,29 +101,25 @@ add_task(async function setup() {
   );
   Assert.equal(await countCacheEntries(), 0, "The cache should be empty");
   Assert.equal(await countCookieEntries(), 0, "Should not find any cookie");
-
-  await test_engine(engines, true);
-  await test_engine(engines, false);
 });
 
-async function test_engine(engines, privateMode) {
+add_task(async function test_private_mode() {
+  await test_engine(true);
+});
+add_task(async function test_normal_mode() {
+  await test_engine(false);
+});
+
+async function test_engine(privateMode) {
   info(`Testing ${privateMode ? "private" : "normal"} mode`);
-  let controller;
-  await new Promise(resolve => {
-    controller = new SearchSuggestionController(result => {
-      Assert.equal(result.local.length, 0, "Should have no local suggestions");
-      Assert.equal(
-        result.remote.length,
-        0,
-        "Should have no remote suggestions"
-      );
-      if (result.term == "cookie") {
-        resolve();
-      }
-    });
-    controller.fetch("test", privateMode, engines[0]);
-    controller.fetch("cookie", privateMode, engines[1]);
-  });
+  let controller = new SearchSuggestionController();
+  let result = await controller.fetch("no results", privateMode, engines[0]);
+  Assert.equal(result.local.length, 0, "Should have no local suggestions");
+  Assert.equal(result.remote.length, 0, "Should have no remote suggestions");
+
+  result = await controller.fetch("cookie", privateMode, engines[1]);
+  Assert.equal(result.local.length, 0, "Should have no local suggestions");
+  Assert.equal(result.remote.length, 0, "Should have no remote suggestions");
   Assert.equal(await countCacheEntries(), 0, "The cache should be empty");
   Assert.equal(await countCookieEntries(), 0, "Should not find any cookie");
 

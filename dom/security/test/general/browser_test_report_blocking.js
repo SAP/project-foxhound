@@ -1,7 +1,7 @@
 "use strict";
 
-const { TelemetryArchiveTesting } = ChromeUtils.import(
-  "resource://testing-common/TelemetryArchiveTesting.jsm"
+const { TelemetryArchiveTesting } = ChromeUtils.importESModule(
+  "resource://testing-common/TelemetryArchiveTesting.sys.mjs"
 );
 
 const kTestPath = getRootDirectory(gTestPath).replace(
@@ -62,7 +62,7 @@ const TEST_CASES = [
   },
 ];
 
-add_task(async function setup() {
+add_setup(async function () {
   Services.telemetry.setEventRecordingEnabled("security.ui.xfocsperror", true);
 
   await SpecialPowers.pushPrefEnv({
@@ -98,7 +98,7 @@ async function testReporting(test) {
     test.frame_uri,
     true
   );
-  BrowserTestUtils.loadURI(browser, test.test_uri);
+  BrowserTestUtils.startLoadingURIString(browser, test.test_uri);
   await loaded;
 
   let { type } = test;
@@ -134,7 +134,7 @@ async function testReporting(test) {
   browser = tab.linkedBrowser;
 
   loaded = BrowserTestUtils.browserLoaded(browser, true, test.frame_uri, true);
-  BrowserTestUtils.loadURI(browser, test.test_uri);
+  BrowserTestUtils.startLoadingURIString(browser, test.test_uri);
   await loaded;
 
   frameBC = await SpecialPowers.spawn(browser, [], async _ => {
@@ -174,7 +174,7 @@ async function testReporting(test) {
   browser = tab.linkedBrowser;
 
   loaded = BrowserTestUtils.browserLoaded(browser, true, test.frame_uri, true);
-  BrowserTestUtils.loadURI(browser, test.test_uri);
+  BrowserTestUtils.startLoadingURIString(browser, test.test_uri);
   await loaded;
 
   frameBC = await SpecialPowers.spawn(browser, [], async _ => {

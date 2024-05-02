@@ -10,6 +10,7 @@
 #include "nsIFile.h"
 #include "nsINIParser.h"
 #include "mozilla/ResultExtensions.h"
+#include "mozilla/Try.h"
 #include "mozilla/URLPreloader.h"
 
 using namespace mozilla;
@@ -294,15 +295,7 @@ nsresult nsINIParser::RenameSection(const char* aSection,
 nsresult nsINIParser::WriteToFile(nsIFile* aFile) {
   nsCString buffer;
 
-  for (const auto& entry : mSections) {
-    buffer.AppendPrintf("[%s]\n", entry.GetKey());
-    INIValue* val = entry.GetWeak();
-    while (val) {
-      buffer.AppendPrintf("%s=%s\n", val->key, val->value);
-      val = val->next.get();
-    }
-    buffer.AppendLiteral("\n");
-  }
+  WriteToString(buffer);
 
   FILE* writeFile;
   nsresult rv = aFile->OpenANSIFileDesc("w", &writeFile);
@@ -317,4 +310,16 @@ nsresult nsINIParser::WriteToFile(nsIFile* aFile) {
 
   fclose(writeFile);
   return NS_OK;
+}
+
+void nsINIParser::WriteToString(nsACString& aOutput) {
+  for (const auto& entry : mSections) {
+    aOutput.AppendPrintf("[%s]\n", entry.GetKey());
+    INIValue* val = entry.GetWeak();
+    while (val) {
+      aOutput.AppendPrintf("%s=%s\n", val->key, val->value);
+      val = val->next.get();
+    }
+    aOutput.AppendLiteral("\n");
+  }
 }

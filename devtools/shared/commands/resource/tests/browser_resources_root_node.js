@@ -13,7 +13,7 @@
  * Otherwise this test checks the basic behavior of the resource when reloading
  * an empty page.
  */
-add_task(async function() {
+add_task(async function () {
   // Open a test tab
   const tab = await addTab("data:text/html,Root Node tests");
 
@@ -110,7 +110,10 @@ add_task(async function testRootNodeFrontIsCorrect() {
 
   info("Navigate to another URL");
   rootNodePromise = new Promise(r => (rootNodeResolve = r));
-  BrowserTestUtils.loadURI(browser, `data:text/html,<div id=div3>`);
+  BrowserTestUtils.startLoadingURIString(
+    browser,
+    `data:text/html,<div id=div3>`
+  );
   const root3 = await rootNodePromise;
   info("Check we can query an expected node under the retrieved root");
   const div3 = await root3.walkerFront.querySelector(root3, "div");

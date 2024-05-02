@@ -17,7 +17,8 @@ add_task(
 
 async function testSymbols(threadFront, debuggee) {
   const evalCode = () => {
-    /* eslint-disable */
+    /* eslint-disable mozilla/var-only-at-top-level, no-unused-vars */
+    // prettier-ignore
     Cu.evalInSandbox(
       "(" + function () {
         var symbolWithName = Symbol("Chris");
@@ -30,16 +31,13 @@ async function testSymbols(threadFront, debuggee) {
       URL,
       1
     );
-    /* eslint-enable */
+    /* eslint-enable mozilla/var-only-at-top-level, no-unused-vars */
   };
 
   const packet = await executeOnNextTickAndWaitForPause(evalCode, threadFront);
   const environment = await packet.frame.getEnvironment();
-  const {
-    symbolWithName,
-    symbolWithoutName,
-    iteratorSymbol,
-  } = environment.bindings.variables;
+  const { symbolWithName, symbolWithoutName, iteratorSymbol } =
+    environment.bindings.variables;
 
   equal(symbolWithName.value.type, "symbol");
   equal(symbolWithName.value.name, "Chris");

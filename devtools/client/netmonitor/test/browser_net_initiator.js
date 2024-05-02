@@ -4,7 +4,7 @@
 "use strict";
 const {
   getUrlBaseName,
-} = require("devtools/client/netmonitor/src/utils/request-utils");
+} = require("resource://devtools/client/netmonitor/src/utils/request-utils.js");
 /**
  * Tests if request initiator is reported correctly.
  */
@@ -98,13 +98,13 @@ const EXPECTED_REQUESTS = [
     url: HTTPS_EXAMPLE_URL + "favicon_request",
     causeType: "img",
     causeUri: INITIATOR_URL,
-    // the favicon request is triggered in FaviconLoader.jsm module, it should
+    // the favicon request is triggered in FaviconLoader.sys.mjs module, it should
     // NOT be shown in the stack (bug 1280266).  For now we intentionally
     // specify the file and the line number to be properly sorted.
     // NOTE: The line number can be an arbitrary number greater than 0.
     stack: [
       {
-        file: "resource:///modules/FaviconLoader.jsm",
+        file: "resource:///modules/FaviconLoader.sys.mjs",
         line: Number.MAX_SAFE_INTEGER,
       },
     ],
@@ -132,7 +132,7 @@ const EXPECTED_REQUESTS = [
   },
 ];
 
-add_task(async function() {
+add_task(async function () {
   // the initNetMonitor function clears the network request list after the
   // page is loaded. That's why we first load a bogus page from SIMPLE_URL,
   // and only then load the real thing from INITIATOR_URL - we want to catch
@@ -152,7 +152,7 @@ add_task(async function() {
   store.dispatch(Actions.batchEnable(false));
 
   const wait = waitForNetworkEvents(monitor, EXPECTED_REQUESTS.length);
-  BrowserTestUtils.loadURI(tab.linkedBrowser, INITIATOR_URL);
+  BrowserTestUtils.startLoadingURIString(tab.linkedBrowser, INITIATOR_URL);
 
   registerFaviconNotifier(tab.linkedBrowser);
 

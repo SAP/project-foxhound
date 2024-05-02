@@ -1,4 +1,4 @@
-// |jit-test| --wasm-compiler=optimizing; --spectre-mitigations=off; skip-if: !hasDisassembler() || wasmCompileMode() != "ion" || !getBuildConfiguration().x86 || getBuildConfiguration().simulator || getJitCompilerOptions()["ion.check-range-analysis"]; include:codegen-x86-test.js
+// |jit-test| --wasm-compiler=optimizing; --spectre-mitigations=off; skip-if: !hasDisassembler() || wasmCompileMode() != "ion" || !getBuildConfiguration("x86") || getBuildConfiguration("simulator") || getJitCompilerOptions()["ion.check-range-analysis"]; include:codegen-x86-test.js
 
 // Spectre mitigation is disabled above to make the generated code simpler to
 // match; ion.check-range-analysis makes a hash of the code and makes testing
@@ -24,8 +24,7 @@ codegenTestX86_adhoc(
      (i32.load (local.get 1))))`,
     'f', `
 3b ..                     cmp %e.., %e..
-0f 82 02 00 00 00         jb 0x00000000000000..
-0f 0b                     ud2
+0f 83 .. 00 00 00         jnb 0x00000000000000..
 8b .. ..                  movl \\(%r..,%r..,1\\), %e..
 8b .. ..                  movl \\(%r..,%r..,1\\), %eax`,
     {no_prefix:true});

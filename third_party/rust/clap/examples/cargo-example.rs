@@ -1,21 +1,18 @@
 fn main() {
-    let app = clap::App::new("cargo")
+    let cmd = clap::Command::new("cargo")
         .bin_name("cargo")
-        .setting(clap::AppSettings::SubcommandRequired)
+        .subcommand_required(true)
         .subcommand(
-            clap::app_from_crate!().name("example").arg(
+            clap::command!("example").arg(
                 clap::arg!(--"manifest-path" <PATH>)
-                    .required(false)
-                    .allow_invalid_utf8(true),
+                    .value_parser(clap::value_parser!(std::path::PathBuf)),
             ),
         );
-    let matches = app.get_matches();
+    let matches = cmd.get_matches();
     let matches = match matches.subcommand() {
         Some(("example", matches)) => matches,
         _ => unreachable!("clap should ensure we don't get here"),
     };
-    let manifest_path = matches
-        .value_of_os("manifest-path")
-        .map(std::path::PathBuf::from);
-    println!("{:?}", manifest_path);
+    let manifest_path = matches.get_one::<std::path::PathBuf>("manifest-path");
+    println!("{manifest_path:?}");
 }

@@ -7,7 +7,7 @@
  * Tests if Copy as Fetch works.
  */
 
-add_task(async function() {
+add_task(async function () {
   const { tab, monitor } = await initNetMonitor(HTTPS_CURL_URL, {
     requestCount: 1,
   });
@@ -48,7 +48,7 @@ add_task(async function() {
           payload_: payload,
         },
       ],
-      async function({ url, method_, payload_ }) {
+      async function ({ url, method_, payload_ }) {
         content.wrappedJSObject.performRequest(url, method_, payload_);
       }
     );
@@ -66,19 +66,18 @@ add_task(async function() {
     );
 
     /* Ensure that the copy as fetch option is always visible */
-    const copyAsFetchNode = getContextMenuItem(
-      monitor,
-      "request-list-context-copy-as-fetch"
-    );
     is(
-      !!copyAsFetchNode,
+      !!getContextMenuItem(monitor, "request-list-context-copy-as-fetch"),
       true,
       'The "Copy as Fetch" context menu item should not be hidden.'
     );
 
     await waitForClipboardPromise(
-      function setup() {
-        copyAsFetchNode.click();
+      async function setup() {
+        await selectContextMenuItem(
+          monitor,
+          "request-list-context-copy-as-fetch"
+        );
       },
       function validate(result) {
         if (typeof result !== "string") {

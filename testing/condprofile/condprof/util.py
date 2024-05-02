@@ -4,26 +4,22 @@
 #
 # This module needs to stay Python 2 and 3 compatible
 #
-from __future__ import absolute_import, division, print_function
-
-import platform
-import time
-import os
-import shutil
 import contextlib
-import yaml
-from subprocess import Popen, PIPE
+import os
+import platform
+import shutil
 import sys
 import tempfile
+import time
+from subprocess import PIPE, Popen
 
+import mozlog
 import requests
+import yaml
 from requests.exceptions import ConnectionError
 from requests.packages.urllib3.util.retry import Retry
 
-import mozlog
-
 from condprof import progress
-
 
 TASK_CLUSTER = "TASK_ID" in os.environ.keys()
 DOWNLOAD_TIMEOUT = 30
@@ -37,7 +33,7 @@ DEFAULT_PREFS = {
     "focusmanager.testmode": True,
     "marionette.defaultPrefs.port": 2828,
     "marionette.port": 2828,
-    "marionette.log.level": "Trace",
+    "remote.log.level": "Trace",
     "marionette.log.truncate": False,
     "extensions.autoDisableScopes": 10,
     "devtools.debugger.remote-enabled": True,
@@ -278,7 +274,6 @@ def extract_from_dmg(dmg, target):
 
 @contextlib.contextmanager
 def latest_nightly(binary=None):
-
     if binary is None:
         # we want to use the latest nightly
         nightly_archive = get_firefox_download_link()
@@ -327,7 +322,8 @@ def write_yml_file(yml_file, yml_data):
 def get_version(firefox):
     p = Popen([firefox, "--version"], stdin=PIPE, stdout=PIPE, stderr=PIPE)
     output, __ = p.communicate()
-    res = output.strip().split()[-1]
+    first_line = output.strip().split(b"\n")[0]
+    res = first_line.split()[-1]
     return res.decode("utf-8")
 
 
@@ -336,7 +332,7 @@ def get_current_platform():
 
     e.g. macosx64, win32, linux64, etc..
     """
-    arch = sys.maxsize == 2 ** 63 - 1 and "64" or "32"
+    arch = sys.maxsize == 2**63 - 1 and "64" or "32"
     plat = platform.system().lower()
     if plat == "windows":
         plat = "win"

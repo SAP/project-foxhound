@@ -570,7 +570,7 @@ LexerTransition<nsBMPDecoder::State> nsBMPDecoder::ReadInfoHeaderRest(
         break;
       case InfoColorSpace::LINKED:
       case InfoColorSpace::SRGB:
-      case InfoColorSpace::WINDOWS:
+      case InfoColorSpace::WIN:
       default:
         // Nothing to be done at this time.
         break;
@@ -731,7 +731,7 @@ LexerTransition<nsBMPDecoder::State> nsBMPDecoder::ReadBitfields(
         PrepareCalibratedColorProfile();
         break;
       case InfoColorSpace::SRGB:
-      case InfoColorSpace::WINDOWS:
+      case InfoColorSpace::WIN:
         MOZ_LOG(sBMPLog, LogLevel::Debug, ("using sRGB color profile\n"));
         if (mColors) {
           // We will transform the color table instead of the output pixels.
@@ -1229,9 +1229,17 @@ LexerTransition<nsBMPDecoder::State> nsBMPDecoder::ReadRLEAbsolute(
   mAbsoluteModeNumPixels = 0;
 
   if (mCurrentPos + n > uint32_t(mH.mWidth)) {
-    // Bad data. Stop decoding; at least part of the image may have been
-    // decoded.
-    return Transition::TerminateSuccess();
+    // Some DIB RLE8 encoders count a padding byte as the absolute mode
+    // pixel number at the end of the row.
+    if (mH.mCompression == Compression::RLE8 && n > 0 && (n & 1) == 0 &&
+        mCurrentPos + n - uint32_t(mH.mWidth) == 1 && aLength > 0 &&
+        aData[aLength - 1] == 0) {
+      n--;
+    } else {
+      // Bad data. Stop decoding; at least part of the image may have been
+      // decoded.
+      return Transition::TerminateSuccess();
+    }
   }
 
   // In absolute mode, n represents the number of pixels that follow, each of

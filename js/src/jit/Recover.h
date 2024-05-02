@@ -85,6 +85,7 @@ namespace jit {
   _(BigIntDecrement)              \
   _(BigIntNegate)                 \
   _(BigIntBitNot)                 \
+  _(Compare)                      \
   _(Concat)                       \
   _(StringLength)                 \
   _(ArgumentsLength)              \
@@ -108,9 +109,8 @@ namespace jit {
   _(StringSplit)                  \
   _(NaNToZero)                    \
   _(RegExpMatcher)                \
-  _(RegExpSearcher)               \
-  _(RegExpTester)                 \
   _(StringReplace)                \
+  _(Substr)                       \
   _(TypeOf)                       \
   _(TypeOfName)                   \
   _(ToDouble)                     \
@@ -124,7 +124,6 @@ namespace jit {
   _(NewIterator)                  \
   _(NewCallObject)                \
   _(Lambda)                       \
-  _(LambdaArrow)                  \
   _(FunctionWithProto)            \
   _(ObjectState)                  \
   _(ArrayState)                   \
@@ -207,13 +206,22 @@ class MOZ_NON_PARAM RInstruction {
 
 class RResumePoint final : public RInstruction {
  private:
-  uint32_t pcOffset_;     // Offset from script->code.
-  uint32_t numOperands_;  // Number of slots.
+  uint32_t pcOffsetAndMode_;  // Offset from script->code and ResumeMode.
+  uint32_t numOperands_;      // Number of slots.
 
  public:
   RINSTRUCTION_HEADER_(ResumePoint)
 
-  uint32_t pcOffset() const { return pcOffset_; }
+  // Used to encode/decode pcOffsetAndMode_.
+  static constexpr uint32_t PCOffsetShift = 4;
+  static constexpr uint32_t ResumeModeMask = 0b1111;
+  static_assert(uint32_t(ResumeMode::Last) <= ResumeModeMask);
+
+  uint32_t pcOffset() const { return pcOffsetAndMode_ >> PCOffsetShift; }
+  ResumeMode mode() const {
+    return ResumeMode(pcOffsetAndMode_ & ResumeModeMask);
+  }
+
   uint32_t numOperands() const override { return numOperands_; }
   [[nodiscard]] bool recover(JSContext* cx,
                              SnapshotIterator& iter) const override;
@@ -467,6 +475,16 @@ class RBigIntBitNot final : public RInstruction {
                              SnapshotIterator& iter) const override;
 };
 
+class RCompare final : public RInstruction {
+  JSOp jsop_;
+
+ public:
+  RINSTRUCTION_HEADER_NUM_OP_(Compare, 2)
+
+  [[nodiscard]] bool recover(JSContext* cx,
+                             SnapshotIterator& iter) const override;
+};
+
 class RConcat final : public RInstruction {
  public:
   RINSTRUCTION_HEADER_NUM_OP_(Concat, 2)
@@ -666,28 +684,20 @@ class RRegExpMatcher final : public RInstruction {
                              SnapshotIterator& iter) const override;
 };
 
-class RRegExpSearcher final : public RInstruction {
- public:
-  RINSTRUCTION_HEADER_NUM_OP_(RegExpSearcher, 3)
-
-  [[nodiscard]] bool recover(JSContext* cx,
-                             SnapshotIterator& iter) const override;
-};
-
-class RRegExpTester final : public RInstruction {
- public:
-  RINSTRUCTION_HEADER_NUM_OP_(RegExpTester, 3)
-
-  [[nodiscard]] bool recover(JSContext* cx,
-                             SnapshotIterator& iter) const override;
-};
-
 class RStringReplace final : public RInstruction {
  private:
   bool isFlatReplacement_;
 
  public:
   RINSTRUCTION_HEADER_NUM_OP_(StringReplace, 3)
+
+  [[nodiscard]] bool recover(JSContext* cx,
+                             SnapshotIterator& iter) const override;
+};
+
+class RSubstr final : public RInstruction {
+ public:
+  RINSTRUCTION_HEADER_NUM_OP_(Substr, 3)
 
   [[nodiscard]] bool recover(JSContext* cx,
                              SnapshotIterator& iter) const override;
@@ -744,7 +754,7 @@ class RNewObject final : public RInstruction {
 class RNewPlainObject final : public RInstruction {
  private:
   gc::AllocKind allocKind_;
-  gc::InitialHeap initialHeap_;
+  gc::Heap initialHeap_;
 
  public:
   RINSTRUCTION_HEADER_NUM_OP_(NewPlainObject, 1)
@@ -756,7 +766,7 @@ class RNewPlainObject final : public RInstruction {
 class RNewArrayObject final : public RInstruction {
  private:
   uint32_t length_;
-  gc::InitialHeap initialHeap_;
+  gc::Heap initialHeap_;
 
  public:
   RINSTRUCTION_HEADER_NUM_OP_(NewArrayObject, 1)
@@ -798,14 +808,6 @@ class RNewIterator final : public RInstruction {
 class RLambda final : public RInstruction {
  public:
   RINSTRUCTION_HEADER_NUM_OP_(Lambda, 2)
-
-  [[nodiscard]] bool recover(JSContext* cx,
-                             SnapshotIterator& iter) const override;
-};
-
-class RLambdaArrow final : public RInstruction {
- public:
-  RINSTRUCTION_HEADER_NUM_OP_(LambdaArrow, 3)
 
   [[nodiscard]] bool recover(JSContext* cx,
                              SnapshotIterator& iter) const override;

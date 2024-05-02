@@ -10,6 +10,7 @@
 #include "mozilla/UniquePtr.h"
 #include "mozilla/WindowsEnumProcessModules.h"
 
+#include <limits>
 #include <stdio.h>
 #include <windows.h>
 #include <strsafe.h>
@@ -27,6 +28,12 @@ const wchar_t kHex11[] = L"Foo.ABCDEF01234.dll";
 const wchar_t kPrefixedHex16[] = L"Pabcdef0123456789.dll";
 const uint32_t kTlsDataValue = 1234;
 static MOZ_THREAD_LOCAL(uint32_t) sTlsData;
+
+// Need non-inline functions to bypass compiler optimization that the thread
+// local storage pointer is cached in a register before accessing a thread-local
+// variable. See bug 1803322 for a motivating example.
+MOZ_NEVER_INLINE uint32_t getTlsData() { return sTlsData.get(); }
+MOZ_NEVER_INLINE void setTlsData(uint32_t x) { sTlsData.set(x); }
 
 const char kFailFmt[] =
     "TEST-FAILED | NativeNt | %s(%s) should have returned %s but did not\n";
@@ -359,6 +366,42 @@ MOZ_NEVER_INLINE PVOID SwapThreadLocalStoragePointer(PVOID aNewValue) {
   return oldValue;
 }
 
+#if defined(_M_X64)
+bool TestCheckStack() {
+  auto stackBase = reinterpret_cast<uint8_t*>(RtlGetThreadStackBase());
+  auto stackLimit = reinterpret_cast<uint8_t*>(RtlGetThreadStackLimit());
+  uint8_t* stackPointer = nullptr;
+  asm volatile("mov %%rsp, %0;" : "=r"(stackPointer));
+  if (!(stackLimit < stackBase && stackLimit <= stackPointer &&
+        stackPointer < stackBase)) {
+    printf("TEST-FAIL | NativeNt | Stack addresses are not coherent.\n");
+    return false;
+  }
+  uintptr_t committedBytes = stackPointer - stackLimit;
+  const uint32_t maxExtraCommittedBytes = 0x10000;
+  if ((committedBytes + maxExtraCommittedBytes) >
+      std::numeric_limits<uint32_t>::max()) {
+    printf(
+        "TEST-FAIL | NativeNt | The stack limit is too high to perform the "
+        "test.\n");
+    return false;
+  }
+  for (uint32_t extraSize = 0; extraSize < maxExtraCommittedBytes;
+       ++extraSize) {
+    CheckStack(static_cast<uint32_t>(committedBytes) + extraSize);
+    auto expectedNewLimit = stackLimit - ((extraSize + 0xFFF) & ~0xFFF);
+    if (expectedNewLimit != RtlGetThreadStackLimit()) {
+      printf(
+          "TEST-FAIL | NativeNt | CheckStack did not grow the stack "
+          "correctly (expected: %p, got: %p).\n",
+          expectedNewLimit, RtlGetThreadStackLimit());
+      return false;
+    }
+  }
+  return true;
+}
+#endif  // _M_X64
+
 int wmain(int argc, wchar_t* argv[]) {
   UNICODE_STRING normal;
   ::RtlInitUnicodeString(&normal, kNormal);
@@ -419,13 +462,13 @@ int wmain(int argc, wchar_t* argv[]) {
   bool isExceptionThrown = false;
   // Touch sTlsData.get() several times to prevent the call to sTlsData.set()
   // from being optimized out in PGO build.
-  printf("sTlsData#1 = %08x\n", sTlsData.get());
+  printf("sTlsData#1 = %08x\n", getTlsData());
   MOZ_SEH_TRY {
     // Need to call SwapThreadLocalStoragePointer inside __try to make sure
     // accessing sTlsData is caught by SEH.  This is due to clang's design.
     // https://bugs.llvm.org/show_bug.cgi?id=44174.
     origTlsHead = SwapThreadLocalStoragePointer(nullptr);
-    sTlsData.set(~kTlsDataValue);
+    setTlsData(~kTlsDataValue);
   }
   MOZ_SEH_EXCEPT(GetExceptionCode() == EXCEPTION_ACCESS_VIOLATION
                      ? EXCEPTION_EXECUTE_HANDLER
@@ -433,10 +476,10 @@ int wmain(int argc, wchar_t* argv[]) {
     isExceptionThrown = true;
   }
   SwapThreadLocalStoragePointer(origTlsHead);
-  printf("sTlsData#2 = %08x\n", sTlsData.get());
-  sTlsData.set(kTlsDataValue);
-  printf("sTlsData#3 = %08x\n", sTlsData.get());
-  if (!isExceptionThrown || sTlsData.get() != kTlsDataValue) {
+  printf("sTlsData#2 = %08x\n", getTlsData());
+  setTlsData(kTlsDataValue);
+  printf("sTlsData#3 = %08x\n", getTlsData());
+  if (!isExceptionThrown || getTlsData() != kTlsDataValue) {
     printf(
         "TEST-FAILED | NativeNt | RtlGetThreadLocalStoragePointer() is "
         "broken\n");
@@ -594,6 +637,12 @@ int wmain(int argc, wchar_t* argv[]) {
   if (!TestModuleLoadedAsData()) {
     return 1;
   }
+
+#if defined(_M_X64)
+  if (!TestCheckStack()) {
+    return 1;
+  }
+#endif  // _M_X64
 
   printf("TEST-PASS | NativeNt | All tests ran successfully\n");
   return 0;

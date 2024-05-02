@@ -21,6 +21,16 @@ void js::Mutex::lock() {
   postLockChecks();
 }
 
+bool js::Mutex::tryLock() {
+  preLockChecks();
+  if (!impl_.tryLock()) {
+    return false;
+  }
+
+  postLockChecks();
+  return true;
+}
+
 void js::Mutex::preLockChecks() const {
   Mutex* prev = HeldMutexStack.get();
   if (prev) {
@@ -62,14 +72,18 @@ void js::Mutex::assertOwnedByCurrentThread() const {
   // This check is only thread-safe if it succeeds.
   MOZ_ASSERT(ThreadId::ThisThreadId() == owningThread_);
 
-  // Check the mutex is on the mutex stack.
+  MOZ_ASSERT(isOwnedByCurrentThread());
+}
+
+bool js::Mutex::isOwnedByCurrentThread() const {
+  // Check whether the mutex is on the thread-local mutex stack.
   for (Mutex* mutex = HeldMutexStack.get(); mutex; mutex = mutex->prev_) {
     if (mutex == this) {
-      return;
+      return true;
     }
   }
 
-  MOZ_CRASH("Mutex not found on the stack of held mutexes");
+  return false;
 }
 
 #endif

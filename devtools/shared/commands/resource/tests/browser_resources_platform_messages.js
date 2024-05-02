@@ -6,7 +6,7 @@
 // Test the ResourceCommand API around PLATFORM_MESSAGE
 // Reproduces assertions from: devtools/shared/webconsole/test/chrome/test_nsiconsolemessage.html
 
-add_task(async function() {
+add_task(async function () {
   // Disable the preloaded process as it creates processes intermittently
   // which forces the emission of RDP requests we aren't correctly waiting for.
   await pushPref("dom.ipc.processPrelaunch.enabled", false);
@@ -16,11 +16,8 @@ add_task(async function() {
 });
 
 async function testPlatformMessagesResources() {
-  const {
-    client,
-    resourceCommand,
-    targetCommand,
-  } = await initMultiProcessResourceCommand();
+  const { client, resourceCommand, targetCommand } =
+    await initMultiProcessResourceCommand();
 
   const cachedMessages = [
     "This is a cached message",
@@ -60,9 +57,12 @@ async function testPlatformMessagesResources() {
         `Received the expected «${resource.message}» message, in the expected order`
       );
 
+      // timeStamp are the result of a number in microsecond divided by 1000.
+      // so we can't expect a precise number of decimals, or even if there would
+      // be decimals at all.
       ok(
-        resource.timeStamp.toString().match(/^\d+$/),
-        "The resource has a timeStamp property"
+        resource.timeStamp.toString().match(/^\d+(\.\d{1,3})?$/),
+        `The resource has a timeStamp property ${resource.timeStamp}`
       );
 
       const isCachedMessage = receivedMessages.length <= cachedMessages.length;
@@ -101,11 +101,8 @@ async function testPlatformMessagesResources() {
 }
 
 async function testPlatformMessagesResourcesWithIgnoreExistingResources() {
-  const {
-    client,
-    resourceCommand,
-    targetCommand,
-  } = await initMultiProcessResourceCommand();
+  const { client, resourceCommand, targetCommand } =
+    await initMultiProcessResourceCommand();
 
   info(
     "Check whether onAvailable will not be called with existing platform messages"

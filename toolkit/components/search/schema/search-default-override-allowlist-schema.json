@@ -1,10 +1,6 @@
 {
   "type": "object",
-  "required": [
-    "thirdPartyId",
-    "overridesId",
-    "urls"
-  ],
+  "required": ["thirdPartyId", "overridesId", "urls"],
   "properties": {
     "thirdPartyId": {
       "type": "string",
@@ -15,7 +11,7 @@
     "overridesId": {
       "type": "string",
       "title": "Add-on Id to Override",
-      "description": "The identifier of the app-provided add-on to be overriden. Should be of the format example@search.mozilla.org",
+      "description": "The identifier of the app-provided add-on to be overridden. Should be of the format example@search.mozilla.org",
       "pattern": "^[a-zA-Z0-9-._]*@search.mozilla.org$"
     },
     "urls": {
@@ -24,9 +20,7 @@
       "description": "An array of URL sets which must be matched (with the add-on's manifest settings) to allow the override",
       "items": {
         "type": "object",
-        "required": [
-          "search_url"
-        ],
+        "required": ["search_url"],
         "properties": {
           "search_url": {
             "type": "string",

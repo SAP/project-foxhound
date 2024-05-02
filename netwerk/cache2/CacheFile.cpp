@@ -28,7 +28,7 @@
 //  - CacheFile is still waiting for the handle
 //  - the chunk is preloaded
 
-//#define CACHE_CHUNKS
+// #define CACHE_CHUNKS
 
 namespace mozilla::net {
 
@@ -178,7 +178,8 @@ CacheFile::~CacheFile() {
 
 nsresult CacheFile::Init(const nsACString& aKey, bool aCreateNew,
                          bool aMemoryOnly, bool aSkipSizeCheck, bool aPriority,
-                         bool aPinned, CacheFileListener* aCallback) {
+                         bool aPinned, CacheFileListener* aCallback)
+    MOZ_NO_THREAD_SAFETY_ANALYSIS {
   MOZ_ASSERT(!mListener);
   MOZ_ASSERT(!mHandle);
 
@@ -2188,7 +2189,7 @@ void CacheFile::QueueChunkListener(uint32_t aIndex,
     LOG(
         ("CacheFile::QueueChunkListener() - Cannot get Cache I/O thread! Using "
          "main thread for callback."));
-    item->mTarget = GetMainThreadEventTarget();
+    item->mTarget = GetMainThreadSerialEventTarget();
   }
   item->mCallback = aCallback;
 

@@ -14,6 +14,7 @@
 #include <memory>
 #include <vector>
 
+#include "api/array_view.h"
 #include "api/audio/audio_frame.h"
 #include "modules/audio_processing/agc2/limiter.h"
 
@@ -22,7 +23,6 @@ class ApmDataDumper;
 
 class FrameCombiner {
  public:
-  enum class LimiterType { kNoLimiter, kApmAgcLimiter, kApmAgc2Limiter };
   explicit FrameCombiner(bool use_limiter);
   ~FrameCombiner();
 
@@ -32,7 +32,7 @@ class FrameCombiner {
   // because 'mix_list' can be empty. The parameter
   // 'number_of_streams' is used for determining whether to pass the
   // data through a limiter.
-  void Combine(const std::vector<AudioFrame*>& mix_list,
+  void Combine(rtc::ArrayView<AudioFrame* const> mix_list,
                size_t number_of_channels,
                int sample_rate,
                size_t number_of_streams,
@@ -46,15 +46,10 @@ class FrameCombiner {
                                   kMaximumNumberOfChannels>;
 
  private:
-  void LogMixingStats(const std::vector<AudioFrame*>& mix_list,
-                      int sample_rate,
-                      size_t number_of_streams) const;
-
   std::unique_ptr<ApmDataDumper> data_dumper_;
   std::unique_ptr<MixingBuffer> mixing_buffer_;
   Limiter limiter_;
   const bool use_limiter_;
-  mutable int uma_logging_counter_ = 0;
 };
 }  // namespace webrtc
 

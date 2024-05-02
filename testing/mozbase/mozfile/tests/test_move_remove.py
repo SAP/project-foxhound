@@ -1,21 +1,17 @@
 #!/usr/bin/env python
 
-from __future__ import absolute_import
-
+import errno
 import os
-import stat
 import shutil
+import stat
 import threading
 import time
 import unittest
-import errno
 from contextlib import contextmanager
-
-import mozunit
 
 import mozfile
 import mozinfo
-
+import mozunit
 import stubs
 
 
@@ -180,6 +176,26 @@ class MozfileRemoveTestCase(unittest.TestCase):
         self.assertFalse(os.path.exists(dir_path))
         self.assertFalse(os.path.exists(symlink_path))
         self.assertTrue(os.path.exists(file_path))
+
+    @unittest.skipIf(mozinfo.isWin, "Symlinks are not supported on Windows")
+    def test_remove_broken_symlink(self):
+        """Test removing a folder with an contained symlink"""
+        file_path = os.path.join(self.tempdir, "readonly.txt")
+        working_link = os.path.join(self.tempdir, "link_to_readonly.txt")
+        broken_link = os.path.join(self.tempdir, "broken_link")
+        os.symlink(file_path, working_link)
+        os.symlink(os.path.join(self.tempdir, "broken.txt"), broken_link)
+
+        self.assertTrue(os.path.exists(file_path))
+        self.assertTrue(os.path.islink(working_link))
+        self.assertTrue(os.path.islink(broken_link))
+
+        mozfile.remove(working_link)
+        self.assertFalse(os.path.lexists(working_link))
+        self.assertTrue(os.path.exists(file_path))
+
+        mozfile.remove(broken_link)
+        self.assertFalse(os.path.lexists(broken_link))
 
     @unittest.skipIf(
         mozinfo.isWin or not os.geteuid(),

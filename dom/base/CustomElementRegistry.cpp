@@ -20,15 +20,18 @@
 #include "mozilla/dom/DocGroup.h"
 #include "mozilla/dom/CustomEvent.h"
 #include "mozilla/dom/ShadowRoot.h"
+#include "mozilla/dom/UnionTypes.h"
 #include "mozilla/AutoRestore.h"
 #include "mozilla/HoldDropJSObjects.h"
+#include "mozilla/UseCounter.h"
 #include "nsContentUtils.h"
 #include "nsHTMLTags.h"
+#include "nsInterfaceHashtable.h"
+#include "nsPIDOMWindow.h"
 #include "jsapi.h"
 #include "js/ForOfIterator.h"       // JS::ForOfIterator
 #include "js/PropertyAndElement.h"  // JS_GetProperty, JS_GetUCProperty
 #include "xpcprivate.h"
-#include "nsGlobalWindow.h"
 #include "nsNameSpaceManager.h"
 
 namespace mozilla::dom {
@@ -122,8 +125,7 @@ class CustomElementCallbackReaction final : public CustomElementReaction {
 
 size_t LifecycleCallbackArgs::SizeOfExcludingThis(
     MallocSizeOf aMallocSizeOf) const {
-  size_t n = mName.SizeOfExcludingThisIfUnshared(aMallocSizeOf);
-  n += mOldValue.SizeOfExcludingThisIfUnshared(aMallocSizeOf);
+  size_t n = mOldValue.SizeOfExcludingThisIfUnshared(aMallocSizeOf);
   n += mNewValue.SizeOfExcludingThisIfUnshared(aMallocSizeOf);
   n += mNamespaceURI.SizeOfExcludingThisIfUnshared(aMallocSizeOf);
   return n;
@@ -165,20 +167,34 @@ UniquePtr<CustomElementCallback> CustomElementCallback::Create(
       break;
 
     case ElementCallbackType::eFormAssociated:
-      if (aDefinition->mCallbacks->mFormAssociatedCallback.WasPassed()) {
-        func = aDefinition->mCallbacks->mFormAssociatedCallback.Value();
+      if (aDefinition->mFormAssociatedCallbacks->mFormAssociatedCallback
+              .WasPassed()) {
+        func = aDefinition->mFormAssociatedCallbacks->mFormAssociatedCallback
+                   .Value();
       }
       break;
 
     case ElementCallbackType::eFormReset:
-      if (aDefinition->mCallbacks->mFormResetCallback.WasPassed()) {
-        func = aDefinition->mCallbacks->mFormResetCallback.Value();
+      if (aDefinition->mFormAssociatedCallbacks->mFormResetCallback
+              .WasPassed()) {
+        func =
+            aDefinition->mFormAssociatedCallbacks->mFormResetCallback.Value();
       }
       break;
 
     case ElementCallbackType::eFormDisabled:
-      if (aDefinition->mCallbacks->mFormDisabledCallback.WasPassed()) {
-        func = aDefinition->mCallbacks->mFormDisabledCallback.Value();
+      if (aDefinition->mFormAssociatedCallbacks->mFormDisabledCallback
+              .WasPassed()) {
+        func = aDefinition->mFormAssociatedCallbacks->mFormDisabledCallback
+                   .Value();
+      }
+      break;
+
+    case ElementCallbackType::eFormStateRestore:
+      if (aDefinition->mFormAssociatedCallbacks->mFormStateRestoreCallback
+              .WasPassed()) {
+        func = aDefinition->mFormAssociatedCallbacks->mFormStateRestoreCallback
+                   .Value();
       }
       break;
 
@@ -212,8 +228,8 @@ void CustomElementCallback::Call() {
       break;
     case ElementCallbackType::eAttributeChanged:
       static_cast<LifecycleAttributeChangedCallback*>(mCallback.get())
-          ->Call(mThisObject, mArgs.mName, mArgs.mOldValue, mArgs.mNewValue,
-                 mArgs.mNamespaceURI);
+          ->Call(mThisObject, nsDependentAtomString(mArgs.mName),
+                 mArgs.mOldValue, mArgs.mNewValue, mArgs.mNamespaceURI);
       break;
     case ElementCallbackType::eFormAssociated:
       static_cast<LifecycleFormAssociatedCallback*>(mCallback.get())
@@ -227,6 +243,27 @@ void CustomElementCallback::Call() {
       static_cast<LifecycleFormDisabledCallback*>(mCallback.get())
           ->Call(mThisObject, mArgs.mDisabled);
       break;
+    case ElementCallbackType::eFormStateRestore: {
+      if (mArgs.mState.IsNull()) {
+        MOZ_ASSERT_UNREACHABLE(
+            "A null state should never be restored to a form-associated "
+            "custom element");
+        return;
+      }
+
+      const OwningFileOrUSVStringOrFormData& owningValue = mArgs.mState.Value();
+      Nullable<FileOrUSVStringOrFormData> value;
+      if (owningValue.IsFormData()) {
+        value.SetValue().SetAsFormData() = owningValue.GetAsFormData();
+      } else if (owningValue.IsFile()) {
+        value.SetValue().SetAsFile() = owningValue.GetAsFile();
+      } else {
+        value.SetValue().SetAsUSVString().ShareOrDependUpon(
+            owningValue.GetAsUSVString());
+      }
+      static_cast<LifecycleFormStateRestoreCallback*>(mCallback.get())
+          ->Call(mThisObject, value, mArgs.mReason);
+    } break;
     case ElementCallbackType::eGetCustomInterface:
       MOZ_ASSERT_UNREACHABLE("Don't call GetCustomInterface through callback");
       break;
@@ -324,8 +361,7 @@ void CustomElementData::Traverse(
 
   if (mElementInternals) {
     NS_CYCLE_COLLECTION_NOTE_EDGE_NAME(aCb, "mElementInternals");
-    aCb.NoteNativeChild(mElementInternals,
-                        NS_CYCLE_COLLECTION_PARTICIPANT(ElementInternals));
+    aCb.NoteXPCOMChild(ToSupports(mElementInternals.get()));
   }
 }
 
@@ -389,7 +425,6 @@ class MOZ_RAII AutoConstructionStackEntry final {
 
 }  // namespace
 
-// Only needed for refcounted objects.
 NS_IMPL_CYCLE_COLLECTION_CLASS(CustomElementRegistry)
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(CustomElementRegistry)
@@ -574,7 +609,7 @@ void CustomElementRegistry::EnqueueLifecycleCallback(
       return;
     }
 
-    if (!definition->mCallbacks) {
+    if (!definition->mCallbacks && !definition->mFormAssociatedCallbacks) {
       // definition has been unlinked.  Don't try to mess with it.
       return;
     }
@@ -592,9 +627,7 @@ void CustomElementRegistry::EnqueueLifecycleCallback(
   }
 
   if (aType == ElementCallbackType::eAttributeChanged) {
-    RefPtr<nsAtom> attrName = NS_Atomize(aArgs.mName);
-    if (definition->mObservedAttributes.IsEmpty() ||
-        !definition->mObservedAttributes.Contains(attrName)) {
+    if (!definition->mObservedAttributes.Contains(aArgs.mName)) {
       return;
     }
   }
@@ -714,7 +747,7 @@ int32_t CustomElementRegistry::InferNamespace(
 bool CustomElementRegistry::JSObjectToAtomArray(
     JSContext* aCx, JS::Handle<JSObject*> aConstructor, const nsString& aName,
     nsTArray<RefPtr<nsAtom>>& aArray, ErrorResult& aRv) {
-  JS::RootedValue iterable(aCx, JS::UndefinedValue());
+  JS::Rooted<JS::Value> iterable(aCx, JS::UndefinedValue());
   if (!JS_GetUCProperty(aCx, aConstructor, aName.get(), aName.Length(),
                         &iterable)) {
     aRv.NoteJSContextException(aCx);
@@ -867,6 +900,8 @@ void CustomElementRegistry::Define(
    */
   nsAutoString localName(aName);
   if (aOptions.mExtends.WasPassed()) {
+    doc->SetUseCounter(eUseCounter_custom_CustomizedBuiltin);
+
     RefPtr<nsAtom> extendsAtom(NS_Atomize(aOptions.mExtends.Value()));
     if (nsContentUtils::IsCustomElementName(extendsAtom, kNameSpaceID_XHTML)) {
       aRv.ThrowNotSupportedError(
@@ -906,6 +941,8 @@ void CustomElementRegistry::Define(
   }
 
   auto callbacksHolder = MakeUnique<LifecycleCallbacks>();
+  auto formAssociatedCallbacksHolder =
+      MakeUnique<FormAssociatedLifecycleCallbacks>();
   nsTArray<RefPtr<nsAtom>> observedAttributes;
   AutoTArray<RefPtr<nsAtom>, 2> disabledFeatures;
   bool formAssociated = false;
@@ -975,50 +1012,62 @@ void CustomElementRegistry::Define(
       }
     }
 
-    if (StaticPrefs::dom_webcomponents_disabledFeatures_enabled()) {
-      /**
-       * 14.6. Let disabledFeatures be an empty sequence<DOMString>.
-       * 14.7. Let disabledFeaturesIterable be Get(constructor,
-       *       "disabledFeatures"). Rethrow any exceptions.
-       * 14.8. If disabledFeaturesIterable is not undefined, then set
-       *       disabledFeatures to the result of converting
-       *       disabledFeaturesIterable to a sequence<DOMString>.
-       *       Rethrow any exceptions from the conversion.
-       */
-      if (!JSObjectToAtomArray(aCx, constructor, u"disabledFeatures"_ns,
-                               disabledFeatures, aRv)) {
-        return;
-      }
-
-      // 14.9. Set disableInternals to true if disabledFeaturesSequence contains
-      //       "internals".
-      disableInternals = disabledFeatures.Contains(
-          static_cast<nsStaticAtom*>(nsGkAtoms::internals));
-
-      // 14.10. Set disableShadow to true if disabledFeaturesSequence contains
-      //        "shadow".
-      disableShadow = disabledFeatures.Contains(
-          static_cast<nsStaticAtom*>(nsGkAtoms::shadow));
+    /**
+     * 14.6. Let disabledFeatures be an empty sequence<DOMString>.
+     * 14.7. Let disabledFeaturesIterable be Get(constructor,
+     *       "disabledFeatures"). Rethrow any exceptions.
+     * 14.8. If disabledFeaturesIterable is not undefined, then set
+     *       disabledFeatures to the result of converting
+     *       disabledFeaturesIterable to a sequence<DOMString>.
+     *       Rethrow any exceptions from the conversion.
+     */
+    if (!JSObjectToAtomArray(aCx, constructor, u"disabledFeatures"_ns,
+                             disabledFeatures, aRv)) {
+      return;
     }
 
-    if (StaticPrefs::dom_webcomponents_formAssociatedCustomElement_enabled()) {
-      // 14.11. Let formAssociatedValue be Get(constructor, "formAssociated").
-      //        Rethrow any exceptions.
-      JS::Rooted<JS::Value> formAssociatedValue(aCx);
-      if (!JS_GetProperty(aCx, constructor, "formAssociated",
-                          &formAssociatedValue)) {
-        aRv.NoteJSContextException(aCx);
-        return;
-      }
+    // 14.9. Set disableInternals to true if disabledFeaturesSequence contains
+    //       "internals".
+    disableInternals = disabledFeatures.Contains(
+        static_cast<nsStaticAtom*>(nsGkAtoms::internals));
 
-      // 14.12. Set formAssociated to the result of converting
-      //        formAssociatedValue to a boolean. Rethrow any exceptions from
-      //        the conversion.
-      if (!ValueToPrimitive<bool, eDefault>(
-              aCx, formAssociatedValue, "formAssociated", &formAssociated)) {
-        aRv.NoteJSContextException(aCx);
-        return;
-      }
+    // 14.10. Set disableShadow to true if disabledFeaturesSequence contains
+    //        "shadow".
+    disableShadow = disabledFeatures.Contains(
+        static_cast<nsStaticAtom*>(nsGkAtoms::shadow));
+
+    // 14.11. Let formAssociatedValue be Get(constructor, "formAssociated").
+    //        Rethrow any exceptions.
+    JS::Rooted<JS::Value> formAssociatedValue(aCx);
+    if (!JS_GetProperty(aCx, constructor, "formAssociated",
+                        &formAssociatedValue)) {
+      aRv.NoteJSContextException(aCx);
+      return;
+    }
+
+    // 14.12. Set formAssociated to the result of converting
+    //        formAssociatedValue to a boolean. Rethrow any exceptions from
+    //        the conversion.
+    if (!ValueToPrimitive<bool, eDefault>(aCx, formAssociatedValue,
+                                          "formAssociated", &formAssociated)) {
+      aRv.NoteJSContextException(aCx);
+      return;
+    }
+
+    /**
+     * 14.13. If formAssociated is true, for each of "formAssociatedCallback",
+     *        "formResetCallback", "formDisabledCallback", and
+     *        "formStateRestoreCallback" callbackName:
+     *        1. Let callbackValue be ? Get(prototype, callbackName).
+     *        2. If callbackValue is not undefined, then set the value of the
+     *           entry in lifecycleCallbacks with key callbackName to the result
+     *           of converting callbackValue to the Web IDL Function callback
+     *           type. Rethrow any exceptions from the conversion.
+     */
+    if (formAssociated &&
+        !formAssociatedCallbacksHolder->Init(aCx, prototype)) {
+      aRv.NoteJSContextException(aCx);
+      return;
     }
   }  // Unset mIsCustomDefinitionRunning
 
@@ -1041,7 +1090,8 @@ void CustomElementRegistry::Define(
 
   RefPtr<CustomElementDefinition> definition = new CustomElementDefinition(
       nameAtom, localNameAtom, nameSpaceID, &aFunctionConstructor,
-      std::move(observedAttributes), std::move(callbacksHolder), formAssociated,
+      std::move(observedAttributes), std::move(callbacksHolder),
+      std::move(formAssociatedCallbacksHolder), formAssociated,
       disableInternals, disableShadow);
 
   CustomElementDefinition* def = definition.get();
@@ -1081,7 +1131,8 @@ void CustomElementRegistry::Define(
                            /* Cancelable */ true, detail);
     event->SetTrusted(true);
 
-    AsyncEventDispatcher* dispatcher = new AsyncEventDispatcher(doc, event);
+    AsyncEventDispatcher* dispatcher =
+        new AsyncEventDispatcher(doc, event.forget());
     dispatcher->mOnlyChromeDispatch = ChromeOnlyDispatch::eYes;
 
     dispatcher->PostDOMEvent();
@@ -1129,17 +1180,31 @@ void CustomElementRegistry::Upgrade(nsINode& aRoot) {
   }
 }
 
-void CustomElementRegistry::Get(JSContext* aCx, const nsAString& aName,
-                                JS::MutableHandle<JS::Value> aRetVal) {
+void CustomElementRegistry::Get(
+    const nsAString& aName,
+    OwningCustomElementConstructorOrUndefined& aRetVal) {
   RefPtr<nsAtom> nameAtom(NS_Atomize(aName));
   CustomElementDefinition* data = mCustomDefinitions.GetWeak(nameAtom);
 
   if (!data) {
-    aRetVal.setUndefined();
+    aRetVal.SetUndefined();
     return;
   }
 
-  aRetVal.setObject(*data->mConstructor->Callback(aCx));
+  aRetVal.SetAsCustomElementConstructor() = data->mConstructor;
+}
+
+void CustomElementRegistry::GetName(JSContext* aCx,
+                                    CustomElementConstructor& aConstructor,
+                                    nsAString& aResult) {
+  CustomElementDefinition* aDefinition =
+      LookupCustomElementDefinition(aCx, aConstructor.CallableOrNull());
+
+  if (aDefinition) {
+    aDefinition->mType->ToString(aResult);
+  } else {
+    aResult.SetIsVoid(true);
+  }
 }
 
 already_AddRefed<Promise> CustomElementRegistry::WhenDefined(
@@ -1263,7 +1328,7 @@ void CustomElementRegistry::Upgrade(Element* aElement,
                                                            namespaceURI);
 
         LifecycleCallbackArgs args;
-        args.mName = nsDependentAtomString(attrName);
+        args.mName = attrName;
         args.mOldValue = VoidString();
         args.mNewValue = attrValue;
         args.mNamespaceURI =
@@ -1337,7 +1402,7 @@ already_AddRefed<nsISupports> CustomElementRegistry::CallGetCustomInterface(
 
   // Initialize a AutoJSAPI to enter the compartment of the callback.
   AutoJSAPI jsapi;
-  JS::RootedObject funcGlobal(RootingCx(), func->CallbackGlobalOrNull());
+  JS::Rooted<JSObject*> funcGlobal(RootingCx(), func->CallbackGlobalOrNull());
   if (!funcGlobal || !jsapi.Init(funcGlobal)) {
     return nullptr;
   }
@@ -1346,12 +1411,12 @@ already_AddRefed<nsISupports> CustomElementRegistry::CallGetCustomInterface(
   JSContext* cx = jsapi.cx();
 
   // Convert our IID to a JSValue to call our callback.
-  JS::RootedValue jsiid(cx);
+  JS::Rooted<JS::Value> jsiid(cx);
   if (!xpc::ID2JSValue(cx, aIID, &jsiid)) {
     return nullptr;
   }
 
-  JS::RootedObject customInterface(cx);
+  JS::Rooted<JSObject*> customInterface(cx);
   func->Call(aElement, jsiid, &customInterface);
   if (!customInterface) {
     return nullptr;
@@ -1541,22 +1606,22 @@ void CustomElementReactionsStack::InvokeReactions(ElementQueue* aElementQueue,
 // CustomElementDefinition
 
 NS_IMPL_CYCLE_COLLECTION(CustomElementDefinition, mConstructor, mCallbacks,
-                         mConstructionStack)
-NS_IMPL_CYCLE_COLLECTION_ROOT_NATIVE(CustomElementDefinition, AddRef)
-NS_IMPL_CYCLE_COLLECTION_UNROOT_NATIVE(CustomElementDefinition, Release)
+                         mFormAssociatedCallbacks, mConstructionStack)
 
 CustomElementDefinition::CustomElementDefinition(
     nsAtom* aType, nsAtom* aLocalName, int32_t aNamespaceID,
     CustomElementConstructor* aConstructor,
     nsTArray<RefPtr<nsAtom>>&& aObservedAttributes,
-    UniquePtr<LifecycleCallbacks>&& aCallbacks, bool aFormAssociated,
-    bool aDisableInternals, bool aDisableShadow)
+    UniquePtr<LifecycleCallbacks>&& aCallbacks,
+    UniquePtr<FormAssociatedLifecycleCallbacks>&& aFormAssociatedCallbacks,
+    bool aFormAssociated, bool aDisableInternals, bool aDisableShadow)
     : mType(aType),
       mLocalName(aLocalName),
       mNamespaceID(aNamespaceID),
       mConstructor(aConstructor),
       mObservedAttributes(std::move(aObservedAttributes)),
       mCallbacks(std::move(aCallbacks)),
+      mFormAssociatedCallbacks(std::move(aFormAssociatedCallbacks)),
       mFormAssociated(aFormAssociated),
       mDisableInternals(aDisableInternals),
       mDisableShadow(aDisableShadow) {}

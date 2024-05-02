@@ -4,8 +4,10 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "Cookie.h"
+#include "CookieStorage.h"
 #include "mozilla/Encoding.h"
 #include "mozilla/dom/ToJSValue.h"
+#include "mozilla/glean/GleanMetrics.h"
 #include "mozilla/StaticPrefs_network.h"
 #include "nsIURLParser.h"
 #include "nsURLHelper.h"
@@ -43,12 +45,8 @@ int64_t Cookie::GenerateUniqueCreationTime(int64_t aCreationTime) {
 already_AddRefed<Cookie> Cookie::Create(
     const CookieStruct& aCookieData,
     const OriginAttributes& aOriginAttributes) {
-  RefPtr<Cookie> cookie = new Cookie(aCookieData, aOriginAttributes);
-
-  // Ensure mValue contains a valid UTF-8 sequence. Otherwise XPConnect will
-  // truncate the string after the first invalid octet.
-  UTF_8_ENCODING->DecodeWithoutBOMHandling(aCookieData.value(),
-                                           cookie->mData.value());
+  RefPtr<Cookie> cookie =
+      Cookie::FromCookieStruct(aCookieData, aOriginAttributes);
 
   // If the creationTime given to us is higher than the running maximum,
   // update our maximum.
@@ -56,15 +54,70 @@ already_AddRefed<Cookie> Cookie::Create(
     gLastCreationTime = cookie->mData.creationTime();
   }
 
-  // If sameSite is not a sensible value, assume strict
-  if (cookie->mData.sameSite() < 0 ||
-      cookie->mData.sameSite() > nsICookie::SAMESITE_STRICT) {
-    cookie->mData.sameSite() = nsICookie::SAMESITE_STRICT;
+  return cookie.forget();
+}
+
+already_AddRefed<Cookie> Cookie::FromCookieStruct(
+    const CookieStruct& aCookieData,
+    const OriginAttributes& aOriginAttributes) {
+  RefPtr<Cookie> cookie = new Cookie(aCookieData, aOriginAttributes);
+
+  // Ensure mValue contains a valid UTF-8 sequence. Otherwise XPConnect will
+  // truncate the string after the first invalid octet.
+  UTF_8_ENCODING->DecodeWithoutBOMHandling(aCookieData.value(),
+                                           cookie->mData.value());
+
+  // If sameSite/rawSameSite values aren't sensible reset to Default
+  // cf. 5.4.7 in draft-ietf-httpbis-rfc6265bis-09
+  if (!Cookie::ValidateSameSite(cookie->mData)) {
+    cookie->mData.sameSite() = nsICookie::SAMESITE_LAX;
+    cookie->mData.rawSameSite() = nsICookie::SAMESITE_NONE;
   }
 
-  // If rawSameSite is not a sensible value, assume equal to sameSite.
-  if (!Cookie::ValidateRawSame(cookie->mData)) {
-    cookie->mData.rawSameSite() = nsICookie::SAMESITE_NONE;
+  return cookie.forget();
+}
+
+already_AddRefed<Cookie> Cookie::CreateValidated(
+    const CookieStruct& aCookieData,
+    const OriginAttributes& aOriginAttributes) {
+  if (!StaticPrefs::network_cookie_fixup_on_db_load()) {
+    return Cookie::Create(aCookieData, aOriginAttributes);
+  }
+
+  RefPtr<Cookie> cookie =
+      Cookie::FromCookieStruct(aCookieData, aOriginAttributes);
+
+  int64_t currentTimeInUsec = PR_Now();
+  // Assert that the last creation time is not higher than the current time.
+  // The 10000 wiggle room accounts for the fact that calling
+  // GenerateUniqueCreationTime might go over the value of PR_Now(), but we'd
+  // most likely not add 10000 cookies in a row.
+  MOZ_ASSERT(gLastCreationTime < currentTimeInUsec + 10000,
+             "Last creation time must not be higher than NOW");
+
+  // If the creationTime given to us is higher than the current time then
+  // update the creation time to now.
+  if (cookie->mData.creationTime() > currentTimeInUsec) {
+    uint64_t diffInSeconds =
+        (cookie->mData.creationTime() - currentTimeInUsec) / PR_USEC_PER_SEC;
+    mozilla::glean::networking::cookie_creation_fixup_diff.AccumulateSamples(
+        {diffInSeconds});
+    glean::networking::cookie_timestamp_fixed_count.Get("creationTime"_ns)
+        .Add(1);
+
+    cookie->mData.creationTime() =
+        GenerateUniqueCreationTime(currentTimeInUsec);
+  }
+
+  if (cookie->mData.lastAccessed() > currentTimeInUsec) {
+    uint64_t diffInSeconds =
+        (cookie->mData.lastAccessed() - currentTimeInUsec) / PR_USEC_PER_SEC;
+    mozilla::glean::networking::cookie_access_fixup_diff.AccumulateSamples(
+        {diffInSeconds});
+    glean::networking::cookie_timestamp_fixed_count.Get("lastAccessed"_ns)
+        .Add(1);
+
+    cookie->mData.lastAccessed() = currentTimeInUsec;
   }
 
   return cookie.forget();
@@ -161,6 +214,12 @@ Cookie::GetOriginAttributes(JSContext* aCx, JS::MutableHandle<JS::Value> aVal) {
   return NS_OK;
 }
 
+const OriginAttributes& Cookie::OriginAttributesNative() {
+  return mOriginAttributes;
+}
+
+const Cookie& Cookie::AsCookie() { return *this; }
+
 const nsCString& Cookie::GetFilePath() {
   MOZ_DIAGNOSTIC_ASSERT(NS_IsMainThread());
 
@@ -204,9 +263,16 @@ Cookie::GetExpires(uint64_t* aExpires) {
 }
 
 // static
-bool Cookie::ValidateRawSame(const CookieStruct& aCookieData) {
-  return aCookieData.rawSameSite() == aCookieData.sameSite() ||
-         aCookieData.rawSameSite() == nsICookie::SAMESITE_NONE;
+bool Cookie::ValidateSameSite(const CookieStruct& aCookieData) {
+  // For proper migration towards a laxByDefault world,
+  // sameSite is initialized to LAX even though the server
+  // has never sent it.
+  if (aCookieData.rawSameSite() == aCookieData.sameSite()) {
+    return aCookieData.rawSameSite() >= nsICookie::SAMESITE_NONE &&
+           aCookieData.rawSameSite() <= nsICookie::SAMESITE_STRICT;
+  }
+  return aCookieData.rawSameSite() == nsICookie::SAMESITE_NONE &&
+         aCookieData.sameSite() == nsICookie::SAMESITE_LAX;
 }
 
 already_AddRefed<Cookie> Cookie::Clone() const {

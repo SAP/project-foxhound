@@ -7,7 +7,19 @@
  * Tests if resending a request works.
  */
 
-add_task(async function() {
+add_task(async function () {
+  if (
+    Services.prefs.getBoolPref(
+      "devtools.netmonitor.features.newEditAndResend",
+      true
+    )
+  ) {
+    ok(
+      true,
+      "Skip this test when pref is true, because this panel won't be default when that is the case."
+    );
+    return;
+  }
   const { tab, monitor } = await initNetMonitor(POST_RAW_URL, {
     requestCount: 1,
   });
@@ -32,8 +44,7 @@ add_task(async function() {
   const waitForResentRequestEvent = waitForNetworkEvents(monitor, 1);
   // Context Menu > "Resend"
   EventUtils.sendMouseEvent({ type: "contextmenu" }, firstRequest);
-  getContextMenuItem(monitor, "request-list-context-resend-only").click();
-
+  await selectContextMenuItem(monitor, "request-list-context-resend-only");
   await waitForResentRequestEvent;
 
   // Selects request that was resent
@@ -42,5 +53,5 @@ add_task(async function() {
   // Compares if the requests are the same.
   ok(originalRequest.url === selectedRequest.url, "Both requests are the same");
 
-  return teardown(monitor);
+  await teardown(monitor);
 });

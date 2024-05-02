@@ -27,11 +27,11 @@ const {
   COMPATIBILITY_UPDATE_TOP_LEVEL_TARGET_SUCCESS,
   COMPATIBILITY_UPDATE_TOP_LEVEL_TARGET_FAILURE,
   COMPATIBILITY_UPDATE_TOP_LEVEL_TARGET_COMPLETE,
-} = require("devtools/client/inspector/compatibility/actions/index");
+} = require("resource://devtools/client/inspector/compatibility/actions/index.js");
 
 const INITIAL_STATE = {
   defaultTargetBrowsers: [],
-  isSettingsVisibile: false,
+  isSettingsVisible: false,
   isTopLevelTargetProcessing: false,
   selectedNode: null,
   selectedNodeIssues: [],
@@ -108,7 +108,7 @@ const reducers = {
     return state;
   },
   [COMPATIBILITY_UPDATE_SETTINGS_VISIBILITY](state, { visibility }) {
-    return Object.assign({}, state, { isSettingsVisibile: visibility });
+    return Object.assign({}, state, { isSettingsVisible: visibility });
   },
   [COMPATIBILITY_UPDATE_TARGET_BROWSERS_START](state) {
     return Object.assign({}, state, {
@@ -256,7 +256,7 @@ function _showError(action, error) {
   console.error(error.stack);
 }
 
-module.exports = function(state = INITIAL_STATE, action) {
+module.exports = function (state = INITIAL_STATE, action) {
   const reducer = reducers[action.type];
   return reducer ? reducer(state, action) : state;
 };

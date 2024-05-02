@@ -12,6 +12,7 @@
 #include "nsICloneableInputStream.h"
 #include "nsIInputStream.h"
 #include "nsIOutputStream.h"
+#include "nsIRandomAccessStream.h"
 #include "nsISafeOutputStream.h"
 #include "nsISeekableStream.h"
 #include "nsILineInputStream.h"
@@ -47,6 +48,7 @@ class nsFileStreamBase : public nsISeekableStream, public nsIFileMetadata {
                         uint32_t aCount, uint32_t* _retval);
   nsresult IsNonBlocking(bool* aNonBlocking);
   nsresult Flush();
+  nsresult StreamStatus();
   nsresult Write(const char* aBuf, uint32_t aCount, uint32_t* result);
   nsresult WriteFrom(nsIInputStream* aFromStream, uint32_t aCount,
                      uint32_t* _retval);
@@ -136,6 +138,7 @@ class nsFileInputStream : public nsFileStreamBase,
   NS_IMETHOD Close() override;
   NS_IMETHOD Tell(int64_t* aResult) override;
   NS_IMETHOD Available(uint64_t* _retval) override;
+  NS_IMETHOD StreamStatus() override;
   NS_IMETHOD Read(char* aBuf, uint32_t aCount, uint32_t* _retval) override;
   NS_IMETHOD ReadSegments(nsWriteSegmentFun aWriter, void* aClosure,
                           uint32_t aCount, uint32_t* _retval) override {
@@ -150,13 +153,10 @@ class nsFileInputStream : public nsFileStreamBase,
 
   nsFileInputStream() : mLineBuffer(nullptr) {}
 
-  static nsresult Create(nsISupports* aOuter, REFNSIID aIID, void** aResult);
+  static nsresult Create(REFNSIID aIID, void** aResult);
 
  protected:
   virtual ~nsFileInputStream() = default;
-
-  void SerializeInternal(mozilla::ipc::InputStreamParams& aParams,
-                         FileDescriptorArray& aFileDescriptors);
 
   nsresult SeekInternal(int32_t aWhence, int64_t aOffset,
                         bool aClearBuf = true);
@@ -199,7 +199,7 @@ class nsFileOutputStream : public nsFileStreamBase, public nsIFileOutputStream {
   NS_DECL_NSIFILEOUTPUTSTREAM
   NS_FORWARD_NSIOUTPUTSTREAM(nsFileStreamBase::)
 
-  static nsresult Create(nsISupports* aOuter, REFNSIID aIID, void** aResult);
+  static nsresult Create(REFNSIID aIID, void** aResult);
   nsresult InitWithFileDescriptor(const mozilla::ipc::FileDescriptor& aFd);
 
  protected:
@@ -253,15 +253,18 @@ class nsSafeFileOutputStream : public nsAtomicFileOutputStream {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-class nsFileStream : public nsFileStreamBase,
-                     public nsIInputStream,
-                     public nsIOutputStream,
-                     public nsIFileStream {
+class nsFileRandomAccessStream : public nsFileStreamBase,
+                                 public nsIFileRandomAccessStream,
+                                 public nsIInputStream,
+                                 public nsIOutputStream {
  public:
-  static nsresult Create(nsISupports* aOuter, REFNSIID aIID, void** aResult);
+  static nsresult Create(REFNSIID aIID, void** aResult);
 
   NS_DECL_ISUPPORTS_INHERITED
-  NS_DECL_NSIFILESTREAM
+  NS_FORWARD_NSITELLABLESTREAM(nsFileStreamBase::)
+  NS_FORWARD_NSISEEKABLESTREAM(nsFileStreamBase::)
+  NS_DECL_NSIRANDOMACCESSSTREAM
+  NS_DECL_NSIFILERANDOMACCESSSTREAM
   NS_FORWARD_NSIINPUTSTREAM(nsFileStreamBase::)
 
   // Can't use NS_FORWARD_NSIOUTPUTSTREAM due to overlapping methods
@@ -281,7 +284,7 @@ class nsFileStream : public nsFileStreamBase,
   }
 
  protected:
-  virtual ~nsFileStream() = default;
+  virtual ~nsFileRandomAccessStream() = default;
 };
 
 ////////////////////////////////////////////////////////////////////////////////

@@ -23,7 +23,7 @@ let searchbar;
 let textbox;
 let searchIcon;
 
-add_task(async function setup() {
+add_setup(async function () {
   searchbar = await gCUITestUtils.addSearchBar();
   registerCleanupFunction(() => {
     gCUITestUtils.removeSearchBar();
@@ -31,34 +31,22 @@ add_task(async function setup() {
   textbox = searchbar.textbox;
   searchIcon = searchbar.querySelector(".searchbar-search-button");
 
-  let defaultEngine = await Services.search.getDefault();
-  let engine = await SearchTestUtils.promiseNewSearchEngine(
-    getRootDirectory(gTestPath) + "testEngine.xml"
-  );
-  await Services.search.setDefault(engine);
+  await SearchTestUtils.promiseNewSearchEngine({
+    url: getRootDirectory(gTestPath) + "testEngine.xml",
+    setAsDefault: true,
+  });
 
   // First cleanup the form history in case other tests left things there.
-  await new Promise((resolve, reject) => {
-    info("cleanup the search history");
-    searchbar.FormHistory.update(
-      { op: "remove", fieldname: "searchbar-history" },
-      { handleCompletion: resolve, handleError: reject }
-    );
-  });
+  info("cleanup the search history");
+  await FormHistory.update({ op: "remove", fieldname: "searchbar-history" });
 
-  await new Promise((resolve, reject) => {
-    info("adding search history values: " + kValues);
-    let addOps = kValues.map(value => {
-      return { op: "add", fieldname: "searchbar-history", value };
-    });
-    searchbar.FormHistory.update(addOps, {
-      handleCompletion: resolve,
-      handleError: reject,
-    });
+  info("adding search history values: " + kValues);
+  let addOps = kValues.map(value => {
+    return { op: "add", fieldname: "searchbar-history", value };
   });
+  await FormHistory.update(addOps);
 
   registerCleanupFunction(async () => {
-    await Services.search.setDefault(defaultEngine);
     gCUITestUtils.removeSearchBar();
   });
 });
@@ -457,5 +445,5 @@ add_task(async function cleanup() {
   let removeOps = kValues.map(value => {
     return { op: "remove", fieldname: "searchbar-history", value };
   });
-  searchbar.FormHistory.update(removeOps);
+  FormHistory.update(removeOps);
 });

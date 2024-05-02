@@ -3,6 +3,9 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "BitWriter.h"
+
+#include <stdint.h>
+
 #include "MediaData.h"
 #include "mozilla/MathAlgorithms.h"
 
@@ -78,9 +81,24 @@ void BitWriter::WriteUE(uint32_t aValue) {
   }
 }
 
+void BitWriter::WriteULEB128(uint64_t aValue) {
+  // See https://en.wikipedia.org/wiki/LEB128#Encode_unsigned_integer
+  do {
+    uint8_t byte = aValue & 0x7F;
+    aValue >>= 7;
+    WriteBit(aValue != 0);
+    WriteBits(byte, 7);
+  } while (aValue != 0);
+}
+
 void BitWriter::CloseWithRbspTrailing() {
   WriteBit(true);
   WriteBits(0, (8 - mBitIndex) & 7);
+}
+
+void BitWriter::AdvanceBytes(uint32_t aByteOffset) {
+  MOZ_DIAGNOSTIC_ASSERT(mBitIndex == 0);
+  mPosition += aByteOffset;
 }
 
 }  // namespace mozilla

@@ -87,7 +87,7 @@ TEST_P(DecodePerfTest, PerfTest) {
   vpx_usec_timer t;
   vpx_usec_timer_start(&t);
 
-  for (video.Begin(); video.cxdata() != NULL; video.Next()) {
+  for (video.Begin(); video.cxdata() != nullptr; video.Next()) {
     decoder.DecodeFrame(video.cxdata(), video.frame_size());
   }
 
@@ -107,8 +107,8 @@ TEST_P(DecodePerfTest, PerfTest) {
   printf("}\n");
 }
 
-INSTANTIATE_TEST_CASE_P(VP9, DecodePerfTest,
-                        ::testing::ValuesIn(kVP9DecodePerfVectors));
+INSTANTIATE_TEST_SUITE_P(VP9, DecodePerfTest,
+                         ::testing::ValuesIn(kVP9DecodePerfVectors));
 
 class VP9NewEncodeDecodePerfTest
     : public ::libvpx_test::EncoderTest,
@@ -116,11 +116,11 @@ class VP9NewEncodeDecodePerfTest
  protected:
   VP9NewEncodeDecodePerfTest()
       : EncoderTest(GET_PARAM(0)), encoding_mode_(GET_PARAM(1)), speed_(0),
-        outfile_(0), out_frames_(0) {}
+        outfile_(nullptr), out_frames_(0) {}
 
-  virtual ~VP9NewEncodeDecodePerfTest() {}
+  ~VP9NewEncodeDecodePerfTest() override = default;
 
-  virtual void SetUp() {
+  void SetUp() override {
     InitializeConfig();
     SetMode(encoding_mode_);
 
@@ -137,8 +137,8 @@ class VP9NewEncodeDecodePerfTest
     cfg_.rc_end_usage = VPX_VBR;
   }
 
-  virtual void PreEncodeFrameHook(::libvpx_test::VideoSource *video,
-                                  ::libvpx_test::Encoder *encoder) {
+  void PreEncodeFrameHook(::libvpx_test::VideoSource *video,
+                          ::libvpx_test::Encoder *encoder) override {
     if (video->frame() == 0) {
       encoder->Control(VP8E_SET_CPUUSED, speed_);
       encoder->Control(VP9E_SET_FRAME_PARALLEL_DECODING, 1);
@@ -146,24 +146,24 @@ class VP9NewEncodeDecodePerfTest
     }
   }
 
-  virtual void BeginPassHook(unsigned int /*pass*/) {
+  void BeginPassHook(unsigned int /*pass*/) override {
     const std::string data_path = getenv("LIBVPX_TEST_DATA_PATH");
     const std::string path_to_source = data_path + "/" + kNewEncodeOutputFile;
     outfile_ = fopen(path_to_source.c_str(), "wb");
-    ASSERT_TRUE(outfile_ != NULL);
+    ASSERT_NE(outfile_, nullptr);
   }
 
-  virtual void EndPassHook() {
-    if (outfile_ != NULL) {
+  void EndPassHook() override {
+    if (outfile_ != nullptr) {
       if (!fseek(outfile_, 0, SEEK_SET)) {
         ivf_write_file_header(outfile_, &cfg_, VP9_FOURCC, out_frames_);
       }
       fclose(outfile_);
-      outfile_ = NULL;
+      outfile_ = nullptr;
     }
   }
 
-  virtual void FramePktHook(const vpx_codec_cx_pkt_t *pkt) {
+  void FramePktHook(const vpx_codec_cx_pkt_t *pkt) override {
     ++out_frames_;
 
     // Write initial file header if first frame.
@@ -177,7 +177,7 @@ class VP9NewEncodeDecodePerfTest
               pkt->data.frame.sz);
   }
 
-  virtual bool DoDecode() const { return false; }
+  bool DoDecode() const override { return false; }
 
   void set_speed(unsigned int speed) { speed_ = speed; }
 
@@ -236,7 +236,7 @@ TEST_P(VP9NewEncodeDecodePerfTest, PerfTest) {
   vpx_usec_timer t;
   vpx_usec_timer_start(&t);
 
-  for (decode_video.Begin(); decode_video.cxdata() != NULL;
+  for (decode_video.Begin(); decode_video.cxdata() != nullptr;
        decode_video.Next()) {
     decoder.DecodeFrame(decode_video.cxdata(), decode_video.frame_size());
   }
@@ -258,6 +258,6 @@ TEST_P(VP9NewEncodeDecodePerfTest, PerfTest) {
   printf("}\n");
 }
 
-VP9_INSTANTIATE_TEST_CASE(VP9NewEncodeDecodePerfTest,
-                          ::testing::Values(::libvpx_test::kTwoPassGood));
+VP9_INSTANTIATE_TEST_SUITE(VP9NewEncodeDecodePerfTest,
+                           ::testing::Values(::libvpx_test::kTwoPassGood));
 }  // namespace

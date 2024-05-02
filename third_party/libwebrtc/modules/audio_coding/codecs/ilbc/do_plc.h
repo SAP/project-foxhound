@@ -19,6 +19,9 @@
 #ifndef MODULES_AUDIO_CODING_CODECS_ILBC_MAIN_SOURCE_DO_PLC_H_
 #define MODULES_AUDIO_CODING_CODECS_ILBC_MAIN_SOURCE_DO_PLC_H_
 
+#include <stddef.h>
+#include <stdint.h>
+
 #include "modules/audio_coding/codecs/ilbc/defines.h"
 
 /*----------------------------------------------------------------*
@@ -36,6 +39,6 @@ void WebRtcIlbcfix_DoThePlc(
     size_t inlag,         /* (i) pitch lag */
     IlbcDecoder* iLBCdec_inst
     /* (i/o) decoder instance */
-    );
+);
 
 #endif

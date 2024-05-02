@@ -7,7 +7,7 @@
 const {
   getAdHocFrontOrPrimitiveGrip,
   // eslint-disable-next-line mozilla/reject-some-requires
-} = require("devtools/client/fronts/object");
+} = require("resource://devtools/client/fronts/object.js");
 
 class ScriptCommand {
   constructor({ commands }) {
@@ -38,6 +38,9 @@ class ScriptCommand {
    *        entered by the users have been modified
    * @param {boolean} options.mapped.await: true if the expression was a top-level await
    *        expression that was wrapped in an async-iife
+   * @param {boolean} options.disableBreaks: Set to true to avoid triggering any
+   *        type of breakpoint when evaluating the source. Also, the evaluated source won't be
+   *        visible in the debugger UI.
    *
    * @return {Promise}: A promise that resolves with the response.
    */
@@ -49,6 +52,14 @@ class ScriptCommand {
       selectedTargetFront,
     } = options;
 
+    // Retrieve the right WebConsole front that relates either to (by order of priority):
+    // - the currently selected target in the context selector
+    //   (selectedTargetFront argument),
+    // - the object picked in the console (when using store as global) (selectedObjectActor),
+    // - the currently selected Node in the inspector (selectedNodeActor),
+    // - the currently selected frame in the debugger (when paused) (frameActor),
+    // - the currently selected target in the iframe dropdown
+    //   (selectedTargetFront from the TargetCommand)
     let targetFront = this._commands.targetCommand.selectedTargetFront;
 
     const selectedActor =
@@ -95,6 +106,7 @@ class ScriptCommand {
           selectedNodeActor,
           selectedObjectActor,
           url: options.url,
+          disableBreaks: options.disableBreaks,
         })
         .then(packet => {
           resultID = packet.resultID;

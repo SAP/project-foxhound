@@ -7,6 +7,7 @@
 #include "ScaledFontMac.h"
 #include "UnscaledFontMac.h"
 #include "mozilla/webrender/WebRenderTypes.h"
+#include "nsCocoaFeatures.h"
 #include "PathSkia.h"
 #include "skia/include/core/SkPaint.h"
 #include "skia/include/core/SkPath.h"
@@ -16,7 +17,6 @@
 #ifdef MOZ_WIDGET_UIKIT
 #  include <CoreFoundation/CoreFoundation.h>
 #endif
-#include "nsCocoaFeatures.h"
 #include "mozilla/gfx/Logging.h"
 
 #ifdef MOZ_WIDGET_COCOA
@@ -46,11 +46,14 @@ class AutoRelease final {
     }
   }
 
-  void operator=(T aObject) {
-    if (mObject) {
-      CFRelease(mObject);
+  AutoRelease<T>& operator=(const T& aObject) {
+    if (aObject != mObject) {
+      if (mObject) {
+        CFRelease(mObject);
+      }
+      mObject = aObject;
     }
-    mObject = aObject;
+    return *this;
   }
 
   operator T() { return mObject; }
@@ -66,51 +69,50 @@ class AutoRelease final {
 };
 
 // Helper to create a CTFont from a CGFont, copying any variations that were
-// set on the original CGFont.
-static CTFontRef CreateCTFontFromCGFontWithVariations(CGFontRef aCGFont,
-                                                      CGFloat aSize,
-                                                      bool aInstalledFont) {
-  // Avoid calling potentially buggy variation APIs on pre-Sierra macOS
-  // versions (see bug 1331683).
-  //
-  // And on HighSierra, CTFontCreateWithGraphicsFont properly carries over
-  // variation settings from the CGFont to CTFont, so we don't need to do
-  // the extra work here -- and this seems to avoid Core Text crashiness
-  // seen in bug 1454094.
-  //
-  // However, for installed fonts it seems we DO need to copy the variations
-  // explicitly even on 10.13, otherwise fonts fail to render (as in bug
-  // 1455494) when non-default values are used. Fortunately, the crash
-  // mentioned above occurs with data fonts, not (AFAICT) with system-
-  // installed fonts.
-  //
-  // So we only need to do this "the hard way" on Sierra, and for installed
-  // fonts on HighSierra+; otherwise, just let the standard CTFont function
-  // do its thing.
-  //
-  // NOTE in case this ever needs further adjustment: there is similar logic
-  // in four places in the tree (sadly):
-  //    CreateCTFontFromCGFontWithVariations in gfxMacFont.cpp
-  //    CreateCTFontFromCGFontWithVariations in ScaledFontMac.cpp
-  //    CreateCTFontFromCGFontWithVariations in cairo-quartz-font.c
-  //    ctfont_create_exact_copy in SkFontHost_mac.cpp
-  CTFontRef ctFont;
-  if (nsCocoaFeatures::OnSierraExactly() ||
-      (aInstalledFont && nsCocoaFeatures::OnHighSierraOrLater())) {
-    CFDictionaryRef vars = CGFontCopyVariations(aCGFont);
+// set on the CGFont, and applying attributes from (optional) aFontDesc.
+CTFontRef CreateCTFontFromCGFontWithVariations(CGFontRef aCGFont, CGFloat aSize,
+                                               bool aInstalledFont,
+                                               CTFontDescriptorRef aFontDesc) {
+  // New implementation (see bug 1856035) for macOS 13+.
+  if (nsCocoaFeatures::OnVenturaOrLater()) {
+    // Create CTFont, applying any descriptor that was passed (used by
+    // gfxCoreTextShaper to set features).
+    AutoRelease<CTFontRef> ctFont(
+        CTFontCreateWithGraphicsFont(aCGFont, aSize, nullptr, aFontDesc));
+    AutoRelease<CFDictionaryRef> vars(CGFontCopyVariations(aCGFont));
     if (vars) {
-      CFDictionaryRef varAttr = CFDictionaryCreate(
+      // Create an attribute dictionary containing the variations.
+      AutoRelease<CFDictionaryRef> attrs(CFDictionaryCreate(
           nullptr, (const void**)&kCTFontVariationAttribute,
           (const void**)&vars, 1, &kCFTypeDictionaryKeyCallBacks,
-          &kCFTypeDictionaryValueCallBacks);
-      CFRelease(vars);
+          &kCFTypeDictionaryValueCallBacks));
+      // Get the original descriptor from the CTFont, then add the variations
+      // attribute to it.
+      AutoRelease<CTFontDescriptorRef> desc(CTFontCopyFontDescriptor(ctFont));
+      desc = CTFontDescriptorCreateCopyWithAttributes(desc, attrs);
+      // Return a copy of the font that has the variations added.
+      return CTFontCreateCopyWithAttributes(ctFont, 0.0, nullptr, desc);
+    }
+    // No variations to set, just return the default CTFont.
+    return ctFont.forget();
+  }
 
-      CTFontDescriptorRef varDesc =
-          CTFontDescriptorCreateWithAttributes(varAttr);
-      CFRelease(varAttr);
+  // Older implementation used up to macOS 12.
+  CTFontRef ctFont;
+  if (aInstalledFont) {
+    AutoRelease<CFDictionaryRef> vars(CGFontCopyVariations(aCGFont));
+    if (vars) {
+      AutoRelease<CFDictionaryRef> varAttr(CFDictionaryCreate(
+          nullptr, (const void**)&kCTFontVariationAttribute,
+          (const void**)&vars, 1, &kCFTypeDictionaryKeyCallBacks,
+          &kCFTypeDictionaryValueCallBacks));
+
+      AutoRelease<CTFontDescriptorRef> varDesc(
+          aFontDesc
+              ? ::CTFontDescriptorCreateCopyWithAttributes(aFontDesc, varAttr)
+              : ::CTFontDescriptorCreateWithAttributes(varAttr));
 
       ctFont = CTFontCreateWithGraphicsFont(aCGFont, aSize, nullptr, varDesc);
-      CFRelease(varDesc);
     } else {
       ctFont = CTFontCreateWithGraphicsFont(aCGFont, aSize, nullptr, nullptr);
     }
@@ -123,12 +125,10 @@ static CTFontRef CreateCTFontFromCGFontWithVariations(CGFontRef aCGFont,
 ScaledFontMac::ScaledFontMac(CGFontRef aFont,
                              const RefPtr<UnscaledFont>& aUnscaledFont,
                              Float aSize, bool aOwnsFont,
-                             const DeviceColor& aFontSmoothingBackgroundColor,
                              bool aUseFontSmoothing, bool aApplySyntheticBold,
                              bool aHasColorGlyphs)
     : ScaledFontBase(aUnscaledFont, aSize),
       mFont(aFont),
-      mFontSmoothingBackgroundColor(aFontSmoothingBackgroundColor),
       mUseFontSmoothing(aUseFontSmoothing),
       mApplySyntheticBold(aApplySyntheticBold),
       mHasColorGlyphs(aHasColorGlyphs) {
@@ -144,12 +144,10 @@ ScaledFontMac::ScaledFontMac(CGFontRef aFont,
 
 ScaledFontMac::ScaledFontMac(CTFontRef aFont,
                              const RefPtr<UnscaledFont>& aUnscaledFont,
-                             const DeviceColor& aFontSmoothingBackgroundColor,
                              bool aUseFontSmoothing, bool aApplySyntheticBold,
                              bool aHasColorGlyphs)
     : ScaledFontBase(aUnscaledFont, CTFontGetSize(aFont)),
       mCTFont(aFont),
-      mFontSmoothingBackgroundColor(aFontSmoothingBackgroundColor),
       mUseFontSmoothing(aUseFontSmoothing),
       mApplySyntheticBold(aApplySyntheticBold),
       mHasColorGlyphs(aHasColorGlyphs) {
@@ -164,7 +162,7 @@ ScaledFontMac::~ScaledFontMac() {
 }
 
 SkTypeface* ScaledFontMac::CreateSkTypeface() {
-  return SkCreateTypefaceFromCTFont(mCTFont);
+  return SkMakeTypefaceFromCTFont(mCTFont).release();
 }
 
 void ScaledFontMac::SetupSkFontDrawOptions(SkFont& aFont) {
@@ -376,7 +374,7 @@ bool UnscaledFontMac::GetFontDescriptor(FontDescriptorOutput aCb,
     return false;
   }
 
-  char buf[256];
+  char buf[1024];
   const char* cstr = CFStringGetCStringPtr(psname, kCFStringEncodingUTF8);
   if (!cstr) {
     if (!CFStringGetCString(psname, buf, sizeof(buf), kCFStringEncodingUTF8)) {
@@ -385,7 +383,28 @@ bool UnscaledFontMac::GetFontDescriptor(FontDescriptorOutput aCb,
     cstr = buf;
   }
 
-  aCb(reinterpret_cast<const uint8_t*>(cstr), strlen(cstr), 0, aBaton);
+  nsAutoCString descriptor(cstr);
+  uint32_t psNameLen = descriptor.Length();
+
+  AutoRelease<CTFontRef> ctFont(
+      CTFontCreateWithGraphicsFont(mFont, 0, nullptr, nullptr));
+  AutoRelease<CFURLRef> fontUrl(
+      (CFURLRef)CTFontCopyAttribute(ctFont, kCTFontURLAttribute));
+  if (fontUrl) {
+    CFStringRef urlStr(CFURLCopyFileSystemPath(fontUrl, kCFURLPOSIXPathStyle));
+    cstr = CFStringGetCStringPtr(urlStr, kCFStringEncodingUTF8);
+    if (!cstr) {
+      if (!CFStringGetCString(urlStr, buf, sizeof(buf),
+                              kCFStringEncodingUTF8)) {
+        return false;
+      }
+      cstr = buf;
+    }
+    descriptor.Append(cstr);
+  }
+
+  aCb(reinterpret_cast<const uint8_t*>(descriptor.get()), descriptor.Length(),
+      psNameLen, aBaton);
   return true;
 }
 
@@ -455,7 +474,6 @@ bool ScaledFontMac::GetWRFontInstanceOptions(
   if (mHasColorGlyphs) {
     options.flags |= wr::FontInstanceFlags::EMBEDDED_BITMAPS;
   }
-  options.bg_color = wr::ToColorU(mFontSmoothingBackgroundColor);
   options.synthetic_italics =
       wr::DegreesToSyntheticItalics(GetSyntheticObliqueAngle());
   *aOutOptions = Some(options);
@@ -477,11 +495,6 @@ ScaledFontMac::InstanceData::InstanceData(
     }
     if (aOptions->flags & wr::FontInstanceFlags::EMBEDDED_BITMAPS) {
       mHasColorGlyphs = true;
-    }
-    if (aOptions->bg_color.a != 0) {
-      mFontSmoothingBackgroundColor =
-          DeviceColor::FromU8(aOptions->bg_color.r, aOptions->bg_color.g,
-                              aOptions->bg_color.b, aOptions->bg_color.a);
     }
   }
 }
@@ -716,21 +729,22 @@ already_AddRefed<ScaledFont> UnscaledFontMac::CreateScaledFont(
     if (aNumVariations > 0) {
       AutoRelease<CFDictionaryRef> varDict(CreateVariationTagDictionaryOrNull(
           font, aNumVariations, aVariations));
-      CFDictionaryRef varAttr = CFDictionaryCreate(
-          nullptr, (const void**)&kCTFontVariationAttribute,
-          (const void**)&varDict, 1, &kCFTypeDictionaryKeyCallBacks,
-          &kCFTypeDictionaryValueCallBacks);
-      AutoRelease<CTFontDescriptorRef> fontDesc(
-          CTFontDescriptorCreateCopyWithAttributes(mFontDesc, varAttr));
-      if (!fontDesc) {
-        return nullptr;
+      if (varDict) {
+        CFDictionaryRef varAttr = CFDictionaryCreate(
+            nullptr, (const void**)&kCTFontVariationAttribute,
+            (const void**)&varDict, 1, &kCFTypeDictionaryKeyCallBacks,
+            &kCFTypeDictionaryValueCallBacks);
+        AutoRelease<CTFontDescriptorRef> fontDesc(
+            CTFontDescriptorCreateCopyWithAttributes(mFontDesc, varAttr));
+        if (!fontDesc) {
+          return nullptr;
+        }
+        font = CTFontCreateWithFontDescriptor(fontDesc, aGlyphSize, nullptr);
       }
-      font = CTFontCreateWithFontDescriptor(fontDesc, aGlyphSize, nullptr);
     }
-    scaledFont = new ScaledFontMac(
-        font, this, instanceData.mFontSmoothingBackgroundColor,
-        instanceData.mUseFontSmoothing, instanceData.mApplySyntheticBold,
-        instanceData.mHasColorGlyphs);
+    scaledFont = new ScaledFontMac(font, this, instanceData.mUseFontSmoothing,
+                                   instanceData.mApplySyntheticBold,
+                                   instanceData.mHasColorGlyphs);
   } else {
     CGFontRef fontRef = mFont;
     if (aNumVariations > 0) {
@@ -742,7 +756,6 @@ already_AddRefed<ScaledFont> UnscaledFontMac::CreateScaledFont(
     }
 
     scaledFont = new ScaledFontMac(fontRef, this, aGlyphSize, fontRef != mFont,
-                                   instanceData.mFontSmoothingBackgroundColor,
                                    instanceData.mUseFontSmoothing,
                                    instanceData.mApplySyntheticBold,
                                    instanceData.mHasColorGlyphs);
@@ -771,17 +784,39 @@ already_AddRefed<UnscaledFont> UnscaledFontMac::CreateFromFontDescriptor(
     gfxWarning() << "Mac font descriptor is truncated.";
     return nullptr;
   }
-  CFStringRef name =
-      CFStringCreateWithBytes(kCFAllocatorDefault, (const UInt8*)aData,
-                              aDataLength, kCFStringEncodingUTF8, false);
+  AutoRelease<CFStringRef> name(
+      CFStringCreateWithBytes(kCFAllocatorDefault, (const UInt8*)aData, aIndex,
+                              kCFStringEncodingUTF8, false));
   if (!name) {
     return nullptr;
   }
   CGFontRef font = CGFontCreateWithFontName(name);
-  CFRelease(name);
   if (!font) {
     return nullptr;
   }
+
+  // If the descriptor included a font file path, apply that attribute and
+  // refresh the font in case it changed.
+  if (aIndex < aDataLength) {
+    AutoRelease<CFStringRef> path(CFStringCreateWithBytes(
+        kCFAllocatorDefault, (const UInt8*)aData + aIndex, aDataLength - aIndex,
+        kCFStringEncodingUTF8, false));
+    AutoRelease<CFURLRef> url(CFURLCreateWithFileSystemPath(
+        kCFAllocatorDefault, path, kCFURLPOSIXPathStyle, false));
+    AutoRelease<CFDictionaryRef> attrs(CFDictionaryCreate(
+        nullptr, (const void**)&kCTFontURLAttribute, (const void**)&url, 1,
+        &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks));
+    AutoRelease<CTFontRef> ctFont(
+        CTFontCreateWithGraphicsFont(font, 0.0, nullptr, nullptr));
+    AutoRelease<CTFontDescriptorRef> desc(CTFontCopyFontDescriptor(ctFont));
+    AutoRelease<CTFontDescriptorRef> newDesc(
+        CTFontDescriptorCreateCopyWithAttributes(desc, attrs));
+    AutoRelease<CTFontRef> newFont(
+        CTFontCreateWithFontDescriptor(newDesc, 0.0, nullptr));
+    CFRelease(font);
+    font = CTFontCopyGraphicsFont(newFont, nullptr);
+  }
+
   RefPtr<UnscaledFont> unscaledFont = new UnscaledFontMac(font);
   CFRelease(font);
   return unscaledFont.forget();

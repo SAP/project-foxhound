@@ -4,7 +4,7 @@ use crate::{
 };
 
 use super::{Error, Instruction, LookupExpression, LookupHelper as _};
-use crate::front::Emitter;
+use crate::proc::Emitter;
 
 pub type BlockId = u32;
 
@@ -14,7 +14,7 @@ pub struct MergeInstruction {
     pub continue_block_id: Option<BlockId>,
 }
 
-impl<I: Iterator<Item = u32>> super::Parser<I> {
+impl<I: Iterator<Item = u32>> super::Frontend<I> {
     // Registers a function call. It will generate a dummy handle to call, which
     // gets resolved after all the functions are processed.
     pub(super) fn add_call(
@@ -61,7 +61,7 @@ impl<I: Iterator<Item = u32>> super::Parser<I> {
                 local_variables: Arena::new(),
                 expressions: self
                     .make_expression_storage(&module.global_variables, &module.constants),
-                named_expressions: crate::FastHashMap::default(),
+                named_expressions: crate::NamedExpressions::default(),
                 body: crate::Block::new(),
             }
         };
@@ -128,6 +128,7 @@ impl<I: Iterator<Item = u32>> super::Parser<I> {
             expressions: &mut fun.expressions,
             local_arena: &mut fun.local_variables,
             const_arena: &mut module.constants,
+            const_expressions: &mut module.const_expressions,
             type_arena: &module.types,
             global_arena: &module.global_variables,
             arguments: &fun.arguments,
@@ -170,7 +171,7 @@ impl<I: Iterator<Item = u32>> super::Parser<I> {
                 None => format!("block_ctx.Fun-{}.txt", module.functions.len()),
             };
             let dest = prefix.join(dump_suffix);
-            let dump = format!("{:#?}", block_ctx);
+            let dump = format!("{block_ctx:#?}");
             if let Err(e) = std::fs::write(&dest, dump) {
                 log::error!("Unable to dump the block context into {:?}: {}", dest, e);
             }
@@ -298,7 +299,7 @@ impl<I: Iterator<Item = u32>> super::Parser<I> {
                 result: None,
                 local_variables: Arena::new(),
                 expressions: Arena::new(),
-                named_expressions: crate::FastHashMap::default(),
+                named_expressions: crate::NamedExpressions::default(),
                 body: crate::Block::new(),
             };
 
@@ -370,24 +371,63 @@ impl<I: Iterator<Item = u32>> super::Parser<I> {
                     let expr_handle = function
                         .expressions
                         .append(crate::Expression::GlobalVariable(lvar.handle), span);
+
+                    // Cull problematic builtins of gl_PerVertex.
+                    // See the docs for `Frontend::gl_per_vertex_builtin_access`.
+                    {
+                        let ty = &module.types[result.ty];
+                        match ty.inner {
+                            crate::TypeInner::Struct {
+                                members: ref original_members,
+                                span,
+                            } if ty.name.as_deref() == Some("gl_PerVertex") => {
+                                let mut new_members = original_members.clone();
+                                for member in &mut new_members {
+                                    if let Some(crate::Binding::BuiltIn(built_in)) = member.binding
+                                    {
+                                        if !self.gl_per_vertex_builtin_access.contains(&built_in) {
+                                            member.binding = None
+                                        }
+                                    }
+                                }
+                                if &new_members != original_members {
+                                    module.types.replace(
+                                        result.ty,
+                                        crate::Type {
+                                            name: ty.name.clone(),
+                                            inner: crate::TypeInner::Struct {
+                                                members: new_members,
+                                                span,
+                                            },
+                                        },
+                                    );
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+
                     match module.types[result.ty].inner {
                         crate::TypeInner::Struct {
                             members: ref sub_members,
                             ..
                         } => {
                             for (index, sm) in sub_members.iter().enumerate() {
-                                match sm.binding {
-                                    Some(crate::Binding::BuiltIn(builtin)) => {
-                                        // Cull unused builtins to preserve performances
-                                        if !self.builtin_usage.contains(&builtin) {
-                                            continue;
-                                        }
-                                    }
-                                    // unrecognized binding, skip
-                                    None => continue,
-                                    _ => {}
+                                if sm.binding.is_none() {
+                                    continue;
                                 }
-                                members.push(sm.clone());
+                                let mut sm = sm.clone();
+
+                                if let Some(ref mut binding) = sm.binding {
+                                    if ep.stage == crate::ShaderStage::Vertex {
+                                        binding.apply_default_interpolation(
+                                            &module.types[sm.ty].inner,
+                                        );
+                                    }
+                                }
+
+                                members.push(sm);
+
                                 components.push(function.expressions.append(
                                     crate::Expression::AccessIndex {
                                         base: expr_handle,
@@ -397,11 +437,18 @@ impl<I: Iterator<Item = u32>> super::Parser<I> {
                                 ));
                             }
                         }
-                        _ => {
+                        ref inner => {
+                            let mut binding = result.binding.clone();
+                            if let Some(ref mut binding) = binding {
+                                if ep.stage == crate::ShaderStage::Vertex {
+                                    binding.apply_default_interpolation(inner);
+                                }
+                            }
+
                             members.push(crate::StructMember {
                                 name: None,
                                 ty: result.ty,
-                                binding: result.binding.clone(),
+                                binding,
                                 offset: 0,
                             });
                             // populate just the globals first, then do `Load` in a
@@ -414,7 +461,7 @@ impl<I: Iterator<Item = u32>> super::Parser<I> {
 
             for (member_index, member) in members.iter().enumerate() {
                 match member.binding {
-                    Some(crate::Binding::BuiltIn(crate::BuiltIn::Position))
+                    Some(crate::Binding::BuiltIn(crate::BuiltIn::Position { .. }))
                         if self.options.adjust_coordinate_space =>
                     {
                         let mut emitter = Emitter::default();
@@ -464,9 +511,9 @@ impl<I: Iterator<Item = u32>> super::Parser<I> {
                 *component = function.expressions.append(load_expr, span);
             }
 
-            match &members[..] {
+            match members[..] {
                 [] => {}
-                [member] => {
+                [ref member] => {
                     function.body.extend(emitter.finish(&function.expressions));
                     let span = function.expressions.get_span(components[0]);
                     function.body.push(
@@ -522,6 +569,14 @@ impl<I: Iterator<Item = u32>> super::Parser<I> {
 }
 
 impl<'function> BlockContext<'function> {
+    pub(super) fn gctx(&self) -> crate::proc::GlobalCtx {
+        crate::proc::GlobalCtx {
+            types: self.type_arena,
+            constants: self.const_arena,
+            const_expressions: self.const_expressions,
+        }
+    }
+
     /// Consumes the `BlockContext` producing a Ir [`Block`](crate::Block)
     fn lower(mut self) -> crate::Block {
         fn lower_impl(
@@ -551,12 +606,20 @@ impl<'function> BlockContext<'function> {
                             crate::Span::default(),
                         )
                     }
-                    super::BodyFragment::Loop { body, continuing } => {
+                    super::BodyFragment::Loop {
+                        body,
+                        continuing,
+                        break_if,
+                    } => {
                         let body = lower_impl(blocks, bodies, body);
                         let continuing = lower_impl(blocks, bodies, continuing);
 
                         block.push(
-                            crate::Statement::Loop { body, continuing },
+                            crate::Statement::Loop {
+                                body,
+                                continuing,
+                                break_if,
+                            },
                             crate::Span::default(),
                         )
                     }
@@ -574,7 +637,7 @@ impl<'function> BlockContext<'function> {
                                 let fall_through = body.last().map_or(true, |s| !s.is_terminator());
 
                                 crate::SwitchCase {
-                                    value: crate::SwitchValue::Integer(value),
+                                    value: crate::SwitchValue::I32(value),
                                     body,
                                     fall_through,
                                 }

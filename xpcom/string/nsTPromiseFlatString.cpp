@@ -7,6 +7,8 @@
  * Modifications Copyright SAP SE. 2019-2021.  All rights reserved.
  */
 
+#include "nsTPromiseFlatString.h"
+
 template <typename T>
 void nsTPromiseFlatString<T>::Init(const substring_type& str) {
   if (str.IsTerminated()) {
@@ -24,3 +26,6 @@ void nsTPromiseFlatString<T>::Init(const substring_type& str) {
     this->Assign(str);
   }
 }
+
+template class nsTPromiseFlatString<char>;
+template class nsTPromiseFlatString<char16_t>;

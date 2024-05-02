@@ -1,4 +1,7 @@
-import { actionCreators as ac, actionTypes as at } from "common/Actions.jsm";
+import {
+  actionCreators as ac,
+  actionTypes as at,
+} from "common/Actions.sys.mjs";
 import { GlobalOverrider } from "test/unit/utils";
 import injector from "inject!lib/PlacesFeed.jsm";
 
@@ -20,10 +23,10 @@ const SOURCES = {
 const BLOCKED_EVENT = "newtab-linkBlocked"; // The event dispatched in NewTabUtils when a link is blocked;
 
 const TOP_SITES_BLOCKED_SPONSORS_PREF = "browser.topsites.blockedSponsors";
+const POCKET_SITE_PREF = "extensions.pocket.site";
 
 describe("PlacesFeed", () => {
   let PlacesFeed;
-  let BookmarksObserver;
   let PlacesObserver;
   let globals;
   let sandbox;
@@ -44,6 +47,17 @@ describe("PlacesFeed", () => {
         archivePocketEntry: sandbox.spy(() => Promise.resolve()),
       },
     });
+    globals.set("pktApi", {
+      isUserLoggedIn: sandbox.spy(),
+    });
+    globals.set("ExperimentAPI", {
+      getExperiment: sandbox.spy(),
+    });
+    globals.set("NimbusFeatures", {
+      pocketNewtab: {
+        getVariable: sandbox.spy(),
+      },
+    });
     globals.set("PartnerLinkAttribution", {
       makeRequest: sandbox.spy(),
     });
@@ -51,15 +65,13 @@ describe("PlacesFeed", () => {
       .stub(global.PlacesUtils.bookmarks, "TYPE_BOOKMARK")
       .value(TYPE_BOOKMARK);
     sandbox.stub(global.PlacesUtils.bookmarks, "SOURCES").value(SOURCES);
-    sandbox.spy(global.PlacesUtils.bookmarks, "addObserver");
-    sandbox.spy(global.PlacesUtils.bookmarks, "removeObserver");
     sandbox.spy(global.PlacesUtils.history, "addObserver");
     sandbox.spy(global.PlacesUtils.history, "removeObserver");
     sandbox.spy(global.PlacesUtils.observers, "addListener");
     sandbox.spy(global.PlacesUtils.observers, "removeListener");
     sandbox.spy(global.Services.obs, "addObserver");
     sandbox.spy(global.Services.obs, "removeObserver");
-    sandbox.spy(global.Cu, "reportError");
+    sandbox.spy(global.console, "error");
     shortURLStub = sandbox
       .stub()
       .callsFake(site =>
@@ -90,21 +102,16 @@ describe("PlacesFeed", () => {
     ({ PlacesFeed } = injector({
       "lib/ShortURL.jsm": { shortURL: shortURLStub },
     }));
-    BookmarksObserver = PlacesFeed.BookmarksObserver;
     PlacesObserver = PlacesFeed.PlacesObserver;
     feed = new PlacesFeed();
     feed.store = { dispatch: sinon.spy() };
+    globals.set("AboutNewTab", {
+      activityStream: { store: { feeds: { get() {} } } },
+    });
   });
-  afterEach(() => globals.restore());
-
-  it("should have a BookmarksObserver that dispatch to the store", () => {
-    assert.instanceOf(feed.bookmarksObserver, BookmarksObserver);
-    const action = { type: "FOO" };
-
-    feed.bookmarksObserver.dispatch(action);
-
-    assert.calledOnce(feed.store.dispatch);
-    assert.equal(feed.store.dispatch.firstCall.args[0].type, action.type);
+  afterEach(() => {
+    globals.restore();
+    sandbox.restore();
   });
 
   it("should have a PlacesObserver that dispatches to the store", () => {
@@ -125,9 +132,6 @@ describe("PlacesFeed", () => {
         .withArgs(TOP_SITES_BLOCKED_SPONSORS_PREF)
         .returns(`["foo","bar"]`);
       spy = sandbox.spy(global.Services.prefs, "setStringPref");
-    });
-    afterEach(() => {
-      sandbox.restore();
     });
 
     it("should add the blocked sponsors to the blocklist", () => {
@@ -165,11 +169,6 @@ describe("PlacesFeed", () => {
       feed.onAction({ type: at.INIT });
 
       assert.calledWith(
-        global.PlacesUtils.bookmarks.addObserver,
-        feed.bookmarksObserver,
-        true
-      );
-      assert.calledWith(
         global.PlacesUtils.observers.addListener,
         [
           "bookmark-added",
@@ -182,16 +181,11 @@ describe("PlacesFeed", () => {
       assert.calledWith(global.Services.obs.addObserver, feed, BLOCKED_EVENT);
     });
     it("should remove bookmark, history, places, blocked observers, and timers on UNINIT", () => {
-      feed.placesChangedTimer = global.Cc[
-        "@mozilla.org/timer;1"
-      ].createInstance();
+      feed.placesChangedTimer =
+        global.Cc["@mozilla.org/timer;1"].createInstance();
       let spy = feed.placesChangedTimer.cancel;
       feed.onAction({ type: at.UNINIT });
 
-      assert.calledWith(
-        global.PlacesUtils.bookmarks.removeObserver,
-        feed.bookmarksObserver
-      );
       assert.calledWith(
         global.PlacesUtils.observers.removeListener,
         [
@@ -287,7 +281,7 @@ describe("PlacesFeed", () => {
       assert.equal(url, "https://foo.com");
       assert.equal(where, "window");
       assert.propertyVal(params, "private", false);
-      assert.propertyVal(params, "fromChrome", false);
+      assert.propertyVal(params, "forceForeground", false);
     });
     it("should call openTrustedLinkIn with the correct url, where, params and privacy args on OPEN_PRIVATE_WINDOW", () => {
       const openTrustedLinkIn = sinon.stub();
@@ -304,7 +298,7 @@ describe("PlacesFeed", () => {
       assert.equal(url, "https://foo.com");
       assert.equal(where, "window");
       assert.propertyVal(params, "private", true);
-      assert.propertyVal(params, "fromChrome", false);
+      assert.propertyVal(params, "forceForeground", false);
     });
     it("should call openTrustedLinkIn with the correct url, where and params on OPEN_LINK", () => {
       const openTrustedLinkIn = sinon.stub();
@@ -325,7 +319,7 @@ describe("PlacesFeed", () => {
       assert.equal(url, "https://foo.com");
       assert.equal(where, "current");
       assert.propertyVal(params, "private", false);
-      assert.propertyVal(params, "fromChrome", false);
+      assert.propertyVal(params, "forceForeground", false);
     });
     it("should open link with referrer on OPEN_LINK", () => {
       const openTrustedLinkIn = sinon.stub();
@@ -428,7 +422,7 @@ describe("PlacesFeed", () => {
       };
 
       feed.onAction(openLinkAction);
-      const [e] = global.Cu.reportError.firstCall.args;
+      const [e] = global.console.error.firstCall.args;
       assert.equal(
         e.message,
         "Can't open link using file protocol from the new tab page."
@@ -489,6 +483,40 @@ describe("PlacesFeed", () => {
         action._target.browser
       );
     });
+    it("should openTrustedLinkIn with sendToPocket if not logged in", () => {
+      const openTrustedLinkIn = sinon.stub();
+      global.NimbusFeatures.pocketNewtab.getVariable = sandbox
+        .stub()
+        .returns(true);
+      global.pktApi.isUserLoggedIn = sandbox.stub().returns(false);
+      global.ExperimentAPI.getExperiment = sandbox.stub().returns({
+        slug: "slug",
+        branch: { slug: "branch-slug" },
+      });
+      sandbox
+        .stub(global.Services.prefs, "getStringPref")
+        .withArgs(POCKET_SITE_PREF)
+        .returns("getpocket.com");
+      const action = {
+        type: at.SAVE_TO_POCKET,
+        data: { site: { url: "raspberry.com", title: "raspberry" } },
+        _target: {
+          browser: {
+            ownerGlobal: {
+              openTrustedLinkIn,
+            },
+          },
+        },
+      };
+      feed.onAction(action);
+      assert.calledOnce(openTrustedLinkIn);
+      const [url, where] = openTrustedLinkIn.firstCall.args;
+      assert.equal(
+        url,
+        "https://getpocket.com/signup?utm_source=firefox_newtab_save_button&utm_campaign=slug&utm_content=branch-slug"
+      );
+      assert.equal(where, "tab");
+    });
     it("should call NewTabUtils.activityStreamLinks.addPocketEntry if we are saving a pocket story", async () => {
       const action = {
         data: { site: { url: "raspberry.com", title: "raspberry" } },
@@ -513,7 +541,7 @@ describe("PlacesFeed", () => {
         .stub()
         .rejects(e);
       await feed.saveToPocket(action.data.site, action._target.browser);
-      assert.calledWith(global.Cu.reportError, e);
+      assert.calledWith(global.console.error, e);
     });
     it("should broadcast to content if we successfully added a link to Pocket", async () => {
       // test in the form that the API returns data based on: https://getpocket.com/developer/docs/v3/add
@@ -564,7 +592,7 @@ describe("PlacesFeed", () => {
         .rejects(e);
       await feed.deleteFromPocket(12345);
 
-      assert.calledWith(global.Cu.reportError, e);
+      assert.calledWith(global.console.error, e);
     });
     it("should call NewTabUtils.deletePocketEntry and dispatch POCKET_LINK_DELETED_OR_ARCHIVED when deleting from Pocket", async () => {
       await feed.deleteFromPocket(12345);
@@ -599,7 +627,7 @@ describe("PlacesFeed", () => {
         .rejects(e);
       await feed.archiveFromPocket(12345);
 
-      assert.calledWith(global.Cu.reportError, e);
+      assert.calledWith(global.console.error, e);
     });
     it("should call NewTabUtils.archivePocketEntry and dispatch POCKET_LINK_DELETED_OR_ARCHIVED when archiving from Pocket", async () => {
       await feed.archiveFromPocket(12345);
@@ -689,16 +717,27 @@ describe("PlacesFeed", () => {
       });
     });
     it("should properly handle handoff with text data passed in", () => {
+      const sessionId = "decafc0ffee";
+      sandbox
+        .stub(global.AboutNewTab.activityStream.store.feeds, "get")
+        .returns({
+          sessions: {
+            get: () => {
+              return { session_id: sessionId };
+            },
+          },
+        });
       feed.handoffSearchToAwesomebar({
         _target: { browser: { ownerGlobal: { gURLBar: fakeUrlBar } } },
         data: { text: "foo" },
         meta: { fromTarget: {} },
       });
       assert.calledOnce(fakeUrlBar.handoff);
-      assert.calledWith(
+      assert.calledWithExactly(
         fakeUrlBar.handoff,
         "foo",
-        global.Services.search.defaultEngine
+        global.Services.search.defaultEngine,
+        sessionId
       );
       assert.notCalled(fakeUrlBar.focus);
       assert.notCalled(fakeUrlBar.setHiddenFocus);
@@ -724,10 +763,11 @@ describe("PlacesFeed", () => {
         meta: { fromTarget: {} },
       });
       assert.calledOnce(fakeUrlBar.handoff);
-      assert.calledWith(
+      assert.calledWithExactly(
         fakeUrlBar.handoff,
         "foo",
-        global.Services.search.defaultPrivateEngine
+        global.Services.search.defaultPrivateEngine,
+        undefined
       );
       assert.notCalled(fakeUrlBar.focus);
       assert.notCalled(fakeUrlBar.setHiddenFocus);
@@ -756,7 +796,8 @@ describe("PlacesFeed", () => {
       assert.calledWithExactly(
         fakeUrlBar.handoff,
         "foo",
-        global.Services.search.defaultEngine
+        global.Services.search.defaultEngine,
+        undefined
       );
       assert.notCalled(fakeUrlBar.focus);
 
@@ -771,6 +812,47 @@ describe("PlacesFeed", () => {
           toTarget: {},
         },
         type: "SHOW_SEARCH",
+      });
+    });
+    it("should properly handoff a newtab session id with no text passed in", () => {
+      const sessionId = "decafc0ffee";
+      sandbox
+        .stub(global.AboutNewTab.activityStream.store.feeds, "get")
+        .returns({
+          sessions: {
+            get: () => {
+              return { session_id: sessionId };
+            },
+          },
+        });
+      feed.handoffSearchToAwesomebar({
+        _target: { browser: { ownerGlobal: { gURLBar: fakeUrlBar } } },
+        data: {},
+        meta: { fromTarget: {} },
+      });
+      assert.calledOnce(fakeUrlBar.setHiddenFocus);
+      assert.notCalled(fakeUrlBar.handoff);
+      assert.notCalled(feed.store.dispatch);
+
+      // Now type a character.
+      listeners.keydown({ key: "f" });
+      assert.calledOnce(fakeUrlBar.handoff);
+      assert.calledWithExactly(
+        fakeUrlBar.handoff,
+        "",
+        global.Services.search.defaultEngine,
+        sessionId
+      );
+      assert.calledOnce(fakeUrlBar.removeHiddenFocus);
+      assert.calledOnce(feed.store.dispatch);
+      assert.calledWith(feed.store.dispatch, {
+        meta: {
+          from: "ActivityStream:Main",
+          skipMain: true,
+          to: "ActivityStream:Content",
+          toTarget: {},
+        },
+        type: "DISABLE_SEARCH",
       });
     });
   });
@@ -1157,23 +1239,6 @@ describe("PlacesFeed", () => {
           type: at.PLACES_BOOKMARKS_REMOVED,
           data: { urls: ["foo.com"] },
         });
-      });
-    });
-  });
-
-  describe("BookmarksObserver", () => {
-    let dispatch;
-    let observer;
-    beforeEach(() => {
-      dispatch = sandbox.spy();
-      observer = new BookmarksObserver(dispatch);
-    });
-    it("should have a QueryInterface property", () => {
-      assert.property(observer, "QueryInterface");
-    });
-    describe("Other empty methods (to keep code coverage happy)", () => {
-      it("should have a various empty functions for xpconnect happiness", () => {
-        observer.onItemChanged();
       });
     });
   });

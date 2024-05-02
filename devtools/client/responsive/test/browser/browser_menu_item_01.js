@@ -7,7 +7,9 @@
 
 const TEST_URL = "data:text/html;charset=utf-8,";
 
-const { startup } = require("devtools/client/responsive/utils/window");
+const {
+  startup,
+} = require("resource://devtools/client/responsive/utils/window.js");
 
 const activateTab = tab =>
   new Promise(resolve => {
@@ -27,7 +29,7 @@ const isMenuChecked = () => {
   return menu.getAttribute("checked") === "true";
 };
 
-add_task(async function() {
+add_task(async function () {
   await startup(window);
 
   ok(!isMenuChecked(), "RDM menu item is unchecked by default");
@@ -60,6 +62,6 @@ addRDMTaskWithPreAndPost(
   }
 );
 
-add_task(async function() {
+add_task(async function () {
   await removeTab(tab2);
 });

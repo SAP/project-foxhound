@@ -15,7 +15,6 @@
 #include "mozilla/StaticPtr.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/ToString.h"
-#include "mozilla/ipc/AutoTransportDescriptor.h"
 #include "mozilla/ipc/BrowserProcessSubThread.h"
 #include "mozilla/ipc/ProtocolUtils.h"
 #include "mozilla/mozalloc.h"
@@ -271,6 +270,10 @@ already_AddRefed<NodeChannel> NodeController::GetNodeChannel(
 void NodeController::DropPeer(NodeName aNodeName) {
   AssertIOThread();
 
+#ifdef FUZZING_SNAPSHOT
+  MOZ_FUZZING_IPC_DROP_PEER("NodeController::DropPeer");
+#endif
+
   Invite invite;
   RefPtr<NodeChannel> channel;
   nsTArray<PortRef> pendingMerges;
@@ -282,9 +285,9 @@ void NodeController::DropPeer(NodeName aNodeName) {
     state->mPendingMerges.Remove(aNodeName, &pendingMerges);
   }
 
-  NODECONTROLLER_LOG(LogLevel::Info, "Dropping Peer %s (pid: %d)",
+  NODECONTROLLER_LOG(LogLevel::Info, "Dropping Peer %s (pid: %" PRIPID ")",
                      ToString(aNodeName).c_str(),
-                     channel ? channel->OtherPid() : -1);
+                     channel ? channel->OtherPid() : base::kInvalidProcessId);
 
   if (channel) {
     channel->Close();
@@ -560,22 +563,27 @@ void NodeController::OnBroadcast(const NodeName& aFromNode,
     return;
   }
 
+  nsTArray<RefPtr<NodeChannel>> peers;
   {
     auto state = mState.Lock();
+    peers.SetCapacity(state->mPeers.Count());
     for (const auto& peer : state->mPeers.Values()) {
-      // NOTE: This `clone` operation is only supported for a limited number of
-      // message types by the ports API, which provides some extra security by
-      // only allowing those specific types of messages to be broadcasted.
-      // Messages which don't support `Clone` cannot be broadcast, and the ports
-      // library will not attempt to broadcast them.
-      auto clone = event->Clone();
-      if (!clone) {
-        NODECONTROLLER_WARNING("Attempt to broadcast unsupported message");
-        break;
-      }
-
-      peer->SendEventMessage(SerializeEventMessage(std::move(clone)));
+      peers.AppendElement(peer);
     }
+  }
+  for (const auto& peer : peers) {
+    // NOTE: This `clone` operation is only supported for a limited number of
+    // message types by the ports API, which provides some extra security by
+    // only allowing those specific types of messages to be broadcasted.
+    // Messages which don't support `Clone` cannot be broadcast, and the ports
+    // library will not attempt to broadcast them.
+    auto clone = event->Clone();
+    if (!clone) {
+      NODECONTROLLER_WARNING("Attempt to broadcast unsupported message");
+      break;
+    }
+
+    peer->SendEventMessage(SerializeEventMessage(std::move(clone)));
   }
 }
 
@@ -592,9 +600,7 @@ void NodeController::OnIntroduce(const NodeName& aFromNode,
   MOZ_ASSERT(aIntroduction.mMyPid == base::GetCurrentProcId(),
              "We're the wrong process to receive this?");
 
-  UniquePtr<IPC::Channel> channel =
-      aIntroduction.mTransport.Open(aIntroduction.mMode);
-  if (!channel) {
+  if (!aIntroduction.mHandle) {
     NODECONTROLLER_WARNING("Could not be introduced to peer %s",
                            ToString(aIntroduction.mName).c_str());
     mNode->LostConnectionToNode(aIntroduction.mName);
@@ -604,6 +610,9 @@ void NodeController::OnIntroduce(const NodeName& aFromNode,
     return;
   }
 
+  auto channel =
+      MakeUnique<IPC::Channel>(std::move(aIntroduction.mHandle),
+                               aIntroduction.mMode, aIntroduction.mOtherPid);
   auto nodeChannel = MakeRefPtr<NodeChannel>(
       aIntroduction.mName, std::move(channel), this, aIntroduction.mOtherPid);
 
@@ -624,13 +633,12 @@ void NodeController::OnIntroduce(const NodeName& aFromNode,
     }
 
     // Deliver any pending messages, then remove the entry from our table. We do
-    // this while `peersLock` is still held to ensure that these messages are
+    // this while `mState` is still held to ensure that these messages are
     // all sent before another thread can observe the newly created channel.
-    // This is safe because `SendEventMessage` currently unconditionally
-    // dispatches to the IO thread, so we can't deadlock. We'll call
-    // `nodeChannel->Start()` with the lock not held, but on the IO thread,
-    // before any actual `Send` requests are processed so the channel will
-    // already be opened by that time.
+    // As the channel hasn't been `Connect()`-ed yet, this will only queue the
+    // messages up to be sent, so is OK to do with the mutex held.  These
+    // messages will be processed to be sent during `Start()` below, which is
+    // performed outside of the lock.
     if (auto pending = state->mPendingMessages.Lookup(aIntroduction.mName)) {
       while (!pending->IsEmpty()) {
         nodeChannel->SendEventMessage(pending->Pop());
@@ -661,8 +669,8 @@ void NodeController::OnRequestIntroduction(const NodeName& aFromNode,
   }
 
   RefPtr<NodeChannel> peerB = GetNodeChannel(aName);
-  auto result = AutoTransportDescriptor::Create();
-  if (!peerB || result.isErr()) {
+  IPC::Channel::ChannelHandle handleA, handleB;
+  if (!peerB || !IPC::Channel::CreateRawPipe(&handleA, &handleB)) {
     NODECONTROLLER_WARNING(
         "Rejecting introduction request from '%s' for unknown peer '%s'",
         ToString(aFromNode).c_str(), ToString(aName).c_str());
@@ -670,18 +678,16 @@ void NodeController::OnRequestIntroduction(const NodeName& aFromNode,
     // We don't know this peer, or ran into issues creating the descriptor! Send
     // an invalid introduction to content to clean up any pending outbound
     // messages.
-    NodeChannel::Introduction intro{aName, AutoTransportDescriptor{},
-                                    IPC::Channel::MODE_SERVER,
-                                    peerA->OtherPid(), -1};
+    NodeChannel::Introduction intro{aName, nullptr, IPC::Channel::MODE_SERVER,
+                                    peerA->OtherPid(), base::kInvalidProcessId};
     peerA->Introduce(std::move(intro));
     return;
   }
 
-  auto [descrA, descrB] = result.unwrap();
-  NodeChannel::Introduction introA{aName, std::move(descrA),
+  NodeChannel::Introduction introA{aName, std::move(handleA),
                                    IPC::Channel::MODE_SERVER, peerA->OtherPid(),
                                    peerB->OtherPid()};
-  NodeChannel::Introduction introB{aFromNode, std::move(descrB),
+  NodeChannel::Introduction introB{aFromNode, std::move(handleB),
                                    IPC::Channel::MODE_CLIENT, peerB->OtherPid(),
                                    peerA->OtherPid()};
   peerA->Introduce(std::move(introA));
@@ -747,7 +753,8 @@ static mojo::core::ports::NodeName RandomNodeName() {
 }
 
 std::tuple<ScopedPort, RefPtr<NodeChannel>> NodeController::InviteChildProcess(
-    UniquePtr<IPC::Channel> aChannel) {
+    UniquePtr<IPC::Channel> aChannel,
+    GeckoChildProcessHost* aChildProcessHost) {
   MOZ_ASSERT(IsBroker());
   AssertIOThread();
 
@@ -757,7 +764,8 @@ std::tuple<ScopedPort, RefPtr<NodeChannel>> NodeController::InviteChildProcess(
   auto ports = CreatePortPair();
   auto inviteName = RandomNodeName();
   auto nodeChannel =
-      MakeRefPtr<NodeChannel>(inviteName, std::move(aChannel), this);
+      MakeRefPtr<NodeChannel>(inviteName, std::move(aChannel), this,
+                              base::kInvalidProcessId, aChildProcessHost);
   {
     auto state = mState.Lock();
     MOZ_DIAGNOSTIC_ASSERT(!state->mPeers.Contains(inviteName),
@@ -768,7 +776,7 @@ std::tuple<ScopedPort, RefPtr<NodeChannel>> NodeController::InviteChildProcess(
                                    Invite{nodeChannel, ports.second.Release()});
   }
 
-  nodeChannel->Start(/* aCallConnect */ false);
+  nodeChannel->Start();
   return std::tuple{std::move(ports.first), std::move(nodeChannel)};
 }
 
@@ -779,7 +787,7 @@ void NodeController::InitBrokerProcess() {
 }
 
 ScopedPort NodeController::InitChildProcess(UniquePtr<IPC::Channel> aChannel,
-                                            int32_t aParentPid) {
+                                            base::ProcessId aParentPid) {
   AssertIOThread();
   MOZ_ASSERT(!gNodeController);
 
@@ -800,7 +808,7 @@ ScopedPort NodeController::InitChildProcess(UniquePtr<IPC::Channel> aChannel,
         .AppendElement(toMerge);
   }
 
-  nodeChannel->Start(/* aCallConnect */ true);
+  nodeChannel->Start();
   nodeChannel->AcceptInvite(nodeName, toMerge.name());
   return std::move(ports.first);
 }

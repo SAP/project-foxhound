@@ -45,22 +45,19 @@ class NumberObject : public NativeObject {
                                             HandleObject proto = nullptr);
 
   // TaintFox: A finalizer is required for correct memory handling.
-  static void Finalize(JSFreeOp* fop, JSObject* obj) {
-    NumberObject& number = obj->as<NumberObject>();
-    delete number.maybePtrFromReservedSlot<TaintFlow>(TAINT_SLOT);
-    // TaintNode* head = number.getTaintNode();
-    // if (head) {
-    //   head->release();
-    // }
+  void finalize(JS::GCContext* gcx) {
+    TaintFlow* flow = getTaintFlow();
+    delete flow;
+    setReservedSlot(TAINT_SLOT, PrivateValue(nullptr));
   }
 
-  TaintFlow taint() const {
+  const TaintFlow& taint() const {
     TaintFlow* flow = getTaintFlow();
     if (flow) {
       // head->addref();
       return *flow;
     }
-    return TaintFlow();
+    return TaintFlow::getEmptyTaintFlow();
   }
 
   void setTaint(const TaintFlow& taint) {
@@ -91,7 +88,7 @@ private:
     return n;
   }
 
-  inline void setTaintFlow(TaintFlow flow) {
+  inline void setTaintFlow(const TaintFlow& flow) {
     setReservedSlot(TAINT_SLOT, PrivateValue(new TaintFlow(flow)));
   }
   

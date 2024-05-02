@@ -6,7 +6,7 @@
 // Test color scheme simulation.
 const TEST_URI = URL_ROOT_SSL + "doc_media_queries.html";
 
-add_task(async function() {
+add_task(async function () {
   await addTab(TEST_URI);
   const { inspector, view, toolbox } = await openRuleView();
 
@@ -32,20 +32,23 @@ add_task(async function() {
   );
 
   // Define functions checking if the rule view display the expected property.
-  const divHasDefaultStyling = () =>
-    getPropertiesForRuleIndex(view, 1).has("background-color:yellow");
-  const divHasDarkSchemeStyling = () =>
-    getPropertiesForRuleIndex(view, 1).has("background-color:darkblue");
-  const iframeElHasDefaultStyling = () =>
-    getPropertiesForRuleIndex(view, 1).has("background:cyan");
-  const iframeHasDarkSchemeStyling = () =>
-    getPropertiesForRuleIndex(view, 1).has("background:darkred");
+  const divHasDefaultStyling = async () =>
+    (await getPropertiesForRuleIndex(view, 1)).has("background-color:yellow");
+  const divHasDarkSchemeStyling = async () =>
+    (await getPropertiesForRuleIndex(view, 1)).has("background-color:darkblue");
+  const iframeElHasDefaultStyling = async () =>
+    (await getPropertiesForRuleIndex(view, 1)).has("background:cyan");
+  const iframeHasDarkSchemeStyling = async () =>
+    (await getPropertiesForRuleIndex(view, 1)).has("background:darkred");
 
   info(
     "Select the div that will change according to conditions in prefered color scheme"
   );
   await selectNode("div", inspector);
-  ok(divHasDefaultStyling(), "The rule view shows the expected initial rule");
+  ok(
+    await divHasDefaultStyling(),
+    "The rule view shows the expected initial rule"
+  );
 
   info("Click on the dark button");
   darkButton.click();
@@ -60,7 +63,7 @@ add_task(async function() {
   await waitFor(() => divHasDarkSchemeStyling());
   is(
     getRuleViewAncestorRulesDataTextByIndex(view, 1),
-    "@media (prefers-color-scheme: dark)",
+    "@media (prefers-color-scheme: dark) {",
     "The rules view was updated with the rule from the dark scheme media query"
   );
 
@@ -68,12 +71,12 @@ add_task(async function() {
   await selectNodeInFrames(["iframe", "html"], inspector);
 
   ok(
-    iframeHasDarkSchemeStyling(),
+    await iframeHasDarkSchemeStyling(),
     "The simulation is also applied on the remote iframe"
   );
   is(
     getRuleViewAncestorRulesDataTextByIndex(view, 1),
-    "@media (prefers-color-scheme: dark)",
+    "@media (prefers-color-scheme: dark) {",
     "The prefers-color-scheme media query is displayed"
   );
 
@@ -116,12 +119,12 @@ add_task(async function() {
   await selectNode("div", inspector);
   await waitFor(() => view.element.children[1]);
   ok(
-    divHasDarkSchemeStyling(),
+    await divHasDarkSchemeStyling(),
     "dark mode is still simulated after reloading the page"
   );
   is(
     getRuleViewAncestorRulesDataTextByIndex(view, 1),
-    "@media (prefers-color-scheme: dark)",
+    "@media (prefers-color-scheme: dark) {",
     "The prefers-color-scheme media query is displayed on the rule after reloading"
   );
 
@@ -130,7 +133,7 @@ add_task(async function() {
   ok(true, "simulation is still applied to the iframe after reloading");
   is(
     getRuleViewAncestorRulesDataTextByIndex(view, 1),
-    "@media (prefers-color-scheme: dark)",
+    "@media (prefers-color-scheme: dark) {",
     "The prefers-color-scheme media query is still displayed on the rule for the element in iframe after reloading"
   );
 

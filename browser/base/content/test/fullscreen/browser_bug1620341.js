@@ -19,7 +19,7 @@ const ORIGIN =
 
 add_task(async function test_fullscreen_cross_origin() {
   async function requestFullscreenThenCloseTab() {
-    await BrowserTestUtils.withNewTab(ORIGIN, async function(browser) {
+    await BrowserTestUtils.withNewTab(ORIGIN, async function (browser) {
       info("Start fullscreen on iframe frameAllowed");
 
       // Make sure there is no attribute "inDOMFullscreen" before requesting fullscreen.
@@ -27,14 +27,13 @@ add_task(async function test_fullscreen_cross_origin() {
         () => !document.documentElement.hasAttribute("inDOMFullscreen")
       );
 
-      let tabbrowser = browser.ownerDocument.querySelector("#tabbrowser-tabs");
       ok(
-        !tabbrowser.hasAttribute("closebuttons"),
+        !gBrowser.tabContainer.hasAttribute("closebuttons"),
         "Close buttons should be visible on every tab"
       );
 
       // Request fullscreen from iframe
-      await SpecialPowers.spawn(browser, [], async function() {
+      await SpecialPowers.spawn(browser, [], async function () {
         let frame = content.document.getElementById("frameAllowed");
         frame.focus();
         await SpecialPowers.spawn(frame, [], async () => {
@@ -57,11 +56,6 @@ add_task(async function test_fullscreen_cross_origin() {
       // Make sure there is attribute "inDOMFullscreen" after requesting fullscreen.
       await TestUtils.waitForCondition(() =>
         document.documentElement.hasAttribute("inDOMFullscreen")
-      );
-
-      await TestUtils.waitForCondition(
-        () => tabbrowser.hasAttribute("closebuttons"),
-        "Close buttons should be visible only on the active tab (tabs have width=0 so closebuttons gets set on them)"
       );
     });
   }

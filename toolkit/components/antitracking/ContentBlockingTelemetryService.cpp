@@ -13,8 +13,10 @@
 #include "mozilla/Telemetry.h"
 
 #include "AntiTrackingLog.h"
+#include "prtime.h"
 
 #include "nsIObserverService.h"
+#include "nsIPermission.h"
 #include "nsTArray.h"
 
 using namespace mozilla;
@@ -67,6 +69,17 @@ void ContentBlockingTelemetryService::ReportStoragePermissionExpire() {
 
   if (NS_WARN_IF(NS_FAILED(rv))) {
     LOG(("Fail to get all storage access permissions."));
+    return;
+  }
+  nsTArray<RefPtr<nsIPermission>> framePermissions;
+  rv = permManager->GetAllWithTypePrefix("3rdPartyFrameStorage"_ns,
+                                         framePermissions);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    LOG(("Fail to get all frame storage access permissions."));
+    return;
+  }
+  if (!permissions.AppendElements(framePermissions, fallible)) {
+    LOG(("Fail to combine all storage access permissions."));
     return;
   }
 

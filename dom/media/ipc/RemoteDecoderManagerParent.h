@@ -8,11 +8,14 @@
 
 #include "GPUVideoImage.h"
 #include "mozilla/PRemoteDecoderManagerParent.h"
+#include "mozilla/dom/ipc/IdType.h"
 #include "mozilla/layers/VideoBridgeChild.h"
 
 namespace mozilla {
 
 class PDMFactory;
+class PMFCDMParent;
+class PMFMediaEngineParent;
 
 class RemoteDecoderManagerParent final
     : public PRemoteDecoderManagerParent,
@@ -23,7 +26,8 @@ class RemoteDecoderManagerParent final
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(RemoteDecoderManagerParent, override)
 
   static bool CreateForContent(
-      Endpoint<PRemoteDecoderManagerParent>&& aEndpoint);
+      Endpoint<PRemoteDecoderManagerParent>&& aEndpoint,
+      dom::ContentParentId aContentId);
 
   static bool CreateVideoBridgeToOtherProcess(
       Endpoint<layers::PVideoBridgeChild>&& aEndpoint);
@@ -53,12 +57,22 @@ class RemoteDecoderManagerParent final
   // Can be called from manager thread only
   PDMFactory& EnsurePDMFactory();
 
+  const dom::ContentParentId& GetContentId() const { return mContentId; }
+
  protected:
   PRemoteDecoderParent* AllocPRemoteDecoderParent(
       const RemoteDecoderInfoIPDL& aRemoteDecoderInfo,
       const CreateDecoderParams::OptionSet& aOptions,
-      const Maybe<layers::TextureFactoryIdentifier>& aIdentifier);
+      const Maybe<layers::TextureFactoryIdentifier>& aIdentifier,
+      const Maybe<uint64_t>& aMediaEngineId,
+      const Maybe<TrackingId>& aTrackingId);
   bool DeallocPRemoteDecoderParent(PRemoteDecoderParent* actor);
+
+  PMFMediaEngineParent* AllocPMFMediaEngineParent();
+  bool DeallocPMFMediaEngineParent(PMFMediaEngineParent* actor);
+
+  PMFCDMParent* AllocPMFCDMParent(const nsAString& aKeySystem);
+  bool DeallocPMFCDMParent(PMFCDMParent* actor);
 
   mozilla::ipc::IPCResult RecvReadback(const SurfaceDescriptorGPUVideo& aSD,
                                        SurfaceDescriptor* aResult);
@@ -66,10 +80,10 @@ class RemoteDecoderManagerParent final
       const SurfaceDescriptorGPUVideo& aSD);
 
   void ActorDestroy(mozilla::ipc::IProtocol::ActorDestroyReason) override;
-  void ActorDealloc() override;
 
  private:
-  explicit RemoteDecoderManagerParent(nsISerialEventTarget* aThread);
+  RemoteDecoderManagerParent(nsISerialEventTarget* aThread,
+                             dom::ContentParentId aContentId);
   ~RemoteDecoderManagerParent();
 
   void Open(Endpoint<PRemoteDecoderManagerParent>&& aEndpoint);
@@ -79,6 +93,7 @@ class RemoteDecoderManagerParent final
 
   nsCOMPtr<nsISerialEventTarget> mThread;
   RefPtr<PDMFactory> mPDMFactory;
+  dom::ContentParentId mContentId;
 };
 
 }  // namespace mozilla

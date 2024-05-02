@@ -2,6 +2,9 @@
 // Test whether passing an undefined url InstallTrigger.install throws an
 // exception
 function test() {
+  // This test depends on InstallTrigger.install availability.
+  setInstallTriggerPrefs();
+
   waitForExplicitFinish();
 
   var triggers = encodeURIComponent(
@@ -13,7 +16,7 @@ function test() {
   );
   gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser, TESTROOT);
 
-  ContentTask.spawn(gBrowser.selectedBrowser, null, function() {
+  ContentTask.spawn(gBrowser.selectedBrowser, null, function () {
     return new Promise(resolve => {
       addEventListener(
         "load",
@@ -32,7 +35,7 @@ function test() {
     expectUncaughtException();
   }
 
-  BrowserTestUtils.loadURI(
+  BrowserTestUtils.startLoadingURIString(
     gBrowser,
     TESTROOT + "installtrigger.html?" + triggers
   );

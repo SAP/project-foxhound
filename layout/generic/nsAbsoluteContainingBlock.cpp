@@ -45,8 +45,8 @@ using namespace mozilla;
 typedef mozilla::CSSAlignUtils::AlignJustifyFlags AlignJustifyFlags;
 
 void nsAbsoluteContainingBlock::SetInitialChildList(nsIFrame* aDelegatingFrame,
-                                                    ChildListID aListID,
-                                                    nsFrameList& aChildList) {
+                                                    FrameChildListID aListID,
+                                                    nsFrameList&& aChildList) {
   MOZ_ASSERT(mChildListID == aListID, "unexpected child list name");
 #ifdef DEBUG
   nsIFrame::VerifyDirtyBitSet(aChildList);
@@ -54,30 +54,30 @@ void nsAbsoluteContainingBlock::SetInitialChildList(nsIFrame* aDelegatingFrame,
     MOZ_ASSERT(f->GetParent() == aDelegatingFrame, "Unexpected parent");
   }
 #endif
-  mAbsoluteFrames.SetFrames(aChildList);
+  mAbsoluteFrames = std::move(aChildList);
 }
 
 void nsAbsoluteContainingBlock::AppendFrames(nsIFrame* aDelegatingFrame,
-                                             ChildListID aListID,
-                                             nsFrameList& aFrameList) {
+                                             FrameChildListID aListID,
+                                             nsFrameList&& aFrameList) {
   NS_ASSERTION(mChildListID == aListID, "unexpected child list");
 
   // Append the frames to our list of absolutely positioned frames
 #ifdef DEBUG
   nsIFrame::VerifyDirtyBitSet(aFrameList);
 #endif
-  mAbsoluteFrames.AppendFrames(nullptr, aFrameList);
+  mAbsoluteFrames.AppendFrames(nullptr, std::move(aFrameList));
 
   // no damage to intrinsic widths, since absolutely positioned frames can't
   // change them
   aDelegatingFrame->PresShell()->FrameNeedsReflow(
-      aDelegatingFrame, IntrinsicDirty::Resize, NS_FRAME_HAS_DIRTY_CHILDREN);
+      aDelegatingFrame, IntrinsicDirty::None, NS_FRAME_HAS_DIRTY_CHILDREN);
 }
 
 void nsAbsoluteContainingBlock::InsertFrames(nsIFrame* aDelegatingFrame,
-                                             ChildListID aListID,
+                                             FrameChildListID aListID,
                                              nsIFrame* aPrevFrame,
-                                             nsFrameList& aFrameList) {
+                                             nsFrameList&& aFrameList) {
   NS_ASSERTION(mChildListID == aListID, "unexpected child list");
   NS_ASSERTION(!aPrevFrame || aPrevFrame->GetParent() == aDelegatingFrame,
                "inserting after sibling frame with different parent");
@@ -85,24 +85,22 @@ void nsAbsoluteContainingBlock::InsertFrames(nsIFrame* aDelegatingFrame,
 #ifdef DEBUG
   nsIFrame::VerifyDirtyBitSet(aFrameList);
 #endif
-  mAbsoluteFrames.InsertFrames(nullptr, aPrevFrame, aFrameList);
+  mAbsoluteFrames.InsertFrames(nullptr, aPrevFrame, std::move(aFrameList));
 
   // no damage to intrinsic widths, since absolutely positioned frames can't
   // change them
   aDelegatingFrame->PresShell()->FrameNeedsReflow(
-      aDelegatingFrame, IntrinsicDirty::Resize, NS_FRAME_HAS_DIRTY_CHILDREN);
+      aDelegatingFrame, IntrinsicDirty::None, NS_FRAME_HAS_DIRTY_CHILDREN);
 }
 
-void nsAbsoluteContainingBlock::RemoveFrame(nsIFrame* aDelegatingFrame,
-                                            ChildListID aListID,
+void nsAbsoluteContainingBlock::RemoveFrame(FrameDestroyContext& aContext,
+                                            FrameChildListID aListID,
                                             nsIFrame* aOldFrame) {
   NS_ASSERTION(mChildListID == aListID, "unexpected child list");
-  nsIFrame* nif = aOldFrame->GetNextInFlow();
-  if (nif) {
-    nif->GetParent()->DeleteNextInFlowChild(nif, false);
+  if (nsIFrame* nif = aOldFrame->GetNextInFlow()) {
+    nif->GetParent()->DeleteNextInFlowChild(aContext, nif, false);
   }
-
-  mAbsoluteFrames.DestroyFrame(aOldFrame);
+  mAbsoluteFrames.DestroyFrame(aContext, aOldFrame);
 }
 
 static void MaybeMarkAncestorsAsHavingDescendantDependentOnItsStaticPos(
@@ -161,7 +159,7 @@ void nsAbsoluteContainingBlock::Reflow(nsContainerFrame* aDelegatingFrame,
   // them contributing to overflow areas because that means we'll create new
   // pages ad infinitum if one of them overflows the page.
   if (aDelegatingFrame->IsPageContentFrame()) {
-    MOZ_ASSERT(mChildListID == nsAtomicContainerFrame::kFixedList);
+    MOZ_ASSERT(mChildListID == FrameChildListID::Fixed);
     aOverflowAreas = nullptr;
   }
 
@@ -238,12 +236,11 @@ void nsAbsoluteContainingBlock::Reflow(nsContainerFrame* aDelegatingFrame,
         // to keep continuations within an nsAbsoluteContainingBlock eventually.
         tracker.Insert(nextFrame, kidStatus);
         reflowStatus.MergeCompletionStatusFrom(kidStatus);
-      } else {
+      } else if (nextFrame) {
         // Delete any continuations
-        if (nextFrame) {
-          nsOverflowContinuationTracker::AutoFinish fini(&tracker, kidFrame);
-          nextFrame->GetParent()->DeleteNextInFlowChild(nextFrame, true);
-        }
+        nsOverflowContinuationTracker::AutoFinish fini(&tracker, kidFrame);
+        FrameDestroyContext context(aPresContext->PresShell());
+        nextFrame->GetParent()->DeleteNextInFlowChild(context, nextFrame, true);
       }
     } else {
       tracker.Skip(kidFrame, reflowStatus);
@@ -275,7 +272,10 @@ void nsAbsoluteContainingBlock::Reflow(nsContainerFrame* aDelegatingFrame,
 
   // Abspos frames can't cause their parent to be incomplete,
   // only overflow incomplete.
-  if (reflowStatus.IsIncomplete()) reflowStatus.SetOverflowIncomplete();
+  if (reflowStatus.IsIncomplete()) {
+    reflowStatus.SetOverflowIncomplete();
+    reflowStatus.SetNextInFlowNeedsReflow();
+  }
 
   aReflowStatus.MergeCompletionStatusFrom(reflowStatus);
 }
@@ -393,10 +393,8 @@ bool nsAbsoluteContainingBlock::FrameDependsOnContainer(nsIFrame* f,
   return false;
 }
 
-void nsAbsoluteContainingBlock::DestroyFrames(
-    nsIFrame* aDelegatingFrame, nsIFrame* aDestructRoot,
-    PostDestroyData& aPostDestroyData) {
-  mAbsoluteFrames.DestroyFramesFrom(aDestructRoot, aPostDestroyData);
+void nsAbsoluteContainingBlock::DestroyFrames(DestroyContext& aContext) {
+  mAbsoluteFrames.DestroyFrames(aContext);
 }
 
 void nsAbsoluteContainingBlock::MarkSizeDependentFramesDirty() {
@@ -669,14 +667,14 @@ void nsAbsoluteContainingBlock::ResolveAutoMarginsAfterLayout(
   LogicalMargin offsetsInWM = aOffsets.ConvertTo(wm, outerWM);
 
   // No need to substract border sizes because aKidSize has it included
-  // already
-  nscoord availMarginSpace = aLogicalCBSize->BSize(wm) - kidSizeInWM.BSize(wm) -
-                             offsetsInWM.BStartEnd(wm) -
-                             marginInWM.BStartEnd(wm);
-
-  if (availMarginSpace < 0) {
-    availMarginSpace = 0;
-  }
+  // already. Also, if any offset is auto, the auto margin resolves to zero.
+  // https://drafts.csswg.org/css-position-3/#abspos-margins
+  const bool autoOffset = offsetsInWM.BEnd(wm) == NS_AUTOOFFSET ||
+                          offsetsInWM.BStart(wm) == NS_AUTOOFFSET;
+  nscoord availMarginSpace =
+      autoOffset ? 0
+                 : aLogicalCBSize->BSize(wm) - kidSizeInWM.BSize(wm) -
+                       offsetsInWM.BStartEnd(wm) - marginInWM.BStartEnd(wm);
 
   const auto& styleMargin = aKidReflowInput.mStyleMargin;
   if (wm.IsOrthogonalTo(outerWM)) {
@@ -711,7 +709,7 @@ void nsAbsoluteContainingBlock::ResolveAutoMarginsAfterLayout(
 // reflow...
 
 // When bug 154892 is checked in, make sure that when
-// mChildListID == kFixedList, the height is unconstrained.
+// mChildListID == FrameChildListID::Fixed, the height is unconstrained.
 // since we don't allow replicated frames to split.
 
 void nsAbsoluteContainingBlock::ReflowAbsoluteFrame(
@@ -797,74 +795,80 @@ void nsAbsoluteContainingBlock::ReflowAbsoluteFrame(
                              LogicalSize(wm, availISize, availBSize),
                              Some(logicalCBSize), initFlags);
 
-  if (kidReflowInput.AvailableBSize() != NS_UNCONSTRAINEDSIZE) {
+  if (nscoord kidAvailBSize = kidReflowInput.AvailableBSize();
+      kidAvailBSize != NS_UNCONSTRAINEDSIZE) {
     // Shrink available block-size if it's constrained.
-    kidReflowInput.AvailableBSize() -=
-        kidReflowInput.ComputedLogicalMargin(wm).BStart(wm);
+    kidAvailBSize -= kidReflowInput.ComputedLogicalMargin(wm).BStart(wm);
     const nscoord kidOffsetBStart =
         kidReflowInput.ComputedLogicalOffsets(wm).BStart(wm);
     if (NS_AUTOOFFSET != kidOffsetBStart) {
-      kidReflowInput.AvailableBSize() -= kidOffsetBStart;
+      kidAvailBSize -= kidOffsetBStart;
     }
+    kidReflowInput.SetAvailableBSize(kidAvailBSize);
   }
 
   // Do the reflow
   ReflowOutput kidDesiredSize(kidReflowInput);
   aKidFrame->Reflow(aPresContext, kidDesiredSize, kidReflowInput, aStatus);
 
-  const LogicalSize kidSize = kidDesiredSize.Size(outerWM);
+  // Position the child relative to our padding edge. Don't do this for popups,
+  // which handle their own positioning.
+  if (!aKidFrame->IsMenuPopupFrame()) {
+    const LogicalSize kidSize = kidDesiredSize.Size(outerWM);
 
-  LogicalMargin offsets = kidReflowInput.ComputedLogicalOffsets(outerWM);
-  LogicalMargin margin = kidReflowInput.ComputedLogicalMargin(outerWM);
+    LogicalMargin offsets = kidReflowInput.ComputedLogicalOffsets(outerWM);
+    LogicalMargin margin = kidReflowInput.ComputedLogicalMargin(outerWM);
 
-  // If we're doing CSS Box Alignment in either axis, that will apply the
-  // margin for us in that axis (since the thing that's aligned is the margin
-  // box).  So, we clear out the margin here to avoid applying it twice.
-  if (kidReflowInput.mFlags.mIOffsetsNeedCSSAlign) {
-    margin.IStart(outerWM) = margin.IEnd(outerWM) = 0;
-  }
-  if (kidReflowInput.mFlags.mBOffsetsNeedCSSAlign) {
-    margin.BStart(outerWM) = margin.BEnd(outerWM) = 0;
-  }
+    // If we're doing CSS Box Alignment in either axis, that will apply the
+    // margin for us in that axis (since the thing that's aligned is the margin
+    // box).  So, we clear out the margin here to avoid applying it twice.
+    if (kidReflowInput.mFlags.mIOffsetsNeedCSSAlign) {
+      margin.IStart(outerWM) = margin.IEnd(outerWM) = 0;
+    }
+    if (kidReflowInput.mFlags.mBOffsetsNeedCSSAlign) {
+      margin.BStart(outerWM) = margin.BEnd(outerWM) = 0;
+    }
 
-  // If we're solving for start in either inline or block direction,
-  // then compute it now that we know the dimensions.
-  ResolveSizeDependentOffsets(aPresContext, kidReflowInput, kidSize, margin,
-                              &offsets, &logicalCBSize);
+    // If we're solving for start in either inline or block direction,
+    // then compute it now that we know the dimensions.
+    ResolveSizeDependentOffsets(aPresContext, kidReflowInput, kidSize, margin,
+                                &offsets, &logicalCBSize);
 
-  if (kidReflowInput.mFrame->HasIntrinsicKeywordForBSize()) {
-    ResolveAutoMarginsAfterLayout(kidReflowInput, &logicalCBSize, kidSize,
-                                  margin, offsets);
-  }
+    if (kidReflowInput.mFrame->HasIntrinsicKeywordForBSize()) {
+      ResolveAutoMarginsAfterLayout(kidReflowInput, &logicalCBSize, kidSize,
+                                    margin, offsets);
+    }
 
-  // Position the child relative to our padding edge
-  LogicalRect rect(
-      outerWM,
-      border.IStart(outerWM) + offsets.IStart(outerWM) + margin.IStart(outerWM),
-      border.BStart(outerWM) + offsets.BStart(outerWM) + margin.BStart(outerWM),
-      kidSize.ISize(outerWM), kidSize.BSize(outerWM));
-  nsRect r = rect.GetPhysicalRect(
-      outerWM, logicalCBSize.GetPhysicalSize(wm) +
-                   border.Size(outerWM).GetPhysicalSize(outerWM));
+    LogicalRect rect(outerWM,
+                     border.StartOffset(outerWM) +
+                         offsets.StartOffset(outerWM) +
+                         margin.StartOffset(outerWM),
+                     kidSize);
+    nsRect r = rect.GetPhysicalRect(
+        outerWM, logicalCBSize.GetPhysicalSize(wm) +
+                     border.Size(outerWM).GetPhysicalSize(outerWM));
 
-  // Offset the frame rect by the given origin of the absolute containing block.
-  r.x += aContainingBlock.x;
-  r.y += aContainingBlock.y;
+    // Offset the frame rect by the given origin of the absolute containing
+    // block.
+    r.x += aContainingBlock.x;
+    r.y += aContainingBlock.y;
 
-  aKidFrame->SetRect(r);
+    aKidFrame->SetRect(r);
 
-  nsView* view = aKidFrame->GetView();
-  if (view) {
-    // Size and position the view and set its opacity, visibility, content
-    // transparency, and clip
-    nsContainerFrame::SyncFrameViewAfterReflow(aPresContext, aKidFrame, view,
-                                               kidDesiredSize.InkOverflow());
-  } else {
-    nsContainerFrame::PositionChildViews(aKidFrame);
+    nsView* view = aKidFrame->GetView();
+    if (view) {
+      // Size and position the view and set its opacity, visibility, content
+      // transparency, and clip
+      nsContainerFrame::SyncFrameViewAfterReflow(aPresContext, aKidFrame, view,
+                                                 kidDesiredSize.InkOverflow());
+    } else {
+      nsContainerFrame::PositionChildViews(aKidFrame);
+    }
   }
 
   aKidFrame->DidReflow(aPresContext, &kidReflowInput);
 
+  const nsRect r = aKidFrame->GetRect();
 #ifdef DEBUG
   if (nsBlockFrame::gNoisyReflow) {
     nsIFrame::IndentBy(stdout, nsBlockFrame::gNoiseIndent - 1);

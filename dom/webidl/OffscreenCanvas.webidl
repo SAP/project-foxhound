@@ -16,9 +16,9 @@ dictionary ImageEncodeOptions {
 
 enum OffscreenRenderingContextId { "2d", "bitmaprenderer", "webgl", "webgl2", "webgpu" };
 
-[Exposed=(Window,Worker),
- Func="CanvasUtils::IsOffscreenCanvasEnabled"]
+[Exposed=(Window,Worker), Pref="gfx.offscreencanvas.enabled"]
 interface OffscreenCanvas : EventTarget {
+  [Throws]
   constructor([EnforceRange] unsigned long width, [EnforceRange] unsigned long height);
 
   [Pure, SetterThrows]
@@ -32,15 +32,14 @@ interface OffscreenCanvas : EventTarget {
 
   [Throws]
   ImageBitmap transferToImageBitmap();
-  [Throws]
+  [NewObject]
   Promise<Blob> convertToBlob(optional ImageEncodeOptions options = {});
 
   attribute EventHandler oncontextlost;
   attribute EventHandler oncontextrestored;
 
   // Deprecated by convertToBlob
-  [Deprecated="OffscreenCanvasToBlob", Throws]
+  [Deprecated="OffscreenCanvasToBlob", NewObject]
   Promise<Blob> toBlob(optional DOMString type = "",
                        optional any encoderOptions);
 };
-

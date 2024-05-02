@@ -9,12 +9,33 @@
 
 var { ExtensionError } = ExtensionUtils;
 
+const dispositionMap = {
+  CURRENT_TAB: "current",
+  NEW_TAB: "tab",
+  NEW_WINDOW: "window",
+};
+
 this.search = class extends ExtensionAPI {
   getAPI(context) {
+    function getTarget({ tabId, disposition, defaultDisposition }) {
+      let tab, where;
+      if (disposition) {
+        if (tabId) {
+          throw new ExtensionError(`Cannot set both 'disposition' and 'tabId'`);
+        }
+        where = dispositionMap[disposition];
+      } else if (tabId) {
+        tab = tabTracker.getTab(tabId);
+      } else {
+        where = dispositionMap[defaultDisposition];
+      }
+      return { tab, where };
+    }
+
     return {
       search: {
         async get() {
-          await searchInitialized;
+          await Services.search.promiseInitialized;
           let visibleEngines = await Services.search.getVisibleEngines();
           let defaultEngine = await Services.search.getDefault();
           return Promise.all(
@@ -48,8 +69,9 @@ this.search = class extends ExtensionAPI {
         },
 
         async search(searchProperties) {
-          await searchInitialized;
+          await Services.search.promiseInitialized;
           let engine;
+
           if (searchProperties.engine) {
             engine = Services.search.getEngineByName(searchProperties.engine);
             if (!engine) {
@@ -59,16 +81,36 @@ this.search = class extends ExtensionAPI {
             }
           }
 
-          const tab = searchProperties.tabId
-            ? tabTracker.getTab(searchProperties.tabId)
-            : null;
+          let { tab, where } = getTarget({
+            tabId: searchProperties.tabId,
+            disposition: searchProperties.disposition,
+            defaultDisposition: "NEW_TAB",
+          });
 
-          await windowTracker.topWindow.BrowserSearch.loadSearchFromExtension(
-            searchProperties.query,
+          await windowTracker.topWindow.BrowserSearch.loadSearchFromExtension({
+            query: searchProperties.query,
+            where,
             engine,
             tab,
-            context.principal
-          );
+            triggeringPrincipal: context.principal,
+          });
+        },
+
+        async query(queryProperties) {
+          await Services.search.promiseInitialized;
+
+          let { tab, where } = getTarget({
+            tabId: queryProperties.tabId,
+            disposition: queryProperties.disposition,
+            defaultDisposition: "CURRENT_TAB",
+          });
+
+          await windowTracker.topWindow.BrowserSearch.loadSearchFromExtension({
+            query: queryProperties.text,
+            where,
+            tab,
+            triggeringPrincipal: context.principal,
+          });
         },
       },
     };

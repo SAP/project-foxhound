@@ -9,6 +9,7 @@
 
 #  include "MFTDecoder.h"
 #  include "WMF.h"
+#  include "WMFDecoderModule.h"
 #  include "WMFMediaDataDecoder.h"
 #  include "mozilla/RefPtr.h"
 
@@ -36,6 +37,8 @@ class WMFAudioMFTManager : public MFTManager {
     return "wmf audio decoder"_ns;
   }
 
+  nsCString GetCodecName() const override;
+
  private:
   HRESULT UpdateOutputType();
 
@@ -47,16 +50,18 @@ class WMFAudioMFTManager : public MFTManager {
   uint32_t mAudioRate;
   nsTArray<BYTE> mUserData;
 
-  enum StreamType { Unknown, AAC, MP3 };
-  StreamType mStreamType;
+  WMFStreamType mStreamType;
 
-  const GUID& GetMFTGUID();
   const GUID& GetMediaSubtypeGUID();
 
   media::TimeUnit mLastInputTime = media::TimeUnit::Zero();
   media::TimeUnit mLastOutputDuration = media::TimeUnit::Zero();
 
   bool mFirstFrame = true;
+
+  uint64_t mTotalMediaFrames = 0;
+  uint32_t mEncoderDelay = 0;
+  uint32_t mRemainingEncoderDelay = 0;
 };
 
 }  // namespace mozilla

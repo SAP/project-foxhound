@@ -10,43 +10,65 @@
 # See Cargo.toml.orig for the original contents.
 
 [package]
-edition = "2018"
+edition = "2021"
 name = "enumset"
-version = "1.0.8"
+version = "1.1.2"
 authors = ["Alissa Rao <lymia@lymiahugs.com>"]
 description = "A library for creating compact sets of enums."
 documentation = "https://docs.rs/enumset/"
-readme = "../README.md"
-keywords = ["enum", "bitset"]
+readme = "README.md"
+keywords = [
+    "enum",
+    "bitset",
+]
 categories = ["data-structures"]
 license = "MIT/Apache-2.0"
 repository = "https://github.com/Lymia/enumset"
+resolver = "1"
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = [
+    "--cfg",
+    "docsrs",
+]
+
 [dependencies.enumset_derive]
-version = "0.5.5"
+version = "0.8.0"
 
 [dependencies.serde2]
-version = "1.0.91"
+version = "1"
 optional = true
 default-features = false
 package = "serde"
+
 [dev-dependencies.bincode]
-version = "1.0"
+version = "1"
 features = ["i128"]
 
 [dev-dependencies.rustversion]
-version = "1.0.2"
+version = "1"
 
 [dev-dependencies.serde_derive]
-version = "1.0.91"
+version = "1"
 
 [dev-dependencies.serde_json]
-version = "1.0.39"
+version = "1"
 
 [dev-dependencies.trybuild]
-version = "1.0.24"
+version = "1"
 
 [features]
-serde = ["serde2", "enumset_derive/serde"]
+alloc = []
+serde = [
+    "serde2",
+    "enumset_derive/serde",
+]
+std = [
+    "alloc",
+    "enumset_derive/proc-macro-crate",
+]
+
 [badges.maintenance]
 status = "actively-developed"
 

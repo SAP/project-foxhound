@@ -1,9 +1,6 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
-/* import-globals-from ../../shared/test/shared-head.js */
-/* import-globals-from ../../shared/test/telemetry-test-helpers.js */
-
 // shared-head.js handles imports, constants, and utility functions
 Services.scriptloader.loadSubScript(
   "chrome://mochitests/content/browser/devtools/client/shared/test/shared-head.js",
@@ -14,7 +11,39 @@ Services.scriptloader.loadSubScript(
   this
 );
 
-const EventEmitter = require("devtools/shared/event-emitter");
+const EventEmitter = require("resource://devtools/shared/event-emitter.js");
+
+/**
+ * Retrieve all tool ids compatible with a target created for the provided tab.
+ *
+ * @param {XULTab} tab
+ *        The tab for which we want to get the list of supported toolIds
+ * @return {Array<String>} array of tool ids
+ */
+async function getSupportedToolIds(tab) {
+  info("Getting the entire list of tools supported in this tab");
+
+  let shouldDestroyToolbox = false;
+
+  // Get the toolbox for this tab, or create one if needed.
+  let toolbox = gDevTools.getToolboxForTab(tab);
+  if (!toolbox) {
+    toolbox = await gDevTools.showToolboxForTab(tab);
+    shouldDestroyToolbox = true;
+  }
+
+  const toolIds = gDevTools
+    .getToolDefinitionArray()
+    .filter(def => def.isToolSupported(toolbox))
+    .map(def => def.id);
+
+  if (shouldDestroyToolbox) {
+    // Only close the toolbox if it was explicitly created here.
+    await toolbox.destroy();
+  }
+
+  return toolIds;
+}
 
 function toggleAllTools(state) {
   for (const [, tool] of gDevTools._tools) {
@@ -30,23 +59,10 @@ function toggleAllTools(state) {
 }
 
 async function getParentProcessActors(callback) {
-  const { DevToolsServer } = require("devtools/server/devtools-server");
-  const { DevToolsClient } = require("devtools/client/devtools-client");
+  const commands = await CommandsFactory.forMainProcess();
+  const mainProcessTargetFront = await commands.descriptorFront.getTarget();
 
-  DevToolsServer.init();
-  DevToolsServer.registerAllActors();
-  DevToolsServer.allowChromeProcess = true;
-
-  SimpleTest.registerCleanupFunction(() => {
-    DevToolsServer.destroy();
-  });
-
-  const client = new DevToolsClient(DevToolsServer.connectPipe());
-  await client.connect();
-  const mainProcessDescriptor = await client.mainRoot.getMainProcess();
-  const mainProcessTargetFront = await mainProcessDescriptor.getTarget();
-
-  callback(client, mainProcessTargetFront);
+  callback(commands.client, mainProcessTargetFront);
 }
 
 function getSourceActor(aSources, aURL) {
@@ -157,7 +173,7 @@ function DevToolPanel(iframeWindow, toolbox) {
 }
 
 DevToolPanel.prototype = {
-  open: function() {
+  open() {
     return new Promise(resolve => {
       executeSoon(() => {
         resolve(this);
@@ -177,7 +193,7 @@ DevToolPanel.prototype = {
     return this._toolbox;
   },
 
-  destroy: function() {
+  destroy() {
     return Promise.resolve(null);
   },
 };

@@ -3,11 +3,8 @@
 
 "use strict";
 
-var { SitePermissions } = ChromeUtils.import(
-  "resource:///modules/SitePermissions.jsm"
-);
-const { PermissionTestUtils } = ChromeUtils.import(
-  "resource://testing-common/PermissionTestUtils.jsm"
+const { PermissionTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/PermissionTestUtils.sys.mjs"
 );
 
 async function testClearData(clearSiteData, clearCache) {
@@ -54,7 +51,7 @@ async function testClearData(clearSiteData, clearCache) {
   let initialSizeLabelValue = await SpecialPowers.spawn(
     gBrowser.selectedBrowser,
     [],
-    async function() {
+    async function () {
       let sizeLabel = content.document.getElementById("totalSiteDataSize");
       return sizeLabel.textContent;
     }
@@ -76,9 +73,8 @@ async function testClearData(clearSiteData, clearCache) {
   // since we've had cache intermittently changing under our feet.
   let [, convertedCacheUnit] = DownloadUtils.convertByteUnits(cacheUsage);
 
-  let clearSiteDataCheckbox = dialogWin.document.getElementById(
-    "clearSiteData"
-  );
+  let clearSiteDataCheckbox =
+    dialogWin.document.getElementById("clearSiteData");
   let clearCacheCheckbox = dialogWin.document.getElementById("clearCache");
   // The usage details are filled asynchronously, so we assert that they're present by
   // waiting for them to be filled in.
@@ -145,7 +141,7 @@ async function testClearData(clearSiteData, clearCache) {
   await dialogClosed;
 
   if (clearCache) {
-    TestUtils.waitForCondition(async function() {
+    TestUtils.waitForCondition(async function () {
       let usage = await SiteDataManager.getCacheSize();
       return usage == 0;
     }, "The cache usage should be removed");
@@ -162,7 +158,7 @@ async function testClearData(clearSiteData, clearCache) {
     await cookiesClearedPromise;
     await promiseServiceWorkersCleared();
 
-    TestUtils.waitForCondition(async function() {
+    TestUtils.waitForCondition(async function () {
       let usage = await SiteDataManager.getTotalUsage();
       return usage == 0;
     }, "The total usage should be removed");
@@ -178,7 +174,7 @@ async function testClearData(clearSiteData, clearCache) {
     await SpecialPowers.spawn(
       gBrowser.selectedBrowser,
       [{ initialSizeLabelValue }],
-      async function(opts) {
+      async function (opts) {
         let sizeLabel = content.document.getElementById("totalSiteDataSize");
         await ContentTaskUtils.waitForCondition(
           () => sizeLabel.textContent != opts.initialSizeLabelValue,
@@ -203,21 +199,21 @@ async function testClearData(clearSiteData, clearCache) {
 }
 
 // Test opening the "Clear All Data" dialog and cancelling.
-add_task(async function() {
+add_task(async function () {
   await testClearData(false, false);
 });
 
 // Test opening the "Clear All Data" dialog and removing all site data.
-add_task(async function() {
+add_task(async function () {
   await testClearData(true, false);
 });
 
 // Test opening the "Clear All Data" dialog and removing all cache.
-add_task(async function() {
+add_task(async function () {
   await testClearData(false, true);
 });
 
 // Test opening the "Clear All Data" dialog and removing everything.
-add_task(async function() {
+add_task(async function () {
   await testClearData(true, true);
 });

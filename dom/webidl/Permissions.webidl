@@ -11,8 +11,9 @@ enum PermissionName {
   "geolocation",
   "notifications",
   "push",
-  "persistent-storage"
-  // Unsupported: "midi"
+  "persistent-storage",
+  "midi",
+  "storage-access" // Defined in https://privacycg.github.io/storage-access/#permissions-integration
 };
 
 [GenerateInit]
@@ -20,13 +21,16 @@ dictionary PermissionDescriptor {
   required PermissionName name;
 };
 
+[GenerateInit]
+dictionary MidiPermissionDescriptor : PermissionDescriptor {
+  boolean sysex;
+};
+
 // We don't implement `PushPermissionDescriptor` because we use a background
 // message quota instead of `userVisibleOnly`.
 
 [Exposed=Window]
 interface Permissions {
-  [Throws]
+  [NewObject]
   Promise<PermissionStatus> query(object permission);
-  [Throws, Pref="dom.permissions.revoke.enable"]
-  Promise<PermissionStatus> revoke(object permission);
 };

@@ -9,12 +9,9 @@
 #include <string.h>
 
 #include "gc/PublicIterators.h"
-#include "js/Wrapper.h"
-#include "vm/GlobalObject.h"
-#include "vm/JSContext.h"
 #include "vm/JSObject.h"
 
-#include "vm/JSObject-inl.h"
+#include "gc/Marking-inl.h"
 
 using namespace js;
 using namespace js::gc;
@@ -132,11 +129,6 @@ void WeakMapBase::restoreMarkedWeakMaps(WeakMapColors& markedWeakMaps) {
     MOZ_ASSERT(map->mapColor == CellColor::White);
     map->mapColor = r.front().value();
   }
-}
-
-size_t ObjectValueWeakMap::sizeOfIncludingThis(
-    mozilla::MallocSizeOf mallocSizeOf) {
-  return mallocSizeOf(this) + shallowSizeOfExcludingThis(mallocSizeOf);
 }
 
 ObjectWeakMap::ObjectWeakMap(JSContext* cx) : map(cx, nullptr) {}

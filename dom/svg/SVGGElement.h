@@ -12,8 +12,7 @@
 nsresult NS_NewSVGGElement(
     nsIContent** aResult, already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class SVGGElement final : public SVGGraphicsElement {
  protected:
@@ -25,13 +24,9 @@ class SVGGElement final : public SVGGraphicsElement {
 
  public:
   // nsIContent
-  NS_IMETHOD_(bool) IsAttributeMapped(const nsAtom* aAttribute) const override;
-
-  bool IsNodeOfType(uint32_t aFlags) const override;
   nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // DOM_SVG_SVGGELEMENT_H_

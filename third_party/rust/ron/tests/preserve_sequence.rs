@@ -1,9 +1,10 @@
+use std::collections::BTreeMap;
+
 use ron::{
     de::from_str,
     ser::{to_string_pretty, PrettyConfig},
 };
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
 
 #[derive(Debug, Deserialize, Serialize)]
 struct Config {
@@ -25,13 +26,7 @@ fn read_original(source: &str) -> String {
 }
 
 fn make_roundtrip(source: &str) -> String {
-    let config: Config = match from_str(source) {
-        Ok(x) => x,
-        Err(e) => {
-            println!("Failed to load config: {}", e);
-            std::process::exit(1);
-        }
-    };
+    let config: Config = from_str(source).unwrap();
     let pretty = PrettyConfig::new()
         .depth_limit(3)
         .separate_tuple_members(true)

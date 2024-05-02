@@ -33,6 +33,7 @@ static PRBool clmul_support_ = PR_FALSE;
 static PRBool sha_support_ = PR_FALSE;
 static PRBool avx_support_ = PR_FALSE;
 static PRBool avx2_support_ = PR_FALSE;
+static PRBool adx_support_ = PR_FALSE;
 static PRBool ssse3_support_ = PR_FALSE;
 static PRBool sse4_1_support_ = PR_FALSE;
 static PRBool sse4_2_support_ = PR_FALSE;
@@ -47,6 +48,7 @@ static PRBool ppc_crypto_support_ = PR_FALSE;
 /*
  * Adapted from the example code in "How to detect New Instruction support in
  * the 4th generation Intel Core processor family" by Max Locktyukhin.
+ * https://www.intel.com/content/dam/develop/external/us/en/documents/how-to-detect-new-instruction-support-in-the-4th-generation-intel-core-processor-family.pdf
  *
  * XGETBV:
  *   Reads an extended control register (XCR) specified by ECX into EDX:EAX.
@@ -82,6 +84,7 @@ check_xcr0_ymm()
 #define ECX_OSXSAVE (1 << 27)
 #define ECX_AVX (1 << 28)
 #define EBX_AVX2 (1 << 5)
+#define EBX_ADX (1 << 19)
 #define EBX_BMI1 (1 << 3)
 #define EBX_BMI2 (1 << 8)
 #define EBX_SHA (1 << 29)
@@ -104,6 +107,7 @@ CheckX86CPUSupport()
     char *disable_hw_sha = PR_GetEnvSecure("NSS_DISABLE_HW_SHA");
     char *disable_avx = PR_GetEnvSecure("NSS_DISABLE_AVX");
     char *disable_avx2 = PR_GetEnvSecure("NSS_DISABLE_AVX2");
+    char *disable_adx = PR_GetEnvSecure("NSS_DISABLE_ADX");
     char *disable_ssse3 = PR_GetEnvSecure("NSS_DISABLE_SSSE3");
     char *disable_sse4_1 = PR_GetEnvSecure("NSS_DISABLE_SSE4_1");
     char *disable_sse4_2 = PR_GetEnvSecure("NSS_DISABLE_SSE4_2");
@@ -112,15 +116,25 @@ CheckX86CPUSupport()
     aesni_support_ = (PRBool)((ecx & ECX_AESNI) != 0 && disable_hw_aes == NULL);
     clmul_support_ = (PRBool)((ecx & ECX_CLMUL) != 0 && disable_pclmul == NULL);
     sha_support_ = (PRBool)((ebx7 & EBX_SHA) != 0 && disable_hw_sha == NULL);
-    /* For AVX we check AVX, OSXSAVE, and XSAVE
-     * as well as XMM and YMM state. */
+    /* For AVX we ensure that:
+     *  - The AVX, OSXSAVE, and XSAVE bits of ECX from CPUID(EAX=1) are set, and
+     *  - the SSE and AVX state bits of XCR0 are set (check_xcr0_ymm).
+     */
     avx_support_ = (PRBool)((ecx & AVX_BITS) == AVX_BITS) && check_xcr0_ymm() &&
                    disable_avx == NULL;
-    /* For AVX2 we check AVX2, BMI1, BMI2, FMA, MOVBE.
-     * We do not check for AVX above. */
-    avx2_support_ = (PRBool)((ebx7 & AVX2_EBX_BITS) == AVX2_EBX_BITS &&
+    /* For AVX2 we ensure that:
+     *  - AVX is supported,
+     *  - the AVX2, BMI1, and BMI2 bits of EBX from CPUID(EAX=7) are set, and
+     *  - the FMA, and MOVBE bits of ECX from CPUID(EAX=1) are set.
+     * We do not check for LZCNT support.
+     */
+    avx2_support_ = (PRBool)(avx_support_ == PR_TRUE &&
+                             (ebx7 & AVX2_EBX_BITS) == AVX2_EBX_BITS &&
                              (ecx & AVX2_ECX_BITS) == AVX2_ECX_BITS &&
                              disable_avx2 == NULL);
+    /* CPUID.(EAX=07H, ECX=0H):EBX.ADX[bit 19]=1 indicates 
+    the processor supports ADCX and ADOX instructions.*/
+    adx_support_ = (PRBool)((ebx7 & EBX_ADX) != 0 && disable_adx == NULL);
     ssse3_support_ = (PRBool)((ecx & ECX_SSSE3) != 0 &&
                               disable_ssse3 == NULL);
     sse4_1_support_ = (PRBool)((ecx & ECX_SSE4_1) != 0 &&
@@ -142,7 +156,7 @@ CheckX86CPUSupport()
 #include <sys/auxv.h>
 #endif
 extern unsigned long getauxval(unsigned long type) __attribute__((weak));
-#elif defined(__arm__) || !defined(__OpenBSD__)
+#elif defined(__arm__) || (!defined(__OpenBSD__) && !defined(_WIN64))
 static unsigned long (*getauxval)(unsigned long) = NULL;
 #endif /* defined(__GNUC__) && __GNUC__ >= 2 && defined(__ELF__)*/
 
@@ -205,6 +219,12 @@ static unsigned long getauxval(unsigned long type)
 #endif
 #endif /* defined(__FreeBSD__) */
 
+#if defined(__OpenBSD__)
+#include <sys/sysctl.h>
+#include <machine/cpu.h>
+#include <machine/armreg.h>
+#endif /* defined(__OpenBSD__) */
+
 void
 CheckARMSupport()
 {
@@ -231,6 +251,16 @@ CheckARMSupport()
         arm_sha1_support_ = ID_AA64ISAR0_SHA1_VAL(isar0) >= ID_AA64ISAR0_SHA1_BASE;
         arm_sha2_support_ = ID_AA64ISAR0_SHA2_VAL(isar0) >= ID_AA64ISAR0_SHA2_BASE;
     }
+#elif defined(__OpenBSD__)
+    const int isar0_mib[] = { CTL_MACHDEP, CPU_ID_AA64ISAR0 };
+    uint64_t isar0;
+    size_t len = sizeof(isar0);
+    if (sysctl(isar0_mib, 2, &isar0, &len, NULL, 0) < 0)
+        return;
+    arm_aes_support_ = ID_AA64ISAR0_AES(isar0) >= ID_AA64ISAR0_AES_BASE;
+    arm_pmull_support_ = ID_AA64ISAR0_AES(isar0) >= ID_AA64ISAR0_AES_PMULL;
+    arm_sha1_support_ = ID_AA64ISAR0_SHA1(isar0) >= ID_AA64ISAR0_SHA1_BASE;
+    arm_sha2_support_ = ID_AA64ISAR0_SHA2(isar0) >= ID_AA64ISAR0_SHA2_BASE;
 #elif defined(__ARM_FEATURE_CRYPTO)
     /*
      * Although no feature detection, default compiler option allows ARM
@@ -429,6 +459,11 @@ PRBool
 avx2_support()
 {
     return avx2_support_;
+}
+PRBool
+adx_support()
+{
+    return adx_support_;
 }
 PRBool
 ssse3_support()

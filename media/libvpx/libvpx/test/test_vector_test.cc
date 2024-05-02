@@ -40,7 +40,7 @@ typedef std::tuple<int, int, const char *> DecodeParam;
 class TestVectorTest : public ::libvpx_test::DecoderTest,
                        public ::libvpx_test::CodecTestWithParam<DecodeParam> {
  protected:
-  TestVectorTest() : DecoderTest(GET_PARAM(0)), md5_file_(NULL) {
+  TestVectorTest() : DecoderTest(GET_PARAM(0)), md5_file_(nullptr) {
 #if CONFIG_VP9_DECODER
     resize_clips_.insert(::libvpx_test::kVP9TestVectorsResize,
                          ::libvpx_test::kVP9TestVectorsResize +
@@ -48,20 +48,19 @@ class TestVectorTest : public ::libvpx_test::DecoderTest,
 #endif
   }
 
-  virtual ~TestVectorTest() {
+  ~TestVectorTest() override {
     if (md5_file_) fclose(md5_file_);
   }
 
   void OpenMD5File(const std::string &md5_file_name_) {
     md5_file_ = libvpx_test::OpenTestDataFile(md5_file_name_);
-    ASSERT_TRUE(md5_file_ != NULL)
+    ASSERT_NE(md5_file_, nullptr)
         << "Md5 file open failed. Filename: " << md5_file_name_;
   }
 
 #if CONFIG_VP9_DECODER
-  virtual void PreDecodeFrameHook(
-      const libvpx_test::CompressedVideoSource &video,
-      libvpx_test::Decoder *decoder) {
+  void PreDecodeFrameHook(const libvpx_test::CompressedVideoSource &video,
+                          libvpx_test::Decoder *decoder) override {
     if (video.frame_number() == 0 && mt_mode_ >= 0) {
       if (mt_mode_ == 1) {
         decoder->Control(VP9D_SET_LOOP_FILTER_OPT, 1);
@@ -77,9 +76,9 @@ class TestVectorTest : public ::libvpx_test::DecoderTest,
   }
 #endif
 
-  virtual void DecompressedFrameHook(const vpx_image_t &img,
-                                     const unsigned int frame_number) {
-    ASSERT_TRUE(md5_file_ != NULL);
+  void DecompressedFrameHook(const vpx_image_t &img,
+                             const unsigned int frame_number) override {
+    ASSERT_NE(md5_file_, nullptr);
     char expected_md5[33];
     char junk[128];
 
@@ -137,7 +136,7 @@ TEST_P(TestVectorTest, MD5Match) {
     return;
 #endif
   }
-  ASSERT_TRUE(video.get() != NULL);
+  ASSERT_NE(video.get(), nullptr);
   video->Init();
 
   // Construct md5 file name.
@@ -153,7 +152,7 @@ TEST_P(TestVectorTest, MD5Match) {
 }
 
 #if CONFIG_VP8_DECODER
-VP8_INSTANTIATE_TEST_CASE(
+VP8_INSTANTIATE_TEST_SUITE(
     TestVectorTest,
     ::testing::Combine(
         ::testing::Values(1),   // Single thread.
@@ -163,7 +162,7 @@ VP8_INSTANTIATE_TEST_CASE(
                                 libvpx_test::kNumVP8TestVectors)));
 
 // Test VP8 decode in with different numbers of threads.
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     VP8MultiThreaded, TestVectorTest,
     ::testing::Combine(
         ::testing::Values(
@@ -178,7 +177,7 @@ INSTANTIATE_TEST_CASE_P(
 #endif  // CONFIG_VP8_DECODER
 
 #if CONFIG_VP9_DECODER
-VP9_INSTANTIATE_TEST_CASE(
+VP9_INSTANTIATE_TEST_SUITE(
     TestVectorTest,
     ::testing::Combine(
         ::testing::Values(1),   // Single thread.
@@ -187,7 +186,7 @@ VP9_INSTANTIATE_TEST_CASE(
                             libvpx_test::kVP9TestVectors +
                                 libvpx_test::kNumVP9TestVectors)));
 
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     VP9MultiThreaded, TestVectorTest,
     ::testing::Combine(
         ::testing::Values(

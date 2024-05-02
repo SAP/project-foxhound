@@ -1,7 +1,7 @@
 "use strict";
 
-const { TelemetryTestUtils } = ChromeUtils.import(
-  "resource://testing-common/TelemetryTestUtils.jsm"
+const { TelemetryTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/TelemetryTestUtils.sys.mjs"
 );
 
 add_task(async function test_popup_opened() {
@@ -17,7 +17,7 @@ add_task(async function test_popup_opened() {
   let content = await SpecialPowers.spawn(
     viewSourceTab.linkedBrowser,
     [],
-    async function() {
+    async function () {
       return content.document.documentElement.innerHTML;
     }
   );

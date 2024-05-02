@@ -9,14 +9,11 @@
 #include "mozilla/dom/DOMStringList.h"
 #include "mozilla/StaticPrefs_accessibility.h"
 #include "nsContentUtils.h"
-#include "nsISimpleEnumerator.h"
 
-#include "AccAttributes.h"
 #include "LocalAccessible-inl.h"
 #include "nsAccessibilityService.h"
 #include "DocAccessible.h"
 
-#include "mozilla/dom/Document.h"  // for inline nsINode::GetParentObject
 #include "mozilla/dom/ToJSValue.h"
 
 using namespace mozilla;
@@ -106,7 +103,7 @@ void AccessibleNode::GetAttributes(nsTArray<nsString>& aAttributes) {
 
   RefPtr<AccAttributes> attrs = mIntl->Attributes();
 
-  for (auto iter : *attrs) {
+  for (const auto& iter : *attrs) {
     aAttributes.AppendElement(nsAtomString(iter.Name()));
   }
 }

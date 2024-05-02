@@ -1,3 +1,5 @@
+# mypy: allow-untyped-defs
+
 import errno
 import os
 import shutil
@@ -109,6 +111,8 @@ def test_list_tests(manifest_dir):
     with pytest.raises(SystemExit) as excinfo:
         wpt.main(argv=["run", "--metadata", manifest_dir, "--list-tests",
                        "--channel", "dev", "--yes",
+                       # WebTransport server is not needed (web-platform-tests/wpt#41675).
+                       "--no-enable-webtransport-h3",
                        # Taskcluster machines do not have GPUs, so use software rendering via --enable-swiftshader.
                        "--enable-swiftshader",
                        "chrome", "/dom/nodes/Element-tagName.html"])
@@ -133,6 +137,8 @@ def test_list_tests_missing_manifest(manifest_dir):
                        "--metadata", manifest_dir,
                        "--list-tests",
                        "--yes",
+                       # WebTransport server is not needed (web-platform-tests/wpt#41675).
+                       "--no-enable-webtransport-h3",
                        "firefox", "/dom/nodes/Element-tagName.html"])
 
     assert excinfo.value.code == 0
@@ -161,6 +167,8 @@ def test_list_tests_invalid_manifest(manifest_dir):
                        "--metadata", manifest_dir,
                        "--list-tests",
                        "--yes",
+                       # WebTransport server is not needed (web-platform-tests/wpt#41675).
+                       "--no-enable-webtransport-h3",
                        "firefox", "/dom/nodes/Element-tagName.html"])
 
     assert excinfo.value.code == 0
@@ -178,6 +186,8 @@ def test_run_zero_tests():
 
     with pytest.raises(SystemExit) as excinfo:
         wpt.main(argv=["run", "--yes", "--no-pause", "--channel", "dev",
+                       # WebTransport server is not needed (web-platform-tests/wpt#41675).
+                       "--no-enable-webtransport-h3",
                        # Taskcluster machines do not have GPUs, so use software rendering via --enable-swiftshader.
                        "--enable-swiftshader",
                        "chrome", "/non-existent-dir/non-existent-file.html"])
@@ -186,6 +196,8 @@ def test_run_zero_tests():
     with pytest.raises(SystemExit) as excinfo:
         wpt.main(argv=["run", "--yes", "--no-pause", "--no-fail-on-unexpected",
                        "--channel", "dev",
+                       # WebTransport server is not needed (web-platform-tests/wpt#41675).
+                       "--no-enable-webtransport-h3",
                        # Taskcluster machines do not have GPUs, so use software rendering via --enable-swiftshader.
                        "--enable-swiftshader",
                        "chrome", "/non-existent-dir/non-existent-file.html"])
@@ -207,6 +219,8 @@ def test_run_failing_test():
 
     with pytest.raises(SystemExit) as excinfo:
         wpt.main(argv=["run", "--yes", "--no-pause", "--channel", "dev",
+                       # WebTransport server is not needed (web-platform-tests/wpt#41675).
+                       "--no-enable-webtransport-h3",
                        # Taskcluster machines do not have GPUs, so use software rendering via --enable-swiftshader.
                        "--enable-swiftshader",
                        "chrome", failing_test])
@@ -215,6 +229,8 @@ def test_run_failing_test():
     with pytest.raises(SystemExit) as excinfo:
         wpt.main(argv=["run", "--yes", "--no-pause", "--no-fail-on-unexpected",
                        "--channel", "dev",
+                       # WebTransport server is not needed (web-platform-tests/wpt#41675).
+                       "--no-enable-webtransport-h3",
                        # Taskcluster machines do not have GPUs, so use software rendering via --enable-swiftshader.
                        "--enable-swiftshader",
                        "chrome", failing_test])
@@ -242,6 +258,8 @@ def test_run_verify_unstable(temp_test):
 
     with pytest.raises(SystemExit) as excinfo:
         wpt.main(argv=["run", "--yes", "--verify", "--channel", "dev",
+                       # WebTransport server is not needed (web-platform-tests/wpt#41675).
+                       "--no-enable-webtransport-h3",
                        # Taskcluster machines do not have GPUs, so use software rendering via --enable-swiftshader.
                        "--enable-swiftshader",
                        "chrome", unstable_test])
@@ -251,6 +269,8 @@ def test_run_verify_unstable(temp_test):
 
     with pytest.raises(SystemExit) as excinfo:
         wpt.main(argv=["run", "--yes", "--verify", "--channel", "dev",
+                       # WebTransport server is not needed (web-platform-tests/wpt#41675).
+                       "--no-enable-webtransport-h3",
                        # Taskcluster machines do not have GPUs, so use software rendering via --enable-swiftshader.
                        "--enable-swiftshader",
                        "chrome", stable_test])
@@ -260,7 +280,7 @@ def test_run_verify_unstable(temp_test):
 def test_files_changed(capsys):
     commit = "9047ac1d9f51b1e9faa4f9fad9c47d109609ab09"
     with pytest.raises(SystemExit) as excinfo:
-        wpt.main(argv=["files-changed", "%s~..%s" % (commit, commit)])
+        wpt.main(argv=["files-changed", f"{commit}~..{commit}"])
     assert excinfo.value.code == 0
     out, err = capsys.readouterr()
     expected = """html/browsers/offline/appcache/workers/appcache-worker.html
@@ -278,7 +298,7 @@ html/browsers/offline/appcache/workers/resources/appcache-worker.py
 def test_files_changed_null(capsys):
     commit = "9047ac1d9f51b1e9faa4f9fad9c47d109609ab09"
     with pytest.raises(SystemExit) as excinfo:
-        wpt.main(argv=["files-changed", "--null", "%s~..%s" % (commit, commit)])
+        wpt.main(argv=["files-changed", "--null", f"{commit}~..{commit}"])
     assert excinfo.value.code == 0
     out, err = capsys.readouterr()
     expected = "\0".join(["html/browsers/offline/appcache/workers/appcache-worker.html",
@@ -323,7 +343,7 @@ def test_tests_affected(capsys, manifest_dir):
     # The test will fail if the file we assert is renamed, so we choose a stable one.
     commit = "3a055e818218f548db240c316654f3cc1aeeb733"
     with pytest.raises(SystemExit) as excinfo:
-        wpt.main(argv=["tests-affected", "--metadata", manifest_dir, "%s~..%s" % (commit, commit)])
+        wpt.main(argv=["tests-affected", "--metadata", manifest_dir, f"{commit}~..{commit}"])
     assert excinfo.value.code == 0
     out, err = capsys.readouterr()
     assert "infrastructure/reftest-wait.html" in out
@@ -337,14 +357,14 @@ def test_tests_affected(capsys, manifest_dir):
 def test_tests_affected_idlharness(capsys, manifest_dir):
     commit = "47cea8c38b88c0ddd3854e4edec0c5b6f2697e62"
     with pytest.raises(SystemExit) as excinfo:
-        wpt.main(argv=["tests-affected", "--metadata", manifest_dir, "%s~..%s" % (commit, commit)])
+        wpt.main(argv=["tests-affected", "--metadata", manifest_dir, f"{commit}~..{commit}"])
     assert excinfo.value.code == 0
     out, err = capsys.readouterr()
     assert ("mst-content-hint/idlharness.window.js\n" +
             "webrtc-encoded-transform/idlharness.https.window.js\n" +
             "webrtc-identity/idlharness.https.window.js\n" +
             "webrtc-stats/idlharness.window.js\n" +
-            "webrtc-stats/supported-stats.html\n" +
+            "webrtc-stats/supported-stats.https.html\n" +
             "webrtc/idlharness.https.window.js\n") == out
 
 
@@ -360,7 +380,7 @@ def test_tests_affected_null(capsys, manifest_dir):
     # The test will fail if the file we assert is renamed, so we choose a stable one.
     commit = "2614e3316f1d3d1a744ed3af088d19516552a5de"
     with pytest.raises(SystemExit) as excinfo:
-        wpt.main(argv=["tests-affected", "--null", "--metadata", manifest_dir, "%s~..%s" % (commit, commit)])
+        wpt.main(argv=["tests-affected", "--null", "--metadata", manifest_dir, f"{commit}~..{commit}"])
     assert excinfo.value.code == 0
     out, err = capsys.readouterr()
 
@@ -397,6 +417,7 @@ def test_serve():
                 break
     finally:
         os.killpg(p.pid, 15)
+        p.wait(10)
 
 # The following commands are slow running and used implicitly in other CI
 # jobs, so we skip them here:

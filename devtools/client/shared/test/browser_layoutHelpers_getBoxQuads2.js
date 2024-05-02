@@ -53,18 +53,21 @@
 
 const TEST_URI = TEST_URI_ROOT_SSL + "doc_layoutHelpers_getBoxQuads2-a.html";
 
-add_task(async function() {
+add_task(async function () {
   info("Opening a fission window.");
   const fissionWin = await BrowserTestUtils.openNewBrowserWindow({
     remote: true,
     fission: true,
   });
 
+  info("Load APZ test utils.");
   loadHelperScript(
     "../../../../gfx/layers/apz/test/mochitest/apz_test_utils.js"
   );
+  info("Load paint_listener.");
   loadHelperScript("../../../../../tests/SimpleTest/paint_listener.js");
 
+  info("Open a new tab.");
   const tab = await BrowserTestUtils.openNewForegroundTab(
     fissionWin.gBrowser,
     TEST_URI
@@ -75,7 +78,7 @@ add_task(async function() {
   ok(waitUntilApzStable, "waitUntilApzStable is defined.");
   await waitUntilApzStable();
 
-  await ContentTask.spawn(tab.linkedBrowser, null, async function() {
+  await ContentTask.spawn(tab.linkedBrowser, null, async function () {
     const win = content.window;
     const doc = content.document;
     const refNode = doc.documentElement;

@@ -9,14 +9,20 @@ http://creativecommons.org/publicdomain/zero/1.0/ */
  * Stream Redux store into an HTML document and script.
  */
 
-const { AddonTestUtils } = ChromeUtils.import(
-  "resource://testing-common/AddonTestUtils.jsm"
+const { AddonTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/AddonTestUtils.sys.mjs"
 );
-const { SearchTestUtils } = ChromeUtils.import(
-  "resource://testing-common/SearchTestUtils.jsm"
+const { SearchTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/SearchTestUtils.sys.mjs"
 );
-const { TestUtils } = ChromeUtils.import(
-  "resource://testing-common/TestUtils.jsm"
+const { TestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/TestUtils.sys.mjs"
+);
+const { sinon } = ChromeUtils.importESModule(
+  "resource://testing-common/Sinon.sys.mjs"
+);
+const { DiscoveryStreamFeed } = ChromeUtils.import(
+  "resource://activity-stream/lib/DiscoveryStreamFeed.jsm"
 );
 
 SearchTestUtils.init(this);
@@ -28,22 +34,18 @@ AddonTestUtils.createAppInfo(
   "42"
 );
 
-const { AboutNewTab } = ChromeUtils.import(
-  "resource:///modules/AboutNewTab.jsm"
+const { AboutNewTab } = ChromeUtils.importESModule(
+  "resource:///modules/AboutNewTab.sys.mjs"
 );
 const { PREFS_CONFIG } = ChromeUtils.import(
   "resource://activity-stream/lib/ActivityStream.jsm"
 );
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "BasePromiseWorker",
-  "resource://gre/modules/PromiseWorker.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  BasePromiseWorker: "resource://gre/modules/PromiseWorker.sys.mjs",
+});
 
-XPCOMUtils.defineLazyGlobalGetters(this, ["DOMParser"]);
-
-const CACHE_WORKER_URL = "resource://activity-stream/lib/cache-worker.js";
+const CACHE_WORKER_URL = "resource://activity-stream/lib/cache.worker.js";
 const NEWTAB_RENDER_URL =
   "resource://activity-stream/data/content/newtab-render.js";
 
@@ -55,7 +57,7 @@ const NEWTAB_RENDER_URL =
  * a dynamic layout, and then have that layout point to a local feed rather
  * than one from the Pocket CDN.
  */
-add_task(async function setup() {
+add_setup(async function () {
   do_get_profile();
   // The SearchService is also needed in order to construct the initial state,
   // which means that the AddonManager needs to be available.
@@ -83,17 +85,16 @@ add_task(async function setup() {
     })
   );
 
-  let newConfig = Object.assign(defaultDSConfig, {
-    show_spocs: false,
-    hardcoded_layout: false,
-    layout_endpoint: "http://example.com/ds_layout.json",
-  });
+  const sandbox = sinon.createSandbox();
+  sandbox
+    .stub(DiscoveryStreamFeed.prototype, "generateFeedUrl")
+    .returns("http://example.com/topstories.json");
 
   // Configure Activity Stream to query for the layout JSON file that points
   // at the local top stories feed.
   Services.prefs.setCharPref(
     "browser.newtabpage.activity-stream.discoverystream.config",
-    JSON.stringify(newConfig)
+    JSON.stringify(defaultDSConfig)
   );
 
   // We need to allow example.com as a place to get both the layout and the
@@ -110,13 +111,13 @@ add_task(async function setup() {
   Services.prefs.setBoolPref("browser.ping-centre.telemetry", false);
 
   // We need a default search engine set up for rendering the search input.
-  await SearchTestUtils.installSearchExtension({
-    name: "Test engine",
-    keyword: "@testengine",
-    search_url_get_params: "s={searchTerms}",
-  });
-  Services.search.defaultEngine = Services.search.getEngineByName(
-    "Test engine"
+  await SearchTestUtils.installSearchExtension(
+    {
+      name: "Test engine",
+      keyword: "@testengine",
+      search_url_get_params: "s={searchTerms}",
+    },
+    { setAsDefault: true }
   );
 
   // Initialize Activity Stream, and pretend that a new window has been loaded
@@ -227,18 +228,19 @@ add_task(async function test_cache_worker() {
   let root = doc.getElementById("root");
   ok(root.childElementCount, "There are children on the root node");
 
-  // There should be the 1 top story, and 2 placeholders.
+  // There should be the 1 top story, and 20 placeholders.
   equal(
     Array.from(root.querySelectorAll(".ds-card")).length,
-    3,
-    "There are 3 DSCards"
+    21,
+    "There are 21 DSCards"
   );
-  let cardHostname = doc.querySelector("[data-section-id='topstories'] .source")
-    .innerText;
+  let cardHostname = doc.querySelector(
+    "[data-section-id='topstories'] .source"
+  ).innerText;
   equal(cardHostname, "bbc.com", "Card hostname is bbc.com");
 
   let placeholders = doc.querySelectorAll(".ds-card.placeholder");
-  equal(placeholders.length, 2, "There should be 2 placeholders");
+  equal(placeholders.length, 20, "There should be 20 placeholders");
 });
 
 /**

@@ -1,7 +1,14 @@
-use clap::{app_from_crate, arg};
+use clap::{command, Arg, ArgAction};
 
 fn main() {
-    let matches = app_from_crate!().arg(arg!(-v - -verbose)).get_matches();
+    let matches = command!() // requires `cargo` feature
+        .arg(
+            Arg::new("verbose")
+                .short('v')
+                .long("verbose")
+                .action(ArgAction::SetTrue),
+        )
+        .get_matches();
 
-    println!("verbose: {:?}", matches.is_present("verbose"));
+    println!("verbose: {:?}", matches.get_flag("verbose"));
 }

@@ -21,9 +21,8 @@ RemoteSandboxBrokerChild::RemoteSandboxBrokerChild() {
 
 RemoteSandboxBrokerChild::~RemoteSandboxBrokerChild() {}
 
-bool RemoteSandboxBrokerChild::Init(base::ProcessId aParentPid,
-                                    mozilla::ipc::ScopedPort aPort) {
-  if (NS_WARN_IF(!Open(std::move(aPort), aParentPid))) {
+bool RemoteSandboxBrokerChild::Init(mozilla::ipc::UntypedEndpoint&& aEndpoint) {
+  if (NS_WARN_IF(!aEndpoint.Bind(this))) {
     return false;
   }
   CrashReporterClient::InitSingleton(this);
@@ -79,10 +78,11 @@ mozilla::ipc::IPCResult RemoteSandboxBrokerChild::RecvLaunchApp(
   }
 
   HANDLE p;
-  *aOutOk =
+  mozilla::Result<mozilla::Ok, LaunchError> err =
       mSandboxBroker.LaunchApp(aParams.path().get(), aParams.args().get(),
                                envmap, GeckoProcessType(aParams.processType()),
                                aParams.enableLogging(), nullptr, (void**)&p);
+  *aOutOk = err.isOk();
   if (*aOutOk) {
     *aOutHandle = uint64_t(p);
   }

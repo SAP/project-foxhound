@@ -1,10 +1,12 @@
 "use strict";
 
-const { sinon } = ChromeUtils.import("resource://testing-common/Sinon.jsm");
+const { sinon } = ChromeUtils.importESModule(
+  "resource://testing-common/Sinon.sys.mjs"
+);
 const {
   setDefaultPreferencesIfNeeded,
   PREFERENCE_TYPES,
-} = require("devtools/client/aboutdebugging/src/modules/runtime-default-preferences");
+} = require("resource://devtools/client/aboutdebugging/src/modules/runtime-default-preferences.js");
 
 const CHAR_PREF = "some.char.pref";
 const BOOL_PREF = "some.bool.pref";

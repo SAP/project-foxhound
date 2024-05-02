@@ -13,7 +13,7 @@ function markArrayElementsAsUsed(context, node, expression) {
   if (expression.type != "ArrayExpression") {
     context.report({
       node,
-      message: "Unexpected assignment of non-Array to EXPORTED_SYMBOLS",
+      messageId: "nonArrayAssignedToImported",
     });
     return;
   }
@@ -25,59 +25,66 @@ function markArrayElementsAsUsed(context, node, expression) {
   context.markVariableAsUsed("EXPORTED_SYMBOLS");
 }
 
-// -----------------------------------------------------------------------------
-// Rule Definition
-// -----------------------------------------------------------------------------
+// Ignore assignments not in the global scope, e.g. where special module
+// definitions are required due to having different ways of importing files,
+// e.g. osfile.
+function isGlobalScope(context) {
+  return !context.getScope().upper;
+}
 
-module.exports = function(context) {
-  // Ignore assignments not in the global scope, e.g. where special module
-  // definitions are required due to having different ways of importing files,
-  // e.g. osfile.
-  function isGlobalScope() {
-    return !context.getScope().upper;
-  }
-
-  // ---------------------------------------------------------------------------
-  // Public
-  // ---------------------------------------------------------------------------
-
-  return {
-    AssignmentExpression(node, parents) {
-      if (
-        node.operator === "=" &&
-        node.left.type === "MemberExpression" &&
-        node.left.object.type === "ThisExpression" &&
-        node.left.property.name === "EXPORTED_SYMBOLS" &&
-        isGlobalScope()
-      ) {
-        markArrayElementsAsUsed(context, node, node.right);
-      }
+module.exports = {
+  meta: {
+    docs: {
+      url: "https://firefox-source-docs.mozilla.org/code-quality/lint/linters/eslint-plugin-mozilla/rules/mark-exported-symbols-as-used.html",
     },
+    messages: {
+      useLetForExported:
+        "EXPORTED_SYMBOLS cannot be declared via `let`. Use `var` or `this.EXPORTED_SYMBOLS =`",
+      nonArrayAssignedToImported:
+        "Unexpected assignment of non-Array to EXPORTED_SYMBOLS",
+    },
+    schema: [],
+    type: "problem",
+  },
 
-    VariableDeclaration(node, parents) {
-      if (!isGlobalScope()) {
-        return;
-      }
-
-      for (let item of node.declarations) {
+  create(context) {
+    return {
+      AssignmentExpression(node, parents) {
         if (
-          item.id &&
-          item.id.type == "Identifier" &&
-          item.id.name === "EXPORTED_SYMBOLS"
+          node.operator === "=" &&
+          node.left.type === "MemberExpression" &&
+          node.left.object.type === "ThisExpression" &&
+          node.left.property.name === "EXPORTED_SYMBOLS" &&
+          isGlobalScope(context)
         ) {
-          if (node.kind === "let") {
-            // The use of 'let' isn't allowed as the lexical scope may die after
-            // the script executes.
-            context.report({
-              node,
-              message:
-                "EXPORTED_SYMBOLS cannot be declared via `let`. Use `var` or `this.EXPORTED_SYMBOLS =`",
-            });
-          }
-
-          markArrayElementsAsUsed(context, node, item.init);
+          markArrayElementsAsUsed(context, node, node.right);
         }
-      }
-    },
-  };
+      },
+
+      VariableDeclaration(node, parents) {
+        if (!isGlobalScope(context)) {
+          return;
+        }
+
+        for (let item of node.declarations) {
+          if (
+            item.id &&
+            item.id.type == "Identifier" &&
+            item.id.name === "EXPORTED_SYMBOLS"
+          ) {
+            if (node.kind === "let") {
+              // The use of 'let' isn't allowed as the lexical scope may die after
+              // the script executes.
+              context.report({
+                node,
+                messageId: "useLetForExported",
+              });
+            }
+
+            markArrayElementsAsUsed(context, node, item.init);
+          }
+        }
+      },
+    };
+  },
 };

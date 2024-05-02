@@ -13,7 +13,7 @@
 #define TO_SUBSTRING(_v) (*(_v))
 
 template <typename T>
-StringTaint nsTSubstringTuple<T>::Taint() const
+SafeStringTaint nsTSubstringTuple<T>::Taint() const
 {
   SafeStringTaint res;
   uint32_t len;
@@ -21,11 +21,11 @@ StringTaint nsTSubstringTuple<T>::Taint() const
     res = mHead->Taint().safeCopy();
     len = mHead->Length();
   } else {
-    res = TO_SUBSTRING(mFragA).Taint();
+    res = TO_SUBSTRING(mFragA).Taint().safeCopy();
     len = TO_SUBSTRING(mFragA).Length();
   }
 
-  res.concat(TO_SUBSTRING(mFragB).Taint(), len);
+  res.concat(TO_SUBSTRING(mFragB).Taint().safeCopy(), len);
   return res;
 }
 

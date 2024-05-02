@@ -1,8 +1,5 @@
-from __future__ import absolute_import, print_function
-
-import pytest
-
 import mozunit
+import pytest
 
 LINTER = "file-perm"
 

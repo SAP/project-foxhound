@@ -33,9 +33,9 @@ class DNSRequestBase : public nsISupports {
 
   virtual void OnRecvCancelDNSRequest(const nsCString& hostName,
                                       const nsCString& trrServer,
-                                      const uint16_t& type,
+                                      const int32_t& port, const uint16_t& type,
                                       const OriginAttributes& originAttributes,
-                                      const uint32_t& flags,
+                                      const nsIDNSService::DNSFlags& flags,
                                       const nsresult& reason) = 0;
   virtual bool OnRecvLookupCompleted(const DNSRequestResponse& reply) = 0;
   virtual void OnIPCActorDestroy() = 0;
@@ -58,15 +58,16 @@ class DNSRequestSender final : public DNSRequestBase, public nsICancelable {
   NS_DECL_NSICANCELABLE
 
   DNSRequestSender(const nsACString& aHost, const nsACString& aTrrServer,
-                   const uint16_t& aType,
+                   int32_t aPort, const uint16_t& aType,
                    const OriginAttributes& aOriginAttributes,
-                   const uint32_t& aFlags, nsIDNSListener* aListener,
-                   nsIEventTarget* target);
+                   const nsIDNSService::DNSFlags& aFlags,
+                   nsIDNSListener* aListener, nsIEventTarget* target);
 
   void OnRecvCancelDNSRequest(const nsCString& hostName,
-                              const nsCString& trrServer, const uint16_t& type,
+                              const nsCString& trrServer, const int32_t& port,
+                              const uint16_t& type,
                               const OriginAttributes& originAttributes,
-                              const uint32_t& flags,
+                              const nsIDNSService::DNSFlags& flags,
                               const nsresult& reason) override;
   bool OnRecvLookupCompleted(const DNSRequestResponse& reply) override;
   void OnIPCActorDestroy() override;
@@ -88,9 +89,10 @@ class DNSRequestSender final : public DNSRequestBase, public nsICancelable {
   nsresult mResultStatus = NS_OK;
   nsCString mHost;
   nsCString mTrrServer;
+  int32_t mPort;
   uint16_t mType = 0;
   const OriginAttributes mOriginAttributes;
-  uint16_t mFlags = 0;
+  nsIDNSService::DNSFlags mFlags = nsIDNSService::RESOLVE_DEFAULT_FLAGS;
 };
 
 // DNSRequestHandler handles the dns request and sends the result back via IPC.
@@ -103,13 +105,15 @@ class DNSRequestHandler final : public DNSRequestBase, public nsIDNSListener {
   DNSRequestHandler() = default;
 
   void DoAsyncResolve(const nsACString& hostname, const nsACString& trrServer,
-                      uint16_t type, const OriginAttributes& originAttributes,
-                      uint32_t flags);
+                      int32_t port, uint16_t type,
+                      const OriginAttributes& originAttributes,
+                      nsIDNSService::DNSFlags flags);
 
   void OnRecvCancelDNSRequest(const nsCString& hostName,
-                              const nsCString& trrServer, const uint16_t& type,
+                              const nsCString& trrServer, const int32_t& port,
+                              const uint16_t& type,
                               const OriginAttributes& originAttributes,
-                              const uint32_t& flags,
+                              const nsIDNSService::DNSFlags& flags,
                               const nsresult& reason) override;
   bool OnRecvLookupCompleted(const DNSRequestResponse& reply) override;
   void OnIPCActorDestroy() override;
@@ -120,7 +124,7 @@ class DNSRequestHandler final : public DNSRequestBase, public nsIDNSListener {
  private:
   virtual ~DNSRequestHandler() = default;
 
-  uint32_t mFlags = 0;
+  nsIDNSService::DNSFlags mFlags = nsIDNSService::RESOLVE_DEFAULT_FLAGS;
 };
 
 // Provides some common methods for DNSRequestChild and DNSRequestParent.

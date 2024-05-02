@@ -10,7 +10,7 @@ const EXAMPLE_NET_URL = "https://example.net/document-builder.sjs?html=testnet";
 const REQUEST_URL = HTTPS_SEARCH_SJS + "?value=test";
 const PARENT_PROCESS_URL = "about:blank";
 
-add_task(async function() {
+add_task(async function () {
   info("Open a page that runs on the content process and the netmonitor");
   const { monitor } = await initNetMonitor(EXAMPLE_COM_URL, {
     requestCount: 1,
@@ -18,19 +18,24 @@ add_task(async function() {
   await assertRequest(monitor, REQUEST_URL);
 
   info("Navigate to a page that runs in another content process (if fission)");
-  await navigateTo(EXAMPLE_NET_URL);
+  await waitForUpdatesAndNavigateTo(EXAMPLE_NET_URL);
   await assertRequest(monitor, REQUEST_URL);
 
   info("Navigate to a parent process page");
-  await navigateTo(PARENT_PROCESS_URL);
+  await waitForUpdatesAndNavigateTo(PARENT_PROCESS_URL);
   await assertRequest(monitor, REQUEST_URL);
 
   info("Navigate back to the example.com content page");
-  await navigateTo(EXAMPLE_COM_URL);
+  await waitForUpdatesAndNavigateTo(EXAMPLE_COM_URL);
   await assertRequest(monitor, REQUEST_URL);
 
   await teardown(monitor);
 });
+
+async function waitForUpdatesAndNavigateTo(url) {
+  await waitForAllNetworkUpdateEvents();
+  await navigateTo(url);
+}
 
 async function assertRequest(monitor, url) {
   const waitForRequests = waitForNetworkEvents(monitor, 1);

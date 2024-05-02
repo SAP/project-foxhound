@@ -5,7 +5,6 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nscore.h"
-#include "plstr.h"
 #include <stdio.h>
 #include "nsString.h"
 #include <windows.h>
@@ -32,7 +31,9 @@
 
 using mozilla::LogLevel;
 
+#ifdef DEBUG
 static mozilla::LazyLogModule gWin32SoundLog("nsSound");
+#endif
 
 // Hackaround for bug 1644240
 // When we call PlaySound for the first time in the process, winmm.dll creates

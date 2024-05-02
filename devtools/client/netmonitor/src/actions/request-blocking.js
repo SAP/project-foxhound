@@ -4,8 +4,6 @@
 
 "use strict";
 
-const Services = require("Services");
-
 const {
   ADD_BLOCKED_URL,
   TOGGLE_BLOCKING_ENABLED,
@@ -20,7 +18,7 @@ const {
   OPEN_ACTION_BAR,
   SELECT_ACTION_BAR_TAB,
   PANELS,
-} = require("devtools/client/netmonitor/src/constants");
+} = require("resource://devtools/client/netmonitor/src/constants.js");
 
 function toggleRequestBlockingPanel() {
   return async ({ dispatch, getState }) => {
@@ -85,11 +83,11 @@ function updateBlockedUrl(oldUrl, newUrl) {
 }
 
 async function openRequestBlocking() {
-  return async ({ dispatch, getState, connector }) => {
+  return async ({ dispatch, getState, commands }) => {
     const state = getState();
     if (!state.requestBlocking.blockingSynced) {
       const blockedUrls = state.requestBlocking.blockedUrls;
-      const responses = await connector.getBlockedUrls();
+      const responses = await commands.networkCommand.getBlockedUrls();
       const urls = responses.flat();
       if (urls.length !== blockedUrls.length) {
         urls.forEach(url => dispatch(addBlockedUrl(url)));

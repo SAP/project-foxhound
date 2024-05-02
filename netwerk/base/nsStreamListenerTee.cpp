@@ -4,6 +4,7 @@
 
 #include "nsStreamListenerTee.h"
 #include "nsProxyRelease.h"
+#include "nsIRequest.h"
 
 namespace mozilla {
 namespace net {
@@ -49,9 +50,14 @@ nsStreamListenerTee::OnStopRequest(nsIRequest* request, nsresult status) {
   }
 
   nsresult rv = mListener->OnStopRequest(request, status);
-  if (mObserver) mObserver->OnStopRequest(request, status);
   if (!mIsMultiPart) {
-    mObserver = nullptr;
+    mListener = nullptr;
+  }
+  if (mObserver) {
+    mObserver->OnStopRequest(request, status);
+    if (!mIsMultiPart) {
+      mObserver = nullptr;
+    }
   }
   return rv;
 }
@@ -129,6 +135,27 @@ nsStreamListenerTee::CheckListenerChain() {
   retargetableListener = do_QueryInterface(mObserver, &rv);
   if (retargetableListener) {
     rv = retargetableListener->CheckListenerChain();
+  }
+  return rv;
+}
+
+NS_IMETHODIMP
+nsStreamListenerTee::OnDataFinished(nsresult aStatus) {
+  nsresult rv = NS_OK;
+  nsCOMPtr<nsIThreadRetargetableStreamListener> retargetableListener =
+      do_QueryInterface(mListener, &rv);
+  if (retargetableListener) {
+    rv = retargetableListener->OnDataFinished(aStatus);
+  }
+  if (NS_FAILED(rv)) {
+    return rv;
+  }
+  if (!mObserver) {
+    return rv;
+  }
+  retargetableListener = do_QueryInterface(mObserver, &rv);
+  if (retargetableListener) {
+    rv = retargetableListener->OnDataFinished(aStatus);
   }
   return rv;
 }

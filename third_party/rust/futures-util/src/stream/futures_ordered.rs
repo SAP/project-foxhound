@@ -19,7 +19,7 @@ pin_project! {
     struct OrderWrapper<T> {
         #[pin]
         data: T, // A future or a future's output
-        index: usize,
+        index: isize,
     }
 }
 
@@ -58,7 +58,7 @@ where
 
 /// An unbounded queue of futures.
 ///
-/// This "combinator" is similar to `FuturesUnordered`, but it imposes an order
+/// This "combinator" is similar to [`FuturesUnordered`], but it imposes a FIFO order
 /// on top of the set of futures. While futures in the set will race to
 /// completion in parallel, results will only be returned in the order their
 /// originating futures were added to the queue.
@@ -95,8 +95,8 @@ where
 pub struct FuturesOrdered<T: Future> {
     in_progress_queue: FuturesUnordered<OrderWrapper<T>>,
     queued_outputs: BinaryHeap<OrderWrapper<T::Output>>,
-    next_incoming_index: usize,
-    next_outgoing_index: usize,
+    next_incoming_index: isize,
+    next_outgoing_index: isize,
 }
 
 impl<T: Future> Unpin for FuturesOrdered<T> {}
@@ -135,9 +135,33 @@ impl<Fut: Future> FuturesOrdered<Fut> {
     /// This function will not call `poll` on the submitted future. The caller
     /// must ensure that `FuturesOrdered::poll` is called in order to receive
     /// task notifications.
+    #[deprecated(note = "use `push_back` instead")]
     pub fn push(&mut self, future: Fut) {
+        self.push_back(future);
+    }
+
+    /// Pushes a future to the back of the queue.
+    ///
+    /// This function submits the given future to the internal set for managing.
+    /// This function will not call `poll` on the submitted future. The caller
+    /// must ensure that `FuturesOrdered::poll` is called in order to receive
+    /// task notifications.
+    pub fn push_back(&mut self, future: Fut) {
         let wrapped = OrderWrapper { data: future, index: self.next_incoming_index };
         self.next_incoming_index += 1;
+        self.in_progress_queue.push(wrapped);
+    }
+
+    /// Pushes a future to the front of the queue.
+    ///
+    /// This function submits the given future to the internal set for managing.
+    /// This function will not call `poll` on the submitted future. The caller
+    /// must ensure that `FuturesOrdered::poll` is called in order to receive
+    /// task notifications. This future will be the next future to be returned
+    /// complete.
+    pub fn push_front(&mut self, future: Fut) {
+        let wrapped = OrderWrapper { data: future, index: self.next_outgoing_index - 1 };
+        self.next_outgoing_index -= 1;
         self.in_progress_queue.push(wrapped);
     }
 }
@@ -196,7 +220,7 @@ impl<Fut: Future> FromIterator<Fut> for FuturesOrdered<Fut> {
     {
         let acc = Self::new();
         iter.into_iter().fold(acc, |mut acc, item| {
-            acc.push(item);
+            acc.push_back(item);
             acc
         })
     }
@@ -214,7 +238,7 @@ impl<Fut: Future> Extend<Fut> for FuturesOrdered<Fut> {
         I: IntoIterator<Item = Fut>,
     {
         for item in iter {
-            self.push(item);
+            self.push_back(item);
         }
     }
 }

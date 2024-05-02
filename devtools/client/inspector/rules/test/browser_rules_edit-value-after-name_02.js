@@ -22,7 +22,7 @@ const TEST_URI = `
   <div id="testid">Styled Node</div>
 `;
 
-add_task(async function() {
+add_task(async function () {
   await addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
   const { inspector, view } = await openRuleView();
 
@@ -50,7 +50,7 @@ add_task(async function() {
   editor.input.value = "background-image";
 
   const onPropertyValueUpdate = view.once("property-value-updated");
-  const onSwatchUnitChange = swatchSpan.once("unit-change");
+  const onSwatchUnitChange = once(swatchSpan, "unit-change");
   const onRuleViewChanged = view.once("ruleview-changed");
 
   info("blur propEditor.nameSpan by clicking on the color swatch");

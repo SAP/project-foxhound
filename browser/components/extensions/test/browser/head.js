@@ -3,7 +3,7 @@
 "use strict";
 
 /* exported CustomizableUI makeWidgetId focusWindow forceGC
- *          getBrowserActionWidget
+ *          getBrowserActionWidget assertPersistentListeners
  *          clickBrowserAction clickPageAction clickPageActionInPanel
  *          triggerPageActionWithKeyboard triggerPageActionWithKeyboardInPanel
  *          triggerBrowserActionWithKeyboard
@@ -12,7 +12,7 @@
  *          closeBrowserAction closePageAction
  *          promisePopupShown promisePopupHidden promisePopupNotificationShown
  *          toggleBookmarksToolbar
- *          openContextMenu closeContextMenu
+ *          openContextMenu closeContextMenu promiseContextMenuClosed
  *          openContextMenuInSidebar openContextMenuInPopup
  *          openExtensionContextMenu closeExtensionContextMenu
  *          openActionContextMenu openSubmenu closeActionContextMenu
@@ -20,7 +20,7 @@
  *          openToolsMenu closeToolsMenu
  *          imageBuffer imageBufferFromDataURI
  *          getInlineOptionsBrowser
- *          getListStyleImage getPanelForNode
+ *          getListStyleImage getRawListStyleImage getPanelForNode
  *          awaitExtensionPanel awaitPopupResize
  *          promiseContentDimensions alterContent
  *          promisePrefChangeObserved openContextMenuInFrame
@@ -29,6 +29,7 @@
  *          navigateTab historyPushState promiseWindowRestored
  *          getIncognitoWindow startIncognitoMonitorExtension
  *          loadTestSubscript awaitBrowserLoaded backgroundColorSetOnRoot
+ *          getScreenAt roundCssPixcel getCssAvailRect isRectContained
  */
 
 // There are shutdown issues for which multiple rejections are left uncaught.
@@ -38,8 +39,8 @@
 // NOTE: Allowing rejections on an entire directory should be avoided.
 //       Normally you should use "expectUncaughtRejection" to flag individual
 //       failures.
-const { PromiseTestUtils } = ChromeUtils.import(
-  "resource://testing-common/PromiseTestUtils.jsm"
+const { PromiseTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/PromiseTestUtils.sys.mjs"
 );
 PromiseTestUtils.allowMatchingRejectionsGlobally(
   /Message manager disconnected/
@@ -49,34 +50,23 @@ PromiseTestUtils.allowMatchingRejectionsGlobally(
   /Receiving end does not exist/
 );
 
-const { AppUiTestDelegate, AppUiTestInternals } = ChromeUtils.import(
-  "resource://testing-common/AppUiTestDelegate.jsm"
-);
-const { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
-);
-const { CustomizableUI } = ChromeUtils.import(
-  "resource:///modules/CustomizableUI.jsm"
-);
-const { Preferences } = ChromeUtils.import(
-  "resource://gre/modules/Preferences.jsm"
-);
-const { ClientEnvironmentBase } = ChromeUtils.import(
-  "resource://gre/modules/components-utils/ClientEnvironment.jsm"
+const { AppUiTestDelegate, AppUiTestInternals } = ChromeUtils.importESModule(
+  "resource://testing-common/AppUiTestDelegate.sys.mjs"
 );
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "Management",
-  "resource://gre/modules/Extension.jsm"
+const { Preferences } = ChromeUtils.importESModule(
+  "resource://gre/modules/Preferences.sys.mjs"
+);
+const { ClientEnvironmentBase } = ChromeUtils.importESModule(
+  "resource://gre/modules/components-utils/ClientEnvironment.sys.mjs"
 );
 
-var {
-  makeWidgetId,
-  promisePopupShown,
-  getPanelForNode,
-  awaitBrowserLoaded,
-} = AppUiTestInternals;
+ChromeUtils.defineESModuleGetters(this, {
+  Management: "resource://gre/modules/Extension.sys.mjs",
+});
+
+var { makeWidgetId, promisePopupShown, getPanelForNode, awaitBrowserLoaded } =
+  AppUiTestInternals;
 
 // The extension tests can run a lot slower under ASAN.
 if (AppConstants.ASAN) {
@@ -87,6 +77,11 @@ function loadTestSubscript(filePath) {
   Services.scriptloader.loadSubScript(new URL(filePath, gTestPath).href, this);
 }
 
+// Ensure when we turn off topsites in the next few lines,
+// we don't hit any remote endpoints.
+Services.prefs
+  .getDefaultBranch("browser.newtabpage.activity-stream.")
+  .setStringPref("discoverystream.endpointSpocsClear", "");
 // Leaving Top Sites enabled during these tests would create site screenshots
 // and update pinned Top Sites unnecessarily.
 Services.prefs
@@ -99,11 +94,14 @@ Services.prefs
 {
   // Touch the recipeParentPromise lazy getter so we don't get
   // `this._recipeManager is undefined` errors during tests.
-  const { LoginManagerParent } = ChromeUtils.import(
-    "resource://gre/modules/LoginManagerParent.jsm"
+  const { LoginManagerParent } = ChromeUtils.importESModule(
+    "resource://gre/modules/LoginManagerParent.sys.mjs"
   );
   void LoginManagerParent.recipeParentPromise;
 }
+
+// Persistent Listener test functionality
+const { assertPersistentListeners } = ExtensionTestUtils.testAssertions;
 
 // Bug 1239884: Our tests occasionally hit a long GC pause at unpredictable
 // times in debug builds, which results in intermittent timeouts. Until we have
@@ -123,7 +121,7 @@ var focusWindow = async function focusWindow(win) {
   let promise = new Promise(resolve => {
     win.addEventListener(
       "focus",
-      function() {
+      function () {
         resolve();
       },
       { capture: true, once: true }
@@ -148,7 +146,7 @@ function getInlineOptionsBrowser(aboutAddonsBrowser) {
   return contentDocument.getElementById("addon-inline-options");
 }
 
-function getListStyleImage(button) {
+function getRawListStyleImage(button) {
   // Ensure popups are initialized so that the elements are rendered and
   // getComputedStyle works.
   for (
@@ -159,10 +157,11 @@ function getListStyleImage(button) {
     popup.ensureInitialized();
   }
 
-  let style = button.ownerGlobal.getComputedStyle(button);
+  return button.ownerGlobal.getComputedStyle(button).listStyleImage;
+}
 
-  let match = /^url\("(.*)"\)$/.exec(style.listStyleImage);
-
+function getListStyleImage(button) {
+  let match = /url\("([^"]*)"\)/.exec(getRawListStyleImage(button));
   return match && match[1];
 }
 
@@ -214,7 +213,7 @@ function promisePopupNotificationShown(name, win = window) {
 }
 
 function promisePossiblyInaccurateContentDimensions(browser) {
-  return SpecialPowers.spawn(browser, [], async function() {
+  return SpecialPowers.spawn(browser, [], async function () {
     function copyProps(obj, props) {
       let res = {};
       for (let prop of props) {
@@ -255,7 +254,20 @@ function delay(ms = 0) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-async function promiseContentDimensions(browser) {
+/**
+ * Retrieve the content dimensions (and wait until the content gets to the.
+ * size of the browser element they are loaded into, optionally tollerating
+ * size differences to prevent intermittent failures).
+ *
+ * @param {BrowserElement} browser
+ *        The browser element where the content has been loaded.
+ * @param {number} [tolleratedWidthSizeDiff]
+ *        width size difference to tollerate in pixels (defaults to 1).
+ *
+ * @returns {Promise<object>}
+ *          An object with the dims retrieved from the content.
+ */
+async function promiseContentDimensions(browser, tolleratedWidthSizeDiff = 1) {
   // For remote browsers, each resize operation requires an asynchronous
   // round-trip to resize the content window. Since there's a certain amount of
   // unpredictability in the timing, mainly due to the unpredictability of
@@ -264,9 +276,15 @@ async function promiseContentDimensions(browser) {
 
   let dims = await promisePossiblyInaccurateContentDimensions(browser);
   while (
-    browser.clientWidth !== Math.round(dims.window.innerWidth) ||
+    Math.abs(browser.clientWidth - dims.window.innerWidth) >
+      tolleratedWidthSizeDiff ||
     browser.clientHeight !== Math.round(dims.window.innerHeight)
   ) {
+    const diffWidth = Math.abs(browser.clientWidth - dims.window.innerWidth);
+    const diffHeight = Math.abs(browser.clientHeight - dims.window.innerHeight);
+    info(
+      `Content dimension did not reached the expected size yet (diff: ${diffWidth}x${diffHeight}). Wait further.`
+    );
     await delay(50);
     dims = await promisePossiblyInaccurateContentDimensions(browser);
   }
@@ -303,12 +321,12 @@ async function focusButtonAndPressKey(key, elem, modifiers) {
   elem.blur();
 }
 
-var awaitExtensionPanel = function(extension, win = window, awaitLoad = true) {
+var awaitExtensionPanel = function (extension, win = window, awaitLoad = true) {
   return AppUiTestDelegate.awaitExtensionPanel(win, extension.id, awaitLoad);
 };
 
-function getCustomizableUIPanelID() {
-  return CustomizableUI.AREA_FIXED_OVERFLOW_PANEL;
+function getCustomizableUIPanelID(win = window) {
+  return CustomizableUI.AREA_ADDONS;
 }
 
 function getBrowserActionWidget(extension) {
@@ -321,10 +339,11 @@ function getBrowserActionPopup(extension, win = window) {
   if (group.areaType == CustomizableUI.TYPE_TOOLBAR) {
     return win.document.getElementById("customizationui-widget-panel");
   }
-  return win.PanelUI.overflowPanel;
+
+  return win.gUnifiedExtensions.panel;
 }
 
-var showBrowserAction = function(extension, win = window) {
+var showBrowserAction = function (extension, win = window) {
   return AppUiTestInternals.showBrowserAction(win, extension.id);
 };
 
@@ -342,13 +361,13 @@ async function triggerBrowserActionWithKeyboard(
   await showBrowserAction(extension, win);
 
   let group = getBrowserActionWidget(extension);
-  let node = group.forWindow(win).node;
+  let node = group.forWindow(win).node.firstElementChild;
 
   if (group.areaType == CustomizableUI.TYPE_TOOLBAR) {
     await focusButtonAndPressKey(key, node, modifiers);
-  } else if (group.areaType == CustomizableUI.TYPE_MENU_PANEL) {
-    // Use key navigation so that the PanelMultiView doesn't ignore key events
-    let panel = win.document.getElementById("widget-overflow");
+  } else if (group.areaType == CustomizableUI.TYPE_PANEL) {
+    // Use key navigation so that the PanelMultiView doesn't ignore key events.
+    let panel = win.gUnifiedExtensions.panel;
     while (win.document.activeElement != node) {
       EventUtils.synthesizeKey("KEY_ArrowDown");
       ok(
@@ -389,11 +408,14 @@ async function toggleBookmarksToolbar(visible = true) {
   );
 }
 
-async function openContextMenuInPopup(extension, selector = "body") {
-  let contentAreaContextMenu = document.getElementById(
-    "contentAreaContextMenu"
-  );
-  let browser = await awaitExtensionPanel(extension);
+async function openContextMenuInPopup(
+  extension,
+  selector = "body",
+  win = window
+) {
+  let doc = win.document;
+  let contentAreaContextMenu = doc.getElementById("contentAreaContextMenu");
+  let browser = await awaitExtensionPanel(extension, win);
 
   // Ensure that the document layout has been flushed before triggering the mouse event
   // (See Bug 1519808 for a rationale).
@@ -491,15 +513,18 @@ async function openContextMenu(selector = "#img1", win = window) {
   return contentAreaContextMenu;
 }
 
-async function closeContextMenu(contextMenu) {
+async function promiseContextMenuClosed(contextMenu) {
   let contentAreaContextMenu =
     contextMenu || document.getElementById("contentAreaContextMenu");
-  let popupHiddenPromise = BrowserTestUtils.waitForEvent(
-    contentAreaContextMenu,
-    "popuphidden"
-  );
+  return BrowserTestUtils.waitForEvent(contentAreaContextMenu, "popuphidden");
+}
+
+async function closeContextMenu(contextMenu, win = window) {
+  let contentAreaContextMenu =
+    contextMenu || win.document.getElementById("contentAreaContextMenu");
+  let closed = promiseContextMenuClosed(contentAreaContextMenu);
   contentAreaContextMenu.hidePopup();
-  await popupHiddenPromise;
+  await closed;
 }
 
 async function openExtensionContextMenu(selector = "#img1") {
@@ -528,10 +553,7 @@ async function closeExtensionContextMenu(itemToSelect, modifiers = {}) {
   let contentAreaContextMenu = document.getElementById(
     "contentAreaContextMenu"
   );
-  let popupHiddenPromise = BrowserTestUtils.waitForEvent(
-    contentAreaContextMenu,
-    "popuphidden"
-  );
+  let popupHiddenPromise = promiseContextMenuClosed(contentAreaContextMenu);
   if (itemToSelect) {
     itemToSelect.closest("menupopup").activateItem(itemToSelect, modifiers);
   } else {
@@ -957,7 +979,7 @@ async function getIncognitoWindow(url = "about:privatebrowsing") {
   let data = windowWatcher.awaitMessage("data");
 
   let win = await BrowserTestUtils.openNewBrowserWindow({ private: true });
-  BrowserTestUtils.loadURI(win.gBrowser.selectedBrowser, url);
+  BrowserTestUtils.startLoadingURIString(win.gBrowser.selectedBrowser, url);
 
   let details = await data;
   await windowWatcher.unload();
@@ -971,11 +993,63 @@ async function getIncognitoWindow(url = "about:privatebrowsing") {
  *
  * @returns {boolean} True if the window's background-color is set on :root
  *   rather than #navigator-toolbox.
- **/
+ */
 function backgroundColorSetOnRoot() {
   const os = ClientEnvironmentBase.os;
   if (!os.isWindows) {
     return false;
   }
   return os.windowsVersion < 10;
+}
+
+function getScreenAt(left, top, width, height) {
+  const screenManager = Cc["@mozilla.org/gfx/screenmanager;1"].getService(
+    Ci.nsIScreenManager
+  );
+  return screenManager.screenForRect(left, top, width, height);
+}
+
+function roundCssPixcel(pixel, screen) {
+  return Math.floor(
+    Math.floor(pixel * screen.defaultCSSScaleFactor) /
+      screen.defaultCSSScaleFactor
+  );
+}
+
+function getCssAvailRect(screen) {
+  const availDeviceLeft = {};
+  const availDeviceTop = {};
+  const availDeviceWidth = {};
+  const availDeviceHeight = {};
+  screen.GetAvailRect(
+    availDeviceLeft,
+    availDeviceTop,
+    availDeviceWidth,
+    availDeviceHeight
+  );
+  const factor = screen.defaultCSSScaleFactor;
+  const left = Math.floor(availDeviceLeft.value / factor);
+  const top = Math.floor(availDeviceTop.value / factor);
+  const width = Math.floor(availDeviceWidth.value / factor);
+  const height = Math.floor(availDeviceHeight.value / factor);
+  return {
+    left,
+    top,
+    width,
+    height,
+    right: left + width,
+    bottom: top + height,
+  };
+}
+
+function isRectContained(actualRect, maxRect) {
+  is(
+    `top=${actualRect.top >= maxRect.top},bottom=${
+      actualRect.bottom <= maxRect.bottom
+    },left=${actualRect.left >= maxRect.left},right=${
+      actualRect.right <= maxRect.right
+    }`,
+    "top=true,bottom=true,left=true,right=true",
+    `Dimension must be inside, top:${actualRect.top}>=${maxRect.top}, bottom:${actualRect.bottom}<=${maxRect.bottom}, left:${actualRect.left}>=${maxRect.left}, right:${actualRect.right}<=${maxRect.right}`
+  );
 }

@@ -3,21 +3,24 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/BasicEvents.h"
-#include "mozilla/ContentEvents.h"
+#include "BasicEvents.h"
+#include "ContentEvents.h"
+#include "MiscEvents.h"
+#include "MouseEvents.h"
+#include "NativeKeyBindingsType.h"
+#include "TextEventDispatcher.h"
+#include "TextEvents.h"
+#include "TouchEvents.h"
+
 #include "mozilla/EventStateManager.h"
 #include "mozilla/InternalMutationEvent.h"
 #include "mozilla/Maybe.h"
-#include "mozilla/MiscEvents.h"
-#include "mozilla/MouseEvents.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/StaticPrefs_mousewheel.h"
 #include "mozilla/StaticPrefs_ui.h"
-#include "mozilla/TextEventDispatcher.h"
-#include "mozilla/TextEvents.h"
-#include "mozilla/TouchEvents.h"
 #include "mozilla/WritingModes.h"
 #include "mozilla/dom/KeyboardEventBinding.h"
+#include "mozilla/dom/MouseEventBinding.h"
 #include "mozilla/dom/WheelEventBinding.h"
 #include "nsCommandParams.h"
 #include "nsContentUtils.h"
@@ -26,6 +29,8 @@
 #include "nsPrintfCString.h"
 
 #if defined(XP_WIN)
+#  include "windef.h"
+#  include "winnetwk.h"
 #  include "npapi.h"
 #  include "WinUtils.h"
 #endif  // #if defined (XP_WIN)
@@ -347,8 +352,6 @@ bool WidgetEvent::IsKeyEventMessage(EventMessage aMessage) {
     case eKeyDown:
     case eKeyPress:
     case eKeyUp:
-    case eKeyDownOnPlugin:
-    case eKeyUpOnPlugin:
     case eAccessKeyNotFound:
       return true;
     default:
@@ -368,10 +371,6 @@ bool WidgetEvent::HasIMEEventMessage() const {
     default:
       return false;
   }
-}
-
-bool WidgetEvent::HasPluginActivationEventMessage() const {
-  return mMessage == ePluginActivate || mMessage == ePluginFocus;
 }
 
 /******************************************************************************
@@ -439,7 +438,7 @@ bool WidgetEvent::IsUsingCoordinates() const {
     return !mouseEvent->IsContextMenuKeyEvent();
   }
   return !HasKeyEventMessage() && !IsIMERelatedEvent() &&
-         !HasPluginActivationEventMessage() && !IsContentCommandEvent();
+         !IsContentCommandEvent();
 }
 
 bool WidgetEvent::IsTargetedAtFocusedWindow() const {
@@ -502,10 +501,6 @@ bool WidgetEvent::IsAllowedToDispatchInSystemGroup() const {
 }
 
 bool WidgetEvent::IsBlockedForFingerprintingResistance() const {
-  if (!nsContentUtils::ShouldResistFingerprinting()) {
-    return false;
-  }
-
   switch (mClass) {
     case eKeyboardEventClass: {
       const WidgetKeyboardEvent* keyboardEvent = AsKeyboardEvent();
@@ -527,6 +522,17 @@ bool WidgetEvent::IsBlockedForFingerprintingResistance() const {
     default:
       return false;
   }
+}
+
+bool WidgetEvent::AllowFlushingPendingNotifications() const {
+  if (mClass != eQueryContentEventClass) {
+    return true;
+  }
+  // If the dispatcher does not want a flush of pending notifications, it may
+  // be caused by that it's unsafe.  Therefore, we should allow handlers to
+  // flush pending things only when the dispatcher requires the latest content
+  // layout.
+  return AsQueryContentEvent()->mNeedsToFlushLayout;
 }
 
 /******************************************************************************
@@ -619,12 +625,10 @@ Modifier WidgetInputEvent::GetModifier(const nsAString& aDOMKeyName) {
 Modifier WidgetInputEvent::AccelModifier() {
   static Modifier sAccelModifier = MODIFIER_NONE;
   if (sAccelModifier == MODIFIER_NONE) {
-    switch (Preferences::GetInt("ui.key.accelKey", 0)) {
+    switch (StaticPrefs::ui_key_accelKey()) {
       case dom::KeyboardEvent_Binding::DOM_VK_META:
-        sAccelModifier = MODIFIER_META;
-        break;
       case dom::KeyboardEvent_Binding::DOM_VK_WIN:
-        sAccelModifier = MODIFIER_OS;
+        sAccelModifier = MODIFIER_META;
         break;
       case dom::KeyboardEvent_Binding::DOM_VK_ALT:
         sAccelModifier = MODIFIER_ALT;
@@ -642,6 +646,25 @@ Modifier WidgetInputEvent::AccelModifier() {
     }
   }
   return sAccelModifier;
+}
+
+/******************************************************************************
+ * mozilla::WidgetMouseEventBase (MouseEvents.h)
+ ******************************************************************************/
+
+bool WidgetMouseEventBase::InputSourceSupportsHover() const {
+  switch (mInputSource) {
+    case dom::MouseEvent_Binding::MOZ_SOURCE_MOUSE:
+    case dom::MouseEvent_Binding::MOZ_SOURCE_PEN:
+    case dom::MouseEvent_Binding::MOZ_SOURCE_ERASER:
+      return true;
+    case dom::MouseEvent_Binding::MOZ_SOURCE_TOUCH:
+    case dom::MouseEvent_Binding::MOZ_SOURCE_UNKNOWN:
+    case dom::MouseEvent_Binding::MOZ_SOURCE_KEYBOARD:
+    case dom::MouseEvent_Binding::MOZ_SOURCE_CURSOR:
+    default:
+      return false;
+  }
 }
 
 /******************************************************************************
@@ -813,28 +836,24 @@ void WidgetKeyboardEvent::InitAllEditCommands(
   }
 
   DebugOnly<bool> okIgnored = InitEditCommandsFor(
-      nsIWidget::NativeKeyBindingsForSingleLineEditor, aWritingMode);
-  NS_WARNING_ASSERTION(
-      okIgnored,
-      "InitEditCommandsFor(nsIWidget::NativeKeyBindingsForSingleLineEditor) "
-      "failed, but ignored");
-  okIgnored = InitEditCommandsFor(
-      nsIWidget::NativeKeyBindingsForMultiLineEditor, aWritingMode);
-  NS_WARNING_ASSERTION(
-      okIgnored,
-      "InitEditCommandsFor(nsIWidget::NativeKeyBindingsForMultiLineEditor) "
-      "failed, but ignored");
-  okIgnored = InitEditCommandsFor(nsIWidget::NativeKeyBindingsForRichTextEditor,
-                                  aWritingMode);
-  NS_WARNING_ASSERTION(
-      okIgnored,
-      "InitEditCommandsFor(nsIWidget::NativeKeyBindingsForRichTextEditor) "
-      "failed, but ignored");
+      NativeKeyBindingsType::SingleLineEditor, aWritingMode);
+  NS_WARNING_ASSERTION(okIgnored,
+                       "InitEditCommandsFor(NativeKeyBindingsType::"
+                       "SingleLineEditor) failed, but ignored");
+  okIgnored =
+      InitEditCommandsFor(NativeKeyBindingsType::MultiLineEditor, aWritingMode);
+  NS_WARNING_ASSERTION(okIgnored,
+                       "InitEditCommandsFor(NativeKeyBindingsType::"
+                       "MultiLineEditor) failed, but ignored");
+  okIgnored =
+      InitEditCommandsFor(NativeKeyBindingsType::RichTextEditor, aWritingMode);
+  NS_WARNING_ASSERTION(okIgnored,
+                       "InitEditCommandsFor(NativeKeyBindingsType::"
+                       "RichTextEditor) failed, but ignored");
 }
 
 bool WidgetKeyboardEvent::InitEditCommandsFor(
-    nsIWidget::NativeKeyBindingsType aType,
-    const Maybe<WritingMode>& aWritingMode) {
+    NativeKeyBindingsType aType, const Maybe<WritingMode>& aWritingMode) {
   bool& initialized = IsEditCommandsInitializedRef(aType);
   if (initialized) {
     return true;
@@ -868,9 +887,9 @@ bool WidgetKeyboardEvent::InitEditCommandsFor(
   return initialized;
 }
 
-bool WidgetKeyboardEvent::ExecuteEditCommands(
-    nsIWidget::NativeKeyBindingsType aType, DoCommandCallback aCallback,
-    void* aCallbackData) {
+bool WidgetKeyboardEvent::ExecuteEditCommands(NativeKeyBindingsType aType,
+                                              DoCommandCallback aCallback,
+                                              void* aCallbackData) {
   // If the event was created without widget, e.g., created event in chrome
   // script, this shouldn't execute native key bindings.
   if (NS_WARN_IF(!mWidget)) {
@@ -887,7 +906,7 @@ bool WidgetKeyboardEvent::ExecuteEditCommands(
     Maybe<WritingMode> writingMode;
     if (RefPtr<widget::TextEventDispatcher> textEventDispatcher =
             mWidget->GetTextEventDispatcher()) {
-      writingMode = textEventDispatcher->MaybeWritingModeAtSelection();
+      writingMode = textEventDispatcher->MaybeQueryWritingModeAtSelection();
     }
     if (NS_WARN_IF(!InitEditCommandsFor(aType, writingMode))) {
       return false;
@@ -918,7 +937,6 @@ bool WidgetKeyboardEvent::ShouldCauseKeypressEvents() const {
     // case KEY_NAME_INDEX_Hyper:
     case KEY_NAME_INDEX_Meta:
     case KEY_NAME_INDEX_NumLock:
-    case KEY_NAME_INDEX_OS:
     case KEY_NAME_INDEX_ScrollLock:
     case KEY_NAME_INDEX_Shift:
     // case KEY_NAME_INDEX_Super:
@@ -954,20 +972,28 @@ void WidgetKeyboardEvent::GetShortcutKeyCandidates(
     ShortcutKeyCandidateArray& aCandidates) const {
   MOZ_ASSERT(aCandidates.IsEmpty(), "aCandidates must be empty");
 
+  using ShiftState = ShortcutKeyCandidate::ShiftState;
+  using SkipIfEarlierHandlerDisabled =
+      ShortcutKeyCandidate::SkipIfEarlierHandlerDisabled;
+
   // ShortcutKeyCandidate::mCharCode is a candidate charCode.
-  // ShortcutKeyCandidate::mIgnoreShift means the mCharCode should be tried to
-  // execute a command with/without shift key state. If this is TRUE, the
-  // shifted key state should be ignored. Otherwise, don't ignore the state.
+  // ShortcutKeyCandidate::mShiftState means the mCharCode should be tried to
+  // execute a command with/without shift key state. If this is Ignorable,
+  // the shifted key state should be ignored. Otherwise, don't ignore the state.
   // the priority of the charCodes are (shift key is not pressed):
-  //   0: PseudoCharCode()/false,
-  //   1: unshiftedCharCodes[0]/false, 2: unshiftedCharCodes[1]/false...
+  //   0: PseudoCharCode()/ShiftState::MatchExactly,
+  //   1: unshiftedCharCodes[0]/ShiftState::MatchExactly,
+  //   2: unshiftedCharCodes[1]/ShiftState::MatchExactly...
   // the priority of the charCodes are (shift key is pressed):
-  //   0: PseudoCharCode()/false,
-  //   1: shiftedCharCodes[0]/false, 2: shiftedCharCodes[0]/true,
-  //   3: shiftedCharCodes[1]/false, 4: shiftedCharCodes[1]/true...
+  //   0: PseudoCharCode()/ShiftState::MatchExactly,
+  //   1: shiftedCharCodes[0]/ShiftState::MatchExactly,
+  //   2: shiftedCharCodes[0]/ShiftState::Ignorable,
+  //   3: shiftedCharCodes[1]/ShiftState::MatchExactly,
+  //   4: shiftedCharCodes[1]/ShiftState::Ignorable...
   uint32_t pseudoCharCode = PseudoCharCode();
   if (pseudoCharCode) {
-    ShortcutKeyCandidate key(pseudoCharCode, false);
+    ShortcutKeyCandidate key(pseudoCharCode, ShiftState::MatchExactly,
+                             SkipIfEarlierHandlerDisabled::No);
     aCandidates.AppendElement(key);
   }
 
@@ -978,7 +1004,8 @@ void WidgetKeyboardEvent::GetShortcutKeyCandidates(
       if (!ch || ch == pseudoCharCode) {
         continue;
       }
-      ShortcutKeyCandidate key(ch, false);
+      ShortcutKeyCandidate key(ch, ShiftState::MatchExactly,
+                               SkipIfEarlierHandlerDisabled::No);
       aCandidates.AppendElement(key);
     }
     // If unshiftedCharCodes doesn't have numeric but shiftedCharCode has it,
@@ -989,7 +1016,11 @@ void WidgetKeyboardEvent::GetShortcutKeyCandidates(
       for (uint32_t i = 0; i < len; ++i) {
         uint32_t ch = mAlternativeCharCodes[i].mShiftedCharCode;
         if (ch >= '0' && ch <= '9') {
-          ShortcutKeyCandidate key(ch, false);
+          ShortcutKeyCandidate key(
+              ch, ShiftState::MatchExactly,
+              // Ctrl + `-` in the French keyboard layout should not match with
+              // Ctrl + `6` shortcut when it's already fully zoomed out.
+              SkipIfEarlierHandlerDisabled::Yes);
           aCandidates.AppendElement(key);
           break;
         }
@@ -1003,7 +1034,8 @@ void WidgetKeyboardEvent::GetShortcutKeyCandidates(
       }
 
       if (ch != pseudoCharCode) {
-        ShortcutKeyCandidate key(ch, false);
+        ShortcutKeyCandidate key(ch, ShiftState::MatchExactly,
+                                 SkipIfEarlierHandlerDisabled::No);
         aCandidates.AppendElement(key);
       }
 
@@ -1026,7 +1058,8 @@ void WidgetKeyboardEvent::GetShortcutKeyCandidates(
 
       // Setting the alternative charCode candidates for retry without shift
       // key state only when the shift key is pressed.
-      ShortcutKeyCandidate key(ch, true);
+      ShortcutKeyCandidate key(ch, ShiftState::Ignorable,
+                               SkipIfEarlierHandlerDisabled::No);
       aCandidates.AppendElement(key);
     }
   }
@@ -1038,7 +1071,8 @@ void WidgetKeyboardEvent::GetShortcutKeyCandidates(
   // shouldn't work as a space key.
   if (mKeyNameIndex == KEY_NAME_INDEX_USE_STRING &&
       mCodeNameIndex == CODE_NAME_INDEX_Space && pseudoCharCode != ' ') {
-    ShortcutKeyCandidate spaceKey(' ', false);
+    ShortcutKeyCandidate spaceKey(' ', ShiftState::MatchExactly,
+                                  SkipIfEarlierHandlerDisabled::No);
     aCandidates.AppendElement(spaceKey);
   }
 }
@@ -1091,7 +1125,6 @@ void WidgetKeyboardEvent::GetAccessKeyCandidates(
 #define NS_MODIFIER_CONTROL 2
 #define NS_MODIFIER_ALT 4
 #define NS_MODIFIER_META 8
-#define NS_MODIFIER_OS 16
 
 static Modifiers PrefFlagsToModifiers(int32_t aPrefFlags) {
   Modifiers result = 0;
@@ -1107,9 +1140,6 @@ static Modifiers PrefFlagsToModifiers(int32_t aPrefFlags) {
   if (aPrefFlags & NS_MODIFIER_META) {
     result |= MODIFIER_META;
   }
-  if (aPrefFlags & NS_MODIFIER_OS) {
-    result |= MODIFIER_OS;
-  }
   return result;
 }
 
@@ -1122,9 +1152,8 @@ bool WidgetKeyboardEvent::ModifiersMatchWithAccessKey(
 }
 
 Modifiers WidgetKeyboardEvent::ModifiersForAccessKeyMatching() const {
-  static const Modifiers kModifierMask = MODIFIER_SHIFT | MODIFIER_CONTROL |
-                                         MODIFIER_ALT | MODIFIER_META |
-                                         MODIFIER_OS;
+  static const Modifiers kModifierMask =
+      MODIFIER_SHIFT | MODIFIER_CONTROL | MODIFIER_ALT | MODIFIER_META;
   return mModifiers & kModifierMask;
 }
 
@@ -1140,9 +1169,8 @@ Modifiers WidgetKeyboardEvent::AccessKeyModifiers(AccessKeyType aType) {
     case NS_VK_ALT:
       return MODIFIER_ALT;
     case NS_VK_META:
-      return MODIFIER_META;
     case NS_VK_WIN:
-      return MODIFIER_OS;
+      return MODIFIER_META;
     default:
       return MODIFIER_NONE;
   }
@@ -1194,6 +1222,37 @@ void WidgetKeyboardEvent::GetDOMCodeName(CodeNameIndex aCodeNameIndex,
   MOZ_RELEASE_ASSERT(
       static_cast<size_t>(aCodeNameIndex) < ArrayLength(kCodeNames),
       "Illegal physical code enumeration value");
+
+  // Generate some continuous runs of codes, rather than looking them up.
+  if (aCodeNameIndex >= CODE_NAME_INDEX_KeyA &&
+      aCodeNameIndex <= CODE_NAME_INDEX_KeyZ) {
+    uint32_t index = aCodeNameIndex - CODE_NAME_INDEX_KeyA;
+    aCodeName.AssignLiteral(u"Key");
+    aCodeName.Append(u'A' + index);
+    return;
+  }
+  if (aCodeNameIndex >= CODE_NAME_INDEX_Digit0 &&
+      aCodeNameIndex <= CODE_NAME_INDEX_Digit9) {
+    uint32_t index = aCodeNameIndex - CODE_NAME_INDEX_Digit0;
+    aCodeName.AssignLiteral(u"Digit");
+    aCodeName.AppendInt(index);
+    return;
+  }
+  if (aCodeNameIndex >= CODE_NAME_INDEX_Numpad0 &&
+      aCodeNameIndex <= CODE_NAME_INDEX_Numpad9) {
+    uint32_t index = aCodeNameIndex - CODE_NAME_INDEX_Numpad0;
+    aCodeName.AssignLiteral(u"Numpad");
+    aCodeName.AppendInt(index);
+    return;
+  }
+  if (aCodeNameIndex >= CODE_NAME_INDEX_F1 &&
+      aCodeNameIndex <= CODE_NAME_INDEX_F24) {
+    uint32_t index = aCodeNameIndex - CODE_NAME_INDEX_F1;
+    aCodeName.Assign(u'F');
+    aCodeName.AppendInt(index + 1);
+    return;
+  }
+
   aCodeName = kCodeNames[aCodeNameIndex];
 }
 
@@ -1286,12 +1345,12 @@ uint32_t WidgetKeyboardEvent::ComputeLocationFromCodeValue(
   switch (aCodeNameIndex) {
     case CODE_NAME_INDEX_AltLeft:
     case CODE_NAME_INDEX_ControlLeft:
-    case CODE_NAME_INDEX_OSLeft:
+    case CODE_NAME_INDEX_MetaLeft:
     case CODE_NAME_INDEX_ShiftLeft:
       return eKeyLocationLeft;
     case CODE_NAME_INDEX_AltRight:
     case CODE_NAME_INDEX_ControlRight:
-    case CODE_NAME_INDEX_OSRight:
+    case CODE_NAME_INDEX_MetaRight:
     case CODE_NAME_INDEX_ShiftRight:
       return eKeyLocationRight;
     case CODE_NAME_INDEX_Numpad0:
@@ -1409,10 +1468,6 @@ uint32_t WidgetKeyboardEvent::ComputeKeyCodeFromKeyNameIndex(
       return dom::KeyboardEvent_Binding::DOM_VK_INSERT;
     case KEY_NAME_INDEX_Delete:
       return dom::KeyboardEvent_Binding::DOM_VK_DELETE;
-    case KEY_NAME_INDEX_OS:
-      // case KEY_NAME_INDEX_Super:
-      // case KEY_NAME_INDEX_Hyper:
-      return dom::KeyboardEvent_Binding::DOM_VK_WIN;
     case KEY_NAME_INDEX_ContextMenu:
       return dom::KeyboardEvent_Binding::DOM_VK_CONTEXT_MENU;
     case KEY_NAME_INDEX_Standby:
@@ -1476,7 +1531,11 @@ uint32_t WidgetKeyboardEvent::ComputeKeyCodeFromKeyNameIndex(
     case KEY_NAME_INDEX_AudioVolumeUp:
       return dom::KeyboardEvent_Binding::DOM_VK_VOLUME_UP;
     case KEY_NAME_INDEX_Meta:
+#if defined(XP_WIN) || defined(MOZ_WIDGET_GTK)
+      return dom::KeyboardEvent_Binding::DOM_VK_WIN;
+#else
       return dom::KeyboardEvent_Binding::DOM_VK_META;
+#endif
     case KEY_NAME_INDEX_AltGraph:
       return dom::KeyboardEvent_Binding::DOM_VK_ALTGR;
     case KEY_NAME_INDEX_Process:
@@ -1560,22 +1619,8 @@ CodeNameIndex WidgetKeyboardEvent::ComputeCodeNameIndexFromKeyNameIndex(
                        : CODE_NAME_INDEX_ControlLeft;
       case KEY_NAME_INDEX_Shift:
         return isRight ? CODE_NAME_INDEX_ShiftRight : CODE_NAME_INDEX_ShiftLeft;
-#if defined(XP_WIN)
       case KEY_NAME_INDEX_Meta:
-        return CODE_NAME_INDEX_UNKNOWN;
-      case KEY_NAME_INDEX_OS:  // win key.
-        return isRight ? CODE_NAME_INDEX_OSRight : CODE_NAME_INDEX_OSLeft;
-#elif defined(XP_MACOSX) || defined(ANDROID)
-      case KEY_NAME_INDEX_Meta:  // command key.
-        return isRight ? CODE_NAME_INDEX_OSRight : CODE_NAME_INDEX_OSLeft;
-      case KEY_NAME_INDEX_OS:
-        return CODE_NAME_INDEX_UNKNOWN;
-#else
-      case KEY_NAME_INDEX_Meta:  // Alt + Shift.
-        return isRight ? CODE_NAME_INDEX_AltRight : CODE_NAME_INDEX_AltLeft;
-      case KEY_NAME_INDEX_OS:  // Super/Hyper key.
-        return isRight ? CODE_NAME_INDEX_OSRight : CODE_NAME_INDEX_OSLeft;
-#endif
+        return isRight ? CODE_NAME_INDEX_MetaRight : CODE_NAME_INDEX_MetaLeft;
       default:
         return CODE_NAME_INDEX_UNKNOWN;
     }
@@ -1842,8 +1887,6 @@ Modifier WidgetKeyboardEvent::GetModifierForKeyName(
       return MODIFIER_META;
     case KEY_NAME_INDEX_NumLock:
       return MODIFIER_NUMLOCK;
-    case KEY_NAME_INDEX_OS:
-      return MODIFIER_OS;
     case KEY_NAME_INDEX_ScrollLock:
       return MODIFIER_SCROLLLOCK;
     case KEY_NAME_INDEX_Shift:

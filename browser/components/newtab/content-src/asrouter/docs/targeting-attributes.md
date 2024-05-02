@@ -4,54 +4,76 @@ When you create ASRouter messages such as snippets, contextual feature recommend
 
 Targeting information must be captured in [an expression](./targeting-guide.md) that has access to the following attributes. You may combine and compare any of these attributes as needed.
 
-Please note that some targeting attributes require stricter controls on the telemetry than can be colleted, so when in doubt, ask for review.
+Please note that some targeting attributes require stricter controls on the telemetry than can be collected, so when in doubt, ask for review.
 
 ## Available attributes
 
+* [activeNotifications](#activenotifications)
 * [addonsInfo](#addonsinfo)
+* [addressesSaved](#addressessaved)
+* [attachedFxAOAuthClients](#attachedfxaoauthclients)
 * [attributionData](#attributiondata)
+* [backgroundTaskName](#backgroundtaskname)
+* [blockedCountByType](#blockedcountbytype)
 * [browserSettings](#browsersettings)
+* [colorwaysActive](#colorwaysActive)
+* [creditCardsSaved](#creditcardssaved)
 * [currentDate](#currentdate)
+* [defaultPDFHandler](#defaultpdfhandler)
 * [devToolsOpenedCount](#devtoolsopenedcount)
-* [isDefaultBrowser](#isdefaultbrowser)
+* [distributionId](#distributionId)
+* [doesAppNeedPin](#doesappneedpin)
+* [doesAppNeedPrivatePin](#doesappneedprivatepin)
 * [firefoxVersion](#firefoxversion)
+* [fxViewButtonAreaType](#fxviewbuttonareatype)
+* [hasAccessedFxAPanel](#hasaccessedfxapanel)
+* [hasActiveEnterprisePolicies](#hasactiveenterprisepolicies)
+* [hasMigratedBookmarks](#hasmigratedbookmarks)
+* [hasMigratedCSVPasswords](#hasmigratedcsvpasswords)
+* [hasMigratedHistory](#hasmigratedhistory)
+* [hasMigratedPasswords](#hasmigratedpasswords)
+* [hasPinnedTabs](#haspinnedtabs)
+* [homePageSettings](#homepagesettings)
+* [inMr2022Holdback](#inmr2022holdback)
+* [isBackgroundTaskMode](#isbackgroundtaskmode)
+* [isChinaRepack](#ischinarepack)
+* [isDefaultBrowser](#isdefaultbrowser)
+* [isDefaultHandler](#isdefaulthandler)
+* [isDeviceMigration](#isdevicemigration)
+* [isFxAEnabled](#isfxaenabled)
+* [isFxASignedIn](#isFxASignedIn)
+* [isMajorUpgrade](#ismajorupgrade)
+* [isRTAMO](#isrtamo)
+* [isWhatsNewPanelEnabled](#iswhatsnewpanelenabled)
 * [locale](#locale)
 * [localeLanguageCode](#localelanguagecode)
+* [messageImpressions](#messageimpressions)
 * [needsUpdate](#needsupdate)
+* [newtabSettings](#newtabsettings)
 * [pinnedSites](#pinnedsites)
+* [platformName](#platformname)
 * [previousSessionEnd](#previoussessionend)
+* [primaryResolution](#primaryresolution)
 * [profileAgeCreated](#profileagecreated)
 * [profileAgeReset](#profileagereset)
+* [profileRestartCount](#profilerestartcount)
 * [providerCohorts](#providercohorts)
+* [recentBookmarks](#recentbookmarks)
 * [region](#region)
+* [screenImpressions](#screenImpressions)
 * [searchEngines](#searchengines)
 * [sync](#sync)
 * [topFrecentSites](#topfrecentsites)
-* [totalBookmarksCount](#totalbookmarkscount)
-* [usesFirefoxSync](#usesfirefoxsync)
-* [isFxAEnabled](#isFxAEnabled)
-* [xpinstallEnabled](#xpinstallEnabled)
-* [hasPinnedTabs](#haspinnedtabs)
-* [hasAccessedFxAPanel](#hasaccessedfxapanel)
-* [isWhatsNewPanelEnabled](#iswhatsnewpanelenabled)
 * [totalBlockedCount](#totalblockedcount)
-* [recentBookmarks](#recentbookmarks)
-* [userPrefs](#userprefs)
-* [attachedFxAOAuthClients](#attachedfxaoauthclients)
-* [platformName](#platformname)
-* [messageImpressions](#messageimpressions)
-* [blockedCountByType](#blockedcountbytype)
-* [isChinaRepack](#ischinarepack)
+* [totalBookmarksCount](#totalbookmarkscount)
+* [userEnabledActiveColorway](#userEnabledActiveColorway)
 * [userId](#userid)
-* [profileRestartCount](#profilerestartcount)
-* [homePageSettings](#homepagesettings)
-* [newtabSettings](#newtabsettings)
-* [isFissionExperimentEnabled](#isfissionexperimentenabled)
-* [activeNotifications](#activenotifications)
-* [isMajorUpgrade](#ismajorupgrade)
-* [hasActiveEnterprisePolicies](#hasactiveenterprisepolicies)
 * [userMonthlyActivity](#usermonthlyactivity)
-* [doesAppNeedPin](#doesappneedpin)
+* [userPrefersReducedMotion](#userprefersreducedmotion)
+* [useEmbeddedMigrationWizard][#useembeddedmigrationwizard]
+* [userPrefs](#userprefs)
+* [usesFirefoxSync](#usesfirefoxsync)
+* [xpinstallEnabled](#xpinstallEnabled)
 
 ## Detailed usage
 
@@ -211,6 +233,45 @@ Is Firefox the user's default browser?
 declare const isDefaultBrowser: boolean;
 ```
 
+### `isDefaultHandler`
+
+Is Firefox the user's default handler for various file extensions?
+
+Windows-only.
+
+#### Definition
+
+```ts
+declare const isDefaultHandler: {
+  pdf: boolean;
+  html: boolean;
+};
+```
+
+#### Examples
+* Is Firefox the default PDF handler?
+```ts
+isDefaultHandler.pdf
+```
+
+### `defaultPDFHandler`
+
+Information about the user's default PDF handler
+
+Windows-only.
+
+#### Definition
+
+```ts
+declare const defaultPDFHandler: {
+  // Does the user have a default PDF handler registered?
+  registered: boolean;
+
+  // Is the default PDF handler a known browser?
+  knownBrowser: boolean;
+};
+```
+
 ### `firefoxVersion`
 
 The major Firefox version of the browser
@@ -300,6 +361,19 @@ Timestamp of the previously closed session.
 declare const previousSessionEnd: UnixEpochNumber;
 // UnixEpochNumber is UNIX Epoch timestamp, e.g. 1522843725924
 type UnixEpochNumber = number;
+```
+
+### `primaryResolution`
+
+An object containing the available width and available height of the primary monitor in pixel values. The values take into account the existence of docks and task bars.
+
+#### Definition
+
+```ts
+interface primaryResolution {
+  width: number;
+  height: number;
+}
 ```
 
 ### `profileAgeCreated`
@@ -467,6 +541,46 @@ Does the user have Firefox sync enabled? The service could potentially be turned
 declare const isFxAEnabled: boolean;
 ```
 
+### `isFxASignedIn`
+
+Is the user signed in to a Firefox Account?
+
+#### Definition
+
+```ts
+declare const isFxASignedIn: Promise<boolean>
+```
+
+### `creditCardsSaved`
+
+The number of credit cards the user has saved for Forms and Autofill.
+
+#### Examples
+```java
+creditCardsSaved > 1
+```
+
+#### Definition
+
+```ts
+declare const creditCardsSaved: Promise<number>
+```
+
+### `addressesSaved`
+
+The number of addresses the user has saved for Forms and Autofill.
+
+#### Examples
+```java
+addressesSaved > 1
+```
+
+#### Definition
+
+```ts
+declare const addressesSaved: Promise<number>
+```
+
 ### `xpinstallEnabled`
 
 Pref used by system administrators to disallow add-ons from installed altogether.
@@ -519,7 +633,7 @@ declare const totalBlockedCount: number;
 
 ### `recentBookmarks`
 
-An array of GUIDs of recent bookmarks as provided by [`NewTabUtils.getRecentBookmarks`](https://searchfox.org/mozilla-central/rev/e0b0c38ee83f99d3cf868bad525ace4a395039f1/toolkit/modules/NewTabUtils.jsm#1087)
+An array of GUIDs of recent bookmarks as provided by [`NewTabUtils.getRecentBookmarks`](https://searchfox.org/mozilla-central/rev/c5c002f81f08a73e04868e0c2bf0eb113f200b03/toolkit/modules/NewTabUtils.sys.mjs#1059)
 
 #### Definition
 
@@ -581,7 +695,7 @@ declare const attachedFxAOAuthClients: Promise<OAuthClient[]>
 
 ### `platformName`
 
-[Platform information](https://searchfox.org/mozilla-central/rev/05a22d864814cb1e4352faa4004e1f975c7d2eb9/toolkit/modules/AppConstants.jsm#156).
+[Platform information](https://searchfox.org/mozilla-central/rev/c5c002f81f08a73e04868e0c2bf0eb113f200b03/toolkit/modules/AppConstants.sys.mjs#153).
 
 #### Definition
 
@@ -802,10 +916,6 @@ Object {
 }
 ```
 
-### `isFissionExperimentEnabled`
-
-A boolean. `true` if we're running Fission experiment, `false` otherwise.
-
 ### `activeNotifications`
 
 True when an infobar style message is displayed or when the awesomebar is
@@ -826,4 +936,70 @@ user activity where the first entry is the total urls visited for that day.
 
 ### `doesAppNeedPin`
 
-Checks if Firefox app can and isn't pinned to OS taskbar/dock.
+Checks if Firefox app can be and isn't pinned to OS taskbar/dock.
+
+### `doesAppNeedPrivatePin`
+
+Checks if Firefox Private Browsing Mode can be and isn't pinned to OS taskbar/dock. Currently this only works on certain Windows versions.
+
+### `isBackgroundTaskMode`
+
+Checks if this invocation is running in background task mode.
+
+### `backgroundTaskName`
+
+A non-empty string task name if this invocation is running in background task
+mode, or `null` if this invocation is not running in background task mode.
+
+### `userPrefersReducedMotion`
+
+Checks if user prefers reduced motion as indicated by the value of a media query for `prefers-reduced-motion`.
+
+### `inMr2022Holdback`
+
+A boolean. `true` when the user is in the Major Release 2022 holdback study.
+
+### `distributionId`
+
+A string containing the id of the distribution, or the empty string if there
+is no distribution associated with the build.
+
+### `fxViewButtonAreaType`
+
+A string of the name of the container where the Firefox View button is shown, null if the button has been removed.
+
+### `hasMigratedBookmarks`
+
+A boolean. `true` if the user ever used the Migration Wizard to migrate bookmarks since Firefox 113 released. Available in Firefox 113+; will not be true if the user had only ever migrated bookmarks prior to Firefox 113 being released.
+
+### `hasMigratedCSVPasswords`
+
+A boolean. `true` if CSV passwords have been imported via the migration wizard since Firefox 116 released. Available in Firefox 116+; ; will not be true if the user had only ever migrated CSV passwords prior to Firefox 116 being released.
+
+### `hasMigratedHistory`
+
+A boolean. `true` if the user ever used the Migration Wizard to migrate history since Firefox 113 released. Available in Firefox 113+; will not be true if the user had only ever migrated history prior to Firefox 113 being released.
+
+### `hasMigratedPasswords`
+
+A boolean. `true` if the user ever used the Migration Wizard to migrate passwords since Firefox 113 released. Available in Firefox 113+; will not be true if the user had only ever migrated passwords prior to Firefox 113 being released.
+
+### `useEmbeddedMigrationWizard`
+
+A boolean. `true` if the user is configured to use the embedded Migration Wizard in about:welcome.
+
+### `isRTAMO`
+
+A boolean. `true` when [RTAMO](first-run.md#return-to-amo-rtamo) has been used to download Firefox, `false` otherwise.
+
+### `isDeviceMigration`
+
+A boolean. `true` when [support.mozilla.org](https://support.mozilla.org) has been used to download the browser as part of a "migration" campaign, for device migration guidance, `false` otherwise.
+### `screenImpressions`
+
+An array that maps about:welcome screen IDs to their most recent impression timestamp. Should only be used for unique screen IDs to avoid unintentionally targeting messages with identical screen IDs.
+#### Definition
+
+```
+declare const screenImpressions: { [key: string]: Array<UnixEpochNumber> };
+```

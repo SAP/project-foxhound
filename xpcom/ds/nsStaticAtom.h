@@ -40,7 +40,7 @@ template<uint32_t size>
 struct nsFakeStringBuffer
 {
   // TaintFox: taint information.
-  StringTaint mTaint;
+  SafeStringTaint mTaint;
   int32_t mRefCnt;
   uint32_t mSize;
   char16_t mStringData[size];

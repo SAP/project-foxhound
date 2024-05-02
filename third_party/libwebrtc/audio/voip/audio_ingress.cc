@@ -17,16 +17,21 @@
 #include "api/audio_codecs/audio_format.h"
 #include "audio/utility/audio_frame_operations.h"
 #include "modules/audio_coding/include/audio_coding_module.h"
+#include "modules/rtp_rtcp/source/byte_io.h"
+#include "modules/rtp_rtcp/source/rtcp_packet/common_header.h"
+#include "modules/rtp_rtcp/source/rtcp_packet/receiver_report.h"
+#include "modules/rtp_rtcp/source/rtcp_packet/sender_report.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/numerics/safe_minmax.h"
+#include "rtc_base/time_utils.h"
 
 namespace webrtc {
 
 namespace {
 
-AudioCodingModule::Config CreateAcmConfig(
+acm2::AcmReceiver::Config CreateAcmConfig(
     rtc::scoped_refptr<AudioDecoderFactory> decoder_factory) {
-  AudioCodingModule::Config acm_config;
+  acm2::AcmReceiver::Config acm_config;
   acm_config.neteq_config.enable_muted_state = true;
   acm_config.decoder_factory = decoder_factory;
   return acm_config;
@@ -72,6 +77,12 @@ AudioMixer::Source::AudioFrameInfo AudioIngress::GetAudioFrameWithInfo(
   // Measure audio level.
   constexpr double kAudioSampleDurationSeconds = 0.01;
   output_audio_level_.ComputeLevel(*audio_frame, kAudioSampleDurationSeconds);
+
+  // If caller invoked StopPlay(), then mute the frame.
+  if (!playing_) {
+    AudioFrameOperations::Mute(audio_frame);
+    muted = true;
+  }
 
   // Set first rtp timestamp with first audio frame with valid timestamp.
   if (first_rtp_timestamp_ < 0 && audio_frame->timestamp_ != 0) {
@@ -127,10 +138,6 @@ void AudioIngress::SetReceiveCodecs(
 }
 
 void AudioIngress::ReceivedRTPPacket(rtc::ArrayView<const uint8_t> rtp_packet) {
-  if (!IsPlaying()) {
-    return;
-  }
-
   RtpPacketReceived rtp_packet_received;
   rtp_packet_received.Parse(rtp_packet.data(), rtp_packet.size());
 
@@ -149,6 +156,12 @@ void AudioIngress::ReceivedRTPPacket(rtc::ArrayView<const uint8_t> rtp_packet) {
       return;
     }
     rtp_packet_received.set_payload_type_frequency(it->second);
+  }
+
+  // Track current remote SSRC.
+  if (rtp_packet_received.Ssrc() != remote_ssrc_) {
+    rtp_rtcp_->SetRemoteSSRC(rtp_packet_received.Ssrc());
+    remote_ssrc_.store(rtp_packet_received.Ssrc());
   }
 
   rtp_receive_statistics_->OnRtpPacket(rtp_packet_received);
@@ -179,52 +192,99 @@ void AudioIngress::ReceivedRTPPacket(rtc::ArrayView<const uint8_t> rtp_packet) {
 
 void AudioIngress::ReceivedRTCPPacket(
     rtc::ArrayView<const uint8_t> rtcp_packet) {
-  // Deliver RTCP packet to RTP/RTCP module for parsing.
-  rtp_rtcp_->IncomingRtcpPacket(rtcp_packet.data(), rtcp_packet.size());
+  rtcp::CommonHeader rtcp_header;
+  if (rtcp_header.Parse(rtcp_packet.data(), rtcp_packet.size()) &&
+      (rtcp_header.type() == rtcp::SenderReport::kPacketType ||
+       rtcp_header.type() == rtcp::ReceiverReport::kPacketType)) {
+    RTC_DCHECK_GE(rtcp_packet.size(), 8);
 
-  int64_t rtt = GetRoundTripTime();
-  if (rtt == -1) {
+    uint32_t sender_ssrc =
+        ByteReader<uint32_t>::ReadBigEndian(rtcp_packet.data() + 4);
+
+    // If we don't have remote ssrc at this point, it's likely that remote
+    // endpoint is receive-only or it could have restarted the media.
+    if (sender_ssrc != remote_ssrc_) {
+      rtp_rtcp_->SetRemoteSSRC(sender_ssrc);
+      remote_ssrc_.store(sender_ssrc);
+    }
+  }
+
+  // Deliver RTCP packet to RTP/RTCP module for parsing and processing.
+  rtp_rtcp_->IncomingRtcpPacket(rtcp_packet);
+
+  absl::optional<TimeDelta> rtt = rtp_rtcp_->LastRtt();
+  if (!rtt.has_value()) {
     // Waiting for valid RTT.
     return;
   }
 
-  uint32_t ntp_secs = 0, ntp_frac = 0, rtp_timestamp = 0;
-  if (rtp_rtcp_->RemoteNTP(&ntp_secs, &ntp_frac, nullptr, nullptr,
-                           &rtp_timestamp) != 0) {
+  absl::optional<RtpRtcpInterface::SenderReportStats> last_sr =
+      rtp_rtcp_->GetSenderReportStats();
+  if (!last_sr.has_value()) {
     // Waiting for RTCP.
     return;
   }
 
   {
     MutexLock lock(&lock_);
-    ntp_estimator_.UpdateRtcpTimestamp(rtt, ntp_secs, ntp_frac, rtp_timestamp);
+    ntp_estimator_.UpdateRtcpTimestamp(*rtt, last_sr->last_remote_timestamp,
+                                       last_sr->last_remote_rtp_timestamp);
   }
 }
 
-int64_t AudioIngress::GetRoundTripTime() {
+ChannelStatistics AudioIngress::GetChannelStatistics() {
+  ChannelStatistics channel_stats;
+
+  // Get clockrate for current decoder ahead of jitter calculation.
+  uint32_t clockrate_hz = 0;
+  absl::optional<std::pair<int, SdpAudioFormat>> decoder =
+      acm_receiver_.LastDecoder();
+  if (decoder) {
+    clockrate_hz = decoder->second.clockrate_hz;
+  }
+
+  StreamStatistician* statistician =
+      rtp_receive_statistics_->GetStatistician(remote_ssrc_);
+  if (statistician) {
+    RtpReceiveStats stats = statistician->GetStats();
+    channel_stats.packets_lost = stats.packets_lost;
+    channel_stats.packets_received = stats.packet_counter.packets;
+    channel_stats.bytes_received = stats.packet_counter.payload_bytes;
+    channel_stats.remote_ssrc = remote_ssrc_;
+    if (clockrate_hz > 0) {
+      channel_stats.jitter = static_cast<double>(stats.jitter) / clockrate_hz;
+    }
+  }
+
+  // Get RTCP report using remote SSRC.
   const std::vector<ReportBlockData>& report_data =
       rtp_rtcp_->GetLatestReportBlockData();
+  for (const ReportBlockData& rtcp_report : report_data) {
+    if (rtp_rtcp_->SSRC() != rtcp_report.source_ssrc() ||
+        remote_ssrc_ != rtcp_report.sender_ssrc()) {
+      continue;
+    }
+    RemoteRtcpStatistics remote_stat;
+    remote_stat.packets_lost = rtcp_report.cumulative_lost();
+    remote_stat.fraction_lost = rtcp_report.fraction_lost();
+    if (clockrate_hz > 0) {
+      remote_stat.jitter = rtcp_report.jitter(clockrate_hz).seconds<double>();
+    }
+    if (rtcp_report.has_rtt()) {
+      remote_stat.round_trip_time = rtcp_report.last_rtt().seconds<double>();
+    }
+    remote_stat.last_report_received_timestamp_ms =
+        rtcp_report.report_block_timestamp_utc().ms();
+    channel_stats.remote_rtcp = remote_stat;
 
-  // If we do not have report block which means remote RTCP hasn't be received
-  // yet, return -1 as to indicate uninitialized value.
-  if (report_data.empty()) {
-    return -1;
+    // Receive only channel won't send any RTP packets.
+    if (!channel_stats.remote_ssrc.has_value()) {
+      channel_stats.remote_ssrc = remote_ssrc_;
+    }
+    break;
   }
 
-  // We don't know in advance the remote SSRC used by the other end's receiver
-  // reports, so use the SSRC of the first report block as remote SSRC for now.
-  // TODO(natim@webrtc.org): handle the case where remote end is changing ssrc
-  // and update accordingly here.
-  const ReportBlockData& block_data = report_data[0];
-
-  const uint32_t sender_ssrc = block_data.report_block().sender_ssrc;
-
-  if (sender_ssrc != remote_ssrc_.load()) {
-    remote_ssrc_.store(sender_ssrc);
-    rtp_rtcp_->SetRemoteSSRC(sender_ssrc);
-  }
-
-  return (block_data.has_rtt() ? block_data.last_rtt_ms() : -1);
+  return channel_stats;
 }
 
 }  // namespace webrtc

@@ -1,7 +1,7 @@
 "use strict";
 
-const { AddonSettings } = ChromeUtils.import(
-  "resource://gre/modules/addons/AddonSettings.jsm"
+const { AddonSettings } = ChromeUtils.importESModule(
+  "resource://gre/modules/addons/AddonSettings.sys.mjs"
 );
 
 // This test checks that theme warnings are properly emitted.
@@ -19,7 +19,7 @@ function waitForConsole(task, message) {
   });
 }
 
-add_task(async function setup() {
+add_setup(async function () {
   SimpleTest.waitForExplicitFinish();
 });
 
@@ -83,6 +83,7 @@ add_task(async function test_experiments_enabled() {
   info("Testing that experiments are handled correctly on nightly and deved");
 
   const extension = ExtensionTestUtils.loadExtension({
+    useAddonManager: "temporary",
     manifest: {
       theme: {
         properties: {

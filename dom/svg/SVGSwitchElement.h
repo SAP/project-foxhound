@@ -27,10 +27,12 @@ class SVGSwitchElement final : public SVGSwitchElementBase {
   explicit SVGSwitchElement(
       already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
   ~SVGSwitchElement() = default;
-  virtual JSObject* WrapNode(JSContext* aCx,
-                             JS::Handle<JSObject*> aGivenProto) override;
+  JSObject* WrapNode(JSContext* aCx,
+                     JS::Handle<JSObject*> aGivenProto) override;
 
  public:
+  NS_IMPL_FROMNODE_WITH_TAG(SVGSwitchElement, kNameSpaceID_SVG, svgSwitch)
+
   nsIContent* GetActiveChild() const { return mActiveChild; }
   void MaybeInvalidate();
 
@@ -42,12 +44,10 @@ class SVGSwitchElement final : public SVGSwitchElementBase {
   // nsINode
   virtual void InsertChildBefore(nsIContent* aKid, nsIContent* aBeforeThis,
                                  bool aNotify, ErrorResult& aRv) override;
-  virtual void RemoveChildNode(nsIContent* aKid, bool aNotify) override;
+  void RemoveChildNode(nsIContent* aKid, bool aNotify) override;
 
   // nsIContent
-  NS_IMETHOD_(bool) IsAttributeMapped(const nsAtom* aAttribute) const override;
-
-  virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
+  nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 
  private:
   void UpdateActiveChild() { mActiveChild = FindActiveChild(); }

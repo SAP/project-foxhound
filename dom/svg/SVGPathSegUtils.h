@@ -10,6 +10,7 @@
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/dom/SVGPathSegBinding.h"
 #include "mozilla/gfx/Point.h"
+#include "mozilla/gfx/Rect.h"
 #include "nsDebug.h"
 
 namespace mozilla {
@@ -243,8 +244,9 @@ class SVGPathSegUtils {
     return aType | 1;
   }
 
-  static uint32_t SameTypeModuloRelativeness(uint32_t aType1, uint32_t aType2) {
-    if (!IsRelativeOrAbsoluteType(aType1)) {
+  static bool SameTypeModuloRelativeness(uint32_t aType1, uint32_t aType2) {
+    if (!IsRelativeOrAbsoluteType(aType1) ||
+        !IsRelativeOrAbsoluteType(aType2)) {
       return aType1 == aType2;
     }
 
@@ -265,6 +267,20 @@ class SVGPathSegUtils {
   static void TraversePathSegment(const StylePathCommand& aCommand,
                                   SVGPathTraversalState& aState);
 };
+
+/// Detect whether the path represents a rectangle (for both filling AND
+/// stroking) and if so returns it.
+///
+/// This is typically useful for google slides which has many of these rectangle
+/// shaped paths. It handles the same scenarios as skia's
+/// SkPathPriv::IsRectContour which it is inspried from, including zero-length
+/// edges and multiple points on edges of the rectangle, and doesn't attempt to
+/// detect flat curves (that could easily be added but the expectation is that
+/// since skia doesn't fast path it we're not likely to run into it in
+/// practice).
+///
+/// We could implement something similar for polygons.
+Maybe<gfx::Rect> SVGPathToAxisAlignedRect(Span<const StylePathCommand> aPath);
 
 }  // namespace mozilla
 

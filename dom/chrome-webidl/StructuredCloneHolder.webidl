@@ -8,7 +8,7 @@
  * A holder for structured-clonable data which can itself be cloned with
  * little overhead, and deserialized into an arbitrary global.
  */
-[ChromeOnly, Exposed=(Window,Worker)]
+[ChromeOnly, Exposed=*]
 interface StructuredCloneHolder {
   /**
    * Serializes the given value to an opaque structured clone blob, and
@@ -16,9 +16,17 @@ interface StructuredCloneHolder {
    *
    * The serialization happens in the compartment of the given global or, if no
    * global is provided, the compartment of the data value.
+   *
+   * The name argument is added to the path of the object in
+   * memory reports, to make it easier to determine the source of leaks. In
+   * anonymized memory reports, the anonymized name is used instead. If
+   * anonymizedName is null, name is used in anonymized reports as well.
+   * Anonymized names should not contain any potentially private information,
+   * such as web URLs or user-provided data.
    */
   [Throws]
-  constructor(any data, optional object? global = null);
+  constructor(UTF8String name, UTF8String? anonymizedName,
+              any data, optional object? global = null);
 
   /**
    * Deserializes the structured clone data in the scope of the given global,

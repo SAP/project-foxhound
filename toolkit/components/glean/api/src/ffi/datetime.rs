@@ -4,7 +4,6 @@
 
 #![cfg(feature = "with_gecko")]
 
-use chrono::prelude::*;
 use nsstring::nsACString;
 
 #[repr(C)]
@@ -31,14 +30,14 @@ pub extern "C" fn fog_datetime_test_get_value(
     value: &mut FogDatetime,
 ) {
     let val = with_metric!(DATETIME_MAP, id, metric, test_get!(metric, ping_name));
-    value.year = val.year();
-    value.month = val.month();
-    value.day = val.day();
-    value.hour = val.hour();
-    value.minute = val.minute();
-    value.second = val.second();
-    value.nano = val.nanosecond();
-    value.offset_seconds = val.offset().local_minus_utc();
+    value.year = val.year;
+    value.month = val.month;
+    value.day = val.day;
+    value.hour = val.hour;
+    value.minute = val.minute;
+    value.second = val.second;
+    value.nano = val.nanosecond;
+    value.offset_seconds = val.offset_seconds;
 }
 
 #[no_mangle]
@@ -61,16 +60,7 @@ pub extern "C" fn fog_datetime_set(id: u32, dt: &FogDatetime) {
 }
 
 #[no_mangle]
-pub extern "C" fn fog_datetime_test_get_error(
-    id: u32,
-    ping_name: &nsACString,
-    error_str: &mut nsACString,
-) -> bool {
-    let err = with_metric!(
-        DATETIME_MAP,
-        id,
-        metric,
-        test_get_errors!(metric, ping_name)
-    );
+pub extern "C" fn fog_datetime_test_get_error(id: u32, error_str: &mut nsACString) -> bool {
+    let err = with_metric!(DATETIME_MAP, id, metric, test_get_errors!(metric));
     err.map(|err_str| error_str.assign(&err_str)).is_some()
 }

@@ -48,7 +48,7 @@
 #include "mozilla/fallible.h"
 #include "nsCOMPtr.h"
 #include "nsDebug.h"
-#include "nsGlobalWindowOuter.h"
+#include "nsGlobalWindowInner.h"
 #include "nsIConsoleService.h"
 #include "nsIScriptError.h"
 #include "nsScriptError.h"
@@ -58,8 +58,7 @@
 #include "nscore.h"
 #include "xpcpublic.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 namespace {
 
@@ -117,7 +116,7 @@ class ReportErrorRunnable final : public WorkerDebuggeeRunnable {
       // the ServiceWorkerManager to report on any controlled documents.
       if (aWorkerPrivate->IsServiceWorker()) {
         RefPtr<RemoteWorkerChild> actor(
-            aWorkerPrivate->GetRemoteWorkerControllerWeakRef());
+            aWorkerPrivate->GetRemoteWorkerController());
 
         Unused << NS_WARN_IF(!actor);
 
@@ -196,7 +195,7 @@ class ReportGenericErrorRunnable final : public WorkerDebuggeeRunnable {
 
     if (aWorkerPrivate->IsServiceWorker()) {
       RefPtr<RemoteWorkerChild> actor(
-          aWorkerPrivate->GetRemoteWorkerControllerWeakRef());
+          aWorkerPrivate->GetRemoteWorkerController());
 
       Unused << NS_WARN_IF(!actor);
 
@@ -225,9 +224,9 @@ class ReportGenericErrorRunnable final : public WorkerDebuggeeRunnable {
 }  // namespace
 
 void WorkerErrorBase::AssignErrorBase(JSErrorBase* aReport) {
-  CopyUTF8toUTF16(MakeStringSpan(aReport->filename), mFilename);
+  CopyUTF8toUTF16(MakeStringSpan(aReport->filename.c_str()), mFilename);
   mLineNumber = aReport->lineno;
-  mColumnNumber = aReport->column;
+  mColumnNumber = aReport->column.oneOriginValue();
   mErrorNumber = aReport->errorNumber;
 }
 
@@ -353,10 +352,8 @@ void WorkerErrorReport::ReportError(
             ErrorEvent::Constructor(aTarget, u"error"_ns, init);
         event->SetTrusted(true);
 
-        // TODO: Bug 1506441
         if (NS_FAILED(EventDispatcher::DispatchDOMEvent(
-                MOZ_KnownLive(ToSupports(globalScope)), nullptr, event, nullptr,
-                &status))) {
+                globalScope, nullptr, event, nullptr, &status))) {
           NS_WARNING("Failed to dispatch worker thread error event!");
           status = nsEventStatus_eIgnore;
         }
@@ -392,8 +389,8 @@ void WorkerErrorReport::ReportError(
 void WorkerErrorReport::LogErrorToConsole(JSContext* aCx,
                                           WorkerErrorReport& aReport,
                                           uint64_t aInnerWindowId) {
-  JS::RootedObject stack(aCx, aReport.ReadStack(aCx));
-  JS::RootedObject stackGlobal(aCx, JS::CurrentGlobalOrNull(aCx));
+  JS::Rooted<JSObject*> stack(aCx, aReport.ReadStack(aCx));
+  JS::Rooted<JSObject*> stackGlobal(aCx, JS::CurrentGlobalOrNull(aCx));
 
   ErrorData errorData(
       aReport.mIsWarning, aReport.mLineNumber, aReport.mColumnNumber,
@@ -408,8 +405,8 @@ void WorkerErrorReport::LogErrorToConsole(JSContext* aCx,
 /* static */
 void WorkerErrorReport::LogErrorToConsole(const ErrorData& aReport,
                                           uint64_t aInnerWindowId,
-                                          JS::HandleObject aStack,
-                                          JS::HandleObject aStackGlobal) {
+                                          JS::Handle<JSObject*> aStack,
+                                          JS::Handle<JSObject*> aStackGlobal) {
   AssertIsOnMainThread();
 
   RefPtr<nsScriptErrorBase> scriptError =
@@ -475,5 +472,4 @@ void WorkerErrorReport::CreateAndDispatchGenericErrorRunnableToParent(
   ReportGenericErrorRunnable::CreateAndDispatch(aWorkerPrivate);
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

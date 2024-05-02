@@ -7,7 +7,7 @@
 
 const TEST_URI = `data:text/html;charset=utf-8,<!DOCTYPE html>Test command autocomplete`;
 
-add_task(async function() {
+add_task(async function () {
   // Run with autocomplete preference as false
   await pushPref("devtools.webconsole.input.autocomplete", false);
   await performTests_false();
@@ -33,7 +33,7 @@ async function performTests_false() {
   await onUpdated;
 
   ok(popup.isOpen, "popup opens on Ctrl+Space");
-  ok(popup.getItems().length > 0, "'w' gave a list of suggestions");
+  ok(!!popup.getItems().length, "'w' gave a list of suggestions");
 
   onUpdated = jsterm.once("autocomplete-updated");
   EventUtils.synthesizeKey("in");

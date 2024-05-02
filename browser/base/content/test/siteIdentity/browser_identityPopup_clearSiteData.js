@@ -13,11 +13,9 @@ const TEST_IDN_ORIGIN =
 const TEST_PUNY_ORIGIN = "https://xn--hxajbheg2az3al.xn--jxalpdlp/";
 const TEST_PUNY_SUB_ORIGIN = "https://sub1.xn--hxajbheg2az3al.xn--jxalpdlp/";
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "SiteDataTestUtils",
-  "resource://testing-common/SiteDataTestUtils.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  SiteDataTestUtils: "resource://testing-common/SiteDataTestUtils.sys.mjs",
+});
 
 async function testClearing(
   testQuota,
@@ -31,12 +29,11 @@ async function testClearing(
   let { scheme, host } = Services.io.newURI(originA);
   let partitionKey = `(${scheme},${host})`;
 
-  let {
-    origin: originBPartitioned,
-  } = Services.scriptSecurityManager.createContentPrincipal(
-    Services.io.newURI(originB),
-    { partitionKey }
-  );
+  let { origin: originBPartitioned } =
+    Services.scriptSecurityManager.createContentPrincipal(
+      Services.io.newURI(originB),
+      { partitionKey }
+    );
 
   // Add some test quota storage.
   if (testQuota) {
@@ -70,7 +67,7 @@ async function testClearing(
     });
   }
 
-  await BrowserTestUtils.withNewTab(testURI, async function(browser) {
+  await BrowserTestUtils.withNewTab(testURI, async function (browser) {
     // Verify we have added quota storage.
     if (testQuota) {
       let usage = await SiteDataTestUtils.getQuotaUsage(originA);
@@ -107,24 +104,16 @@ async function testClearing(
 
     let cookiesCleared;
     if (testCookies) {
-      cookiesCleared = Promise.all([
-        TestUtils.topicObserved(
-          "cookie-changed",
-          (subj, data) => data == "deleted" && subj.name == "test1"
-        ),
-        TestUtils.topicObserved(
-          "cookie-changed",
-          (subj, data) => data == "deleted" && subj.name == "test2"
-        ),
-        TestUtils.topicObserved(
-          "cookie-changed",
-          (subj, data) => data == "deleted" && subj.name == "test3"
-        ),
-        TestUtils.topicObserved(
-          "cookie-changed",
-          (subj, data) => data == "deleted" && subj.name == "test4"
-        ),
-      ]);
+      let promises = ["test1", "test2", "test3", "test4"].map(cookieName =>
+        TestUtils.topicObserved("cookie-changed", subj => {
+          let notification = subj.QueryInterface(Ci.nsICookieNotification);
+          return (
+            notification.action == Ci.nsICookieNotification.COOKIE_DELETED &&
+            notification.cookie.name == cookieName
+          );
+        })
+      );
+      cookiesCleared = Promise.all(promises);
     }
 
     // Click the "Clear data" button.

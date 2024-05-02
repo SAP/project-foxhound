@@ -8,14 +8,15 @@ Add from parameters.yml into bouncer submission tasks.
 
 import logging
 
-from gecko_taskgraph.transforms.base import TransformSequence
+from taskgraph.transforms.base import TransformSequence
+from taskgraph.util.schema import resolve_keyed_by
+
 from gecko_taskgraph.transforms.bouncer_submission import craft_bouncer_product_name
 from gecko_taskgraph.transforms.bouncer_submission_partners import (
     craft_partner_bouncer_product_name,
 )
 from gecko_taskgraph.util.attributes import release_level
 from gecko_taskgraph.util.partners import get_partners_to_be_published
-from gecko_taskgraph.util.schema import resolve_keyed_by
 from gecko_taskgraph.util.scriptworker import get_release_config
 
 logger = logging.getLogger(__name__)
@@ -42,14 +43,14 @@ def make_task_worker(config, jobs):
             job,
             "bouncer-products-per-alias",
             item_name=job["name"],
-            project=config.params["project"],
+            **{"release-type": config.params["release_type"]},
         )
         if "partner-bouncer-products-per-alias" in job:
             resolve_keyed_by(
                 job,
                 "partner-bouncer-products-per-alias",
                 item_name=job["name"],
-                project=config.params["project"],
+                **{"release-type": config.params["release_type"]},
             )
 
         job["worker"]["entries"] = craft_bouncer_entries(config, job)
@@ -61,7 +62,7 @@ def make_task_worker(config, jobs):
         if job["worker"]["entries"]:
             yield job
         else:
-            logger.warn(
+            logger.warning(
                 'No bouncer entries defined in bouncer submission task for "{}". \
 Job deleted.'.format(
                     job["name"]

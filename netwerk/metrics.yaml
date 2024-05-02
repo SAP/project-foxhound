@@ -1,0 +1,404 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+# Adding a new metric? We have docs for that!
+# https://firefox-source-docs.mozilla.org/toolkit/components/glean/user/new_definitions_file.html
+
+---
+$schema: moz://mozilla.org/schemas/glean/metrics/2-0-0
+$tags:
+  - 'Core :: Networking'
+
+networking:
+  speculative_connect_outcome:
+    type: labeled_counter
+    description: >
+      Counts the occurrence of each outcome of a speculative connection
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=909865
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=909865
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - necko@mozilla.com
+      - acreskey@mozilla.com
+    expires: never
+    labels:
+      - successful
+      - aborted_socket_limit
+      - aborted_socket_fail
+      - aborted_https_not_enabled
+    telemetry_mirror: NETWORKING_SPECULATIVE_CONNECT_OUTCOME
+
+  cookie_timestamp_fixed_count:
+    type: labeled_counter
+    description: >
+      Counts the number of times a cookie's invalid timestamp was fixed when
+      reading it from the DB.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1828126
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1828126#c5
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - necko@mozilla.com
+      - vgosu@mozilla.com
+    labels:
+      - creationTime
+      - lastAccessed
+    expires: never
+
+  cookie_creation_fixup_diff:
+    type: custom_distribution
+    unit: second
+    description: >
+      If we fix up a cookie creation timestamp that is in the future this
+      metric records the number of seconds that timestamp was off from NOW.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1828126
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1828126#c5
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - necko@mozilla.com
+      - vgosu@mozilla.com
+    expires: never
+    range_min: 0
+    range_max: 315360000000
+    bucket_count: 100
+    histogram_type: exponential
+
+  cookie_access_fixup_diff:
+    type: custom_distribution
+    unit: second
+    description: >
+      If we fix up a cookie lastAccessed timestamp that is in the future this
+      metric records the number of seconds that timestamp was off from NOW.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1828126
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1828126#c5
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - necko@mozilla.com
+      - vgosu@mozilla.com
+    expires: never
+    range_min: 0
+    range_max: 315360000000
+    bucket_count: 100
+    histogram_type: exponential
+
+  dns_lookup_time:
+    type: timing_distribution
+    time_unit: millisecond
+    description: >
+      Time for a successful DNS resolution (msec) |
+      Migrated from Firefox Telemetry's `DNS_LOOKUP_TIME`.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1838240
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1838240#c6
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - necko@mozilla.com
+      - acreskey@mozilla.com
+    expires: never
+    telemetry_mirror: DNS_LOOKUP_TIME
+
+  dns_renewal_time:
+    type: timing_distribution
+    time_unit: millisecond
+    description: >
+      Time for a renewed DNS OS resolution (msec) |
+      Migrated from Firefox Telemetry's `DNS_RENEWAL_TIME`.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1838240
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1838240#c6
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - necko@mozilla.com
+      - acreskey@mozilla.com
+    expires: never
+    telemetry_mirror: DNS_RENEWAL_TIME
+
+  dns_renewal_time_for_ttl:
+    type: timing_distribution
+    time_unit: millisecond
+    description: >
+      Time for a DNS OS resolution (msec) used to get TTL |
+      Migrated from Firefox Telemetry's `DNS_RENEWAL_TIME_FOR_TTL`.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1838240
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1838240#c6
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - necko@mozilla.com
+      - acreskey@mozilla.com
+    expires: never
+    telemetry_mirror: DNS_RENEWAL_TIME_FOR_TTL
+
+  dns_failed_lookup_time:
+    type: timing_distribution
+    time_unit: millisecond
+    description: >
+      Time for an unsuccessful DNS OS resolution (msec) |
+      Migrated from Firefox Telemetry's `DNS_FAILED_LOOKUP_TIME`.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1838240
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1838240#c6
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - necko@mozilla.com
+      - acreskey@mozilla.com
+    expires: never
+    telemetry_mirror: DNS_FAILED_LOOKUP_TIME
+
+  http_content_onstart_delay:
+    type: timing_distribution
+    time_unit: millisecond
+    description: >
+      The time between dispatching OnStartRequest from the socket thread and processing it on the main thread (content process).
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1857926
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1857926#c
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - necko@mozilla.com
+      - rjesup@mozilla.com
+    expires: 130
+
+  http_content_onstop_delay:
+    type: timing_distribution
+    time_unit: millisecond
+    description: >
+      The time between dispatching OnStopRequest from the socket thread and processing it on the main thread (content process).
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1857926
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1857926#c
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - necko@mozilla.com
+      - rjesup@mozilla.com
+    expires: 130
+
+  http_content_ondatafinished_delay:
+    type: timing_distribution
+    time_unit: millisecond
+    description: >
+      The time between dispatching OnDataFinished from the socket thread and processing it.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1857615
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1857615#c
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - necko@mozilla.com
+      - rjesup@mozilla.com
+    expires: 130
+
+  http_content_ondatafinished_to_onstop_delay:
+    type: timing_distribution
+    time_unit: millisecond
+    description: >
+      The time between processing OnDataFinished and processing OnStopRequest (if OnDataFinished comes first)
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1857615
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1857615#c
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - necko@mozilla.com
+      - rjesup@mozilla.com
+    expires: 130
+
+  http_content_ondatafinished_to_onstop_delay_negative:
+    type: timing_distribution
+    time_unit: millisecond
+    description: >
+      The time between processing OnStopRequest and processing OnDataFinished (if OnStopRequest comes first)
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1857615
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1857615#c
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - necko@mozilla.com
+      - rjesup@mozilla.com
+    expires: 130
+
+  http_content_html5parser_ondatafinished_to_onstop_delay:
+    type: timing_distribution
+    time_unit: millisecond
+    description: >
+      The time between processing OnDataFinished and processing OnStopRequest (if OnDataFinished comes first)
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1857926
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1857926
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - necko@mozilla.com
+      - rjesup@mozilla.com
+    expires: 130
+
+  http_content_html5parser_ondatafinished_to_onstop_delay_negative:
+    type: timing_distribution
+    time_unit: millisecond
+    description: >
+      The time between processing OnStopRequest and processing OnDataFinished (if OnStopRequest comes first)
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1857926
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1857926
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - necko@mozilla.com
+      - rjesup@mozilla.com
+    expires: 130
+
+  http_1_download_throughput:
+    type: custom_distribution
+    unit: mbps
+    range_min: 0
+    range_max: 10000
+    bucket_count: 100
+    histogram_type: exponential
+    description: >
+     The download throughput for  http/1.0, http/1.1 requests larger than 10MB. Measured in megabits per second, Mbps.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1846798
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1846798#c2
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - necko@mozilla.com
+      - acreskey@mozilla.com
+    expires: never
+    telemetry_mirror: NETWORKING_DOWNLOAD_THROUGHPUT_HTTP_1
+
+  http_2_download_throughput:
+    type: custom_distribution
+    unit: mbps
+    range_min: 0
+    range_max: 10000
+    bucket_count: 100
+    histogram_type: exponential
+    description: >
+     The download throughput for http/2 requests larger than 10MB. Measured in megabits per second, Mbps.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1846798
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1846798#c2
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - necko@mozilla.com
+      - acreskey@mozilla.com
+    expires: never
+    telemetry_mirror: NETWORKING_DOWNLOAD_THROUGHPUT_HTTP_2
+
+  http_3_download_throughput:
+    type: custom_distribution
+    unit: mbps
+    range_min: 0
+    range_max: 10000
+    bucket_count: 100
+    histogram_type: exponential
+    description: >
+     The download throughput for http/3 requests larger than 10MB. Measured in megabits per second, Mbps.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1846798
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1846798#c2
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - necko@mozilla.com
+      - acreskey@mozilla.com
+    expires: never
+    telemetry_mirror: NETWORKING_DOWNLOAD_THROUGHPUT_HTTP_3
+
+  http_1_upload_throughput:
+    type: custom_distribution
+    unit: mbps
+    range_min: 0
+    range_max: 5000
+    bucket_count: 100
+    histogram_type: exponential
+    description: >
+     The upload throughput for http/1.0, http/1.1 requests larger than 10MB. Measured in megabits per second, Mbps.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1858256
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1858256#c2
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - necko@mozilla.com
+      - acreskey@mozilla.com
+    expires: never
+    telemetry_mirror: HTTP_UPLOAD_THROUGHPUT_MBPS_HTTP_1
+
+  http_2_upload_throughput:
+    type: custom_distribution
+    unit: mbps
+    range_min: 0
+    range_max: 5000
+    bucket_count: 100
+    histogram_type: exponential
+    description: >
+     The upload throughput for http/2 requests larger than 10MB. Measured in megabits per second, Mbps.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1858256
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1858256#c2
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - necko@mozilla.com
+      - acreskey@mozilla.com
+    expires: never
+    telemetry_mirror: HTTP_UPLOAD_THROUGHPUT_MBPS_HTTP_2
+
+  http_3_upload_throughput:
+    type: custom_distribution
+    unit: mbps
+    range_min: 0
+    range_max: 5000
+    bucket_count: 100
+    histogram_type: exponential
+    description: >
+     The upload throughput for http/3 requests larger than 10MB. Measured in megabits per second, Mbps.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1858256
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1858256#c2
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - necko@mozilla.com
+      - acreskey@mozilla.com
+    expires: never
+    telemetry_mirror: HTTP_UPLOAD_THROUGHPUT_MBPS_HTTP_3

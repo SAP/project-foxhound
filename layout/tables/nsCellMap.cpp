@@ -55,8 +55,7 @@ nsTableCellMap::nsTableCellMap(nsTableFrame& aTableFrame, bool aBorderCollapse)
     : mTableFrame(aTableFrame), mFirstMap(nullptr), mBCInfo(nullptr) {
   MOZ_COUNT_CTOR(nsTableCellMap);
 
-  nsTableFrame::RowGroupArray orderedRowGroups;
-  aTableFrame.OrderRowGroups(orderedRowGroups);
+  nsTableFrame::RowGroupArray orderedRowGroups = aTableFrame.OrderedRowGroups();
 
   nsTableRowGroupFrame* prior = nullptr;
   for (uint32_t rgX = 0; rgX < orderedRowGroups.Length(); rgX++) {
@@ -208,7 +207,16 @@ nsCellMap* nsTableCellMap::GetMapFor(const nsTableRowGroupFrame* aRowGroup,
 
   // If aRowGroup is a repeated header or footer find the header or footer it
   // was repeated from.
-  if (aRowGroup->IsRepeatable()) {
+  // Bug 1442018: we also need this search for header/footer frames that are
+  // not marked as _repeatable_ because they have a next-in-flow, as they may
+  // nevertheless have been _repeated_ from an earlier fragment.
+  auto isTableHeaderFooterGroup = [](const nsTableRowGroupFrame* aRG) -> bool {
+    const auto display = aRG->StyleDisplay()->mDisplay;
+    return display == StyleDisplay::TableHeaderGroup ||
+           display == StyleDisplay::TableFooterGroup;
+  };
+  if (aRowGroup->IsRepeatable() ||
+      (aRowGroup->GetNextInFlow() && isTableHeaderFooterGroup(aRowGroup))) {
     auto findOtherRowGroupOfType =
         [aRowGroup](nsTableFrame* aTable) -> nsTableRowGroupFrame* {
       const auto display = aRowGroup->StyleDisplay()->mDisplay;
@@ -235,10 +243,10 @@ nsCellMap* nsTableCellMap::GetMapFor(const nsTableRowGroupFrame* aRowGroup,
 }
 
 void nsTableCellMap::Synchronize(nsTableFrame* aTableFrame) {
-  nsTableFrame::RowGroupArray orderedRowGroups;
   AutoTArray<nsCellMap*, 8> maps;
 
-  aTableFrame->OrderRowGroups(orderedRowGroups);
+  nsTableFrame::RowGroupArray orderedRowGroups =
+      aTableFrame->OrderedRowGroups();
   if (!orderedRowGroups.Length()) {
     return;
   }
@@ -1420,15 +1428,13 @@ CellData* nsCellMap::AppendCell(nsTableCellMap& aMap,
 bool nsCellMap::CellsSpanOut(nsTArray<nsTableRowFrame*>& aRows) const {
   int32_t numNewRows = aRows.Length();
   for (int32_t rowX = 0; rowX < numNewRows; rowX++) {
-    nsIFrame* rowFrame = (nsIFrame*)aRows.ElementAt(rowX);
-    for (nsIFrame* childFrame : rowFrame->PrincipalChildList()) {
-      nsTableCellFrame* cellFrame = do_QueryFrame(childFrame);
-      if (cellFrame) {
-        bool zeroSpan;
-        int32_t rowSpan = GetRowSpanForNewCell(cellFrame, rowX, zeroSpan);
-        if (zeroSpan || rowX + rowSpan > numNewRows) {
-          return true;
-        }
+    nsTableRowFrame* rowFrame = aRows.ElementAt(rowX);
+    for (nsTableCellFrame* cellFrame = rowFrame->GetFirstCell(); cellFrame;
+         cellFrame = cellFrame->GetNextCell()) {
+      bool zeroSpan;
+      int32_t rowSpan = GetRowSpanForNewCell(cellFrame, rowX, zeroSpan);
+      if (zeroSpan || rowX + rowSpan > numNewRows) {
+        return true;
       }
     }
   }
@@ -1586,12 +1592,10 @@ void nsCellMap::ExpandWithRows(nsTableCellMap& aMap,
     nsTableRowFrame* rFrame = aRowFrames.ElementAt(newRowIndex);
     // append cells
     int32_t colIndex = 0;
-    for (nsIFrame* cFrame : rFrame->PrincipalChildList()) {
-      nsTableCellFrame* cellFrame = do_QueryFrame(cFrame);
-      if (cellFrame) {
-        AppendCell(aMap, cellFrame, rowX, false, aRgFirstRowIndex, aDamageArea,
-                   &colIndex);
-      }
+    for (nsTableCellFrame* cellFrame = rFrame->GetFirstCell(); cellFrame;
+         cellFrame = cellFrame->GetNextCell()) {
+      AppendCell(aMap, cellFrame, rowX, false, aRgFirstRowIndex, aDamageArea,
+                 &colIndex);
     }
     newRowIndex++;
   }
@@ -2002,11 +2006,9 @@ void nsCellMap::RebuildConsideringRows(
     int32_t numNewRows = aRowsToInsert->Length();
     for (int32_t newRowX = 0; newRowX < numNewRows; newRowX++) {
       nsTableRowFrame* rFrame = aRowsToInsert->ElementAt(newRowX);
-      for (nsIFrame* cFrame : rFrame->PrincipalChildList()) {
-        nsTableCellFrame* cellFrame = do_QueryFrame(cFrame);
-        if (cellFrame) {
-          AppendCell(aMap, cellFrame, rowX, false, 0, damageArea);
-        }
+      for (nsTableCellFrame* cellFrame = rFrame->GetFirstCell(); cellFrame;
+           cellFrame = cellFrame->GetNextCell()) {
+        AppendCell(aMap, cellFrame, rowX, false, 0, damageArea);
       }
       rowX++;
     }
@@ -2162,14 +2164,14 @@ void nsCellMap::Dump(bool aIsBorderCollapse) const {
   printf("\n  ***** START GROUP CELL MAP DUMP ***** %p\n", (void*)this);
   nsTableRowGroupFrame* rg = GetRowGroup();
   const nsStyleDisplay* display = rg->StyleDisplay();
-  switch (display->mDisplay) {
-    case StyleDisplay::TableHeaderGroup:
+  switch (display->DisplayInside()) {
+    case StyleDisplayInside::TableHeaderGroup:
       printf("  thead ");
       break;
-    case StyleDisplay::TableFooterGroup:
+    case StyleDisplayInside::TableFooterGroup:
       printf("  tfoot ");
       break;
-    case StyleDisplay::TableRowGroup:
+    case StyleDisplayInside::TableRowGroup:
       printf("  tbody ");
       break;
     default:
@@ -2233,7 +2235,6 @@ void nsCellMap::Dump(bool aIsBorderCollapse) const {
   }
 
   // output info mapping Ci,j to cell address
-  uint32_t cellCount = 0;
   for (uint32_t rIndex = 0; rIndex < mapRowCount; rIndex++) {
     const CellDataArray& row = mRows[rIndex];
     uint32_t colCount = row.Length();
@@ -2246,7 +2247,6 @@ void nsCellMap::Dump(bool aIsBorderCollapse) const {
           uint32_t cellFrameColIndex = cellFrame->ColIndex();
           printf("C%d,%d=%p(%u)  ", rIndex, colIndex, (void*)cellFrame,
                  cellFrameColIndex);
-          cellCount++;
         }
       }
     }

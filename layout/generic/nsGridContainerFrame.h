@@ -13,10 +13,15 @@
 #include "mozilla/MathAlgorithms.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/HashTable.h"
+#include "nsAtomHashKeys.h"
 #include "nsContainerFrame.h"
+#include "nsILineIterator.h"
 
 namespace mozilla {
 class PresShell;
+namespace dom {
+class Grid;
+}
 }  // namespace mozilla
 
 /**
@@ -89,7 +94,8 @@ struct ComputedGridLineInfo {
 };
 }  // namespace mozilla
 
-class nsGridContainerFrame final : public nsContainerFrame {
+class nsGridContainerFrame final : public nsContainerFrame,
+                                   public nsILineIterator {
  public:
   NS_DECL_FRAMEARENA_HELPERS(nsGridContainerFrame)
   NS_DECL_QUERYFRAME
@@ -125,30 +131,14 @@ class nsGridContainerFrame final : public nsContainerFrame {
   void BuildDisplayList(nsDisplayListBuilder* aBuilder,
                         const nsDisplayListSet& aLists) override;
 
-  nscoord GetLogicalBaseline(mozilla::WritingMode aWM) const override {
-    if (HasAnyStateBits(NS_STATE_GRID_SYNTHESIZE_BASELINE)) {
-      // Return a baseline synthesized from our margin-box.
-      return nsContainerFrame::GetLogicalBaseline(aWM);
-    }
-    nscoord b;
-    GetBBaseline(BaselineSharingGroup::First, &b);
-    return b;
-  }
-
-  bool GetVerticalAlignBaseline(mozilla::WritingMode aWM,
-                                nscoord* aBaseline) const override {
-    return GetNaturalBaselineBOffset(aWM, BaselineSharingGroup::First,
-                                     aBaseline);
-  }
-
-  bool GetNaturalBaselineBOffset(mozilla::WritingMode aWM,
-                                 BaselineSharingGroup aBaselineGroup,
-                                 nscoord* aBaseline) const override {
+  Maybe<nscoord> GetNaturalBaselineBOffset(
+      mozilla::WritingMode aWM, BaselineSharingGroup aBaselineGroup,
+      BaselineExportContext) const override {
     if (StyleDisplay()->IsContainLayout() ||
         HasAnyStateBits(NS_STATE_GRID_SYNTHESIZE_BASELINE)) {
-      return false;
+      return Nothing{};
     }
-    return GetBBaseline(aBaselineGroup, aBaseline);
+    return mozilla::Some(GetBBaseline(aBaselineGroup));
   }
 
 #ifdef DEBUG_FRAME_DUMP
@@ -158,17 +148,17 @@ class nsGridContainerFrame final : public nsContainerFrame {
 
   // nsContainerFrame overrides
   bool DrainSelfOverflowList() override;
-  void AppendFrames(ChildListID aListID, nsFrameList& aFrameList) override;
+  void AppendFrames(ChildListID aListID, nsFrameList&& aFrameList) override;
   void InsertFrames(ChildListID aListID, nsIFrame* aPrevFrame,
                     const nsLineList::iterator* aPrevFrameLine,
-                    nsFrameList& aFrameList) override;
-  void RemoveFrame(ChildListID aListID, nsIFrame* aOldFrame) override;
+                    nsFrameList&& aFrameList) override;
+  void RemoveFrame(DestroyContext&, ChildListID, nsIFrame*) override;
   mozilla::StyleAlignFlags CSSAlignmentForAbsPosChild(
       const ReflowInput& aChildRI, LogicalAxis aLogicalAxis) const override;
 
 #ifdef DEBUG
   void SetInitialChildList(ChildListID aListID,
-                           nsFrameList& aChildList) override;
+                           nsFrameList&& aChildList) override;
 #endif
 
   /**
@@ -212,21 +202,20 @@ class nsGridContainerFrame final : public nsContainerFrame {
     return info;
   }
 
-  struct AtomKey {
-    RefPtr<nsAtom> mKey;
+  /**
+   * This property is set by the creation of a dom::Grid object, and cleared
+   * during GC unlink. Since the Grid object manages the lifecycle, the property
+   * itself is set without a destructor. The property is also cleared whenever
+   * new grid computed info is generated during reflow, ensuring that we aren't
+   * holding a stale dom::Grid object.
+   */
+  NS_DECLARE_FRAME_PROPERTY_WITHOUT_DTOR(GridFragmentInfo, mozilla::dom::Grid)
+  mozilla::dom::Grid* GetGridFragmentInfo() {
+    return GetProperty(GridFragmentInfo());
+  }
 
-    explicit AtomKey(nsAtom* aAtom) : mKey(aAtom) {}
-
-    using Lookup = nsAtom*;
-
-    static mozilla::HashNumber hash(const Lookup& aKey) { return aKey->hash(); }
-
-    static bool match(const AtomKey& aFirst, const Lookup& aSecond) {
-      return aFirst.mKey == aSecond;
-    }
-  };
-
-  using ImplicitNamedAreas = mozilla::HashMap<AtomKey, NamedArea, AtomKey>;
+  using ImplicitNamedAreas =
+      mozilla::HashMap<mozilla::AtomHashKey, NamedArea, mozilla::AtomHashKey>;
   NS_DECLARE_FRAME_PROPERTY_DELETABLE(ImplicitNamedAreasProperty,
                                       ImplicitNamedAreas)
   ImplicitNamedAreas* GetImplicitNamedAreas() const {
@@ -349,6 +338,9 @@ class nsGridContainerFrame final : public nsContainerFrame {
   using LineNameList =
       const mozilla::StyleOwnedSlice<mozilla::StyleCustomIdent>;
   void AddImplicitNamedAreas(mozilla::Span<LineNameList>);
+  using StyleLineNameListValue =
+      const mozilla::StyleGenericLineNameListValue<mozilla::StyleInteger>;
+  void AddImplicitNamedAreas(mozilla::Span<StyleLineNameListValue>);
 
   /**
    * Reflow and place our children.
@@ -366,15 +358,11 @@ class nsGridContainerFrame final : public nsContainerFrame {
   nscoord IntrinsicISize(gfxContext* aRenderingContext,
                          mozilla::IntrinsicISizeType aConstraint);
 
-  bool GetBBaseline(BaselineSharingGroup aBaselineGroup,
-                    nscoord* aResult) const {
-    *aResult = mBaseline[mozilla::eLogicalAxisBlock][aBaselineGroup];
-    return true;
+  nscoord GetBBaseline(BaselineSharingGroup aBaselineGroup) const {
+    return mBaseline[mozilla::eLogicalAxisBlock][aBaselineGroup];
   }
-  bool GetIBaseline(BaselineSharingGroup aBaselineGroup,
-                    nscoord* aResult) const {
-    *aResult = mBaseline[mozilla::eLogicalAxisInline][aBaselineGroup];
-    return true;
+  nscoord GetIBaseline(BaselineSharingGroup aBaselineGroup) const {
+    return mBaseline[mozilla::eLogicalAxisInline][aBaselineGroup];
   }
 
   /**
@@ -527,6 +515,10 @@ class nsGridContainerFrame final : public nsContainerFrame {
   void StoreUsedTrackSizes(LogicalAxis aAxis,
                            const nsTArray<TrackSize>& aSizes);
 
+  // The internal implementation for AddImplicitNamedAreas().
+  void AddImplicitNamedAreasInternal(LineNameList& aNameList,
+                                     ImplicitNamedAreas*& aAreas);
+
   /**
    * Cached values to optimize GetMinISize/GetPrefISize.
    */
@@ -637,6 +629,19 @@ class nsGridContainerFrame final : public nsContainerFrame {
     Key mKey;
     nscoord mBSize;
   };
+
+  bool CanProvideLineIterator() const final { return true; }
+  nsILineIterator* GetLineIterator() final { return this; }
+  int32_t GetNumLines() const final;
+  bool IsLineIteratorFlowRTL() final;
+  mozilla::Result<LineInfo, nsresult> GetLine(int32_t aLineNumber) final;
+  int32_t FindLineContaining(nsIFrame* aFrame, int32_t aStartLine = 0) final;
+  NS_IMETHOD FindFrameAt(int32_t aLineNumber, nsPoint aPos,
+                         nsIFrame** aFrameFound, bool* aPosIsBeforeFirstFrame,
+                         bool* aPosIsAfterLastFrame) final;
+  NS_IMETHOD CheckLineOrder(int32_t aLine, bool* aIsReordered,
+                            nsIFrame** aFirstVisual,
+                            nsIFrame** aLastVisual) final;
 };
 
 #endif /* nsGridContainerFrame_h___ */

@@ -3,12 +3,11 @@
 
 "use strict";
 
-const {
-  HAWKAuthenticatedRESTRequest,
-  deriveHawkCredentials,
-} = ChromeUtils.import("resource://services-common/hawkrequest.js");
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { Async } = ChromeUtils.import("resource://services-common/async.js");
+const { HAWKAuthenticatedRESTRequest, deriveHawkCredentials } =
+  ChromeUtils.importESModule("resource://services-common/hawkrequest.sys.mjs");
+const { Async } = ChromeUtils.importESModule(
+  "resource://services-common/async.sys.mjs"
+);
 
 // https://github.com/mozilla/fxa-auth-server/wiki/onepw-protocol#wiki-use-session-certificatesign-etc
 var SESSION_KEYS = {
@@ -38,6 +37,8 @@ function do_register_cleanup() {
 }
 
 function run_test() {
+  registerCleanupFunction(do_register_cleanup);
+
   Services.prefs.setStringPref(
     "services.common.log.logger.rest.request",
     "Trace"
@@ -64,7 +65,7 @@ add_test(function test_intl_accept_language() {
   setLanguagePref(languages[testCount]);
 
   function checkLanguagePref() {
-    CommonUtils.nextTick(function() {
+    CommonUtils.nextTick(function () {
       // Ensure we're only called for the number of entries in languages[].
       Assert.ok(testCount < languages.length);
 
@@ -112,7 +113,7 @@ add_task(async function test_hawk_authenticated_request() {
   };
 
   let server = httpd_setup({
-    "/elysium": function(request, response) {
+    "/elysium": function (request, response) {
       Assert.ok(request.hasHeader("Authorization"));
 
       // check that the header timestamp is our arbitrary system date, not
@@ -178,7 +179,7 @@ add_task(async function test_hawk_language_pref_changed() {
   }
 
   let server = httpd_setup({
-    "/foo": function(request, response) {
+    "/foo": function (request, response) {
       Assert.equal(languages[1], request.getHeader("Accept-Language"));
 
       response.setStatusLine(request.httpVersion, 200, "OK");

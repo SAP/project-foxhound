@@ -8,12 +8,14 @@
 #ifndef _NS_ACCESSIBLE_RELATION_WRAP_H
 #define _NS_ACCESSIBLE_RELATION_WRAP_H
 
-#include "LocalAccessible.h"
+#include "MsaaAccessible.h"
 #include "IUnknownImpl.h"
 
 #include <utility>
 #include "nsTArray.h"
 
+#include "mozilla/a11y/RelationType.h"
+#include "mozilla/a11y/Accessible.h"
 #include "AccessibleRelation.h"
 
 namespace mozilla {
@@ -22,10 +24,6 @@ namespace a11y {
 class ia2AccessibleRelation final : public IAccessibleRelation {
  public:
   ia2AccessibleRelation(RelationType aType, Relation* aRel);
-
-  ia2AccessibleRelation(RelationType aType,
-                        nsTArray<RefPtr<LocalAccessible>>&& aTargets)
-      : mType(aType), mTargets(std::move(aTargets)) {}
 
   // IUnknown
   DECL_IUNKNOWN
@@ -57,7 +55,7 @@ class ia2AccessibleRelation final : public IAccessibleRelation {
   ia2AccessibleRelation& operator=(const ia2AccessibleRelation&);
 
   RelationType mType;
-  nsTArray<RefPtr<LocalAccessible>> mTargets;
+  nsTArray<RefPtr<IUnknown>> mTargets;
 };
 
 /**

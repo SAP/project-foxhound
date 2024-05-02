@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
+/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -13,6 +13,7 @@
 #include "mozilla/dom/PContentChild.h"
 #include "mozilla/dom/ProcessActor.h"
 #include "mozilla/dom/RemoteType.h"
+#include "mozilla/Hal.h"
 #include "mozilla/ipc/InputStreamUtils.h"
 #include "mozilla/ipc/ProtocolUtils.h"
 #include "mozilla/StaticPtr.h"
@@ -28,6 +29,10 @@
 
 #if defined(XP_MACOSX) && defined(MOZ_SANDBOX)
 #  include "nsIFile.h"
+#endif
+
+#if defined(MOZ_SANDBOX) && defined(MOZ_DEBUG) && defined(ENABLE_TESTS)
+#  include "mozilla/PSandboxTestingChild.h"
 #endif
 
 struct ChromePackage;
@@ -46,9 +51,8 @@ class ChildProfilerController;
 class BenchmarkStorageChild;
 
 namespace ipc {
-class PChildToParentStreamChild;
-class PFileDescriptorSetChild;
-}  // namespace ipc
+class UntypedEndpoint;
+}
 
 namespace loader {
 class PScriptCacheChild;
@@ -57,16 +61,6 @@ class PScriptCacheChild;
 namespace widget {
 enum class ThemeChangeKind : uint8_t;
 }
-
-#if !defined(XP_WIN)
-// Returns whether or not the currently running build is an unpackaged
-// developer build. This check is implemented by looking for omni.ja in the
-// the obj/dist dir. We use this routine to detect when the build dir will
-// use symlinks to the repo and object dir. On Windows, dev builds don't
-// use symlinks.
-bool IsDevelopmentBuild();
-#endif /* !XP_WIN */
-
 namespace dom {
 
 namespace ipc {
@@ -83,11 +77,9 @@ enum class CallerType : uint32_t;
 class ContentChild final : public PContentChild,
                            public nsIDOMProcessChild,
                            public mozilla::ipc::IShmemAllocator,
-                           public mozilla::ipc::ChildToParentStreamActorManager,
                            public ProcessActor {
   using ClonedMessageData = mozilla::dom::ClonedMessageData;
   using FileDescriptor = mozilla::ipc::FileDescriptor;
-  using PFileDescriptorSetChild = mozilla::ipc::PFileDescriptorSetChild;
 
   friend class PContentChild;
 
@@ -112,19 +104,19 @@ class ContentChild final : public PContentChild,
   };
 
   MOZ_CAN_RUN_SCRIPT_BOUNDARY nsresult ProvideWindowCommon(
-      BrowserChild* aTabOpener, nsIOpenWindowInfo* aOpenWindowInfo,
+      NotNull<BrowserChild*> aTabOpener, nsIOpenWindowInfo* aOpenWindowInfo,
       uint32_t aChromeFlags, bool aCalledFromJS, nsIURI* aURI,
       const nsAString& aName, const nsACString& aFeatures, bool aForceNoOpener,
       bool aForceNoReferrer, bool aIsPopupRequested,
       nsDocShellLoadState* aLoadState, bool* aWindowIsNew,
       BrowsingContext** aReturn);
 
-  void Init(base::ProcessId aParentPid, const char* aParentBuildID,
-            mozilla::ipc::ScopedPort aPort, uint64_t aChildID,
-            bool aIsForBrowser);
+  void Init(mozilla::ipc::UntypedEndpoint&& aEndpoint,
+            const char* aParentBuildID, uint64_t aChildID, bool aIsForBrowser);
 
   void InitXPCOM(XPCOMInitData&& aXPCOMInit,
-                 const mozilla::dom::ipc::StructuredCloneData& aInitialData);
+                 const mozilla::dom::ipc::StructuredCloneData& aInitialData,
+                 bool aIsReadyForBackgroundProcessing);
 
   void InitSharedUASheets(Maybe<base::SharedMemoryHandle>&& aHandle,
                           uintptr_t aAddress);
@@ -136,7 +128,8 @@ class ContentChild final : public PContentChild,
   const AppInfo& GetAppInfo() { return mAppInfo; }
 
   void SetProcessName(const nsACString& aName,
-                      const nsACString* aETLDplus1 = nullptr);
+                      const nsACString* aETLDplus1 = nullptr,
+                      const nsACString* aCurrentProfile = nullptr);
 
   void GetProcessName(nsACString& aName) const;
 
@@ -178,8 +171,6 @@ class ContentChild final : public PContentChild,
       Endpoint<PRemoteDecoderManagerChild>&& aVideoManager,
       nsTArray<uint32_t>&& namespaces);
 
-  mozilla::ipc::IPCResult RecvRequestPerformanceMetrics(const nsID& aID);
-
   mozilla::ipc::IPCResult RecvReinitRendering(
       Endpoint<PCompositorManagerChild>&& aCompositor,
       Endpoint<PImageBridgeChild>&& aImageBridge,
@@ -191,9 +182,6 @@ class ContentChild final : public PContentChild,
 
   mozilla::ipc::IPCResult RecvSetProcessSandbox(
       const Maybe<FileDescriptor>& aBroker);
-
-  already_AddRefed<PRemoteLazyInputStreamChild>
-  AllocPRemoteLazyInputStreamChild(const nsID& aID, const uint64_t& aSize);
 
   PHalChild* AllocPHalChild();
   bool DeallocPHalChild(PHalChild*);
@@ -239,15 +227,10 @@ class ContentChild final : public PContentChild,
       PScriptCacheChild*, const FileDescOrError& cacheFile,
       const bool& wantCacheData) override;
 
-  PPrintingChild* AllocPPrintingChild();
+  PRemotePrintJobChild* AllocPRemotePrintJobChild();
 
-  bool DeallocPPrintingChild(PPrintingChild*);
-
-  PChildToParentStreamChild* AllocPChildToParentStreamChild();
-  bool DeallocPChildToParentStreamChild(PChildToParentStreamChild*);
-
-  PParentToChildStreamChild* AllocPParentToChildStreamChild();
-  bool DeallocPParentToChildStreamChild(PParentToChildStreamChild*);
+  already_AddRefed<PClipboardReadRequestChild> AllocPClipboardReadRequestChild(
+      const nsTArray<nsCString>& aTypes);
 
   PMediaChild* AllocPMediaChild();
 
@@ -291,6 +274,9 @@ class ContentChild final : public PContentChild,
 
   mozilla::ipc::IPCResult RecvSetConnectivity(const bool& connectivity);
   mozilla::ipc::IPCResult RecvSetCaptivePortalState(const int32_t& state);
+  mozilla::ipc::IPCResult RecvSetTRRMode(
+      const nsIDNSService::ResolverMode& mode,
+      const nsIDNSService::ResolverMode& modeFromPref);
 
   mozilla::ipc::IPCResult RecvBidiKeyboardNotify(const bool& isLangRTL,
                                                  const bool& haveBidiKeyboards);
@@ -299,9 +285,6 @@ class ContentChild final : public PContentChild,
 
   mozilla::ipc::IPCResult RecvThemeChanged(FullLookAndFeel&&,
                                            widget::ThemeChangeKind);
-
-  mozilla::ipc::IPCResult RecvUpdateSystemParameters(
-      nsTArray<SystemParameterKVPair>&& aUpdates);
 
   // auto remove when alertfinished is received.
   nsresult AddRemoteAlertObserver(const nsString& aData,
@@ -361,14 +344,15 @@ class ContentChild final : public PContentChild,
   mozilla::ipc::IPCResult RecvUpdateRequestedLocales(
       nsTArray<nsCString>&& aRequestedLocales);
 
+  mozilla::ipc::IPCResult RecvSystemTimezoneChanged();
+
   mozilla::ipc::IPCResult RecvAddPermission(const IPC::Permission& permission);
 
   mozilla::ipc::IPCResult RecvRemoveAllPermissions();
 
   mozilla::ipc::IPCResult RecvFlushMemory(const nsString& reason);
 
-  mozilla::ipc::IPCResult RecvActivateA11y(const uint32_t& aMainChromeTid,
-                                           const uint32_t& aMsaaID);
+  mozilla::ipc::IPCResult RecvActivateA11y();
   mozilla::ipc::IPCResult RecvShutdownA11y();
 
   mozilla::ipc::IPCResult RecvApplicationForeground();
@@ -382,7 +366,8 @@ class ContentChild final : public PContentChild,
       const nsCString& UAName, const nsCString& ID, const nsCString& vendor,
       const nsCString& sourceURL, const nsCString& updateURL);
 
-  mozilla::ipc::IPCResult RecvRemoteType(const nsCString& aRemoteType);
+  mozilla::ipc::IPCResult RecvRemoteType(const nsCString& aRemoteType,
+                                         const nsCString& aProfile);
 
   void PreallocInit();
 
@@ -428,37 +413,40 @@ class ContentChild final : public PContentChild,
                                                const uint32_t& aChangeType,
                                                nsIURI* aDomain);
 
+  mozilla::ipc::IPCResult RecvShutdownConfirmedHP();
+
   mozilla::ipc::IPCResult RecvShutdown();
 
   mozilla::ipc::IPCResult RecvInvokeDragSession(
       const MaybeDiscarded<WindowContext>& aSourceWindowContext,
-      nsTArray<IPCDataTransfer>&& aTransfers, const uint32_t& aAction);
+      const MaybeDiscarded<WindowContext>& aSourceTopWindowContext,
+      nsTArray<IPCTransferableData>&& aTransferables, const uint32_t& aAction);
 
   MOZ_CAN_RUN_SCRIPT_BOUNDARY
   mozilla::ipc::IPCResult RecvEndDragSession(
       const bool& aDoneDrag, const bool& aUserCancelled,
       const mozilla::LayoutDeviceIntPoint& aEndDragPoint,
-      const uint32_t& aKeyModifiers);
+      const uint32_t& aKeyModifiers, const uint32_t& aDropEffect);
 
   mozilla::ipc::IPCResult RecvPush(const nsCString& aScope,
-                                   const IPC::Principal& aPrincipal,
+                                   nsIPrincipal* aPrincipal,
                                    const nsString& aMessageId);
 
   mozilla::ipc::IPCResult RecvPushWithData(const nsCString& aScope,
-                                           const IPC::Principal& aPrincipal,
+                                           nsIPrincipal* aPrincipal,
                                            const nsString& aMessageId,
                                            nsTArray<uint8_t>&& aData);
 
-  mozilla::ipc::IPCResult RecvPushSubscriptionChange(
-      const nsCString& aScope, const IPC::Principal& aPrincipal);
+  mozilla::ipc::IPCResult RecvPushSubscriptionChange(const nsCString& aScope,
+                                                     nsIPrincipal* aPrincipal);
 
   mozilla::ipc::IPCResult RecvPushError(const nsCString& aScope,
-                                        const IPC::Principal& aPrincipal,
+                                        nsIPrincipal* aPrincipal,
                                         const nsString& aMessage,
                                         const uint32_t& aFlags);
 
   mozilla::ipc::IPCResult RecvNotifyPushSubscriptionModifiedObservers(
-      const nsCString& aScope, const IPC::Principal& aPrincipal);
+      const nsCString& aScope, nsIPrincipal* aPrincipal);
 
   mozilla::ipc::IPCResult RecvRefreshScreens(
       nsTArray<ScreenDetails>&& aScreens);
@@ -466,23 +454,15 @@ class ContentChild final : public PContentChild,
   mozilla::ipc::IPCResult RecvNetworkLinkTypeChange(const uint32_t& aType);
   uint32_t NetworkLinkType() const { return mNetworkLinkType; }
 
+  mozilla::ipc::IPCResult RecvSocketProcessCrashed();
+
   // Get the directory for IndexedDB files. We query the parent for this and
   // cache the value
   nsString& GetIndexedDBPath();
 
   ContentParentId GetID() const { return mID; }
 
-#if defined(XP_WIN) && defined(ACCESSIBILITY)
-  uint32_t GetChromeMainThreadId() const { return mMainChromeTid; }
-
-  uint32_t GetMsaaID() const { return mMsaaID; }
-#endif
-
   bool IsForBrowser() const { return mIsForBrowser; }
-
-  PFileDescriptorSetChild* AllocPFileDescriptorSetChild(const FileDescriptor&);
-
-  bool DeallocPFileDescriptorSetChild(PFileDescriptorSetChild*);
 
   MOZ_CAN_RUN_SCRIPT_BOUNDARY mozilla::ipc::IPCResult RecvConstructBrowser(
       ManagedEndpoint<PBrowserChild>&& aBrowserEp,
@@ -501,10 +481,8 @@ class ContentChild final : public PContentChild,
 #endif
 
   PContentPermissionRequestChild* AllocPContentPermissionRequestChild(
-      const nsTArray<PermissionRequest>& aRequests,
-      const IPC::Principal& aPrincipal,
-      const IPC::Principal& aTopLevelPrincipal,
-      const bool& aIsHandlingUserInput,
+      Span<const PermissionRequest> aRequests, nsIPrincipal* aPrincipal,
+      nsIPrincipal* aTopLevelPrincipal, const bool& aIsHandlingUserInput,
       const bool& aMaybeUnsafePermissionDelegate, const TabId& aTabId);
   bool DeallocPContentPermissionRequestChild(
       PContentPermissionRequestChild* actor);
@@ -521,8 +499,8 @@ class ContentChild final : public PContentChild,
       const nsID& aUUID, const GetFilesResponseResult& aResult);
 
   mozilla::ipc::IPCResult RecvBlobURLRegistration(
-      const nsCString& aURI, const IPCBlob& aBlob,
-      const IPC::Principal& aPrincipal, const Maybe<nsID>& aAgentClusterId);
+      const nsCString& aURI, const IPCBlob& aBlob, nsIPrincipal* aPrincipal,
+      const nsCString& aPartitionKey);
 
   mozilla::ipc::IPCResult RecvBlobURLUnregistration(const nsCString& aURI);
 
@@ -534,6 +512,7 @@ class ContentChild final : public PContentChild,
 #if defined(XP_WIN)
   mozilla::ipc::IPCResult RecvGetUntrustedModulesData(
       GetUntrustedModulesDataResolver&& aResolver);
+  mozilla::ipc::IPCResult RecvUnblockUntrustedModulesThread();
 #endif  // defined(XP_WIN)
 
   mozilla::ipc::IPCResult RecvSetXPCOMProcessAttributes(
@@ -541,7 +520,8 @@ class ContentChild final : public PContentChild,
       FullLookAndFeel&& aLookAndFeelData, SystemFontList&& aFontList,
       Maybe<base::SharedMemoryHandle>&& aSharedUASheetHandle,
       const uintptr_t& aSharedUASheetAddress,
-      nsTArray<base::SharedMemoryHandle>&& aSharedFontListBlocks);
+      nsTArray<base::SharedMemoryHandle>&& aSharedFontListBlocks,
+      const bool& aIsReadyForBackgroundProcessing);
 
   mozilla::ipc::IPCResult RecvProvideAnonymousTemporaryFile(
       const uint64_t& aID, const FileDescOrError& aFD);
@@ -566,10 +546,6 @@ class ContentChild final : public PContentChild,
   mozilla::ipc::IPCResult RecvAddDynamicScalars(
       nsTArray<DynamicScalarDefinition>&& aDefs);
 
-#if defined(XP_WIN) && defined(ACCESSIBILITY)
-  bool SendGetA11yContentId();
-#endif  // defined(XP_WIN) && defined(ACCESSIBILITY)
-
   // Get a reference to the font list passed from the chrome process,
   // for use during gfx initialization.
   SystemFontList& SystemFontList() { return mFontList; }
@@ -579,18 +555,14 @@ class ContentChild final : public PContentChild,
   }
 
   // PURLClassifierChild
-  PURLClassifierChild* AllocPURLClassifierChild(const Principal& aPrincipal,
+  PURLClassifierChild* AllocPURLClassifierChild(nsIPrincipal* aPrincipal,
                                                 bool* aSuccess);
   bool DeallocPURLClassifierChild(PURLClassifierChild* aActor);
 
   // PURLClassifierLocalChild
   PURLClassifierLocalChild* AllocPURLClassifierLocalChild(
-      nsIURI* aUri, const nsTArray<IPCURLClassifierFeature>& aFeatures);
+      nsIURI* aUri, Span<const IPCURLClassifierFeature> aFeatures);
   bool DeallocPURLClassifierLocalChild(PURLClassifierLocalChild* aActor);
-
-  PLoginReputationChild* AllocPLoginReputationChild(nsIURI* aUri);
-
-  bool DeallocPLoginReputationChild(PLoginReputationChild* aActor);
 
   PSessionStorageObserverChild* AllocPSessionStorageObserverChild();
 
@@ -659,11 +631,6 @@ class ContentChild final : public PContentChild,
       Endpoint<PSandboxTestingChild>&& aEndpoint);
 #endif
 
-  PChildToParentStreamChild* SendPChildToParentStreamConstructor(
-      PChildToParentStreamChild* aActor) override;
-  PFileDescriptorSetChild* SendPFileDescriptorSetConstructor(
-      const FileDescriptor& aFD) override;
-
  private:
   static void ForceKillTimerCallback(nsITimer* aTimer, void* aClosure);
   void StartForceKillTimer();
@@ -676,8 +643,6 @@ class ContentChild final : public PContentChild,
   virtual void ActorDestroy(ActorDestroyReason why) override;
 
   virtual void ProcessingError(Result aCode, const char* aReason) override;
-
-  virtual void OnChannelReceivedMessage(const Message& aMsg) override;
 
   mozilla::ipc::IPCResult RecvCreateBrowsingContext(
       uint64_t aGroupId, BrowsingContext::IPCInitializer&& aInit);
@@ -697,13 +662,13 @@ class ContentChild final : public PContentChild,
       uint64_t aActionId);
   mozilla::ipc::IPCResult RecvWindowBlur(
       const MaybeDiscarded<BrowsingContext>& aContext, CallerType aCallerType);
-  mozilla::ipc::IPCResult RecvRaiseWindow(
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY mozilla::ipc::IPCResult RecvRaiseWindow(
       const MaybeDiscarded<BrowsingContext>& aContext, CallerType aCallerType,
       uint64_t aActionId);
-  mozilla::ipc::IPCResult RecvAdjustWindowFocus(
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY mozilla::ipc::IPCResult RecvAdjustWindowFocus(
       const MaybeDiscarded<BrowsingContext>& aContext, bool aIsVisible,
       uint64_t aActionId);
-  mozilla::ipc::IPCResult RecvClearFocus(
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY mozilla::ipc::IPCResult RecvClearFocus(
       const MaybeDiscarded<BrowsingContext>& aContext);
   mozilla::ipc::IPCResult RecvSetFocusedBrowsingContext(
       const MaybeDiscarded<BrowsingContext>& aContext, uint64_t aActionId);
@@ -718,7 +683,7 @@ class ContentChild final : public PContentChild,
   mozilla::ipc::IPCResult RecvFinalizeFocusOuter(
       const MaybeDiscarded<BrowsingContext>& aContext, bool aCanFocus,
       CallerType aCallerType);
-  mozilla::ipc::IPCResult RecvBlurToChild(
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY mozilla::ipc::IPCResult RecvBlurToChild(
       const MaybeDiscarded<BrowsingContext>& aFocusedBrowsingContext,
       const MaybeDiscarded<BrowsingContext>& aBrowsingContextToClear,
       const MaybeDiscarded<BrowsingContext>& aAncestorBrowsingContextToFocus,
@@ -764,7 +729,7 @@ class ContentChild final : public PContentChild,
       const uint64_t& aInnerWindowId, const bool& aFromChromeContext);
 
   mozilla::ipc::IPCResult RecvReportFrameTimingData(
-      uint64_t innerWindowId, const nsString& entryName,
+      const LoadInfoArgs& loadInfoArgs, const nsString& entryName,
       const nsString& initiatorType, UniquePtr<PerformanceTimingData>&& aData);
 
   mozilla::ipc::IPCResult RecvLoadURI(
@@ -799,7 +764,7 @@ class ContentChild final : public PContentChild,
       const JSActorMessageMeta& aMeta, const Maybe<ClonedMessageData>& aData,
       const Maybe<ClonedMessageData>& aStack);
 
-  already_AddRefed<JSActor> InitJSActor(JS::HandleObject aMaybeActor,
+  already_AddRefed<JSActor> InitJSActor(JS::Handle<JSObject*> aMaybeActor,
                                         const nsACString& aName,
                                         ErrorResult& aRv) override;
   mozilla::ipc::IProtocol* AsNativeActor() override { return this; }
@@ -808,16 +773,16 @@ class ContentChild final : public PContentChild,
       const MaybeDiscarded<BrowsingContext>& aContext, const uint32_t& aIndex,
       const uint32_t& aLength, const nsID& aChangeID);
 
+  mozilla::ipc::IPCResult RecvGetLayoutHistoryState(
+      const MaybeDiscarded<BrowsingContext>& aContext,
+      GetLayoutHistoryStateResolver&& aResolver);
+
   mozilla::ipc::IPCResult RecvDispatchLocationChangeEvent(
       const MaybeDiscarded<BrowsingContext>& aContext);
 
   mozilla::ipc::IPCResult RecvDispatchBeforeUnloadToSubtree(
       const MaybeDiscarded<BrowsingContext>& aStartingAt,
       DispatchBeforeUnloadToSubtreeResolver&& aResolver);
-
-  mozilla::ipc::IPCResult RecvFlushTabState(
-      const MaybeDiscarded<BrowsingContext>& aContext,
-      FlushTabStateResolver&& aResolver);
 
   mozilla::ipc::IPCResult RecvDecoderSupportedMimeTypes(
       nsTArray<nsCString>&& aSupportedTypes);
@@ -832,21 +797,35 @@ class ContentChild final : public PContentChild,
 
   hal::ProcessPriority GetProcessPriority() const { return mProcessPriority; }
 
+  hal::PerformanceHintSession* PerformanceHintSession() const {
+    return mPerformanceHintSession.get();
+  }
+
+  // Returns the target work duration for the PerformanceHintSession, based on
+  // the refresh interval. Estimate that we want the tick to complete in at most
+  // half of the refresh period. This is fairly arbitrary and can be tweaked
+  // later.
+  static TimeDuration GetPerformanceHintTarget(TimeDuration aRefreshInterval) {
+    return aRefreshInterval / int64_t(2);
+  }
+
  private:
+  void AddProfileToProcessName(const nsACString& aProfile);
   mozilla::ipc::IPCResult RecvFlushFOGData(FlushFOGDataResolver&& aResolver);
 
   mozilla::ipc::IPCResult RecvUpdateMediaCodecsSupported(
-      RemoteDecodeIn aLocation,
-      const PDMFactory::MediaCodecsSupported& aSupported);
+      RemoteDecodeIn aLocation, const media::MediaCodecsSupported& aSupported);
 
 #ifdef NIGHTLY_BUILD
+  virtual void OnChannelReceivedMessage(const Message& aMsg) override;
+
   virtual PContentChild::Result OnMessageReceived(const Message& aMsg) override;
-#else
-  using PContentChild::OnMessageReceived;
+
+  virtual PContentChild::Result OnMessageReceived(
+      const Message& aMsg, UniquePtr<Message>& aReply) override;
 #endif
 
-  virtual PContentChild::Result OnMessageReceived(const Message& aMsg,
-                                                  Message*& aReply) override;
+  void ConfigureThreadPerformanceHints(const hal::ProcessPriority& aPriority);
 
   nsTArray<mozilla::UniquePtr<AlertObserver>> mAlertObservers;
   RefPtr<ConsoleListener> mConsoleListener;
@@ -872,19 +851,6 @@ class ContentChild final : public PContentChild,
    * channel to us.
    */
   ContentParentId mID;
-
-#if defined(XP_WIN) && defined(ACCESSIBILITY)
-  /**
-   * The thread ID of the main thread in the chrome process.
-   */
-  uint32_t mMainChromeTid;
-
-  /**
-   * This is an a11y-specific unique id for the content process that is
-   * generated by the chrome process.
-   */
-  uint32_t mMsaaID;
-#endif  // defined(XP_WIN) && defined(ACCESSIBILITY)
 
   AppInfo mAppInfo;
 
@@ -931,6 +897,11 @@ class ContentChild final : public PContentChild,
   uint64_t mBrowsingContextFieldEpoch = 0;
 
   hal::ProcessPriority mProcessPriority = hal::PROCESS_PRIORITY_UNKNOWN;
+
+  // Session created when the process priority is FOREGROUND to ensure high
+  // priority scheduling of important threads. (Currently main thread and style
+  // threads.) The work duration is reported by the RefreshDriverTimer.
+  UniquePtr<hal::PerformanceHintSession> mPerformanceHintSession;
 };
 
 inline nsISupports* ToSupports(mozilla::dom::ContentChild* aContentChild) {

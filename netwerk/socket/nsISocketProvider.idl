@@ -6,6 +6,7 @@
 #include "nsISupports.idl"
 
 interface nsIProxyInfo;
+interface nsITLSSocketControl;
 [ptr] native PRFileDescStar(struct PRFileDesc);
 native OriginAttributes(mozilla::OriginAttributes);
 [ref] native const_OriginAttributesRef(const mozilla::OriginAttributes);
@@ -41,9 +42,9 @@ interface nsISocketProvider : nsISupports
      *        studies relating to the TLS implementation.
      * @param aFileDesc
      *        The resulting PRFileDesc.
-     * @param aSecurityInfo
-     *        Any security info that should be associated with aFileDesc.  This
-     *        object typically implements nsITransportSecurityInfo.
+     * @param aTLSSocketControl
+     *        TLS socket control object that should be associated with
+     *        aFileDesc, if applicable.
      */
     [noscript]
     void newSocket(in long                      aFamily,
@@ -54,7 +55,7 @@ interface nsISocketProvider : nsISupports
                    in unsigned long             aFlags,
                    in unsigned long             aTlsFlags,
                    out PRFileDescStar           aFileDesc,
-                   out nsISupports              aSecurityInfo);
+                   out nsITLSSocketControl      aTLSSocketControl);
 
     /**
      * addToSocket
@@ -75,7 +76,7 @@ interface nsISocketProvider : nsISupports
                      in unsigned long             aFlags,
                      in unsigned long             aTlsFlags,
                      in PRFileDescStar            aFileDesc,
-                     out nsISupports              aSecurityInfo);
+                     out nsITLSSocketControl      aTLSSocketControl);
 
     /**
      * PROXY_RESOLVES_HOST
@@ -118,4 +119,27 @@ interface nsISocketProvider : nsISupports
      * on a connection for an anonymous request.
      */
     const long ANONYMOUS_CONNECT_ALLOW_CLIENT_CERT = 1 << 4;
+
+    /**
+     * If set, indicates that this is a speculative connection.
+     */
+    const unsigned long IS_SPECULATIVE_CONNECTION = 1 << 5;
+
+    /**
+     * If set, do not send an ECH extension (whether GREASE or 'real').
+     * Currently false by default and is set when retrying failed connections.
+     */
+    const unsigned long DONT_TRY_ECH = (1 << 10);
+
+    /**
+     *  If set, indicates that the connection is a retry.
+     */
+    const unsigned long IS_RETRY = (1 << 11);
+
+    /**
+     * If set, indicates that the connection used a privacy-preserving DNS
+     * transport such as DoH, DoQ or similar. Currently this field is
+     * set only when DoH is used via the TRR.
+     */
+    const unsigned long USED_PRIVATE_DNS = (1 << 12);
 };

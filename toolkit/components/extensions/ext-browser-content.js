@@ -1,20 +1,16 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-"use strict";
-
-var { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
-);
-
-XPCOMUtils.defineLazyModuleGetters(this, {
-  clearTimeout: "resource://gre/modules/Timer.jsm",
-  ExtensionCommon: "resource://gre/modules/ExtensionCommon.jsm",
-  Services: "resource://gre/modules/Services.jsm",
-  setTimeout: "resource://gre/modules/Timer.jsm",
-});
 
 /* eslint-env mozilla/frame-script */
+
+"use strict";
+
+ChromeUtils.defineESModuleGetters(this, {
+  ExtensionCommon: "resource://gre/modules/ExtensionCommon.sys.mjs",
+  clearTimeout: "resource://gre/modules/Timer.sys.mjs",
+  setTimeout: "resource://gre/modules/Timer.sys.mjs",
+});
 
 // Minimum time between two resizes.
 const RESIZE_TIMEOUT = 100;
@@ -44,9 +40,6 @@ const BrowserListener = {
     if (allowScriptsToClose) {
       content.windowUtils.allowScriptsToClose();
     }
-
-    // Force external links to open in tabs.
-    docShell.isAppTab = true;
 
     if (this.blockParser) {
       this.blockingPromise = new Promise(resolve => {
@@ -102,7 +95,12 @@ const BrowserListener = {
     switch (event.type) {
       case "DOMDocElementInserted":
         if (this.blockingPromise) {
-          event.target.blockParsing(this.blockingPromise);
+          const doc = event.target;
+          const policy = doc?.nodePrincipal?.addonPolicy;
+          event.target.blockParsing(this.blockingPromise).then(() => {
+            policy?.weakExtension?.get()?.untrackBlockedParsingDocument(doc);
+          });
+          policy?.weakExtension?.get()?.trackBlockedParsingDocument(doc);
         }
         break;
 
@@ -250,21 +248,18 @@ const BrowserListener = {
       this.oldBackground = background;
 
       // Adjust the size of the browser based on its content's preferred size.
-      let { contentViewer } = docShell;
-      let ratio = content.devicePixelRatio;
-
       let w = {},
         h = {};
-      contentViewer.getContentSizeConstrained(
-        this.maxWidth * ratio,
-        this.maxHeight * ratio,
+      docShell.contentViewer.getContentSize(
+        this.maxWidth,
+        this.maxHeight,
+        /* prefWidth = */ 0,
         w,
         h
       );
 
-      let width = Math.ceil((w.value * zoom) / ratio);
-      let height = Math.ceil((h.value * zoom) / ratio);
-
+      let width = Math.ceil(w.value * zoom);
+      let height = Math.ceil(h.value * zoom);
       result = { width, height, detail };
     }
 

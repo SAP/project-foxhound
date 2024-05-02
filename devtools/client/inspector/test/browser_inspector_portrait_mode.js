@@ -7,7 +7,7 @@
 // Test that the inspector splitter is properly initialized in horizontal mode if the
 // inspector starts in portrait mode.
 
-add_task(async function() {
+add_task(async function () {
   let { inspector, toolbox } = await openInspectorForURL(
     "data:text/html;charset=utf-8,<h1>foo</h1><span>bar</span>",
     "window"
@@ -57,7 +57,7 @@ add_task(async function() {
  * promise.
  *
  * @param {Node} target
- *        Node to observe
+ *         Node to observe
  * @return {Promise} promise that will resolve upon receiving a mutation for the class
  *         attribute on the target.
  */
@@ -76,7 +76,7 @@ function waitForClassMutation(target) {
   });
 }
 
-registerCleanupFunction(function() {
+registerCleanupFunction(function () {
   // Restore the host type for other tests.
   Services.prefs.clearUserPref("devtools.toolbox.host");
 });

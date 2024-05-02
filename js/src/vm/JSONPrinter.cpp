@@ -209,15 +209,14 @@ void JSONPrinter::property(const char* name, size_t value) {
 
 void JSONPrinter::floatProperty(const char* name, double value,
                                 size_t precision) {
-  if (!mozilla::IsFinite(value)) {
+  if (!std::isfinite(value)) {
     propertyName(name);
     out_.put("null");
     return;
   }
 
-  // Note: NumberToCString does not use the |cx| argument for base 10.
   ToCStringBuf cbuf;
-  const char* str = NumberToCString(nullptr, &cbuf, value);
+  const char* str = NumberToCString(&cbuf, value);
   MOZ_ASSERT(str);
 
   property(name, str);

@@ -34,7 +34,7 @@ function handleEventLocal(aEvent) {
   }
 }
 const NUM_PAGES_OPEN_FOR_EACH_TEST_CASE = 5;
-add_task(async function setup() {
+add_setup(async function () {
   await SpecialPowers.pushPrefEnv({
     set: [
       ["privacy.userContext.enabled", true],
@@ -50,9 +50,9 @@ add_task(async function setup() {
 function setupRemoteTypes() {
   remoteTypes = {
     regular: { "about:preferences": null, "about:config": null },
-    "1": { "about:preferences": null, "about:config": null },
-    "2": { "about:preferences": null, "about:config": null },
-    "3": { "about:preferences": null, "about:config": null },
+    1: { "about:preferences": null, "about:config": null },
+    2: { "about:preferences": null, "about:config": null },
+    3: { "about:preferences": null, "about:config": null },
   };
   if (gFissionBrowser) {
     remoteTypes.regular[URI_EXAMPLECOM] = "webIsolated=https://example.com";
@@ -94,7 +94,7 @@ add_task(async function testReopen() {
    *    reopen container tab in regular tab
    *  Close all the tabs
    * This tests that behaviour of reopening tabs is correct
-   * */
+   */
 
   let regularPage = await openURIInRegularTab("about:blank");
   var currRemoteType;
@@ -106,7 +106,7 @@ add_task(async function testReopen() {
       false,
       uri
     );
-    await BrowserTestUtils.loadURI(regularPage.tab.linkedBrowser, uri);
+    BrowserTestUtils.startLoadingURIString(regularPage.tab.linkedBrowser, uri);
     await loaded;
     info(`Start Opened ${uri} in a regular tab`);
     currRemoteType = regularPage.tab.linkedBrowser.remoteType;

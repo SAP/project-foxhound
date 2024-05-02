@@ -8,11 +8,10 @@
 #include "mozilla/dom/WorkerCommon.h"
 #include "mozilla/dom/WorkerRef.h"
 
-#include "RemoteServiceWorkerContainerImpl.h"
+#include "ServiceWorkerContainer.h"
 #include "ServiceWorkerContainerChild.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 void ServiceWorkerContainerChild::ActorDestroy(ActorDestroyReason aReason) {
   mIPCWorkerRef = nullptr;
@@ -49,15 +48,13 @@ ServiceWorkerContainerChild::Create() {
 ServiceWorkerContainerChild::ServiceWorkerContainerChild()
     : mOwner(nullptr), mTeardownStarted(false) {}
 
-void ServiceWorkerContainerChild::SetOwner(
-    RemoteServiceWorkerContainerImpl* aOwner) {
+void ServiceWorkerContainerChild::SetOwner(ServiceWorkerContainer* aOwner) {
   MOZ_DIAGNOSTIC_ASSERT(!mOwner);
   MOZ_DIAGNOSTIC_ASSERT(aOwner);
   mOwner = aOwner;
 }
 
-void ServiceWorkerContainerChild::RevokeOwner(
-    RemoteServiceWorkerContainerImpl* aOwner) {
+void ServiceWorkerContainerChild::RevokeOwner(ServiceWorkerContainer* aOwner) {
   MOZ_DIAGNOSTIC_ASSERT(mOwner);
   MOZ_DIAGNOSTIC_ASSERT(aOwner == mOwner);
   mOwner = nullptr;
@@ -70,5 +67,4 @@ void ServiceWorkerContainerChild::MaybeStartTeardown() {
   mTeardownStarted = true;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

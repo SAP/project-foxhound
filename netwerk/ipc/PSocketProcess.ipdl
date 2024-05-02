@@ -9,18 +9,14 @@ include protocol PProfiler;
 include protocol PWebrtcTCPSocket;
 include protocol PHttpTransaction;
 include protocol PHttpConnectionMgr;
-include protocol PFileDescriptorSet;
-include protocol PChildToParentStream;
-include protocol PParentToChildStream;
 include protocol PInputChannelThrottleQueue;
-include protocol PBackgroundStarter;
 include protocol PAltService;
 include protocol PAltSvcTransaction;
 include protocol PTRRService;
 include protocol PProxyConfigLookup;
 include protocol PNativeDNSResolverOverride;
-include protocol PRemoteLazyInputStream;
 include protocol PProxyAutoConfig;
+include protocol PSocketProcessBackground;
 
 #if defined(MOZ_SANDBOX) && defined(MOZ_DEBUG) && defined(ENABLE_TESTS)
 include protocol PSandboxTesting;
@@ -29,7 +25,6 @@ include protocol PSandboxTesting;
 include MemoryReportTypes;
 include NeckoChannelParams;
 include PrefsTypes;
-include PSMIPCTypes;
 
 include "mozilla/ipc/ByteBufUtils.h";
 
@@ -49,6 +44,7 @@ using struct nsID from "nsID.h";
 using mozilla::net::SocketInfo from "mozilla/net/DashboardTypes.h";
 using mozilla::net::DNSCacheEntries from "mozilla/net/DashboardTypes.h";
 using mozilla::net::HttpRetParams from "mozilla/net/DashboardTypes.h";
+using nsIDNSService::DNSFlags from "nsIDNSService.h";
 
 #if defined(XP_WIN)
 [MoveOnly] using mozilla::UntrustedModulesData from "mozilla/UntrustedModulesData.h";
@@ -85,6 +81,9 @@ struct SocketPorcessInitAttributes {
   bool mOffline;
   bool mConnectivity;
   bool mInitSandbox;
+#if defined(XP_WIN)
+  bool mIsReadyForBackgroundProcessing;
+#endif
   FileDescriptor? mSandboxBroker;
 };
 
@@ -93,18 +92,14 @@ sync protocol PSocketProcess
 {
   manages PDNSRequest;
   manages PWebrtcTCPSocket;
-  manages PFileDescriptorSet;
   manages PHttpTransaction;
   manages PHttpConnectionMgr;
-  manages PChildToParentStream;
-  manages PParentToChildStream;
   manages PInputChannelThrottleQueue;
   manages PAltService;
   manages PAltSvcTransaction;
   manages PTRRService;
   manages PProxyConfigLookup;
   manages PNativeDNSResolverOverride;
-  manages PRemoteLazyInputStream;
 
 parent:
   async InitCrashReporter(NativeThreadId threadId);
@@ -119,30 +114,19 @@ parent:
 
   /* tabId is only required for web-proxy support, which isn't always needed */
   async PWebrtcTCPSocket(TabId? tabId);
-  async PChildToParentStream();
   async ObserveHttpActivity(HttpActivityArgs aActivityArgs,
                             uint32_t aActivityType,
                             uint32_t aActivitySubtype,
                             PRTime   aTimestamp,
                             uint64_t aExtraSizeData,
                             nsCString aExtraStringData);
-  async InitBackground(Endpoint<PBackgroundStarterParent> aEndpoint);
+  async InitSocketBackground(Endpoint<PSocketProcessBackgroundParent> aEndpoint);
   async PAltService();
-  sync GetTLSClientCert(nsCString aHostName,
-                        OriginAttributes aOriginAttributes,
-                        int32_t aPort,
-                        uint32_t aProviderFlags,
-                        uint32_t aProviderTlsFlags,
-                        ByteArray aServerCert,
-                        ByteArray? aClientCert,
-                        ByteArray[] aCollectedCANames)
-    returns (bool aSucceeded, ByteArray aOutCert, ByteArray[] aBuiltChain);
-  async PProxyConfigLookup(nsIURI aUri, uint32_t aFlags);
-  async CachePushCheck(nsIURI aPushedURL,
+  async PProxyConfigLookup(nullable nsIURI aUri, uint32_t aFlags);
+  async CachePushCheck(nullable nsIURI aPushedURL,
                        OriginAttributes aOriginAttributes,
                        nsCString aRequestString)
     returns (bool aAccepted);
-  async ODoHServiceActivated(bool aActivated);
 
   async ExcludeHttp2OrHttp3(HttpConnectionInfoCloneArgs aArgs);
 
@@ -178,7 +162,6 @@ child:
   async SocketProcessTelemetryPing();
 
   async PHttpTransaction();
-  async PParentToChildStream();
   async PHttpConnectionMgr(HttpHandlerInitArgs aArgs);
   async UpdateDeviceModelId(nsCString aModelId);
 
@@ -189,14 +172,12 @@ child:
                                    uint32_t maxBytesPerSecond);
   async PAltSvcTransaction(HttpConnectionInfoCloneArgs aConnInfo,
                            uint32_t aCaps);
-  async ClearSessionCache();
+  async ClearSessionCache() returns (void_t ok);
   async PTRRService(bool aCaptiveIsPassed,
                     bool aParentalControlEnabled,
                     nsCString[] aDNSSuffixList);
   async PNativeDNSResolverOverride();
   async NotifyObserver(nsCString aTopic, nsString aData);
-
-  async PRemoteLazyInputStream(nsID aID, uint64_t aSize);
 
   async GetSocketData()
     returns (SocketDataArgs data);
@@ -222,12 +203,19 @@ child:
 
 #if defined(XP_WIN)
   async GetUntrustedModulesData() returns (UntrustedModulesData? data);
+
+  /**
+  * This method is used to notifty a child process to start
+  * processing module loading events in UntrustedModulesProcessor.
+  * This should be called when the parent process has gone idle.
+  */
+  async UnblockUntrustedModulesThread();
 #endif  // defined(XP_WIN)
 
 both:
-  async PFileDescriptorSet(FileDescriptor fd);
-  async PDNSRequest(nsCString hostName, nsCString trrServer, uint16_t type,
-                    OriginAttributes originAttributes, uint32_t flags);
+  async PDNSRequest(nsCString hostName, nsCString trrServer, int32_t port,
+                    uint16_t type, OriginAttributes originAttributes,
+                    DNSFlags flags);
 };
 
 } // namespace net

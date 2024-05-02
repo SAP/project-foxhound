@@ -12,6 +12,8 @@ interface nsIReferrerInfo;
 #include "GeckoProfiler.h"
 %}
 
+native UniqueProfileChunkedBuffer(mozilla::UniquePtr<mozilla::ProfileChunkedBuffer>);
+
 /**
  * nsIHttpChannel
  *
@@ -203,13 +205,6 @@ interface nsIHttpChannel : nsIIdentChannel
      * for the new http channel. This should be called during redirection.
      */
     [must_use] bool ShouldStripRequestBodyHeader(in ACString aMethod);
-
-    /**
-     * This attribute no longer has any effect, it remains for backwards compat
-     *
-     * @throws NS_ERROR_FAILURE if set after the channel has been opened.
-     */
-    [must_use] attribute boolean allowPipelining;
 
     /**
      * This attribute of the channel indicates whether or not
@@ -464,26 +459,12 @@ interface nsIHttpChannel : nsIIdentChannel
     [must_use] attribute uint64_t topLevelContentWindowId;
 
     /**
-     * Returns the allowing status for flash plugin for this channel.
-     */
-    cenum FlashPluginState : 8 {
-      FlashPluginUnknown = 0,
-      FlashPluginAllowed = 1,
-      FlashPluginDenied = 2,
-      FlashPluginDeniedInSubdocuments = 3,
-
-      // Keep this equal to the last value.
-      FlashPluginLastValue = 3,
-    };
-    [infallible] readonly attribute nsIHttpChannel_FlashPluginState flashPluginState;
-
-    /**
-     * ID of the top-level browsing context for this channel.
+     * ID of the browser for this channel.
      *
      * NOTE: The setter of this attribute is currently for xpcshell test only.
      *       Don't alter it otherwise.
      */
-    [must_use] attribute uint64_t topBrowsingContextId;
+    [must_use] attribute uint64_t browserId;
 
     /**
      * In e10s, the information that the CORS response blocks the load is in the
@@ -495,15 +476,22 @@ interface nsIHttpChannel : nsIIdentChannel
      *
      * @param aCategory
      *        The category under which the message should be displayed.
+     *
+     * @param aIsWarning
+     *        When true, this is a warning message.
      */
-    void logBlockedCORSRequest(in AString aMessage, in ACString aCategory);
+    void logBlockedCORSRequest(in AString aMessage,
+                               in ACString aCategory,
+                               in boolean aIsWarning);
 
     void logMimeTypeMismatch(in ACString aMessageName,
                              in boolean aWarning,
                              in AString aURL,
                              in AString aContentType);
 
-%{ C++
-  virtual void SetSource(mozilla::UniquePtr<mozilla::ProfileChunkedBuffer> aSource) {}
-%}
+    [notxpcom, nostdcall] void setSource(in UniqueProfileChunkedBuffer aSource);
+
+    [must_use] attribute AString classicScriptHintCharset;
+
+    [must_use] attribute AString documentCharacterSet;
 };

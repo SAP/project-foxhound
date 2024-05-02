@@ -6,23 +6,23 @@
 
 // Checks for the NodeTabbingOrderHighlighter.
 
-add_task(async function() {
+add_task(async function () {
   await BrowserTestUtils.withNewTab(
     {
       gBrowser,
       url: MAIN_DOMAIN + "doc_accessibility_infobar.html",
     },
-    async function(browser) {
-      await SpecialPowers.spawn(browser, [], async function() {
-        const { require } = ChromeUtils.import(
-          "resource://devtools/shared/loader/Loader.jsm"
+    async function (browser) {
+      await SpecialPowers.spawn(browser, [], async function () {
+        const { require } = ChromeUtils.importESModule(
+          "resource://devtools/shared/loader/Loader.sys.mjs"
         );
         const {
           HighlighterEnvironment,
-        } = require("devtools/server/actors/highlighters");
+        } = require("resource://devtools/server/actors/highlighters.js");
         const {
           NodeTabbingOrderHighlighter,
-        } = require("devtools/server/actors/highlighters/node-tabbing-order");
+        } = require("resource://devtools/server/actors/highlighters/node-tabbing-order.js");
 
         // Checks for updated content for an infobar.
         async function testShowHide(highlighter, node, index) {

@@ -29,11 +29,10 @@ pub mod nspr {
 pub type Res<T> = Result<T, Error>;
 
 #[derive(Clone, Debug, PartialEq, PartialOrd, Ord, Eq)]
-#[allow(renamed_and_removed_lints, clippy::pub_enum_variant_names)] // rust 1.54 will require a different approach
 pub enum Error {
-    AeadInitFailure,
     AeadError,
     CertificateLoading,
+    CipherInitFailure,
     CreateSslSocket,
     EchRetry(Vec<u8>),
     HkdfError,
@@ -74,7 +73,7 @@ impl std::error::Error for Error {
 
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "Error: {:?}", self)
+        write!(f, "Error: {self:?}")
     }
 }
 

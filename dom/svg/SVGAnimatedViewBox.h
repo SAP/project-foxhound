@@ -43,6 +43,15 @@ class SVGAnimatedViewBox {
   friend class AutoChangeViewBoxNotifier;
   using SVGElement = dom::SVGElement;
 
+  SVGAnimatedViewBox& operator=(const SVGAnimatedViewBox& aOther) {
+    mBaseVal = aOther.mBaseVal;
+    if (aOther.mAnimVal) {
+      mAnimVal = MakeUnique<SVGViewBox>(*aOther.mAnimVal);
+    }
+    mHasBaseVal = aOther.mHasBaseVal;
+    return *this;
+  }
+
   void Init();
 
   /**
@@ -104,12 +113,13 @@ class SVGAnimatedViewBox {
     SVGElement* mSVGElement;
 
     // SMILAttr methods
-    virtual nsresult ValueFromString(
-        const nsAString& aStr, const dom::SVGAnimationElement* aSrcElement,
-        SMILValue& aValue, bool& aPreventCachingOfSandwich) const override;
-    virtual SMILValue GetBaseValue() const override;
-    virtual void ClearAnimValue() override;
-    virtual nsresult SetAnimValue(const SMILValue& aValue) override;
+    nsresult ValueFromString(const nsAString& aStr,
+                             const dom::SVGAnimationElement* aSrcElement,
+                             SMILValue& aValue,
+                             bool& aPreventCachingOfSandwich) const override;
+    SMILValue GetBaseValue() const override;
+    void ClearAnimValue() override;
+    nsresult SetAnimValue(const SMILValue& aValue) override;
   };
 
   static SVGAttrTearoffTable<SVGAnimatedViewBox, dom::SVGAnimatedRect>

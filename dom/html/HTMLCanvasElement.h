@@ -42,6 +42,7 @@ class SharedSurfaceTextureClient;
 class WebRenderCanvasData;
 }  // namespace layers
 namespace gfx {
+class DrawTarget;
 class SourceSurface;
 class VRLayerChild;
 }  // namespace gfx
@@ -113,7 +114,6 @@ class HTMLCanvasElement final : public nsGenericHTMLElement,
   enum { DEFAULT_CANVAS_WIDTH = 300, DEFAULT_CANVAS_HEIGHT = 150 };
 
   typedef layers::CanvasRenderer CanvasRenderer;
-  typedef layers::Layer Layer;
   typedef layers::LayerManager LayerManager;
   typedef layers::WebRenderCanvasData WebRenderCanvasData;
 
@@ -163,12 +163,6 @@ class HTMLCanvasElement final : public nsGenericHTMLElement,
 
     SetHTMLBoolAttr(nsGkAtoms::moz_opaque, aValue, aRv);
   }
-  already_AddRefed<File> MozGetAsFile(const nsAString& aName,
-                                      const nsAString& aType,
-                                      nsIPrincipal& aSubjectPrincipal,
-                                      ErrorResult& aRv);
-  already_AddRefed<nsISupports> MozGetIPCContext(const nsAString& aContextId,
-                                                 ErrorResult& aRv);
   PrintCallback* GetMozPrintCallback() const;
   void SetMozPrintCallback(PrintCallback* aCallback);
 
@@ -182,20 +176,21 @@ class HTMLCanvasElement final : public nsGenericHTMLElement,
   nsIntSize GetSize();
 
   /**
+   * Set the size in pixels of this canvas element.
+   */
+  void SetSize(const nsIntSize& aSize, ErrorResult& aRv);
+
+  /**
    * Determine whether the canvas is write-only.
    */
   bool IsWriteOnly() const;
 
   /**
-   * Force the canvas to be write-only.
-   */
-  void SetWriteOnly();
-
-  /**
    * Force the canvas to be write-only, except for readers from
-   * a specific extension's content script expanded principal.
+   * a specific extension's content script expanded principal, if
+   * available.
    */
-  void SetWriteOnly(nsIPrincipal* aExpandedReader);
+  void SetWriteOnly(nsIPrincipal* aExpandedReader = nullptr);
 
   /**
    * Notify the placeholder offscreen canvas of an updated size.
@@ -224,8 +219,14 @@ class HTMLCanvasElement final : public nsGenericHTMLElement,
   bool GetIsOpaque();
   virtual bool GetOpaqueAttr() override;
 
+  /**
+   * Retrieve a snapshot of the internal surface, returning the alpha type if
+   * requested. An optional target may be supplied for which the snapshot will
+   * be optimized for, if possible.
+   */
   virtual already_AddRefed<gfx::SourceSurface> GetSurfaceSnapshot(
-      gfxAlphaType* aOutAlphaType = nullptr);
+      gfxAlphaType* aOutAlphaType = nullptr,
+      gfx::DrawTarget* aTarget = nullptr);
 
   /*
    * Register a FrameCaptureListener with this canvas.
@@ -270,10 +271,7 @@ class HTMLCanvasElement final : public nsGenericHTMLElement,
   virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
   nsresult CopyInnerTo(HTMLCanvasElement* aDest);
 
-  void GetEventTargetParent(EventChainPreVisitor& aVisitor) override;
-
-  static void MapAttributesIntoRule(const nsMappedAttributes* aAttributes,
-                                    MappedDeclarations&);
+  static void MapAttributesIntoRule(MappedDeclarationsBuilder&);
 
   /*
    * Helpers called by various users of Canvas
@@ -313,6 +311,7 @@ class HTMLCanvasElement final : public nsGenericHTMLElement,
 
  protected:
   virtual ~HTMLCanvasElement();
+  void Destroy();
 
   virtual JSObject* WrapNode(JSContext* aCx,
                              JS::Handle<JSObject*> aGivenProto) override;
@@ -322,24 +321,30 @@ class HTMLCanvasElement final : public nsGenericHTMLElement,
   virtual already_AddRefed<nsICanvasRenderingContextInternal> CreateContext(
       CanvasContextType aContextType) override;
 
+  nsresult UpdateContext(JSContext* aCx,
+                         JS::Handle<JS::Value> aNewContextOptions,
+                         ErrorResult& aRvForDictionaryInit) override;
+
   nsresult ExtractData(JSContext* aCx, nsIPrincipal& aSubjectPrincipal,
                        nsAString& aType, const nsAString& aOptions,
                        nsIInputStream** aStream);
   nsresult ToDataURLImpl(JSContext* aCx, nsIPrincipal& aSubjectPrincipal,
                          const nsAString& aMimeType,
                          const JS::Value& aEncoderOptions, nsAString& aDataURL);
-  nsresult MozGetAsFileImpl(const nsAString& aName, const nsAString& aType,
-                            nsIPrincipal& aSubjectPrincipal, File** aResult);
+
+  UniquePtr<uint8_t[]> GetImageBuffer(int32_t* aOutFormat,
+                                      gfx::IntSize* aOutImageSize) override;
+
   MOZ_CAN_RUN_SCRIPT void CallPrintCallback();
 
-  virtual nsresult AfterSetAttr(int32_t aNamespaceID, nsAtom* aName,
-                                const nsAttrValue* aValue,
-                                const nsAttrValue* aOldValue,
-                                nsIPrincipal* aSubjectPrincipal,
-                                bool aNotify) override;
-  virtual nsresult OnAttrSetButNotChanged(int32_t aNamespaceID, nsAtom* aName,
-                                          const nsAttrValueOrString& aValue,
-                                          bool aNotify) override;
+  virtual void AfterSetAttr(int32_t aNamespaceID, nsAtom* aName,
+                            const nsAttrValue* aValue,
+                            const nsAttrValue* aOldValue,
+                            nsIPrincipal* aSubjectPrincipal,
+                            bool aNotify) override;
+  virtual void OnAttrSetButNotChanged(int32_t aNamespaceID, nsAtom* aName,
+                                      const nsAttrValueOrString& aValue,
+                                      bool aNotify) override;
 
  public:
   ClientWebGLContext* GetWebGLContext();
@@ -347,8 +352,9 @@ class HTMLCanvasElement final : public nsGenericHTMLElement,
 
   bool IsOffscreen() const { return !!mOffscreenCanvas; }
   OffscreenCanvas* GetOffscreenCanvas() const { return mOffscreenCanvas; }
+  void FlushOffscreenCanvas();
 
-  RefPtr<layers::ImageContainer> GetImageContainer();
+  layers::ImageContainer* GetImageContainer() const { return mImageContainer; }
 
  protected:
   bool mResetLayer;
@@ -359,9 +365,9 @@ class HTMLCanvasElement final : public nsGenericHTMLElement,
   RefPtr<HTMLCanvasPrintState> mPrintState;
   nsTArray<WeakPtr<FrameCaptureListener>> mRequestedFrameListeners;
   RefPtr<RequestedFrameRefreshObserver> mRequestedFrameRefreshObserver;
-  RefPtr<CanvasRenderer> mCanvasRenderer;
   RefPtr<OffscreenCanvas> mOffscreenCanvas;
   RefPtr<OffscreenCanvasDisplayHelper> mOffscreenDisplay;
+  RefPtr<layers::ImageContainer> mImageContainer;
   RefPtr<HTMLCanvasElementObserver> mContextObserver;
 
  public:
@@ -376,7 +382,7 @@ class HTMLCanvasElement final : public nsGenericHTMLElement,
   RefPtr<nsIPrincipal> mExpandedReader;
 
   // Determines if the caller should be able to read the content.
-  bool CallerCanRead(JSContext* aCx);
+  bool CallerCanRead(nsIPrincipal& aPrincipal) const;
 
   bool IsPrintCallbackDone();
 
@@ -418,7 +424,7 @@ class HTMLCanvasPrintState final : public nsWrapperCache {
   bool mIsDone;
 
   NS_INLINE_DECL_CYCLE_COLLECTING_NATIVE_REFCOUNTING(HTMLCanvasPrintState)
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_NATIVE_CLASS(HTMLCanvasPrintState)
+  NS_DECL_CYCLE_COLLECTION_NATIVE_WRAPPERCACHE_CLASS(HTMLCanvasPrintState)
 
   virtual JSObject* WrapObject(JSContext* cx,
                                JS::Handle<JSObject*> aGivenProto) override;

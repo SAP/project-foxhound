@@ -4,9 +4,9 @@
 
 "use strict";
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  ctypes: "resource://gre/modules/ctypes.jsm",
-  NativeManifests: "resource://gre/modules/NativeManifests.jsm",
+ChromeUtils.defineESModuleGetters(this, {
+  NativeManifests: "resource://gre/modules/NativeManifests.sys.mjs",
+  ctypes: "resource://gre/modules/ctypes.sys.mjs",
 });
 
 XPCOMUtils.defineLazyServiceGetter(
@@ -21,7 +21,7 @@ Cu.importGlobalProperties(["PathUtils"]);
 
 var { DefaultMap } = ExtensionUtils;
 
-const findModuleByPath = function(path) {
+const findModuleByPath = function (path) {
   for (let module of pkcs11db.listModules()) {
     if (module && module.libName === path) {
       return module;

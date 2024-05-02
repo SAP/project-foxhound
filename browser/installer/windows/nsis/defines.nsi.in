@@ -27,10 +27,12 @@
 !define AB_CD                 "@AB_CD@"
 
 !define FileMainEXE           "@MOZ_APP_NAME@.exe"
+!define PrivateBrowsingEXE    "private_browsing.exe"
 !define MainWindowClass       "MozillaWindowClass"
 !define DialogWindowClass     "MozillaDialogClass"
 !define DDEApplication        "Firefox"
 !define AppRegName            "Firefox"
+!define ToastAumidPrefix      "@MOZ_TOAST_APP_NAME@Toast-"
 
 !define BrandProductName      "Firefox"
 !ifndef DEV_EDITION
@@ -39,6 +41,17 @@
 !ifndef BrandFullName
 !define BrandFullName         "${BrandFullNameInternal}"
 !endif
+
+; The C++ defines in `nsNativeAppSupportWin.h` are 1-based.  The Windows
+; resource IDs in the registry are 0-based.
+!define IDI_APPICON_ZERO_BASED       "0"
+!define IDI_DOCUMENT_ZERO_BASED      "1"
+!define IDI_PBICON_ZERO_BASED        "4"
+!define IDI_DOCUMENT_PDF_ZERO_BASED  "5"
+
+; This one is the location of the Private Browsing icon in
+; private_browsing.exe (as opposed to @MOZ_APP_NAME@.exe)
+!define IDI_PBICON_PB_EXE_ZERO_BASED "0"
 
 !define CERTIFICATE_NAME            "Mozilla Corporation"
 !define CERTIFICATE_ISSUER          "DigiCert SHA2 Assured ID Code Signing CA"
@@ -58,8 +71,6 @@
 !else
 !define UpdateChannel "@MOZ_UPDATE_CHANNEL@"
 !endif
-
-!define AccessibleHandlerCLSID "@MOZ_HANDLER_CLSID@"
 
 #ifdef MOZ_LAUNCHER_PROCESS
 !define MOZ_LAUNCHER_PROCESS
@@ -87,10 +98,10 @@
 !define MinSupportedVer "Microsoft Windows 10 for ARM"
 #else
 !define ARCH "x64"
-!define MinSupportedVer "Microsoft Windows 7 x64"
+!define MinSupportedVer "Microsoft Windows 10 x64"
 #endif
 #else
-!define MinSupportedVer "Microsoft Windows 7"
+!define MinSupportedVer "Microsoft Windows 10"
 !define ARCH "x86"
 #endif
 
@@ -113,6 +124,9 @@
 !else if "@AB_CD@" == "zh-CN"
 !define MOZ_OPTIONAL_EXTENSIONS
 !endif
+
+# To add Private Browsing shortcut argument to setup.exe
+!define MOZ_PRIVATE_BROWSING
 
 # File details shared by both the installer and uninstaller
 VIProductVersion "1.0.0.0"

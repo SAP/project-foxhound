@@ -39,14 +39,14 @@ import org.mozilla.gecko.util.XPCOMEventTarget;
    * passed into Context.bindService().
    */
   @WrapForJNI
-  public static enum PriorityLevel {
+  public enum PriorityLevel {
     FOREGROUND(Context.BIND_IMPORTANT),
     BACKGROUND(0),
     IDLE(Context.BIND_WAIVE_PRIORITY);
 
     private final int mAndroidFlag;
 
-    private PriorityLevel(final int androidFlag) {
+    PriorityLevel(final int androidFlag) {
       mAndroidFlag = androidFlag;
     }
 
@@ -390,7 +390,9 @@ import org.mozilla.gecko.util.XPCOMEventTarget;
   }
 
   private interface ContentAllocationPolicy {
-    /** @return BindServiceDelegate that will be used for binding a new content service. */
+    /**
+     * @return BindServiceDelegate that will be used for binding a new content service.
+     */
     BindServiceDelegate getBindServiceDelegate(InstanceInfo info);
 
     /**
@@ -459,7 +461,9 @@ import org.mozilla.gecko.util.XPCOMEventTarget;
       mAllocator.clear(id);
     }
 
-    /** @return The number of content services defined in our manifest. */
+    /**
+     * @return The number of content services defined in our manifest.
+     */
     private static int getContentServiceCount() {
       return ServiceUtils.getServiceCount(
           GeckoAppShell.getApplicationContext(), GeckoProcessType.CONTENT);

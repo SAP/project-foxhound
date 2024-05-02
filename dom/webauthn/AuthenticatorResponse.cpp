@@ -4,28 +4,16 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "mozilla/Base64.h"
 #include "mozilla/dom/AuthenticatorResponse.h"
-
+#include "mozilla/dom/TypedArray.h"
 #include "nsPIDOMWindow.h"
+#include "nsWrapperCache.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
-NS_IMPL_CYCLE_COLLECTION_CLASS(AuthenticatorResponse)
-NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(AuthenticatorResponse)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK(mParent)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK_PRESERVED_WRAPPER
-  tmp->mClientDataJSONCachedObj = nullptr;
-NS_IMPL_CYCLE_COLLECTION_UNLINK_END
-
-NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN(AuthenticatorResponse)
-  NS_IMPL_CYCLE_COLLECTION_TRACE_PRESERVED_WRAPPER
-  NS_IMPL_CYCLE_COLLECTION_TRACE_JS_MEMBER_CALLBACK(mClientDataJSONCachedObj)
-NS_IMPL_CYCLE_COLLECTION_TRACE_END
-
-NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(AuthenticatorResponse)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mParent)
-NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
+NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE_WITH_JS_MEMBERS(
+    AuthenticatorResponse, (mParent), (mClientDataJSONCachedObj))
 
 NS_IMPL_CYCLE_COLLECTING_ADDREF(AuthenticatorResponse)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(AuthenticatorResponse)
@@ -47,19 +35,18 @@ AuthenticatorResponse::~AuthenticatorResponse() {
 nsISupports* AuthenticatorResponse::GetParentObject() const { return mParent; }
 
 void AuthenticatorResponse::GetClientDataJSON(
-    JSContext* aCx, JS::MutableHandle<JSObject*> aRetVal) {
+    JSContext* aCx, JS::MutableHandle<JSObject*> aValue, ErrorResult& aRv) {
   if (!mClientDataJSONCachedObj) {
-    mClientDataJSONCachedObj = mClientDataJSON.ToArrayBuffer(aCx);
+    mClientDataJSONCachedObj = ArrayBuffer::Create(aCx, mClientDataJSON, aRv);
+    if (aRv.Failed()) {
+      return;
+    }
   }
-  aRetVal.set(mClientDataJSONCachedObj);
+  aValue.set(mClientDataJSONCachedObj);
 }
 
-nsresult AuthenticatorResponse::SetClientDataJSON(CryptoBuffer& aBuffer) {
-  if (NS_WARN_IF(!mClientDataJSON.Assign(aBuffer))) {
-    return NS_ERROR_OUT_OF_MEMORY;
-  }
-  return NS_OK;
+void AuthenticatorResponse::SetClientDataJSON(const nsCString& aBuffer) {
+  mClientDataJSON.Assign(aBuffer);
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

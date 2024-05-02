@@ -12,8 +12,9 @@
   <script>
     "use strict";
 
-    const { Assert } = ChromeUtils.import("resource://testing-common/Assert.jsm");
-    const { ObjectUtils } = ChromeUtils.import("resource://gre/modules/ObjectUtils.jsm");
+    const { Assert } = ChromeUtils.importESModule(
+      "resource://testing-common/Assert.sys.mjs"
+    );
 
     add_task(async function test_move_relative_path() {
       const tmpFileName = PathUtils.join(PathUtils.tempDir, "test_ioutils_move_relative_path.tmp");

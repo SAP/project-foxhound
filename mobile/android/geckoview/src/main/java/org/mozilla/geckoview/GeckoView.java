@@ -6,6 +6,9 @@
 
 package org.mozilla.geckoview;
 
+import static org.mozilla.geckoview.GeckoSession.GeckoPrintException.ERROR_NO_ACTIVITY_CONTEXT;
+import static org.mozilla.geckoview.GeckoSession.GeckoPrintException.ERROR_NO_ACTIVITY_CONTEXT_DELEGATE;
+
 import android.annotation.SuppressLint;
 import android.annotation.TargetApi;
 import android.app.Activity;
@@ -21,6 +24,8 @@ import android.graphics.RectF;
 import android.graphics.Region;
 import android.os.Build;
 import android.os.Handler;
+import android.print.PrintDocumentAdapter;
+import android.print.PrintManager;
 import android.util.AttributeSet;
 import android.util.DisplayMetrics;
 import android.util.Log;
@@ -30,6 +35,7 @@ import android.view.DisplayCutout;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.Surface;
+import android.view.SurfaceControl;
 import android.view.SurfaceView;
 import android.view.TextureView;
 import android.view.View;
@@ -47,8 +53,11 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.annotation.UiThread;
 import androidx.core.view.ViewCompat;
+import java.io.InputStream;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
+import java.lang.ref.WeakReference;
+import java.util.Objects;
 import org.mozilla.gecko.AndroidGamepadManager;
 import org.mozilla.gecko.EventDispatcher;
 import org.mozilla.gecko.InputMethods;
@@ -56,7 +65,7 @@ import org.mozilla.gecko.SurfaceViewWrapper;
 import org.mozilla.gecko.util.ThreadUtils;
 
 @UiThread
-public class GeckoView extends FrameLayout {
+public class GeckoView extends FrameLayout implements GeckoDisplay.NewSurfaceProvider {
   private static final String LOGTAG = "GeckoView";
   private static final boolean DEBUG = false;
 
@@ -64,6 +73,12 @@ public class GeckoView extends FrameLayout {
 
   private Integer mLastCoverColor;
   protected @Nullable GeckoSession mSession;
+  WeakReference<Autofill.Session> mAutofillSession = new WeakReference<>(null);
+
+  // Whether this GeckoView instance has a session that is no longer valid, e.g. because the session
+  // associated to this GeckoView was attached to a different GeckoView instance.
+  private boolean mIsSessionPoisoned = false;
+
   private boolean mStateSaved;
 
   private @Nullable SurfaceViewWrapper mSurfaceWrapper;
@@ -74,6 +89,8 @@ public class GeckoView extends FrameLayout {
 
   private GeckoSession.SelectionActionDelegate mSelectionActionDelegate;
   private Autofill.Delegate mAutofillDelegate;
+  private @Nullable ActivityContextDelegate mActivityDelegate;
+  private GeckoSession.PrintDelegate mPrintDelegate;
 
   private class Display implements SurfaceViewWrapper.Listener {
     private final int[] mOrigin = new int[2];
@@ -97,7 +114,13 @@ public class GeckoView extends FrameLayout {
       onGlobalLayout();
       if (GeckoView.this.mSurfaceWrapper != null) {
         final SurfaceViewWrapper wrapper = GeckoView.this.mSurfaceWrapper;
-        mDisplay.surfaceChanged(wrapper.getSurface(), wrapper.getWidth(), wrapper.getHeight());
+
+        mDisplay.surfaceChanged(
+            new GeckoDisplay.SurfaceInfo.Builder(wrapper.getSurface())
+                .surfaceControl(wrapper.getSurfaceControl())
+                .newSurfaceProvider(GeckoView.this)
+                .size(wrapper.getWidth(), wrapper.getHeight())
+                .build());
         mDisplay.setDynamicToolbarMaxHeight(mDynamicToolbarMaxHeight);
         GeckoView.this.setActive(true);
       }
@@ -117,9 +140,18 @@ public class GeckoView extends FrameLayout {
     }
 
     @Override // SurfaceListener
-    public void onSurfaceChanged(final Surface surface, final int width, final int height) {
+    public void onSurfaceChanged(
+        final Surface surface,
+        @Nullable final SurfaceControl surfaceControl,
+        final int width,
+        final int height) {
       if (mDisplay != null) {
-        mDisplay.surfaceChanged(surface, width, height);
+        mDisplay.surfaceChanged(
+            new GeckoDisplay.SurfaceInfo.Builder(surface)
+                .surfaceControl(surfaceControl)
+                .newSurfaceProvider(GeckoView.this)
+                .size(width, height)
+                .build());
         mDisplay.setDynamicToolbarMaxHeight(mDynamicToolbarMaxHeight);
         if (!mValid) {
           GeckoView.this.setActive(true);
@@ -160,7 +192,7 @@ public class GeckoView extends FrameLayout {
     }
 
     public boolean shouldPinOnScreen() {
-      return mDisplay != null ? mDisplay.shouldPinOnScreen() : false;
+      return mDisplay != null && mDisplay.shouldPinOnScreen();
     }
 
     public void setVerticalClipping(final int clippingHeight) {
@@ -255,7 +287,13 @@ public class GeckoView extends FrameLayout {
       mSelectionActionDelegate = new BasicSelectionActionDelegate(activity);
     }
 
-    mAutofillDelegate = new AndroidAutofillDelegate();
+    if (Build.VERSION.SDK_INT >= 26) {
+      mAutofillDelegate = new AndroidAutofillDelegate();
+    } else {
+      // We don't support Autofill on SDK < 26
+      mAutofillDelegate = new Autofill.Delegate() {};
+    }
+    mPrintDelegate = new GeckoViewPrintDelegate();
   }
 
   /**
@@ -290,6 +328,7 @@ public class GeckoView extends FrameLayout {
    * <p>This option offers the best performance at the price of not being able to animate GeckoView.
    */
   public static final int BACKEND_SURFACE_VIEW = 1;
+
   /**
    * This GeckoView instance will be backed by a {@link TextureView}.
    *
@@ -319,6 +358,10 @@ public class GeckoView extends FrameLayout {
     }
 
     addView(mSurfaceWrapper.getView());
+
+    if (mSession != null) {
+      mSession.getMagnifier().setView(mSurfaceWrapper.getView());
+    }
   }
 
   /**
@@ -406,6 +449,7 @@ public class GeckoView extends FrameLayout {
     final GeckoSession session = mSession;
     mSession.releaseDisplay(mDisplay.release());
     mSession.getOverscrollEdgeEffect().setInvalidationCallback(null);
+    mSession.getOverscrollEdgeEffect().setSession(null);
     mSession.getCompositorController().setFirstPaintCallback(null);
 
     if (mSession.getAccessibility().getView() == this) {
@@ -424,12 +468,36 @@ public class GeckoView extends FrameLayout {
       mSession.setAutofillDelegate(null);
     }
 
+    if (mSession.getPrintDelegate() == mPrintDelegate) {
+      session.setPrintDelegate(null);
+    }
+
+    if (mSession.getMagnifier().getView() == mSurfaceWrapper.getView()) {
+      session.getMagnifier().setView(null);
+    }
+
     if (isFocused()) {
       mSession.setFocused(false);
     }
     mSession = null;
+    mIsSessionPoisoned = false;
+    session.releaseOwner();
     return session;
   }
+
+  private final GeckoSession.Owner mSessionOwner =
+      new GeckoSession.Owner() {
+        @Override
+        public void onRelease() {
+          // The session that we own is being owned by some other object so we need to release it
+          // here.
+          releaseSession();
+          // The session associated to this GeckoView is now invalid, but the app is not aware of
+          // it. We cannot display this GeckoView until the app sets a session again (or releases
+          // the poisoned session).
+          mIsSessionPoisoned = true;
+        }
+      };
 
   /**
    * Attach a session to this view. If this instance already has an open session, you must use
@@ -443,13 +511,16 @@ public class GeckoView extends FrameLayout {
   public void setSession(@NonNull final GeckoSession session) {
     ThreadUtils.assertOnUiThread();
 
-    if (mSession != null && mSession.isOpen()) {
-      throw new IllegalStateException("Current session is open");
+    if (session == mSession) {
+      // Nothing to do
+      return;
     }
 
     releaseSession();
 
+    session.setOwner(mSessionOwner);
     mSession = session;
+    mIsSessionPoisoned = false;
 
     // Make sure the clear color is set to the default
     mSession.getCompositorController().setClearColor(defaultColor());
@@ -460,17 +531,14 @@ public class GeckoView extends FrameLayout {
 
     final Context context = getContext();
     session.getOverscrollEdgeEffect().setTheme(context);
+    session.getOverscrollEdgeEffect().setSession(session);
     session
         .getOverscrollEdgeEffect()
         .setInvalidationCallback(
             new Runnable() {
               @Override
               public void run() {
-                if (Build.VERSION.SDK_INT >= 16) {
-                  GeckoView.this.postInvalidateOnAnimation();
-                } else {
-                  GeckoView.this.postInvalidateDelayed(10);
-                }
+                GeckoView.this.postInvalidateOnAnimation();
               }
             });
 
@@ -502,6 +570,14 @@ public class GeckoView extends FrameLayout {
       session.setAutofillDelegate(mAutofillDelegate);
     }
 
+    if (session.getMagnifier().getView() == null) {
+      session.getMagnifier().setView(mSurfaceWrapper.getView());
+    }
+
+    if (session.getPrintDelegate() == null && mPrintDelegate != null) {
+      session.setPrintDelegate(mPrintDelegate);
+    }
+
     if (isFocused()) {
       session.setFocused(true);
     }
@@ -527,6 +603,9 @@ public class GeckoView extends FrameLayout {
 
   @Override
   public void onAttachedToWindow() {
+    if (mIsSessionPoisoned) {
+      throw new IllegalStateException("Trying to display a view with invalid session.");
+    }
     if (mSession != null) {
       final GeckoRuntime runtime = mSession.getRuntime();
       if (runtime != null) {
@@ -560,14 +639,12 @@ public class GeckoView extends FrameLayout {
     if (mSession != null) {
       final GeckoRuntime runtime = mSession.getRuntime();
       if (runtime != null) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.JELLY_BEAN_MR1) {
-          // onConfigurationChanged is not called for 180 degree orientation changes,
-          // we will miss such rotations and the screen orientation will not be
-          // updated.
-          //
-          // If API is 17+, we use DisplayManager API to detect all degree
-          // orientation change.
-          runtime.orientationChanged(newConfig.orientation);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+          // If API is 31+, DisplayManager API may report previous information.
+          // So we have to report it again. But since Configuration.orientation may still have
+          // previous information even if onConfigurationChanged is called, we have to calculate it
+          // from display data.
+          runtime.orientationChanged();
         }
 
         runtime.configurationChanged(newConfig);
@@ -796,13 +873,20 @@ public class GeckoView extends FrameLayout {
     }
 
     final Autofill.Session autofillSession = mSession.getAutofillSession();
+
+    // Let's store the session here in case we need to autofill it later
+    mAutofillSession = new WeakReference<>(autofillSession);
     autofillSession.fillViewStructure(this, structure, flags);
   }
 
   @Override
   @TargetApi(26)
   public void autofill(@NonNull final SparseArray<AutofillValue> values) {
-    if (mSession == null) {
+    // Note: we can't use mSession.getAutofillSession() because the app might have swapped
+    // the session under us between the onProvideAutofillVirtualStructure and this call
+    // so mSession could refer to a different session or we might not have a session at all.
+    final Autofill.Session session = mAutofillSession.get();
+    if (session == null) {
       return;
     }
     final SparseArray<CharSequence> strValues = new SparseArray<>(values.size());
@@ -813,7 +897,7 @@ public class GeckoView extends FrameLayout {
         strValues.put(values.keyAt(i), value.getTextValue());
       }
     }
-    mSession.autofill(strValues);
+    session.autofill(strValues);
   }
 
   @Override
@@ -858,18 +942,40 @@ public class GeckoView extends FrameLayout {
     }
   }
 
-  /** @return Whether or not Android autofill is enabled for this view. */
+  /**
+   * @return Whether or not Android autofill is enabled for this view.
+   */
   @TargetApi(26)
   public boolean getAutofillEnabled() {
     return mAutofillEnabled;
   }
 
+  @TargetApi(26)
   private class AndroidAutofillDelegate implements Autofill.Delegate {
+    AutofillManager mAutofillManager;
+    boolean mDisabled = false;
+
+    private void ensureAutofillManager() {
+      if (mDisabled || mAutofillManager != null) {
+        // Nothing to do
+        return;
+      }
+
+      mAutofillManager = GeckoView.this.getContext().getSystemService(AutofillManager.class);
+      if (mAutofillManager == null) {
+        // If we can't get a reference to the autofill manager, we cannot run the autofill service
+        mDisabled = true;
+      }
+    }
 
     private Rect displayRectForId(
-        @NonNull final GeckoSession session, @NonNull final Autofill.Node node) {
+        @NonNull final GeckoSession session, @Nullable final Autofill.Node node) {
       if (node == null) {
         return new Rect(0, 0, 0, 0);
+      }
+
+      if (!node.getScreenRect().isEmpty()) {
+        return node.getScreenRect();
       }
 
       final Matrix matrix = new Matrix();
@@ -883,44 +989,248 @@ public class GeckoView extends FrameLayout {
     }
 
     @Override
-    public void onAutofill(
-        @NonNull final GeckoSession session, final int notification, final Autofill.Node node) {
-      ThreadUtils.assertOnUiThread();
-      if (Build.VERSION.SDK_INT < 26) {
+    public void onNodeBlur(
+        final @NonNull GeckoSession session,
+        final @NonNull Autofill.Node prev,
+        final @NonNull Autofill.NodeData data) {
+      ensureAutofillManager();
+      if (mAutofillManager == null) {
         return;
       }
-
-      final AutofillManager manager =
-          GeckoView.this.getContext().getSystemService(AutofillManager.class);
-      if (manager == null) {
-        return;
-      }
-
       try {
-        switch (notification) {
-          case Autofill.Notify.SESSION_STARTED:
-            // This line seems necessary for auto-fill to work on the initial page.
-          case Autofill.Notify.SESSION_CANCELED:
-            manager.cancel();
-            break;
-          case Autofill.Notify.SESSION_COMMITTED:
-            manager.commit();
-            break;
-          case Autofill.Notify.NODE_FOCUSED:
-            manager.notifyViewEntered(
-                GeckoView.this, node.getId(), displayRectForId(session, node));
-            break;
-          case Autofill.Notify.NODE_BLURRED:
-            manager.notifyViewExited(GeckoView.this, node.getId());
-            break;
-          case Autofill.Notify.NODE_UPDATED:
-            manager.notifyValueChanged(
-                GeckoView.this, node.getId(), AutofillValue.forText(node.getValue()));
-            break;
-        }
+        mAutofillManager.notifyViewExited(GeckoView.this, data.getId());
       } catch (final SecurityException e) {
-        Log.e(LOGTAG, "Failed to call Autofill Manager API: ", e);
+        Log.e(LOGTAG, "Failed to call AutofillManager.notifyViewExited: ", e);
       }
     }
+
+    @Override
+    public void onNodeAdd(
+        final @NonNull GeckoSession session,
+        final @NonNull Autofill.Node node,
+        final @NonNull Autofill.NodeData data) {
+      if (!mSession.getAutofillSession().isVisible(node)) {
+        return;
+      }
+      final Autofill.Node focused = mSession.getAutofillSession().getFocused();
+      // We must have a focused node because |node| is visible
+      Objects.requireNonNull(focused);
+
+      final Autofill.NodeData focusedData = mSession.getAutofillSession().dataFor(focused);
+      Objects.requireNonNull(focusedData);
+
+      ensureAutofillManager();
+      if (mAutofillManager == null) {
+        return;
+      }
+      try {
+        mAutofillManager.notifyViewExited(GeckoView.this, focusedData.getId());
+        mAutofillManager.notifyViewEntered(
+            GeckoView.this, focusedData.getId(), displayRectForId(session, focused));
+      } catch (final SecurityException e) {
+        Log.e(
+            LOGTAG,
+            "Failed to call AutofillManager.notifyViewExited or AutofillManager.notifyViewEntered: ",
+            e);
+      }
+    }
+
+    @Override
+    public void onNodeFocus(
+        final @NonNull GeckoSession session,
+        final @NonNull Autofill.Node focused,
+        final @NonNull Autofill.NodeData data) {
+      ensureAutofillManager();
+      if (mAutofillManager == null) {
+        return;
+      }
+      try {
+        mAutofillManager.notifyViewEntered(
+            GeckoView.this, data.getId(), displayRectForId(session, focused));
+      } catch (final SecurityException e) {
+        Log.e(LOGTAG, "Failed to call AutofillManager.notifyViewEntered: ", e);
+      }
+    }
+
+    @Override
+    public void onNodeRemove(
+        final @NonNull GeckoSession session,
+        final @NonNull Autofill.Node node,
+        final @NonNull Autofill.NodeData data) {}
+
+    @Override
+    public void onNodeUpdate(
+        final @NonNull GeckoSession session,
+        final @NonNull Autofill.Node node,
+        final @NonNull Autofill.NodeData data) {
+      ensureAutofillManager();
+      if (mAutofillManager == null) {
+        return;
+      }
+      try {
+        mAutofillManager.notifyValueChanged(
+            GeckoView.this, data.getId(), AutofillValue.forText(data.getValue()));
+      } catch (final SecurityException e) {
+        Log.e(LOGTAG, "Failed to call AutofillManager.notifyValueChanged: ", e);
+      }
+    }
+
+    @Override
+    public void onSessionCancel(final @NonNull GeckoSession session) {
+      ensureAutofillManager();
+      if (mAutofillManager == null) {
+        return;
+      }
+      try {
+        // This line seems necessary for auto-fill to work on the initial page.
+        mAutofillManager.cancel();
+      } catch (final SecurityException e) {
+        Log.e(LOGTAG, "Failed to call AutofillManager.cancel: ", e);
+      }
+    }
+
+    @Override
+    public void onSessionCommit(
+        final @NonNull GeckoSession session,
+        final @NonNull Autofill.Node node,
+        final @NonNull Autofill.NodeData data) {
+      ensureAutofillManager();
+      if (mAutofillManager == null) {
+        return;
+      }
+      try {
+        mAutofillManager.commit();
+      } catch (final SecurityException e) {
+        Log.e(LOGTAG, "Failed to call AutofillManager.commit: ", e);
+      }
+    }
+
+    @Override
+    public void onSessionStart(final @NonNull GeckoSession session) {
+      ensureAutofillManager();
+      if (mAutofillManager == null) {
+        return;
+      }
+      try {
+        // This line seems necessary for auto-fill to work on the initial page.
+        mAutofillManager.cancel();
+      } catch (final SecurityException e) {
+        Log.e(LOGTAG, "Failed to call AutofillManager.cancel: ", e);
+      }
+    }
+  }
+
+  /**
+   * This delegate is used to provide the GeckoView an Activity context for certain operations such
+   * as retrieving a PrintManager, which requires an Activity context. Using getContext() directly
+   * might retrieve an Activity context or a Fragment context, this delegate ensures an Activity
+   * context.
+   *
+   * <p>Not to be confused with the GeckoRuntime delegate {@link GeckoRuntime.ActivityDelegate}
+   * which is tightly coupled with WebAuthn - see bug 1671988.
+   */
+  @AnyThread
+  public interface ActivityContextDelegate {
+    /**
+     * Method should return an Activity context. May return null if not available.
+     *
+     * @return Activity context
+     */
+    @Nullable
+    Context getActivityContext();
+  }
+
+  /**
+   * Sets the delegate for the GeckoView.
+   *
+   * @param delegate to provide activity context or null
+   */
+  public void setActivityContextDelegate(final @Nullable ActivityContextDelegate delegate) {
+    mActivityDelegate = delegate;
+  }
+
+  /**
+   * Gets the delegate from the GeckoView.
+   *
+   * @return delegate, if set
+   */
+  public @Nullable ActivityContextDelegate getActivityContextDelegate() {
+    return mActivityDelegate;
+  }
+
+  /**
+   * Retrieves the GeckoView's print delegate.
+   *
+   * @return The GeckoView's print delegate.
+   */
+  public @Nullable GeckoSession.PrintDelegate getPrintDelegate() {
+    return mPrintDelegate;
+  }
+
+  /**
+   * Sets the GeckoView's print delegate.
+   *
+   * @param delegate for printing
+   */
+  public void getPrintDelegate(@Nullable final GeckoSession.PrintDelegate delegate) {
+    mPrintDelegate = delegate;
+  }
+
+  private class GeckoViewPrintDelegate implements GeckoSession.PrintDelegate {
+    public void onPrint(@NonNull final GeckoSession session) {
+      final GeckoResult<InputStream> geckoResult = session.saveAsPdf();
+      geckoResult.accept(
+          pdfStream -> {
+            onPrint(pdfStream);
+          },
+          exception -> Log.e(LOGTAG, "Could not create a content PDF to print.", exception));
+    }
+
+    public void onPrint(@NonNull final InputStream pdfStream) {
+      onPrintWithStatus(pdfStream);
+    }
+
+    public GeckoResult<Boolean> onPrintWithStatus(@NonNull final InputStream pdfStream) {
+      final GeckoResult<Boolean> isDialogFinished = new GeckoResult<Boolean>();
+      if (mActivityDelegate == null) {
+        Log.w(LOGTAG, "Missing an activity context delegate, which is required for printing.");
+        isDialogFinished.completeExceptionally(
+            new GeckoSession.GeckoPrintException(ERROR_NO_ACTIVITY_CONTEXT_DELEGATE));
+        return isDialogFinished;
+      }
+      final Context printContext = mActivityDelegate.getActivityContext();
+      if (printContext == null) {
+        Log.w(LOGTAG, "An activity context is required for printing.");
+        isDialogFinished.completeExceptionally(
+            new GeckoSession.GeckoPrintException(ERROR_NO_ACTIVITY_CONTEXT));
+        return isDialogFinished;
+      }
+      final PrintManager printManager =
+          (PrintManager)
+              mActivityDelegate.getActivityContext().getSystemService(Context.PRINT_SERVICE);
+      final PrintDocumentAdapter pda =
+          new GeckoViewPrintDocumentAdapter(pdfStream, getContext(), isDialogFinished);
+      printManager.print("Firefox", pda, null);
+      return isDialogFinished;
+    }
+  }
+
+  // GeckoDisplay.NewSurfaceProvider
+
+  @Override
+  public void requestNewSurface() {
+    // Toggling the View's visibility is enough to provoke a surfaceChanged callback with a new
+    // Surface on all current versions of Android tested from 5 through to 13. On the more recent of
+    // those versions, however, this does not work when called from within a prior surfaceChanged
+    // callback, which we probably are here. We therefore post a Runnable to toggle the visibility
+    // from outside of the current callback.
+    post(
+        new Runnable() {
+          @Override
+          public void run() {
+            mSurfaceWrapper.getView().setVisibility(View.INVISIBLE);
+            mSurfaceWrapper.getView().setVisibility(View.VISIBLE);
+          }
+        });
   }
 }

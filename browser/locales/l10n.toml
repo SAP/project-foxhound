@@ -41,6 +41,7 @@ locales = [
     "ff",
     "fi",
     "fr",
+    "fur",
     "fy-NL",
     "ga-IE",
     "gd",
@@ -94,6 +95,7 @@ locales = [
     "sco",
     "si",
     "sk",
+    "skr",
     "sl",
     "son",
     "sq",
@@ -137,10 +139,6 @@ locales = [
     reference = "browser/extensions/report-site-issue/locales/en-US/**"
     l10n = "{l}browser/extensions/report-site-issue/**"
 
-[[paths]]
-    reference = "services/sync/locales/en-US/**"
-    l10n = "{l}services/sync/**"
-
 
 [[includes]]
     path = "toolkit/locales/l10n.toml"
@@ -162,13 +160,7 @@ locales = [
 # key: the key/id of the entity
 # If key isn't specified, the complete file can be missing.
 [[filters]]
-    path = "{l}browser/defines.inc"
-    key = "MOZ_LANGPACK_CONTRIBUTORS"
-    action = "ignore"
-
-[[filters]]
     path = [
-        "{l}browser/defines.inc",
         "{l}browser/firefox-l10n.js",
     ]
     action = "ignore"

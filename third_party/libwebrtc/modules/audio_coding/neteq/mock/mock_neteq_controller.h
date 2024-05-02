@@ -36,21 +36,16 @@ class MockNetEqController : public NetEqController {
   MOCK_METHOD(bool, SetMinimumDelay, (int delay_ms), (override));
   MOCK_METHOD(bool, SetBaseMinimumDelay, (int delay_ms), (override));
   MOCK_METHOD(int, GetBaseMinimumDelay, (), (const, override));
-  MOCK_METHOD(bool, CngRfc3389On, (), (const, override));
-  MOCK_METHOD(bool, CngOff, (), (const, override));
-  MOCK_METHOD(void, SetCngOff, (), (override));
   MOCK_METHOD(void, ExpandDecision, (NetEq::Operation operation), (override));
   MOCK_METHOD(void, AddSampleMemory, (int32_t value), (override));
   MOCK_METHOD(int, TargetLevelMs, (), (const, override));
   MOCK_METHOD(absl::optional<int>,
               PacketArrived,
-              (bool last_cng_or_dtmf,
-               size_t packet_length_samples,
+              (int fs_hz,
                bool should_update_stats,
-               uint16_t main_sequence_number,
-               uint32_t main_timestamp,
-               int fs_hz),
+               const PacketArrivedInfo& info),
               (override));
+  MOCK_METHOD(void, NotifyMutedState, (), (override));
   MOCK_METHOD(bool, PeakFound, (), (const, override));
   MOCK_METHOD(int, GetFilteredBufferLevel, (), (const, override));
   MOCK_METHOD(void, set_sample_memory, (int32_t value), (override));

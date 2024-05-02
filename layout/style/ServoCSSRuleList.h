@@ -25,7 +25,7 @@ class Rule;
 
 class ServoCSSRuleList final : public dom::CSSRuleList {
  public:
-  ServoCSSRuleList(already_AddRefed<ServoCssRules> aRawRules,
+  ServoCSSRuleList(already_AddRefed<StyleLockedCssRules> aRawRules,
                    StyleSheet* aSheet, css::GroupRule* aParentRule);
   css::GroupRule* GetParentRule() const { return mParentRule; }
   void DropSheetReference();
@@ -48,7 +48,13 @@ class ServoCSSRuleList final : public dom::CSSRuleList {
   nsresult InsertRule(const nsACString& aRule, uint32_t aIndex);
   nsresult DeleteRule(uint32_t aIndex);
 
-  void SetRawAfterClone(RefPtr<ServoCssRules>);
+  // aFromClone says whether this comes from a clone of the stylesheet (and thus
+  // we should also fix up the wrappers for the individual rules in the rule
+  // lists).
+  void SetRawContents(RefPtr<StyleLockedCssRules>, bool aFromClone);
+  void SetRawAfterClone(RefPtr<StyleLockedCssRules> aRules) {
+    SetRawContents(std::move(aRules), /* aFromClone = */ true);
+  }
 
  private:
   virtual ~ServoCSSRuleList();
@@ -69,6 +75,7 @@ class ServoCSSRuleList final : public dom::CSSRuleList {
   void EnumerateInstantiatedRules(Func aCallback);
 
   void DropAllRules();
+  void ResetRules();
 
   bool IsReadOnly() const;
 
@@ -76,7 +83,7 @@ class ServoCSSRuleList final : public dom::CSSRuleList {
   StyleSheet* mStyleSheet = nullptr;
   // mParentRule is nullptr if it isn't a nested rule list.
   css::GroupRule* mParentRule = nullptr;
-  RefPtr<ServoCssRules> mRawRules;
+  RefPtr<StyleLockedCssRules> mRawRules;
   // Array stores either a number indicating rule type, or a pointer to
   // css::Rule. If the value is less than kMaxRuleType, the given rule
   // instance has not been constructed, and the value means the type

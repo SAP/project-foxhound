@@ -8,8 +8,10 @@
 
 #include "ContainerParser.h"
 #include "mozilla/ArrayUtils.h"
+#include "mozilla/gtest/MozAssertions.h"
 
 using namespace mozilla;
+using TimeUnit = mozilla::media::TimeUnit;
 
 TEST(ContainerParser, MIMETypes)
 {
@@ -44,7 +46,7 @@ TEST(ContainerParser, ADTSHeader)
 
   // Test a valid header.
   RefPtr<MediaByteBuffer> header = make_adts_header();
-  EXPECT_TRUE(NS_SUCCEEDED(parser->IsInitSegmentPresent(MediaSpan(header))));
+  EXPECT_NS_SUCCEEDED(parser->IsInitSegmentPresent(MediaSpan(header)));
 
   // Test variations.
   uint8_t save = header->ElementAt(1);
@@ -80,8 +82,8 @@ TEST(ContainerParser, ADTSHeader)
   header = make_adts_header();
   EXPECT_FALSE(NS_SUCCEEDED(parser->IsMediaSegmentPresent(MediaSpan(header))))
       << "Found media segment when there was just a header.";
-  int64_t start = 0;
-  int64_t end = 0;
+  TimeUnit start;
+  TimeUnit end;
   EXPECT_TRUE(NS_FAILED(
       parser->ParseStartAndEndTimestamps(MediaSpan(header), start, end)));
 
@@ -110,7 +112,7 @@ TEST(ContainerParser, ADTSBlankMedia)
 
   // Test the header only.
   RefPtr<MediaByteBuffer> header = make_adts_header();
-  EXPECT_TRUE(NS_SUCCEEDED(parser->IsInitSegmentPresent(MediaSpan(header))));
+  EXPECT_NS_SUCCEEDED(parser->IsInitSegmentPresent(MediaSpan(header)));
 
   // Test with the correct length of (invalid) frame data.
   size_t header_length = header->Length();
@@ -121,13 +123,13 @@ TEST(ContainerParser, ADTSBlankMedia)
       << "Rejected a valid header.";
   EXPECT_TRUE(NS_SUCCEEDED(parser->IsMediaSegmentPresent(MediaSpan(header))))
       << "Rejected a full (but zeroed) media segment.";
-  int64_t start = 0;
-  int64_t end = 0;
+  TimeUnit start;
+  TimeUnit end;
   // We don't report timestamps from ADTS.
   EXPECT_TRUE(NS_FAILED(
       parser->ParseStartAndEndTimestamps(MediaSpan(header), start, end)));
-  EXPECT_EQ(start, 0);
-  EXPECT_EQ(end, 0);
+  EXPECT_TRUE(start.IsZero());
+  EXPECT_TRUE(end.IsZero());
 
   // Verify the parser calculated header and packet data boundaries.
   EXPECT_TRUE(parser->HasInitData());

@@ -4,15 +4,17 @@
 
 "use strict";
 
-const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
+const PropTypes = require("resource://devtools/client/shared/vendor/react-prop-types.js");
 const {
   DEBUG_TARGETS,
-} = require("devtools/client/aboutdebugging/src/constants");
+} = require("resource://devtools/client/aboutdebugging/src/constants.js");
 
 const extensionTargetDetails = {
   // actor ID for this extention.
   actor: PropTypes.string.isRequired,
   location: PropTypes.string.isRequired,
+  // error message forwarded from the WebExtensions internals if terminating the background script failed.
+  lastTerminateBackgroundScriptError: PropTypes.string,
   // manifestURL points to the manifest.json file. This URL is only valid when debugging
   // local extensions so it might be null.
   manifestURL: PropTypes.string,
@@ -57,7 +59,7 @@ const debugTarget = {
   icon: PropTypes.string.isRequired,
   // unique id for the target (unique in the scope of the application lifecycle).
   // - extensions: {String} extension id (for instance "someextension@mozilla.org")
-  // - tabs: {Number} outerWindowID
+  // - tabs: {Number} browserId
   // - workers: {String} id for the WorkerTargetActor corresponding to the worker
   id: PropTypes.oneOfType([PropTypes.number, PropTypes.string]).isRequired,
   // display name for the debug target.

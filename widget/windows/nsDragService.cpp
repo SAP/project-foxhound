@@ -21,6 +21,7 @@
 #include "nsNativeDragSource.h"
 #include "nsClipboard.h"
 #include "mozilla/dom/Document.h"
+#include "mozilla/dom/DocumentInlines.h"
 #include "nsDataObjCollection.h"
 
 #include "nsArrayUtils.h"
@@ -39,6 +40,7 @@
 #include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/DataSurfaceHelpers.h"
 #include "mozilla/gfx/Tools.h"
+#include "mozilla/ScopeExit.h"
 
 using namespace mozilla;
 using namespace mozilla::gfx;
@@ -132,8 +134,8 @@ bool nsDragService::CreateDragImage(nsINode* aDOMNode,
     psdi->sizeDragImage.cx = bmWidth;
     psdi->sizeDragImage.cy = bmHeight;
 
-    LayoutDeviceIntPoint screenPoint =
-        ConvertToUnscaledDevPixels(pc, mScreenPosition);
+    const auto screenPoint =
+        LayoutDeviceIntPoint::Round(mScreenPosition * pc->CSSToDevPixelScale());
     psdi->ptOffset.x = screenPoint.x - dragRect.X();
     psdi->ptOffset.y = screenPoint.y - dragRect.Y();
 
@@ -216,36 +218,22 @@ nsresult nsDragService::InvokeDragSessionImpl(
   return StartInvokingDragSession(itemToDrag, aActionType);
 }
 
-static bool LayoutDevicePointToCSSPoint(const LayoutDevicePoint& aDevPos,
-                                        CSSPoint& aCSSPos) {
-  nsCOMPtr<nsIScreenManager> screenMgr =
-      do_GetService("@mozilla.org/gfx/screenmanager;1");
-  if (!screenMgr) {
-    return false;
+static HWND GetSourceWindow(dom::Document* aSourceDocument) {
+  if (!aSourceDocument) {
+    return nullptr;
   }
 
-  nsCOMPtr<nsIScreen> screen;
-  screenMgr->ScreenForRect(NSToIntRound(aDevPos.x), NSToIntRound(aDevPos.y), 1,
-                           1, getter_AddRefs(screen));
-  if (!screen) {
-    return false;
+  auto* pc = aSourceDocument->GetPresContext();
+  if (!pc) {
+    return nullptr;
   }
 
-  int32_t w, h;  // unused
-  LayoutDeviceIntPoint screenOriginDev;
-  screen->GetRect(&screenOriginDev.x, &screenOriginDev.y, &w, &h);
+  nsCOMPtr<nsIWidget> widget = pc->GetRootWidget();
+  if (!widget) {
+    return nullptr;
+  }
 
-  double scale;
-  screen->GetDefaultCSSScaleFactor(&scale);
-  LayoutDeviceToCSSScale devToCSSScale =
-      CSSToLayoutDeviceScale(scale).Inverse();
-
-  // Desktop pixels and CSS pixels share the same screen origin.
-  CSSIntPoint screenOriginCSS;
-  screen->GetRectDisplayPix(&screenOriginCSS.x, &screenOriginCSS.y, &w, &h);
-
-  aCSSPos = (aDevPos - screenOriginDev) * devToCSSScale + screenOriginCSS;
-  return true;
+  return (HWND)widget->GetNativeData(NS_NATIVE_WINDOW);
 }
 
 //-------------------------------------------------------------------------
@@ -320,21 +308,15 @@ nsresult nsDragService::StartInvokingDragSession(IDataObject* aDataObj,
   // Note that we must convert this from device pixels back to Windows logical
   // pixels (bug 818927).
   DWORD pos = ::GetMessagePos();
-  CSSPoint cssPos;
-  if (!LayoutDevicePointToCSSPoint(
-          LayoutDevicePoint(GET_X_LPARAM(pos), GET_Y_LPARAM(pos)), cssPos)) {
-    // fallback to the simple scaling
-    POINT pt = {GET_X_LPARAM(pos), GET_Y_LPARAM(pos)};
-    HMONITOR monitor = ::MonitorFromPoint(pt, MONITOR_DEFAULTTOPRIMARY);
-    double dpiScale = widget::WinUtils::LogToPhysFactor(monitor);
-    cssPos.x = GET_X_LPARAM(pos) / dpiScale;
-    cssPos.y = GET_Y_LPARAM(pos) / dpiScale;
+  POINT cpos;
+  cpos.x = GET_X_LPARAM(pos);
+  cpos.y = GET_Y_LPARAM(pos);
+  if (auto wnd = GetSourceWindow(mSourceDocument)) {
+    // Convert from screen to client coordinates like nsWindow::InitEvent does.
+    ::ScreenToClient(wnd, &cpos);
   }
-  // We have to abuse SetDragEndPoint to pass CSS pixels because
-  // Event::GetScreenCoords will not convert pixels for dragend events
-  // until bug 1224754 is fixed.
-  SetDragEndPoint(
-      LayoutDeviceIntPoint(NSToIntRound(cssPos.x), NSToIntRound(cssPos.y)));
+  SetDragEndPoint(LayoutDeviceIntPoint(cpos.x, cpos.y));
+
   ModifierKeyState modifierKeyState;
   EndDragSession(true, modifierKeyState.GetModifiers());
 
@@ -370,37 +352,52 @@ nsDragService::GetNumDropItems(uint32_t* aNumItems) {
 
   if (IsCollectionObject(mDataObject)) {
     nsDataObjCollection* dataObjCol = GetDataObjCollection(mDataObject);
-    if (dataObjCol) {
-      *aNumItems = dataObjCol->GetNumDataObjects();
-    } else {
-      // If the count cannot be determined just return 0.
-      // This can happen if we have collection data of type
-      // MULTI_MIME ("Mozilla/IDataObjectCollectionFormat") on the clipboard
-      // from another process but we can't obtain an IID_IDataObjCollection
-      // from this process.
-      *aNumItems = 0;
-    }
-  } else {
-    // Next check if we have a file drop. Return the number of files in
-    // the file drop as the number of items we have, pretending like we
-    // actually have > 1 drag item.
-    FORMATETC fe2;
-    SET_FORMATETC(fe2, CF_HDROP, 0, DVASPECT_CONTENT, -1, TYMED_HGLOBAL);
-    if (mDataObject->QueryGetData(&fe2) == S_OK) {
-      STGMEDIUM stm;
-      if (mDataObject->GetData(&fe2, &stm) == S_OK) {
-        HDROP hdrop = (HDROP)GlobalLock(stm.hGlobal);
-        *aNumItems = ::DragQueryFileW(hdrop, 0xFFFFFFFF, nullptr, 0);
-        ::GlobalUnlock(stm.hGlobal);
-        ::ReleaseStgMedium(&stm);
-        // Data may be provided later, so assume we have 1 item
-        if (*aNumItems == 0) *aNumItems = 1;
-      } else
-        *aNumItems = 1;
-    } else
-      *aNumItems = 1;
+    // If the count cannot be determined just return 0.
+    // This can happen if we have collection data of type
+    // MULTI_MIME ("Mozilla/IDataObjectCollectionFormat") on the clipboard
+    // from another process but we can't obtain an IID_IDataObjCollection
+    // from this process.
+    *aNumItems = dataObjCol ? dataObjCol->GetNumDataObjects() : 0;
+    return NS_OK;
   }
+  // Next check if we have a file drop. Return the number of files in
+  // the file drop as the number of items we have, pretending like we
+  // actually have > 1 drag item.
+  FORMATETC fe2;
+  SET_FORMATETC(fe2, CF_HDROP, 0, DVASPECT_CONTENT, -1, TYMED_HGLOBAL);
+  if (SUCCEEDED(mDataObject->QueryGetData(&fe2))) {
+    STGMEDIUM stm;
+    if (FAILED(mDataObject->GetData(&fe2, &stm))) {
+      *aNumItems = 1;
+      return NS_OK;
+    }
+    HDROP hdrop = static_cast<HDROP>(GlobalLock(stm.hGlobal));
+    MOZ_ASSERT(hdrop != NULL);
+    *aNumItems = ::DragQueryFileW(hdrop, 0xFFFFFFFF, nullptr, 0);
+    ::GlobalUnlock(stm.hGlobal);
+    ::ReleaseStgMedium(&stm);
+    // Data may be provided later, so assume we have 1 item
+    if (*aNumItems == 0) {
+      *aNumItems = 1;
+    }
+    return NS_OK;
+  }
+  // Next check if we have a virtual file drop.
+  SET_FORMATETC(fe2, nsClipboard::GetClipboardFileDescriptorFormatW(), 0,
+                DVASPECT_CONTENT, -1, TYMED_HGLOBAL);
+  STGMEDIUM stm;
 
+  if (SUCCEEDED(mDataObject->GetData(&fe2, &stm))) {
+    LPFILEGROUPDESCRIPTOR pDesc =
+        static_cast<LPFILEGROUPDESCRIPTOR>(GlobalLock(stm.hGlobal));
+    if (pDesc) {
+      *aNumItems = pDesc->cItems;
+    }
+    GlobalUnlock(stm.hGlobal);
+    ReleaseStgMedium(&stm);
+    return NS_OK;
+  }
+  *aNumItems = 1;
   return NS_OK;
 }
 
@@ -432,8 +429,12 @@ nsDragService::GetData(nsITransferable* aTransferable, uint32_t anItem) {
     } else {
       // It better be a file drop, or else non-zero indexes are invalid!
       FORMATETC fe2;
+      FORMATETC fe3;
       SET_FORMATETC(fe2, CF_HDROP, 0, DVASPECT_CONTENT, -1, TYMED_HGLOBAL);
-      if (mDataObject->QueryGetData(&fe2) == S_OK)
+      SET_FORMATETC(fe3, nsClipboard::GetClipboardFileDescriptorFormatW(), 0,
+                    DVASPECT_CONTENT, -1, TYMED_HGLOBAL);
+      if (SUCCEEDED(mDataObject->QueryGetData(&fe2)) ||
+          SUCCEEDED(mDataObject->QueryGetData(&fe3)))
         dataFound = nsClipboard::GetDataFromDataObject(mDataObject, anItem,
                                                        nullptr, aTransferable);
       else
@@ -454,6 +455,24 @@ nsDragService::SetIDataObject(IDataObject* aDataObj) {
   mDataObject = aDataObj;
   NS_IF_ADDREF(mDataObject);
 
+  if (MOZ_DRAGSERVICE_LOG_ENABLED()) {
+    MOZ_DRAGSERVICE_LOG("nsDragService::SetIDataObject (%p)", mDataObject);
+    IEnumFORMATETC* pEnum = nullptr;
+    if (mDataObject &&
+        S_OK == mDataObject->EnumFormatEtc(DATADIR_GET, &pEnum)) {
+      MOZ_DRAGSERVICE_LOG("    formats in DataObject:");
+
+      FORMATETC fEtc;
+      while (S_OK == pEnum->Next(1, &fEtc, nullptr)) {
+        nsAutoString format;
+        WinUtils::GetClipboardFormatAsString(fEtc.cfFormat, format);
+        MOZ_DRAGSERVICE_LOG("        FORMAT %s",
+                            NS_ConvertUTF16toUTF8(format).get());
+      }
+      pEnum->Release();
+    }
+  }
+
   return NS_OK;
 }
 
@@ -468,16 +487,16 @@ void nsDragService::SetDroppedLocal() {
 //-------------------------------------------------------------------------
 NS_IMETHODIMP
 nsDragService::IsDataFlavorSupported(const char* aDataFlavor, bool* _retval) {
-  if (!aDataFlavor || !mDataObject || !_retval) return NS_ERROR_FAILURE;
-
-#ifdef DEBUG
-  if (strcmp(aDataFlavor, kTextMime) == 0)
-    NS_WARNING(
-        "DO NOT USE THE text/plain DATA FLAVOR ANY MORE. USE text/unicode "
-        "INSTEAD");
-#endif
+  if (!aDataFlavor || !mDataObject || !_retval) {
+    MOZ_DRAGSERVICE_LOG("%s: error", __PRETTY_FUNCTION__);
+    return NS_ERROR_FAILURE;
+  }
 
   *_retval = false;
+  auto logging = MakeScopeExit([&] {
+    MOZ_DRAGSERVICE_LOG("IsDataFlavorSupported: %s is%s found", aDataFlavor,
+                        *_retval ? "" : " not");
+  });
 
   FORMATETC fe;
   UINT format = 0;
@@ -495,44 +514,76 @@ nsDragService::IsDataFlavorSupported(const char* aDataFlavor, bool* _retval) {
       uint32_t cnt = dataObjCol->GetNumDataObjects();
       for (uint32_t i = 0; i < cnt; ++i) {
         IDataObject* dataObj = dataObjCol->GetDataObjectAt(i);
-        if (S_OK == dataObj->QueryGetData(&fe)) *_retval = true;  // found it!
+        if (S_OK == dataObj->QueryGetData(&fe)) {
+          *_retval = true;  // found it!
+        }
       }
     }
-  }  // if special collection object
-  else {
-    // Ok, so we have a single object. Check to see if has the correct
-    // data type. Since this can come from an outside app, we also
-    // need to see if we need to perform text->unicode conversion if
-    // the client asked for unicode and it wasn't available.
-    format = nsClipboard::GetFormat(aDataFlavor);
+    return NS_OK;
+  }
+
+  // Ok, so we have a single object. Check to see if has the correct
+  // data type. Since this can come from an outside app, we also
+  // need to see if we need to perform text->unicode conversion if
+  // the client asked for unicode and it wasn't available.
+  format = nsClipboard::GetFormat(aDataFlavor);
+  SET_FORMATETC(fe, format, 0, DVASPECT_CONTENT, -1,
+                TYMED_HGLOBAL | TYMED_FILE | TYMED_GDI);
+  if (mDataObject->QueryGetData(&fe) == S_OK) {
+    *_retval = true;  // found it!
+    return NS_OK;
+  }
+
+  // We haven't found the exact flavor the client asked for, but
+  // maybe we can still find it from something else that's in the
+  // data object.
+  if (strcmp(aDataFlavor, kTextMime) == 0) {
+    // If unicode wasn't there, it might exist as CF_TEXT, client asked
+    // for unicode and it wasn't present, check if we
+    // have CF_TEXT.  We'll handle the actual data substitution in
+    // the data object.
+    SET_FORMATETC(fe, CF_TEXT, 0, DVASPECT_CONTENT, -1,
+                  TYMED_HGLOBAL | TYMED_FILE | TYMED_GDI);
+    if (mDataObject->QueryGetData(&fe) == S_OK) {
+      *_retval = true;  // found it!
+    }
+    return NS_OK;
+  }
+
+  if (strcmp(aDataFlavor, kURLMime) == 0) {
+    // client asked for a url and it wasn't present, but if we
+    // have a file, then we have a URL to give them (the path, or
+    // the internal URL if an InternetShortcut).
+    format = nsClipboard::GetFormat(kFileMime);
     SET_FORMATETC(fe, format, 0, DVASPECT_CONTENT, -1,
                   TYMED_HGLOBAL | TYMED_FILE | TYMED_GDI);
-    if (mDataObject->QueryGetData(&fe) == S_OK)
+    if (mDataObject->QueryGetData(&fe) == S_OK) {
       *_retval = true;  // found it!
-    else {
-      // We haven't found the exact flavor the client asked for, but
-      // maybe we can still find it from something else that's on the
-      // clipboard
-      if (strcmp(aDataFlavor, kUnicodeMime) == 0) {
-        // client asked for unicode and it wasn't present, check if we
-        // have CF_TEXT.  We'll handle the actual data substitution in
-        // the data object.
-        format = nsClipboard::GetFormat(kTextMime);
-        SET_FORMATETC(fe, format, 0, DVASPECT_CONTENT, -1,
-                      TYMED_HGLOBAL | TYMED_FILE | TYMED_GDI);
-        if (mDataObject->QueryGetData(&fe) == S_OK)
-          *_retval = true;  // found it!
-      } else if (strcmp(aDataFlavor, kURLMime) == 0) {
-        // client asked for a url and it wasn't present, but if we
-        // have a file, then we have a URL to give them (the path, or
-        // the internal URL if an InternetShortcut).
-        format = nsClipboard::GetFormat(kFileMime);
-        SET_FORMATETC(fe, format, 0, DVASPECT_CONTENT, -1,
-                      TYMED_HGLOBAL | TYMED_FILE | TYMED_GDI);
-        if (mDataObject->QueryGetData(&fe) == S_OK)
-          *_retval = true;  // found it!
-      }
-    }  // else try again
+    }
+    return NS_OK;
+  }
+
+  if (format == CF_HDROP) {
+    // Dragging a link from browsers creates both a URL and a FILE which is a
+    // *.url shortcut in the data object. The file is useful when dropping in
+    // Windows Explorer to create a internet shortcut. But when dropping in the
+    // browser, users do not expect to have this file. So do not try to look up
+    // virtal file if there is a URL in the data object.
+    format = nsClipboard::GetFormat(kURLMime);
+    SET_FORMATETC(fe, format, 0, DVASPECT_CONTENT, -1, TYMED_HGLOBAL);
+    if (mDataObject->QueryGetData(&fe) == S_OK) {
+      return NS_OK;
+    }
+
+    // If the client wants a file, maybe we find a virtual file.
+    format = nsClipboard::GetClipboardFileDescriptorFormatW();
+    SET_FORMATETC(fe, format, 0, DVASPECT_CONTENT, -1, TYMED_HGLOBAL);
+    if (mDataObject->QueryGetData(&fe) == S_OK) {
+      *_retval = true;  // found it!
+    }
+
+    // XXX should we fall back to CFSTR_FILEDESCRIPTORA?
+    return NS_OK;
   }
 
   return NS_OK;

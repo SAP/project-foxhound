@@ -30,7 +30,7 @@ const TEST_URI = [
 ].join("\n");
 
 const SELECTOR_ATTRIBUTE = "ruleview-selector-attribute";
-const SELECTOR_ELEMENT = "ruleview-selector";
+const SELECTOR_ELEMENT = "ruleview-selector-element";
 const SELECTOR_PSEUDO_CLASS = "ruleview-selector-pseudo-class";
 const SELECTOR_PSEUDO_CLASS_LOCK = "ruleview-selector-pseudo-class-lock";
 
@@ -102,7 +102,7 @@ const TEST_DATA = [
   },
 ];
 
-add_task(async function() {
+add_task(async function () {
   await addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
   const { inspector, view } = await openRuleView();
 

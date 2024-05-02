@@ -12,8 +12,9 @@
   <script>
     "use strict";
 
-    const { Assert } = ChromeUtils.import("resource://testing-common/Assert.jsm");
-    const { FileUtils } = ChromeUtils.import("resource://gre/modules/FileUtils.jsm");
+    const { Assert } = ChromeUtils.importESModule(
+      "resource://testing-common/Assert.sys.mjs"
+    );
 
     const ATTR = "bogus.attr";
     const VALUE = new TextEncoder().encode("bogus");

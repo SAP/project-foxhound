@@ -9,13 +9,15 @@
 #include <algorithm>
 #include <utility>
 
+#include "AutoRangeArray.h"
+#include "CSSEditUtils.h"
+#include "EditAction.h"
+#include "EditorUtils.h"
+#include "HTMLEditHelpers.h"
 #include "HTMLEditUtils.h"
 #include "WSRunObject.h"
 
 #include "mozilla/Assertions.h"
-#include "mozilla/CSSEditUtils.h"
-#include "mozilla/EditAction.h"
-#include "mozilla/EditorUtils.h"
 #include "mozilla/OwningNonNull.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/Selection.h"
@@ -64,16 +66,31 @@ ListElementSelectionState::ListElementSelectionState(HTMLEditor& aHTMLEditor,
     return;
   }
 
+  Element* editingHostOrRoot = aHTMLEditor.ComputeEditingHost();
+  if (!editingHostOrRoot) {
+    // This is not a handler of editing command so that if there is no active
+    // editing host, let's use the <body> or document element instead.
+    editingHostOrRoot = aHTMLEditor.GetRoot();
+    if (!editingHostOrRoot) {
+      return;
+    }
+  }
+
   AutoTArray<OwningNonNull<nsIContent>, 64> arrayOfContents;
-  nsresult rv = aHTMLEditor.CollectEditTargetNodesInExtendedSelectionRanges(
-      arrayOfContents, EditSubAction::eCreateOrChangeList,
-      HTMLEditor::CollectNonEditableNodes::No);
-  if (NS_FAILED(rv)) {
-    NS_WARNING(
-        "HTMLEditor::CollectEditTargetNodesInExtendedSelectionRanges("
-        "eCreateOrChangeList, CollectNonEditableNodes::No) failed");
-    aRv = EditorBase::ToGenericNSResult(rv);
-    return;
+  {
+    AutoRangeArray extendedSelectionRanges(aHTMLEditor.SelectionRef());
+    extendedSelectionRanges.ExtendRangesToWrapLinesToHandleBlockLevelEditAction(
+        EditSubAction::eCreateOrChangeList, *editingHostOrRoot);
+    nsresult rv = extendedSelectionRanges.CollectEditTargetNodes(
+        aHTMLEditor, arrayOfContents, EditSubAction::eCreateOrChangeList,
+        AutoRangeArray::CollectNonEditableNodes::No);
+    if (NS_FAILED(rv)) {
+      NS_WARNING(
+          "AutoRangeArray::CollectEditTargetNodes(EditSubAction::"
+          "eCreateOrChangeList, CollectNonEditableNodes::No) failed");
+      aRv = EditorBase::ToGenericNSResult(rv);
+      return;
+    }
   }
 
   // Examine list type for nodes in selection.
@@ -129,16 +146,32 @@ ListItemElementSelectionState::ListItemElementSelectionState(
     return;
   }
 
+  Element* editingHostOrRoot = aHTMLEditor.ComputeEditingHost();
+  if (!editingHostOrRoot) {
+    // This is not a handler of editing command so that if there is no active
+    // editing host, let's use the <body> or document element instead.
+    editingHostOrRoot = aHTMLEditor.GetRoot();
+    if (!editingHostOrRoot) {
+      return;
+    }
+  }
+
   AutoTArray<OwningNonNull<nsIContent>, 64> arrayOfContents;
-  nsresult rv = aHTMLEditor.CollectEditTargetNodesInExtendedSelectionRanges(
-      arrayOfContents, EditSubAction::eCreateOrChangeList,
-      HTMLEditor::CollectNonEditableNodes::No);
-  if (NS_FAILED(rv)) {
-    NS_WARNING(
-        "HTMLEditor::CollectEditTargetNodesInExtendedSelectionRanges("
-        "eCreateOrChangeList, CollectNonEditableNodes::No) failed");
-    aRv = EditorBase::ToGenericNSResult(rv);
-    return;
+  {
+    AutoRangeArray extendedSelectionRanges(aHTMLEditor.SelectionRef());
+    extendedSelectionRanges.ExtendRangesToWrapLinesToHandleBlockLevelEditAction(
+        EditSubAction::eCreateOrChangeList, *editingHostOrRoot);
+    nsresult rv = extendedSelectionRanges.CollectEditTargetNodes(
+        aHTMLEditor, arrayOfContents, EditSubAction::eCreateOrChangeList,
+        AutoRangeArray::CollectNonEditableNodes::No);
+    if (NS_FAILED(rv)) {
+      NS_WARNING_ASSERTION(
+          NS_SUCCEEDED(rv),
+          "AutoRangeArray::CollectEditTargetNodes(EditSubAction::"
+          "eCreateOrChangeList, CollectNonEditableNodes::No) failed");
+      aRv = EditorBase::ToGenericNSResult(rv);
+      return;
+    }
   }
 
   // examine list type for nodes in selection
@@ -234,7 +267,7 @@ AlignStateAtSelection::AlignStateAtSelection(HTMLEditor& aHTMLEditor,
   // If selection is collapsed or in a text node, take the container.
   if (aHTMLEditor.SelectionRef().IsCollapsed() ||
       atStartOfSelection.IsInTextNode()) {
-    editTargetContent = atStartOfSelection.GetContainerAsContent();
+    editTargetContent = atStartOfSelection.GetContainerAs<nsIContent>();
     if (NS_WARN_IF(!editTargetContent)) {
       aRv.Throw(NS_ERROR_FAILURE);
       return;
@@ -250,35 +283,44 @@ AlignStateAtSelection::AlignStateAtSelection(HTMLEditor& aHTMLEditor,
            atStartOfSelection.Offset() == atBodyOrDocumentElement.Offset()) {
     editTargetContent = HTMLEditUtils::GetNextContent(
         atStartOfSelection, {WalkTreeOption::IgnoreNonEditableNode},
-        aHTMLEditor.GetActiveEditingHost());
+        BlockInlineCheck::Unused, aHTMLEditor.ComputeEditingHost());
     if (NS_WARN_IF(!editTargetContent)) {
       aRv.Throw(NS_ERROR_FAILURE);
       return;
     }
   }
   // Otherwise, use first selected node.
-  // XXX Only for retreiving it, the following block treats all selected
+  // XXX Only for retrieving it, the following block treats all selected
   //     ranges.  `HTMLEditor` should have
   //     `GetFirstSelectionRangeExtendedToHardLineStartAndEnd()`.
   else {
-    AutoTArray<RefPtr<nsRange>, 4> arrayOfRanges;
-    aHTMLEditor.GetSelectionRangesExtendedToHardLineStartAndEnd(
-        arrayOfRanges, EditSubAction::eSetOrClearAlignment);
+    Element* editingHostOrRoot = aHTMLEditor.ComputeEditingHost();
+    if (!editingHostOrRoot) {
+      // This is not a handler of editing command so that if there is no active
+      // editing host, let's use the <body> or document element instead.
+      editingHostOrRoot = aHTMLEditor.GetRoot();
+      if (!editingHostOrRoot) {
+        return;
+      }
+    }
+    AutoRangeArray extendedSelectionRanges(aHTMLEditor.SelectionRef());
+    extendedSelectionRanges.ExtendRangesToWrapLinesToHandleBlockLevelEditAction(
+        EditSubAction::eSetOrClearAlignment, *editingHostOrRoot);
 
     AutoTArray<OwningNonNull<nsIContent>, 64> arrayOfContents;
-    nsresult rv = aHTMLEditor.CollectEditTargetNodes(
-        arrayOfRanges, arrayOfContents, EditSubAction::eSetOrClearAlignment,
-        HTMLEditor::CollectNonEditableNodes::Yes);
+    nsresult rv = extendedSelectionRanges.CollectEditTargetNodes(
+        aHTMLEditor, arrayOfContents, EditSubAction::eSetOrClearAlignment,
+        AutoRangeArray::CollectNonEditableNodes::Yes);
     if (NS_FAILED(rv)) {
       NS_WARNING(
-          "HTMLEditor::CollectEditTargetNodes(eSetOrClearAlignment, "
+          "AutoRangeArray::CollectEditTargetNodes(eSetOrClearAlignment, "
           "CollectNonEditableNodes::Yes) failed");
       aRv.Throw(NS_ERROR_FAILURE);
       return;
     }
     if (arrayOfContents.IsEmpty()) {
       NS_WARNING(
-          "HTMLEditor::CollectEditTargetNodes(eSetOrClearAlignment, "
+          "AutoRangeArray::CollectEditTargetNodes(eSetOrClearAlignment, "
           "CollectNonEditableNodes::Yes) returned no contents");
       aRv.Throw(NS_ERROR_FAILURE);
       return;
@@ -288,41 +330,38 @@ AlignStateAtSelection::AlignStateAtSelection(HTMLEditor& aHTMLEditor,
 
   const RefPtr<dom::Element> maybeNonEditableBlockElement =
       HTMLEditUtils::GetInclusiveAncestorElement(
-          *editTargetContent, HTMLEditUtils::ClosestBlockElement);
+          *editTargetContent, HTMLEditUtils::ClosestBlockElement,
+          BlockInlineCheck::UseHTMLDefaultStyle);
   if (NS_WARN_IF(!maybeNonEditableBlockElement)) {
     aRv.Throw(NS_ERROR_FAILURE);
     return;
   }
 
-  if (aHTMLEditor.IsCSSEnabled() &&
-      CSSEditUtils::IsCSSEditableProperty(maybeNonEditableBlockElement, nullptr,
-                                          nsGkAtoms::align)) {
+  if (aHTMLEditor.IsCSSEnabled() && EditorElementStyle::Align().IsCSSSettable(
+                                        *maybeNonEditableBlockElement)) {
     // We are in CSS mode and we know how to align this element with CSS
     nsAutoString value;
     // Let's get the value(s) of text-align or margin-left/margin-right
-    DebugOnly<nsresult> rvIgnored =
-        CSSEditUtils::GetComputedCSSEquivalentToHTMLInlineStyleSet(
-            *maybeNonEditableBlockElement, nullptr, nsGkAtoms::align, value);
+    DebugOnly<nsresult> rvIgnored = CSSEditUtils::GetComputedCSSEquivalentTo(
+        *maybeNonEditableBlockElement, EditorElementStyle::Align(), value);
     if (NS_WARN_IF(aHTMLEditor.Destroyed())) {
       aRv.Throw(NS_ERROR_EDITOR_DESTROYED);
       return;
     }
-    NS_WARNING_ASSERTION(
-        NS_SUCCEEDED(rvIgnored),
-        "CSSEditUtils::GetComputedCSSEquivalentToHTMLInlineStyleSet(nsGkAtoms::"
-        "align, "
-        "eComputed) failed, but ignored");
-    if (value.EqualsLiteral("center") || value.EqualsLiteral("-moz-center") ||
-        value.EqualsLiteral("auto auto")) {
+    NS_WARNING_ASSERTION(NS_SUCCEEDED(rvIgnored),
+                         "CSSEditUtils::GetComputedCSSEquivalentTo("
+                         "EditorElementStyle::Align()) failed, but ignored");
+    if (value.EqualsLiteral(u"center") || value.EqualsLiteral(u"-moz-center") ||
+        value.EqualsLiteral(u"auto auto")) {
       mFirstAlign = nsIHTMLEditor::eCenter;
       return;
     }
-    if (value.EqualsLiteral("right") || value.EqualsLiteral("-moz-right") ||
-        value.EqualsLiteral("auto 0px")) {
+    if (value.EqualsLiteral(u"right") || value.EqualsLiteral(u"-moz-right") ||
+        value.EqualsLiteral(u"auto 0px")) {
       mFirstAlign = nsIHTMLEditor::eRight;
       return;
     }
-    if (value.EqualsLiteral("justify")) {
+    if (value.EqualsLiteral(u"justify")) {
       mFirstAlign = nsIHTMLEditor::eJustify;
       return;
     }
@@ -331,21 +370,20 @@ AlignStateAtSelection::AlignStateAtSelection(HTMLEditor& aHTMLEditor,
     return;
   }
 
-  for (nsIContent* containerContent :
-       editTargetContent->InclusiveAncestorsOfType<nsIContent>()) {
+  for (Element* const containerElement :
+       editTargetContent->InclusiveAncestorsOfType<Element>()) {
     // If the node is a parent `<table>` element of edit target, let's break
     // here to materialize the 'inline-block' behaviour of html tables
     // regarding to text alignment.
-    if (containerContent != editTargetContent &&
-        containerContent->IsHTMLElement(nsGkAtoms::table)) {
+    if (containerElement != editTargetContent &&
+        containerElement->IsHTMLElement(nsGkAtoms::table)) {
       return;
     }
 
-    if (CSSEditUtils::IsCSSEditableProperty(containerContent, nullptr,
-                                            nsGkAtoms::align)) {
+    if (EditorElementStyle::Align().IsCSSSettable(*containerElement)) {
       nsAutoString value;
       DebugOnly<nsresult> rvIgnored = CSSEditUtils::GetSpecifiedProperty(
-          *containerContent, *nsGkAtoms::textAlign, value);
+          *containerElement, *nsGkAtoms::textAlign, value);
       NS_WARNING_ASSERTION(NS_SUCCEEDED(rvIgnored),
                            "CSSEditUtils::GetSpecifiedProperty(nsGkAtoms::"
                            "textAlign) failed, but ignored");
@@ -371,13 +409,12 @@ AlignStateAtSelection::AlignStateAtSelection(HTMLEditor& aHTMLEditor,
       }
     }
 
-    if (!HTMLEditUtils::SupportsAlignAttr(*containerContent)) {
+    if (!HTMLEditUtils::SupportsAlignAttr(*containerElement)) {
       continue;
     }
 
     nsAutoString alignAttributeValue;
-    containerContent->AsElement()->GetAttr(kNameSpaceID_None, nsGkAtoms::align,
-                                           alignAttributeValue);
+    containerElement->GetAttr(nsGkAtoms::align, alignAttributeValue);
     if (alignAttributeValue.IsEmpty()) {
       continue;
     }
@@ -405,8 +442,9 @@ AlignStateAtSelection::AlignStateAtSelection(HTMLEditor& aHTMLEditor,
  * ParagraphStateAtSelection
  ****************************************************************************/
 
-ParagraphStateAtSelection::ParagraphStateAtSelection(HTMLEditor& aHTMLEditor,
-                                                     ErrorResult& aRv) {
+ParagraphStateAtSelection::ParagraphStateAtSelection(
+    HTMLEditor& aHTMLEditor, FormatBlockMode aFormatBlockMode,
+    ErrorResult& aRv) {
   if (NS_WARN_IF(aHTMLEditor.Destroyed())) {
     aRv = EditorBase::ToGenericNSResult(NS_ERROR_EDITOR_DESTROYED);
     return;
@@ -427,9 +465,27 @@ ParagraphStateAtSelection::ParagraphStateAtSelection(HTMLEditor& aHTMLEditor,
     return;
   }
 
+  if (MOZ_UNLIKELY(!aHTMLEditor.SelectionRef().RangeCount())) {
+    aRv.Throw(NS_ERROR_FAILURE);
+    return;
+  }
+
+  const Element* const editingHostOrBodyOrDocumentElement = [&]() -> Element* {
+    if (Element* editingHost = aHTMLEditor.ComputeEditingHost()) {
+      return editingHost;
+    }
+    return aHTMLEditor.GetRoot();
+  }();
+  if (!editingHostOrBodyOrDocumentElement ||
+      !HTMLEditUtils::IsSimplyEditableNode(
+          *editingHostOrBodyOrDocumentElement)) {
+    return;
+  }
+
   AutoTArray<OwningNonNull<nsIContent>, 64> arrayOfContents;
-  nsresult rv =
-      CollectEditableFormatNodesInSelection(aHTMLEditor, arrayOfContents);
+  nsresult rv = CollectEditableFormatNodesInSelection(
+      aHTMLEditor, aFormatBlockMode, *editingHostOrBodyOrDocumentElement,
+      arrayOfContents);
   if (NS_FAILED(rv)) {
     NS_WARNING(
         "ParagraphStateAtSelection::CollectEditableFormatNodesInSelection() "
@@ -441,11 +497,11 @@ ParagraphStateAtSelection::ParagraphStateAtSelection(HTMLEditor& aHTMLEditor,
   // We need to append descendant format block if block nodes are not format
   // block.  This is so we only have to look "up" the hierarchy to find
   // format nodes, instead of both up and down.
-  for (int32_t i = arrayOfContents.Length() - 1; i >= 0; i--) {
-    auto& content = arrayOfContents[i];
-    nsAutoString format;
-    if (HTMLEditUtils::IsBlockElement(content) &&
-        !HTMLEditUtils::IsFormatNode(content)) {
+  for (size_t index : Reversed(IntegerRange(arrayOfContents.Length()))) {
+    OwningNonNull<nsIContent>& content = arrayOfContents[index];
+    if (HTMLEditUtils::IsBlockElement(content,
+                                      BlockInlineCheck::UseHTMLDefaultStyle) &&
+        !HTMLEditor::IsFormatElement(aFormatBlockMode, content)) {
       // XXX This RemoveObject() call has already been commented out and
       //     the above comment explained we're trying to replace non-format
       //     block nodes in the array.  According to the following blocks and
@@ -453,68 +509,89 @@ ParagraphStateAtSelection::ParagraphStateAtSelection(HTMLEditor& aHTMLEditor,
       //     non-format block with descendants format blocks makes sense.
       // arrayOfContents.RemoveObject(node);
       ParagraphStateAtSelection::AppendDescendantFormatNodesAndFirstInlineNode(
-          arrayOfContents, *content->AsElement());
+          arrayOfContents, aFormatBlockMode, *content->AsElement());
     }
   }
 
   // We might have an empty node list.  if so, find selection parent
   // and put that on the list
   if (arrayOfContents.IsEmpty()) {
-    EditorRawDOMPoint atCaret(
-        EditorBase::GetStartPoint(aHTMLEditor.SelectionRef()));
-    if (NS_WARN_IF(!atCaret.IsSet())) {
+    const auto atCaret =
+        aHTMLEditor.GetFirstSelectionStartPoint<EditorRawDOMPoint>();
+    if (NS_WARN_IF(!atCaret.IsInContentNode())) {
+      MOZ_ASSERT(false,
+                 "We've already checked whether there is a selection range, "
+                 "but we have no range right now.");
       aRv.Throw(NS_ERROR_FAILURE);
       return;
     }
-    nsIContent* content = atCaret.GetContainerAsContent();
-    if (NS_WARN_IF(!content)) {
-      aRv.Throw(NS_ERROR_FAILURE);
-      return;
-    }
-    arrayOfContents.AppendElement(*content);
-  }
-
-  dom::Element* bodyOrDocumentElement = aHTMLEditor.GetRoot();
-  if (NS_WARN_IF(!bodyOrDocumentElement)) {
-    aRv.Throw(NS_ERROR_FAILURE);
-    return;
+    arrayOfContents.AppendElement(*atCaret.ContainerAs<nsIContent>());
   }
 
   for (auto& content : Reversed(arrayOfContents)) {
-    nsAtom* paragraphStateOfNode = nsGkAtoms::_empty;
-    if (HTMLEditUtils::IsFormatNode(content)) {
-      MOZ_ASSERT(content->NodeInfo()->NameAtom());
-      paragraphStateOfNode = content->NodeInfo()->NameAtom();
+    const Element* formatElement = nullptr;
+    if (HTMLEditor::IsFormatElement(aFormatBlockMode, content)) {
+      formatElement = content->AsElement();
     }
-    // Ignore non-format block node since its children have been appended
+    // Ignore inline contents since its children have been appended
     // the list above so that we'll handle this descendants later.
-    else if (HTMLEditUtils::IsBlockElement(content)) {
+    // XXX: It's odd to ignore block children to consider the mixed state.
+    else if (HTMLEditUtils::IsBlockElement(
+                 content, BlockInlineCheck::UseHTMLDefaultStyle)) {
       continue;
     }
     // If we meet an inline node, let's get its parent format.
     else {
-      for (nsINode* parentNode = content->GetParentNode(); parentNode;
-           parentNode = parentNode->GetParentNode()) {
+      for (Element* parentElement : content->AncestorsOfType<Element>()) {
         // If we reach `HTMLDocument.body` or `Document.documentElement`,
         // there is no format.
-        if (parentNode == bodyOrDocumentElement) {
+        if (parentElement == editingHostOrBodyOrDocumentElement) {
           break;
         }
-        if (HTMLEditUtils::IsFormatNode(parentNode)) {
-          MOZ_ASSERT(parentNode->NodeInfo()->NameAtom());
-          paragraphStateOfNode = parentNode->NodeInfo()->NameAtom();
+        if (HTMLEditor::IsFormatElement(aFormatBlockMode, *parentElement)) {
+          MOZ_ASSERT(parentElement->NodeInfo()->NameAtom());
+          formatElement = parentElement;
           break;
         }
       }
     }
 
+    auto FormatElementIsInclusiveDescendantOfFormatDLElement = [&]() {
+      if (aFormatBlockMode == FormatBlockMode::XULParagraphStateCommand) {
+        return false;
+      }
+      if (!formatElement) {
+        return false;
+      }
+      for (const Element* const element :
+           formatElement->InclusiveAncestorsOfType<Element>()) {
+        if (element->IsHTMLElement(nsGkAtoms::dl)) {
+          return true;
+        }
+        if (element->IsAnyOfHTMLElements(nsGkAtoms::dd, nsGkAtoms::dt)) {
+          continue;
+        }
+        if (HTMLEditUtils::IsFormatElementForFormatBlockCommand(
+                *formatElement)) {
+          return false;
+        }
+      }
+      return false;
+    };
+
     // if this is the first node, we've found, remember it as the format
     if (!mFirstParagraphState) {
-      mFirstParagraphState = paragraphStateOfNode;
+      mFirstParagraphState = formatElement
+                                 ? formatElement->NodeInfo()->NameAtom()
+                                 : nsGkAtoms::_empty;
+      mIsInDLElement = FormatElementIsInclusiveDescendantOfFormatDLElement();
       continue;
     }
+    mIsInDLElement &= FormatElementIsInclusiveDescendantOfFormatDLElement();
     // else make sure it matches previously found format
-    if (mFirstParagraphState != paragraphStateOfNode) {
+    if ((!formatElement && mFirstParagraphState != nsGkAtoms::_empty) ||
+        (formatElement &&
+         !formatElement->IsHTMLElement(mFirstParagraphState))) {
       mIsMixed = true;
       break;
     }
@@ -524,9 +601,11 @@ ParagraphStateAtSelection::ParagraphStateAtSelection(HTMLEditor& aHTMLEditor,
 // static
 void ParagraphStateAtSelection::AppendDescendantFormatNodesAndFirstInlineNode(
     nsTArray<OwningNonNull<nsIContent>>& aArrayOfContents,
-    dom::Element& aNonFormatBlockElement) {
-  MOZ_ASSERT(HTMLEditUtils::IsBlockElement(aNonFormatBlockElement));
-  MOZ_ASSERT(!HTMLEditUtils::IsFormatNode(&aNonFormatBlockElement));
+    FormatBlockMode aFormatBlockMode, dom::Element& aNonFormatBlockElement) {
+  MOZ_ASSERT(HTMLEditUtils::IsBlockElement(
+      aNonFormatBlockElement, BlockInlineCheck::UseHTMLDefaultStyle));
+  MOZ_ASSERT(
+      !HTMLEditor::IsFormatElement(aFormatBlockMode, aNonFormatBlockElement));
 
   // We only need to place any one inline inside this node onto
   // the list.  They are all the same for purposes of determining
@@ -535,13 +614,15 @@ void ParagraphStateAtSelection::AppendDescendantFormatNodesAndFirstInlineNode(
   bool foundInline = false;
   for (nsIContent* childContent = aNonFormatBlockElement.GetFirstChild();
        childContent; childContent = childContent->GetNextSibling()) {
-    bool isBlock = HTMLEditUtils::IsBlockElement(*childContent);
-    bool isFormat = HTMLEditUtils::IsFormatNode(childContent);
+    const bool isBlock = HTMLEditUtils::IsBlockElement(
+        *childContent, BlockInlineCheck::UseHTMLDefaultStyle);
+    const bool isFormat =
+        HTMLEditor::IsFormatElement(aFormatBlockMode, *childContent);
     // If the child is a non-format block element, let's check its children
     // recursively.
     if (isBlock && !isFormat) {
       ParagraphStateAtSelection::AppendDescendantFormatNodesAndFirstInlineNode(
-          aArrayOfContents, *childContent->AsElement());
+          aArrayOfContents, aFormatBlockMode, *childContent->AsElement());
       continue;
     }
 
@@ -568,25 +649,37 @@ void ParagraphStateAtSelection::AppendDescendantFormatNodesAndFirstInlineNode(
 
 // static
 nsresult ParagraphStateAtSelection::CollectEditableFormatNodesInSelection(
-    HTMLEditor& aHTMLEditor,
+    HTMLEditor& aHTMLEditor, FormatBlockMode aFormatBlockMode,
+    const Element& aEditingHost,
     nsTArray<OwningNonNull<nsIContent>>& aArrayOfContents) {
-  nsresult rv = aHTMLEditor.CollectEditTargetNodesInExtendedSelectionRanges(
-      aArrayOfContents, EditSubAction::eCreateOrRemoveBlock,
-      HTMLEditor::CollectNonEditableNodes::Yes);
-  if (NS_FAILED(rv)) {
-    NS_WARNING(
-        "HTMLEditor::CollectEditTargetNodesInExtendedSelectionRanges("
-        "eCreateOrRemoveBlock, CollectNonEditableNodes::Yes) failed");
-    return rv;
+  {
+    AutoRangeArray extendedSelectionRanges(aHTMLEditor.SelectionRef());
+    extendedSelectionRanges.ExtendRangesToWrapLinesToHandleBlockLevelEditAction(
+        aFormatBlockMode == FormatBlockMode::HTMLFormatBlockCommand
+            ? EditSubAction::eFormatBlockForHTMLCommand
+            : EditSubAction::eCreateOrRemoveBlock,
+        aEditingHost);
+    nsresult rv = extendedSelectionRanges.CollectEditTargetNodes(
+        aHTMLEditor, aArrayOfContents,
+        aFormatBlockMode == FormatBlockMode::HTMLFormatBlockCommand
+            ? EditSubAction::eFormatBlockForHTMLCommand
+            : EditSubAction::eCreateOrRemoveBlock,
+        AutoRangeArray::CollectNonEditableNodes::Yes);
+    if (NS_FAILED(rv)) {
+      NS_WARNING(
+          "AutoRangeArray::CollectEditTargetNodes("
+          "CollectNonEditableNodes::Yes) failed");
+      return rv;
+    }
   }
 
   // Pre-process our list of nodes
-  for (int32_t i = aArrayOfContents.Length() - 1; i >= 0; i--) {
-    OwningNonNull<nsIContent> content = aArrayOfContents[i];
+  for (size_t index : Reversed(IntegerRange(aArrayOfContents.Length()))) {
+    OwningNonNull<nsIContent> content = aArrayOfContents[index];
 
     // Remove all non-editable nodes.  Leave them be.
     if (!EditorUtils::IsEditableContent(content, EditorType::HTML)) {
-      aArrayOfContents.RemoveElementAt(i);
+      aArrayOfContents.RemoveElementAt(index);
       continue;
     }
 
@@ -596,11 +689,11 @@ nsresult ParagraphStateAtSelection::CollectEditableFormatNodesInSelection(
     if (HTMLEditUtils::IsAnyTableElement(content) ||
         HTMLEditUtils::IsAnyListElement(content) ||
         HTMLEditUtils::IsListItem(content)) {
-      aArrayOfContents.RemoveElementAt(i);
-      aHTMLEditor.CollectChildren(content, aArrayOfContents, i,
-                                  HTMLEditor::CollectListChildren::Yes,
-                                  HTMLEditor::CollectTableChildren::Yes,
-                                  HTMLEditor::CollectNonEditableNodes::Yes);
+      aArrayOfContents.RemoveElementAt(index);
+      HTMLEditUtils::CollectChildren(
+          content, aArrayOfContents, index,
+          {CollectChildrenOption::CollectListChildren,
+           CollectChildrenOption::CollectTableChildren});
     }
   }
   return NS_OK;

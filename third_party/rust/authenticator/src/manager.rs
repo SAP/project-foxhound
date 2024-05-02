@@ -2,45 +2,55 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+use crate::authenticatorservice::AuthenticatorTransport;
+use crate::authenticatorservice::{RegisterArgs, SignArgs};
+use crate::errors::*;
+use crate::statecallback::StateCallback;
+use crate::statemachine::StateMachine;
+use crate::Pin;
+use runloop::RunLoop;
 use std::io;
 use std::sync::mpsc::{channel, RecvTimeoutError, Sender};
 use std::time::Duration;
 
-use crate::authenticatorservice::AuthenticatorTransport;
-use crate::consts::PARAMETER_SIZE;
-use crate::errors::*;
-use crate::statecallback::StateCallback;
-use crate::statemachine::StateMachine;
-use runloop::RunLoop;
-
 enum QueueAction {
     Register {
-        flags: crate::RegisterFlags,
         timeout: u64,
-        challenge: Vec<u8>,
-        application: crate::AppId,
-        key_handles: Vec<crate::KeyHandle>,
+        register_args: RegisterArgs,
         status: Sender<crate::StatusUpdate>,
         callback: StateCallback<crate::Result<crate::RegisterResult>>,
     },
     Sign {
-        flags: crate::SignFlags,
         timeout: u64,
-        challenge: Vec<u8>,
-        app_ids: Vec<crate::AppId>,
-        key_handles: Vec<crate::KeyHandle>,
+        sign_args: SignArgs,
         status: Sender<crate::StatusUpdate>,
         callback: StateCallback<crate::Result<crate::SignResult>>,
     },
     Cancel,
+    Reset {
+        timeout: u64,
+        status: Sender<crate::StatusUpdate>,
+        callback: StateCallback<crate::Result<crate::ResetResult>>,
+    },
+    SetPin {
+        timeout: u64,
+        new_pin: Pin,
+        status: Sender<crate::StatusUpdate>,
+        callback: StateCallback<crate::Result<crate::ResetResult>>,
+    },
+    InteractiveManagement {
+        timeout: u64,
+        status: Sender<crate::StatusUpdate>,
+        callback: StateCallback<crate::Result<crate::ManageResult>>,
+    },
 }
 
-pub struct U2FManager {
+pub struct Manager {
     queue: RunLoop,
     tx: Sender<QueueAction>,
 }
 
-impl U2FManager {
+impl Manager {
     pub fn new() -> io::Result<Self> {
         let (tx, rx) = channel();
 
@@ -51,53 +61,63 @@ impl U2FManager {
             while alive() {
                 match rx.recv_timeout(Duration::from_millis(50)) {
                     Ok(QueueAction::Register {
-                        flags,
                         timeout,
-                        challenge,
-                        application,
-                        key_handles,
+                        register_args,
                         status,
                         callback,
                     }) => {
                         // This must not block, otherwise we can't cancel.
-                        sm.register(
-                            flags,
-                            timeout,
-                            challenge,
-                            application,
-                            key_handles,
-                            status,
-                            callback,
-                        );
+                        sm.register(timeout, register_args, status, callback);
                     }
+
                     Ok(QueueAction::Sign {
-                        flags,
                         timeout,
-                        challenge,
-                        app_ids,
-                        key_handles,
+                        sign_args,
                         status,
                         callback,
                     }) => {
                         // This must not block, otherwise we can't cancel.
-                        sm.sign(
-                            flags,
-                            timeout,
-                            challenge,
-                            app_ids,
-                            key_handles,
-                            status,
-                            callback,
-                        );
+                        sm.sign(timeout, sign_args, status, callback);
                     }
+
                     Ok(QueueAction::Cancel) => {
                         // Cancelling must block so that we don't start a new
                         // polling thread before the old one has shut down.
                         sm.cancel();
                     }
+
+                    Ok(QueueAction::Reset {
+                        timeout,
+                        status,
+                        callback,
+                    }) => {
+                        // Reset the token: Delete all keypairs, reset PIN
+                        sm.reset(timeout, status, callback);
+                    }
+
+                    Ok(QueueAction::SetPin {
+                        timeout,
+                        new_pin,
+                        status,
+                        callback,
+                    }) => {
+                        // This must not block, otherwise we can't cancel.
+                        sm.set_pin(timeout, new_pin, status, callback);
+                    }
+
+                    Ok(QueueAction::InteractiveManagement {
+                        timeout,
+                        status,
+                        callback,
+                    }) => {
+                        // Manage token interactively
+                        sm.manage(timeout, status, callback);
+                    }
+
                     Err(RecvTimeoutError::Disconnected) => {
                         break;
                     }
+
                     _ => { /* continue */ }
                 }
             }
@@ -110,33 +130,23 @@ impl U2FManager {
     }
 }
 
-impl AuthenticatorTransport for U2FManager {
+impl Drop for Manager {
+    fn drop(&mut self) {
+        self.queue.cancel();
+    }
+}
+
+impl AuthenticatorTransport for Manager {
     fn register(
         &mut self,
-        flags: crate::RegisterFlags,
         timeout: u64,
-        challenge: Vec<u8>,
-        application: crate::AppId,
-        key_handles: Vec<crate::KeyHandle>,
+        register_args: RegisterArgs,
         status: Sender<crate::StatusUpdate>,
         callback: StateCallback<crate::Result<crate::RegisterResult>>,
-    ) -> crate::Result<()> {
-        if challenge.len() != PARAMETER_SIZE || application.len() != PARAMETER_SIZE {
-            return Err(AuthenticatorError::InvalidRelyingPartyInput);
-        }
-
-        for key_handle in &key_handles {
-            if key_handle.credential.len() > 256 {
-                return Err(AuthenticatorError::InvalidRelyingPartyInput);
-            }
-        }
-
+    ) -> Result<(), AuthenticatorError> {
         let action = QueueAction::Register {
-            flags,
             timeout,
-            challenge,
-            application,
-            key_handles,
+            register_args,
             status,
             callback,
         };
@@ -145,53 +155,64 @@ impl AuthenticatorTransport for U2FManager {
 
     fn sign(
         &mut self,
-        flags: crate::SignFlags,
         timeout: u64,
-        challenge: Vec<u8>,
-        app_ids: Vec<crate::AppId>,
-        key_handles: Vec<crate::KeyHandle>,
+        sign_args: SignArgs,
         status: Sender<crate::StatusUpdate>,
         callback: StateCallback<crate::Result<crate::SignResult>>,
     ) -> crate::Result<()> {
-        if challenge.len() != PARAMETER_SIZE {
-            return Err(AuthenticatorError::InvalidRelyingPartyInput);
-        }
-
-        if app_ids.is_empty() {
-            return Err(AuthenticatorError::InvalidRelyingPartyInput);
-        }
-
-        for app_id in &app_ids {
-            if app_id.len() != PARAMETER_SIZE {
-                return Err(AuthenticatorError::InvalidRelyingPartyInput);
-            }
-        }
-
-        for key_handle in &key_handles {
-            if key_handle.credential.len() > 256 {
-                return Err(AuthenticatorError::InvalidRelyingPartyInput);
-            }
-        }
-
         let action = QueueAction::Sign {
-            flags,
             timeout,
-            challenge,
-            app_ids,
-            key_handles,
+            sign_args,
             status,
             callback,
         };
-        Ok(self.tx.send(action)?)
+
+        self.tx.send(action)?;
+        Ok(())
     }
 
-    fn cancel(&mut self) -> crate::Result<()> {
+    fn cancel(&mut self) -> Result<(), AuthenticatorError> {
         Ok(self.tx.send(QueueAction::Cancel)?)
     }
-}
 
-impl Drop for U2FManager {
-    fn drop(&mut self) {
-        self.queue.cancel();
+    fn reset(
+        &mut self,
+        timeout: u64,
+        status: Sender<crate::StatusUpdate>,
+        callback: StateCallback<crate::Result<crate::ResetResult>>,
+    ) -> Result<(), AuthenticatorError> {
+        Ok(self.tx.send(QueueAction::Reset {
+            timeout,
+            status,
+            callback,
+        })?)
+    }
+
+    fn set_pin(
+        &mut self,
+        timeout: u64,
+        new_pin: Pin,
+        status: Sender<crate::StatusUpdate>,
+        callback: StateCallback<crate::Result<crate::ResetResult>>,
+    ) -> crate::Result<()> {
+        Ok(self.tx.send(QueueAction::SetPin {
+            timeout,
+            new_pin,
+            status,
+            callback,
+        })?)
+    }
+
+    fn manage(
+        &mut self,
+        timeout: u64,
+        status: Sender<crate::StatusUpdate>,
+        callback: StateCallback<crate::Result<crate::ManageResult>>,
+    ) -> Result<(), AuthenticatorError> {
+        Ok(self.tx.send(QueueAction::InteractiveManagement {
+            timeout,
+            status,
+            callback,
+        })?)
     }
 }

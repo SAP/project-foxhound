@@ -6,7 +6,6 @@
 
 #include "TextureRecorded.h"
 
-#include "mozilla/gfx/gfxVars.h"
 #include "RecordedCanvasEventImpl.h"
 
 namespace mozilla {
@@ -42,7 +41,10 @@ void RecordedTextureData::FillInfo(TextureData::Info& aInfo) const {
 }
 
 bool RecordedTextureData::Lock(OpenMode aMode) {
-  mCanvasChild->EnsureBeginTransaction();
+  if (!mCanvasChild->EnsureBeginTransaction()) {
+    return false;
+  }
+
   if (!mDT) {
     mTextureId = sNextRecordedTextureId++;
     mCanvasChild->RecordEvent(RecordedNextTextureId(mTextureId));
@@ -93,7 +95,11 @@ void RecordedTextureData::EndDraw() {
 }
 
 already_AddRefed<gfx::SourceSurface> RecordedTextureData::BorrowSnapshot() {
-  MOZ_ASSERT(mDT);
+  // There are some failure scenarios where we have no DrawTarget and
+  // BorrowSnapshot is called in an attempt to copy to a new texture.
+  if (!mDT) {
+    return nullptr;
+  }
 
   if (mSnapshot) {
     return mCanvasChild->WrapSurface(mSnapshot);
@@ -114,13 +120,9 @@ void RecordedTextureData::OnForwardedToHost() {
 }
 
 TextureFlags RecordedTextureData::GetTextureFlags() const {
-  TextureFlags flags = TextureFlags::NO_FLAGS;
   // With WebRender, resource open happens asynchronously on RenderThread.
   // Use WAIT_HOST_USAGE_END to keep TextureClient alive during host side usage.
-  if (gfx::gfxVars::UseWebRender()) {
-    flags |= TextureFlags::WAIT_HOST_USAGE_END;
-  }
-  return flags;
+  return TextureFlags::WAIT_HOST_USAGE_END;
 }
 
 }  // namespace layers

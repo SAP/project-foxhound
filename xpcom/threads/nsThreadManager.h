@@ -12,13 +12,15 @@
 #include "mozilla/ShutdownPhase.h"
 
 class nsIRunnable;
-class nsIEventTarget;
-class nsISerialEventTarget;
 class nsIThread;
 
 namespace mozilla {
 class IdleTaskManager;
 class SynchronizedEventQueue;
+class TaskQueue;
+
+template <typename T>
+class NeverDestroyed;
 }  // namespace mozilla
 
 class BackgroundEventTarget;
@@ -32,9 +34,18 @@ class nsThreadManager : public nsIThreadManager {
 
   nsresult Init();
 
-  // Shutdown all threads.  This function should only be called on the main
-  // thread of the application process.
-  void Shutdown();
+  // Shutdown all threads other than the main thread.  This function should only
+  // be called on the main thread of the application process.
+  void ShutdownNonMainThreads();
+
+  // Finish shutting down all threads. This function must be called after
+  // ShutdownNonMainThreads and will delete the BackgroundEventTarget and
+  // take the main thread event target out of commission, but without
+  // releasing the underlying nsThread object.
+  void ShutdownMainThread();
+
+  // Release the underlying main thread nsThread object.
+  void ReleaseMainThread();
 
   // Called by nsThread to inform the ThreadManager it exists.  This method
   // must be called when the given thread is the current thread.
@@ -64,16 +75,8 @@ class nsThreadManager : public nsIThreadManager {
   nsresult DispatchToBackgroundThread(nsIRunnable* aEvent,
                                       uint32_t aDispatchFlags);
 
-  already_AddRefed<nsISerialEventTarget> CreateBackgroundTaskQueue(
+  already_AddRefed<mozilla::TaskQueue> CreateBackgroundTaskQueue(
       const char* aName);
-
-  // For each background TaskQueue cancel pending DelayedRunnables, and prohibit
-  // creating future DelayedRunnables for them, since we'll soon be shutting
-  // them down.
-  // Pending DelayedRunnables are canceled on their respective TaskQueue.
-  // We block main thread until they are all done, but spin the eventloop in the
-  // meantime.
-  void CancelBackgroundDelayedRunnables();
 
   ~nsThreadManager();
 
@@ -86,7 +89,25 @@ class nsThreadManager : public nsIThreadManager {
 
   nsIThread* GetMainThreadWeak() { return mMainThread; }
 
+  // Low level methods for interacting with the global thread list. Be very
+  // careful when holding `ThreadListMutex()` as no new threads can be started
+  // while it is held.
+  mozilla::OffTheBooksMutex& ThreadListMutex() MOZ_RETURN_CAPABILITY(mMutex) {
+    return mMutex;
+  }
+
+  bool AllowNewXPCOMThreads() MOZ_EXCLUDES(mMutex);
+  bool AllowNewXPCOMThreadsLocked() MOZ_REQUIRES(mMutex) {
+    return mState == State::eActive;
+  }
+
+  mozilla::LinkedList<nsThread>& ThreadList() MOZ_REQUIRES(mMutex) {
+    return mThreadList;
+  }
+
  private:
+  friend class mozilla::NeverDestroyed<nsThreadManager>;
+
   nsThreadManager();
 
   nsresult SpinEventLoopUntilInternal(
@@ -96,14 +117,34 @@ class nsThreadManager : public nsIThreadManager {
 
   static void ReleaseThread(void* aData);
 
+  enum class State : uint8_t {
+    // The thread manager has yet to be initialized.
+    eUninit,
+    // The thread manager is active, and operating normally.
+    eActive,
+    // The thread manager is in XPCOM shutdown. New calls to NS_NewNamedThread
+    // will fail, as all XPCOM threads are required to be shutting down.
+    eShutdown,
+  };
+
   unsigned mCurThreadIndex;  // thread-local-storage index
-  RefPtr<mozilla::IdleTaskManager> mIdleTaskManager;
   RefPtr<nsThread> mMainThread;
-  PRThread* mMainPRThread;
-  mozilla::Atomic<bool, mozilla::SequentiallyConsistent> mInitialized;
+
+  mutable mozilla::OffTheBooksMutex mMutex;
+
+  // Current state in the thread manager's lifecycle. See docs above.
+  State mState MOZ_GUARDED_BY(mMutex);
+
+  // Global list of active nsThread instances, including both explicitly and
+  // implicitly created threads.
+  //
+  // NOTE: New entries to this list _may_ be added after mAllowNewThreads has
+  // been cleared, but only for implicitly created thread wrappers which are
+  // not shut down during XPCOM shutdown.
+  mozilla::LinkedList<nsThread> mThreadList MOZ_GUARDED_BY(mMutex);
 
   // Shared event target used for background runnables.
-  RefPtr<BackgroundEventTarget> mBackgroundEventTarget;
+  RefPtr<BackgroundEventTarget> mBackgroundEventTarget MOZ_GUARDED_BY(mMutex);
 };
 
 #define NS_THREADMANAGER_CID                         \

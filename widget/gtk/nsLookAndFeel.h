@@ -16,6 +16,7 @@
 enum WidgetNodeType : int;
 struct _GtkStyle;
 typedef struct _GDBusProxy GDBusProxy;
+typedef struct _GtkCssProvider GtkCssProvider;
 
 class nsLookAndFeel final : public nsXPLookAndFeel {
  public:
@@ -35,13 +36,16 @@ class nsLookAndFeel final : public nsXPLookAndFeel {
 
   bool GetDefaultDrawInTitlebar() override;
 
-  void GetGtkContentTheme(LookAndFeelTheme&) override;
   void GetThemeInfo(nsACString&) override;
-
-  static void ConfigureTheme(const LookAndFeelTheme& aTheme);
 
   static const nscolor kBlack = NS_RGB(0, 0, 0);
   static const nscolor kWhite = NS_RGB(255, 255, 255);
+  void OnColorSchemeSettingChanged();
+
+  struct ColorPair {
+    nscolor mBg = kWhite;
+    nscolor mFg = kBlack;
+  };
 
  protected:
   static bool WidgetUsesImage(WidgetNodeType aNodeType);
@@ -49,14 +53,28 @@ class nsLookAndFeel final : public nsXPLookAndFeel {
   static bool ShouldHonorThemeScrollbarColors();
   mozilla::Maybe<ColorScheme> ComputeColorSchemeSetting();
 
+  void WatchDBus();
+  void UnwatchDBus();
+
+  enum class ThemeFamily : uint8_t {
+    // Adwaita, the default GTK theme.
+    Adwaita,
+    // Breeze, the default KDE theme.
+    Breeze,
+    // Yaru, the default Ubuntu theme.
+    Yaru,
+    Other,
+  };
+
   // We use up to two themes (one light, one dark), which might have different
   // sets of fonts and colors.
   struct PerThemeData {
     nsCString mName;
-
     bool mIsDark = false;
     bool mHighContrast = false;
     bool mPreferDarkTheme = false;
+
+    ThemeFamily mFamily = ThemeFamily::Other;
 
     // NOTE(emilio): This is unused, but if we need to we can use it to override
     // system colors with standins like we do for the non-native theme.
@@ -73,46 +91,41 @@ class nsLookAndFeel final : public nsXPLookAndFeel {
     gfxFontStyle mMenuFontStyle;
 
     // Cached colors
-    nscolor mInfoBackground = kWhite;
-    nscolor mInfoText = kBlack;
-    nscolor mMenuBackground = kWhite;
-    nscolor mMenuBarText = kBlack;
-    nscolor mMenuBarHoverText = kBlack;
-    nscolor mMenuText = kBlack;
-    nscolor mMenuTextInactive = kWhite;
-    nscolor mMenuHover = kWhite;
-    nscolor mMenuHoverText = kBlack;
-    nscolor mButtonDefault = kWhite;
-    nscolor mButtonText = kBlack;
-    nscolor mButtonHoverText = kBlack;
-    nscolor mButtonHoverFace = kWhite;
+    nscolor mGrayText = kBlack;
+    ColorPair mInfo;
+    ColorPair mMenu;
+    ColorPair mMenuHover;
+    ColorPair mHeaderBar;
+    ColorPair mHeaderBarInactive;
+    ColorPair mButton;
+    ColorPair mButtonHover;
     nscolor mButtonActiveText = kBlack;
     nscolor mFrameOuterLightBorder = kBlack;
     nscolor mFrameInnerDarkBorder = kBlack;
     nscolor mOddCellBackground = kWhite;
     nscolor mNativeHyperLinkText = kBlack;
     nscolor mNativeVisitedHyperLinkText = kBlack;
+    // FIXME: This doesn't seem like it'd be sound since we use Window for
+    // -moz-Combobox... But I guess we rely on chrome code not setting
+    // appearance: none on selects or overriding the color if they do.
     nscolor mComboBoxText = kBlack;
-    nscolor mComboBoxBackground = kWhite;
-    nscolor mFieldText = kBlack;
-    nscolor mFieldBackground = kWhite;
-    nscolor mMozWindowText = kBlack;
-    nscolor mMozWindowBackground = kWhite;
+    ColorPair mField;
+    ColorPair mWindow;
+
     nscolor mMozWindowActiveBorder = kBlack;
     nscolor mMozWindowInactiveBorder = kBlack;
-    nscolor mMozCellHighlightBackground = kWhite;
-    nscolor mMozCellHighlightText = kBlack;
-    nscolor mTextSelectedText = kBlack;
-    nscolor mTextSelectedBackground = kWhite;
-    nscolor mAccentColor = kWhite;
-    nscolor mAccentColorForeground = kWhite;
-    nscolor mMozScrollbar = kWhite;
+
+    ColorPair mCellHighlight;
+    ColorPair mSelectedText;
+    ColorPair mAccent;
+    ColorPair mSelectedItem;
+
     nscolor mMozColHeaderText = kBlack;
     nscolor mMozColHeaderHoverText = kBlack;
-    nscolor mTitlebarText = kBlack;
-    nscolor mTitlebarBackground = kWhite;
-    nscolor mTitlebarInactiveText = kBlack;
-    nscolor mTitlebarInactiveBackground = kWhite;
+
+    ColorPair mTitlebar;
+    ColorPair mTitlebarInactive;
+
     nscolor mThemedScrollbar = kWhite;
     nscolor mThemedScrollbarInactive = kWhite;
     nscolor mThemedScrollbarThumb = kBlack;
@@ -122,7 +135,6 @@ class nsLookAndFeel final : public nsXPLookAndFeel {
 
     float mCaretRatio = 0.0f;
     int32_t mTitlebarRadius = 0;
-    int32_t mMenuRadius = 0;
     char16_t mInvisibleCharacter = 0;
     bool mMenuSupportsDrag = false;
 
@@ -151,7 +163,8 @@ class nsLookAndFeel final : public nsXPLookAndFeel {
     return mSystemThemeOverridden ? mAltTheme : mSystemTheme;
   }
 
-  GDBusProxy* mDBusSettingsProxy = nullptr;
+  uint32_t mDBusID = 0;
+  RefPtr<GDBusProxy> mDBusSettingsProxy;
   mozilla::Maybe<ColorScheme> mColorSchemePreference;
   int32_t mCaretBlinkTime = 0;
   int32_t mCaretBlinkCount = -1;
@@ -166,6 +179,11 @@ class nsLookAndFeel final : public nsXPLookAndFeel {
   int32_t mCSDMinimizeButtonPosition = 0;
   int32_t mCSDCloseButtonPosition = 0;
 
+  RefPtr<GtkCssProvider> mRoundedCornerProvider;
+  void UpdateRoundedBottomCornerStyles();
+
+  void ClearRoundedCornerProvider();
+
   void EnsureInit() {
     if (mInitialized) {
       return;
@@ -177,6 +195,8 @@ class nsLookAndFeel final : public nsXPLookAndFeel {
 
   void RestoreSystemTheme();
   void InitializeGlobalSettings();
+  // Returns whether we found an alternative theme.
+  bool ConfigureAltTheme();
   void ConfigureAndInitializeAltTheme();
   void ConfigureFinalEffectiveTheme();
 };

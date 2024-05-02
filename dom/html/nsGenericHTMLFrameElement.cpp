@@ -165,6 +165,11 @@ void nsGenericHTMLFrameElement::SwapFrameLoaders(
 }
 
 void nsGenericHTMLFrameElement::LoadSrc() {
+  // Waiting for lazy load, do nothing.
+  if (mLazyLoading) {
+    return;
+  }
+
   EnsureFrameLoader();
 
   if (!mFrameLoader) {
@@ -216,18 +221,18 @@ void nsGenericHTMLFrameElement::UnbindFromTree(bool aNullParent) {
 ScrollbarPreference nsGenericHTMLFrameElement::MapScrollingAttribute(
     const nsAttrValue* aValue) {
   if (aValue && aValue->Type() == nsAttrValue::eEnum) {
-    switch (aValue->GetEnumValue()) {
-      case NS_STYLE_FRAME_OFF:
-      case NS_STYLE_FRAME_NOSCROLL:
-      case NS_STYLE_FRAME_NO:
-        return ScrollbarPreference::Never;
+    auto scrolling = static_cast<ScrollingAttribute>(aValue->GetEnumValue());
+    if (scrolling == ScrollingAttribute::Off ||
+        scrolling == ScrollingAttribute::Noscroll ||
+        scrolling == ScrollingAttribute::No) {
+      return ScrollbarPreference::Never;
     }
   }
   return ScrollbarPreference::Auto;
 }
 
 /* virtual */
-nsresult nsGenericHTMLFrameElement::AfterSetAttr(
+void nsGenericHTMLFrameElement::AfterSetAttr(
     int32_t aNameSpaceID, nsAtom* aName, const nsAttrValue* aValue,
     const nsAttrValue* aOldValue, nsIPrincipal* aMaybeScriptedPrincipal,
     bool aNotify) {
@@ -265,7 +270,7 @@ nsresult nsGenericHTMLFrameElement::AfterSetAttr(
       aNameSpaceID, aName, aValue, aOldValue, aMaybeScriptedPrincipal, aNotify);
 }
 
-nsresult nsGenericHTMLFrameElement::OnAttrSetButNotChanged(
+void nsGenericHTMLFrameElement::OnAttrSetButNotChanged(
     int32_t aNamespaceID, nsAtom* aName, const nsAttrValueOrString& aValue,
     bool aNotify) {
   AfterMaybeChangeAttr(aNamespaceID, aName, &aValue, nullptr, aNotify);
@@ -281,8 +286,7 @@ void nsGenericHTMLFrameElement::AfterMaybeChangeAttr(
     if (aName == nsGkAtoms::src) {
       mSrcTriggeringPrincipal = nsContentUtils::GetAttrTriggeringPrincipal(
           this, aValue ? aValue->String() : u""_ns, aMaybeScriptedPrincipal);
-      if (!IsHTMLElement(nsGkAtoms::iframe) ||
-          !HasAttr(kNameSpaceID_None, nsGkAtoms::srcdoc)) {
+      if (!IsHTMLElement(nsGkAtoms::iframe) || !HasAttr(nsGkAtoms::srcdoc)) {
         // Don't propagate error here. The attribute was successfully
         // set or removed; that's what we should reflect.
         LoadSrc();
@@ -329,12 +333,7 @@ bool nsGenericHTMLFrameElement::IsHTMLFocusable(bool aWithMouse,
     return true;
   }
 
-  *aIsFocusable = nsContentUtils::IsSubDocumentTabbable(this);
-
-  if (!*aIsFocusable && aTabIndex) {
-    *aTabIndex = -1;
-  }
-
+  *aIsFocusable = true;
   return false;
 }
 

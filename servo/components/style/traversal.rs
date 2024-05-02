@@ -5,23 +5,28 @@
 //! Traversing the DOM tree; the bloom filter.
 
 use crate::context::{ElementCascadeInputs, SharedStyleContext, StyleContext};
-use crate::data::{ElementData, ElementStyles};
+use crate::data::{ElementData, ElementStyles, RestyleKind};
 use crate::dom::{NodeInfo, OpaqueNode, TElement, TNode};
 use crate::invalidation::element::restyle_hints::RestyleHint;
-use crate::matching::{ChildCascadeRequirement, MatchMethods};
+use crate::matching::{ChildRestyleRequirement, MatchMethods};
 use crate::selector_parser::PseudoElement;
 use crate::sharing::StyleSharingTarget;
 use crate::style_resolver::{PseudoElementResolution, StyleResolverForElement};
 use crate::stylist::RuleInclusion;
 use crate::traversal_flags::TraversalFlags;
-use selectors::NthIndexCache;
+use selectors::matching::SelectorCaches;
 use smallvec::SmallVec;
+use std::collections::HashMap;
+
+/// A cache from element reference to known-valid computed style.
+pub type UndisplayedStyleCache =
+    HashMap<selectors::OpaqueElement, servo_arc::Arc<crate::properties::ComputedValues>>;
 
 /// A per-traversal-level chunk of data. This is sent down by the traversal, and
 /// currently only holds the dom depth for the bloom filter.
 ///
 /// NB: Keep this as small as possible, please!
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct PerLevelTraversalData {
     /// The current dom depth.
     ///
@@ -152,6 +157,8 @@ pub trait DomTraversal<E: TElement>: Sync {
     /// such, we have a pre-traversal step to handle that part and determine whether
     /// a full traversal is needed.
     fn pre_traverse(root: E, shared_context: &SharedStyleContext) -> PreTraverseToken<E> {
+        use crate::invalidation::element::state_and_attributes::propagate_dirty_bit_up_to;
+
         let traversal_flags = shared_context.traversal_flags;
 
         let mut data = root.mutate_data();
@@ -165,15 +172,15 @@ pub trait DomTraversal<E: TElement>: Sync {
                     root,
                     shared_context,
                     None,
-                    &mut NthIndexCache::default(),
+                    &mut SelectorCaches::default(),
                 );
 
                 if invalidation_result.has_invalidated_siblings() {
-                    let actual_root = root.traversal_parent().expect(
+                    let actual_root = root.as_node().parent_element_or_host().expect(
                         "How in the world can you invalidate \
                          siblings without a parent?",
                     );
-                    unsafe { actual_root.set_dirty_descendants() }
+                    propagate_dirty_bit_up_to(actual_root, root);
                     return PreTraverseToken(Some(actual_root));
                 }
             }
@@ -210,9 +217,8 @@ pub trait DomTraversal<E: TElement>: Sync {
             el, traversal_flags, data
         );
 
-        // In case of animation-only traversal we need to traverse the element
-        // if the element has animation only dirty descendants bit,
-        // animation-only restyle hint or recascade.
+        // In case of animation-only traversal we need to traverse the element if the element has
+        // animation only dirty descendants bit, animation-only restyle hint.
         if traversal_flags.for_animation_only() {
             return data.map_or(false, |d| d.has_styles()) &&
                 (el.has_animation_only_dirty_descendants() ||
@@ -261,26 +267,6 @@ pub trait DomTraversal<E: TElement>: Sync {
         false
     }
 
-    /// Returns true if we want to cull this subtree from the travesal.
-    fn should_cull_subtree(
-        &self,
-        context: &mut StyleContext<E>,
-        parent: E,
-        parent_data: &ElementData,
-    ) -> bool {
-        debug_assert!(
-            parent.has_current_styles_for_traversal(parent_data, context.shared.traversal_flags)
-        );
-
-        // If the parent computed display:none, we don't style the subtree.
-        if parent_data.styles.is_display_none() {
-            debug!("Parent {:?} is display:none, culling traversal", parent);
-            return true;
-        }
-
-        return false;
-    }
-
     /// Return the shared style context common to all worker threads.
     fn shared_context(&self) -> &SharedStyleContext;
 }
@@ -294,6 +280,7 @@ pub fn resolve_style<E>(
     element: E,
     rule_inclusion: RuleInclusion,
     pseudo: Option<&PseudoElement>,
+    mut undisplayed_style_cache: Option<&mut UndisplayedStyleCache>,
 ) -> ElementStyles
 where
     E: TElement,
@@ -304,6 +291,11 @@ where
             element.borrow_data().map_or(true, |d| !d.has_styles()),
         "Why are we here?"
     );
+    debug_assert!(
+        rule_inclusion == RuleInclusion::All || undisplayed_style_cache.is_none(),
+        "can't use the cache for default styles only"
+    );
+
     let mut ancestors_requiring_style_resolution = SmallVec::<[E; 16]>::new();
 
     // Clear the bloom filter, just in case the caller is reusing TLS.
@@ -318,6 +310,12 @@ where
                     style = Some(ancestor_style.clone());
                     break;
                 }
+            }
+        }
+        if let Some(ref mut cache) = undisplayed_style_cache {
+            if let Some(s) = cache.get(&current.opaque()) {
+                style = Some(s.clone());
+                break;
             }
         }
         ancestors_requiring_style_resolution.push(current);
@@ -337,7 +335,8 @@ where
         }
 
         ancestor = ancestor.unwrap().traversal_parent();
-        layout_parent_style = ancestor.map(|a| a.borrow_data().unwrap().styles.primary().clone());
+        layout_parent_style =
+            ancestor.and_then(|a| a.borrow_data().map(|data| data.styles.primary().clone()));
     }
 
     for ancestor in ancestors_requiring_style_resolution.iter().rev() {
@@ -360,25 +359,34 @@ where
             layout_parent_style = style.clone();
         }
 
+        if let Some(ref mut cache) = undisplayed_style_cache {
+            cache.insert(ancestor.opaque(), style.clone().unwrap());
+        }
         context.thread_local.bloom_filter.push(*ancestor);
     }
 
     context.thread_local.bloom_filter.assert_complete(element);
-    StyleResolverForElement::new(
+    let styles: ElementStyles = StyleResolverForElement::new(
         element,
         context,
         rule_inclusion,
         PseudoElementResolution::Force,
     )
     .resolve_style(style.as_deref(), layout_parent_style.as_deref())
-    .into()
+    .into();
+
+    if let Some(ref mut cache) = undisplayed_style_cache {
+        cache.insert(element.opaque(), styles.primary().clone());
+    }
+
+    styles
 }
 
 /// Calculates the style for a single node.
 #[inline]
 #[allow(unsafe_code)]
 pub fn recalc_style_at<E, D, F>(
-    traversal: &D,
+    _traversal: &D,
     traversal_data: &PerLevelTraversalData,
     context: &mut StyleContext<E>,
     element: E,
@@ -397,35 +405,35 @@ pub fn recalc_style_at<E, D, F>(
     context.thread_local.statistics.elements_traversed += 1;
     debug_assert!(
         flags.intersects(TraversalFlags::AnimationOnly) ||
+            is_initial_style ||
             !element.has_snapshot() ||
             element.handled_snapshot(),
         "Should've handled snapshots here already"
     );
 
-    let compute_self = !element.has_current_styles_for_traversal(data, flags);
-
+    let restyle_kind = data.restyle_kind(&context.shared);
     debug!(
-        "recalc_style_at: {:?} (compute_self={:?}, \
-         dirty_descendants={:?}, data={:?})",
+        "recalc_style_at: {:?} (restyle_kind={:?}, dirty_descendants={:?}, data={:?})",
         element,
-        compute_self,
+        restyle_kind,
         element.has_dirty_descendants(),
         data
     );
 
-    let mut child_cascade_requirement = ChildCascadeRequirement::CanSkipCascade;
+    let mut child_restyle_requirement = ChildRestyleRequirement::CanSkipCascade;
 
     // Compute style for this element if necessary.
-    if compute_self {
-        child_cascade_requirement = compute_style(traversal_data, context, element, data);
+    if let Some(restyle_kind) = restyle_kind {
+        child_restyle_requirement =
+            compute_style(traversal_data, context, element, data, restyle_kind);
 
-        if element.is_in_native_anonymous_subtree() {
+        if !element.matches_user_and_content_rules() {
             // We must always cascade native anonymous subtrees, since they
             // may have pseudo-elements underneath that would inherit from the
             // closest non-NAC ancestor instead of us.
-            child_cascade_requirement = cmp::max(
-                child_cascade_requirement,
-                ChildCascadeRequirement::MustCascadeChildren,
+            child_restyle_requirement = cmp::max(
+                child_restyle_requirement,
+                ChildRestyleRequirement::MustCascadeChildren,
             );
         }
 
@@ -459,21 +467,32 @@ pub fn recalc_style_at<E, D, F>(
         "animation restyle hint should be handled during \
          animation-only restyles"
     );
-    let propagated_hint = data.hint.propagate(&flags);
-
+    let mut propagated_hint = data.hint.propagate(&flags);
     trace!(
-        "propagated_hint={:?}, cascade_requirement={:?}, \
+        "propagated_hint={:?}, restyle_requirement={:?}, \
          is_display_none={:?}, implementing_pseudo={:?}",
         propagated_hint,
-        child_cascade_requirement,
+        child_restyle_requirement,
         data.styles.is_display_none(),
         element.implemented_pseudo_element()
     );
-    debug_assert!(
-        element.has_current_styles_for_traversal(data, flags),
-        "Should have computed style or haven't yet valid computed \
-         style in case of animation-only restyle"
-    );
+
+    // Integrate the child cascade requirement into the propagated hint.
+    match child_restyle_requirement {
+        ChildRestyleRequirement::CanSkipCascade => {},
+        ChildRestyleRequirement::MustCascadeDescendants => {
+            propagated_hint |= RestyleHint::RECASCADE_SELF | RestyleHint::RECASCADE_DESCENDANTS;
+        },
+        ChildRestyleRequirement::MustCascadeChildrenIfInheritResetStyle => {
+            propagated_hint |= RestyleHint::RECASCADE_SELF_IF_INHERIT_RESET_STYLE;
+        },
+        ChildRestyleRequirement::MustCascadeChildren => {
+            propagated_hint |= RestyleHint::RECASCADE_SELF;
+        },
+        ChildRestyleRequirement::MustMatchDescendants => {
+            propagated_hint |= RestyleHint::restyle_subtree();
+        },
+    }
 
     let has_dirty_descendants_for_this_restyle = if flags.for_animation_only() {
         element.has_animation_only_dirty_descendants()
@@ -487,19 +506,15 @@ pub fn recalc_style_at<E, D, F>(
     //
     //  * We have the dirty descendants bit.
     //  * We're propagating a restyle hint.
-    //  * We can't skip the cascade.
     //  * This is a servo non-incremental traversal.
     //
-    // Additionally, there are a few scenarios where we avoid traversing the
-    // subtree even if descendant styles are out of date. These cases are
-    // enumerated in should_cull_subtree().
+    // We only do this if we're not a display: none root, since in that case
+    // it's useless to style children.
     let mut traverse_children = has_dirty_descendants_for_this_restyle ||
         !propagated_hint.is_empty() ||
-        !child_cascade_requirement.can_skip_cascade() ||
         is_servo_nonincremental_layout();
 
-    traverse_children =
-        traverse_children && !traversal.should_cull_subtree(context, element, &data);
+    traverse_children = traverse_children && !data.styles.is_display_none();
 
     // Examine our children, and enqueue the appropriate ones for traversal.
     if traverse_children {
@@ -508,7 +523,6 @@ pub fn recalc_style_at<E, D, F>(
             element,
             data,
             propagated_hint,
-            child_cascade_requirement,
             is_initial_style,
             note_child,
         );
@@ -541,15 +555,14 @@ fn compute_style<E>(
     context: &mut StyleContext<E>,
     element: E,
     data: &mut ElementData,
-) -> ChildCascadeRequirement
+    kind: RestyleKind,
+) -> ChildRestyleRequirement
 where
     E: TElement,
 {
     use crate::data::RestyleKind::*;
 
     context.thread_local.statistics.elements_styled += 1;
-    let kind = data.restyle_kind(context.shared);
-
     debug!("compute_style: {:?} (kind={:?})", element, kind);
 
     if data.has_styles() {
@@ -726,7 +739,6 @@ fn note_children<E, D, F>(
     element: E,
     data: &ElementData,
     propagated_hint: RestyleHint,
-    cascade_requirement: ChildCascadeRequirement,
     is_initial_style: bool,
     mut note_child: F,
 ) where
@@ -762,29 +774,7 @@ fn note_children<E, D, F>(
         );
 
         if let Some(ref mut child_data) = child_data {
-            let mut child_hint = propagated_hint;
-            match cascade_requirement {
-                ChildCascadeRequirement::CanSkipCascade => {},
-                ChildCascadeRequirement::MustCascadeDescendants => {
-                    child_hint |= RestyleHint::RECASCADE_SELF | RestyleHint::RECASCADE_DESCENDANTS;
-                },
-                ChildCascadeRequirement::MustCascadeChildrenIfInheritResetStyle => {
-                    use crate::computed_value_flags::ComputedValueFlags;
-                    if child_data
-                        .styles
-                        .primary()
-                        .flags
-                        .contains(ComputedValueFlags::INHERITS_RESET_STYLE)
-                    {
-                        child_hint |= RestyleHint::RECASCADE_SELF;
-                    }
-                },
-                ChildCascadeRequirement::MustCascadeChildren => {
-                    child_hint |= RestyleHint::RECASCADE_SELF;
-                },
-            }
-
-            child_data.hint.insert(child_hint);
+            child_data.hint.insert(propagated_hint);
 
             // Handle element snapshots and invalidation of descendants and siblings
             // as needed.
@@ -794,7 +784,7 @@ fn note_children<E, D, F>(
                 child,
                 &context.shared,
                 Some(&context.thread_local.stack_limit_checker),
-                &mut context.thread_local.nth_index_cache,
+                &mut context.thread_local.selector_caches,
             );
         }
 

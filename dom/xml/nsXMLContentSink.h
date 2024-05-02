@@ -24,12 +24,10 @@ class nsIContent;
 class nsIParser;
 class nsTextNode;
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 class NodeInfo;
 class ProcessingInstruction;
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 enum XMLContentSinkState {
   eXMLContentSinkState_InProlog,
@@ -64,7 +62,7 @@ class nsXMLContentSink : public nsContentSink,
   NS_IMETHOD WillBuildModel(nsDTDMode aDTDMode) override;
   NS_IMETHOD DidBuildModel(bool aTerminated) override;
   NS_IMETHOD WillInterrupt(void) override;
-  NS_IMETHOD WillResume(void) override;
+  void WillResume() override;
   NS_IMETHOD SetParser(nsParserBase* aParser) override;
   virtual void InitialTranslationCompleted() override;
   virtual void FlushPendingNotifications(mozilla::FlushType aType) override;
@@ -78,10 +76,11 @@ class nsXMLContentSink : public nsContentSink,
   }
 
   // nsITransformObserver
-  NS_IMETHOD OnDocumentCreated(
-      mozilla::dom::Document* aResultDocument) override;
-  NS_IMETHOD OnTransformDone(nsresult aResult,
+  nsresult OnDocumentCreated(mozilla::dom::Document* aSourceDocument,
                              mozilla::dom::Document* aResultDocument) override;
+  nsresult OnTransformDone(mozilla::dom::Document* aSourceDocument,
+                           nsresult aResult,
+                           mozilla::dom::Document* aResultDocument) override;
 
   // nsICSSLoaderObserver
   NS_IMETHOD StyleSheetLoaded(mozilla::StyleSheet* aSheet, bool aWasDeferred,

@@ -6,9 +6,8 @@
 
 #include "vm/RegExpStatics.h"
 
-#include "gc/FreeOp.h"
-
-#include "vm/NativeObject-inl.h"
+#include "gc/Zone.h"
+#include "vm/RegExpShared.h"
 
 using namespace js;
 
@@ -27,7 +26,7 @@ bool RegExpStatics::executeLazy(JSContext* cx) {
   MOZ_ASSERT(lazyIndex != size_t(-1));
 
   /* Retrieve or create the RegExpShared in this zone. */
-  RootedAtom source(cx, lazySource);
+  Rooted<JSAtom*> source(cx, lazySource);
   RootedRegExpShared shared(cx,
                             cx->zone()->regExps().get(cx, source, lazyFlags));
   if (!shared) {
@@ -40,7 +39,7 @@ bool RegExpStatics::executeLazy(JSContext* cx) {
    */
 
   /* Execute the full regular expression. */
-  RootedLinearString input(cx, matchesInput);
+  Rooted<JSLinearString*> input(cx, matchesInput);
   RegExpRunStatus status =
       RegExpShared::execute(cx, &shared, input, lazyIndex, &this->matches);
   if (status == RegExpRunStatus_Error) {

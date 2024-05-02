@@ -7,12 +7,11 @@
 
 #include "CacheConstants.h"
 #include "nsCoreUtils.h"
-#include "DocAccessible.h"
-#include "Role.h"
+#include "mozilla/a11y/Role.h"
 #include "States.h"
 
 #include "nsContentUtils.h"
-#include "mozilla/EventStates.h"
+#include "mozilla/a11y/DocAccessible.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/MutationEventBinding.h"
 
@@ -25,7 +24,7 @@ using namespace mozilla::a11y;
 
 HTMLLinkAccessible::HTMLLinkAccessible(nsIContent* aContent,
                                        DocAccessible* aDoc)
-    : HyperTextAccessibleWrap(aContent, aDoc) {
+    : HyperTextAccessible(aContent, aDoc) {
   mType = eHTMLLinkType;
 }
 
@@ -35,14 +34,16 @@ HTMLLinkAccessible::HTMLLinkAccessible(nsIContent* aContent,
 role HTMLLinkAccessible::NativeRole() const { return roles::LINK; }
 
 uint64_t HTMLLinkAccessible::NativeState() const {
-  return HyperTextAccessibleWrap::NativeState() & ~states::READONLY;
+  return HyperTextAccessible::NativeState() & ~states::READONLY;
 }
 
 uint64_t HTMLLinkAccessible::NativeLinkState() const {
-  EventStates eventState = mContent->AsElement()->State();
-  if (eventState.HasState(NS_EVENT_STATE_UNVISITED)) return states::LINKED;
+  dom::ElementState state = mContent->AsElement()->State();
+  if (state.HasState(dom::ElementState::UNVISITED)) {
+    return states::LINKED;
+  }
 
-  if (eventState.HasState(NS_EVENT_STATE_VISITED)) {
+  if (state.HasState(dom::ElementState::VISITED)) {
     return states::LINKED | states::TRAVERSED;
   }
 
@@ -53,12 +54,12 @@ uint64_t HTMLLinkAccessible::NativeLinkState() const {
 }
 
 uint64_t HTMLLinkAccessible::NativeInteractiveState() const {
-  uint64_t state = HyperTextAccessibleWrap::NativeInteractiveState();
+  uint64_t state = HyperTextAccessible::NativeInteractiveState();
 
   // This is how we indicate it is a named anchor. In other words, this anchor
   // can be selected as a location :) There is no other better state to use to
   // indicate this.
-  if (mContent->AsElement()->HasAttr(kNameSpaceID_None, nsGkAtoms::name)) {
+  if (mContent->AsElement()->HasAttr(nsGkAtoms::name)) {
     state |= states::SELECTABLE;
   }
 
@@ -74,8 +75,9 @@ void HTMLLinkAccessible::Value(nsString& aValue) const {
   }
 }
 
-uint8_t HTMLLinkAccessible::ActionCount() const {
-  return IsLinked() ? 1 : HyperTextAccessible::ActionCount();
+bool HTMLLinkAccessible::HasPrimaryAction() const {
+  return IsLinked() || HyperTextAccessible::HasPrimaryAction();
+  ;
 }
 
 void HTMLLinkAccessible::ActionNameAt(uint8_t aIndex, nsAString& aName) {
@@ -90,19 +92,9 @@ void HTMLLinkAccessible::ActionNameAt(uint8_t aIndex, nsAString& aName) {
   if (aIndex == eAction_Jump) aName.AssignLiteral("jump");
 }
 
-bool HTMLLinkAccessible::DoAction(uint8_t aIndex) const {
-  if (!IsLinked()) return HyperTextAccessible::DoAction(aIndex);
-
-  // Action 0 (default action): Jump to link
-  if (aIndex != eAction_Jump) return false;
-
-  DoCommand();
-  return true;
-}
-
 bool HTMLLinkAccessible::AttributeChangesState(nsAtom* aAttribute) {
   return aAttribute == nsGkAtoms::href ||
-         HyperTextAccessibleWrap::AttributeChangesState(aAttribute);
+         HyperTextAccessible::AttributeChangesState(aAttribute);
 }
 
 void HTMLLinkAccessible::DOMAttributeChanged(int32_t aNameSpaceID,
@@ -110,13 +102,13 @@ void HTMLLinkAccessible::DOMAttributeChanged(int32_t aNameSpaceID,
                                              int32_t aModType,
                                              const nsAttrValue* aOldValue,
                                              uint64_t aOldState) {
-  HyperTextAccessibleWrap::DOMAttributeChanged(aNameSpaceID, aAttribute,
-                                               aModType, aOldValue, aOldState);
+  HyperTextAccessible::DOMAttributeChanged(aNameSpaceID, aAttribute, aModType,
+                                           aOldValue, aOldState);
 
   if (aAttribute == nsGkAtoms::href &&
       (aModType == dom::MutationEvent_Binding::ADDITION ||
        aModType == dom::MutationEvent_Binding::REMOVAL)) {
-    SendCache(CacheDomain::Actions, CacheUpdateType::Update);
+    mDoc->QueueCacheUpdate(this, CacheDomain::Actions);
   }
 }
 
@@ -128,16 +120,10 @@ bool HTMLLinkAccessible::IsLink() const {
   return true;
 }
 
-already_AddRefed<nsIURI> HTMLLinkAccessible::AnchorURIAt(
-    uint32_t aAnchorIndex) const {
-  return aAnchorIndex == 0 ? mContent->GetHrefURI() : nullptr;
-}
-
 ////////////////////////////////////////////////////////////////////////////////
 // HTMLLinkAccessible
 
 bool HTMLLinkAccessible::IsLinked() const {
-  EventStates state = mContent->AsElement()->State();
-  return state.HasAtLeastOneOfStates(NS_EVENT_STATE_VISITED |
-                                     NS_EVENT_STATE_UNVISITED);
+  dom::ElementState state = mContent->AsElement()->State();
+  return state.HasAtLeastOneOfStates(dom::ElementState::VISITED_OR_UNVISITED);
 }

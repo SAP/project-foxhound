@@ -2,12 +2,12 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
-import parseScriptTags from "parse-script-tags";
+import { parseScriptTags } from "./parse-script-tags";
 import * as babelParser from "@babel/parser";
 import * as t from "@babel/types";
 import { getSource } from "../sources";
 
-let ASTs = new Map();
+const ASTs = new Map();
 
 function _parse(code, opts) {
   return babelParser.parse(code, {
@@ -29,6 +29,7 @@ const sourceOptions = {
       "optionalChaining",
       "privateIn",
       "nullishCoalescingOperator",
+      "regexpUnicodeSets",
     ],
   },
   original: {
@@ -53,21 +54,21 @@ const sourceOptions = {
       "functionSent",
       "dynamicImport",
       "react-jsx",
+      "regexpUnicodeSets",
     ],
   },
 };
 
 export function parse(text, opts) {
-  let ast;
+  let ast = {};
   if (!text) {
-    return;
+    return ast;
   }
 
   try {
     ast = _parse(text, opts);
   } catch (error) {
     console.error(error);
-    ast = {};
   }
 
   return ast;
@@ -88,7 +89,7 @@ function vueParser({ source, line }) {
 }
 function parseVueScript(code) {
   if (typeof code !== "string") {
-    return;
+    return {};
   }
 
   let ast;
@@ -120,6 +121,7 @@ export function parseConsoleScript(text, opts) {
         "dynamicImport",
         "nullishCoalescingOperator",
         "optionalChaining",
+        "regexpUnicodeSets",
       ],
       ...opts,
       allowAwaitOutsideFunction: true,
@@ -180,13 +182,15 @@ export function getAst(sourceId) {
   return ast;
 }
 
-export function clearASTs() {
-  ASTs = new Map();
+export function clearASTs(sourceIds) {
+  for (const sourceId of sourceIds) {
+    ASTs.delete(sourceId);
+  }
 }
 
 export function traverseAst(sourceId, visitor, state) {
   const ast = getAst(sourceId);
-  if (!ast || Object.keys(ast).length == 0) {
+  if (!ast || !Object.keys(ast).length) {
     return null;
   }
 

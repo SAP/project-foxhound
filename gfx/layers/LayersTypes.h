@@ -10,6 +10,7 @@
 #include <iosfwd>    // for ostream
 #include <stdint.h>  // for uint32_t
 #include <stdio.h>   // FILE
+#include <tuple>
 
 #include "Units.h"
 #include "mozilla/DefineEnum.h"  // for MOZ_DEFINE_ENUM_CLASS_WITH_BASE
@@ -27,7 +28,7 @@
 
 #define INVALID_OVERLAY -1
 
-//#define ENABLE_FRAME_LATENCY_LOG
+// #define ENABLE_FRAME_LATENCY_LOG
 
 namespace IPC {
 template <typename T>
@@ -121,30 +122,6 @@ struct BaseTransactionId {
 
 class TransactionIdType {};
 typedef BaseTransactionId<TransactionIdType> TransactionId;
-
-struct LayersObserverEpoch {
-  uint64_t mId;
-
-  [[nodiscard]] LayersObserverEpoch Next() const {
-    return LayersObserverEpoch{mId + 1};
-  }
-
-  bool operator<=(const LayersObserverEpoch& aOther) const {
-    return mId <= aOther.mId;
-  }
-
-  bool operator>=(const LayersObserverEpoch& aOther) const {
-    return mId >= aOther.mId;
-  }
-
-  bool operator==(const LayersObserverEpoch& aOther) const {
-    return mId == aOther.mId;
-  }
-
-  bool operator!=(const LayersObserverEpoch& aOther) const {
-    return mId != aOther.mId;
-  }
-};
 
 // CompositionOpportunityId is a counter that goes up every time we have an
 // opportunity to composite. It increments even on no-op composites (if nothing
@@ -245,6 +222,8 @@ enum TextureDumpMode {
   DoNotCompress  // dump texture uncompressed
 };
 
+// Corresponding bit masks for allowed touch behaviors
+// are defined in AllowedTouchBehavior
 typedef uint32_t TouchBehaviorFlags;
 
 // Some specialized typedefs of Matrix4x4Typed.
@@ -302,18 +281,143 @@ class CompositableHandle final {
   friend struct IPC::ParamTraits<mozilla::layers::CompositableHandle>;
 
  public:
+  static CompositableHandle GetNext();
+
   CompositableHandle() : mHandle(0) {}
   CompositableHandle(const CompositableHandle& aOther) = default;
   explicit CompositableHandle(uint64_t aHandle) : mHandle(aHandle) {}
   bool IsValid() const { return mHandle != 0; }
   explicit operator bool() const { return IsValid(); }
+  explicit operator uint64_t() const { return mHandle; }
   bool operator==(const CompositableHandle& aOther) const {
     return mHandle == aOther.mHandle;
+  }
+  bool operator!=(const CompositableHandle& aOther) const {
+    return !(*this == aOther);
   }
   uint64_t Value() const { return mHandle; }
 
  private:
   uint64_t mHandle;
+};
+
+enum class CompositableHandleOwner : uint8_t {
+  WebRenderBridge,
+  ImageBridge,
+};
+
+struct RemoteTextureId {
+  uint64_t mId = 0;
+
+  auto MutTiedFields() { return std::tie(mId); }
+
+  static RemoteTextureId GetNext();
+
+  static constexpr RemoteTextureId Max() { return RemoteTextureId{UINT64_MAX}; }
+
+  bool IsValid() const { return mId != 0; }
+
+  // Allow explicit cast to a uint64_t for now
+  explicit operator uint64_t() const { return mId; }
+
+  // Implement some operators so this class can be used as a key in
+  // stdlib classes.
+  bool operator<(const RemoteTextureId& aOther) const {
+    return mId < aOther.mId;
+  }
+
+  bool operator>(const RemoteTextureId& aOther) const {
+    return mId > aOther.mId;
+  }
+
+  bool operator==(const RemoteTextureId& aOther) const {
+    return mId == aOther.mId;
+  }
+
+  bool operator!=(const RemoteTextureId& aOther) const {
+    return !(*this == aOther);
+  }
+
+  bool operator>=(const RemoteTextureId& aOther) const {
+    return mId >= aOther.mId;
+  }
+
+  // Helper struct that allow this class to be used as a key in
+  // std::unordered_map like so:
+  //   std::unordered_map<RemoteTextureId, ValueType, RemoteTextureId::HashFn>
+  //   myMap;
+  struct HashFn {
+    std::size_t operator()(const RemoteTextureId aKey) const {
+      return std::hash<uint64_t>{}(aKey.mId);
+    }
+  };
+};
+
+struct RemoteTextureOwnerId {
+  uint64_t mId = 0;
+
+  auto MutTiedFields() { return std::tie(mId); }
+
+  static RemoteTextureOwnerId GetNext();
+
+  bool IsValid() const { return mId != 0; }
+
+  // Allow explicit cast to a uint64_t for now
+  explicit operator uint64_t() const { return mId; }
+
+  // Implement some operators so this class can be used as a key in
+  // stdlib classes.
+  bool operator<(const RemoteTextureOwnerId& aOther) const {
+    return mId < aOther.mId;
+  }
+
+  bool operator==(const RemoteTextureOwnerId& aOther) const {
+    return mId == aOther.mId;
+  }
+
+  bool operator!=(const RemoteTextureOwnerId& aOther) const {
+    return !(*this == aOther);
+  }
+
+  // Helper struct that allow this class to be used as a key in
+  // std::unordered_map like so:
+  //   std::unordered_map<RemoteTextureOwnerId, ValueType,
+  //   RemoteTextureOwnerId::HashFn> myMap;
+  struct HashFn {
+    std::size_t operator()(const RemoteTextureOwnerId aKey) const {
+      return std::hash<uint64_t>{}(aKey.mId);
+    }
+  };
+};
+
+// TextureId allocated in GPU process
+struct GpuProcessTextureId {
+  uint64_t mId = 0;
+
+  static GpuProcessTextureId GetNext();
+
+  bool IsValid() const { return mId != 0; }
+
+  // Allow explicit cast to a uint64_t for now
+  explicit operator uint64_t() const { return mId; }
+
+  bool operator==(const GpuProcessTextureId& aOther) const {
+    return mId == aOther.mId;
+  }
+
+  bool operator!=(const GpuProcessTextureId& aOther) const {
+    return !(*this == aOther);
+  }
+
+  // Helper struct that allow this class to be used as a key in
+  // std::unordered_map like so:
+  //   std::unordered_map<GpuProcessTextureId, ValueType,
+  //   GpuProcessTextureId::HashFn> myMap;
+  struct HashFn {
+    std::size_t operator()(const GpuProcessTextureId aKey) const {
+      return std::hash<uint64_t>{}(aKey.mId);
+    }
+  };
 };
 
 // clang-format off
@@ -328,6 +432,18 @@ constexpr ScrollDirections EitherScrollDirection(ScrollDirection::eVertical,Scro
 constexpr ScrollDirections HorizontalScrollDirection(ScrollDirection::eHorizontal);
 constexpr ScrollDirections VerticalScrollDirection(ScrollDirection::eVertical);
 
+// Return the scroll directions which have a nonzero component in |aDelta|.
+template <typename Point>
+ScrollDirections DirectionsInDelta(const Point& aDelta) {
+  ScrollDirections result;
+  if (aDelta.x != 0) {
+    result += ScrollDirection::eHorizontal;
+  }
+  if (aDelta.y != 0) {
+    result += ScrollDirection::eVertical;
+  }
+  return result;
+}
 
 MOZ_DEFINE_ENUM_CLASS_WITH_BASE(CompositionPayloadType, uint8_t, (
   /**

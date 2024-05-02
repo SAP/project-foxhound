@@ -10,22 +10,16 @@
 #include "vm/JSContext.h"
 
 #include <type_traits>
-#include <utility>
 
-#include "builtin/Object.h"
+#include "gc/Marking.h"
 #include "gc/Zone.h"
 #include "jit/JitFrames.h"
-#include "js/friend/StackLimits.h"  // js::CheckRecursionLimit
-#include "proxy/Proxy.h"
 #include "util/DiagnosticAssertions.h"
 #include "vm/BigIntType.h"
 #include "vm/GlobalObject.h"
-#include "vm/HelperThreads.h"
-#include "vm/Interpreter.h"
-#include "vm/Iteration.h"
 #include "vm/Realm.h"
-#include "vm/SymbolType.h"
 
+#include "gc/Allocator-inl.h"
 #include "vm/Activation-inl.h"  // js::Activation::hasWasmExitFP
 
 namespace js {
@@ -270,8 +264,6 @@ MOZ_ALWAYS_INLINE bool CheckForInterrupt(JSContext* cx) {
 
 } /* namespace js */
 
-inline js::Nursery& JSContext::nursery() { return runtime()->gc.nursery(); }
-
 inline void JSContext::minorGC(JS::GCReason reason) {
   runtime()->gc.minorGC(reason);
 }
@@ -296,22 +288,10 @@ inline void JSContext::enterRealm(JS::Realm* realm) {
 
 inline void JSContext::enterAtomsZone() {
   realm_ = nullptr;
-  setZone(runtime_->unsafeAtomsZone(), AtomsZone);
+  setZone(runtime_->unsafeAtomsZone());
 }
 
-inline void JSContext::setZone(js::Zone* zone,
-                               JSContext::IsAtomsZone isAtomsZone) {
-  MOZ_ASSERT(!isHelperThreadContext());
-
-  if (zone_) {
-    zone_->addTenuredAllocsSinceMinorGC(allocsThisZoneSinceMinorGC_);
-  }
-
-  allocsThisZoneSinceMinorGC_ = 0;
-
-  zone_ = zone;
-  freeLists_ = zone ? &zone_->arenas.freeLists() : nullptr;
-}
+inline void JSContext::setZone(js::Zone* zone) { zone_ = zone; }
 
 inline void JSContext::enterRealmOf(JSObject* target) {
   JS::AssertCellIsNotGray(target);
@@ -359,9 +339,9 @@ inline void JSContext::setRealm(JS::Realm* realm) {
     // This thread must have exclusive access to the zone.
     MOZ_ASSERT(CurrentThreadCanAccessZone(realm->zone()));
     MOZ_ASSERT(!realm->zone()->isAtomsZone());
-    setZone(realm->zone(), NotAtomsZone);
+    setZone(realm->zone());
   } else {
-    setZone(nullptr, NotAtomsZone);
+    setZone(nullptr);
   }
 }
 
@@ -419,5 +399,11 @@ inline JSScript* JSContext::currentScript(
 }
 
 inline js::RuntimeCaches& JSContext::caches() { return runtime()->caches(); }
+
+template <typename T, js::AllowGC allowGC, typename... Args>
+T* JSContext::newCell(Args&&... args) {
+  return js::gc::CellAllocator::template NewCell<T, allowGC>(
+      this, std::forward<Args>(args)...);
+}
 
 #endif /* vm_JSContext_inl_h */

@@ -3,16 +3,18 @@
 
 "use strict";
 
-add_task(async function() {
+add_task(async function () {
   await BrowserTestUtils.withNewTab(
     { gBrowser, url: "about:blank" },
-    async function(browser) {
+    async function (browser) {
       const BASE1 = getRootDirectory(gTestPath).replace(
         "chrome://mochitests/content",
+        // eslint-disable-next-line @microsoft/sdl/no-insecure-url
         "http://example.com"
       );
       const BASE2 = getRootDirectory(gTestPath).replace(
         "chrome://mochitests/content",
+        // eslint-disable-next-line @microsoft/sdl/no-insecure-url
         "http://test1.example.com"
       );
       const URL = BASE1 + "onload_message.html";
@@ -31,7 +33,7 @@ add_task(async function() {
       let browserIds = await SpecialPowers.spawn(
         browser,
         [{ base1: BASE1, base2: BASE2 }],
-        async function({ base1, base2 }) {
+        async function ({ base1, base2 }) {
           let top = content;
           top.name = "top";
           top.location.href += "#top";
@@ -105,12 +107,14 @@ add_task(async function() {
           // wish to confirm that targeting is able to find
           // appropriate browsing contexts.
 
-          // BrowsingContext.findWithName requires access checks, which
-          // can only be performed in the process of the accessor BC's
-          // docShell.
+          // WindowGlobalChild.findBrowsingContextWithName requires access
+          // checks, which can only be performed in the process of the accessor
+          // WindowGlobalChild.
           function findWithName(bc, name) {
-            return content.SpecialPowers.spawn(bc, [bc, name], (bc, name) => {
-              return bc.findWithName(name);
+            return content.SpecialPowers.spawn(bc, [name], name => {
+              return content.windowGlobalChild.findBrowsingContextWithName(
+                name
+              );
             });
           }
 

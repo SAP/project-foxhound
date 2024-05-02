@@ -11,6 +11,8 @@
 #ifndef mozilla_AssemblyPayloads_h
 #define mozilla_AssemblyPayloads_h
 
+#include <cstdint>
+
 #define PADDING_256_NOP                                              \
   "nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;" \
   "nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;" \
@@ -113,6 +115,48 @@ __declspec(dllexport) __attribute__((naked)) void MovImm64() {
       "nop;nop;nop");
 }
 
+#    if !defined(MOZ_CODE_COVERAGE)
+// This code reproduces bug 1798787: it uses the same prologue, the same unwind
+// info, and it has a call instruction that starts within the 13 first bytes.
+__attribute__((naked)) void DetouredCallCode(uintptr_t aCallee) {
+  asm volatile(
+      "subq $0x28, %rsp;"
+      "testq %rcx, %rcx;"
+      "jz exit;"
+      "callq *%rcx;"
+      "exit:"
+      "addq $0x28, %rsp;"
+      "retq;");
+}
+constexpr uint8_t gDetouredCallCodeSize = 16;  // size of function in bytes
+alignas(uint32_t) uint8_t gDetouredCallUnwindInfo[] = {
+    0x01,  // Version (1), Flags (0)
+    0x04,  // SizeOfProlog (4)
+    0x01,  // CountOfUnwindCodes (1)
+    0x00,  // FrameRegister (0), FrameOffset (0)
+    // UnwindCodes[0]
+    0x04,  // .OffsetInProlog (4)
+    0x42,  // .UnwindOpCode(UWOP_ALLOC_SMALL=2), .UnwindInfo (4)
+};
+
+// This points to the same code as DetouredCallCode, but dynamically generated
+// so that it can have custom unwinding info. See TestDllInterceptor.cpp.
+extern decltype(&DetouredCallCode) gDetouredCall;
+
+// This is just a jumper: our hooking code will thus detour the jump target
+// -- it will not detour DetouredCallJumper. We need to do this to point our
+// hooking code to the dynamic code, because our hooking API works with an
+// exported function name.
+__attribute__((naked)) __declspec(dllexport noinline) void DetouredCallJumper(
+    uintptr_t aCallee) {
+  // Ideally we would want this to be:
+  //   jmp qword ptr [rip + offset gDetouredCall]
+  // Unfortunately, it is unclear how to do that with inline assembly, so we
+  // use a zero offset and patch it before the test.
+  asm volatile("jmpq *0(%rip)");
+}
+#    endif  // !defined(MOZ_CODE_COVERAGE)
+
 #  elif defined(_M_IX86)
 constexpr uintptr_t JumpDestination = 0x7fff0000;
 
@@ -184,6 +228,32 @@ __declspec(dllexport) __attribute__((naked)) void UnsupportedOp() {
       "ud2;"
       "nop;nop;nop;nop;nop;nop;nop;nop;"
       "nop;nop;nop;nop;nop;nop;nop;nop;");
+}
+
+// bug 1816936
+// Make sure no instruction ends at 5 (for x86) or 13 (for x64) bytes
+__declspec(dllexport) __attribute__((naked)) void SpareBytesAfterDetour() {
+  asm volatile(
+      "incl %eax;"                // 2 bytes on x64, 1 byte on x86
+      "mov $0x01234567, %eax;"    // 5 bytes
+      "mov $0xfedcba98, %eax;"    // 5 bytes
+      "mov $0x01234567, %eax;"    // 5 bytes
+      "mov $0xfedcba98, %eax;");  // 5 bytes
+}
+
+// bug 1816936
+// Make sure no instruction ends at 10 (for x64) bytes
+// This is slightly different than SpareBytesAfterDetour so the compiler doesn't
+// combine them, which would make the test that detours this one behave
+// unexpectedly since it is already detoured.
+__declspec(dllexport)
+    __attribute__((naked)) void SpareBytesAfterDetourFor10BytePatch() {
+  asm volatile(
+      "incl %eax;"                // 2 bytes
+      "mov $0x01234567, %ecx;"    // 5 bytes
+      "mov $0xfedcba98, %ebx;"    // 5 bytes
+      "mov $0x01234567, %eax;"    // 5 bytes
+      "mov $0xfedcba98, %edx;");  // 5 bytes
 }
 #  endif  // !defined(_M_ARM64)
 

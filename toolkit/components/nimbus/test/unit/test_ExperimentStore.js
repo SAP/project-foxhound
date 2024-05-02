@@ -1,10 +1,10 @@
 "use strict";
 
-const { ExperimentStore } = ChromeUtils.import(
-  "resource://nimbus/lib/ExperimentStore.jsm"
+const { ExperimentStore } = ChromeUtils.importESModule(
+  "resource://nimbus/lib/ExperimentStore.sys.mjs"
 );
-const { FeatureManifest } = ChromeUtils.import(
-  "resource://nimbus/FeatureManifest.js"
+const { FeatureManifest } = ChromeUtils.importESModule(
+  "resource://nimbus/FeatureManifest.sys.mjs"
 );
 
 const { SYNC_DATA_PREF_BRANCH, SYNC_DEFAULTS_PREF_BRANCH } = ExperimentStore;
@@ -23,7 +23,7 @@ add_task(async function test_usageBeforeInitialization() {
   const experiment = ExperimentFakes.experiment("foo", {
     branch: {
       slug: "variant",
-      features: [{ featureId: "purple", enabled: true }],
+      features: [{ featureId: "purple" }],
     },
   });
 
@@ -70,7 +70,7 @@ add_task(async function test_event_updates_main() {
 
   // Set update cb
   store.on(
-    `update:${experiment.branch.features[0].featureId}`,
+    `featureUpdate:${experiment.branch.features[0].featureId}`,
     updateEventCbStub
   );
 
@@ -83,13 +83,18 @@ add_task(async function test_event_updates_main() {
     "Should be called twice: add, update"
   );
   Assert.equal(
-    updateEventCbStub.secondCall.args[1].active,
-    false,
+    updateEventCbStub.firstCall.args[1],
+    "experiment-updated",
+    "Should be called with updated experiment status"
+  );
+  Assert.equal(
+    updateEventCbStub.secondCall.args[1],
+    "experiment-updated",
     "Should be called with updated experiment status"
   );
 
   store.off(
-    `update:${experiment.branch.features[0].featureId}`,
+    `featureUpdate:${experiment.branch.features[0].featureId}`,
     updateEventCbStub
   );
 });
@@ -99,7 +104,7 @@ add_task(async function test_getExperimentForGroup() {
   const experiment = ExperimentFakes.experiment("foo", {
     branch: {
       slug: "variant",
-      features: [{ featureId: "purple", enabled: true }],
+      features: [{ featureId: "purple" }],
     },
   });
 
@@ -122,7 +127,7 @@ add_task(async function test_hasExperimentForFeature() {
     ExperimentFakes.experiment("foo", {
       branch: {
         slug: "variant",
-        feature: { featureId: "green", enabled: true },
+        feature: { featureId: "green" },
       },
     })
   );
@@ -130,7 +135,7 @@ add_task(async function test_hasExperimentForFeature() {
     ExperimentFakes.experiment("foo2", {
       branch: {
         slug: "variant",
-        feature: { featureId: "yellow", enabled: true },
+        feature: { featureId: "yellow" },
       },
     })
   );
@@ -139,7 +144,7 @@ add_task(async function test_hasExperimentForFeature() {
       active: false,
       branch: {
         slug: "variant",
-        feature: { featureId: "purple", enabled: true },
+        feature: { featureId: "purple" },
       },
     })
   );
@@ -168,7 +173,7 @@ add_task(async function test_hasExperimentForFeature() {
   );
 });
 
-add_task(async function test_getAll_getAllActive() {
+add_task(async function test_getAll_getAllActiveExperiments() {
   const store = ExperimentFakes.store();
 
   await store.init();
@@ -183,13 +188,13 @@ add_task(async function test_getAll_getAllActive() {
     ".getAll() should return all experiments"
   );
   Assert.deepEqual(
-    store.getAllActive().map(e => e.slug),
+    store.getAllActiveExperiments().map(e => e.slug),
     ["qux"],
-    ".getAllActive() should return all experiments that are active"
+    ".getAllActiveExperiments() should return all experiments that are active"
   );
 });
 
-add_task(async function test_getAll_getAllActive_no_rollouts() {
+add_task(async function test_getAll_getAllActiveExperiments() {
   const store = ExperimentFakes.store();
 
   await store.init();
@@ -205,13 +210,13 @@ add_task(async function test_getAll_getAllActive_no_rollouts() {
     ".getAll() should return all experiments and rollouts"
   );
   Assert.deepEqual(
-    store.getAllActive().map(e => e.slug),
+    store.getAllActiveExperiments().map(e => e.slug),
     ["qux"],
-    ".getAllActive() should return all experiments that are active and no rollouts"
+    ".getAllActiveExperiments() should return all experiments that are active and no rollouts"
   );
 });
 
-add_task(async function test_getAllRollouts() {
+add_task(async function test_getAllActiveRollouts() {
   const store = ExperimentFakes.store();
 
   await store.init();
@@ -226,9 +231,9 @@ add_task(async function test_getAllRollouts() {
     ".getAll() should return all experiments and rollouts"
   );
   Assert.deepEqual(
-    store.getAllRollouts().map(e => e.slug),
+    store.getAllActiveRollouts().map(e => e.slug),
     ["foo", "bar", "baz"],
-    ".getAllRollouts() should return all rollouts"
+    ".getAllActiveRollouts() should return all rollouts"
   );
 });
 
@@ -253,7 +258,7 @@ add_task(async function test_addEnrollment_rollout() {
 });
 
 add_task(async function test_updateExperiment() {
-  const features = [{ featureId: "cfr", enabled: true }];
+  const features = [{ featureId: "cfr" }];
   const experiment = Object.freeze(
     ExperimentFakes.experiment("foo", { features, active: true })
   );
@@ -280,7 +285,7 @@ add_task(async function test_sync_access_before_init() {
   Assert.equal(store.getAll().length, 0, "Start with an empty store");
 
   const syncAccessExp = ExperimentFakes.experiment("foo", {
-    features: [{ featureId: "newtab", enabled: "true" }],
+    features: [{ featureId: "newtab" }],
   });
   await store.init();
   store.addEnrollment(syncAccessExp);
@@ -312,7 +317,7 @@ add_task(async function test_sync_access_update() {
 
   let store = ExperimentFakes.store();
   let experiment = ExperimentFakes.experiment("foo", {
-    features: [{ featureId: "aboutwelcome", enabled: true }],
+    features: [{ featureId: "aboutwelcome" }],
   });
 
   await store.init();
@@ -324,8 +329,7 @@ add_task(async function test_sync_access_update() {
       features: [
         {
           featureId: "aboutwelcome",
-          enabled: true,
-          value: { bar: "bar" },
+          value: { bar: "bar", enabled: true },
         },
       ],
     },
@@ -339,7 +343,7 @@ add_task(async function test_sync_access_update() {
     // `branch.feature` and not `features` because for sync access (early startup)
     // experiments we only store the `isEarlyStartup` feature
     cachedExperiment.branch.feature.value,
-    { bar: "bar" },
+    { bar: "bar", enabled: true },
     "Got updated value"
   );
 });
@@ -349,7 +353,7 @@ add_task(async function test_sync_features_only() {
 
   let store = ExperimentFakes.store();
   let experiment = ExperimentFakes.experiment("foo", {
-    features: [{ featureId: "cfr", enabled: true }],
+    features: [{ featureId: "cfr" }],
   });
 
   await store.init();
@@ -365,7 +369,7 @@ add_task(async function test_sync_features_remotely() {
 
   let store = ExperimentFakes.store();
   let experiment = ExperimentFakes.experiment("foo", {
-    features: [{ featureId: "cfr", enabled: true, isEarlyStartup: true }],
+    features: [{ featureId: "cfr", isEarlyStartup: true }],
   });
 
   await store.init();
@@ -385,7 +389,7 @@ add_task(async function test_sync_access_unenroll() {
 
   let store = ExperimentFakes.store();
   let experiment = ExperimentFakes.experiment("foo", {
-    features: [{ featureId: "aboutwelcome", enabled: true }],
+    features: [{ featureId: "aboutwelcome" }],
     active: true,
   });
 
@@ -405,10 +409,10 @@ add_task(async function test_sync_access_unenroll_2() {
 
   let store = ExperimentFakes.store();
   let experiment1 = ExperimentFakes.experiment("foo", {
-    features: [{ featureId: "newtab", enabled: true }],
+    features: [{ featureId: "newtab" }],
   });
   let experiment2 = ExperimentFakes.experiment("bar", {
-    features: [{ featureId: "aboutwelcome", enabled: true }],
+    features: [{ featureId: "aboutwelcome" }],
   });
 
   await store.init();
@@ -517,7 +521,7 @@ add_task(async function test_remoteRollout() {
   let updatePromise = new Promise(resolve =>
     store.on(`update:${rollout.slug}`, resolve)
   );
-  store.on("update:aboutwelcome", featureUpdateStub);
+  store.on("featureUpdate:aboutwelcome", featureUpdateStub);
 
   await store.init();
   store.addEnrollment(rollout);
@@ -570,9 +574,7 @@ add_task(async function test_syncDataStore_setDefault() {
   );
 
   let rollout = ExperimentFakes.rollout("foo", {
-    features: [
-      { featureId: "aboutwelcome", enabled: true, value: { remote: true } },
-    ],
+    features: [{ featureId: "aboutwelcome", value: { remote: true } }],
   });
   store.addEnrollment(rollout);
 
@@ -622,7 +624,7 @@ add_task(async function test_addEnrollment_rollout() {
   const stub = sandbox.stub();
   const value = { bar: true };
   let rollout = ExperimentFakes.rollout("foo", {
-    features: [{ featureId: "aboutwelcome", enabled: true, value }],
+    features: [{ featureId: "aboutwelcome", value }],
   });
 
   store._onFeatureUpdate("aboutwelcome", stub);
@@ -653,7 +655,6 @@ add_task(async function test_storeValuePerPref_noVariables() {
           // Ensure it gets saved to prefs
           isEarlyStartup: true,
           featureId: "purple",
-          enabled: true,
         },
       ],
     },
@@ -816,25 +817,25 @@ add_task(async function test_cleanupOldRecipes() {
   const experiment1 = ExperimentFakes.experiment("foo", {
     branch: {
       slug: "variant",
-      features: [{ featureId: "purple", enabled: true }],
+      features: [{ featureId: "purple" }],
     },
   });
   const experiment2 = ExperimentFakes.experiment("bar", {
     branch: {
       slug: "variant",
-      features: [{ featureId: "purple", enabled: true }],
+      features: [{ featureId: "purple" }],
     },
   });
   const experiment3 = ExperimentFakes.experiment("baz", {
     branch: {
       slug: "variant",
-      features: [{ featureId: "purple", enabled: true }],
+      features: [{ featureId: "purple" }],
     },
   });
   const experiment4 = ExperimentFakes.experiment("faz", {
     branch: {
       slug: "variant",
-      features: [{ featureId: "purple", enabled: true }],
+      features: [{ featureId: "purple" }],
     },
   });
   // Exp 2 is kept because it's recent (even though it's not active)

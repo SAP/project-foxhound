@@ -27,8 +27,6 @@
 # Assumes there is no intrinsic size for the border-image-source, so uses
 # the size of the border image area.
 
-from __future__ import print_function, absolute_import
-
 import sys
 
 
@@ -198,6 +196,7 @@ class Tile:
 # 0 1 2
 # 3 4 5
 # 6 7 8
+
 
 # Compute the source tiles' slice and border-width sizes
 def make_src_tiles():

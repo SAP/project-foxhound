@@ -7,21 +7,19 @@
 #ifndef mozilla_TaskController_h
 #define mozilla_TaskController_h
 
+#include "MainThreadUtils.h"
 #include "mozilla/CondVar.h"
 #include "mozilla/IdlePeriodState.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/Mutex.h"
-#include "mozilla/StaticMutex.h"
+#include "mozilla/StaticPtr.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/EventQueue.h"
 #include "nsISupportsImpl.h"
-#include "nsIEventTarget.h"
 
 #include <atomic>
-#include <memory>
 #include <vector>
 #include <set>
-#include <list>
 #include <stack>
 
 class nsIRunnable;
@@ -110,16 +108,31 @@ class TaskManager {
 };
 
 // A Task is the the base class for any unit of work that may be scheduled.
+//
 // Subclasses may specify their priority and whether they should be bound to
-// the Gecko Main thread. When not bound to the main thread tasks may be
-// executed on any available thread (including the main thread), but they may
-// also be executed in parallel to any other task they do not have a dependency
-// relationship with. Tasks will be run in order of object creation.
+// either the Gecko Main thread or off main thread. When not bound to the main
+// thread tasks may be executed on any available thread excluding the main
+// thread, but they may also be executed in parallel to any other task they do
+// not have a dependency relationship with.
+//
+// Tasks will be run in order of object creation.
 class Task {
  public:
+  enum class Kind : uint8_t {
+    // This task should be executed on any available thread excluding the Gecko
+    // Main thread.
+    OffMainThreadOnly,
+
+    // This task should be executed on the Gecko Main thread.
+    MainThreadOnly
+
+    // NOTE: "any available thread including the main thread" option is not
+    //       supported (See bug 1839102).
+  };
+
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(Task)
 
-  bool IsMainThreadOnly() { return mMainThreadOnly; }
+  Kind GetKind() { return mKind; }
 
   // This returns the current task priority with its modifier applied.
   uint32_t GetPriority() { return mPriority + mPriorityModifier; }
@@ -147,7 +160,7 @@ class Task {
   // This sets the TaskManager for the current task. Calling this after the
   // task has been added to the TaskController results in undefined behavior.
   void SetManager(TaskManager* aManager) {
-    MOZ_ASSERT(mMainThreadOnly);
+    MOZ_ASSERT(mKind == Kind::MainThreadOnly);
     MOZ_ASSERT(!mIsInGraph);
     mTaskManager = aManager;
   }
@@ -177,15 +190,12 @@ class Task {
 #endif
 
  protected:
-  Task(bool aMainThreadOnly,
+  Task(Kind aKind,
        uint32_t aPriority = static_cast<uint32_t>(kDefaultPriorityValue))
-      : mMainThreadOnly(aMainThreadOnly),
-        mSeqNo(sCurrentTaskSeqNo++),
-        mPriority(aPriority) {}
+      : mKind(aKind), mSeqNo(sCurrentTaskSeqNo++), mPriority(aPriority) {}
 
-  Task(bool aMainThreadOnly,
-       EventQueuePriority aPriority = kDefaultPriorityValue)
-      : mMainThreadOnly(aMainThreadOnly),
+  Task(Kind aKind, EventQueuePriority aPriority = kDefaultPriorityValue)
+      : mKind(aKind),
         mSeqNo(sCurrentTaskSeqNo++),
         mPriority(static_cast<uint32_t>(aPriority)) {}
 
@@ -193,9 +203,14 @@ class Task {
 
   friend class TaskController;
 
-  // When this returns false, the task is considered incomplete and will be
-  // rescheduled at the current 'mPriority' level.
-  virtual bool Run() = 0;
+  enum class TaskResult {
+    Complete,
+    Incomplete,
+  };
+
+  // When this returns TaskResult::Incomplete, it will be rescheduled at the
+  // current 'mPriority' level.
+  virtual TaskResult Run() = 0;
 
  private:
   Task* GetHighestPriorityDependency();
@@ -219,7 +234,7 @@ class Task {
   RefPtr<TaskManager> mTaskManager;
 
   // Access to these variables is protected by the GraphMutex.
-  bool mMainThreadOnly;
+  Kind mKind;
   bool mCompleted = false;
   bool mInProgress = false;
 #ifdef DEBUG
@@ -249,7 +264,7 @@ struct PoolThread {
 class IdleTaskManager : public TaskManager {
  public:
   explicit IdleTaskManager(already_AddRefed<nsIIdlePeriod>&& aIdlePeriod)
-      : mIdlePeriodState(std::move(aIdlePeriod)) {}
+      : mIdlePeriodState(std::move(aIdlePeriod)), mProcessedTaskCount(0) {}
 
   IdlePeriodState& State() { return mIdlePeriodState; }
 
@@ -258,9 +273,18 @@ class IdleTaskManager : public TaskManager {
     return !idleDeadline;
   }
 
+  void DidRunTask() override {
+    TaskManager::DidRunTask();
+    ++mProcessedTaskCount;
+  }
+
+  uint64_t ProcessedTaskCount() { return mProcessedTaskCount; }
+
  private:
   // Tracking of our idle state of various sorts.
   IdlePeriodState mIdlePeriodState;
+
+  std::atomic<uint64_t> mProcessedTaskCount;
 };
 
 // The TaskController is the core class of the scheduler. It is used to
@@ -269,20 +293,21 @@ class IdleTaskManager : public TaskManager {
 // ReprioritizeTask.
 class TaskController {
  public:
-  TaskController()
-      : mGraphMutex("TaskController::mGraphMutex"),
-        mThreadPoolCV(mGraphMutex, "TaskController::mThreadPoolCV"),
-        mMainThreadCV(mGraphMutex, "TaskController::mMainThreadCV") {}
+  TaskController();
 
-  static TaskController* Get();
+  static TaskController* Get() {
+    MOZ_ASSERT(sSingleton.get());
+    return sSingleton.get();
+  }
 
-  static bool Initialize();
+  static void Initialize();
 
   void SetThreadObserver(nsIThreadObserver* aObserver) {
     MutexAutoLock lock(mGraphMutex);
     mObserver = aObserver;
   }
   void SetConditionVariable(CondVar* aExternalCondVar) {
+    MutexAutoLock lock(mGraphMutex);
     mExternalCondVar = aExternalCondVar;
   }
 
@@ -290,6 +315,8 @@ class TaskController {
     mIdleTaskManager = aIdleTaskManager;
   }
   IdleTaskManager* GetIdleTaskManager() { return mIdleTaskManager.get(); }
+
+  uint64_t RunOutOfMTTasksCount() { return mRunOutOfMTTasksCounter; }
 
   // Initialization and shutdown code.
   void SetPerformanceCounterState(
@@ -323,16 +350,20 @@ class TaskController {
 
   bool HasMainThreadPendingTasks();
 
+  uint64_t PendingMainthreadTaskCountIncludingSuspended();
+
   // Let users know whether the last main thread task runnable did work.
-  bool MTTaskRunnableProcessedTask() { return mMTTaskRunnableProcessedTask; }
+  bool MTTaskRunnableProcessedTask() {
+    MOZ_ASSERT(NS_IsMainThread());
+    return mMTTaskRunnableProcessedTask;
+  }
 
   static int32_t GetPoolThreadCount();
   static size_t GetThreadStackSize();
 
  private:
   friend void ThreadFuncPoolThread(void* aIndex);
-
-  bool InitializeInternal();
+  static StaticAutoPtr<TaskController> sSingleton;
 
   void InitializeThreadPool();
 
@@ -355,28 +386,28 @@ class TaskController {
   void ProcessUpdatedPriorityModifier(TaskManager* aManager);
 
   void ShutdownThreadPoolInternal();
-  void ShutdownInternal();
 
   void RunPoolThread();
 
-  static std::unique_ptr<TaskController> sSingleton;
-  static StaticMutex sSingletonMutex;
-
   // This protects access to the task graph.
-  Mutex mGraphMutex;
+  Mutex mGraphMutex MOZ_UNANNOTATED;
 
   // This protects thread pool initialization. We cannot do this from within
   // the GraphMutex, since thread creation on Windows can generate events on
   // the main thread that need to be handled.
   Mutex mPoolInitializationMutex =
       Mutex("TaskController::mPoolInitializationMutex");
+  // Created under the PoolInitialization mutex, then never extended, and
+  // only freed when the object is freed.  mThread is set at creation time;
+  // mCurrentTask and mEffectiveTaskPriority are only accessed from the
+  // thread, so no locking is needed to access this.
+  std::vector<PoolThread> mPoolThreads;
 
   CondVar mThreadPoolCV;
   CondVar mMainThreadCV;
 
   // Variables below are protected by mGraphMutex.
 
-  std::vector<PoolThread> mPoolThreads;
   std::stack<RefPtr<Task>> mCurrentTasksMT;
 
   // A list of all tasks ordered by priority.
@@ -392,6 +423,7 @@ class TaskController {
   bool mShuttingDown = false;
 
   // This stores whether the last main thread task runnable did work.
+  // Accessed only on MainThread
   bool mMTTaskRunnableProcessedTask = false;
 
   // Whether our thread pool is initialized. We use this currently to avoid
@@ -405,14 +437,20 @@ class TaskController {
   RefPtr<nsIRunnable> mMTBlockingProcessingRunnable;
 
   // XXX - Thread observer to notify when a new event has been dispatched
+  // Set immediately, then simply accessed from any thread
   nsIThreadObserver* mObserver = nullptr;
   // XXX - External condvar to notify when we have received an event
   CondVar* mExternalCondVar = nullptr;
   // Idle task manager so we can properly do idle state stuff.
   RefPtr<IdleTaskManager> mIdleTaskManager;
 
+  // How many times the main thread was empty.
+  std::atomic<uint64_t> mRunOutOfMTTasksCounter;
+
   // Our tracking of our performance counter and long task state,
   // shared with nsThread.
+  // Set once when MainThread is created, never changed, only accessed from
+  // DoExecuteNextTaskOnlyMainThreadInternal()
   PerformanceCounterState* mPerformanceCounterState = nullptr;
 };
 

@@ -73,7 +73,7 @@ class SMILTimeValueSpec {
   void UpdateReferencedElement(Element* aFrom, Element* aTo);
   void UnregisterFromReferencedElement(Element* aElement);
   SMILTimedElement* GetTimedElement(Element* aElement);
-  bool IsWhitelistedEvent();
+  bool IsEventAllowedWhenScriptingIsDisabled();
   void RegisterEventListener(Element* aTarget);
   void UnregisterEventListener(Element* aTarget);
   void HandleEvent(Event* aEvent);
@@ -110,11 +110,11 @@ class SMILTimeValueSpec {
     }
 
    protected:
-    virtual void ElementChanged(Element* aFrom, Element* aTo) override {
+    void ElementChanged(Element* aFrom, Element* aTo) override {
       IDTracker::ElementChanged(aFrom, aTo);
       mSpec->UpdateReferencedElement(aFrom, aTo);
     }
-    virtual bool IsPersistent() override { return true; }
+    bool IsPersistent() override { return true; }
 
    private:
     SMILTimeValueSpec* mSpec;

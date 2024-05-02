@@ -1,16 +1,11 @@
 "use strict";
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "HttpServer",
-  "resource://testing-common/httpd.js"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  HttpServer: "resource://testing-common/httpd.sys.mjs",
+});
 
-const {
-  createAppInfo,
-  promiseShutdownManager,
-  promiseStartupManager,
-} = AddonTestUtils;
+const { createAppInfo, promiseShutdownManager, promiseStartupManager } =
+  AddonTestUtils;
 
 AddonTestUtils.init(this);
 
@@ -74,7 +69,7 @@ add_task(async function test_proxy_settings() {
 
   let extension = ExtensionTestUtils.loadExtension({
     manifest: {
-      applications: { gecko: { id: "proxy.settings@mochi.test" } },
+      browser_specific_settings: { gecko: { id: "proxy.settings@mochi.test" } },
       permissions: ["proxy", "webRequest", "<all_urls>"],
     },
     incognitoOverride: "spanning",

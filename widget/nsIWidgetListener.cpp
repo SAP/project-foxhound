@@ -21,8 +21,8 @@ nsView* nsIWidgetListener::GetView() { return nullptr; }
 
 PresShell* nsIWidgetListener::GetPresShell() { return nullptr; }
 
-bool nsIWidgetListener::WindowMoved(nsIWidget* aWidget, int32_t aX,
-                                    int32_t aY) {
+bool nsIWidgetListener::WindowMoved(nsIWidget* aWidget, int32_t aX, int32_t aY,
+                                    ByMoveToRect) {
   return false;
 }
 
@@ -43,10 +43,6 @@ void nsIWidgetListener::DynamicToolbarMaxHeightChanged(ScreenIntCoord aHeight) {
 }
 void nsIWidgetListener::DynamicToolbarOffsetChanged(ScreenIntCoord aOffset) {}
 #endif
-
-void nsIWidgetListener::FullscreenWillChange(bool aInFullscreen) {}
-
-void nsIWidgetListener::FullscreenChanged(bool aInFullscreen) {}
 
 void nsIWidgetListener::MacFullscreenMenubarOverlapChanged(
     mozilla::DesktopCoord aOverlapAmount) {}

@@ -21,8 +21,11 @@
 #include "gc/Heap-inl.h"
 
 #include "gc/GCLock.h"
+#include "gc/Memory.h"
 #include "jit/Assembler.h"
+#include "vm/BigIntType.h"
 #include "vm/RegExpShared.h"
+#include "vm/Scope.h"
 
 #include "gc/ArenaList-inl.h"
 #include "gc/PrivateIterators-inl.h"
@@ -190,14 +193,10 @@ FreeLists::FreeLists() {
 
 ArenaLists::ArenaLists(Zone* zone)
     : zone_(zone),
-      freeLists_(zone),
-      arenaLists_(zone),
-      collectingArenaLists_(zone),
-      incrementalSweptArenaKind(zone, AllocKind::LIMIT),
-      incrementalSweptArenas(zone),
-      gcCompactPropMapArenasToUpdate(zone, nullptr),
-      gcNormalPropMapArenasToUpdate(zone, nullptr),
-      savedEmptyArenas(zone, nullptr) {
+      incrementalSweptArenaKind(AllocKind::LIMIT),
+      gcCompactPropMapArenasToUpdate(nullptr),
+      gcNormalPropMapArenasToUpdate(nullptr),
+      savedEmptyArenas(nullptr) {
   for (auto i : AllAllocKinds()) {
     concurrentUse(i) = ConcurrentUse::None;
   }
@@ -612,6 +611,14 @@ void ChunkPool::verifyChunks() const {
 }
 
 void TenuredChunk::verify() const {
+  // Check the mark bits for each arena are aligned to the cache line size.
+  static_assert((offsetof(TenuredChunk, arenas) % ArenaSize) == 0);
+  constexpr size_t CellBytesPerMarkByte = CellBytesPerMarkBit * 8;
+  static_assert((ArenaSize % CellBytesPerMarkByte) == 0);
+  constexpr size_t MarkBytesPerArena = ArenaSize / CellBytesPerMarkByte;
+  static_assert((MarkBytesPerArena % TypicalCacheLineSize) == 0);
+  static_assert((offsetof(TenuredChunk, markBits) % TypicalCacheLineSize) == 0);
+
   MOZ_ASSERT(info.numArenasFree <= ArenasPerChunk);
   MOZ_ASSERT(info.numArenasFreeCommitted <= info.numArenasFree);
 

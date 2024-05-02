@@ -1,9 +1,9 @@
 "use strict";
 
 var FormAutofillContent;
-add_task(async function setup() {
-  ({ FormAutofillContent } = ChromeUtils.import(
-    "resource://autofill/FormAutofillContent.jsm"
+add_setup(async () => {
+  ({ FormAutofillContent } = ChromeUtils.importESModule(
+    "resource://autofill/FormAutofillContent.sys.mjs"
   ));
 });
 
@@ -552,99 +552,6 @@ const TESTCASES = [
       },
     },
   },
-  {
-    description: "Shouldn't save tel whose length is too short",
-    document: DEFAULT_TEST_DOC,
-    targetElementId: TARGET_ELEMENT_ID,
-    formValue: {
-      "street-addr": "331 E. Evelyn Avenue",
-      "address-level1": "CA",
-      country: "US",
-      tel: "1234",
-    },
-    expectedResult: {
-      formSubmission: true,
-      records: {
-        address: [
-          {
-            guid: null,
-            record: {
-              "street-address": "331 E. Evelyn Avenue",
-              "address-level1": "CA",
-              "address-level2": "",
-              country: "US",
-              tel: "",
-              email: "",
-            },
-            untouchedFields: [],
-          },
-        ],
-        creditCard: [],
-      },
-    },
-  },
-  {
-    description: "Shouldn't save tel whose length is too long",
-    document: DEFAULT_TEST_DOC,
-    targetElementId: TARGET_ELEMENT_ID,
-    formValue: {
-      "street-addr": "331 E. Evelyn Avenue",
-      "address-level1": "CA",
-      country: "US",
-      tel: "1234567890123456",
-    },
-    expectedResult: {
-      formSubmission: true,
-      records: {
-        address: [
-          {
-            guid: null,
-            record: {
-              "street-address": "331 E. Evelyn Avenue",
-              "address-level1": "CA",
-              "address-level2": "",
-              country: "US",
-              tel: "",
-              email: "",
-            },
-            untouchedFields: [],
-          },
-        ],
-        creditCard: [],
-      },
-    },
-  },
-  {
-    description: "Shouldn't save tel which contains invalid characters",
-    document: DEFAULT_TEST_DOC,
-    targetElementId: TARGET_ELEMENT_ID,
-    formValue: {
-      "street-addr": "331 E. Evelyn Avenue",
-      "address-level1": "CA",
-      country: "US",
-      tel: "12345###!!",
-    },
-    expectedResult: {
-      formSubmission: true,
-      records: {
-        address: [
-          {
-            guid: null,
-            record: {
-              "street-address": "331 E. Evelyn Avenue",
-              "address-level1": "CA",
-              "address-level2": "",
-              country: "US",
-              tel: "",
-              email: "",
-            },
-            untouchedFields: [],
-          },
-        ],
-        creditCard: [],
-      },
-    },
-  },
 ];
 
 add_task(async function handle_invalid_form() {
@@ -788,6 +695,10 @@ TESTCASES.forEach(testcase => {
       for (let ccRecord of FormAutofillContent._onFormSubmit.args[0][0]
         .creditCard) {
         delete ccRecord.flowId;
+      }
+      for (let addrRecord of FormAutofillContent._onFormSubmit.args[0][0]
+        .address) {
+        delete addrRecord.flowId;
       }
 
       Assert.deepEqual(

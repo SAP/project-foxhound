@@ -19,8 +19,7 @@
 #include "mozilla/DOMEventTargetHelper.h"
 #include "mozilla/dom/MediaQueryListBinding.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class MediaList;
 
@@ -30,7 +29,7 @@ class MediaQueryList final : public DOMEventTargetHelper,
   // The caller who constructs is responsible for calling Evaluate
   // before calling any other methods.
   MediaQueryList(Document* aDocument, const nsACString& aMediaQueryList,
-                 CallerType aCallerType);
+                 CallerType);
 
  private:
   ~MediaQueryList();
@@ -41,26 +40,25 @@ class MediaQueryList final : public DOMEventTargetHelper,
 
   nsISupports* GetParentObject() const;
 
-  // Returns whether we need to notify of the change event using
-  // FireChangeEvent().
-  [[nodiscard]] bool MediaFeatureValuesChanged();
+  void MediaFeatureValuesChanged();
+
+  // Returns whether we need to notify of the change by dispatching a change
+  // event.
+  [[nodiscard]] bool EvaluateOnRenderingUpdate();
   void FireChangeEvent();
 
   JSObject* WrapObject(JSContext* aCx,
                        JS::Handle<JSObject*> aGivenProto) override;
 
   // WebIDL methods
-  void GetMedia(nsACString& aMedia);
+  void GetMedia(nsACString& aMedia) const;
   bool Matches();
   void AddListener(EventListener* aListener, ErrorResult& aRv);
   void RemoveListener(EventListener* aListener, ErrorResult& aRv);
 
-  using DOMEventTargetHelper::EventListenerAdded;
-  void EventListenerAdded(nsAtom* aType) override;
-
   IMPL_EVENT_HANDLER(change)
 
-  bool HasListeners();
+  bool HasListeners() const;
 
   void Disconnect();
 
@@ -68,7 +66,7 @@ class MediaQueryList final : public DOMEventTargetHelper,
 
  private:
   void LastRelease() final {
-    auto listElement = static_cast<LinkedListElement<MediaQueryList>*>(this);
+    auto* listElement = static_cast<LinkedListElement<MediaQueryList>*>(this);
     if (listElement->isInList()) {
       listElement->remove();
     }
@@ -91,13 +89,19 @@ class MediaQueryList final : public DOMEventTargetHelper,
   // is equivalent to being in that document's mDOMMediaQueryLists
   // linked list.
   RefPtr<Document> mDocument;
-
-  RefPtr<MediaList> mMediaList;
-  bool mMatches;
-  bool mMatchesValid;
+  const RefPtr<const MediaList> mMediaList;
+  // Whether our MediaList depends on our viewport size. Our medialist is
+  // immutable, so we can just compute this once and carry on with our lives.
+  const bool mViewportDependent : 1;
+  // The matches state.
+  // https://drafts.csswg.org/cssom-view/#mediaquerylist-matches-state
+  bool mMatches : 1;
+  // The value of the matches state on creation, or on the last rendering
+  // update, in order to implement:
+  // https://drafts.csswg.org/cssom-view/#evaluate-media-queries-and-report-changes
+  bool mMatchesOnRenderingUpdate : 1;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif /* !defined(mozilla_dom_MediaQueryList_h) */

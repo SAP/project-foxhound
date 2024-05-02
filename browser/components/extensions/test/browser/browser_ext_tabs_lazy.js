@@ -1,8 +1,5 @@
 "use strict";
 
-const { E10SUtils } = ChromeUtils.import(
-  "resource://gre/modules/E10SUtils.jsm"
-);
 const triggeringPrincipal_base64 = E10SUtils.SERIALIZED_SYSTEMPRINCIPAL;
 
 const SESSION = {
@@ -20,7 +17,7 @@ const SESSION = {
   ],
 };
 
-add_task(async function() {
+add_task(async function () {
   SessionStore.setBrowserState(JSON.stringify(SESSION));
   await promiseWindowRestored(window);
   const tab = gBrowser.tabs[1];

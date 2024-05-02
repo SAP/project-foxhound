@@ -7,17 +7,17 @@
 const {
   Component,
   createFactory,
-} = require("devtools/client/shared/vendor/react");
-const dom = require("devtools/client/shared/vendor/react-dom-factories");
-const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
+} = require("resource://devtools/client/shared/vendor/react.js");
+const dom = require("resource://devtools/client/shared/vendor/react-dom-factories.js");
+const PropTypes = require("resource://devtools/client/shared/vendor/react-prop-types.js");
 const {
   fetchNetworkUpdatePacket,
   propertiesEqual,
-} = require("devtools/client/netmonitor/src/utils/request-utils");
+} = require("resource://devtools/client/netmonitor/src/utils/request-utils.js");
 const {
   PANELS,
   RESPONSE_HEADERS,
-} = require("devtools/client/netmonitor/src/constants");
+} = require("resource://devtools/client/netmonitor/src/constants.js");
 
 // Components
 /* global
@@ -37,91 +37,97 @@ const {
   RequestListColumnTransferredSize,
   RequestListColumnType,
   RequestListColumnUrl,
-  RequestListColumnWaterfall
+  RequestListColumnWaterfall,
+  RequestListColumnPriority
 */
-loader.lazyGetter(this, "RequestListColumnInitiator", function() {
+loader.lazyGetter(this, "RequestListColumnInitiator", function () {
   return createFactory(
-    require("devtools/client/netmonitor/src/components/request-list/RequestListColumnInitiator")
+    require("resource://devtools/client/netmonitor/src/components/request-list/RequestListColumnInitiator.js")
   );
 });
-loader.lazyGetter(this, "RequestListColumnContentSize", function() {
+loader.lazyGetter(this, "RequestListColumnContentSize", function () {
   return createFactory(
-    require("devtools/client/netmonitor/src/components/request-list/RequestListColumnContentSize")
+    require("resource://devtools/client/netmonitor/src/components/request-list/RequestListColumnContentSize.js")
   );
 });
-loader.lazyGetter(this, "RequestListColumnCookies", function() {
+loader.lazyGetter(this, "RequestListColumnCookies", function () {
   return createFactory(
-    require("devtools/client/netmonitor/src/components/request-list/RequestListColumnCookies")
+    require("resource://devtools/client/netmonitor/src/components/request-list/RequestListColumnCookies.js")
   );
 });
-loader.lazyGetter(this, "RequestListColumnDomain", function() {
+loader.lazyGetter(this, "RequestListColumnDomain", function () {
   return createFactory(
-    require("devtools/client/netmonitor/src/components/request-list/RequestListColumnDomain")
+    require("resource://devtools/client/netmonitor/src/components/request-list/RequestListColumnDomain.js")
   );
 });
-loader.lazyGetter(this, "RequestListColumnFile", function() {
+loader.lazyGetter(this, "RequestListColumnFile", function () {
   return createFactory(
-    require("devtools/client/netmonitor/src/components/request-list/RequestListColumnFile")
+    require("resource://devtools/client/netmonitor/src/components/request-list/RequestListColumnFile.js")
   );
 });
-loader.lazyGetter(this, "RequestListColumnUrl", function() {
+loader.lazyGetter(this, "RequestListColumnUrl", function () {
   return createFactory(
-    require("devtools/client/netmonitor/src/components/request-list/RequestListColumnUrl")
+    require("resource://devtools/client/netmonitor/src/components/request-list/RequestListColumnUrl.js")
   );
 });
-loader.lazyGetter(this, "RequestListColumnMethod", function() {
+loader.lazyGetter(this, "RequestListColumnMethod", function () {
   return createFactory(
-    require("devtools/client/netmonitor/src/components/request-list/RequestListColumnMethod")
+    require("resource://devtools/client/netmonitor/src/components/request-list/RequestListColumnMethod.js")
   );
 });
-loader.lazyGetter(this, "RequestListColumnProtocol", function() {
+loader.lazyGetter(this, "RequestListColumnProtocol", function () {
   return createFactory(
-    require("devtools/client/netmonitor/src/components/request-list/RequestListColumnProtocol")
+    require("resource://devtools/client/netmonitor/src/components/request-list/RequestListColumnProtocol.js")
   );
 });
-loader.lazyGetter(this, "RequestListColumnRemoteIP", function() {
+loader.lazyGetter(this, "RequestListColumnRemoteIP", function () {
   return createFactory(
-    require("devtools/client/netmonitor/src/components/request-list/RequestListColumnRemoteIP")
+    require("resource://devtools/client/netmonitor/src/components/request-list/RequestListColumnRemoteIP.js")
   );
 });
-loader.lazyGetter(this, "RequestListColumnResponseHeader", function() {
+loader.lazyGetter(this, "RequestListColumnResponseHeader", function () {
   return createFactory(
-    require("devtools/client/netmonitor/src/components/request-list/RequestListColumnResponseHeader")
+    require("resource://devtools/client/netmonitor/src/components/request-list/RequestListColumnResponseHeader.js")
   );
 });
-loader.lazyGetter(this, "RequestListColumnTime", function() {
+loader.lazyGetter(this, "RequestListColumnTime", function () {
   return createFactory(
-    require("devtools/client/netmonitor/src/components/request-list/RequestListColumnTime")
+    require("resource://devtools/client/netmonitor/src/components/request-list/RequestListColumnTime.js")
   );
 });
-loader.lazyGetter(this, "RequestListColumnScheme", function() {
+loader.lazyGetter(this, "RequestListColumnScheme", function () {
   return createFactory(
-    require("devtools/client/netmonitor/src/components/request-list/RequestListColumnScheme")
+    require("resource://devtools/client/netmonitor/src/components/request-list/RequestListColumnScheme.js")
   );
 });
-loader.lazyGetter(this, "RequestListColumnSetCookies", function() {
+loader.lazyGetter(this, "RequestListColumnSetCookies", function () {
   return createFactory(
-    require("devtools/client/netmonitor/src/components/request-list/RequestListColumnSetCookies")
+    require("resource://devtools/client/netmonitor/src/components/request-list/RequestListColumnSetCookies.js")
   );
 });
-loader.lazyGetter(this, "RequestListColumnStatus", function() {
+loader.lazyGetter(this, "RequestListColumnStatus", function () {
   return createFactory(
-    require("devtools/client/netmonitor/src/components/request-list/RequestListColumnStatus")
+    require("resource://devtools/client/netmonitor/src/components/request-list/RequestListColumnStatus.js")
   );
 });
-loader.lazyGetter(this, "RequestListColumnTransferredSize", function() {
+loader.lazyGetter(this, "RequestListColumnTransferredSize", function () {
   return createFactory(
-    require("devtools/client/netmonitor/src/components/request-list/RequestListColumnTransferredSize")
+    require("resource://devtools/client/netmonitor/src/components/request-list/RequestListColumnTransferredSize.js")
   );
 });
-loader.lazyGetter(this, "RequestListColumnType", function() {
+loader.lazyGetter(this, "RequestListColumnType", function () {
   return createFactory(
-    require("devtools/client/netmonitor/src/components/request-list/RequestListColumnType")
+    require("resource://devtools/client/netmonitor/src/components/request-list/RequestListColumnType.js")
   );
 });
-loader.lazyGetter(this, "RequestListColumnWaterfall", function() {
+loader.lazyGetter(this, "RequestListColumnWaterfall", function () {
   return createFactory(
-    require("devtools/client/netmonitor/src/components/request-list/RequestListColumnWaterfall")
+    require("resource://devtools/client/netmonitor/src/components/request-list/RequestListColumnWaterfall.js")
+  );
+});
+loader.lazyGetter(this, "RequestListColumnPriority", function () {
+  return createFactory(
+    require("resource://devtools/client/netmonitor/src/components/request-list/RequestListColumnPriority.js")
   );
 });
 
@@ -154,6 +160,7 @@ const UPDATED_REQ_ITEM_PROPS = [
   "responseHeaders",
   "waitingTime",
   "isEventStream",
+  "priority",
 ];
 
 const UPDATED_REQ_PROPS = [
@@ -210,6 +217,7 @@ const COLUMN_COMPONENTS = [
   },
   { column: "transferred", ColumnComponent: RequestListColumnTransferredSize },
   { column: "contentSize", ColumnComponent: RequestListColumnContentSize },
+  { column: "priority", ColumnComponent: RequestListColumnPriority },
   {
     column: "startTime",
     ColumnComponent: RequestListColumnTime,
@@ -286,7 +294,8 @@ class RequestListItem extends Component {
     }
   }
 
-  componentWillReceiveProps(nextProps) {
+  // FIXME: https://bugzilla.mozilla.org/show_bug.cgi?id=1774507
+  UNSAFE_componentWillReceiveProps(nextProps) {
     const { connector, item, requestFilterTypes } = nextProps;
     // Filtering XHR & WS require to lazily fetch requestHeaders & responseHeaders
     if (requestFilterTypes.xhr || requestFilterTypes.ws) {

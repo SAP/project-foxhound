@@ -43,7 +43,7 @@ Attr::Attr(nsDOMAttributeMap* aAttrMap,
   // to drop our reference when it goes away.
 }
 
-NS_IMPL_CYCLE_COLLECTION_CLASS(Attr)
+NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(Attr)
 
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(Attr)
   if (!nsINode::Traverse(tmp, cb)) {
@@ -51,8 +51,6 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(Attr)
   }
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mAttrMap)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
-
-NS_IMPL_CYCLE_COLLECTION_TRACE_WRAPPERCACHE(Attr)
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(Attr)
   nsINode::Unlink(tmp);
@@ -166,7 +164,7 @@ void Attr::SetValue(const nsAString& aValue, ErrorResult& aRv) {
 
 bool Attr::Specified() const { return true; }
 
-Element* Attr::GetOwnerElement(ErrorResult& aRv) { return GetElement(); }
+Element* Attr::GetOwnerElement() { return GetElement(); }
 
 void Attr::GetNodeValueInternal(nsAString& aNodeValue) { GetValue(aNodeValue); }
 
@@ -203,8 +201,6 @@ void Attr::SetTextContentInternal(const nsAString& aTextContent,
                                   ErrorResult& aError) {
   SetNodeValueInternal(aTextContent, aError);
 }
-
-bool Attr::IsNodeOfType(uint32_t aFlags) const { return false; }
 
 void Attr::GetEventTargetParent(EventChainPreVisitor& aVisitor) {
   aVisitor.mCanHandle = true;

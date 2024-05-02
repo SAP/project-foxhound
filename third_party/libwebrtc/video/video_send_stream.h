@@ -13,27 +13,30 @@
 
 #include <map>
 #include <memory>
+#include <string>
 #include <vector>
 
 #include "api/fec_controller.h"
-#include "api/video/video_stream_encoder_interface.h"
+#include "api/field_trials_view.h"
+#include "api/sequence_checker.h"
+#include "api/task_queue/pending_task_safety_flag.h"
 #include "call/bitrate_allocator.h"
 #include "call/video_receive_stream.h"
 #include "call/video_send_stream.h"
 #include "rtc_base/event.h"
-#include "rtc_base/task_queue.h"
-#include "rtc_base/thread_checker.h"
+#include "rtc_base/system/no_unique_address.h"
+#include "video/encoder_rtcp_feedback.h"
 #include "video/send_delay_stats.h"
 #include "video/send_statistics_proxy.h"
+#include "video/video_send_stream_impl.h"
+#include "video/video_stream_encoder_interface.h"
 
 namespace webrtc {
 namespace test {
 class VideoSendStreamPeer;
 }  // namespace test
 
-class CallStats;
 class IvfFileWriter;
-class ProcessThread;
 class RateLimiter;
 class RtpRtcp;
 class RtpTransportControllerSendInterface;
@@ -45,8 +48,7 @@ class VideoSendStreamImpl;
 
 // VideoSendStream implements webrtc::VideoSendStream.
 // Internally, it delegates all public methods to VideoSendStreamImpl and / or
-// VideoStreamEncoder. VideoSendStreamInternal is created and deleted on
-// |worker_queue|.
+// VideoStreamEncoder.
 class VideoSendStream : public webrtc::VideoSendStream {
  public:
   using RtpStateMap = std::map<uint32_t, RtpState>;
@@ -55,8 +57,8 @@ class VideoSendStream : public webrtc::VideoSendStream {
   VideoSendStream(
       Clock* clock,
       int num_cpu_cores,
-      ProcessThread* module_process_thread,
       TaskQueueFactory* task_queue_factory,
+      TaskQueueBase* network_queue,
       RtcpRttStats* call_stats,
       RtpTransportControllerSendInterface* transport,
       BitrateAllocatorInterface* bitrate_allocator,
@@ -66,17 +68,18 @@ class VideoSendStream : public webrtc::VideoSendStream {
       VideoEncoderConfig encoder_config,
       const std::map<uint32_t, RtpState>& suspended_ssrcs,
       const std::map<uint32_t, RtpPayloadState>& suspended_payload_states,
-      std::unique_ptr<FecController> fec_controller);
+      std::unique_ptr<FecController> fec_controller,
+      const FieldTrialsView& field_trials);
 
   ~VideoSendStream() override;
 
   void DeliverRtcp(const uint8_t* packet, size_t length);
 
   // webrtc::VideoSendStream implementation.
-  void UpdateActiveSimulcastLayers(
-      const std::vector<bool> active_layers) override;
   void Start() override;
+  void StartPerRtpStream(std::vector<bool> active_layers) override;
   void Stop() override;
+  bool started() override;
 
   void AddAdaptationResource(rtc::scoped_refptr<Resource> resource) override;
   std::vector<rtc::scoped_refptr<Resource>> GetAdaptationResources() override;
@@ -84,28 +87,31 @@ class VideoSendStream : public webrtc::VideoSendStream {
   void SetSource(rtc::VideoSourceInterface<webrtc::VideoFrame>* source,
                  const DegradationPreference& degradation_preference) override;
 
-  void ReconfigureVideoEncoder(VideoEncoderConfig) override;
+  void ReconfigureVideoEncoder(VideoEncoderConfig config) override;
+  void ReconfigureVideoEncoder(VideoEncoderConfig config,
+                               SetParametersCallback callback) override;
   Stats GetStats() override;
 
   void StopPermanentlyAndGetRtpStates(RtpStateMap* rtp_state_map,
                                       RtpPayloadStateMap* payload_state_map);
+  void GenerateKeyFrame(const std::vector<std::string>& rids) override;
 
  private:
   friend class test::VideoSendStreamPeer;
 
-  class ConstructionTask;
-
   absl::optional<float> GetPacingFactorOverride() const;
 
-  rtc::ThreadChecker thread_checker_;
-  rtc::TaskQueue* const worker_queue_;
-  rtc::Event thread_sync_event_;
+  RTC_NO_UNIQUE_ADDRESS SequenceChecker thread_checker_;
+  RtpTransportControllerSendInterface* const transport_;
 
   SendStatisticsProxy stats_proxy_;
   const VideoSendStream::Config config_;
   const VideoEncoderConfig::ContentType content_type_;
-  std::unique_ptr<VideoSendStreamImpl> send_stream_;
   std::unique_ptr<VideoStreamEncoderInterface> video_stream_encoder_;
+  EncoderRtcpFeedback encoder_feedback_;
+  RtpVideoSenderInterface* const rtp_video_sender_;
+  VideoSendStreamImpl send_stream_;
+  bool running_ RTC_GUARDED_BY(thread_checker_) = false;
 };
 
 }  // namespace internal

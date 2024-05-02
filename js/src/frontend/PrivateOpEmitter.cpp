@@ -35,7 +35,7 @@ bool PrivateOpEmitter::emitLoad(TaggedParserAtomIndex name,
 }
 
 bool PrivateOpEmitter::emitLoadPrivateBrand() {
-  return emitLoad(TaggedParserAtomIndex::WellKnown::dotPrivateBrand(),
+  return emitLoad(TaggedParserAtomIndex::WellKnown::dot_privateBrand_(),
                   *brandLoc_);
 }
 
@@ -263,7 +263,7 @@ bool PrivateOpEmitter::emitAssignment() {
   return true;
 }
 
-bool PrivateOpEmitter::emitIncDec() {
+bool PrivateOpEmitter::emitIncDec(ValueUsage valueUsage) {
   MOZ_ASSERT(state_ == State::Reference);
   MOZ_ASSERT(isIncDec());
   //                [stack] OBJ NAME
@@ -286,7 +286,7 @@ bool PrivateOpEmitter::emitIncDec() {
     //              [stack] OBJ NAME N
     return false;
   }
-  if (isPostIncDec()) {
+  if (isPostIncDec() && valueUsage == ValueUsage::WantValue) {
     //              [stack] OBJ NAME N
     if (!bce_->emit1(JSOp::Dup)) {
       //            [stack] OBJ NAME N N
@@ -302,12 +302,25 @@ bool PrivateOpEmitter::emitIncDec() {
     return false;
   }
 
-  if (!bce_->emitElemOpBase(JSOp::StrictSetElem)) {
-    //              [stack] N? N+1
-    return false;
+  if (brandLoc_) {
+    if (!bce_->emit2(JSOp::ThrowMsg,
+                     uint8_t(ThrowMsgKind::AssignToPrivateMethod))) {
+      return false;
+    }
+
+    // Balance the expression stack.
+    if (!bce_->emitPopN(2)) {
+      //            [stack] N? N+1
+      return false;
+    }
+  } else {
+    if (!bce_->emitElemOpBase(JSOp::StrictSetElem)) {
+      //            [stack] N? N+1
+      return false;
+    }
   }
 
-  if (isPostIncDec()) {
+  if (isPostIncDec() && valueUsage == ValueUsage::WantValue) {
     if (!bce_->emit1(JSOp::Pop)) {
       //            [stack] N
       return false;

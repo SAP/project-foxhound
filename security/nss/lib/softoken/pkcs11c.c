@@ -17,6 +17,9 @@
  *   In this implementation, session objects are only visible to the session
  *   that created or generated them.
  */
+
+#include <limits.h> /* for UINT_MAX and ULONG_MAX */
+
 #include "seccomon.h"
 #include "secitem.h"
 #include "secport.h"
@@ -237,37 +240,6 @@ NSC_DestroyObject(CK_SESSION_HANDLE hSession, CK_OBJECT_HANDLE hObject)
 }
 
 /*
- ************** Crypto Functions:     Utilities ************************
- */
-/*
- * Utility function for converting PSS/OAEP parameter types into
- * HASH_HashTypes. Note: Only SHA family functions are defined in RFC 3447.
- */
-static HASH_HashType
-GetHashTypeFromMechanism(CK_MECHANISM_TYPE mech)
-{
-    switch (mech) {
-        case CKM_SHA_1:
-        case CKG_MGF1_SHA1:
-            return HASH_AlgSHA1;
-        case CKM_SHA224:
-        case CKG_MGF1_SHA224:
-            return HASH_AlgSHA224;
-        case CKM_SHA256:
-        case CKG_MGF1_SHA256:
-            return HASH_AlgSHA256;
-        case CKM_SHA384:
-        case CKG_MGF1_SHA384:
-            return HASH_AlgSHA384;
-        case CKM_SHA512:
-        case CKG_MGF1_SHA512:
-            return HASH_AlgSHA512;
-        default:
-            return HASH_AlgNULL;
-    }
-}
-
-/*
  * Returns true if "params" contains a valid set of PSS parameters
  */
 static PRBool
@@ -276,8 +248,8 @@ sftk_ValidatePssParams(const CK_RSA_PKCS_PSS_PARAMS *params)
     if (!params) {
         return PR_FALSE;
     }
-    if (GetHashTypeFromMechanism(params->hashAlg) == HASH_AlgNULL ||
-        GetHashTypeFromMechanism(params->mgf) == HASH_AlgNULL) {
+    if (sftk_GetHashTypeFromMechanism(params->hashAlg) == HASH_AlgNULL ||
+        sftk_GetHashTypeFromMechanism(params->mgf) == HASH_AlgNULL) {
         return PR_FALSE;
     }
     return PR_TRUE;
@@ -298,8 +270,8 @@ sftk_ValidateOaepParams(const CK_RSA_PKCS_OAEP_PARAMS *params)
      *   ulSourceDataLen must be zero.
      */
     if (params->source != CKZ_DATA_SPECIFIED ||
-        (GetHashTypeFromMechanism(params->hashAlg) == HASH_AlgNULL) ||
-        (GetHashTypeFromMechanism(params->mgf) == HASH_AlgNULL) ||
+        (sftk_GetHashTypeFromMechanism(params->hashAlg) == HASH_AlgNULL) ||
+        (sftk_GetHashTypeFromMechanism(params->mgf) == HASH_AlgNULL) ||
         (params->ulSourceDataLen == 0 && params->pSourceData != NULL) ||
         (params->ulSourceDataLen != 0 && params->pSourceData == NULL)) {
         return PR_FALSE;
@@ -611,8 +583,8 @@ sftk_RSAEncryptOAEP(SFTKOAEPInfo *info, unsigned char *output,
         return SECFailure;
     }
 
-    hashAlg = GetHashTypeFromMechanism(info->params.hashAlg);
-    maskHashAlg = GetHashTypeFromMechanism(info->params.mgf);
+    hashAlg = sftk_GetHashTypeFromMechanism(info->params.hashAlg);
+    maskHashAlg = sftk_GetHashTypeFromMechanism(info->params.mgf);
 
     return RSA_EncryptOAEP(&info->key.pub->u.rsa, hashAlg, maskHashAlg,
                            (const unsigned char *)info->params.pSourceData,
@@ -635,8 +607,8 @@ sftk_RSADecryptOAEP(SFTKOAEPInfo *info, unsigned char *output,
         return SECFailure;
     }
 
-    hashAlg = GetHashTypeFromMechanism(info->params.hashAlg);
-    maskHashAlg = GetHashTypeFromMechanism(info->params.mgf);
+    hashAlg = sftk_GetHashTypeFromMechanism(info->params.hashAlg);
+    maskHashAlg = sftk_GetHashTypeFromMechanism(info->params.mgf);
 
     rv = RSA_DecryptOAEP(&info->key.priv->u.rsa, hashAlg, maskHashAlg,
                          (const unsigned char *)info->params.pSourceData,
@@ -1943,6 +1915,10 @@ NSC_DigestInit(CK_SESSION_HANDLE hSession,
         INIT_MECH(SHA256)
         INIT_MECH(SHA384)
         INIT_MECH(SHA512)
+        INIT_MECH(SHA3_224)
+        INIT_MECH(SHA3_256)
+        INIT_MECH(SHA3_384)
+        INIT_MECH(SHA3_512)
 
         default:
             crv = CKR_MECHANISM_INVALID;
@@ -1983,8 +1959,17 @@ NSC_Digest(CK_SESSION_HANDLE hSession,
         goto finish;
     }
 
-    /* do it: */
+#if (ULONG_MAX > UINT_MAX)
+    /* The context->hashUpdate function takes an unsigned int for its data
+     * length argument, but NSC_Digest takes an unsigned long. */
+    while (ulDataLen > UINT_MAX) {
+        (*context->hashUpdate)(context->cipherInfo, pData, UINT_MAX);
+        pData += UINT_MAX;
+        ulDataLen -= UINT_MAX;
+    }
+#endif
     (*context->hashUpdate)(context->cipherInfo, pData, ulDataLen);
+
     /*  NOTE: this assumes buf size is bigenough for the algorithm */
     (*context->end)(context->cipherInfo, pDigest, &digestLen, maxout);
     *pulDigestLen = digestLen;
@@ -2009,8 +1994,18 @@ NSC_DigestUpdate(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pPart,
     crv = sftk_GetContext(hSession, &context, SFTK_HASH, PR_TRUE, NULL);
     if (crv != CKR_OK)
         return crv;
-    /* do it: */
+
+#if (ULONG_MAX > UINT_MAX)
+    /* The context->hashUpdate function takes an unsigned int for its data
+     * length argument, but NSC_DigestUpdate takes an unsigned long. */
+    while (ulPartLen > UINT_MAX) {
+        (*context->hashUpdate)(context->cipherInfo, pPart, UINT_MAX);
+        pPart += UINT_MAX;
+        ulPartLen -= UINT_MAX;
+    }
+#endif
     (*context->hashUpdate)(context->cipherInfo, pPart, ulPartLen);
+
     return CKR_OK;
 }
 
@@ -2099,7 +2094,12 @@ static SECStatus
 sftk_HMACCmp(CK_ULONG *copyLen, unsigned char *sig, unsigned int sigLen,
              unsigned char *hash, unsigned int hashLen)
 {
-    return (NSS_SecureMemcmp(sig, hash, *copyLen) == 0) ? SECSuccess : SECFailure;
+    if (NSS_SecureMemcmp(sig, hash, *copyLen) == 0) {
+        return SECSuccess;
+    }
+
+    PORT_SetError(SEC_ERROR_BAD_SIGNATURE);
+    return SECFailure;
 }
 
 /*
@@ -2651,8 +2651,8 @@ sftk_RSASignPSS(SFTKPSSSignInfo *info, unsigned char *sig,
         return SECFailure;
     }
 
-    hashAlg = GetHashTypeFromMechanism(params->hashAlg);
-    maskHashAlg = GetHashTypeFromMechanism(params->mgf);
+    hashAlg = sftk_GetHashTypeFromMechanism(params->hashAlg);
+    maskHashAlg = sftk_GetHashTypeFromMechanism(params->mgf);
 
     rv = RSA_SignPSS(&info->key->u.rsa, hashAlg, maskHashAlg, NULL,
                      params->sLen, sig, sigLen, maxLen, hash, hashLen);
@@ -2973,6 +2973,10 @@ NSC_SignInit(CK_SESSION_HANDLE hSession,
             INIT_HMAC_MECH(SHA256)
             INIT_HMAC_MECH(SHA384)
             INIT_HMAC_MECH(SHA512)
+            INIT_HMAC_MECH(SHA3_224)
+            INIT_HMAC_MECH(SHA3_256)
+            INIT_HMAC_MECH(SHA3_384)
+            INIT_HMAC_MECH(SHA3_512)
 
         case CKM_AES_CMAC_GENERAL:
             PORT_Assert(pMechanism->pParameter);
@@ -3026,7 +3030,7 @@ NSC_SignInit(CK_SESSION_HANDLE hSession,
             } else {
                 /* The hash function for the TLS 1.2 PRF */
                 tlsPrfHash =
-                    GetHashTypeFromMechanism(tls12_mac_params->prfHashMechanism);
+                    sftk_GetHashTypeFromMechanism(tls12_mac_params->prfHashMechanism);
                 if (tlsPrfHash == HASH_AlgNULL ||
                     tls12_mac_params->ulMacLength < 12) {
                     crv = CKR_MECHANISM_PARAM_INVALID;
@@ -3186,6 +3190,13 @@ sftk_MACUpdate(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pPart,
         return crv;
 
     if (context->hashInfo) {
+#if (ULONG_MAX > UINT_MAX)
+        while (ulPartLen > UINT_MAX) {
+            (*context->hashUpdate)(context->cipherInfo, pPart, UINT_MAX);
+            pPart += UINT_MAX;
+            ulPartLen -= UINT_MAX;
+        }
+#endif
         (*context->hashUpdate)(context->hashInfo, pPart, ulPartLen);
     } else {
         /* must be block cipher MACing */
@@ -3544,8 +3555,8 @@ sftk_RSACheckSignPSS(SFTKPSSVerifyInfo *info, const unsigned char *sig,
         return SECFailure;
     }
 
-    hashAlg = GetHashTypeFromMechanism(params->hashAlg);
-    maskHashAlg = GetHashTypeFromMechanism(params->mgf);
+    hashAlg = sftk_GetHashTypeFromMechanism(params->hashAlg);
+    maskHashAlg = sftk_GetHashTypeFromMechanism(params->mgf);
 
     return RSA_CheckSignPSS(&info->key->u.rsa, hashAlg, maskHashAlg,
                             params->sLen, sig, sigLen, digest, digestLen);
@@ -3718,6 +3729,10 @@ NSC_VerifyInit(CK_SESSION_HANDLE hSession,
             INIT_HMAC_MECH(SHA256)
             INIT_HMAC_MECH(SHA384)
             INIT_HMAC_MECH(SHA512)
+            INIT_HMAC_MECH(SHA3_224)
+            INIT_HMAC_MECH(SHA3_256)
+            INIT_HMAC_MECH(SHA3_384)
+            INIT_HMAC_MECH(SHA3_512)
 
         case CKM_SSL3_MD5_MAC:
             PORT_Assert(pMechanism->pParameter);
@@ -5645,7 +5660,7 @@ NSC_GenerateKeyPair(CK_SESSION_HANDLE hSession,
             }
 
             if (PR_GetEnvSecure("NSS_USE_DECODED_CKA_EC_POINT") ||
-                ecParams->fieldID.type == ec_field_plain) {
+                ecParams->type != ec_params_named) {
                 PORT_FreeArena(ecParams->arena, PR_TRUE);
                 crv = sftk_AddAttributeType(publicKey, CKA_EC_POINT,
                                             sftk_item_expand(&ecPriv->publicValue));
@@ -6956,7 +6971,7 @@ sftk_HKDF(CK_HKDF_PARAMS_PTR params, CK_SESSION_HANDLE hSession,
     const unsigned char *prk;               /* psuedo-random key */
     CK_ULONG prkLen;
     const unsigned char *okm; /* output keying material */
-    HASH_HashType hashType = GetHashTypeFromMechanism(params->prfHashMechanism);
+    HASH_HashType hashType = sftk_GetHashTypeFromMechanism(params->prfHashMechanism);
     SFTKObject *saltKey = NULL;
     CK_RV crv = CKR_OK;
 
@@ -7394,7 +7409,7 @@ NSC_DeriveKey(CK_SESSION_HANDLE hSession,
                 }
                 CK_TLS12_MASTER_KEY_DERIVE_PARAMS *tls12_master =
                     (CK_TLS12_MASTER_KEY_DERIVE_PARAMS *)pMechanism->pParameter;
-                tlsPrfHash = GetHashTypeFromMechanism(tls12_master->prfHashMechanism);
+                tlsPrfHash = sftk_GetHashTypeFromMechanism(tls12_master->prfHashMechanism);
                 if (tlsPrfHash == HASH_AlgNULL) {
                     crv = CKR_MECHANISM_PARAM_INVALID;
                     break;
@@ -7612,7 +7627,7 @@ NSC_DeriveKey(CK_SESSION_HANDLE hSession,
             } else {
                 const SECHashObject *hashObj;
 
-                tlsPrfHash = GetHashTypeFromMechanism(ems_params->prfHashMechanism);
+                tlsPrfHash = sftk_GetHashTypeFromMechanism(ems_params->prfHashMechanism);
                 if (tlsPrfHash == HASH_AlgNULL) {
                     crv = CKR_MECHANISM_PARAM_INVALID;
                     break;
@@ -7670,7 +7685,7 @@ NSC_DeriveKey(CK_SESSION_HANDLE hSession,
                 }
                 CK_TLS12_KEY_MAT_PARAMS *tls12_keys =
                     (CK_TLS12_KEY_MAT_PARAMS *)pMechanism->pParameter;
-                tlsPrfHash = GetHashTypeFromMechanism(tls12_keys->prfHashMechanism);
+                tlsPrfHash = sftk_GetHashTypeFromMechanism(tls12_keys->prfHashMechanism);
                 if (tlsPrfHash == HASH_AlgNULL) {
                     crv = CKR_MECHANISM_PARAM_INVALID;
                     break;
@@ -8339,6 +8354,10 @@ NSC_DeriveKey(CK_SESSION_HANDLE hSession,
             DERIVE_KEY_HASH(SHA256)
             DERIVE_KEY_HASH(SHA384)
             DERIVE_KEY_HASH(SHA512)
+            DERIVE_KEY_HASH(SHA3_224)
+            DERIVE_KEY_HASH(SHA3_256)
+            DERIVE_KEY_HASH(SHA3_384)
+            DERIVE_KEY_HASH(SHA3_512)
 
         case CKM_DH_PKCS_DERIVE: {
             SECItem derived, dhPublic;
@@ -8781,6 +8800,11 @@ NSC_GetOperationState(CK_SESSION_HANDLE hSession,
     if (crv != CKR_OK)
         return crv;
 
+    /* a zero cipherInfoLen signals that this context cannot be serialized */
+    if (context->cipherInfoLen == 0) {
+        return CKR_STATE_UNSAVEABLE;
+    }
+
     *pulOperationStateLen = context->cipherInfoLen + sizeof(CK_MECHANISM_TYPE) + sizeof(SFTKContextType);
     if (pOperationState == NULL) {
         sftk_FreeSession(session);
@@ -8851,6 +8875,10 @@ NSC_SetOperationState(CK_SESSION_HANDLE hSession,
                                       NULL);
                 if (crv != CKR_OK)
                     break;
+                if (context->cipherInfoLen == 0) {
+                    crv = CKR_SAVED_STATE_INVALID;
+                    break;
+                }
                 PORT_Memcpy(context->cipherInfo, pOperationState,
                             context->cipherInfoLen);
                 pOperationState += context->cipherInfoLen;

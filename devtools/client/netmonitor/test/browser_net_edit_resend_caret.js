@@ -9,7 +9,19 @@
  * after removing it and resets to its original value when it looses focus.
  */
 
-add_task(async function() {
+add_task(async function () {
+  if (
+    Services.prefs.getBoolPref(
+      "devtools.netmonitor.features.newEditAndResend",
+      true
+    )
+  ) {
+    ok(
+      true,
+      "Skip this test when pref is true, because this panel won't be default when that is the case."
+    );
+    return;
+  }
   const { monitor } = await initNetMonitor(HTTPS_SIMPLE_URL, {
     requestCount: 1,
   });
@@ -35,11 +47,7 @@ add_task(async function() {
   EventUtils.sendMouseEvent({ type: "contextmenu" }, firstRequest);
 
   // Open "New Request" form
-  const contextResend = getContextMenuItem(
-    monitor,
-    "request-list-context-resend"
-  );
-  contextResend.click();
+  await selectContextMenuItem(monitor, "request-list-context-edit-resend");
   await waitUntil(() => document.querySelector("#custom-headers-value"));
   const headersTextarea = document.querySelector("#custom-headers-value");
   await waitUntil(() => document.querySelector("#custom-method-value"));
@@ -90,5 +98,5 @@ add_task(async function() {
     "Value of method header should reset to its original value"
   );
 
-  return teardown(monitor);
+  await teardown(monitor);
 });

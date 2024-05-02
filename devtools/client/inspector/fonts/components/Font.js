@@ -7,21 +7,21 @@
 const {
   createFactory,
   PureComponent,
-} = require("devtools/client/shared/vendor/react");
-const dom = require("devtools/client/shared/vendor/react-dom-factories");
-const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
+} = require("resource://devtools/client/shared/vendor/react.js");
+const dom = require("resource://devtools/client/shared/vendor/react-dom-factories.js");
+const PropTypes = require("resource://devtools/client/shared/vendor/react-prop-types.js");
 
 const FontName = createFactory(
-  require("devtools/client/inspector/fonts/components/FontName")
+  require("resource://devtools/client/inspector/fonts/components/FontName.js")
 );
 const FontOrigin = createFactory(
-  require("devtools/client/inspector/fonts/components/FontOrigin")
+  require("resource://devtools/client/inspector/fonts/components/FontOrigin.js")
 );
 const FontPreview = createFactory(
-  require("devtools/client/inspector/fonts/components/FontPreview")
+  require("resource://devtools/client/inspector/fonts/components/FontPreview.js")
 );
 
-const Types = require("devtools/client/inspector/fonts/types");
+const Types = require("resource://devtools/client/inspector/fonts/types.js");
 
 class Font extends PureComponent {
   static get propTypes() {
@@ -42,7 +42,8 @@ class Font extends PureComponent {
     this.onFontFaceRuleToggle = this.onFontFaceRuleToggle.bind(this);
   }
 
-  componentWillReceiveProps(newProps) {
+  // FIXME: https://bugzilla.mozilla.org/show_bug.cgi?id=1774507
+  UNSAFE_componentWillReceiveProps(newProps) {
     if (this.props.font.name === newProps.font.name) {
       return;
     }

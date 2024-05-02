@@ -1,4 +1,4 @@
-use crate::stream::{Fuse, FuturesOrdered, StreamExt};
+use crate::stream::{Fuse, FusedStream, FuturesOrdered, StreamExt};
 use core::fmt;
 use core::pin::Pin;
 use futures_core::future::Future;
@@ -64,7 +64,7 @@ where
         // our queue of futures.
         while this.in_progress_queue.len() < *this.max {
             match this.stream.as_mut().poll_next(cx) {
-                Poll::Ready(Some(fut)) => this.in_progress_queue.push(fut),
+                Poll::Ready(Some(fut)) => this.in_progress_queue.push_back(fut),
                 Poll::Ready(None) | Poll::Pending => break,
             }
         }
@@ -92,6 +92,16 @@ where
             None => None,
         };
         (lower, upper)
+    }
+}
+
+impl<St> FusedStream for Buffered<St>
+where
+    St: Stream,
+    St::Item: Future,
+{
+    fn is_terminated(&self) -> bool {
+        self.stream.is_done() && self.in_progress_queue.is_terminated()
     }
 }
 

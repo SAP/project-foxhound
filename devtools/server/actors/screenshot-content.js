@@ -3,33 +3,33 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-const { Actor, ActorClassWithSpec } = require("devtools/shared/protocol");
+const { Actor } = require("resource://devtools/shared/protocol.js");
 const {
   screenshotContentSpec,
-} = require("devtools/shared/specs/screenshot-content");
+} = require("resource://devtools/shared/specs/screenshot-content.js");
 
-const { LocalizationHelper } = require("devtools/shared/l10n");
+const { LocalizationHelper } = require("resource://devtools/shared/l10n.js");
 const STRINGS_URI = "devtools/shared/locales/screenshot.properties";
 const L10N = new LocalizationHelper(STRINGS_URI);
 loader.lazyRequireGetter(
   this,
   ["getCurrentZoom", "getRect"],
-  "devtools/shared/layout/utils",
+  "resource://devtools/shared/layout/utils.js",
   true
 );
 
-exports.ScreenshotContentActor = ActorClassWithSpec(screenshotContentSpec, {
-  initialize: function(conn, targetActor) {
-    Actor.prototype.initialize.call(this, conn);
+exports.ScreenshotContentActor = class ScreenshotContentActor extends Actor {
+  constructor(conn, targetActor) {
+    super(conn, screenshotContentSpec);
     this.targetActor = targetActor;
-  },
+  }
 
   _getRectForNode(node) {
     const originWindow = this.targetActor.ignoreSubFrames
       ? node.ownerGlobal
       : node.ownerGlobal.top;
     return getRect(originWindow, node, node.ownerGlobal);
-  },
+  }
 
   /**
    * Retrieve some window-related information that will be passed to the parent process
@@ -56,7 +56,13 @@ exports.ScreenshotContentActor = ActorClassWithSpec(screenshotContentSpec, {
    */
   prepareCapture({ fullpage, selector, nodeActorID }) {
     const { window } = this.targetActor;
-    const windowDpr = window.devicePixelRatio;
+    // Use the override if set, note that the override is not returned by
+    // devicePixelRatio on privileged code, see bug 1759962.
+    //
+    // FIXME(bug 1760711): Whether zoom is included in devicePixelRatio depends
+    // on whether there's an override, this is a bit suspect.
+    const windowDpr =
+      window.browsingContext.top.overrideDPPX || window.devicePixelRatio;
     const windowZoom = getCurrentZoom(window);
     const messages = [];
 
@@ -134,5 +140,5 @@ exports.ScreenshotContentActor = ActorClassWithSpec(screenshotContentSpec, {
       rect: { left, top, width, height },
       messages,
     };
-  },
-});
+  }
+};

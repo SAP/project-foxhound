@@ -1202,13 +1202,11 @@ vi{
         KYD{"$"}
         MXN{"$"}
         NIO{"C$"}
+        RUR{"RUR"}
         TTD{"$"}
         TWD{"NT$"}
         USD{"$"}
         XCD{"$"}
-    }
-    Currencies%variant{
-        GEL{"₾"}
     }
     CurrencyPlurals{
         AED{

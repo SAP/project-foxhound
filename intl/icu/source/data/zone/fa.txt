@@ -258,6 +258,9 @@ fa{
         "America:Chihuahua"{
             ec{"چیواوا"}
         }
+        "America:Ciudad_Juarez"{
+            ec{"سیوداد خوارز"}
+        }
         "America:Coral_Harbour"{
             ec{"اتکوکان"}
         }
@@ -1222,6 +1225,9 @@ fa{
         }
         "Pacific:Johnston"{
             ec{"جانستون"}
+        }
+        "Pacific:Kanton"{
+            ec{"کانتون"}
         }
         "Pacific:Kiritimati"{
             ec{"کریتیماتی"}

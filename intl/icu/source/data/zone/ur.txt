@@ -258,6 +258,9 @@ ur{
         "America:Chihuahua"{
             ec{"چیہوآہوآ"}
         }
+        "America:Ciudad_Juarez"{
+            ec{"سیوداد جیوریز"}
+        }
         "America:Coral_Harbour"{
             ec{"اٹیکوکن"}
         }
@@ -919,7 +922,7 @@ ur{
             ec{"اسٹینلے"}
         }
         "Australia:Adelaide"{
-            ec{"اڈیلائڈ"}
+            ec{"ایڈیلیڈ"}
         }
         "Australia:Brisbane"{
             ec{"برسبین"}
@@ -1222,6 +1225,9 @@ ur{
         }
         "Pacific:Johnston"{
             ec{"جانسٹن"}
+        }
+        "Pacific:Kanton"{
+            ec{"کانٹن"}
         }
         "Pacific:Kiritimati"{
             ec{"کریتیماٹی"}

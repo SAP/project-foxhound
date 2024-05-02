@@ -43,12 +43,11 @@ interface BiquadFilterNode : AudioNode {
     readonly attribute AudioParam gain; // in Decibels
 
     [Throws]
-    void getFrequencyResponse(Float32Array frequencyHz,
-                              Float32Array magResponse,
-                              Float32Array phaseResponse);
+    undefined getFrequencyResponse(Float32Array frequencyHz,
+                                   Float32Array magResponse,
+                                   Float32Array phaseResponse);
 
 };
 
 // Mozilla extension
 BiquadFilterNode includes  AudioNodePassThrough;
-

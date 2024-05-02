@@ -1,5 +1,3 @@
-from __future__ import print_function
-
 import json
 import pipes
 import re
@@ -82,7 +80,7 @@ class TestResult:
                 harness_message = "Exit code reported crash"
             tests = []
         else:
-            for (idx, line) in enumerate(stdout):
+            for idx, line in enumerate(stdout):
                 if line.startswith("WPT OUTPUT: "):
                     msg = line[len("WPT OUTPUT: ") :]
                     data = [output.test.wpt.url] + json.loads(msg)

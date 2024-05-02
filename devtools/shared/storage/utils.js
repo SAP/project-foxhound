@@ -7,11 +7,16 @@
 loader.lazyRequireGetter(
   this,
   "validator",
-  "devtools/shared/storage/vendor/stringvalidator/validator"
+  "resource://devtools/shared/storage/vendor/stringvalidator/validator.js"
 );
-loader.lazyRequireGetter(this, "JSON5", "devtools/shared/storage/vendor/json5");
+loader.lazyRequireGetter(
+  this,
+  "JSON5",
+  "resource://devtools/shared/storage/vendor/json5.js"
+);
 
-const MATH_REGEX = /(?:(?:^|[-+_*/])(?:\s*-?\d+(\.\d+)?(?:[eE][+-]?\d+)?\s*))+$/;
+const MATH_REGEX =
+  /(?:(?:^|[-+_*/])(?:\s*-?\d+(\.\d+)?(?:[eE][+-]?\d+)?\s*))+$/;
 
 /**
  * Tries to parse a string into an object on the basis of key-value pairs,

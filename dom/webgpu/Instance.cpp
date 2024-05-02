@@ -6,36 +6,45 @@
 #include "Instance.h"
 
 #include "Adapter.h"
-#include "gfxConfig.h"
 #include "nsIGlobalObject.h"
 #include "ipc/WebGPUChild.h"
 #include "ipc/WebGPUTypes.h"
 #include "mozilla/webgpu/ffi/wgpu.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/gfx/CanvasManagerChild.h"
+#include "mozilla/gfx/gfxVars.h"
+#include "mozilla/StaticPrefs_dom.h"
 
-namespace mozilla {
-namespace webgpu {
+#include <optional>
+#include <string_view>
 
-GPU_IMPL_CYCLE_COLLECTION(Instance, mBridge, mOwner)
+namespace mozilla::webgpu {
+
+GPU_IMPL_CYCLE_COLLECTION(Instance, mOwner)
+
+static inline nsDependentCString ToCString(const std::string_view s) {
+  return {s.data(), s.length()};
+}
+
+/* static */ bool Instance::PrefEnabled(JSContext* aCx, JSObject* aObj) {
+  if (!StaticPrefs::dom_webgpu_enabled()) {
+    return false;
+  }
+
+  if (NS_IsMainThread()) {
+    return true;
+  }
+
+  return StaticPrefs::dom_webgpu_workers_enabled();
+}
 
 /*static*/
 already_AddRefed<Instance> Instance::Create(nsIGlobalObject* aOwner) {
-  RefPtr<WebGPUChild> bridge;
-
-  if (gfx::gfxConfig::IsEnabled(gfx::Feature::WEBGPU)) {
-    bridge = gfx::CanvasManagerChild::Get()->GetWebGPUChild();
-    if (NS_WARN_IF(!bridge)) {
-      MOZ_CRASH("Failed to create an IPDL bridge for WebGPU!");
-    }
-  }
-
-  RefPtr<Instance> result = new Instance(aOwner, bridge);
+  RefPtr<Instance> result = new Instance(aOwner);
   return result.forget();
 }
 
-Instance::Instance(nsIGlobalObject* aOwner, WebGPUChild* aBridge)
-    : mBridge(aBridge), mOwner(aOwner) {}
+Instance::Instance(nsIGlobalObject* aOwner) : mOwner(aOwner) {}
 
 Instance::~Instance() { Cleanup(); }
 
@@ -52,20 +61,54 @@ already_AddRefed<dom::Promise> Instance::RequestAdapter(
   if (NS_WARN_IF(aRv.Failed())) {
     return nullptr;
   }
-  if (!mBridge) {
-    promise->MaybeRejectWithInvalidStateError("WebGPU is not enabled!");
+
+  // -
+  // Check if we should allow the request.
+
+  const auto errStr = [&]() -> std::optional<std::string_view> {
+#ifdef RELEASE_OR_BETA
+    if (true) {
+      return "WebGPU is not yet available in Release or Beta builds.";
+    }
+#endif
+    if (!gfx::gfxVars::AllowWebGPU()) {
+      return "WebGPU is disabled by blocklist.";
+    }
+    if (!StaticPrefs::dom_webgpu_enabled()) {
+      return "WebGPU is disabled by dom.webgpu.enabled:false.";
+    }
+    return {};
+  }();
+  if (errStr) {
+    promise->MaybeRejectWithNotSupportedError(ToCString(*errStr));
+    return promise.forget();
+  }
+
+  // -
+  // Make the request.
+
+  auto* const canvasManager = gfx::CanvasManagerChild::Get();
+  if (!canvasManager) {
+    promise->MaybeRejectWithInvalidStateError(
+        "Failed to create CanavasManagerChild");
+    return promise.forget();
+  }
+
+  RefPtr<WebGPUChild> bridge = canvasManager->GetWebGPUChild();
+  if (!bridge) {
+    promise->MaybeRejectWithInvalidStateError("Failed to create WebGPUChild");
     return promise.forget();
   }
 
   RefPtr<Instance> instance = this;
 
-  mBridge->InstanceRequestAdapter(aOptions)->Then(
-      GetMainThreadSerialEventTarget(), __func__,
-      [promise, instance](ipc::ByteBuf aInfoBuf) {
-        ffi::WGPUAdapterInformation info = {};
-        ffi::wgpu_client_adapter_extract_info(ToFFI(&aInfoBuf), &info);
-        MOZ_ASSERT(info.id != 0);
-        RefPtr<Adapter> adapter = new Adapter(instance, info);
+  bridge->InstanceRequestAdapter(aOptions)->Then(
+      GetCurrentSerialEventTarget(), __func__,
+      [promise, instance, bridge](ipc::ByteBuf aInfoBuf) {
+        auto info = std::make_shared<ffi::WGPUAdapterInformation>();
+        ffi::wgpu_client_adapter_extract_info(ToFFI(&aInfoBuf), info.get());
+        MOZ_ASSERT(info->id != 0);
+        RefPtr<Adapter> adapter = new Adapter(instance, bridge, info);
         promise->MaybeResolve(adapter);
       },
       [promise](const Maybe<ipc::ResponseRejectReason>& aResponseReason) {
@@ -79,5 +122,4 @@ already_AddRefed<dom::Promise> Instance::RequestAdapter(
   return promise.forget();
 }
 
-}  // namespace webgpu
-}  // namespace mozilla
+}  // namespace mozilla::webgpu

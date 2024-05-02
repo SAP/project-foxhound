@@ -1,12 +1,11 @@
 #![cfg(test)]
 
-#[allow(deprecated)]
-use crate::Configuration;
 use crate::{ThreadPoolBuildError, ThreadPoolBuilder};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Barrier};
 
 #[test]
+#[cfg_attr(any(target_os = "emscripten", target_family = "wasm"), ignore)]
 fn worker_thread_index() {
     let pool = ThreadPoolBuilder::new().num_threads(22).build().unwrap();
     assert_eq!(pool.current_num_threads(), 22);
@@ -16,14 +15,15 @@ fn worker_thread_index() {
 }
 
 #[test]
+#[cfg_attr(any(target_os = "emscripten", target_family = "wasm"), ignore)]
 fn start_callback_called() {
     let n_threads = 16;
     let n_called = Arc::new(AtomicUsize::new(0));
     // Wait for all the threads in the pool plus the one running tests.
     let barrier = Arc::new(Barrier::new(n_threads + 1));
 
-    let b = barrier.clone();
-    let nc = n_called.clone();
+    let b = Arc::clone(&barrier);
+    let nc = Arc::clone(&n_called);
     let start_handler = move |_| {
         nc.fetch_add(1, Ordering::SeqCst);
         b.wait();
@@ -42,14 +42,15 @@ fn start_callback_called() {
 }
 
 #[test]
+#[cfg_attr(any(target_os = "emscripten", target_family = "wasm"), ignore)]
 fn exit_callback_called() {
     let n_threads = 16;
     let n_called = Arc::new(AtomicUsize::new(0));
     // Wait for all the threads in the pool plus the one running tests.
     let barrier = Arc::new(Barrier::new(n_threads + 1));
 
-    let b = barrier.clone();
-    let nc = n_called.clone();
+    let b = Arc::clone(&barrier);
+    let nc = Arc::clone(&n_called);
     let exit_handler = move |_| {
         nc.fetch_add(1, Ordering::SeqCst);
         b.wait();
@@ -71,6 +72,7 @@ fn exit_callback_called() {
 }
 
 #[test]
+#[cfg_attr(any(target_os = "emscripten", target_family = "wasm"), ignore)]
 fn handler_panics_handled_correctly() {
     let n_threads = 16;
     let n_called = Arc::new(AtomicUsize::new(0));
@@ -85,9 +87,9 @@ fn handler_panics_handled_correctly() {
         panic!("ensure panic handler is called when exiting");
     };
 
-    let sb = start_barrier.clone();
-    let eb = exit_barrier.clone();
-    let nc = n_called.clone();
+    let sb = Arc::clone(&start_barrier);
+    let eb = Arc::clone(&exit_barrier);
+    let nc = Arc::clone(&n_called);
     let panic_handler = move |_| {
         let val = nc.fetch_add(1, Ordering::SeqCst);
         if val < n_threads {
@@ -121,7 +123,7 @@ fn handler_panics_handled_correctly() {
 }
 
 #[test]
-#[allow(deprecated)]
+#[cfg_attr(any(target_os = "emscripten", target_family = "wasm"), ignore)]
 fn check_config_build() {
     let pool = ThreadPoolBuilder::new().num_threads(22).build().unwrap();
     assert_eq!(pool.current_num_threads(), 22);
@@ -137,6 +139,7 @@ fn check_error_send_sync() {
 
 #[allow(deprecated)]
 #[test]
+#[cfg_attr(any(target_os = "emscripten", target_family = "wasm"), ignore)]
 fn configuration() {
     let start_handler = move |_| {};
     let exit_handler = move |_| {};
@@ -144,7 +147,7 @@ fn configuration() {
     let thread_name = move |i| format!("thread_name_{}", i);
 
     // Ensure we can call all public methods on Configuration
-    Configuration::new()
+    crate::Configuration::new()
         .thread_name(thread_name)
         .num_threads(5)
         .panic_handler(panic_handler)
@@ -157,6 +160,7 @@ fn configuration() {
 }
 
 #[test]
+#[cfg_attr(any(target_os = "emscripten", target_family = "wasm"), ignore)]
 fn default_pool() {
     ThreadPoolBuilder::default().build().unwrap();
 }
@@ -165,6 +169,7 @@ fn default_pool() {
 /// the pool is done with them, allowing them to be used with rayon again
 /// later. e.g. WebAssembly want to have their own pool of available threads.
 #[test]
+#[cfg_attr(any(target_os = "emscripten", target_family = "wasm"), ignore)]
 fn cleared_current_thread() -> Result<(), ThreadPoolBuildError> {
     let n_threads = 5;
     let mut handles = vec![];

@@ -7,7 +7,7 @@
  * In this test, we check behavior of listeners of Places event upon firing nested
  * notification from inside of listener that received notifications.
  */
-add_task(async function() {
+add_task(async function () {
   // We prepare 6 listeners for the test.
   // 1. Listener that added before root notification.
   const addRoot = new Observer();
@@ -115,7 +115,15 @@ function notifyPlacesEvent(guid) {
       parentId: -2,
       source: 0,
       title: guid,
+      tags: "tags",
       url: `http://example.com/${guid}`,
+      frecency: 0,
+      hidden: false,
+      visitCount: 0,
+      lastVisitDate: 0,
+      targetFolderGuid: null,
+      targetFolderItemId: -1,
+      targetFolderTitle: null,
     }),
   ]);
 }

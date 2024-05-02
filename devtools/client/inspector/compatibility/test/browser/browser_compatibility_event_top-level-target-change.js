@@ -9,20 +9,31 @@ const TEST_DATA_ISSUES = {
   uri: `
     <style>
     body {
-      border-block-color: lime;
+      ruby-align: center;
     }
     div {
-      font-variant-alternates: historical-forms;
+      scrollbar-width: thin;
     }
     </style>
     <body>
       <div>test</div>
     </body>
   `,
-  expectedIssuesOnSelected: [{ property: "border-block-color" }],
+  expectedIssuesOnSelected: [
+    {
+      property: "ruby-align",
+      url: "https://developer.mozilla.org/docs/Web/CSS/ruby-align",
+    },
+  ],
   expectedIssuesOnAll: [
-    { property: "border-block-color" },
-    { property: "font-variant-alternates" },
+    {
+      property: "ruby-align",
+      url: "https://developer.mozilla.org/docs/Web/CSS/ruby-align",
+    },
+    {
+      property: "scrollbar-width",
+      url: "https://developer.mozilla.org/docs/Web/CSS/scrollbar-width",
+    },
   ],
 };
 
@@ -32,16 +43,13 @@ const TEST_DATA_NO_ISSUES = {
   expectedIssuesOnAll: [],
 };
 
-add_task(async function() {
+add_task(async function () {
   const tab = await addTab(
     "data:text/html;charset=utf-8," + encodeURIComponent(TEST_DATA_ISSUES.uri)
   );
 
-  const {
-    allElementsPane,
-    inspector,
-    selectedElementPane,
-  } = await openCompatibilityView();
+  const { allElementsPane, inspector, selectedElementPane } =
+    await openCompatibilityView();
 
   info("Check issues at initial");
   await assertIssues(selectedElementPane, allElementsPane, TEST_DATA_ISSUES);
@@ -71,6 +79,6 @@ async function navigateTo(uri, tab, { store }) {
   const onSelectedNodeUpdated = waitForUpdateSelectedNodeAction(store);
   const onTopLevelTargetUpdated = waitForUpdateTopLevelTargetAction(store);
   const onLoaded = BrowserTestUtils.browserLoaded(tab.linkedBrowser);
-  BrowserTestUtils.loadURI(tab.linkedBrowser, uri);
+  BrowserTestUtils.startLoadingURIString(tab.linkedBrowser, uri);
   await Promise.all([onLoaded, onSelectedNodeUpdated, onTopLevelTargetUpdated]);
 }

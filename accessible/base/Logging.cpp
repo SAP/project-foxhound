@@ -16,7 +16,6 @@
 
 #include "nsDocShellLoadTypes.h"
 #include "nsIChannel.h"
-#include "nsIInterfaceRequestorUtils.h"
 #include "nsIWebProgress.h"
 #include "prenv.h"
 #include "nsIDocShellTreeItem.h"
@@ -53,7 +52,6 @@ static ModuleRep sModuleMap[] = {{"docload", logging::eDocLoad},
                                  {"doclifecycle", logging::eDocLifeCycle},
 
                                  {"events", logging::eEvents},
-                                 {"eventTree", logging::eEventTree},
                                  {"platforms", logging::ePlatforms},
                                  {"text", logging::eText},
                                  {"tree", logging::eTree},

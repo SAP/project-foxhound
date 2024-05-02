@@ -18,7 +18,6 @@
 #include "nsCOMArray.h"
 #include "nsINode.h"
 #include "nsJSUtils.h"
-#include "nsMemory.h"
 #include "nsServiceManagerUtils.h"
 #include "nsArray.h"
 #include "nsThreadUtils.h"
@@ -97,22 +96,9 @@ EventListenerInfo::EventListenerInfo(
 
 EventListenerInfo::~EventListenerInfo() { DropJSObjects(this); }
 
-NS_IMPL_CYCLE_COLLECTION_CLASS(EventListenerInfo)
-
-NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(EventListenerInfo)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mListenerManager)
-NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
-
-NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(EventListenerInfo)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK(mListenerManager)
-  tmp->mScriptedListener = nullptr;
-  tmp->mScriptedListenerGlobal = nullptr;
-NS_IMPL_CYCLE_COLLECTION_UNLINK_END
-
-NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN(EventListenerInfo)
-  NS_IMPL_CYCLE_COLLECTION_TRACE_JS_MEMBER_CALLBACK(mScriptedListener)
-  NS_IMPL_CYCLE_COLLECTION_TRACE_JS_MEMBER_CALLBACK(mScriptedListenerGlobal)
-NS_IMPL_CYCLE_COLLECTION_TRACE_END
+NS_IMPL_CYCLE_COLLECTION_WITH_JS_MEMBERS(EventListenerInfo, (mListenerManager),
+                                         (mScriptedListener,
+                                          mScriptedListenerGlobal))
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(EventListenerInfo)
   NS_INTERFACE_MAP_ENTRY(nsIEventListenerInfo)
@@ -385,13 +371,7 @@ void EventListenerService::NotifyAboutMainThreadListenerChangeInternal(
     nsCOMPtr<nsIRunnable> runnable =
         NewRunnableMethod("EventListenerService::NotifyPendingChanges", this,
                           &EventListenerService::NotifyPendingChanges);
-    if (nsCOMPtr<nsIGlobalObject> global = aTarget->GetOwnerGlobal()) {
-      global->Dispatch(TaskCategory::Other, runnable.forget());
-    } else if (nsINode* node = nsINode::FromEventTarget(aTarget)) {
-      node->OwnerDoc()->Dispatch(TaskCategory::Other, runnable.forget());
-    } else {
-      NS_DispatchToCurrentThread(runnable);
-    }
+    NS_DispatchToCurrentThread(runnable.forget());
   }
 
   RefPtr<EventListenerChange> changes =

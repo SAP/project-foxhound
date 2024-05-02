@@ -4,10 +4,10 @@
 
 /* Shared imports */
 @import url("chrome://devtools/content/shared/components/AppErrorBoundary.css");
+@import url("chrome://devtools/content/shared/components/SearchModifiers.css");
 
 /* Devtools imports */
 @import url("chrome://devtools/content/debugger/src/components/variables.css");
-@import url("chrome://devtools/content/debugger/src/components/A11yIntention.css");
 @import url("chrome://devtools/content/debugger/src/components/App.css");
 @import url("chrome://devtools/content/debugger/src/components/shared/AccessibleImage.css");
 @import url("chrome://devtools/content/debugger/src/components/shared/Accordion.css");
@@ -17,7 +17,6 @@
 @import url("chrome://devtools/content/debugger/src/components/shared/Button/styles/CommandBarButton.css");
 @import url("chrome://devtools/content/debugger/src/components/shared/Button/styles/PaneToggleButton.css");
 @import url("chrome://devtools/content/debugger/src/components/shared/Dropdown.css");
-@import url("chrome://devtools/content/debugger/src/components/shared/ManagedTree.css");
 @import url("chrome://devtools/content/debugger/src/components/shared/menu.css");
 @import url("chrome://devtools/content/debugger/src/components/shared/Modal.css");
 @import url("chrome://devtools/content/debugger/src/components/shared/Popover.css");
@@ -32,13 +31,12 @@
 @import url("chrome://devtools/content/debugger/src/components/Editor/InlinePreview.css");
 @import url("chrome://devtools/content/debugger/src/components/Editor/Preview.css");
 @import url("chrome://devtools/content/debugger/src/components/Editor/Preview/Popup.css");
-@import url("chrome://devtools/content/debugger/src/components/Editor/HighlightCalls.css");
-@import url("chrome://devtools/content/debugger/src/components/Editor/SearchBar.css");
+@import url("chrome://devtools/content/debugger/src/components/Editor/SearchInFileBar.css");
 @import url("chrome://devtools/content/debugger/src/components/Editor/Tabs.css");
 @import url("chrome://devtools/content/debugger/src/components/PrimaryPanes/Outline.css");
 @import url("chrome://devtools/content/debugger/src/components/PrimaryPanes/OutlineFilter.css");
+@import url("chrome://devtools/content/debugger/src/components/PrimaryPanes/ProjectSearch.css");
 @import url("chrome://devtools/content/debugger/src/components/PrimaryPanes/Sources.css");
-@import url("chrome://devtools/content/debugger/src/components/ProjectSearch.css");
 @import url("chrome://devtools/content/debugger/src/components/QuickOpenModal.css");
 @import url("chrome://devtools/content/debugger/src/components/SecondaryPanes/Breakpoints/Breakpoints.css");
 @import url("chrome://devtools/content/debugger/src/components/SecondaryPanes/CommandBar.css");

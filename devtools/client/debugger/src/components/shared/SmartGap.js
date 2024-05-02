@@ -2,7 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
-import React from "react";
+import { svg, polygon } from "react-dom-factories";
+import PropTypes from "prop-types";
 
 function shorten(coordinates) {
   // In cases where the token is wider than the preview, the smartGap
@@ -137,20 +138,30 @@ export default function SmartGap({
     gapHeight,
     coords
   );
-
-  return (
-    <svg
-      version="1.1"
-      xmlns="http://www.w3.org/2000/svg"
-      style={{
+  return svg(
+    {
+      version: "1.1",
+      xmlns: "http://www.w3.org/2000/svg",
+      style: {
         height,
         width,
         position: "absolute",
         marginLeft: optionalMarginLeft,
         marginTop: optionalMarginTop,
-      }}
-    >
-      <polygon points={coordinates} fill="transparent" />
-    </svg>
+      },
+    },
+    polygon({
+      points: coordinates,
+      fill: "transparent",
+    })
   );
 }
+
+SmartGap.propTypes = {
+  coords: PropTypes.object.isRequired,
+  gapHeight: PropTypes.number.isRequired,
+  offset: PropTypes.number.isRequired,
+  preview: PropTypes.object.isRequired,
+  token: PropTypes.object.isRequired,
+  type: PropTypes.oneOf(["popover", "tooltip"]).isRequired,
+};

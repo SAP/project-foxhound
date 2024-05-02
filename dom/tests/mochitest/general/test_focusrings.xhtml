@@ -9,8 +9,8 @@
 
 <html:style xmlns:html="http://www.w3.org/1999/xhtml" type="text/css">
 * { outline: none; }
-#b3 { outline: auto }
-#l1:-moz-focusring, #l3:-moz-focusring, #b1:-moz-focusring { outline: 2px solid red; }
+#b3:focus-visible { outline: auto }
+#l1:focus-visible, #l3:focus-visible, #b1:focus-visible { outline: 2px solid red; }
 #l2:focus, #b2:focus { outline: 2px solid red; }
 </html:style>
 
@@ -47,6 +47,9 @@ async function initTest() {
 
 function runTest()
 {
+  // Make sure our snapshots don't depend on mouse position.
+  synthesizeMouse(document.documentElement, 0, 0, { type: "mousemove" });
+
   var isWinOrLinux = navigator.platform.includes("Win") || navigator.platform.includes("Linux");
 
   function checkFocus(element, visible, testid)
@@ -58,9 +61,11 @@ function runTest()
   // make sure that a focus ring appears on the focused button
   if (kIsMac) {
     var focusedButton = $("b3");
-    ok(compareSnapshots(snapShot(focusedButton), snapShot($("b2")), true)[0], "unfocused shows no ring");
+    const retBefore = compareSnapshots(snapShot(focusedButton), snapShot($("b2")), true);
+    ok(retBefore[0], `unfocused shows no ring,\nRESULT:\n${retBefore[1]}, \nREFERENCE:\n${retBefore[2]}`);
     focusedButton.focus();
-    ok(compareSnapshots(snapShot(focusedButton), snapShot($("b2")), false)[0], "focus shows ring");
+    const retAfter = compareSnapshots(snapShot(focusedButton), snapShot($("b2")), false);
+    ok(retAfter[0], `focus shows ring,\nRESULT:\n${retAfter[1]}, \nREFERENCE:\n${retAfter[2]}`);
   }
 
   checkFocus($("l1"), false, "initial appearance");

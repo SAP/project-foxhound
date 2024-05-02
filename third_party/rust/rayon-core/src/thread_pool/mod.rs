@@ -3,12 +3,11 @@
 //!
 //! [`ThreadPool`]: struct.ThreadPool.html
 
+use crate::broadcast::{self, BroadcastContext};
 use crate::join;
 use crate::registry::{Registry, ThreadSpawn, WorkerThread};
 use crate::scope::{do_in_place_scope, do_in_place_scope_fifo};
 use crate::spawn;
-#[allow(deprecated)]
-use crate::Configuration;
 use crate::{scope, Scope};
 use crate::{scope_fifo, ScopeFifo};
 use crate::{ThreadPoolBuildError, ThreadPoolBuilder};
@@ -57,7 +56,7 @@ impl ThreadPool {
     #[deprecated(note = "Use `ThreadPoolBuilder::build`")]
     #[allow(deprecated)]
     /// Deprecated in favor of `ThreadPoolBuilder::build`.
-    pub fn new(configuration: Configuration) -> Result<ThreadPool, Box<dyn Error>> {
+    pub fn new(configuration: crate::Configuration) -> Result<ThreadPool, Box<dyn Error>> {
         Self::build(configuration.into_builder()).map_err(Box::from)
     }
 
@@ -109,6 +108,57 @@ impl ThreadPool {
         R: Send,
     {
         self.registry.in_worker(|_, _| op())
+    }
+
+    /// Executes `op` within every thread in the threadpool. Any attempts to use
+    /// `join`, `scope`, or parallel iterators will then operate within that
+    /// threadpool.
+    ///
+    /// Broadcasts are executed on each thread after they have exhausted their
+    /// local work queue, before they attempt work-stealing from other threads.
+    /// The goal of that strategy is to run everywhere in a timely manner
+    /// *without* being too disruptive to current work. There may be alternative
+    /// broadcast styles added in the future for more or less aggressive
+    /// injection, if the need arises.
+    ///
+    /// # Warning: thread-local data
+    ///
+    /// Because `op` is executing within the Rayon thread-pool,
+    /// thread-local data from the current thread will not be
+    /// accessible.
+    ///
+    /// # Panics
+    ///
+    /// If `op` should panic on one or more threads, exactly one panic
+    /// will be propagated, only after all threads have completed
+    /// (or panicked) their own `op`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    ///    # use rayon_core as rayon;
+    ///    use std::sync::atomic::{AtomicUsize, Ordering};
+    ///
+    ///    fn main() {
+    ///         let pool = rayon::ThreadPoolBuilder::new().num_threads(5).build().unwrap();
+    ///
+    ///         // The argument gives context, including the index of each thread.
+    ///         let v: Vec<usize> = pool.broadcast(|ctx| ctx.index() * ctx.index());
+    ///         assert_eq!(v, &[0, 1, 4, 9, 16]);
+    ///
+    ///         // The closure can reference the local stack
+    ///         let count = AtomicUsize::new(0);
+    ///         pool.broadcast(|_| count.fetch_add(1, Ordering::Relaxed));
+    ///         assert_eq!(count.into_inner(), 5);
+    ///    }
+    /// ```
+    pub fn broadcast<OP, R>(&self, op: OP) -> Vec<R>
+    where
+        OP: Fn(BroadcastContext<'_>) -> R + Sync,
+        R: Send,
+    {
+        // We assert that `self.registry` has not terminated.
+        unsafe { broadcast::broadcast_in(op, &self.registry) }
     }
 
     /// Returns the (current) number of threads in the thread pool.
@@ -277,6 +327,42 @@ impl ThreadPool {
         // We assert that `self.registry` has not terminated.
         unsafe { spawn::spawn_fifo_in(op, &self.registry) }
     }
+
+    /// Spawns an asynchronous task on every thread in this thread-pool. This task
+    /// will run in the implicit, global scope, which means that it may outlast the
+    /// current stack frame -- therefore, it cannot capture any references onto the
+    /// stack (you will likely need a `move` closure).
+    pub fn spawn_broadcast<OP>(&self, op: OP)
+    where
+        OP: Fn(BroadcastContext<'_>) + Send + Sync + 'static,
+    {
+        // We assert that `self.registry` has not terminated.
+        unsafe { broadcast::spawn_broadcast_in(op, &self.registry) }
+    }
+
+    /// Cooperatively yields execution to Rayon.
+    ///
+    /// This is similar to the general [`yield_now()`], but only if the current
+    /// thread is part of *this* thread pool.
+    ///
+    /// Returns `Some(Yield::Executed)` if anything was executed, `Some(Yield::Idle)` if
+    /// nothing was available, or `None` if the current thread is not part this pool.
+    pub fn yield_now(&self) -> Option<Yield> {
+        let curr = self.registry.current_thread()?;
+        Some(curr.yield_now())
+    }
+
+    /// Cooperatively yields execution to local Rayon work.
+    ///
+    /// This is similar to the general [`yield_local()`], but only if the current
+    /// thread is part of *this* thread pool.
+    ///
+    /// Returns `Some(Yield::Executed)` if anything was executed, `Some(Yield::Idle)` if
+    /// nothing was available, or `None` if the current thread is not part this pool.
+    pub fn yield_local(&self) -> Option<Yield> {
+        let curr = self.registry.current_thread()?;
+        Some(curr.yield_local())
+    }
 }
 
 impl Drop for ThreadPool {
@@ -337,4 +423,49 @@ pub fn current_thread_has_pending_tasks() -> Option<bool> {
         let curr = WorkerThread::current().as_ref()?;
         Some(!curr.local_deque_is_empty())
     }
+}
+
+/// Cooperatively yields execution to Rayon.
+///
+/// If the current thread is part of a rayon thread pool, this looks for a
+/// single unit of pending work in the pool, then executes it. Completion of
+/// that work might include nested work or further work stealing.
+///
+/// This is similar to [`std::thread::yield_now()`], but does not literally make
+/// that call. If you are implementing a polling loop, you may want to also
+/// yield to the OS scheduler yourself if no Rayon work was found.
+///
+/// Returns `Some(Yield::Executed)` if anything was executed, `Some(Yield::Idle)` if
+/// nothing was available, or `None` if this thread is not part of any pool at all.
+pub fn yield_now() -> Option<Yield> {
+    unsafe {
+        let thread = WorkerThread::current().as_ref()?;
+        Some(thread.yield_now())
+    }
+}
+
+/// Cooperatively yields execution to local Rayon work.
+///
+/// If the current thread is part of a rayon thread pool, this looks for a
+/// single unit of pending work in this thread's queue, then executes it.
+/// Completion of that work might include nested work or further work stealing.
+///
+/// This is similar to [`yield_now()`], but does not steal from other threads.
+///
+/// Returns `Some(Yield::Executed)` if anything was executed, `Some(Yield::Idle)` if
+/// nothing was available, or `None` if this thread is not part of any pool at all.
+pub fn yield_local() -> Option<Yield> {
+    unsafe {
+        let thread = WorkerThread::current().as_ref()?;
+        Some(thread.yield_local())
+    }
+}
+
+/// Result of [`yield_now()`] or [`yield_local()`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Yield {
+    /// Work was found and executed.
+    Executed,
+    /// No available work was found.
+    Idle,
 }

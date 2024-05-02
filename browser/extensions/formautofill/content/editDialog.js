@@ -7,17 +7,10 @@
 
 "use strict";
 
-// eslint-disable-next-line no-unused-vars
-const { FormAutofill } = ChromeUtils.import(
-  "resource://autofill/FormAutofill.jsm"
-);
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-
-ChromeUtils.defineModuleGetter(
-  this,
-  "formAutofillStorage",
-  "resource://autofill/FormAutofillStorage.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  AutofillTelemetry: "resource://autofill/AutofillTelemetry.sys.mjs",
+  formAutofillStorage: "resource://autofill/FormAutofillStorage.sys.mjs",
+});
 
 class AutofillEditDialog {
   constructor(subStorageName, elements, record) {
@@ -40,6 +33,7 @@ class AutofillEditDialog {
 
   /**
    * Get storage and ensure it has been initialized.
+   *
    * @returns {object}
    */
   async getStorage() {
@@ -49,6 +43,7 @@ class AutofillEditDialog {
 
   /**
    * Asks FormAutofillParent to save or update an record.
+   *
    * @param  {object} record
    * @param  {string} guid [optional]
    */
@@ -86,8 +81,8 @@ class AutofillEditDialog {
       }
       case "contextmenu": {
         if (
-          !(event.target instanceof HTMLInputElement) &&
-          !(event.target instanceof HTMLTextAreaElement)
+          !HTMLInputElement.isInstance(event.target) &&
+          !HTMLTextAreaElement.isInstance(event.target)
         ) {
           event.preventDefault();
         }
@@ -152,16 +147,29 @@ class AutofillEditDialog {
 
   // An interface to be inherited.
   localizeDocument() {}
+
+  recordFormSubmit() {
+    let method = this._record?.guid ? "edit" : "add";
+    AutofillTelemetry.recordManageEvent(this.telemetryType, method);
+  }
 }
 
 class EditAddressDialog extends AutofillEditDialog {
+  telemetryType = AutofillTelemetry.ADDRESS;
+
   constructor(elements, record) {
     super("addresses", elements, record);
+    if (record) {
+      AutofillTelemetry.recordManageEvent(this.telemetryType, "show_entry");
+    }
   }
 
   localizeDocument() {
     if (this._record?.guid) {
-      this._elements.title.dataset.localization = "editAddressTitle";
+      document.l10n.setAttributes(
+        this._elements.title,
+        "autofill-edit-address-title"
+      );
     }
   }
 
@@ -170,11 +178,15 @@ class EditAddressDialog extends AutofillEditDialog {
       this._elements.fieldContainer.buildFormObject(),
       this._record ? this._record.guid : null
     );
+    this.recordFormSubmit();
+
     window.close();
   }
 }
 
 class EditCreditCardDialog extends AutofillEditDialog {
+  telemetryType = AutofillTelemetry.CREDIT_CARD;
+
   constructor(elements, record) {
     elements.fieldContainer._elements.billingAddress.disabled = true;
     super("creditCards", elements, record);
@@ -183,7 +195,7 @@ class EditCreditCardDialog extends AutofillEditDialog {
       this._onCCNumberFieldBlur.bind(this)
     );
     if (record) {
-      Services.telemetry.recordEvent("creditcard", "show_entry", "manage");
+      AutofillTelemetry.recordManageEvent(this.telemetryType, "show_entry");
     }
   }
 
@@ -194,7 +206,10 @@ class EditCreditCardDialog extends AutofillEditDialog {
 
   localizeDocument() {
     if (this._record?.guid) {
-      this._elements.title.dataset.localization = "editCreditCardTitle";
+      document.l10n.setAttributes(
+        this._elements.title,
+        "autofill-edit-card-title"
+      );
     }
   }
 
@@ -210,15 +225,11 @@ class EditCreditCardDialog extends AutofillEditDialog {
         this._record ? this._record.guid : null
       );
 
-      if (this._record?.guid) {
-        Services.telemetry.recordEvent("creditcard", "edit", "manage");
-      } else {
-        Services.telemetry.recordEvent("creditcard", "add", "manage");
-      }
+      this.recordFormSubmit();
 
       window.close();
     } catch (ex) {
-      Cu.reportError(ex);
+      console.error(ex);
     }
   }
 }

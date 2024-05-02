@@ -19,6 +19,7 @@
 #include "mozilla/MathAlgorithms.h"
 #include "mozilla/ProfilerLabels.h"
 
+#include "nsLayoutUtils.h"
 #include "nsStyleConsts.h"
 #include "nsPresContext.h"
 #include "nsPoint.h"
@@ -35,6 +36,8 @@
 #include "mozilla/webrender/WebRenderTypes.h"
 #include "mozilla/webrender/WebRenderAPI.h"
 #include "Units.h"
+
+#include "mozilla/StaticPrefs_layout.h"
 
 using namespace mozilla;
 using namespace mozilla::gfx;
@@ -245,6 +248,19 @@ static float Interpolate(float aF1, float aF2, float aFrac) {
   return aF1 + aFrac * (aF2 - aF1);
 }
 
+static StyleAbsoluteColor Interpolate(const StyleAbsoluteColor& aLeft,
+                                      const StyleAbsoluteColor& aRight,
+                                      float aFrac) {
+  // NOTE: This has to match the interpolation method that WebRender uses which
+  // right now is sRGB. In the future we should implement interpolation in more
+  // gradient color-spaces.
+  static constexpr auto kMethod = StyleColorInterpolationMethod{
+      StyleColorSpace::Srgb,
+      StyleHueInterpolationMethod::Shorter,
+  };
+  return Servo_InterpolateColor(kMethod, &aRight, &aLeft, aFrac);
+}
+
 static nscoord FindTileStart(nscoord aDirtyCoord, nscoord aTilePos,
                              nscoord aTileDim) {
   NS_ASSERTION(aTileDim > 0, "Non-positive tile dimension");
@@ -273,8 +289,8 @@ static gfxFloat LinearGradientStopPositionForPoint(
    * In nsCSSRendering::PaintGradient we know the length of d
    * is not zero.
    */
-  double numerator = d.x * p.x + d.y * p.y;
-  double denominator = d.x * d.x + d.y * d.y;
+  double numerator = d.x.value * p.x.value + d.y.value * p.y.value;
+  double denominator = d.x.value * d.x.value + d.y.value * d.y.value;
   return numerator / denominator;
 }
 
@@ -283,7 +299,7 @@ static bool RectIsBeyondLinearGradientEdge(const gfxRect& aRect,
                                            const nsTArray<ColorStop>& aStops,
                                            const gfxPoint& aGradientStart,
                                            const gfxPoint& aGradientEnd,
-                                           sRGBColor* aOutEdgeColor) {
+                                           StyleAbsoluteColor* aOutEdgeColor) {
   gfxFloat topLeft = LinearGradientStopPositionForPoint(
       aGradientStart, aGradientEnd,
       aPatternMatrix.TransformPoint(aRect.TopLeft()));
@@ -321,8 +337,8 @@ static void ResolveMidpoints(nsTArray<ColorStop>& stops) {
       continue;
     }
 
-    sRGBColor color1 = stops[x - 1].mColor;
-    sRGBColor color2 = stops[x + 1].mColor;
+    const auto& color1 = stops[x - 1].mColor;
+    const auto& color2 = stops[x + 1].mColor;
     float offset1 = stops[x - 1].mPosition;
     float offset2 = stops[x + 1].mPosition;
     float offset = stops[x].mPosition;
@@ -375,16 +391,26 @@ static void ResolveMidpoints(nsTArray<ColorStop>& stops) {
       // points were chosen since it is the minimum number of stops that always
       // give the smoothest appearace regardless of midpoint position and
       // difference in luminance of the end points.
-      float relativeOffset =
+      const float relativeOffset =
           (newStop.mPosition - offset1) / (offset2 - offset1);
-      float multiplier = powf(relativeOffset, logf(.5f) / logf(midpoint));
+      const float multiplier = powf(relativeOffset, logf(.5f) / logf(midpoint));
 
-      gfx::Float red = color1.r + multiplier * (color2.r - color1.r);
-      gfx::Float green = color1.g + multiplier * (color2.g - color1.g);
-      gfx::Float blue = color1.b + multiplier * (color2.b - color1.b);
-      gfx::Float alpha = color1.a + multiplier * (color2.a - color1.a);
+      auto srgb1 = color1.ToColorSpace(StyleColorSpace::Srgb);
+      auto srgb2 = color2.ToColorSpace(StyleColorSpace::Srgb);
 
-      newStop.mColor = sRGBColor(red, green, blue, alpha);
+      const float red =
+          srgb1.components._0 +
+          multiplier * (srgb2.components._0 - srgb1.components._0);
+      const float green =
+          srgb1.components._1 +
+          multiplier * (srgb2.components._1 - srgb1.components._1);
+      const float blue =
+          srgb1.components._2 +
+          multiplier * (srgb2.components._2 - srgb1.components._2);
+      const float alpha =
+          srgb1.alpha + multiplier * (srgb2.alpha - srgb1.alpha);
+
+      newStop.mColor = StyleAbsoluteColor::SrgbLegacy(red, green, blue, alpha);
     }
 
     stops.ReplaceElementsAt(x, 1, newStops, 9);
@@ -392,9 +418,10 @@ static void ResolveMidpoints(nsTArray<ColorStop>& stops) {
   }
 }
 
-static sRGBColor TransparentColor(sRGBColor aColor) {
-  aColor.a = 0;
-  return aColor;
+static StyleAbsoluteColor TransparentColor(const StyleAbsoluteColor& aColor) {
+  auto color = aColor;
+  color.alpha = 0.0f;
+  return color;
 }
 
 // Adjusts and adds color stops in such a way that drawing the gradient with
@@ -409,21 +436,21 @@ static void ResolvePremultipliedAlpha(nsTArray<ColorStop>& aStops) {
     // if the left and right stop have the same alpha value, we don't need
     // to do anything. Hardstops should be instant, and also should never
     // require dealing with interpolation.
-    if (leftStop.mColor.a == rightStop.mColor.a ||
+    if (leftStop.mColor.alpha == rightStop.mColor.alpha ||
         leftStop.mPosition == rightStop.mPosition) {
       continue;
     }
 
     // Is the stop on the left 100% transparent? If so, have it adopt the color
     // of the right stop
-    if (leftStop.mColor.a == 0) {
+    if (leftStop.mColor.alpha == 0) {
       aStops[x - 1].mColor = TransparentColor(rightStop.mColor);
       continue;
     }
 
     // Is the stop on the right completely transparent?
     // If so, duplicate it and assign it the color on the left.
-    if (rightStop.mColor.a == 0) {
+    if (rightStop.mColor.alpha == 0) {
       ColorStop newStop = rightStop;
       newStop.mColor = TransparentColor(leftStop.mColor);
       aStops.InsertElementAt(x, newStop);
@@ -433,20 +460,16 @@ static void ResolvePremultipliedAlpha(nsTArray<ColorStop>& aStops) {
 
     // Now handle cases where one or both of the stops are partially
     // transparent.
-    if (leftStop.mColor.a != 1.0f || rightStop.mColor.a != 1.0f) {
-      sRGBColor premulLeftColor = leftStop.mColor.Premultiplied();
-      sRGBColor premulRightColor = rightStop.mColor.Premultiplied();
+    if (leftStop.mColor.alpha != 1.0f || rightStop.mColor.alpha != 1.0f) {
       // Calculate how many extra steps. We do a step per 10% transparency.
       size_t stepCount =
-          NSToIntFloor(fabsf(leftStop.mColor.a - rightStop.mColor.a) /
+          NSToIntFloor(fabsf(leftStop.mColor.alpha - rightStop.mColor.alpha) /
                        kAlphaIncrementPerGradientStep);
       for (size_t y = 1; y < stepCount; y++) {
         float frac = static_cast<float>(y) / stepCount;
         ColorStop newStop(
             Interpolate(leftStop.mPosition, rightStop.mPosition, frac), false,
-            sRGBColor::InterpolatePremultiplied(premulLeftColor,
-                                                premulRightColor, frac)
-                .Unpremultiplied());
+            Interpolate(leftStop.mColor, rightStop.mColor, frac));
         aStops.InsertElementAt(x, newStop);
         x++;
       }
@@ -457,7 +480,7 @@ static void ResolvePremultipliedAlpha(nsTArray<ColorStop>& aStops) {
 static ColorStop InterpolateColorStop(const ColorStop& aFirst,
                                       const ColorStop& aSecond,
                                       double aPosition,
-                                      const sRGBColor& aDefault) {
+                                      const StyleAbsoluteColor& aDefault) {
   MOZ_ASSERT(aFirst.mPosition <= aPosition);
   MOZ_ASSERT(aPosition <= aSecond.mPosition);
 
@@ -466,10 +489,9 @@ static ColorStop InterpolateColorStop(const ColorStop& aFirst,
     return ColorStop(aPosition, false, aDefault);
   }
 
-  return ColorStop(
-      aPosition, false,
-      sRGBColor::Interpolate(aFirst.mColor, aSecond.mColor,
-                             (aPosition - aFirst.mPosition) / delta));
+  return ColorStop(aPosition, false,
+                   Interpolate(aFirst.mColor, aSecond.mColor,
+                               (aPosition - aFirst.mPosition) / delta));
 }
 
 // Clamp and extend the given ColorStop array in-place to fit exactly into the
@@ -481,8 +503,8 @@ static void ClampColorStops(nsTArray<ColorStop>& aStops) {
   // with a single colour.
   if (aStops.Length() < 2 || aStops[0].mPosition > 1 ||
       aStops.LastElement().mPosition < 0) {
-    sRGBColor c = aStops[0].mPosition > 1 ? aStops[0].mColor
-                                          : aStops.LastElement().mColor;
+    const auto c = aStops[0].mPosition > 1 ? aStops[0].mColor
+                                           : aStops.LastElement().mColor;
     aStops.Clear();
     aStops.AppendElement(ColorStop(0, false, c));
     return;
@@ -528,16 +550,17 @@ static void ClampColorStops(nsTArray<ColorStop>& aStops) {
 namespace mozilla {
 
 template <typename T>
-static sRGBColor GetSpecifiedColor(
+static StyleAbsoluteColor GetSpecifiedColor(
     const StyleGenericGradientItem<StyleColor, T>& aItem,
     const ComputedStyle& aStyle) {
   if (aItem.IsInterpolationHint()) {
-    return sRGBColor();
+    return StyleAbsoluteColor::TRANSPARENT_BLACK;
   }
-  const StyleColor& color = aItem.IsSimpleColorStop()
-                                ? aItem.AsSimpleColorStop()
-                                : aItem.AsComplexColorStop().color;
-  return sRGBColor::FromABGR(color.CalcColor(aStyle));
+  const StyleColor& c = aItem.IsSimpleColorStop()
+                            ? aItem.AsSimpleColorStop()
+                            : aItem.AsComplexColorStop().color;
+
+  return c.ResolveColor(aStyle.StyleText()->mColor);
 }
 
 static Maybe<double> GetSpecifiedGradientPosition(
@@ -748,7 +771,7 @@ void nsCSSGradientRenderer::Paint(gfxContext& aContext, const nsRect& aDest,
       mGradient->IsLinear() &&
       (mLineStart.x == mLineEnd.x) != (mLineStart.y == mLineEnd.y) &&
       aRepeatSize.width == aDest.width && aRepeatSize.height == aDest.height &&
-      !mGradient->AsLinear().repeating && !aSrc.IsEmpty() && !cellContainsFill;
+      !(mGradient->Repeating()) && !aSrc.IsEmpty() && !cellContainsFill;
 
   gfxMatrix matrix;
   if (forceRepeatToCoverTiles) {
@@ -798,7 +821,7 @@ void nsCSSGradientRenderer::Paint(gfxContext& aContext, const nsRect& aDest,
   // Eliminate negative-position stops if the gradient is radial.
   double firstStop = mStops[0].mPosition;
   if (mGradient->IsRadial() && firstStop < 0.0) {
-    if (mGradient->AsRadial().repeating) {
+    if (mGradient->AsRadial().flags & StyleGradientFlags::REPEATING) {
       // Choose an instance of the repeated pattern that gives us all positive
       // stop-offsets.
       double lastStop = mStops[mStops.Length() - 1].mPosition;
@@ -840,8 +863,8 @@ void nsCSSGradientRenderer::Paint(gfxContext& aContext, const nsRect& aDest,
               // XXX Color interpolation (in cairo, too) should use the
               // CSS 'color-interpolation' property!
               float frac = float((0.0 - pos) / (nextPos - pos));
-              mStops[i].mColor = sRGBColor::InterpolatePremultiplied(
-                  mStops[i].mColor, mStops[i + 1].mColor, frac);
+              mStops[i].mColor =
+                  Interpolate(mStops[i].mColor, mStops[i + 1].mColor, frac);
             }
           }
         }
@@ -851,7 +874,8 @@ void nsCSSGradientRenderer::Paint(gfxContext& aContext, const nsRect& aDest,
     MOZ_ASSERT(firstStop >= 0.0, "Failed to fix stop offsets");
   }
 
-  if (mGradient->IsRadial() && !mGradient->AsRadial().repeating) {
+  if (mGradient->IsRadial() &&
+      !(mGradient->AsRadial().flags & StyleGradientFlags::REPEATING)) {
     // Direct2D can only handle a particular class of radial gradients because
     // of the way the it specifies gradients. Setting firstStop to 0, when we
     // can, will help us stay on the fast path. Currently we don't do this
@@ -958,8 +982,8 @@ void nsCSSGradientRenderer::Paint(gfxContext& aContext, const nsRect& aDest,
     // gradient with radius of 0 -> just paint the last stop color.
     // We use firstStop offset to keep |stops| with same units (will later
     // normalize to 0).
-    sRGBColor firstColor(mStops[0].mColor);
-    sRGBColor lastColor(mStops.LastElement().mColor);
+    auto firstColor(mStops[0].mColor);
+    auto lastColor(mStops.LastElement().mColor);
     mStops.Clear();
 
     if (!mGradient->Repeating() && !zeroRadius) {
@@ -1063,13 +1087,13 @@ void nsCSSGradientRenderer::Paint(gfxContext& aContext, const nsRect& aDest,
 
       gfxRect dirtyFillRect = fillRect.Intersect(dirtyAreaToFill);
       gfxRect fillRectRelativeToTile = dirtyFillRect - tileRect.TopLeft();
-      sRGBColor edgeColor;
+      auto edgeColor = StyleAbsoluteColor::TRANSPARENT_BLACK;
       if (mGradient->IsLinear() && !isRepeat &&
           RectIsBeyondLinearGradientEdge(fillRectRelativeToTile, matrix, mStops,
                                          gradientStart, gradientEnd,
                                          &edgeColor)) {
-        edgeColor.a *= aOpacity;
-        aContext.SetColor(edgeColor);
+        edgeColor.alpha *= aOpacity;
+        aContext.SetColor(ToSRGBColor(edgeColor));
       } else {
         aContext.SetMatrixDouble(
             aContext.CurrentMatrixDouble().Copy().PreTranslate(
@@ -1141,12 +1165,13 @@ bool nsCSSGradientRenderer::TryPaintTilesWithExtendMode(
       return false;
     }
 
-    RefPtr<gfxContext> tileContext = gfxContext::CreateOrNull(tileTarget);
+    {
+      gfxContext tileContext(tileTarget);
 
-    tileContext->SetPattern(aGradientPattern);
-    tileContext->Paint();
+      tileContext.SetPattern(aGradientPattern);
+      tileContext.Paint();
+    }
 
-    tileContext = nullptr;
     tileSurface = tileTarget->Snapshot();
     tileTarget = nullptr;
   }
@@ -1172,11 +1197,75 @@ void nsCSSGradientRenderer::BuildWebRenderParameters(
   aMode =
       mGradient->Repeating() ? wr::ExtendMode::Repeat : wr::ExtendMode::Clamp;
 
-  aStops.SetLength(mStops.Length());
-  for (uint32_t i = 0; i < mStops.Length(); i++) {
-    aStops[i].color = wr::ToColorF(ToDeviceColor(mStops[i].mColor));
-    aStops[i].color.a *= aOpacity;
-    aStops[i].offset = mStops[i].mPosition;
+  // If the interpolation space is not sRGB, or if color management is active,
+  // we need to add additional stops so that the sRGB interpolation in WebRender
+  // still closely approximates the correct curves.  We prefer avoiding this if
+  // the gradient is simple because WebRender has fast rendering of linear
+  // gradients with 2 stops (which represent >99% of all gradients on the web).
+  //
+  // WebRender doesn't have easy access to StyleAbsoluteColor and CMS display
+  // color correction, so we just expand the gradient stop table significantly
+  // so that gamma and hue interpolation errors become imperceptible.
+  //
+  // This always turns into 128 pairs of stops inside WebRender as an
+  // implementation detail, so the number of stops we generate here should have
+  // very little impact on performance as the texture upload is always the same,
+  // except for the special linear gradient 2-stop case, and it is gpucache so
+  // if it does not change it is not re-uploaded.
+  //
+  // Color management bugs that this addresses:
+  // * https://bugzilla.mozilla.org/show_bug.cgi?id=939387
+  // * https://bugzilla.mozilla.org/show_bug.cgi?id=1248178
+  StyleColorInterpolationMethod styleColorInterpolationMethod =
+      mGradient->ColorInterpolationMethod();
+  if (mStops.Length() >= 2 &&
+      (styleColorInterpolationMethod.space != StyleColorSpace::Srgb ||
+       gfxPlatform::GetCMSMode() == CMSMode::All)) {
+    aStops.SetLengthAndRetainStorage(0);
+    // this could be made tunable, but at 1.0/128 the error is largely
+    // irrelevant, as WebRender re-encodes it to 128 pairs of stops.
+    //
+    // note that we don't attempt to place the positions of these stops
+    // precisely at intervals, we just add this many extra stops across the
+    // range where it is convenient.
+    const int fullRangeExtraStops = 128;
+    // we always emit at least two stops (start and end) for each input stop,
+    // which avoids ambiguity with incomplete oklch/lch/hsv/hsb color stops for
+    // the last stop pair, where the last color stop can't be interpreted on its
+    // own because it actually depends on the previous stop.
+    aStops.SetLength(mStops.Length() * 2 + fullRangeExtraStops);
+    uint32_t outputStop = 0;
+    for (uint32_t i = 0; i < mStops.Length() - 1; i++) {
+      auto& start = mStops[i];
+      auto& end = i + 1 < mStops.Length() ? mStops[i + 1] : mStops[i];
+      StyleAbsoluteColor startColor = start.mColor;
+      StyleAbsoluteColor endColor = end.mColor;
+      int extraStops = (int)(floor(end.mPosition * fullRangeExtraStops) -
+                             floor(start.mPosition * fullRangeExtraStops));
+      extraStops = clamped(extraStops, 1, fullRangeExtraStops);
+      float step = 1.0f / (float)extraStops;
+      for (int extraStop = 0;
+           extraStop <= extraStops && outputStop < aStops.Capacity();
+           extraStop++) {
+        auto lerp = (float)extraStop * step;
+        auto position =
+            start.mPosition + lerp * (end.mPosition - start.mPosition);
+        StyleAbsoluteColor color = Servo_InterpolateColor(
+            styleColorInterpolationMethod, &endColor, &startColor, lerp);
+        aStops[outputStop].color = wr::ToColorF(ToDeviceColor(color));
+        aStops[outputStop].color.a *= aOpacity;
+        aStops[outputStop].offset = (float)position;
+        outputStop++;
+      }
+    }
+    aStops.SetLength(outputStop);
+  } else {
+    aStops.SetLength(mStops.Length());
+    for (uint32_t i = 0; i < mStops.Length(); i++) {
+      aStops[i].color = wr::ToColorF(ToDeviceColor(mStops[i].mColor));
+      aStops[i].color.a *= aOpacity;
+      aStops[i].offset = (float)mStops[i].mPosition;
+    }
   }
 
   aLineStart = LayoutDevicePoint(mLineStart.x, mLineStart.y);

@@ -5,7 +5,9 @@
 
 "use strict";
 
-const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
+const { HttpServer } = ChromeUtils.importESModule(
+  "resource://testing-common/httpd.sys.mjs"
+);
 
 const gDashboard = Cc["@mozilla.org/network/dashboard;1"].getService(
   Ci.nsIDashboard
@@ -17,7 +19,7 @@ const gServerSocket = Cc["@mozilla.org/network/server-socket;1"].createInstance(
 const gHttpServer = new HttpServer();
 
 add_test(function test_http() {
-  gDashboard.requestHttpConnections(function(data) {
+  gDashboard.requestHttpConnections(function (data) {
     let found = false;
     for (let i = 0; i < data.connections.length; i++) {
       if (data.connections[i].host == "localhost") {
@@ -32,7 +34,7 @@ add_test(function test_http() {
 });
 
 add_test(function test_dns() {
-  gDashboard.requestDNSInfo(function(data) {
+  gDashboard.requestDNSInfo(function (data) {
     let found = false;
     for (let i = 0; i < data.entries.length; i++) {
       if (data.entries[i].hostname == "localhost") {
@@ -72,7 +74,7 @@ add_test(function test_sockets() {
   let listener = {
     onTransportStatus(aTransport, aStatus, aProgress, aProgressMax) {
       if (aStatus == Ci.nsISocketTransport.STATUS_CONNECTED_TO) {
-        gDashboard.requestSockets(function(data) {
+        gDashboard.requestSockets(function (data) {
           gServerSocket.close();
           let found = false;
           for (let i = 0; i < data.sockets.length; i++) {

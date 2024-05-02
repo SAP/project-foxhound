@@ -32,7 +32,7 @@ bitflags! {
 
 macro_rules! bits {
     ($($x:ident => $y:ident),*) => {
-        $(pub const $x: ChannelLayout = ChannelLayout { bits: ffi::$y };)*
+        $(pub const $x: ChannelLayout = ChannelLayout::from_bits_truncate(ffi::$y);)*
     }
 }
 
@@ -67,16 +67,15 @@ impl From<ffi::cubeb_channel> for ChannelLayout {
     }
 }
 
-impl Into<ffi::cubeb_channel> for ChannelLayout {
-    fn into(self) -> ffi::cubeb_channel {
-        self.bits()
+impl From<ChannelLayout> for ffi::cubeb_channel {
+    fn from(x: ChannelLayout) -> Self {
+        x.bits()
     }
 }
 
 impl ChannelLayout {
     pub fn num_channels(&self) -> u32 {
-        let layout = *self;
-        unsafe { ffi::cubeb_channel_layout_nb_channels(layout.into()) }
+        unsafe { ffi::cubeb_channel_layout_nb_channels(self.bits()) }
     }
 }
 

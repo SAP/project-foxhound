@@ -5,12 +5,13 @@ const kPagePrefRoot = "browser.laterrun.pages.";
 const kSessionCountPref = "browser.laterrun.bookkeeping.sessionCount";
 const kProfileCreationTime = "browser.laterrun.bookkeeping.profileCreationTime";
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { LaterRun } = ChromeUtils.import("resource:///modules/LaterRun.jsm");
+const { LaterRun } = ChromeUtils.importESModule(
+  "resource:///modules/LaterRun.sys.mjs"
+);
 
 Services.prefs.setBoolPref(kEnabledPref, true);
-const { updateAppInfo } = ChromeUtils.import(
-  "resource://testing-common/AppInfo.jsm"
+const { updateAppInfo } = ChromeUtils.importESModule(
+  "resource://testing-common/AppInfo.sys.mjs"
 );
 updateAppInfo();
 

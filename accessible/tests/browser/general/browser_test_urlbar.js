@@ -4,8 +4,8 @@
 
 "use strict";
 
-const { UrlbarTestUtils } = ChromeUtils.import(
-  "resource://testing-common/UrlbarTestUtils.jsm"
+const { UrlbarTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/UrlbarTestUtils.sys.mjs"
 );
 
 // Checking that the awesomebar popup gets COMBOBOX_LIST role instead of
@@ -35,6 +35,6 @@ add_task(async function testAutocompleteRichResult() {
   BrowserTestUtils.removeTab(tab);
 });
 
-registerCleanupFunction(async function() {
+registerCleanupFunction(async function () {
   await shutdownAccessibilityService();
 });

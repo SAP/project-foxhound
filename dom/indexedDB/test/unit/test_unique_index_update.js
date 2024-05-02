@@ -3,6 +3,7 @@
  * http://creativecommons.org/publicdomain/zero/1.0/
  */
 
+/* exported testGenerator */
 var testGenerator = testSteps();
 
 function* testSteps() {
@@ -47,7 +48,7 @@ function* testSteps() {
 
     let keyRange = IDBKeyRange.only(5);
 
-    objectStore.index("").openCursor(keyRange).onsuccess = function(event) {
+    objectStore.index("").openCursor(keyRange).onsuccess = function (event) {
       let cursor = event.target.result;
       ok(cursor, "Must have a cursor here");
 

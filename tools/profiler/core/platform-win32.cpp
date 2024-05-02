@@ -32,8 +32,6 @@
 #include <mmsystem.h>
 #include <process.h>
 
-#include "nsWindowsDllInterceptor.h"
-#include "mozilla/StackWalk_windows.h"
 #include "mozilla/WindowsVersion.h"
 
 #include <type_traits>
@@ -43,18 +41,23 @@ static void PopulateRegsFromContext(Registers& aRegs, CONTEXT* aContext) {
   aRegs.mPC = reinterpret_cast<Address>(aContext->Rip);
   aRegs.mSP = reinterpret_cast<Address>(aContext->Rsp);
   aRegs.mFP = reinterpret_cast<Address>(aContext->Rbp);
+  aRegs.mR10 = reinterpret_cast<Address>(aContext->R10);
+  aRegs.mR12 = reinterpret_cast<Address>(aContext->R12);
 #elif defined(GP_ARCH_x86)
   aRegs.mPC = reinterpret_cast<Address>(aContext->Eip);
   aRegs.mSP = reinterpret_cast<Address>(aContext->Esp);
   aRegs.mFP = reinterpret_cast<Address>(aContext->Ebp);
+  aRegs.mEcx = reinterpret_cast<Address>(aContext->Ecx);
+  aRegs.mEdx = reinterpret_cast<Address>(aContext->Edx);
 #elif defined(GP_ARCH_arm64)
   aRegs.mPC = reinterpret_cast<Address>(aContext->Pc);
   aRegs.mSP = reinterpret_cast<Address>(aContext->Sp);
   aRegs.mFP = reinterpret_cast<Address>(aContext->Fp);
+  aRegs.mLR = reinterpret_cast<Address>(aContext->Lr);
+  aRegs.mR11 = reinterpret_cast<Address>(aContext->X11);
 #else
 #  error "bad arch"
 #endif
-  aRegs.mLR = 0;
 }
 
 // Gets a real (i.e. not pseudo) handle for the current thread, with the
@@ -120,6 +123,39 @@ uint64_t RunningTimes::ConvertRawToJson(uint64_t aRawValue) {
   // the result of the division is truncated.
   return (aRawValue * GHZ_PER_MHZ + (GHZ_PER_MHZ / 2u)) / cycleTimeFrequencyMHz;
 }
+
+static inline uint64_t ToNanoSeconds(const FILETIME& aFileTime) {
+  // FILETIME values are 100-nanoseconds units, converting
+  ULARGE_INTEGER usec = {{aFileTime.dwLowDateTime, aFileTime.dwHighDateTime}};
+  return usec.QuadPart * 100;
+}
+
+namespace mozilla::profiler {
+bool GetCpuTimeSinceThreadStartInNs(
+    uint64_t* aResult, const mozilla::profiler::PlatformData& aPlatformData) {
+  const HANDLE profiledThread = aPlatformData.ProfiledThread();
+  int frequencyInMHz = GetCycleTimeFrequencyMHz();
+  if (frequencyInMHz) {
+    uint64_t cpuCycleCount;
+    if (!QueryThreadCycleTime(profiledThread, &cpuCycleCount)) {
+      return false;
+    }
+
+    constexpr uint64_t USEC_PER_NSEC = 1000L;
+    *aResult = cpuCycleCount * USEC_PER_NSEC / frequencyInMHz;
+    return true;
+  }
+
+  FILETIME createTime, exitTime, kernelTime, userTime;
+  if (!GetThreadTimes(profiledThread, &createTime, &exitTime, &kernelTime,
+                      &userTime)) {
+    return false;
+  }
+
+  *aResult = ToNanoSeconds(kernelTime) + ToNanoSeconds(userTime);
+  return true;
+}
+}  // namespace mozilla::profiler
 
 static RunningTimes GetProcessRunningTimesDiff(
     PSLockRef aLock, RunningTimes& aPreviousRunningTimesToBeUpdated) {
@@ -229,7 +265,7 @@ void Sampler::SuspendAndSampleAndResumeThread(
 #if defined(GP_ARCH_amd64)
   context.ContextFlags = CONTEXT_FULL;
 #else
-  context.ContextFlags = CONTEXT_CONTROL;
+  context.ContextFlags = CONTEXT_CONTROL | CONTEXT_INTEGER;
 #endif
   if (!GetThreadContext(profiled_thread, &context)) {
     ResumeThread(profiled_thread);
@@ -440,23 +476,8 @@ void SamplerThread::Stop(PSLockRef aLock) {
 static void PlatformInit(PSLockRef aLock) {}
 
 #if defined(HAVE_NATIVE_UNWIND)
-void Registers::SyncPopulate() {
-  CONTEXT context;
-  RtlCaptureContext(&context);
-  PopulateRegsFromContext(*this, &context);
-}
+#  define REGISTERS_SYNC_POPULATE(regs) \
+    CONTEXT context;                    \
+    RtlCaptureContext(&context);        \
+    PopulateRegsFromContext(regs, &context);
 #endif
-
-#if defined(GP_PLAT_amd64_windows)
-
-// Use InitializeWin64ProfilerHooks from the base profiler.
-
-namespace mozilla {
-namespace baseprofiler {
-MFBT_API void InitializeWin64ProfilerHooks();
-}  // namespace baseprofiler
-}  // namespace mozilla
-
-using mozilla::baseprofiler::InitializeWin64ProfilerHooks;
-
-#endif  // defined(GP_PLAT_amd64_windows)

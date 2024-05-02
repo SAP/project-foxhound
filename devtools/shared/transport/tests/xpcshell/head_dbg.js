@@ -9,12 +9,12 @@
 
 var CC = Components.Constructor;
 
-const { require } = ChromeUtils.import(
-  "resource://devtools/shared/loader/Loader.jsm"
+const { require } = ChromeUtils.importESModule(
+  "resource://devtools/shared/loader/Loader.sys.mjs"
 );
-const { NetUtil } = require("resource://gre/modules/NetUtil.jsm");
-
-const Services = require("Services");
+const { NetUtil } = ChromeUtils.importESModule(
+  "resource://gre/modules/NetUtil.sys.mjs"
+);
 
 // We do not want to log packets by default, because in some tests,
 // we can be sending large amounts of data. The test harness has
@@ -27,10 +27,16 @@ Services.prefs.setBoolPref("devtools.debugger.remote-enabled", true);
 
 const {
   ActorRegistry,
-} = require("devtools/server/actors/utils/actor-registry");
-const { DevToolsServer } = require("devtools/server/devtools-server");
-const { DevToolsClient } = require("devtools/client/devtools-client");
-const { SocketListener } = require("devtools/shared/security/socket");
+} = require("resource://devtools/server/actors/utils/actor-registry.js");
+const {
+  DevToolsServer,
+} = require("resource://devtools/server/devtools-server.js");
+const {
+  DevToolsClient,
+} = require("resource://devtools/client/devtools-client.js");
+const {
+  SocketListener,
+} = require("resource://devtools/shared/security/socket.js");
 
 // Convert an nsIScriptError 'logLevel' value into an appropriate string.
 function scriptErrorLogLevel(message) {
@@ -49,7 +55,7 @@ function scriptErrorLogLevel(message) {
 // into the ether.
 var errorCount = 0;
 var listener = {
-  observe: function(message) {
+  observe(message) {
     errorCount++;
     let string = "";
     try {
@@ -101,6 +107,8 @@ function initTestDevToolsServer() {
   DevToolsServer.setRootActor(createRootActor);
   // Allow incoming connections.
   DevToolsServer.init();
+  // Avoid the server from being destroyed when the last connection closes
+  DevToolsServer.keepAlive = true;
 }
 
 /**
@@ -124,7 +132,7 @@ function writeTestTempFile(fileName, content) {
     do {
       const numWritten = stream.write(content, content.length);
       content = content.slice(numWritten);
-    } while (content.length > 0);
+    } while (content.length);
   } finally {
     stream.close();
   }
@@ -132,7 +140,7 @@ function writeTestTempFile(fileName, content) {
 
 /** * Transport Factories ***/
 
-var socket_transport = async function() {
+var socket_transport = async function () {
   if (!DevToolsServer.listeningSockets) {
     const AuthenticatorType = DevToolsServer.Authenticators.get("PROMPT");
     const authenticator = new AuthenticatorType.Server();

@@ -17,16 +17,15 @@
           isDefaultCookieStoreId: false, isPrivateCookieStoreId:false,
           EventManager: false */
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "ContextualIdentityService",
-  "resource://gre/modules/ContextualIdentityService.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  ContextualIdentityService:
+    "resource://gre/modules/ContextualIdentityService.sys.mjs",
+});
 
 XPCOMUtils.defineLazyGlobalGetters(this, ["URL"]);
 
-var { ExtensionCommon } = ChromeUtils.import(
-  "resource://gre/modules/ExtensionCommon.jsm"
+var { ExtensionCommon } = ChromeUtils.importESModule(
+  "resource://gre/modules/ExtensionCommon.sys.mjs"
 );
 
 var { ExtensionError } = ExtensionUtils;
@@ -40,7 +39,7 @@ global.DEFAULT_STORE = "firefox-default";
 global.PRIVATE_STORE = "firefox-private";
 global.CONTAINER_STORE = "firefox-container-";
 
-global.getCookieStoreIdForTab = function(data, tab) {
+global.getCookieStoreIdForTab = function (data, tab) {
   if (data.incognito) {
     return PRIVATE_STORE;
   }
@@ -52,7 +51,7 @@ global.getCookieStoreIdForTab = function(data, tab) {
   return DEFAULT_STORE;
 };
 
-global.getCookieStoreIdForOriginAttributes = function(originAttributes) {
+global.getCookieStoreIdForOriginAttributes = function (originAttributes) {
   if (originAttributes.privateBrowsingId) {
     return PRIVATE_STORE;
   }
@@ -64,23 +63,23 @@ global.getCookieStoreIdForOriginAttributes = function(originAttributes) {
   return DEFAULT_STORE;
 };
 
-global.isPrivateCookieStoreId = function(storeId) {
+global.isPrivateCookieStoreId = function (storeId) {
   return storeId == PRIVATE_STORE;
 };
 
-global.isDefaultCookieStoreId = function(storeId) {
+global.isDefaultCookieStoreId = function (storeId) {
   return storeId == DEFAULT_STORE;
 };
 
-global.isContainerCookieStoreId = function(storeId) {
+global.isContainerCookieStoreId = function (storeId) {
   return storeId !== null && storeId.startsWith(CONTAINER_STORE);
 };
 
-global.getCookieStoreIdForContainer = function(containerId) {
+global.getCookieStoreIdForContainer = function (containerId) {
   return CONTAINER_STORE + containerId;
 };
 
-global.getContainerForCookieStoreId = function(storeId) {
+global.getContainerForCookieStoreId = function (storeId) {
   if (!isContainerCookieStoreId(storeId)) {
     return null;
   }
@@ -98,7 +97,7 @@ global.getContainerForCookieStoreId = function(storeId) {
   return null;
 };
 
-global.isValidCookieStoreId = function(storeId) {
+global.isValidCookieStoreId = function (storeId) {
   return (
     isDefaultCookieStoreId(storeId) ||
     isPrivateCookieStoreId(storeId) ||
@@ -106,7 +105,7 @@ global.isValidCookieStoreId = function(storeId) {
   );
 };
 
-global.getOriginAttributesPatternForCookieStoreId = function(cookieStoreId) {
+global.getOriginAttributesPatternForCookieStoreId = function (cookieStoreId) {
   if (isDefaultCookieStoreId(cookieStoreId)) {
     return {
       userContextId: Ci.nsIScriptSecurityManager.DEFAULT_USER_CONTEXT_ID,

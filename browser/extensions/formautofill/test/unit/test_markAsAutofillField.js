@@ -94,6 +94,12 @@ const TESTCASES = [
                </form>`,
     targetElementId: "cc-number1",
     expectedResult: [],
+    prefs: [
+      [
+        "extensions.formautofill.creditCards.heuristics.fathom.testConfidence",
+        "1.0",
+      ],
+    ],
   },
   {
     description:
@@ -107,6 +113,12 @@ const TESTCASES = [
                </form>`,
     targetElementId: "cc-number1",
     expectedResult: [],
+    prefs: [
+      [
+        "extensions.formautofill.creditCards.heuristics.fathom.testConfidence",
+        "1.0",
+      ],
+    ],
   },
   {
     description:
@@ -121,6 +133,12 @@ const TESTCASES = [
                </form>`,
     targetElementId: "cc-number1",
     expectedResult: ["cc-number3", "cc-name", "cc-exp-month", "cc-exp-year"],
+    prefs: [
+      [
+        "extensions.formautofill.creditCards.heuristics.fathom.testConfidence",
+        "1.0",
+      ],
+    ],
   },
   {
     description:
@@ -143,19 +161,23 @@ const TESTCASES = [
 let markedFieldId = [];
 
 var FormAutofillContent;
-add_task(async function setup() {
-  ({ FormAutofillContent } = ChromeUtils.import(
-    "resource://autofill/FormAutofillContent.jsm"
+add_setup(async () => {
+  ({ FormAutofillContent } = ChromeUtils.importESModule(
+    "resource://autofill/FormAutofillContent.sys.mjs"
   ));
 
-  FormAutofillContent._markAsAutofillField = function(field) {
+  FormAutofillContent._markAsAutofillField = function (field) {
     markedFieldId.push(field.id);
   };
 });
 
 TESTCASES.forEach(testcase => {
-  add_task(async function() {
+  add_task(async function () {
     info("Starting testcase: " + testcase.description);
+
+    if (testcase.prefs) {
+      testcase.prefs.forEach(pref => SetPref(pref[0], pref[1]));
+    }
 
     markedFieldId = [];
 
@@ -171,5 +193,9 @@ TESTCASES.forEach(testcase => {
       testcase.expectedResult,
       "Check the fields were marked correctly."
     );
+
+    if (testcase.prefs) {
+      testcase.prefs.forEach(pref => Services.prefs.clearUserPref(pref[0]));
+    }
   });
 });

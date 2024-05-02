@@ -5,6 +5,11 @@ http://creativecommons.org/publicdomain/zero/1.0/ */
 
 // Test adding and removing custom devices via the modal.
 
+const L10N = new LocalizationHelper(
+  "devtools/client/locales/device.properties",
+  true
+);
+
 const device = {
   name: "Test Device",
   width: 400,
@@ -27,11 +32,17 @@ const TEST_URL = "data:text/html;charset=utf-8,";
 
 addRDMTask(
   TEST_URL,
-  async function({ ui }) {
+  async function ({ ui }) {
     const { toolWindow } = ui;
     const { document } = toolWindow;
 
     await openDeviceModal(ui);
+
+    is(
+      getCustomHeaderEl(document),
+      null,
+      "There's no Custom header when we don't have custom devices"
+    );
 
     info("Reveal device adder form, check that defaults match the viewport");
     const adderShow = document.getElementById("device-add-button");
@@ -56,6 +67,15 @@ addRDMTask(
     });
     ok(deviceCb, "Custom device checkbox added to modal");
     ok(deviceCb.checked, "Custom device enabled");
+
+    const customHeaderEl = getCustomHeaderEl(document);
+    ok(customHeaderEl, "There's a Custom header when add a custom devices");
+    is(
+      customHeaderEl.textContent,
+      L10N.getStr(`device.custom`),
+      "The custom header has the expected text"
+    );
+
     document.getElementById("device-close-button").click();
 
     info("Look for custom device in device selector");
@@ -70,7 +90,7 @@ addRDMTask(
 
 addRDMTask(
   TEST_URL,
-  async function({ ui }) {
+  async function ({ ui }) {
     const { toolWindow } = ui;
     const { store, document } = toolWindow;
 
@@ -98,7 +118,7 @@ addRDMTask(
 
     const deviceRemoveButton = document.querySelector(".device-remove-button");
     const removed = Promise.all([
-      waitUntilState(store, state => state.devices.custom.length == 0),
+      waitUntilState(store, state => !state.devices.custom.length),
       once(ui, "device-association-removed"),
     ]);
     deviceRemoveButton.click();
@@ -131,7 +151,7 @@ addRDMTask(
 
 addRDMTask(
   TEST_URL,
-  async function({ ui }) {
+  async function ({ ui }) {
     const { toolWindow } = ui;
     const { document } = toolWindow;
 
@@ -168,7 +188,7 @@ addRDMTask(
 
 addRDMTask(
   TEST_URL,
-  async function({ ui }) {
+  async function ({ ui }) {
     const { toolWindow } = ui;
     const { document } = toolWindow;
 
@@ -210,4 +230,8 @@ function testDeviceAdder(ui, expected) {
   );
   is(userAgentInput.value, expected.userAgent, "User agent matches");
   is(touchInput.checked, expected.touch, "Touch matches");
+}
+
+function getCustomHeaderEl(doc) {
+  return doc.querySelector(`.device-type-custom .device-header`);
 }

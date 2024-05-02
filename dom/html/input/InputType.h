@@ -24,8 +24,7 @@ inline mozilla::Decimal NS_floorModulo(mozilla::Decimal x, mozilla::Decimal y) {
 
 class nsIFrame;
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 class HTMLInputElement;
 
 /**
@@ -49,7 +48,7 @@ class InputType {
   virtual ~InputType() = default;
 
   // Float value returned by GetStep() when the step attribute is set to 'any'.
-  static const Decimal kStepAny;
+  static constexpr Decimal kStepAny = Decimal(0_d);
 
   /**
    * Drop the reference to the input element.
@@ -65,7 +64,7 @@ class InputType {
   virtual Maybe<bool> HasPatternMismatch() const;
   virtual bool IsRangeOverflow() const;
   virtual bool IsRangeUnderflow() const;
-  virtual bool HasStepMismatch(bool aUseZeroIfValueNaN) const;
+  virtual bool HasStepMismatch() const;
   virtual bool HasBadInput() const;
 
   nsresult GetValidationMessage(
@@ -77,7 +76,7 @@ class InputType {
   virtual nsresult GetRangeUnderflowMessage(nsAString& aMessage);
   virtual nsresult GetBadInputMessage(nsAString& aMessage);
 
-  MOZ_CAN_RUN_SCRIPT virtual nsresult MinMaxStepAttrChanged();
+  MOZ_CAN_RUN_SCRIPT virtual void MinMaxStepAttrChanged() {}
 
   /**
    * Convert a string to a Decimal number in a type specific way,
@@ -85,11 +84,16 @@ class InputType {
    * ie parse a date string to a timestamp if type=date,
    * or parse a number string to its value if type=number.
    * @param aValue the string to be parsed.
-   * @param aResultValue the number as a Decimal.
-   * @result whether the parsing was successful.
    */
-  virtual bool ConvertStringToNumber(nsAString& aValue,
-                                     Decimal& aResultValue) const;
+  struct StringToNumberResult {
+    // The result decimal. Successfully parsed if it's finite.
+    Decimal mResult = Decimal::nan();
+    // Whether the result required reading locale-dependent data (for input
+    // type=number), or the value parses using the regular HTML rules.
+    bool mLocalized = false;
+  };
+  virtual StringToNumberResult ConvertStringToNumber(
+      const nsAString& aValue) const;
 
   /**
    * Convert a Decimal to a string in a type specific way, ie convert a
@@ -140,14 +144,6 @@ class InputType {
    */
   MOZ_CAN_RUN_SCRIPT nsresult
   SetValueInternal(const nsAString& aValue, const ValueSetterOptions& aOptions);
-
-  /**
-   * Return the base used to compute if a value matches step.
-   * Basically, it's the min attribute if present and a default value otherwise.
-   *
-   * @return The step base.
-   */
-  Decimal GetStepBase() const;
 
   /**
    * Get the primary frame for the input element.
@@ -239,7 +235,6 @@ class InputType {
   HTMLInputElement* mInputElement;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif /* mozilla_dom_InputType_h__ */

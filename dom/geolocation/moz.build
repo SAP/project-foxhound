@@ -47,7 +47,7 @@ elif CONFIG["MOZ_WIDGET_TOOLKIT"] == "cocoa":
     ]
 elif CONFIG["MOZ_WIDGET_TOOLKIT"] == "windows":
     LOCAL_INCLUDES += [
-        "/dom/system/windows",
+        "/dom/system/windows/location",
     ]
 elif CONFIG["MOZ_WIDGET_TOOLKIT"] == "gtk":
     if CONFIG["MOZ_GPSD"]:
@@ -55,3 +55,6 @@ elif CONFIG["MOZ_WIDGET_TOOLKIT"] == "gtk":
             "/dom/system/linux",
         ]
         DEFINES["MOZ_GPSD"] = True
+    if CONFIG["MOZ_ENABLE_DBUS"]:
+        LOCAL_INCLUDES += ["/dom/system/linux"]
+        CXXFLAGS += CONFIG["MOZ_GTK3_CFLAGS"]

@@ -9,7 +9,7 @@
 // using the button contained therein to load the certificate exception
 // dialog, using that to add an exception, and finally successfully visiting
 // the site, including showing the right identity box and control center icons.
-add_task(async function() {
+add_task(async function () {
   await BrowserTestUtils.openNewForegroundTab(gBrowser);
   await loadBadCertPage("https://expired.example.com");
 
@@ -43,14 +43,14 @@ add_task(async function() {
         .getElementById("identity-popup-securityView")
         .getElementsByClassName("identity-popup-security-connection")[0]
     )
-    .getPropertyValue("background-image");
+    .getPropertyValue("list-style-image");
   let securityContentBG = gBrowser.ownerGlobal
     .getComputedStyle(
       document
         .getElementById("identity-popup-mainView")
         .getElementsByClassName("identity-popup-security-connection")[0]
     )
-    .getPropertyValue("background-image");
+    .getPropertyValue("list-style-image");
   is(
     identityIconImage,
     'url("chrome://global/skin/icons/security-warning.svg")',

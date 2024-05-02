@@ -6,55 +6,14 @@
 
 #include "StyleInfo.h"
 
-#include "mozilla/dom/Element.h"
-#include "nsComputedDOMStyle.h"
-#include "nsCSSProps.h"
-#include "nsIFrame.h"
+#include "nsStyleConsts.h"
 
 using namespace mozilla;
 using namespace mozilla::a11y;
 
-StyleInfo::StyleInfo(dom::Element* aElement) : mElement(aElement) {
-  mComputedStyle = nsComputedDOMStyle::GetComputedStyleNoFlush(aElement);
-}
-
-already_AddRefed<nsAtom> StyleInfo::Display() {
-  nsAutoCString value;
-  mComputedStyle->GetComputedPropertyValue(eCSSProperty_display, value);
-  RefPtr<nsAtom> atomVal = NS_Atomize(value);
-  return atomVal.forget();
-}
-
-already_AddRefed<nsAtom> StyleInfo::TextAlign() {
-  nsAutoCString value;
-  mComputedStyle->GetComputedPropertyValue(eCSSProperty_text_align, value);
-  RefPtr<nsAtom> atomVal = NS_Atomize(value);
-  return atomVal.forget();
-}
-
-mozilla::LengthPercentage StyleInfo::TextIndent() {
-  return mComputedStyle->StyleText()->mTextIndent;
-}
-
-CSSCoord StyleInfo::Margin(Side aSide) {
-  MOZ_ASSERT(mElement->GetPrimaryFrame(),
-             " mElement->GetPrimaryFrame() needs to be valid pointer");
-
-  nsIFrame* frame = mElement->GetPrimaryFrame();
-
-  // This is here only to guarantee that we do the same as getComputedStyle
-  // does, so that we don't hit precision errors in tests.
-  auto& margin = frame->StyleMargin()->mMargin.Get(aSide);
-  if (margin.ConvertsToLength()) {
-    return margin.AsLengthPercentage().ToLengthInCSSPixels();
-  }
-
-  nscoord coordVal = frame->GetUsedMargin().Side(aSide);
-  return CSSPixel::FromAppUnits(coordVal);
-}
-
 void StyleInfo::FormatColor(const nscolor& aValue, nsAString& aFormattedValue) {
   // Combine the string like rgb(R, G, B) from nscolor.
+  // FIXME: What about the alpha channel?
   aFormattedValue.AppendLiteral("rgb(");
   aFormattedValue.AppendInt(NS_GET_R(aValue));
   aFormattedValue.AppendLiteral(", ");
@@ -64,21 +23,23 @@ void StyleInfo::FormatColor(const nscolor& aValue, nsAString& aFormattedValue) {
   aFormattedValue.Append(')');
 }
 
-already_AddRefed<nsAtom> StyleInfo::TextDecorationStyleToAtom(uint8_t aValue) {
+already_AddRefed<nsAtom> StyleInfo::TextDecorationStyleToAtom(
+    StyleTextDecorationStyle aValue) {
   // TODO: When these are enum classes that rust also understands we should just
   // make an FFI call here.
+  // TODO: These should probably be static atoms.
   switch (aValue) {
-    case NS_STYLE_TEXT_DECORATION_STYLE_NONE:
+    case StyleTextDecorationStyle::None:
       return NS_Atomize("-moz-none");
-    case NS_STYLE_TEXT_DECORATION_STYLE_SOLID:
+    case StyleTextDecorationStyle::Solid:
       return NS_Atomize("solid");
-    case NS_STYLE_TEXT_DECORATION_STYLE_DOUBLE:
+    case StyleTextDecorationStyle::Double:
       return NS_Atomize("double");
-    case NS_STYLE_TEXT_DECORATION_STYLE_DOTTED:
+    case StyleTextDecorationStyle::Dotted:
       return NS_Atomize("dotted");
-    case NS_STYLE_TEXT_DECORATION_STYLE_DASHED:
+    case StyleTextDecorationStyle::Dashed:
       return NS_Atomize("dashed");
-    case NS_STYLE_TEXT_DECORATION_STYLE_WAVY:
+    case StyleTextDecorationStyle::Wavy:
       return NS_Atomize("wavy");
     default:
       MOZ_ASSERT_UNREACHABLE("Unknown decoration style");

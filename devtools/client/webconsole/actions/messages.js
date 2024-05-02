@@ -7,45 +7,52 @@
 const {
   prepareMessage,
   getNaturalOrder,
-} = require("devtools/client/webconsole/utils/messages");
+} = require("resource://devtools/client/webconsole/utils/messages.js");
 const {
   IdGenerator,
-} = require("devtools/client/webconsole/utils/id-generator");
+} = require("resource://devtools/client/webconsole/utils/id-generator.js");
 const {
   batchActions,
-} = require("devtools/client/shared/redux/middleware/debounce");
+} = require("resource://devtools/client/shared/redux/middleware/debounce.js");
 
 const {
+  CSS_MESSAGE_ADD_MATCHING_ELEMENTS,
+  MESSAGE_CLOSE,
+  MESSAGE_OPEN,
+  MESSAGE_REMOVE,
+  MESSAGE_TYPE,
   MESSAGES_ADD,
+  MESSAGES_CLEAR,
+  MESSAGES_DISABLE,
   NETWORK_MESSAGES_UPDATE,
   NETWORK_UPDATES_REQUEST,
-  MESSAGES_CLEAR,
-  MESSAGE_OPEN,
-  MESSAGE_CLOSE,
-  MESSAGE_TYPE,
-  MESSAGE_REMOVE,
-  MESSAGE_UPDATE_PAYLOAD,
   PRIVATE_MESSAGES_CLEAR,
-} = require("devtools/client/webconsole/constants");
+  TARGET_MESSAGES_REMOVE,
+} = require("resource://devtools/client/webconsole/constants.js");
 
 const defaultIdGenerator = new IdGenerator();
 
-function messagesAdd(packets, idGenerator = null) {
+function messagesAdd(packets, idGenerator = null, persistLogs = false) {
   if (idGenerator == null) {
     idGenerator = defaultIdGenerator;
   }
-  const messages = packets.map(packet => prepareMessage(packet, idGenerator));
+  const messages = packets.map(packet =>
+    prepareMessage(packet, idGenerator, persistLogs)
+  );
   // Sort the messages by their timestamps.
   messages.sort(getNaturalOrder);
-  for (let i = messages.length - 1; i >= 0; i--) {
-    if (messages[i].type === MESSAGE_TYPE.CLEAR) {
-      return batchActions([
-        messagesClear(),
-        {
-          type: MESSAGES_ADD,
-          messages: messages.slice(i),
-        },
-      ]);
+
+  if (!persistLogs) {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].type === MESSAGE_TYPE.CLEAR) {
+        return batchActions([
+          messagesClear(),
+          {
+            type: MESSAGES_ADD,
+            messages: messages.slice(i),
+          },
+        ]);
+      }
     }
   }
 
@@ -63,9 +70,23 @@ function messagesClear() {
   };
 }
 
+function messagesDisable(ids) {
+  return {
+    type: MESSAGES_DISABLE,
+    ids,
+  };
+}
+
 function privateMessagesClear() {
   return {
     type: PRIVATE_MESSAGES_CLEAR,
+  };
+}
+
+function targetMessagesRemove(targetFront) {
+  return {
+    type: TARGET_MESSAGES_REMOVE,
+    targetFront,
   };
 }
 
@@ -85,49 +106,34 @@ function messageClose(id) {
 
 /**
  * Make a query on the server to get a list of DOM elements matching the given
- * CSS selectors and set the result as a message's additional data payload.
+ * CSS selectors and store the information in the state.
  *
- * @param {String} id
- *        Message ID
- * @param {String} cssSelectors
- *        CSS selectors string to use in the querySelectorAll() call
- * @return {[type]} [description]
+ * @param {Message} message
+ *        The CSSWarning message
  */
-function messageGetMatchingElements(id, cssSelectors) {
-  return async ({ dispatch, commands, getState }) => {
+function messageGetMatchingElements(message) {
+  return async ({ dispatch, commands }) => {
     try {
       // We need to do the querySelectorAll using the target the message is coming from,
       // as well as with the window the warning message was emitted from.
-      const message = getState().messages.messagesById.get(id);
       const selectedTargetFront = message?.targetFront;
 
       const response = await commands.scriptCommand.execute(
-        `document.querySelectorAll('${cssSelectors}')`,
+        `document.querySelectorAll('${message.cssSelectors}')`,
         {
           selectedTargetFront,
           innerWindowID: message.innerWindowID,
+          disableBreaks: true,
         }
       );
-      dispatch(messageUpdatePayload(id, response.result));
+      dispatch({
+        type: CSS_MESSAGE_ADD_MATCHING_ELEMENTS,
+        id: message.id,
+        elements: response.result,
+      });
     } catch (err) {
       console.error(err);
     }
-  };
-}
-
-/**
- * Associate additional data with a message without mutating the original message object.
- *
- * @param {String} id
- *        Message ID
- * @param {Object} data
- *        Object with arbitrary data.
- */
-function messageUpdatePayload(id, data) {
-  return {
-    type: MESSAGE_UPDATE_PAYLOAD,
-    id,
-    data,
   };
 }
 
@@ -161,12 +167,13 @@ function networkUpdateRequests(updates) {
 module.exports = {
   messagesAdd,
   messagesClear,
+  messagesDisable,
   messageOpen,
   messageClose,
   messageRemove,
   messageGetMatchingElements,
-  messageUpdatePayload,
   networkMessageUpdates,
   networkUpdateRequests,
   privateMessagesClear,
+  targetMessagesRemove,
 };

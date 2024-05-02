@@ -8,11 +8,6 @@
 // certificates are valid for or what errors prevented the certificates from
 // being verified.
 
-var { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
-);
-var { OS } = ChromeUtils.import("resource://gre/modules/osfile.jsm");
-
 add_task(async function testCAandTitle() {
   let cert = await readCertificate("ca.pem", "CTu,CTu,CTu");
   let url = getURL(cert);
@@ -69,9 +64,10 @@ add_task(async function testLongOID() {
 
 /**
  * Given a certificate, returns its PEMs (each one of the certificate chain) string in a url.
- * @param {Object} cert
+ *
+ * @param {object} cert
  *      A certificate object
- * @returns {String} an URL for opening the certificate viewer
+ * @returns {string} an URL for opening the certificate viewer
  */
 function getURL(cert) {
   // Note that we don't get the certificate chain as in e.g browser/base/content/browser.js,
@@ -85,23 +81,32 @@ function getURL(cert) {
  * Given an certificate URL, opens the new certificate viewer and check
  * if a certain element exists, with its expected result.
  *
- * @param {String} url
+ * @param {string} url
  *        The URL with the certificate info
- * @param {String} expectedTabName
+ * @param {string} expectedTabName
  *        The expected name of the tab in the certificate viewer
  */
 async function openCertViewerAndCheckTabName(url, expectedTabName) {
-  await BrowserTestUtils.withNewTab({ gBrowser, url }, async function(browser) {
-    await SpecialPowers.spawn(browser, [expectedTabName], async function(
-      expectedTabName
-    ) {
-      let certificateSection = await ContentTaskUtils.waitForCondition(() => {
-        return content.document.querySelector("certificate-section");
-      }, "Certificate section found");
-      let tabName = certificateSection.shadowRoot.querySelector(
-        ".tab[idnumber='0']"
-      ).textContent;
-      Assert.equal(tabName, expectedTabName);
-    });
-  });
+  await BrowserTestUtils.withNewTab(
+    { gBrowser, url },
+    async function (browser) {
+      await SpecialPowers.spawn(
+        browser,
+        [expectedTabName],
+        async function (expectedTabName) {
+          let certificateSection = await ContentTaskUtils.waitForCondition(
+            () => {
+              return content.document.querySelector("certificate-section");
+            },
+            "Certificate section found"
+          );
+          let tabName =
+            certificateSection.shadowRoot.querySelector(
+              ".tab[idnumber='0']"
+            ).textContent;
+          Assert.equal(tabName, expectedTabName);
+        }
+      );
+    }
+  );
 }

@@ -7,9 +7,8 @@
 
 "use strict";
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
 
 const APP_TIMER_TIMEOUT_MS = 1000 * 15;
@@ -19,20 +18,17 @@ const TRY_COUNT = 50;
 // newVals AND return value is an array of { key: "", value: "" }
 function setEnvironmentVariables(newVals) {
   let oldVals = [];
-  let env = Cc["@mozilla.org/process/environment;1"].getService(
-    Ci.nsIEnvironment
-  );
   for (let i = 0; i < newVals.length; ++i) {
     let key = newVals[i].key;
     let value = newVals[i].value;
     let oldObj = { key };
-    if (env.exists(key)) {
-      oldObj.value = env.get(key);
+    if (Services.env.exists(key)) {
+      oldObj.value = Services.env.get(key);
     } else {
       oldObj.value = null;
     }
 
-    env.set(key, value);
+    Services.env.set(key, value);
     oldVals.push(oldObj);
   }
   return oldVals;

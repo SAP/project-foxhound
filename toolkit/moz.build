@@ -24,8 +24,17 @@ DIRS += [
     "themes",
 ]
 
-if CONFIG["OS_ARCH"] == "WINNT" and CONFIG["MOZ_DEFAULT_BROWSER_AGENT"]:
-    DIRS += ["mozapps/defaultagent"]
+if CONFIG["OS_ARCH"] == "WINNT":
+    # mingw is missing Windows toast notification definitions.
+    if CONFIG["CC_TYPE"] == "clang-cl":
+        if CONFIG["MOZ_NOTIFICATION_SERVER"]:
+            DIRS += ["mozapps/notificationserver"]
+
+    if CONFIG["CC_TYPE"] == "clang-cl" or CONFIG["MOZ_ARTIFACT_BUILDS"]:
+        # Default Browser Agent relies on Windows toast notifications, so should
+        # also not be built with mingw.
+        if CONFIG["MOZ_DEFAULT_BROWSER_AGENT"]:
+            DIRS += ["mozapps/defaultagent"]
 
 if CONFIG["MOZ_UPDATER"] and CONFIG["MOZ_WIDGET_TOOLKIT"] != "android":
     DIRS += ["mozapps/update"]
@@ -45,9 +54,13 @@ if CONFIG["MOZ_WIDGET_TOOLKIT"] != "android":
 if CONFIG["MOZ_WIDGET_TOOLKIT"] == "gtk":
     DIRS += ["system/unixproxy"]
 elif CONFIG["MOZ_WIDGET_TOOLKIT"] == "cocoa":
-    DIRS += ["system/osxproxy"]
+    DIRS += [
+        "system/commonproxy",
+        "system/osxproxy",
+    ]
 elif CONFIG["MOZ_WIDGET_TOOLKIT"] == "windows":
     DIRS += [
+        "system/commonproxy",
         "system/windowsproxy",
         "system/windowsDHCPClient",
         "system/windowsPackageManager",
@@ -62,6 +75,9 @@ TEST_HARNESS_FILES.testing.mochitest.browser.toolkit.crashreporter.test.browser 
 with Files("docs/**"):
     BUG_COMPONENT = ("Toolkit", "General")
 
+with Files("locales-preview/**"):
+    BUG_COMPONENT = ("Toolkit", "General")
+
 with Files("moz.*"):
     BUG_COMPONENT = ("Firefox Build System", "General")
 
@@ -71,11 +87,14 @@ with Files("toolkit.mozbuild"):
 with Files("library/**"):
     BUG_COMPONENT = ("Firefox Build System", "General")
 
-with Files("mozapps/installer/windows/**"):
-    BUG_COMPONENT = ("Toolkit", "NSIS Installer")
-
 with Files("mozapps/preferences/**"):
     BUG_COMPONENT = ("Toolkit", "Preferences")
 
 with Files("l10n-registry.manifest"):
     BUG_COMPONENT = ("Core", "Localization")
+
+GeneratedFile(
+    "content/neterror/aboutNetErrorCodes.js",
+    script="content/neterror/gen_aboutneterror_codes.py",
+    inputs=["/toolkit/locales/en-US/toolkit/neterror/nsserrors.ftl"],
+)

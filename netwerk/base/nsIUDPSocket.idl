@@ -297,7 +297,7 @@ interface nsIUDPSocket : nsISupports
      * dontFragment
      *
      * The don't fragment flag.
-     * The socket must be initialized before calling this function. 
+     * The socket must be initialized before calling this function.
      */
     [noscript] attribute boolean dontFragment;
 };
@@ -374,7 +374,7 @@ interface nsIUDPMessage : nsISupports
     [noscript, notxpcom, nostdcall] Uint8TArrayRef getDataAsTArray();
 };
 
-[noscript, builtinclass, uuid(99f3d085-3d69-45da-a2c2-a6176af617cb)]
+[uuid(99f3d085-3d69-45da-a2c2-a6176af617cb)]
 interface nsIUDPSocketSyncListener : nsISupports
 {
     /**

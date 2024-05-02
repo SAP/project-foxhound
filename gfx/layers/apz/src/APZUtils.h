@@ -74,12 +74,11 @@ inline bool ScrollSourceAllowsOverscroll(ScrollSource aSource) {
 // ten thousands. Note also that the smallest legitimate difference in page
 // coordinates is 1 app unit, which is 1/60 of a (CSS pixel), so this epsilon
 // isn't too large.
-const float COORDINATE_EPSILON = 0.02f;
+const CSSCoord COORDINATE_EPSILON = 0.01f;
 
-template <typename Units>
-static bool IsZero(const gfx::PointTyped<Units>& aPoint) {
-  return FuzzyEqualsAdditive(aPoint.x, 0.0f, COORDINATE_EPSILON) &&
-         FuzzyEqualsAdditive(aPoint.y, 0.0f, COORDINATE_EPSILON);
+inline bool IsZero(const CSSPoint& aPoint) {
+  return FuzzyEqualsAdditive(aPoint.x, CSSCoord(), COORDINATE_EPSILON) &&
+         FuzzyEqualsAdditive(aPoint.y, CSSCoord(), COORDINATE_EPSILON);
 }
 
 // Represents async transforms consisting of a scale and a translation.
@@ -149,6 +148,27 @@ using AsyncTransformComponents = EnumSet<AsyncTransformComponent>;
 
 constexpr AsyncTransformComponents LayoutAndVisual(
     AsyncTransformComponent::eLayout, AsyncTransformComponent::eVisual);
+
+/**
+ * Allows consumers of async transforms to specify for what purpose they are
+ * using the async transform:
+ *
+ *   |eForEventHandling| is intended for event handling and other uses that
+ *                       need the most up-to-date transform, reflecting all
+ *                       events that have been processed so far, even if the
+ *                       transform is not yet reflected visually.
+ *   |eForCompositing| is intended for the transform that should be reflected
+ *                     visually.
+ *
+ * For example, if an APZC has metrics with the mForceDisableApz flag set,
+ * then the |eForCompositing| async transform will be empty, while the
+ * |eForEventHandling| async transform will reflect processed input events
+ * regardless of mForceDisableApz.
+ */
+enum class AsyncTransformConsumer {
+  eForEventHandling,
+  eForCompositing,
+};
 
 /**
  * Metrics that GeckoView wants to know at every composite.

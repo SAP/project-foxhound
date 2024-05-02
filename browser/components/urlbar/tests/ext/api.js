@@ -6,19 +6,26 @@
 
 "use strict";
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.jsm",
-  Preferences: "resource://gre/modules/Preferences.jsm",
-  UrlbarProviderExtension: "resource:///modules/UrlbarProviderExtension.jsm",
-  UrlbarResult: "resource:///modules/UrlbarResult.jsm",
-  UrlbarView: "resource:///modules/UrlbarView.jsm",
+const { ExtensionPreferencesManager } = ChromeUtils.importESModule(
+  "resource://gre/modules/ExtensionPreferencesManager.sys.mjs"
+);
+
+var { getSettingsAPI } = ExtensionPreferencesManager;
+
+ChromeUtils.defineESModuleGetters(this, {
+  BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.sys.mjs",
+  Preferences: "resource://gre/modules/Preferences.sys.mjs",
+  UrlbarProviderExtension:
+    "resource:///modules/UrlbarProviderExtension.sys.mjs",
+  UrlbarResult: "resource:///modules/UrlbarResult.sys.mjs",
+  UrlbarView: "resource:///modules/UrlbarView.sys.mjs",
 });
 
-XPCOMUtils.defineLazyGetter(
+ChromeUtils.defineLazyGetter(
   this,
   "defaultPreferences",
   () => new Preferences({ defaultBranch: true })
@@ -49,9 +56,12 @@ this.experiments_urlbar = class extends ExtensionAPI {
             window.gURLBar.setPageProxyState("invalid");
           },
 
-          engagementTelemetry: this._getDefaultSettingsAPI(
-            "browser.urlbar.eventTelemetry.enabled"
-          ),
+          engagementTelemetry: getSettingsAPI({
+            context,
+            name: "engagementTelemetry",
+            readOnly: true,
+            callback: () => false,
+          }),
 
           extensionTimeout: this._getDefaultSettingsAPI(
             "browser.urlbar.extension.timeout"
@@ -99,7 +109,7 @@ this.experiments_urlbar = class extends ExtensionAPI {
           value: Preferences.get(pref),
 
           // Nothing actually uses this, but on debug builds there are extra
-          // checks enabled in Schema.jsm that fail if it's not present.  The
+          // checks enabled in Schema.sys.mjs that fail if it's not present.  The
           // value doesn't matter.
           levelOfControl: "controllable_by_this_extension",
         };

@@ -19,14 +19,19 @@
 #include "rtc_base/network/sent_packet.h"
 #include "rtc_base/third_party/sigslot/sigslot.h"
 #include "rtc_base/time_utils.h"
+#include "system_wrappers/include/field_trial.h"
 
 namespace rtc {
 
-static const int BUF_SIZE = 64 * 1024;
+// Returns true if the experiement "WebRTC-SCM-Timestamp" is explicitly
+// disabled.
+static bool IsScmTimeStampExperimentDisabled() {
+  return webrtc::field_trial::IsDisabled("WebRTC-SCM-Timestamp");
+}
 
-AsyncUDPSocket* AsyncUDPSocket::Create(AsyncSocket* socket,
+AsyncUDPSocket* AsyncUDPSocket::Create(Socket* socket,
                                        const SocketAddress& bind_address) {
-  std::unique_ptr<AsyncSocket> owned_socket(socket);
+  std::unique_ptr<Socket> owned_socket(socket);
   if (socket->Bind(bind_address) < 0) {
     RTC_LOG(LS_ERROR) << "Bind() failed with error " << socket->GetError();
     return nullptr;
@@ -36,24 +41,17 @@ AsyncUDPSocket* AsyncUDPSocket::Create(AsyncSocket* socket,
 
 AsyncUDPSocket* AsyncUDPSocket::Create(SocketFactory* factory,
                                        const SocketAddress& bind_address) {
-  AsyncSocket* socket =
-      factory->CreateAsyncSocket(bind_address.family(), SOCK_DGRAM);
+  Socket* socket = factory->CreateSocket(bind_address.family(), SOCK_DGRAM);
   if (!socket)
     return nullptr;
   return Create(socket, bind_address);
 }
 
-AsyncUDPSocket::AsyncUDPSocket(AsyncSocket* socket) : socket_(socket) {
-  size_ = BUF_SIZE;
-  buf_ = new char[size_];
-
+AsyncUDPSocket::AsyncUDPSocket(Socket* socket) : socket_(socket) {
+  sequence_checker_.Detach();
   // The socket should start out readable but not writable.
   socket_->SignalReadEvent.connect(this, &AsyncUDPSocket::OnReadEvent);
   socket_->SignalWriteEvent.connect(this, &AsyncUDPSocket::OnWriteEvent);
-}
-
-AsyncUDPSocket::~AsyncUDPSocket() {
-  delete[] buf_;
 }
 
 SocketAddress AsyncUDPSocket::GetLocalAddress() const {
@@ -111,12 +109,14 @@ void AsyncUDPSocket::SetError(int error) {
   return socket_->SetError(error);
 }
 
-void AsyncUDPSocket::OnReadEvent(AsyncSocket* socket) {
+void AsyncUDPSocket::OnReadEvent(Socket* socket) {
   RTC_DCHECK(socket_.get() == socket);
+  RTC_DCHECK_RUN_ON(&sequence_checker_);
 
   SocketAddress remote_addr;
-  int64_t timestamp;
-  int len = socket_->RecvFrom(buf_, size_, &remote_addr, &timestamp);
+  int64_t timestamp = -1;
+  int len = socket_->RecvFrom(buf_, BUF_SIZE, &remote_addr, &timestamp);
+
   if (len < 0) {
     // An error here typically means we got an ICMP error in response to our
     // send datagram, indicating the remote address was unreachable.
@@ -127,14 +127,24 @@ void AsyncUDPSocket::OnReadEvent(AsyncSocket* socket) {
                      << "] receive failed with error " << socket_->GetError();
     return;
   }
+  if (timestamp == -1) {
+    // Timestamp from socket is not available.
+    timestamp = TimeMicros();
+  } else {
+    if (!socket_time_offset_) {
+      socket_time_offset_ =
+          !IsScmTimeStampExperimentDisabled() ? TimeMicros() - timestamp : 0;
+    }
+    timestamp += *socket_time_offset_;
+  }
 
   // TODO: Make sure that we got all of the packet.
   // If we did not, then we should resize our buffer to be large enough.
   SignalReadPacket(this, buf_, static_cast<size_t>(len), remote_addr,
-                   (timestamp > -1 ? timestamp : TimeMicros()));
+                   timestamp);
 }
 
-void AsyncUDPSocket::OnWriteEvent(AsyncSocket* socket) {
+void AsyncUDPSocket::OnWriteEvent(Socket* socket) {
   SignalReadyToSend(this);
 }
 

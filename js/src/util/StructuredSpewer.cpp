@@ -18,7 +18,7 @@
 using namespace js;
 
 const StructuredSpewer::NameArray StructuredSpewer::names_ = {
-#  define STRUCTURED_CHANNEL(name) #  name,
+#  define STRUCTURED_CHANNEL(name) #name,
     STRUCTURED_CHANNEL_LIST(STRUCTURED_CHANNEL)
 #  undef STRUCTURED_CHANNEL
 };
@@ -88,7 +88,7 @@ static bool MatchJSScript(JSScript* script, const char* pattern) {
 
   char signature[2048] = {0};
   SprintfLiteral(signature, "%s:%u:%u", script->filename(), script->lineno(),
-                 script->column());
+                 script->column().zeroOriginValue());
 
   // Trivial containment match.
   char* result = strstr(signature, pattern);
@@ -131,7 +131,7 @@ void StructuredSpewer::startObject(JSContext* cx, const JSScript* script,
     json.beginObjectProperty("location");
     json.property("filename", script->filename());
     json.property("line", script->lineno());
-    json.property("column", script->column());
+    json.property("column", script->column().zeroOriginValue());
     json.endObject();
   }
 }

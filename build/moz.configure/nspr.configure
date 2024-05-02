@@ -83,6 +83,7 @@ def pkgconf_requires_private(system_nspr, nspr_minver):
 
 set_config("PKGCONF_REQUIRES_PRIVATE", pkgconf_requires_private)
 
+
 # pkg_check_modules takes care of NSPR_CFLAGS and NSPR_LIBS when using --with-system-nspr.
 @depends(build_environment, c_compiler, fold_libs, when=build_nspr)
 def nspr_config(build_env, c_compiler, fold_libs):
@@ -111,7 +112,5 @@ set_config("NSPR_LIB_DIR", nspr_config.lib_dir, when=nspr_config)
 set_config("NSPR_INCLUDE_DIR", nspr_pkg.include_dir, when=nspr_pkg)
 set_config("NSPR_LIB_DIR", nspr_pkg.lib_dir, when=nspr_pkg)
 
-add_old_configure_assignment("NSPR_CFLAGS", nspr_config.cflags, when=nspr_config)
 add_old_configure_assignment("NSPR_LIBS", nspr_config.libs, when=nspr_config)
-add_old_configure_assignment("NSPR_CFLAGS", nspr_pkg.cflags, when=nspr_pkg)
 add_old_configure_assignment("NSPR_LIBS", nspr_pkg.libs, when=nspr_pkg)

@@ -9,30 +9,31 @@
 #include "nsIObserverService.h"
 #include "mozilla/ipc/Endpoint.h"
 #include "mozilla/Services.h"
+#include "mozilla/SyncRunnable.h"
+#include "nsDirectoryServiceUtils.h"
 
 namespace mozilla {
 
 /* static */
-SandboxTestingParent* SandboxTestingParent::Create(
+already_AddRefed<SandboxTestingParent> SandboxTestingParent::Create(
     Endpoint<PSandboxTestingParent>&& aParentEnd) {
   SandboxTestingThread* thread = SandboxTestingThread::Create();
   if (!thread) {
     return nullptr;
   }
-  return new SandboxTestingParent(thread, std::move(aParentEnd));
+  RefPtr<SandboxTestingParent> instance = new SandboxTestingParent(thread);
+  thread->Dispatch(NewRunnableMethod<Endpoint<PSandboxTestingParent>&&>(
+      "SandboxTestingParent::Bind", instance, &SandboxTestingParent::Bind,
+      std::move(aParentEnd)));
+  return instance.forget();
 }
 
-SandboxTestingParent::SandboxTestingParent(
-    SandboxTestingThread* aThread, Endpoint<PSandboxTestingParent>&& aParentEnd)
+SandboxTestingParent::SandboxTestingParent(SandboxTestingThread* aThread)
     : mThread(aThread),
       mMonitor("SandboxTestingParent Lock"),
-      mShutdownDone(false) {
-  MOZ_ASSERT(mThread);
-  mThread->Dispatch(
-      NewNonOwningRunnableMethod<Endpoint<PSandboxTestingParent>&&>(
-          "SandboxTestingParent::Bind", this, &SandboxTestingParent::Bind,
-          std::move(aParentEnd)));
-}
+      mShutdownDone(false) {}
+
+SandboxTestingParent::~SandboxTestingParent() = default;
 
 void SandboxTestingParent::Bind(Endpoint<PSandboxTestingParent>&& aEnd) {
   MOZ_RELEASE_ASSERT(mThread->IsOnThread());
@@ -49,26 +50,26 @@ void SandboxTestingParent::ShutdownSandboxTestThread() {
   mMonitor.Notify();
 }
 
-void SandboxTestingParent::Destroy(SandboxTestingParent* aInstance) {
+void SandboxTestingParent::Destroy(
+    already_AddRefed<SandboxTestingParent> aInstance) {
   MOZ_ASSERT(NS_IsMainThread());
-  if (!aInstance) {
+  RefPtr<SandboxTestingParent> instance(aInstance);
+  if (!instance) {
     return;
   }
 
   {
     // Hold the lock while we destroy the actor on the test thread.
-    MonitorAutoLock lock(aInstance->mMonitor);
-    aInstance->mThread->Dispatch(NewNonOwningRunnableMethod(
-        "SandboxTestingParent::ShutdownSandboxTestThread", aInstance,
+    MonitorAutoLock lock(instance->mMonitor);
+    instance->mThread->Dispatch(NewRunnableMethod(
+        "SandboxTestingParent::ShutdownSandboxTestThread", instance,
         &SandboxTestingParent::ShutdownSandboxTestThread));
 
     // Wait for test thread to complete destruction.
-    while (!aInstance->mShutdownDone) {
-      aInstance->mMonitor.Wait();
+    while (!instance->mShutdownDone) {
+      instance->mMonitor.Wait();
     }
   }
-
-  delete aInstance;
 }
 
 void SandboxTestingParent::ActorDestroy(ActorDestroyReason aWhy) {
@@ -103,6 +104,21 @@ mozilla::ipc::IPCResult SandboxTestingParent::RecvTestCompleted() {
         MOZ_RELEASE_ASSERT(observerService);
         observerService->NotifyObservers(nullptr, "sandbox-test-done", 0);
       }));
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult SandboxTestingParent::RecvGetSpecialDirectory(
+    const nsCString& aSpecialDirName, nsString* aDirPath) {
+  RefPtr<Runnable> runnable = NS_NewRunnableFunction(
+      "SandboxTestingParent::RecvGetSpecialDirectory", [&]() {
+        nsCOMPtr<nsIFile> dir;
+        NS_GetSpecialDirectory(aSpecialDirName.get(), getter_AddRefs(dir));
+        if (dir) {
+          dir->GetPath(*aDirPath);
+        }
+      });
+  SyncRunnable::DispatchToThread(GetMainThreadSerialEventTarget(), runnable,
+                                 /*aForceDispatch*/ true);
   return IPC_OK();
 }
 

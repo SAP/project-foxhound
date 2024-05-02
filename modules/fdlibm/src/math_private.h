@@ -21,9 +21,9 @@
 #include <stdint.h>
 #include <sys/types.h>
 
-#include "fdlibm.h"
-
 #include "mozilla/EndianUtils.h"
+
+#include "fdlibm.h"
 
 /*
  * Emulate FreeBSD internal double types.
@@ -32,6 +32,7 @@
 
 typedef double      __double_t;
 typedef __double_t  double_t;
+typedef float       __float_t;
 
 /*
  * The original fdlibm code used statements like:
@@ -93,11 +94,6 @@ typedef union
 } ieee_quad_shape_type;
 
 #endif
-
-/*
- * A union which permits us to convert between a double and two 32 bit
- * ints.
- */
 
 #if MOZ_BIG_ENDIAN()
 
@@ -481,7 +477,7 @@ do {								\
  * or by having |c| a few percent smaller than |a|.  Pre-normalization of
  * (a, b) may help.
  *
- * This is is a variant of an algorithm of Kahan (see Knuth (1981) 4.2.2
+ * This is a variant of an algorithm of Kahan (see Knuth (1981) 4.2.2
  * exercise 19).  We gain considerable efficiency by requiring the terms to
  * be sufficiently normalized and sufficiently increasing.
  */
@@ -635,7 +631,7 @@ rnint(__double_t x)
  * return type provided their arg is a floating point integer.  They can
  * sometimes be more efficient because no rounding is required.
  */
-#if (defined(amd64) || defined(__i386__)) && defined(__GNUCLIKE_ASM)
+#if defined(amd64) || defined(__i386__)
 #define	irint(x)						\
     (sizeof(x) == sizeof(float) &&				\
     sizeof(__float_t) == sizeof(long double) ? irintf(x) :	\
@@ -644,6 +640,39 @@ rnint(__double_t x)
     sizeof(x) == sizeof(long double) ? irintl(x) : (int)(x))
 #else
 #define	irint(x)	((int)(x))
+#endif
+
+#define	i64rint(x)	((int64_t)(x))	/* only needed for ld128 so not opt. */
+
+#if defined(__i386__)
+static __inline int
+irintf(float x)
+{
+	int n;
+
+	__asm("fistl %0" : "=m" (n) : "t" (x));
+	return (n);
+}
+
+static __inline int
+irintd(double x)
+{
+	int n;
+
+	__asm("fistl %0" : "=m" (n) : "t" (x));
+	return (n);
+}
+#endif
+
+#if defined(__amd64__) || defined(__i386__)
+static __inline int
+irintl(long double x)
+{
+	int n;
+
+	__asm("fistl %0" : "=m" (n) : "t" (x));
+	return (n);
+}
 #endif
 
 #ifdef DEBUG
@@ -841,42 +870,58 @@ rnint(__double_t x)
 #define	__ieee754_remainderf remainderf
 #define	__ieee754_scalbf scalbf
 
-#define acos fdlibm::acos
-#define asin fdlibm::asin
-#define atan fdlibm::atan
-#define atan2 fdlibm::atan2
-#define cos fdlibm::cos
-#define sin fdlibm::sin
-#define tan fdlibm::tan
-#define cosh fdlibm::cosh
-#define sinh fdlibm::sinh
-#define tanh fdlibm::tanh
-#define exp fdlibm::exp
-#define log fdlibm::log
-#define log10 fdlibm::log10
-#define pow fdlibm::pow
-#define ceil fdlibm::ceil
-#define ceilf fdlibm::ceilf
-#define fabs fdlibm::fabs
-#define floor fdlibm::floor
-#define acosh fdlibm::acosh
-#define asinh fdlibm::asinh
-#define atanh fdlibm::atanh
-#define cbrt fdlibm::cbrt
-#define expm1 fdlibm::expm1
-#define hypot fdlibm::hypot
-#define log1p fdlibm::log1p
-#define log2 fdlibm::log2
-#define scalb fdlibm::scalb
-#define copysign fdlibm::copysign
-#define scalbn fdlibm::scalbn
-#define trunc fdlibm::trunc
-#define truncf fdlibm::truncf
-#define floorf fdlibm::floorf
-#define nearbyint fdlibm::nearbyint
-#define nearbyintf fdlibm::nearbyintf
-#define rint fdlibm::rint
-#define rintf fdlibm::rintf
+#define acos fdlibm_acos
+#define acosf fdlibm_acosf
+#define asin fdlibm_asin
+#define asinf fdlibm_asinf
+#define atan fdlibm_atan
+#define atanf fdlibm_atanf
+#define atan2 fdlibm_atan2
+#define cos fdlibm_cos
+#define cosf fdlibm_cosf
+#define sin fdlibm_sin
+#define sinf fdlibm_sinf
+#define tan fdlibm_tan
+#define tanf fdlibm_tanf
+#define cosh fdlibm_cosh
+#define sinh fdlibm_sinh
+#define tanh fdlibm_tanh
+#define exp fdlibm_exp
+#define expf fdlibm_expf
+#define exp2 fdlibm_exp2
+#define exp2f fdlibm_exp2f
+#define log fdlibm_log
+#define logf fdlibm_logf
+#define log10 fdlibm_log10
+#define log10f fdlibm_log10f
+#define pow fdlibm_pow
+#define powf fdlibm_powf
+#define ceil fdlibm_ceil
+#define ceilf fdlibm_ceilf
+#define fabs fdlibm_fabs
+#define fabsf fdlibm_fabsf
+#define floor fdlibm_floor
+#define acosh fdlibm_acosh
+#define asinh fdlibm_asinh
+#define atanh fdlibm_atanh
+#define cbrt fdlibm_cbrt
+#define expm1 fdlibm_expm1
+#define hypot fdlibm_hypot
+#define hypotf fdlibm_hypotf
+#define log1p fdlibm_log1p
+#define log2 fdlibm_log2
+#define scalb fdlibm_scalb
+#define copysign fdlibm_copysign
+#define scalbn fdlibm_scalbn
+#define scalbnf fdlibm_scalbnf
+#define trunc fdlibm_trunc
+#define truncf fdlibm_truncf
+#define floorf fdlibm_floorf
+#define nearbyint fdlibm_nearbyint
+#define nearbyintf fdlibm_nearbyintf
+#define rint fdlibm_rint
+#define rintf fdlibm_rintf
+#define sqrtf fdlibm_sqrtf
 
 /* fdlibm kernel function */
 int	__kernel_rem_pio2(double*,double*,int,int,int);

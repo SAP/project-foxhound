@@ -13,10 +13,10 @@
 #include <utility>   // std::move
 
 #include "debugger/DebugAPI.h"        // js::DebugAPI
+#include "jit/JSJitFrameIter.h"       // js::jit::InlineFrameIterator
 #include "jit/RematerializedFrame.h"  // js::jit::RematerializedFrame
 #include "js/AllocPolicy.h"           // js::ReportOutOfMemory
 #include "vm/EnvironmentObject.h"     // js::DebugEnvironments
-#include "vm/FrameIter.h"             // js::jit::InlineFrameIterator
 #include "vm/JSContext.h"             // JSContext
 #include "vm/Realm.h"                 // js::AutoRealmUnchecked
 #include "wasm/WasmCode.h"            // js::wasm::Code
@@ -24,7 +24,6 @@
 #include "wasm/WasmFrameIter.h"  // js::wasm::{RegisterState,StartUnwinding,UnwindState}
 #include "wasm/WasmInstance.h"  // js::wasm::Instance
 #include "wasm/WasmProcess.h"   // js::wasm::LookupCode
-#include "wasm/WasmTlsData.h"   // js::wasm::TlsData
 
 #include "vm/Realm-inl.h"  // js::~AutoRealm
 
@@ -35,7 +34,6 @@ js::jit::JitActivation::JitActivation(JSContext* cx)
       packedExitFP_(nullptr),
       encodedWasmExitReason_(0),
       prevJitActivation_(cx->jitActivation),
-      rematerializedFrames_(),
       ionRecovery_(cx),
       bailoutData_(nullptr),
       lastProfilingFrame_(nullptr),
@@ -96,7 +94,8 @@ void js::jit::JitActivation::clearRematerializedFrames() {
 }
 
 js::jit::RematerializedFrame* js::jit::JitActivation::getRematerializedFrame(
-    JSContext* cx, const JSJitFrameIter& iter, size_t inlineDepth) {
+    JSContext* cx, const JSJitFrameIter& iter, size_t inlineDepth,
+    MaybeReadFallback::FallbackConsequence consequence) {
   MOZ_ASSERT(iter.activation() == this);
   MOZ_ASSERT(iter.isIonScripted());
 
@@ -118,7 +117,7 @@ js::jit::RematerializedFrame* js::jit::JitActivation::getRematerializedFrame(
     // preserve identity. Therefore, we always rematerialize an uninlined
     // frame and all its inlined frames at once.
     InlineFrameIterator inlineIter(cx, &iter);
-    MaybeReadFallback recover(cx, this, &iter);
+    MaybeReadFallback recover(cx, this, &iter, consequence);
 
     // Frames are often rematerialized with the cx inside a Debugger's
     // realm. To recover slots and to create CallObjects, we need to
@@ -228,12 +227,15 @@ void js::jit::JitActivation::startWasmTrap(wasm::Trap trap,
   bool unwound;
   wasm::UnwindState unwindState;
   MOZ_RELEASE_ASSERT(wasm::StartUnwinding(state, &unwindState, &unwound));
-  MOZ_ASSERT(unwound == (trap == wasm::Trap::IndirectCallBadSig));
+  // With return calls, it is possible to not unwind when there is only an
+  // entry left on the stack, e.g. the return call trampoline that is created
+  // to restore realm before returning to the interpreter entry stub.
+  MOZ_ASSERT_IF(unwound, trap == wasm::Trap::IndirectCallBadSig);
 
   void* pc = unwindState.pc;
   const wasm::Frame* fp = wasm::Frame::fromUntaggedWasmExitFP(unwindState.fp);
 
-  const wasm::Code& code = wasm::GetNearestEffectiveTls(fp)->instance->code();
+  const wasm::Code& code = wasm::GetNearestEffectiveInstance(fp)->code();
   MOZ_RELEASE_ASSERT(&code == wasm::LookupCode(pc));
 
   // If the frame was unwound, the bytecodeOffset must be recovered from the

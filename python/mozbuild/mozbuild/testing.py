@@ -2,8 +2,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, print_function, unicode_literals
-
 import os
 import sys
 
@@ -126,7 +124,6 @@ class SupportFilesConverter(object):
         for field, seen in self._fields:
             value = test.get(field, "")
             for pattern in value.split():
-
                 # We track uniqueness locally (per test) where duplicates are forbidden,
                 # and globally, where they are permitted. If a support file appears multiple
                 # times for a single test, there are unnecessary entries in the manifest. But

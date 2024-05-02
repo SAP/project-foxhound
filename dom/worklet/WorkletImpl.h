@@ -8,9 +8,12 @@
 #define mozilla_dom_worklet_WorkletImpl_h
 
 #include "MainThreadUtils.h"
+#include "mozilla/BasePrincipal.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/OriginAttributes.h"
+#include "mozilla/OriginTrials.h"
 #include "mozilla/ipc/PBackgroundSharedTypes.h"
+#include "nsRFPService.h"
 
 class nsPIDOMWindowInner;
 class nsIPrincipal;
@@ -47,6 +50,8 @@ class WorkletLoadInfo {
  * collected.
  */
 class WorkletImpl {
+  using RFPTarget = mozilla::RFPTarget;
+
  public:
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(WorkletImpl);
 
@@ -57,11 +62,6 @@ class WorkletImpl {
 
   virtual nsresult SendControlMessage(already_AddRefed<nsIRunnable> aRunnable);
 
-  nsIPrincipal* Principal() const {
-    MOZ_ASSERT(NS_IsMainThread());
-    return mPrincipal;
-  }
-
   void NotifyWorkletFinished();
 
   virtual nsContentPolicyType ContentPolicyType() const = 0;
@@ -71,15 +71,23 @@ class WorkletImpl {
 
   // Any thread.
 
+  const OriginTrials& Trials() const { return mTrials; }
   const WorkletLoadInfo& LoadInfo() const { return mWorkletLoadInfo; }
   const OriginAttributes& OriginAttributesRef() const {
-    return mPrincipalInfo.get_NullPrincipalInfo().attrs();
+    return mPrincipal->OriginAttributesRef();
   }
+  nsIPrincipal* Principal() const { return mPrincipal; }
   const ipc::PrincipalInfo& PrincipalInfo() const { return mPrincipalInfo; }
 
   const Maybe<nsID>& GetAgentClusterId() const { return mAgentClusterId; }
 
   bool IsSharedMemoryAllowed() const { return mSharedMemoryAllowed; }
+  bool IsSystemPrincipal() const { return mPrincipal->IsSystemPrincipal(); }
+  bool ShouldResistFingerprinting(RFPTarget aTarget) const {
+    return mShouldResistFingerprinting &&
+           nsRFPService::IsRFPEnabledFor(aTarget,
+                                         mOverriddenFingerprintingSettings);
+  }
 
   virtual void OnAddModuleStarted() const {
     MOZ_ASSERT(NS_IsMainThread());
@@ -99,7 +107,6 @@ class WorkletImpl {
 
   // Modified only in constructor.
   ipc::PrincipalInfo mPrincipalInfo;
-  // Accessed on only worklet parent thread.
   nsCOMPtr<nsIPrincipal> mPrincipal;
 
   const WorkletLoadInfo mWorkletLoadInfo;
@@ -115,6 +122,14 @@ class WorkletImpl {
   Maybe<nsID> mAgentClusterId;
 
   bool mSharedMemoryAllowed;
+  bool mShouldResistFingerprinting;
+  // The granular fingerprinting protection overrides applied to the worklet.
+  // This will only get populated if these is one that comes from the local
+  // granular override pref or WebCompat. Otherwise, a value of Nothing()
+  // indicates no granular overrides are present for this workerlet.
+  Maybe<RFPTarget> mOverriddenFingerprintingSettings;
+
+  const OriginTrials mTrials;
 };
 
 }  // namespace mozilla

@@ -1,6 +1,5 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
-from __future__ import print_function
 import locale
 import subprocess
 from collections import defaultdict
@@ -40,7 +39,6 @@ AllowCompilerWarnings()
 FINAL_LIBRARY = 'gkmedias'
 LOCAL_INCLUDES += [
     'skia',
-    'skia/include/third_party/skcms',
 ]
 
 if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'windows':
@@ -54,15 +52,16 @@ if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'windows':
 # We should autogenerate these SSE related flags.
 
 if CONFIG['INTEL_ARCHITECTURE']:
-    SOURCES['skia/src/opts/SkOpts_ssse3.cpp'].flags += ['-mssse3']
-    SOURCES['skia/src/opts/SkOpts_sse41.cpp'].flags += ['-msse4.1']
-    SOURCES['skia/src/opts/SkOpts_sse42.cpp'].flags += ['-msse4.2']
-    SOURCES['skia/src/opts/SkOpts_avx.cpp'].flags += ['-mavx']
-    SOURCES['skia/src/opts/SkOpts_hsw.cpp'].flags += ['-mavx2', '-mf16c', '-mfma']
-elif CONFIG['CPU_ARCH'] == 'arm' and CONFIG['CC_TYPE'] in ('clang', 'gcc'):
-    CXXFLAGS += CONFIG['NEON_FLAGS']
+    SOURCES['skia/src/opts/SkOpts_ssse3.cpp'].flags += ['-Dskvx=skvx_ssse3', '-mssse3']
+    SOURCES['skia/src/opts/SkOpts_sse42.cpp'].flags += ['-Dskvx=skvx_sse42', '-msse4.2']
+    SOURCES['skia/src/opts/SkOpts_avx.cpp'].flags += ['-Dskvx=skvx_avx', '-mavx']
+    SOURCES['skia/src/opts/SkOpts_hsw.cpp'].flags += ['-Dskvx=skvx_hsw', '-mavx2', '-mf16c', '-mfma']
+    if not CONFIG["MOZ_CODE_COVERAGE"]:
+        SOURCES['skia/src/opts/SkOpts_skx.cpp'].flags += ['-Dskvx=skvx_skx', '-mavx512f', '-mavx512dq', '-mavx512cd', '-mavx512bw', '-mavx512vl']
 elif CONFIG['CPU_ARCH'] == 'aarch64' and CONFIG['CC_TYPE'] in ('clang', 'gcc'):
-    SOURCES['skia/src/opts/SkOpts_crc32.cpp'].flags += ['-march=armv8-a+crc']
+    SOURCES['skia/src/opts/SkOpts_crc32.cpp'].flags += ['-Dskvx=skvx_crc32', '-march=armv8-a+crc']
+
+DEFINES['MOZ_SKIA'] = True
 
 DEFINES['SKIA_IMPLEMENTATION'] = 1
 
@@ -70,10 +69,6 @@ DEFINES['SK_PDF_USE_HARFBUZZ_SUBSETTING'] = 1
 
 if CONFIG['MOZ_TREE_FREETYPE']:
     DEFINES['SK_CAN_USE_DLOPEN'] = 0
-
-# Reduce strength of synthetic-emboldening used in the freetype backend
-# (see bug 1600470).
-DEFINES['SK_OUTLINE_EMBOLDEN_DIVISOR'] = 48
 
 # Suppress warnings in third-party code.
 CXXFLAGS += [
@@ -104,6 +99,11 @@ if CONFIG['MOZ_WIDGET_TOOLKIT'] in ('gtk', 'android'):
 
 if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'gtk':
     CXXFLAGS += CONFIG['MOZ_PANGO_CFLAGS']
+
+if CONFIG['CPU_ARCH'] in ('mips32', 'mips64'):
+    # The skia code uses `mips` as a variable, but it's a builtin preprocessor
+    # macro on mips that expands to `1`.
+    DEFINES['mips'] = False
 """
 
 import json
@@ -111,13 +111,11 @@ import json
 platforms = ['linux', 'mac', 'android', 'win']
 
 def parse_sources(output):
-  return set(v.replace('//', 'skia/') for v in output.split() if v.endswith('.cpp') or v.endswith('.S'))
+  return set(v.replace('//', 'skia/') for v in output.decode('utf-8').split() if v.endswith('.cpp') or v.endswith('.S'))
 
 def generate_opt_sources():
-  cpus = [('intel', 'x86', [':sse2', ':ssse3', ':sse41', ':sse42', ':avx', ':hsw']),
-          ('arm', 'arm', [':armv7']),
-          ('arm64', 'arm64', [':arm64', ':crc32']),
-          ('none', 'none', [':none'])]
+  cpus = [('intel', 'x86', [':ssse3', ':sse42', ':avx', ':hsw', ':skx']),
+          ('arm64', 'arm64', [':crc32'])]
 
   opt_sources = {}
   for key, cpu, deps in cpus:
@@ -129,7 +127,7 @@ def generate_opt_sources():
             if output:
                 opt_sources[key].update(parse_sources(output))
         except subprocess.CalledProcessError as e:
-            if e.output.find('source_set') < 0:
+            if e.output.find(b'source_set') < 0:
                 raise
 
   return opt_sources
@@ -145,7 +143,11 @@ def generate_platform_sources():
     if output:
       sources[plat] = parse_sources(output)
 
-  plat_deps = {':fontmgr_win' : 'win', ':fontmgr_win_gdi' : 'win'}
+  plat_deps = {
+    ':fontmgr_win' : 'win',
+    ':fontmgr_win_gdi' : 'win',
+    ':fontmgr_mac_ct' : 'mac',
+  }
   for dep, key in plat_deps.items():
     output = subprocess.check_output('cd skia && bin/gn desc out/{1} {0} sources'.format(dep, key), shell=True)
     if output:
@@ -157,33 +159,26 @@ def generate_platform_sources():
     if output:
       sources[key] = parse_sources(output)
 
-  return dict(sources.items() + generate_opt_sources().items())
+  sources.update(generate_opt_sources())
+  return sources
 
 
 def generate_separated_sources(platform_sources):
-  blacklist = [
+  ignorelist = [
     'skia/src/android/',
-    'skia/src/atlastext/',
-    'skia/src/c/',
     'skia/src/effects/',
     'skia/src/fonts/',
     'skia/src/ports/SkImageEncoder',
     'skia/src/ports/SkImageGenerator',
-    'SkBitmapRegion',
-    'SkLite',
     'SkLight',
-    'SkNormal',
     'codec',
     'SkWGL',
     'SkMemory_malloc',
     'third_party',
-    'Sk3D',
     'SkAnimCodecPlayer',
     'SkCamera',
     'SkCanvasStack',
     'SkCanvasStateUtils',
-    'SkFrontBufferedStream',
-    'SkInterpolator',
     'JSON',
     'SkMultiPictureDocument',
     'SkNullCanvas',
@@ -191,14 +186,14 @@ def generate_separated_sources(platform_sources):
     'SkOverdrawCanvas',
     'SkPaintFilterCanvas',
     'SkParseColor',
-    'SkWhitelistTypefaces',
     'SkXPS',
     'SkCreateCGImageRef',
     'skia/src/ports/SkGlobalInitialization',
+    'SkICC',
   ]
 
-  def isblacklisted(value):
-    for item in blacklist:
+  def isignorelisted(value):
+    for item in ignorelist:
       if value.find(item) >= 0:
         return True
 
@@ -214,7 +209,9 @@ def generate_separated_sources(platform_sources):
       'skia/src/ports/SkGlobalInitialization_default.cpp',
       'skia/src/ports/SkMemory_mozalloc.cpp',
       'skia/src/ports/SkImageGenerator_none.cpp',
-      'skia/third_party/skcms/skcms.cc',
+      'skia/modules/skcms/skcms.cc',
+      'skia/src/core/SkImageFilterTypes.cpp',
+      'skia/src/ports/SkFontMgr_empty_factory.cpp',
     },
     'android': {
       # 'skia/src/ports/SkDebug_android.cpp',
@@ -228,6 +225,7 @@ def generate_separated_sources(platform_sources):
       'skia/src/ports/SkFontHost_cairo.cpp',
       'skia/src/ports/SkFontHost_FreeType_common.cpp',
     },
+    'win': set (),
     'intel': set(),
     'arm': set(),
     'arm64': set(),
@@ -237,7 +235,7 @@ def generate_separated_sources(platform_sources):
 
   for plat in platform_sources.keys():
     for value in platform_sources[plat]:
-      if isblacklisted(value):
+      if isignorelisted(value):
         continue
 
       if value in separated['common']:
@@ -266,7 +264,7 @@ def write_cflags(f, values, subsearch, cflag, indent):
   if isinstance(subsearch, str):
     subsearch = [ subsearch ]
 
-  def iswhitelisted(value):
+  def isallowlisted(value):
     for item in subsearch:
       if value.find(item) >= 0:
         return True
@@ -279,14 +277,13 @@ def write_cflags(f, values, subsearch, cflag, indent):
     return
 
   for val in val_list:
-    if iswhitelisted(val):
+    if isallowlisted(val):
       write_indent(indent)
       f.write("SOURCES[\'" + val + "\'].flags += " + cflag + "\n")
 
-opt_whitelist = [
+opt_allowlist = [
   'SkOpts',
   'SkBitmapProcState',
-  'SkBitmapScaler',
   'SkBlitRow',
   'SkBlitter',
   'SkSpriteBlitter',
@@ -296,37 +293,34 @@ opt_whitelist = [
 
 # Unfortunately for now the gpu and pathops directories are
 # non-unifiable. Keep track of this and fix it.
-unified_blacklist = [
+unified_ignorelist = [
   'FontHost',
   'SkBitmapProcState_matrixProcs.cpp',
   'SkBlitter_A8.cpp',
   'SkBlitter_ARGB32.cpp',
-  'SkBlitter_RGB16.cpp',
   'SkBlitter_Sprite.cpp',
+  'SkCpu.cpp',
   'SkScan_Antihair.cpp',
   'SkScan_AntiPath.cpp',
-  'SkScan_DAAPath.cpp',
   'SkParse.cpp',
   'SkPDFFont.cpp',
   'SkPDFDevice.cpp',
   'SkPDFType1Font.cpp',
   'SkPictureData.cpp',
   'SkColorSpace',
+  'SkPath.cpp',
   'SkPathOpsDebug.cpp',
   'SkParsePath.cpp',
   'SkRecorder.cpp',
-  'SkMiniRecorder.cpp',
   'SkXfermode',
-  'SkMatrix44.cpp',
   'SkRTree.cpp',
   'SkVertices.cpp',
-  'SkSLHCodeGenerator.cpp',
   'SkSLLexer.cpp',
-] + opt_whitelist
+] + opt_allowlist
 
 def write_sources(f, values, indent):
-  def isblacklisted(value):
-    for item in unified_blacklist:
+  def isignorelisted(value):
+    for item in unified_ignorelist:
       if value.find(item) >= 0:
         return True
 
@@ -337,14 +331,14 @@ def write_sources(f, values, indent):
   sources['unified'] = set()
 
   for item in values:
-    if isblacklisted(item):
+    if isignorelisted(item):
       sources['nonunified'].add(item)
     else:
       sources['unified'].add(item)
 
   write_list(f, "UNIFIED_SOURCES", sources['unified'], indent)
   write_list(f, "SOURCES", sources['nonunified'], indent)
-  
+
 def write_list(f, name, values, indent):
   def write_indent(indent):
     for _ in range(indent):
@@ -371,7 +365,7 @@ def write_mozbuild(sources):
   f.write(header)
 
   write_sources(f, sources['common'], 0)
-  write_cflags(f, sources['common'], opt_whitelist, 'skia_opt_flags', 0)
+  write_cflags(f, sources['common'], opt_allowlist, 'skia_opt_flags', 0)
 
   f.write("if CONFIG['MOZ_ENABLE_SKIA_PDF']:\n")
   write_sources(f, sources['pdf'], 4)
@@ -390,17 +384,17 @@ def write_mozbuild(sources):
 
   f.write("if CONFIG['INTEL_ARCHITECTURE']:\n")
   write_sources(f, sources['intel'], 4)
-  write_cflags(f, sources['intel'], opt_whitelist, 'skia_opt_flags', 4)
+  write_cflags(f, sources['intel'], opt_allowlist, 'skia_opt_flags', 4)
 
   if sources['arm']:
     f.write("elif CONFIG['CPU_ARCH'] == 'arm' and CONFIG['CC_TYPE'] in ('clang', 'gcc'):\n")
     write_sources(f, sources['arm'], 4)
-    write_cflags(f, sources['arm'], opt_whitelist, 'skia_opt_flags', 4)
+    write_cflags(f, sources['arm'], opt_allowlist, 'skia_opt_flags', 4)
 
   if sources['arm64']:
     f.write("elif CONFIG['CPU_ARCH'] == 'aarch64':\n")
     write_sources(f, sources['arm64'], 4)
-    write_cflags(f, sources['arm64'], opt_whitelist, 'skia_opt_flags', 4)
+    write_cflags(f, sources['arm64'], opt_allowlist, 'skia_opt_flags', 4)
 
   if sources['none']:
     f.write("else:\n")

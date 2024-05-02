@@ -4,8 +4,6 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-
 var EXPORTED_SYMBOLS = ["TestWindowParent"];
 
 class TestWindowParent extends JSWindowActorParent {
@@ -40,6 +38,11 @@ class TestWindowParent extends JSWindowActorParent {
           aMessage.data.type
         );
         break;
+      case "messagePort": {
+        const { port } = aMessage.data;
+        port.postMessage("Message sent from parent over a MessagePort.");
+        port.close();
+      }
     }
 
     return undefined;

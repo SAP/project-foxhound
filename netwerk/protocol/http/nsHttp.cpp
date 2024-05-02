@@ -12,6 +12,7 @@
 #include "PLDHashTable.h"
 #include "mozilla/DataMutex.h"
 #include "mozilla/HashFunctions.h"
+#include "mozilla/OriginAttributes.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/StaticPrefs_network.h"
 #include "nsCRT.h"
@@ -21,7 +22,9 @@
 #include "nsHttpHandler.h"
 #include "nsICacheEntry.h"
 #include "nsIRequest.h"
+#include "nsIStandardURL.h"
 #include "nsJSUtils.h"
+#include "nsStandardURL.h"
 #include "sslerr.h"
 #include <errno.h>
 #include <functional>
@@ -35,12 +38,9 @@ const uint32_t kHttp3VersionCount = 5;
 const nsCString kHttp3Versions[] = {"h3-29"_ns, "h3-30"_ns, "h3-31"_ns,
                                     "h3-32"_ns, "h3"_ns};
 
-// define storage for all atoms
-namespace nsHttp {
-#define HTTP_ATOM(_name, _value) nsHttpAtom _name(nsLiteralCString{_value});
-#include "nsHttpAtomList.h"
-#undef HTTP_ATOM
-}  // namespace nsHttp
+// https://datatracker.ietf.org/doc/html/draft-ietf-webtrans-http3/#section-4.3
+constexpr uint64_t kWebTransportErrorCodeStart = 0x52e4a40fa8db;
+constexpr uint64_t kWebTransportErrorCodeEnd = 0x52e4a40fa9e2;
 
 // find out how many atoms we have
 #define HTTP_ATOM(_name, _value) Unused_##_name,
@@ -66,7 +66,7 @@ nsresult CreateAtomTable(
     return NS_ERROR_ILLEGAL_DURING_SHUTDOWN;
   }
   // fill the table with our known atoms
-  const nsHttpAtom* atoms[] = {
+  const nsHttpAtomLiteral* atoms[] = {
 #define HTTP_ATOM(_name, _value) &(_name),
 #include "nsHttpAtomList.h"
 #undef HTTP_ATOM
@@ -98,9 +98,8 @@ void DestroyAtomTable() {
 
 // this function may be called from multiple threads
 nsHttpAtom ResolveAtom(const nsACString& str) {
-  nsHttpAtom atom;
   if (str.IsEmpty()) {
-    return atom;
+    return {};
   }
 
   auto atomTable = sAtomTable.Lock();
@@ -108,29 +107,28 @@ nsHttpAtom ResolveAtom(const nsACString& str) {
   if (atomTable.ref().IsEmpty()) {
     if (sTableDestroyed) {
       NS_WARNING("ResolveAtom called during shutdown");
-      return atom;
+      return {};
     }
 
     NS_WARNING("ResolveAtom called before CreateAtomTable");
     if (NS_FAILED(CreateAtomTable(atomTable.ref()))) {
-      return atom;
+      return {};
     }
   }
 
   // Check if we already have an entry in the table
   auto* entry = atomTable.ref().GetEntry(str);
   if (entry) {
-    atom._val = entry->GetKey();
-    return atom;
+    return nsHttpAtom(entry->GetKey());
   }
 
   LOG(("Putting %s header into atom table", nsPromiseFlatCString(str).get()));
   // Put the string in the table. If it works create the atom.
   entry = atomTable.ref().PutEntry(str, fallible);
   if (entry) {
-    atom._val = entry->GetKey();
+    return nsHttpAtom(entry->GetKey());
   }
-  return atom;
+  return {};
 }
 
 //
@@ -794,24 +792,42 @@ ParsedHeaderValueListList::ParsedHeaderValueListList(
   Tokenize(mFull.BeginReading(), mFull.Length(), ',', consumer);
 }
 
-void LogCallingScriptLocation(void* instance) {
-  if (!LOG4_ENABLED()) {
-    return;
+Maybe<nsCString> CallingScriptLocationString() {
+  if (!LOG4_ENABLED() && !xpc::IsInAutomation()) {
+    return Nothing();
   }
 
   JSContext* cx = nsContentUtils::GetCurrentJSContext();
   if (!cx) {
-    return;
+    return Nothing();
   }
 
   nsAutoCString fileNameString;
   uint32_t line = 0, col = 0;
   if (!nsJSUtils::GetCallingLocation(cx, fileNameString, &line, &col)) {
+    return Nothing();
+  }
+
+  nsCString logString = ""_ns;
+  logString.AppendPrintf("%s:%u:%u", fileNameString.get(), line, col);
+  return Some(logString);
+}
+
+void LogCallingScriptLocation(void* instance) {
+  Maybe<nsCString> logLocation = CallingScriptLocationString();
+  LogCallingScriptLocation(instance, logLocation);
+}
+
+void LogCallingScriptLocation(void* instance,
+                              const Maybe<nsCString>& aLogLocation) {
+  if (aLogLocation.isNothing()) {
     return;
   }
 
-  LOG(("%p called from script: %s:%u:%u", instance, fileNameString.get(), line,
-       col));
+  nsCString logString;
+  logString.AppendPrintf("%p called from script: ", instance);
+  logString.AppendPrintf("%s", aLogLocation->get());
+  LOG(("%s", logString.get()));
 }
 
 void LogHeaders(const char* lineStart) {
@@ -982,16 +998,14 @@ SupportedAlpnRank H3VersionToRank(const nsACString& aVersion) {
 }
 
 SupportedAlpnRank IsAlpnSupported(const nsACString& aAlpn) {
-  if (StaticPrefs::network_http_http3_enable() &&
+  if (nsHttpHandler::IsHttp3Enabled() &&
       gHttpHandler->IsHttp3VersionSupported(aAlpn)) {
     return H3VersionToRank(aAlpn);
   }
 
-  if (gHttpHandler->IsSpdyEnabled()) {
-    uint32_t spdyIndex;
+  if (StaticPrefs::network_http_http2_enabled()) {
     SpdyInformation* spdyInfo = gHttpHandler->SpdyInfo();
-    if (NS_SUCCEEDED(spdyInfo->GetNPNIndex(aAlpn, &spdyIndex)) &&
-        spdyInfo->ProtocolEnabled(spdyIndex)) {
+    if (aAlpn.Equals(spdyInfo->VersionString)) {
       return SupportedAlpnRank::HTTP_2;
     }
   }
@@ -1003,10 +1017,143 @@ SupportedAlpnRank IsAlpnSupported(const nsACString& aAlpn) {
   return SupportedAlpnRank::NOT_SUPPORTED;
 }
 
-bool SecurityErrorToBeHandledByTransaction(nsresult aReason) {
+// On some security error when 0RTT is used we want to restart transactions
+// without 0RTT. Some firewalls do not behave well with 0RTT and cause this
+// errors.
+bool SecurityErrorThatMayNeedRestart(nsresult aReason) {
   return (aReason ==
           psm::GetXPCOMFromNSSError(SSL_ERROR_PROTOCOL_VERSION_ALERT)) ||
          (aReason == psm::GetXPCOMFromNSSError(SSL_ERROR_BAD_MAC_ALERT));
+}
+
+nsresult MakeOriginURL(const nsACString& origin, nsCOMPtr<nsIURI>& url) {
+  nsAutoCString scheme;
+  nsresult rv = net_ExtractURLScheme(origin, scheme);
+  NS_ENSURE_SUCCESS(rv, rv);
+  return MakeOriginURL(scheme, origin, url);
+}
+
+nsresult MakeOriginURL(const nsACString& scheme, const nsACString& origin,
+                       nsCOMPtr<nsIURI>& url) {
+  return NS_MutateURI(new nsStandardURL::Mutator())
+      .Apply(&nsIStandardURLMutator::Init, nsIStandardURL::URLTYPE_AUTHORITY,
+             scheme.EqualsLiteral("http") ? NS_HTTP_DEFAULT_PORT
+                                          : NS_HTTPS_DEFAULT_PORT,
+             origin, nullptr, nullptr, nullptr)
+      .Finalize(url);
+}
+
+void CreatePushHashKey(const nsCString& scheme, const nsCString& hostHeader,
+                       const mozilla::OriginAttributes& originAttributes,
+                       uint64_t serial, const nsACString& pathInfo,
+                       nsCString& outOrigin, nsCString& outKey) {
+  nsCString fullOrigin = scheme;
+  fullOrigin.AppendLiteral("://");
+  fullOrigin.Append(hostHeader);
+
+  nsCOMPtr<nsIURI> origin;
+  nsresult rv = MakeOriginURL(scheme, fullOrigin, origin);
+
+  if (NS_SUCCEEDED(rv)) {
+    rv = origin->GetAsciiSpec(outOrigin);
+    outOrigin.Trim("/", false, true, false);
+  }
+
+  if (NS_FAILED(rv)) {
+    // Fallback to plain text copy - this may end up behaving poorly
+    outOrigin = fullOrigin;
+  }
+
+  outKey = outOrigin;
+  outKey.AppendLiteral("/[");
+  nsAutoCString suffix;
+  originAttributes.CreateSuffix(suffix);
+  outKey.Append(suffix);
+  outKey.Append(']');
+  outKey.AppendLiteral("/[http2.");
+  outKey.AppendInt(serial);
+  outKey.Append(']');
+  outKey.Append(pathInfo);
+}
+
+nsresult GetNSResultFromWebTransportError(uint8_t aErrorCode) {
+  return static_cast<nsresult>((uint32_t)NS_ERROR_WEBTRANSPORT_CODE_BASE +
+                               (uint32_t)aErrorCode);
+}
+
+uint8_t GetWebTransportErrorFromNSResult(nsresult aResult) {
+  if (aResult < NS_ERROR_WEBTRANSPORT_CODE_BASE ||
+      aResult > NS_ERROR_WEBTRANSPORT_CODE_END) {
+    return 0;
+  }
+
+  return static_cast<uint8_t>((uint32_t)aResult -
+                              (uint32_t)NS_ERROR_WEBTRANSPORT_CODE_BASE);
+}
+
+uint64_t WebTransportErrorToHttp3Error(uint8_t aErrorCode) {
+  return kWebTransportErrorCodeStart + aErrorCode + aErrorCode / 0x1e;
+}
+
+uint8_t Http3ErrorToWebTransportError(uint64_t aErrorCode) {
+  // Ensure the code is within the valid range.
+  if (aErrorCode < kWebTransportErrorCodeStart ||
+      aErrorCode > kWebTransportErrorCodeEnd) {
+    return 0;
+  }
+
+  uint64_t shifted = aErrorCode - kWebTransportErrorCodeStart;
+  uint64_t result = shifted - shifted / 0x1f;
+
+  if (result <= std::numeric_limits<uint8_t>::max()) {
+    return (uint8_t)result;
+  }
+
+  return 0;
+}
+
+ConnectionCloseReason ToCloseReason(nsresult aErrorCode) {
+  if (NS_SUCCEEDED(aErrorCode)) {
+    return ConnectionCloseReason::OK;
+  }
+
+  if (aErrorCode == NS_ERROR_UNKNOWN_HOST) {
+    return ConnectionCloseReason::DNS_ERROR;
+  }
+  if (aErrorCode == NS_ERROR_NET_RESET) {
+    return ConnectionCloseReason::NET_RESET;
+  }
+  if (aErrorCode == NS_ERROR_CONNECTION_REFUSED) {
+    return ConnectionCloseReason::NET_REFUSED;
+  }
+  if (aErrorCode == NS_ERROR_SOCKET_ADDRESS_NOT_SUPPORTED) {
+    return ConnectionCloseReason::SOCKET_ADDRESS_NOT_SUPPORTED;
+  }
+  if (aErrorCode == NS_ERROR_NET_TIMEOUT) {
+    return ConnectionCloseReason::NET_TIMEOUT;
+  }
+  if (aErrorCode == NS_ERROR_OUT_OF_MEMORY) {
+    return ConnectionCloseReason::OUT_OF_MEMORY;
+  }
+  if (aErrorCode == NS_ERROR_SOCKET_ADDRESS_IN_USE) {
+    return ConnectionCloseReason::SOCKET_ADDRESS_IN_USE;
+  }
+  if (aErrorCode == NS_BINDING_ABORTED) {
+    return ConnectionCloseReason::BINDING_ABORTED;
+  }
+  if (aErrorCode == NS_BINDING_REDIRECTED) {
+    return ConnectionCloseReason::BINDING_REDIRECTED;
+  }
+  if (aErrorCode == NS_ERROR_ABORT) {
+    return ConnectionCloseReason::ERROR_ABORT;
+  }
+
+  int32_t code = -1 * NS_ERROR_GET_CODE(aErrorCode);
+  if (mozilla::psm::IsNSSErrorCode(code)) {
+    return ConnectionCloseReason::SECURITY_ERROR;
+  }
+
+  return ConnectionCloseReason::OTHER_NET_ERROR;
 }
 
 }  // namespace net

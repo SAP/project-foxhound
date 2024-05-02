@@ -11,7 +11,7 @@
 // directory.)
 
 /* eslint-disable no-unused-vars */
-add_task(async function() {
+add_task(async function () {
   let dbDirectory = do_get_profile();
   dbDirectory.append("security_state");
   let dbFile = do_get_file("test_cert_storage_preexisting/data.safe.bin");
@@ -45,15 +45,4 @@ add_task(async function() {
     );
   });
   Assert.equal(hasPriorCertData, true, "should have prior cert data");
-
-  let hasPriorCRLiteData = await new Promise(resolve => {
-    certStorage.hasPriorData(
-      Ci.nsICertStorage.DATA_TYPE_CRLITE,
-      (rv, hasPriorData) => {
-        Assert.equal(rv, Cr.NS_OK, "hasPriorData should succeed");
-        resolve(hasPriorData);
-      }
-    );
-  });
-  Assert.equal(hasPriorCRLiteData, true, "should have prior cert data");
 });

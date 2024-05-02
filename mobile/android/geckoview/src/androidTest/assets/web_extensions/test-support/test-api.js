@@ -6,27 +6,29 @@
 
 /* globals Services */
 
-const { OS } = ChromeUtils.import("resource://gre/modules/osfile.jsm");
-const { E10SUtils } = ChromeUtils.import(
-  "resource://gre/modules/E10SUtils.jsm"
+const { E10SUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/E10SUtils.sys.mjs"
 );
-const { Preferences } = ChromeUtils.import(
-  "resource://gre/modules/Preferences.jsm"
+const { Preferences } = ChromeUtils.importESModule(
+  "resource://gre/modules/Preferences.sys.mjs"
 );
+
+// eslint-disable-next-line mozilla/reject-importGlobalProperties
+Cu.importGlobalProperties(["PathUtils"]);
 
 this.test = class extends ExtensionAPI {
   onStartup() {
     ChromeUtils.registerWindowActor("TestSupport", {
       child: {
-        moduleURI:
-          "resource://android/assets/web_extensions/test-support/TestSupportChild.jsm",
+        esModuleURI:
+          "resource://android/assets/web_extensions/test-support/TestSupportChild.sys.mjs",
       },
       allFrames: true,
     });
     ChromeUtils.registerProcessActor("TestSupportProcess", {
       child: {
-        moduleURI:
-          "resource://android/assets/web_extensions/test-support/TestSupportProcessChild.jsm",
+        esModuleURI:
+          "resource://android/assets/web_extensions/test-support/TestSupportProcessChild.sys.mjs",
       },
     });
   }
@@ -40,10 +42,20 @@ this.test = class extends ExtensionAPI {
   }
 
   getAPI(context) {
-    function windowActor(tabId) {
+    /**
+     * Helper function for getting window or process actors.
+     *
+     * @param tabId - id of the tab; required
+     * @param actorName - a string; the name of the actor
+     *   Default: "TestSupport" which is our test framework actor
+     *   (you can still pass the second parameter when getting the TestSupport actor, for readability)
+     *
+     * @returns actor
+     */
+    function getActorForTab(tabId, actorName = "TestSupport") {
       const tab = context.extension.tabManager.get(tabId);
       const { browsingContext } = tab.browser;
-      return browsingContext.currentWindowGlobal.getActor("TestSupport");
+      return browsingContext.currentWindowGlobal.getActor(actorName);
     }
 
     return {
@@ -81,7 +93,10 @@ this.test = class extends ExtensionAPI {
 
         /* Gets link color for a given selector. */
         async getLinkColor(tabId, selector) {
-          return windowActor(tabId).sendQuery("GetLinkColor", { selector });
+          return getActorForTab(tabId, "TestSupport").sendQuery(
+            "GetLinkColor",
+            { selector }
+          );
         },
 
         async getRequestedLocales() {
@@ -132,9 +147,12 @@ this.test = class extends ExtensionAPI {
         },
 
         async setResolutionAndScaleTo(tabId, resolution) {
-          return windowActor(tabId).sendQuery("SetResolutionAndScaleTo", {
-            resolution,
-          });
+          return getActorForTab(tabId, "TestSupport").sendQuery(
+            "SetResolutionAndScaleTo",
+            {
+              resolution,
+            }
+          );
         },
 
         async getActive(tabId) {
@@ -143,7 +161,7 @@ this.test = class extends ExtensionAPI {
         },
 
         async getProfilePath() {
-          return OS.Constants.Path.profileDir;
+          return PathUtils.profileDir;
         },
 
         async flushApzRepaints(tabId) {
@@ -153,11 +171,15 @@ this.test = class extends ExtensionAPI {
           // flushApzRepaints is called for the target content document, if we
           // still meet intermittent failures, we might want to do it here as
           // well.
-          await windowActor(tabId).sendQuery("FlushApzRepaints");
+          await getActorForTab(tabId, "TestSupport").sendQuery(
+            "FlushApzRepaints"
+          );
         },
 
         async promiseAllPaintsDone(tabId) {
-          await windowActor(tabId).sendQuery("PromiseAllPaintsDone");
+          await getActorForTab(tabId, "TestSupport").sendQuery(
+            "PromiseAllPaintsDone"
+          );
         },
 
         async usingGpuProcess() {
@@ -179,6 +201,48 @@ this.test = class extends ExtensionAPI {
             Ci.nsIGfxInfo
           );
           return gfxInfo.crashGPUProcessForTests();
+        },
+
+        async clearHSTSState() {
+          const sss = Cc["@mozilla.org/ssservice;1"].getService(
+            Ci.nsISiteSecurityService
+          );
+          return sss.clearAll();
+        },
+
+        async triggerCookieBannerDetected(tabId) {
+          const actor = getActorForTab(tabId, "CookieBanner");
+          return actor.receiveMessage({
+            name: "CookieBanner::DetectedBanner",
+          });
+        },
+
+        async triggerCookieBannerHandled(tabId) {
+          const actor = getActorForTab(tabId, "CookieBanner");
+          return actor.receiveMessage({
+            name: "CookieBanner::HandledBanner",
+          });
+        },
+
+        async triggerTranslationsOffer(tabId) {
+          const browser = context.extension.tabManager.get(tabId).browser;
+          const { CustomEvent } = browser.ownerGlobal;
+          return browser.dispatchEvent(
+            new CustomEvent("TranslationsParent:OfferTranslation", {
+              bubbles: true,
+            })
+          );
+        },
+
+        async triggerLanguageStateChange(tabId, languageState) {
+          const browser = context.extension.tabManager.get(tabId).browser;
+          const { CustomEvent } = browser.ownerGlobal;
+          return browser.dispatchEvent(
+            new CustomEvent("TranslationsParent:LanguageState", {
+              bubbles: true,
+              detail: languageState,
+            })
+          );
         },
       },
     };

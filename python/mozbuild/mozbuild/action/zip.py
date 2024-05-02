@@ -5,17 +5,14 @@
 # This script creates a zip file, but will also strip any binaries
 # it finds before adding them to the zip.
 
-from __future__ import absolute_import, print_function
+import argparse
+import sys
 
-from mozpack.files import FileFinder
+import mozpack.path as mozpath
 from mozpack.copier import Jarrer
 from mozpack.errors import errors
+from mozpack.files import FileFinder
 from mozpack.path import match
-from mozbuild.action.util import log_build_task
-
-import argparse
-import mozpack.path as mozpath
-import sys
 
 
 def main(args):
@@ -50,4 +47,4 @@ def main(args):
 
 
 if __name__ == "__main__":
-    log_build_task(main, sys.argv[1:])
+    main(sys.argv[1:])

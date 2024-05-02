@@ -1,21 +1,25 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
-const { Weave } = ChromeUtils.import("resource://services-sync/main.js");
-const { HistoryEngine } = ChromeUtils.import(
-  "resource://services-sync/engines/history.js"
+const { Weave } = ChromeUtils.importESModule(
+  "resource://services-sync/main.sys.mjs"
 );
-const { CryptoWrapper, WBORecord } = ChromeUtils.import(
-  "resource://services-sync/record.js"
+const { HistoryEngine } = ChromeUtils.importESModule(
+  "resource://services-sync/engines/history.sys.mjs"
 );
-const { Service } = ChromeUtils.import("resource://services-sync/service.js");
+const { CryptoWrapper, WBORecord } = ChromeUtils.importESModule(
+  "resource://services-sync/record.sys.mjs"
+);
+const { Service } = ChromeUtils.importESModule(
+  "resource://services-sync/service.sys.mjs"
+);
 
 add_task(async function test_locally_changed_keys() {
   enableValidationPrefs();
 
   let hmacErrorCount = 0;
   function counting(f) {
-    return async function() {
+    return async function () {
       hmacErrorCount++;
       return f.call(this);
     };
@@ -33,7 +37,7 @@ add_task(async function test_locally_changed_keys() {
   server.start();
 
   try {
-    Svc.Prefs.set("registerEngines", "Tab");
+    Svc.PrefBranch.setCharPref("registerEngines", "Tab");
 
     await configureIdentity({ username: "johndoe" }, server);
     // We aren't doing a .login yet, so fudge the cluster URL.
@@ -229,7 +233,9 @@ add_task(async function test_locally_changed_keys() {
       await PlacesUtils.history.hasVisits("http://foo/bar?record-no--9")
     );
   } finally {
-    Svc.Prefs.resetBranch("");
+    for (const pref of Svc.PrefBranch.getChildList("")) {
+      Svc.PrefBranch.clearUserPref(pref);
+    }
     await promiseStopServer(server);
   }
 });

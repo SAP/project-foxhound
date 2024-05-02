@@ -3,23 +3,20 @@
  */
 
 "use strict";
-const { PasswordGenerator } = ChromeUtils.import(
-  "resource://gre/modules/PasswordGenerator.jsm"
+const { PasswordGenerator } = ChromeUtils.importESModule(
+  "resource://gre/modules/PasswordGenerator.sys.mjs"
 );
-const { PasswordRulesManagerParent } = ChromeUtils.import(
-  "resource://gre/modules/PasswordRulesManager.jsm"
+const { PasswordRulesManagerParent } = ChromeUtils.importESModule(
+  "resource://gre/modules/PasswordRulesManager.sys.mjs"
 );
-const { PasswordRulesParser } = ChromeUtils.import(
-  "resource://gre/modules/PasswordRulesParser.jsm"
+const { PasswordRulesParser } = ChromeUtils.importESModule(
+  "resource://gre/modules/PasswordRulesParser.sys.mjs"
 );
-const { RemoteSettings } = ChromeUtils.import(
-  "resource://services-settings/remote-settings.js"
+const { RemoteSettings } = ChromeUtils.importESModule(
+  "resource://services-settings/remote-settings.sys.mjs"
 );
-const { TestUtils } = ChromeUtils.import(
-  "resource://testing-common/TestUtils.jsm"
-);
-const { TelemetryTestUtils } = ChromeUtils.import(
-  "resource://testing-common/TelemetryTestUtils.jsm"
+const { TelemetryTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/TelemetryTestUtils.sys.mjs"
 );
 
 Services.prefs.setBoolPref(
@@ -142,13 +139,13 @@ add_task(async function test_generatePassword_many_rules() {
   let rules = getRulesForRecord(records, TEST_BASE_ORIGIN);
 
   rules = PasswordRulesParser.parsePasswordRules(rules);
-  ok(rules.length, "Rules should exist after parsing");
+  Assert.ok(rules.length, "Rules should exist after parsing");
 
   let PRMP = new PasswordRulesManagerParent();
-  ok(PRMP.generatePassword, "PRMP.generatePassword exists");
+  Assert.ok(PRMP.generatePassword, "PRMP.generatePassword exists");
 
   let generatedPassword = await PRMP.generatePassword(TEST_ORIGIN);
-  ok(generatedPassword, "A password was generated");
+  Assert.ok(generatedPassword, "A password was generated");
 
   verifyPassword(rules, generatedPassword);
 
@@ -178,13 +175,13 @@ add_task(async function test_generatePassword_all_characters_allowed() {
   let rules = getRulesForRecord(records, TEST_BASE_ORIGIN);
 
   rules = PasswordRulesParser.parsePasswordRules(rules);
-  ok(rules.length, "Rules should exist after parsing");
+  Assert.ok(rules.length, "Rules should exist after parsing");
 
   let PRMP = new PasswordRulesManagerParent();
-  ok(PRMP.generatePassword, "PRMP.generatePassword exists");
+  Assert.ok(PRMP.generatePassword, "PRMP.generatePassword exists");
 
   let generatedPassword = await PRMP.generatePassword(TEST_ORIGIN);
-  ok(generatedPassword, "A password was generated");
+  Assert.ok(generatedPassword, "A password was generated");
 
   verifyPassword(rules, generatedPassword);
 
@@ -214,13 +211,13 @@ add_task(async function test_generatePassword_required_special_character() {
   let rules = getRulesForRecord(records, TEST_BASE_ORIGIN);
 
   rules = PasswordRulesParser.parsePasswordRules(rules);
-  ok(rules.length, "Rules should exist after parsing");
+  Assert.ok(rules.length, "Rules should exist after parsing");
 
   let PRMP = new PasswordRulesManagerParent();
-  ok(PRMP.generatePassword, "PRMP.generatePassword exists");
+  Assert.ok(PRMP.generatePassword, "PRMP.generatePassword exists");
 
   let generatedPassword = await PRMP.generatePassword(TEST_ORIGIN);
-  ok(generatedPassword, "A password was generated");
+  Assert.ok(generatedPassword, "A password was generated");
 
   verifyPassword(TEST_RULES, generatedPassword);
 });
@@ -254,14 +251,14 @@ add_task(
     let rules = getRulesForRecord(records, TEST_BASE_ORIGIN);
 
     rules = PasswordRulesParser.parsePasswordRules(rules);
-    ok(rules.length, "Rules should exist after parsing");
+    Assert.ok(rules.length, "Rules should exist after parsing");
 
     let PRMP = new PasswordRulesManagerParent();
-    ok(PRMP.generatePassword, "PRMP.generatePassword exists");
+    Assert.ok(PRMP.generatePassword, "PRMP.generatePassword exists");
 
     let generatedPassword = await PRMP.generatePassword(TEST_ORIGIN);
     generatedPassword = await PRMP.generatePassword(TEST_ORIGIN);
-    ok(generatedPassword, "A password was generated");
+    Assert.ok(generatedPassword, "A password was generated");
 
     verifyPassword(TEST_RULES, generatedPassword);
 
@@ -276,13 +273,13 @@ add_task(
       }
     }
     for (let char of disallowedSpecialCharacters) {
-      ok(
+      Assert.ok(
         !generatedPassword.includes(char),
         "Password must not contain any disallowed special characters: " + char
       );
     }
     for (let char of digits) {
-      ok(
+      Assert.ok(
         !generatedPassword.includes(char),
         "Password must not contain any digits: " + char
       );
@@ -358,29 +355,19 @@ add_task(async function test_generatePassword_subdomain_rule() {
     let rules = getRulesForRecord(records, TEST_BASE_ORIGIN);
 
     rules = PasswordRulesParser.parsePasswordRules(rules);
-    ok(rules.length, "Rules should exist after parsing");
+    Assert.ok(rules.length, "Rules should exist after parsing");
 
     let PRMP = new PasswordRulesManagerParent();
 
     let generatedPassword = await PRMP.generatePassword(TEST_ORIGIN);
-    ok(generatedPassword, "A password was generated for URI: " + test.uri);
+    Assert.ok(
+      generatedPassword,
+      "A password was generated for URI: " + test.uri
+    );
 
     // If a rule should be applied, we verify the password has all the required classes in the generated password.
     if (test.shouldApplyPWRule) {
       verifyPassword(rules, generatedPassword);
-    } else {
-      // If a rule should not be applied, we verify that the generated password has no special characters
-      // since our standard generation does not include special characters.
-
-      const SPECIAL_CHARACTERS = PasswordGenerator._getSpecialCharacters();
-      // We need to escape our special characters since some of them
-      // have special meaning in regex.
-      let escapedSpecialCharacters = SPECIAL_CHARACTERS.replace(
-        /[.*\-+?^${}()|[\]\\]/g,
-        "\\$&"
-      );
-      let checkSpecial = new RegExp(`[${escapedSpecialCharacters}]`);
-      ok(!generatedPassword.match(checkSpecial));
     }
   }
 });
@@ -410,7 +397,7 @@ add_task(async function test_improved_password_rules_telemetry() {
   // Generate a password with custom rules,
   // so we should send a ping to the custom rules bucket (position 1).
   let generatedPassword = await PRMP.generatePassword(TEST_ORIGIN);
-  ok(generatedPassword, "A password was generated");
+  Assert.ok(generatedPassword, "A password was generated");
 
   TelemetryTestUtils.assertHistogram(snapshot, 1, 1);
 
@@ -421,7 +408,7 @@ add_task(async function test_improved_password_rules_telemetry() {
     IMPROVED_PASSWORD_GENERATION_HISTOGRAM
   );
   generatedPassword = await PRMP.generatePassword(TEST_ORIGIN);
-  ok(generatedPassword, "A password was generated");
+  Assert.ok(generatedPassword, "A password was generated");
 
   TelemetryTestUtils.assertHistogram(snapshot, 0, 1);
 });
@@ -474,19 +461,19 @@ function verifyPassword(rules, generatedPassword) {
       for (let required of value) {
         if (required._name === "upper") {
           let _checkUppercase = new RegExp(`[${UPPER_CASE_ALPHA}]`);
-          ok(
+          Assert.ok(
             generatedPassword.match(_checkUppercase),
             "Password must include upper case letter"
           );
         } else if (required._name === "lower") {
           let _checkLowercase = new RegExp(`[${LOWER_CASE_ALPHA}]`);
-          ok(
+          Assert.ok(
             generatedPassword.match(_checkLowercase),
             "Password must include lower case letter"
           );
         } else if (required._name === "digit") {
           let _checkDigits = new RegExp(`[${DIGITS}]`);
-          ok(
+          Assert.ok(
             generatedPassword.match(_checkDigits),
             "Password must include digits"
           );
@@ -499,7 +486,7 @@ function verifyPassword(rules, generatedPassword) {
             "\\$&"
           );
           let _checkSpecial = new RegExp(`[${escapedSpecialCharacters}]`);
-          ok(
+          Assert.ok(
             generatedPassword.match(_checkSpecial),
             "Password must include special character"
           );
@@ -510,24 +497,24 @@ function verifyPassword(rules, generatedPassword) {
           // We can't use regex to do a quick check here since the
           // required characters could be characters that need to be escaped
           // in order for the regex to work properly ([]"^...etc)
-          ok(
+          Assert.ok(
             checkCharacters(generatedPassword, _characters),
             `Password must contain one of the following characters: ${_characters}`
           );
         }
       }
     } else if (_name === "minlength") {
-      ok(
+      Assert.ok(
         generatedPassword.length >= value,
         `Password should have a minimum length of ${value}`
       );
     } else if (_name === "maxlength") {
-      ok(
+      Assert.ok(
         generatedPassword.length <= value,
         `Password should have a maximum length of ${value}`
       );
     } else if (_name === "max-consecutive") {
-      ok(
+      Assert.ok(
         checkConsecutiveCharacters(generatedPassword, value),
         `Password must not contain more than ${value} consecutive characters`
       );

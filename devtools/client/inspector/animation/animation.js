@@ -7,17 +7,19 @@
 const {
   createElement,
   createFactory,
-} = require("devtools/client/shared/vendor/react");
-const { Provider } = require("devtools/client/shared/vendor/react-redux");
+} = require("resource://devtools/client/shared/vendor/react.js");
+const {
+  Provider,
+} = require("resource://devtools/client/shared/vendor/react-redux.js");
 
-const EventEmitter = require("devtools/shared/event-emitter");
+const EventEmitter = require("resource://devtools/shared/event-emitter.js");
 
 const App = createFactory(
-  require("devtools/client/inspector/animation/components/App")
+  require("resource://devtools/client/inspector/animation/components/App.js")
 );
-const CurrentTimeTimer = require("devtools/client/inspector/animation/current-time-timer");
+const CurrentTimeTimer = require("resource://devtools/client/inspector/animation/current-time-timer.js");
 
-const animationsReducer = require("devtools/client/inspector/animation/reducers/animations");
+const animationsReducer = require("resource://devtools/client/inspector/animation/reducers/animations.js");
 const {
   updateAnimations,
   updateDetailVisibility,
@@ -26,11 +28,11 @@ const {
   updatePlaybackRates,
   updateSelectedAnimation,
   updateSidebarSize,
-} = require("devtools/client/inspector/animation/actions/animations");
+} = require("resource://devtools/client/inspector/animation/actions/animations.js");
 const {
   hasAnimationIterationCountInfinite,
   hasRunningAnimation,
-} = require("devtools/client/inspector/animation/utils/utils");
+} = require("resource://devtools/client/inspector/animation/utils/utils.js");
 
 class AnimationInspector {
   constructor(inspector, win) {
@@ -39,19 +41,16 @@ class AnimationInspector {
 
     this.inspector.store.injectReducer("animations", animationsReducer);
 
-    this.addAnimationsCurrentTimeListener = this.addAnimationsCurrentTimeListener.bind(
-      this
-    );
+    this.addAnimationsCurrentTimeListener =
+      this.addAnimationsCurrentTimeListener.bind(this);
     this.getAnimatedPropertyMap = this.getAnimatedPropertyMap.bind(this);
     this.getAnimationsCurrentTime = this.getAnimationsCurrentTime.bind(this);
     this.getComputedStyle = this.getComputedStyle.bind(this);
     this.getNodeFromActor = this.getNodeFromActor.bind(this);
-    this.removeAnimationsCurrentTimeListener = this.removeAnimationsCurrentTimeListener.bind(
-      this
-    );
-    this.rewindAnimationsCurrentTime = this.rewindAnimationsCurrentTime.bind(
-      this
-    );
+    this.removeAnimationsCurrentTimeListener =
+      this.removeAnimationsCurrentTimeListener.bind(this);
+    this.rewindAnimationsCurrentTime =
+      this.rewindAnimationsCurrentTime.bind(this);
     this.selectAnimation = this.selectAnimation.bind(this);
     this.setAnimationsCurrentTime = this.setAnimationsCurrentTime.bind(this);
     this.setAnimationsPlaybackRate = this.setAnimationsPlaybackRate.bind(this);
@@ -60,15 +59,13 @@ class AnimationInspector {
     this.setHighlightedNode = this.setHighlightedNode.bind(this);
     this.setSelectedNode = this.setSelectedNode.bind(this);
     this.simulateAnimation = this.simulateAnimation.bind(this);
-    this.simulateAnimationForKeyframesProgressBar = this.simulateAnimationForKeyframesProgressBar.bind(
-      this
-    );
+    this.simulateAnimationForKeyframesProgressBar =
+      this.simulateAnimationForKeyframesProgressBar.bind(this);
     this.toggleElementPicker = this.toggleElementPicker.bind(this);
     this.update = this.update.bind(this);
     this.onAnimationStateChanged = this.onAnimationStateChanged.bind(this);
-    this.onAnimationsCurrentTimeUpdated = this.onAnimationsCurrentTimeUpdated.bind(
-      this
-    );
+    this.onAnimationsCurrentTimeUpdated =
+      this.onAnimationsCurrentTimeUpdated.bind(this);
     this.onAnimationsMutation = this.onAnimationsMutation.bind(this);
     this.onCurrentTimeTimerUpdated = this.onCurrentTimeTimerUpdated.bind(this);
     this.onElementPickerStarted = this.onElementPickerStarted.bind(this);
@@ -445,9 +442,8 @@ class AnimationInspector {
   }
 
   removeAnimationsCurrentTimeListener(listener) {
-    this.animationsCurrentTimeListeners = this.animationsCurrentTimeListeners.filter(
-      l => l !== listener
-    );
+    this.animationsCurrentTimeListeners =
+      this.animationsCurrentTimeListeners.filter(l => l !== listener);
   }
 
   async rewindAnimationsCurrentTime() {
@@ -691,11 +687,8 @@ class AnimationInspector {
       this.simulatedAnimationForKeyframesProgressBar = new this.win.Animation();
     }
 
-    this.simulatedAnimationForKeyframesProgressBar.effect = new this.win.KeyframeEffect(
-      null,
-      null,
-      effectTiming
-    );
+    this.simulatedAnimationForKeyframesProgressBar.effect =
+      new this.win.KeyframeEffect(null, null, effectTiming);
 
     return this.simulatedAnimationForKeyframesProgressBar;
   }

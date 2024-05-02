@@ -140,6 +140,8 @@ class WebSocket final : public DOMEventTargetHelper {
   nsresult CreateAndDispatchCloseEvent(bool aWasClean, uint16_t aCode,
                                        const nsAString& aReason);
 
+  static bool IsValidProtocolString(const nsString& aValue);
+
   // if there are "strong event listeners" (see comment in WebSocket.cpp) or
   // outgoing not sent messages then this method keeps the object alive
   // when js doesn't have strong references to it.
@@ -181,7 +183,7 @@ class WebSocket final : public DOMEventTargetHelper {
   mozilla::Mutex mMutex;
 
   // This value should not be used directly but use ReadyState() instead.
-  uint16_t mReadyState;
+  uint16_t mReadyState MOZ_GUARDED_BY(mMutex);
 };
 
 }  // namespace dom

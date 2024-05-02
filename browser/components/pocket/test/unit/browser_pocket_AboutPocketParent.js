@@ -2,10 +2,12 @@
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 "use strict";
 
-const { AboutPocketParent } = ChromeUtils.import(
-  "resource:///actors/AboutPocketParent.jsm"
+const { AboutPocketParent } = ChromeUtils.importESModule(
+  "resource:///actors/AboutPocketParent.sys.mjs"
 );
-const { pktApi } = ChromeUtils.import("chrome://pocket/content/pktApi.jsm");
+const { pktApi } = ChromeUtils.importESModule(
+  "chrome://pocket/content/pktApi.sys.mjs"
+);
 let aboutPocketParent;
 
 function test_runner(test) {
@@ -83,9 +85,8 @@ test_runner(
       name: "PKT_show_signup",
     });
 
-    const {
-      onShowSignup,
-    } = aboutPocketParent.browsingContext.topChromeWindow.pktUI;
+    const { onShowSignup } =
+      aboutPocketParent.browsingContext.topChromeWindow.pktUI;
 
     Assert.ok(
       onShowSignup.calledOnce,
@@ -102,9 +103,8 @@ test_runner(
       name: "PKT_show_saved",
     });
 
-    const {
-      onShowSaved,
-    } = aboutPocketParent.browsingContext.topChromeWindow.pktUI;
+    const { onShowSaved } =
+      aboutPocketParent.browsingContext.topChromeWindow.pktUI;
 
     Assert.ok(
       onShowSaved.calledOnce,
@@ -120,9 +120,8 @@ test_runner(async function test_AboutPocketParent_receiveMessage_PKT_close({
     name: "PKT_close",
   });
 
-  const {
-    closePanel,
-  } = aboutPocketParent.browsingContext.topChromeWindow.pktUI;
+  const { closePanel } =
+    aboutPocketParent.browsingContext.topChromeWindow.pktUI;
 
   Assert.ok(
     closePanel.calledOnce,
@@ -139,9 +138,8 @@ test_runner(
       data: { foo: 1 },
     });
 
-    const {
-      onOpenTabWithUrl,
-    } = aboutPocketParent.browsingContext.topChromeWindow.pktUI;
+    const { onOpenTabWithUrl } =
+      aboutPocketParent.browsingContext.topChromeWindow.pktUI;
     const { args } = onOpenTabWithUrl.firstCall;
 
     Assert.ok(
@@ -165,9 +163,8 @@ test_runner(
       data: { foo: 1 },
     });
 
-    const {
-      onOpenTabWithPocketUrl,
-    } = aboutPocketParent.browsingContext.topChromeWindow.pktUI;
+    const { onOpenTabWithPocketUrl } =
+      aboutPocketParent.browsingContext.topChromeWindow.pktUI;
     const { args } = onOpenTabWithPocketUrl.firstCall;
 
     Assert.ok(
@@ -195,9 +192,8 @@ test_runner(
       data: { foo: 1 },
     });
 
-    const {
-      resizePanel,
-    } = aboutPocketParent.browsingContext.topChromeWindow.pktUI;
+    const { resizePanel } =
+      aboutPocketParent.browsingContext.topChromeWindow.pktUI;
     const { args } = resizePanel.firstCall;
 
     Assert.ok(
@@ -237,7 +233,7 @@ test_runner(async function test_AboutPocketParent_receiveMessage_PKT_getTags({
   );
   Assert.deepEqual(
     sendResponseMessageToPanel.firstCall.args,
-    ["PKT_getTags", { tags: [], usedTags: [] }],
+    ["PKT_getTags", { tags: [] }],
     "Should fire sendResponseMessageToPanel with proper args from PKT_getTags"
   );
 });

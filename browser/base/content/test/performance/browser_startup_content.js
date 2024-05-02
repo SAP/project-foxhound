@@ -1,8 +1,8 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
-/* This test records which services, JS components, frame scripts, process
- * scripts, and JS modules are loaded when creating a new content process.
+/* This test records which services, frame scripts, process scripts, and
+ * JS modules are loaded when creating a new content process.
  *
  * If you made changes that cause this test to fail, it's likely because you
  * are loading more JS code during content process startup. Please try to
@@ -20,33 +20,31 @@ const kDumpAllStacks = false;
 
 const known_scripts = {
   modules: new Set([
-    "chrome://mochikit/content/ShutdownLeaksCollector.jsm",
+    "chrome://mochikit/content/ShutdownLeaksCollector.sys.mjs",
 
     // General utilities
-    "resource://gre/modules/AppConstants.jsm",
-    "resource://gre/modules/DeferredTask.jsm",
-    "resource://gre/modules/Services.jsm", // bug 1464542
-    "resource://gre/modules/Timer.jsm",
-    "resource://gre/modules/XPCOMUtils.jsm",
+    "resource://gre/modules/AppConstants.sys.mjs",
+    "resource://gre/modules/Timer.sys.mjs",
+    "resource://gre/modules/XPCOMUtils.sys.mjs",
 
     // Logging related
-    "resource://gre/modules/Log.jsm",
+    "resource://gre/modules/Log.sys.mjs",
 
     // Browser front-end
-    "resource:///actors/AboutReaderChild.jsm",
-    "resource:///actors/BrowserTabChild.jsm",
-    "resource:///actors/LinkHandlerChild.jsm",
-    "resource:///actors/PageStyleChild.jsm",
-    "resource:///actors/SearchSERPTelemetryChild.jsm",
-    "resource://gre/modules/Readerable.jsm",
+    "resource:///actors/AboutReaderChild.sys.mjs",
+    "resource:///actors/InteractionsChild.sys.mjs",
+    "resource:///actors/LinkHandlerChild.sys.mjs",
+    "resource:///actors/SearchSERPTelemetryChild.sys.mjs",
+    "resource://gre/actors/ContentMetaChild.sys.mjs",
+    "resource://gre/modules/Readerable.sys.mjs",
 
     // Telemetry
-    "resource://gre/modules/TelemetryControllerBase.jsm", // bug 1470339
-    "resource://gre/modules/TelemetryControllerContent.jsm", // bug 1470339
+    "resource://gre/modules/TelemetryControllerBase.sys.mjs", // bug 1470339
+    "resource://gre/modules/TelemetryControllerContent.sys.mjs", // bug 1470339
 
     // Extensions
-    "resource://gre/modules/ExtensionProcessScript.jsm",
-    "resource://gre/modules/ExtensionUtils.jsm",
+    "resource://gre/modules/ExtensionProcessScript.sys.mjs",
+    "resource://gre/modules/ExtensionUtils.sys.mjs",
   ]),
   frameScripts: new Set([
     // Test related
@@ -58,9 +56,9 @@ const known_scripts = {
   ]),
 };
 
-if (!gFissionBrowser) {
+if (!Services.appinfo.sessionHistoryInParent) {
   known_scripts.modules.add(
-    "resource:///modules/sessionstore/ContentSessionStore.jsm"
+    "resource:///modules/sessionstore/ContentSessionStore.sys.mjs"
   );
 }
 
@@ -68,31 +66,32 @@ if (!gFissionBrowser) {
 // items in the main list, which we expect will always load.
 const intermittently_loaded_scripts = {
   modules: new Set([
-    "resource://gre/modules/nsAsyncShutdown.jsm",
-    "resource://gre/modules/sessionstore/Utils.jsm",
+    "resource://gre/modules/nsAsyncShutdown.sys.mjs",
+    "resource://gre/modules/sessionstore/Utils.sys.mjs",
+
+    // Translations code which may be preffed on.
+    "resource://gre/actors/TranslationsChild.sys.mjs",
+    "resource://gre/modules/translation/LanguageDetector.sys.mjs",
+    "resource://gre/modules/ConsoleAPIStorage.sys.mjs", // Logging related.
 
     // Session store.
-    "resource://gre/modules/sessionstore/SessionHistory.jsm",
+    "resource://gre/modules/sessionstore/SessionHistory.sys.mjs",
 
-    // Webcompat about:config front-end. This is part of a system add-on which
-    // may not load early enough for the test.
-    "resource://webcompat/AboutCompat.jsm",
+    // Cookie banner handling.
+    "resource://gre/actors/CookieBannerChild.sys.mjs",
+    "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
 
     // Test related
-    "chrome://remote/content/marionette/actors/MarionetteEventsChild.jsm",
-    "chrome://remote/content/shared/Log.jsm",
-    "resource://testing-common/BrowserTestUtilsChild.jsm",
-    "resource://testing-common/ContentEventListenerChild.jsm",
-    "resource://specialpowers/AppTestDelegateChild.jsm",
-    "resource://specialpowers/SpecialPowersChild.jsm",
-    "resource://specialpowers/WrapPrivileged.jsm",
+    "chrome://remote/content/marionette/actors/MarionetteEventsChild.sys.mjs",
+    "chrome://remote/content/shared/Log.sys.mjs",
+    "resource://testing-common/BrowserTestUtilsChild.sys.mjs",
+    "resource://testing-common/ContentEventListenerChild.sys.mjs",
+    "resource://specialpowers/AppTestDelegateChild.sys.mjs",
+    "resource://testing-common/SpecialPowersChild.sys.mjs",
+    "resource://testing-common/WrapPrivileged.sys.mjs",
   ]),
   frameScripts: new Set([]),
-  processScripts: new Set([
-    // Webcompat about:config front-end. This is presently nightly-only and
-    // part of a system add-on which may not load early enough for the test.
-    "resource://webcompat/aboutPageProcessScript.js",
-  ]),
+  processScripts: new Set([]),
 };
 
 const forbiddenScripts = {
@@ -103,7 +102,7 @@ const forbiddenScripts = {
   ]),
 };
 
-add_task(async function() {
+add_task(async function () {
   SimpleTest.requestCompleteLog();
 
   let tab = await BrowserTestUtils.openNewForegroundTab({
@@ -111,7 +110,7 @@ add_task(async function() {
     url:
       getRootDirectory(gTestPath).replace(
         "chrome://mochitests/content",
-        "http://example.com"
+        "https://example.com"
       ) + "file_empty.html",
     forceNewProcess: true,
   });
@@ -122,24 +121,21 @@ add_task(async function() {
   // Load a custom frame script to avoid using ContentTask which loads Task.jsm
   mm.loadFrameScript(
     "data:text/javascript,(" +
-      function() {
+      function () {
         /* eslint-env mozilla/frame-script */
         const Cm = Components.manager;
         Cm.QueryInterface(Ci.nsIServiceManager);
-        const { AppConstants } = ChromeUtils.import(
-          "resource://gre/modules/AppConstants.jsm"
+        const { AppConstants } = ChromeUtils.importESModule(
+          "resource://gre/modules/AppConstants.sys.mjs"
         );
         let collectStacks = AppConstants.NIGHTLY_BUILD || AppConstants.DEBUG;
-        let components = {};
-        for (let component of Cu.loadedComponents) {
-          /* Keep only the file name for components, as the path is an absolute file
-         URL rather than a resource:// URL like for modules. */
-          components[component.replace(/.*\//, "")] = collectStacks
-            ? Cu.getComponentLoadStack(component)
+        let modules = {};
+        for (let module of Cu.loadedJSModules) {
+          modules[module] = collectStacks
+            ? Cu.getModuleImportStack(module)
             : "";
         }
-        let modules = {};
-        for (let module of Cu.loadedModules) {
+        for (let module of Cu.loadedESModules) {
           modules[module] = collectStacks
             ? Cu.getModuleImportStack(module)
             : "";
@@ -155,7 +151,6 @@ add_task(async function() {
           } catch (e) {}
         }
         sendAsyncMessage("Test:LoadedScripts", {
-          components,
           modules,
           services,
         });
@@ -178,7 +173,7 @@ add_task(async function() {
     loadedInfo.processScripts[uri] = "";
   }
 
-  checkLoadedScripts({
+  await checkLoadedScripts({
     loadedInfo,
     known: known_scripts,
     intermittent: intermittently_loaded_scripts,

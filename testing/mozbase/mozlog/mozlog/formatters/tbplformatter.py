@@ -2,16 +2,15 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, division
-
 import functools
 from collections import deque
+from functools import reduce
 
+import six
+
+from ..handlers import SummaryHandler
 from .base import BaseFormatter
 from .process import strstatus
-from ..handlers import SummaryHandler
-import six
-from functools import reduce
 
 
 def output_subtests(func):
@@ -102,6 +101,10 @@ class TbplFormatter(BaseFormatter):
         return "TEST-INFO | %s: %s\n" % (data["process"], strstatus(data["exitcode"]))
 
     @output_subtests
+    def shutdown_failure(self, data):
+        return "TEST-UNEXPECTED-FAIL | %s | %s\n" % (data["group"], data["message"])
+
+    @output_subtests
     def crash(self, data):
         id = data["test"] if "test" in data else "pid: %s" % data["process"]
 
@@ -119,7 +122,13 @@ class TbplFormatter(BaseFormatter):
 
         else:
             signature = data["signature"] if data["signature"] else "unknown top frame"
-            rv = ["PROCESS-CRASH | %s | application crashed [%s]" % (id, signature)]
+            reason = data.get("reason", "application crashed")
+            rv = ["PROCESS-CRASH | %s [%s] | %s " % (reason, signature, id)]
+
+            if data.get("process_type"):
+                rv.append("Process type: {}".format(data["process_type"]))
+
+            rv.append("Process pid: {}".format(data.get("pid", "unknown")))
 
             if data.get("reason"):
                 rv.append("Mozilla crash reason: %s" % data["reason"])
@@ -128,14 +137,14 @@ class TbplFormatter(BaseFormatter):
                 rv.append("Crash dump filename: %s" % data["minidump_path"])
 
             if data.get("stackwalk_stderr"):
-                rv.append("stderr from minidump_stackwalk:")
+                rv.append("stderr from minidump-stackwalk:")
                 rv.append(data["stackwalk_stderr"])
             elif data.get("stackwalk_stdout"):
                 rv.append(data["stackwalk_stdout"])
 
             if data.get("stackwalk_returncode", 0) != 0:
                 rv.append(
-                    "minidump_stackwalk exited with return code %d"
+                    "minidump-stackwalk exited with return code %d"
                     % data["stackwalk_returncode"]
                 )
 
@@ -308,6 +317,9 @@ class TbplFormatter(BaseFormatter):
     def suite_end(self, data):
         start_time = self.suite_start_time
         # pylint --py3k W1619
+        # in wpt --repeat mode sometimes we miss suite_start()
+        if start_time is None:
+            start_time = data["time"]
         time = int((data["time"] - start_time) / 1000)
 
         return "SUITE-END | took %is\n" % time
@@ -383,19 +395,34 @@ class TbplFormatter(BaseFormatter):
         if data["bytes"] == 0:
             return "TEST-PASS | leakcheck | %s no leaks detected!\n" % data["process"]
 
+        message = ""
+        bigLeakers = [
+            "nsGlobalWindowInner",
+            "nsGlobalWindowOuter",
+            "Document",
+            "nsDocShell",
+            "BrowsingContext",
+            "BackstagePass",
+        ]
+        for bigLeakName in bigLeakers:
+            if bigLeakName in data["objects"]:
+                message = "leakcheck large %s | %s" % (bigLeakName, data["scope"])
+                break
+
         # Create a comma delimited string of the first N leaked objects found,
         # to aid with bug summary matching in TBPL. Note: The order of the objects
         # had no significance (they're sorted alphabetically).
-        max_objects = 5
-        object_summary = ", ".join(data["objects"][:max_objects])
-        if len(data["objects"]) > max_objects:
-            object_summary += ", ..."
+        if message == "":
+            max_objects = 5
+            object_summary = ", ".join(data["objects"][:max_objects])
+            if len(data["objects"]) > max_objects:
+                object_summary += ", ..."
 
-        message = "leakcheck | %s %d bytes leaked (%s)\n" % (
-            data["process"],
-            data["bytes"],
-            object_summary,
-        )
+            message = "leakcheck | %s %d bytes leaked (%s)\n" % (
+                data["process"],
+                data["bytes"],
+                object_summary,
+            )
 
         # data["bytes"] will include any expected leaks, so it can be off
         # by a few thousand bytes.

@@ -7,14 +7,15 @@
 #ifndef mozilla_dom_cache_QuotaClientImpl_h
 #define mozilla_dom_cache_QuotaClientImpl_h
 
+#include "CacheCipherKeyManager.h"
+#include "mozilla/RefPtr.h"
 #include "mozilla/dom/QMResult.h"
 #include "mozilla/dom/cache/QuotaClient.h"
 #include "mozilla/dom/cache/FileUtils.h"
+#include "mozilla/dom/cache/Types.h"
 #include "mozilla/dom/quota/ResultExtensions.h"
 
-namespace mozilla {
-namespace dom {
-namespace cache {
+namespace mozilla::dom::cache {
 
 class CacheQuotaClient final : public quota::Client {
   static CacheQuotaClient* sInstance;
@@ -44,6 +45,8 @@ class CacheQuotaClient final : public quota::Client {
 
   virtual void OnOriginClearCompleted(PersistenceType aPersistenceType,
                                       const nsACString& aOrigin) override;
+
+  void OnRepositoryClearCompleted(PersistenceType aPersistenceType) override;
 
   virtual void ReleaseIOThreadObjects() override;
 
@@ -119,6 +122,9 @@ class CacheQuotaClient final : public quota::Client {
   nsresult WipePaddingFileInternal(
       const CacheDirectoryMetadata& aDirectoryMetadata, nsIFile* aBaseDir);
 
+  RefPtr<CipherKeyManager> GetOrCreateCipherKeyManager(
+      const quota::PrincipalMetadata& aMetadata);
+
  private:
   ~CacheQuotaClient();
 
@@ -128,11 +134,12 @@ class CacheQuotaClient final : public quota::Client {
   void ForceKillActors() override;
   void FinalizeShutdown() override;
 
+  // Should always be accessed from QM IO thread.
+  nsTHashMap<nsCStringHashKey, RefPtr<CipherKeyManager>> mCipherKeyManagers;
+
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(CacheQuotaClient, override)
 };
 
-}  // namespace cache
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom::cache
 
 #endif  // mozilla_dom_cache_QuotaClientImpl_h

@@ -7,16 +7,18 @@
 const {
   createFactory,
   createElement,
-} = require("devtools/client/shared/vendor/react");
-const { Provider } = require("devtools/client/shared/vendor/react-redux");
-const FlexboxInspector = require("devtools/client/inspector/flexbox/flexbox");
-const GridInspector = require("devtools/client/inspector/grids/grid-inspector");
+} = require("resource://devtools/client/shared/vendor/react.js");
+const {
+  Provider,
+} = require("resource://devtools/client/shared/vendor/react-redux.js");
+const FlexboxInspector = require("resource://devtools/client/inspector/flexbox/flexbox.js");
+const GridInspector = require("resource://devtools/client/inspector/grids/grid-inspector.js");
 
 const LayoutApp = createFactory(
-  require("devtools/client/inspector/layout/components/LayoutApp")
+  require("resource://devtools/client/inspector/layout/components/LayoutApp.js")
 );
 
-const { LocalizationHelper } = require("devtools/shared/l10n");
+const { LocalizationHelper } = require("resource://devtools/shared/l10n.js");
 const INSPECTOR_L10N = new LocalizationHelper(
   "devtools/client/locales/inspector.properties"
 );
@@ -24,7 +26,7 @@ const INSPECTOR_L10N = new LocalizationHelper(
 loader.lazyRequireGetter(
   this,
   "SwatchColorPickerTooltip",
-  "devtools/client/shared/widgets/tooltip/SwatchColorPickerTooltip"
+  "resource://devtools/client/shared/widgets/tooltip/SwatchColorPickerTooltip.js"
 );
 
 class LayoutView {
@@ -53,9 +55,8 @@ class LayoutView {
       this.inspector,
       this.inspector.panelWin
     );
-    const {
-      onSetFlexboxOverlayColor,
-    } = this.flexboxInspector.getComponentProps();
+    const { onSetFlexboxOverlayColor } =
+      this.flexboxInspector.getComponentProps();
 
     this.gridInspector = new GridInspector(
       this.inspector,
@@ -124,8 +125,7 @@ class LayoutView {
     if (!this._swatchColorPickerTooltip) {
       this._swatchColorPickerTooltip = new SwatchColorPickerTooltip(
         this.inspector.toolbox.doc,
-        this.inspector,
-        { supportsCssColor4ColorFunction: () => false }
+        this.inspector
       );
     }
 

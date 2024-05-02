@@ -877,6 +877,11 @@ s! {
         pub c_ispeed: ::speed_t,
         pub c_ospeed: ::speed_t,
     }
+
+    pub struct in6_pktinfo {
+        pub ipi6_addr: ::in6_addr,
+        pub ipi6_ifindex: ::c_uint,
+    }
 }
 
 s_no_extra_traits! {
@@ -904,8 +909,8 @@ s_no_extra_traits! {
 
     pub struct sockaddr_storage {
         pub ss_family: sa_family_t,
+        __ss_pad2: [u8; 128 - 2 - 8],
         __ss_align: ::size_t,
-        __ss_pad2: [u8; 128 - 2 * 8],
     }
 
     pub struct utsname {
@@ -1313,6 +1318,7 @@ pub const SIG_DFL: sighandler_t = 0 as sighandler_t;
 pub const SIG_IGN: sighandler_t = 1 as sighandler_t;
 pub const SIG_ERR: sighandler_t = !0 as sighandler_t;
 
+pub const DT_UNKNOWN: u8 = 0;
 pub const DT_FIFO: u8 = 1;
 pub const DT_CHR: u8 = 2;
 pub const DT_DIR: u8 = 4;
@@ -1787,6 +1793,9 @@ pub const IPV6_MULTICAST_LOOP: ::c_int = 19;
 pub const IPV6_ADD_MEMBERSHIP: ::c_int = 20;
 pub const IPV6_DROP_MEMBERSHIP: ::c_int = 21;
 pub const IPV6_V6ONLY: ::c_int = 26;
+pub const IPV6_RECVPKTINFO: ::c_int = 49;
+pub const IPV6_RECVTCLASS: ::c_int = 66;
+pub const IPV6_TCLASS: ::c_int = 67;
 
 pub const TCP_NODELAY: ::c_int = 1;
 pub const TCP_MAXSEG: ::c_int = 2;
@@ -2593,6 +2602,7 @@ pub const PR_SET_MM_MAP: ::c_int = 14;
 pub const PR_SET_MM_MAP_SIZE: ::c_int = 15;
 
 pub const PR_SET_PTRACER: ::c_int = 0x59616d61;
+pub const PR_SET_PTRACER_ANY: ::c_ulong = 0xffffffffffffffff;
 
 pub const PR_SET_CHILD_SUBREAPER: ::c_int = 36;
 pub const PR_GET_CHILD_SUBREAPER: ::c_int = 37;
@@ -2668,6 +2678,89 @@ pub const PT_GNU_EH_FRAME: u32 = 0x6474e550;
 pub const PT_GNU_STACK: u32 = 0x6474e551;
 pub const PT_GNU_RELRO: u32 = 0x6474e552;
 
+// Ethernet protocol IDs.
+pub const ETH_P_LOOP: ::c_int = 0x0060;
+pub const ETH_P_PUP: ::c_int = 0x0200;
+pub const ETH_P_PUPAT: ::c_int = 0x0201;
+pub const ETH_P_IP: ::c_int = 0x0800;
+pub const ETH_P_X25: ::c_int = 0x0805;
+pub const ETH_P_ARP: ::c_int = 0x0806;
+pub const ETH_P_BPQ: ::c_int = 0x08FF;
+pub const ETH_P_IEEEPUP: ::c_int = 0x0a00;
+pub const ETH_P_IEEEPUPAT: ::c_int = 0x0a01;
+pub const ETH_P_BATMAN: ::c_int = 0x4305;
+pub const ETH_P_DEC: ::c_int = 0x6000;
+pub const ETH_P_DNA_DL: ::c_int = 0x6001;
+pub const ETH_P_DNA_RC: ::c_int = 0x6002;
+pub const ETH_P_DNA_RT: ::c_int = 0x6003;
+pub const ETH_P_LAT: ::c_int = 0x6004;
+pub const ETH_P_DIAG: ::c_int = 0x6005;
+pub const ETH_P_CUST: ::c_int = 0x6006;
+pub const ETH_P_SCA: ::c_int = 0x6007;
+pub const ETH_P_TEB: ::c_int = 0x6558;
+pub const ETH_P_RARP: ::c_int = 0x8035;
+pub const ETH_P_ATALK: ::c_int = 0x809B;
+pub const ETH_P_AARP: ::c_int = 0x80F3;
+pub const ETH_P_8021Q: ::c_int = 0x8100;
+pub const ETH_P_IPX: ::c_int = 0x8137;
+pub const ETH_P_IPV6: ::c_int = 0x86DD;
+pub const ETH_P_PAUSE: ::c_int = 0x8808;
+pub const ETH_P_SLOW: ::c_int = 0x8809;
+pub const ETH_P_WCCP: ::c_int = 0x883E;
+pub const ETH_P_MPLS_UC: ::c_int = 0x8847;
+pub const ETH_P_MPLS_MC: ::c_int = 0x8848;
+pub const ETH_P_ATMMPOA: ::c_int = 0x884c;
+pub const ETH_P_PPP_DISC: ::c_int = 0x8863;
+pub const ETH_P_PPP_SES: ::c_int = 0x8864;
+pub const ETH_P_LINK_CTL: ::c_int = 0x886c;
+pub const ETH_P_ATMFATE: ::c_int = 0x8884;
+pub const ETH_P_PAE: ::c_int = 0x888E;
+pub const ETH_P_AOE: ::c_int = 0x88A2;
+pub const ETH_P_8021AD: ::c_int = 0x88A8;
+pub const ETH_P_802_EX1: ::c_int = 0x88B5;
+pub const ETH_P_TIPC: ::c_int = 0x88CA;
+pub const ETH_P_8021AH: ::c_int = 0x88E7;
+pub const ETH_P_MVRP: ::c_int = 0x88F5;
+pub const ETH_P_1588: ::c_int = 0x88F7;
+pub const ETH_P_PRP: ::c_int = 0x88FB;
+pub const ETH_P_FCOE: ::c_int = 0x8906;
+pub const ETH_P_TDLS: ::c_int = 0x890D;
+pub const ETH_P_FIP: ::c_int = 0x8914;
+pub const ETH_P_80221: ::c_int = 0x8917;
+pub const ETH_P_LOOPBACK: ::c_int = 0x9000;
+pub const ETH_P_QINQ1: ::c_int = 0x9100;
+pub const ETH_P_QINQ2: ::c_int = 0x9200;
+pub const ETH_P_QINQ3: ::c_int = 0x9300;
+pub const ETH_P_EDSA: ::c_int = 0xDADA;
+pub const ETH_P_AF_IUCV: ::c_int = 0xFBFB;
+
+pub const ETH_P_802_3_MIN: ::c_int = 0x0600;
+
+pub const ETH_P_802_3: ::c_int = 0x0001;
+pub const ETH_P_AX25: ::c_int = 0x0002;
+pub const ETH_P_ALL: ::c_int = 0x0003;
+pub const ETH_P_802_2: ::c_int = 0x0004;
+pub const ETH_P_SNAP: ::c_int = 0x0005;
+pub const ETH_P_DDCMP: ::c_int = 0x0006;
+pub const ETH_P_WAN_PPP: ::c_int = 0x0007;
+pub const ETH_P_PPP_MP: ::c_int = 0x0008;
+pub const ETH_P_LOCALTALK: ::c_int = 0x0009;
+pub const ETH_P_CAN: ::c_int = 0x000C;
+pub const ETH_P_CANFD: ::c_int = 0x000D;
+pub const ETH_P_PPPTALK: ::c_int = 0x0010;
+pub const ETH_P_TR_802_2: ::c_int = 0x0011;
+pub const ETH_P_MOBITEX: ::c_int = 0x0015;
+pub const ETH_P_CONTROL: ::c_int = 0x0016;
+pub const ETH_P_IRDA: ::c_int = 0x0017;
+pub const ETH_P_ECONET: ::c_int = 0x0018;
+pub const ETH_P_HDLC: ::c_int = 0x0019;
+pub const ETH_P_ARCNET: ::c_int = 0x001A;
+pub const ETH_P_DSA: ::c_int = 0x001B;
+pub const ETH_P_TRAILER: ::c_int = 0x001C;
+pub const ETH_P_PHONET: ::c_int = 0x00F5;
+pub const ETH_P_IEEE802154: ::c_int = 0x00F6;
+pub const ETH_P_CAIF: ::c_int = 0x00F7;
+
 pub const SFD_CLOEXEC: ::c_int = 0x080000;
 
 pub const NCCS: usize = 32;
@@ -2718,7 +2811,10 @@ pub const POSIX_MADV_DONTNEED: ::c_int = 4;
 
 pub const RLIM_INFINITY: ::rlim_t = !0;
 pub const RLIMIT_RTTIME: ::c_int = 15;
+#[deprecated(since = "0.2.64", note = "Not stable across OS versions")]
 pub const RLIMIT_NLIMITS: ::c_int = 16;
+#[allow(deprecated)]
+#[deprecated(since = "0.2.64", note = "Not stable across OS versions")]
 pub const RLIM_NLIMITS: ::c_int = RLIMIT_NLIMITS;
 
 pub const MAP_ANONYMOUS: ::c_int = MAP_ANON;
@@ -3223,17 +3319,6 @@ f! {
         minor as ::c_uint
     }
 
-    pub fn makedev(major: ::c_uint, minor: ::c_uint) -> ::dev_t {
-        let major = major as ::dev_t;
-        let minor = minor as ::dev_t;
-        let mut dev = 0;
-        dev |= (major & 0x00000fff) << 8;
-        dev |= (major & 0xfffff000) << 32;
-        dev |= (minor & 0x000000ff) << 0;
-        dev |= (minor & 0xffffff00) << 12;
-        dev
-    }
-
     pub fn CMSG_DATA(cmsg: *const cmsghdr) -> *mut c_uchar {
         cmsg.offset(1) as *mut c_uchar
     }
@@ -3269,7 +3354,7 @@ f! {
             as ::c_uint
     }
 
-    pub fn CMSG_LEN(len: ::c_uint) -> ::c_uint {
+    pub {const} fn CMSG_LEN(len: ::c_uint) -> ::c_uint {
         (CMSG_ALIGN(::mem::size_of::<cmsghdr>()) + len as ::size_t) as ::c_uint
     }
 }
@@ -3309,6 +3394,17 @@ safe_f! {
 
     pub {const} fn QCMD(cmd: ::c_int, type_: ::c_int) -> ::c_int {
         (cmd << 8) | (type_ & 0x00ff)
+    }
+
+    pub {const} fn makedev(major: ::c_uint, minor: ::c_uint) -> ::dev_t {
+        let major = major as ::dev_t;
+        let minor = minor as ::dev_t;
+        let mut dev = 0;
+        dev |= (major & 0x00000fff) << 8;
+        dev |= (major & 0xfffff000) << 32;
+        dev |= (minor & 0x000000ff) << 0;
+        dev |= (minor & 0xffffff00) << 12;
+        dev
     }
 }
 
@@ -3390,11 +3486,16 @@ extern "C" {
     pub fn feof(stream: *mut FILE) -> c_int;
     pub fn ferror(stream: *mut FILE) -> c_int;
     pub fn perror(s: *const c_char);
+    pub fn atof(s: *const c_char) -> c_double;
     pub fn atoi(s: *const c_char) -> c_int;
+    pub fn atol(s: *const c_char) -> c_long;
+    pub fn atoll(s: *const c_char) -> c_longlong;
     pub fn strtod(s: *const c_char, endp: *mut *mut c_char) -> c_double;
     pub fn strtof(s: *const c_char, endp: *mut *mut c_char) -> c_float;
     pub fn strtol(s: *const c_char, endp: *mut *mut c_char, base: c_int) -> c_long;
+    pub fn strtoll(s: *const c_char, endp: *mut *mut c_char, base: c_int) -> c_longlong;
     pub fn strtoul(s: *const c_char, endp: *mut *mut c_char, base: c_int) -> c_ulong;
+    pub fn strtoull(s: *const c_char, endp: *mut *mut c_char, base: c_int) -> c_ulonglong;
     pub fn calloc(nobj: size_t, size: size_t) -> *mut c_void;
     pub fn malloc(size: size_t) -> *mut c_void;
     pub fn realloc(p: *mut c_void, size: size_t) -> *mut c_void;
@@ -3436,7 +3537,6 @@ extern "C" {
     pub fn memset(dest: *mut c_void, c: c_int, n: size_t) -> *mut c_void;
 
     pub fn abs(i: c_int) -> c_int;
-    pub fn atof(s: *const c_char) -> c_double;
     pub fn labs(i: c_long) -> c_long;
     pub fn rand() -> c_int;
     pub fn srand(seed: c_uint);
@@ -3670,6 +3770,10 @@ extern "C" {
     pub fn pthread_exit(value: *mut ::c_void) -> !;
     pub fn pthread_attr_init(attr: *mut ::pthread_attr_t) -> ::c_int;
     pub fn pthread_attr_destroy(attr: *mut ::pthread_attr_t) -> ::c_int;
+    pub fn pthread_attr_getstacksize(
+        attr: *const ::pthread_attr_t,
+        stacksize: *mut ::size_t,
+    ) -> ::c_int;
     pub fn pthread_attr_setstacksize(attr: *mut ::pthread_attr_t, stack_size: ::size_t) -> ::c_int;
     pub fn pthread_attr_setdetachstate(attr: *mut ::pthread_attr_t, state: ::c_int) -> ::c_int;
     pub fn pthread_detach(thread: ::pthread_t) -> ::c_int;
@@ -3768,7 +3872,7 @@ extern "C" {
     pub fn poll(fds: *mut pollfd, nfds: nfds_t, timeout: ::c_int) -> ::c_int;
     pub fn select(
         nfds: ::c_int,
-        readfs: *mut fd_set,
+        readfds: *mut fd_set,
         writefds: *mut fd_set,
         errorfds: *mut fd_set,
         timeout: *mut timeval,
@@ -3805,7 +3909,7 @@ extern "C" {
 
     pub fn pselect(
         nfds: ::c_int,
-        readfs: *mut fd_set,
+        readfds: *mut fd_set,
         writefds: *mut fd_set,
         errorfds: *mut fd_set,
         timeout: *const timespec,
@@ -4144,6 +4248,7 @@ extern "C" {
         attr: *const ::pthread_attr_t,
         guardsize: *mut ::size_t,
     ) -> ::c_int;
+    pub fn pthread_attr_setguardsize(attr: *mut ::pthread_attr_t, guardsize: ::size_t) -> ::c_int;
     pub fn sethostname(name: *const ::c_char, len: ::size_t) -> ::c_int;
     pub fn sched_get_priority_min(policy: ::c_int) -> ::c_int;
     pub fn umount2(target: *const ::c_char, flags: ::c_int) -> ::c_int;
@@ -4200,6 +4305,11 @@ extern "C" {
         child: ::Option<unsafe extern "C" fn()>,
     ) -> ::c_int;
     pub fn getgrgid(gid: ::gid_t) -> *mut ::group;
+
+    pub fn setgrent();
+    pub fn endgrent();
+    pub fn getgrent() -> *mut ::group;
+
     pub fn getgrouplist(
         user: *const ::c_char,
         group: ::gid_t,
@@ -4238,6 +4348,9 @@ cfg_if! {
     } else if #[cfg(any(target_arch = "x86_64"))] {
         mod x86_64;
         pub use self::x86_64::*;
+    } else if #[cfg(any(target_arch = "riscv64"))] {
+        mod riscv64;
+        pub use self::riscv64::*;
     } else {
         // Unknown target_arch
     }

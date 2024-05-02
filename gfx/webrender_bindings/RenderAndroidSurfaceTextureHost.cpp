@@ -10,19 +10,23 @@
 #include "mozilla/gfx/Logging.h"
 #include "mozilla/webrender/RenderThread.h"
 #include "GLContext.h"
+#include "AndroidSurfaceTexture.h"
 
 namespace mozilla {
 namespace wr {
 
 RenderAndroidSurfaceTextureHost::RenderAndroidSurfaceTextureHost(
     const java::GeckoSurfaceTexture::GlobalRef& aSurfTex, gfx::IntSize aSize,
-    gfx::SurfaceFormat aFormat, bool aContinuousUpdate)
+    gfx::SurfaceFormat aFormat, bool aContinuousUpdate,
+    Maybe<gfx::Matrix4x4> aTransformOverride, bool aIsRemoteTexture)
     : mSurfTex(aSurfTex),
       mSize(aSize),
       mFormat(aFormat),
       mContinuousUpdate(aContinuousUpdate),
+      mTransformOverride(aTransformOverride),
       mPrepareStatus(STATUS_NONE),
-      mAttachedToGLContext(false) {
+      mAttachedToGLContext(false),
+      mIsRemoteTexture(aIsRemoteTexture) {
   MOZ_COUNT_CTOR_INHERITED(RenderAndroidSurfaceTextureHost, RenderTextureHost);
 
   if (mSurfTex) {
@@ -39,12 +43,17 @@ RenderAndroidSurfaceTextureHost::~RenderAndroidSurfaceTextureHost() {
   }
 }
 
-wr::WrExternalImage RenderAndroidSurfaceTextureHost::Lock(
-    uint8_t aChannelIndex, gl::GLContext* aGL, wr::ImageRendering aRendering) {
+wr::WrExternalImage RenderAndroidSurfaceTextureHost::Lock(uint8_t aChannelIndex,
+                                                          gl::GLContext* aGL) {
   MOZ_ASSERT(aChannelIndex == 0);
   MOZ_ASSERT((mPrepareStatus == STATUS_PREPARED) ||
              (!mSurfTex->IsSingleBuffer() &&
-              mPrepareStatus == STATUS_UPDATE_TEX_IMAGE_NEEDED));
+              mPrepareStatus == STATUS_UPDATE_TEX_IMAGE_NEEDED) ||
+             mIsRemoteTexture);
+
+  if (mIsRemoteTexture) {
+    EnsureAttachedToGLContext();
+  }
 
   if (mGL.get() != aGL) {
     // This should not happen. On android, SingletonGL is used.
@@ -61,28 +70,12 @@ wr::WrExternalImage RenderAndroidSurfaceTextureHost::Lock(
     return InvalidToWrExternalImage();
   }
 
-  if (IsFilterUpdateNecessary(aRendering)) {
-    // Cache new rendering filter.
-    mCachedRendering = aRendering;
-    ActivateBindAndTexParameteri(mGL, LOCAL_GL_TEXTURE0,
-                                 LOCAL_GL_TEXTURE_EXTERNAL_OES,
-                                 mSurfTex->GetTexName(), aRendering);
-  }
+  UpdateTexImageIfNecessary();
 
-  if (mContinuousUpdate) {
-    MOZ_ASSERT(!mSurfTex->IsSingleBuffer());
-    mSurfTex->UpdateTexImage();
-  } else if (mPrepareStatus == STATUS_UPDATE_TEX_IMAGE_NEEDED) {
-    MOZ_ASSERT(!mSurfTex->IsSingleBuffer());
-    // When SurfaceTexture is not single buffer mode, call UpdateTexImage() once
-    // just before rendering. During playing video, one SurfaceTexture is used
-    // for all RenderAndroidSurfaceTextureHosts of video.
-    mSurfTex->UpdateTexImage();
-    mPrepareStatus = STATUS_PREPARED;
-  }
-
-  return NativeTextureToWrExternalImage(mSurfTex->GetTexName(), 0, 0,
-                                        mSize.width, mSize.height);
+  const auto uvs = GetUvCoords(mSize);
+  return NativeTextureToWrExternalImage(mSurfTex->GetTexName(), uvs.first.x,
+                                        uvs.first.y, uvs.second.x,
+                                        uvs.second.y);
 }
 
 void RenderAndroidSurfaceTextureHost::Unlock() {}
@@ -110,8 +103,7 @@ bool RenderAndroidSurfaceTextureHost::EnsureAttachedToGLContext() {
     GLuint texName;
     mGL->fGenTextures(1, &texName);
     ActivateBindAndTexParameteri(mGL, LOCAL_GL_TEXTURE0,
-                                 LOCAL_GL_TEXTURE_EXTERNAL_OES, texName,
-                                 mCachedRendering);
+                                 LOCAL_GL_TEXTURE_EXTERNAL_OES, texName);
 
     if (NS_FAILED(mSurfTex->AttachToGLContext((int64_t)mGL.get(), texName))) {
       MOZ_ASSERT(0);
@@ -173,6 +165,10 @@ void RenderAndroidSurfaceTextureHost::NotifyNotUsed() {
     return;
   }
 
+  if (mIsRemoteTexture) {
+    UpdateTexImageIfNecessary();
+  }
+
   if (mSurfTex->IsSingleBuffer()) {
     MOZ_ASSERT(mPrepareStatus == STATUS_PREPARED);
     MOZ_ASSERT(mAttachedToGLContext);
@@ -187,6 +183,30 @@ void RenderAndroidSurfaceTextureHost::NotifyNotUsed() {
   }
 
   mPrepareStatus = STATUS_NONE;
+}
+
+void RenderAndroidSurfaceTextureHost::UpdateTexImageIfNecessary() {
+  if (mIsRemoteTexture) {
+    EnsureAttachedToGLContext();
+    if (mPrepareStatus == STATUS_NONE) {
+      PrepareForUse();
+    }
+    if (mPrepareStatus == STATUS_MIGHT_BE_USED_BY_WR) {
+      NotifyForUse();
+    }
+  }
+
+  if (mContinuousUpdate) {
+    MOZ_ASSERT(!mSurfTex->IsSingleBuffer());
+    mSurfTex->UpdateTexImage();
+  } else if (mPrepareStatus == STATUS_UPDATE_TEX_IMAGE_NEEDED) {
+    MOZ_ASSERT(!mSurfTex->IsSingleBuffer());
+    // When SurfaceTexture is not single buffer mode, call UpdateTexImage() once
+    // just before rendering. During playing video, one SurfaceTexture is used
+    // for all RenderAndroidSurfaceTextureHosts of video.
+    mSurfTex->UpdateTexImage();
+    mPrepareStatus = STATUS_PREPARED;
+  }
 }
 
 gfx::SurfaceFormat RenderAndroidSurfaceTextureHost::GetFormat() const {
@@ -207,7 +227,7 @@ gfx::SurfaceFormat RenderAndroidSurfaceTextureHost::GetFormat() const {
   return gfx::SurfaceFormat::UNKNOWN;
 }
 
-already_AddRefed<DataSourceSurface>
+already_AddRefed<gfx::DataSourceSurface>
 RenderAndroidSurfaceTextureHost::ReadTexImage() {
   if (!mGL) {
     mGL = RenderThread::Get()->SingletonGL();
@@ -218,8 +238,9 @@ RenderAndroidSurfaceTextureHost::ReadTexImage() {
 
   /* Allocate resulting image surface */
   int32_t stride = mSize.width * BytesPerPixel(GetFormat());
-  RefPtr<DataSourceSurface> surf =
-      Factory::CreateDataSourceSurfaceWithStride(mSize, GetFormat(), stride);
+  RefPtr<gfx::DataSourceSurface> surf =
+      gfx::Factory::CreateDataSourceSurfaceWithStride(mSize, GetFormat(),
+                                                      stride);
   if (!surf) {
     return nullptr;
   }
@@ -241,13 +262,15 @@ RenderAndroidSurfaceTextureHost::ReadTexImage() {
 bool RenderAndroidSurfaceTextureHost::MapPlane(RenderCompositor* aCompositor,
                                                uint8_t aChannelIndex,
                                                PlaneInfo& aPlaneInfo) {
+  UpdateTexImageIfNecessary();
+
   RefPtr<gfx::DataSourceSurface> readback = ReadTexImage();
   if (!readback) {
     return false;
   }
 
-  DataSourceSurface::MappedSurface map;
-  if (!readback->Map(DataSourceSurface::MapType::READ, &map)) {
+  gfx::DataSourceSurface::MappedSurface map;
+  if (!readback->Map(gfx::DataSourceSurface::MapType::READ, &map)) {
     return false;
   }
 
@@ -263,6 +286,40 @@ void RenderAndroidSurfaceTextureHost::UnmapPlanes() {
     mReadback->Unmap();
     mReadback = nullptr;
   }
+}
+
+std::pair<gfx::Point, gfx::Point> RenderAndroidSurfaceTextureHost::GetUvCoords(
+    gfx::IntSize aTextureSize) const {
+  gfx::Matrix4x4 transform;
+
+  // GetTransformMatrix() returns the transform set by the producer side of the
+  // SurfaceTexture that must be applied to texture coordinates when
+  // sampling. In some cases we may have set an override value, such as in
+  // AndroidNativeWindowTextureData where we own the producer side, or for
+  // MediaCodec output on devices where where we know the value is incorrect.
+  if (mTransformOverride) {
+    transform = *mTransformOverride;
+  } else if (mSurfTex) {
+    const auto& surf = java::sdk::SurfaceTexture::LocalRef(
+        java::sdk::SurfaceTexture::Ref::From(mSurfTex));
+    gl::AndroidSurfaceTexture::GetTransformMatrix(surf, &transform);
+  }
+
+  // We expect this transform to always be rectilinear, usually just a
+  // y-flip and sometimes an x and y scale. This allows this function
+  // to simply transform and return 2 points here instead of 4.
+  MOZ_ASSERT(transform.IsRectilinear(),
+             "Unexpected non-rectilinear transform returned from "
+             "SurfaceTexture.GetTransformMatrix()");
+
+  transform.PostScale(aTextureSize.width, aTextureSize.height, 0.0);
+
+  gfx::Point uv0 = gfx::Point(0.0, 0.0);
+  gfx::Point uv1 = gfx::Point(1.0, 1.0);
+  uv0 = transform.TransformPoint(uv0);
+  uv1 = transform.TransformPoint(uv1);
+
+  return std::make_pair(uv0, uv1);
 }
 
 }  // namespace wr

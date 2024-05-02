@@ -2,11 +2,16 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
-import mozunit
-import pytest
 from datetime import date
 
-from mozperftest.argparser import PerftestArgumentParser, Options
+import mozunit
+import pytest
+
+from mozperftest.argparser import (
+    Options,
+    PerftestArgumentParser,
+    PerftestToolsArgumentParser,
+)
 
 
 def test_argparser():
@@ -55,7 +60,6 @@ def test_test_date_today():
 
 
 def test_perfherder_metrics():
-
     parser = PerftestArgumentParser()
     args = [
         "test_one.js",
@@ -111,6 +115,44 @@ def test_perfherder_metrics():
     assert res.perfherder_metrics[1]["name"] == "baz"
     assert res.perfherder_metrics[0]["name"] == "foo"
     assert res.perfherder_metrics[0]["unit"] == "euros"
+
+
+def test_tools_argparser_bad_tool():
+    with pytest.raises(SystemExit):
+        PerftestToolsArgumentParser()
+
+
+def test_tools_bad_argparser():
+    PerftestToolsArgumentParser.tool = "side-by-side"
+    parser = PerftestToolsArgumentParser()
+    args = [
+        "-t",
+        "browsertime-first-install-firefox-welcome",
+        "--base-platform",
+        "test-linux1804-64-shippable-qr",
+    ]
+    with pytest.raises(SystemExit):
+        parser.parse_args(args)
+
+
+def test_tools_argparser():
+    PerftestToolsArgumentParser.tool = "side-by-side"
+    parser = PerftestToolsArgumentParser()
+    args = [
+        "-t",
+        "browsertime-first-install-firefox-welcome",
+        "--base-platform",
+        "test-linux1804-64-shippable-qr",
+        "--base-revision",
+        "438092d03ac4b9c36b52ba455da446afc7e14213",
+        "--new-revision",
+        "29943068938aa9e94955dbe13c2e4c254553e4ce",
+    ]
+    res = parser.parse_args(args)
+    assert res.test_name == "browsertime-first-install-firefox-welcome"
+    assert res.platform == "test-linux1804-64-shippable-qr"
+    assert res.base_revision == "438092d03ac4b9c36b52ba455da446afc7e14213"
+    assert res.new_revision == "29943068938aa9e94955dbe13c2e4c254553e4ce"
 
 
 if __name__ == "__main__":

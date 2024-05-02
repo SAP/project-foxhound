@@ -220,7 +220,7 @@ tls13_MaybeSetDelegatedCredential(sslSocket *ss)
     }
 
     priv = ss->sec.serverCert->delegCredKeyPair->privKey;
-    rv = ssl_PrivateKeySupportsRsaPss(priv, &doesRsaPss);
+    rv = ssl_PrivateKeySupportsRsaPss(priv, NULL, NULL, &doesRsaPss);
     if (rv != SECSuccess) {
         return SECFailure;
     }
@@ -311,7 +311,7 @@ tls13_HashCredentialSignatureMessage(SSL3Hashes *hash,
         0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20,
         0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20,
         0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20,
-        0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20,
+        0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20
     };
 
     static const PRUint8 kCtxStr[] = "TLS, server delegated credentials";
@@ -407,7 +407,15 @@ tls13_CheckCertDelegationUsage(sslSocket *ss)
 
     /* 1.3.6.1.4.1.44363.44, as defined in draft-ietf-tls-subcerts. */
     static unsigned char kDelegationUsageOid[] = {
-        0x2b, 0x06, 0x01, 0x04, 0x01, 0x82, 0xda, 0x4b, 0x2c,
+        0x2b,
+        0x06,
+        0x01,
+        0x04,
+        0x01,
+        0x82,
+        0xda,
+        0x4b,
+        0x2c
     };
 
     delegUsageOid.data = kDelegationUsageOid;

@@ -2,22 +2,19 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/* import-globals-from ../../shared/test/shared-head.js */
-
 "use strict";
 
 // Test deleting all storage items from the tree.
 
-add_task(async function() {
+add_task(async function () {
   // storage-listings.html explicitly mixes secure and insecure frames.
   // We should not enforce https for tests using this page.
   await pushPref("dom.security.https_first", false);
 
   await openTabAndSetupStorage(MAIN_DOMAIN + "storage-listings.html");
 
-  const contextMenu = gPanelWindow.document.getElementById(
-    "storage-tree-popup"
-  );
+  const contextMenu =
+    gPanelWindow.document.getElementById("storage-tree-popup");
   const menuDeleteAllItem = contextMenu.querySelector(
     "#storage-tree-popup-delete-all"
   );
@@ -79,7 +76,7 @@ add_task(async function() {
     ok(target, `tree item found in ${storeName}`);
     await waitForContextMenu(contextMenu, target, () => {
       info(`Opened tree context menu in ${storeName}`);
-      menuDeleteAllItem.click();
+      contextMenu.activateItem(menuDeleteAllItem);
     });
 
     await eventWait;

@@ -14,10 +14,13 @@
 #include <winternl.h>
 #include <processthreadsapi.h>
 
+#include <bcrypt.h>
+#pragma comment(lib, "bcrypt.lib")
+
 #include "AssemblyPayloads.h"
 #include "mozilla/DynamicallyLinkedFunctionPtr.h"
 #include "mozilla/UniquePtr.h"
-#include "mozilla/WindowsVersion.h"
+#include "mozilla/WindowsProcessMitigations.h"
 #include "nsWindowsDllInterceptor.h"
 #include "nsWindowsHelpers.h"
 
@@ -54,11 +57,11 @@ void __fastcall BaseThreadInitThunk(BOOL aIsInitialThread, void* aStartAddress,
 
 BOOL WINAPI ApiSetQueryApiSetPresence(PCUNICODE_STRING, PBOOLEAN);
 
-#if (_WIN32_WINNT < 0x0602)
-BOOL WINAPI
-SetProcessMitigationPolicy(PROCESS_MITIGATION_POLICY aMitigationPolicy,
-                           PVOID aBuffer, SIZE_T aBufferLen);
-#endif  // (_WIN32_WINNT < 0x0602)
+#define RtlGenRandom SystemFunction036
+extern "C" BOOLEAN NTAPI RtlGenRandom(PVOID aRandomBuffer,
+                                      ULONG aRandomBufferLength);
+
+extern "C" uintptr_t WINAPI TF_Notify(UINT uMsg, WPARAM wParam, LPARAM lParam);
 
 using namespace mozilla;
 
@@ -93,7 +96,9 @@ extern "C" __declspec(dllexport) __declspec(noinline) payload
   return p;
 }
 
-static bool patched_func_called = false;
+// Declared as volatile to prevent optimizers from incorrectly eliding accesses
+// to it. (See bug 1769001 for a motivating example.)
+static volatile bool patched_func_called = false;
 
 static WindowsDllInterceptor::FuncHookType<decltype(&rotatePayload)>
     orig_rotatePayload;
@@ -108,17 +113,17 @@ static payload patched_rotatePayload(payload p) {
 
 // Invoke aFunc by taking aArg's contents and using them as aFunc's arguments
 template <typename OrigFuncT, typename... Args,
-          typename ArgTuple = Tuple<Args...>, size_t... Indices>
+          typename ArgTuple = std::tuple<Args...>, size_t... Indices>
 decltype(auto) Apply(OrigFuncT& aFunc, ArgTuple&& aArgs,
                      std::index_sequence<Indices...>) {
-  return aFunc(Get<Indices>(std::forward<ArgTuple>(aArgs))...);
+  return std::apply(aFunc, aArgs);
 }
 
 #define DEFINE_TEST_FUNCTION(calling_convention)                               \
   template <typename R, typename... Args, typename... TestArgs>                \
   bool TestFunction(R(calling_convention* aFunc)(Args...), bool (*aPred)(R),   \
                     TestArgs&&... aArgs) {                                     \
-    using ArgTuple = Tuple<Args...>;                                           \
+    using ArgTuple = std::tuple<Args...>;                                      \
     using Indices = std::index_sequence_for<Args...>;                          \
     ArgTuple fakeArgs{std::forward<TestArgs>(aArgs)...};                       \
     patched_func_called = false;                                               \
@@ -130,7 +135,7 @@ decltype(auto) Apply(OrigFuncT& aFunc, ArgTuple&& aArgs,
   template <typename PredT, typename... Args, typename... TestArgs>            \
   bool TestFunction(void(calling_convention * aFunc)(Args...), PredT,          \
                     TestArgs&&... aArgs) {                                     \
-    using ArgTuple = Tuple<Args...>;                                           \
+    using ArgTuple = std::tuple<Args...>;                                      \
     using Indices = std::index_sequence_for<Args...>;                          \
     ArgTuple fakeArgs{std::forward<TestArgs>(aArgs)...};                       \
     patched_func_called = false;                                               \
@@ -194,7 +199,8 @@ struct InterceptorFunction {
     memcpy(funcCode, sInterceptorTemplate, TemplateLength);
 
     // Fill in the patched_func_called pointer in the template.
-    auto pfPtr = reinterpret_cast<bool**>(&ret[PatchedFuncCalledIndex]);
+    auto pfPtr =
+        reinterpret_cast<volatile bool**>(&ret[PatchedFuncCalledIndex]);
     *pfPtr = &patched_func_called;
     return ret;
   }
@@ -278,6 +284,31 @@ size_t InterceptorFunction::sNumInstances = 0;
 
 constexpr uint8_t InterceptorFunction::sInterceptorTemplate[];
 
+#ifdef _M_X64
+
+// To check that unwind information propagates from hooked functions to their
+// stubs, we need to find the real address where the detoured code lives.
+class RedirectionResolver : public interceptor::WindowsDllPatcherBase<
+                                interceptor::VMSharingPolicyShared> {
+ public:
+  uintptr_t ResolveRedirectedAddressForTest(FARPROC aFunc) {
+    return ResolveRedirectedAddress(aFunc).GetAddress();
+  }
+};
+
+#endif  // _M_X64
+
+void PrintFunctionBytes(FARPROC aFuncAddr, uint32_t aNumBytesToDump) {
+  printf("\tFirst %u bytes of function:\n\t", aNumBytesToDump);
+  auto code = reinterpret_cast<const uint8_t*>(aFuncAddr);
+  for (uint32_t i = 0; i < aNumBytesToDump; ++i) {
+    char suffix = (i < (aNumBytesToDump - 1)) ? ' ' : '\n';
+    printf("%02hhX%c", code[i], suffix);
+  }
+
+  fflush(stdout);
+}
+
 // Hook the function and optionally attempt calling it
 template <typename OrigFuncT, size_t N, typename PredicateT, typename... Args>
 bool TestHook(const char (&dll)[N], const char* func, PredicateT&& aPred,
@@ -286,6 +317,28 @@ bool TestHook(const char (&dll)[N], const char* func, PredicateT&& aPred,
       mozilla::MakeUnique<WindowsDllInterceptor::FuncHookType<OrigFuncT>>());
   wchar_t dllW[N];
   std::copy(std::begin(dll), std::end(dll), std::begin(dllW));
+
+  HMODULE module = ::LoadLibraryW(dllW);
+  FARPROC funcAddr = ::GetProcAddress(module, func);
+  if (!funcAddr) {
+    printf(
+        "TEST-UNEXPECTED-FAIL | WindowsDllInterceptor | Failed to find %s from "
+        "%s\n",
+        func, dll);
+    fflush(stdout);
+    return false;
+  }
+
+#ifdef _M_X64
+
+  // Resolve what is the actual address of the code that will be detoured, as
+  // that's the code we want to compare with when we check for unwind
+  // information. Do that *before* detouring, although the address will only be
+  // used after detouring.
+  RedirectionResolver resolver;
+  auto detouredCodeAddr = resolver.ResolveRedirectedAddressForTest(funcAddr);
+
+#endif  // _M_X64
 
   bool successful = false;
   WindowsDllInterceptor TestIntercept;
@@ -297,10 +350,62 @@ bool TestHook(const char (&dll)[N], const char* func, PredicateT&& aPred,
       reinterpret_cast<OrigFuncT>(interceptorFunc.GetFunction()));
 
   if (successful) {
-    interceptorFunc.SetStub(reinterpret_cast<uintptr_t>(orig_func->GetStub()));
+    auto stub = reinterpret_cast<uintptr_t>(orig_func->GetStub());
+    interceptorFunc.SetStub(stub);
     printf("TEST-PASS | WindowsDllInterceptor | Could hook %s from %s\n", func,
            dll);
     fflush(stdout);
+
+#ifdef _M_X64
+
+    // Check that unwind information has been added if and only if it was
+    // present for the original detoured code.
+    uintptr_t funcImageBase = 0;
+    auto funcEntry =
+        RtlLookupFunctionEntry(detouredCodeAddr, &funcImageBase, nullptr);
+    bool funcHasUnwindInfo = bool(funcEntry);
+
+    uintptr_t stubImageBase = 0;
+    auto stubEntry = RtlLookupFunctionEntry(stub, &stubImageBase, nullptr);
+    bool stubHasUnwindInfo = bool(stubEntry);
+
+    if (funcHasUnwindInfo == stubHasUnwindInfo) {
+      printf(
+          "TEST-PASS | WindowsDllInterceptor | The hook for %s from %s and "
+          "the original function are coherent with respect to unwind info: "
+          "funcHasUnwindInfo (%d) == stubHasUnwindInfo (%d).\n",
+          func, dll, funcHasUnwindInfo, stubHasUnwindInfo);
+      fflush(stdout);
+    } else {
+      printf(
+          "TEST-UNEXPECTED-FAIL | WindowsDllInterceptor | Hook for %s from %s "
+          "and the original function are not coherent with respect to unwind "
+          "info: "
+          "funcHasUnwindInfo (%d) != stubHasUnwindInfo (%d).\n",
+          func, dll, funcHasUnwindInfo, stubHasUnwindInfo);
+      fflush(stdout);
+      return false;
+    }
+
+    if (stubHasUnwindInfo) {
+      if (stub == (stubImageBase + stubEntry->BeginAddress)) {
+        printf(
+            "TEST-PASS | WindowsDllInterceptor | The hook for %s from %s has "
+            "coherent unwind info.\n",
+            func, dll);
+        fflush(stdout);
+      } else {
+        printf(
+            "TEST-UNEXPECTED-FAIL | WindowsDllInterceptor | The hook for %s "
+            " from %s has incoherent unwind info.\n",
+            func, dll);
+        fflush(stdout);
+        return false;
+      }
+    }
+
+#endif  // _M_X64
+
     if (!aPred) {
       printf(
           "TEST-SKIPPED | WindowsDllInterceptor | "
@@ -311,12 +416,6 @@ bool TestHook(const char (&dll)[N], const char* func, PredicateT&& aPred,
     }
 
     // Test the DLL function we just hooked.
-    HMODULE module = ::LoadLibraryW(dllW);
-    FARPROC funcAddr = ::GetProcAddress(module, func);
-    if (!funcAddr) {
-      return false;
-    }
-
     return CheckHook(reinterpret_cast<OrigFuncT&>(funcAddr), dll, func,
                      std::forward<PredicateT>(aPred),
                      std::forward<Args>(aArgs)...);
@@ -333,16 +432,7 @@ bool TestHook(const char (&dll)[N], const char* func, PredicateT&& aPred,
     if (funcAddr) {
       const uint32_t kNumBytesToDump =
           WindowsDllInterceptor::GetWorstCaseRequiredBytesToPatch();
-
-      printf("\tFirst %u bytes of function:\n\t", kNumBytesToDump);
-
-      auto code = reinterpret_cast<const uint8_t*>(funcAddr);
-      for (uint32_t i = 0; i < kNumBytesToDump; ++i) {
-        char suffix = (i < (kNumBytesToDump - 1)) ? ' ' : '\n';
-        printf("%02hhX%c", code[i], suffix);
-      }
-
-      fflush(stdout);
+      PrintFunctionBytes(funcAddr, kNumBytesToDump);
     }
     return false;
   }
@@ -500,9 +590,11 @@ struct Predicates<void(__fastcall*)(Args...)> {
 //
 // Note: When |func| returns void, you must supply |Ignore| and |nullptr| as the
 // |pred| and |comp| arguments, respectively.
-#define TEST_HOOK(dll, func, pred, comp) \
-  TestHook<decltype(&func)>(dll, #func,  \
+#define TEST_HOOK_HELPER(dll, func, pred, comp) \
+  TestHook<decltype(&func)>(dll, #func,         \
                             &Predicates<decltype(&func)>::pred<comp>)
+
+#define TEST_HOOK(dll, func, pred, comp) TEST_HOOK_HELPER(dll, func, pred, comp)
 
 // We need to special-case functions that return INVALID_HANDLE_VALUE
 // (ie, CreateFile). Our template machinery for comparing values doesn't work
@@ -579,10 +671,6 @@ bool MaybeTestHook(const bool cond, const char (&dll)[N], const char* func,
           NULL))
 
 bool ShouldTestTipTsf() {
-  if (!IsWin8OrLater()) {
-    return false;
-  }
-
   mozilla::DynamicallyLinkedFunctionPtr<decltype(&SHGetKnownFolderPath)>
       pSHGetKnownFolderPath(L"shell32.dll", "SHGetKnownFolderPath");
   if (!pSHGetKnownFolderPath) {
@@ -625,7 +713,7 @@ bool HasApiSetQueryApiSetPresence() {
   return true;
 }
 
-// Set this to true to test function unhooking.
+// Set this to true to test function unhooking (currently broken).
 const bool ShouldTestUnhookFunction = false;
 
 #if defined(_M_X64) || defined(_M_ARM64)
@@ -716,10 +804,13 @@ struct TestCase {
   const char* mFunctionName;
   uintptr_t mExpectedStub;
   bool mPatchedOnce;
-  explicit TestCase(const char* aFunctionName, uintptr_t aExpectedStub)
+  bool mSkipExec;
+  explicit TestCase(const char* aFunctionName, uintptr_t aExpectedStub,
+                    bool aSkipExec = false)
       : mFunctionName(aFunctionName),
         mExpectedStub(aExpectedStub),
-        mPatchedOnce(false) {}
+        mPatchedOnce(false),
+        mSkipExec(aSkipExec) {}
 } g_AssemblyTestCases[] = {
 #if defined(__clang__)
 // We disable these testcases because the code coverage instrumentation injects
@@ -728,7 +819,8 @@ struct TestCase {
 #    if defined(_M_X64)
     // Since we have PatchIfTargetIsRecognizedTrampoline for x64, we expect the
     // original jump destination is returned as a stub.
-    TestCase("MovPushRet", JumpDestination),
+    TestCase("MovPushRet", JumpDestination,
+             mozilla::IsUserShadowStackEnabled()),
     TestCase("MovRaxJump", JumpDestination),
     TestCase("DoubleJump", JumpDestination),
 
@@ -740,7 +832,8 @@ struct TestCase {
     TestCase("MovImm64", NoStubAddressCheck),
 #    elif defined(_M_IX86)
     // Skip the stub address check as we always generate a trampoline for x86.
-    TestCase("PushRet", NoStubAddressCheck),
+    TestCase("PushRet", NoStubAddressCheck,
+             mozilla::IsUserShadowStackEnabled()),
     TestCase("MovEaxJump", NoStubAddressCheck),
     TestCase("DoubleJump", NoStubAddressCheck),
     TestCase("Opcode83", NoStubAddressCheck),
@@ -821,18 +914,25 @@ bool TestAssemblyFunctions() {
       return false;
     }
 
-    patched_func_called = false;
-
-    auto originalFunction = reinterpret_cast<void (*)()>(
-        GetProcAddress(GetModuleHandleW(nullptr), testCase.mFunctionName));
-    originalFunction();
-
-    if (!patched_func_called) {
+    if (testCase.mSkipExec) {
       printf(
-          "TEST-FAILED | WindowsDllInterceptor | "
-          "Hook from %s was not called\n",
+          "TEST-SKIPPED | WindowsDllInterceptor | "
+          "Will not attempt to execute patched %s.\n",
           testCase.mFunctionName);
-      return false;
+    } else {
+      patched_func_called = false;
+
+      auto originalFunction = reinterpret_cast<void (*)()>(
+          GetProcAddress(GetModuleHandleW(nullptr), testCase.mFunctionName));
+      originalFunction();
+
+      if (!patched_func_called) {
+        printf(
+            "TEST-FAILED | WindowsDllInterceptor | "
+            "Hook from %s was not called\n",
+            testCase.mFunctionName);
+        return false;
+      }
     }
 
     printf("TEST-PASS | WindowsDllInterceptor | %s\n", testCase.mFunctionName);
@@ -841,12 +941,377 @@ bool TestAssemblyFunctions() {
   return true;
 }
 
-bool TestDynamicCodePolicy() {
-  if (!IsWin8Point1OrLater()) {
-    // Skip if a platform does not support this policy.
-    return true;
+#if defined(_M_X64) && !defined(MOZ_CODE_COVERAGE)
+// We want to test hooking and unhooking with unwind information, so we need:
+//  - a VMSharingPolicy such that ShouldUnhookUponDestruction() is true and
+//    Items() is implemented;
+//  - a MMPolicy such that ShouldUnhookUponDestruction() is true and
+//    kSupportsUnwindInfo is true.
+using DetouredCallInterceptor = mozilla::interceptor::WindowsDllInterceptor<
+    mozilla::interceptor::VMSharingPolicyUnique<
+        mozilla::interceptor::MMPolicyInProcess>>;
+
+struct DetouredCallChunk {
+  alignas(uint32_t) RUNTIME_FUNCTION functionTable[1];
+  alignas(uint32_t) uint8_t unwindInfo[sizeof(gDetouredCallUnwindInfo)];
+  uint8_t code[gDetouredCallCodeSize];
+};
+
+// Unfortunately using RtlAddFunctionTable for static code that lives within
+// a module doesn't seem to work. Presumably it conflicts with the static
+// function tables. So we recreate gDetouredCall as dynamic code to be able to
+// associate it with unwind information.
+decltype(&DetouredCallCode) gDetouredCall =
+    []() -> decltype(&DetouredCallCode) {
+  // We first adjust the detoured call jumper from:
+  //   ff 25 00 00 00 00    jmp qword ptr [rip + 0]
+  // to:
+  //   ff 25 XX XX XX XX    jmp qword ptr [rip + offset gDetouredCall]
+  uint8_t bytes[6]{0xff, 0x25, 0, 0, 0, 0};
+  if (0 != memcmp(bytes, reinterpret_cast<void*>(DetouredCallJumper),
+                  sizeof bytes)) {
+    return nullptr;
   }
 
+  DWORD oldProtect{};
+  // Because the current function could be located on the same memory page as
+  // DetouredCallJumper, we must preserve the permission to execute the page
+  // while we adjust the detoured call jumper (hence PAGE_EXECUTE_READWRITE).
+  if (!VirtualProtect(reinterpret_cast<void*>(DetouredCallJumper), sizeof bytes,
+                      PAGE_EXECUTE_READWRITE, &oldProtect)) {
+    return nullptr;
+  }
+
+  *reinterpret_cast<uint32_t*>(&bytes[2]) = static_cast<uint32_t>(
+      reinterpret_cast<uintptr_t>(&gDetouredCall) -
+      (reinterpret_cast<uintptr_t>(DetouredCallJumper) + sizeof bytes));
+  memcpy(reinterpret_cast<void*>(DetouredCallJumper), bytes, sizeof bytes);
+
+  if (!VirtualProtect(reinterpret_cast<void*>(DetouredCallJumper), sizeof bytes,
+                      oldProtect, &oldProtect)) {
+    return nullptr;
+  }
+
+  auto detouredCallChunk = reinterpret_cast<DetouredCallChunk*>(
+      VirtualAlloc(nullptr, sizeof(DetouredCallChunk), MEM_RESERVE | MEM_COMMIT,
+                   PAGE_READWRITE));
+  if (!detouredCallChunk) {
+    return nullptr;
+  }
+
+  detouredCallChunk->functionTable[0].BeginAddress =
+      offsetof(DetouredCallChunk, code);
+  detouredCallChunk->functionTable[0].EndAddress =
+      offsetof(DetouredCallChunk, code) + gDetouredCallCodeSize;
+  detouredCallChunk->functionTable[0].UnwindData =
+      offsetof(DetouredCallChunk, unwindInfo);
+  memcpy(reinterpret_cast<void*>(&detouredCallChunk->unwindInfo),
+         reinterpret_cast<void*>(gDetouredCallUnwindInfo),
+         sizeof(detouredCallChunk->unwindInfo));
+  memcpy(reinterpret_cast<void*>(&detouredCallChunk->code[0]),
+         reinterpret_cast<void*>(DetouredCallCode),
+         sizeof(detouredCallChunk->code));
+
+  if (!VirtualProtect(reinterpret_cast<void*>(detouredCallChunk),
+                      sizeof(DetouredCallChunk), PAGE_EXECUTE_READ,
+                      &oldProtect)) {
+    VirtualFree(detouredCallChunk, 0, MEM_RELEASE);
+    return nullptr;
+  }
+
+  if (!RtlAddFunctionTable(detouredCallChunk->functionTable, 1,
+                           reinterpret_cast<uintptr_t>(detouredCallChunk))) {
+    VirtualFree(detouredCallChunk, 0, MEM_RELEASE);
+    return nullptr;
+  }
+
+  return reinterpret_cast<decltype(&DetouredCallCode)>(detouredCallChunk->code);
+}();
+
+// We use our own variable instead of patched_func_called because the callee of
+// gDetouredCall could end up calling other, already hooked functions could
+// change patched_func_called.
+static volatile bool sCalledPatchedDetouredCall = false;
+static volatile bool sCalledDetouredCallCallee = false;
+static volatile bool sCouldUnwindFromDetouredCallCallee = false;
+void DetouredCallCallee() {
+  sCalledDetouredCallCallee = true;
+
+  // Check that we can fully unwind the stack
+  CONTEXT contextRecord{};
+  RtlCaptureContext(&contextRecord);
+  if (!contextRecord.Rip) {
+    printf(
+        "TEST-UNEXPECTED-FAIL | WindowsDllInterceptor | "
+        "DetouredCallCallee was unable to get an initial context to work "
+        "with\n");
+    fflush(stdout);
+    return;
+  }
+  while (contextRecord.Rip) {
+    DWORD64 imageBase = 0;
+    auto FunctionEntry =
+        RtlLookupFunctionEntry(contextRecord.Rip, &imageBase, nullptr);
+    if (!FunctionEntry) {
+      printf(
+          "TEST-UNEXPECTED-FAIL | WindowsDllInterceptor | "
+          "DetouredCallCallee was unable to get unwind info for ControlPc=%p\n",
+          reinterpret_cast<void*>(contextRecord.Rip));
+      fflush(stdout);
+      return;
+    }
+    printf(
+        "TEST-PASS | WindowsDllInterceptor | "
+        "DetouredCallCallee was able to get unwind info for ControlPc=%p\n",
+        reinterpret_cast<void*>(contextRecord.Rip));
+    fflush(stdout);
+    void* handlerData = nullptr;
+    DWORD64 establisherFrame = 0;
+    RtlVirtualUnwind(UNW_FLAG_NHANDLER, imageBase, contextRecord.Rip,
+                     FunctionEntry, &contextRecord, &handlerData,
+                     &establisherFrame, nullptr);
+  }
+  sCouldUnwindFromDetouredCallCallee = true;
+}
+
+static DetouredCallInterceptor::FuncHookType<decltype(&DetouredCallCode)>
+    orig_DetouredCall;
+
+static void patched_DetouredCall(uintptr_t aCallee) {
+  sCalledPatchedDetouredCall = true;
+  return orig_DetouredCall(aCallee);
+}
+
+bool TestCallingDetouredCall(const char* aTestDescription,
+                             bool aExpectCalledPatchedDetouredCall) {
+  sCalledPatchedDetouredCall = false;
+  sCalledDetouredCallCallee = false;
+  sCouldUnwindFromDetouredCallCallee = false;
+  DetouredCallJumper(reinterpret_cast<uintptr_t>(DetouredCallCallee));
+
+  if (aExpectCalledPatchedDetouredCall != sCalledPatchedDetouredCall) {
+    printf(
+        "TEST-UNEXPECTED-FAIL | WindowsDllInterceptor | "
+        "%s: expectCalledPatchedDetouredCall (%d) differs from "
+        "sCalledPatchedDetouredCall (%d)\n",
+        aTestDescription, aExpectCalledPatchedDetouredCall,
+        sCalledPatchedDetouredCall);
+    fflush(stdout);
+    return false;
+  }
+
+  printf(
+      "TEST-PASS | WindowsDllInterceptor | "
+      "%s: expectCalledPatchedDetouredCall (%d) matches with "
+      "sCalledPatchedDetouredCall (%d)\n",
+      aTestDescription, aExpectCalledPatchedDetouredCall,
+      sCalledPatchedDetouredCall);
+  fflush(stdout);
+
+  if (!sCalledDetouredCallCallee) {
+    printf(
+        "TEST-UNEXPECTED-FAIL | WindowsDllInterceptor | "
+        "%s: gDetouredCall failed to call its callee\n",
+        aTestDescription);
+    fflush(stdout);
+    return false;
+  }
+
+  printf(
+      "TEST-PASS | WindowsDllInterceptor | "
+      "%s: gDetouredCall successfully called its callee\n",
+      aTestDescription);
+  fflush(stdout);
+
+  if (!sCouldUnwindFromDetouredCallCallee) {
+    printf(
+        "TEST-UNEXPECTED-FAIL | WindowsDllInterceptor | "
+        "%s: the callee of gDetouredCall failed to unwind\n",
+        aTestDescription);
+    fflush(stdout);
+    return false;
+  }
+
+  printf(
+      "TEST-PASS | WindowsDllInterceptor | "
+      "%s: the callee of gDetouredCall successfully unwinded\n",
+      aTestDescription);
+  fflush(stdout);
+  return true;
+}
+
+// Test that detouring a call preserves unwind information (bug 1798787).
+bool TestDetouredCallUnwindInfo() {
+  if (!gDetouredCall) {
+    printf(
+        "TEST-UNEXPECTED-FAIL | WindowsDllInterceptor | "
+        "Failed to generate dynamic gDetouredCall code\n");
+    fflush(stdout);
+    return false;
+  }
+
+  uintptr_t imageBase = 0;
+  if (!RtlLookupFunctionEntry(reinterpret_cast<uintptr_t>(gDetouredCall),
+                              &imageBase, nullptr)) {
+    printf(
+        "TEST-UNEXPECTED-FAIL | WindowsDllInterceptor | "
+        "Failed to find unwind information for dynamic gDetouredCall code\n");
+    fflush(stdout);
+    return false;
+  }
+
+  // We first double check that we manage to unwind when we *do not* detour
+  if (!TestCallingDetouredCall("Before hooking", false)) {
+    return false;
+  }
+
+  uintptr_t StubAddress = 0;
+
+  // The real test starts here: let's detour and check if we can still unwind
+  {
+    DetouredCallInterceptor ExeIntercept;
+    ExeIntercept.Init("TestDllInterceptor.exe");
+    if (!orig_DetouredCall.Set(ExeIntercept, "DetouredCallJumper",
+                               &patched_DetouredCall)) {
+      printf(
+          "TEST-UNEXPECTED-FAIL | WindowsDllInterceptor | "
+          "Failed to hook the detoured call jumper.\n");
+      fflush(stdout);
+      return false;
+    }
+
+    printf(
+        "TEST-PASS | WindowsDllInterceptor | "
+        "Successfully hooked the detoured call jumper.\n");
+    fflush(stdout);
+
+    StubAddress = reinterpret_cast<uintptr_t>(orig_DetouredCall.GetStub());
+    if (!RtlLookupFunctionEntry(StubAddress, &imageBase, nullptr)) {
+      printf(
+          "TEST-UNEXPECTED-FAIL | WindowsDllInterceptor | "
+          "Failed to find unwind information for detoured code of "
+          "gDetouredCall\n");
+      fflush(stdout);
+      return false;
+    }
+
+    TestCallingDetouredCall("After hooking", true);
+  }
+
+  // Check that we can still unwind after clearing the hook.
+  return TestCallingDetouredCall("After unhooking", false);
+}
+#endif  // defined(_M_X64) && !defined(MOZ_CODE_COVERAGE)
+
+#ifndef MOZ_CODE_COVERAGE
+#  if defined(_M_X64) || defined(_M_IX86)
+bool TestSpareBytesAfterDetour() {
+  WindowsDllInterceptor interceptor;
+  interceptor.Init("TestDllInterceptor.exe");
+  InterceptorFunction& interceptorFunc = InterceptorFunction::Create();
+  auto orig_func(
+      mozilla::MakeUnique<WindowsDllInterceptor::FuncHookType<void (*)()>>());
+
+  bool successful = orig_func->Set(
+      interceptor, "SpareBytesAfterDetour",
+      reinterpret_cast<void (*)()>(interceptorFunc.GetFunction()));
+  if (!successful) {
+    printf(
+        "TEST-FAILED | WindowsDllInterceptor | "
+        "Failed to detour SpareBytesAfterDetour.\n");
+    return false;
+  }
+  FARPROC funcAddr =
+      ::GetProcAddress(GetModuleHandleW(nullptr), "SpareBytesAfterDetour");
+  if (!funcAddr) {
+    printf(
+        "TEST-FAILED | WindowsDllInterceptor | "
+        "Failed to GetProcAddress() for SpareBytesAfterDetour.\n");
+    return false;
+  }
+  uint8_t* funcBytes = reinterpret_cast<uint8_t*>(funcAddr);
+#    if defined(_M_X64)
+  // patch is 13 bytes
+  // the next instruction ends after 17 bytes
+  if (*(funcBytes + 13) != 0x90 || *(funcBytes + 14) != 0x90 ||
+      *(funcBytes + 15) != 0x90 || *(funcBytes + 16) != 0x90) {
+    printf(
+        "TEST-FAILED | WindowsDllInterceptor | "
+        "SpareBytesAfterDetour doesn't have nop's after the patch.\n");
+    PrintFunctionBytes(funcAddr, 17);
+    return false;
+  }
+  printf(
+      "TEST-PASS | WindowsDllInterceptor | "
+      "SpareBytesAfterDetour has correct nop bytes after the patch.\n");
+#    elif defined(_M_IX86)
+  // patch is 5 bytes
+  // the next instruction ends after 6 bytes
+  if (*(funcBytes + 5) != 0x90) {
+    printf(
+        "TEST-FAILED | WindowsDllInterceptor | "
+        "SpareBytesAfterDetour doesn't have nop's after the patch.\n");
+    PrintFunctionBytes(funcAddr, 6);
+    return false;
+  }
+  printf(
+      "TEST-PASS | WindowsDllInterceptor | "
+      "SpareBytesAfterDetour has correct nop bytes after the patch.\n");
+#    endif
+
+  return true;
+}
+#  endif  // defined(_M_X64) || defined(_M_IX86)
+
+#  if defined(_M_X64)
+bool TestSpareBytesAfterDetourFor10BytePatch() {
+  ShortInterceptor interceptor;
+  interceptor.TestOnlyDetourInit(
+      L"TestDllInterceptor.exe",
+      mozilla::interceptor::DetourFlags::eTestOnlyForceShortPatch);
+  InterceptorFunction& interceptorFunc = InterceptorFunction::Create();
+
+  auto orig_func(
+      mozilla::MakeUnique<ShortInterceptor::FuncHookType<void (*)()>>());
+  bool successful = orig_func->SetDetour(
+      interceptor, "SpareBytesAfterDetourFor10BytePatch",
+      reinterpret_cast<void (*)()>(interceptorFunc.GetFunction()));
+  if (!successful) {
+    printf(
+        "TEST-FAILED | WindowsDllInterceptor | "
+        "Failed to detour SpareBytesAfterDetourFor10BytePatch.\n");
+    return false;
+  }
+  FARPROC funcAddr = ::GetProcAddress(GetModuleHandleW(nullptr),
+                                      "SpareBytesAfterDetourFor10BytePatch");
+  if (!funcAddr) {
+    printf(
+        "TEST-FAILED | WindowsDllInterceptor | "
+        "Failed to GetProcAddress() for "
+        "SpareBytesAfterDetourFor10BytePatch.\n");
+    return false;
+  }
+  uint8_t* funcBytes = reinterpret_cast<uint8_t*>(funcAddr);
+  // patch is 10 bytes
+  // the next instruction ends after 12 bytes
+  if (*(funcBytes + 10) != 0x90 || *(funcBytes + 11) != 0x90) {
+    printf(
+        "TEST-FAILED | WindowsDllInterceptor | "
+        "SpareBytesAfterDetourFor10BytePatch doesn't have nop's after the "
+        "patch.\n");
+    PrintFunctionBytes(funcAddr, 12);
+    return false;
+  }
+  printf(
+      "TEST-PASS | WindowsDllInterceptor | "
+      "SpareBytesAfterDetourFor10BytePatch has correct nop bytes after the "
+      "patch.\n");
+  return true;
+}
+#  endif
+#endif  // MOZ_CODE_COVERAGE
+
+bool TestDynamicCodePolicy() {
   PROCESS_MITIGATION_DYNAMIC_CODE_POLICY policy = {};
   policy.ProhibitDynamicCode = true;
 
@@ -1006,8 +1471,7 @@ extern "C" int wmain(int argc, wchar_t* argv[]) {
                        &attributes, nullptr) &&
       TEST_DETOUR_SKIP_EXEC("ntdll.dll", LdrLoadDll) &&
       TEST_HOOK("ntdll.dll", LdrUnloadDll, NotEquals, 0) &&
-      MAYBE_TEST_HOOK_SKIP_EXEC(IsWin8OrLater(), "ntdll.dll",
-                                LdrResolveDelayLoadedAPI) &&
+      TEST_HOOK_SKIP_EXEC("ntdll.dll", LdrResolveDelayLoadedAPI) &&
       MAYBE_TEST_HOOK_PARAMS(HasApiSetQueryApiSetPresence(),
                              "Api-ms-win-core-apiquery-l1-1-0.dll",
                              ApiSetQueryApiSetPresence, Equals, FALSE,
@@ -1038,8 +1502,6 @@ extern "C" int wmain(int argc, wchar_t* argv[]) {
 #endif  // !defined(_M_ARM64)
       TEST_DETOUR_SKIP_EXEC("kernel32.dll", BaseThreadInitThunk) &&
 #if defined(_M_X64) || defined(_M_ARM64)
-      MAYBE_TEST_HOOK(!IsWin8OrLater(), "kernel32.dll",
-                      RtlInstallFunctionTableCallback, Equals, FALSE) &&
       TEST_HOOK("user32.dll", GetKeyState, Ignore, 0) &&  // see Bug 1316415
 #endif
       TEST_HOOK("user32.dll", GetWindowInfo, Equals, FALSE) &&
@@ -1048,12 +1510,16 @@ extern "C" int wmain(int argc, wchar_t* argv[]) {
       TEST_HOOK("user32.dll", InSendMessageEx, Equals, ISMEX_NOSEND) &&
       TEST_HOOK("user32.dll", SendMessageTimeoutW, Equals, 0) &&
       TEST_HOOK("user32.dll", SetCursorPos, NotEquals, FALSE) &&
+      TEST_HOOK("bcrypt.dll", BCryptGenRandom, Equals,
+                static_cast<NTSTATUS>(STATUS_INVALID_HANDLE)) &&
+      TEST_HOOK("advapi32.dll", RtlGenRandom, Equals, TRUE) &&
 #if !defined(_M_ARM64)
       TEST_HOOK("imm32.dll", ImmGetContext, Equals, nullptr) &&
 #endif  // !defined(_M_ARM64)
       TEST_HOOK("imm32.dll", ImmGetCompositionStringW, Ignore, 0) &&
       TEST_HOOK_SKIP_EXEC("imm32.dll", ImmSetCandidateWindow) &&
       TEST_HOOK("imm32.dll", ImmNotifyIME, Equals, 0) &&
+      TEST_HOOK("msctf.dll", TF_Notify, Equals, 0) &&
       TEST_HOOK("comdlg32.dll", GetSaveFileNameW, Ignore, FALSE) &&
       TEST_HOOK("comdlg32.dll", GetOpenFileNameW, Ignore, FALSE) &&
 #if defined(_M_X64)
@@ -1081,6 +1547,19 @@ extern "C" int wmain(int argc, wchar_t* argv[]) {
                        SEC_E_INVALID_HANDLE, &credHandle, 0, nullptr) &&
       TEST_HOOK_PARAMS("sspicli.dll", FreeCredentialsHandle, Equals,
                        SEC_E_INVALID_HANDLE, &credHandle) &&
+#if defined(_M_X64) && !defined(MOZ_CODE_COVERAGE)
+      TestDetouredCallUnwindInfo() &&
+#endif  // defined(_M_X64) && !defined(MOZ_CODE_COVERAGE)
+// We disable these testcases because the code coverage instrumentation injects
+// code in a way that WindowsDllInterceptor doesn't understand.
+#ifndef MOZ_CODE_COVERAGE
+#  if defined(_M_X64) || defined(_M_IX86)
+      TestSpareBytesAfterDetour() &&
+#    if defined(_M_X64)
+      TestSpareBytesAfterDetourFor10BytePatch() &&
+#    endif  // defined(_M_X64)
+#  endif    // MOZ_CODE_COVERAGE
+#endif      // defined(_M_X64) || defined(_M_IX86)
       // Run TestDynamicCodePolicy() at the end because the policy is
       // irreversible.
       TestDynamicCodePolicy()) {

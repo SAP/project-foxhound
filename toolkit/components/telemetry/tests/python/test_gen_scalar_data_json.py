@@ -3,13 +3,14 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 import json
-import mozunit
 import os
 import sys
 import tempfile
 import unittest
 from io import StringIO
 from os import path
+
+import mozunit
 
 TELEMETRY_ROOT_PATH = path.abspath(
     path.join(path.dirname(__file__), path.pardir, path.pardir)
@@ -21,7 +22,6 @@ import gen_scalar_data  # noqa: E402
 
 
 class TestScalarDataJson(unittest.TestCase):
-
     maxDiff = None
 
     def test_JSON_definitions_generation(self):

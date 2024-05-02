@@ -8,10 +8,11 @@
 #include "DocAccessibleWrap.h"
 #include "nsObjCExceptions.h"
 #include "nsCocoaUtils.h"
+#include "nsUnicharUtils.h"
 
 #include "LocalAccessible-inl.h"
 #include "nsAccUtils.h"
-#include "Role.h"
+#include "mozilla/a11y/Role.h"
 #include "TextRange.h"
 #include "gfxPlatform.h"
 
@@ -39,8 +40,8 @@ AccessibleWrap::AccessibleWrap(nsIContent* aContent, DocAccessible* aDoc)
     DocAccessibleWrap* doc = static_cast<DocAccessibleWrap*>(aDoc);
     static const dom::Element::AttrValuesArray sLiveRegionValues[] = {
         nsGkAtoms::OFF, nsGkAtoms::polite, nsGkAtoms::assertive, nullptr};
-    int32_t attrValue = aContent->AsElement()->FindAttrValueIn(
-        kNameSpaceID_None, nsGkAtoms::aria_live, sLiveRegionValues,
+    int32_t attrValue = nsAccUtils::FindARIAAttrValueIn(
+        aContent->AsElement(), nsGkAtoms::aria_live, sLiveRegionValues,
         eIgnoreCase);
     if (attrValue == 0) {
       // aria-live is "off", do nothing.
@@ -145,6 +146,11 @@ nsresult AccessibleWrap::HandleAccEvent(AccEvent* aEvent) {
   nsresult rv = LocalAccessible::HandleAccEvent(aEvent);
   NS_ENSURE_SUCCESS(rv, rv);
 
+  if (IsDefunct()) {
+    // The accessible can become defunct after their events are handled.
+    return NS_OK;
+  }
+
   uint32_t eventType = aEvent->GetEventType();
 
   if (eventType == nsIAccessibleEvent::EVENT_SHOW) {
@@ -152,141 +158,9 @@ nsresult AccessibleWrap::HandleAccEvent(AccEvent* aEvent) {
     doc->ProcessNewLiveRegions();
   }
 
-  if (IPCAccessibilityActive()) {
-    return NS_OK;
-  }
-
-  LocalAccessible* eventTarget = nullptr;
-
-  switch (eventType) {
-    case nsIAccessibleEvent::EVENT_SELECTION:
-    case nsIAccessibleEvent::EVENT_SELECTION_ADD:
-    case nsIAccessibleEvent::EVENT_SELECTION_REMOVE: {
-      AccSelChangeEvent* selEvent = downcast_accEvent(aEvent);
-      // The "widget" is the selected widget's container. In OSX
-      // it is the target of the selection changed event.
-      eventTarget = selEvent->Widget();
-      break;
-    }
-    case nsIAccessibleEvent::EVENT_TEXT_INSERTED:
-    case nsIAccessibleEvent::EVENT_TEXT_REMOVED: {
-      LocalAccessible* acc = aEvent->GetAccessible();
-      // If there is a text input ancestor, use it as the event source.
-      while (acc && GetTypeFromRole(acc->Role()) != [mozTextAccessible class]) {
-        acc = acc->LocalParent();
-      }
-      eventTarget = acc ? acc : aEvent->GetAccessible();
-      break;
-    }
-    default:
-      eventTarget = aEvent->GetAccessible();
-      break;
-  }
-
-  mozAccessible* nativeAcc = nil;
-  eventTarget->GetNativeInterface((void**)&nativeAcc);
-  if (!nativeAcc) {
-    return NS_ERROR_FAILURE;
-  }
-
-  switch (eventType) {
-    case nsIAccessibleEvent::EVENT_STATE_CHANGE: {
-      AccStateChangeEvent* event = downcast_accEvent(aEvent);
-      [nativeAcc stateChanged:event->GetState()
-                    isEnabled:event->IsStateEnabled()];
-      break;
-    }
-
-    case nsIAccessibleEvent::EVENT_TEXT_SELECTION_CHANGED: {
-      MOXTextMarkerDelegate* delegate =
-          [MOXTextMarkerDelegate getOrCreateForDoc:aEvent->Document()];
-      AccTextSelChangeEvent* event = downcast_accEvent(aEvent);
-      AutoTArray<TextRange, 1> ranges;
-      event->SelectionRanges(&ranges);
-
-      if (ranges.Length()) {
-        // Cache selection in delegate.
-        [delegate setSelectionFrom:ranges[0].StartContainer()
-                                at:ranges[0].StartOffset()
-                                to:ranges[0].EndContainer()
-                                at:ranges[0].EndOffset()];
-      }
-
-      [nativeAcc handleAccessibleEvent:eventType];
-      break;
-    }
-
-    case nsIAccessibleEvent::EVENT_TEXT_CARET_MOVED: {
-      AccCaretMoveEvent* event = downcast_accEvent(aEvent);
-      int32_t caretOffset = event->GetCaretOffset();
-      MOXTextMarkerDelegate* delegate =
-          [MOXTextMarkerDelegate getOrCreateForDoc:aEvent->Document()];
-      [delegate setCaretOffset:eventTarget at:caretOffset];
-      if (event->IsSelectionCollapsed()) {
-        // If the selection is collapsed, invalidate our text selection cache.
-        [delegate setSelectionFrom:eventTarget
-                                at:caretOffset
-                                to:eventTarget
-                                at:caretOffset];
-      }
-
-      if (mozTextAccessible* textAcc = static_cast<mozTextAccessible*>(
-              [nativeAcc moxEditableAncestor])) {
-        [textAcc
-            handleAccessibleEvent:nsIAccessibleEvent::EVENT_TEXT_CARET_MOVED];
-      } else {
-        [nativeAcc
-            handleAccessibleEvent:nsIAccessibleEvent::EVENT_TEXT_CARET_MOVED];
-      }
-      break;
-    }
-
-    case nsIAccessibleEvent::EVENT_TEXT_INSERTED:
-    case nsIAccessibleEvent::EVENT_TEXT_REMOVED: {
-      AccTextChangeEvent* tcEvent = downcast_accEvent(aEvent);
-      [nativeAcc handleAccessibleTextChangeEvent:nsCocoaUtils::ToNSString(
-                                                     tcEvent->ModifiedText())
-                                        inserted:tcEvent->IsTextInserted()
-                                     inContainer:aEvent->GetAccessible()
-                                              at:tcEvent->GetStartOffset()];
-      break;
-    }
-
-    case nsIAccessibleEvent::EVENT_ALERT:
-    case nsIAccessibleEvent::EVENT_FOCUS:
-    case nsIAccessibleEvent::EVENT_TEXT_VALUE_CHANGE:
-    case nsIAccessibleEvent::EVENT_DOCUMENT_LOAD_COMPLETE:
-    case nsIAccessibleEvent::EVENT_MENUPOPUP_START:
-    case nsIAccessibleEvent::EVENT_MENUPOPUP_END:
-    case nsIAccessibleEvent::EVENT_REORDER:
-    case nsIAccessibleEvent::EVENT_SELECTION:
-    case nsIAccessibleEvent::EVENT_SELECTION_ADD:
-    case nsIAccessibleEvent::EVENT_SELECTION_REMOVE:
-    case nsIAccessibleEvent::EVENT_LIVE_REGION_ADDED:
-    case nsIAccessibleEvent::EVENT_LIVE_REGION_REMOVED:
-    case nsIAccessibleEvent::EVENT_NAME_CHANGE:
-    case nsIAccessibleEvent::EVENT_OBJECT_ATTRIBUTE_CHANGED:
-    case nsIAccessibleEvent::EVENT_TABLE_STYLING_CHANGED:
-      [nativeAcc handleAccessibleEvent:eventType];
-      break;
-
-    default:
-      break;
-  }
-
   return NS_OK;
 
   NS_OBJC_END_TRY_BLOCK_RETURN(NS_ERROR_FAILURE);
-}
-
-bool AccessibleWrap::ApplyPostFilter(const EWhichPostFilter& aSearchKey,
-                                     const nsString& aSearchText) {
-  // We currently only support the eContainsText post filter.
-  MOZ_ASSERT(aSearchKey == EWhichPostFilter::eContainsText,
-             "Only search text supported");
-  nsAutoString name;
-  Name(name);
-  return name.Find(aSearchText, true) != kNotFound;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -305,12 +179,17 @@ Class a11y::GetTypeFromRole(roles::Role aRole) {
     case roles::PAGETAB:
       return [mozTabAccessible class];
 
+    case roles::DATE_EDITOR:
+      return [mozDatePickerAccessible class];
+
     case roles::CHECKBUTTON:
     case roles::TOGGLE_BUTTON:
     case roles::SWITCH:
+    case roles::CHECK_MENU_ITEM:
       return [mozCheckboxAccessible class];
 
     case roles::RADIOBUTTON:
+    case roles::RADIO_MENU_ITEM:
       return [mozRadioButtonAccessible class];
 
     case roles::SPINBUTTON:
@@ -325,7 +204,6 @@ Class a11y::GetTypeFromRole(roles::Role aRole) {
 
     case roles::ENTRY:
     case roles::CAPTION:
-    case roles::ACCEL_LABEL:
     case roles::EDITCOMBOBOX:
     case roles::PASSWORD_TEXT:
       // normal textfield (static or editable)

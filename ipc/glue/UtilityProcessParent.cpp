@@ -15,24 +15,22 @@
 #include "mozilla/ipc/ProcessChild.h"
 #include "mozilla/FOGIPC.h"
 
-namespace mozilla::ipc {
+#include "mozilla/Telemetry.h"
+#include "mozilla/TelemetryIPC.h"
 
-static std::atomic<UtilityProcessParent*> sUtilityProcessParent;
+#include "nsHashPropertyBag.h"
+#include "mozilla/Services.h"
+#include "nsIObserverService.h"
+
+namespace mozilla::ipc {
 
 UtilityProcessParent::UtilityProcessParent(UtilityProcessHost* aHost)
     : mHost(aHost) {
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(mHost);
-  sUtilityProcessParent = this;
 }
 
 UtilityProcessParent::~UtilityProcessParent() = default;
-
-/* static */
-UtilityProcessParent* UtilityProcessParent::GetSingleton() {
-  MOZ_DIAGNOSTIC_ASSERT(sUtilityProcessParent);
-  return sUtilityProcessParent;
-}
 
 bool UtilityProcessParent::SendRequestMemoryReport(
     const uint32_t& aGeneration, const bool& aAnonymize,
@@ -41,24 +39,14 @@ bool UtilityProcessParent::SendRequestMemoryReport(
 
   PUtilityProcessParent::SendRequestMemoryReport(
       aGeneration, aAnonymize, aMinimizeMemoryUsage, aDMDFile,
-      [&](const uint32_t& aGeneration2) {
-        if (RefPtr<UtilityProcessManager> utilitypm =
-                UtilityProcessManager::GetSingleton()) {
-          if (UtilityProcessParent* child = utilitypm->GetProcessParent()) {
-            if (child->mMemoryReportRequest) {
-              child->mMemoryReportRequest->Finish(aGeneration2);
-              child->mMemoryReportRequest = nullptr;
-            }
-          }
+      [self = RefPtr{this}](const uint32_t& aGeneration2) {
+        if (self->mMemoryReportRequest) {
+          self->mMemoryReportRequest->Finish(aGeneration2);
+          self->mMemoryReportRequest = nullptr;
         }
       },
-      [&](mozilla::ipc::ResponseRejectReason) {
-        if (RefPtr<UtilityProcessManager> utilitypm =
-                UtilityProcessManager::GetSingleton()) {
-          if (UtilityProcessParent* child = utilitypm->GetProcessParent()) {
-            child->mMemoryReportRequest = nullptr;
-          }
-        }
+      [self = RefPtr{this}](mozilla::ipc::ResponseRejectReason) {
+        self->mMemoryReportRequest = nullptr;
       });
 
   return true;
@@ -77,9 +65,116 @@ mozilla::ipc::IPCResult UtilityProcessParent::RecvFOGData(ByteBuf&& aBuf) {
   return IPC_OK();
 }
 
+#if defined(XP_WIN)
+mozilla::ipc::IPCResult UtilityProcessParent::RecvGetModulesTrust(
+    ModulePaths&& aModPaths, bool aRunAtNormalPriority,
+    GetModulesTrustResolver&& aResolver) {
+  RefPtr<DllServices> dllSvc(DllServices::Get());
+  dllSvc->GetModulesTrust(std::move(aModPaths), aRunAtNormalPriority)
+      ->Then(
+          GetMainThreadSerialEventTarget(), __func__,
+          [aResolver](ModulesMapResult&& aResult) {
+            aResolver(Some(ModulesMapResult(std::move(aResult))));
+          },
+          [aResolver](nsresult aRv) { aResolver(Nothing()); });
+  return IPC_OK();
+}
+#endif  // defined(XP_WIN)
+
+mozilla::ipc::IPCResult UtilityProcessParent::RecvAccumulateChildHistograms(
+    nsTArray<HistogramAccumulation>&& aAccumulations) {
+  TelemetryIPC::AccumulateChildHistograms(Telemetry::ProcessID::Utility,
+                                          aAccumulations);
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult
+UtilityProcessParent::RecvAccumulateChildKeyedHistograms(
+    nsTArray<KeyedHistogramAccumulation>&& aAccumulations) {
+  TelemetryIPC::AccumulateChildKeyedHistograms(Telemetry::ProcessID::Utility,
+                                               aAccumulations);
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult UtilityProcessParent::RecvUpdateChildScalars(
+    nsTArray<ScalarAction>&& aScalarActions) {
+  TelemetryIPC::UpdateChildScalars(Telemetry::ProcessID::Utility,
+                                   aScalarActions);
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult UtilityProcessParent::RecvUpdateChildKeyedScalars(
+    nsTArray<KeyedScalarAction>&& aScalarActions) {
+  TelemetryIPC::UpdateChildKeyedScalars(Telemetry::ProcessID::Utility,
+                                        aScalarActions);
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult UtilityProcessParent::RecvRecordChildEvents(
+    nsTArray<mozilla::Telemetry::ChildEventData>&& aEvents) {
+  TelemetryIPC::RecordChildEvents(Telemetry::ProcessID::Utility, aEvents);
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult UtilityProcessParent::RecvRecordDiscardedData(
+    const mozilla::Telemetry::DiscardedData& aDiscardedData) {
+  TelemetryIPC::RecordDiscardedData(Telemetry::ProcessID::Utility,
+                                    aDiscardedData);
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult UtilityProcessParent::RecvInitCompleted() {
+  MOZ_ASSERT(mHost);
+  mHost->ResolvePromise();
+  return IPC_OK();
+}
+
 void UtilityProcessParent::ActorDestroy(ActorDestroyReason aWhy) {
+  RefPtr<nsHashPropertyBag> props = new nsHashPropertyBag();
+
   if (aWhy == AbnormalShutdown) {
-    GenerateCrashReport(OtherPid());
+    nsAutoString dumpID;
+
+    if (mCrashReporter) {
+#if defined(MOZ_SANDBOX)
+      RefPtr<mozilla::ipc::UtilityProcessManager> upm =
+          mozilla::ipc::UtilityProcessManager::GetSingleton();
+      if (upm) {
+        Span<const UtilityActorName> actors = upm->GetActors(this);
+        nsAutoCString actorsName;
+        if (!actors.IsEmpty()) {
+          actorsName += GetUtilityActorName(actors.First<1>()[0]);
+          for (const auto& actor : actors.From(1)) {
+            actorsName += ", "_ns + GetUtilityActorName(actor);
+          }
+        }
+        mCrashReporter->AddAnnotation(
+            CrashReporter::Annotation::UtilityActorsName, actorsName);
+      }
+#endif
+    }
+
+    GenerateCrashReport(OtherPid(), &dumpID);
+
+    // It's okay for dumpID to be empty if there was no minidump generated
+    // tests like ipc/glue/test/browser/browser_utility_crashReporter.js are
+    // there to verify this
+    if (!dumpID.IsEmpty()) {
+      props->SetPropertyAsAString(u"dumpID"_ns, dumpID);
+    }
+
+    MaybeTerminateProcess();
+  }
+
+  nsAutoString pid;
+  pid.AppendInt(static_cast<uint64_t>(OtherPid()));
+
+  nsCOMPtr<nsIObserverService> obs = mozilla::services::GetObserverService();
+  if (obs) {
+    obs->NotifyObservers((nsIPropertyBag2*)props, "ipc:utility-shutdown",
+                         pid.get());
+  } else {
+    NS_WARNING("Could not get a nsIObserverService, ipc:utility-shutdown skip");
   }
 
   mHost->OnChannelClosed();

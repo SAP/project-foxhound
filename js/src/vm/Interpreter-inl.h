@@ -9,12 +9,16 @@
 
 #include "vm/Interpreter.h"
 
+#include "jslibmath.h"
+#include "jsmath.h"
 #include "jsnum.h"
 
-#include "js/friend/DumpFunctions.h"
 #include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
+#include "util/CheckedArithmetic.h"
 #include "vm/ArgumentsObject.h"
+#include "vm/BigIntType.h"
 #include "vm/BytecodeUtil.h"  // JSDVG_SEARCH_STACK
+#include "vm/JSAtomUtils.h"   // AtomizeString
 #include "vm/Realm.h"
 #include "vm/SharedStencil.h"  // GCThingIndex
 #include "vm/StaticStrings.h"
@@ -23,13 +27,13 @@
 #  include "vm/RecordTupleShared.h"
 #endif
 
-#include "vm/EnvironmentObject-inl.h"
 #include "vm/GlobalObject-inl.h"
-#include "vm/JSAtom-inl.h"
+#include "vm/JSAtomUtils-inl.h"  // PrimitiveValueToId, TypeName
+#include "vm/JSContext-inl.h"
 #include "vm/JSObject-inl.h"
+#include "vm/NativeObject-inl.h"
 #include "vm/NumberObject-inl.h"
 #include "vm/ObjectOperations-inl.h"
-#include "vm/Stack-inl.h"
 #include "vm/StringType-inl.h"
 
 namespace js {
@@ -70,7 +74,7 @@ static inline bool IsUninitializedLexicalSlot(HandleObject obj,
 static inline bool CheckUninitializedLexical(JSContext* cx, PropertyName* name_,
                                              HandleValue val) {
   if (IsUninitializedLexical(val)) {
-    RootedPropertyName name(cx, name_);
+    Rooted<PropertyName*> name(cx, name_);
     ReportRuntimeLexicalError(cx, JSMSG_UNINITIALIZED_LEXICAL, name);
     return false;
   }
@@ -108,7 +112,7 @@ enum class GetNameMode { Normal, TypeOf };
 
 template <GetNameMode mode>
 inline bool FetchName(JSContext* cx, HandleObject receiver, HandleObject holder,
-                      HandlePropertyName name, const PropertyResult& prop,
+                      Handle<PropertyName*> name, const PropertyResult& prop,
                       MutableHandleValue vp) {
   if (prop.isNotFound()) {
     switch (mode) {
@@ -145,7 +149,7 @@ inline bool FetchName(JSContext* cx, HandleObject receiver, HandleObject holder,
   }
 
   // We do our own explicit checking for |this|
-  if (name == cx->names().dotThis) {
+  if (name == cx->names().dot_this_) {
     return true;
   }
 
@@ -170,7 +174,8 @@ inline bool FetchNameNoGC(NativeObject* pobj, PropertyResult prop, Value* vp) {
 
 template <js::GetNameMode mode>
 inline bool GetEnvironmentName(JSContext* cx, HandleObject envChain,
-                               HandlePropertyName name, MutableHandleValue vp) {
+                               Handle<PropertyName*> name,
+                               MutableHandleValue vp) {
   {
     PropertyResult prop;
     JSObject* obj = nullptr;
@@ -226,13 +231,13 @@ inline bool HasOwnProperty(JSContext* cx, HandleValue val, HandleValue idValue,
 
 inline bool GetIntrinsicOperation(JSContext* cx, HandleScript script,
                                   jsbytecode* pc, MutableHandleValue vp) {
-  RootedPropertyName name(cx, script->getName(pc));
+  Rooted<PropertyName*> name(cx, script->getName(pc));
   return GlobalObject::getIntrinsicValue(cx, cx->global(), name, vp);
 }
 
 inline bool SetIntrinsicOperation(JSContext* cx, JSScript* script,
                                   jsbytecode* pc, HandleValue val) {
-  RootedPropertyName name(cx, script->getName(pc));
+  Rooted<PropertyName*> name(cx, script->getName(pc));
   return GlobalObject::setIntrinsicValue(cx, cx->global(), name, val);
 }
 
@@ -250,7 +255,7 @@ inline bool SetNameOperation(JSContext* cx, JSScript* script, jsbytecode* pc,
 
   bool strict =
       JSOp(*pc) == JSOp::StrictSetName || JSOp(*pc) == JSOp::StrictSetGName;
-  RootedPropertyName name(cx, script->getName(pc));
+  Rooted<PropertyName*> name(cx, script->getName(pc));
 
   // In strict mode, assigning to an undeclared global variable is an
   // error. To detect this, we call NativeSetProperty directly and pass
@@ -260,7 +265,7 @@ inline bool SetNameOperation(JSContext* cx, JSScript* script, jsbytecode* pc,
   RootedId id(cx, NameToId(name));
   RootedValue receiver(cx, ObjectValue(*env));
   if (env->isUnqualifiedVarObj()) {
-    RootedNativeObject varobj(cx);
+    Rooted<NativeObject*> varobj(cx);
     if (env->is<DebugEnvironmentProxy>()) {
       varobj =
           &env->as<DebugEnvironmentProxy>().environment().as<NativeObject>();
@@ -290,9 +295,10 @@ inline void InitGlobalLexicalOperation(
   lexicalEnv->setSlot(prop->slot(), value);
 }
 
-inline bool InitPropertyOperation(JSContext* cx, JSOp op, HandleObject obj,
-                                  HandlePropertyName name, HandleValue rhs) {
-  unsigned propAttrs = GetInitDataPropAttrs(op);
+inline bool InitPropertyOperation(JSContext* cx, jsbytecode* pc,
+                                  HandleObject obj, Handle<PropertyName*> name,
+                                  HandleValue rhs) {
+  unsigned propAttrs = GetInitDataPropAttrs(JSOp(*pc));
   return DefineDataProperty(cx, obj, name, rhs, propAttrs);
 }
 
@@ -639,6 +645,18 @@ static MOZ_ALWAYS_INLINE bool CheckPrivateFieldOperation(JSContext* cx,
     }
   }
 
+  // Invoke the HostEnsureCanAddPrivateElement ( O ) host hook here
+  // if the code is attempting to attach a new private element (which
+  // corresponds to the ThrowHas Throw Condition).
+  if (condition == ThrowCondition::ThrowHas) {
+    if (JS::EnsureCanAddPrivateElementOp op =
+            cx->runtime()->canAddPrivateElement) {
+      if (!op(cx, val)) {
+        return false;
+      }
+    }
+  }
+
   if (!HasOwnProperty(cx, val, idval, result)) {
     return false;
   }
@@ -653,11 +671,11 @@ static MOZ_ALWAYS_INLINE bool CheckPrivateFieldOperation(JSContext* cx,
   return false;
 }
 
-static inline JS::Symbol* NewPrivateName(JSContext* cx, HandleAtom name) {
+static inline JS::Symbol* NewPrivateName(JSContext* cx, Handle<JSAtom*> name) {
   return JS::Symbol::new_(cx, JS::SymbolCode::PrivateNameSymbol, name);
 }
 
-inline bool InitElemIncOperation(JSContext* cx, HandleArrayObject arr,
+inline bool InitElemIncOperation(JSContext* cx, Handle<ArrayObject*> arr,
                                  uint32_t index, HandleValue val) {
   if (index == INT32_MAX) {
     JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
@@ -676,32 +694,6 @@ inline bool InitElemIncOperation(JSContext* cx, HandleArrayObject arr,
   return DefineDataElement(cx, arr, index, val, JSPROP_ENUMERATE);
 }
 
-static inline ArrayObject* ProcessCallSiteObjOperation(JSContext* cx,
-                                                       HandleScript script,
-                                                       const jsbytecode* pc) {
-  MOZ_ASSERT(JSOp(*pc) == JSOp::CallSiteObj);
-
-  RootedArrayObject cso(cx, &script->getObject(pc)->as<ArrayObject>());
-
-  if (cso->isExtensible()) {
-    RootedObject raw(cx, script->getObject(GET_GCTHING_INDEX(pc).next()));
-    MOZ_ASSERT(raw->is<ArrayObject>());
-
-    RootedValue rawValue(cx, ObjectValue(*raw));
-    if (!DefineDataProperty(cx, cso, cx->names().raw, rawValue, 0)) {
-      return nullptr;
-    }
-    if (!FreezeObject(cx, raw)) {
-      return nullptr;
-    }
-    if (!FreezeObject(cx, cso)) {
-      return nullptr;
-    }
-  }
-
-  return cso;
-}
-
 inline JSFunction* ReportIfNotFunction(
     JSContext* cx, HandleValue v, MaybeConstruct construct = NO_CONSTRUCT) {
   if (v.isObject() && v.toObject().is<JSFunction>()) {
@@ -711,6 +703,504 @@ inline JSFunction* ReportIfNotFunction(
   ReportIsNotFunction(cx, v, -1, construct);
   return nullptr;
 }
+
+static inline JSObject* SuperFunOperation(JSObject* callee) {
+  MOZ_ASSERT(callee->as<JSFunction>().isClassConstructor());
+  MOZ_ASSERT(
+      callee->as<JSFunction>().baseScript()->isDerivedClassConstructor());
+
+  return callee->as<JSFunction>().staticPrototype();
+}
+
+static inline JSObject* HomeObjectSuperBase(JSObject* homeObj) {
+  MOZ_ASSERT(homeObj->is<PlainObject>() || homeObj->is<JSFunction>());
+
+  return homeObj->staticPrototype();
+}
+
+static MOZ_ALWAYS_INLINE bool AddOperation(JSContext* cx,
+                                           MutableHandleValue lhs,
+                                           MutableHandleValue rhs,
+                                           MutableHandleValue res) {
+  // TaintFox: copy lhs and rhs since they are mutable.
+  RootedValue origLhs(cx, lhs);
+  RootedValue origRhs(cx, rhs);
+
+  if (lhs.isInt32() && rhs.isInt32()) {
+    int32_t l = lhs.toInt32(), r = rhs.toInt32();
+    int32_t t;
+    if (MOZ_LIKELY(SafeAdd(l, r, &t))) {
+      res.setInt32(t);
+      return true;
+    }
+  }
+
+  // TaintFox: Deactivate generic ToPrimitive() without preffered type here.
+  // This would cause taintedNumber objects to be converted to primitive numbers
+  // without taint. This is bad, if we later have to convert to String.
+  // ToString() is internally using ToPrimitive() with a preffered type, which
+  // supports taint propagation.
+  /*
+  if (!ToPrimitive(cx, lhs)) {
+    return false;
+  }
+  if (!ToPrimitive(cx, rhs)) {
+    return false;
+  }
+  */
+
+  bool lIsString = lhs.isString();
+  bool rIsString = rhs.isString();
+
+  // TaintFox: Cast to primitive if values are neither strings nor tainted numbers
+  // Required for some special cases like arrays
+  if (!lIsString && !isTaintedNumber(lhs)) {
+    if (!ToPrimitive(cx, lhs)) {
+      return false;
+    }
+    lIsString = lhs.isString();
+  }
+  if (!rIsString && !isTaintedNumber(rhs)) {
+    if (!ToPrimitive(cx, rhs)) {
+      return false;
+    }
+    rIsString = rhs.isString();
+  }
+
+  if (lIsString || rIsString) {
+    JSString* lstr;
+    if (lIsString) {
+      lstr = lhs.toString();
+    } else {
+      lstr = ToString<CanGC>(cx, lhs);
+      if (!lstr) {
+        return false;
+      }
+    }
+
+    JSString* rstr;
+    if (rIsString) {
+      rstr = rhs.toString();
+    } else {
+      // Save/restore lstr in case of GC activity under ToString.
+      lhs.setString(lstr);
+      rstr = ToString<CanGC>(cx, rhs);
+      if (!rstr) {
+        return false;
+      }
+      lstr = lhs.toString();
+    }
+    JSString* str = ConcatStrings<NoGC>(cx, lstr, rstr);
+    if (!str) {
+      RootedString nlstr(cx, lstr), nrstr(cx, rstr);
+      str = ConcatStrings<CanGC>(cx, nlstr, nrstr);
+      if (!str) {
+        return false;
+      }
+    }
+    res.setString(str);
+    return true;
+  }
+
+  // TaintFox: If no string conversion of numbers is needed, we can safely
+  // use the generic ToPrimitive() taint is also lost in this case but will
+  // later be added based on origLhs and origRhs
+  if (!ToPrimitive(cx, lhs)) {
+    return false;
+  }
+  if (!ToPrimitive(cx, rhs)) {
+    return false;
+  }
+
+  if (!ToNumeric(cx, lhs) || !ToNumeric(cx, rhs)) {
+    return false;
+  }
+
+  if (lhs.isBigInt() || rhs.isBigInt()) {
+    return BigInt::addValue(cx, lhs, rhs, res);
+  }
+
+  res.setNumber(lhs.toNumber() + rhs.toNumber());
+
+  // TaintFox: Taint propagation when adding tainted numbers.
+  if (isAnyTaintedNumber(origLhs, origRhs)) {
+    res.setObject(*NumberObject::createTainted(cx, res.toNumber(), getAnyNumberTaint(origLhs, origRhs)));
+  }
+  return true;
+}
+
+static MOZ_ALWAYS_INLINE bool SubOperation(JSContext* cx,
+                                           MutableHandleValue lhs,
+                                           MutableHandleValue rhs,
+                                           MutableHandleValue res) {
+  // TaintFox: copy lhs and rhs since they are mutable.
+  RootedValue origLhs(cx, lhs);
+  RootedValue origRhs(cx, rhs);
+
+  if (!ToNumeric(cx, lhs) || !ToNumeric(cx, rhs)) {
+    return false;
+  }
+
+  if (lhs.isBigInt() || rhs.isBigInt()) {
+    return BigInt::subValue(cx, lhs, rhs, res);
+  }
+
+  res.setNumber(lhs.toNumber() - rhs.toNumber());
+  // TaintFox: Taint propagation when subtracting tainted numbers.
+  if (isAnyTaintedNumber(origLhs, origRhs)) {
+    res.setObject(*NumberObject::createTainted(cx, res.toNumber(), getAnyNumberTaint(origLhs, origRhs)));
+  }
+  return true;
+}
+
+static MOZ_ALWAYS_INLINE bool MulOperation(JSContext* cx,
+                                           MutableHandleValue lhs,
+                                           MutableHandleValue rhs,
+                                           MutableHandleValue res) {
+  // TaintFox: copy lhs and rhs since they are mutable.
+  RootedValue origLhs(cx, lhs);
+  RootedValue origRhs(cx, rhs);
+
+  if (!ToNumeric(cx, lhs) || !ToNumeric(cx, rhs)) {
+    return false;
+  }
+
+  if (lhs.isBigInt() || rhs.isBigInt()) {
+    return BigInt::mulValue(cx, lhs, rhs, res);
+  }
+
+  res.setNumber(lhs.toNumber() * rhs.toNumber());
+  // TaintFox: Taint propagation when multiplying tainted numbers.
+  if (isAnyTaintedNumber(origLhs, origRhs)) {
+    res.setObject(*NumberObject::createTainted(cx, res.toNumber(), getAnyNumberTaint(origLhs, origRhs)));
+  }
+  return true;
+}
+
+static MOZ_ALWAYS_INLINE bool DivOperation(JSContext* cx,
+                                           MutableHandleValue lhs,
+                                           MutableHandleValue rhs,
+                                           MutableHandleValue res) {
+  // TaintFox: copy lhs and rhs since they are mutable.
+  RootedValue origLhs(cx, lhs);
+  RootedValue origRhs(cx, rhs);
+
+  if (!ToNumeric(cx, lhs) || !ToNumeric(cx, rhs)) {
+    return false;
+  }
+
+  if (lhs.isBigInt() || rhs.isBigInt()) {
+    return BigInt::divValue(cx, lhs, rhs, res);
+  }
+
+  res.setNumber(NumberDiv(lhs.toNumber(), rhs.toNumber()));
+  // TaintFox: Taint propagation when dividing tainted numbers.
+  if (isAnyTaintedNumber(origLhs, origRhs)) {
+    res.setObject(*NumberObject::createTainted(cx, res.toNumber(), getAnyNumberTaint(origLhs, origRhs)));
+  }
+  return true;
+}
+
+static MOZ_ALWAYS_INLINE bool ModOperation(JSContext* cx,
+                                           MutableHandleValue lhs,
+                                           MutableHandleValue rhs,
+                                           MutableHandleValue res) {
+  // TaintFox: copy lhs and rhs since they are mutable.
+  RootedValue origLhs(cx, lhs);
+  RootedValue origRhs(cx, rhs);
+
+  int32_t l, r;
+  if (lhs.isInt32() && rhs.isInt32() && (l = lhs.toInt32()) >= 0 &&
+      (r = rhs.toInt32()) > 0) {
+    int32_t mod = l % r;
+    res.setInt32(mod);
+    return true;
+  }
+
+  if (!ToNumeric(cx, lhs) || !ToNumeric(cx, rhs)) {
+    return false;
+  }
+
+  if (lhs.isBigInt() || rhs.isBigInt()) {
+    return BigInt::modValue(cx, lhs, rhs, res);
+  }
+
+  res.setNumber(NumberMod(lhs.toNumber(), rhs.toNumber()));
+  // TaintFox: Taint propagation when modding tainted numbers.
+  if (isAnyTaintedNumber(origLhs, origRhs)) {
+    res.setObject(*NumberObject::createTainted(cx, res.toNumber(), getAnyNumberTaint(origLhs, origRhs)));
+  }
+  return true;
+}
+  
+static MOZ_ALWAYS_INLINE bool PowOperation(JSContext* cx,
+                                           MutableHandleValue lhs,
+                                           MutableHandleValue rhs,
+                                           MutableHandleValue res) {
+  // TaintFox: copy lhs and rhs since they are mutable.
+  RootedValue origLhs(cx, lhs);
+  RootedValue origRhs(cx, rhs);
+
+  if (!ToNumeric(cx, lhs) || !ToNumeric(cx, rhs)) {
+    return false;
+  }
+
+  if (lhs.isBigInt() || rhs.isBigInt()) {
+    return BigInt::powValue(cx, lhs, rhs, res);
+  }
+
+  res.setNumber(ecmaPow(lhs.toNumber(), rhs.toNumber()));
+  // TaintFox: Taint propagation when taking power of tainted numbers.
+  if (isAnyTaintedNumber(origLhs, origRhs)) {
+    res.setObject(*NumberObject::createTainted(cx, res.toNumber(), getAnyNumberTaint(origLhs, origRhs)));
+  }
+  return true;
+}
+
+static MOZ_ALWAYS_INLINE bool BitNotOperation(JSContext* cx,
+                                              MutableHandleValue in,
+                                              MutableHandleValue out) {
+  // TaintFox: copy in since it is mutable.
+  RootedValue origIn(cx, in);
+
+  if (!ToInt32OrBigInt(cx, in)) {
+    return false;
+  }
+
+  if (in.isBigInt()) {
+    return BigInt::bitNotValue(cx, in, out);
+  }
+
+  out.setInt32(~in.toInt32());
+
+  // TaintFox: Taint propagation for bitwise not.
+  if (isTaintedNumber(origIn)) {
+    out.setObject(*NumberObject::createTainted(cx, out.toInt32(), getNumberTaint(origIn)));
+  }
+  return true;
+}
+
+static MOZ_ALWAYS_INLINE bool BitXorOperation(JSContext* cx,
+                                              MutableHandleValue lhs,
+                                              MutableHandleValue rhs,
+                                              MutableHandleValue out) {
+  // TaintFox: copy lhs and rhs since they are mutable.
+  RootedValue origLhs(cx, lhs);
+  RootedValue origRhs(cx, rhs);
+
+  if (!ToInt32OrBigInt(cx, lhs) || !ToInt32OrBigInt(cx, rhs)) {
+    return false;
+  }
+
+  if (lhs.isBigInt() || rhs.isBigInt()) {
+    return BigInt::bitXorValue(cx, lhs, rhs, out);
+  }
+
+  out.setInt32(lhs.toInt32() ^ rhs.toInt32());
+
+  // TaintFox: Taint propagation for bitwise xor.
+  if (isAnyTaintedNumber(origLhs, origRhs)) {
+    out.setObject(*NumberObject::createTainted(cx, out.toInt32(), getAnyNumberTaint(origLhs, origRhs)));
+  }
+  return true;
+}
+
+static MOZ_ALWAYS_INLINE bool BitOrOperation(JSContext* cx,
+                                             MutableHandleValue lhs,
+                                             MutableHandleValue rhs,
+                                             MutableHandleValue out) {
+  // TaintFox: copy lhs and rhs since they are mutable.
+  RootedValue origLhs(cx, lhs);
+  RootedValue origRhs(cx, rhs);
+
+  if (!ToInt32OrBigInt(cx, lhs) || !ToInt32OrBigInt(cx, rhs)) {
+    return false;
+  }
+
+  if (lhs.isBigInt() || rhs.isBigInt()) {
+    return BigInt::bitOrValue(cx, lhs, rhs, out);
+  }
+
+  out.setInt32(lhs.toInt32() | rhs.toInt32());
+
+  // TaintFox: Taint propagation for bitwise or.
+  if (isAnyTaintedNumber(origLhs, origRhs)) {
+    out.setObject(*NumberObject::createTainted(cx, out.toInt32(), getAnyNumberTaint(origLhs, origRhs)));
+  }
+  return true;
+}
+
+static MOZ_ALWAYS_INLINE bool BitAndOperation(JSContext* cx,
+                                              MutableHandleValue lhs,
+                                              MutableHandleValue rhs,
+                                              MutableHandleValue out) {
+  // TaintFox: copy lhs and rhs since they are mutable.
+  RootedValue origLhs(cx, lhs);
+  RootedValue origRhs(cx, rhs);
+
+  if (!ToInt32OrBigInt(cx, lhs) || !ToInt32OrBigInt(cx, rhs)) {
+    return false;
+  }
+
+  if (lhs.isBigInt() || rhs.isBigInt()) {
+    return BigInt::bitAndValue(cx, lhs, rhs, out);
+  }
+
+  out.setInt32(lhs.toInt32() & rhs.toInt32());
+
+  // TaintFox: Taint propagation for bitwise and.
+  if (isAnyTaintedNumber(origLhs, origRhs)) {
+    out.setObject(*NumberObject::createTainted(cx, out.toInt32(), getAnyNumberTaint(origLhs, origRhs)));
+  }
+  return true;
+}
+
+static MOZ_ALWAYS_INLINE bool BitLshOperation(JSContext* cx,
+                                              MutableHandleValue lhs,
+                                              MutableHandleValue rhs,
+                                              MutableHandleValue out) {
+  // TaintFox: copy lhs and rhs since they are mutable.
+  RootedValue origLhs(cx, lhs);
+  RootedValue origRhs(cx, rhs);
+
+  if (!ToInt32OrBigInt(cx, lhs) || !ToInt32OrBigInt(cx, rhs)) {
+    return false;
+  }
+
+  if (lhs.isBigInt() || rhs.isBigInt()) {
+    return BigInt::lshValue(cx, lhs, rhs, out);
+  }
+
+  // Signed left-shift is undefined on overflow, so |lhs << (rhs & 31)| won't
+  // work.  Instead, convert to unsigned space (where overflow is treated
+  // modularly), perform the operation there, then convert back.
+  uint32_t left = static_cast<uint32_t>(lhs.toInt32());
+  uint8_t right = rhs.toInt32() & 31;
+  out.setInt32(mozilla::WrapToSigned(left << right));
+
+  // TaintFox: Taint propagation for bitwise left shift.
+  if (isAnyTaintedNumber(origLhs, origRhs)) {
+    out.setObject(*NumberObject::createTainted(cx, out.toInt32(), getAnyNumberTaint(origLhs, origRhs)));
+  }
+  return true;
+}
+
+static MOZ_ALWAYS_INLINE bool BitRshOperation(JSContext* cx,
+                                              MutableHandleValue lhs,
+                                              MutableHandleValue rhs,
+                                              MutableHandleValue out) {
+  // TaintFox: copy lhs and rhs since they are mutable.
+  RootedValue origLhs(cx, lhs);
+  RootedValue origRhs(cx, rhs);
+
+  if (!ToInt32OrBigInt(cx, lhs) || !ToInt32OrBigInt(cx, rhs)) {
+    return false;
+  }
+
+  if (lhs.isBigInt() || rhs.isBigInt()) {
+    return BigInt::rshValue(cx, lhs, rhs, out);
+  }
+
+  out.setInt32(lhs.toInt32() >> (rhs.toInt32() & 31));
+
+  // TaintFox: Taint propagation for bitwise right shift.
+  if (isAnyTaintedNumber(origLhs, origRhs)) {
+    out.setObject(*NumberObject::createTainted(cx, out.toInt32(), getAnyNumberTaint(origLhs, origRhs)));
+  }
+  return true;
+}
+
+static MOZ_ALWAYS_INLINE bool UrshOperation(JSContext* cx,
+                                            MutableHandleValue lhs,
+                                            MutableHandleValue rhs,
+                                            MutableHandleValue out) {
+  // TaintFox: copy lhs and rhs since they are mutable.
+  RootedValue origLhs(cx, lhs);
+  RootedValue origRhs(cx, rhs);
+
+  if (!ToNumeric(cx, lhs) || !ToNumeric(cx, rhs)) {
+    return false;
+  }
+
+  if (lhs.isBigInt() || rhs.isBigInt()) {
+    JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
+                              JSMSG_BIGINT_TO_NUMBER);
+    return false;
+  }
+
+  uint32_t left;
+  int32_t right;
+  if (!ToUint32(cx, lhs, &left) || !ToInt32(cx, rhs, &right)) {
+    return false;
+  }
+  left >>= right & 31;
+  out.setNumber(uint32_t(left));
+
+  // TaintFox: Taint propagation for unsigned right shift.
+  if (isAnyTaintedNumber(origLhs, origRhs)) {
+    out.setObject(*NumberObject::createTainted(cx, out.toNumber(), getAnyNumberTaint(origLhs, origRhs)));
+  }
+  return true;
+}
+
+static MOZ_ALWAYS_INLINE void InitElemArrayOperation(JSContext* cx,
+                                                     jsbytecode* pc,
+                                                     Handle<ArrayObject*> arr,
+                                                     HandleValue val) {
+  MOZ_ASSERT(JSOp(*pc) == JSOp::InitElemArray);
+
+  // The dense elements must have been initialized up to this index. The JIT
+  // implementation also depends on this.
+  uint32_t index = GET_UINT32(pc);
+  MOZ_ASSERT(index < arr->getDenseCapacity());
+  MOZ_ASSERT(index == arr->getDenseInitializedLength());
+
+  // Bump the initialized length even for hole values to ensure the
+  // index == initLength invariant holds for later InitElemArray ops.
+  arr->setDenseInitializedLength(index + 1);
+
+  if (val.isMagic(JS_ELEMENTS_HOLE)) {
+    arr->initDenseElementHole(index);
+  } else {
+    arr->initDenseElement(index, val);
+  }
+}
+
+/*
+ * As an optimization, the interpreter creates a handful of reserved Rooted<T>
+ * variables at the beginning, thus inserting them into the Rooted list once
+ * upon entry. ReservedRooted "borrows" a reserved Rooted variable and uses it
+ * within a local scope, resetting the value to nullptr (or the appropriate
+ * equivalent for T) at scope end. This avoids inserting/removing the Rooted
+ * from the rooter list, while preventing stale values from being kept alive
+ * unnecessarily.
+ */
+
+template <typename T>
+class ReservedRooted : public RootedOperations<T, ReservedRooted<T>> {
+  Rooted<T>* savedRoot;
+
+ public:
+  ReservedRooted(Rooted<T>* root, const T& ptr) : savedRoot(root) {
+    *root = ptr;
+  }
+
+  explicit ReservedRooted(Rooted<T>* root) : savedRoot(root) {
+    *root = JS::SafelyInitialized<T>::create();
+  }
+
+  ~ReservedRooted() { *savedRoot = JS::SafelyInitialized<T>::create(); }
+
+  void set(const T& p) const { *savedRoot = p; }
+  operator Handle<T>() { return *savedRoot; }
+  operator Rooted<T>&() { return *savedRoot; }
+  MutableHandle<T> operator&() { return &*savedRoot; }
+
+  DECLARE_NONPOINTER_ACCESSOR_METHODS(savedRoot->get())
+  DECLARE_NONPOINTER_MUTABLE_ACCESSOR_METHODS(savedRoot->get())
+  DECLARE_POINTER_CONSTREF_OPS(T)
+  DECLARE_POINTER_ASSIGN_OPS(ReservedRooted, T)
+};
 
 } /* namespace js */
 

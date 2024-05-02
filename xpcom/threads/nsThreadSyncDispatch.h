@@ -9,6 +9,7 @@
 
 #include "mozilla/Atomics.h"
 #include "mozilla/DebugOnly.h"
+#include "mozilla/SpinEventLoopUntil.h"
 
 #include "nsThreadUtils.h"
 #include "LeakRefPtr.h"
@@ -27,6 +28,11 @@ class nsThreadSyncDispatch : public mozilla::Runnable {
     return mIsPending;
   }
 
+  void SpinEventLoopUntilComplete(const nsACString& aVeryGoodReasonToDoThis) {
+    mozilla::SpinEventLoopUntil(aVeryGoodReasonToDoThis,
+                                [&]() -> bool { return !IsPending(); });
+  }
+
  private:
   NS_IMETHOD Run() override {
     if (nsCOMPtr<nsIRunnable> task = mSyncTask.take()) {
@@ -43,7 +49,7 @@ class nsThreadSyncDispatch : public mozilla::Runnable {
       mIsPending = false;
 
       // unblock the origin thread
-      mOrigin->Dispatch(this, NS_DISPATCH_NORMAL);
+      mOrigin->Dispatch(this, NS_DISPATCH_IGNORE_BLOCK_DISPATCH);
     }
 
     return NS_OK;

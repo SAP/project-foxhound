@@ -38,8 +38,9 @@
 #  include <unistd.h>
 #endif
 
-// NB: Initial amount determined by auditing the codebase for the total amount
-//     of unique module names and padding up to the next power of 2.
+// NB: Amount determined by performing a typical browsing session and finding
+//     the maximum number of modules instantiated, and padding up to the next
+//     power of 2.
 const uint32_t kInitialModuleCount = 256;
 // When rotate option is added to the modules list, this is the hardcoded
 // number of files we create and rotate.  When there is rotate:40,
@@ -136,7 +137,7 @@ static const char* ExpandLogFileName(const char* aFilename,
 
   const char* pidTokenPtr = strstr(aFilename, kPIDToken);
   if (pidTokenPtr &&
-      SprintfLiteral(buffer, "%.*s%s%d%s%s",
+      SprintfLiteral(buffer, "%.*s%s%" PRIPID "%s%s",
                      static_cast<int>(pidTokenPtr - aFilename), aFilename,
                      XRE_IsParentProcess() ? "-main." : "-child.",
                      base::GetCurrentProcId(), pidTokenPtr + strlen(kPIDToken),
@@ -198,7 +199,7 @@ bool LimitFileToLessThanSize(const char* aFilename, uint32_t aSize,
 
     ScopedCloseFile temp;
 
-#if defined(OS_WIN)
+#if defined(XP_WIN)
     // This approach was cribbed from
     // https://searchfox.org/mozilla-central/rev/868935867c6241e1302e64cf9be8f56db0fd0d1c/xpcom/build/LateWriteChecks.cpp#158.
     HANDLE hFile;
@@ -221,7 +222,7 @@ bool LimitFileToLessThanSize(const char* aFilename, uint32_t aSize,
     }
 
     temp.reset(_fdopen(fd, "ab"));
-#elif defined(OS_POSIX)
+#elif defined(XP_UNIX)
 
     // Coverity would prefer us to set a secure umask before using `mkstemp`.
     // However, the umask is process-wide, so setting it may lead to difficult
@@ -272,13 +273,13 @@ bool LimitFileToLessThanSize(const char* aFilename, uint32_t aSize,
     return false;
   }
 
-#if defined(OS_WIN)
+#if defined(XP_WIN)
   if (!::ReplaceFileA(aFilename, tempFilename, nullptr, 0, 0, 0)) {
     NS_WARNING(
-        nsPrintfCString("ReplaceFileA failed: %d\n", GetLastError()).get());
+        nsPrintfCString("ReplaceFileA failed: %lu\n", GetLastError()).get());
     return false;
   }
-#elif defined(OS_POSIX)
+#elif defined(XP_UNIX)
   if (rename(tempFilename, aFilename)) {
     NS_WARNING(
         nsPrintfCString("rename failed: %s (%d)\n", strerror(errno), errno)
@@ -307,6 +308,9 @@ class LogModuleManager {
   LogModuleManager()
       : mModulesLock("logmodules"),
         mModules(kInitialModuleCount),
+#ifdef DEBUG
+        mLoggingModuleRegistered(0),
+#endif
         mPrintEntryCount(0),
         mOutFile(nullptr),
         mToReleaseFile(nullptr),
@@ -315,11 +319,12 @@ class LogModuleManager {
         mMainThread(PR_GetCurrentThread()),
         mSetFromEnv(false),
         mAddTimestamp(false),
-        mAddProfilerMarker(false),
+        mCaptureProfilerStack(false),
         mIsRaw(false),
         mIsSync(false),
         mRotate(0),
-        mInitialized(false) {}
+        mInitialized(false) {
+  }
 
   ~LogModuleManager() {
     detail::LogFile* logFile = mOutFile.exchange(nullptr);
@@ -358,7 +363,7 @@ class LogModuleManager {
     bool addTimestamp = false;
     bool isSync = false;
     bool isRaw = false;
-    bool isMarkers = false;
+    bool captureStacks = false;
     int32_t rotate = 0;
     int32_t maxSize = 0;
     bool prependHeader = false;
@@ -385,8 +390,8 @@ class LogModuleManager {
     NSPRLogModulesParser(
         modules,
         [this, &shouldAppend, &addTimestamp, &isSync, &isRaw, &rotate, &maxSize,
-         &prependHeader, &isMarkers](const char* aName, LogLevel aLevel,
-                                     int32_t aValue) mutable {
+         &prependHeader, &captureStacks](const char* aName, LogLevel aLevel,
+                                         int32_t aValue) mutable {
           if (strcmp(aName, "append") == 0) {
             shouldAppend = true;
           } else if (strcmp(aName, "timestamp") == 0) {
@@ -401,8 +406,8 @@ class LogModuleManager {
             maxSize = aValue << 20;
           } else if (strcmp(aName, "prependheader") == 0) {
             prependHeader = true;
-          } else if (strcmp(aName, "profilermarkers") == 0) {
-            isMarkers = true;
+          } else if (strcmp(aName, "profilerstacks") == 0) {
+            captureStacks = true;
           } else {
             this->CreateOrGetModule(aName)->SetLevel(aLevel);
           }
@@ -413,7 +418,7 @@ class LogModuleManager {
     mIsSync = isSync;
     mIsRaw = isRaw;
     mRotate = rotate;
-    mAddProfilerMarker = isMarkers;
+    mCaptureProfilerStack = captureStacks;
 
     if (rotate > 0 && shouldAppend) {
       NS_WARNING("MOZ_LOG: when you rotate the log, you cannot use append!");
@@ -520,6 +525,10 @@ class LogModuleManager {
 
   void SetIsSync(bool aIsSync) { mIsSync = aIsSync; }
 
+  void SetCaptureStacks(bool aCaptureStacks) {
+    mCaptureProfilerStack = aCaptureStacks;
+  }
+
   void SetAddTimestamp(bool aAddTimestamp) { mAddTimestamp = aAddTimestamp; }
 
   detail::LogFile* OpenFile(bool aShouldAppend, uint32_t aFileNum,
@@ -555,11 +564,19 @@ class LogModuleManager {
   LogModule* CreateOrGetModule(const char* aName) {
     OffTheBooksMutexAutoLock guard(mModulesLock);
     return mModules
-        .LookupOrInsertWith(aName,
-                            [&] {
-                              return UniquePtr<LogModule>(
-                                  new LogModule{aName, LogLevel::Disabled});
-                            })
+        .LookupOrInsertWith(
+            aName,
+            [&] {
+#ifdef DEBUG
+              if (++mLoggingModuleRegistered > kInitialModuleCount) {
+                NS_WARNING(
+                    "kInitialModuleCount too low, consider increasing its "
+                    "value");
+              }
+#endif
+              return UniquePtr<LogModule>(
+                  new LogModule{aName, LogLevel::Disabled});
+            })
         .get();
   }
 
@@ -599,7 +616,7 @@ class LogModuleManager {
       charsWritten = strlen(buffToWrite);
     }
 
-    if (mAddProfilerMarker && profiler_thread_is_being_profiled_for_markers()) {
+    if (profiler_thread_is_being_profiled_for_markers()) {
       struct LogMarker {
         static constexpr Span<const char> MarkerTypeName() {
           return MakeStringSpan("Log");
@@ -615,16 +632,20 @@ class LogModuleManager {
           using MS = MarkerSchema;
           MS schema{MS::Location::MarkerChart, MS::Location::MarkerTable};
           schema.SetTableLabel("({marker.data.module}) {marker.data.name}");
-          schema.AddKeyLabelFormat("module", "Module", MS::Format::String);
-          schema.AddKeyLabelFormat("name", "Name", MS::Format::String);
+          schema.AddKeyLabelFormatSearchable("module", "Module",
+                                             MS::Format::String,
+                                             MS::Searchable::Searchable);
+          schema.AddKeyLabelFormatSearchable("name", "Name", MS::Format::String,
+                                             MS::Searchable::Searchable);
           return schema;
         }
       };
 
       profiler_add_marker(
           "LogMessages", geckoprofiler::category::OTHER,
-          aStart ? MarkerTiming::IntervalUntilNowFrom(*aStart)
-                 : MarkerTiming::InstantNow(),
+          {aStart ? MarkerTiming::IntervalUntilNowFrom(*aStart)
+                  : MarkerTiming::InstantNow(),
+           MarkerStack::MaybeCapture(mCaptureProfilerStack)},
           LogMarker{}, ProfilerString8View::WrapNullTerminatedString(aName),
           ProfilerString8View::WrapNullTerminatedString(buffToWrite));
     }
@@ -756,6 +777,9 @@ class LogModuleManager {
   OffTheBooksMutex mModulesLock;
   nsClassHashtable<nsCharPtrHashKey, LogModule> mModules;
 
+#ifdef DEBUG
+  Atomic<uint32_t, ReleaseAcquire> mLoggingModuleRegistered;
+#endif
   // Print() entry counter, actually reflects concurrent use of the current
   // output file.  ReleaseAcquire ensures that manipulation with mOutFile
   // and mToReleaseFile is synchronized by manipulation with this value.
@@ -778,7 +802,7 @@ class LogModuleManager {
   PRThread* mMainThread;
   bool mSetFromEnv;
   Atomic<bool, Relaxed> mAddTimestamp;
-  Atomic<bool, Relaxed> mAddProfilerMarker;
+  Atomic<bool, Relaxed> mCaptureProfilerStack;
   Atomic<bool, Relaxed> mIsRaw;
   Atomic<bool, Relaxed> mIsSync;
   int32_t mRotate;
@@ -810,6 +834,10 @@ void LogModule::SetAddTimestamp(bool aAddTimestamp) {
 
 void LogModule::SetIsSync(bool aIsSync) {
   sLogModuleManager->SetIsSync(aIsSync);
+}
+
+void LogModule::SetCaptureStacks(bool aCaptureStacks) {
+  sLogModuleManager->SetCaptureStacks(aCaptureStacks);
 }
 
 // This function is defined in gecko_logger/src/lib.rs

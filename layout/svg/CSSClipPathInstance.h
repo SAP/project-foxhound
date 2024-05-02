@@ -26,6 +26,9 @@ class MOZ_STACK_CLASS CSSClipPathInstance {
  public:
   static void ApplyBasicShapeOrPathClip(gfxContext& aContext, nsIFrame* aFrame,
                                         const gfxMatrix& aTransform);
+  static RefPtr<Path> CreateClipPathForFrame(gfx::DrawTarget* aDt,
+                                             nsIFrame* aFrame,
+                                             const gfxMatrix& aTransform);
   // aPoint is in CSS pixels.
   static bool HitTestBasicShapeOrPathClip(nsIFrame* aFrame,
                                           const gfxPoint& aPoint);
@@ -52,7 +55,8 @@ class MOZ_STACK_CLASS CSSClipPathInstance {
   already_AddRefed<Path> CreateClipPathInset(DrawTarget* aDrawTarget,
                                              const nsRect& aRefBox);
 
-  already_AddRefed<Path> CreateClipPathPath(DrawTarget* aDrawTarget);
+  already_AddRefed<Path> CreateClipPathPath(DrawTarget* aDrawTarget,
+                                            const nsRect& aRefBox);
 
   /**
    * The frame for the element that is currently being clipped.

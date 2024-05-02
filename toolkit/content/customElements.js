@@ -21,16 +21,10 @@
   const MozElements = {};
   window.MozElements = MozElements;
 
-  const { Services } = ChromeUtils.import(
-    "resource://gre/modules/Services.jsm"
+  const { AppConstants } = ChromeUtils.importESModule(
+    "resource://gre/modules/AppConstants.sys.mjs"
   );
-  const { AppConstants } = ChromeUtils.import(
-    "resource://gre/modules/AppConstants.jsm"
-  );
-  const env = Cc["@mozilla.org/process/environment;1"].getService(
-    Ci.nsIEnvironment
-  );
-  const instrumentClasses = env.get("MOZ_INSTRUMENT_CUSTOM_ELEMENTS");
+  const instrumentClasses = Services.env.get("MOZ_INSTRUMENT_CUSTOM_ELEMENTS");
   const instrumentedClasses = instrumentClasses ? new Set() : null;
   const instrumentedBaseClasses = instrumentClasses ? new WeakSet() : null;
 
@@ -38,7 +32,7 @@
   // to modify the class so we can instrument function calls in local development:
   if (instrumentClasses) {
     let define = window.customElements.define;
-    window.customElements.define = function(name, c, opts) {
+    window.customElements.define = function (name, c, opts) {
       instrumentCustomElementClass(c);
       return define.call(this, name, c, opts);
     };
@@ -51,7 +45,7 @@
     );
   }
 
-  MozElements.printInstrumentation = function(collapsed) {
+  MozElements.printInstrumentation = function (collapsed) {
     let summaries = [];
     let totalCalls = 0;
     let totalTime = 0;
@@ -119,7 +113,7 @@
     let data = { instances: 0 };
 
     function wrapFunction(name, fn) {
-      return function() {
+      return function () {
         if (!data[name]) {
           data[name] = { time: 0, calls: 0 };
         }
@@ -370,9 +364,8 @@
 
         for (let [selector, newAttr] of list) {
           if (!(selector in this._inheritedElements)) {
-            this._inheritedElements[
-              selector
-            ] = this.getElementForAttrInheritance(selector);
+            this._inheritedElements[selector] =
+              this.getElementForAttrInheritance(selector);
           }
           let el = this._inheritedElements[selector];
           if (el) {
@@ -481,11 +474,6 @@
        *  class ElementA extends MozXULElement {
        *    static get markup() {
        *      return `<hbox class="example"`;
-       *    }
-       *
-       *    static get entities() {
-       *      // Optional field for parseXULToFragment
-       *      return `["chrome://global/locale/notification.dtd"]`;
        *    }
        *
        *    connectedCallback() {
@@ -652,18 +640,17 @@
         cls.prototype.customInterfaces = ifaces;
 
         cls.prototype.QueryInterface = ChromeUtils.generateQI(ifaces);
-        cls.prototype.getCustomInterfaceCallback = function getCustomInterfaceCallback(
-          ifaceToCheck
-        ) {
-          if (
-            cls.prototype.customInterfaces.some(iface =>
-              iface.equals(ifaceToCheck)
-            )
-          ) {
-            return getInterfaceProxy(this);
-          }
-          return null;
-        };
+        cls.prototype.getCustomInterfaceCallback =
+          function getCustomInterfaceCallback(ifaceToCheck) {
+            if (
+              cls.prototype.customInterfaces.some(iface =>
+                iface.equals(ifaceToCheck)
+              )
+            ) {
+              return getInterfaceProxy(this);
+            }
+            return null;
+          };
       }
     };
 
@@ -689,10 +676,10 @@
         get(target, prop, receiver) {
           let propOrMethod = target[prop];
           if (typeof propOrMethod == "function") {
-            if (propOrMethod instanceof MozQueryInterface) {
+            if (MozQueryInterface.isInstance(propOrMethod)) {
               return Reflect.get(target, prop, receiver);
             }
-            return function(...args) {
+            return function (...args) {
               return propOrMethod.apply(target, args);
             };
           }
@@ -748,14 +735,6 @@
         return this.getAttribute("label");
       }
 
-      set crop(val) {
-        this.setAttribute("crop", val);
-      }
-
-      get crop() {
-        return this.getAttribute("crop");
-      }
-
       set image(val) {
         this.setAttribute("image", val);
       }
@@ -809,6 +788,67 @@
     document.documentURI == "chrome://geckoview/content/geckoview.xhtml"
   );
   if (loadExtraCustomElements) {
+    // Lazily load the following elements
+    for (let [tag, script] of [
+      ["button-group", "chrome://global/content/elements/named-deck.js"],
+      ["findbar", "chrome://global/content/elements/findbar.js"],
+      ["menulist", "chrome://global/content/elements/menulist.js"],
+      ["message-bar", "chrome://global/content/elements/message-bar.js"],
+      ["named-deck", "chrome://global/content/elements/named-deck.js"],
+      ["named-deck-button", "chrome://global/content/elements/named-deck.js"],
+      ["panel-list", "chrome://global/content/elements/panel-list.js"],
+      ["search-textbox", "chrome://global/content/elements/search-textbox.js"],
+      ["stringbundle", "chrome://global/content/elements/stringbundle.js"],
+      [
+        "printpreview-pagination",
+        "chrome://global/content/printPreviewPagination.js",
+      ],
+      [
+        "autocomplete-input",
+        "chrome://global/content/elements/autocomplete-input.js",
+      ],
+      ["editor", "chrome://global/content/elements/editor.js"],
+    ]) {
+      customElements.setElementCreationCallback(tag, () => {
+        Services.scriptloader.loadSubScript(script, window);
+      });
+    }
+    // Bug 1813077: This is a workaround until Bug 1803810 lands
+    // which will give us the ability to load ESMs synchronously
+    // like the previous Services.scriptloader.loadSubscript() function
+    function importCustomElementFromESModule(name) {
+      switch (name) {
+        case "moz-button-group":
+          return import(
+            "chrome://global/content/elements/moz-button-group.mjs"
+          );
+        case "moz-message-bar":
+          return import("chrome://global/content/elements/moz-message-bar.mjs");
+        case "moz-support-link":
+          return import(
+            "chrome://global/content/elements/moz-support-link.mjs"
+          );
+        case "moz-toggle":
+          return import("chrome://global/content/elements/moz-toggle.mjs");
+      }
+      throw new Error(`Unknown custom element name (${name})`);
+    }
+
+    /*
+    This function explicitly returns null so that there is no confusion
+    about which custom elements from ES Modules have been loaded.
+    */
+    window.ensureCustomElements = function (...elementNames) {
+      return Promise.all(
+        elementNames
+          .filter(name => !customElements.get(name))
+          .map(name => importCustomElementFromESModule(name))
+      )
+        .then(() => null)
+        .catch(console.error);
+    };
+
+    // Immediately load the following elements
     for (let script of [
       "chrome://global/content/elements/arrowscrollbox.js",
       "chrome://global/content/elements/dialog.js",
@@ -832,30 +872,6 @@
       "chrome://global/content/elements/wizard.js",
     ]) {
       Services.scriptloader.loadSubScript(script, window);
-    }
-
-    for (let [tag, script] of [
-      ["button-group", "chrome://global/content/elements/named-deck.js"],
-      ["findbar", "chrome://global/content/elements/findbar.js"],
-      ["menulist", "chrome://global/content/elements/menulist.js"],
-      ["message-bar", "chrome://global/content/elements/message-bar.js"],
-      ["named-deck", "chrome://global/content/elements/named-deck.js"],
-      ["named-deck-button", "chrome://global/content/elements/named-deck.js"],
-      ["search-textbox", "chrome://global/content/elements/search-textbox.js"],
-      ["stringbundle", "chrome://global/content/elements/stringbundle.js"],
-      [
-        "printpreview-pagination",
-        "chrome://global/content/printPreviewPagination.js",
-      ],
-      [
-        "autocomplete-input",
-        "chrome://global/content/elements/autocomplete-input.js",
-      ],
-      ["editor", "chrome://global/content/elements/editor.js"],
-    ]) {
-      customElements.setElementCreationCallback(tag, () => {
-        Services.scriptloader.loadSubScript(script, window);
-      });
     }
   }
 })();

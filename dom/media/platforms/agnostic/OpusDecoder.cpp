@@ -12,13 +12,12 @@
 #include "TimeUnits.h"
 #include "VideoUtils.h"
 #include "VorbisDecoder.h"  // For VorbisLayout
-#include "VorbisUtils.h"
 #include "mozilla/EndianUtils.h"
 #include "mozilla/PodOperations.h"
 #include "mozilla/SyncRunnable.h"
-#include "opus/opus.h"
+#include <opus/opus.h>
 extern "C" {
-#include "opus/opus_multistream.h"
+#include <opus/opus_multistream.h>
 }
 
 #define OPUS_DEBUG(arg, ...)                                           \
@@ -51,28 +50,23 @@ RefPtr<ShutdownPromise> OpusDataDecoder::Shutdown() {
   return ShutdownPromise::CreateAndResolve(true, __func__);
 }
 
-void OpusDataDecoder::AppendCodecDelay(MediaByteBuffer* config,
-                                       uint64_t codecDelayUS) {
-  uint8_t buffer[sizeof(uint64_t)];
-  BigEndian::writeUint64(buffer, codecDelayUS);
-  config->AppendElements(buffer, sizeof(uint64_t));
-}
-
 RefPtr<MediaDataDecoder::InitPromise> OpusDataDecoder::Init() {
   mThread = GetCurrentSerialEventTarget();
-  size_t length = mInfo.mCodecSpecificConfig->Length();
-  uint8_t* p = mInfo.mCodecSpecificConfig->Elements();
-  if (length < sizeof(uint64_t)) {
-    OPUS_DEBUG("CodecSpecificConfig too short to read codecDelay!");
+  if (!mInfo.mCodecSpecificConfig.is<OpusCodecSpecificData>()) {
+    MOZ_ASSERT_UNREACHABLE();
+    OPUS_DEBUG("Opus decoder got non-opus codec specific data");
     return InitPromise::CreateAndReject(
         MediaResult(
             NS_ERROR_DOM_MEDIA_FATAL_ERR,
-            RESULT_DETAIL("CodecSpecificConfig too short to read codecDelay!")),
+            RESULT_DETAIL("Opus decoder got non-opus codec specific data!")),
         __func__);
   }
-  int64_t codecDelay = BigEndian::readUint64(p);
-  length -= sizeof(uint64_t);
-  p += sizeof(uint64_t);
+  const OpusCodecSpecificData opusCodecSpecificData =
+      mInfo.mCodecSpecificConfig.as<OpusCodecSpecificData>();
+  RefPtr<MediaByteBuffer> opusHeaderBlob =
+      opusCodecSpecificData.mHeadersBinaryBlob;
+  size_t length = opusHeaderBlob->Length();
+  uint8_t* p = opusHeaderBlob->Elements();
   if (NS_FAILED(DecodeHeader(p, length))) {
     OPUS_DEBUG("Error decoding header!");
     return InitPromise::CreateAndReject(
@@ -108,12 +102,14 @@ RefPtr<MediaDataDecoder::InitPromise> OpusDataDecoder::Init() {
   mSkip = mOpusParser->mPreSkip;
   mPaddingDiscarded = false;
 
-  if (codecDelay !=
-      FramesToUsecs(mOpusParser->mPreSkip, mOpusParser->mRate).value()) {
+  if (opusCodecSpecificData.mContainerCodecDelayFrames !=
+      mOpusParser->mPreSkip) {
     NS_WARNING(
         "Invalid Opus header: container CodecDelay and Opus pre-skip do not "
         "match!");
   }
+  OPUS_DEBUG("Opus preskip in extradata: %" PRId64 " frames",
+             opusCodecSpecificData.mContainerCodecDelayFrames);
 
   if (mInfo.mRate != (uint32_t)mOpusParser->mRate) {
     NS_WARNING("Invalid Opus header: container and codec rate do not match!");
@@ -180,6 +176,7 @@ nsresult OpusDataDecoder::DecodeHeader(const unsigned char* aData,
 RefPtr<MediaDataDecoder::DecodePromise> OpusDataDecoder::Decode(
     MediaRawData* aSample) {
   MOZ_ASSERT(mThread->IsOnCurrentThread());
+  PROCESS_DECODE_LOG(aSample);
   uint32_t channels = mOpusParser->mChannels;
 
   if (mPaddingDiscarded) {
@@ -259,35 +256,23 @@ RefPtr<MediaDataDecoder::DecodePromise> OpusDataDecoder::Decode(
   NS_ASSERTION(ret == frames, "Opus decoded too few audio samples");
   auto startTime = aSample->mTime;
 
+  OPUS_DEBUG("Decoding frames: [%lf, %lf]", aSample->mTime.ToSeconds(),
+             aSample->GetEndTime().ToSeconds());
+
   // Trim the initial frames while the decoder is settling.
   if (mSkip > 0) {
     int32_t skipFrames = std::min<int32_t>(mSkip, frames);
     int32_t keepFrames = frames - skipFrames;
-    OPUS_DEBUG("Opus decoder skipping %d of %d frames", skipFrames, frames);
+    OPUS_DEBUG("Opus decoder trimming %d of %d frames", skipFrames, frames);
     PodMove(buffer.get(), buffer.get() + skipFrames * channels,
             keepFrames * channels);
-    startTime = startTime + FramesToTimeUnit(skipFrames, mOpusParser->mRate);
+    startTime = startTime + media::TimeUnit(skipFrames, mOpusParser->mRate);
     frames = keepFrames;
     mSkip -= skipFrames;
-  }
-
-  if (aSample->mDiscardPadding > 0) {
-    OPUS_DEBUG("Opus decoder discarding %u of %d frames",
-               aSample->mDiscardPadding, frames);
-    // Padding discard is only supposed to happen on the final packet.
-    // Record the discard so we can return an error if another packet is
-    // decoded.
-    if (aSample->mDiscardPadding > uint32_t(frames)) {
-      // Discarding more than the entire packet is invalid.
-      OPUS_DEBUG("Opus error, discard padding larger than packet");
-      return DecodePromise::CreateAndReject(
-          MediaResult(NS_ERROR_DOM_MEDIA_FATAL_ERR,
-                      RESULT_DETAIL("Discard padding larger than packet")),
-          __func__);
-    }
-
-    mPaddingDiscarded = true;
-    frames = frames - aSample->mDiscardPadding;
+    aSample->mTime += media::TimeUnit(skipFrames, 48000);
+    aSample->mDuration -= media::TimeUnit(skipFrames, 48000);
+    OPUS_DEBUG("Adjusted frame after trimming pre-roll: [%lf, %lf]",
+               aSample->mTime.ToSeconds(), aSample->GetEndTime().ToSeconds());
   }
 
   // Apply the header gain if one was specified.
@@ -310,7 +295,7 @@ RefPtr<MediaDataDecoder::DecodePromise> OpusDataDecoder::Decode(
   }
 #endif
 
-  auto duration = FramesToTimeUnit(frames, mOpusParser->mRate);
+  auto duration = media::TimeUnit(frames, mOpusParser->mRate);
   if (!duration.IsValid()) {
     return DecodePromise::CreateAndReject(
         MediaResult(NS_ERROR_DOM_MEDIA_OVERFLOW_ERR,
@@ -318,8 +303,8 @@ RefPtr<MediaDataDecoder::DecodePromise> OpusDataDecoder::Decode(
         __func__);
   }
   auto time = startTime -
-              FramesToTimeUnit(mOpusParser->mPreSkip, mOpusParser->mRate) +
-              FramesToTimeUnit(mFrames, mOpusParser->mRate);
+              media::TimeUnit(mOpusParser->mPreSkip, mOpusParser->mRate) +
+              media::TimeUnit(mFrames, mOpusParser->mRate);
   if (!time.IsValid()) {
     return DecodePromise::CreateAndReject(
         MediaResult(NS_ERROR_DOM_MEDIA_OVERFLOW_ERR,
@@ -328,6 +313,9 @@ RefPtr<MediaDataDecoder::DecodePromise> OpusDataDecoder::Decode(
   };
 
   mFrames += frames;
+  mTotalFrames += frames;
+
+  OPUS_DEBUG("Total frames so far: %" PRId64, mTotalFrames);
 
   if (!frames) {
     return DecodePromise::CreateAndResolve(DecodedData(), __func__);

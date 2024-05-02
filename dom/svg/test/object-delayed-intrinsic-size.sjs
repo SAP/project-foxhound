@@ -10,17 +10,15 @@ function handleRequest(request, response) {
   // while waiting for the rest of the document to load:
   response.bodyOutputStream.write("\n", 1);
 
-  timer = Components.classes["@mozilla.org/timer;1"].createInstance(
-    Components.interfaces.nsITimer
-  );
+  timer = Cc["@mozilla.org/timer;1"].createInstance(Ci.nsITimer);
   timer.initWithCallback(
-    function() {
+    function () {
       var body =
         "<svg xmlns='http://www.w3.org/2000/svg' width='70' height='0'></svg>";
       response.bodyOutputStream.write(body, body.length);
       response.finish();
     },
     1000 /* milliseconds */,
-    Components.interfaces.nsITimer.TYPE_ONE_SHOT
+    Ci.nsITimer.TYPE_ONE_SHOT
   );
 }

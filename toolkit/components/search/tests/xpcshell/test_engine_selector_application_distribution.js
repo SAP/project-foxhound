@@ -3,11 +3,10 @@
 
 "use strict";
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  SearchEngineSelector: "resource://gre/modules/SearchEngineSelector.jsm",
+ChromeUtils.defineESModuleGetters(this, {
+  SearchEngineSelectorOld:
+    "resource://gre/modules/SearchEngineSelectorOld.sys.mjs",
 });
-
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 const CONFIG = [
   {
@@ -65,8 +64,9 @@ const CONFIG = [
   },
 ];
 
-const engineSelector = new SearchEngineSelector();
-add_task(async function setup() {
+const engineSelector = new SearchEngineSelectorOld();
+add_setup(async function () {
+  Services.prefs.setBoolPref("browser.search.newSearchConfig.enabled", false);
   await SearchTestUtils.useTestEngines("data", null, CONFIG);
   await AddonTestUtils.promiseStartupManager();
 });

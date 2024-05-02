@@ -16,6 +16,7 @@
 #include "nsServiceManagerUtils.h"
 #include "nsIInterfaceRequestor.h"
 #include "nsIInterfaceRequestorUtils.h"
+#include "nsIRedirectHistoryEntry.h"
 #include "nsNetUtil.h"
 #include "nsContentSecurityManager.h"
 #include "nsExternalHelperAppService.h"
@@ -119,7 +120,8 @@ NS_IMETHODIMP nsExtProtocolChannel::SetNotificationCallbacks(
 }
 
 NS_IMETHODIMP
-nsExtProtocolChannel::GetSecurityInfo(nsISupports** aSecurityInfo) {
+nsExtProtocolChannel::GetSecurityInfo(
+    nsITransportSecurityInfo** aSecurityInfo) {
   *aSecurityInfo = nullptr;
   return NS_OK;
 }
@@ -170,9 +172,9 @@ nsresult nsExtProtocolChannel::OpenURL() {
       mLoadInfo->RedirectChain().LastElement()->GetPrincipal(
           getter_AddRefs(redirectPrincipal));
     }
-    rv =
-        extProtService->LoadURI(mUrl, triggeringPrincipal, redirectPrincipal,
-                                ctx, mLoadInfo->GetLoadTriggeredFromExternal());
+    rv = extProtService->LoadURI(mUrl, triggeringPrincipal, redirectPrincipal,
+                                 ctx, mLoadInfo->GetLoadTriggeredFromExternal(),
+                                 mLoadInfo->GetHasValidUserGestureActivation());
 
     if (NS_SUCCEEDED(rv) && mListener) {
       mStatus = NS_ERROR_NO_CONTENT;
@@ -347,6 +349,20 @@ NS_IMETHODIMP nsExtProtocolChannel::GetStatus(nsresult* status) {
   return NS_OK;
 }
 
+NS_IMETHODIMP nsExtProtocolChannel::SetCanceledReason(
+    const nsACString& aReason) {
+  return SetCanceledReasonImpl(aReason);
+}
+
+NS_IMETHODIMP nsExtProtocolChannel::GetCanceledReason(nsACString& aReason) {
+  return GetCanceledReasonImpl(aReason);
+}
+
+NS_IMETHODIMP nsExtProtocolChannel::CancelWithReason(
+    nsresult aStatus, const nsACString& aReason) {
+  return CancelWithReasonImpl(aStatus, aReason);
+}
+
 NS_IMETHODIMP nsExtProtocolChannel::Cancel(nsresult status) {
   if (NS_SUCCEEDED(mStatus)) {
     mStatus = status;
@@ -422,12 +438,6 @@ NS_IMETHODIMP nsExtProtocolChannel::NotifyClassificationFlags(
   return NS_OK;
 }
 
-NS_IMETHODIMP nsExtProtocolChannel::NotifyFlashPluginStateChanged(
-    nsIHttpChannel::FlashPluginState aState) {
-  // nothing to do
-  return NS_OK;
-}
-
 NS_IMETHODIMP nsExtProtocolChannel::Delete() {
   // nothing to do
   return NS_OK;
@@ -480,11 +490,6 @@ NS_IMETHODIMP nsExternalProtocolHandler::GetScheme(nsACString& aScheme) {
   return NS_OK;
 }
 
-NS_IMETHODIMP nsExternalProtocolHandler::GetDefaultPort(int32_t* aDefaultPort) {
-  *aDefaultPort = 0;
-  return NS_OK;
-}
-
 NS_IMETHODIMP
 nsExternalProtocolHandler::AllowPort(int32_t port, const char* scheme,
                                      bool* _retval) {
@@ -507,13 +512,6 @@ bool nsExternalProtocolHandler::HaveExternalProtocolHandler(nsIURI* aURI) {
   bool haveHandler = false;
   extProtSvc->ExternalProtocolHandlerExists(scheme.get(), &haveHandler);
   return haveHandler;
-}
-
-NS_IMETHODIMP nsExternalProtocolHandler::GetProtocolFlags(uint32_t* aUritype) {
-  // Make it norelative since it is a simple uri
-  *aUritype = URI_NORELATIVE | URI_NOAUTH | URI_LOADABLE_BY_ANYONE |
-              URI_NON_PERSISTABLE | URI_DOES_NOT_RETURN_DATA;
-  return NS_OK;
 }
 
 NS_IMETHODIMP

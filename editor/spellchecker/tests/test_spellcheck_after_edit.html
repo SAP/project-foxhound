@@ -8,8 +8,9 @@
 </head>
 <body>
 <script>
-let {onSpellCheck} =
-  SpecialPowers.Cu.import("resource://testing-common/AsyncSpellCheckTestHelper.jsm", {});
+let { maybeOnSpellCheck } = SpecialPowers.ChromeUtils.importESModule(
+  "resource://testing-common/AsyncSpellCheckTestHelper.sys.mjs"
+);
 
 function waitForTick() {
   return new Promise(resolve =>
@@ -30,7 +31,7 @@ async function waitForOnSpellCheck(
   info(`Waiting for onSpellCheck (${aWhen})...`);
   for (let retry = 0; retry < 100; retry++) {
     await waitForTick();
-    await new Promise(resolve => onSpellCheck(aEditingHost, resolve));
+    await new Promise(resolve => maybeOnSpellCheck(aEditingHost, resolve));
     if (aWaitForNumberOfMisspelledWords === 0) {
       if (aSpellCheckSelection.rangeCount === 0) {
         break;
@@ -62,7 +63,6 @@ SimpleTest.waitForFocus(async () => {
       {
         init: (normalSel, editingHost) => {
           info("Staring to test spellcheck of misspelled word after joining paragraphs");
-          // eslint-disable-next-line no-unsanitized/property
           editingHost.innerHTML = "<p>It is</p><p>what I want</p>";
           normalSel.collapse(editingHost.querySelector("p + p").firstChild, 0);
           return 0;
@@ -82,7 +82,6 @@ SimpleTest.waitForFocus(async () => {
       {
         init: (normalSel, editingHost) => {
           info("Staring to test spellcheck of correct word after joining paragraphs");
-          // eslint-disable-next-line no-unsanitized/property
           editingHost.innerHTML = "<p>It's beco</p><p>ming nicer</p>";
           normalSel.collapse(editingHost.querySelector("p + p").firstChild, 0);
           return 2;
@@ -102,7 +101,6 @@ SimpleTest.waitForFocus(async () => {
       {
         init: (normalSel, editingHost) => {
           info("Staring to test spellcheck of correct words after splitting a paragraph");
-          // eslint-disable-next-line no-unsanitized/property
           editingHost.innerHTML = "<p>It iswhat I want</p>";
           normalSel.collapse(editingHost.querySelector("p").firstChild, "It is".length);
           return 1;
@@ -122,7 +120,6 @@ SimpleTest.waitForFocus(async () => {
       {
         init: (normalSel, editingHost) => {
           info("Staring to test spellcheck of misspelled words after splitting a paragraph");
-          // eslint-disable-next-line no-unsanitized/property
           editingHost.innerHTML = "<p>It's becoming nicer</p>";
           normalSel.collapse(editingHost.querySelector("p").firstChild, "It's beco".length);
           return 0;

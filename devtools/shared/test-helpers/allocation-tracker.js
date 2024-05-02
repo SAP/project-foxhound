@@ -35,16 +35,13 @@
 
 "use strict";
 
-const { Cu, Cc, Ci } = require("chrome");
-const ChromeUtils = require("ChromeUtils");
-
 const MemoryReporter = Cc["@mozilla.org/memory-reporter-manager;1"].getService(
   Ci.nsIMemoryReporterManager
 );
 
 const global = Cu.getGlobalForObject(this);
-const { addDebuggerToGlobal } = ChromeUtils.import(
-  "resource://gre/modules/jsdebugger.jsm"
+const { addDebuggerToGlobal } = ChromeUtils.importESModule(
+  "resource://gre/modules/jsdebugger.sys.mjs"
 );
 addDebuggerToGlobal(global);
 
@@ -59,7 +56,7 @@ addDebuggerToGlobal(global);
  * @param Boolean watchAllGlobals
  *        If true, only allocations made from DevTools contexts are going to be recorded.
  */
-exports.allocationTracker = function({
+exports.allocationTracker = function ({
   watchGlobal,
   watchAllGlobals,
   watchDevToolsGlobals,
@@ -82,7 +79,7 @@ exports.allocationTracker = function({
     acceptGlobal = () => true;
   } else if (watchDevToolsGlobals) {
     // Only accept globals related to DevTools
-    const builtinGlobal = require("devtools/shared/loader/builtin-modules");
+    const builtinGlobal = require("resource://devtools/shared/loader/builtin-modules.js");
     acceptGlobal = g => {
       // self-hosting-global crashes when trying to call unsafeDereference
       if (g.class == "self-hosting-global") {
@@ -99,12 +96,12 @@ exports.allocationTracker = function({
       let accept = !!location.match(/devtools/i);
 
       // Also ignore the dedicated Sandbox used to spawn builtin-modules,
-      // as well as its internal Sandbox used to fetch various platform globals.
+      // as well as its internal ChromeDebugger Sandbox.
       // We ignore the global used by the dedicated loader used to load
       // the allocation-tracker module.
       if (
         ref == Cu.getGlobalForObject(builtinGlobal) ||
-        ref == builtinGlobal.internalSandbox
+        ref == Cu.getGlobalForObject(builtinGlobal.modules.ChromeDebugger)
       ) {
         accept = false;
       }
@@ -132,7 +129,7 @@ exports.allocationTracker = function({
 
   // addAllGlobalsAsDebuggees won't automatically track new ones,
   // so ensure tracking all new globals
-  dbg.onNewGlobalObject = function(g) {
+  dbg.onNewGlobalObject = function (g) {
     if (acceptGlobal(g)) {
       dbg.addDebuggee(g);
     }
@@ -200,7 +197,7 @@ exports.allocationTracker = function({
       // If means that the test we are recording is having pending operation which aren't properly recorded.
       if (!watchAllGlobals) {
         const allocations = dbg.memory.drainAllocationsLog();
-        if (allocations.length > 0) {
+        if (allocations.length) {
           this.logAllocationLog(
             allocations,
             "Allocation that happened during the GC"

@@ -2,6 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+import atexit
 import collections
 import itertools
 import json
@@ -10,13 +11,11 @@ import os
 import re
 import runpy
 import sys
-import atexit
-import six
-from . import shared_telemetry_utils as utils
-
-from ctypes import c_int
-from .shared_telemetry_utils import ParserError
 from collections import OrderedDict
+from ctypes import c_int
+
+from . import shared_telemetry_utils as utils
+from .shared_telemetry_utils import ParserError
 
 atexit.register(ParserError.exit_func)
 
@@ -601,22 +600,22 @@ class Histogram:
             "low": int,
             "high": int,
             "keyed": bool,
-            "expires_in_version": six.string_types,
-            "kind": six.string_types,
-            "description": six.string_types,
-            "releaseChannelCollection": six.string_types,
+            "expires_in_version": str,
+            "kind": str,
+            "description": str,
+            "releaseChannelCollection": str,
         }
 
         # For list fields we check the items types.
         type_checked_list_fields = {
             "bug_numbers": int,
-            "alert_emails": six.string_types,
-            "labels": six.string_types,
-            "record_in_processes": six.string_types,
-            "keys": six.string_types,
-            "products": six.string_types,
-            "operating_systems": six.string_types,
-            "record_into_store": six.string_types,
+            "alert_emails": str,
+            "labels": str,
+            "record_in_processes": str,
+            "keys": str,
+            "products": str,
+            "operating_systems": str,
+            "record_into_store": str,
         }
 
         # For the server-side, where _strict_type_checks==False, we want to
@@ -863,7 +862,7 @@ def add_css_property_counters(histograms, property_name):
 def from_ServoCSSPropList(filename, strict_type_checks):
     histograms = collections.OrderedDict()
     properties = runpy.run_path(filename)["data"]
-    for prop in properties:
+    for prop in properties.values():
         add_css_property_counters(histograms, prop.name)
     return histograms
 
@@ -963,7 +962,7 @@ def from_files(filenames, strict_type_checks=True):
         if not isinstance(histograms, OrderedDict):
             ParserError("Histogram parser did not provide an OrderedDict.").handle_now()
 
-        for (name, definition) in histograms.items():
+        for name, definition in histograms.items():
             if name in all_histograms:
                 ParserError('Duplicate histogram name "%s".' % name).handle_later()
             all_histograms[name] = definition
@@ -1006,5 +1005,5 @@ def from_files(filenames, strict_type_checks=True):
             )
             ParserError(msg % (", ".join(sorted(orphaned)))).handle_later()
 
-    for (name, definition) in all_histograms.items():
+    for name, definition in all_histograms.items():
         yield Histogram(name, definition, strict_type_checks=strict_type_checks)

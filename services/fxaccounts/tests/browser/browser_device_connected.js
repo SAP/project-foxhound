@@ -1,27 +1,22 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
-const { FxAccounts } = ChromeUtils.import(
-  "resource://gre/modules/FxAccounts.jsm"
+const { FxAccounts } = ChromeUtils.importESModule(
+  "resource://gre/modules/FxAccounts.sys.mjs"
 );
 
 const gBrowserGlue = Cc["@mozilla.org/browser/browserglue;1"].getService(
   Ci.nsIObserver
 );
-const accountsBundle = Services.strings.createBundle(
-  "chrome://browser/locale/accounts.properties"
-);
 const DEVICES_URL = "https://example.com/devices";
 
-let expectedBody;
-
-add_task(async function setup() {
+add_setup(async function () {
   const origManageDevicesURI = FxAccounts.config.promiseManageDevicesURI;
   FxAccounts.config.promiseManageDevicesURI = () =>
     Promise.resolve(DEVICES_URL);
   setupMockAlertsService();
 
-  registerCleanupFunction(function() {
+  registerCleanupFunction(function () {
     FxAccounts.config.promiseManageDevicesURI = origManageDevicesURI;
     delete window.FxAccounts;
   });
@@ -29,7 +24,10 @@ add_task(async function setup() {
 
 async function testDeviceConnected(deviceName) {
   info("testDeviceConnected with deviceName=" + deviceName);
-  BrowserTestUtils.loadURI(gBrowser.selectedBrowser, "about:mozilla");
+  BrowserTestUtils.startLoadingURIString(
+    gBrowser.selectedBrowser,
+    "about:mozilla"
+  );
   await waitForDocLoadComplete();
 
   let waitForTabPromise = BrowserTestUtils.waitForNewTab(gBrowser);
@@ -44,17 +42,10 @@ async function testDeviceConnected(deviceName) {
   BrowserTestUtils.removeTab(tab);
 }
 
-add_task(async function() {
-  expectedBody = accountsBundle.formatStringFromName(
-    "otherDeviceConnectedBody",
-    ["My phone"]
-  );
+add_task(async function () {
   await testDeviceConnected("My phone");
 });
 
-add_task(async function() {
-  expectedBody = accountsBundle.GetStringFromName(
-    "otherDeviceConnectedBody.noDeviceName"
-  );
+add_task(async function () {
   await testDeviceConnected(null);
 });

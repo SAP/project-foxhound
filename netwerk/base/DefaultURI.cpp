@@ -6,6 +6,10 @@
 #include "nsIClassInfoImpl.h"
 #include "nsIObjectInputStream.h"
 #include "nsIObjectOutputStream.h"
+#include "nsURLHelper.h"
+
+#include "mozilla/ipc/URIParams.h"
+
 namespace mozilla {
 namespace net {
 
@@ -224,6 +228,11 @@ NS_IMETHODIMP DefaultURI::GetHasRef(bool* aHasRef) {
   return NS_OK;
 }
 
+NS_IMETHODIMP DefaultURI::GetHasUserPass(bool* aHasUserPass) {
+  *aHasUserPass = !mURL->Username().IsEmpty() || !mURL->Password().IsEmpty();
+  return NS_OK;
+}
+
 NS_IMETHODIMP DefaultURI::GetFilePath(nsACString& aFilePath) {
   aFilePath = mURL->FilePath();
   return NS_OK;
@@ -231,6 +240,11 @@ NS_IMETHODIMP DefaultURI::GetFilePath(nsACString& aFilePath) {
 
 NS_IMETHODIMP DefaultURI::GetQuery(nsACString& aQuery) {
   aQuery = mURL->Query();
+  return NS_OK;
+}
+
+NS_IMETHODIMP DefaultURI::GetHasQuery(bool* aHasQuery) {
+  *aHasQuery = mURL->HasQuery();
   return NS_OK;
 }
 

@@ -47,7 +47,7 @@ add_task(async function withMultiSelectedTabs() {
 
   is(
     SessionStore.getLastClosedTabCount(window),
-    SessionStore.getClosedTabCount(window) ? 1 : 0,
+    SessionStore.getClosedTabCountForWindow(window) ? 1 : 0,
     "LastClosedTabCount should be reset"
   );
 
@@ -95,6 +95,7 @@ add_task(async function withBothGroupsAndTab() {
     "SessionStore should know how many tabs were just closed"
   );
 
+  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
   let tab4 = await addTab("http://example.com/4");
 
   is(

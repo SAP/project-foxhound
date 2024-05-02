@@ -4,84 +4,67 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_quota_quotaobject_h__
-#define mozilla_dom_quota_quotaobject_h__
+#ifndef DOM_QUOTA_QUOTAOBJECT_H_
+#define DOM_QUOTA_QUOTAOBJECT_H_
 
-// Local includes
-#include "Client.h"
+#include "nsISupportsImpl.h"
 
-// Global includes
-#include <cstdint>
-#include "mozilla/AlreadyAddRefed.h"
-#include "mozilla/RefPtr.h"
-#include "nsCOMPtr.h"
-#include "nsISupports.h"
-#include "nsStringFwd.h"
-
-// XXX Avoid including this here by moving function bodies to the cpp file.
-#include "mozilla/dom/quota/QuotaCommon.h"
+class nsIInterfaceRequestor;
 
 namespace mozilla::dom::quota {
 
-class OriginInfo;
-class QuotaManager;
+class CanonicalQuotaObject;
+class IPCQuotaObject;
+class RemoteQuotaObject;
 
+// QuotaObject type is serializable, but only in a restricted manner. The type
+// is only safe to serialize in the parent process and only when the type
+// hasn't been previously deserialized. So the type can be serialized in the
+// parent process and deserialized in a child process or it can be serialized
+// in the parent process and deserialized in the parent process as well
+// (non-e10s mode). The same type can never be serialized/deserialized more
+// than once.
+// The deserialized type (remote variant) can only be used on the thread it was
+// deserialized on and it will stop working if the thread it was sent from is
+// shutdown (consumers should make sure that the originating thread is kept
+// alive for the necessary time).
 class QuotaObject {
-  friend class OriginInfo;
-  friend class QuotaManager;
-
-  class StoragePressureRunnable;
-
  public:
-  void AddRef();
+  NS_INLINE_DECL_PURE_VIRTUAL_REFCOUNTING
 
-  void Release();
+  CanonicalQuotaObject* AsCanonicalQuotaObject();
 
-  const nsAString& Path() const { return mPath; }
+  RemoteQuotaObject* AsRemoteQuotaObject();
 
-  [[nodiscard]] bool MaybeUpdateSize(int64_t aSize, bool aTruncate);
+  // Serialize this QuotaObject. This method works only in the parent process
+  // and only with objects which haven't been previously deserialized.
+  // The serial event target where this method is called should be highly
+  // available, as it will be used to process requests from the remote variant.
+  IPCQuotaObject Serialize(nsIInterfaceRequestor* aCallbacks);
 
-  bool IncreaseSize(int64_t aDelta);
+  // Deserialize a QuotaObject. This method works in both the child and parent.
+  // The deserialized QuotaObject can only be used on the calling serial event
+  // target.
+  static RefPtr<QuotaObject> Deserialize(IPCQuotaObject& aQuotaObject);
 
-  void DisableQuotaCheck();
+  virtual const nsAString& Path() const = 0;
 
-  void EnableQuotaCheck();
+  [[nodiscard]] virtual bool MaybeUpdateSize(int64_t aSize, bool aTruncate) = 0;
 
- private:
-  QuotaObject(OriginInfo* aOriginInfo, Client::Type aClientType,
-              const nsAString& aPath, int64_t aSize)
-      : mOriginInfo(aOriginInfo),
-        mPath(aPath),
-        mSize(aSize),
-        mClientType(aClientType),
-        mQuotaCheckDisabled(false),
-        mWritingDone(false) {
-    MOZ_COUNT_CTOR(QuotaObject);
-  }
+  virtual bool IncreaseSize(int64_t aDelta) = 0;
 
-  MOZ_COUNTED_DTOR(QuotaObject)
+  virtual void DisableQuotaCheck() = 0;
 
-  already_AddRefed<QuotaObject> LockedAddRef() {
-    AssertCurrentThreadOwnsQuotaMutex();
+  virtual void EnableQuotaCheck() = 0;
 
-    ++mRefCnt;
+ protected:
+  QuotaObject(bool aIsRemote) : mIsRemote(aIsRemote) {}
 
-    RefPtr<QuotaObject> result = dont_AddRef(this);
-    return result.forget();
-  }
+  virtual ~QuotaObject() = default;
 
-  bool LockedMaybeUpdateSize(int64_t aSize, bool aTruncate);
-
-  mozilla::ThreadSafeAutoRefCnt mRefCnt;
-
-  OriginInfo* mOriginInfo;
-  nsString mPath;
-  int64_t mSize;
-  Client::Type mClientType;
-  bool mQuotaCheckDisabled;
-  bool mWritingDone;
+  const bool mIsRemote;
 };
 
 }  // namespace mozilla::dom::quota
 
-#endif  // mozilla_dom_quota_quotaobject_h__
+#endif  // DOM_QUOTA_QUOTAOBJECT_H_

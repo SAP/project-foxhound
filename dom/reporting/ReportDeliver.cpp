@@ -4,7 +4,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/JSONWriter.h"
+#include "mozilla/JSONStringWriteFuncs.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/dom/EndpointForReportChild.h"
 #include "mozilla/dom/Fetch.h"
@@ -15,6 +15,7 @@
 #include "mozilla/dom/Request.h"
 #include "mozilla/dom/RequestBinding.h"
 #include "mozilla/dom/Response.h"
+#include "mozilla/dom/RootedDictionary.h"
 #include "mozilla/ipc/BackgroundChild.h"
 #include "mozilla/ipc/PBackgroundChild.h"
 #include "mozilla/ipc/PBackgroundSharedTypes.h"
@@ -24,8 +25,7 @@
 #include "nsNetUtil.h"
 #include "nsStringStream.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 namespace {
 
@@ -95,24 +95,16 @@ class ReportFetchHandler final : public PromiseNativeHandler {
 
 NS_IMPL_ISUPPORTS0(ReportFetchHandler)
 
-struct StringWriteFunc final : public JSONWriteFunc {
-  nsACString&
-      mBuffer;  // The lifetime of the struct must be bound to the buffer
-  explicit StringWriteFunc(nsACString& aBuffer) : mBuffer(aBuffer) {}
-
-  void Write(const Span<const char>& aStr) override { mBuffer.Append(aStr); }
-};
-
 class ReportJSONWriter final : public JSONWriter {
  public:
-  explicit ReportJSONWriter(nsACString& aOutput)
-      : JSONWriter(MakeUnique<StringWriteFunc>(aOutput)) {}
+  explicit ReportJSONWriter(JSONStringWriteFunc<nsAutoCString>& aOutput)
+      : JSONWriter(aOutput) {}
 
   void JSONProperty(const Span<const char>& aProperty,
                     const Span<const char>& aJSON) {
     Separator();
     PropertyNameAndColon(aProperty);
-    mWriter->Write(aJSON);
+    mWriter.Write(aJSON);
   }
 };
 
@@ -149,7 +141,7 @@ void SendReports(nsTArray<ReportDeliver::ReportData>& aReports,
   }
 
   // The body
-  nsAutoCString body;
+  JSONStringWriteFunc<nsAutoCString> body;
   ReportJSONWriter w(body);
 
   w.StartArrayElement();
@@ -171,7 +163,8 @@ void SendReports(nsTArray<ReportDeliver::ReportData>& aReports,
 
   // The body as stream
   nsCOMPtr<nsIInputStream> streamBody;
-  nsresult rv = NS_NewCStringInputStream(getter_AddRefs(streamBody), body);
+  nsresult rv =
+      NS_NewCStringInputStream(getter_AddRefs(streamBody), body.StringCRef());
 
   // Headers
   IgnoredErrorResult error;
@@ -210,7 +203,7 @@ void SendReports(nsTArray<ReportDeliver::ReportData>& aReports,
   auto internalRequest = MakeSafeRefPtr<InternalRequest>(uriSpec, uriFragment);
 
   internalRequest->SetMethod("POST"_ns);
-  internalRequest->SetBody(streamBody, body.Length());
+  internalRequest->SetBody(streamBody, body.StringCRef().Length());
   internalRequest->SetHeaders(internalHeaders);
   internalRequest->SetSkipServiceWorker();
   // TODO: internalRequest->SetContentPolicyType(TYPE_REPORT);
@@ -250,7 +243,7 @@ void ReportDeliver::Record(nsPIDOMWindowInner* aWindow, const nsAString& aType,
   MOZ_ASSERT(aWindow);
   MOZ_ASSERT(aBody);
 
-  nsAutoCString reportBodyJSON;
+  JSONStringWriteFunc<nsAutoCString> reportBodyJSON;
   ReportJSONWriter w(reportBodyJSON);
 
   w.Start();
@@ -284,7 +277,7 @@ void ReportDeliver::Record(nsPIDOMWindowInner* aWindow, const nsAString& aType,
   data.mGroupName = aGroupName;
   data.mURL = aURL;
   data.mCreationTime = TimeStamp::Now();
-  data.mReportBodyJSON = reportBodyJSON;
+  data.mReportBodyJSON = std::move(reportBodyJSON).StringRRef();
   data.mPrincipal = principal;
   data.mFailures = 0;
 
@@ -414,5 +407,4 @@ NS_INTERFACE_MAP_END
 NS_IMPL_ADDREF(ReportDeliver)
 NS_IMPL_RELEASE(ReportDeliver)
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

@@ -2,8 +2,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import
-
 import sys
 
 import six
@@ -21,7 +19,7 @@ def fake_cause():
 
 
 message = "foo"
-unicode_message = u"\u201Cfoo"
+unicode_message = "\u201Cfoo"
 cause = fake_cause()
 stacktrace = "first\nsecond"
 
@@ -29,7 +27,7 @@ stacktrace = "first\nsecond"
 class TestErrors(marionette_test.MarionetteTestCase):
     def test_defaults(self):
         exc = errors.MarionetteException()
-        self.assertEquals(str(exc), "None")
+        self.assertEqual(str(exc), "None")
         self.assertIsNone(exc.cause)
         self.assertIsNone(exc.stacktrace)
 
@@ -37,9 +35,9 @@ class TestErrors(marionette_test.MarionetteTestCase):
         exc = errors.MarionetteException(
             message=message, cause=cause, stacktrace=stacktrace
         )
-        self.assertEquals(exc.message, message)
-        self.assertEquals(exc.cause, cause)
-        self.assertEquals(exc.stacktrace, stacktrace)
+        self.assertEqual(exc.message, message)
+        self.assertEqual(exc.cause, cause)
+        self.assertEqual(exc.stacktrace, stacktrace)
 
     def test_str_message(self):
         exc = errors.MarionetteException(
@@ -95,7 +93,7 @@ class TestLookup(marionette_test.MarionetteTestCase):
 
     def test_by_known_unicode_string(self):
         self.assertEqual(
-            errors.NoSuchElementException, errors.lookup(u"no such element")
+            errors.NoSuchElementException, errors.lookup("no such element")
         )
 
 

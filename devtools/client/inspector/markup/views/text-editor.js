@@ -4,28 +4,30 @@
 
 "use strict";
 
-const { createFactory } = require("devtools/client/shared/vendor/react");
+const {
+  createFactory,
+} = require("resource://devtools/client/shared/vendor/react.js");
 
 const TextNode = createFactory(
-  require("devtools/client/inspector/markup/components/TextNode")
+  require("resource://devtools/client/inspector/markup/components/TextNode.js")
 );
 
 loader.lazyRequireGetter(
   this,
   "getAutocompleteMaxWidth",
-  "devtools/client/inspector/markup/utils",
+  "resource://devtools/client/inspector/markup/utils.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "getLongString",
-  "devtools/client/inspector/shared/utils",
+  "resource://devtools/client/inspector/shared/utils.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "InplaceEditor",
-  "devtools/client/shared/inplace-editor",
+  "resource://devtools/client/shared/inplace-editor.js",
   true
 );
 
@@ -52,7 +54,7 @@ function TextEditor(container, node, type) {
 }
 
 TextEditor.prototype = {
-  buildMarkup: function(type) {
+  buildMarkup(type) {
     const doc = this.markup.doc;
 
     this.elt = doc.createElement("span");
@@ -88,7 +90,7 @@ TextEditor.prototype = {
     this.update();
   },
 
-  showTextEditor: function(element) {
+  showTextEditor(element) {
     new InplaceEditor({
       cssProperties: this.markup.inspector.cssProperties,
       done: (val, commit) => {
@@ -114,7 +116,7 @@ TextEditor.prototype = {
     });
   },
 
-  update: async function() {
+  async update() {
     try {
       const value = await getLongString(this.node.getNodeValue());
 
@@ -126,14 +128,14 @@ TextEditor.prototype = {
     }
   },
 
-  destroy: function() {
+  destroy() {
     this.ReactDOM.unmountComponentAtNode(this.elt);
   },
 
   /**
    * Stub method for consistency with ElementEditor.
    */
-  getInfoAtNode: function() {
+  getInfoAtNode() {
     return null;
   },
 };

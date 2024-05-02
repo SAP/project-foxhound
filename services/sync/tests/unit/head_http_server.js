@@ -5,13 +5,14 @@
 var Cm = Components.manager;
 
 // Shared logging for all HTTP server functions.
-var { Log } = ChromeUtils.import("resource://gre/modules/Log.jsm");
-var { CommonUtils } = ChromeUtils.import("resource://services-common/utils.js");
-var { TestUtils } = ChromeUtils.import(
-  "resource://testing-common/TestUtils.jsm"
+var { Log } = ChromeUtils.importESModule("resource://gre/modules/Log.sys.mjs");
+var { CommonUtils } = ChromeUtils.importESModule(
+  "resource://services-common/utils.sys.mjs"
+);
+var { TestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/TestUtils.sys.mjs"
 );
 var {
-  AccountState,
   MockFxaStorageManager,
   SyncTestingInfrastructure,
   configureFxAccountIdentity,
@@ -25,7 +26,9 @@ var {
   sumHistogram,
   syncTestLogging,
   waitForZeroTimer,
-} = ChromeUtils.import("resource://testing-common/services/sync/utils.js");
+} = ChromeUtils.importESModule(
+  "resource://testing-common/services/sync/utils.sys.mjs"
+);
 
 const SYNC_HTTP_LOGGER = "Sync.Test.Server";
 
@@ -135,7 +138,7 @@ ServerWBO.prototype = {
   handler() {
     let self = this;
 
-    return function(request, response) {
+    return function (request, response) {
       var statusCode = 200;
       var status = "OK";
       var body;
@@ -324,7 +327,7 @@ ServerCollection.prototype = {
    * Insert a record, which may either an object with a cleartext property, or
    * the cleartext property itself.
    */
-  insertRecord(record, timestamp = Date.now() / 1000) {
+  insertRecord(record, timestamp = Math.round(Date.now() / 10) / 100) {
     if (typeof timestamp != "number") {
       throw new TypeError("insertRecord: Timestamp is not a number.");
     }
@@ -500,7 +503,7 @@ ServerCollection.prototype = {
   handler() {
     let self = this;
 
-    return function(request, response) {
+    return function (request, response) {
       var statusCode = 200;
       var status = "OK";
       var body;
@@ -632,7 +635,7 @@ function track_collections_helper() {
    * it's a GET request.
    */
   function with_updated_collection(coll, f) {
-    return function(request, response) {
+    return function (request, response) {
       f.call(this, request, response);
 
       // Update the collection timestamp to the appropriate modified time.
@@ -704,7 +707,7 @@ var SyncServerCallback = {
  * SyncServerCallback) as input.
  */
 function SyncServer(callback) {
-  this.callback = callback || { __proto__: SyncServerCallback };
+  this.callback = callback || Object.create(SyncServerCallback);
   this.server = new HttpServer();
   this.started = false;
   this.users = {};
@@ -906,7 +909,7 @@ SyncServer.prototype = {
     let collection = this.getCollection.bind(this, username);
     let createCollection = this.createCollection.bind(this, username);
     let createContents = this.createContents.bind(this, username);
-    let modified = function(collectionName) {
+    let modified = function (collectionName) {
       return collection(collectionName).timestamp;
     };
     let deleteCollections = this.deleteCollections.bind(this, username);
@@ -938,7 +941,8 @@ SyncServer.prototype = {
    * Path: [all, version, username, first, rest]
    * Storage: [all, collection?, id?]
    */
-  pathRE: /^\/([0-9]+(?:\.[0-9]+)?)\/([-._a-zA-Z0-9]+)(?:\/([^\/]+)(?:\/(.+))?)?$/,
+  pathRE:
+    /^\/([0-9]+(?:\.[0-9]+)?)\/([-._a-zA-Z0-9]+)(?:\/([^\/]+)(?:\/(.+))?)?$/,
   storageRE: /^([-_a-zA-Z0-9]+)(?:\/([-_a-zA-Z0-9]+)\/?)?$/,
 
   defaultHeaders: {},

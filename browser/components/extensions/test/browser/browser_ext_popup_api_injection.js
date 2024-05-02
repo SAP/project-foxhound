@@ -10,6 +10,7 @@ add_task(async function testPageActionPopup() {
     manifest: {
       browser_action: {
         default_popup: `${BASE}/file_popup_api_injection_a.html`,
+        default_area: "navbar",
       },
       page_action: {
         default_popup: `${BASE}/file_popup_api_injection_b.html`,
@@ -26,7 +27,7 @@ add_task(async function testPageActionPopup() {
       "popup-b.js": 'browser.test.sendMessage("from-popup-b");',
     },
 
-    background: function() {
+    background: function () {
       let tabId;
       browser.tabs.query({ active: true, currentWindow: true }, tabs => {
         tabId = tabs[0].id;

@@ -8,10 +8,14 @@
 #ifndef mozilla_net_NeckoCommon_h
 #define mozilla_net_NeckoCommon_h
 
+#include "mozilla/Preferences.h"
+#include "mozilla/Variant.h"
+#include "nsIRequest.h"
+#include "nsPrintfCString.h"
 #include "nsXULAppAPI.h"
 #include "prenv.h"
-#include "nsPrintfCString.h"
-#include "mozilla/Preferences.h"
+
+class nsIStreamListener;
 
 namespace mozilla {
 namespace dom {
@@ -104,11 +108,35 @@ class HttpChannelSecurityWarningReporter : public nsISupports {
   [[nodiscard]] virtual nsresult ReportSecurityMessage(
       const nsAString& aMessageTag, const nsAString& aMessageCategory) = 0;
   [[nodiscard]] virtual nsresult LogBlockedCORSRequest(
-      const nsAString& aMessage, const nsACString& aCategory) = 0;
+      const nsAString& aMessage, const nsACString& aCategory,
+      bool aIsWarning = false) = 0;
   [[nodiscard]] virtual nsresult LogMimeTypeMismatch(
       const nsACString& aMessageName, bool aWarning, const nsAString& aURL,
       const nsAString& aContentType) = 0;
 };
+
+struct OnStartRequestParams {
+  nsCOMPtr<nsIRequest> request;
+};
+struct OnDataAvailableParams {
+  nsCOMPtr<nsIRequest> request;
+  nsCString data;
+  uint64_t offset;
+  uint32_t count;
+};
+struct OnStopRequestParams {
+  nsCOMPtr<nsIRequest> request;
+  nsresult status;
+};
+struct OnAfterLastPartParams {
+  nsresult status;
+};
+using StreamListenerFunction =
+    mozilla::Variant<OnStartRequestParams, OnDataAvailableParams,
+                     OnStopRequestParams, OnAfterLastPartParams>;
+
+nsresult ForwardStreamListenerFunctions(
+    nsTArray<StreamListenerFunction>& aCalls, nsIStreamListener* aParent);
 
 }  // namespace net
 }  // namespace mozilla

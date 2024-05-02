@@ -4,8 +4,8 @@
 
 "use strict";
 
-const { TelemetryTestUtils } = ChromeUtils.import(
-  "resource://testing-common/TelemetryTestUtils.jsm"
+const { TelemetryTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/TelemetryTestUtils.sys.mjs"
 );
 
 const SCALAR_NAME = "browser.ui.customized_widgets";
@@ -147,8 +147,10 @@ async function assertUIChange(key, value) {
 }
 
 function keyedScalarExists(scalar, key, value) {
-  let snapshot = Services.telemetry.getSnapshotForKeyedScalars("main", false)
-    .parent;
+  let snapshot = Services.telemetry.getSnapshotForKeyedScalars(
+    "main",
+    false
+  ).parent;
   if (!snapshot.hasOwnProperty(scalar)) {
     return false;
   }

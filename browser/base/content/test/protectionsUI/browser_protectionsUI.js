@@ -6,19 +6,19 @@
 "use strict";
 
 const TRACKING_PAGE =
+  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
   "http://tracking.example.org/browser/browser/base/content/test/protectionsUI/trackingPage.html";
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "ContentBlockingAllowList",
-  "resource://gre/modules/ContentBlockingAllowList.jsm"
+ChromeUtils.defineESModuleGetters(this, {
+  ContentBlockingAllowList:
+    "resource://gre/modules/ContentBlockingAllowList.sys.mjs",
+});
+
+const { CustomizableUITestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/CustomizableUITestUtils.sys.mjs"
 );
 
-const { CustomizableUITestUtils } = ChromeUtils.import(
-  "resource://testing-common/CustomizableUITestUtils.jsm"
-);
-
-add_task(async function setup() {
+add_setup(async function () {
   await SpecialPowers.pushPrefEnv({
     set: [
       // Set the auto hide timing to 100ms for blocking the test less.
@@ -40,6 +40,12 @@ add_task(async function setup() {
     Services.telemetry.clearEvents();
   });
 });
+
+async function clickToggle(toggle) {
+  let changed = BrowserTestUtils.waitForEvent(toggle, "toggle");
+  await EventUtils.synthesizeMouseAtCenter(toggle.buttonEl, {});
+  await changed;
+}
 
 add_task(async function testToggleSwitch() {
   let tab = await BrowserTestUtils.openNewForegroundTab(
@@ -117,15 +123,15 @@ add_task(async function testToggleSwitch() {
   await viewShown;
 
   ok(
-    gProtectionsHandler._protectionsPopupTPSwitch.hasAttribute("enabled"),
-    "TP Switch should be enabled"
+    gProtectionsHandler._protectionsPopupTPSwitch.hasAttribute("pressed"),
+    "TP Switch should be on"
   );
   let popuphiddenPromise = BrowserTestUtils.waitForEvent(
     gProtectionsHandler._protectionsPopup,
     "popuphidden"
   );
   let browserLoadedPromise = BrowserTestUtils.browserLoaded(tab.linkedBrowser);
-  gProtectionsHandler._protectionsPopupTPSwitch.click();
+  await clickToggle(gProtectionsHandler._protectionsPopupTPSwitch);
 
   // The 'Site not working?' link should be hidden after clicking the TP switch.
   ok(
@@ -165,8 +171,8 @@ add_task(async function testToggleSwitch() {
 
   await openProtectionsPanel();
   ok(
-    !gProtectionsHandler._protectionsPopupTPSwitch.hasAttribute("enabled"),
-    "TP Switch should be disabled"
+    !gProtectionsHandler._protectionsPopupTPSwitch.hasAttribute("pressed"),
+    "TP Switch should be off"
   );
 
   // The 'Site not working?' link should be hidden if the TP is off.
@@ -199,7 +205,7 @@ add_task(async function testToggleSwitch() {
   // Click the TP switch again and check the visibility of the 'Site not
   // Working?'. It should be hidden after toggling the TP switch.
   browserLoadedPromise = BrowserTestUtils.browserLoaded(tab.linkedBrowser);
-  gProtectionsHandler._protectionsPopupTPSwitch.click();
+  await clickToggle(gProtectionsHandler._protectionsPopupTPSwitch);
 
   ok(
     BrowserTestUtils.is_hidden(
@@ -398,7 +404,7 @@ add_task(async function testToggleSwitchFlow() {
   let browserLoadedPromise = BrowserTestUtils.browserLoaded(tab.linkedBrowser);
 
   // Click the TP switch, from On -> Off.
-  gProtectionsHandler._protectionsPopupTPSwitch.click();
+  await clickToggle(gProtectionsHandler._protectionsPopupTPSwitch);
 
   // Check that the icon state has been changed.
   ok(
@@ -425,7 +431,14 @@ add_task(async function testToggleSwitchFlow() {
     gProtectionsHandler._protectionsPopup,
     "popuphidden"
   );
+  // We intentionally turn off a11y_checks, because the following click
+  // is targeting static toast message that's not meant to be interactive and
+  // is not expected to be accessible:
+  AccessibilityUtils.setEnv({
+    mustHaveAccessibleRule: false,
+  });
   document.getElementById("protections-popup-mainView-panel-header").click();
+  AccessibilityUtils.resetEnv();
   await popuphiddenPromise;
   await popupShownPromise;
 
@@ -444,7 +457,7 @@ add_task(async function testToggleSwitchFlow() {
     "popupshown"
   );
   browserLoadedPromise = BrowserTestUtils.browserLoaded(tab.linkedBrowser);
-  gProtectionsHandler._protectionsPopupTPSwitch.click();
+  await clickToggle(gProtectionsHandler._protectionsPopupTPSwitch);
 
   // Check that the icon state has been changed.
   ok(
@@ -625,6 +638,7 @@ add_task(async function testSubViewTelemetry() {
   ].map(item => [document.getElementById(item[0]), item[1]]);
 
   for (let [item, telemetryId] of items) {
+    // eslint-disable-next-line @microsoft/sdl/no-insecure-url
     await BrowserTestUtils.withNewTab("http://www.example.com", async () => {
       await openProtectionsPanel();
 
@@ -656,6 +670,8 @@ add_task(async function testSubViewTelemetry() {
  * tab after toggling the TP switch.
  */
 add_task(async function testQuickSwitchTabAfterTogglingTPSwitch() {
+  requestLongerTimeout(3);
+
   const FIRST_TEST_SITE = "https://example.com/";
   const SECOND_TEST_SITE = "https://example.org/";
 
@@ -683,7 +699,7 @@ add_task(async function testQuickSwitchTabAfterTogglingTPSwitch() {
   );
 
   // Toggle the TP state and switch tab without waiting it to be finished.
-  gProtectionsHandler._protectionsPopupTPSwitch.click();
+  await clickToggle(gProtectionsHandler._protectionsPopupTPSwitch);
   gBrowser.selectedTab = tabOne;
 
   // Wait for the second tab to be reloaded.

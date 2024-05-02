@@ -84,13 +84,13 @@
 #  define NS_WIN_FAVORITES_DIR "Favs"
 #  define NS_WIN_APPDATA_DIR "AppData"
 #  define NS_WIN_LOCAL_APPDATA_DIR "LocalAppData"
-#  if defined(MOZ_SANDBOX)
-#    define NS_WIN_LOCAL_APPDATA_LOW_DIR "LocalAppDataLow"
-#    define NS_WIN_LOW_INTEGRITY_TEMP_BASE "LowTmpDBase"
-#  endif
 #  define NS_WIN_COOKIES_DIR "CookD"
 #elif defined(XP_UNIX)
 #  define NS_UNIX_HOME_DIR NS_OS_HOME_DIR
 #endif
+
+#if defined(MOZ_WIDGET_GTK)
+#  define NS_OS_SYSTEM_CONFIG_DIR "SysConfD"
+#endif  // defined(MOZ_WIDGET_GTK)
 
 #endif

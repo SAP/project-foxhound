@@ -29,6 +29,7 @@
 #include "mozilla/IntegerPrintfMacros.h"
 #include "mozilla/Logging.h"
 #include "mozilla/SpinEventLoopUntil.h"
+#include "mozilla/Try.h"
 
 using mozilla::LogLevel;
 
@@ -432,7 +433,7 @@ nsresult nsAutoConfig::getEmailAddr(nsACString& emailAddr) {
 nsresult nsAutoConfig::PromptForEMailAddress(nsACString& emailAddress) {
   nsresult rv;
   nsCOMPtr<nsIPromptService> promptService =
-      do_GetService("@mozilla.org/embedcomp/prompt-service;1", &rv);
+      do_GetService("@mozilla.org/prompter;1", &rv);
   NS_ENSURE_SUCCESS(rv, rv);
   nsCOMPtr<nsIStringBundleService> bundleService =
       do_GetService(NS_STRINGBUNDLE_CONTRACTID, &rv);

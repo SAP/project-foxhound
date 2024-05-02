@@ -25,8 +25,8 @@ namespace webrtc {
 namespace {
 
 using ::testing::_;
-using ::testing::Args;
-using ::testing::ElementsAreArray;
+using ::testing::Eq;
+using ::testing::Property;
 
 using test::fec::FlexfecPacketGenerator;
 using Packet = ForwardErrorCorrection::Packet;
@@ -66,12 +66,12 @@ class FlexfecReceiverTest : public ::testing::Test {
             ForwardErrorCorrection::CreateFlexfec(kFlexfecSsrc, kMediaSsrc)),
         packet_generator_(kMediaSsrc, kFlexfecSsrc) {}
 
-  // Generates |num_media_packets| corresponding to a single frame.
+  // Generates `num_media_packets` corresponding to a single frame.
   void PacketizeFrame(size_t num_media_packets,
                       size_t frame_offset,
                       PacketList* media_packets);
 
-  // Generates |num_fec_packets| FEC packets, given |media_packets|.
+  // Generates `num_fec_packets` FEC packets, given `media_packets`.
   std::list<Packet*> EncodeFec(const PacketList& media_packets,
                                size_t num_fec_packets);
 
@@ -165,10 +165,10 @@ TEST_F(FlexfecReceiverTest, FailsOnUnknownMediaSsrc) {
   PacketizeFrame(kNumMediaPackets, 0, &media_packets);
   auto& media_packet = media_packets.front();
   // Corrupt the SSRC.
-  media_packet->data[8] = 0;
-  media_packet->data[9] = 1;
-  media_packet->data[10] = 2;
-  media_packet->data[11] = 3;
+  media_packet->data.MutableData()[8] = 0;
+  media_packet->data.MutableData()[9] = 1;
+  media_packet->data.MutableData()[10] = 2;
+  media_packet->data.MutableData()[11] = 3;
 
   EXPECT_FALSE(receiver_.AddReceivedPacket(ParsePacket(*media_packet)));
 }
@@ -183,10 +183,10 @@ TEST_F(FlexfecReceiverTest, FailsOnUnknownFecSsrc) {
   const auto& media_packet = media_packets.front();
   auto fec_packet = packet_generator_.BuildFlexfecPacket(*fec_packets.front());
   // Corrupt the SSRC.
-  fec_packet->data[8] = 4;
-  fec_packet->data[9] = 5;
-  fec_packet->data[10] = 6;
-  fec_packet->data[11] = 7;
+  fec_packet->data.MutableData()[8] = 4;
+  fec_packet->data.MutableData()[9] = 5;
+  fec_packet->data.MutableData()[10] = 6;
+  fec_packet->data.MutableData()[11] = 7;
 
   std::unique_ptr<ForwardErrorCorrection::ReceivedPacket> received_packet =
       receiver_.AddReceivedPacket(ParsePacket(*media_packet));
@@ -239,9 +239,8 @@ TEST_F(FlexfecReceiverTest, RecoversFromSingleMediaLoss) {
       packet_generator_.BuildFlexfecPacket(**fec_it);
   media_it++;
   EXPECT_CALL(recovered_packet_receiver_,
-              OnRecoveredPacket(_, (*media_it)->data.size()))
-      .With(Args<0, 1>(ElementsAreArray((*media_it)->data.cdata(),
-                                        (*media_it)->data.size())));
+              OnRecoveredPacket(
+                  Property(&RtpPacketReceived::Buffer, Eq((*media_it)->data))));
   receiver_.OnRtpPacket(ParsePacket(*packet_with_rtp_header));
 }
 
@@ -261,9 +260,8 @@ TEST_F(FlexfecReceiverTest, RecoversFromDoubleMediaLoss) {
       packet_generator_.BuildFlexfecPacket(**fec_it);
   auto media_it = media_packets.begin();
   EXPECT_CALL(recovered_packet_receiver_,
-              OnRecoveredPacket(_, (*media_it)->data.size()))
-      .With(Args<0, 1>(ElementsAreArray((*media_it)->data.cdata(),
-                                        (*media_it)->data.size())));
+              OnRecoveredPacket(
+                  Property(&RtpPacketReceived::Buffer, Eq((*media_it)->data))));
   receiver_.OnRtpPacket(ParsePacket(*packet_with_rtp_header));
 
   // Receive second FEC packet and recover second lost media packet.
@@ -271,9 +269,9 @@ TEST_F(FlexfecReceiverTest, RecoversFromDoubleMediaLoss) {
   packet_with_rtp_header = packet_generator_.BuildFlexfecPacket(**fec_it);
   media_it++;
   EXPECT_CALL(recovered_packet_receiver_,
-              OnRecoveredPacket(_, (*media_it)->data.size()))
-      .With(Args<0, 1>(ElementsAreArray((*media_it)->data.cdata(),
-                                        (*media_it)->data.size())));
+              OnRecoveredPacket(
+                  Property(&RtpPacketReceived::Buffer, Eq((*media_it)->data))));
+
   receiver_.OnRtpPacket(ParsePacket(*packet_with_rtp_header));
 }
 
@@ -310,9 +308,8 @@ TEST_F(FlexfecReceiverTest, DoesNotCallbackTwice) {
       packet_generator_.BuildFlexfecPacket(**fec_it);
   media_it++;
   EXPECT_CALL(recovered_packet_receiver_,
-              OnRecoveredPacket(_, (*media_it)->data.size()))
-      .With(Args<0, 1>(ElementsAreArray((*media_it)->data.cdata(),
-                                        (*media_it)->data.size())));
+              OnRecoveredPacket(
+                  Property(&RtpPacketReceived::Buffer, Eq((*media_it)->data))));
   receiver_.OnRtpPacket(ParsePacket(*packet_with_rtp_header));
 
   // Receive the FEC packet again, but do not call back.
@@ -363,9 +360,8 @@ TEST_F(FlexfecReceiverTest, RecoversFrom50PercentLoss) {
       break;
     }
     EXPECT_CALL(recovered_packet_receiver_,
-                OnRecoveredPacket(_, (*media_it)->data.size()))
-        .With(Args<0, 1>(ElementsAreArray((*media_it)->data.cdata(),
-                                          (*media_it)->data.size())));
+                OnRecoveredPacket(Property(&RtpPacketReceived::Buffer,
+                                           Eq((*media_it)->data))));
     receiver_.OnRtpPacket(ParsePacket(*fec_packet_with_rtp_header));
     ++media_it;
   }
@@ -374,7 +370,8 @@ TEST_F(FlexfecReceiverTest, RecoversFrom50PercentLoss) {
 TEST_F(FlexfecReceiverTest, DelayedFecPacketDoesHelp) {
   // These values need to be updated if the underlying erasure code
   // implementation changes.
-  const size_t kNumFrames = 48;
+  // Delay FEC packet by maximum number of media packets tracked by receiver.
+  const size_t kNumFrames = 192;
   const size_t kNumMediaPacketsPerFrame = 1;
   const size_t kNumFecPackets = 1;
 
@@ -403,23 +400,24 @@ TEST_F(FlexfecReceiverTest, DelayedFecPacketDoesHelp) {
       packet_generator_.BuildFlexfecPacket(**fec_it);
   media_it = media_packets.begin();
   EXPECT_CALL(recovered_packet_receiver_,
-              OnRecoveredPacket(_, (*media_it)->data.size()))
-      .With(Args<0, 1>(ElementsAreArray((*media_it)->data.cdata(),
-                                        (*media_it)->data.size())));
+              OnRecoveredPacket(
+                  Property(&RtpPacketReceived::Buffer, Eq((*media_it)->data))));
   receiver_.OnRtpPacket(ParsePacket(*packet_with_rtp_header));
 }
 
 TEST_F(FlexfecReceiverTest, TooDelayedFecPacketDoesNotHelp) {
   // These values need to be updated if the underlying erasure code
   // implementation changes.
-  const size_t kNumFrames = 49;
+  // Delay FEC packet by one more than maximum number of media packets
+  // tracked by receiver.
+  const size_t kNumFrames = 193;
   const size_t kNumMediaPacketsPerFrame = 1;
   const size_t kNumFecPackets = 1;
 
   PacketList media_packets;
   PacketizeFrame(kNumMediaPacketsPerFrame, 0, &media_packets);
   PacketizeFrame(kNumMediaPacketsPerFrame, 1, &media_packets);
-  // Protect two first frames.
+  // Protect first two frames.
   std::list<Packet*> fec_packets = EncodeFec(media_packets, kNumFecPackets);
   for (size_t i = 2; i < kNumFrames; ++i) {
     PacketizeFrame(kNumMediaPacketsPerFrame, i, &media_packets);
@@ -454,20 +452,17 @@ TEST_F(FlexfecReceiverTest, SurvivesOldRecoveredPacketBeingReinserted) {
     void SetReceiver(FlexfecReceiver* receiver) { receiver_ = receiver; }
 
     // Implements RecoveredPacketReceiver.
-    void OnRecoveredPacket(const uint8_t* packet, size_t length) override {
-      RtpPacketReceived parsed_packet;
-      EXPECT_TRUE(parsed_packet.Parse(packet, length));
-      parsed_packet.set_recovered(true);
-
+    void OnRecoveredPacket(const RtpPacketReceived& packet) override {
+      EXPECT_TRUE(packet.recovered());
       RTC_DCHECK(receiver_);
-      receiver_->OnRtpPacket(parsed_packet);
+      receiver_->OnRtpPacket(packet);
     }
 
    private:
     FlexfecReceiver* receiver_;
   } loopback_recovered_packet_receiver;
 
-  // Feed recovered packets back into |receiver|.
+  // Feed recovered packets back into `receiver`.
   FlexfecReceiver receiver(Clock::GetRealTimeClock(), kFlexfecSsrc, kMediaSsrc,
                            &loopback_recovered_packet_receiver);
   loopback_recovered_packet_receiver.SetReceiver(&receiver);
@@ -532,14 +527,11 @@ TEST_F(FlexfecReceiverTest, RecoversWithMediaPacketsOutOfOrder) {
 
   // Expect to recover lost media packets.
   EXPECT_CALL(recovered_packet_receiver_,
-              OnRecoveredPacket(_, (*media_packet1)->data.size()))
-      .With(Args<0, 1>(ElementsAreArray((*media_packet1)->data.cdata(),
-                                        (*media_packet1)->data.size())));
+              OnRecoveredPacket(Property(&RtpPacketReceived::Buffer,
+                                         Eq((*media_packet1)->data))));
   EXPECT_CALL(recovered_packet_receiver_,
-              OnRecoveredPacket(_, (*media_packet4)->data.size()))
-      .With(Args<0, 1>(ElementsAreArray((*media_packet4)->data.cdata(),
-                                        (*media_packet4)->data.size())));
-
+              OnRecoveredPacket(Property(&RtpPacketReceived::Buffer,
+                                         Eq((*media_packet4)->data))));
   // Add FEC packets.
   auto fec_it = fec_packets.begin();
   std::unique_ptr<Packet> packet_with_rtp_header;
@@ -568,10 +560,7 @@ TEST_F(FlexfecReceiverTest, RecoveryCallbackDoesNotLoopInfinitely) {
     bool DeepRecursion() const { return deep_recursion_; }
 
     // Implements RecoveredPacketReceiver.
-    void OnRecoveredPacket(const uint8_t* packet, size_t length) override {
-      RtpPacketReceived parsed_packet;
-      EXPECT_TRUE(parsed_packet.Parse(packet, length));
-
+    void OnRecoveredPacket(const RtpPacketReceived& packet) override {
       did_receive_call_back_ = true;
 
       if (recursion_depth_ > kMaxRecursionDepth) {
@@ -580,7 +569,7 @@ TEST_F(FlexfecReceiverTest, RecoveryCallbackDoesNotLoopInfinitely) {
       }
       ++recursion_depth_;
       RTC_DCHECK(receiver_);
-      receiver_->OnRtpPacket(parsed_packet);
+      receiver_->OnRtpPacket(packet);
       --recursion_depth_;
     }
 
@@ -591,7 +580,7 @@ TEST_F(FlexfecReceiverTest, RecoveryCallbackDoesNotLoopInfinitely) {
     bool deep_recursion_;
   } loopback_recovered_packet_receiver;
 
-  // Feed recovered packets back into |receiver|.
+  // Feed recovered packets back into `receiver`.
   FlexfecReceiver receiver(Clock::GetRealTimeClock(), kFlexfecSsrc, kMediaSsrc,
                            &loopback_recovered_packet_receiver);
   loopback_recovered_packet_receiver.SetReceiver(&receiver);
@@ -634,9 +623,8 @@ TEST_F(FlexfecReceiverTest, CalculatesNumberOfPackets) {
       packet_generator_.BuildFlexfecPacket(**fec_it);
   media_it++;
   EXPECT_CALL(recovered_packet_receiver_,
-              OnRecoveredPacket(_, (*media_it)->data.size()))
-      .With(Args<0, 1>(ElementsAreArray((*media_it)->data.cdata(),
-                                        (*media_it)->data.size())));
+              OnRecoveredPacket(
+                  Property(&RtpPacketReceived::Buffer, Eq((*media_it)->data))));
   receiver_.OnRtpPacket(ParsePacket(*packet_with_rtp_header));
 
   // Check stats calculations.
@@ -644,6 +632,60 @@ TEST_F(FlexfecReceiverTest, CalculatesNumberOfPackets) {
   EXPECT_EQ(2U, packet_counter.num_packets);
   EXPECT_EQ(1U, packet_counter.num_fec_packets);
   EXPECT_EQ(1U, packet_counter.num_recovered_packets);
+}
+
+TEST_F(FlexfecReceiverTest, DoesNotDecodeWrappedMediaSequenceUsingOldFec) {
+  const size_t kFirstFrameNumMediaPackets = 2;
+  const size_t kFirstFrameNumFecPackets = 1;
+
+  PacketList media_packets;
+  PacketizeFrame(kFirstFrameNumMediaPackets, 0, &media_packets);
+
+  // Protect first frame (sequences 0 and 1) with 1 FEC packet.
+  std::list<Packet*> fec_packets =
+      EncodeFec(media_packets, kFirstFrameNumFecPackets);
+
+  // Generate enough media packets to simulate media sequence number wraparound.
+  // Use no FEC for these frames to make sure old FEC is not purged due to age.
+  const size_t kNumFramesSequenceWrapAround =
+      std::numeric_limits<uint16_t>::max();
+  const size_t kNumMediaPacketsPerFrame = 1;
+
+  for (size_t i = 1; i <= kNumFramesSequenceWrapAround; ++i) {
+    PacketizeFrame(kNumMediaPacketsPerFrame, i, &media_packets);
+  }
+
+  // Receive first (`kFirstFrameNumMediaPackets` + 192) media packets.
+  // Simulate an old FEC packet by separating it from its encoded media
+  // packets by at least 192 packets.
+  auto media_it = media_packets.begin();
+  for (size_t i = 0; i < (kFirstFrameNumMediaPackets + 192); i++) {
+    if (i == 1) {
+      // Drop the second packet of the first frame.
+      media_it++;
+    } else {
+      receiver_.OnRtpPacket(ParsePacket(**media_it++));
+    }
+  }
+
+  // Receive FEC packet. Although a protected packet was dropped,
+  // expect no recovery callback since it is delayed from first frame
+  // by more than 192 packets.
+  auto fec_it = fec_packets.begin();
+  std::unique_ptr<Packet> fec_packet_with_rtp_header =
+      packet_generator_.BuildFlexfecPacket(**fec_it);
+  receiver_.OnRtpPacket(ParsePacket(*fec_packet_with_rtp_header));
+
+  // Receive remaining media packets.
+  // NOTE: Because we sent enough to simulate wrap around, sequence 0 is
+  // received again, but is a different packet than the original first
+  // packet of first frame.
+  while (media_it != media_packets.end()) {
+    receiver_.OnRtpPacket(ParsePacket(**media_it++));
+  }
+
+  // Do not expect a recovery callback, the FEC packet is old
+  // and should not decode wrapped around media sequences.
 }
 
 }  // namespace webrtc

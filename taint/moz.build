@@ -17,3 +17,7 @@ SOURCES += [
     'md5_utils.c',
     'Taint.cpp'
 ]
+
+TEST_DIRS += [
+    'test'
+]

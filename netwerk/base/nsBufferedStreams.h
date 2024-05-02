@@ -18,6 +18,7 @@
 #include "nsICloneableInputStream.h"
 #include "nsIInputStreamLength.h"
 #include "mozilla/Mutex.h"
+#include "mozilla/RecursiveMutex.h"
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -40,7 +41,9 @@ class nsBufferedStream : public nsISeekableStream {
   NS_IMETHOD Flush() = 0;
 
   uint32_t mBufferSize{0};
-  char* mBuffer{nullptr};
+  char* mBuffer MOZ_GUARDED_BY(mBufferMutex){nullptr};
+
+  mozilla::RecursiveMutex mBufferMutex{"nsBufferedStream::mBufferMutex"};
 
   // mBufferStartOffset is the offset relative to the start of mStream.
   int64_t mBufferStartOffset{0};
@@ -58,6 +61,7 @@ class nsBufferedStream : public nsISeekableStream {
 
   bool mBufferDisabled{false};
   bool mEOF{false};  // True if mStream is at EOF
+  bool mSeekable{true};
   uint8_t mGetBufferCount{0};
 };
 
@@ -86,9 +90,9 @@ class nsBufferedInputStream final : public nsBufferedStream,
   NS_DECL_NSIASYNCINPUTSTREAMLENGTH
   NS_DECL_NSIINPUTSTREAMLENGTHCALLBACK
 
-  nsBufferedInputStream() : nsBufferedStream() {}
+  nsBufferedInputStream() = default;
 
-  static nsresult Create(nsISupports* aOuter, REFNSIID aIID, void** aResult);
+  static nsresult Create(REFNSIID aIID, void** aResult);
 
   nsIInputStream* Source() { return (nsIInputStream*)mStream.get(); }
 
@@ -111,16 +115,10 @@ class nsBufferedInputStream final : public nsBufferedStream,
  protected:
   virtual ~nsBufferedInputStream() = default;
 
-  template <typename M>
-  void SerializeInternal(mozilla::ipc::InputStreamParams& aParams,
-                         FileDescriptorArray& aFileDescriptors,
-                         bool aDelayedStart, uint32_t aMaxSize,
-                         uint32_t* aSizeUsed, M* aManager);
-
   NS_IMETHOD Fill() override;
   NS_IMETHOD Flush() override { return NS_OK; }  // no-op for input streams
 
-  mozilla::Mutex mMutex{"nsBufferedInputStream::mMutex"};
+  mozilla::Mutex mMutex MOZ_UNANNOTATED{"nsBufferedInputStream::mMutex"};
 
   // This value is protected by mutex.
   nsCOMPtr<nsIInputStreamCallback> mAsyncWaitCallback;
@@ -148,9 +146,9 @@ class nsBufferedOutputStream : public nsBufferedStream,
   NS_DECL_NSIBUFFEREDOUTPUTSTREAM
   NS_DECL_NSISTREAMBUFFERACCESS
 
-  nsBufferedOutputStream() : nsBufferedStream() {}
+  nsBufferedOutputStream() = default;
 
-  static nsresult Create(nsISupports* aOuter, REFNSIID aIID, void** aResult);
+  static nsresult Create(REFNSIID aIID, void** aResult);
 
   nsIOutputStream* Sink() { return (nsIOutputStream*)mStream.get(); }
 

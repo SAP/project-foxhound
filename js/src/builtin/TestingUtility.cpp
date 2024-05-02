@@ -9,7 +9,8 @@
 #include <stdint.h>  // uint32_t
 
 #include "jsapi.h"                 // JS_NewPlainObject, JS_WrapValue
-#include "js/CharacterEncoding.h"  // JS_EncodeStringToLatin1
+#include "js/CharacterEncoding.h"  // JS_EncodeStringToUTF8
+#include "js/ColumnNumber.h"       // JS::ColumnNumberOneOrigin
 #include "js/CompileOptions.h"     // JS::CompileOptions
 #include "js/Conversions.h"  // JS::ToBoolean, JS::ToString, JS::ToUint32, JS::ToInt32
 #include "js/PropertyAndElement.h"  // JS_GetProperty, JS_DefineProperty
@@ -17,13 +18,12 @@
 #include "js/RootingAPI.h"          // JS::Rooted, JS::Handle
 #include "js/Utility.h"             // JS::UniqueChars
 #include "js/Value.h"               // JS::Value, JS::StringValue
-#include "vm/JSContext.h"           // JSContext
-#include "vm/JSObject.h"            // JSObject
-#include "vm/StringType.h"          // JSString
+#include "vm/JSContext.h"           // JS::ReportUsageErrorASCII
+#include "vm/JSScript.h"
 
 bool js::ParseCompileOptions(JSContext* cx, JS::CompileOptions& options,
                              JS::Handle<JSObject*> opts,
-                             UniqueChars* fileNameBytes) {
+                             JS::UniqueChars* fileNameBytes) {
   JS::Rooted<JS::Value> v(cx);
   JS::Rooted<JSString*> s(cx);
 
@@ -52,7 +52,7 @@ bool js::ParseCompileOptions(JSContext* cx, JS::CompileOptions& options,
       return false;
     }
     if (fileNameBytes) {
-      *fileNameBytes = JS_EncodeStringToLatin1(cx, s);
+      *fileNameBytes = JS_EncodeStringToUTF8(cx, s);
       if (!*fileNameBytes) {
         return false;
       }
@@ -86,7 +86,10 @@ bool js::ParseCompileOptions(JSContext* cx, JS::CompileOptions& options,
     if (!JS::ToInt32(cx, v, &c)) {
       return false;
     }
-    options.setColumn(c);
+    if (c < 0) {
+      c = 0;
+    }
+    options.setColumn(JS::ColumnNumberOneOrigin::fromZeroOrigin(c));
   }
 
   if (!JS_GetProperty(cx, opts, "sourceIsLazy", &v)) {
@@ -176,24 +179,25 @@ bool js::ParseSourceOptions(JSContext* cx, JS::Handle<JSObject*> opts,
   return true;
 }
 
-bool js::SetSourceOptions(JSContext* cx, ScriptSource* source,
+bool js::SetSourceOptions(JSContext* cx, FrontendContext* fc,
+                          ScriptSource* source,
                           JS::Handle<JSString*> displayURL,
                           JS::Handle<JSString*> sourceMapURL) {
   if (displayURL && !source->hasDisplayURL()) {
-    UniqueTwoByteChars chars = JS_CopyStringCharsZ(cx, displayURL);
+    JS::UniqueTwoByteChars chars = JS_CopyStringCharsZ(cx, displayURL);
     if (!chars) {
       return false;
     }
-    if (!source->setDisplayURL(cx, std::move(chars))) {
+    if (!source->setDisplayURL(fc, std::move(chars))) {
       return false;
     }
   }
   if (sourceMapURL && !source->hasSourceMapURL()) {
-    UniqueTwoByteChars chars = JS_CopyStringCharsZ(cx, sourceMapURL);
+    JS::UniqueTwoByteChars chars = JS_CopyStringCharsZ(cx, sourceMapURL);
     if (!chars) {
       return false;
     }
-    if (!source->setSourceMapURL(cx, std::move(chars))) {
+    if (!source->setSourceMapURL(fc, std::move(chars))) {
       return false;
     }
   }
@@ -239,7 +243,7 @@ bool js::ParseDebugMetadata(JSContext* cx, JS::Handle<JSObject*> opts,
     if (!JS_DefineProperty(cx, infoObject, "element", elementValue, 0)) {
       return false;
     }
-    privateValue.set(ObjectValue(*infoObject));
+    privateValue.set(JS::ObjectValue(*infoObject));
   }
 
   if (!JS_GetProperty(cx, opts, "elementAttributeName", &v)) {
@@ -254,4 +258,37 @@ bool js::ParseDebugMetadata(JSContext* cx, JS::Handle<JSObject*> opts,
   }
 
   return true;
+}
+
+JS::UniqueChars js::StringToLocale(JSContext* cx, JS::Handle<JSObject*> callee,
+                                   JS::Handle<JSString*> str_) {
+  Rooted<JSLinearString*> str(cx, str_->ensureLinear(cx));
+  if (!str) {
+    return nullptr;
+  }
+
+  if (!StringIsAscii(str)) {
+    ReportUsageErrorASCII(cx, callee,
+                          "First argument contains non-ASCII characters");
+    return nullptr;
+  }
+
+  UniqueChars locale = JS_EncodeStringToASCII(cx, str);
+  if (!locale) {
+    return nullptr;
+  }
+
+  bool containsOnlyValidBCP47Characters =
+      mozilla::IsAsciiAlpha(locale[0]) &&
+      std::all_of(locale.get(), locale.get() + str->length(), [](auto c) {
+        return mozilla::IsAsciiAlphanumeric(c) || c == '-';
+      });
+
+  if (!containsOnlyValidBCP47Characters) {
+    ReportUsageErrorASCII(cx, callee,
+                          "First argument should be a BCP47 language tag");
+    return nullptr;
+  }
+
+  return locale;
 }

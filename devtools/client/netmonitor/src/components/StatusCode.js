@@ -4,13 +4,17 @@
 
 "use strict";
 
-const { Component } = require("devtools/client/shared/vendor/react");
-const dom = require("devtools/client/shared/vendor/react-dom-factories");
-const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
-const { L10N } = require("devtools/client/netmonitor/src/utils/l10n");
+const {
+  Component,
+} = require("resource://devtools/client/shared/vendor/react.js");
+const dom = require("resource://devtools/client/shared/vendor/react-dom-factories.js");
+const PropTypes = require("resource://devtools/client/shared/vendor/react-prop-types.js");
+const {
+  L10N,
+} = require("resource://devtools/client/netmonitor/src/utils/l10n.js");
 const {
   propertiesEqual,
-} = require("devtools/client/netmonitor/src/utils/request-utils");
+} = require("resource://devtools/client/netmonitor/src/utils/request-utils.js");
 
 const { div } = dom;
 
@@ -43,13 +47,8 @@ class StatusCode extends Component {
 
   render() {
     const { item } = this.props;
-    const {
-      fromCache,
-      fromServiceWorker,
-      status,
-      statusText,
-      blockedReason,
-    } = item;
+    const { fromCache, fromServiceWorker, status, statusText, blockedReason } =
+      item;
     let code;
 
     if (status) {
@@ -83,7 +82,7 @@ class StatusCode extends Component {
     return div(
       {
         className: "requests-list-status-code status-code",
-        onMouseOver: function({ target }) {
+        onMouseOver({ target }) {
           if (status && statusText && !target.title) {
             target.title = getStatusTooltip(item);
           }

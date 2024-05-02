@@ -4,10 +4,12 @@
 
 const CC = Components.Constructor;
 
-let { ForgetAboutSite } = ChromeUtils.import(
-  "resource://gre/modules/ForgetAboutSite.jsm"
+let { ForgetAboutSite } = ChromeUtils.importESModule(
+  "resource://gre/modules/ForgetAboutSite.sys.mjs"
 );
-let { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
+let { HttpServer } = ChromeUtils.importESModule(
+  "resource://testing-common/httpd.sys.mjs"
+);
 
 const USER_CONTEXTS = ["default", "personal"];
 const TEST_HOST = "example.com";
@@ -293,7 +295,7 @@ async function test_storage_cleared() {
     await SpecialPowers.spawn(
       tabInfo.browser,
       [{ userContext: USER_CONTEXTS[userContextId] }],
-      async function(arg) {
+      async function (arg) {
         // Check that the local storage has been set correctly.
         Assert.equal(
           content.localStorage.getItem("userContext"),
@@ -352,7 +354,7 @@ async function test_storage_cleared() {
     );
 
     // Check that do storages be cleared or not.
-    await SpecialPowers.spawn(tabInfo.browser, [], async function() {
+    await SpecialPowers.spawn(tabInfo.browser, [], async function () {
       // Check that does the local storage be cleared or not.
       Assert.ok(
         !content.localStorage.getItem("userContext"),
@@ -390,7 +392,7 @@ async function test_storage_cleared() {
   }
 }
 
-add_task(async function setup() {
+add_setup(async function () {
   // Make sure userContext is enabled.
   await SpecialPowers.pushPrefEnv({
     set: [["privacy.userContext.enabled", true]],

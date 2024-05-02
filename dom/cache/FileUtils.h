@@ -7,9 +7,10 @@
 #ifndef mozilla_dom_cache_FileUtils_h
 #define mozilla_dom_cache_FileUtils_h
 
+#include "CacheCommon.h"
+#include "CacheCipherKeyManager.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/dom/cache/Types.h"
-#include "CacheCommon.h"
 #include "mozIStorageConnection.h"
 #include "nsStreamUtils.h"
 #include "nsTArrayForwardDeclare.h"
@@ -17,9 +18,7 @@
 struct nsID;
 class nsIFile;
 
-namespace mozilla {
-namespace dom {
-namespace cache {
+namespace mozilla::dom::cache {
 
 #define PADDING_FILE_NAME u".padding"
 #define PADDING_TMP_FILE_NAME u".padding-tmp"
@@ -36,17 +35,18 @@ nsresult BodyDeleteDir(const CacheDirectoryMetadata& aDirectoryMetadata,
 
 // Returns a Result with a success value with the body id and, optionally, the
 // copy context.
-Result<std::pair<nsID, nsCOMPtr<nsISupports>>, nsresult> BodyStartWriteStream(
+Result<nsCOMPtr<nsISupports>, nsresult> BodyStartWriteStream(
     const CacheDirectoryMetadata& aDirectoryMetadata, nsIFile& aBaseDir,
+    const nsID& aBodyId, Maybe<CipherKey> aMaybeCipherKey,
     nsIInputStream& aSource, void* aClosure, nsAsyncCopyCallbackFun aCallback);
 
 void BodyCancelWrite(nsISupports& aCopyContext);
 
 nsresult BodyFinalizeWrite(nsIFile& aBaseDir, const nsID& aId);
 
-Result<NotNull<nsCOMPtr<nsIInputStream>>, nsresult> BodyOpen(
+Result<MovingNotNull<nsCOMPtr<nsIInputStream>>, nsresult> BodyOpen(
     const CacheDirectoryMetadata& aDirectoryMetadata, nsIFile& aBaseDir,
-    const nsID& aId);
+    const nsID& aId, Maybe<CipherKey> aMaybeCipherKey);
 
 nsresult BodyMaybeUpdatePaddingSize(
     const CacheDirectoryMetadata& aDirectoryMetadata, nsIFile& aBaseDir,
@@ -150,8 +150,6 @@ Result<int64_t, nsresult> DirectoryPaddingRestore(nsIFile& aBaseDir,
 
 nsresult DirectoryPaddingDeleteFile(nsIFile& aBaseDir,
                                     DirPaddingFile aPaddingFileType);
-}  // namespace cache
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom::cache
 
 #endif  // mozilla_dom_cache_FileUtils_h

@@ -14,18 +14,25 @@
 // error packets.
 /* eslint-disable no-throw-literal */
 
-const { Ci } = require("chrome");
-const { DevToolsServer } = require("devtools/server/devtools-server");
-const { XPCOMUtils } = require("resource://gre/modules/XPCOMUtils.jsm");
-const protocol = require("devtools/shared/protocol");
+const { Actor } = require("resource://devtools/shared/protocol.js");
 const {
   workerDescriptorSpec,
-} = require("devtools/shared/specs/descriptors/worker");
+} = require("resource://devtools/shared/specs/descriptors/worker.js");
+
+const {
+  DevToolsServer,
+} = require("resource://devtools/server/devtools-server.js");
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
+);
+const {
+  createWorkerSessionContext,
+} = require("resource://devtools/server/actors/watcher/session-context.js");
 
 loader.lazyRequireGetter(
   this,
   "connectToWorker",
-  "devtools/server/connectors/worker-connector",
+  "resource://devtools/server/connectors/worker-connector.js",
   true
 );
 
@@ -36,144 +43,140 @@ XPCOMUtils.defineLazyServiceGetter(
   "nsIServiceWorkerManager"
 );
 
-const WorkerDescriptorActor = protocol.ActorClassWithSpec(
-  workerDescriptorSpec,
-  {
-    initialize(conn, dbg) {
-      protocol.Actor.prototype.initialize.call(this, conn);
-      this._dbg = dbg;
-      this._attached = false;
-      this._threadActor = null;
-      this._transport = null;
+class WorkerDescriptorActor extends Actor {
+  constructor(conn, dbg) {
+    super(conn, workerDescriptorSpec);
+    this._dbg = dbg;
 
-      this._dbgListener = {
-        onClose: this._onWorkerClose.bind(this),
-        onError: this._onWorkerError.bind(this),
-      };
-    },
+    this._threadActor = null;
+    this._transport = null;
 
-    form() {
-      const form = {
-        actor: this.actorID,
+    this._dbgListener = {
+      onClose: this._onWorkerClose.bind(this),
+      onError: this._onWorkerError.bind(this),
+    };
+
+    this._dbg.addListener(this._dbgListener);
+    this._attached = true;
+  }
+
+  form() {
+    const form = {
+      actor: this.actorID,
+
+      consoleActor: this._consoleActor,
+      threadActor: this._threadActor,
+      tracerActor: this._tracerActor,
+
+      id: this._dbg.id,
+      url: this._dbg.url,
+      traits: {},
+      type: this._dbg.type,
+    };
+    if (this._dbg.type === Ci.nsIWorkerDebugger.TYPE_SERVICE) {
+      /**
+       * The ServiceWorkerManager in content processes don't maintain
+       * ServiceWorkerRegistrations; record the ServiceWorker's ID, and
+       * this data will be merged with the corresponding registration in
+       * the parent process.
+       */
+      if (!DevToolsServer.isInChildProcess) {
+        const registration = this._getServiceWorkerRegistrationInfo();
+        form.scope = registration.scope;
+        const newestWorker =
+          registration.activeWorker ||
+          registration.waitingWorker ||
+          registration.installingWorker;
+        form.fetch = newestWorker?.handlesFetchEvents;
+      }
+    }
+    return form;
+  }
+
+  detach() {
+    if (!this._attached) {
+      throw { error: "wrongState" };
+    }
+
+    this.destroy();
+  }
+
+  destroy() {
+    if (this._attached) {
+      this._detach();
+    }
+
+    this.emit("descriptor-destroyed");
+    super.destroy();
+  }
+
+  async getTarget() {
+    if (!this._attached) {
+      return { error: "wrongState" };
+    }
+
+    if (this._threadActor !== null) {
+      return {
+        type: "connected",
+
         consoleActor: this._consoleActor,
         threadActor: this._threadActor,
-        id: this._dbg.id,
-        url: this._dbg.url,
-        traits: {},
-        type: this._dbg.type,
+        tracerActor: this._tracerActor,
       };
-      if (this._dbg.type === Ci.nsIWorkerDebugger.TYPE_SERVICE) {
-        /**
-         * The ServiceWorkerManager in content processes don't maintain
-         * ServiceWorkerRegistrations; record the ServiceWorker's ID, and
-         * this data will be merged with the corresponding registration in
-         * the parent process.
-         */
-        if (!DevToolsServer.isInChildProcess) {
-          const registration = this._getServiceWorkerRegistrationInfo();
-          form.scope = registration.scope;
-          const newestWorker =
-            registration.activeWorker ||
-            registration.waitingWorker ||
-            registration.installingWorker;
-          form.fetch = newestWorker?.handlesFetchEvents;
+    }
+
+    try {
+      const { transport, workerTargetForm } = await connectToWorker(
+        this.conn,
+        this._dbg,
+        this.actorID,
+        {
+          sessionContext: createWorkerSessionContext(),
         }
-      }
-      return form;
-    },
+      );
 
-    attach() {
-      if (this._dbg.isClosed) {
-        return { error: "closed" };
-      }
+      this._consoleActor = workerTargetForm.consoleActor;
+      this._threadActor = workerTargetForm.threadActor;
+      this._tracerActor = workerTargetForm.tracerActor;
 
-      if (!this._attached) {
-        this._dbg.addListener(this._dbgListener);
-        this._attached = true;
-      }
+      this._transport = transport;
 
       return {
-        type: "attached",
+        type: "connected",
+
+        consoleActor: this._consoleActor,
+        threadActor: this._threadActor,
+        tracerActor: this._tracerActor,
+
         url: this._dbg.url,
       };
-    },
-
-    detach() {
-      if (!this._attached) {
-        throw { error: "wrongState" };
-      }
-
-      this.destroy();
-    },
-
-    destroy() {
-      if (this._attached) {
-        this._detach();
-      }
-
-      this.emit("descriptor-destroyed");
-      protocol.Actor.prototype.destroy.call(this);
-    },
-
-    async getTarget() {
-      if (!this._attached) {
-        return { error: "wrongState" };
-      }
-
-      if (this._threadActor !== null) {
-        return {
-          type: "connected",
-          threadActor: this._threadActor,
-          consoleActor: this._consoleActor,
-        };
-      }
-
-      try {
-        const { transport, workerTargetForm } = await connectToWorker(
-          this.conn,
-          this._dbg,
-          this.actorID,
-          {}
-        );
-
-        this._threadActor = workerTargetForm.threadActor;
-        this._consoleActor = workerTargetForm.consoleActor;
-        this._transport = transport;
-
-        return {
-          type: "connected",
-          threadActor: this._threadActor,
-          consoleActor: this._consoleActor,
-          url: this._dbg.url,
-        };
-      } catch (error) {
-        return { error: error.toString() };
-      }
-    },
-
-    _onWorkerClose() {
-      this.destroy();
-    },
-
-    _onWorkerError(filename, lineno, message) {
-      reportError("ERROR:" + filename + ":" + lineno + ":" + message + "\n");
-    },
-
-    _getServiceWorkerRegistrationInfo() {
-      return swm.getRegistrationByPrincipal(this._dbg.principal, this._dbg.url);
-    },
-
-    _detach() {
-      if (this._threadActor !== null) {
-        this._transport.close();
-        this._transport = null;
-        this._threadActor = null;
-      }
-
-      this._dbg.removeListener(this._dbgListener);
-      this._attached = false;
-    },
+    } catch (error) {
+      return { error: error.toString() };
+    }
   }
-);
+
+  _onWorkerClose() {
+    this.destroy();
+  }
+
+  _onWorkerError(filename, lineno, message) {
+    console.error("ERROR:", filename, ":", lineno, ":", message);
+  }
+
+  _getServiceWorkerRegistrationInfo() {
+    return swm.getRegistrationByPrincipal(this._dbg.principal, this._dbg.url);
+  }
+
+  _detach() {
+    if (this._threadActor !== null) {
+      this._transport.close();
+      this._transport = null;
+      this._threadActor = null;
+    }
+
+    this._dbg.removeListener(this._dbgListener);
+    this._attached = false;
+  }
+}
 
 exports.WorkerDescriptorActor = WorkerDescriptorActor;

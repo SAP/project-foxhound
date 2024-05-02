@@ -19,7 +19,7 @@
 #ifndef MODULES_AUDIO_CODING_CODECS_ILBC_MAIN_SOURCE_LSF_TO_LSP_H_
 #define MODULES_AUDIO_CODING_CODECS_ILBC_MAIN_SOURCE_LSF_TO_LSP_H_
 
-#include "modules/audio_coding/codecs/ilbc/defines.h"
+#include <stdint.h>
 
 /*----------------------------------------------------------------*
  *  conversion from lsf to lsp coefficients
@@ -29,6 +29,6 @@ void WebRtcIlbcfix_Lsf2Lsp(
     int16_t* lsf, /* (i) lsf in Q13 values between 0 and pi */
     int16_t* lsp, /* (o) lsp in Q15 values between -1 and 1 */
     int16_t m     /* (i) number of coefficients */
-    );
+);
 
 #endif

@@ -5,120 +5,112 @@
 import {
   getFrames,
   getBlackBoxRanges,
-  getSource,
   getSelectedFrame,
+  getSymbols,
 } from "../../selectors";
 
 import { isFrameBlackBoxed } from "../../utils/source";
 
 import assert from "../../utils/assert";
-
-import { isGeneratedId } from "devtools-source-map";
+import { getOriginalLocation } from "../../utils/source-maps";
+import {
+  debuggerToSourceMapLocation,
+  sourceMapToDebuggerLocation,
+} from "../../utils/location";
+import { annotateFramesWithLibrary } from "../../utils/pause/frames/annotateFrames";
+import { createWasmOriginalFrame } from "../../client/firefox/create";
+import { getOriginalDisplayNameForOriginalLocation } from "../../reducers/pause";
 
 function getSelectedFrameId(state, thread, frames) {
   let selectedFrame = getSelectedFrame(state, thread);
   const blackboxedRanges = getBlackBoxRanges(state);
 
-  if (
-    selectedFrame &&
-    !isFrameBlackBoxed(
-      selectedFrame,
-      getSource(state, selectedFrame.location.sourceId),
-      blackboxedRanges
-    )
-  ) {
+  if (selectedFrame && !isFrameBlackBoxed(selectedFrame, blackboxedRanges)) {
     return selectedFrame.id;
   }
 
   selectedFrame = frames.find(frame => {
-    const frameSource = getSource(state, frame.location.sourceId);
-    return !isFrameBlackBoxed(frame, frameSource, blackboxedRanges);
+    return !isFrameBlackBoxed(frame, blackboxedRanges);
   });
   return selectedFrame?.id;
 }
 
-export function updateFrameLocation(frame, sourceMaps) {
+async function updateFrameLocationAndDisplayName(frame, thunkArgs) {
+  // Ignore WASM original sources
   if (frame.isOriginal) {
-    return Promise.resolve(frame);
+    return frame;
   }
-  return sourceMaps.getOriginalLocation(frame.location).then(loc => ({
+
+  const location = await getOriginalLocation(frame.location, thunkArgs, true);
+  // Avoid instantiating new frame objects if the frame location isn't mapped
+  if (location == frame.location) {
+    return frame;
+  }
+
+  // As we now know that this frame relates to an original source...
+  // Check if we already fetched symbols for it and compute the frame's originalDisplayName.
+  // Otherwise it will be lazily computed by the reducer on source selection / symbols being fetched.
+  const symbols = getSymbols(thunkArgs.getState(), location);
+  const originalDisplayName = symbols
+    ? getOriginalDisplayNameForOriginalLocation(symbols, location)
+    : null;
+
+  // As we modify frame object, fork it to force causing re-renders
+  return {
     ...frame,
-    location: loc,
+    location,
     generatedLocation: frame.generatedLocation || frame.location,
-  }));
+    originalDisplayName,
+  };
 }
 
-function updateFrameLocations(frames, sourceMaps) {
-  if (!frames || frames.length == 0) {
-    return Promise.resolve(frames);
-  }
-
-  return Promise.all(
-    frames.map(frame => updateFrameLocation(frame, sourceMaps))
-  );
-}
-
-function isWasmOriginalSourceFrame(frame, getState) {
-  if (isGeneratedId(frame.location.sourceId)) {
+function isWasmOriginalSourceFrame(frame) {
+  if (!frame.location.source.isOriginal) {
     return false;
   }
-  const generatedSource = getSource(
-    getState(),
-    frame.generatedLocation.sourceId
-  );
 
-  return Boolean(generatedSource?.isWasm);
+  return Boolean(frame.generatedLocation?.source.isWasm);
 }
 
-async function expandFrames(frames, sourceMaps, getState) {
+/**
+ * Wasm Source Maps can come with an non-standard "xScopes" attribute
+ * which allows mapping the scope of a given location.
+ */
+async function expandWasmFrames(frames, { getState, sourceMapLoader }) {
   const result = [];
   for (let i = 0; i < frames.length; ++i) {
     const frame = frames[i];
-    if (frame.isOriginal || !isWasmOriginalSourceFrame(frame, getState)) {
+    if (frame.isOriginal || !isWasmOriginalSourceFrame(frame)) {
       result.push(frame);
       continue;
     }
-    const originalFrames = await sourceMaps.getOriginalStackFrames(
-      frame.generatedLocation
+    const originalFrames = await sourceMapLoader.getOriginalStackFrames(
+      debuggerToSourceMapLocation(frame.generatedLocation)
     );
     if (!originalFrames) {
       result.push(frame);
       continue;
     }
 
-    assert(originalFrames.length > 0, "Expected at least one original frame");
-    // First entry has not specific location -- use one from original frame.
-    originalFrames[0] = {
-      ...originalFrames[0],
-      location: frame.location,
-    };
+    assert(!!originalFrames.length, "Expected at least one original frame");
+    // First entry has no specific location -- use one from the generated frame.
+    originalFrames[0].location = frame.location;
 
     originalFrames.forEach((originalFrame, j) => {
       if (!originalFrame.location) {
         return;
       }
 
-      // Keep outer most frame with true actor ID, and generate uniquie
+      // Keep outer most frame with true actor ID, and generate unique
       // one for the nested frames.
       const id = j == 0 ? frame.id : `${frame.id}-originalFrame${j}`;
-      result.push({
-        id,
-        displayName: originalFrame.displayName,
-        location: originalFrame.location,
-        index: frame.index,
-        source: null,
-        thread: frame.thread,
-        scope: frame.scope,
-        this: frame.this,
-        isOriginal: true,
-        // More fields that will be added by the mapDisplayNames and
-        // updateFrameLocation.
-        generatedLocation: frame.generatedLocation,
-        originalDisplayName: originalFrame.displayName,
-        originalVariables: originalFrame.variables,
-        asyncCause: frame.asyncCause,
-        state: frame.state,
-      });
+      const originalFrameLocation = sourceMapToDebuggerLocation(
+        getState(),
+        originalFrame.location
+      );
+      result.push(
+        createWasmOriginalFrame(frame, id, originalFrame, originalFrameLocation)
+      );
     });
   }
   return result;
@@ -133,28 +125,35 @@ async function expandFrames(frames, sourceMaps, getState) {
  * @memberof actions/pause
  * @static
  */
-export function mapFrames(cx) {
-  return async function(thunkArgs) {
-    const { dispatch, getState, sourceMaps } = thunkArgs;
-    const frames = getFrames(getState(), cx.thread);
-    if (!frames) {
+export function mapFrames(thread) {
+  return async function (thunkArgs) {
+    const { dispatch, getState } = thunkArgs;
+    const frames = getFrames(getState(), thread);
+    if (!frames || !frames.length) {
       return;
     }
 
-    let mappedFrames = await updateFrameLocations(frames, sourceMaps);
+    // Update frame's location/generatedLocation/originalDisplayNames in case it relates to an original source
+    let mappedFrames = await Promise.all(
+      frames.map(frame => updateFrameLocationAndDisplayName(frame, thunkArgs))
+    );
 
-    mappedFrames = await expandFrames(mappedFrames, sourceMaps, getState);
+    mappedFrames = await expandWasmFrames(mappedFrames, thunkArgs);
 
+    // Add the "library" attribute on all frame objects (if relevant)
+    annotateFramesWithLibrary(mappedFrames);
+
+    // After having mapped the frames, we should update the selected frame
+    // just in case the selected frame is now set on a blackboxed original source
     const selectedFrameId = getSelectedFrameId(
       getState(),
-      cx.thread,
+      thread,
       mappedFrames
     );
 
     dispatch({
       type: "MAP_FRAMES",
-      cx,
-      thread: cx.thread,
+      thread,
       frames: mappedFrames,
       selectedFrameId,
     });

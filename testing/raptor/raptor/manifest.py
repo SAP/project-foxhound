@@ -1,18 +1,22 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
-from __future__ import absolute_import
-
 import json
 import os
+import pathlib
 import re
 
-from six.moves.urllib.parse import parse_qs, urlsplit, urlunsplit, urlencode, unquote
-
+from constants.raptor_tests_constants import YOUTUBE_PLAYBACK_MEASURE
 from logger.logger import RaptorLogger
 from manifestparser import TestManifest
-from utils import bool_from_str, transform_platform, transform_subtest
-from constants.raptor_tests_constants import YOUTUBE_PLAYBACK_MEASURE
+from perftest import TRACE_APPS
+from six.moves.urllib.parse import parse_qs, unquote, urlencode, urlsplit, urlunsplit
+from utils import (
+    bool_from_str,
+    import_support_class,
+    transform_platform,
+    transform_subtest,
+)
 
 here = os.path.abspath(os.path.dirname(__file__))
 raptor_ini = os.path.join(here, "raptor.ini")
@@ -91,7 +95,6 @@ def validate_test_ini(test_details):
     # if 'alert-on' is specified, we need to make sure that the value given is valid
     # i.e. any 'alert_on' values must be values that exist in the 'measure' ini setting
     if test_details.get("alert_on") is not None:
-
         # support with or without spaces, i.e. 'measure = fcp, loadtime' or '= fcp,loadtime'
         # convert to a list; and remove any spaces
         # this can also have regexes inside
@@ -132,6 +135,18 @@ def validate_test_ini(test_details):
         # replace old alert_on values with valid elements (no more regexes inside)
         # and also remove duplicates if any, by converting valid_alerts to a 'set' first
         test_details["alert_on"] = sorted(set(valid_alerts))
+
+    # if repository is defined, then a revision also needs to be defined
+    # the path is optional and we'll default to the root of the repo
+    if test_details.get("repository", None) is not None:
+        if test_details.get("repository_revision", None) is None:
+            LOG.error(
+                "`repository_revision` is required when a `repository` is defined."
+            )
+            valid_settings = False
+        elif test_details.get("type") not in ("benchmark"):
+            LOG.error("`repository` is only available for benchmark test types.")
+            valid_settings = False
 
     return valid_settings
 
@@ -242,8 +257,7 @@ def write_test_settings_json(args, test_details, oskey):
 
     # if Gecko profiling is enabled, write profiling settings for webext
     if test_details.get("gecko_profile", False):
-        threads = ["GeckoMain", "Compositor"]
-        threads.extend(["Renderer", "WR"])
+        threads = ["GeckoMain", "Compositor", "Renderer"]
 
         if test_details.get("gecko_profile_threads"):
             # pylint --py3k: W1639
@@ -268,6 +282,9 @@ def write_test_settings_json(args, test_details, oskey):
         features = test_details.get("gecko_profile_features")
         if features:
             test_settings["raptor-options"]["gecko_profile_features"] = features
+
+    if test_details.get("extra_profiler_run", False):
+        test_settings["raptor-options"]["extra_profiler_run"] = True
 
     if test_details.get("newtab_per_cycle", None) is not None:
         test_settings["raptor-options"]["newtab_per_cycle"] = bool(
@@ -339,6 +356,14 @@ def get_raptor_test_list(args, oskey):
             if tail == _ini:
                 # subtest comes from matching test ini file name, so add it
                 tests_to_run.append(next_test)
+
+    if args.collect_perfstats and args.app.lower() not in (
+        "chrome",
+        "chromium",
+        "custom-car",
+    ):
+        for next_test in tests_to_run:
+            next_test["perfstats"] = "true"
 
     # enable live sites if requested with --live-sites
     if args.live_sites:
@@ -418,6 +443,20 @@ def get_raptor_test_list(args, oskey):
             next_test.pop("gecko_profile_threads", None)
             next_test.pop("gecko_profile_features", None)
 
+        if args.extra_profiler_run is True and (
+            args.app == "firefox" or args.app in TRACE_APPS
+        ):
+            next_test["extra_profiler_run"] = True
+            LOG.info("extra-profiler-run enabled")
+            next_test["extra_profiler_run_browser_cycles"] = 1
+            if args.chimera:
+                next_test["extra_profiler_run_page_cycles"] = 2
+            else:
+                next_test["extra_profiler_run_page_cycles"] = 1
+        else:
+            args.extra_profiler_run = False
+            LOG.info("extra-profiler-run disabled")
+
         if args.debug_mode is True:
             next_test["debug_mode"] = True
             LOG.info("debug-mode enabled")
@@ -430,13 +469,12 @@ def get_raptor_test_list(args, oskey):
             LOG.info(
                 "setting page-cycles to %d as specified on cmd line" % args.page_cycles
             )
-        else:
-            if int(next_test.get("page_cycles", 1)) > max_page_cycles:
-                next_test["page_cycles"] = max_page_cycles
-                LOG.info(
-                    "setting page-cycles to %d because gecko-profling is enabled"
-                    % next_test["page_cycles"]
-                )
+        elif int(next_test.get("page_cycles", 1)) > max_page_cycles:
+            next_test["page_cycles"] = max_page_cycles
+            LOG.info(
+                "setting page-cycles to %d because gecko-profling is enabled"
+                % next_test["page_cycles"]
+            )
 
         # if --browser-cycles was provided on the command line, use that instead of INI
         # if just provided in the INI use that but cap at 3 if gecko-profiling is enabled
@@ -446,13 +484,12 @@ def get_raptor_test_list(args, oskey):
                 "setting browser-cycles to %d as specified on cmd line"
                 % args.browser_cycles
             )
-        else:
-            if int(next_test.get("browser_cycles", 1)) > max_browser_cycles:
-                next_test["browser_cycles"] = max_browser_cycles
-                LOG.info(
-                    "setting browser-cycles to %d because gecko-profilng is enabled"
-                    % next_test["browser_cycles"]
-                )
+        elif int(next_test.get("browser_cycles", 1)) > max_browser_cycles:
+            next_test["browser_cycles"] = max_browser_cycles
+            LOG.info(
+                "setting browser-cycles to %d because gecko-profilng is enabled"
+                % next_test["browser_cycles"]
+            )
 
         # if --page-timeout was provided on the command line, use that instead of INI
         if args.page_timeout is not None:
@@ -540,7 +577,11 @@ def get_raptor_test_list(args, oskey):
             and next_test.get("measure") is None
             and next_test.get("type") == "pageload"
         ):
-            next_test["measure"] = "fnbpaint, fcp, dcf, loadtime"
+            next_test["measure"] = (
+                "fnbpaint, fcp, dcf, loadtime,"
+                "ContentfulSpeedIndex, PerceptualSpeedIndex,"
+                "SpeedIndex, FirstVisualChange, LastVisualChange"
+            )
 
         # convert 'measure =' test INI line to list
         if next_test.get("measure") is not None:
@@ -560,11 +601,25 @@ def get_raptor_test_list(args, oskey):
                 # remove the 'hero =' line since no longer measuring hero
                 del next_test["hero"]
 
+        if next_test.get("support_class", None) is not None:
+            support_class = import_support_class(
+                pathlib.Path(
+                    here,
+                    "..",
+                    "browsertime",
+                    "support-scripts",
+                    next_test["support_class"],
+                ).resolve()
+            )
+            next_test["support_class"] = support_class()
+
         bool_settings = [
             "lower_is_better",
             "subtest_lower_is_better",
             "accept_zero_vismet",
             "interactive",
+            "host_from_parent",
+            "expose_browser_profiler",
         ]
         for setting in bool_settings:
             if next_test.get(setting, None) is not None:

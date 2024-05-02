@@ -10,7 +10,7 @@
 
 const TEST_URL = "about:mozilla";
 
-add_task(async function setup() {
+add_setup(async function () {
   await PlacesUtils.bookmarks.eraseEverything();
 
   let toolbar = document.getElementById("PersonalToolbar");
@@ -57,8 +57,7 @@ add_task(async function test_remove_bookmark_from_toolbar() {
 
   let removePromise = PlacesTestUtils.waitForNotification(
     "bookmark-removed",
-    events => events.some(event => event.url == TEST_URL),
-    "places"
+    events => events.some(event => event.url == TEST_URL)
   );
 
   contextMenu.activateItem(contextMenuDeleteBookmark, {});
@@ -95,7 +94,7 @@ add_task(async function test_remove_bookmark_from_library() {
   // Open the Library and select the "UnfiledBookmarks".
   let library = await promiseLibrary("UnfiledBookmarks");
 
-  registerCleanupFunction(async function() {
+  registerCleanupFunction(async function () {
     await promiseLibraryClosed(library);
   });
 
@@ -142,8 +141,7 @@ add_task(async function test_remove_bookmark_from_library() {
 
   let removePromise = PlacesTestUtils.waitForNotification(
     "bookmark-removed",
-    events => events.some(event => event.url == uris[0]),
-    "places"
+    events => events.some(event => event.url == uris[0])
   );
   contextMenu.activateItem(contextMenuDeleteBookmark, {});
 

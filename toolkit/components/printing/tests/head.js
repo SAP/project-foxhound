@@ -19,15 +19,9 @@ class PrintHelper {
     info("withTestPage: " + pageUrl);
     let isPdf = pageUrl.endsWith(".pdf");
 
-    if (isPdf) {
-      await SpecialPowers.pushPrefEnv({
-        set: [["pdfjs.eventBusDispatchToDOM", true]],
-      });
-    }
-
     let taskReturn = await BrowserTestUtils.withNewTab(
       isPdf ? "about:blank" : pageUrl,
-      async function(browser) {
+      async function (browser) {
         if (isPdf) {
           let loaded = BrowserTestUtils.waitForContentEvent(
             browser,
@@ -36,9 +30,7 @@ class PrintHelper {
             null,
             true
           );
-          await SpecialPowers.spawn(browser, [pageUrl], contentUrl => {
-            content.location = contentUrl;
-          });
+          BrowserTestUtils.startLoadingURIString(browser, pageUrl);
           await loaded;
         }
         await testFn(new PrintHelper(browser));
@@ -113,23 +105,6 @@ class PrintHelper {
     );
   }
 
-  // This is used only for the old print preview. For tests
-  // involving the newer UI, use waitForPreview instead.
-  static waitForOldPrintPreview(expectedBrowser) {
-    const { PrintingParent } = ChromeUtils.import(
-      "resource://gre/actors/PrintingParent.jsm"
-    );
-
-    return new Promise(resolve => {
-      PrintingParent.setTestListener(browser => {
-        if (browser == expectedBrowser) {
-          PrintingParent.setTestListener(null);
-          resolve();
-        }
-      });
-    });
-  }
-
   constructor(sourceBrowser) {
     this.sourceBrowser = sourceBrowser;
   }
@@ -186,7 +161,8 @@ class PrintHelper {
   }
 
   resetSettings() {
-    this.win.PrintEventHandler.settings = this.win.PrintEventHandler.defaultSettings;
+    this.win.PrintEventHandler.settings =
+      this.win.PrintEventHandler.defaultSettings;
     this.win.PrintEventHandler.saveSettingsToPrefs(
       this.win.PrintEventHandler.kInitSaveAll
     );
@@ -239,11 +215,14 @@ class PrintHelper {
       throw new Error("Print already mocked");
     }
 
-    // Create some Promises that we can resolve/reject from the test.
-    let showSystemDialogPromise = new Promise((resolve, reject) => {
-      this.resolveShowSystemDialog = resolve;
-      this.rejectShowSystemDialog = () => {
-        reject(Components.Exception("", Cr.NS_ERROR_ABORT));
+    // Create some Promises that we can resolve from the test.
+    let showSystemDialogPromise = new Promise(resolve => {
+      this.resolveShowSystemDialog = result => {
+        if (result !== undefined) {
+          resolve(result);
+        } else {
+          resolve(true);
+        }
       };
     });
     let printPromise = new Promise((resolve, reject) => {
@@ -252,7 +231,14 @@ class PrintHelper {
     });
 
     // Mock PrintEventHandler with our Promises.
-    this.win.PrintEventHandler._showPrintDialog = () => showSystemDialogPromise;
+    this.win.PrintEventHandler._showPrintDialog = (
+      window,
+      haveSelection,
+      settings
+    ) => {
+      this.systemDialogOpenedWithSelection = haveSelection;
+      return showSystemDialogPromise;
+    };
     this.win.PrintEventHandler._doPrint = (bc, settings) => {
       this._printedSettings = settings;
       return printPromise;
@@ -281,11 +267,12 @@ class PrintHelper {
       ).fallbackPaperList;
     }
 
-    let defaultSettings = PSSVC.newPrintSettings;
+    let defaultSettings = PSSVC.createNewPrintSettings();
     defaultSettings.printerName = name;
     defaultSettings.toFileName = "";
     defaultSettings.outputFormat = Ci.nsIPrintSettings.kOutputFormatNative;
-    defaultSettings.printToFile = false;
+    defaultSettings.outputDestination =
+      Ci.nsIPrintSettings.kOutputDestinationPrinter;
     defaultSettings.paperSizeUnit = paperSizeUnit;
     if (paperId) {
       defaultSettings.paperId = paperId;
@@ -559,7 +546,7 @@ class PrintHelper {
 }
 
 function waitForPreviewVisible() {
-  return BrowserTestUtils.waitForCondition(function() {
+  return BrowserTestUtils.waitForCondition(function () {
     let preview = document.querySelector(".printPreviewBrowser");
     return preview && BrowserTestUtils.is_visible(preview);
   });

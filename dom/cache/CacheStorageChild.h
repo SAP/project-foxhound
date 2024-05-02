@@ -13,8 +13,7 @@
 
 class nsIGlobalObject;
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class Promise;
 
@@ -31,7 +30,6 @@ class CacheStorageChild final : public PCacheStorageChild, public ActorChild {
  public:
   CacheStorageChild(CacheStorage* aListener,
                     SafeRefPtr<CacheWorkerRef> aWorkerRef);
-  ~CacheStorageChild();
 
   // Must be called by the associated CacheStorage listener in its
   // DestroyInternal() method.  Also, CacheStorage must call
@@ -45,9 +43,15 @@ class CacheStorageChild final : public PCacheStorageChild, public ActorChild {
   // Our parent Listener object has gone out of scope and is being destroyed.
   void StartDestroyFromListener();
 
- private:
-  // ActorChild methods
+  NS_INLINE_DECL_REFCOUNTING(CacheStorageChild, override)
+  void NoteDeletedActor() override;
 
+ private:
+  ~CacheStorageChild();
+
+  void DestroyInternal();
+
+  // ActorChild methods
   // CacheWorkerRef is trying to destroy due to worker shutdown.
   virtual void StartDestroy() override;
 
@@ -59,20 +63,16 @@ class CacheStorageChild final : public PCacheStorageChild, public ActorChild {
   bool DeallocPCacheOpChild(PCacheOpChild* aActor);
 
   // utility methods
-  void NoteDeletedActor();
+  inline uint32_t NumChildActors() { return ManagedPCacheOpChild().Count(); }
 
   // Use a weak ref so actor does not hold DOM object alive past content use.
   // The CacheStorage object must call ClearListener() to null this before its
   // destroyed.
   CacheStorage* MOZ_NON_OWNING_REF mListener;
-  uint32_t mNumChildActors;
   bool mDelayedDestroy;
-
-  NS_DECL_OWNINGTHREAD
 };
 
 }  // namespace cache
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_cache_CacheStorageChild_h

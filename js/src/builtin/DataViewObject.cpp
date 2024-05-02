@@ -17,18 +17,16 @@
 
 #include "jsnum.h"
 
-#include "builtin/Array.h"
 #include "jit/AtomicOperations.h"
 #include "jit/InlinableNatives.h"
-#include "js/CallAndConstruct.h"  // JS::Construct
 #include "js/Conversions.h"
 #include "js/experimental/TypedData.h"  // JS_NewDataView
 #include "js/friend/ErrorMessages.h"    // js::GetErrorMessage, JSMSG_*
 #include "js/PropertySpec.h"
 #include "js/Wrapper.h"
 #include "util/DifferentialTesting.h"
-#include "util/WindowsWrapper.h"
 #include "vm/ArrayBufferObject.h"
+#include "vm/Compartment.h"
 #include "vm/GlobalObject.h"
 #include "vm/Interpreter.h"
 #include "vm/JSContext.h"
@@ -37,8 +35,6 @@
 #include "vm/Uint8Clamped.h"
 #include "vm/WrapperObject.h"
 
-#include "gc/Nursery-inl.h"
-#include "gc/StoreBuffer-inl.h"
 #include "vm/ArrayBufferObject-inl.h"
 #include "vm/NativeObject-inl.h"
 
@@ -48,6 +44,10 @@ using JS::CanonicalizeNaN;
 using JS::ToInt32;
 using mozilla::AssertedCast;
 using mozilla::WrapToSigned;
+
+static bool IsDataView(HandleValue v) {
+  return v.isObject() && v.toObject().is<DataViewObject>();
+}
 
 DataViewObject* DataViewObject::create(
     JSContext* cx, size_t byteOffset, size_t byteLength,
@@ -105,7 +105,7 @@ bool DataViewObject::getAndCheckConstructorArgs(JSContext* cx,
                               JSMSG_OFFSET_OUT_OF_BUFFER);
     return false;
   }
-  MOZ_ASSERT(offset <= ArrayBufferObject::maxBufferByteLength());
+  MOZ_ASSERT(offset <= ArrayBufferObject::MaxByteLength);
 
   // Step 8.a
   uint64_t viewByteLength = bufferByteLength - offset;
@@ -126,7 +126,7 @@ bool DataViewObject::getAndCheckConstructorArgs(JSContext* cx,
       return false;
     }
   }
-  MOZ_ASSERT(viewByteLength <= ArrayBufferObject::maxBufferByteLength());
+  MOZ_ASSERT(viewByteLength <= ArrayBufferObject::MaxByteLength);
 
   *byteOffsetPtr = offset;
   *byteLengthPtr = viewByteLength;
@@ -493,7 +493,7 @@ bool DataViewObject::write(JSContext* cx, Handle<DataViewObject*> obj,
 }
 
 bool DataViewObject::getInt8Impl(JSContext* cx, const CallArgs& args) {
-  MOZ_ASSERT(is(args.thisv()));
+  MOZ_ASSERT(IsDataView(args.thisv()));
 
   Rooted<DataViewObject*> thisView(
       cx, &args.thisv().toObject().as<DataViewObject>());
@@ -508,11 +508,11 @@ bool DataViewObject::getInt8Impl(JSContext* cx, const CallArgs& args) {
 
 bool DataViewObject::fun_getInt8(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
-  return CallNonGenericMethod<is, getInt8Impl>(cx, args);
+  return CallNonGenericMethod<IsDataView, getInt8Impl>(cx, args);
 }
 
 bool DataViewObject::getUint8Impl(JSContext* cx, const CallArgs& args) {
-  MOZ_ASSERT(is(args.thisv()));
+  MOZ_ASSERT(IsDataView(args.thisv()));
 
   Rooted<DataViewObject*> thisView(
       cx, &args.thisv().toObject().as<DataViewObject>());
@@ -527,11 +527,11 @@ bool DataViewObject::getUint8Impl(JSContext* cx, const CallArgs& args) {
 
 bool DataViewObject::fun_getUint8(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
-  return CallNonGenericMethod<is, getUint8Impl>(cx, args);
+  return CallNonGenericMethod<IsDataView, getUint8Impl>(cx, args);
 }
 
 bool DataViewObject::getInt16Impl(JSContext* cx, const CallArgs& args) {
-  MOZ_ASSERT(is(args.thisv()));
+  MOZ_ASSERT(IsDataView(args.thisv()));
 
   Rooted<DataViewObject*> thisView(
       cx, &args.thisv().toObject().as<DataViewObject>());
@@ -546,11 +546,11 @@ bool DataViewObject::getInt16Impl(JSContext* cx, const CallArgs& args) {
 
 bool DataViewObject::fun_getInt16(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
-  return CallNonGenericMethod<is, getInt16Impl>(cx, args);
+  return CallNonGenericMethod<IsDataView, getInt16Impl>(cx, args);
 }
 
 bool DataViewObject::getUint16Impl(JSContext* cx, const CallArgs& args) {
-  MOZ_ASSERT(is(args.thisv()));
+  MOZ_ASSERT(IsDataView(args.thisv()));
 
   Rooted<DataViewObject*> thisView(
       cx, &args.thisv().toObject().as<DataViewObject>());
@@ -565,11 +565,11 @@ bool DataViewObject::getUint16Impl(JSContext* cx, const CallArgs& args) {
 
 bool DataViewObject::fun_getUint16(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
-  return CallNonGenericMethod<is, getUint16Impl>(cx, args);
+  return CallNonGenericMethod<IsDataView, getUint16Impl>(cx, args);
 }
 
 bool DataViewObject::getInt32Impl(JSContext* cx, const CallArgs& args) {
-  MOZ_ASSERT(is(args.thisv()));
+  MOZ_ASSERT(IsDataView(args.thisv()));
 
   Rooted<DataViewObject*> thisView(
       cx, &args.thisv().toObject().as<DataViewObject>());
@@ -584,11 +584,11 @@ bool DataViewObject::getInt32Impl(JSContext* cx, const CallArgs& args) {
 
 bool DataViewObject::fun_getInt32(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
-  return CallNonGenericMethod<is, getInt32Impl>(cx, args);
+  return CallNonGenericMethod<IsDataView, getInt32Impl>(cx, args);
 }
 
 bool DataViewObject::getUint32Impl(JSContext* cx, const CallArgs& args) {
-  MOZ_ASSERT(is(args.thisv()));
+  MOZ_ASSERT(IsDataView(args.thisv()));
 
   Rooted<DataViewObject*> thisView(
       cx, &args.thisv().toObject().as<DataViewObject>());
@@ -603,13 +603,13 @@ bool DataViewObject::getUint32Impl(JSContext* cx, const CallArgs& args) {
 
 bool DataViewObject::fun_getUint32(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
-  return CallNonGenericMethod<is, getUint32Impl>(cx, args);
+  return CallNonGenericMethod<IsDataView, getUint32Impl>(cx, args);
 }
 
 // BigInt proposal 7.26
 // DataView.prototype.getBigInt64 ( byteOffset [ , littleEndian ] )
 bool DataViewObject::getBigInt64Impl(JSContext* cx, const CallArgs& args) {
-  MOZ_ASSERT(is(args.thisv()));
+  MOZ_ASSERT(IsDataView(args.thisv()));
 
   Rooted<DataViewObject*> thisView(
       cx, &args.thisv().toObject().as<DataViewObject>());
@@ -629,13 +629,13 @@ bool DataViewObject::getBigInt64Impl(JSContext* cx, const CallArgs& args) {
 
 bool DataViewObject::fun_getBigInt64(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
-  return CallNonGenericMethod<is, getBigInt64Impl>(cx, args);
+  return CallNonGenericMethod<IsDataView, getBigInt64Impl>(cx, args);
 }
 
 // BigInt proposal 7.27
 // DataView.prototype.getBigUint64 ( byteOffset [ , littleEndian ] )
 bool DataViewObject::getBigUint64Impl(JSContext* cx, const CallArgs& args) {
-  MOZ_ASSERT(is(args.thisv()));
+  MOZ_ASSERT(IsDataView(args.thisv()));
 
   Rooted<DataViewObject*> thisView(
       cx, &args.thisv().toObject().as<DataViewObject>());
@@ -655,11 +655,11 @@ bool DataViewObject::getBigUint64Impl(JSContext* cx, const CallArgs& args) {
 
 bool DataViewObject::fun_getBigUint64(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
-  return CallNonGenericMethod<is, getBigUint64Impl>(cx, args);
+  return CallNonGenericMethod<IsDataView, getBigUint64Impl>(cx, args);
 }
 
 bool DataViewObject::getFloat32Impl(JSContext* cx, const CallArgs& args) {
-  MOZ_ASSERT(is(args.thisv()));
+  MOZ_ASSERT(IsDataView(args.thisv()));
 
   Rooted<DataViewObject*> thisView(
       cx, &args.thisv().toObject().as<DataViewObject>());
@@ -675,11 +675,11 @@ bool DataViewObject::getFloat32Impl(JSContext* cx, const CallArgs& args) {
 
 bool DataViewObject::fun_getFloat32(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
-  return CallNonGenericMethod<is, getFloat32Impl>(cx, args);
+  return CallNonGenericMethod<IsDataView, getFloat32Impl>(cx, args);
 }
 
 bool DataViewObject::getFloat64Impl(JSContext* cx, const CallArgs& args) {
-  MOZ_ASSERT(is(args.thisv()));
+  MOZ_ASSERT(IsDataView(args.thisv()));
 
   Rooted<DataViewObject*> thisView(
       cx, &args.thisv().toObject().as<DataViewObject>());
@@ -695,11 +695,11 @@ bool DataViewObject::getFloat64Impl(JSContext* cx, const CallArgs& args) {
 
 bool DataViewObject::fun_getFloat64(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
-  return CallNonGenericMethod<is, getFloat64Impl>(cx, args);
+  return CallNonGenericMethod<IsDataView, getFloat64Impl>(cx, args);
 }
 
 bool DataViewObject::setInt8Impl(JSContext* cx, const CallArgs& args) {
-  MOZ_ASSERT(is(args.thisv()));
+  MOZ_ASSERT(IsDataView(args.thisv()));
 
   Rooted<DataViewObject*> thisView(
       cx, &args.thisv().toObject().as<DataViewObject>());
@@ -713,11 +713,11 @@ bool DataViewObject::setInt8Impl(JSContext* cx, const CallArgs& args) {
 
 bool DataViewObject::fun_setInt8(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
-  return CallNonGenericMethod<is, setInt8Impl>(cx, args);
+  return CallNonGenericMethod<IsDataView, setInt8Impl>(cx, args);
 }
 
 bool DataViewObject::setUint8Impl(JSContext* cx, const CallArgs& args) {
-  MOZ_ASSERT(is(args.thisv()));
+  MOZ_ASSERT(IsDataView(args.thisv()));
 
   Rooted<DataViewObject*> thisView(
       cx, &args.thisv().toObject().as<DataViewObject>());
@@ -731,11 +731,11 @@ bool DataViewObject::setUint8Impl(JSContext* cx, const CallArgs& args) {
 
 bool DataViewObject::fun_setUint8(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
-  return CallNonGenericMethod<is, setUint8Impl>(cx, args);
+  return CallNonGenericMethod<IsDataView, setUint8Impl>(cx, args);
 }
 
 bool DataViewObject::setInt16Impl(JSContext* cx, const CallArgs& args) {
-  MOZ_ASSERT(is(args.thisv()));
+  MOZ_ASSERT(IsDataView(args.thisv()));
 
   Rooted<DataViewObject*> thisView(
       cx, &args.thisv().toObject().as<DataViewObject>());
@@ -749,11 +749,11 @@ bool DataViewObject::setInt16Impl(JSContext* cx, const CallArgs& args) {
 
 bool DataViewObject::fun_setInt16(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
-  return CallNonGenericMethod<is, setInt16Impl>(cx, args);
+  return CallNonGenericMethod<IsDataView, setInt16Impl>(cx, args);
 }
 
 bool DataViewObject::setUint16Impl(JSContext* cx, const CallArgs& args) {
-  MOZ_ASSERT(is(args.thisv()));
+  MOZ_ASSERT(IsDataView(args.thisv()));
 
   Rooted<DataViewObject*> thisView(
       cx, &args.thisv().toObject().as<DataViewObject>());
@@ -767,11 +767,11 @@ bool DataViewObject::setUint16Impl(JSContext* cx, const CallArgs& args) {
 
 bool DataViewObject::fun_setUint16(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
-  return CallNonGenericMethod<is, setUint16Impl>(cx, args);
+  return CallNonGenericMethod<IsDataView, setUint16Impl>(cx, args);
 }
 
 bool DataViewObject::setInt32Impl(JSContext* cx, const CallArgs& args) {
-  MOZ_ASSERT(is(args.thisv()));
+  MOZ_ASSERT(IsDataView(args.thisv()));
 
   Rooted<DataViewObject*> thisView(
       cx, &args.thisv().toObject().as<DataViewObject>());
@@ -785,11 +785,11 @@ bool DataViewObject::setInt32Impl(JSContext* cx, const CallArgs& args) {
 
 bool DataViewObject::fun_setInt32(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
-  return CallNonGenericMethod<is, setInt32Impl>(cx, args);
+  return CallNonGenericMethod<IsDataView, setInt32Impl>(cx, args);
 }
 
 bool DataViewObject::setUint32Impl(JSContext* cx, const CallArgs& args) {
-  MOZ_ASSERT(is(args.thisv()));
+  MOZ_ASSERT(IsDataView(args.thisv()));
 
   Rooted<DataViewObject*> thisView(
       cx, &args.thisv().toObject().as<DataViewObject>());
@@ -803,13 +803,13 @@ bool DataViewObject::setUint32Impl(JSContext* cx, const CallArgs& args) {
 
 bool DataViewObject::fun_setUint32(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
-  return CallNonGenericMethod<is, setUint32Impl>(cx, args);
+  return CallNonGenericMethod<IsDataView, setUint32Impl>(cx, args);
 }
 
 // BigInt proposal 7.28
 // DataView.prototype.setBigInt64 ( byteOffset, value [ , littleEndian ] )
 bool DataViewObject::setBigInt64Impl(JSContext* cx, const CallArgs& args) {
-  MOZ_ASSERT(is(args.thisv()));
+  MOZ_ASSERT(IsDataView(args.thisv()));
 
   Rooted<DataViewObject*> thisView(
       cx, &args.thisv().toObject().as<DataViewObject>());
@@ -823,13 +823,13 @@ bool DataViewObject::setBigInt64Impl(JSContext* cx, const CallArgs& args) {
 
 bool DataViewObject::fun_setBigInt64(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
-  return CallNonGenericMethod<is, setBigInt64Impl>(cx, args);
+  return CallNonGenericMethod<IsDataView, setBigInt64Impl>(cx, args);
 }
 
 // BigInt proposal 7.29
 // DataView.prototype.setBigUint64 ( byteOffset, value [ , littleEndian ] )
 bool DataViewObject::setBigUint64Impl(JSContext* cx, const CallArgs& args) {
-  MOZ_ASSERT(is(args.thisv()));
+  MOZ_ASSERT(IsDataView(args.thisv()));
 
   Rooted<DataViewObject*> thisView(
       cx, &args.thisv().toObject().as<DataViewObject>());
@@ -843,11 +843,11 @@ bool DataViewObject::setBigUint64Impl(JSContext* cx, const CallArgs& args) {
 
 bool DataViewObject::fun_setBigUint64(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
-  return CallNonGenericMethod<is, setBigUint64Impl>(cx, args);
+  return CallNonGenericMethod<IsDataView, setBigUint64Impl>(cx, args);
 }
 
 bool DataViewObject::setFloat32Impl(JSContext* cx, const CallArgs& args) {
-  MOZ_ASSERT(is(args.thisv()));
+  MOZ_ASSERT(IsDataView(args.thisv()));
 
   Rooted<DataViewObject*> thisView(
       cx, &args.thisv().toObject().as<DataViewObject>());
@@ -861,11 +861,11 @@ bool DataViewObject::setFloat32Impl(JSContext* cx, const CallArgs& args) {
 
 bool DataViewObject::fun_setFloat32(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
-  return CallNonGenericMethod<is, setFloat32Impl>(cx, args);
+  return CallNonGenericMethod<IsDataView, setFloat32Impl>(cx, args);
 }
 
 bool DataViewObject::setFloat64Impl(JSContext* cx, const CallArgs& args) {
-  MOZ_ASSERT(is(args.thisv()));
+  MOZ_ASSERT(IsDataView(args.thisv()));
 
   Rooted<DataViewObject*> thisView(
       cx, &args.thisv().toObject().as<DataViewObject>());
@@ -879,7 +879,7 @@ bool DataViewObject::setFloat64Impl(JSContext* cx, const CallArgs& args) {
 
 bool DataViewObject::fun_setFloat64(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
-  return CallNonGenericMethod<is, setFloat64Impl>(cx, args);
+  return CallNonGenericMethod<IsDataView, setFloat64Impl>(cx, args);
 }
 
 bool DataViewObject::bufferGetterImpl(JSContext* cx, const CallArgs& args) {
@@ -891,7 +891,7 @@ bool DataViewObject::bufferGetterImpl(JSContext* cx, const CallArgs& args) {
 
 bool DataViewObject::bufferGetter(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
-  return CallNonGenericMethod<is, bufferGetterImpl>(cx, args);
+  return CallNonGenericMethod<IsDataView, bufferGetterImpl>(cx, args);
 }
 
 bool DataViewObject::byteLengthGetterImpl(JSContext* cx, const CallArgs& args) {
@@ -912,7 +912,7 @@ bool DataViewObject::byteLengthGetterImpl(JSContext* cx, const CallArgs& args) {
 
 bool DataViewObject::byteLengthGetter(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
-  return CallNonGenericMethod<is, byteLengthGetterImpl>(cx, args);
+  return CallNonGenericMethod<IsDataView, byteLengthGetterImpl>(cx, args);
 }
 
 bool DataViewObject::byteOffsetGetterImpl(JSContext* cx, const CallArgs& args) {
@@ -933,7 +933,7 @@ bool DataViewObject::byteOffsetGetterImpl(JSContext* cx, const CallArgs& args) {
 
 bool DataViewObject::byteOffsetGetter(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
-  return CallNonGenericMethod<is, byteOffsetGetterImpl>(cx, args);
+  return CallNonGenericMethod<IsDataView, byteOffsetGetterImpl>(cx, args);
 }
 
 static const JSClassOps DataViewObjectClassOps = {
@@ -945,7 +945,6 @@ static const JSClassOps DataViewObjectClassOps = {
     nullptr,                       // mayResolve
     nullptr,                       // finalize
     nullptr,                       // call
-    nullptr,                       // hasInstance
     nullptr,                       // construct
     ArrayBufferViewObject::trace,  // trace
 };

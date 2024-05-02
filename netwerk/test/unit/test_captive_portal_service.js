@@ -1,9 +1,11 @@
 "use strict";
 
-const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
+const { HttpServer } = ChromeUtils.importESModule(
+  "resource://testing-common/httpd.sys.mjs"
+);
 
 let httpserver = null;
-XPCOMUtils.defineLazyGetter(this, "cpURI", function() {
+ChromeUtils.defineLazyGetter(this, "cpURI", function () {
   return (
     "http://localhost:" + httpserver.identity.primaryPort + "/captive.html"
   );
@@ -185,9 +187,7 @@ add_task(async function test_redirect_https() {
   Services.prefs.setBoolPref(PREF_CAPTIVE_ENABLED, false);
   equal(cps.state, Ci.nsICaptivePortalService.UNKNOWN);
 
-  let h2Port = Cc["@mozilla.org/process/environment;1"]
-    .getService(Ci.nsIEnvironment)
-    .get("MOZHTTP2_PORT");
+  let h2Port = Services.env.get("MOZHTTP2_PORT");
   Assert.notEqual(h2Port, null);
   Assert.notEqual(h2Port, "");
 
@@ -207,6 +207,61 @@ add_task(async function test_redirect_https() {
     "Should be locked after redirect to https"
   );
   Services.prefs.setBoolPref(PREF_CAPTIVE_ENABLED, false);
+});
+
+// This test uses a 511 status code to request a captive portal login
+// We check that it triggers a captive portal login
+// See RFC 6585 for details
+add_task(async function test_511_error() {
+  Services.prefs.setBoolPref(PREF_CAPTIVE_ENABLED, false);
+  equal(cps.state, Ci.nsICaptivePortalService.UNKNOWN);
+
+  httpserver.registerPathHandler("/captive.html", (metadata, response) => {
+    response.setStatusLine(
+      metadata.httpVersion,
+      511,
+      "Network Authentication Required"
+    );
+    cpResponse = '<meta http-equiv="refresh" content="0;url=/login">';
+    contentHandler(metadata, response);
+  });
+
+  let notification = observerPromise("captive-portal-login");
+  Services.prefs.setBoolPref(PREF_CAPTIVE_ENABLED, true);
+
+  await notification;
+  equal(cps.state, Ci.nsICaptivePortalService.LOCKED_PORTAL);
+});
+
+// Any other 5xx HTTP error, is assumed to be an issue with the
+// canonical web server, and should not trigger a captive portal login
+add_task(async function test_generic_5xx_error() {
+  Services.prefs.setBoolPref(PREF_CAPTIVE_ENABLED, false);
+  equal(cps.state, Ci.nsICaptivePortalService.UNKNOWN);
+
+  let requests = 0;
+  httpserver.registerPathHandler("/captive.html", (metadata, response) => {
+    if (requests++ === 0) {
+      // on first attempt, send 503 error
+      response.setStatusLine(
+        metadata.httpVersion,
+        503,
+        "Internal Server Error"
+      );
+      cpResponse = "<h1>Internal Server Error</h1>";
+    } else {
+      // on retry, send canonical reply
+      cpResponse = SUCCESS_STRING;
+    }
+    contentHandler(metadata, response);
+  });
+
+  let notification = observerPromise("network:captive-portal-connectivity");
+  Services.prefs.setBoolPref(PREF_CAPTIVE_ENABLED, true);
+
+  await notification;
+  equal(requests, 2);
+  equal(cps.state, Ci.nsICaptivePortalService.NOT_CAPTIVE);
 });
 
 add_task(async function test_changed_notification() {

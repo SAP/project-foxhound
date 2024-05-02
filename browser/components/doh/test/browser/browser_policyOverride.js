@@ -6,8 +6,8 @@
 
 add_task(setup);
 
-const { EnterprisePolicyTesting } = ChromeUtils.import(
-  "resource://testing-common/EnterprisePolicyTesting.jsm"
+const { EnterprisePolicyTesting } = ChromeUtils.importESModule(
+  "resource://testing-common/EnterprisePolicyTesting.sys.mjs"
 );
 
 add_task(async function testPolicyOverride() {
@@ -46,6 +46,16 @@ add_task(async function testPolicyOverride() {
   ensureNoTRRSelectionTelemetry();
   await ensureNoTRRModeChange(undefined);
   ensureNoHeuristicsTelemetry();
+
+  checkScalars(
+    [
+      [
+        "networking.doh_heuristics_result",
+        { value: Heuristics.Telemetry.enterprisePresent },
+      ],
+      // All of the heuristics must be false.
+    ].concat(falseExpectations([]))
+  );
 
   // Simulate a network change.
   simulateNetworkChange();

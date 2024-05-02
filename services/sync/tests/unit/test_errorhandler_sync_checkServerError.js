@@ -1,10 +1,14 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
-const { Service } = ChromeUtils.import("resource://services-sync/service.js");
-const { Status } = ChromeUtils.import("resource://services-sync/status.js");
-const { FakeCryptoService } = ChromeUtils.import(
-  "resource://testing-common/services/sync/fakeservices.js"
+const { Service } = ChromeUtils.importESModule(
+  "resource://services-sync/service.sys.mjs"
+);
+const { Status } = ChromeUtils.importESModule(
+  "resource://services-sync/status.sys.mjs"
+);
+const { FakeCryptoService } = ChromeUtils.importESModule(
+  "resource://testing-common/services/sync/fakeservices.sys.mjs"
 );
 
 var engineManager = Service.engineManager;
@@ -13,12 +17,12 @@ function CatapultEngine() {
   SyncEngine.call(this, "Catapult", Service);
 }
 CatapultEngine.prototype = {
-  __proto__: SyncEngine.prototype,
   exception: null, // tests fill this in
   async _sync() {
     throw this.exception;
   },
 };
+Object.setPrototypeOf(CatapultEngine.prototype, SyncEngine.prototype);
 
 async function sync_httpd_setup() {
   let collectionsHelper = track_collections_helper();
@@ -113,7 +117,7 @@ add_task(async function test_backoff503() {
   engine.exception = { status: 503, headers: { "retry-after": BACKOFF } };
 
   let backoffInterval;
-  Svc.Obs.add("weave:service:backoff:interval", function(subject) {
+  Svc.Obs.add("weave:service:backoff:interval", function (subject) {
     backoffInterval = subject;
   });
 

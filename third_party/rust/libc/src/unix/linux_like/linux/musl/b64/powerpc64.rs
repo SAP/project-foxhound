@@ -1,6 +1,7 @@
 pub type c_char = u8;
 pub type wchar_t = i32;
 pub type __u64 = ::c_ulong;
+pub type __s64 = ::c_long;
 pub type nlink_t = u64;
 pub type blksize_t = ::c_long;
 
@@ -172,6 +173,9 @@ pub const MAP_STACK: ::c_int = 0x020000;
 pub const MAP_HUGETLB: ::c_int = 0x040000;
 pub const MAP_SYNC: ::c_int = 0x080000;
 
+pub const PTRACE_SYSEMU: ::c_int = 0x1d;
+pub const PTRACE_SYSEMU_SINGLESTEP: ::c_int = 0x1e;
+
 pub const SOCK_STREAM: ::c_int = 1;
 pub const SOCK_DGRAM: ::c_int = 2;
 
@@ -208,9 +212,6 @@ pub const F_GETOWN: ::c_int = 9;
 pub const F_SETLK: ::c_int = 6;
 pub const F_SETLKW: ::c_int = 7;
 pub const F_SETOWN: ::c_int = 8;
-pub const F_OFD_GETLK: ::c_int = 36;
-pub const F_OFD_SETLK: ::c_int = 37;
-pub const F_OFD_SETLKW: ::c_int = 38;
 
 pub const VEOF: usize = 4;
 
@@ -600,10 +601,15 @@ pub const SYS_faccessat2: ::c_long = 439;
 pub const SYS_process_madvise: ::c_long = 440;
 pub const SYS_epoll_pwait2: ::c_long = 441;
 pub const SYS_mount_setattr: ::c_long = 442;
+pub const SYS_quotactl_fd: ::c_long = 443;
+pub const SYS_landlock_create_ruleset: ::c_long = 444;
+pub const SYS_landlock_add_rule: ::c_long = 445;
+pub const SYS_landlock_restrict_self: ::c_long = 446;
+pub const SYS_memfd_secret: ::c_long = 447;
+pub const SYS_process_mrelease: ::c_long = 448;
+pub const SYS_futex_waitv: ::c_long = 449;
+pub const SYS_set_mempolicy_home_node: ::c_long = 450;
 
-pub const FIOCLEX: ::c_int = 0x20006601;
-pub const FIONCLEX: ::c_int = 0x20006602;
-pub const FIONBIO: ::c_int = 0x8004667e;
 pub const EDEADLK: ::c_int = 58;
 pub const EDEADLOCK: ::c_int = EDEADLK;
 
@@ -614,40 +620,10 @@ pub const VMIN: usize = 5;
 pub const IEXTEN: ::tcflag_t = 0x00000400;
 pub const TOSTOP: ::tcflag_t = 0x00400000;
 pub const FLUSHO: ::tcflag_t = 0x00800000;
-pub const TCGETS: ::c_int = 0x403c7413;
-pub const TCSETS: ::c_int = 0x803c7414;
-pub const TCSETSW: ::c_int = 0x803c7415;
-pub const TCSETSF: ::c_int = 0x803c7416;
-pub const TCGETA: ::c_int = 0x40147417;
-pub const TCSETA: ::c_int = 0x80147418;
-pub const TCSETAW: ::c_int = 0x80147419;
-pub const TCSETAF: ::c_int = 0x8014741c;
-pub const TCSBRK: ::c_int = 0x2000741d;
-pub const TCXONC: ::c_int = 0x2000741e;
-pub const TCFLSH: ::c_int = 0x2000741f;
-pub const TIOCGSOFTCAR: ::c_int = 0x5419;
-pub const TIOCSSOFTCAR: ::c_int = 0x541A;
-pub const TIOCLINUX: ::c_int = 0x541C;
-pub const TIOCGSERIAL: ::c_int = 0x541E;
-pub const TIOCEXCL: ::c_int = 0x540C;
-pub const TIOCNXCL: ::c_int = 0x540D;
-pub const TIOCSCTTY: ::c_int = 0x540E;
-pub const TIOCGPGRP: ::c_int = 0x40047477;
-pub const TIOCSPGRP: ::c_int = 0x80047476;
-pub const TIOCOUTQ: ::c_int = 0x40047473;
-pub const TIOCGWINSZ: ::c_int = 0x40087468;
-pub const TIOCSWINSZ: ::c_int = 0x80087467;
-pub const FIONREAD: ::c_int = 0x4004667f;
-pub const TIOCCONS: ::c_int = 0x541D;
 
-pub const TIOCGRS485: ::c_int = 0x542E;
-pub const TIOCSRS485: ::c_int = 0x542F;
-
-pub const RLIMIT_NLIMITS: ::c_int = 15;
-pub const RLIM_NLIMITS: ::c_int = RLIMIT_NLIMITS;
-pub const TIOCINQ: ::c_int = ::FIONREAD;
 pub const MCL_CURRENT: ::c_int = 0x2000;
 pub const MCL_FUTURE: ::c_int = 0x4000;
+pub const MCL_ONFAULT: ::c_int = 0x8000;
 pub const CBAUD: ::tcflag_t = 0xff;
 pub const TAB1: ::c_int = 0x400;
 pub const TAB2: ::c_int = 0x800;
@@ -717,7 +693,3 @@ pub const B2500000: ::speed_t = 0o00033;
 pub const B3000000: ::speed_t = 0o00034;
 pub const B3500000: ::speed_t = 0o00035;
 pub const B4000000: ::speed_t = 0o00036;
-
-extern "C" {
-    pub fn ioctl(fd: ::c_int, request: ::c_int, ...) -> ::c_int;
-}

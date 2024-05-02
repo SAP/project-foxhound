@@ -29,6 +29,12 @@ available.map(x => {
 }).filter(loc => {
   // Find all locales which have both a script and a region subtag.
   return loc.script && loc.region;
+}).filter(loc => {
+  // Skip "sd-Deva-IN" and Fulah because of <https://unicode-org.atlassian.net/browse/ICU-21974>.
+  return !((loc.language === "sd" && loc.script === "Deva" && loc.region === "IN") ||
+           (loc.language === "ff" && (loc.script === "Adlm" || loc.script === "Latn") &&
+            (loc.region === "GH" || loc.region === "GM" || loc.region === "LR" || loc.region === "SL"))
+          );
 }).forEach(loc => {
   // Remove the script subtag from the locale.
   let noScript = new Intl.Locale(`${loc.language}-${loc.region}`);
@@ -38,14 +44,14 @@ available.map(x => {
 
   for (let opt of options) {
     // Formatter for the locale without a script subtag.
-    let df1 = new Intl.DateTimeFormat(noScript, options);
+    let df1 = new Intl.DateTimeFormat(noScript, opt);
 
     // Formatter for the locale with the likely script subtag added.
-    let df2 = new Intl.DateTimeFormat(maximized, options);
+    let df2 = new Intl.DateTimeFormat(maximized, opt);
 
     // The output for the locale without a script subtag should match the output
     // with the likely script subtag added.
-    assertEq(df1.format(date), df2.format(date), `Mismatch for locale "${noScript}"`);
+    assertEq(df1.format(date), df2.format(date), `Mismatch for locale "${noScript}" (${maximized})`);
   }
 });
 

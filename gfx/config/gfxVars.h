@@ -15,8 +15,7 @@
 #include "nsTArray.h"
 #include "nsXULAppAPI.h"
 
-namespace mozilla {
-namespace gfx {
+namespace mozilla::gfx {
 
 class gfxVarReceiver;
 
@@ -38,11 +37,11 @@ class gfxVarReceiver;
   _(DXNV12Blocked, bool, false)                                    \
   _(DXP010Blocked, bool, false)                                    \
   _(DXP016Blocked, bool, false)                                    \
-  _(UseWebRender, bool, false)                                     \
   _(UseWebRenderANGLE, bool, false)                                \
   _(UseWebRenderFlipSequentialWin, bool, false)                    \
   _(UseWebRenderDCompWin, bool, false)                             \
-  _(UseWebRenderDCompVideoOverlayWin, bool, false)                 \
+  _(UseWebRenderDCompVideoHwOverlayWin, bool, false)               \
+  _(UseWebRenderDCompVideoSwOverlayWin, bool, false)               \
   _(UseWebRenderTripleBufferingWin, bool, false)                   \
   _(UseWebRenderCompositor, bool, false)                           \
   _(UseWebRenderProgramBinaryDisk, bool, false)                    \
@@ -77,16 +76,30 @@ class gfxVarReceiver;
   _(UseDoubleBufferingWithCompositor, bool, false)                 \
   _(UseGLSwizzle, bool, true)                                      \
   _(ForceSubpixelAAWherePossible, bool, false)                     \
-  _(DwmCompositionEnabled, bool, true)                             \
   _(FxREmbedded, bool, false)                                      \
-  _(UseAHardwareBufferContent, bool, false)                        \
-  _(UseAHardwareBufferSharedSurface, bool, false)                  \
+  _(UseAHardwareBufferSharedSurfaceWebglOop, bool, false)          \
   _(UseEGL, bool, false)                                           \
   _(DrmRenderDevice, nsCString, nsCString())                       \
   _(UseDMABuf, bool, false)                                        \
+  _(DMABufModifiersXRGB, ArrayOfuint64_t, nsTArray<uint64_t>())    \
+  _(DMABufModifiersARGB, ArrayOfuint64_t, nsTArray<uint64_t>())    \
+  _(CodecSupportInfo, nsCString, nsCString())                      \
   _(WebRenderRequiresHardwareDriver, bool, false)                  \
   _(SupportsThreadsafeGL, bool, false)                             \
-  _(OffscreenCanvasDomainAllowlist, nsCString, nsCString())
+  _(AllowWebGPU, bool, false)                                      \
+  _(UseVP8HwDecode, bool, false)                                   \
+  _(UseVP9HwDecode, bool, false)                                   \
+  _(UseAV1HwDecode, bool, false)                                   \
+  _(UseH264HwDecode, bool, false)                                  \
+  _(HwDecodedVideoZeroCopy, bool, false)                           \
+  _(UseDMABufSurfaceExport, bool, true)                            \
+  _(ReuseDecoderDevice, bool, false)                               \
+  _(UseCanvasRenderThread, bool, false)                            \
+  _(AllowBackdropFilter, bool, true)                               \
+  _(WebglOopAsyncPresentForceSync, bool, true)                     \
+  _(UseAcceleratedCanvas2D, bool, false)                           \
+  _(AllowSoftwareWebRenderOGL, bool, false)                        \
+  _(WebglUseHardware, bool, true)
 
 /* Add new entries above this line. */
 
@@ -120,6 +133,17 @@ class gfxVars final {
   // Return a list of updates for all variables with non-default values.
   static nsTArray<GfxVarUpdate> FetchNonDefaultVars();
 
+ private:
+  template <typename U>
+  static U CloneVarValue(const U& aValue) {
+    return aValue;
+  }
+
+  template <typename U>
+  static nsTArray<U> CloneVarValue(const nsTArray<U>& aValue) {
+    return aValue.Clone();
+  }
+
  public:
   // Each variable must expose Set and Get methods for IPDL.
   class VarBase {
@@ -133,6 +157,12 @@ class gfxVars final {
    private:
     size_t mIndex;
   };
+
+  // Whether the gfxVars singleton instance has been initialized. Most gfx code
+  // doesn't need to check this, but code that can potentially run before
+  // gfxPlatform initialization can use this to check whether gfxVars are
+  // available yet.
+  static bool IsInitialized() { return sInstance != nullptr; }
 
  private:
   static StaticAutoPtr<gfxVars> sInstance;
@@ -153,13 +183,14 @@ class gfxVars final {
     }
     bool HasDefaultValue() const override { return mValue == Default(); }
     const T& Get() const { return mValue; }
+
     // Return true if the value changed, false otherwise.
     bool Set(const T& aValue) {
       MOZ_ASSERT(XRE_IsParentProcess());
       if (mValue == aValue) {
         return false;
       }
-      mValue = aValue;
+      mValue = CloneVarValue(aValue);
       if (mListener) {
         mListener();
       }
@@ -179,7 +210,7 @@ class gfxVars final {
  private:                                                                      \
   static DataType Get##CxxName##Default() { return DefaultValue; }             \
   static DataType Get##CxxName##From(const GfxVarValue& aValue) {              \
-    return aValue.get_##DataType();                                            \
+    return CloneVarValue(aValue.get_##DataType());                             \
   }                                                                            \
   VarImpl<DataType, Get##CxxName##Default, Get##CxxName##From> mVar##CxxName;  \
                                                                                \
@@ -189,7 +220,7 @@ class gfxVars final {
     if (!sInstance) {                                                          \
       return DefaultValue;                                                     \
     }                                                                          \
-    return sInstance->mVar##CxxName.Get();                                     \
+    return CloneVarValue(sInstance->mVar##CxxName.Get());                      \
   }                                                                            \
   static void Set##CxxName(const DataType& aValue) {                           \
     if (sInstance->mVar##CxxName.Set(aValue)) {                                \
@@ -200,6 +231,8 @@ class gfxVars final {
   static void Set##CxxName##Listener(const std::function<void()>& aListener) { \
     sInstance->mVar##CxxName.SetListener(aListener);                           \
   }
+
+  using ArrayOfuint64_t = nsTArray<uint64_t>;
 
   GFX_VARS_LIST(GFX_VAR_DECL)
 #undef GFX_VAR_DECL
@@ -215,7 +248,6 @@ class gfxVars final {
 
 #undef GFX_VARS_LIST
 
-}  // namespace gfx
-}  // namespace mozilla
+}  // namespace mozilla::gfx
 
 #endif  // mozilla_gfx_config_gfxVars_h

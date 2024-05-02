@@ -10,7 +10,7 @@ For information about the specific data that the agent sends, see :doc:`the ping
 Scheduled Task
 ==============
 
-The agent runs as a `Windows scheduled task <https://docs.microsoft.com/en-us/windows/win32/taskschd/about-the-task-scheduler>`_. The scheduled task executes all of the agent's primary functions; all of its other functions relate to managing the task. The Windows installer is responsible for creating (and the uninstaller for removing) the agent's task entry, but the code for actually doing this resides in the agent itself, and the installers simply call it using dedicated command line parameters (``register-task`` and ``uninstall``). The :doc:`PostUpdate </browser/installer/windows/installer/Helper>` code also calls the agent to update any properties of an existing task registration that need to be updated, or to create one during an application update if none exists.
+The agent runs as a `Windows scheduled task <https://docs.microsoft.com/en-us/windows/win32/taskschd/about-the-task-scheduler>`_. The scheduled task proxy executable invokes the Firefox ``BackgroundTask_defaultagent`` which executes all of the agent's primary functions; all of its other functions relate to managing the task. The Windows installer is responsible for creating (and the uninstaller for removing) the agent's task entry, but the code for actually doing this resides in the agent itself, and the installers simply call it using dedicated command line parameters (``register-task`` and ``uninstall``). The :doc:`PostUpdate </browser/installer/windows/installer/Helper>` code also calls the agent to update any properties of an existing task registration that need to be updated, or to create one during an application update if none exists.
 
 The tasks are normal entries in the Windows Task Scheduler, managed using `its Win32 API <https://docs.microsoft.com/en-us/windows/win32/api/_taskschd/>`_. They're created in a tasks folder called "Mozilla" (or whatever the application's vendor name is), and there's one for each installation of Firefox (or other Mozilla application). The task is set to run automatically every 24 hours starting at the time it's registered (with the first run being 24 hours after that), or the nearest time after that the computer is awake. The task is configured with one action, which is to run the agent binary with the command line parameter ``do-task``, the command that invokes the actual agent functionality.
 
@@ -38,9 +38,9 @@ The agent needs to be able to read (but not set) values that have their canonica
 
 The list of reflected prefs includes the global telemetry opt-out pref ``datareporting.healthreport.uploadEnabled`` and a pref called ``default-browser-agent.enabled``, which can enable or disable the entire agent. The agent checks these registry-reflected pref values when its scheduled task runs, they do not actually prevent the scheduled task from running.
 
-Enterprise policies also exist to perform the same functions as these prefs. These work the same way as all other Firefox policies and `the documentation for those <https://github.com/mozilla/policy-templates/blob/master/README.md>`_ explains how to use them.
+Enterprise policies also exist to perform the same functions as these prefs. These work the same way as all other Firefox policies and `the documentation for those <https://mozilla.github.io/policy-templates/>`_ explains how to use them.
 
-In addition, the following Firefox Remote Settings prefs are reflected: ``services.settings.server`` and ``security.content.signature.root_hash``.  The former is the service endpoint to consult for remote-disablement and the latter is used to secure the content of queries to that service endpoint.
+In addition, the following Firefox Remote Settings pref is reflected: ``services.settings.server``.  It is the service endpoint to consult for remote-disablement.
 
 
 Default Browser Setting

@@ -13,8 +13,8 @@ const kDefaultBackgroundImage_10_14 =
 const kDefaultBackgroundImage_10_15 =
   "/System/Library/Desktop Pictures/Solid Colors/Teal.png";
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  FileUtils: "resource://gre/modules/FileUtils.jsm",
+ChromeUtils.defineESModuleGetters(this, {
+  FileUtils: "resource://gre/modules/FileUtils.sys.mjs",
 });
 
 function getPythonExecutableFile() {
@@ -95,7 +95,7 @@ function restoreDefaultBackground() {
  * validate that the current desktop background is in fact set to the
  * downloaded logo.
  */
-add_task(async function() {
+add_task(async function () {
   await BrowserTestUtils.withNewTab(
     {
       gBrowser,
@@ -120,10 +120,7 @@ add_task(async function() {
       // up a filename for the desktop background. Use a UUID to distinguish
       // between runs so we won't be confused by images that were not properly
       // cleaned up after previous runs.
-      let uuid = uuidGenerator
-        .generateUUID()
-        .toString()
-        .replace(/\W/g, "");
+      let uuid = uuidGenerator.generateUUID().toString().replace(/\W/g, "");
 
       // Set the background image path to be $HOME/Pictures/<UUID>.png.
       // nsIShellService.setDesktopBackground() downloads the image to this

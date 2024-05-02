@@ -5,7 +5,7 @@
 "use strict";
 
 // Adding a separator and then dragging it out of the navbar shouldn't throw
-add_task(async function() {
+add_task(async function () {
   try {
     let navbar = document.getElementById("nav-bar");
     let separatorSelector =
@@ -25,7 +25,7 @@ add_task(async function() {
       "No separator in the palette."
     );
   } catch (ex) {
-    Cu.reportError(ex);
+    console.error(ex);
     ok(false, "Shouldn't throw an exception moving an item to the navbar.");
   } finally {
     await endCustomizing();

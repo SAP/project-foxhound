@@ -8,13 +8,10 @@
 #include "nsIInputStream.h"
 #include "nsUrlClassifierPrefixSet.h"
 #include "nsPrintfCString.h"
-#include "nsThreadUtils.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/EndianUtils.h"
 #include "mozilla/Logging.h"
-#include "mozilla/Telemetry.h"
 #include "mozilla/UniquePtr.h"
-#include "mozilla/Unused.h"
 #include <algorithm>
 
 // MOZ_LOG=UrlClassifierPrefixSet:5
@@ -250,6 +247,13 @@ nsresult VariableLengthPrefixSet::GetFixedLengthPrefixes(
   return NS_OK;
 }
 
+nsresult VariableLengthPrefixSet::GetFixedLengthPrefixByIndex(
+    uint32_t aIndex, uint32_t* aOutPrefix) const {
+  NS_ENSURE_ARG_POINTER(aOutPrefix);
+
+  return mFixedPrefixSet->GetPrefixByIndex(aIndex, aOutPrefix);
+}
+
 // It should never be the case that more than one hash prefixes match a given
 // full hash. However, if that happens, this method returns any one of them.
 // It does not guarantee which one of those will be returned.
@@ -382,6 +386,10 @@ uint32_t VariableLengthPrefixSet::CalculatePreallocateSize() const {
     fileSize += data->Length();
   }
   return fileSize;
+}
+
+uint32_t VariableLengthPrefixSet::FixedLengthPrefixLength() const {
+  return mFixedPrefixSet->Length();
 }
 
 nsresult VariableLengthPrefixSet::WritePrefixes(

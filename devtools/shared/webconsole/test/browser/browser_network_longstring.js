@@ -5,17 +5,18 @@
 
 // Test that the network actor uses the LongStringActor
 
-const { DevToolsServer } = require("devtools/server/devtools-server");
+const {
+  DevToolsServer,
+} = require("resource://devtools/server/devtools-server.js");
 const LONG_STRING_LENGTH = 400;
 const LONG_STRING_INITIAL_LENGTH = 400;
 let ORIGINAL_LONG_STRING_LENGTH, ORIGINAL_LONG_STRING_INITIAL_LENGTH;
 
-add_task(async function() {
+add_task(async function () {
   const tab = await addTab(URL_ROOT + "network_requests_iframe.html");
 
   const commands = await CommandsFactory.forTab(tab);
   await commands.targetCommand.startListening();
-  const target = commands.targetCommand.targetFront;
 
   // Override the default long string settings to lower values.
   // This is done from the parent process's DevToolsServer as the LongString
@@ -39,7 +40,7 @@ add_task(async function() {
       })
       .then(() => {
         // Spawn the network request after we started watching
-        SpecialPowers.spawn(gBrowser.selectedBrowser, [], async function() {
+        SpecialPowers.spawn(gBrowser.selectedBrowser, [], async function () {
           content.wrappedJSObject.testXhrPost();
         });
       });
@@ -48,32 +49,54 @@ add_task(async function() {
   const netActor = networkResource.actor;
   ok(netActor, "We have a netActor:" + netActor);
 
-  const webConsoleFront = await target.getFront("console");
-  const requestHeaders = await webConsoleFront.getRequestHeaders(netActor);
+  const { client } = commands;
+  const requestHeaders = await client.request({
+    to: netActor,
+    type: "getRequestHeaders",
+  });
   assertRequestHeaders(requestHeaders);
-  const requestCookies = await webConsoleFront.getRequestCookies(netActor);
+  const requestCookies = await client.request({
+    to: netActor,
+    type: "getRequestCookies",
+  });
   assertRequestCookies(requestCookies);
-  const requestPostData = await webConsoleFront.getRequestPostData(netActor);
+  const requestPostData = await client.request({
+    to: netActor,
+    type: "getRequestPostData",
+  });
   assertRequestPostData(requestPostData);
-  const responseHeaders = await webConsoleFront.getResponseHeaders(netActor);
+  const responseHeaders = await client.request({
+    to: netActor,
+    type: "getResponseHeaders",
+  });
   assertResponseHeaders(responseHeaders);
-  const responseCookies = await webConsoleFront.getResponseCookies(netActor);
+  const responseCookies = await client.request({
+    to: netActor,
+    type: "getResponseCookies",
+  });
   assertResponseCookies(responseCookies);
-  const responseContent = await webConsoleFront.getResponseContent(netActor);
+  const responseContent = await client.request({
+    to: netActor,
+    type: "getResponseContent",
+  });
   assertResponseContent(responseContent);
-  const eventTimings = await webConsoleFront.getEventTimings(netActor);
+  const eventTimings = await client.request({
+    to: netActor,
+    type: "getEventTimings",
+  });
   assertEventTimings(eventTimings);
 
   await commands.destroy();
 
   DevToolsServer.LONG_STRING_LENGTH = ORIGINAL_LONG_STRING_LENGTH;
-  DevToolsServer.LONG_STRING_INITIAL_LENGTH = ORIGINAL_LONG_STRING_INITIAL_LENGTH;
+  DevToolsServer.LONG_STRING_INITIAL_LENGTH =
+    ORIGINAL_LONG_STRING_INITIAL_LENGTH;
 });
 
 function assertRequestHeaders(response) {
   info("checking request headers");
 
-  ok(response.headers.length > 0, "request headers > 0");
+  ok(!!response.headers.length, "request headers > 0");
   ok(response.headersSize > 0, "request headersSize > 0");
 
   checkHeadersOrCookies(response.headers, {
@@ -119,7 +142,7 @@ function assertRequestPostData(response) {
 function assertResponseHeaders(response) {
   info("checking response headers");
 
-  ok(response.headers.length > 0, "response headers > 0");
+  ok(!!response.headers.length, "response headers > 0");
   ok(response.headersSize > 0, "response headersSize > 0");
 
   checkHeadersOrCookies(response.headers, {

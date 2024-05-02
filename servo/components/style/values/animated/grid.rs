@@ -25,7 +25,15 @@ fn discrete<T: Clone>(from: &T, to: &T, procedure: Procedure) -> Result<T, ()> {
             to.clone()
         })
     } else {
-        Err(())
+        // The discrete animation is not additive, so per spec [1] we should use the |from|, which
+        // is the underlying value. However this mismatches our animation mechanism (see
+        // composite_endpoint() in servo/ports/geckolib/glues.rs), which uses the effect value
+        // (i.e. |to| value here) [2]. So in order to match the behavior of other properties and
+        // other browsers, we use |to| value for addition and accumulation, i.e. Vresult = Vb.
+        //
+        // [1] https://drafts.csswg.org/css-values-4/#not-additive
+        // [2] https://github.com/w3c/csswg-drafts/issues/9070
+        Ok(to.clone())
     }
 }
 
@@ -81,18 +89,12 @@ impl Animate for generics::TrackRepeat<LengthPercentage, Integer> {
             (_, _) => return Err(()),
         }
 
-        // The length of track_sizes should be matched.
-        if self.track_sizes.len() != other.track_sizes.len() {
-            return Err(());
-        }
-
         let count = self.count;
-        let track_sizes = self
-            .track_sizes
-            .iter()
-            .zip(other.track_sizes.iter())
-            .map(|(a, b)| a.animate(b, procedure))
-            .collect::<Result<Vec<_>, _>>()?;
+        let track_sizes = super::lists::by_computed_value::animate(
+            &self.track_sizes,
+            &other.track_sizes,
+            procedure,
+        )?;
 
         // The length of |line_names| is always 0 or N+1, where N is the length
         // of |track_sizes|. Besides, <line-names> is always discrete.
@@ -101,7 +103,7 @@ impl Animate for generics::TrackRepeat<LengthPercentage, Integer> {
         Ok(generics::TrackRepeat {
             count,
             line_names,
-            track_sizes: track_sizes.into(),
+            track_sizes,
         })
     }
 }
@@ -130,18 +132,15 @@ impl Animate for TrackList {
             return Err(());
         }
 
-        let values = self
-            .values
-            .iter()
-            .zip(other.values.iter())
-            .map(|(a, b)| a.animate(b, procedure))
-            .collect::<Result<Vec<_>, _>>()?;
+        let values =
+            super::lists::by_computed_value::animate(&self.values, &other.values, procedure)?;
+
         // The length of |line_names| is always 0 or N+1, where N is the length
         // of |track_sizes|. Besides, <line-names> is always discrete.
         let line_names = discrete(&self.line_names, &other.line_names, procedure)?;
 
         Ok(TrackList {
-            values: values.into(),
+            values,
             line_names,
             auto_repeat_index: self.auto_repeat_index,
         })

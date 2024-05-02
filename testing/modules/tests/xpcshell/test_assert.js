@@ -5,13 +5,15 @@
 // https://github.com/joyent/node/blob/6101eb184db77d0b11eb96e48744e57ecce4b73d/test/simple/test-assert.js
 // MIT license: http://opensource.org/licenses/MIT
 
+var { Assert } = ChromeUtils.importESModule(
+  "resource://testing-common/Assert.sys.mjs"
+);
+
 function run_test() {
-  let ns = {};
-  ChromeUtils.import("resource://testing-common/Assert.jsm", ns);
-  let assert = new ns.Assert();
+  let assert = new Assert();
 
   function makeBlock(f, ...args) {
-    return function() {
+    return function () {
       return f.apply(assert, args);
     };
   }
@@ -34,13 +36,13 @@ function run_test() {
   }
 
   assert.ok(
-    indirectInstanceOf(ns.Assert.AssertionError.prototype, Error),
+    indirectInstanceOf(Assert.AssertionError.prototype, Error),
     "Assert.AssertionError instanceof Error"
   );
 
   assert.throws(
     makeBlock(assert.ok, false),
-    ns.Assert.AssertionError,
+    Assert.AssertionError,
     "ok(false)"
   );
 
@@ -50,7 +52,7 @@ function run_test() {
 
   assert.throws(
     makeBlock(assert.equal, true, false),
-    ns.Assert.AssertionError,
+    Assert.AssertionError,
     "equal"
   );
 
@@ -66,19 +68,19 @@ function run_test() {
 
   assert.throws(
     makeBlock(assert.notEqual, true, true),
-    ns.Assert.AssertionError,
+    Assert.AssertionError,
     "notEqual"
   );
 
   assert.throws(
     makeBlock(assert.strictEqual, 2, "2"),
-    ns.Assert.AssertionError,
+    Assert.AssertionError,
     "strictEqual"
   );
 
   assert.throws(
     makeBlock(assert.strictEqual, null, undefined),
-    ns.Assert.AssertionError,
+    Assert.AssertionError,
     "strictEqual"
   );
 
@@ -95,7 +97,7 @@ function run_test() {
 
   assert.throws(
     makeBlock(assert.deepEqual, new Date(), new Date(2000, 3, 14)),
-    ns.Assert.AssertionError,
+    Assert.AssertionError,
     "deepEqual date"
   );
 
@@ -105,40 +107,25 @@ function run_test() {
   assert.deepEqual(/a/i, /a/i);
   assert.deepEqual(/a/m, /a/m);
   assert.deepEqual(/a/gim, /a/gim);
-  assert.throws(
-    makeBlock(assert.deepEqual, /ab/, /a/),
-    ns.Assert.AssertionError
-  );
-  assert.throws(
-    makeBlock(assert.deepEqual, /a/g, /a/),
-    ns.Assert.AssertionError
-  );
-  assert.throws(
-    makeBlock(assert.deepEqual, /a/i, /a/),
-    ns.Assert.AssertionError
-  );
-  assert.throws(
-    makeBlock(assert.deepEqual, /a/m, /a/),
-    ns.Assert.AssertionError
-  );
+  assert.throws(makeBlock(assert.deepEqual, /ab/, /a/), Assert.AssertionError);
+  assert.throws(makeBlock(assert.deepEqual, /a/g, /a/), Assert.AssertionError);
+  assert.throws(makeBlock(assert.deepEqual, /a/i, /a/), Assert.AssertionError);
+  assert.throws(makeBlock(assert.deepEqual, /a/m, /a/), Assert.AssertionError);
   assert.throws(
     makeBlock(assert.deepEqual, /a/gim, /a/im),
-    ns.Assert.AssertionError
+    Assert.AssertionError
   );
 
   let re1 = /a/;
   re1.lastIndex = 3;
-  assert.throws(
-    makeBlock(assert.deepEqual, re1, /a/),
-    ns.Assert.AssertionError
-  );
+  assert.throws(makeBlock(assert.deepEqual, re1, /a/), Assert.AssertionError);
 
   // 7.4
   assert.deepEqual(4, "4", "deepEqual == check");
   assert.deepEqual(true, 1, "deepEqual == check");
   assert.throws(
     makeBlock(assert.deepEqual, 4, "5"),
-    ns.Assert.AssertionError,
+    Assert.AssertionError,
     "deepEqual == check"
   );
 
@@ -149,7 +136,7 @@ function run_test() {
   assert.deepEqual([4], ["4"]);
   assert.throws(
     makeBlock(assert.deepEqual, { a: 4 }, { a: 4, b: true }),
-    ns.Assert.AssertionError
+    Assert.AssertionError
   );
   assert.deepEqual(["a"], { 0: "a" });
 
@@ -161,7 +148,7 @@ function run_test() {
   a2.a = "test";
   assert.throws(
     makeBlock(assert.deepEqual, Object.keys(a1), Object.keys(a2)),
-    ns.Assert.AssertionError
+    Assert.AssertionError
   );
   assert.deepEqual(a1, a2);
 
@@ -192,34 +179,31 @@ function run_test() {
 
   nameBuilder2.prototype = Object;
   nb2 = new nameBuilder2("Ryan", "Dahl");
-  assert.throws(
-    makeBlock(assert.deepEqual, nb1, nb2),
-    ns.Assert.AssertionError
-  );
+  assert.throws(makeBlock(assert.deepEqual, nb1, nb2), Assert.AssertionError);
 
   // String literal + object
-  assert.throws(makeBlock(assert.deepEqual, "a", {}), ns.Assert.AssertionError);
+  assert.throws(makeBlock(assert.deepEqual, "a", {}), Assert.AssertionError);
 
   // Testing the throwing
   function thrower(errorConstructor) {
     throw new errorConstructor("test");
   }
-  makeBlock(thrower, ns.Assert.AssertionError);
-  makeBlock(thrower, ns.Assert.AssertionError);
+  makeBlock(thrower, Assert.AssertionError);
+  makeBlock(thrower, Assert.AssertionError);
 
   // the basic calls work
   assert.throws(
-    makeBlock(thrower, ns.Assert.AssertionError),
-    ns.Assert.AssertionError,
+    makeBlock(thrower, Assert.AssertionError),
+    Assert.AssertionError,
     "message"
   );
   assert.throws(
-    makeBlock(thrower, ns.Assert.AssertionError),
-    ns.Assert.AssertionError
+    makeBlock(thrower, Assert.AssertionError),
+    Assert.AssertionError
   );
   assert.throws(
-    makeBlock(thrower, ns.Assert.AssertionError),
-    ns.Assert.AssertionError
+    makeBlock(thrower, Assert.AssertionError),
+    Assert.AssertionError
   );
 
   // if not passing an error, catch all.
@@ -228,7 +212,7 @@ function run_test() {
   // when passing a type, only catch errors of the appropriate type
   let threw = false;
   try {
-    assert.throws(makeBlock(thrower, TypeError), ns.Assert.AssertionError);
+    assert.throws(makeBlock(thrower, TypeError), Assert.AssertionError);
   } catch (e) {
     threw = true;
     assert.ok(e instanceof TypeError, "type");
@@ -237,7 +221,7 @@ function run_test() {
     true,
     threw,
     "Assert.throws with an explicit error is eating extra errors",
-    ns.Assert.AssertionError
+    Assert.AssertionError
   );
   threw = false;
 
@@ -246,14 +230,14 @@ function run_test() {
       throw err;
     }
   }
-  assert.throws(function() {
+  assert.throws(function () {
     ifError(new Error("test error"));
   }, /test error/);
 
   // make sure that validating using constructor really works
   threw = false;
   try {
-    assert.throws(function() {
+    assert.throws(function () {
       throw new Error({});
     }, Array);
   } catch (e) {
@@ -265,7 +249,7 @@ function run_test() {
   assert.throws(makeBlock(thrower, TypeError), /test/);
 
   // use a fn to validate error object
-  assert.throws(makeBlock(thrower, TypeError), function(err) {
+  assert.throws(makeBlock(thrower, TypeError), function (err) {
     if (err instanceof TypeError && /test/.test(err)) {
       return true;
     }
@@ -314,7 +298,7 @@ function run_test() {
 
   // https://github.com/joyent/node/issues/2893
   try {
-    assert.throws(function() {
+    assert.throws(function () {
       ifError(null);
     });
   } catch (e) {
@@ -364,7 +348,7 @@ function run_test() {
 
   // Test robustness of reporting:
   equal(
-    new ns.Assert.AssertionError({
+    new Assert.AssertionError({
       actual: {
         toJSON() {
           throw new Error("bam!");
@@ -409,6 +393,20 @@ function run_test() {
   }
   assert.equal(message, "AssertionError: 2 <= 1");
 
+  try {
+    assert.greater(NaN, 0);
+  } catch (e) {
+    message = e.toString().split("\n")[0];
+  }
+  assert.equal(message, "AssertionError: 'NaN' is not a number");
+
+  try {
+    assert.greater(0, NaN);
+  } catch (e) {
+    message = e.toString().split("\n")[0];
+  }
+  assert.equal(message, "AssertionError: 'NaN' is not a number");
+
   /* ---- stringMatches ---- */
   assert.stringMatches("hello world", /llo\s/);
   assert.stringMatches("hello world", "llo\\s");
@@ -436,9 +434,7 @@ function run_test() {
 }
 
 add_task(async function test_rejects() {
-  let ns = {};
-  ChromeUtils.import("resource://testing-common/Assert.jsm", ns);
-  let assert = new ns.Assert();
+  let assert = new Assert();
 
   // A helper function to test failures.
   async function checkRejectsFails(err, expected) {
@@ -451,7 +447,7 @@ add_task(async function test_rejects() {
   }
 
   // A "throwable" error that's not an actual Error().
-  let SomeErrorLikeThing = function() {};
+  let SomeErrorLikeThing = function () {};
 
   // The actual tests...
 
@@ -471,4 +467,12 @@ add_task(async function test_rejects() {
   await assert.rejects(Promise.reject("oh no"), /oh no/, "rejected");
   // Wrong message.
   await checkRejectsFails("something else", /oh no/);
+
+  // A non-rejection should also be an assertion failure:
+  try {
+    await assert.rejects(Promise.resolve(), /./, "ReSoLvEd");
+    ok(false, "should have rejected");
+  } catch (ex) {
+    deepEqual(ex.message, "Missing expected exception ReSoLvEd");
+  }
 });

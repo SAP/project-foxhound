@@ -61,7 +61,6 @@ const EnumName<JxlRenderingIntent> kJxlRenderingIntentNames[] = {
 template <typename T>
 Status ParseEnum(const std::string& token, const EnumName<T>* enum_values,
                  size_t enum_len, T* value) {
-  std::string str;
   for (size_t i = 0; i < enum_len; i++) {
     if (enum_values[i].name == token) {
       *value = enum_values[i].value;
@@ -70,9 +69,9 @@ Status ParseEnum(const std::string& token, const EnumName<T>* enum_values,
   }
   return false;
 }
-#define ARRAYSIZE(X) (sizeof(X) / sizeof((X)[0]))
+#define ARRAY_SIZE(X) (sizeof(X) / sizeof((X)[0]))
 #define PARSE_ENUM(type, token, value) \
-  ParseEnum<type>(token, k##type##Names, ARRAYSIZE(k##type##Names), value)
+  ParseEnum<type>(token, k##type##Names, ARRAY_SIZE(k##type##Names), value)
 
 class Tokenizer {
  public:

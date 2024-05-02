@@ -6,9 +6,9 @@
 scripts:
   # bundle: Build all assets for activity stream
   bundle:
-    webpack: webpack --config webpack.system-addon.config.js
+    webpack: webpack-cli --config webpack.system-addon.config.js
     css: sass content-src/styles:css --no-source-map
-    welcomeBundle: webpack --config webpack.aboutwelcome.config.js
+    welcomeBundle: webpack-cli --config webpack.aboutwelcome.config.js
     welcomeCss: sass content-src/aboutwelcome:aboutwelcome/content --no-source-map
     html: rimraf prerendered && node ./bin/render-activity-stream-html.js
 
@@ -38,9 +38,9 @@ scripts:
   lint:
     codespell: (cd $npm_package_config_mc_root && ./mach lint -l codespell $npm_package_config_newtab_path)
     eslint: (cd $npm_package_config_mc_root && ./mach lint -l eslint $npm_package_config_newtab_path)
-    l10n: (cd $npm_package_config_mc_root && ./mach lint -l l10n --warnings browser/locales/en-US/browser/newtab)
+    l10n: (cd $npm_package_config_mc_root && ./mach lint -l l10n --warnings soft browser/locales/en-US/browser/newtab)
     license: (cd $npm_package_config_mc_root && ./mach lint -l license $npm_package_config_newtab_path)
-    sasslint: sass-lint -v -q
+    stylelint: (cd $npm_package_config_mc_root && ./mach lint -l stylelint $npm_package_config_newtab_path)
 
   # test: Run all tests once
   test: =>testmc
@@ -51,7 +51,17 @@ scripts:
   # Utility scripts for use when vendoring in Node packages
   vendor: node ./bin/vendor.js
 
+  # script for the `source-test-node-newtab-unit-tests` task on taskcluster.
+  # this is what appears as `newtab` in treeherder results after pushing to try.
+  # so this npm script allows us to run the same tests locally that patches will
+  # be run against in CI.
+  try: node ./bin/try-runner.js
+
   fix:
     # Note that since we're currently running eslint-plugin-prettier,
     # running fix:eslint will also reformat changed JS files using prettier.
     eslint: =>lint:eslint -- --fix
+    stylelint: =>lint:stylelint -- --fix
+
+  # script to import Nimbus rollouts into NimbusRolloutMessageProvider.sys.mjs
+  import-rollouts: node ./bin/import-rollouts.js

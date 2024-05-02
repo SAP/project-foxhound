@@ -3,15 +3,8 @@
 
 "use strict";
 
-/* import-globals-from ../../../debugger/test/mochitest/helpers.js */
 Services.scriptloader.loadSubScript(
-  "chrome://mochitests/content/browser/devtools/client/debugger/test/mochitest/helpers.js",
-  this
-);
-
-/* import-globals-from ../../../debugger/test/mochitest/helpers/context.js */
-Services.scriptloader.loadSubScript(
-  "chrome://mochitests/content/browser/devtools/client/debugger/test/mochitest/helpers/context.js",
+  "chrome://mochitests/content/browser/devtools/client/debugger/test/mochitest/shared-head.js",
   this
 );
 
@@ -29,7 +22,7 @@ Services.scriptloader.loadSubScript(
 /**
  * Test breakpoints in about:devtools-toolbox tabs (ie non localTab tab target).
  */
-add_task(async function() {
+add_task(async function () {
   const testTab = await addTab(TAB_URL);
 
   info("Force all debug target panes to be expanded");
@@ -56,14 +49,15 @@ add_task(async function() {
   const onContentTaskDone = ContentTask.spawn(
     testTab.linkedBrowser,
     {},
-    function() {
+    function () {
       content.wrappedJSObject.testMethod();
     }
   );
 
   info("Wait for the debugger to pause");
   await waitForPaused(debuggerContext);
-  assertPausedLocation(debuggerContext);
+  const script = findSource(debuggerContext, SCRIPT_FILE);
+  assertPausedAtSourceAndLine(debuggerContext, script.id, 10);
 
   info("Resume");
   await resume(debuggerContext);
@@ -72,7 +66,6 @@ add_task(async function() {
   await onContentTaskDone;
 
   info("Remove breakpoint");
-  const script = findSource(debuggerContext, SCRIPT_FILE);
   await removeBreakpoint(debuggerContext, script.id, 10);
 
   await closeAboutDevtoolsToolbox(document, devtoolsTab, window);

@@ -9,9 +9,6 @@
 
 #include "mpi-priv.h"
 #include "mplogic.h"
-#if defined(OSF1)
-#include <c_asm.h>
-#endif
 
 #if defined(__arm__) && \
     ((defined(__thumb__) && !defined(__thumb2__)) || defined(__ARM_ARCH_3__))
@@ -2523,12 +2520,6 @@ mp_read_raw(mp_int *mp, char *str, int len)
 
     mp_zero(mp);
 
-    /* Get sign from first byte */
-    if (ustr[0])
-        SIGN(mp) = NEG;
-    else
-        SIGN(mp) = ZPOS;
-
     /* Read the rest of the digits */
     for (ix = 1; ix < len; ix++) {
         if ((res = mp_mul_d(mp, 256, mp)) != MP_OKAY)
@@ -2536,6 +2527,12 @@ mp_read_raw(mp_int *mp, char *str, int len)
         if ((res = mp_add_d(mp, ustr[ix], mp)) != MP_OKAY)
             return res;
     }
+
+    /* Get sign from first byte */
+    if (ustr[0])
+        SIGN(mp) = NEG;
+    else
+        SIGN(mp) = ZPOS;
 
     return MP_OKAY;
 
@@ -3248,7 +3245,8 @@ CLEANUP:
 /* {{{ s_mp_add_d(mp, d) */
 
 /* Add d to |mp| in place                                                 */
-mp_err s_mp_add_d(mp_int *mp, mp_digit d) /* unsigned digit addition */
+mp_err
+s_mp_add_d(mp_int *mp, mp_digit d) /* unsigned digit addition */
 {
 #if !defined(MP_NO_MP_WORD) && !defined(MP_NO_ADD_WORD)
     mp_word w, k = 0;
@@ -3305,7 +3303,8 @@ CLEANUP:
 /* {{{ s_mp_sub_d(mp, d) */
 
 /* Subtract d from |mp| in place, assumes |mp| > d                        */
-mp_err s_mp_sub_d(mp_int *mp, mp_digit d) /* unsigned digit subtract */
+mp_err
+s_mp_sub_d(mp_int *mp, mp_digit d) /* unsigned digit subtract */
 {
 #if !defined(MP_NO_MP_WORD) && !defined(MP_NO_SUB_WORD)
     mp_word w, b = 0;
@@ -3512,7 +3511,8 @@ CLEANUP:
 /* {{{ s_mp_add(a, b) */
 
 /* Compute a = |a| + |b|                                                  */
-mp_err s_mp_add(mp_int *a, const mp_int *b) /* magnitude addition      */
+mp_err
+s_mp_add(mp_int *a, const mp_int *b) /* magnitude addition      */
 {
 #if !defined(MP_NO_MP_WORD) && !defined(MP_NO_ADD_WORD)
     mp_word w = 0;
@@ -3775,7 +3775,8 @@ s_mp_add_offset(mp_int *a, mp_int *b, mp_size offset)
 /* {{{ s_mp_sub(a, b) */
 
 /* Compute a = |a| - |b|, assumes |a| >= |b|                              */
-mp_err s_mp_sub(mp_int *a, const mp_int *b) /* magnitude subtract      */
+mp_err
+s_mp_sub(mp_int *a, const mp_int *b) /* magnitude subtract      */
 {
     mp_digit *pa, *pb, *limit;
 #if !defined(MP_NO_MP_WORD) && !defined(MP_NO_SUB_WORD)
@@ -3930,12 +3931,6 @@ s_mp_mul(mp_int *a, const mp_int *b)
         Plo = (mp_digit)product;                                \
         Phi = (mp_digit)(product >> MP_DIGIT_BIT);              \
     }
-#elif defined(OSF1)
-#define MP_MUL_DxD(a, b, Phi, Plo)              \
-    {                                           \
-        Plo = asm("mulq %a0, %a1, %v0", a, b);  \
-        Phi = asm("umulh %a0, %a1, %v0", a, b); \
-    }
 #else
 #define MP_MUL_DxD(a, b, Phi, Plo)                                 \
     {                                                              \
@@ -4080,12 +4075,6 @@ s_mpv_mul_d_add_prop(const mp_digit *a, mp_size a_len, mp_digit b, mp_digit *c)
         unsigned long long square = (unsigned long long)a * a; \
         Plo = (mp_digit)square;                                \
         Phi = (mp_digit)(square >> MP_DIGIT_BIT);              \
-    }
-#elif defined(OSF1)
-#define MP_SQR_D(a, Phi, Plo)                \
-    {                                        \
-        Plo = asm("mulq  %a0, %a0, %v0", a); \
-        Phi = asm("umulh %a0, %a0, %v0", a); \
     }
 #else
 #define MP_SQR_D(a, Phi, Plo)                                      \
@@ -4253,9 +4242,10 @@ s_mp_sqr(mp_int *a)
   Compute a = a / b and b = a mod b.  Assumes b > a.
  */
 
-mp_err s_mp_div(mp_int *rem,  /* i: dividend, o: remainder */
-                mp_int *div,  /* i: divisor                */
-                mp_int *quot) /* i: 0;        o: quotient  */
+mp_err
+s_mp_div(mp_int *rem,  /* i: dividend, o: remainder */
+         mp_int *div,  /* i: divisor                */
+         mp_int *quot) /* i: 0;        o: quotient  */
 {
     mp_int part, t;
     mp_digit q_msd;

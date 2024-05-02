@@ -68,7 +68,7 @@ PaymentResponse::PaymentResponse(
   NS_NewTimerWithCallback(getter_AddRefs(mTimer), this,
                           StaticPrefs::dom_payments_response_timeout(),
                           nsITimer::TYPE_ONE_SHOT,
-                          aWindow->EventTargetFor(TaskCategory::Other));
+                          GetMainThreadSerialEventTarget());
 }
 
 PaymentResponse::~PaymentResponse() = default;
@@ -132,7 +132,7 @@ void PaymentResponse::GetDetails(JSContext* aCx,
             rawData.billingAddress.recipient, rawData.billingAddress.phone);
       }
       MOZ_ASSERT(aCx);
-      JS::RootedValue value(aCx);
+      JS::Rooted<JS::Value> value(aCx);
       if (NS_WARN_IF(!basicCardResponse.ToObjectInternal(aCx, &value))) {
         return;
       }
@@ -299,7 +299,7 @@ void PaymentResponse::RespondRetry(const nsAString& aMethodName,
   NS_NewTimerWithCallback(getter_AddRefs(mTimer), this,
                           StaticPrefs::dom_payments_response_timeout(),
                           nsITimer::TYPE_ONE_SHOT,
-                          GetOwner()->EventTargetFor(TaskCategory::Other));
+                          GetMainThreadSerialEventTarget());
   MOZ_ASSERT(mRetryPromise);
   mRetryPromise->MaybeResolve(JS::UndefinedHandleValue);
   mRetryPromise = nullptr;

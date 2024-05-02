@@ -20,31 +20,34 @@ const TRANSITION_RELOAD = Ci.nsINavHistoryService.TRANSITION_RELOAD;
 
 const TITLE_LENGTH_MAX = 4096;
 
-var { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+var { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-var { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-var { PlacesSyncUtils } = ChromeUtils.import(
-  "resource://gre/modules/PlacesSyncUtils.jsm"
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
-XPCOMUtils.defineLazyModuleGetters(this, {
-  FileUtils: "resource://gre/modules/FileUtils.jsm",
-  NetUtil: "resource://gre/modules/NetUtil.jsm",
-  PromiseUtils: "resource://gre/modules/PromiseUtils.jsm",
-  BookmarkJSONUtils: "resource://gre/modules/BookmarkJSONUtils.jsm",
-  BookmarkHTMLUtils: "resource://gre/modules/BookmarkHTMLUtils.jsm",
-  PlacesBackups: "resource://gre/modules/PlacesBackups.jsm",
-  PlacesTestUtils: "resource://testing-common/PlacesTestUtils.jsm",
-  PlacesTransactions: "resource://gre/modules/PlacesTransactions.jsm",
-  OS: "resource://gre/modules/osfile.jsm",
-  Sqlite: "resource://gre/modules/Sqlite.jsm",
-  TestUtils: "resource://testing-common/TestUtils.jsm",
-  AppConstants: "resource://gre/modules/AppConstants.jsm",
-  PlacesUtils: "resource://gre/modules/PlacesUtils.jsm",
-  PlacesDBUtils: "resource://gre/modules/PlacesDBUtils.jsm",
+var { PlacesSyncUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/PlacesSyncUtils.sys.mjs"
+);
+
+ChromeUtils.defineESModuleGetters(this, {
+  BookmarkHTMLUtils: "resource://gre/modules/BookmarkHTMLUtils.sys.mjs",
+  BookmarkJSONUtils: "resource://gre/modules/BookmarkJSONUtils.sys.mjs",
+  FileUtils: "resource://gre/modules/FileUtils.sys.mjs",
+  NetUtil: "resource://gre/modules/NetUtil.sys.mjs",
+  ObjectUtils: "resource://gre/modules/ObjectUtils.sys.mjs",
+  PlacesBackups: "resource://gre/modules/PlacesBackups.sys.mjs",
+  PlacesDBUtils: "resource://gre/modules/PlacesDBUtils.sys.mjs",
+  PlacesTestUtils: "resource://testing-common/PlacesTestUtils.sys.mjs",
+  PlacesTransactions: "resource://gre/modules/PlacesTransactions.sys.mjs",
+  PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
+  PromiseUtils: "resource://gre/modules/PromiseUtils.sys.mjs",
+  Sqlite: "resource://gre/modules/Sqlite.sys.mjs",
+  TelemetryTestUtils: "resource://testing-common/TelemetryTestUtils.sys.mjs",
+  TestUtils: "resource://testing-common/TestUtils.sys.mjs",
 });
 
-XPCOMUtils.defineLazyGetter(this, "SMALLPNG_DATA_URI", function() {
+ChromeUtils.defineLazyGetter(this, "SMALLPNG_DATA_URI", function () {
   return NetUtil.newURI(
     "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAA" +
       "AAAA6fptVAAAACklEQVQI12NgAAAAAgAB4iG8MwAAAABJRU5ErkJggg=="
@@ -52,7 +55,7 @@ XPCOMUtils.defineLazyGetter(this, "SMALLPNG_DATA_URI", function() {
 });
 const SMALLPNG_DATA_LEN = 67;
 
-XPCOMUtils.defineLazyGetter(this, "SMALLSVG_DATA_URI", function() {
+ChromeUtils.defineLazyGetter(this, "SMALLSVG_DATA_URI", function () {
   return NetUtil.newURI(
     "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy5" +
       "3My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIiBmaWxs" +
@@ -64,15 +67,16 @@ XPCOMUtils.defineLazyGetter(this, "SMALLSVG_DATA_URI", function() {
   );
 });
 
+ChromeUtils.defineLazyGetter(this, "PlacesFrecencyRecalculator", () => {
+  return Cc["@mozilla.org/places/frecency-recalculator;1"].getService(
+    Ci.nsIObserver
+  ).wrappedJSObject;
+});
+
 var gTestDir = do_get_cwd();
 
 // Initialize profile.
 var gProfD = do_get_profile(true);
-
-Services.prefs.setBoolPref("browser.urlbar.usepreloadedtopurls.enabled", false);
-registerCleanupFunction(() =>
-  Services.prefs.clearUserPref("browser.urlbar.usepreloadedtopurls.enabled")
-);
 
 // Remove any old database.
 clearDB();
@@ -376,7 +380,7 @@ function promiseTopicObserved(aTopic) {
 /**
  * Simulates a Places shutdown.
  */
-var shutdownPlaces = function() {
+var shutdownPlaces = function () {
   info("shutdownPlaces: starting");
   let promise = new Promise(resolve => {
     Services.obs.addObserver(resolve, "places-connection-closed");
@@ -519,34 +523,6 @@ function check_JSON_backup(aIsAutomaticBackup) {
 }
 
 /**
- * Returns the frecency of a url.
- *
- * @param aURI
- *        The URI or spec to get frecency for.
- * @return the frecency value.
- */
-function frecencyForUrl(aURI) {
-  let url = aURI;
-  if (aURI instanceof Ci.nsIURI) {
-    url = aURI.spec;
-  } else if (aURI instanceof URL) {
-    url = aURI.href;
-  }
-  let stmt = DBConn().createStatement(
-    "SELECT frecency FROM moz_places WHERE url_hash = hash(?1) AND url = ?1"
-  );
-  stmt.bindByIndex(0, url);
-  try {
-    if (!stmt.executeStep()) {
-      throw new Error("No result for frecency.");
-    }
-    return stmt.getInt32(0);
-  } finally {
-    stmt.finalize();
-  }
-}
-
-/**
  * Returns the hidden status of a url.
  *
  * @param aURI
@@ -611,29 +587,6 @@ function do_check_valid_places_guid(aGuid) {
 }
 
 /**
- * Retrieves the guid for a given uri.
- *
- * @param aURI
- *        The uri to check.
- * @param [optional] aStack
- *        The stack frame used to report the error.
- * @return the associated the guid.
- */
-function do_get_guid_for_uri(aURI) {
-  let stmt = DBConn().createStatement(
-    `SELECT guid
-     FROM moz_places
-     WHERE url_hash = hash(:url) AND url = :url`
-  );
-  stmt.params.url = aURI.spec;
-  Assert.ok(stmt.executeStep(), "GUID for URI statement should succeed");
-  let guid = stmt.row.guid;
-  stmt.finalize();
-  do_check_valid_places_guid(guid);
-  return guid;
-}
-
-/**
  * Tests that a guid was set in moz_places for a given uri.
  *
  * @param aURI
@@ -641,35 +594,14 @@ function do_get_guid_for_uri(aURI) {
  * @param [optional] aGUID
  *        The expected guid in the database.
  */
-function do_check_guid_for_uri(aURI, aGUID) {
-  let guid = do_get_guid_for_uri(aURI);
+async function check_guid_for_uri(aURI, aGUID) {
+  let guid = await PlacesTestUtils.getDatabaseValue("moz_places", "guid", {
+    url: aURI,
+  });
   if (aGUID) {
     do_check_valid_places_guid(aGUID);
     Assert.equal(guid, aGUID, "Should have a guid in moz_places for the URI");
   }
-}
-
-/**
- * Retrieves the guid for a given bookmark.
- *
- * @param aId
- *        The bookmark id to check.
- * @param [optional] aStack
- *        The stack frame used to report the error.
- * @return the associated the guid.
- */
-function do_get_guid_for_bookmark(aId) {
-  let stmt = DBConn().createStatement(
-    `SELECT guid
-     FROM moz_bookmarks
-     WHERE id = :item_id`
-  );
-  stmt.params.item_id = aId;
-  Assert.ok(stmt.executeStep(), "Should succeed executing the SQL statement");
-  let guid = stmt.row.guid;
-  stmt.finalize();
-  do_check_valid_places_guid(guid);
-  return guid;
 }
 
 /**
@@ -680,8 +612,10 @@ function do_get_guid_for_bookmark(aId) {
  * @param [optional] aGUID
  *        The expected guid in the database.
  */
-function do_check_guid_for_bookmark(aId, aGUID) {
-  let guid = do_get_guid_for_bookmark(aId);
+async function check_guid_for_bookmark(aId, aGUID) {
+  let guid = await PlacesTestUtils.getDatabaseValue("moz_bookmarks", "guid", {
+    id: aId,
+  });
   if (aGUID) {
     do_check_valid_places_guid(aGUID);
     Assert.equal(guid, aGUID, "Should have the correct GUID for the bookmark");
@@ -712,18 +646,6 @@ function do_compare_arrays(a1, a2, sorted) {
     !a2.filter(e => !a1.includes(e)).length
   );
 }
-
-/**
- * Generic nsINavBookmarkObserver that doesn't implement anything, but provides
- * dummy methods to prevent errors about an object not having a certain method.
- */
-function NavBookmarkObserver() {}
-
-NavBookmarkObserver.prototype = {
-  onItemRemoved() {},
-  onItemChanged() {},
-  QueryInterface: ChromeUtils.generateQI(["nsINavBookmarkObserver"]),
-};
 
 /**
  * Generic nsINavHistoryResultObserver that doesn't implement anything, but
@@ -874,7 +796,7 @@ async function compareFavicons(icon1, icon2, msg) {
           loadUsingSystemPrincipal: true,
           contentPolicyType: Ci.nsIContentPolicy.TYPE_INTERNAL_IMAGE_FAVICON,
         },
-        function(inputStream, status) {
+        function (inputStream, status) {
           if (!Components.isSuccessCode(status)) {
             reject();
           }
@@ -923,19 +845,29 @@ const DB_FILENAME = "places.sqlite";
  * Sets the database to use for the given test.  This should be the very first
  * thing in the test, otherwise this database will not be used!
  *
- * @param aFileName
- *        The filename of the database to use.  This database must exist in
- *        the test folder.
+ * @param {string|string[]} path
+ *        A filename or path to a database. The database must exist.
+ *        If this is a string, then this is assumed to be a filename in the
+ *        directory where the test calling this is located.
+ *        If this is an array, this is assumed to be a path relative to the
+ *        directory that this file, head_common.js, is located.
+ * @param {string} destFileName
+ *        The destination filename to copy the database to.
  * @return {Promise} the final path to the database
  */
-async function setupPlacesDatabase(aFileName, aDestFileName = DB_FILENAME) {
+async function setupPlacesDatabase(path, destFileName = DB_FILENAME) {
   let currentDir = do_get_cwd().path;
 
-  let src = OS.Path.join(currentDir, aFileName);
+  if (typeof path == "string") {
+    path = [path];
+  } else {
+    currentDir = PathUtils.parent(currentDir);
+  }
+  let src = PathUtils.join(currentDir, ...path);
   Assert.ok(await IOUtils.exists(src), "Database file found");
 
   // Ensure that our database doesn't already exist.
-  let dest = OS.Path.join(OS.Constants.Path.profileDir, aDestFileName);
+  let dest = PathUtils.join(PathUtils.profileDir, destFileName);
   Assert.ok(
     !(await IOUtils.exists(dest)),
     "Database file should not exist yet"

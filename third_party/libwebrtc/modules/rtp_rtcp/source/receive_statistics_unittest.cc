@@ -10,9 +10,11 @@
 
 #include "modules/rtp_rtcp/include/receive_statistics.h"
 
+#include <cstdint>
 #include <memory>
 #include <vector>
 
+#include "api/units/time_delta.h"
 #include "modules/rtp_rtcp/source/rtp_packet_received.h"
 #include "rtc_base/random.h"
 #include "system_wrappers/include/clock.h"
@@ -53,6 +55,25 @@ RtpPacketReceived CreateRtpPacket(uint32_t ssrc,
   return packet;
 }
 
+RtpPacketReceived MakeRtpPacket(int payload_type_frequency,
+                                uint32_t timestamp) {
+  RtpPacketReceived packet =
+      CreateRtpPacket(kSsrc1,
+                      /*header_size=*/12, kPacketSize1 - 12,
+                      /*padding_size=*/0);
+  packet.SetTimestamp(timestamp);
+  packet.set_payload_type_frequency(payload_type_frequency);
+  return packet;
+}
+
+RtpPacketReceived MakeNextRtpPacket(const RtpPacketReceived& previous_packet,
+                                    int payload_type_frequency,
+                                    uint32_t timestamp) {
+  RtpPacketReceived packet = MakeRtpPacket(payload_type_frequency, timestamp);
+  packet.SetSequenceNumber(previous_packet.SequenceNumber() + 1);
+  return packet;
+}
+
 RtpPacketReceived CreateRtpPacket(uint32_t ssrc, size_t packet_size) {
   return CreateRtpPacket(ssrc, 12, packet_size - 12, 0);
 }
@@ -65,10 +86,17 @@ void IncrementSequenceNumber(RtpPacketReceived* packet) {
   IncrementSequenceNumber(packet, 1);
 }
 
-class ReceiveStatisticsTest : public ::testing::Test {
+uint32_t GetJitter(const ReceiveStatistics& stats) {
+  return stats.GetStatistician(kSsrc1)->GetStats().jitter;
+}
+
+class ReceiveStatisticsTest : public ::testing::TestWithParam<bool> {
  public:
   ReceiveStatisticsTest()
-      : clock_(0), receive_statistics_(ReceiveStatistics::Create(&clock_)) {
+      : clock_(0),
+        receive_statistics_(
+            GetParam() ? ReceiveStatistics::Create(&clock_)
+                       : ReceiveStatistics::CreateThreadCompatible(&clock_)) {
     packet1_ = CreateRtpPacket(kSsrc1, kPacketSize1);
     packet2_ = CreateRtpPacket(kSsrc2, kPacketSize2);
   }
@@ -80,7 +108,14 @@ class ReceiveStatisticsTest : public ::testing::Test {
   RtpPacketReceived packet2_;
 };
 
-TEST_F(ReceiveStatisticsTest, TwoIncomingSsrcs) {
+INSTANTIATE_TEST_SUITE_P(All,
+                         ReceiveStatisticsTest,
+                         ::testing::Bool(),
+                         [](::testing::TestParamInfo<bool> info) {
+                           return info.param ? "WithMutex" : "WithoutMutex";
+                         });
+
+TEST_P(ReceiveStatisticsTest, TwoIncomingSsrcs) {
   receive_statistics_->OnRtpPacket(packet1_);
   IncrementSequenceNumber(&packet1_);
   receive_statistics_->OnRtpPacket(packet2_);
@@ -133,7 +168,7 @@ TEST_F(ReceiveStatisticsTest, TwoIncomingSsrcs) {
   EXPECT_EQ(3u, counters.transmitted.packets);
 }
 
-TEST_F(ReceiveStatisticsTest,
+TEST_P(ReceiveStatisticsTest,
        RtcpReportBlocksReturnsMaxBlocksWhenThereAreMoreStatisticians) {
   RtpPacketReceived packet1 = CreateRtpPacket(kSsrc1, kPacketSize1);
   RtpPacketReceived packet2 = CreateRtpPacket(kSsrc2, kPacketSize1);
@@ -147,7 +182,7 @@ TEST_F(ReceiveStatisticsTest,
   EXPECT_THAT(receive_statistics_->RtcpReportBlocks(2), SizeIs(2));
 }
 
-TEST_F(ReceiveStatisticsTest,
+TEST_P(ReceiveStatisticsTest,
        RtcpReportBlocksReturnsAllObservedSsrcsWithMultipleCalls) {
   RtpPacketReceived packet1 = CreateRtpPacket(kSsrc1, kPacketSize1);
   RtpPacketReceived packet2 = CreateRtpPacket(kSsrc2, kPacketSize1);
@@ -174,7 +209,7 @@ TEST_F(ReceiveStatisticsTest,
               UnorderedElementsAre(kSsrc1, kSsrc2, kSsrc3, kSsrc4));
 }
 
-TEST_F(ReceiveStatisticsTest, ActiveStatisticians) {
+TEST_P(ReceiveStatisticsTest, ActiveStatisticians) {
   receive_statistics_->OnRtpPacket(packet1_);
   IncrementSequenceNumber(&packet1_);
   clock_.AdvanceTimeMilliseconds(1000);
@@ -206,7 +241,7 @@ TEST_F(ReceiveStatisticsTest, ActiveStatisticians) {
   EXPECT_EQ(2u, counters.transmitted.packets);
 }
 
-TEST_F(ReceiveStatisticsTest,
+TEST_P(ReceiveStatisticsTest,
        DoesntCreateRtcpReportBlockUntilFirstReceivedPacketForSsrc) {
   // Creates a statistician object for the ssrc.
   receive_statistics_->EnableRetransmitDetection(kSsrc1, true);
@@ -217,23 +252,23 @@ TEST_F(ReceiveStatisticsTest,
   EXPECT_EQ(1u, receive_statistics_->RtcpReportBlocks(3).size());
 }
 
-TEST_F(ReceiveStatisticsTest, GetReceiveStreamDataCounters) {
+TEST_P(ReceiveStatisticsTest, GetReceiveStreamDataCounters) {
   receive_statistics_->OnRtpPacket(packet1_);
   StreamStatistician* statistician =
       receive_statistics_->GetStatistician(kSsrc1);
   ASSERT_TRUE(statistician != NULL);
 
   StreamDataCounters counters = statistician->GetReceiveStreamDataCounters();
-  EXPECT_GT(counters.first_packet_time_ms, -1);
+  EXPECT_TRUE(counters.first_packet_time.IsFinite());
   EXPECT_EQ(1u, counters.transmitted.packets);
 
   receive_statistics_->OnRtpPacket(packet1_);
   counters = statistician->GetReceiveStreamDataCounters();
-  EXPECT_GT(counters.first_packet_time_ms, -1);
+  EXPECT_TRUE(counters.first_packet_time.IsFinite());
   EXPECT_EQ(2u, counters.transmitted.packets);
 }
 
-TEST_F(ReceiveStatisticsTest, SimpleLossComputation) {
+TEST_P(ReceiveStatisticsTest, SimpleLossComputation) {
   packet1_.SetSequenceNumber(1);
   receive_statistics_->OnRtpPacket(packet1_);
   packet1_.SetSequenceNumber(3);
@@ -250,13 +285,13 @@ TEST_F(ReceiveStatisticsTest, SimpleLossComputation) {
 
   // 20% = 51/255.
   EXPECT_EQ(51u, report_blocks[0].fraction_lost());
-  EXPECT_EQ(1, report_blocks[0].cumulative_lost_signed());
+  EXPECT_EQ(1, report_blocks[0].cumulative_lost());
   StreamStatistician* statistician =
       receive_statistics_->GetStatistician(kSsrc1);
   EXPECT_EQ(20, statistician->GetFractionLostInPercent());
 }
 
-TEST_F(ReceiveStatisticsTest, LossComputationWithReordering) {
+TEST_P(ReceiveStatisticsTest, LossComputationWithReordering) {
   packet1_.SetSequenceNumber(1);
   receive_statistics_->OnRtpPacket(packet1_);
   packet1_.SetSequenceNumber(3);
@@ -273,13 +308,13 @@ TEST_F(ReceiveStatisticsTest, LossComputationWithReordering) {
 
   // 20% = 51/255.
   EXPECT_EQ(51u, report_blocks[0].fraction_lost());
-  EXPECT_EQ(1, report_blocks[0].cumulative_lost_signed());
+  EXPECT_EQ(1, report_blocks[0].cumulative_lost());
   StreamStatistician* statistician =
       receive_statistics_->GetStatistician(kSsrc1);
   EXPECT_EQ(20, statistician->GetFractionLostInPercent());
 }
 
-TEST_F(ReceiveStatisticsTest, LossComputationWithDuplicates) {
+TEST_P(ReceiveStatisticsTest, LossComputationWithDuplicates) {
   // Lose 2 packets, but also receive 1 duplicate. Should actually count as
   // only 1 packet being lost.
   packet1_.SetSequenceNumber(1);
@@ -298,13 +333,13 @@ TEST_F(ReceiveStatisticsTest, LossComputationWithDuplicates) {
 
   // 20% = 51/255.
   EXPECT_EQ(51u, report_blocks[0].fraction_lost());
-  EXPECT_EQ(1, report_blocks[0].cumulative_lost_signed());
+  EXPECT_EQ(1, report_blocks[0].cumulative_lost());
   StreamStatistician* statistician =
       receive_statistics_->GetStatistician(kSsrc1);
   EXPECT_EQ(20, statistician->GetFractionLostInPercent());
 }
 
-TEST_F(ReceiveStatisticsTest, LossComputationWithSequenceNumberWrapping) {
+TEST_P(ReceiveStatisticsTest, LossComputationWithSequenceNumberWrapping) {
   // First, test loss computation over a period that included a sequence number
   // rollover.
   packet1_.SetSequenceNumber(0xfffd);
@@ -324,7 +359,7 @@ TEST_F(ReceiveStatisticsTest, LossComputationWithSequenceNumberWrapping) {
 
   // 20% = 51/255.
   EXPECT_EQ(51u, report_blocks[0].fraction_lost());
-  EXPECT_EQ(1, report_blocks[0].cumulative_lost_signed());
+  EXPECT_EQ(1, report_blocks[0].cumulative_lost());
   StreamStatistician* statistician =
       receive_statistics_->GetStatistician(kSsrc1);
   EXPECT_EQ(20, statistician->GetFractionLostInPercent());
@@ -339,12 +374,12 @@ TEST_F(ReceiveStatisticsTest, LossComputationWithSequenceNumberWrapping) {
 
   // 50% = 127/255.
   EXPECT_EQ(127u, report_blocks[0].fraction_lost());
-  EXPECT_EQ(2, report_blocks[0].cumulative_lost_signed());
+  EXPECT_EQ(2, report_blocks[0].cumulative_lost());
   // 2 packets lost, 7 expected
   EXPECT_EQ(28, statistician->GetFractionLostInPercent());
 }
 
-TEST_F(ReceiveStatisticsTest, StreamRestartDoesntCountAsLoss) {
+TEST_P(ReceiveStatisticsTest, StreamRestartDoesntCountAsLoss) {
   receive_statistics_->SetMaxReorderingThreshold(kSsrc1, 200);
 
   packet1_.SetSequenceNumber(0);
@@ -361,7 +396,7 @@ TEST_F(ReceiveStatisticsTest, StreamRestartDoesntCountAsLoss) {
   EXPECT_EQ(kSsrc1, report_blocks[0].source_ssrc());
 
   EXPECT_EQ(0, report_blocks[0].fraction_lost());
-  EXPECT_EQ(0, report_blocks[0].cumulative_lost_signed());
+  EXPECT_EQ(0, report_blocks[0].cumulative_lost());
   StreamStatistician* statistician =
       receive_statistics_->GetStatistician(kSsrc1);
   EXPECT_EQ(0, statistician->GetFractionLostInPercent());
@@ -373,11 +408,11 @@ TEST_F(ReceiveStatisticsTest, StreamRestartDoesntCountAsLoss) {
   EXPECT_EQ(kSsrc1, report_blocks[0].source_ssrc());
 
   EXPECT_EQ(0, report_blocks[0].fraction_lost());
-  EXPECT_EQ(0, report_blocks[0].cumulative_lost_signed());
+  EXPECT_EQ(0, report_blocks[0].cumulative_lost());
   EXPECT_EQ(0, statistician->GetFractionLostInPercent());
 }
 
-TEST_F(ReceiveStatisticsTest, CountsLossAfterStreamRestart) {
+TEST_P(ReceiveStatisticsTest, CountsLossAfterStreamRestart) {
   receive_statistics_->SetMaxReorderingThreshold(kSsrc1, 200);
 
   packet1_.SetSequenceNumber(0);
@@ -397,7 +432,7 @@ TEST_F(ReceiveStatisticsTest, CountsLossAfterStreamRestart) {
   ASSERT_THAT(report_blocks, SizeIs(1));
   EXPECT_EQ(kSsrc1, report_blocks[0].source_ssrc());
 
-  EXPECT_EQ(1, report_blocks[0].cumulative_lost_signed());
+  EXPECT_EQ(1, report_blocks[0].cumulative_lost());
 
   StreamStatistician* statistician =
       receive_statistics_->GetStatistician(kSsrc1);
@@ -405,7 +440,7 @@ TEST_F(ReceiveStatisticsTest, CountsLossAfterStreamRestart) {
   EXPECT_EQ(0, statistician->GetFractionLostInPercent());
 }
 
-TEST_F(ReceiveStatisticsTest, StreamCanRestartAtSequenceNumberWrapAround) {
+TEST_P(ReceiveStatisticsTest, StreamCanRestartAtSequenceNumberWrapAround) {
   receive_statistics_->SetMaxReorderingThreshold(kSsrc1, 200);
 
   packet1_.SetSequenceNumber(0xffff - 401);
@@ -425,10 +460,10 @@ TEST_F(ReceiveStatisticsTest, StreamCanRestartAtSequenceNumberWrapAround) {
   ASSERT_THAT(report_blocks, SizeIs(1));
   EXPECT_EQ(kSsrc1, report_blocks[0].source_ssrc());
 
-  EXPECT_EQ(1, report_blocks[0].cumulative_lost_signed());
+  EXPECT_EQ(1, report_blocks[0].cumulative_lost());
 }
 
-TEST_F(ReceiveStatisticsTest, StreamRestartNeedsTwoConsecutivePackets) {
+TEST_P(ReceiveStatisticsTest, StreamRestartNeedsTwoConsecutivePackets) {
   receive_statistics_->SetMaxReorderingThreshold(kSsrc1, 200);
 
   packet1_.SetSequenceNumber(400);
@@ -458,7 +493,7 @@ TEST_F(ReceiveStatisticsTest, StreamRestartNeedsTwoConsecutivePackets) {
   EXPECT_EQ(4u, report_blocks[0].extended_high_seq_num());
 }
 
-TEST_F(ReceiveStatisticsTest, WrapsAroundExtendedHighestSequenceNumber) {
+TEST_P(ReceiveStatisticsTest, WrapsAroundExtendedHighestSequenceNumber) {
   packet1_.SetSequenceNumber(0xffff);
   receive_statistics_->OnRtpPacket(packet1_);
 
@@ -503,8 +538,7 @@ TEST_F(ReceiveStatisticsTest, WrapsAroundExtendedHighestSequenceNumber) {
   EXPECT_EQ(0x20001u, report_blocks[0].extended_high_seq_num());
 }
 
-TEST_F(ReceiveStatisticsTest, StreamDataCounters) {
-  receive_statistics_ = ReceiveStatistics::Create(&clock_);
+TEST_P(ReceiveStatisticsTest, StreamDataCounters) {
   receive_statistics_->EnableRetransmitDetection(kSsrc1, true);
 
   const size_t kHeaderLength = 20;
@@ -554,21 +588,314 @@ TEST_F(ReceiveStatisticsTest, StreamDataCounters) {
   EXPECT_EQ(counters.retransmitted.packets, 1u);
 }
 
-TEST_F(ReceiveStatisticsTest, LastPacketReceivedTimestamp) {
-  receive_statistics_ = ReceiveStatistics::Create(&clock_);
-
+TEST_P(ReceiveStatisticsTest, LastPacketReceivedTimestamp) {
   clock_.AdvanceTimeMilliseconds(42);
+  packet1_.SetSequenceNumber(100);
   receive_statistics_->OnRtpPacket(packet1_);
-  StreamDataCounters counters = receive_statistics_->GetStatistician(kSsrc1)
-                                    ->GetReceiveStreamDataCounters();
+  RtpReceiveStats counters =
+      receive_statistics_->GetStatistician(kSsrc1)->GetStats();
 
-  EXPECT_EQ(42, counters.last_packet_received_timestamp_ms);
+  EXPECT_EQ(counters.last_packet_received, Timestamp::Millis(42));
 
   clock_.AdvanceTimeMilliseconds(3);
+  packet1_.SetSequenceNumber(101);
   receive_statistics_->OnRtpPacket(packet1_);
-  counters = receive_statistics_->GetStatistician(kSsrc1)
-                 ->GetReceiveStreamDataCounters();
-  EXPECT_EQ(45, counters.last_packet_received_timestamp_ms);
+  counters = receive_statistics_->GetStatistician(kSsrc1)->GetStats();
+  EXPECT_EQ(counters.last_packet_received, Timestamp::Millis(45));
+}
+
+TEST_P(ReceiveStatisticsTest, SimpleJitterComputation) {
+  const int kMsPerPacket = 20;
+  const int kCodecSampleRate = 48'000;
+  const int kSamplesPerPacket = kMsPerPacket * kCodecSampleRate / 1'000;
+  const int kLateArrivalDeltaMs = 100;
+  const int kLateArrivalDeltaSamples =
+      kLateArrivalDeltaMs * kCodecSampleRate / 1'000;
+
+  packet1_.set_payload_type_frequency(kCodecSampleRate);
+  packet1_.SetSequenceNumber(1);
+  packet1_.SetTimestamp(0);
+  receive_statistics_->OnRtpPacket(packet1_);
+  packet1_.SetSequenceNumber(2);
+  packet1_.SetTimestamp(kSamplesPerPacket);
+  // Arrives 100 ms late.
+  clock_.AdvanceTimeMilliseconds(kMsPerPacket + kLateArrivalDeltaMs);
+  receive_statistics_->OnRtpPacket(packet1_);
+
+  StreamStatistician* statistician =
+      receive_statistics_->GetStatistician(kSsrc1);
+  // See jitter caluculation in https://www.rfc-editor.org/rfc/rfc3550 6.4.1.
+  const uint32_t expected_jitter = (kLateArrivalDeltaSamples) / 16;
+  EXPECT_EQ(expected_jitter, statistician->GetStats().jitter);
+  EXPECT_EQ(webrtc::TimeDelta::Seconds(expected_jitter) / kCodecSampleRate,
+            statistician->GetStats().interarrival_jitter);
+}
+
+TEST(ReviseJitterTest, AllPacketsHaveSamePayloadTypeFrequency) {
+  SimulatedClock clock(0);
+  std::unique_ptr<ReceiveStatistics> statistics =
+      ReceiveStatistics::Create(&clock);
+  RtpPacketReceived packet1 = MakeRtpPacket(/*payload_type_frequency=*/8'000,
+                                            /*timestamp=*/1);
+  RtpPacketReceived packet2 = MakeNextRtpPacket(
+      packet1, /*payload_type_frequency=*/8'000, /*timestamp=*/1 + 160);
+
+  RtpPacketReceived packet3 = MakeNextRtpPacket(
+      packet2, /*payload_type_frequency=*/8'000, /*timestamp=*/1 + 2 * 160);
+
+  statistics->OnRtpPacket(packet1);
+  clock.AdvanceTimeMilliseconds(50);
+  statistics->OnRtpPacket(packet2);
+  clock.AdvanceTimeMilliseconds(50);
+  statistics->OnRtpPacket(packet3);
+
+  // packet1: no jitter calculation
+  // packet2: jitter = 0[jitter] + (abs(50[receive time ms] *
+  //          8[frequency KHz] - 160[timestamp diff]) * 16 - 0[jitter] + 8)
+  //          / 16 = 240
+  // packet3: jitter = 240[jitter] + (abs(50[receive time ms] *
+  //          8[frequency KHz] - 160[timestamp diff]) * 16 - 240[jitter] + 8)
+  //          / 16 = 465
+  // final jitter: 465 / 16 = 29
+  EXPECT_EQ(GetJitter(*statistics), 29U);
+}
+
+TEST(ReviseJitterTest, AllPacketsHaveDifferentPayloadTypeFrequency) {
+  SimulatedClock clock(0);
+  std::unique_ptr<ReceiveStatistics> statistics =
+      ReceiveStatistics::Create(&clock);
+  RtpPacketReceived packet1 = MakeRtpPacket(/*payload_type_frequency=*/8'000,
+                                            /*timestamp=*/1);
+  RtpPacketReceived packet2 = MakeNextRtpPacket(
+      packet1, /*payload_type_frequency=*/8'000, /*timestamp=*/1 + 160);
+  RtpPacketReceived packet3 = MakeNextRtpPacket(
+      packet2, /*payload_type_frequency=*/48'000, /*timestamp=*/1 + 160 + 960);
+
+  statistics->OnRtpPacket(packet1);
+  clock.AdvanceTimeMilliseconds(50);
+  statistics->OnRtpPacket(packet2);
+  clock.AdvanceTimeMilliseconds(50);
+  statistics->OnRtpPacket(packet3);
+
+  // packet1: no jitter calculation
+  // packet2: jitter = 0[jitter] + (abs(50[receive time ms] *
+  //          8[frequency KHz] - 160[timestamp diff]) * 16 - 0[jitter] + 8)
+  //          / 16 = 240
+  // packet3: revised jitter: 240 * 48[frequency KHz] / 8[frequency KHz] = 1'440
+  //          jitter = 1'440[jitter] + (abs(50[receive time ms] *
+  //          48[frequency KHz] - 960[timestamp diff]) * 16 - 1'440[jitter] + 8)
+  //          / 16 = 2'790
+  // final jitter: 2'790 / 16 = 174
+  EXPECT_EQ(GetJitter(*statistics), 174U);
+}
+
+TEST(ReviseJitterTest,
+     FirstPacketPayloadTypeFrequencyIsZeroAndFrequencyChanged) {
+  SimulatedClock clock(0);
+  std::unique_ptr<ReceiveStatistics> statistics =
+      ReceiveStatistics::Create(&clock);
+  RtpPacketReceived packet1 = MakeRtpPacket(/*payload_type_frequency=*/0,
+                                            /*timestamp=*/1);
+  RtpPacketReceived packet2 = MakeNextRtpPacket(
+      packet1, /*payload_type_frequency=*/8'000, /*timestamp=*/1 + 160);
+  RtpPacketReceived packet3 = MakeNextRtpPacket(
+      packet2, /*payload_type_frequency=*/48'000, /*timestamp=*/1 + 160 + 960);
+
+  statistics->OnRtpPacket(packet1);
+  clock.AdvanceTimeMilliseconds(50);
+  statistics->OnRtpPacket(packet2);
+  clock.AdvanceTimeMilliseconds(50);
+  statistics->OnRtpPacket(packet3);
+
+  // packet1: no jitter calculation
+  // packet2: jitter = 0[jitter] + (abs(50[receive time ms] *
+  //          8[frequency KHz] - 160[timestamp diff]) * 16 - 0[jitter] + 8)
+  //          / 16 = 240
+  // packet3: revised jitter: 240 * 48[frequency KHz] / 8[frequency KHz] = 1'440
+  //          jitter = 1'440[jitter] + (abs(50[receive time ms] *
+  //          48[frequency KHz] - 960[timestamp diff]) * 16 - 1'440[jitter] + 8)
+  //          / 16 = 2'790
+  // final jitter: 2'790 / 16 = 174
+  EXPECT_EQ(GetJitter(*statistics), 174U);
+}
+
+TEST(ReviseJitterTest,
+     FirstPacketPayloadTypeFrequencyIsZeroAndFrequencyNotChanged) {
+  SimulatedClock clock(0);
+  std::unique_ptr<ReceiveStatistics> statistics =
+      ReceiveStatistics::Create(&clock);
+  RtpPacketReceived packet1 = MakeRtpPacket(/*payload_type_frequency=*/0,
+                                            /*timestamp=*/1);
+  RtpPacketReceived packet2 = MakeNextRtpPacket(
+      packet1, /*payload_type_frequency=*/8'000, /*timestamp=*/1 + 160);
+  RtpPacketReceived packet3 = MakeNextRtpPacket(
+      packet2, /*payload_type_frequency=*/8'000, /*timestamp=*/1 + 160 + 160);
+
+  statistics->OnRtpPacket(packet1);
+  clock.AdvanceTimeMilliseconds(50);
+  statistics->OnRtpPacket(packet2);
+  clock.AdvanceTimeMilliseconds(50);
+  statistics->OnRtpPacket(packet3);
+
+  // packet1: no jitter calculation
+  // packet2: jitter = 0[jitter] + (abs(50[receive time ms] *
+  //          8[frequency KHz] - 160[timestamp diff]) * 16 - 0[jitter] + 8)
+  //          / 16 = 240
+  // packet3: jitter = 240[jitter] + (abs(50[receive time ms] *
+  //          8[frequency KHz] - 160[timestamp diff]) * 16 - 240[jitter] + 8)
+  //          / 16 = 465
+  // final jitter: 465 / 16 = 29
+  EXPECT_EQ(GetJitter(*statistics), 29U);
+}
+
+TEST(ReviseJitterTest,
+     TwoFirstPacketPayloadTypeFrequencyIsZeroAndFrequencyChanged) {
+  SimulatedClock clock(0);
+  std::unique_ptr<ReceiveStatistics> statistics =
+      ReceiveStatistics::Create(&clock);
+  RtpPacketReceived packet1 = MakeRtpPacket(/*payload_type_frequency=*/0,
+                                            /*timestamp=*/1);
+  RtpPacketReceived packet2 = MakeNextRtpPacket(
+      packet1, /*payload_type_frequency=*/0, /*timestamp=*/1 + 160);
+  RtpPacketReceived packet3 = MakeNextRtpPacket(
+      packet2, /*payload_type_frequency=*/48'000, /*timestamp=*/1 + 160 + 960);
+  RtpPacketReceived packet4 =
+      MakeNextRtpPacket(packet3, /*payload_type_frequency=*/8'000,
+                        /*timestamp=*/1 + 160 + 960 + 160);
+
+  statistics->OnRtpPacket(packet1);
+  clock.AdvanceTimeMilliseconds(50);
+  statistics->OnRtpPacket(packet2);
+  clock.AdvanceTimeMilliseconds(50);
+  statistics->OnRtpPacket(packet3);
+  clock.AdvanceTimeMilliseconds(50);
+  statistics->OnRtpPacket(packet4);
+
+  // packet1: no jitter calculation
+  // packet2: jitter = 0[jitter] + (abs(50[receive time ms] *
+  //          0[frequency KHz] - 160[timestamp diff]) * 16 - 0[jitter] + 8)
+  //          / 16 = 160
+  // packet3: jitter = 160[jitter] + (abs(50[receive time ms] *
+  //          48[frequency KHz] - 960[timestamp diff]) * 16 - 160[jitter] + 8)
+  //          / 16 = 1'590
+  // packet4: revised jitter: 1'590 * 8[frequency KHz] / 48[frequency KHz] = 265
+  // packet4: jitter = 265[jitter] + (abs(50[receive time ms] *
+  //          8[frequency KHz] - 160[timestamp diff]) * 16 - 265[jitter] + 8)
+  //          / 16 = 488
+  // final jitter: 488 / 16 = 30
+  EXPECT_EQ(GetJitter(*statistics), 30U);
+}
+
+TEST(ReviseJitterTest,
+     TwoFirstPacketPayloadTypeFrequencyIsZeroAndFrequencyNotChanged) {
+  SimulatedClock clock(0);
+  std::unique_ptr<ReceiveStatistics> statistics =
+      ReceiveStatistics::Create(&clock);
+  RtpPacketReceived packet1 = MakeRtpPacket(/*payload_type_frequency=*/0,
+                                            /*timestamp=*/1);
+  RtpPacketReceived packet2 = MakeNextRtpPacket(
+      packet1, /*payload_type_frequency=*/0, /*timestamp=*/1 + 160);
+  RtpPacketReceived packet3 = MakeNextRtpPacket(
+      packet2, /*payload_type_frequency=*/8'000, /*timestamp=*/1 + 160 + 160);
+  RtpPacketReceived packet4 =
+      MakeNextRtpPacket(packet3, /*payload_type_frequency=*/8'000,
+                        /*timestamp=*/1 + 160 + 160 + 160);
+
+  statistics->OnRtpPacket(packet1);
+  clock.AdvanceTimeMilliseconds(50);
+  statistics->OnRtpPacket(packet2);
+  clock.AdvanceTimeMilliseconds(50);
+  statistics->OnRtpPacket(packet3);
+  clock.AdvanceTimeMilliseconds(50);
+  statistics->OnRtpPacket(packet4);
+
+  // packet1: no jitter calculation
+  // packet2: jitter = 0[jitter] + (abs(50[receive time ms] *
+  //          0[frequency KHz] - 160[timestamp diff]) * 16 - 0[jitter] + 8)
+  //          / 16 = 160
+  // packet3: jitter = 160[jitter] + (abs(50[receive time ms] *
+  //          8[frequency KHz] - 160[timestamp diff]) * 16 - 160[jitter] + 8)
+  //          / 16 = 390
+  // packet4: jitter = 390[jitter] + (abs(50[receive time ms] *
+  //          8[frequency KHz] - 160[timestamp diff]) * 16 - 390[jitter] + 8)
+  //          / 16 = 606
+  // final jitter: 606 / 16 = 37
+  EXPECT_EQ(GetJitter(*statistics), 37U);
+}
+
+TEST(ReviseJitterTest,
+     MiddlePacketPayloadTypeFrequencyIsZeroAndFrequencyChanged) {
+  SimulatedClock clock(0);
+  std::unique_ptr<ReceiveStatistics> statistics =
+      ReceiveStatistics::Create(&clock);
+  RtpPacketReceived packet1 = MakeRtpPacket(/*payload_type_frequency=*/48'000,
+                                            /*timestamp=*/1);
+  RtpPacketReceived packet2 = MakeNextRtpPacket(
+      packet1, /*payload_type_frequency=*/48'000, /*timestamp=*/1 + 960);
+  RtpPacketReceived packet3 = MakeNextRtpPacket(
+      packet2, /*payload_type_frequency=*/0, /*timestamp=*/1 + 960 + 55);
+  RtpPacketReceived packet4 =
+      MakeNextRtpPacket(packet3, /*payload_type_frequency=*/8'000,
+                        /*timestamp=*/1 + 960 + 55 + 160);
+
+  statistics->OnRtpPacket(packet1);
+  clock.AdvanceTimeMilliseconds(50);
+  statistics->OnRtpPacket(packet2);
+  clock.AdvanceTimeMilliseconds(50);
+  statistics->OnRtpPacket(packet3);
+  clock.AdvanceTimeMilliseconds(50);
+  statistics->OnRtpPacket(packet4);
+
+  // packet1: no jitter calculation
+  // packet2: jitter = 0[jitter] + (abs(50[receive time ms] *
+  //          48[frequency KHz] - 960[timestamp diff]) * 16 - 0[jitter] + 8)
+  //          / 16 = 1'440
+  // packet3: jitter = 1'440[jitter] + (abs(50[receive time ms] *
+  //          0[frequency KHz] - 55[timestamp diff]) * 16 - 1'440[jitter] + 8)
+  //          / 16 = 1'405
+  // packet4: revised jitter: 1'405 * 8[frequency KHz] / 48[frequency KHz] = 234
+  //          jitter = 234[jitter] + (abs(50[receive time ms] *
+  //          8[frequency KHz] - 160[timestamp diff]) * 16 - 234[jitter] + 8)
+  //          / 16 = 459
+  // final jitter: 459 / 16 = 28
+  EXPECT_EQ(GetJitter(*statistics), 28U);
+}
+
+TEST(ReviseJitterTest,
+     MiddlePacketPayloadTypeFrequencyIsZeroAndFrequencyNotChanged) {
+  SimulatedClock clock(0);
+  std::unique_ptr<ReceiveStatistics> statistics =
+      ReceiveStatistics::Create(&clock);
+  RtpPacketReceived packet1 = MakeRtpPacket(/*payload_type_frequency=*/48'000,
+                                            /*timestamp=*/1);
+  RtpPacketReceived packet2 = MakeNextRtpPacket(
+      packet1, /*payload_type_frequency=*/48'000, /*timestamp=*/1 + 960);
+  RtpPacketReceived packet3 = MakeNextRtpPacket(
+      packet2, /*payload_type_frequency=*/0, /*timestamp=*/1 + 960 + 55);
+  RtpPacketReceived packet4 =
+      MakeNextRtpPacket(packet3, /*payload_type_frequency=*/48'000,
+                        /*timestamp=*/1 + 960 + 55 + 960);
+
+  statistics->OnRtpPacket(packet1);
+  clock.AdvanceTimeMilliseconds(50);
+  statistics->OnRtpPacket(packet2);
+  clock.AdvanceTimeMilliseconds(50);
+  statistics->OnRtpPacket(packet3);
+  clock.AdvanceTimeMilliseconds(50);
+  statistics->OnRtpPacket(packet4);
+
+  // packet1: no jitter calculation
+  // packet2: jitter = 0[jitter] + (abs(50[receive time ms] *
+  //          48[frequency KHz] - 960[timestamp diff]) * 16 - 0[jitter] + 8)
+  //          / 16 = 1'440
+  // packet3: jitter = 1'440[jitter] + (abs(50[receive time ms] *
+  //          0[frequency KHz] - 55[timestamp diff]) * 16 - 1'440[jitter] + 8)
+  //          / 16 = 1'405
+  // packet4: jitter = 1'405[jitter] + (abs(50[receive time ms] *
+  //          48[frequency KHz] - 960[timestamp diff]) * 16 - 1'405[jitter] + 8)
+  //          / 16 = 2'757
+  // final jitter: 2'757 / 16 = 172
+  EXPECT_EQ(GetJitter(*statistics), 172U);
 }
 
 }  // namespace

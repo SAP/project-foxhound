@@ -5,16 +5,12 @@
 #include "FocusManager.h"
 
 #include "LocalAccessible-inl.h"
-#include "AccIterator.h"
 #include "DocAccessible-inl.h"
 #include "nsAccessibilityService.h"
-#include "nsAccUtils.h"
 #include "nsEventShell.h"
-#include "Role.h"
 
 #include "nsFocusManager.h"
 #include "mozilla/a11y/DocAccessibleParent.h"
-#include "mozilla/a11y/DocManager.h"
 #include "mozilla/EventStateManager.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/BrowsingContext.h"
@@ -27,7 +23,8 @@ FocusManager::FocusManager() {}
 
 FocusManager::~FocusManager() {}
 
-LocalAccessible* FocusManager::FocusedAccessible() const {
+LocalAccessible* FocusManager::FocusedLocalAccessible() const {
+  MOZ_ASSERT(NS_IsMainThread());
   if (mActiveItem) {
     if (mActiveItem->IsDefunct()) {
       MOZ_ASSERT_UNREACHABLE("Stored active item is unbound from document");
@@ -35,6 +32,12 @@ LocalAccessible* FocusManager::FocusedAccessible() const {
     }
 
     return mActiveItem;
+  }
+
+  if (nsAccessibilityService::IsShutdown()) {
+    // We might try to get or create a DocAccessible below, which isn't safe (or
+    // useful) if the accessibility service is shutting down.
+    return nullptr;
   }
 
   nsINode* focusedNode = FocusedDOMNode();
@@ -48,41 +51,63 @@ LocalAccessible* FocusManager::FocusedAccessible() const {
   return nullptr;
 }
 
-bool FocusManager::IsFocused(const LocalAccessible* aAccessible) const {
-  if (mActiveItem) return mActiveItem == aAccessible;
-
-  nsINode* focusedNode = FocusedDOMNode();
-  if (focusedNode) {
-    // XXX: Before getting an accessible for node having a DOM focus make sure
-    // they belong to the same document because it can trigger unwanted document
-    // accessible creation for temporary about:blank document. Without this
-    // peculiarity we would end up with plain implementation based on
-    // FocusedAccessible() method call. Make sure this issue is fixed in
-    // bug 638465.
-    if (focusedNode->OwnerDoc() == aAccessible->GetNode()->OwnerDoc()) {
-      DocAccessible* doc =
-          GetAccService()->GetDocAccessible(focusedNode->OwnerDoc());
-      return aAccessible ==
-             (doc ? doc->GetAccessibleEvenIfNotInMapOrContainer(focusedNode)
-                  : nullptr);
+Accessible* FocusManager::FocusedAccessible() const {
+#if defined(ANDROID)
+  // It's not safe to call FocusedLocalAccessible() except on the main thread.
+  // Android might query RemoteAccessibles on the UI thread, which might call
+  // FocusedAccessible(). Never try to get the focused LocalAccessible in this
+  // case.
+  if (NS_IsMainThread()) {
+    if (Accessible* focusedAcc = FocusedLocalAccessible()) {
+      return focusedAcc;
     }
+  } else {
+    nsAccessibilityService::GetAndroidMonitor().AssertCurrentThreadOwns();
   }
-  return false;
+  return mFocusedRemoteDoc ? mFocusedRemoteDoc->GetFocusedAcc() : nullptr;
+#else
+  if (Accessible* focusedAcc = FocusedLocalAccessible()) {
+    return focusedAcc;
+  }
+
+  if (!XRE_IsParentProcess()) {
+    // DocAccessibleParent's don't exist in the content
+    // process, so we can't return anything useful if this
+    // is the case.
+    return nullptr;
+  }
+
+  nsFocusManager* focusManagerDOM = nsFocusManager::GetFocusManager();
+  if (!focusManagerDOM) {
+    return nullptr;
+  }
+
+  // If we call GetFocusedBrowsingContext from the chrome process
+  // it returns the BrowsingContext for the focused _window_, which
+  // is not helpful here. Instead use GetFocusedBrowsingContextInChrome
+  // which returns the content BrowsingContext that has focus.
+  dom::BrowsingContext* focusedContext =
+      focusManagerDOM->GetFocusedBrowsingContextInChrome();
+
+  DocAccessibleParent* focusedDoc =
+      DocAccessibleParent::GetFrom(focusedContext);
+  return focusedDoc ? focusedDoc->GetFocusedAcc() : nullptr;
+#endif  // defined(ANDROID)
 }
 
-bool FocusManager::IsFocusWithin(const LocalAccessible* aContainer) const {
-  LocalAccessible* child = FocusedAccessible();
+bool FocusManager::IsFocusWithin(const Accessible* aContainer) const {
+  Accessible* child = FocusedAccessible();
   while (child) {
     if (child == aContainer) return true;
 
-    child = child->LocalParent();
+    child = child->Parent();
   }
   return false;
 }
 
 FocusManager::FocusDisposition FocusManager::IsInOrContainsFocus(
     const LocalAccessible* aAccessible) const {
-  LocalAccessible* focus = FocusedAccessible();
+  LocalAccessible* focus = FocusedLocalAccessible();
   if (!focus) return eNone;
 
   // If focused.
@@ -172,7 +197,9 @@ void FocusManager::ActiveItemChanged(LocalAccessible* aItem,
 #endif
 
   // Nothing changed, happens for XUL trees and HTML selects.
-  if (aItem && aItem == mActiveItem) return;
+  if (aItem && aItem == mActiveItem) {
+    return;
+  }
 
   mActiveItem = nullptr;
 
@@ -203,7 +230,7 @@ void FocusManager::ActiveItemChanged(LocalAccessible* aItem,
   // If active item is changed then fire accessible focus event on it, otherwise
   // if there's no an active item then fire focus event to accessible having
   // DOM focus.
-  LocalAccessible* target = FocusedAccessible();
+  LocalAccessible* target = FocusedLocalAccessible();
   if (target) {
     DispatchFocusEvent(target->Document(), target);
   }
@@ -230,6 +257,11 @@ void FocusManager::DispatchFocusEvent(DocAccessible* aDocument,
                      AccEvent::eCoalesceOfSameType);
     aDocument->FireDelayedEvent(event);
     mLastFocus = aTarget;
+    if (mActiveItem != aTarget) {
+      // This new focus overrides the stored active item, so clear the active
+      // item. Among other things, the old active item might die.
+      mActiveItem = nullptr;
+    }
 
 #ifdef A11Y_LOG
     if (logging::IsEnabled(logging::eFocus)) logging::FocusDispatched(aTarget);
@@ -371,7 +403,7 @@ void FocusManager::ProcessFocusEvent(AccEvent* aEvent) {
   MOZ_ASSERT(targetDocument);
   LocalAccessible* anchorJump = targetDocument->AnchorJump();
   if (anchorJump) {
-    if (target == targetDocument) {
+    if (target == targetDocument || target->IsNonInteractive()) {
       // XXX: bug 625699, note in some cases the node could go away before we
       // we receive focus event, for example if the node is removed from DOM.
       nsEventShell::FireEvent(nsIAccessibleEvent::EVENT_SCROLLING_START,

@@ -97,7 +97,7 @@ add_task(async function test_background() {
 
 add_task(async function test_extensionTypes() {
   let extensionData = {
-    background: function() {
+    background: function () {
       browser.test.assertEq(
         typeof browser.extensionTypes,
         "object",
@@ -147,4 +147,62 @@ add_task(async function test_policy_temporarilyInstalled() {
 
   await runTest("temporary");
   await runTest("permanent");
+});
+
+add_task(async function test_manifest_allowInsecureRequests() {
+  Services.prefs.setBoolPref("extensions.manifestV3.enabled", true);
+  let extensionData = {
+    allowInsecureRequests: true,
+    manifest: {
+      manifest_version: 3,
+    },
+  };
+
+  let extension = ExtensionTestUtils.loadExtension(extensionData);
+  await extension.startup();
+  equal(
+    extension.extension.manifest.content_security_policy.extension_pages,
+    `script-src 'self'`,
+    "insecure allowed"
+  );
+  await extension.unload();
+  Services.prefs.clearUserPref("extensions.manifestV3.enabled");
+});
+
+add_task(async function test_manifest_allowInsecureRequests_throws() {
+  Services.prefs.setBoolPref("extensions.manifestV3.enabled", true);
+  let extensionData = {
+    allowInsecureRequests: true,
+    manifest: {
+      manifest_version: 3,
+      content_security_policy: {
+        extension_pages: `script-src 'self'`,
+      },
+    },
+  };
+
+  await Assert.throws(
+    () => ExtensionTestUtils.loadExtension(extensionData),
+    /allowInsecureRequests cannot be used with manifest.content_security_policy/,
+    "allowInsecureRequests with content_security_policy cannot be loaded"
+  );
+  Services.prefs.clearUserPref("extensions.manifestV3.enabled");
+});
+
+add_task(async function test_gecko_android_key_in_applications() {
+  const extensionData = {
+    manifest: {
+      manifest_version: 2,
+      applications: {
+        gecko_android: {},
+      },
+    },
+  };
+  const extension = ExtensionTestUtils.loadExtension(extensionData);
+
+  await Assert.rejects(
+    extension.startup(),
+    /applications: Property "gecko_android" is unsupported by Firefox/,
+    "expected applications.gecko_android to be invalid"
+  );
 });

@@ -16,11 +16,11 @@ const TEST_URI =
   "http://example.com/browser/devtools/client/webconsole/" +
   "test/browser/test-console-filter-by-regex-input.html";
 
-add_task(async function() {
+add_task(async function () {
   const hud = await openNewTabAndConsole(TEST_URI);
   const { outputNode } = hud.ui;
 
-  await waitFor(() => findMessage(hud, MESSAGES[5]), null, 200);
+  await waitFor(() => findConsoleAPIMessage(hud, MESSAGES[5]), null, 200);
 
   let filteredNodes;
 
@@ -89,7 +89,7 @@ add_task(async function() {
 
 async function setFilterInput(hud, value, lastMessage) {
   await setFilterState(hud, { text: value });
-  await waitFor(() => findMessage(hud, lastMessage), null, 200);
+  await waitFor(() => findConsoleAPIMessage(hud, lastMessage), null, 200);
 }
 
 function checkFilteredMessages(filteredNodes, expectedMessages, expectedCount) {

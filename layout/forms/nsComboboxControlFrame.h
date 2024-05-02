@@ -8,15 +8,15 @@
 #define nsComboboxControlFrame_h___
 
 #ifdef DEBUG_evaughan
-//#define DEBUG_rods
+// #define DEBUG_rods
 #endif
 
 #ifdef DEBUG_rods
-//#define DO_REFLOW_DEBUG
-//#define DO_REFLOW_COUNTER
-//#define DO_UNCONSTRAINED_CHECK
-//#define DO_PIXELS
-//#define DO_NEW_REFLOW
+// #define DO_REFLOW_DEBUG
+// #define DO_REFLOW_COUNTER
+// #define DO_UNCONSTRAINED_CHECK
+// #define DO_PIXELS
+// #define DO_NEW_REFLOW
 #endif
 
 // Mark used to indicate when onchange has been fired for current combobox item
@@ -105,9 +105,9 @@ class nsComboboxControlFrame final : public nsBlockFrame,
 #ifdef DEBUG_FRAME_DUMP
   nsresult GetFrameName(nsAString& aResult) const final;
 #endif
-  void DestroyFrom(nsIFrame* aDestructRoot,
-                   PostDestroyData& aPostDestroyData) final;
-  void SetInitialChildList(ChildListID aListID, nsFrameList& aChildList) final;
+  void Destroy(DestroyContext&) final;
+
+  void SetInitialChildList(ChildListID aListID, nsFrameList&& aChildList) final;
   const nsFrameList& GetChildList(ChildListID aListID) const final;
   void GetChildLists(nsTArray<ChildList>* aLists) const final;
 
@@ -149,11 +149,7 @@ class nsComboboxControlFrame final : public nsBlockFrame,
   nsresult RedisplaySelectedText();
   int32_t UpdateRecentIndex(int32_t aIndex);
 
-  bool IsOpenInParentProcess() { return mIsOpenInParentProcess; }
-
-  void SetOpenInParentProcess(bool aVal) { mIsOpenInParentProcess = aVal; }
-
-  bool IsDroppedDown() { return IsOpenInParentProcess(); }
+  bool IsDroppedDown() const;
 
   // nsISelectControlFrame
   NS_IMETHOD AddOption(int32_t index) final;
@@ -184,6 +180,8 @@ class nsComboboxControlFrame final : public nsBlockFrame,
   };
   DropDownPositionState AbsolutelyPositionDropDown();
 
+  nscoord GetLongestOptionISize(gfxContext*) const;
+
   // Helper for GetMinISize/GetPrefISize
   nscoord GetIntrinsicISize(gfxContext* aRenderingContext,
                             mozilla::IntrinsicISizeType aType);
@@ -213,7 +211,6 @@ class nsComboboxControlFrame final : public nsBlockFrame,
   mozilla::dom::HTMLSelectElement& Select() const;
   void GetOptionText(uint32_t aIndex, nsAString& aText) const;
 
-  nsFrameList mPopupFrames;            // additional named child list
   RefPtr<nsTextNode> mDisplayContent;  // Anonymous content used to display the
                                        // current selection
   RefPtr<Element> mButtonContent;      // Anonymous content for the button

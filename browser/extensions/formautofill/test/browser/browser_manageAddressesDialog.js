@@ -12,7 +12,7 @@ const DIALOG_SIZE = "width=600,height=400";
 add_task(async function test_manageAddressesInitialState() {
   await BrowserTestUtils.withNewTab(
     { gBrowser, url: MANAGE_ADDRESSES_DIALOG_URL },
-    async function(browser) {
+    async function (browser) {
       await SpecialPowers.spawn(browser, [TEST_SELECTORS], args => {
         let selRecords = content.document.querySelector(args.selRecords);
         let btnRemove = content.document.querySelector(args.btnRemove);
@@ -38,9 +38,7 @@ add_task(async function test_cancelManageAddressDialogWithESC() {
 });
 
 add_task(async function test_removingSingleAndMultipleAddresses() {
-  await saveAddress(TEST_ADDRESS_1);
-  await saveAddress(TEST_ADDRESS_2);
-  await saveAddress(TEST_ADDRESS_3);
+  await setStorage(TEST_ADDRESS_1, TEST_ADDRESS_2, TEST_ADDRESS_3);
 
   let win = window.openDialog(MANAGE_ADDRESSES_DIALOG_URL, null, DIALOG_SIZE);
   await waitForFocusAndFormReady(win);
@@ -74,7 +72,7 @@ add_task(async function test_removingSingleAndMultipleAddresses() {
 });
 
 add_task(async function test_removingAdressViaKeyboardDelete() {
-  await saveAddress(TEST_ADDRESS_1);
+  await setStorage(TEST_ADDRESS_1);
   let win = window.openDialog(MANAGE_ADDRESSES_DIALOG_URL, null, DIALOG_SIZE);
   await waitForFocusAndFormReady(win);
 
@@ -96,7 +94,7 @@ add_task(async function test_addressesDialogWatchesStorageChanges() {
 
   let selRecords = win.document.querySelector(TEST_SELECTORS.selRecords);
 
-  await saveAddress(TEST_ADDRESS_1);
+  await setStorage(TEST_ADDRESS_1);
   await BrowserTestUtils.waitForEvent(selRecords, "RecordsLoaded");
   is(selRecords.length, 1, "One address is shown");
 

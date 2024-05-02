@@ -93,6 +93,11 @@ VOID NTAPI RtlAcquireSRWLockShared(PSRWLOCK aLock);
 VOID NTAPI RtlReleaseSRWLockExclusive(PSRWLOCK aLock);
 VOID NTAPI RtlReleaseSRWLockShared(PSRWLOCK aLock);
 
+NTSTATUS NTAPI RtlSleepConditionVariableSRW(
+    PCONDITION_VARIABLE aConditionVariable, PSRWLOCK aSRWLock,
+    PLARGE_INTEGER aTimeOut, ULONG aFlags);
+VOID NTAPI RtlWakeAllConditionVariable(PCONDITION_VARIABLE aConditionVariable);
+
 ULONG NTAPI RtlNtStatusToDosError(NTSTATUS aStatus);
 VOID NTAPI RtlSetLastWin32Error(DWORD aError);
 DWORD NTAPI RtlGetLastWin32Error();
@@ -726,6 +731,24 @@ class MOZ_RAII PEHeaders final {
     return true;
   }
 
+  bool GetImageSize(DWORD& aResult) const {
+    if (!(*this)) {
+      return false;
+    }
+
+    aResult = mPeHeader->OptionalHeader.SizeOfImage;
+    return true;
+  }
+
+  bool GetCheckSum(DWORD& aResult) const {
+    if (!(*this)) {
+      return false;
+    }
+
+    aResult = mPeHeader->OptionalHeader.CheckSum;
+    return true;
+  }
+
   PIMAGE_IMPORT_DESCRIPTOR
   GetImportDescriptor(const char* aModuleNameASCII) const {
     for (PIMAGE_IMPORT_DESCRIPTOR curImpDesc = GetImportDirectory();
@@ -963,6 +986,11 @@ class MOZ_RAII PEHeaders final {
     auto dirEnt =
         reinterpret_cast<PIMAGE_RESOURCE_DIRECTORY_ENTRY>(aCurLevel + 1) +
         aCurLevel->NumberOfNamedEntries;
+    if (!(IsWithinImage(dirEnt) &&
+          IsWithinImage(&dirEnt[aCurLevel->NumberOfIdEntries - 1].Id))) {
+      return nullptr;
+    }
+
     for (WORD i = 0; i < aCurLevel->NumberOfIdEntries; ++i) {
       if (dirEnt[i].Id == aId) {
         return &dirEnt[i];
@@ -1259,6 +1287,14 @@ inline DWORD RtlGetCurrentThreadId() {
   CLIENT_ID* cid = reinterpret_cast<CLIENT_ID*>(&teb->Reserved1[8]);
   return static_cast<DWORD>(reinterpret_cast<uintptr_t>(cid->UniqueThread) &
                             0xFFFFFFFFUL);
+}
+
+inline PVOID RtlGetThreadStackBase() {
+  return reinterpret_cast<_NT_TIB*>(::NtCurrentTeb())->StackBase;
+}
+
+inline PVOID RtlGetThreadStackLimit() {
+  return reinterpret_cast<_NT_TIB*>(::NtCurrentTeb())->StackLimit;
 }
 
 const HANDLE kCurrentProcess = reinterpret_cast<HANDLE>(-1);
@@ -1699,6 +1735,22 @@ class AutoMappedView final {
     return p;
   }
 };
+
+#if defined(_M_X64)
+// CheckStack ensures that stack memory pages are committed up to a given size
+// in bytes from the current stack pointer. It updates the thread stack limit,
+// which points to the lowest committed stack address.
+MOZ_NEVER_INLINE __attribute__((naked)) inline void CheckStack(uint32_t size) {
+  asm volatile(
+      "mov %ecx, %eax;"
+#  if defined(__MINGW32__)
+      "jmp ___chkstk_ms;"
+#  else
+      "jmp __chkstk;"
+#  endif  // __MINGW32__
+  );
+}
+#endif  // _M_X64
 
 }  // namespace nt
 }  // namespace mozilla

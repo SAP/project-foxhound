@@ -8,7 +8,7 @@ const {
   UPDATE_GEOMETRY_EDITOR_ENABLED,
   UPDATE_LAYOUT,
   UPDATE_OFFSET_PARENT,
-} = require("devtools/client/inspector/boxmodel/actions/index");
+} = require("resource://devtools/client/inspector/boxmodel/actions/index.js");
 
 const INITIAL_BOX_MODEL = {
   geometryEditorEnabled: false,
@@ -36,7 +36,7 @@ const reducers = {
   },
 };
 
-module.exports = function(boxModel = INITIAL_BOX_MODEL, action) {
+module.exports = function (boxModel = INITIAL_BOX_MODEL, action) {
   const reducer = reducers[action.type];
   if (!reducer) {
     return boxModel;

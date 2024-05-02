@@ -1,5 +1,3 @@
-from __future__ import print_function, absolute_import
-
 import os
 import textwrap
 from xml.etree import ElementTree
@@ -126,7 +124,6 @@ def makeLookup1():
     # build the outline, hmtx and cmap data
     cp = baseCodepoint
     for index, tag in enumerate(features):
-
         # tag.pass
         glyphName = "%s.pass" % tag
         glyphOrder.append(glyphName)
@@ -305,7 +302,6 @@ def makeLookup3():
     # build the outline, hmtx and cmap data
     cp = baseCodepoint
     for index, tag in enumerate(features):
-
         # tag.pass
         glyphName = "%s.pass" % tag
         glyphOrder.append(glyphName)

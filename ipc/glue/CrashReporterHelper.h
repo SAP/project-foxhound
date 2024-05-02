@@ -7,9 +7,11 @@
 
 #include "CrashReporterHost.h"
 #include "mozilla/UniquePtr.h"
+#include "nsIAppStartup.h"
 #include "nsExceptionHandler.h"
 #include "nsICrashService.h"
 #include "nsPrintfCString.h"
+#include "nsServiceManagerUtils.h"
 
 namespace mozilla {
 namespace ipc {
@@ -55,14 +57,28 @@ class CrashReporterHelper {
     mCrashReporter = nullptr;
   }
 
+  void MaybeTerminateProcess() {
+    if (PR_GetEnv("MOZ_CRASHREPORTER_SHUTDOWN")) {
+      NS_WARNING(nsPrintfCString("Shutting down due to %s process crash.",
+                                 XRE_GetProcessTypeString())
+                     .get());
+      nsCOMPtr<nsIAppStartup> appService =
+          do_GetService("@mozilla.org/toolkit/app-startup;1");
+      if (appService) {
+        bool userAllowedQuit = true;
+        appService->Quit(nsIAppStartup::eForceQuit, 1, &userAllowedQuit);
+      }
+    }
+  }
+
  private:
   void HandleOrphanedMinidump(base::ProcessId aPid, nsString& aMinidumpId) {
     if (CrashReporter::FinalizeOrphanedMinidump(aPid, PT, &aMinidumpId)) {
       CrashReporterHost::RecordCrash(PT, nsICrashService::CRASH_TYPE_CRASH,
                                      aMinidumpId);
     } else {
-      NS_WARNING(nsPrintfCString("child process pid = %d crashed without "
-                                 "leaving a minidump behind",
+      NS_WARNING(nsPrintfCString("child process pid = %" PRIPID
+                                 " crashed without leaving a minidump behind",
                                  aPid)
                      .get());
     }

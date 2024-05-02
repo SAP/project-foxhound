@@ -285,12 +285,13 @@ def parse_arg(arg):
 
 
 class AutoTry:
-
     # Maps from flavors to the job names needed to run that flavour
     flavor_jobs = {
         "mochitest": ["mochitest-1", "mochitest-e10s-1"],
         "xpcshell": ["xpcshell"],
         "chrome": ["mochitest-o"],
+        "browser-a11y": ["mochitest-ba"],
+        "browser-media": ["mochitest-bmda"],
         "browser-chrome": [
             "mochitest-browser-chrome-1",
             "mochitest-e10s-browser-chrome-1",
@@ -312,6 +313,8 @@ class AutoTry:
         "xpcshell": "xpcshell",
         "chrome": "mochitest-o",
         "browser-chrome": "mochitest-bc",
+        "browser-a11y": "mochitest-ba",
+        "browser-media": "mochitest-bmda",
         "devtools-chrome": "mochitest-dt",
         "crashtest": "crashtest",
         "reftest": "reftest",
@@ -369,6 +372,12 @@ class AutoTry:
                 flavor = t["flavor"]
                 if "subsuite" in t and t["subsuite"] == "devtools":
                     flavor = "devtools-chrome"
+
+                if "subsuite" in t and t["subsuite"] == "a11y":
+                    flavor = "browser-a11y"
+
+                if "subsuite" in t and t["subsuite"] == "media-bc":
+                    flavor = "browser-media"
 
                 if flavor in ["crashtest", "reftest"]:
                     manifest_relpath = os.path.relpath(t["manifest"], self.topsrcdir)
@@ -687,8 +696,10 @@ class AutoTry:
         push_to_try(
             "syntax",
             kwargs["message"].format(msg=msg),
-            push=kwargs["push"],
+            stage_changes=kwargs["stage_changes"],
+            dry_run=kwargs["dry_run"],
             closed_tree=kwargs["closed_tree"],
+            push_to_lando=kwargs["push_to_lando"],
         )
 
 

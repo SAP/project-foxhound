@@ -1,21 +1,17 @@
-/* eslint-env mozilla/frame-script */
-// assert is available to chrome scripts loaded via SpecialPowers.loadChromeScript.
-/* global assert */
+/* eslint-env mozilla/chrome-script */
 
-const { FormHistory } = ChromeUtils.import(
-  "resource://gre/modules/FormHistory.jsm"
+const { FormHistory } = ChromeUtils.importESModule(
+  "resource://gre/modules/FormHistory.sys.mjs"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { ContentTaskUtils } = ChromeUtils.import(
-  "resource://testing-common/ContentTaskUtils.jsm"
+const { ContentTaskUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/ContentTaskUtils.sys.mjs"
 );
-const { TestUtils } = ChromeUtils.import(
-  "resource://testing-common/TestUtils.jsm"
+const { TestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/TestUtils.sys.mjs"
 );
 
-var gAutocompletePopup = Services.ww.activeWindow.document.getElementById(
-  "PopupAutoComplete"
-);
+var gAutocompletePopup =
+  Services.ww.activeWindow.document.getElementById("PopupAutoComplete");
 assert.ok(gAutocompletePopup, "Got autocomplete popup");
 
 var ParentUtils = {
@@ -28,28 +24,20 @@ var ParentUtils = {
     return entries;
   },
 
-  cleanUpFormHist(callback) {
-    FormHistory.update(
-      { op: "remove" },
-      {
-        handleCompletion: callback,
-      }
-    );
+  cleanUpFormHistory() {
+    return FormHistory.update({ op: "remove" });
   },
 
   updateFormHistory(changes) {
-    let handler = {
-      handleError(error) {
-        assert.ok(false, error);
+    FormHistory.update(changes).then(
+      () => {
+        sendAsyncMessage("formHistoryUpdated", { ok: true });
+      },
+      error => {
         sendAsyncMessage("formHistoryUpdated", { ok: false });
-      },
-      handleCompletion(reason) {
-        if (!reason) {
-          sendAsyncMessage("formHistoryUpdated", { ok: true });
-        }
-      },
-    };
-    FormHistory.update(changes, handler);
+        assert.ok(false, error);
+      }
+    );
   },
 
   popupshownListener() {
@@ -66,27 +54,19 @@ var ParentUtils = {
       obj.value = value;
     }
 
-    let count = 0;
-    let listener = {
-      handleResult(result) {
-        count = result;
+    FormHistory.count(obj).then(
+      count => {
+        sendAsyncMessage("entriesCounted", { ok: true, count });
       },
-      handleError(error) {
+      error => {
         assert.ok(false, error);
         sendAsyncMessage("entriesCounted", { ok: false });
-      },
-      handleCompletion(reason) {
-        if (!reason) {
-          sendAsyncMessage("entriesCounted", { ok: true, count });
-        }
-      },
-    };
-
-    FormHistory.count(obj, listener);
+      }
+    );
   },
 
-  checkRowCount(expectedCount, expectedFirstValue = null) {
-    ContentTaskUtils.waitForCondition(() => {
+  async checkRowCount(expectedCount, expectedFirstValue = null) {
+    await ContentTaskUtils.waitForCondition(() => {
       // This may be called before gAutocompletePopup has initialised
       // which causes it to throw
       try {
@@ -99,23 +79,17 @@ var ParentUtils = {
       } catch (e) {
         return false;
       }
-    }, "Waiting for row count change: " + expectedCount + " First value: " + expectedFirstValue).then(
-      () => {
-        let results = this.getMenuEntries();
-        sendAsyncMessage("gotMenuChange", { results });
-      }
-    );
+    }, `Waiting for row count change to ${expectedCount}, first value: ${expectedFirstValue}.`);
+    return this.getMenuEntries();
   },
 
-  checkSelectedIndex(expectedIndex) {
-    ContentTaskUtils.waitForCondition(() => {
-      return (
+  async checkSelectedIndex(expectedIndex) {
+    await ContentTaskUtils.waitForCondition(
+      () =>
         gAutocompletePopup.popupOpen &&
-        gAutocompletePopup.selectedIndex === expectedIndex
-      );
-    }, "Checking selected index").then(() => {
-      sendAsyncMessage("gotSelectedIndex");
-    });
+        gAutocompletePopup.selectedIndex === expectedIndex,
+      "Checking selected index"
+    );
   },
 
   // Tests using this function need to flip pref for exceptional use of
@@ -160,30 +134,28 @@ var ParentUtils = {
     ).then(reply);
   },
 
-  observe(subject, topic, data) {
-    assert.ok(topic === "satchel-storage-changed");
+  observe(_subject, topic, data) {
+    // This function can be called after SimpleTest.finish().
+    // Do not write assertions here, they will lead to intermittent failures.
     sendAsyncMessage("satchel-storage-changed", { subject: null, topic, data });
   },
 
-  cleanup() {
+  async cleanup() {
     gAutocompletePopup.removeEventListener(
       "popupshown",
       this._popupshownListener
     );
-    this.cleanUpFormHist(() => {
-      sendAsyncMessage("cleanup-done");
-    });
+    await this.cleanUpFormHistory();
   },
 };
 
-ParentUtils._popupshownListener = ParentUtils.popupshownListener.bind(
-  ParentUtils
-);
+ParentUtils._popupshownListener =
+  ParentUtils.popupshownListener.bind(ParentUtils);
 gAutocompletePopup.addEventListener(
   "popupshown",
   ParentUtils._popupshownListener
 );
-ParentUtils.cleanUpFormHist();
+ParentUtils.cleanUpFormHistory();
 
 addMessageListener("updateFormHistory", msg => {
   ParentUtils.updateFormHistory(msg.changes);
@@ -195,14 +167,13 @@ addMessageListener("countEntries", ({ name, value }) => {
 
 addMessageListener(
   "waitForMenuChange",
-  ({ expectedCount, expectedFirstValue }) => {
-    ParentUtils.checkRowCount(expectedCount, expectedFirstValue);
-  }
+  ({ expectedCount, expectedFirstValue }) =>
+    ParentUtils.checkRowCount(expectedCount, expectedFirstValue)
 );
 
-addMessageListener("waitForSelectedIndex", ({ expectedIndex }) => {
-  ParentUtils.checkSelectedIndex(expectedIndex);
-});
+addMessageListener("waitForSelectedIndex", ({ expectedIndex }) =>
+  ParentUtils.checkSelectedIndex(expectedIndex)
+);
 addMessageListener("waitForMenuEntryTest", ({ index, statement }) => {
   ParentUtils.testMenuEntry(index, statement);
 });
@@ -218,6 +189,6 @@ addMessageListener("removeObserver", () => {
   Services.obs.removeObserver(ParentUtils, "satchel-storage-changed");
 });
 
-addMessageListener("cleanup", () => {
-  ParentUtils.cleanup();
+addMessageListener("cleanup", async () => {
+  await ParentUtils.cleanup();
 });

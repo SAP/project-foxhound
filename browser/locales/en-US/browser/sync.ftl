@@ -8,7 +8,7 @@ sync-disconnect-dialog-title2 = Disconnect?
 sync-disconnect-dialog-body = { -brand-product-name } will stop syncing your account but won’t delete any of your browsing data on this device.
 sync-disconnect-dialog-button = Disconnect
 
-fxa-signout-dialog2-title = Sign out of { -fxaccount-brand-name(capitalization: "sentence") }?
+fxa-signout-dialog-title2 = Sign out of your account?
 fxa-signout-dialog-body = Synced data will remain in your account.
 fxa-signout-dialog2-button = Sign out
 fxa-signout-dialog2-checkbox = Delete data from this device (passwords, history, bookmarks, etc.)
@@ -21,6 +21,14 @@ fxa-menu-turn-on-sync-default = Turn on sync
 
 fxa-menu-connect-another-device =
     .label = Connect another device…
+# Variables:
+#   $tabCount (Number): The number of tabs sent to the device.
+fxa-menu-send-tab-to-device =
+    .label =
+        { $tabCount ->
+            [1] Send tab to device
+           *[other] Send { $tabCount } tabs to device
+        }
 
 # This is shown dynamically within "Send tab to device" in fxa menu.
 fxa-menu-send-tab-to-device-syncnotready =

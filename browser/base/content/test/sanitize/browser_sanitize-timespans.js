@@ -1,7 +1,7 @@
 requestLongerTimeout(2);
 
-const { PlacesTestUtils } = ChromeUtils.import(
-  "resource://testing-common/PlacesTestUtils.jsm"
+const { PlacesTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/PlacesTestUtils.sys.mjs"
 );
 
 // Bug 453440 - Test the timespan-based logic of the sanitizer code
@@ -40,28 +40,13 @@ add_task(async function test() {
   await onHistoryReady();
 });
 
-function countEntries(name, message, check) {
-  return new Promise((resolve, reject) => {
-    var obj = {};
-    if (name !== null) {
-      obj.fieldname = name;
-    }
-
-    let count;
-    FormHistory.count(obj, {
-      handleResult: result => (count = result),
-      handleError(error) {
-        reject(error);
-        throw new Error("Error occurred searching form history: " + error);
-      },
-      handleCompletion(reason) {
-        if (!reason) {
-          check(count, message);
-          resolve();
-        }
-      },
-    });
-  });
+async function countEntries(name, message, check) {
+  var obj = {};
+  if (name !== null) {
+    obj.fieldname = name;
+  }
+  let count = await FormHistory.count(obj);
+  check(count, message);
 }
 
 async function onHistoryReady() {
@@ -94,48 +79,48 @@ async function onHistoryReady() {
   await downloadPromise;
 
   ok(
-    !(await PlacesUtils.history.hasVisits("http://10minutes.com")),
+    !(await PlacesUtils.history.hasVisits("https://10minutes.com")),
     "Pretend visit to 10minutes.com should now be deleted"
   );
   ok(
-    await PlacesUtils.history.hasVisits("http://1hour.com"),
+    await PlacesUtils.history.hasVisits("https://1hour.com"),
     "Pretend visit to 1hour.com should should still exist"
   );
   ok(
-    await PlacesUtils.history.hasVisits("http://1hour10minutes.com"),
+    await PlacesUtils.history.hasVisits("https://1hour10minutes.com"),
     "Pretend visit to 1hour10minutes.com should should still exist"
   );
   ok(
-    await PlacesUtils.history.hasVisits("http://2hour.com"),
+    await PlacesUtils.history.hasVisits("https://2hour.com"),
     "Pretend visit to 2hour.com should should still exist"
   );
   ok(
-    await PlacesUtils.history.hasVisits("http://2hour10minutes.com"),
+    await PlacesUtils.history.hasVisits("https://2hour10minutes.com"),
     "Pretend visit to 2hour10minutes.com should should still exist"
   );
   ok(
-    await PlacesUtils.history.hasVisits("http://4hour.com"),
+    await PlacesUtils.history.hasVisits("https://4hour.com"),
     "Pretend visit to 4hour.com should should still exist"
   );
   ok(
-    await PlacesUtils.history.hasVisits("http://4hour10minutes.com"),
+    await PlacesUtils.history.hasVisits("https://4hour10minutes.com"),
     "Pretend visit to 4hour10minutes.com should should still exist"
   );
   if (minutesSinceMidnight > 10) {
     ok(
-      await PlacesUtils.history.hasVisits("http://today.com"),
+      await PlacesUtils.history.hasVisits("https://today.com"),
       "Pretend visit to today.com should still exist"
     );
   }
   ok(
-    await PlacesUtils.history.hasVisits("http://before-today.com"),
+    await PlacesUtils.history.hasVisits("https://before-today.com"),
     "Pretend visit to before-today.com should still exist"
   );
 
-  let checkZero = function(num, message) {
+  let checkZero = function (num, message) {
     is(num, 0, message);
   };
-  let checkOne = function(num, message) {
+  let checkOne = function (num, message) {
     is(num, 1, message);
   };
 
@@ -226,37 +211,37 @@ async function onHistoryReady() {
   await downloadPromise;
 
   ok(
-    !(await PlacesUtils.history.hasVisits("http://1hour.com")),
+    !(await PlacesUtils.history.hasVisits("https://1hour.com")),
     "Pretend visit to 1hour.com should now be deleted"
   );
   ok(
-    await PlacesUtils.history.hasVisits("http://1hour10minutes.com"),
+    await PlacesUtils.history.hasVisits("https://1hour10minutes.com"),
     "Pretend visit to 1hour10minutes.com should should still exist"
   );
   ok(
-    await PlacesUtils.history.hasVisits("http://2hour.com"),
+    await PlacesUtils.history.hasVisits("https://2hour.com"),
     "Pretend visit to 2hour.com should should still exist"
   );
   ok(
-    await PlacesUtils.history.hasVisits("http://2hour10minutes.com"),
+    await PlacesUtils.history.hasVisits("https://2hour10minutes.com"),
     "Pretend visit to 2hour10minutes.com should should still exist"
   );
   ok(
-    await PlacesUtils.history.hasVisits("http://4hour.com"),
+    await PlacesUtils.history.hasVisits("https://4hour.com"),
     "Pretend visit to 4hour.com should should still exist"
   );
   ok(
-    await PlacesUtils.history.hasVisits("http://4hour10minutes.com"),
+    await PlacesUtils.history.hasVisits("https://4hour10minutes.com"),
     "Pretend visit to 4hour10minutes.com should should still exist"
   );
   if (hoursSinceMidnight > 1) {
     ok(
-      await PlacesUtils.history.hasVisits("http://today.com"),
+      await PlacesUtils.history.hasVisits("https://today.com"),
       "Pretend visit to today.com should still exist"
     );
   }
   ok(
-    await PlacesUtils.history.hasVisits("http://before-today.com"),
+    await PlacesUtils.history.hasVisits("https://before-today.com"),
     "Pretend visit to before-today.com should still exist"
   );
 
@@ -338,33 +323,33 @@ async function onHistoryReady() {
   await downloadPromise;
 
   ok(
-    !(await PlacesUtils.history.hasVisits("http://1hour10minutes.com")),
+    !(await PlacesUtils.history.hasVisits("https://1hour10minutes.com")),
     "Pretend visit to 1hour10minutes.com should now be deleted"
   );
   ok(
-    await PlacesUtils.history.hasVisits("http://2hour.com"),
+    await PlacesUtils.history.hasVisits("https://2hour.com"),
     "Pretend visit to 2hour.com should should still exist"
   );
   ok(
-    await PlacesUtils.history.hasVisits("http://2hour10minutes.com"),
+    await PlacesUtils.history.hasVisits("https://2hour10minutes.com"),
     "Pretend visit to 2hour10minutes.com should should still exist"
   );
   ok(
-    await PlacesUtils.history.hasVisits("http://4hour.com"),
+    await PlacesUtils.history.hasVisits("https://4hour.com"),
     "Pretend visit to 4hour.com should should still exist"
   );
   ok(
-    await PlacesUtils.history.hasVisits("http://4hour10minutes.com"),
+    await PlacesUtils.history.hasVisits("https://4hour10minutes.com"),
     "Pretend visit to 4hour10minutes.com should should still exist"
   );
   if (minutesSinceMidnight > 70) {
     ok(
-      await PlacesUtils.history.hasVisits("http://today.com"),
+      await PlacesUtils.history.hasVisits("https://today.com"),
       "Pretend visit to today.com should still exist"
     );
   }
   ok(
-    await PlacesUtils.history.hasVisits("http://before-today.com"),
+    await PlacesUtils.history.hasVisits("https://before-today.com"),
     "Pretend visit to before-today.com should still exist"
   );
 
@@ -440,29 +425,29 @@ async function onHistoryReady() {
   await downloadPromise;
 
   ok(
-    !(await PlacesUtils.history.hasVisits("http://2hour.com")),
+    !(await PlacesUtils.history.hasVisits("https://2hour.com")),
     "Pretend visit to 2hour.com should now be deleted"
   );
   ok(
-    await PlacesUtils.history.hasVisits("http://2hour10minutes.com"),
+    await PlacesUtils.history.hasVisits("https://2hour10minutes.com"),
     "Pretend visit to 2hour10minutes.com should should still exist"
   );
   ok(
-    await PlacesUtils.history.hasVisits("http://4hour.com"),
+    await PlacesUtils.history.hasVisits("https://4hour.com"),
     "Pretend visit to 4hour.com should should still exist"
   );
   ok(
-    await PlacesUtils.history.hasVisits("http://4hour10minutes.com"),
+    await PlacesUtils.history.hasVisits("https://4hour10minutes.com"),
     "Pretend visit to 4hour10minutes.com should should still exist"
   );
   if (hoursSinceMidnight > 2) {
     ok(
-      await PlacesUtils.history.hasVisits("http://today.com"),
+      await PlacesUtils.history.hasVisits("https://today.com"),
       "Pretend visit to today.com should still exist"
     );
   }
   ok(
-    await PlacesUtils.history.hasVisits("http://before-today.com"),
+    await PlacesUtils.history.hasVisits("https://before-today.com"),
     "Pretend visit to before-today.com should still exist"
   );
 
@@ -529,25 +514,25 @@ async function onHistoryReady() {
   await downloadPromise;
 
   ok(
-    !(await PlacesUtils.history.hasVisits("http://2hour10minutes.com")),
+    !(await PlacesUtils.history.hasVisits("https://2hour10minutes.com")),
     "Pretend visit to 2hour10minutes.com should now be deleted"
   );
   ok(
-    await PlacesUtils.history.hasVisits("http://4hour.com"),
+    await PlacesUtils.history.hasVisits("https://4hour.com"),
     "Pretend visit to 4hour.com should should still exist"
   );
   ok(
-    await PlacesUtils.history.hasVisits("http://4hour10minutes.com"),
+    await PlacesUtils.history.hasVisits("https://4hour10minutes.com"),
     "Pretend visit to 4hour10minutes.com should should still exist"
   );
   if (minutesSinceMidnight > 130) {
     ok(
-      await PlacesUtils.history.hasVisits("http://today.com"),
+      await PlacesUtils.history.hasVisits("https://today.com"),
       "Pretend visit to today.com should still exist"
     );
   }
   ok(
-    await PlacesUtils.history.hasVisits("http://before-today.com"),
+    await PlacesUtils.history.hasVisits("https://before-today.com"),
     "Pretend visit to before-today.com should still exist"
   );
 
@@ -609,21 +594,21 @@ async function onHistoryReady() {
   await downloadPromise;
 
   ok(
-    !(await PlacesUtils.history.hasVisits("http://4hour.com")),
+    !(await PlacesUtils.history.hasVisits("https://4hour.com")),
     "Pretend visit to 4hour.com should now be deleted"
   );
   ok(
-    await PlacesUtils.history.hasVisits("http://4hour10minutes.com"),
+    await PlacesUtils.history.hasVisits("https://4hour10minutes.com"),
     "Pretend visit to 4hour10minutes.com should should still exist"
   );
   if (hoursSinceMidnight > 4) {
     ok(
-      await PlacesUtils.history.hasVisits("http://today.com"),
+      await PlacesUtils.history.hasVisits("https://today.com"),
       "Pretend visit to today.com should still exist"
     );
   }
   ok(
-    await PlacesUtils.history.hasVisits("http://before-today.com"),
+    await PlacesUtils.history.hasVisits("https://before-today.com"),
     "Pretend visit to before-today.com should still exist"
   );
 
@@ -676,17 +661,17 @@ async function onHistoryReady() {
   await downloadPromise;
 
   ok(
-    !(await PlacesUtils.history.hasVisits("http://4hour10minutes.com")),
+    !(await PlacesUtils.history.hasVisits("https://4hour10minutes.com")),
     "Pretend visit to 4hour10minutes.com should now be deleted"
   );
   if (minutesSinceMidnight > 250) {
     ok(
-      await PlacesUtils.history.hasVisits("http://today.com"),
+      await PlacesUtils.history.hasVisits("https://today.com"),
       "Pretend visit to today.com should still exist"
     );
   }
   ok(
-    await PlacesUtils.history.hasVisits("http://before-today.com"),
+    await PlacesUtils.history.hasVisits("https://before-today.com"),
     "Pretend visit to before-today.com should still exist"
   );
 
@@ -734,7 +719,12 @@ async function onHistoryReady() {
 
   // Clear Today
   Services.prefs.setIntPref(Sanitizer.PREF_TIMESPAN, 4);
-  await Sanitizer.sanitize(null, { ignoreTimespan: false });
+  let progress = await Sanitizer.sanitize(null, { ignoreTimespan: false });
+  Assert.deepEqual(progress, {
+    history: "cleared",
+    formdata: "cleared",
+    downloads: "cleared",
+  });
 
   await formHistoryPromise;
   await downloadPromise;
@@ -747,7 +737,7 @@ async function onHistoryReady() {
   var today = isToday(new Date(now_mSec));
   if (today) {
     ok(
-      !(await PlacesUtils.history.hasVisits("http://today.com")),
+      !(await PlacesUtils.history.hasVisits("https://today.com")),
       "Pretend visit to today.com should now be deleted"
     );
 
@@ -763,7 +753,7 @@ async function onHistoryReady() {
   }
 
   ok(
-    await PlacesUtils.history.hasVisits("http://before-today.com"),
+    await PlacesUtils.history.hasVisits("https://before-today.com"),
     "Pretend visit to before-today.com should still exist"
   );
   await countEntries(
@@ -787,7 +777,7 @@ async function onHistoryReady() {
   await downloadPromise;
 
   ok(
-    !(await PlacesUtils.history.hasVisits("http://before-today.com")),
+    !(await PlacesUtils.history.hasVisits("https://before-today.com")),
     "Pretend visit to before-today.com should now be deleted"
   );
 
@@ -816,37 +806,37 @@ async function setupHistory() {
   }
 
   addPlace(
-    "http://10minutes.com/",
+    "https://10minutes.com/",
     "10 minutes ago",
     now_uSec - 10 * kUsecPerMin
   );
   addPlace(
-    "http://1hour.com/",
+    "https://1hour.com/",
     "Less than 1 hour ago",
     now_uSec - 45 * kUsecPerMin
   );
   addPlace(
-    "http://1hour10minutes.com/",
+    "https://1hour10minutes.com/",
     "1 hour 10 minutes ago",
     now_uSec - 70 * kUsecPerMin
   );
   addPlace(
-    "http://2hour.com/",
+    "https://2hour.com/",
     "Less than 2 hours ago",
     now_uSec - 90 * kUsecPerMin
   );
   addPlace(
-    "http://2hour10minutes.com/",
+    "https://2hour10minutes.com/",
     "2 hours 10 minutes ago",
     now_uSec - 130 * kUsecPerMin
   );
   addPlace(
-    "http://4hour.com/",
+    "https://4hour.com/",
     "Less than 4 hours ago",
     now_uSec - 180 * kUsecPerMin
   );
   addPlace(
-    "http://4hour10minutes.com/",
+    "https://4hour10minutes.com/",
     "4 hours 10 minutesago",
     now_uSec - 250 * kUsecPerMin
   );
@@ -856,12 +846,12 @@ async function setupHistory() {
   today.setMinutes(0);
   today.setSeconds(0);
   today.setMilliseconds(1);
-  addPlace("http://today.com/", "Today", today.getTime() * 1000);
+  addPlace("https://today.com/", "Today", today.getTime() * 1000);
 
   let lastYear = new Date();
   lastYear.setFullYear(lastYear.getFullYear() - 1);
   addPlace(
-    "http://before-today.com/",
+    "https://before-today.com/",
     "Before Today",
     lastYear.getTime() * 1000
   );
@@ -870,37 +860,11 @@ async function setupHistory() {
 
 async function setupFormHistory() {
   function searchEntries(terms, params) {
-    return new Promise((resolve, reject) => {
-      let results = [];
-      FormHistory.search(terms, params, {
-        handleResult: result => results.push(result),
-        handleError(error) {
-          reject(error);
-          throw new Error("Error occurred searching form history: " + error);
-        },
-        handleCompletion(reason) {
-          resolve(results);
-        },
-      });
-    });
-  }
-
-  function update(changes) {
-    return new Promise((resolve, reject) => {
-      FormHistory.update(changes, {
-        handleError(error) {
-          reject(error);
-          throw new Error("Error occurred searching form history: " + error);
-        },
-        handleCompletion(reason) {
-          resolve();
-        },
-      });
-    });
+    return FormHistory.search(terms, params);
   }
 
   // Make sure we've got a clean DB to start with, then add the entries we'll be testing.
-  await update([
+  await FormHistory.update([
     {
       op: "remove",
     },
@@ -954,31 +918,59 @@ async function setupFormHistory() {
   // Artifically age the entries to the proper vintage.
   let timestamp = now_uSec - 10 * kUsecPerMin;
   let results = await searchEntries(["guid"], { fieldname: "10minutes" });
-  await update({ op: "update", firstUsed: timestamp, guid: results[0].guid });
+  await FormHistory.update({
+    op: "update",
+    firstUsed: timestamp,
+    guid: results[0].guid,
+  });
 
   timestamp = now_uSec - 45 * kUsecPerMin;
   results = await searchEntries(["guid"], { fieldname: "1hour" });
-  await update({ op: "update", firstUsed: timestamp, guid: results[0].guid });
+  await FormHistory.update({
+    op: "update",
+    firstUsed: timestamp,
+    guid: results[0].guid,
+  });
 
   timestamp = now_uSec - 70 * kUsecPerMin;
   results = await searchEntries(["guid"], { fieldname: "1hour10minutes" });
-  await update({ op: "update", firstUsed: timestamp, guid: results[0].guid });
+  await FormHistory.update({
+    op: "update",
+    firstUsed: timestamp,
+    guid: results[0].guid,
+  });
 
   timestamp = now_uSec - 90 * kUsecPerMin;
   results = await searchEntries(["guid"], { fieldname: "2hour" });
-  await update({ op: "update", firstUsed: timestamp, guid: results[0].guid });
+  await FormHistory.update({
+    op: "update",
+    firstUsed: timestamp,
+    guid: results[0].guid,
+  });
 
   timestamp = now_uSec - 130 * kUsecPerMin;
   results = await searchEntries(["guid"], { fieldname: "2hour10minutes" });
-  await update({ op: "update", firstUsed: timestamp, guid: results[0].guid });
+  await FormHistory.update({
+    op: "update",
+    firstUsed: timestamp,
+    guid: results[0].guid,
+  });
 
   timestamp = now_uSec - 180 * kUsecPerMin;
   results = await searchEntries(["guid"], { fieldname: "4hour" });
-  await update({ op: "update", firstUsed: timestamp, guid: results[0].guid });
+  await FormHistory.update({
+    op: "update",
+    firstUsed: timestamp,
+    guid: results[0].guid,
+  });
 
   timestamp = now_uSec - 250 * kUsecPerMin;
   results = await searchEntries(["guid"], { fieldname: "4hour10minutes" });
-  await update({ op: "update", firstUsed: timestamp, guid: results[0].guid });
+  await FormHistory.update({
+    op: "update",
+    firstUsed: timestamp,
+    guid: results[0].guid,
+  });
 
   let today = new Date();
   today.setHours(0);
@@ -987,16 +979,24 @@ async function setupFormHistory() {
   today.setMilliseconds(1);
   timestamp = today.getTime() * 1000;
   results = await searchEntries(["guid"], { fieldname: "today" });
-  await update({ op: "update", firstUsed: timestamp, guid: results[0].guid });
+  await FormHistory.update({
+    op: "update",
+    firstUsed: timestamp,
+    guid: results[0].guid,
+  });
 
   let lastYear = new Date();
   lastYear.setFullYear(lastYear.getFullYear() - 1);
   timestamp = lastYear.getTime() * 1000;
   results = await searchEntries(["guid"], { fieldname: "b4today" });
-  await update({ op: "update", firstUsed: timestamp, guid: results[0].guid });
+  await FormHistory.update({
+    op: "update",
+    firstUsed: timestamp,
+    guid: results[0].guid,
+  });
 
   var checks = 0;
-  let checkOne = function(num, message) {
+  let checkOne = function (num, message) {
     is(num, 1, message);
     checks++;
   };
@@ -1184,7 +1184,7 @@ async function setupDownloads() {
  * @param aID
  *        The ids of the downloads to check.
  */
-let downloadExists = async function(list, path) {
+let downloadExists = async function (list, path) {
   let listArray = await list.getAll();
   return listArray.some(i => i.target.path == path);
 };

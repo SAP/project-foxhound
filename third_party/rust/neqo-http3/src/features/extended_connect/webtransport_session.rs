@@ -17,7 +17,7 @@ use crate::{
 };
 use neqo_common::{qtrace, Encoder, Header, MessageType, Role};
 use neqo_qpack::{QPackDecoder, QPackEncoder};
-use neqo_transport::{Connection, StreamId};
+use neqo_transport::{streams::SendOrder, Connection, DatagramTracking, StreamId};
 use std::any::Any;
 use std::cell::RefCell;
 use std::collections::BTreeSet;
@@ -39,7 +39,7 @@ impl SessionState {
 }
 
 #[derive(Debug)]
-pub struct WebTransportSession {
+pub(crate) struct WebTransportSession {
     control_stream_recv: Box<dyn RecvStream>,
     control_stream_send: Box<dyn SendStream>,
     stream_event_listener: Rc<RefCell<WebTransportSessionListener>>,
@@ -209,14 +209,14 @@ impl WebTransportSession {
         }
         qtrace!("ExtendedConnect close the session");
         self.state = SessionState::Done;
-        if let CloseType::ResetApp(_) = close_type {
-            return;
+        if !close_type.locally_initiated() {
+            self.events.session_end(
+                ExtendedConnectType::WebTransport,
+                self.session_id,
+                SessionCloseReason::from(close_type),
+                None,
+            );
         }
-        self.events.session_end(
-            ExtendedConnectType::WebTransport,
-            self.session_id,
-            SessionCloseReason::from(close_type),
-        );
     }
 
     /// # Panics
@@ -241,8 +241,9 @@ impl WebTransportSession {
                         self.session_id,
                         SessionCloseReason::Clean {
                             error: 0,
-                            message: "".to_string(),
+                            message: String::new(),
                         },
+                        Some(headers),
                     );
                     self.state = SessionState::Done;
                 }
@@ -265,8 +266,9 @@ impl WebTransportSession {
                             self.session_id,
                             SessionCloseReason::Clean {
                                 error: 0,
-                                message: "".to_string(),
+                                message: String::new(),
                             },
+                            Some(headers),
                         );
                         SessionState::Done
                     } else {
@@ -274,6 +276,7 @@ impl WebTransportSession {
                             ExtendedConnectType::WebTransport,
                             self.session_id,
                             status,
+                            headers,
                         );
                         SessionState::Active
                     }
@@ -282,6 +285,7 @@ impl WebTransportSession {
                         ExtendedConnectType::WebTransport,
                         self.session_id,
                         SessionCloseReason::Status(status),
+                        Some(headers),
                     );
                     SessionState::Done
                 };
@@ -323,11 +327,11 @@ impl WebTransportSession {
         matches!(self.state, SessionState::Active)
     }
 
-    pub fn take_sub_streams(&mut self) -> Option<(BTreeSet<StreamId>, BTreeSet<StreamId>)> {
-        Some((
+    pub fn take_sub_streams(&mut self) -> (BTreeSet<StreamId>, BTreeSet<StreamId>) {
+        (
             mem::take(&mut self.recv_streams),
             mem::take(&mut self.send_streams),
-        ))
+        )
     }
 
     /// # Errors
@@ -346,6 +350,7 @@ impl WebTransportSession {
                 ExtendedConnectType::WebTransport,
                 self.session_id,
                 SessionCloseReason::Clean { error, message },
+                None,
             );
             self.state = if fin {
                 SessionState::Done
@@ -358,8 +363,9 @@ impl WebTransportSession {
                 self.session_id,
                 SessionCloseReason::Clean {
                     error: 0,
-                    message: "".to_string(),
+                    message: String::new(),
                 },
+                None,
             );
             self.state = SessionState::Done;
         }
@@ -377,7 +383,8 @@ impl WebTransportSession {
         };
         let mut encoder = Encoder::default();
         close_frame.encode(&mut encoder);
-        self.control_stream_send.send_data_atomic(conn, &encoder)?;
+        self.control_stream_send
+            .send_data_atomic(conn, encoder.as_ref())?;
         self.control_stream_send.close(conn)?;
         self.state = if self.control_stream_send.done() {
             SessionState::Done
@@ -389,6 +396,33 @@ impl WebTransportSession {
 
     fn send_data(&mut self, conn: &mut Connection, buf: &[u8]) -> Res<usize> {
         self.control_stream_send.send_data(conn, buf)
+    }
+
+    /// # Errors
+    /// Returns an error if the datagram exceeds the remote datagram size limit.
+    pub fn send_datagram(
+        &self,
+        conn: &mut Connection,
+        buf: &[u8],
+        id: impl Into<DatagramTracking>,
+    ) -> Res<()> {
+        qtrace!([self], "send_datagram state={:?}", self.state);
+        if let SessionState::Active = self.state {
+            let mut dgram_data = Encoder::default();
+            dgram_data.encode_varint(self.session_id.as_u64() / 4);
+            dgram_data.encode(buf);
+            conn.send_datagram(dgram_data.as_ref(), id)?;
+        } else {
+            debug_assert!(false);
+            return Err(Error::Unavailable);
+        }
+        Ok(())
+    }
+
+    pub fn datagram(&mut self, datagram: Vec<u8>) {
+        if let SessionState::Active = self.state {
+            self.events.new_datagram(self.session_id, datagram);
+        }
     }
 }
 
@@ -450,6 +484,16 @@ impl SendStream for Rc<RefCell<WebTransportSession>> {
 
     fn has_data_to_send(&self) -> bool {
         self.borrow_mut().has_data_to_send()
+    }
+
+    fn set_sendorder(&mut self, _conn: &mut Connection, _sendorder: Option<SendOrder>) -> Res<()> {
+        // Not relevant on session
+        Ok(())
+    }
+
+    fn set_fairness(&mut self, _conn: &mut Connection, _fairness: bool) -> Res<()> {
+        // Not relevant on session
+        Ok(())
     }
 
     fn stream_writable(&self) {}

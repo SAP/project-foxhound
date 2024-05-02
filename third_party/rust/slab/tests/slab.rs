@@ -196,7 +196,15 @@ fn reserve_exact_does_not_allocate_if_available() {
 fn reserve_does_panic_with_capacity_overflow() {
     let mut slab = Slab::with_capacity(10);
     slab.insert(true);
-    slab.reserve(std::usize::MAX);
+    slab.reserve(std::isize::MAX as usize);
+}
+
+#[test]
+#[should_panic(expected = "capacity overflow")]
+fn reserve_does_panic_with_capacity_overflow_bytes() {
+    let mut slab = Slab::with_capacity(10);
+    slab.insert(1u16);
+    slab.reserve((std::isize::MAX as usize) / 2);
 }
 
 #[test]
@@ -204,7 +212,7 @@ fn reserve_does_panic_with_capacity_overflow() {
 fn reserve_exact_does_panic_with_capacity_overflow() {
     let mut slab = Slab::with_capacity(10);
     slab.insert(true);
-    slab.reserve_exact(std::usize::MAX);
+    slab.reserve_exact(std::isize::MAX as usize);
 }
 
 #[test]
@@ -695,4 +703,10 @@ fn try_remove() {
     assert_eq!(slab.try_remove(key), Some(1));
     assert_eq!(slab.try_remove(key), None);
     assert_eq!(slab.get(key), None);
+}
+
+#[rustversion::since(1.39)]
+#[test]
+fn const_new() {
+    static _SLAB: Slab<()> = Slab::new();
 }

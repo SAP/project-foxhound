@@ -47,7 +47,8 @@ function storageUsage() {
 function resetStorage() {
   return new Promise(function(resolve, reject) {
     var qms = SpecialPowers.Services.qms;
-    var request = qms.reset();
+    var principal = SpecialPowers.wrap(document).nodePrincipal;
+    var request = qms.resetStoragesForPrincipal(principal);
     var cb = SpecialPowers.wrapCallback(resolve);
     request.callback = cb;
   });
@@ -64,13 +65,7 @@ SpecialPowers.pushPrefEnv({
   "set": [["dom.caches.enabled", true],
           ["dom.caches.testing.enabled", true],
           ["dom.quotaManager.testing", true]],
-}, async function() {
-  // Bug 1746646: Make mochitests work with TCP enabled (cookieBehavior = 5)
-  // Acquire storage access permission here so that the Cache API is avaialable
-  SpecialPowers.wrap(document).notifyUserGestureActivation();
-  await SpecialPowers.addPermission("storageAccessAPI", true, window.location.href);
-  await SpecialPowers.wrap(document).requestStorageAccess();
-
+}, function() {
   var name = "toBeOrphaned";
   var cache = null;
   var initialUsage = 0;

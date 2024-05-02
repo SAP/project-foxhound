@@ -11,8 +11,7 @@
 #include "nsISupportsImpl.h"
 #include "mozilla/dom/DOMString.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class XMLHttpRequestStringBuffer final {
   friend class XMLHttpRequestStringWriterHelper;
@@ -29,10 +28,12 @@ class XMLHttpRequestStringBuffer final {
     return mData.Length();
   }
 
-  uint32_t UnsafeLength() const { return mData.Length(); }
+  uint32_t UnsafeLength() const MOZ_NO_THREAD_SAFETY_ANALYSIS {
+    return mData.Length();
+  }
 
   mozilla::Result<mozilla::BulkWriteHandle<char16_t>, nsresult> UnsafeBulkWrite(
-      uint32_t aCapacity) {
+      uint32_t aCapacity) MOZ_NO_THREAD_SAFETY_ANALYSIS {
     return mData.BulkWrite(aCapacity, UnsafeLength(), false);
   }
 
@@ -43,7 +44,7 @@ class XMLHttpRequestStringBuffer final {
     mData.Append(aString);
   }
 
-  void UnsafeAppendTaintAt(size_t aIndex, const StringTaint& aTaint)
+  void UnsafeAppendTaintAt(size_t aIndex, const StringTaint& aTaint) MOZ_NO_THREAD_SAFETY_ANALYSIS
   {
     // Caller must hold the lock
     mData.Taint().concat(aTaint, aIndex);
@@ -91,12 +92,12 @@ class XMLHttpRequestStringBuffer final {
  private:
   ~XMLHttpRequestStringBuffer() = default;
 
-  nsString& UnsafeData() { return mData; }
+  nsString& UnsafeData() MOZ_NO_THREAD_SAFETY_ANALYSIS { return mData; }
 
   Mutex mMutex;
 
   // The following member variable is protected by mutex.
-  nsString mData;
+  nsString mData MOZ_GUARDED_BY(mMutex);
 };
 
 // ---------------------------------------------------------------------------
@@ -212,5 +213,4 @@ uint32_t XMLHttpRequestStringSnapshotReaderHelper::Length() const {
   return mBuffer->UnsafeLength();
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

@@ -1,13 +1,14 @@
 ===========
-mozperftest
+Mozperftest
 ===========
 
-**mozperftest** can be used to run performance tests.
+**Mozperftest** can be used to run performance tests.
 
 
 .. toctree::
 
    running
+   tools
    writing
    developing
    vision
@@ -165,16 +166,6 @@ perftest_politico_link.js
 
 **Measures time to load Politico homepage**
 
-perftest_android_view.js
-========================
-
-:owner: Performance Team
-:name: VIEW
-
-**Measures cold process view time**
-
-This test launches the appropriate android app, simulating a opening a link through VIEW intent workflow. The application is launched with the intent action android.intent.action.VIEW loading a trivially simple website. The reported metric is the time from process start to navigationStart, reported as processLaunchToNavStart
-
 perftest_youtube_link.js
 ========================
 
@@ -183,15 +174,15 @@ perftest_youtube_link.js
 
 **Measures time to load YouTube video**
 
-perftest_android_main.js
-========================
+perftest_android_startup.js
+===========================
 
 :owner: Performance Team
-:name: main
+:name: android-startup
 
-**Measures the time from process start until the Fenix main activity (HomeActivity) reports Fully Drawn**
+**Measures android startup times**
 
-This test launches Fenix to its main activity (HomeActivity). The application logs "Fully Drawn" when the activity is drawn. Using the android log transformer we measure the time from process start to this event.
+This test consists of 2 main tests, cold main first frame(cmff) and cold view nav start(cvns). cold main first frame is the measurement from when you click the app icon & get duration to first frame from 'am start -W'. cold view nav start is the measurement from when you send a VIEW intent & get duration from logcat: START proc to PageStart.
 
 perftest_pageload.js
 ====================
@@ -210,6 +201,26 @@ perftest_perfstats.js
 **Collect perfstats for the given site**
 
 This test launches browsertime with the perfStats option (will collect low-overhead timings, see Bug 1553254). The test currently runs a short user journey. A selection of popular sites are visited, first as cold pageloads, and then as warm.
+
+perftest_WPT_chrome_init_file.js
+================================
+
+:owner: Performance Testing Team
+:name: webpagetest-chrome
+
+**Run webpagetest performance pageload tests on Chrome against Alexa top 50 websites**
+
+This mozperftest gets webpagetest to run pageload tests on Chrome against the 50 most popular websites and provide data. The full list of data returned from webpagetest: firstContentfulPaint, visualComplete90, firstPaint, visualComplete99, visualComplete, SpeedIndex, bytesIn,bytesOut, TTFB, fullyLoadedCPUms, fullyLoadedCPUpct, domElements, domContentLoadedEventStart, domContentLoadedEventEnd, loadEventStart, loadEventEnd
+
+perftest_WPT_firefox_init_file.js
+=================================
+
+:owner: Performance Testing Team
+:name: webpagetest-firefox
+
+**Run webpagetest performance pageload tests on Firefox against Alexa top 50 websites**
+
+This mozperftest gets webpagetest to run pageload tests on Firefox against the 50 most popular websites and provide data. The full list of data returned from webpagetest: firstContentfulPaint, timeToContentfulPaint, visualComplete90, firstPaint, visualComplete99, visualComplete, SpeedIndex, bytesIn, bytesOut, TTFB, fullyLoadedCPUms, fullyLoadedCPUpct, domElements, domContentLoadedEventStart, domContentLoadedEventEnd, loadEventStart, loadEventEnd
 
 
 If you have any questions, please see this `wiki page <https://wiki.mozilla.org/TestEngineering/Performance#Where_to_find_us>`_.

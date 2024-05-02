@@ -3,12 +3,11 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "WebNavigationFrames",
-  "resource://gre/modules/WebNavigationFrames.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  WebNavigationFrames: "resource://gre/modules/WebNavigationFrames.sys.mjs",
+});
 
+/* eslint-disable jsdoc/check-param-names */
 /**
  * With optional arguments on both ends, this case is ambiguous:
  *     runtime.sendMessage("string", {} or nullish)
@@ -19,9 +18,10 @@ ChromeUtils.defineModuleGetter(
  * @param {string?}  [extensionId]
  * @param {any}      message
  * @param {object?}  [options]
- * @param {function} [callback]
- * @returns {{extensionId: string?, message: any, callback: function?}}
+ * @param {Function} [callback]
+ * @returns {{extensionId: string?, message: any, callback: Function?}}
  */
+/* eslint-enable jsdoc/check-param-names */
 function parseBonkersArgs(...args) {
   let Error = ExtensionUtils.ExtensionError;
   let callback = typeof args[args.length - 1] === "function" && args.pop();

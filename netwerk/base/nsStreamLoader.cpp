@@ -14,7 +14,7 @@
 namespace mozilla {
 namespace net {
 
-nsStreamLoader::nsStreamLoader() : mData() {}
+nsStreamLoader::nsStreamLoader() = default;
 
 NS_IMETHODIMP
 nsStreamLoader::Init(nsIStreamLoaderObserver* aStreamObserver,
@@ -25,10 +25,7 @@ nsStreamLoader::Init(nsIStreamLoaderObserver* aStreamObserver,
   return NS_OK;
 }
 
-nsresult nsStreamLoader::Create(nsISupports* aOuter, REFNSIID aIID,
-                                void** aResult) {
-  if (aOuter) return NS_ERROR_NO_AGGREGATION;
-
+nsresult nsStreamLoader::Create(REFNSIID aIID, void** aResult) {
   RefPtr<nsStreamLoader> it = new nsStreamLoader();
   return it->QueryInterface(aIID, aResult);
 }
@@ -135,6 +132,9 @@ void nsStreamLoader::ReleaseData() { mData.clearAndFree(); }
 
 NS_IMETHODIMP
 nsStreamLoader::CheckListenerChain() { return NS_OK; }
+
+NS_IMETHODIMP
+nsStreamLoader::OnDataFinished(nsresult) { return NS_OK; }
 
 }  // namespace net
 }  // namespace mozilla

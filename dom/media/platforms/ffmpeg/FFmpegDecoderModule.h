@@ -32,7 +32,7 @@ class FFmpegDecoderModule : public PlatformDecoderModule {
 
   already_AddRefed<MediaDataDecoder> CreateVideoDecoder(
       const CreateDecoderParams& aParams) override {
-    if (!Supports(SupportDecoderParams(aParams), nullptr)) {
+    if (Supports(SupportDecoderParams(aParams), nullptr).isEmpty()) {
       return nullptr;
     }
     RefPtr<MediaDataDecoder> decoder = new FFmpegVideoDecoder<V>(
@@ -40,31 +40,38 @@ class FFmpegDecoderModule : public PlatformDecoderModule {
         aParams.mImageContainer,
         aParams.mOptions.contains(CreateDecoderParams::Option::LowLatency),
         aParams.mOptions.contains(
-            CreateDecoderParams::Option::HardwareDecoderNotAllowed));
+            CreateDecoderParams::Option::HardwareDecoderNotAllowed),
+        aParams.mTrackingId);
     return decoder.forget();
   }
 
   already_AddRefed<MediaDataDecoder> CreateAudioDecoder(
       const CreateDecoderParams& aParams) override {
-    if (!Supports(SupportDecoderParams(aParams), nullptr)) {
+    if (Supports(SupportDecoderParams(aParams), nullptr).isEmpty()) {
       return nullptr;
     }
-    RefPtr<MediaDataDecoder> decoder =
-        new FFmpegAudioDecoder<V>(mLib, aParams.AudioConfig());
+    RefPtr<MediaDataDecoder> decoder = new FFmpegAudioDecoder<V>(mLib, aParams);
     return decoder.forget();
   }
 
-  bool SupportsMimeType(const nsACString& aMimeType,
-                        DecoderDoctorDiagnostics* aDiagnostics) const override {
+  media::DecodeSupportSet SupportsMimeType(
+      const nsACString& aMimeType,
+      DecoderDoctorDiagnostics* aDiagnostics) const override {
     UniquePtr<TrackInfo> trackInfo = CreateTrackInfoWithMIMEType(aMimeType);
     if (!trackInfo) {
-      return false;
+      return media::DecodeSupportSet{};
     }
     return Supports(SupportDecoderParams(*trackInfo), aDiagnostics);
   }
 
-  bool Supports(const SupportDecoderParams& aParams,
-                DecoderDoctorDiagnostics* aDiagnostics) const override {
+  media::DecodeSupportSet Supports(
+      const SupportDecoderParams& aParams,
+      DecoderDoctorDiagnostics* aDiagnostics) const override {
+    // This should only be supported by MFMediaEngineDecoderModule.
+    if (aParams.mMediaEngineId) {
+      return media::DecodeSupportSet{};
+    }
+
     const auto& trackInfo = aParams.mConfig;
     const nsACString& mimeType = trackInfo.mMimeType;
 
@@ -73,16 +80,40 @@ class FFmpegDecoderModule : public PlatformDecoderModule {
     // the check for alpha to PDMFactory but not itself remove the need for a
     // check.
     if (VPXDecoder::IsVPX(mimeType) && trackInfo.GetAsVideoInfo()->HasAlpha()) {
-      return false;
+      MOZ_LOG(sPDMLog, LogLevel::Debug,
+              ("FFmpeg decoder rejects requested type '%s'",
+               mimeType.BeginReading()));
+      return media::DecodeSupportSet{};
+    }
+
+    if (VPXDecoder::IsVP9(mimeType) &&
+        aParams.mOptions.contains(CreateDecoderParams::Option::LowLatency)) {
+      // SVC layers are unsupported, and may be used in low latency use cases
+      // (WebRTC).
+      return media::DecodeSupportSet{};
     }
 
     AVCodecID videoCodec = FFmpegVideoDecoder<V>::GetCodecId(mimeType);
-    AVCodecID audioCodec = FFmpegAudioDecoder<V>::GetCodecId(mimeType);
+    AVCodecID audioCodec = FFmpegAudioDecoder<V>::GetCodecId(
+        mimeType,
+        trackInfo.GetAsAudioInfo() ? *trackInfo.GetAsAudioInfo() : AudioInfo());
     if (audioCodec == AV_CODEC_ID_NONE && videoCodec == AV_CODEC_ID_NONE) {
-      return false;
+      MOZ_LOG(sPDMLog, LogLevel::Debug,
+              ("FFmpeg decoder rejects requested type '%s'",
+               mimeType.BeginReading()));
+      return media::DecodeSupportSet{};
     }
     AVCodecID codec = audioCodec != AV_CODEC_ID_NONE ? audioCodec : videoCodec;
-    return !!FFmpegDataDecoder<V>::FindAVCodec(mLib, codec);
+    bool supports = !!FFmpegDataDecoder<V>::FindAVCodec(mLib, codec);
+    MOZ_LOG(sPDMLog, LogLevel::Debug,
+            ("FFmpeg decoder %s requested type '%s'",
+             supports ? "supports" : "rejects", mimeType.BeginReading()));
+    if (supports) {
+      // TODO: Note that we do not yet distinguish between SW/HW decode support.
+      //       Will be done in bug 1754239.
+      return media::DecodeSupport::SoftwareDecode;
+    }
+    return media::DecodeSupportSet{};
   }
 
  protected:

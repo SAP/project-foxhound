@@ -3,12 +3,11 @@
 
 // There are shutdown issues for which multiple rejections are left uncaught.
 // See bug 1018184 for resolving these issues.
-const { PromiseTestUtils } = ChromeUtils.import(
-  "resource://testing-common/PromiseTestUtils.jsm"
+const { PromiseTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/PromiseTestUtils.sys.mjs"
 );
 PromiseTestUtils.allowMatchingRejectionsGlobally(/File closed/);
 
-/* import-globals-from ../../../inspector/test/shared-head.js */
 Services.scriptloader.loadSubScript(
   "chrome://mochitests/content/browser/devtools/client/inspector/test/shared-head.js",
   this
@@ -19,13 +18,13 @@ requestLongerTimeout(4);
 
 // Check that CSS rules are displayed with the proper source label in the
 // browser toolbox.
-add_task(async function() {
+add_task(async function () {
   // Forces the Browser Toolbox to open on the inspector by default
   await pushPref("devtools.browsertoolbox.panel", "inspector");
+  // Enable Multiprocess Browser Toolbox
+  await pushPref("devtools.browsertoolbox.scope", "everything");
 
-  const ToolboxTask = await initBrowserToolboxTask({
-    enableBrowserToolboxFission: true,
-  });
+  const ToolboxTask = await initBrowserToolboxTask();
   await ToolboxTask.importFunctions({
     getNodeFront,
     getNodeFrontInFrames,
@@ -33,6 +32,7 @@ add_task(async function() {
     selectNode,
     // selectNodeInFrames depends on selectNode, getNodeFront, getNodeFrontInFrames.
     selectNodeInFrames,
+    waitUntil,
   });
 
   // This is a simple test page, which contains a <div> with a CSS rule `color: red`
@@ -64,6 +64,7 @@ add_task(async function() {
 
     info("Retrieve the sourceLabel for the rule at index 1");
     const ruleView = inspector.getPanel("ruleview").view;
+    await waitUntil(() => getRuleViewLinkByIndex(ruleView, 1));
     const sourceLabelEl = getRuleViewLinkByIndex(ruleView, 1).querySelector(
       ".ruleview-rule-source-label"
     );

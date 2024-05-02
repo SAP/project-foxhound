@@ -1,17 +1,7 @@
-var { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
-);
-
-ChromeUtils.defineModuleGetter(
-  this,
-  "PlacesUtils",
-  "resource://gre/modules/PlacesUtils.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "PromiseUtils",
-  "resource://gre/modules/PromiseUtils.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
+  PromiseUtils: "resource://gre/modules/PromiseUtils.sys.mjs",
+});
 
 // Various tests in this directory may define gTestBrowser, to use as the
 // default browser under test in some of the functions below.
@@ -64,7 +54,7 @@ function promiseTabLoadEvent(tab, url) {
   let loaded = BrowserTestUtils.browserLoaded(tab.linkedBrowser, false, handle);
 
   if (url) {
-    BrowserTestUtils.loadURI(tab.linkedBrowser, url);
+    BrowserTestUtils.startLoadingURIString(tab.linkedBrowser, url);
   }
 
   return loaded;
@@ -74,7 +64,7 @@ function waitForCondition(condition, nextTest, errorMsg, aTries, aWait) {
   let tries = 0;
   let maxTries = aTries || 100; // 100 tries
   let maxWait = aWait || 100; // 100 msec x 100 tries = ten seconds
-  let interval = setInterval(function() {
+  let interval = setInterval(function () {
     if (tries >= maxTries) {
       ok(false, errorMsg);
       moveOn();
@@ -91,7 +81,7 @@ function waitForCondition(condition, nextTest, errorMsg, aTries, aWait) {
     }
     tries++;
   }, maxWait);
-  let moveOn = function() {
+  let moveOn = function () {
     clearInterval(interval);
     nextTest();
   };
@@ -113,7 +103,7 @@ function promiseForCondition(aConditionFn, aMessage, aTries, aWait) {
 // Returns a promise for nsIObjectLoadingContent props data.
 function promiseForPluginInfo(aId, aBrowser) {
   let browser = aBrowser || gTestBrowser;
-  return SpecialPowers.spawn(browser, [aId], async function(contentId) {
+  return SpecialPowers.spawn(browser, [aId], async function (contentId) {
     let plugin = content.document.getElementById(contentId);
     if (!(plugin instanceof Ci.nsIObjectLoadingContent)) {
       throw new Error("no plugin found");
@@ -163,9 +153,8 @@ function waitForNotificationBar(notificationID, browser, callback) {
     let notificationBox = gBrowser.getNotificationBox(browser);
     waitForCondition(
       () =>
-        (notification = notificationBox.getNotificationWithValue(
-          notificationID
-        )),
+        (notification =
+          notificationBox.getNotificationWithValue(notificationID)),
       () => {
         ok(
           notification,
@@ -201,7 +190,7 @@ function waitForNotificationShown(notification, callback) {
   }
   PopupNotifications.panel.addEventListener(
     "popupshown",
-    function(e) {
+    function (e) {
       callback();
     },
     { once: true }

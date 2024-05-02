@@ -6,7 +6,6 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1414336
 <head>
   <meta charset="utf-8">
   <title>Test for Bug 1414336</title>
-  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <script src="/tests/SimpleTest/EventUtils.js"></script>
   <script type="text/javascript" src="apz_test_native_event_utils.js"></script>
   <script type="text/javascript" src="apz_test_utils.js"></script>
@@ -58,8 +57,8 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1414336
   <p>Test bug1414336</p>
 </div>
 <script type="text/javascript">
-/** Test for Bug 1414336 **/
-waitUntilApzStable().then(() => {
+/** Test for Bug 1414336 */
+waitUntilApzStable().then(async () => {
   let target0 = window.document.getElementById("target0");
   let target0_events = ["pointerdown", "pointermove"];
 
@@ -83,14 +82,14 @@ waitUntilApzStable().then(() => {
   }, { once: true });
 
   target0.addEventListener("pointerup", (event) => {
-    ok(target0_events.length == 0, " should receive " + target0_events + " on target0");
+    ok(!target0_events.length, " should receive " + target0_events + " on target0");
     // Wait until the event is done processing before we end the subtest,
     // otherwise on Android the pointer events pref is flipped back to false
     // and debug builds will assert.
     setTimeout(subtestDone, 0);
   }, { once: true });
 
-  synthesizeNativeTouchDrag(target0, 2, 2, 0, 80);
+  await synthesizeNativeTouchDrag(target0, 2, 2, 0, 80);
 });
 
 </script>

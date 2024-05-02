@@ -14,8 +14,7 @@
 #include "mozilla/dom/SubtleCryptoBinding.h"
 #include "nsIGlobalObject.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class ThreadSafeWorkerRef;
 
@@ -92,7 +91,7 @@ class WebCryptoTask : public CancelableRunnable {
                                        CryptoKey& aKey,
                                        const CryptoOperationData& aData) {
     CryptoOperationData dummy;
-    dummy.SetAsArrayBuffer(aCx);
+    Unused << dummy.SetAsArrayBuffer(aCx);
     return CreateSignVerifyTask(aCx, aAlgorithm, aKey, dummy, aData, true);
   }
 
@@ -201,7 +200,6 @@ class GenerateAsymmetricKeyTask : public WebCryptoTask {
   UniqueSECKEYPrivateKey mPrivateKey;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_WebCryptoTask_h

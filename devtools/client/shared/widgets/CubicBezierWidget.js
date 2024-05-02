@@ -25,13 +25,13 @@
 
 "use strict";
 
-const EventEmitter = require("devtools/shared/event-emitter");
+const EventEmitter = require("resource://devtools/shared/event-emitter.js");
 const {
   PREDEFINED,
   PRESETS,
   DEFAULT_PRESET_CATEGORY,
-} = require("devtools/client/shared/widgets/CubicBezierPresets");
-const { getCSSLexer } = require("devtools/shared/css/lexer");
+} = require("resource://devtools/client/shared/widgets/CubicBezierPresets.js");
+const { getCSSLexer } = require("resource://devtools/shared/css/lexer.js");
 const XHTML_NS = "http://www.w3.org/1999/xhtml";
 
 /**
@@ -53,7 +53,7 @@ function CubicBezier(coordinates) {
     }
   }
 
-  this.coordinates.toString = function() {
+  this.coordinates.toString = function () {
     return (
       this.map(n => {
         return (Math.round(n * 100) / 100 + "").replace(/^0\./, ".");
@@ -73,7 +73,7 @@ CubicBezier.prototype = {
     return this.coordinates.slice(2);
   },
 
-  toString: function() {
+  toString() {
     // Check first if current coords are one of css predefined functions
     const predefName = Object.keys(PREDEFINED).find(key =>
       coordsAreEqual(PREDEFINED[key], this.coordinates)
@@ -138,7 +138,7 @@ BezierCanvas.prototype = {
   /**
    * Convert an element's left/top offsets into coordinates
    */
-  offsetsToCoordinates: function(element) {
+  offsetsToCoordinates(element) {
     const w = this.canvas.width,
       h = this.canvas.height;
 
@@ -154,7 +154,7 @@ BezierCanvas.prototype = {
   /**
    * Draw the cubic bezier curve for the current coordinates
    */
-  plot: function(settings = {}) {
+  plot(settings = {}) {
     const xy = this.bezier.coordinates;
 
     const defaultSettings = {
@@ -256,9 +256,8 @@ function CubicBezierWidget(
   this._onPointKeyDown = this._onPointKeyDown.bind(this);
   this._onCurveClick = this._onCurveClick.bind(this);
   this._onNewCoordinates = this._onNewCoordinates.bind(this);
-  this.onPrefersReducedMotionChange = this.onPrefersReducedMotionChange.bind(
-    this
-  );
+  this.onPrefersReducedMotionChange =
+    this.onPrefersReducedMotionChange.bind(this);
 
   // Add preset preview menu
   this.presets = new CubicBezierPresetWidget(parent);
@@ -285,7 +284,7 @@ function CubicBezierWidget(
 exports.CubicBezierWidget = CubicBezierWidget;
 
 CubicBezierWidget.prototype = {
-  _initMarkup: function() {
+  _initMarkup() {
     const doc = this.parent.ownerDocument;
 
     const wrap = doc.createElementNS(XHTML_NS, "div");
@@ -319,7 +318,7 @@ CubicBezierWidget.prototype = {
     };
   },
 
-  onPrefersReducedMotionChange: function(event) {
+  onPrefersReducedMotionChange(event) {
     // if prefers-reduced-motion is enabled destroy timing function preview
     // else create it if it does not exist
     if (event.matches) {
@@ -332,11 +331,11 @@ CubicBezierWidget.prototype = {
     }
   },
 
-  _removeMarkup: function() {
+  _removeMarkup() {
     this.parent.querySelector(".display-wrap").remove();
   },
 
-  _initEvents: function() {
+  _initEvents() {
     this.p1.addEventListener("mousedown", this._onPointMouseDown);
     this.p2.addEventListener("mousedown", this._onPointMouseDown);
 
@@ -348,7 +347,7 @@ CubicBezierWidget.prototype = {
     this.presets.on("new-coordinates", this._onNewCoordinates);
   },
 
-  _removeEvents: function() {
+  _removeEvents() {
     this.p1.removeEventListener("mousedown", this._onPointMouseDown);
     this.p2.removeEventListener("mousedown", this._onPointMouseDown);
 
@@ -360,7 +359,7 @@ CubicBezierWidget.prototype = {
     this.presets.off("new-coordinates", this._onNewCoordinates);
   },
 
-  _onPointMouseDown: function(event) {
+  _onPointMouseDown(event) {
     // Updating the boundingbox in case it has changed
     this.curveBoundingBox = this.curve.getBoundingClientRect();
 
@@ -387,13 +386,13 @@ CubicBezierWidget.prototype = {
       self._updateFromPoints();
     };
 
-    doc.onmouseup = function() {
+    doc.onmouseup = function () {
       point.focus();
       doc.onmousemove = doc.onmouseup = null;
     };
   },
 
-  _onPointKeyDown: function(event) {
+  _onPointKeyDown(event) {
     const point = event.target;
     const code = event.keyCode;
 
@@ -424,7 +423,7 @@ CubicBezierWidget.prototype = {
     }
   },
 
-  _onCurveClick: function(event) {
+  _onCurveClick(event) {
     this.curveBoundingBox = this.curve.getBoundingClientRect();
 
     const left = this.curveBoundingBox.left;
@@ -453,14 +452,14 @@ CubicBezierWidget.prototype = {
     this._updateFromPoints();
   },
 
-  _onNewCoordinates: function(coordinates) {
+  _onNewCoordinates(coordinates) {
     this.coordinates = coordinates;
   },
 
   /**
    * Get the current point coordinates and redraw the curve to match
    */
-  _updateFromPoints: function() {
+  _updateFromPoints() {
     // Get the new coordinates from the point's offsets
     let coordinates = this.bezierCanvas.offsetsToCoordinates(this.p1);
     coordinates = coordinates.concat(
@@ -475,7 +474,7 @@ CubicBezierWidget.prototype = {
    * Redraw the curve
    * @param {Array} coordinates The array of control point coordinates
    */
-  _redraw: function(coordinates) {
+  _redraw(coordinates) {
     // Provide a new CubicBezier to the canvas and plot the curve
     this.bezierCanvas.bezier = new CubicBezier(coordinates);
     this.bezierCanvas.plot();
@@ -520,7 +519,7 @@ CubicBezierWidget.prototype = {
     this.coordinates = coordinates;
   },
 
-  destroy: function() {
+  destroy() {
     this._removeEvents();
     this._removeMarkup();
 
@@ -590,7 +589,7 @@ CubicBezierPresetWidget.prototype = {
    *        div .preset
    *        ...
    */
-  _initMarkup: function() {
+  _initMarkup() {
     const doc = this.parent.ownerDocument;
 
     const presetPane = doc.createElementNS(XHTML_NS, "div");
@@ -619,13 +618,13 @@ CubicBezierPresetWidget.prototype = {
     const allPresets = presetPane.querySelectorAll(".preset");
 
     return {
-      presetPane: presetPane,
+      presetPane,
       presets: allPresets,
       categories: allCategories,
     };
   },
 
-  _createCategory: function(categoryLabel) {
+  _createCategory(categoryLabel) {
     const doc = this.parent.ownerDocument;
 
     const category = doc.createElementNS(XHTML_NS, "div");
@@ -639,11 +638,11 @@ CubicBezierPresetWidget.prototype = {
     return category;
   },
 
-  _normalizeCategoryLabel: function(categoryLabel) {
+  _normalizeCategoryLabel(categoryLabel) {
     return categoryLabel.replace("/-/g", " ");
   },
 
-  _createPresetList: function(categoryLabel) {
+  _createPresetList(categoryLabel) {
     const doc = this.parent.ownerDocument;
 
     const presetList = doc.createElementNS(XHTML_NS, "div");
@@ -658,7 +657,7 @@ CubicBezierPresetWidget.prototype = {
     return presetList;
   },
 
-  _createPreset: function(categoryLabel, presetLabel) {
+  _createPreset(categoryLabel, presetLabel) {
     const doc = this.parent.ownerDocument;
 
     const preset = doc.createElementNS(XHTML_NS, "div");
@@ -690,11 +689,11 @@ CubicBezierPresetWidget.prototype = {
     return preset;
   },
 
-  _normalizePresetLabel: function(categoryLabel, presetLabel) {
+  _normalizePresetLabel(categoryLabel, presetLabel) {
     return presetLabel.replace(categoryLabel + "-", "").replace("/-/g", " ");
   },
 
-  _initEvents: function() {
+  _initEvents() {
     for (const category of this.categories) {
       category.addEventListener("click", this._onCategoryClick);
     }
@@ -704,7 +703,7 @@ CubicBezierPresetWidget.prototype = {
     }
   },
 
-  _removeEvents: function() {
+  _removeEvents() {
     for (const category of this.categories) {
       category.removeEventListener("click", this._onCategoryClick);
     }
@@ -714,16 +713,16 @@ CubicBezierPresetWidget.prototype = {
     }
   },
 
-  _onPresetClick: function(event) {
+  _onPresetClick(event) {
     this.emit("new-coordinates", event.currentTarget.coordinates);
     this.activePreset = event.currentTarget;
   },
 
-  _onCategoryClick: function(event) {
+  _onCategoryClick(event) {
     this.activeCategory = event.target;
   },
 
-  _setActivePresetList: function(presetListId) {
+  _setActivePresetList(presetListId) {
     const presetList = this.presetPane.querySelector("#" + presetListId);
     swapClassName("active-preset-list", this._activePresetList, presetList);
     this._activePresetList = presetList;
@@ -755,7 +754,7 @@ CubicBezierPresetWidget.prototype = {
    * existing preset.
    * @param {Array} coordinates new coords [i, j, k, l]
    */
-  refreshMenu: function(coordinates) {
+  refreshMenu(coordinates) {
     // If we cannot find a matching preset, keep
     // menu on last known preset category.
     let category = this._activeCategory;
@@ -785,7 +784,7 @@ CubicBezierPresetWidget.prototype = {
     this.activePreset = preset;
   },
 
-  destroy: function() {
+  destroy() {
     this._removeEvents();
     this.parent.querySelector(".preset-pane").remove();
   },
@@ -806,7 +805,7 @@ function TimingFunctionPreviewWidget(parent) {
 TimingFunctionPreviewWidget.prototype = {
   PREVIEW_DURATION: 1000,
 
-  _initMarkup: function() {
+  _initMarkup() {
     const doc = this.parent.ownerDocument;
 
     const container = doc.createElementNS(XHTML_NS, "div");
@@ -823,7 +822,7 @@ TimingFunctionPreviewWidget.prototype = {
     this.parent.appendChild(container);
   },
 
-  destroy: function() {
+  destroy() {
     this.dot.getAnimations().forEach(anim => anim.cancel());
     this.parent.querySelector(".timing-function-preview").remove();
     this.parent = this.dot = null;
@@ -835,7 +834,7 @@ TimingFunctionPreviewWidget.prototype = {
    * supplied function is invalid, the preview will stop.
    * @param {String} value
    */
-  preview: function(value) {
+  preview(value) {
     // Don't restart the preview animation if the value is the same
     if (value === this.previousValue) {
       return;
@@ -852,7 +851,7 @@ TimingFunctionPreviewWidget.prototype = {
    * Re-start the preview animation from the beginning.
    * @param {String} timingFunction The value for the timing-function.
    */
-  restartAnimation: function(timingFunction) {
+  restartAnimation(timingFunction) {
     // Cancel the previous animation if there was any.
     this.dot.getAnimations().forEach(anim => anim.cancel());
 

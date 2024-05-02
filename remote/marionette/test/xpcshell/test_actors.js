@@ -8,30 +8,28 @@ const {
   getMarionetteCommandsActorProxy,
   registerCommandsActor,
   unregisterCommandsActor,
-} = ChromeUtils.import(
-  "chrome://remote/content/marionette/actors/MarionetteCommandsParent.jsm"
+} = ChromeUtils.importESModule(
+  "chrome://remote/content/marionette/actors/MarionetteCommandsParent.sys.mjs"
 );
-const { enableEventsActor, disableEventsActor } = ChromeUtils.import(
-  "chrome://remote/content/marionette/actors/MarionetteEventsParent.jsm"
+const { enableEventsActor, disableEventsActor } = ChromeUtils.importESModule(
+  "chrome://remote/content/marionette/actors/MarionetteEventsParent.sys.mjs"
 );
 
-registerCleanupFunction(function() {
+registerCleanupFunction(function () {
   unregisterCommandsActor();
   disableEventsActor();
 });
 
-add_test(function test_commandsActor_register() {
+add_task(function test_commandsActor_register() {
   registerCommandsActor();
   unregisterCommandsActor();
 
   registerCommandsActor();
   registerCommandsActor();
   unregisterCommandsActor();
-
-  run_next_test();
 });
 
-add_test(async function test_commandsActor_getActorProxy_noBrowsingContext() {
+add_task(async function test_commandsActor_getActorProxy_noBrowsingContext() {
   registerCommandsActor();
 
   try {
@@ -45,17 +43,13 @@ add_test(async function test_commandsActor_getActorProxy_noBrowsingContext() {
   }
 
   unregisterCommandsActor();
-
-  run_next_test();
 });
 
-add_test(function test_eventsActor_enable_disable() {
+add_task(function test_eventsActor_enable_disable() {
   enableEventsActor();
   disableEventsActor();
 
   enableEventsActor();
   enableEventsActor();
   disableEventsActor();
-
-  run_next_test();
 });

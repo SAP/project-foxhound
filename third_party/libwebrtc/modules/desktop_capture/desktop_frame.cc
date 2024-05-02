@@ -19,6 +19,7 @@
 #include "modules/desktop_capture/desktop_capture_types.h"
 #include "modules/desktop_capture/desktop_geometry.h"
 #include "rtc_base/checks.h"
+#include "third_party/libyuv/include/libyuv/planar_functions.h"
 
 namespace webrtc {
 
@@ -44,11 +45,9 @@ void DesktopFrame::CopyPixelsFrom(const uint8_t* src_buffer,
   RTC_CHECK(DesktopRect::MakeSize(size()).ContainsRect(dest_rect));
 
   uint8_t* dest = GetFrameDataAtPos(dest_rect.top_left());
-  for (int y = 0; y < dest_rect.height(); ++y) {
-    memcpy(dest, src_buffer, DesktopFrame::kBytesPerPixel * dest_rect.width());
-    src_buffer += src_stride;
-    dest += stride();
-  }
+  libyuv::CopyPlane(src_buffer, src_stride, dest, stride(),
+                    DesktopFrame::kBytesPerPixel * dest_rect.width(),
+                    dest_rect.height());
 }
 
 void DesktopFrame::CopyPixelsFrom(const DesktopFrame& src_frame,
@@ -113,7 +112,7 @@ DesktopRect DesktopFrame::rect() const {
 float DesktopFrame::scale_factor() const {
   float scale = 1.0f;
 
-#if defined(WEBRTC_MAC)
+#if defined(WEBRTC_MAC) || defined(CHROMEOS)
   // At least on Windows the logical and physical pixel are the same
   // See http://crbug.com/948362.
   if (!dpi().is_zero() && dpi().x() == dpi().y())
@@ -134,6 +133,7 @@ void DesktopFrame::CopyFrameInfoFrom(const DesktopFrame& other) {
   *mutable_updated_region() = other.updated_region();
   set_top_left(other.top_left());
   set_icc_profile(other.icc_profile());
+  set_may_contain_cursor(other.may_contain_cursor());
 }
 
 void DesktopFrame::MoveFrameInfoFrom(DesktopFrame* other) {
@@ -143,6 +143,24 @@ void DesktopFrame::MoveFrameInfoFrom(DesktopFrame* other) {
   mutable_updated_region()->Swap(other->mutable_updated_region());
   set_top_left(other->top_left());
   set_icc_profile(other->icc_profile());
+  set_may_contain_cursor(other->may_contain_cursor());
+}
+
+bool DesktopFrame::FrameDataIsBlack() const {
+  if (size().is_empty())
+    return false;
+
+  uint32_t* pixel = reinterpret_cast<uint32_t*>(data());
+  for (int i = 0; i < size().width() * size().height(); ++i) {
+    if (*pixel++)
+      return false;
+  }
+  return true;
+}
+
+void DesktopFrame::SetFrameDataToBlack() {
+  const uint8_t kBlackPixelValue = 0x00;
+  memset(data(), kBlackPixelValue, stride() * size().height());
 }
 
 BasicDesktopFrame::BasicDesktopFrame(DesktopSize size)
@@ -158,10 +176,12 @@ BasicDesktopFrame::~BasicDesktopFrame() {
 // static
 DesktopFrame* BasicDesktopFrame::CopyOf(const DesktopFrame& frame) {
   DesktopFrame* result = new BasicDesktopFrame(frame.size());
-  for (int y = 0; y < frame.size().height(); ++y) {
-    memcpy(result->data() + y * result->stride(),
-           frame.data() + y * frame.stride(),
-           frame.size().width() * kBytesPerPixel);
+  // TODO(crbug.com/1330019): Temporary workaround for a known libyuv crash when
+  // the height or width is 0. Remove this once this change has been merged.
+  if (frame.size().width() && frame.size().height()) {
+    libyuv::CopyPlane(frame.data(), frame.stride(), result->data(),
+                      result->stride(), frame.size().width() * kBytesPerPixel,
+                      frame.size().height());
   }
   result->CopyFrameInfoFrom(frame);
   return result;

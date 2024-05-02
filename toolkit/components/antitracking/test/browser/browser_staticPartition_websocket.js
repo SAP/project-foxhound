@@ -81,14 +81,8 @@ function connect(browsingContext, host, protocol) {
 // By observing the order of the handshakes we can ensure that the queue
 // partitioning is working correctly.
 async function runTest(partitioned) {
-  let prefs = [
-    ["privacy.partition.network_state.ws_connection_queue", partitioned],
-  ];
-  if (partitioned) {
-    prefs.push(["privacy.partition.network_state", partitioned]);
-  }
   await SpecialPowers.pushPrefEnv({
-    set: prefs,
+    set: [["privacy.partition.network_state", partitioned]],
   });
 
   let tabA = BrowserTestUtils.addTab(gBrowser, FIRST_PARTY_A);
@@ -188,7 +182,7 @@ async function runTest(partitioned) {
   await SpecialPowers.popPrefEnv();
 }
 
-add_task(async function setup() {
+add_setup(async function () {
   // This test relies on a WS connection timeout > 6 seconds.
   await SpecialPowers.pushPrefEnv({
     set: [["network.websocket.timeout.open", 20]],

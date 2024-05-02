@@ -2,13 +2,12 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import
 import os
+import platform
 import socket
 import sys
 
 PYTHON = sys.executable
-PYTHON_DLL = "c:/mozilla-build/python27/python27.dll"
 VENV_PATH = os.path.join(os.getcwd(), "build/venv")
 
 config = {
@@ -52,8 +51,11 @@ config = {
                     "external_tools",
                     "machine-configuration.json",
                 ),
-                "--platform",
-                "win10-hw",
+                "--platform=win10-hw"
+                if (platform.uname().version == "10.0.19045")
+                else "--platform=win11-hw"
+                if (platform.uname().version == "10.0.22621")
+                else "--platform=win7",
             ],
             "architectures": ["32bit", "64bit"],
             "halt_on_failure": True,

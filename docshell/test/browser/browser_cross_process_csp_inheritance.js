@@ -5,6 +5,7 @@
 
 const TEST_PATH = getRootDirectory(gTestPath).replace(
   "chrome://mochitests/content",
+  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
   "http://example.com"
 );
 const TEST_URI = TEST_PATH + "file_cross_process_csp_inheritance.html";
@@ -37,7 +38,7 @@ function verifyResult(
   return SpecialPowers.spawn(
     aBrowser,
     [{ aTestName, aDataURI, aPID, aSamePID, aFissionEnabled }],
-    async function({ aTestName, aDataURI, aPID, aSamePID, aFissionEnabled }) {
+    async function ({ aTestName, aDataURI, aPID, aSamePID, aFissionEnabled }) {
       // sanity, to make sure the correct URI was loaded
       let channel = content.docShell.currentDocumentChannel;
       is(
@@ -78,7 +79,7 @@ function verifyResult(
 }
 
 async function simulateCspInheritanceForNewTab(aTestName, aSamePID) {
-  await BrowserTestUtils.withNewTab(TEST_URI, async function(browser) {
+  await BrowserTestUtils.withNewTab(TEST_URI, async function (browser) {
     // do some sanity checks
     let currentURI = await getCurrentURI(gBrowser.selectedBrowser);
     is(currentURI, TEST_URI, aTestName + ": correct test uri loaded");

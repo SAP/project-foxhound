@@ -48,8 +48,7 @@ class VRProcessParent final : public mozilla::ipc::GeckoChildProcessHost {
   void DestroyProcess();
   bool CanShutdown() override { return true; }
 
-  void OnChannelError() override;
-  void OnChannelConnected(int32_t peer_pid) override;
+  void OnChannelConnected(base::ProcessId peer_pid) override;
   void OnChannelConnectedTask();
   void OnChannelErrorTask();
   void OnChannelClosed();
@@ -69,7 +68,7 @@ class VRProcessParent final : public mozilla::ipc::GeckoChildProcessHost {
   bool InitAfterConnect(bool aSucceeded);
   void KillHard(const char* aReason);
 
-  UniquePtr<VRChild> mVRChild;
+  RefPtr<VRChild> mVRChild;
   mozilla::ipc::TaskFactory<VRProcessParent> mTaskFactory;
   nsCOMPtr<nsIThread> mLaunchThread;
   Listener* mListener;

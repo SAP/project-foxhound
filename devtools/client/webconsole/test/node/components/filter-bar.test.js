@@ -6,33 +6,36 @@ const expect = require("expect");
 const sinon = require("sinon");
 const { render, mount, shallow } = require("enzyme");
 
-const { createFactory } = require("devtools/client/shared/vendor/react");
-const dom = require("devtools/client/shared/vendor/react-dom-factories");
-const Provider = createFactory(require("react-redux").Provider);
+const {
+  createFactory,
+} = require("resource://devtools/client/shared/vendor/react.js");
+const dom = require("resource://devtools/client/shared/vendor/react-dom-factories.js");
+const Provider = createFactory(
+  require("resource://devtools/client/shared/vendor/react-redux.js").Provider
+);
 
-const actions = require("devtools/client/webconsole/actions/index");
-const FilterButton = require("devtools/client/webconsole/components/FilterBar/FilterButton");
+const actions = require("resource://devtools/client/webconsole/actions/index.js");
+const FilterButton = require("resource://devtools/client/webconsole/components/FilterBar/FilterButton.js");
 const FilterBar = createFactory(
-  require("devtools/client/webconsole/components/FilterBar/FilterBar")
+  require("resource://devtools/client/webconsole/components/FilterBar/FilterBar.js")
 );
 const {
   FILTERBAR_DISPLAY_MODES,
-} = require("devtools/client/webconsole/constants");
+} = require("resource://devtools/client/webconsole/constants.js");
 const {
   MESSAGES_CLEAR,
   FILTERS,
-} = require("devtools/client/webconsole/constants");
+} = require("resource://devtools/client/webconsole/constants.js");
 
 const {
   setupStore,
   clearPrefs,
-} = require("devtools/client/webconsole/test/node/helpers");
-const serviceContainer = require("devtools/client/webconsole/test/node/fixtures/serviceContainer");
+} = require("resource://devtools/client/webconsole/test/node/helpers.js");
+const serviceContainer = require("resource://devtools/client/webconsole/test/node/fixtures/serviceContainer.js");
 
 function getFilterBar(overrides = {}) {
   return FilterBar({
     serviceContainer,
-    hidePersistLogsCheckbox: false,
     attachRefToWebConsoleUI: () => {},
     webConsoleUI: {
       document,
@@ -63,12 +66,7 @@ describe("FilterBar component:", () => {
     expect(clearButton.attr("title")).toBe("Clear the Web Console output");
 
     // Separator
-    expect(
-      toolbar
-        .children()
-        .eq(1)
-        .attr("class")
-    ).toBe("devtools-separator");
+    expect(toolbar.children().eq(1).attr("class")).toBe("devtools-separator");
 
     // Text filter
     const textInput = toolbar.children().eq(2);

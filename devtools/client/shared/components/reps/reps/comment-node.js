@@ -5,12 +5,11 @@
 "use strict";
 
 // Make this available to both AMD and CJS environments
-define(function(require, exports, module) {
+define(function (require, exports, module) {
   // Dependencies
   const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
   const { span } = require("devtools/client/shared/vendor/react-dom-factories");
   const {
-    isGrip,
     cropString,
     cropMultipleLines,
     wrapRender,
@@ -26,8 +25,7 @@ define(function(require, exports, module) {
 
   CommentNode.propTypes = {
     object: PropTypes.object.isRequired,
-    // @TODO Change this to Object.values when supported in Node's version of V8
-    mode: PropTypes.oneOf(Object.keys(MODE).map(key => MODE[key])),
+    mode: PropTypes.oneOf(Object.values(MODE)),
     shouldRenderTooltip: PropTypes.bool,
   };
 
@@ -35,7 +33,7 @@ define(function(require, exports, module) {
     const { object, mode = MODE.SHORT, shouldRenderTooltip } = props;
 
     let { textContent } = object.preview;
-    if (mode === MODE.TINY) {
+    if (mode === MODE.TINY || mode === MODE.HEADER) {
       textContent = cropMultipleLines(textContent, 30);
     } else if (mode === MODE.SHORT) {
       textContent = cropString(textContent, 50);
@@ -66,13 +64,8 @@ define(function(require, exports, module) {
   }
 
   // Registration
-  function supportsObject(object, noGrip = false) {
-    if (noGrip === true || !isGrip(object)) {
-      return false;
-    }
-    return (
-      object.preview && object.preview.nodeType === nodeConstants.COMMENT_NODE
-    );
+  function supportsObject(object) {
+    return object?.preview?.nodeType === nodeConstants.COMMENT_NODE;
   }
 
   // Exports from this module

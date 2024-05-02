@@ -4,14 +4,10 @@
 
 let engine;
 
-add_task(async function setup() {
-  engine = await SearchTestUtils.promiseNewSearchEngine(
-    getRootDirectory(gTestPath) + "testEngine.xml"
-  );
-  const current = await Services.search.getDefault();
-  await Services.search.setDefault(engine);
-  registerCleanupFunction(async () => {
-    await Services.search.setDefault(current);
+add_setup(async function () {
+  engine = await SearchTestUtils.promiseNewSearchEngine({
+    url: getRootDirectory(gTestPath) + "testEngine.xml",
+    setAsDefault: true,
   });
 });
 

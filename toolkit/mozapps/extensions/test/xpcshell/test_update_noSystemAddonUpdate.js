@@ -2,7 +2,8 @@
 
 createAppInfo("xpcshell@tests.mozilla.org", "XPCShell", "2");
 
-let distroDir = FileUtils.getDir("ProfD", ["sysfeatures", "empty"], true);
+let distroDir = FileUtils.getDir("ProfD", ["sysfeatures", "empty"]);
+distroDir.create(Ci.nsIFile.DIRECTORY_TYPE, FileUtils.PERMS_DIRECTORY);
 registerDirectory("XREAppFeat", distroDir);
 
 AddonTestUtils.usePrivilegedSignatures = "system";
@@ -36,7 +37,7 @@ add_task(async function test_systems_update_uninstall_check() {
     "http://example.com/update.json?id=%ITEM_ID%"
   );
 
-  await AddonManagerInternal.backgroundUpdateCheck();
+  await AddonManagerPrivate.backgroundUpdateCheck();
 
   await promiseShutdownManager();
 });

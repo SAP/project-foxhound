@@ -32,6 +32,32 @@ builds-debugopt:
     query:
         - "^build- !fuzzing !rusttests !signing !plain !asan !tsan !noopt !toolchain !upload-symbols"
 
+desktop-frontend:
+    description: >-
+        Run mochitest-browser, xpcshell, mochitest-chrome, mochitest-a11y,
+        marionette, firefox-ui-functional on all desktop platforms.
+        Excludes non-shipped/duplicate configurations like asan/tsan/msix
+        to reduce the runtime of the push as well as infra load.
+        Use with --artifact to speed up your trypush.
+        If this is green, you can be 99% sure that any frontend change will
+        stick on central.
+    selector: fuzzy
+    query:
+        # Runs 64-bit frontend-tests, plus win7. Tries to avoid running
+        # asan/tsan because they're not available as artifact builds, and
+        # rarely offer different results from debug/opt. It also avoids running
+        # msix/swr/a11y-checks/gpu/nofis/headless variants of otherwise
+        # identical tests, as again those are unlikely to show different
+        # results for frontend-only changes.
+        # This won't run 32-bit debug tests, which seems an acceptable
+        # trade-off for query complexity + runtime on infrastructure.
+        - "'browser-chrome                 'windows7 | '64 !spi !asan !tsan !msix !a11y !swr | 'linux"
+        - "'mochitest-chrome               'windows7 | '64 !spi !asan !tsan             !swr !gpu"
+        - "'xpcshell                       'windows7 | '64 !spi !asan !tsan !msix !nofis !condprof"
+        - "'browser-a11y | 'mochitest-a11y 'windows7 | '64 !spi !asan !tsan !no-cache   !swr"
+        - "'marionette                     'windows7 | '64      !asan       !source !headless !swr"
+        - "'firefox-ui-functional          'windows7 | '64      !asan !tsan"
+
 devtools:
     selector: fuzzy
     description: >-
@@ -39,14 +65,13 @@ devtools:
     query:
         - "'node-debugger | 'node-devtools"
         - "'mozlint-eslint"
-        # 'mochitest-devtools-chrome matches "-e10s" and "-fis-e10s"
         # Windows: skip jobs on asan and 32 bits platforms
-        - "'mochitest-devtools-chrome | 'mochitest-chrome-1proc 'windows10 !asan !-32"
+        - "'mochitest-devtools-chrome | 'mochitest-chrome-1proc 'windows !asan !-32"
         # macos: no extra platform to filter out
         - "'mochitest-devtools-chrome | 'mochitest-chrome-1proc 'macosx"
         # Linux is being named "linux1804" and may change over time, so use a more flexible search
         - "'mochitest-devtools-chrome | 'mochitest-chrome-1proc 'linux '64-qr/ !swr"
-        - "'xpcshell-e10s 'linux '64-qr/"
+        - "'xpcshell 'linux !nofis '64-qr/"
 
 devtools-linux:
     selector: fuzzy
@@ -56,7 +81,7 @@ devtools-linux:
         - "'node-debugger | 'node-devtools"
         - "'mozlint-eslint"
         - "'mochitest-devtools-chrome | 'mochitest-chrome-1proc 'linux '64-qr/ !swr"
-        - "'xpcshell-e10s 'linux '64-qr/"
+        - "'xpcshell 'linux !nofis '64-qr/"
 
 fpush-linux-android:
     selector: fuzzy
@@ -84,8 +109,46 @@ geckodriver:
         |mach try --preset geckodriver -xq "'linux"|
     query:
         - "'rusttests"
-        - "'platform 'wdspec 'debug !fis"
-        - "'browsertime 'amazon 'vismet 'shippable 'firefox !fis"
+        - "'platform 'wdspec 'debug 'nofis"
+        - "'browsertime 'amazon 'shippable 'firefox 'nofis"
+
+layout:
+    selector: fuzzy
+    description: >-
+        Runs the tests most relevant to layout.
+        This preset can be filtered down further to limit it to
+        a specific platform or build configuration. For example:
+        |mach try --preset layout -xq "linux64 'opt"|
+    query:
+        # Most mochitest + reftest + crashtest + wpt
+        - "!asan !tsan !jsreftest !shippable !webgl !condprof !media !webgpu 'mochitest | 'web-platform | 'crashtest | 'reftest"
+        # Style system unit tests
+        - "'rusttests"
+
+media-full:
+    selector: fuzzy
+    description: >-
+        Runs tests that exercise media playback and WebRTC code.
+    query:
+        - "mochitest-media !dfpi !nofis"
+        - "mochitest-media android !spi !swr !lite"
+        - "mochitest-browser-chrome !dfpi !nofis !a11y"
+        - "mochitest-browser-media"
+        - "web-platform-tests !dfpi !nofis !shippable"
+        - "web-platform-tests android !wdspec !spi !swr !lite"
+        - "crashtest !wdspec !nofis"
+        - "crashtest android !wdspec !spi !swr !lite"
+        - "'gtest"
+
+mochitest-bc:
+    description: >-
+        Runs mochitest-browser-chrome on all Desktop platforms in both opt
+        and debug. Excludes jobs that require non-artifact builds (asan,
+        tsan, msix, etc.) and some non-default configurations. For frontend
+        only changes, use this with --artifact to speed up your trypushes.
+    query:
+        - "'browser-chrome 'windows7 | '64 !tsan !asan !msix !spi !a11y !swr | 'linux"
+    selector: fuzzy
 
 perf:
     selector: fuzzy
@@ -121,13 +184,13 @@ remote-protocol:
         - "'awsy-base"
         - "'firefox-ui"
         - "'marionette !swr | harness"
-        - "'mochitest-browser !spi !swr 'fis -1$"
+        - "'mochitest-browser !spi !swr !nofis '-1$"
         - "'mochitest-remote !spi !swr"
-        - "'platform 'reftest !swr 'fis | 'android !-lite -1$"
+        - "'platform 'reftest !swr !nofis | 'android !-lite -1$"
         - "'platform 'wdspec !swr"
-        - "'platform !reftest !wdspec !swr 'fis | 'android !-lite -1$"
+        - "'platform !reftest !wdspec !swr !nofis | 'android !-lite -1$"
         - "'puppeteer"
-        - "'reftest !platform !gpu !swr !no-accel 'fis | 'android !-lite -1$"
+        - "'reftest !platform !gpu !swr !no-accel !nofis | 'android !-lite -1$"
         - "'xpcshell !spi !tsan !-lite"
 
 sample-suites:
@@ -172,6 +235,34 @@ sm-all:
         - "!android !asan !shippable 'jsreftest"
         - "!shippable !android 'jittest"  # macosx64 jittests
 
+webextensions:
+    selector: fuzzy
+    description: <-
+        Runs most of the unit tests of WebExtension code across all desktop
+        platforms and Android, including mochitests, xpcshell and test-verify.
+        GeckoView JUnit tests are NOT run.
+    paths:  # must be duplicate of test_paths, see bug 1556445
+        - browser/components/extensions/test/
+        - mobile/android/components/extensions/test/
+        - toolkit/components/extensions/test/
+        - toolkit/mozapps/extensions/test/
+    test_paths:  # must be duplicate of paths, see bug 1556445
+        - browser/components/extensions/test/
+        - mobile/android/components/extensions/test/
+        - toolkit/components/extensions/test/
+        - toolkit/mozapps/extensions/test/
+    query:
+        - "'64-qr/ | 'windows11-64-2009-qr !wpt !gpu !msix"
+
+webgpu:
+    selector: fuzzy
+    description: >-
+        Runs the tests relevant to WebGPU.
+    query:
+        - "'webgpu"
+        - "source-test-mozlint-updatebot"
+        - "source-test-vendor-rust"
+
 webrender:
     selector: fuzzy
     description: >-
@@ -180,14 +271,28 @@ webrender:
         - "!talos !raptor !shippable !asan '-qr"
         - "^webrender-"
 
+webrender-reftests:
+    selector: fuzzy
+    description: >-
+        Runs the reftests relevant to WebRender.
+    query:
+        - "!talos !raptor !shippable !asan !nofis 'reftest"
+
+webrender-reftests-linux:
+    selector: fuzzy
+    description: >-
+        Runs the reftests relevant to WebRender on linux only.
+    query:
+        - "!talos !raptor !shippable !asan !nofis 'linux 'reftest"
+
 webrender-perf:
     selector: fuzzy
     description: >-
         Runs the performance tests relevant to WebRender.
     query:
-        - "'-qr !fis-e10s 'svgr"
-        - "'-qr !fis-e10s 'g1"
-        - "'-qr !fis-e10s 'g4"
-        - "'-qr !fis-e10s 'tp5"
-        - "'-qr !fis-e10s 'talos-webgl"
-        - "'-qr !fis-e10s 'motionmark-animometer"
+        - "'-qr 'svgr"
+        - "'-qr 'g1"
+        - "'-qr 'g4"
+        - "'-qr 'tp5"
+        - "'-qr 'talos-webgl"
+        - "'-qr 'motionmark-animometer"

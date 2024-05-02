@@ -21,7 +21,8 @@ class nsWindowRoot final : public nsPIWindowRoot {
  public:
   explicit nsWindowRoot(nsPIDOMWindowOuter* aWindow);
 
-  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+  NS_DECL_ISUPPORTS_INHERITED
+  NS_IMETHOD_(void) DeleteCycleCollectable() override;
 
   mozilla::EventListenerManager* GetExistingListenerManager() const override;
   mozilla::EventListenerManager* GetOrCreateListenerManager() override;
@@ -64,15 +65,11 @@ class nsWindowRoot final : public nsPIWindowRoot {
 
   JSObject* WrapObject(JSContext*, JS::Handle<JSObject*> aGivenProto) override;
 
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(nsWindowRoot)
+  NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(nsWindowRoot)
 
   void AddBrowser(nsIRemoteTab* aBrowser) override;
   void RemoveBrowser(nsIRemoteTab* aBrowser) override;
   void EnumerateBrowsers(BrowserEnumerator aEnumFunc, void* aArg) override;
-
-  bool ShowFocusRings() override { return mShowFocusRings; }
-
-  void SetShowFocusRings(bool aEnable) override { mShowFocusRings = aEnable; }
 
  protected:
   virtual ~nsWindowRoot();
@@ -87,9 +84,6 @@ class nsWindowRoot final : public nsPIWindowRoot {
   // We own the manager, which owns event listeners attached to us.
   RefPtr<mozilla::EventListenerManager> mListenerManager;  // [Strong]
   nsWeakPtr mPopupNode;
-
-  // True if focus rings are enabled for this window hierarchy.
-  bool mShowFocusRings;
 
   nsCOMPtr<mozilla::dom::EventTarget> mParent;
 

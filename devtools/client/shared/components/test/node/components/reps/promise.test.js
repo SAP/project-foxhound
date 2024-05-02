@@ -9,17 +9,17 @@ const { shallow } = require("enzyme");
 const {
   REPS,
   getRep,
-} = require("devtools/client/shared/components/reps/reps/rep");
+} = require("resource://devtools/client/shared/components/reps/reps/rep.js");
 const { PromiseRep } = REPS;
 const {
   MODE,
-} = require("devtools/client/shared/components/reps/reps/constants");
-const stubs = require("devtools/client/shared/components/test/node/stubs/reps/promise");
+} = require("resource://devtools/client/shared/components/reps/reps/constants.js");
+const stubs = require("resource://devtools/client/shared/components/test/node/stubs/reps/promise.js");
 const {
   expectActorAttribute,
   getSelectableInInspectorGrips,
   getGripLengthBubbleText,
-} = require("devtools/client/shared/components/test/node/components/reps/test-helpers");
+} = require("resource://devtools/client/shared/components/test/node/components/reps/test-helpers.js");
 
 const renderRep = (object, props) => {
   return shallow(PromiseRep.rep({ object, ...props }));
@@ -47,6 +47,14 @@ describe("Promise - Pending", () => {
       shouldRenderTooltip: true,
     });
     expect(component.text()).toBe('Promise { "pending" }');
+    expect(component.prop("title")).toBe("Promise");
+    expectActorAttribute(component, object.actor);
+
+    component = renderRep(object, {
+      mode: MODE.HEADER,
+      shouldRenderTooltip: true,
+    });
+    expect(component.text()).toBe("Promise");
     expect(component.prop("title")).toBe("Promise");
     expectActorAttribute(component, object.actor);
 
@@ -81,6 +89,7 @@ describe("Promise - fulfilled with string", () => {
     expect(renderRep(object, { mode: MODE.TINY }).text()).toBe(
       'Promise { "fulfilled" }'
     );
+    expect(renderRep(object, { mode: MODE.HEADER }).text()).toBe("Promise");
     expect(renderRep(object, { mode: MODE.SHORT }).text()).toBe(defaultOutput);
     expect(renderRep(object, { mode: MODE.LONG }).text()).toBe(defaultOutput);
   });
@@ -99,6 +108,7 @@ describe("Promise - fulfilled with object", () => {
     expect(renderRep(object, { mode: MODE.TINY }).text()).toBe(
       'Promise { "fulfilled" }'
     );
+    expect(renderRep(object, { mode: MODE.HEADER }).text()).toBe("Promise");
     expect(renderRep(object, { mode: MODE.SHORT }).text()).toBe(defaultOutput);
     expect(renderRep(object, { mode: MODE.LONG }).text()).toBe(defaultOutput);
   });
@@ -123,6 +133,7 @@ describe("Promise - fulfilled with array", () => {
     expect(renderRep(object, { mode: MODE.TINY }).text()).toBe(
       'Promise { "fulfilled" }'
     );
+    expect(renderRep(object, { mode: MODE.HEADER }).text()).toBe("Promise");
     expect(renderRep(object, { mode: MODE.SHORT }).text()).toBe(out);
     expect(renderRep(object, { mode: MODE.LONG }).text()).toBe(out);
   });
@@ -192,6 +203,7 @@ describe("Promise - rejected with number", () => {
     expect(renderRep(object, { mode: MODE.TINY }).text()).toBe(
       'Promise { "rejected" }'
     );
+    expect(renderRep(object, { mode: MODE.HEADER }).text()).toBe("Promise");
     expect(renderRep(object, { mode: MODE.SHORT }).text()).toBe(defaultOutput);
     expect(renderRep(object, { mode: MODE.LONG }).text()).toBe(defaultOutput);
   });
@@ -210,6 +222,7 @@ describe("Promise - rejected with object", () => {
     expect(renderRep(object, { mode: MODE.TINY }).text()).toBe(
       'Promise { "rejected" }'
     );
+    expect(renderRep(object, { mode: MODE.HEADER }).text()).toBe("Promise");
     expect(renderRep(object, { mode: MODE.SHORT }).text()).toBe(defaultOutput);
     expect(renderRep(object, { mode: MODE.LONG }).text()).toBe(defaultOutput);
   });

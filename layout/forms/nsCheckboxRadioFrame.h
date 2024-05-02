@@ -61,8 +61,9 @@ class nsCheckboxRadioFrame final : public nsAtomicContainerFrame,
                                mozilla::WidgetGUIEvent* aEvent,
                                nsEventStatus* aEventStatus) override;
 
-  virtual nscoord GetLogicalBaseline(
-      mozilla::WritingMode aWritingMode) const override;
+  Maybe<nscoord> GetNaturalBaselineBOffset(
+      mozilla::WritingMode aWM, BaselineSharingGroup aBaselineGroup,
+      BaselineExportContext) const override;
 
   /**
    * Respond to the request to resize and/or reflow
@@ -84,13 +85,6 @@ class nsCheckboxRadioFrame final : public nsAtomicContainerFrame,
   virtual ~nsCheckboxRadioFrame();
 
   nscoord DefaultSize();
-
-  /**
-   * Get the state of the checked attribute.
-   * @param aState set to true if the checked attribute is set,
-   * false if the checked attribute has been removed
-   */
-  void GetCurrentCheckState(bool* aState);
 };
 
 #endif

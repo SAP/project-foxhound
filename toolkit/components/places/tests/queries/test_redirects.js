@@ -21,8 +21,9 @@ function check_results_callback(aSequence) {
   let includeHidden = aSequence[0];
   let maxResults = aSequence[1];
   let sortingMode = aSequence[2];
-  print(
-    "\nTESTING: includeHidden(" +
+  info(" - - - ");
+  info(
+    "TESTING: includeHidden(" +
       includeHidden +
       ")," +
       " maxResults(" +
@@ -41,7 +42,7 @@ function check_results_callback(aSequence) {
   }
 
   // Build expectedData array.
-  let expectedData = visits.filter(function(aVisit, aIndex, aArray) {
+  let expectedData = visits.filter(function (aVisit, aIndex, aArray) {
     // Embed visits never appear in results.
     if (aVisit.transType == Ci.nsINavHistoryService.TRANSITION_EMBED) {
       return false;
@@ -50,7 +51,7 @@ function check_results_callback(aSequence) {
     if (!includeHidden && isHidden(aVisit)) {
       // If the page has any non-hidden visit, then it's visible.
       if (
-        !visits.filter(function(refVisit) {
+        !visits.filter(function (refVisit) {
           return refVisit.uri == aVisit.uri && !isHidden(refVisit);
         }).length
       ) {
@@ -63,7 +64,7 @@ function check_results_callback(aSequence) {
 
   // Remove duplicates, since queries are RESULTS_AS_URI (unique pages).
   let seen = [];
-  expectedData = expectedData.filter(function(aData) {
+  expectedData = expectedData.filter(function (aData) {
     if (seen.includes(aData.uri)) {
       return false;
     }
@@ -221,7 +222,6 @@ add_task(async function test_add_visits_to_database() {
     // Would make hard sorting by visit date because last_visit_date is actually
     // calculated excluding download transitions, but the query includes
     // downloads.
-    // TODO: Bug 488966 could fix this behavior.
     // Ci.nsINavHistoryService.TRANSITION_DOWNLOAD,
   ];
 

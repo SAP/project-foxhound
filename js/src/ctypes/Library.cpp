@@ -31,7 +31,7 @@ namespace js::ctypes {
 *******************************************************************************/
 
 namespace Library {
-static void Finalize(JSFreeOp* fop, JSObject* obj);
+static void Finalize(JS::GCContext* gcx, JSObject* obj);
 
 static bool Close(JSContext* cx, unsigned argc, Value* vp);
 static bool Declare(JSContext* cx, unsigned argc, Value* vp);
@@ -50,7 +50,6 @@ static const JSClassOps sLibraryClassOps = {
     nullptr,            // mayResolve
     Library::Finalize,  // finalize
     nullptr,            // call
-    nullptr,            // hasInstance
     nullptr,            // construct
     nullptr,            // trace
 };
@@ -122,7 +121,8 @@ JSObject* Library::Create(JSContext* cx, HandleValue path,
   }
 
   PRLibSpec libSpec;
-  RootedLinearString pathStr(cx, JS_EnsureLinearString(cx, path.toString()));
+  Rooted<JSLinearString*> pathStr(cx,
+                                  JS_EnsureLinearString(cx, path.toString()));
   if (!pathStr) {
     return nullptr;
   }
@@ -177,24 +177,17 @@ JSObject* Library::Create(JSContext* cx, HandleValue path,
   PRLibrary* library = PR_LoadLibraryWithFlags(libSpec, PR_LD_NOW);
 
   if (!library) {
-#define MAX_ERROR_LEN 1024
-    char error[MAX_ERROR_LEN] = "Cannot get error from NSPR.";
+    constexpr size_t MaxErrorLength = 1024;
+    char error[MaxErrorLength] = "Cannot get error from NSPR.";
     uint32_t errorLen = PR_GetErrorTextLength();
-    if (errorLen && errorLen < MAX_ERROR_LEN) {
+    if (errorLen && errorLen < MaxErrorLength) {
       PR_GetErrorText(error);
     }
-#undef MAX_ERROR_LEN
 
-    if (JS::StringIsASCII(error)) {
-      if (JS::UniqueChars pathCharsUTF8 = JS_EncodeStringToUTF8(cx, pathStr)) {
-        JS_ReportErrorUTF8(cx, "couldn't open library %s: %s",
-                           pathCharsUTF8.get(), error);
-      }
-    } else {
-      if (JS::UniqueChars pathCharsLatin1 =
-              JS_EncodeStringToLatin1(cx, pathStr)) {
-        JS_ReportErrorLatin1(cx, "couldn't open library %s: %s",
-                             pathCharsLatin1.get(), error);
+    if (JS::UniqueChars errorUtf8 = JS::EncodeNarrowToUtf8(cx, error)) {
+      if (JS::UniqueChars pathChars = JS_EncodeStringToUTF8(cx, pathStr)) {
+        JS_ReportErrorUTF8(cx, "couldn't open library %s: %s", pathChars.get(),
+                           errorUtf8.get());
       }
     }
     return nullptr;
@@ -222,7 +215,9 @@ static void UnloadLibrary(JSObject* obj) {
   }
 }
 
-void Library::Finalize(JSFreeOp* fop, JSObject* obj) { UnloadLibrary(obj); }
+void Library::Finalize(JS::GCContext* gcx, JSObject* obj) {
+  UnloadLibrary(obj);
+}
 
 bool Library::Open(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);

@@ -10,8 +10,7 @@
 #include "mozilla/dom/PRemoteWorkerServiceParent.h"
 #include "mozilla/dom/RemoteType.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class RemoteWorkerManager;
 
@@ -22,7 +21,7 @@ class RemoteWorkerManager;
 class RemoteWorkerServiceParent final : public PRemoteWorkerServiceParent {
  public:
   RemoteWorkerServiceParent();
-  ~RemoteWorkerServiceParent();
+  NS_INLINE_DECL_REFCOUNTING(RemoteWorkerServiceParent, override);
 
   void ActorDestroy(mozilla::ipc::IProtocol::ActorDestroyReason) override;
 
@@ -31,11 +30,12 @@ class RemoteWorkerServiceParent final : public PRemoteWorkerServiceParent {
   nsCString GetRemoteType() const { return mRemoteType; }
 
  private:
+  ~RemoteWorkerServiceParent();
+
   RefPtr<RemoteWorkerManager> mManager;
   nsCString mRemoteType = NOT_REMOTE_TYPE;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_RemoteWorkerServiceParent_h

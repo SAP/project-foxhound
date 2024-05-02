@@ -6,8 +6,6 @@
  * and are CC licensed by https://www.flickr.com/photos/legofenris/.
  */
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-
 // Enumerate the directory tree and store results in entryList as
 //
 //  { path: 'a/b/c', file: <nsIFile> }
@@ -42,7 +40,7 @@ function zip_profile(zipFile, profileDir) {
   var entryList = [{ path: "storage/default/chrome", file: root }];
   enumerate_tree(entryList);
 
-  entryList.forEach(function(entry) {
+  entryList.forEach(function (entry) {
     if (entry.file.isDirectory()) {
       zipWriter.addEntryDirectory(
         entry.path,
@@ -69,7 +67,7 @@ function zip_profile(zipFile, profileDir) {
 }
 
 function exactGC() {
-  return new Promise(function(resolve) {
+  return new Promise(function (resolve) {
     var count = 0;
     function doPreciseGCandCC() {
       function scheduleGCCallback() {
@@ -88,18 +86,14 @@ function exactGC() {
 }
 
 function resetQuotaManager() {
-  return new Promise(function(resolve) {
-    var qm = Cc["@mozilla.org/dom/quota/manager;1"].getService(
-      Ci.nsIQuotaManager
-    );
-
+  return new Promise(function (resolve) {
     var prefService = Services.prefs;
 
     // enable quota manager testing mode
     var pref = "dom.quotaManager.testing";
     prefService.getBranch(null).setBoolPref(pref, true);
 
-    var request = qm.reset();
+    var request = Services.qms.reset();
     request.callback = resolve;
 
     // disable quota manager testing mode
@@ -124,19 +118,19 @@ function run_test() {
 
   caches
     .open("xpcshell-test")
-    .then(function(c) {
+    .then(function (c) {
       var request = new Request("http://example.com/index.html");
       var response = new Response("hello world");
       return c.put(request, response);
     })
     .then(exactGC)
     .then(resetQuotaManager)
-    .then(function() {
+    .then(function () {
       zip_profile(zipFile, profileDir);
       dump("### ### created zip at: " + zipFile.path + "\n");
       do_test_finished();
     })
-    .catch(function(e) {
+    .catch(function (e) {
       do_test_finished();
       ok(false, e);
     });

@@ -11,13 +11,12 @@ const TEST_URI =
   "http://example.com/browser/devtools/client/webconsole/" +
   "test/browser/test-error.html";
 
-add_task(async function() {
+add_task(async function () {
   const hud = await openNewTabAndConsole(TEST_URI);
 
   info("Reload the content window");
-  const {
-    onDomCompleteResource,
-  } = await waitForNextTopLevelDomCompleteResource(hud.toolbox.commands);
+  const { onDomCompleteResource } =
+    await waitForNextTopLevelDomCompleteResource(hud.toolbox.commands);
 
   SpecialPowers.spawn(gBrowser.selectedBrowser, [], () => {
     content.wrappedJSObject.location.reload();
@@ -31,7 +30,11 @@ add_task(async function() {
     expectUncaughtException();
   }
 
-  const onMessage = waitForMessage(hud, "fooBazBaz is not defined");
+  const onMessage = waitForMessageByType(
+    hud,
+    "fooBazBaz is not defined",
+    ".error"
+  );
   BrowserTestUtils.synthesizeMouseAtCenter(
     "button",
     {},

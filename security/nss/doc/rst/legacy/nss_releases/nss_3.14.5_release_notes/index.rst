@@ -11,7 +11,7 @@ NSS 3.14.5 release notes
    Network Security Services (NSS) 3.14.5 is a patch release for NSS 3.14. The bug fixes in NSS
    3.14.5 are described in the "Bugs Fixed" section below.
 
-.. _distribution_information:
+
 
 `Distribution Information <#distribution_information>`__
 --------------------------------------------------------
@@ -42,8 +42,6 @@ NSS 3.14.5 release notes
 
 `New in NSS 3.14.5 <#new_in_nss_3.14.5>`__
 ------------------------------------------
-
-.. container::
 
 .. _new_functionality:
 

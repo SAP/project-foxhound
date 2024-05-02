@@ -4,10 +4,6 @@
 
 "use strict";
 
-const dns = Cc["@mozilla.org/network/dns-service;1"].getService(
-  Ci.nsIDNSService
-);
-
 const gOverride = Cc["@mozilla.org/network/native-dns-override;1"].getService(
   Ci.nsINativeDNSResolverOverride
 );
@@ -24,18 +20,18 @@ add_task(async function start_trr_server() {
     await trrServer.stop();
   });
   await trrServer.start();
-  dump(`port = ${trrServer.port}\n`);
+  dump(`port = ${trrServer.port()}\n`);
   Services.prefs.setBoolPref("network.trr.skip-AAAA-when-not-supported", false);
   Services.prefs.setCharPref(
     "network.trr.uri",
-    `https://foo.example.com:${trrServer.port}/dns-query`
+    `https://foo.example.com:${trrServer.port()}/dns-query`
   );
   Services.prefs.setIntPref("network.trr.mode", Ci.nsIDNSService.MODE_TRRFIRST);
 });
 
 add_task(async function unspec_first() {
   gOverride.clearOverrides();
-  dns.clearCache(true);
+  Services.dns.clearCache(true);
 
   gOverride.addIPOverride("example.org", "1.1.1.1");
   gOverride.addIPOverride("example.org", "::1");
@@ -66,7 +62,7 @@ add_task(async function unspec_first() {
 
 add_task(async function A_then_AAAA_fails() {
   gOverride.clearOverrides();
-  dns.clearCache(true);
+  Services.dns.clearCache(true);
 
   gOverride.addIPOverride("example.org", "1.1.1.1");
   gOverride.addIPOverride("example.org", "::1");
@@ -96,7 +92,7 @@ add_task(async function A_then_AAAA_fails() {
 
 add_task(async function just_AAAA_fails() {
   gOverride.clearOverrides();
-  dns.clearCache(true);
+  Services.dns.clearCache(true);
 
   gOverride.addIPOverride("example.org", "1.1.1.1");
   gOverride.addIPOverride("example.org", "::1");

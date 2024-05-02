@@ -115,6 +115,7 @@
 #define APPLICATION_VND_WORDPROSSING_OPENXML \
   "application/vnd.wordprocessing-openxml"
 #define APPLICATION_XPROTOBUF "application/x-protobuf"
+#define APPLICATION_XPROTOBUFFER "application/x-protobuffer"
 
 #define AUDIO_BASIC "audio/basic"
 #define AUDIO_OGG "audio/ogg"
@@ -129,7 +130,9 @@
 #define AUDIO_MIDI "audio/x-midi"
 #define AUDIO_MATROSKA "audio/x-matroska"
 #define AUDIO_AAC "audio/aac"
+#define AUDIO_AACP "audio/aacp"
 #define AUDIO_MPEG_TS "audio/mp2t"
+#define AUDIO_MPEG_URL "audio/mpegurl"
 
 #define BINARY_OCTET_STREAM "binary/octet-stream"
 
@@ -212,6 +215,7 @@
 #define VIDEO_MATROSKA "video/x-matroska"
 #define APPLICATION_OGG "application/ogg"
 #define APPLICATION_MPEGURL "application/vnd.apple.mpegurl"
+#define APPLICATION_DASH_XML "application/dash+xml"
 
 /* x-uuencode-apple-single. QuickMail made me do this. */
 #define UUENCODE_APPLE_SINGLE "x-uuencode-apple-single"

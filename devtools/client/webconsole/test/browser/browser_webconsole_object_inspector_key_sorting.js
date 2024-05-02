@@ -46,7 +46,7 @@ const typedArrayTypes = [
   "Float64Array",
 ];
 
-add_task(async function() {
+add_task(async function () {
   const hud = await openNewTabAndConsole(TEST_URI);
 
   // Array
@@ -113,7 +113,7 @@ async function testKeyOrder(hud, command, expectedKeys) {
   info(
     "Wait for a new .result message with an object inspector to be displayed"
   );
-  const { node } = await executeAndWaitForMessage(hud, command, "", ".result");
+  const { node } = await executeAndWaitForResultMessage(hud, command, "");
   const oi = node.querySelector(".tree");
 
   info("Expand object inspector");

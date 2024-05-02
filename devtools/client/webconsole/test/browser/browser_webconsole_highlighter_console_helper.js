@@ -20,7 +20,7 @@ const TEST_URI = `data:text/html;charset=utf-8,<!DOCTYPE html>
   </div>
 </body>`.replace("\n", "");
 
-add_task(async function() {
+add_task(async function () {
   const toolbox = await openNewTabAndToolbox(TEST_URI, "inspector");
   await selectNodeWithPicker(toolbox, "h1");
 
@@ -29,17 +29,16 @@ add_task(async function() {
 
   await clearOutput(hud);
 
-  await executeAndWaitForMessage(hud, "$0", "<h1>", ".result");
+  await executeAndWaitForResultMessage(hud, "$0", "<h1>");
   ok(true, "correct output for $0");
 
   await clearOutput(hud);
 
   const newH1Content = "newH1Content";
-  await executeAndWaitForMessage(
+  await executeAndWaitForResultMessage(
     hud,
     `$0.textContent = "${newH1Content}";$0`,
-    "<h1>",
-    ".result"
+    "<h1>"
   );
 
   ok(true, "correct output for $0 after setting $0.textContent");

@@ -8,8 +8,9 @@
 
 const { Constructor: ctor } = Components;
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { NetUtil } = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+const { NetUtil } = ChromeUtils.importESModule(
+  "resource://gre/modules/NetUtil.sys.mjs"
+);
 
 const ios = Services.io;
 const dirSvc = Services.dirsvc;
@@ -64,7 +65,7 @@ function testAsync() {
   var chan = NetUtil.newChannel({ uri, loadUsingSystemPrincipal: true });
   Assert.ok(chan.contentLength < 0);
   chan.asyncOpen(
-    new Listener(function(l) {
+    new Listener(function (l) {
       Assert.ok(chan.contentLength > 0);
       Assert.ok(l.gotStartRequest);
       Assert.ok(l.gotStopRequest);
@@ -133,7 +134,7 @@ add_test(function testAsyncNested(next) {
   var uri = "jar:" + jarBase + "/inner40.zip!/foo";
   var chan = NetUtil.newChannel({ uri, loadUsingSystemPrincipal: true });
   chan.asyncOpen(
-    new Listener(function(l) {
+    new Listener(function (l) {
       Assert.ok(chan.contentLength > 0);
       Assert.ok(l.gotStartRequest);
       Assert.ok(l.gotStopRequest);
@@ -183,7 +184,7 @@ add_test(function testAsyncCloseUnlocks() {
   var chan = NetUtil.newChannel({ uri, loadUsingSystemPrincipal: true });
 
   chan.asyncOpen(
-    new Listener(function(l) {
+    new Listener(function (l) {
       Assert.ok(chan.contentLength > 0);
 
       // Drop any jar caches

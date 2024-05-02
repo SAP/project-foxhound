@@ -3,6 +3,7 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 import json
+
 from six.moves.urllib.parse import urljoin
 
 requests = None
@@ -64,7 +65,7 @@ class GitHub(object):
 
 class GitHubRepo(object):
     def __init__(self, github, data):
-        """Object respresenting a GitHub respoitory"""
+        """Object representing a GitHub repository"""
         self.gh = github
         self.owner = data["owner"]
         self.name = data["name"]

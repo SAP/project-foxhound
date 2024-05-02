@@ -13,8 +13,7 @@
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/StaticPtr.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 JSExecutionManager* JSExecutionManager::mCurrentMTManager;
 
@@ -190,7 +189,7 @@ AutoRequestJSThreadExecution::AutoRequestJSThreadExecution(
 
     nsPIDOMWindowInner* innerWindow = nullptr;
     if (aGlobalObject) {
-      innerWindow = aGlobalObject->AsInnerWindow();
+      innerWindow = aGlobalObject->GetAsInnerWindow();
     }
 
     DocGroup* docGroup = nullptr;
@@ -249,5 +248,4 @@ AutoYieldJSThreadExecution::AutoYieldJSThreadExecution() {
   }
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

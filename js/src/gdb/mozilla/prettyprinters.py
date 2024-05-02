@@ -4,8 +4,9 @@
 
 # mozilla/prettyprinters.py --- infrastructure for SpiderMonkey's auto-loaded pretty-printers.
 
-import gdb
 import re
+
+import gdb
 
 # Decorators for declaring pretty-printers.
 #
@@ -136,7 +137,7 @@ def clear_module_printers(module_name):
         # should remove. (It's not safe to delete entries from a dictionary
         # while we're iterating over it.)
         to_delete = []
-        for (k, v) in d.items():
+        for k, v in d.items():
             if v.__module__ == module_name:
                 to_delete.append(k)
                 remove_from_subprinter_list(v)
@@ -249,7 +250,6 @@ class TypeCache(object):
 
 
 def implemented_types(t):
-
     # Yield all types that follow |t|.
     def followers(t):
         if t.code == gdb.TYPE_CODE_TYPEDEF:
@@ -345,7 +345,7 @@ def lookup_for_objfile(objfile):
         # to scan the whole list, so regexp printers should be used
         # sparingly.
         s = str(value.type)
-        for (r, f) in printers_by_regexp:
+        for r, f in printers_by_regexp:
             if f.enabled:
                 m = r.match(s)
                 if m:

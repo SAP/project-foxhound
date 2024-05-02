@@ -2,7 +2,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import
 import os
 
 config = {
@@ -23,9 +22,6 @@ config = {
         "MOZ_CRASHREPORTER_NO_REPORT": "1",
         "LC_ALL": "C",
         "XPCOM_DEBUG_BREAK": "stack-and-abort",
-        # Disable sccache because otherwise we won't index the files that
-        # sccache optimizes away compilation for
-        "SCCACHE_DISABLE": "1",
         # 64 bit specific
         "PATH": "/tools/python/bin:/opt/local/bin:/usr/bin:"
         "/bin:/usr/sbin:/sbin:/usr/local/bin:/usr/X11/bin",

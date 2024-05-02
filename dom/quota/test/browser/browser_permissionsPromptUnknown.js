@@ -13,21 +13,21 @@ addTest(async function testPermissionUnknownInPrivateWindow() {
 
   registerPopupEventHandler(
     "popupshowing",
-    function() {
+    function () {
       ok(false, "Shouldn't show a popup this time");
     },
     win
   );
   registerPopupEventHandler(
     "popupshown",
-    function() {
+    function () {
       ok(false, "Shouldn't show a popup this time");
     },
     win
   );
   registerPopupEventHandler(
     "popuphidden",
-    function() {
+    function () {
       ok(false, "Shouldn't show a popup this time");
     },
     win
@@ -37,7 +37,10 @@ addTest(async function testPermissionUnknownInPrivateWindow() {
   win.gBrowser.selectedTab = BrowserTestUtils.addTab(win.gBrowser);
 
   info("Loading test page: " + testPageURL);
-  BrowserTestUtils.loadURI(win.gBrowser.selectedBrowser, testPageURL);
+  BrowserTestUtils.startLoadingURIString(
+    win.gBrowser.selectedBrowser,
+    testPageURL
+  );
   await waitForMessage(false, win.gBrowser);
 
   is(

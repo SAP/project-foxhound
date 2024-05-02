@@ -1,11 +1,8 @@
 "use strict";
 
-const Cc = Components.classes;
-const Ci = Components.interfaces;
-
 let timer;
 
-const DELAY_MS = 10000;
+const DELAY_MS = 1000;
 function handleRequest(request, response) {
   response.processAsync();
   timer = Cc["@mozilla.org/timer;1"].createInstance(Ci.nsITimer);

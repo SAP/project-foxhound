@@ -3,9 +3,8 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 """ Script that launches profiles creation.
 """
-from __future__ import absolute_import
-import os
 import argparse
+import os
 import sys
 
 # easier than setting PYTHONPATH in various platforms
@@ -29,7 +28,10 @@ def main(args=sys.argv[1:]):
         "--profile", help="Existing profile Dir", type=str, default=None
     )
     parser.add_argument(
-        "--customization", help="Profile customization to use", type=str, default="all"
+        "--customization",
+        help="Profile customization to use",
+        type=str,
+        default="default",
     )
     parser.add_argument(
         "--visible", help="Don't use headless mode", action="store_true", default=False
@@ -44,7 +46,7 @@ def main(args=sys.argv[1:]):
         "--strict",
         help="Errors out immediatly on a scenario failure",
         action="store_true",
-        default=True,
+        default=False,
     )
     parser.add_argument(
         "--geckodriver",
@@ -62,19 +64,22 @@ def main(args=sys.argv[1:]):
 
     from condprof.runner import run  # NOQA
 
-    run(
-        args.archive,
-        args.firefox,
-        args.scenario,
-        args.profile,
-        args.customization,
-        args.visible,
-        args.archives_dir,
-        args.force_new,
-        args.strict,
-        args.geckodriver,
-        args.device_name,
-    )
+    try:
+        run(
+            args.archive,
+            args.firefox,
+            args.scenario,
+            args.profile,
+            args.customization,
+            args.visible,
+            args.archives_dir,
+            args.force_new,
+            args.strict,
+            args.geckodriver,
+            args.device_name,
+        )
+    except Exception:
+        sys.exit(4)  # TBPL_RETRY
 
 
 if __name__ == "__main__":

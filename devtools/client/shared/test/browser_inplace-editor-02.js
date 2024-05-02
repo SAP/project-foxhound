@@ -8,7 +8,7 @@ loadHelperScript("helper_inplace_editor.js");
 
 // Test that the trimOutput option for the inplace editor works correctly.
 
-add_task(async function() {
+add_task(async function () {
   await addTab("data:text/html;charset=utf-8,inline editor tests");
   const { host, doc } = await createHost();
 
@@ -28,8 +28,8 @@ function testNonTrimmed(doc) {
       {
         trimOutput: false,
         multiline: true,
-        initial: initial,
-        start: function(editor) {
+        initial,
+        start(editor) {
           is(
             editor.input.value,
             initial,
@@ -52,9 +52,9 @@ function testTrimmed(doc) {
     const changed = " \nMultiple\nLines\n with more whitespace ";
     createInplaceEditorAndClick(
       {
-        initial: initial,
+        initial,
         multiline: true,
-        start: function(editor) {
+        start(editor) {
           is(
             editor.input.value,
             initial,
@@ -71,7 +71,7 @@ function testTrimmed(doc) {
 }
 
 function onDone(value, isCommit, resolve) {
-  return function(actualValue, actualCommit) {
+  return function (actualValue, actualCommit) {
     info("Inplace-editor's done callback executed, checking its state");
     is(actualValue, value, "The value is correct");
     is(actualCommit, isCommit, "The commit boolean is correct");

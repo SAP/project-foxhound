@@ -9,11 +9,11 @@ const { shallow } = require("enzyme");
 const {
   REPS,
   getRep,
-} = require("devtools/client/shared/components/reps/reps/rep");
+} = require("resource://devtools/client/shared/components/reps/reps/rep.js");
 
 const {
   MODE,
-} = require("devtools/client/shared/components/reps/reps/constants");
+} = require("resource://devtools/client/shared/components/reps/reps/constants.js");
 const { ArrayRep, Rep } = REPS;
 const { maxLengthMap } = ArrayRep;
 
@@ -77,9 +77,7 @@ describe("Array", () => {
     expect(renderRep({ mode: MODE.TINY }).text()).toBe("[…]");
     expect(renderRep({ mode: MODE.SHORT }).text()).toBe(defaultShortOutput);
     expect(renderRep({ mode: MODE.LONG }).text()).toBe(
-      `[ ${Array(maxLengthMap.get(MODE.LONG))
-        .fill('"foo"')
-        .join(", ")}, … ]`
+      `[ ${Array(maxLengthMap.get(MODE.LONG)).fill('"foo"').join(", ")}, … ]`
     );
   });
 

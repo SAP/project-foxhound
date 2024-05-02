@@ -11,6 +11,7 @@
 #include "mozilla/GfxMessageUtils.h"
 #include "mozilla/MozPromise.h"
 #include "GMPService.h"
+#include "nsTArray.h"
 
 #if !defined(MOZ_DEBUG) || !defined(ENABLE_TESTS)
 #  error "This file should not be used outside of debug with tests"
@@ -28,14 +29,16 @@ class SandboxTest : public mozISandboxTest {
   // We allow nsresult to be rejected with values:
   //  - NS_ERROR_FAILURE in obvious case of error
   //  - NS_OK in case of success to complete the code but missing process (GPU)
-  using ProcessPromise = MozPromise<SandboxTestingParent*, nsresult, true>;
+  using ProcessPromise =
+      MozPromise<RefPtr<SandboxTestingParent>, nsresult, true>;
 
  private:
   virtual ~SandboxTest() = default;
-  static constexpr size_t NumProcessTypes =
-      static_cast<size_t>(GeckoProcessType_End);
-  SandboxTestingParent* mSandboxTestingParents[NumProcessTypes];
-  RefPtr<gmp::GMPContentParent::CloseBlocker> mGMPContentParentWrapper;
+  nsTArray<RefPtr<SandboxTestingParent>> mSandboxTestingParents;
+  RefPtr<gmp::GMPContentParentCloseBlocker> mGMPContentParentWrapper;
+#if defined(XP_WIN)
+  bool mChromeDirExisted = false;
+#endif
 };
 
 }  // namespace mozilla

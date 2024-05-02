@@ -11,6 +11,7 @@
 #include <utility>
 #include "js/TypeDecls.h"
 #include "mozilla/Result.h"
+#include "mozilla/ipc/IPCForwards.h"
 #include "nsISupports.h"
 #include "nsError.h"
 #include "nsString.h"
@@ -21,8 +22,7 @@ template <class T>
 class Heap;
 }
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class OwningStringOrStringSequence;
 template <typename T>
@@ -40,6 +40,7 @@ class KeyPath {
   // This private constructor is only to be used by IPDL-generated classes.
   friend class IndexMetadata;
   friend class ObjectStoreMetadata;
+  ALLOW_DEPRECATED_READPARAM
 
   KeyPath() : mType(KeyPathType::NonExistent) { MOZ_COUNT_CTOR(KeyPath); }
 
@@ -114,7 +115,6 @@ class KeyPath {
 };
 
 }  // namespace indexedDB
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_indexeddb_keypath_h__

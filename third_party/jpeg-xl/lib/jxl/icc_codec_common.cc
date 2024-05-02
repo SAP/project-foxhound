@@ -11,10 +11,7 @@
 #include <string>
 #include <vector>
 
-#include "lib/jxl/aux_out.h"
-#include "lib/jxl/aux_out_fwd.h"
 #include "lib/jxl/base/byte_order.h"
-#include "lib/jxl/common.h"
 #include "lib/jxl/fields.h"
 
 namespace jxl {

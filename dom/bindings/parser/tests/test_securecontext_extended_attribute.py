@@ -1,6 +1,3 @@
-import WebIDL
-
-
 def WebIDLTest(parser, harness):
     parser.parse(
         """
@@ -8,12 +5,12 @@ def WebIDLTest(parser, harness):
         interface TestSecureContextOnInterface {
           const octet TEST_CONSTANT = 0;
           readonly attribute byte testAttribute;
-          void testMethod(byte foo);
+          undefined testMethod(byte foo);
         };
         partial interface TestSecureContextOnInterface {
           const octet TEST_CONSTANT_2 = 0;
           readonly attribute byte testAttribute2;
-          void testMethod2(byte foo);
+          undefined testMethod2(byte foo);
         };
     """
     )
@@ -41,11 +38,17 @@ def WebIDLTest(parser, harness):
     )
     harness.ok(
         results[0].members[3].getExtendedAttribute("SecureContext"),
-        "[SecureContext] should propagate from interface to constant members from partial interface",
+        (
+            "[SecureContext] should propagate from interface to "
+            "constant members from partial interface"
+        ),
     )
     harness.ok(
         results[0].members[4].getExtendedAttribute("SecureContext"),
-        "[SecureContext] should propagate from interface to attribute members from partial interface",
+        (
+            "[SecureContext] should propagate from interface to "
+            "attribute members from partial interface"
+        ),
     )
     harness.ok(
         results[0].members[5].getExtendedAttribute("SecureContext"),
@@ -59,13 +62,13 @@ def WebIDLTest(parser, harness):
         partial interface TestSecureContextOnInterfaceAfterPartialInterface {
           const octet TEST_CONSTANT_2 = 0;
           readonly attribute byte testAttribute2;
-          void testMethod2(byte foo);
+          undefined testMethod2(byte foo);
         };
         [SecureContext]
         interface TestSecureContextOnInterfaceAfterPartialInterface {
           const octet TEST_CONSTANT = 0;
           readonly attribute byte testAttribute;
-          void testMethod(byte foo);
+          undefined testMethod(byte foo);
         };
      """
     )
@@ -93,15 +96,24 @@ def WebIDLTest(parser, harness):
     )
     harness.ok(
         results[1].members[3].getExtendedAttribute("SecureContext"),
-        "[SecureContext] should propagate from interface to constant members from partial interface",
+        (
+            "[SecureContext] should propagate from interface to constant members from "
+            "partial interface"
+        ),
     )
     harness.ok(
         results[1].members[4].getExtendedAttribute("SecureContext"),
-        "[SecureContext] should propagate from interface to attribute members from partial interface",
+        (
+            "[SecureContext] should propagate from interface to attribute members from "
+            "partial interface"
+        ),
     )
     harness.ok(
         results[1].members[5].getExtendedAttribute("SecureContext"),
-        "[SecureContext] should propagate from interface to method members from partial interface",
+        (
+            "[SecureContext] should propagate from interface to method members from partial "
+            "interface"
+        ),
     )
 
     parser = parser.reset()
@@ -110,13 +122,13 @@ def WebIDLTest(parser, harness):
         interface TestSecureContextOnPartialInterface {
           const octet TEST_CONSTANT = 0;
           readonly attribute byte testAttribute;
-          void testMethod(byte foo);
+          undefined testMethod(byte foo);
         };
         [SecureContext]
         partial interface TestSecureContextOnPartialInterface {
           const octet TEST_CONSTANT_2 = 0;
           readonly attribute byte testAttribute2;
-          void testMethod2(byte foo);
+          undefined testMethod2(byte foo);
         };
     """
     )
@@ -132,15 +144,24 @@ def WebIDLTest(parser, harness):
     )
     harness.ok(
         results[0].members[0].getExtendedAttribute("SecureContext") is None,
-        "[SecureContext] should not propagate from a partial interface to the interface's constant members",
+        (
+            "[SecureContext] should not propagate from a partial interface to the interface's "
+            "constant members"
+        ),
     )
     harness.ok(
         results[0].members[1].getExtendedAttribute("SecureContext") is None,
-        "[SecureContext] should not propagate from a partial interface to the interface's attribute members",
+        (
+            "[SecureContext] should not propagate from a partial interface to the interface's "
+            "attribute members"
+        ),
     )
     harness.ok(
         results[0].members[2].getExtendedAttribute("SecureContext") is None,
-        "[SecureContext] should not propagate from a partial interface to the interface's method members",
+        (
+            "[SecureContext] should not propagate from a partial interface to the interface's "
+            "method members"
+        ),
     )
     harness.ok(
         results[0].members[3].getExtendedAttribute("SecureContext"),
@@ -167,10 +188,10 @@ def WebIDLTest(parser, harness):
           [SecureContext]
           readonly attribute byte testSecureAttribute;
           readonly attribute byte testNonSecureAttribute2;
-          void testNonSecureMethod1(byte foo);
+          undefined testNonSecureMethod1(byte foo);
           [SecureContext]
-          void testSecureMethod(byte foo);
-          void testNonSecureMethod2(byte foo);
+          undefined testSecureMethod(byte foo);
+          undefined testNonSecureMethod2(byte foo);
         };
     """
     )
@@ -235,10 +256,10 @@ def WebIDLTest(parser, harness):
           [SecureContext]
           readonly attribute byte testSecureAttribute;
           readonly attribute byte testNonSecureAttribute2;
-          void testNonSecureMethod1(byte foo);
+          undefined testNonSecureMethod1(byte foo);
           [SecureContext]
-          void testSecureMethod(byte foo);
-          void testNonSecureMethod2(byte foo);
+          undefined testSecureMethod(byte foo);
+          undefined testNonSecureMethod2(byte foo);
         };
     """
     )
@@ -297,7 +318,7 @@ def WebIDLTest(parser, harness):
         """
         )
         results = parser.finish()
-    except:
+    except Exception:
         threw = True
     harness.ok(threw, "[SecureContext] must take no arguments (testing on interface)")
 
@@ -308,19 +329,22 @@ def WebIDLTest(parser, harness):
             """
             interface TestSecureContextForOverloads1 {
               [SecureContext]
-              void testSecureMethod(byte foo);
+              undefined testSecureMethod(byte foo);
             };
             partial interface TestSecureContextForOverloads1 {
-              void testSecureMethod(byte foo, byte bar);
+              undefined testSecureMethod(byte foo, byte bar);
             };
         """
         )
         results = parser.finish()
-    except:
+    except Exception:
         threw = True
     harness.ok(
         threw,
-        "If [SecureContext] appears on an overloaded operation, then it MUST appear on all overloads",
+        (
+            "If [SecureContext] appears on an overloaded operation, then it MUST appear on all "
+            "overloads"
+        ),
     )
 
     parser = parser.reset()
@@ -330,16 +354,16 @@ def WebIDLTest(parser, harness):
             """
             interface TestSecureContextForOverloads2 {
               [SecureContext]
-              void testSecureMethod(byte foo);
+              undefined testSecureMethod(byte foo);
             };
             partial interface TestSecureContextForOverloads2 {
               [SecureContext]
-              void testSecureMethod(byte foo, byte bar);
+              undefined testSecureMethod(byte foo, byte bar);
             };
         """
         )
         results = parser.finish()
-    except:
+    except Exception:
         threw = True
     harness.ok(
         not threw,
@@ -354,12 +378,12 @@ def WebIDLTest(parser, harness):
             [SecureContext]
             interface TestSecureContextOnInterfaceAndMember {
               [SecureContext]
-              void testSecureMethod(byte foo);
+              undefined testSecureMethod(byte foo);
             };
         """
         )
         results = parser.finish()
-    except:
+    except Exception:
         threw = True
     harness.ok(
         threw, "[SecureContext] must not appear on an interface and interface member"
@@ -375,16 +399,19 @@ def WebIDLTest(parser, harness):
             [SecureContext]
             partial interface TestSecureContextOnPartialInterfaceAndMember {
               [SecureContext]
-              void testSecureMethod(byte foo);
+              undefined testSecureMethod(byte foo);
             };
         """
         )
         results = parser.finish()
-    except:
+    except Exception:
         threw = True
     harness.ok(
         threw,
-        "[SecureContext] must not appear on a partial interface and one of the partial interface's member's",
+        (
+            "[SecureContext] must not appear on a partial interface and one of the partial "
+            "interface's member's"
+        ),
     )
 
     parser = parser.reset()
@@ -397,16 +424,19 @@ def WebIDLTest(parser, harness):
             };
             partial interface TestSecureContextOnInterfaceAndPartialInterfaceMember {
               [SecureContext]
-              void testSecureMethod(byte foo);
+              undefined testSecureMethod(byte foo);
             };
         """
         )
         results = parser.finish()
-    except:
+    except Exception:
         threw = True
     harness.ok(
         threw,
-        "[SecureContext] must not appear on an interface and one of its partial interface's member's",
+        (
+            "[SecureContext] must not appear on an interface and one of its partial interface's "
+            "member's"
+        ),
     )
 
     parser = parser.reset()
@@ -418,16 +448,19 @@ def WebIDLTest(parser, harness):
             interface TestSecureContextOnInheritedInterface {
             };
             interface TestSecureContextNotOnInheritingInterface : TestSecureContextOnInheritedInterface {
-              void testSecureMethod(byte foo);
+              undefined testSecureMethod(byte foo);
             };
         """
         )
         results = parser.finish()
-    except:
+    except Exception:
         threw = True
     harness.ok(
         threw,
-        "[SecureContext] must appear on interfaces that inherit from another [SecureContext] interface",
+        (
+            "[SecureContext] must appear on interfaces that inherit from another [SecureContext] "
+            "interface"
+        ),
     )
 
     # Test 'includes'.
@@ -441,7 +474,7 @@ def WebIDLTest(parser, harness):
         interface mixin TestNonSecureContextMixin {
           const octet TEST_CONSTANT_2 = 0;
           readonly attribute byte testAttribute2;
-          void testMethod2(byte foo);
+          undefined testMethod2(byte foo);
         };
         TestSecureContextInterfaceThatIncludesNonSecureContextMixin includes TestNonSecureContextMixin;
      """
@@ -450,7 +483,10 @@ def WebIDLTest(parser, harness):
     harness.check(
         len(results[0].members),
         4,
-        "TestSecureContextInterfaceThatImplementsNonSecureContextInterface should have four members",
+        (
+            "TestSecureContextInterfaceThatImplementsNonSecureContextInterface should have four "
+            "members"
+        ),
     )
     harness.ok(
         results[0].getExtendedAttribute("SecureContext"),
@@ -458,7 +494,10 @@ def WebIDLTest(parser, harness):
     )
     harness.ok(
         results[0].members[0].getExtendedAttribute("SecureContext"),
-        "[SecureContext] should propagate from interface to constant members even when other members are copied from a non-[SecureContext] interface",
+        (
+            "[SecureContext] should propagate from interface to constant members even when other "
+            "members are copied from a non-[SecureContext] interface"
+        ),
     )
     harness.ok(
         results[0].members[1].getExtendedAttribute("SecureContext") is None,
@@ -479,7 +518,7 @@ def WebIDLTest(parser, harness):
         """
         [LegacyNoInterfaceObject, SecureContext]
         interface TestSecureContextLegacyNoInterfaceObject {
-          void testSecureMethod(byte foo);
+          undefined testSecureMethod(byte foo);
         };
     """
     )

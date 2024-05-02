@@ -27,7 +27,6 @@ const PR_MSEC_PER_SEC = 1000;
 
 const DATA_DIR = "data/";
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 var ioSvc = Services.io;
 
 var ZipWriter = Components.Constructor(
@@ -49,7 +48,7 @@ if (tmpFile.exists()) {
 
 var zipW = new ZipWriter();
 
-registerCleanupFunction(function() {
+registerCleanupFunction(function () {
   try {
     zipW.close();
   } catch (e) {

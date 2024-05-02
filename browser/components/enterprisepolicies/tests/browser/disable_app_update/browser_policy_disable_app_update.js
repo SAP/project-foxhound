@@ -3,8 +3,8 @@
 
 "use strict";
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  UrlbarTestUtils: "resource://testing-common/UrlbarTestUtils.jsm",
+ChromeUtils.defineESModuleGetters(this, {
+  UrlbarTestUtils: "resource://testing-common/UrlbarTestUtils.sys.mjs",
 });
 
 var updateService = Cc["@mozilla.org/updates/update-service;1"].getService(
@@ -31,7 +31,7 @@ add_task(async function test_update_preferences_ui() {
     "about:preferences"
   );
 
-  await SpecialPowers.spawn(tab.linkedBrowser, [], async function() {
+  await SpecialPowers.spawn(tab.linkedBrowser, [], async function () {
     let setting = content.document.getElementById("updateSettingsContainer");
     is(
       setting.hidden,
@@ -57,14 +57,24 @@ add_task(async function test_update_about_ui() {
     "The About Dialog panel Id should equal " + panelId
   );
 
+  // Make sure that we still remain on the "disabled by policy" panel after
+  // `AppUpdater.stop()` is called.
+  aboutDialog.gAppUpdater._appUpdater.stop();
+  is(
+    aboutDialog.gAppUpdater.selectedPanel.id,
+    panelId,
+    "The About Dialog panel Id should still equal " + panelId
+  );
+
   aboutDialog.close();
 });
 
 /**
  * Waits for the About Dialog to load.
  *
- * @return A promise that returns the domWindow for the About Dialog and
- *         resolves when the About Dialog loads.
+ * @returns {Promise}
+ *   A promise that returns the domWindow for the About Dialog and resolves when
+ *   the About Dialog loads.
  */
 function waitForAboutDialog() {
   return new Promise(resolve => {

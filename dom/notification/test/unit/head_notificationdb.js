@@ -1,9 +1,8 @@
 "use strict";
 
-var { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+var { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-var { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 function getNotificationObject(app, id, tag, includeScope) {
   const origin = `https://${app}.gaiamobile.org/`;
@@ -32,7 +31,7 @@ var calendarNotification = getNotificationObject(
 
 // Helper to start the NotificationDB
 function startNotificationDB() {
-  ChromeUtils.import("resource://gre/modules/NotificationDB.jsm");
+  ChromeUtils.importESModule("resource://gre/modules/NotificationDB.sys.mjs");
 }
 
 // Helper function to add a listener, send message and treat the reply

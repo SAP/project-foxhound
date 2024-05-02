@@ -12,16 +12,14 @@
 nsresult NS_NewSVGTextElement(
     nsIContent** aResult, already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 using SVGTextElementBase = SVGTextPositioningElement;
 
 class SVGTextElement final : public SVGTextElementBase {
  protected:
   explicit SVGTextElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
-  virtual JSObject* WrapNode(JSContext* cx,
-                             JS::Handle<JSObject*> aGivenProto) override;
+  JSObject* WrapNode(JSContext* cx, JS::Handle<JSObject*> aGivenProto) override;
 
   friend nsresult(::NS_NewSVGTextElement(
       nsIContent** aResult,
@@ -29,27 +27,19 @@ class SVGTextElement final : public SVGTextElementBase {
 
  public:
   // nsIContent interface
-  NS_IMETHOD_(bool) IsAttributeMapped(const nsAtom* aAttribute) const override;
-
-  bool IsNodeOfType(uint32_t aFlags) const override;
-  virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
+  nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 
  protected:
-  virtual EnumAttributesInfo GetEnumInfo() override;
-  virtual LengthAttributesInfo GetLengthInfo() override;
+  EnumAttributesInfo GetEnumInfo() override;
+  LengthAttributesInfo GetLengthInfo() override;
 
   SVGAnimatedEnumeration mEnumAttributes[1];
-  virtual SVGAnimatedEnumeration* EnumAttributes() override {
-    return mEnumAttributes;
-  }
+  SVGAnimatedEnumeration* EnumAttributes() override { return mEnumAttributes; }
 
   SVGAnimatedLength mLengthAttributes[1];
-  virtual SVGAnimatedLength* LengthAttributes() override {
-    return mLengthAttributes;
-  }
+  SVGAnimatedLength* LengthAttributes() override { return mLengthAttributes; }
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // DOM_SVG_SVGTEXTELEMENT_H_

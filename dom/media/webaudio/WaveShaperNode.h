@@ -11,8 +11,7 @@
 #include "mozilla/dom/WaveShaperNodeBinding.h"
 #include "mozilla/dom/TypedArray.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class AudioContext;
 struct WaveShaperOptions;
@@ -36,7 +35,8 @@ class WaveShaperNode final : public AudioNode {
   JSObject* WrapObject(JSContext* aCx,
                        JS::Handle<JSObject*> aGivenProto) override;
 
-  void GetCurve(JSContext* aCx, JS::MutableHandle<JSObject*> aRetval);
+  void GetCurve(JSContext* aCx, JS::MutableHandle<JSObject*> aRetval,
+                ErrorResult& aRv);
   void SetCurve(const Nullable<Float32Array>& aData, ErrorResult& aRv);
 
   OverSampleType Oversample() const { return mType; }
@@ -67,7 +67,6 @@ class WaveShaperNode final : public AudioNode {
   OverSampleType mType;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif

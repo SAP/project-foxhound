@@ -1519,25 +1519,6 @@ ok(!_thrown_outer, ctx.canvas.id + ' should not throw exception');
 }
 </script>
 
-<!-- [[[ test_2d.composite.operation.clear.html ]]] -->
-
-<p>Canvas test: 2d.composite.operation.clear</p>
-<canvas id="c55" width="100" height="50"><p class="fallback">FAIL (fallback content)</p></canvas>
-<script>
-
-function test_2d_composite_operation_clear() {
-
-var canvas = document.getElementById('c55');
-var ctx = canvas.getContext('2d');
-
-ctx.globalCompositeOperation = 'xor';
-ctx.globalCompositeOperation = 'clear';
-ok(ctx.globalCompositeOperation == 'xor', "ctx.globalCompositeOperation == 'xor'");
-
-
-}
-</script>
-
 <!-- [[[ test_2d.composite.operation.darker.html ]]] -->
 
 <p>Canvas test: 2d.composite.operation.darker</p>
@@ -14271,7 +14252,7 @@ ctx.lineTo(50, 25);
 ctx.closePath();
 ctx.stroke();
 
-todo_isPixel(ctx, 50,25, 0,255,0,255, 0);
+isPixel(ctx, 50,25, 0,255,0,255, 0);
 
 }
 </script>
@@ -14408,7 +14389,7 @@ ctx.stroke();
 
 ctx.strokeRect(50, 25, 0, 0);
 
-todo_isPixel(ctx, 50,25, 0,255,0,255, 0);
+isPixel(ctx, 50,25, 0,255,0,255, 0);
 
 }
 </script>
@@ -20555,8 +20536,8 @@ var ctx = canvas.getContext('2d');
 is(ctx.font, '10px sans-serif', "default font is not '10px sans-serif'");
 
 ctx.save();
-ctx.font = '20pt serif';
-is(ctx.font, '20pt serif', 'font getter returns incorrect value');
+ctx.font = '18pt serif';
+is(ctx.font, '24px serif', 'font getter returns incorrect value');
 
 ctx.restore();
 is(ctx.font, '10px sans-serif', 'font not being stored in the context state');
@@ -22610,11 +22591,6 @@ function runTests() {
   test_2d_composite_operation_casesensitive();
  } catch (e) {
   ok(false, "unexpected exception thrown in: test_2d_composite_operation_casesensitive");
- }
- try {
-  test_2d_composite_operation_clear();
- } catch (e) {
-  ok(false, "unexpected exception thrown in: test_2d_composite_operation_clear");
  }
  try {
   test_2d_composite_operation_darker();

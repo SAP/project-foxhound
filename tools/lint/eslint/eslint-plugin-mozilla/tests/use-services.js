@@ -10,15 +10,19 @@
 var rule = require("../lib/rules/use-services");
 var RuleTester = require("eslint").RuleTester;
 
-const ruleTester = new RuleTester({ parserOptions: { ecmaVersion: 6 } });
+const ruleTester = new RuleTester({ parserOptions: { ecmaVersion: "latest" } });
 
 // ------------------------------------------------------------------------------
 // Tests
 // ------------------------------------------------------------------------------
 
-function invalidCode(code, name, replaces, type = "CallExpression") {
-  let message = `Use Services.${name} rather than ${replaces}.`;
-  return { code, errors: [{ message, type }] };
+function invalidCode(code, serviceName, getterName, type = "CallExpression") {
+  return {
+    code,
+    errors: [
+      { messageId: "useServices", data: { serviceName, getterName }, type },
+    ],
+  };
 }
 
 ruleTester.run("use-services", rule, {

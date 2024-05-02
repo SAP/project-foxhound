@@ -53,7 +53,7 @@ const TEST_DATA = [
   },
 ];
 
-add_task(async function() {
+add_task(async function () {
   await addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
   const { inspector, view } = await openRuleView();
 
@@ -120,7 +120,7 @@ async function runTestData(inspector, view, data) {
   }
 
   const rule = idRuleEditor.rule;
-  if (rule.textProps.length > 0) {
+  if (rule.textProps.length) {
     is(
       inplaceEditor(rule.textProps[0].editor.nameSpan).input,
       activeElement,

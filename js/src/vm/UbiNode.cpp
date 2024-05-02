@@ -7,20 +7,20 @@
 #include "js/UbiNode.h"
 
 #include "mozilla/Assertions.h"
-#include "mozilla/Range.h"
 
 #include <algorithm>
 
 #include "debugger/Debugger.h"
+#include "gc/GC.h"
 #include "jit/JitCode.h"
 #include "js/Debug.h"
 #include "js/TracingAPI.h"
 #include "js/TypeDecls.h"
 #include "js/UbiNodeUtils.h"
 #include "js/Utility.h"
-#include "js/Vector.h"
 #include "util/Text.h"
 #include "vm/BigIntType.h"
+#include "vm/Compartment.h"
 #include "vm/EnvironmentObject.h"
 #include "vm/GetterSetter.h"
 #include "vm/GlobalObject.h"
@@ -34,6 +34,7 @@
 #include "vm/SymbolType.h"
 
 #include "debugger/Debugger-inl.h"
+#include "gc/StableCellHasher-inl.h"
 #include "vm/JSObject-inl.h"
 
 using namespace js;
@@ -161,17 +162,26 @@ Node::Node(HandleValue value) {
   }
 }
 
+static bool IsSafeToExposeToJS(JSObject* obj) {
+  if (obj->is<js::EnvironmentObject>() || obj->is<js::ScriptSourceObject>() ||
+      obj->is<js::DebugEnvironmentProxy>()) {
+    return false;
+  }
+  if (obj->is<JSFunction>() && js::IsInternalFunctionObject(*obj)) {
+    return false;
+  }
+  return true;
+}
+
 Value Node::exposeToJS() const {
   Value v;
 
   if (is<JSObject>()) {
-    JSObject& obj = *as<JSObject>();
-    if (obj.is<js::EnvironmentObject>()) {
-      v.setUndefined();
-    } else if (obj.is<JSFunction>() && js::IsInternalFunctionObject(obj)) {
-      v.setUndefined();
+    JSObject* obj = as<JSObject>();
+    if (IsSafeToExposeToJS(obj)) {
+      v.setObject(*obj);
     } else {
-      v.setObject(obj);
+      v.setUndefined();
     }
   } else if (is<JSString>()) {
     v.setString(as<JSString>());
@@ -197,7 +207,7 @@ class EdgeVectorTracer final : public JS::CallbackTracer {
   // True if we should populate the edge's names.
   bool wantNames;
 
-  void onChild(JS::GCCellPtr thing) override {
+  void onChild(JS::GCCellPtr thing, const char* name) override {
     if (!okay) {
       return;
     }
@@ -215,8 +225,8 @@ class EdgeVectorTracer final : public JS::CallbackTracer {
     if (wantNames) {
       // Ask the tracer to compute an edge name for us.
       char buffer[1024];
-      context().getEdgeName(buffer, sizeof(buffer));
-      const char* name = buffer;
+      context().getEdgeName(name, buffer, sizeof(buffer));
+      name = buffer;
 
       // Convert the name to char16_t characters.
       name16 = js_pod_malloc<char16_t>(strlen(name) + 1);
@@ -362,7 +372,7 @@ namespace JS {
 namespace ubi {
 
 RootList::RootList(JSContext* cx, bool wantNames /* = false */)
-    : cx(cx), edges(), wantNames(wantNames), inited(false) {}
+    : cx(cx), wantNames(wantNames), inited(false) {}
 
 std::pair<bool, JS::AutoCheckCannotGC> RootList::init() {
   EdgeVectorTracer tracer(cx->runtime(), &edges, wantNames);

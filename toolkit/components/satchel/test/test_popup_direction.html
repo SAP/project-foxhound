@@ -20,41 +20,25 @@ Test for Popup Direction
   </form>
 </div>
 
-<pre id="test">
-<script class="testbody" type="text/javascript">
-var resolvePopupShownListener;
-registerPopupShownListener(() => resolvePopupShownListener());
+<script>
 
-function waitForNextPopup() {
-  return new Promise(resolve => { resolvePopupShownListener = resolve; });
-}
-
-add_task(async function test_popup_direction() {
-  let input = $_(1, "field1");
-
-  await new Promise(resolve => updateFormHistory([
+add_setup(async () => {
+  await updateFormHistory([
     { op: "remove" },
     { op: "add", fieldname: "field1", value: "value1" },
     { op: "add", fieldname: "field1", value: "value2" },
-  ], resolve));
+  ]);
+});
 
-  for (let direction of ["ltr", "rtl"]) {
+add_task(async function test_popup_direction() {
+  for (const direction of ["ltr", "rtl"]) {
     document.getElementById("content").style.direction = direction;
-
-    let popupShown = waitForNextPopup();
-    input.focus();
-    synthesizeKey("KEY_ArrowDown");
-    await popupShown;
-
-    let popupState = await new Promise(resolve => getPopupState(resolve));
+    await openPopupOn("#form1 > input");
+    const popupState = await getPopupState();
     is(popupState.direction, direction, "Direction should match.");
-
-    // Close the popup.
-    input.blur();
   }
 });
 
 </script>
-</pre>
 </body>
 </html>

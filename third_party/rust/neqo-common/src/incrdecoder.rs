@@ -4,8 +4,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use std::cmp::min;
-use std::mem;
+use std::{cmp::min, mem};
 
 use crate::codec::Decoder;
 
@@ -22,7 +21,8 @@ impl IncrementalDecoderUint {
     }
 
     /// Consume some data.
-    #[allow(clippy::missing_panics_doc)] // See https://github.com/rust-lang/rust-clippy/issues/6699
+    /// # Panics
+    /// Never, but this is not something the compiler can tell.
     pub fn consume(&mut self, dv: &mut Decoder) -> Option<u64> {
         if let Some(r) = &mut self.remaining {
             let amount = min(*r, dv.remaining());
@@ -124,7 +124,7 @@ impl IncrementalDecoderIgnore {
 
     pub fn consume(&mut self, dv: &mut Decoder) -> bool {
         let amount = min(self.remaining, dv.remaining());
-        let _ = dv.decode(amount);
+        _ = dv.decode(amount);
         self.remaining -= amount;
         self.remaining == 0
     }
@@ -178,8 +178,8 @@ mod tests {
 
             for tail in 1..db.len() {
                 let split = db.len() - tail;
-                let mut dv = Decoder::from(&db[0..split]);
-                eprintln!("  split at {}: {:?}", split, dv);
+                let mut dv = Decoder::from(&db.as_ref()[0..split]);
+                eprintln!("  split at {split}: {dv:?}");
 
                 // Clone the basic decoder for each iteration of the loop.
                 let mut dec = decoder.clone();
@@ -192,8 +192,8 @@ mod tests {
                 if tail > 1 {
                     assert_eq!(res, None);
                     assert!(dec.min_remaining() > 0);
-                    let mut dv = Decoder::from(&db[split..]);
-                    eprintln!("  split remainder {}: {:?}", split, dv);
+                    let mut dv = Decoder::from(&db.as_ref()[split..]);
+                    eprintln!("  split remainder {split}: {dv:?}");
                     res = dec.consume(&mut dv);
                     assert_eq!(dv.remaining(), 1);
                 }
@@ -230,7 +230,7 @@ mod tests {
     #[test]
     fn zero_len() {
         let enc = Encoder::from_hex("ff");
-        let mut dec = Decoder::new(&enc);
+        let mut dec = Decoder::new(enc.as_ref());
         let mut incr = IncrementalDecoderBuffer::new(0);
         assert_eq!(incr.consume(&mut dec), Some(Vec::new()));
         assert_eq!(dec.remaining(), enc.len());
@@ -244,8 +244,8 @@ mod tests {
 
         for tail in 1..db.len() {
             let split = db.len() - tail;
-            let mut dv = Decoder::from(&db[0..split]);
-            eprintln!("  split at {}: {:?}", split, dv);
+            let mut dv = Decoder::from(&db.as_ref()[0..split]);
+            eprintln!("  split at {split}: {dv:?}");
 
             // Clone the basic decoder for each iteration of the loop.
             let mut dec = decoder.clone();
@@ -256,8 +256,8 @@ mod tests {
             if tail > 1 {
                 assert!(!res);
                 assert!(dec.min_remaining() > 0);
-                let mut dv = Decoder::from(&db[split..]);
-                eprintln!("  split remainder {}: {:?}", split, dv);
+                let mut dv = Decoder::from(&db.as_ref()[split..]);
+                eprintln!("  split remainder {split}: {dv:?}");
                 res = dec.consume(&mut dv);
                 assert_eq!(dv.remaining(), 1);
             }

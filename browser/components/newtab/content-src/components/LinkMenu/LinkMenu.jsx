@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-import { actionCreators as ac } from "common/Actions.jsm";
+import { actionCreators as ac } from "common/Actions.sys.mjs";
 import { connect } from "react-redux";
 import { ContextMenu } from "content-src/components/ContextMenu/ContextMenu";
 import { LinkMenuOptions } from "content-src/lib/link-menu-options";
@@ -28,6 +28,7 @@ export class _LinkMenu extends React.PureComponent {
       isPrivateBrowsingEnabled,
       siteInfo,
       platform,
+      userEvent = ac.UserEvent,
     } = props;
 
     // Handle special case of default site
@@ -48,7 +49,7 @@ export class _LinkMenu extends React.PureComponent {
         )
       )
       .map(option => {
-        const { action, impression, id, type, userEvent } = option;
+        const { action, impression, id, type, userEvent: eventName } = option;
         if (!type && id) {
           option.onClick = (event = {}) => {
             const { ctrlKey, metaKey, shiftKey, button } = event;
@@ -62,16 +63,17 @@ export class _LinkMenu extends React.PureComponent {
               );
             }
             props.dispatch(action);
-            if (userEvent) {
+            if (eventName) {
               const userEventData = Object.assign(
                 {
-                  event: userEvent,
+                  event: eventName,
                   source,
                   action_position: index,
+                  value: { card_type: site.flight_id ? "spoc" : "organic" },
                 },
                 siteInfo
               );
-              props.dispatch(ac.UserEvent(userEventData));
+              props.dispatch(userEvent(userEventData));
             }
             if (impression && props.shouldSendImpressionStats) {
               props.dispatch(impression);

@@ -31,13 +31,15 @@ struct FluentBundleAddResourceOptions;
 
 namespace intl {
 
+class FluentResource;
+
 using L10nArgs =
     dom::Record<nsCString, dom::Nullable<dom::OwningUTF8StringOrDouble>>;
 
 class FluentPattern : public nsWrapperCache {
  public:
   NS_INLINE_DECL_CYCLE_COLLECTING_NATIVE_REFCOUNTING(FluentPattern)
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_NATIVE_CLASS(FluentPattern)
+  NS_DECL_CYCLE_COLLECTION_NATIVE_WRAPPERCACHE_CLASS(FluentPattern)
 
   FluentPattern(nsISupports* aParent, const nsACString& aId);
   FluentPattern(nsISupports* aParent, const nsACString& aId,
@@ -58,7 +60,7 @@ class FluentPattern : public nsWrapperCache {
 class FluentBundle final : public nsWrapperCache {
  public:
   NS_INLINE_DECL_CYCLE_COLLECTING_NATIVE_REFCOUNTING(FluentBundle)
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_NATIVE_CLASS(FluentBundle)
+  NS_DECL_CYCLE_COLLECTION_NATIVE_WRAPPERCACHE_CLASS(FluentBundle)
 
   FluentBundle(nsISupports* aParent, UniquePtr<ffi::FluentBundleRc> aRaw);
 

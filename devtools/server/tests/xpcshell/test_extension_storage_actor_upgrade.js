@@ -9,8 +9,8 @@
  * See Bug 1618059.
  */
 
-const { ExtensionTestUtils } = ChromeUtils.import(
-  "resource://testing-common/ExtensionXPCShellUtils.jsm"
+const { ExtensionTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/ExtensionXPCShellUtils.sys.mjs"
 );
 
 const {
@@ -22,9 +22,12 @@ const {
   startupExtension,
 } = require("resource://test/webextension-helpers.js");
 
+const l10n = new Localization(["devtools/client/storage.ftl"], true);
+const sessionString = l10n.formatValueSync("storage-expires-session");
+
 // Ignore rejection related to the storage.onChanged listener being removed while the extension context is being closed.
-const { PromiseTestUtils } = ChromeUtils.import(
-  "resource://testing-common/PromiseTestUtils.jsm"
+const { PromiseTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/PromiseTestUtils.sys.mjs"
 );
 PromiseTestUtils.allowMatchingRejectionsGlobally(
   /Message manager disconnected/
@@ -32,19 +35,10 @@ PromiseTestUtils.allowMatchingRejectionsGlobally(
 
 const { createAppInfo, promiseStartupManager } = AddonTestUtils;
 
-const EXTENSION_STORAGE_ENABLED_PREF =
-  "devtools.storage.extensionStorage.enabled";
-
 AddonTestUtils.init(this);
 createAppInfo("xpcshell@tests.mozilla.org", "XPCShell", "1", "42");
 
 ExtensionTestUtils.init(this);
-
-// This storage actor is gated behind a pref, so make sure it is enabled first
-Services.prefs.setBoolPref(EXTENSION_STORAGE_ENABLED_PREF, true);
-registerCleanupFunction(() => {
-  Services.prefs.clearUserPref(EXTENSION_STORAGE_ENABLED_PREF);
-});
 
 add_task(async function setup() {
   await promiseStartupManager();
@@ -67,7 +61,7 @@ add_task(async function test_panel_live_reload() {
   const EXTENSION_ID = "test_panel_live_reload@xpcshell.mozilla.org";
   let manifest = {
     version: "1.0",
-    applications: {
+    browser_specific_settings: {
       gecko: {
         id: EXTENSION_ID,
       },
@@ -89,11 +83,9 @@ add_task(async function test_panel_live_reload() {
   extension.sendMessage("storage-local-set", { a: 123 });
   await extension.awaitMessage("storage-local-set:done");
 
-  const {
-    target,
-    extensionStorage,
-    storageFront,
-  } = await openAddonStoragePanel(extension.id);
+  const { commands, extensionStorage } = await openAddonStoragePanel(
+    extension.id
+  );
 
   manifest = {
     ...manifest,
@@ -105,14 +97,17 @@ add_task(async function test_panel_live_reload() {
   // Wait for the storage front to receive an event for the storage panel refresh
   // when the extension has been reloaded.
   const promiseStoragePanelUpdated = new Promise(resolve => {
-    storageFront.on("stores-update", function updateListener(updates) {
-      info(`Got stores-update event: ${JSON.stringify(updates)}`);
-      const extStorageAdded = updates.added?.extensionStorage;
-      if (host in extStorageAdded && extStorageAdded[host].length > 0) {
-        storageFront.off("stores-update", updateListener);
-        resolve();
+    extensionStorage.on(
+      "single-store-update",
+      function updateListener(updates) {
+        info(`Got stores-update event: ${JSON.stringify(updates)}`);
+        const extStorageAdded = updates.added?.extensionStorage;
+        if (host in extStorageAdded && extStorageAdded[host].length) {
+          extensionStorage.off("single-store-update", updateListener);
+          resolve();
+        }
       }
-    });
+    );
   });
 
   await extension.upgrade(
@@ -127,7 +122,9 @@ add_task(async function test_panel_live_reload() {
     promiseStoragePanelUpdated,
   ]);
 
-  const { data } = await extensionStorage.getStoreObjects(host);
+  const { data } = await extensionStorage.getStoreObjects(host, null, {
+    sessionString,
+  });
   Assert.deepEqual(
     data,
     [
@@ -141,5 +138,5 @@ add_task(async function test_panel_live_reload() {
     "Got the expected results on populated storage.local"
   );
 
-  await shutdown(extension, target);
+  await shutdown(extension, commands);
 });

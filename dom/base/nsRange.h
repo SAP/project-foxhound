@@ -18,9 +18,8 @@
 #include "nsWrapperCache.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/ErrorResult.h"
-#include "mozilla/LinkedList.h"
 #include "mozilla/RangeBoundary.h"
-#include "mozilla/WeakPtr.h"
+#include "mozilla/RefPtr.h"
 
 namespace mozilla {
 class RectCallback;
@@ -36,9 +35,7 @@ class Selection;
 }  // namespace mozilla
 
 class nsRange final : public mozilla::dom::AbstractRange,
-                      public nsStubMutationObserver,
-                      // For linking together selection-associated ranges.
-                      public mozilla::LinkedListElement<nsRange> {
+                      public nsStubMutationObserver {
   using ErrorResult = mozilla::ErrorResult;
   using AbstractRange = mozilla::dom::AbstractRange;
   using DocGroup = mozilla::dom::DocGroup;
@@ -90,22 +87,6 @@ class nsRange final : public mozilla::dom::AbstractRange,
   nsrefcnt GetRefCount() const { return mRefCnt; }
 
   nsINode* GetRoot() const { return mRoot; }
-
-  /**
-   * Return true iff this range is part of a Selection object
-   * and isn't detached.
-   */
-  bool IsInSelection() const { return !!mSelection; }
-
-  MOZ_CAN_RUN_SCRIPT void RegisterSelection(
-      mozilla::dom::Selection& aSelection);
-
-  void UnregisterSelection();
-
-  /**
-   * Returns pointer to a Selection if the range is associated with a Selection.
-   */
-  mozilla::dom::Selection* GetSelection() const;
 
   /**
    * Return true if this range was generated.
@@ -324,6 +305,11 @@ class nsRange final : public mozilla::dom::AbstractRange,
   bool IsPointComparableToRange(const nsINode& aContainer, uint32_t aOffset,
                                 ErrorResult& aErrorResult) const;
 
+  /**
+   * @brief Returns true if the range is part of exactly one |Selection|.
+   */
+  bool IsPartOfOneSelectionOnly() const { return mSelections.Length() == 1; };
+
  public:
   /**
    * This helper function gets rects and correlated text for the given range.
@@ -353,17 +339,19 @@ class nsRange final : public mozilla::dom::AbstractRange,
    */
   MOZ_CAN_RUN_SCRIPT void NotifySelectionListenersAfterRangeSet();
 
- protected:
   /**
-   * https://dom.spec.whatwg.org/#concept-tree-inclusive-ancestor
+   * For a range for which IsInSelection() is true, return the closest common
+   * inclusive ancestor
+   * (https://dom.spec.whatwg.org/#concept-tree-inclusive-ancestor)
+   * for the range, which we had to compute when the common ancestor changed or
+   * IsInSelection became true, so we could register with it. That is, it's a
+   * faster version of GetClosestCommonInclusiveAncestor that only works for
+   * ranges in a Selection. The method will assert and the behavior is undefined
+   * if called on a range where IsInSelection() is false.
    */
-  void RegisterClosestCommonInclusiveAncestor(nsINode* aNode);
-  /**
-   * https://dom.spec.whatwg.org/#concept-tree-inclusive-ancestor
-   */
-  void UnregisterClosestCommonInclusiveAncestor(nsINode* aNode,
-                                                bool aIsUnlinking);
+  nsINode* GetRegisteredClosestCommonInclusiveAncestor();
 
+ protected:
   /**
    * DoSetRange() is called when `AbstractRange::SetStartAndEndInternal()` sets
    * mStart and mEnd, or some other internal methods modify `mStart` and/or
@@ -386,18 +374,6 @@ class nsRange final : public mozilla::dom::AbstractRange,
       const mozilla::RangeBoundaryBase<EPT, ERT>& aEndBoundary,
       nsINode* aRootNode, bool aNotInsertedYet = false);
 
-  /**
-   * For a range for which IsInSelection() is true, return the closest common
-   * inclusive ancestor
-   * (https://dom.spec.whatwg.org/#concept-tree-inclusive-ancestor)
-   * for the range, which we had to compute when the common ancestor changed or
-   * IsInSelection became true, so we could register with it. That is, it's a
-   * faster version of GetClosestCommonInclusiveAncestor that only works for
-   * ranges in a Selection. The method will assert and the behavior is undefined
-   * if called on a range where IsInSelection() is false.
-   */
-  nsINode* GetRegisteredClosestCommonInclusiveAncestor();
-
   // Assume that this is guaranteed that this is held by the caller when
   // this is used.  (Note that we cannot use AutoRestore for mCalledByJS
   // due to a bit field.)
@@ -415,7 +391,7 @@ class nsRange final : public mozilla::dom::AbstractRange,
 
   struct MOZ_STACK_CLASS AutoInvalidateSelection {
     explicit AutoInvalidateSelection(nsRange* aRange) : mRange(aRange) {
-      if (!mRange->IsInSelection() || sIsNested) {
+      if (!mRange->IsInAnySelection() || sIsNested) {
         return;
       }
       sIsNested = true;
@@ -432,16 +408,11 @@ class nsRange final : public mozilla::dom::AbstractRange,
 #ifdef DEBUG
   bool IsCleared() const {
     return !mRoot && !mRegisteredClosestCommonInclusiveAncestor &&
-           !mSelection && !mNextStartRef && !mNextEndRef;
+           mSelections.IsEmpty() && !mNextStartRef && !mNextEndRef;
   }
 #endif  // #ifdef DEBUG
 
   nsCOMPtr<nsINode> mRoot;
-  // mRegisteredClosestCommonInclusiveAncestor is only non-null when the range
-  // IsInSelection().  It's kept alive via mStart/mEnd,
-  // because we update it any time those could become disconnected from it.
-  nsINode* MOZ_NON_OWNING_REF mRegisteredClosestCommonInclusiveAncestor;
-  mozilla::WeakPtr<mozilla::dom::Selection> mSelection;
 
   // These raw pointers are used to remember a child that is about
   // to be inserted between a CharacterData call and a subsequent
@@ -455,5 +426,14 @@ class nsRange final : public mozilla::dom::AbstractRange,
 
   friend class mozilla::dom::AbstractRange;
 };
-
+namespace mozilla::dom {
+inline nsRange* AbstractRange::AsDynamicRange() {
+  MOZ_ASSERT(IsDynamicRange());
+  return static_cast<nsRange*>(this);
+}
+inline const nsRange* AbstractRange::AsDynamicRange() const {
+  MOZ_ASSERT(IsDynamicRange());
+  return static_cast<const nsRange*>(this);
+}
+}  // namespace mozilla::dom
 #endif /* nsRange_h___ */

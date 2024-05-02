@@ -60,7 +60,7 @@ class AndroidUiThread : public nsThread {
   AndroidUiThread()
       : nsThread(
             MakeNotNull<ThreadEventQueue*>(MakeUnique<mozilla::EventQueue>()),
-            nsThread::NOT_MAIN_THREAD, 0) {}
+            nsThread::NOT_MAIN_THREAD, {.stackSize = 0}) {}
 
   nsresult Dispatch(already_AddRefed<nsIRunnable> aEvent,
                     uint32_t aFlags) override;
@@ -74,12 +74,8 @@ class AndroidUiThread : public nsThread {
 NS_IMETHODIMP
 AndroidUiThread::Dispatch(already_AddRefed<nsIRunnable> aEvent,
                           uint32_t aFlags) {
-  if (aFlags & NS_DISPATCH_SYNC) {
-    return nsThread::Dispatch(std::move(aEvent), aFlags);
-  } else {
-    EnqueueTask(std::move(aEvent), 0);
-    return NS_OK;
-  }
+  EnqueueTask(std::move(aEvent), 0);
+  return NS_OK;
 }
 
 NS_IMETHODIMP
@@ -192,9 +188,6 @@ class CreateOnUiThread : public Runnable {
     auto regOnExit = MakeScopeExit(
         [&stackTop]() { profiler_register_thread("AndroidUI", stackTop); });
 
-    // Bionic does not properly support pthread_attr_getstack for the UI thread
-    // until Lollipop (API 21).
-#  if __ANDROID_API__ >= __ANDROID_API_L__
     pthread_attr_t attrs;
     if (pthread_getattr_np(pthread_self(), &attrs)) {
       return;
@@ -207,8 +200,7 @@ class CreateOnUiThread : public Runnable {
     }
 
     stackTop = static_cast<char*>(stackBase) + stackSize - 1;
-#  endif  // __ANDROID_API__ >= __ANDROID_API_L__
-#endif    // defined(MOZ_GECKO_PROFILER)
+#endif  // defined(MOZ_GECKO_PROFILER)
   }
 };
 

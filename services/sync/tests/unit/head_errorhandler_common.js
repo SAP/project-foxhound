@@ -10,14 +10,8 @@
 // is used (from service.js).
 /* global Service */
 
-var {
-  Changeset,
-  EngineManager,
-  Store,
-  SyncEngine,
-  Tracker,
-  LegacyTracker,
-} = ChromeUtils.import("resource://services-sync/engines.js");
+var { Changeset, EngineManager, Store, SyncEngine, Tracker, LegacyTracker } =
+  ChromeUtils.importESModule("resource://services-sync/engines.sys.mjs");
 var {
   ABORT_SYNC_COMMAND,
   CLIENT_NOT_CONFIGURED,
@@ -82,9 +76,9 @@ var {
   kSyncNetworkOffline,
   kSyncNotConfigured,
   kSyncWeaveDisabled,
-} = ChromeUtils.import("resource://services-sync/constants.js");
-var { BulkKeyBundle, SyncKeyBundle } = ChromeUtils.import(
-  "resource://services-sync/keys.js"
+} = ChromeUtils.importESModule("resource://services-sync/constants.sys.mjs");
+var { BulkKeyBundle, SyncKeyBundle } = ChromeUtils.importESModule(
+  "resource://services-sync/keys.sys.mjs"
 );
 
 // Common code for test_errorhandler_{1,2}.js -- pulled out to make it less
@@ -156,12 +150,11 @@ const EHTestsCommon = {
     });
   },
 
-  CatapultEngine: (function() {
+  CatapultEngine: (function () {
     function CatapultEngine() {
       SyncEngine.call(this, "Catapult", Service);
     }
     CatapultEngine.prototype = {
-      __proto__: SyncEngine.prototype,
       exception: null, // tests fill this in
       async _sync() {
         if (this.exception) {
@@ -169,6 +162,7 @@ const EHTestsCommon = {
         }
       },
     };
+    Object.setPrototypeOf(CatapultEngine.prototype, SyncEngine.prototype);
 
     return CatapultEngine;
   })(),

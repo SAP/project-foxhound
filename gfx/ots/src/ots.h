@@ -190,6 +190,8 @@ bool CheckTag(uint32_t tag_value);
 #define OTS_TAG_CFF  OTS_TAG('C','F','F',' ')
 #define OTS_TAG_CFF2 OTS_TAG('C','F','F','2')
 #define OTS_TAG_CMAP OTS_TAG('c','m','a','p')
+#define OTS_TAG_COLR OTS_TAG('C','O','L','R')
+#define OTS_TAG_CPAL OTS_TAG('C','P','A','L')
 #define OTS_TAG_CVT  OTS_TAG('c','v','t',' ')
 #define OTS_TAG_FEAT OTS_TAG('F','e','a','t')
 #define OTS_TAG_FPGM OTS_TAG('f','p','g','m')
@@ -261,6 +263,9 @@ class Table {
   // TablePassthru (indicating unparsed data).
   uint32_t Type() { return m_type; }
 
+  // Return the tag assigned when this table was constructed.
+  uint32_t Tag() { return m_tag; }
+
   Font* GetFont() { return m_font; }
 
   bool Error(const char *format, ...);
@@ -312,6 +317,9 @@ struct Font {
   // for |tag|, so it can safely be downcast to the corresponding OpenTypeXXXX;
   // if not (i.e. if the table was treated as Passthru), it will return NULL.
   Table* GetTypedTable(uint32_t tag) const;
+
+  // Insert a new table. Asserts if a table with the same tag already exists.
+  void AddTable(TableEntry entry, Table* table);
 
   // Drop all Graphite tables and don't parse new ones.
   void DropGraphite();

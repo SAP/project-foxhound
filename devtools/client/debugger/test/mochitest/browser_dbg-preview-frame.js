@@ -3,7 +3,10 @@
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
 // Test hovering in a selected frame
-add_task(async function() {
+
+"use strict";
+
+add_task(async function () {
   const dbg = await initDebugger("doc-script-switching.html");
 
   const found = findElement(dbg, "callStackBody");
@@ -15,13 +18,39 @@ add_task(async function() {
   info("Preview a variable in the second frame");
   clickElement(dbg, "frame", 2);
   await waitForSelectedFrame(dbg, "firstCall");
-  await assertFunctionPreview(dbg, 8, 4, "secondCall()");
+  await assertPreviews(dbg, [
+    {
+      line: 8,
+      column: 4,
+      header: `function secondCall()`,
+      fields: [["name", `"secondCall"`]],
+      expression: "secondCall",
+    },
+  ]);
 
   info("Preview should still work after selecting different locations");
   const frame = dbg.selectors.getVisibleSelectedFrame();
   const inScopeLines = dbg.selectors.getInScopeLines(frame.location);
-  await selectSource(dbg, "switching-01");
-  await assertFunctionPreview(dbg, 8, 4, "secondCall()");
+  await selectSource(dbg, "script-switching-01.js");
+  await assertPreviews(dbg, [
+    {
+      line: 6,
+      column: 12,
+      header: `function firstCall()`,
+      fields: [["name", `"firstCall"`]],
+      expression: "firstCall",
+    },
+  ]);
+  await assertPreviews(dbg, [
+    {
+      line: 8,
+      column: 4,
+      header: `function secondCall()`,
+      fields: [["name", `"secondCall"`]],
+      expression: "secondCall",
+    },
+  ]);
+
   is(
     dbg.selectors.getInScopeLines(frame.location),
     inScopeLines,
@@ -34,14 +63,6 @@ function waitForSelectedFrame(dbg, displayName) {
   return waitForState(dbg, state => {
     const frame = getVisibleSelectedFrame();
 
-    return (
-      frame?.displayName == displayName &&
-      getInScopeLines(frame.location)
-    );
+    return frame?.displayName == displayName && getInScopeLines(frame.location);
   });
-}
-
-async function assertFunctionPreview(dbg, line, column, displayName) {
-  const previewEl = await tryHovering(dbg, line, column, "tooltip");
-  is(previewEl.innerText, displayName);
 }

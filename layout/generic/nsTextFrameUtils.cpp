@@ -23,7 +23,7 @@ using namespace mozilla::dom;
 bool nsTextFrameUtils::IsSpaceCombiningSequenceTail(const char16_t* aChars,
                                                     int32_t aLength) {
   return aLength > 0 &&
-         (mozilla::unicode::IsClusterExtender(aChars[0]) ||
+         (mozilla::unicode::IsClusterExtenderExcludingJoiners(aChars[0]) ||
           (IsBidiControl(aChars[0]) &&
            IsSpaceCombiningSequenceTail(aChars + 1, aLength - 1)));
 }
@@ -219,6 +219,8 @@ CharT* nsTextFrameUtils::TransformText(const CharT* aText, uint32_t aLength,
           // aCompression == COMPRESS_NONE
           if (ch == '\t') {
             flags |= Flags::HasTab;
+          } else if (ch == '\n') {
+            flags |= Flags::HasNewline;
           }
         }
         *aOutput++ = ch;

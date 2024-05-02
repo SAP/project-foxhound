@@ -7,13 +7,10 @@
 
 // Tests that we don't speculatively connect when user certificates are installed
 
-const { MockRegistrar } = ChromeUtils.import(
-  "resource://testing-common/MockRegistrar.jsm"
+const { MockRegistrar } = ChromeUtils.importESModule(
+  "resource://testing-common/MockRegistrar.sys.mjs"
 );
 
-const certService = Cc["@mozilla.org/security/local-cert-service;1"].getService(
-  Ci.nsILocalCertService
-);
 const certOverrideService = Cc[
   "@mozilla.org/security/certoverride;1"
 ].getService(Ci.nsICertOverrideService);
@@ -24,31 +21,75 @@ let handshakeDone = false;
 let expectingChooseCertificate = false;
 let chooseCertificateCalled = false;
 
-const clientAuthDialogs = {
-  chooseCertificate(
-    hostname,
-    port,
-    organization,
-    issuerOrg,
-    certList,
-    selectedIndex,
-    rememberClientAuthCertificate
-  ) {
+const clientAuthDialogService = {
+  chooseCertificate(hostname, certArray, loadContext, callback) {
     ok(
       expectingChooseCertificate,
       `${
         expectingChooseCertificate ? "" : "not "
       }expecting chooseCertificate to be called`
     );
-    is(certList.length, 1, "should have only one client certificate available");
-    selectedIndex.value = 0;
-    rememberClientAuthCertificate.value = false;
+    is(
+      certArray.length,
+      1,
+      "should have only one client certificate available"
+    );
+    ok(
+      !chooseCertificateCalled,
+      "chooseCertificate should only be called once"
+    );
     chooseCertificateCalled = true;
-    return true;
+    callback.certificateChosen(certArray[0], false);
   },
 
-  QueryInterface: ChromeUtils.generateQI(["nsIClientAuthDialogs"]),
+  QueryInterface: ChromeUtils.generateQI(["nsIClientAuthDialogService"]),
 };
+
+/**
+ * A helper class to use with nsITLSServerConnectionInfo.setSecurityObserver.
+ * Implements nsITLSServerSecurityObserver and simulates an extremely
+ * rudimentary HTTP server that expects an HTTP/1.1 GET request and responds
+ * with a 200 OK.
+ */
+class SecurityObserver {
+  constructor(input, output) {
+    this.input = input;
+    this.output = output;
+  }
+
+  onHandshakeDone(socket, status) {
+    info("TLS handshake done");
+    handshakeDone = true;
+
+    let output = this.output;
+    this.input.asyncWait(
+      {
+        onInputStreamReady(readyInput) {
+          try {
+            let request = NetUtil.readInputStreamToString(
+              readyInput,
+              readyInput.available()
+            );
+            ok(
+              request.startsWith("GET /") && request.includes("HTTP/1.1"),
+              "expecting an HTTP/1.1 GET request"
+            );
+            let response =
+              "HTTP/1.1 200 OK\r\nContent-Type:text/plain\r\n" +
+              "Connection:Close\r\nContent-Length:2\r\n\r\nOK";
+            output.write(response, response.length);
+          } catch (e) {
+            console.log(e.message);
+            // This will fail when we close the speculative connection.
+          }
+        },
+      },
+      0,
+      0,
+      Services.tm.currentThread
+    );
+  }
+}
 
 function startServer(cert) {
   let tlsServer = Cc["@mozilla.org/network/tls-server-socket;1"].createInstance(
@@ -57,54 +98,25 @@ function startServer(cert) {
   tlsServer.init(-1, true, -1);
   tlsServer.serverCert = cert;
 
-  let input, output;
+  let securityObservers = [];
 
   let listener = {
     onSocketAccepted(socket, transport) {
       info("Accepted TLS client connection");
-      let connectionInfo = transport.securityInfo.QueryInterface(
+      let connectionInfo = transport.securityCallbacks.getInterface(
         Ci.nsITLSServerConnectionInfo
       );
-      connectionInfo.setSecurityObserver(listener);
-      input = transport.openInputStream(0, 0, 0);
-      output = transport.openOutputStream(0, 0, 0);
-    },
-
-    onHandshakeDone(socket, status) {
-      info("TLS handshake done");
-      handshakeDone = true;
-
-      input.asyncWait(
-        {
-          onInputStreamReady(readyInput) {
-            try {
-              let request = NetUtil.readInputStreamToString(
-                readyInput,
-                readyInput.available()
-              );
-              ok(
-                request.startsWith("GET /") && request.includes("HTTP/1.1"),
-                "expecting an HTTP/1.1 GET request"
-              );
-              let response =
-                "HTTP/1.1 200 OK\r\nContent-Type:text/plain\r\n" +
-                "Connection:Close\r\nContent-Length:2\r\n\r\nOK";
-              output.write(response, response.length);
-            } catch (e) {
-              // This will fail when we close the speculative connection.
-            }
-          },
-        },
-        0,
-        0,
-        Services.tm.currentThread
-      );
+      let input = transport.openInputStream(0, 0, 0);
+      let output = transport.openOutputStream(0, 0, 0);
+      connectionInfo.setSecurityObserver(new SecurityObserver(input, output));
     },
 
     onStopListening() {
       info("onStopListening");
-      input.close();
-      output.close();
+      for (let securityObserver of securityObservers) {
+        securityObserver.input.close();
+        securityObserver.output.close();
+      }
     },
   };
 
@@ -118,7 +130,19 @@ function startServer(cert) {
 
 let server;
 
-add_task(async function setup() {
+function getTestServerCertificate() {
+  const certDB = Cc["@mozilla.org/security/x509certdb;1"].getService(
+    Ci.nsIX509CertDB
+  );
+  for (const cert of certDB.getCerts()) {
+    if (cert.commonName == "Mochitest client") {
+      return cert;
+    }
+  }
+  return null;
+}
+
+add_setup(async function () {
   await SpecialPowers.pushPrefEnv({
     set: [
       ["browser.urlbar.autoFill", true],
@@ -134,22 +158,12 @@ add_task(async function setup() {
     ],
   });
 
-  let clientAuthDialogsCID = MockRegistrar.register(
-    "@mozilla.org/nsClientAuthDialogs;1",
-    clientAuthDialogs
+  let clientAuthDialogServiceCID = MockRegistrar.register(
+    "@mozilla.org/security/ClientAuthDialogService;1",
+    clientAuthDialogService
   );
 
-  let cert = await new Promise((resolve, reject) => {
-    certService.getOrCreateCert("speculative-connect", {
-      handleCert(c, rv) {
-        if (!Components.isSuccessCode(rv)) {
-          reject(rv);
-          return;
-        }
-        resolve(c);
-      },
-    });
-  });
+  let cert = getTestServerCertificate();
   server = startServer(cert);
   uri = `https://${host}:${server.port}/`;
   info(`running tls server at ${uri}`);
@@ -161,21 +175,17 @@ add_task(async function setup() {
     },
   ]);
 
-  let overrideBits =
-    Ci.nsICertOverrideService.ERROR_UNTRUSTED |
-    Ci.nsICertOverrideService.ERROR_MISMATCH;
   certOverrideService.rememberValidityOverride(
     "localhost",
     server.port,
     {},
     cert,
-    overrideBits,
     true
   );
 
-  registerCleanupFunction(async function() {
+  registerCleanupFunction(async function () {
     await PlacesUtils.history.clear();
-    MockRegistrar.unregister(clientAuthDialogsCID);
+    MockRegistrar.unregister(clientAuthDialogServiceCID);
     certOverrideService.clearValidityOverride("localhost", server.port, {});
   });
 });

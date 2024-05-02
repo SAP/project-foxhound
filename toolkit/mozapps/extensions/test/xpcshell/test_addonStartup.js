@@ -35,8 +35,7 @@ add_task(async function test_XPIStates_invalid_paths() {
           },
         },
         checkStartupModifications: true,
-        path:
-          "c:\\Users\\XpcShell\\Application Data\\Mozilla Firefox\\Profiles\\meh",
+        path: "c:\\Users\\XpcShell\\Application Data\\Mozilla Firefox\\Profiles\\meh",
       },
     },
     {
@@ -70,16 +69,13 @@ add_task(async function test_XPIStates_invalid_paths() {
           },
         },
         checkStartupModifications: true,
-        path:
-          "c:\\Users\\XpcShell\\Application Data\\Mozilla Firefox\\Profiles\\meh",
+        path: "c:\\Users\\XpcShell\\Application Data\\Mozilla Firefox\\Profiles\\meh",
       },
     },
   ];
 
   for (let startupData of startupDatasets) {
-    let data = new TextEncoder().encode(JSON.stringify(startupData));
-
-    await OS.File.writeAtomic(path, data, { compression: "lz4" });
+    await IOUtils.writeJSON(path, startupData, { compress: true });
 
     try {
       let result = aomStartup.readStartupData();

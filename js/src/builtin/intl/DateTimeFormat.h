@@ -7,10 +7,8 @@
 #ifndef builtin_intl_DateTimeFormat_h
 #define builtin_intl_DateTimeFormat_h
 
-#include "builtin/intl/CommonFunctions.h"
 #include "builtin/SelfHostingDefines.h"
 #include "js/Class.h"
-#include "js/RootingAPI.h"
 #include "vm/NativeObject.h"
 
 namespace mozilla::intl {
@@ -35,10 +33,10 @@ class DateTimeFormatObject : public NativeObject {
                 "object slot");
 
   // Estimated memory use for UDateFormat (see IcuMemoryUsage).
-  static constexpr size_t UDateFormatEstimatedMemoryUse = 105402;
+  static constexpr size_t UDateFormatEstimatedMemoryUse = 72440;
 
   // Estimated memory use for UDateIntervalFormat (see IcuMemoryUsage).
-  static constexpr size_t UDateIntervalFormatEstimatedMemoryUse = 133064;
+  static constexpr size_t UDateIntervalFormatEstimatedMemoryUse = 175646;
 
   mozilla::intl::DateTimeFormat* getDateFormat() const {
     const auto& slot = getFixedSlot(DATE_FORMAT_SLOT);
@@ -69,18 +67,18 @@ class DateTimeFormatObject : public NativeObject {
   static const JSClassOps classOps_;
   static const ClassSpec classSpec_;
 
-  static void finalize(JSFreeOp* fop, JSObject* obj);
+  static void finalize(JS::GCContext* gcx, JSObject* obj);
 };
 
 /**
  * Returns a new instance of the standard built-in DateTimeFormat constructor.
- * Self-hosted code cannot cache this constructor (as it does for others in
- * Utilities.js) because it is initialized after self-hosted code is compiled.
  *
- * Usage: dateTimeFormat = intl_DateTimeFormat(locales, options)
+ * Usage: dateTimeFormat = intl_CreateDateTimeFormat(locales, options, required,
+ * defaults)
  */
-[[nodiscard]] extern bool intl_DateTimeFormat(JSContext* cx, unsigned argc,
-                                              JS::Value* vp);
+[[nodiscard]] extern bool intl_CreateDateTimeFormat(JSContext* cx,
+                                                    unsigned argc,
+                                                    JS::Value* vp);
 
 /**
  * Returns an array with the calendar type identifiers per Unicode

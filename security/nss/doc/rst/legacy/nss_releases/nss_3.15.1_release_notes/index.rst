@@ -11,7 +11,7 @@ NSS 3.15.1 release notes
    Network Security Services (NSS) 3.15.1 is a patch release for NSS 3.15. The bug fixes in NSS
    3.15.1 are described in the "Bugs Fixed" section below.
 
-.. _distribution_information:
+
 
 `Distribution Information <#distribution_information>`__
 --------------------------------------------------------
@@ -27,8 +27,6 @@ NSS 3.15.1 release notes
 
 `New in NSS 3.15.1 <#new_in_nss_3.15.1>`__
 ------------------------------------------
-
-.. container::
 
 .. _new_functionality:
 
@@ -85,8 +83,8 @@ NSS 3.15.1 release notes
 
 .. container::
 
-   -  `Bug 856060 <https://bugzilla.mozilla.org/show_bug.cgi?id=856060>`__ - Enforce name
-      constraints on the common name in libpkix  when no subjectAltName is present.
+   -  `Bug 856060 <https://bugzilla.mozilla.org/show_bug.cgi?id=856060>`__ - Enforce name
+      constraints on the common name in libpkix  when no subjectAltName is present.
    -  `Bug 875156 <https://bugzilla.mozilla.org/show_bug.cgi?id=875156>`__ - Add const to the
       function arguments of SEC_CertNicknameConflict.
    -  `Bug 877798 <https://bugzilla.mozilla.org/show_bug.cgi?id=877798>`__ - Fix ssltap to print the

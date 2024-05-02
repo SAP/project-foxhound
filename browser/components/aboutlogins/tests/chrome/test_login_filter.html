@@ -8,8 +8,8 @@ Test the login-filter component
   <title>Test the login-filter component</title>
   <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
   <script src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"></script>
-  <script type="module" src="chrome://browser/content/aboutlogins/components/login-filter.js"></script>
-  <script type="module" src="chrome://browser/content/aboutlogins/components/login-list.js"></script>
+  <script type="module" src="chrome://browser/content/aboutlogins/components/login-filter.mjs"></script>
+  <script type="module" src="chrome://browser/content/aboutlogins/components/login-list.mjs"></script>
   <script src="aboutlogins_common.js"></script>
 
   <link rel="stylesheet" href="/tests/SimpleTest/test.css"/>
@@ -28,7 +28,7 @@ Test the login-filter component
 
 let gLoginFilter;
 let gLoginList;
-add_task(async function setup() {
+add_setup(async () => {
   let templateFrame = document.getElementById("templateFrame");
   let displayEl = document.getElementById("display");
   importDependencies(templateFrame, displayEl);
@@ -142,18 +142,17 @@ add_task(async function test_list_filtered() {
     // Up/down keys must select previous/next item in the list
     function pressKeyAndExpectSelection(key, selectedIndex) {
       sendKey(key);
-      ok(ol.querySelectorAll(".login-list-item[data-guid]:not([hidden])")[selectedIndex]?.classList?.contains("keyboard-selected"),
+      ok(ol.querySelectorAll("login-list-item[data-guid]:not([hidden])")[selectedIndex]?.classList?.contains("keyboard-selected"),
         `item ${selectedIndex} should be marked as keyboard-selected`);
+      is(ol.querySelector(".selected").dataset.guid, LOGINS[selectedIndex].guid, `item ${selectedIndex} must be selected`);
     }
 
     pressKeyAndExpectSelection("DOWN", 1);
     pressKeyAndExpectSelection("DOWN", 2);
 
     // ENTER key in search box must click on selected item in the list
-    const selectedGuid = LOGINS[2].guid;
-    isnot(ol.querySelector(".selected").dataset.guid, selectedGuid, "item must not be selected");
     sendKey("RETURN");
-    is(ol.querySelector(".selected").dataset.guid, selectedGuid, "item must be selected");
+    is(ol.querySelector(".selected").dataset.guid, LOGINS[2].guid, "item 2 must still be selected");
 
     pressKeyAndExpectSelection("DOWN", 2);
     pressKeyAndExpectSelection("UP", 1);

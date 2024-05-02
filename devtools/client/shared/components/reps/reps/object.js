@@ -5,7 +5,7 @@
 "use strict";
 
 // Make this available to both AMD and CJS environments
-define(function(require, exports, module) {
+define(function (require, exports, module) {
   // Dependencies
   const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
   const { span } = require("devtools/client/shared/vendor/react-dom-factories");
@@ -28,8 +28,7 @@ define(function(require, exports, module) {
 
   ObjectRep.propTypes = {
     object: PropTypes.object.isRequired,
-    // @TODO Change this to Object.values when supported in Node's version of V8
-    mode: PropTypes.oneOf(Object.keys(MODE).map(key => MODE[key])),
+    mode: PropTypes.oneOf(Object.values(MODE)),
     title: PropTypes.string,
     shouldRenderTooltip: PropTypes.bool,
   };
@@ -50,7 +49,7 @@ define(function(require, exports, module) {
             },
             "{"
           ),
-          Object.keys(object).length > 0 ? ellipsisElement : null,
+          Object.keys(object).length ? ellipsisElement : null,
           span(
             {
               className: "objectRightBrace",

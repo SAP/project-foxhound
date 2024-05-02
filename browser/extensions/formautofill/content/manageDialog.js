@@ -10,52 +10,38 @@ const EDIT_ADDRESS_URL = "chrome://formautofill/content/editAddress.xhtml";
 const EDIT_CREDIT_CARD_URL =
   "chrome://formautofill/content/editCreditCard.xhtml";
 
-const { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { FormAutofill } = ChromeUtils.importESModule(
+  "resource://autofill/FormAutofill.sys.mjs"
 );
-const { FormAutofill } = ChromeUtils.import(
-  "resource://autofill/FormAutofill.jsm"
-);
-
-ChromeUtils.defineModuleGetter(
-  this,
-  "CreditCard",
-  "resource://gre/modules/CreditCard.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "formAutofillStorage",
-  "resource://autofill/FormAutofillStorage.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "FormAutofillUtils",
-  "resource://autofill/FormAutofillUtils.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "OSKeyStore",
-  "resource://gre/modules/OSKeyStore.jsm"
+const { AutofillTelemetry } = ChromeUtils.importESModule(
+  "resource://autofill/AutofillTelemetry.sys.mjs"
 );
 
-XPCOMUtils.defineLazyGetter(this, "reauthPasswordPromptMessage", () => {
-  const brandShortName = FormAutofillUtils.brandBundle.GetStringFromName(
-    "brandShortName"
-  );
-  // The string name for Mac is changed because the value needed updating.
-  const platform = AppConstants.platform.replace("macosx", "macos");
-  return FormAutofillUtils.stringBundle.formatStringFromName(
-    `editCreditCardPasswordPrompt.${platform}`,
-    [brandShortName]
-  );
+ChromeUtils.defineESModuleGetters(this, {
+  CreditCard: "resource://gre/modules/CreditCard.sys.mjs",
+  FormAutofillUtils: "resource://gre/modules/shared/FormAutofillUtils.sys.mjs",
+  OSKeyStore: "resource://gre/modules/OSKeyStore.sys.mjs",
+  formAutofillStorage: "resource://autofill/FormAutofillStorage.sys.mjs",
 });
 
+const lazy = {};
+ChromeUtils.defineLazyGetter(
+  lazy,
+  "l10n",
+  () =>
+    new Localization([
+      "browser/preferences/formAutofill.ftl",
+      "branding/brand.ftl",
+    ])
+);
+
 this.log = null;
-FormAutofill.defineLazyLogGetter(this, "manageAddresses");
+ChromeUtils.defineLazyGetter(this, "log", () =>
+  FormAutofill.defineLogGetter(this, "manageAddresses")
+);
 
 class ManageRecords {
   constructor(subStorageName, elements) {
@@ -65,7 +51,6 @@ class ManageRecords {
     this._newRequest = false;
     this._isLoadingRecords = false;
     this.prefWin = window.opener;
-    this.localizeDocument();
     window.addEventListener("DOMContentLoaded", this, { once: true });
   }
 
@@ -82,17 +67,10 @@ class ManageRecords {
     this._elements = null;
   }
 
-  localizeDocument() {
-    document.documentElement.style.minWidth = FormAutofillUtils.stringBundle.GetStringFromName(
-      "manageDialogsWidth"
-    );
-    FormAutofillUtils.localizeMarkup(document);
-  }
-
   /**
    * Get the selected options on the addresses element.
    *
-   * @returns {array<DOMElement>}
+   * @returns {Array<DOMElement>}
    */
   get _selectedOptions() {
     return Array.from(this._elements.records.selectedOptions);
@@ -100,6 +78,7 @@ class ManageRecords {
 
   /**
    * Get storage and ensure it has been initialized.
+   *
    * @returns {object}
    */
   async getStorage() {
@@ -152,13 +131,13 @@ class ManageRecords {
    * Render the records onto the page while maintaining selected options if
    * they still exist.
    *
-   * @param  {array<object>} records
+   * @param  {Array<object>} records
    */
   async renderRecordElements(records) {
     let selectedGuids = this._selectedOptions.map(option => option.value);
     this.clearRecordElements();
     for (let record of records) {
-      let { id, args, raw } = this.getLabelInfo(record);
+      let { id, args, raw } = await this.getLabelInfo(record);
       let option = new Option(
         raw ?? "",
         record.guid,
@@ -187,7 +166,7 @@ class ManageRecords {
   /**
    * Remove records by selected options.
    *
-   * @param  {array<DOMElement>} options
+   * @param  {Array<DOMElement>} options
    */
   async removeRecords(options) {
     let storage = await this.getStorage();
@@ -205,6 +184,10 @@ class ManageRecords {
     Services.obs.addObserver(this, "formautofill-storage-changed");
     // For testing only: notify record(s) has been removed
     this._elements.records.dispatchEvent(new CustomEvent("RecordsRemoved"));
+
+    for (let i = 0; i < options.length; i++) {
+      AutofillTelemetry.recordManageEvent(this.telemetryType, "delete");
+    }
   }
 
   /**
@@ -328,14 +311,15 @@ class ManageRecords {
 }
 
 class ManageAddresses extends ManageRecords {
+  telemetryType = AutofillTelemetry.ADDRESS;
+
   constructor(elements) {
     super("addresses", elements);
     elements.add.setAttribute(
-      "searchkeywords",
-      FormAutofillUtils.EDIT_ADDRESS_KEYWORDS.map(key =>
-        FormAutofillUtils.stringBundle.GetStringFromName(key)
-      ).join("\n")
+      "search-l10n-ids",
+      FormAutofillUtils.EDIT_ADDRESS_L10N_IDS.join(",")
     );
+    AutofillTelemetry.recordManageEvent(this.telemetryType, "show");
   }
 
   /**
@@ -358,18 +342,17 @@ class ManageAddresses extends ManageRecords {
 }
 
 class ManageCreditCards extends ManageRecords {
+  telemetryType = AutofillTelemetry.CREDIT_CARD;
+
   constructor(elements) {
     super("creditCards", elements);
     elements.add.setAttribute(
-      "searchkeywords",
-      FormAutofillUtils.EDIT_CREDITCARD_KEYWORDS.map(key =>
-        FormAutofillUtils.stringBundle.GetStringFromName(key)
-      ).join("\n")
+      "search-l10n-ids",
+      FormAutofillUtils.EDIT_CREDITCARD_L10N_IDS.join(",")
     );
 
-    Services.telemetry.recordEvent("creditcard", "show", "manage");
-
     this._isDecrypted = false;
+    AutofillTelemetry.recordManageEvent(this.telemetryType, "show");
   }
 
   /**
@@ -379,43 +362,45 @@ class ManageCreditCards extends ManageRecords {
    */
   async openEditDialog(creditCard) {
     // Ask for reauth if user is trying to edit an existing credit card.
-    if (
-      !creditCard ||
-      (await FormAutofillUtils.ensureLoggedIn(reauthPasswordPromptMessage))
-        .authenticated
-    ) {
-      let decryptedCCNumObj = {};
-      if (creditCard && creditCard["cc-number-encrypted"]) {
-        try {
-          decryptedCCNumObj["cc-number"] = await OSKeyStore.decrypt(
-            creditCard["cc-number-encrypted"]
-          );
-        } catch (ex) {
-          if (ex.result == Cr.NS_ERROR_ABORT) {
-            // User shouldn't be ask to reauth here, but it could happen.
-            // Return here and skip opening the dialog.
-            return;
-          }
-          // We've got ourselves a real error.
-          // Recover from encryption error so the user gets a chance to re-enter
-          // unencrypted credit card number.
-          decryptedCCNumObj["cc-number"] = "";
-          Cu.reportError(ex);
-        }
+    if (creditCard) {
+      const reauthPasswordPromptMessage = await lazy.l10n.formatValue(
+        "autofill-edit-card-password-prompt"
+      );
+      const loggedIn = await FormAutofillUtils.ensureLoggedIn(
+        reauthPasswordPromptMessage
+      );
+      if (!loggedIn.authenticated) {
+        return;
       }
-      let decryptedCreditCard = Object.assign(
-        {},
-        creditCard,
-        decryptedCCNumObj
-      );
-      this.prefWin.gSubDialog.open(
-        EDIT_CREDIT_CARD_URL,
-        { features: "resizable=no" },
-        {
-          record: decryptedCreditCard,
-        }
-      );
     }
+
+    let decryptedCCNumObj = {};
+    if (creditCard && creditCard["cc-number-encrypted"]) {
+      try {
+        decryptedCCNumObj["cc-number"] = await OSKeyStore.decrypt(
+          creditCard["cc-number-encrypted"]
+        );
+      } catch (ex) {
+        if (ex.result == Cr.NS_ERROR_ABORT) {
+          // User shouldn't be ask to reauth here, but it could happen.
+          // Return here and skip opening the dialog.
+          return;
+        }
+        // We've got ourselves a real error.
+        // Recover from encryption error so the user gets a chance to re-enter
+        // unencrypted credit card number.
+        decryptedCCNumObj["cc-number"] = "";
+        console.error(ex);
+      }
+    }
+    let decryptedCreditCard = Object.assign({}, creditCard, decryptedCCNumObj);
+    this.prefWin.gSubDialog.open(
+      EDIT_CREDIT_CARD_URL,
+      { features: "resizable=no" },
+      {
+        record: decryptedCreditCard,
+      }
+    );
   }
 
   /**
@@ -423,28 +408,25 @@ class ManageCreditCards extends ManageRecords {
    * cardholder's name, separated by a comma.
    *
    * @param {object} creditCard
-   * @returns {string}
+   * @returns {Promise<string>}
    */
-  getLabelInfo(creditCard) {
+  async getLabelInfo(creditCard) {
     // The card type is displayed visually using an image. For a11y, we need
     // to expose it as text. We do this using aria-label. However,
     // aria-label overrides the text content, so we must include that also.
     // Since the text content is generated by Fluent, aria-label must be
     // generated by Fluent also.
-    let type;
-    try {
-      type = FormAutofillUtils.stringBundle.GetStringFromName(
-        `cardNetwork.${creditCard["cc-type"]}`
-      );
-    } catch (e) {
-      type = ""; // Unknown.
-    }
+    const type = creditCard["cc-type"];
+    const typeL10nId = CreditCard.getNetworkL10nId(type);
+    const typeName = typeL10nId
+      ? await document.l10n.formatValue(typeL10nId)
+      : type ?? ""; // Unknown card type
     return CreditCard.getLabelInfo({
       name: creditCard["cc-name"],
       number: creditCard["cc-number"],
       month: creditCard["cc-exp-month"],
       year: creditCard["cc-exp-year"],
-      type,
+      type: typeName,
     });
   }
 
@@ -466,13 +448,6 @@ class ManageCreditCards extends ManageRecords {
       } else {
         option.removeAttribute("cc-type");
       }
-    }
-  }
-
-  async removeRecords(options) {
-    await super.removeRecords(options);
-    for (let i = 0; i < options.length; i++) {
-      Services.telemetry.recordEvent("creditcard", "delete", "manage");
     }
   }
 

@@ -4,11 +4,9 @@
 
 "use strict";
 
-const Services = require("Services");
-const { gDevTools } = require("devtools/client/framework/devtools");
 const {
-  TabDescriptorFactory,
-} = require("devtools/client/framework/tab-descriptor-factory");
+  gDevTools,
+} = require("resource://devtools/client/framework/devtools.js");
 
 /**
  * Retrieve the most recent chrome window.
@@ -36,7 +34,7 @@ function _getTopWindow() {
  * @param {Object} options
  *        Optional parameters, see documentation for openUILinkIn in utilityOverlay.js
  */
-exports.openDocLink = async function(url, options) {
+exports.openDocLink = async function (url, options) {
   const top = _getTopWindow();
   if (!top) {
     return;
@@ -56,14 +54,14 @@ exports.openDocLink = async function(url, options) {
  * @param {Object} options
  *        Optional parameters, see documentation for openUILinkIn in utilityOverlay.js
  */
-exports.openContentLink = async function(url, options = {}) {
+exports.openContentLink = async function (url, options = {}) {
   const top = _getTopWindow();
   if (!top) {
     return;
   }
   if (!options.triggeringPrincipal && top.gBrowser) {
     const tab = top.gBrowser.selectedTab;
-    if (TabDescriptorFactory.isKnownTab(tab)) {
+    if (gDevTools.hasToolboxForTab(tab)) {
       options.triggeringPrincipal = tab.linkedBrowser.contentPrincipal;
       options.csp = tab.linkedBrowser.csp;
     }
@@ -79,7 +77,7 @@ exports.openContentLink = async function(url, options = {}) {
  * @param {Object} options
  *        Optional parameters, see documentation for openUILinkIn in utilityOverlay.js
  */
-exports.openTrustedLink = async function(url, options) {
+exports.openTrustedLink = async function (url, options) {
   const top = _getTopWindow();
   if (!top) {
     return;

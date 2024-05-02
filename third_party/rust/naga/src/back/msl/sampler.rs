@@ -19,7 +19,7 @@ impl Default for Coord {
 }
 
 impl Coord {
-    pub fn as_str(&self) -> &'static str {
+    pub const fn as_str(&self) -> &'static str {
         match *self {
             Self::Normalized => "normalized",
             Self::Pixel => "pixel",
@@ -45,7 +45,7 @@ impl Default for Address {
 }
 
 impl Address {
-    pub fn as_str(&self) -> &'static str {
+    pub const fn as_str(&self) -> &'static str {
         match *self {
             Self::Repeat => "repeat",
             Self::MirroredRepeat => "mirrored_repeat",
@@ -72,7 +72,7 @@ impl Default for BorderColor {
 }
 
 impl BorderColor {
-    pub fn as_str(&self) -> &'static str {
+    pub const fn as_str(&self) -> &'static str {
         match *self {
             Self::TransparentBlack => "transparent_black",
             Self::OpaqueBlack => "opaque_black",
@@ -90,7 +90,7 @@ pub enum Filter {
 }
 
 impl Filter {
-    pub fn as_str(&self) -> &'static str {
+    pub const fn as_str(&self) -> &'static str {
         match *self {
             Self::Nearest => "nearest",
             Self::Linear => "linear",
@@ -125,7 +125,7 @@ impl Default for CompareFunc {
 }
 
 impl CompareFunc {
-    pub fn as_str(&self) -> &'static str {
+    pub const fn as_str(&self) -> &'static str {
         match *self {
             Self::Never => "never",
             Self::Less => "less",
@@ -156,6 +156,7 @@ pub struct InlineSampler {
 
 impl Eq for InlineSampler {}
 
+#[allow(renamed_and_removed_lints)]
 #[allow(clippy::derive_hash_xor_eq)]
 impl std::hash::Hash for InlineSampler {
     fn hash<H: std::hash::Hasher>(&self, hasher: &mut H) {

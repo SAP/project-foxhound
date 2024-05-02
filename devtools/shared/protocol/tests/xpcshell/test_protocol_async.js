@@ -9,17 +9,9 @@
  * complete.
  */
 
-const { waitForTick } = require("devtools/shared/DevToolsUtils");
-const protocol = require("devtools/shared/protocol");
+const { waitForTick } = require("resource://devtools/shared/DevToolsUtils.js");
+const protocol = require("resource://devtools/shared/protocol.js");
 const { Arg, RetVal } = protocol;
-
-function simpleHello() {
-  return {
-    from: "root",
-    applicationType: "xpcshell-tests",
-    traits: [],
-  };
-}
 
 const rootSpec = protocol.generateActorSpec({
   typeName: "root",
@@ -42,23 +34,30 @@ const rootSpec = protocol.generateActorSpec({
   },
 });
 
-const RootActor = protocol.ActorClassWithSpec(rootSpec, {
-  initialize: function(conn) {
-    protocol.Actor.prototype.initialize.call(this, conn);
+class RootActor extends protocol.Actor {
+  constructor(conn) {
+    super(conn, rootSpec);
+
     // Root actor owns itself.
     this.manage(this);
     this.actorID = "root";
     this.sequence = 0;
-  },
+  }
 
-  sayHello: simpleHello,
+  sayHello() {
+    return {
+      from: "root",
+      applicationType: "xpcshell-tests",
+      traits: [],
+    };
+  }
 
-  simpleReturn: function() {
+  simpleReturn() {
     return this.sequence++;
-  },
+  }
 
   // Guarantee that this resolves after simpleReturn returns.
-  promiseReturn: async function(toWait) {
+  async promiseReturn(toWait) {
     const sequence = this.sequence++;
 
     // Wait until the number of requests specified by toWait have
@@ -68,17 +67,17 @@ const RootActor = protocol.ActorClassWithSpec(rootSpec, {
     }
 
     return sequence;
-  },
+  }
 
-  simpleThrow: function() {
+  simpleThrow() {
     throw new Error(this.sequence++);
-  },
+  }
 
   // Guarantee that this resolves after simpleReturn returns.
-  promiseThrow: function(toWait) {
+  promiseThrow(toWait) {
     return this.promiseReturn(toWait).then(Promise.reject);
-  },
-});
+  }
+}
 
 class RootFront extends protocol.FrontClassWithSpec(rootSpec) {
   constructor(client) {
@@ -90,8 +89,8 @@ class RootFront extends protocol.FrontClassWithSpec(rootSpec) {
 }
 protocol.registerFront(RootFront);
 
-add_task(async function() {
-  DevToolsServer.createRootActor = RootActor;
+add_task(async function () {
+  DevToolsServer.createRootActor = conn => new RootActor(conn);
   DevToolsServer.init();
 
   const trace = connectPipeTracing();

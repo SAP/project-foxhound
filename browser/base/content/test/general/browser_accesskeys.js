@@ -1,6 +1,4 @@
-/* eslint-env mozilla/frame-script */
-
-add_task(async function() {
+add_task(async function () {
   await pushPrefs(["ui.key.contentAccess", 5], ["ui.key.chromeAccess", 5]);
 
   const gPageURL1 =
@@ -142,7 +140,7 @@ function performAccessKey(browser, key) {
       callback,
       { capture: true },
       event => {
-        if (!(event.target instanceof HTMLElement)) {
+        if (!HTMLElement.isInstance(event.target)) {
           return false; // ignore window and document focus events
         }
 

@@ -29,18 +29,6 @@ class ExtensionEventManager;
 class ExtensionRuntime final : public nsISupports,
                                public nsWrapperCache,
                                public ExtensionAPINamespace {
-  nsCOMPtr<nsIGlobalObject> mGlobal;
-  RefPtr<ExtensionBrowser> mExtensionBrowser;
-  RefPtr<ExtensionEventManager> mOnStartupEventMgr;
-  RefPtr<ExtensionEventManager> mOnInstalledEventMgr;
-  RefPtr<ExtensionEventManager> mOnUpdateAvailableEventMgr;
-  RefPtr<ExtensionEventManager> mOnConnectEventMgr;
-  RefPtr<ExtensionEventManager> mOnConnectExternalEventMgr;
-  RefPtr<ExtensionEventManager> mOnMessageEventMgr;
-  RefPtr<ExtensionEventManager> mOnMessageExternalEventMgr;
-
-  ~ExtensionRuntime() = default;
-
  public:
   ExtensionRuntime(nsIGlobalObject* aGlobal,
                    ExtensionBrowser* aExtensionBrowser);
@@ -72,10 +60,23 @@ class ExtensionRuntime final : public nsISupports,
   ExtensionEventManager* OnMessageExternal();
 
   void GetLastError(JSContext* aCx, JS::MutableHandle<JS::Value> aRetval);
-  void GetId(DOMString& aRetval);
+  void GetId(dom::DOMString& aRetval);
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(ExtensionRuntime)
+  NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(ExtensionRuntime)
+
+ private:
+  ~ExtensionRuntime() = default;
+
+  nsCOMPtr<nsIGlobalObject> mGlobal;
+  RefPtr<ExtensionBrowser> mExtensionBrowser;
+  RefPtr<ExtensionEventManager> mOnStartupEventMgr;
+  RefPtr<ExtensionEventManager> mOnInstalledEventMgr;
+  RefPtr<ExtensionEventManager> mOnUpdateAvailableEventMgr;
+  RefPtr<ExtensionEventManager> mOnConnectEventMgr;
+  RefPtr<ExtensionEventManager> mOnConnectExternalEventMgr;
+  RefPtr<ExtensionEventManager> mOnMessageEventMgr;
+  RefPtr<ExtensionEventManager> mOnMessageExternalEventMgr;
 };
 
 }  // namespace extensions

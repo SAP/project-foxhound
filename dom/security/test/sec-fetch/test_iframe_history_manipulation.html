@@ -17,8 +17,7 @@ let testCounter = 0;
 let testFrame;
 
 var script = SpecialPowers.loadChromeScript(() => {
-  const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
-
+  /* eslint-env mozilla/chrome-script */
   Services.obs.addObserver(function onExamResp(subject, topic, data) {
     let channel = subject.QueryInterface(Ci.nsIHttpChannel);
     info("request observed: " + channel.URI.spec);
@@ -38,7 +37,6 @@ var script = SpecialPowers.loadChromeScript(() => {
 
     ok(!headerPresent, "testing sec-fetch-user header is not set");
 
-    // eslint-disable-next-line no-undef
     sendAsyncMessage("test-pass");
   }, "http-on-stop-request");
 });
@@ -78,12 +76,9 @@ function iframeAction(test) {
 
 SimpleTest.waitForExplicitFinish();
 
-SpecialPowers.pushPrefEnv({set: [["dom.security.secFetch.enabled", true]]}, async () => {
-  testFrame = document.createElement('iframe');
-  testFrame.src = `https://example.org/${REQUEST_PATH}?test`;
-  document.body.appendChild(testFrame);
-});
-
+testFrame = document.createElement('iframe');
+testFrame.src = `https://example.org/${REQUEST_PATH}?test`;
+document.body.appendChild(testFrame);
 
 </script>
 </body>

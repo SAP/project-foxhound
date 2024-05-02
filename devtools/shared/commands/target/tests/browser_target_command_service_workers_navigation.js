@@ -61,7 +61,10 @@ add_task(async function test_NavigationBetweenTwoDomains_NoDestroy() {
   });
 
   info("Go to .org page, wait for onAvailable to be called");
-  BrowserTestUtils.loadURI(gBrowser.selectedBrowser, ORG_PAGE_URL);
+  BrowserTestUtils.startLoadingURIString(
+    gBrowser.selectedBrowser,
+    ORG_PAGE_URL
+  );
   await checkHooks(hooks, {
     available: 2,
     destroyed: 0,
@@ -69,9 +72,7 @@ add_task(async function test_NavigationBetweenTwoDomains_NoDestroy() {
   });
 
   info("Reload .org page, onAvailable and onDestroyed should not be called");
-  const reloaded = BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser);
-  gBrowser.reloadTab(gBrowser.selectedTab);
-  await reloaded;
+  await BrowserTestUtils.reloadTab(gBrowser.selectedTab);
   await checkHooks(hooks, {
     available: 2,
     destroyed: 0,
@@ -90,7 +91,10 @@ add_task(async function test_NavigationBetweenTwoDomains_NoDestroy() {
   const onBrowserLoaded = BrowserTestUtils.browserLoaded(
     gBrowser.selectedBrowser
   );
-  BrowserTestUtils.loadURI(gBrowser.selectedBrowser, COM_PAGE_URL);
+  BrowserTestUtils.startLoadingURIString(
+    gBrowser.selectedBrowser,
+    COM_PAGE_URL
+  );
   await onBrowserLoaded;
   await checkHooks(hooks, {
     available: 2,
@@ -149,7 +153,10 @@ add_task(async function test_NavigationBetweenTwoDomains_WithDestroy() {
   });
 
   info("Go to .org page, wait for onAvailable to be called");
-  BrowserTestUtils.loadURI(gBrowser.selectedBrowser, ORG_PAGE_URL);
+  BrowserTestUtils.startLoadingURIString(
+    gBrowser.selectedBrowser,
+    ORG_PAGE_URL
+  );
   await checkHooks(hooks, {
     available: 2,
     destroyed: 1,
@@ -169,7 +176,10 @@ add_task(async function test_NavigationBetweenTwoDomains_WithDestroy() {
   await checkHooks(hooks, { available: 3, destroyed: 3, targets: [] });
 
   info("Go back to page 1, wait for onDestroyed and onAvailable to be called");
-  BrowserTestUtils.loadURI(gBrowser.selectedBrowser, COM_PAGE_URL);
+  BrowserTestUtils.startLoadingURIString(
+    gBrowser.selectedBrowser,
+    COM_PAGE_URL
+  );
   await checkHooks(hooks, {
     available: 4,
     destroyed: 3,
@@ -243,7 +253,10 @@ async function testNavigationToPageWithExistingWorker({
   let onBrowserLoaded = BrowserTestUtils.browserLoaded(
     gBrowser.selectedBrowser
   );
-  BrowserTestUtils.loadURI(gBrowser.selectedBrowser, ORG_PAGE_URL);
+  BrowserTestUtils.startLoadingURIString(
+    gBrowser.selectedBrowser,
+    ORG_PAGE_URL
+  );
 
   // Avoid TV failures, where target list still starts thinking that the
   // current domain is .com .
@@ -272,7 +285,10 @@ async function testNavigationToPageWithExistingWorker({
 
   info("Go back .com page, wait for onAvailable to be called");
   onBrowserLoaded = BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser);
-  BrowserTestUtils.loadURI(gBrowser.selectedBrowser, COM_PAGE_URL);
+  BrowserTestUtils.startLoadingURIString(
+    gBrowser.selectedBrowser,
+    COM_PAGE_URL
+  );
   await onBrowserLoaded;
 
   await checkHooks(hooks, {
@@ -294,9 +310,6 @@ async function testNavigationToPageWithExistingWorker({
 }
 
 async function setupServiceWorkerNavigationTest() {
-  // Enabled devtools.browsertoolbox.fission to listen to all target types.
-  await pushPref("devtools.browsertoolbox.fission", true);
-
   // Disable the preloaded process as it creates processes intermittently
   // which forces the emission of RDP requests we aren't correctly waiting for.
   await pushPref("dom.ipc.processPrelaunch.enabled", false);
@@ -316,7 +329,8 @@ async function watchServiceWorkerTargets({
     "Set targetCommand.destroyServiceWorkersOnNavigation to " +
       destroyServiceWorkersOnNavigation
   );
-  targetCommand.destroyServiceWorkersOnNavigation = destroyServiceWorkersOnNavigation;
+  targetCommand.destroyServiceWorkersOnNavigation =
+    destroyServiceWorkersOnNavigation;
   await targetCommand.startListening();
 
   // Setup onAvailable & onDestroyed callbacks so that we can check how many
@@ -360,7 +374,7 @@ async function unregisterServiceWorker(tab, expectedPageUrl) {
  */
 async function waitForRegistrationReady(tab, expectedPageUrl) {
   await asyncWaitUntil(() =>
-    SpecialPowers.spawn(tab.linkedBrowser, [expectedPageUrl], function(_url) {
+    SpecialPowers.spawn(tab.linkedBrowser, [expectedPageUrl], function (_url) {
       try {
         const win = content.wrappedJSObject;
         const isExpectedUrl = win.location.href === _url;

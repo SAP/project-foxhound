@@ -4,7 +4,7 @@
  *
  *   TrueType-specific tables loader (body).
  *
- * Copyright (C) 1996-2021 by
+ * Copyright (C) 1996-2023 by
  * David Turner, Robert Wilhelm, and Werner Lemberg.
  *
  * This file is part of the FreeType project, and may only be used,
@@ -180,10 +180,11 @@
 
 
   FT_LOCAL_DEF( FT_ULong )
-  tt_face_get_location( TT_Face   face,
-                        FT_UInt   gindex,
-                        FT_UInt  *asize )
+  tt_face_get_location( FT_Face    face,   /* TT_Face */
+                        FT_UInt    gindex,
+                        FT_ULong  *asize )
   {
+    TT_Face   ttface = (TT_Face)face;
     FT_ULong  pos1, pos2;
     FT_Byte*  p;
     FT_Byte*  p_limit;
@@ -191,12 +192,12 @@
 
     pos1 = pos2 = 0;
 
-    if ( gindex < face->num_locations )
+    if ( gindex < ttface->num_locations )
     {
-      if ( face->header.Index_To_Loc_Format != 0 )
+      if ( ttface->header.Index_To_Loc_Format != 0 )
       {
-        p       = face->glyph_locations + gindex * 4;
-        p_limit = face->glyph_locations + face->num_locations * 4;
+        p       = ttface->glyph_locations + gindex * 4;
+        p_limit = ttface->glyph_locations + ttface->num_locations * 4;
 
         pos1 = FT_NEXT_ULONG( p );
         pos2 = pos1;
@@ -206,8 +207,8 @@
       }
       else
       {
-        p       = face->glyph_locations + gindex * 2;
-        p_limit = face->glyph_locations + face->num_locations * 2;
+        p       = ttface->glyph_locations + gindex * 2;
+        p_limit = ttface->glyph_locations + ttface->num_locations * 2;
 
         pos1 = FT_NEXT_USHORT( p );
         pos2 = pos1;
@@ -221,30 +222,30 @@
     }
 
     /* Check broken location data. */
-    if ( pos1 > face->glyf_len )
+    if ( pos1 > ttface->glyf_len )
     {
       FT_TRACE1(( "tt_face_get_location:"
                   " too large offset (0x%08lx) found for glyph index %d,\n",
                   pos1, gindex ));
       FT_TRACE1(( "                     "
                   " exceeding the end of `glyf' table (0x%08lx)\n",
-                  face->glyf_len ));
+                  ttface->glyf_len ));
       *asize = 0;
       return 0;
     }
 
-    if ( pos2 > face->glyf_len )
+    if ( pos2 > ttface->glyf_len )
     {
       /* We try to sanitize the last `loca' entry. */
-      if ( gindex == face->num_locations - 2 )
+      if ( gindex == ttface->num_locations - 2 )
       {
         FT_TRACE1(( "tt_face_get_location:"
                     " too large size (%ld bytes) found for glyph index %d,\n",
                     pos2 - pos1, gindex ));
         FT_TRACE1(( "                     "
                     " truncating at the end of `glyf' table to %ld bytes\n",
-                    face->glyf_len - pos1 ));
-        pos2 = face->glyf_len;
+                    ttface->glyf_len - pos1 ));
+        pos2 = ttface->glyf_len;
       }
       else
       {
@@ -253,7 +254,7 @@
                     pos2, gindex + 1 ));
         FT_TRACE1(( "                     "
                     " exceeding the end of `glyf' table (0x%08lx)\n",
-                    face->glyf_len ));
+                    ttface->glyf_len ));
         *asize = 0;
         return 0;
       }
@@ -268,9 +269,9 @@
     /* We get (intentionally) a wrong, non-zero result in case the  */
     /* `glyf' table is missing.                                     */
     if ( pos2 >= pos1 )
-      *asize = (FT_UInt)( pos2 - pos1 );
+      *asize = (FT_ULong)( pos2 - pos1 );
     else
-      *asize = (FT_UInt)( face->glyf_len - pos1 );
+      *asize = (FT_ULong)( ttface->glyf_len - pos1 );
 
     return pos1;
   }
@@ -498,6 +499,14 @@
   }
 
 
+  FT_COMPARE_DEF( int )
+  compare_ppem( const void*  a,
+                const void*  b )
+  {
+    return **(FT_Byte**)a - **(FT_Byte**)b;
+  }
+
+
   /**************************************************************************
    *
    * @Function:
@@ -574,19 +583,20 @@
       goto Fail;
     }
 
-    if ( FT_QNEW_ARRAY( face->hdmx_record_sizes, num_records ) )
+    if ( FT_QNEW_ARRAY( face->hdmx_records, num_records ) )
       goto Fail;
 
-    /* XXX: We do not check if the records are sorted by ppem */
-    /* and cannot use binary search later.                    */
     for ( nn = 0; nn < num_records; nn++ )
     {
       if ( p + record_size > limit )
         break;
-
-      face->hdmx_record_sizes[nn] = p[0];
-      p                          += record_size;
+      face->hdmx_records[nn] = p;
+      p                     += record_size;
     }
+
+    /* The records must be already sorted by ppem but it does not */
+    /* hurt to make sure so that the binary search works later.   */
+    ft_qsort( face->hdmx_records, nn, sizeof ( FT_Byte* ), compare_ppem );
 
     face->hdmx_record_count = nn;
     face->hdmx_table_size   = table_size;
@@ -611,7 +621,7 @@
     FT_Memory  memory = stream->memory;
 
 
-    FT_FREE( face->hdmx_record_sizes );
+    FT_FREE( face->hdmx_records );
     FT_FRAME_RELEASE( face->hdmx_table );
   }
 
@@ -619,27 +629,34 @@
   /**************************************************************************
    *
    * Return the advance width table for a given pixel size if it is found
-   * in the font's `hdmx' table (if any).
+   * in the font's `hdmx' table (if any).  The records must be sorted for
+   * the binary search to work properly.
    */
   FT_LOCAL_DEF( FT_Byte* )
   tt_face_get_device_metrics( TT_Face  face,
                               FT_UInt  ppem,
                               FT_UInt  gindex )
   {
-    FT_UInt   nn;
-    FT_Byte*  result      = NULL;
-    FT_ULong  record_size = face->hdmx_record_size;
-    FT_Byte*  record      = FT_OFFSET( face->hdmx_table, 8 );
+    FT_UInt   min    = 0;
+    FT_UInt   max    = face->hdmx_record_count;
+    FT_UInt   mid;
+    FT_Byte*  result = NULL;
 
 
-    for ( nn = 0; nn < face->hdmx_record_count; nn++ )
-      if ( face->hdmx_record_sizes[nn] == ppem )
+    while ( min < max )
+    {
+      mid = ( min + max ) >> 1;
+
+      if ( face->hdmx_records[mid][0] > ppem )
+        max = mid;
+      else if ( face->hdmx_records[mid][0] < ppem )
+        min = mid + 1;
+      else
       {
-        gindex += 2;
-        if ( gindex < record_size )
-          result = record + nn * record_size + gindex;
+        result = face->hdmx_records[mid] + 2 + gindex;
         break;
       }
+    }
 
     return result;
   }

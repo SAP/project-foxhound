@@ -1,6 +1,7 @@
 "use strict";
 
 let notificationURL =
+  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
   "http://example.org/browser/browser/base/content/test/alerts/file_dom_notifications.html";
 
 add_task(async function test_notificationReplace() {
@@ -12,7 +13,7 @@ add_task(async function test_notificationReplace() {
       url: notificationURL,
     },
     async function dummyTabTask(aBrowser) {
-      await SpecialPowers.spawn(aBrowser, [], async function() {
+      await SpecialPowers.spawn(aBrowser, [], async function () {
         let win = content.window.wrappedJSObject;
         let notification = win.showNotification1();
         let promiseCloseEvent = ContentTaskUtils.waitForEvent(

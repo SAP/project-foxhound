@@ -7,11 +7,7 @@
 const TESTCASE_URI_HTML = TEST_BASE_HTTP + "simple.html";
 const TESTCASE_URI_CSS = TEST_BASE_HTTP + "simple.css";
 
-const { FileUtils } = ChromeUtils.import(
-  "resource://gre/modules/FileUtils.jsm"
-);
-
-add_task(async function() {
+add_task(async function () {
   const htmlFile = await copy(TESTCASE_URI_HTML, "simple.html");
   await copy(TESTCASE_URI_CSS, "simple.css");
   const uri = Services.io.newFileURI(htmlFile);
@@ -38,7 +34,7 @@ add_task(async function() {
   info("Saving the changes.");
   dirty = editor.sourceEditor.once("dirty-change");
 
-  editor.saveToFile(null, function(file) {
+  editor.saveToFile(null, function (file) {
     ok(file, "file should get saved directly when using a file:// URI");
   });
 
@@ -53,7 +49,9 @@ add_task(async function() {
 
 function copy(srcChromeURL, destFileName) {
   return new Promise(resolve => {
-    const destFile = FileUtils.getFile("ProfD", [destFileName]);
+    const destFile = new FileUtils.File(
+      PathUtils.join(PathUtils.profileDir, destFileName)
+    );
     write(read(srcChromeURL), destFile, resolve);
   });
 }
@@ -81,16 +79,10 @@ function read(srcChromeURL) {
 }
 
 function write(data, file, callback) {
-  const converter = Cc[
-    "@mozilla.org/intl/scriptableunicodeconverter"
-  ].createInstance(Ci.nsIScriptableUnicodeConverter);
-
-  converter.charset = "UTF-8";
-
-  const istream = converter.convertToInputStream(data);
+  const istream = getInputStream(data);
   const ostream = FileUtils.openSafeFileOutputStream(file);
 
-  NetUtil.asyncCopy(istream, ostream, function(status) {
+  NetUtil.asyncCopy(istream, ostream, function (status) {
     if (!Components.isSuccessCode(status)) {
       info("Couldn't write to " + file.path);
       return;

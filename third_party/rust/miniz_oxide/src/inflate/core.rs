@@ -102,15 +102,50 @@ const LITLEN_TABLE: usize = 0;
 const DIST_TABLE: usize = 1;
 const HUFFLEN_TABLE: usize = 2;
 
+/// Flags to [`decompress()`] to control how inflation works.
+///
+/// These define bits for a bitmask argument.
 pub mod inflate_flags {
     /// Should we try to parse a zlib header?
+    ///
+    /// If unset, the function will expect an RFC1951 deflate stream.  If set, it will expect a
+    /// RFC1950 zlib wrapper around the deflate stream.
     pub const TINFL_FLAG_PARSE_ZLIB_HEADER: u32 = 1;
-    /// There is more input that hasn't been given to the decompressor yet.
+
+    /// There will be more input that hasn't been given to the decompressor yet.
+    ///
+    /// This is useful when you want to decompress what you have so far,
+    /// even if you know there is probably more input that hasn't gotten here yet (_e.g._, over a
+    /// network connection).  When [`decompress()`][super::decompress] reaches the end of the input
+    /// without finding the end of the compressed stream, it will return
+    /// [`TINFLStatus::NeedsMoreInput`][super::TINFLStatus::NeedsMoreInput] if this is set,
+    /// indicating that you should get more data before calling again.  If not set, it will return
+    /// [`TINFLStatus::FailedCannotMakeProgress`][super::TINFLStatus::FailedCannotMakeProgress]
+    /// suggesting the stream is corrupt, since you claimed it was all there.
     pub const TINFL_FLAG_HAS_MORE_INPUT: u32 = 2;
+
     /// The output buffer should not wrap around.
     pub const TINFL_FLAG_USING_NON_WRAPPING_OUTPUT_BUF: u32 = 4;
-    /// Should we calculate the adler32 checksum of the output data?
+
+    /// Calculate the adler32 checksum of the output data even if we're not inflating a zlib stream.
+    ///
+    /// If [`TINFL_FLAG_IGNORE_ADLER32`] is specified, it will override this.
+    ///
+    /// NOTE: Enabling/disabling this between calls to decompress will result in an incorrect
+    /// checksum.
     pub const TINFL_FLAG_COMPUTE_ADLER32: u32 = 8;
+
+    /// Ignore adler32 checksum even if we are inflating a zlib stream.
+    ///
+    /// Overrides [`TINFL_FLAG_COMPUTE_ADLER32`] if both are enabled.
+    ///
+    /// NOTE: This flag does not exist in miniz as it does not support this and is a
+    /// custom addition for miniz_oxide.
+    ///
+    /// NOTE: Should not be changed from enabled to disabled after decompression has started,
+    /// this will result in checksum failure (outside the unlikely event where the checksum happens
+    /// to match anyway).
+    pub const TINFL_FLAG_IGNORE_ADLER32: u32 = 64;
 }
 
 use self::inflate_flags::*;
@@ -174,10 +209,21 @@ impl DecompressorOxide {
     }
 
     /// Returns the adler32 checksum of the currently decompressed data.
+    /// Note: Will return Some(1) if decompressing zlib but ignoring adler32.
     #[inline]
     pub fn adler32(&self) -> Option<u32> {
         if self.state != State::Start && !self.state.is_failure() && self.z_header0 != 0 {
             Some(self.check_adler32)
+        } else {
+            None
+        }
+    }
+
+    /// Returns the adler32 that was read from the zlib header if it exists.
+    #[inline]
+    pub fn adler32_header(&self) -> Option<u32> {
+        if self.state != State::Start && self.state != State::BadZlibHeader && self.z_header0 != 0 {
+            Some(self.z_adler32)
         } else {
             None
         }
@@ -215,6 +261,7 @@ impl Default for DecompressorOxide {
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
+#[non_exhaustive]
 enum State {
     Start = 0,
     ReadZlibCmf,
@@ -246,6 +293,7 @@ enum State {
     // Failure states.
     BlockTypeUnexpected,
     BadCodeSizeSum,
+    BadDistOrLiteralTableLength,
     BadTotalSymbols,
     BadZlibHeader,
     DistanceOutOfBounds,
@@ -261,6 +309,7 @@ impl State {
         match self {
             BlockTypeUnexpected => true,
             BadCodeSizeSum => true,
+            BadDistOrLiteralTableLength => true,
             BadTotalSymbols => true,
             BadZlibHeader => true,
             DistanceOutOfBounds => true,
@@ -623,6 +672,18 @@ fn start_static_table(r: &mut DecompressorOxide) {
     memset(&mut r.tables[DIST_TABLE].code_size[0..32], 5);
 }
 
+static REVERSED_BITS_LOOKUP: [u32; 1024] = {
+    let mut table = [0; 1024];
+
+    let mut i = 0;
+    while i < 1024 {
+        table[i] = (i as u32).reverse_bits();
+        i += 1;
+    }
+
+    table
+};
+
 fn init_tree(r: &mut DecompressorOxide, l: &mut LocalVars) -> Action {
     loop {
         let table = &mut r.tables[r.block_type as usize];
@@ -660,10 +721,17 @@ fn init_tree(r: &mut DecompressorOxide, l: &mut LocalVars) -> Action {
             let mut cur_code = next_code[code_size as usize];
             next_code[code_size as usize] += 1;
 
-            for _ in 0..code_size {
-                rev_code = (rev_code << 1) | (cur_code & 1);
-                cur_code >>= 1;
-            }
+            let n = cur_code & (u32::MAX >> (32 - code_size));
+
+            let mut rev_code = if n < 1024 {
+                REVERSED_BITS_LOOKUP[n as usize] >> (32 - code_size)
+            } else {
+                for _ in 0..code_size {
+                    rev_code = (rev_code << 1) | (cur_code & 1);
+                    cur_code >>= 1;
+                }
+                rev_code
+            };
 
             if code_size <= FAST_LOOKUP_BITS {
                 let k = (i16::from(code_size) << 9) | symbol_index as i16;
@@ -750,13 +818,38 @@ fn transfer(
     match_len: usize,
     out_buf_size_mask: usize,
 ) {
-    for _ in 0..match_len >> 2 {
-        out_slice[out_pos] = out_slice[source_pos & out_buf_size_mask];
-        out_slice[out_pos + 1] = out_slice[(source_pos + 1) & out_buf_size_mask];
-        out_slice[out_pos + 2] = out_slice[(source_pos + 2) & out_buf_size_mask];
-        out_slice[out_pos + 3] = out_slice[(source_pos + 3) & out_buf_size_mask];
-        source_pos += 4;
-        out_pos += 4;
+    // special case that comes up surprisingly often. in the case that `source_pos`
+    // is 1 less than `out_pos`, we can say that the entire range will be the same
+    // value and optimize this to be a simple `memset`
+    let source_diff = if source_pos > out_pos {
+        source_pos - out_pos
+    } else {
+        out_pos - source_pos
+    };
+    if out_buf_size_mask == usize::MAX && source_diff == 1 && out_pos > source_pos {
+        let init = out_slice[out_pos - 1];
+        let end = (match_len >> 2) * 4 + out_pos;
+
+        out_slice[out_pos..end].fill(init);
+        out_pos = end;
+        source_pos = end - 1;
+    // if the difference between `source_pos` and `out_pos` is greater than 3, we
+    // can do slightly better than the naive case by copying everything at once
+    } else if out_buf_size_mask == usize::MAX && source_diff >= 4 && out_pos > source_pos {
+        for _ in 0..match_len >> 2 {
+            out_slice.copy_within(source_pos..=source_pos + 3, out_pos);
+            source_pos += 4;
+            out_pos += 4;
+        }
+    } else {
+        for _ in 0..match_len >> 2 {
+            out_slice[out_pos] = out_slice[source_pos & out_buf_size_mask];
+            out_slice[out_pos + 1] = out_slice[(source_pos + 1) & out_buf_size_mask];
+            out_slice[out_pos + 2] = out_slice[(source_pos + 2) & out_buf_size_mask];
+            out_slice[out_pos + 3] = out_slice[(source_pos + 3) & out_buf_size_mask];
+            source_pos += 4;
+            out_pos += 4;
+        }
     }
 
     match match_len & 3 {
@@ -829,7 +922,7 @@ fn apply_match(
 /// and already improves decompression speed a fair bit.
 fn decompress_fast(
     r: &mut DecompressorOxide,
-    mut in_iter: &mut slice::Iter<u8>,
+    in_iter: &mut slice::Iter<u8>,
     out_buf: &mut OutputBuffer,
     flags: u32,
     local_vars: &mut LocalVars,
@@ -854,7 +947,7 @@ fn decompress_fast(
                 break 'o TINFLStatus::Done;
             }
 
-            fill_bit_buffer(&mut l, &mut in_iter);
+            fill_bit_buffer(&mut l, in_iter);
 
             if let Some((symbol, code_len)) = r.tables[LITLEN_TABLE].lookup(l.bit_buf) {
                 l.counter = symbol as u32;
@@ -868,7 +961,7 @@ fn decompress_fast(
                     // If we have a 32-bit buffer we need to read another two bytes now
                     // to have enough bits to keep going.
                     if cfg!(not(target_pointer_width = "64")) {
-                        fill_bit_buffer(&mut l, &mut in_iter);
+                        fill_bit_buffer(&mut l, in_iter);
                     }
 
                     if let Some((symbol, code_len)) = r.tables[LITLEN_TABLE].lookup(l.bit_buf) {
@@ -918,7 +1011,7 @@ fn decompress_fast(
             // Length and distance codes have a number of extra bits depending on
             // the base, which together with the base gives us the exact value.
 
-            fill_bit_buffer(&mut l, &mut in_iter);
+            fill_bit_buffer(&mut l, in_iter);
             if l.num_extra != 0 {
                 let extra_bits = l.bit_buf & ((1 << l.num_extra) - 1);
                 l.bit_buf >>= l.num_extra;
@@ -929,7 +1022,7 @@ fn decompress_fast(
             // We found a length code, so a distance code should follow.
 
             if cfg!(not(target_pointer_width = "64")) {
-                fill_bit_buffer(&mut l, &mut in_iter);
+                fill_bit_buffer(&mut l, in_iter);
             }
 
             if let Some((mut symbol, code_len)) = r.tables[DIST_TABLE].lookup(l.bit_buf) {
@@ -949,7 +1042,7 @@ fn decompress_fast(
             }
 
             if l.num_extra != 0 {
-                fill_bit_buffer(&mut l, &mut in_iter);
+                fill_bit_buffer(&mut l, in_iter);
                 let extra_bits = l.bit_buf & ((1 << l.num_extra) - 1);
                 l.bit_buf >>= l.num_extra;
                 l.num_bits -= l.num_extra;
@@ -983,19 +1076,21 @@ fn decompress_fast(
 }
 
 /// Main decompression function. Keeps decompressing data from `in_buf` until the `in_buf` is
-/// empty, `out_cur` is full, the end of the deflate stream is hit, or there is an error in the
+/// empty, `out` is full, the end of the deflate stream is hit, or there is an error in the
 /// deflate stream.
 ///
 /// # Arguments
 ///
+/// `r` is a [`DecompressorOxide`] struct with the state of this stream.
+///
 /// `in_buf` is a reference to the compressed data that is to be decompressed. The decompressor will
 /// start at the first byte of this buffer.
 ///
-/// `out_cur` is a mutable cursor into the buffer that will store the decompressed data, and that
+/// `out` is a reference to the buffer that will store the decompressed data, and that
 /// stores previously decompressed data if any.
-/// * The position of the output cursor indicates where in the output buffer slice writing should
-/// start.
-/// * If TINFL_FLAG_USING_NON_WRAPPING_OUTPUT_BUF is not set, the output buffer is used in a
+///
+/// * The offset given by `out_pos` indicates where in the output buffer slice writing should start.
+/// * If [`TINFL_FLAG_USING_NON_WRAPPING_OUTPUT_BUF`] is not set, the output buffer is used in a
 /// wrapping manner, and it's size is required to be a power of 2.
 /// * The decompression function normally needs access to 32KiB of the previously decompressed data
 ///(or to the beginning of the decompressed data if less than 32KiB has been decompressed.)
@@ -1005,16 +1100,15 @@ fn decompress_fast(
 /// and thus allows a smaller output buffer. The window size can be specified in the zlib
 /// header structure, however, the header data should not be relied on to be correct.
 ///
-/// `flags`
-/// Flags to indicate settings and status to the decompression function.
-/// * The `TINFL_FLAG_HAS_MORE_INPUT` has to be specified if more compressed data is to be provided
+/// `flags` indicates settings and status to the decompression function.
+/// * The [`TINFL_FLAG_HAS_MORE_INPUT`] has to be specified if more compressed data is to be provided
 /// in a subsequent call to this function.
-/// * See the the [`inflate_flags`](inflate_flags/index.html) module for details on other flags.
+/// * See the the [`inflate_flags`] module for details on other flags.
 ///
 /// # Returns
-/// returns a tuple containing the status of the compressor, the number of input bytes read, and the
-/// number of bytes output to `out_cur`.
-/// Updates the position of `out_cur` to point to the next free spot in the output buffer.
+///
+/// Returns a tuple containing the status of the compressor, the number of input bytes read, and the
+/// number of bytes output to `out`.
 ///
 /// This function shouldn't panic pending any bugs.
 pub fn decompress(
@@ -1232,7 +1326,18 @@ pub fn decompress(
                 } else {
                     memset(&mut r.tables[HUFFLEN_TABLE].code_size[..], 0);
                     l.counter = 0;
-                    Action::Jump(ReadHufflenTableCodeSize)
+                    // Check that the litlen and distance are within spec.
+                    // litlen table should be <=286 acc to the RFC and
+                    // additionally zlib rejects dist table sizes larger than 30.
+                    // NOTE this the final sizes after adding back predefined values, not
+                    // raw value in the data.
+                    // See miniz_oxide issue #130 and https://github.com/madler/zlib/issues/82.
+                    if r.table_sizes[LITLEN_TABLE] <= 286 && r.table_sizes[DIST_TABLE] <= 30 {
+                        Action::Jump(ReadHufflenTableCodeSize)
+                    }
+                    else {
+                        Action::Jump(BadDistOrLiteralTableLength)
+                    }
                 }
             }),
 
@@ -1409,7 +1514,8 @@ pub fn decompress(
                 // Mask the top bits since they may contain length info.
                 l.counter &= 511;
 
-                if l.counter == 256 {
+                if l.counter
+                    == 256 {
                     // We hit the end of block symbol.
                     Action::Jump(BlockDone)
                 } else if l.counter > 285 {
@@ -1586,7 +1692,8 @@ pub fn decompress(
             DoneForever => break TINFLStatus::Done,
 
             // Anything else indicates failure.
-            // BadZlibHeader | BadRawLength | BlockTypeUnexpected | DistanceOutOfBounds |
+            // BadZlibHeader | BadRawLength | BadDistOrLiteralTableLength | BlockTypeUnexpected |
+            // DistanceOutOfBounds |
             // BadTotalSymbols | BadCodeSizeDistPrevLookup | BadCodeSizeSum | InvalidLitlen |
             // InvalidDist | InvalidCodeLen
             _ => break TINFLStatus::Failed,
@@ -1601,7 +1708,13 @@ pub fn decompress(
         0
     };
 
-    if status == TINFLStatus::NeedsMoreInput && out_buf.bytes_left() == 0 {
+    // Make sure HasMoreOutput overrides NeedsMoreInput if the output buffer is full.
+    // (Unless the missing input is the adler32 value in which case we don't need to write anything.)
+    // TODO: May want to see if we can do this in a better way.
+    if status == TINFLStatus::NeedsMoreInput
+        && out_buf.bytes_left() == 0
+        && state != State::ReadAdler32
+    {
         status = TINFLStatus::HasMoreOutput
     }
 
@@ -1616,7 +1729,12 @@ pub fn decompress(
 
     // If this is a zlib stream, and update the adler32 checksum with the decompressed bytes if
     // requested.
-    let need_adler = flags & (TINFL_FLAG_PARSE_ZLIB_HEADER | TINFL_FLAG_COMPUTE_ADLER32) != 0;
+    let need_adler = if (flags & TINFL_FLAG_IGNORE_ADLER32) == 0 {
+        flags & (TINFL_FLAG_PARSE_ZLIB_HEADER | TINFL_FLAG_COMPUTE_ADLER32) != 0
+    } else {
+        // If TINFL_FLAG_IGNORE_ADLER32 is enabled, ignore the checksum.
+        false
+    };
     if need_adler && status as i32 >= 0 {
         let out_buf_pos = out_buf.position();
         r.check_adler32 = update_adler32(r.check_adler32, &out_buf.get_ref()[out_pos..out_buf_pos]);
@@ -1781,14 +1899,15 @@ mod test {
         cr(
             b"M\xff\xffM*\xad\xad\xad\xad\xad\xad\xad\xcd\xcd\xcdM",
             F,
-            State::BadTotalSymbols,
+            State::BadDistOrLiteralTableLength,
             false,
         );
+
         // Bad CLEN (also from inflate library issues)
         cr(
             b"\xdd\xff\xff*M\x94ffffffffff",
             F,
-            State::BadTotalSymbols,
+            State::BadDistOrLiteralTableLength,
             false,
         );
 
@@ -1810,9 +1929,9 @@ mod test {
         // Invalid set of code lengths - TODO Check if this is the correct error for this.
         c(&[4, 0, 0xfe, 0xff], F, State::BadTotalSymbols);
         // Invalid repeat in list of code lengths.
-        // (Try to repeat a non-existant code.)
+        // (Try to repeat a non-existent code.)
         c(&[4, 0, 0x24, 0x49, 0], F, State::BadCodeSizeDistPrevLookup);
-        // Missing end of block code (should we have a separate error for this?) - fails on futher input
+        // Missing end of block code (should we have a separate error for this?) - fails on further input
         //    c(&[4, 0, 0x24, 0xe9, 0xff, 0x6d], F, State::BadTotalSymbols);
         // Invalid set of literals/lengths
         c(

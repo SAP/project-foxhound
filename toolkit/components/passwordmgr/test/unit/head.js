@@ -6,40 +6,34 @@
 
 // Globals
 
-const { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { LoginRecipesContent, LoginRecipesParent } = ChromeUtils.import(
-  "resource://gre/modules/LoginRecipes.jsm"
+const { LoginRecipesContent, LoginRecipesParent } = ChromeUtils.importESModule(
+  "resource://gre/modules/LoginRecipes.sys.mjs"
 );
-const { LoginHelper } = ChromeUtils.import(
-  "resource://gre/modules/LoginHelper.jsm"
+const { LoginHelper } = ChromeUtils.importESModule(
+  "resource://gre/modules/LoginHelper.sys.mjs"
 );
-const { FileTestUtils } = ChromeUtils.import(
-  "resource://testing-common/FileTestUtils.jsm"
+const { FileTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/FileTestUtils.sys.mjs"
 );
-const { LoginTestUtils } = ChromeUtils.import(
-  "resource://testing-common/LoginTestUtils.jsm"
+const { LoginTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/LoginTestUtils.sys.mjs"
 );
-const { MockDocument } = ChromeUtils.import(
-  "resource://testing-common/MockDocument.jsm"
+const { MockDocument } = ChromeUtils.importESModule(
+  "resource://testing-common/MockDocument.sys.mjs"
 );
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "DownloadPaths",
-  "resource://gre/modules/DownloadPaths.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "FileUtils",
-  "resource://gre/modules/FileUtils.jsm"
-);
-ChromeUtils.defineModuleGetter(this, "OS", "resource://gre/modules/osfile.jsm");
+const lazy = {};
+
+ChromeUtils.defineESModuleGetters(this, {
+  DownloadPaths: "resource://gre/modules/DownloadPaths.sys.mjs",
+  FileUtils: "resource://gre/modules/FileUtils.sys.mjs",
+});
 
 const LoginInfo = Components.Constructor(
   "@mozilla.org/login-manager/loginInfo;1",
@@ -80,14 +74,14 @@ const RecipeHelpers = {
 
 // Initialization functions common to all tests
 
-add_task(async function test_common_initialize() {
+add_setup(async function test_common_initialize() {
   // Before initializing the service for the first time, we should copy the key
   // file required to decrypt the logins contained in the SQLite databases used
   // by migration tests.  This file is not required for the other tests.
   const keyDBName = "key4.db";
-  await OS.File.copy(
+  await IOUtils.copy(
     do_get_file(`data/${keyDBName}`).path,
-    OS.Path.join(OS.Constants.Path.profileDir, keyDBName)
+    PathUtils.join(PathUtils.profileDir, keyDBName)
   );
 
   // Ensure that the service and the storage module are initialized.
@@ -100,7 +94,7 @@ add_task(async function test_common_initialize() {
   }
 });
 
-add_task(async function test_common_prefs() {
+add_setup(async function test_common_prefs() {
   Services.prefs.setStringPref(NEW_PASSWORD_HEURISTIC_ENABLED_PREF, "0.75");
 });
 

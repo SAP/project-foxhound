@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-let { ForgetAboutSite } = ChromeUtils.import(
-  "resource://gre/modules/ForgetAboutSite.jsm"
+let { ForgetAboutSite } = ChromeUtils.importESModule(
+  "resource://gre/modules/ForgetAboutSite.sys.mjs"
 );
 
 function promiseClearHistory() {
@@ -24,7 +24,7 @@ function promiseClearHistory() {
   });
 }
 
-add_task(async function() {
+add_task(async function () {
   // utility functions
   function countClosedTabsByTitle(aClosedTabList, aTitle) {
     return aClosedTabList.filter(aData => aData.title == aTitle).length;

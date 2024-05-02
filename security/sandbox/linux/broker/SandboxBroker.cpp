@@ -47,7 +47,7 @@ SandboxBroker::SandboxBroker(UniquePtr<const Policy> aPolicy, int aChildPid,
     : mChildPid(aChildPid), mPolicy(std::move(aPolicy)) {
   int fds[2];
   if (0 != socketpair(AF_UNIX, SOCK_SEQPACKET | SOCK_CLOEXEC, 0, fds)) {
-    SANDBOX_LOG_ERROR("SandboxBroker: socketpair failed: %s", strerror(errno));
+    SANDBOX_LOG_ERRNO("SandboxBroker: socketpair failed");
     mFileDesc = -1;
     aClientFd = -1;
     return;
@@ -56,13 +56,13 @@ SandboxBroker::SandboxBroker(UniquePtr<const Policy> aPolicy, int aChildPid,
   aClientFd = fds[1];
 
   if (!PlatformThread::Create(0, this, &mThread)) {
-    SANDBOX_LOG_ERROR("SandboxBroker: thread creation failed: %s",
-                      strerror(errno));
+    SANDBOX_LOG_ERRNO("SandboxBroker: thread creation failed");
     close(mFileDesc);
     close(aClientFd);
     mFileDesc = -1;
     aClientFd = -1;
   }
+#if defined(MOZ_CONTENT_TEMP_DIR)
   nsCOMPtr<nsIFile> tmpDir;
   nsresult rv = NS_GetSpecialDirectory(NS_APP_CONTENT_PROCESS_TEMP_DIR,
                                        getter_AddRefs(tmpDir));
@@ -72,6 +72,7 @@ SandboxBroker::SandboxBroker(UniquePtr<const Policy> aPolicy, int aChildPid,
       mContentTempPath.Truncate();
     }
   }
+#endif
 }
 
 UniquePtr<SandboxBroker> SandboxBroker::Create(
@@ -156,7 +157,7 @@ void SandboxBroker::Policy::AddPath(int aPerms, const char* aPath,
   MOZ_ASSERT(perms & MAY_ACCESS);
 
   if (SandboxInfo::Get().Test(SandboxInfo::kVerbose)) {
-    SANDBOX_LOG_ERROR("policy for %s: %d -> %d", aPath, perms, perms | aPerms);
+    SANDBOX_LOG("policy for %s: %d -> %d", aPath, perms, perms | aPerms);
   }
   perms |= aPerms;
 }
@@ -237,8 +238,8 @@ void SandboxBroker::Policy::AddPrefixInternal(int aPerms,
 
   int newPerms = perms | aPerms | RECURSIVE;
   if (SandboxInfo::Get().Test(SandboxInfo::kVerbose)) {
-    SANDBOX_LOG_ERROR("policy for %s: %d -> %d",
-                      PromiseFlatCString(aPath).get(), perms, newPerms);
+    SANDBOX_LOG("policy for %s: %d -> %d", PromiseFlatCString(aPath).get(),
+                perms, newPerms);
   }
   perms = newPerms;
 }
@@ -252,7 +253,8 @@ void SandboxBroker::Policy::AddFilePrefix(int aPerms, const char* aDir,
     return;
   }
   while ((de = readdir(dirp))) {
-    if (strncmp(de->d_name, aPrefix, prefixLen) == 0) {
+    if (strcmp(de->d_name, ".") != 0 && strcmp(de->d_name, "..") != 0 &&
+        strncmp(de->d_name, aPrefix, prefixLen) == 0) {
       nsAutoCString subPath;
       subPath.Assign(aDir);
       subPath.Append('/');
@@ -301,7 +303,7 @@ void SandboxBroker::Policy::FixRecursivePermissions() {
   mMap.SwapElements(oldMap);
 
   if (SandboxInfo::Get().Test(SandboxInfo::kVerbose)) {
-    SANDBOX_LOG_ERROR("fixing recursive policy entries");
+    SANDBOX_LOG("fixing recursive policy entries");
   }
 
   for (const auto& entry : oldMap) {
@@ -331,8 +333,8 @@ void SandboxBroker::Policy::FixRecursivePermissions() {
         // if a child is set with FORCE_DENY, do not compute inheritedPerms
         if ((localPerms & FORCE_DENY) == FORCE_DENY) {
           if (SandboxInfo::Get().Test(SandboxInfo::kVerbose)) {
-            SANDBOX_LOG_ERROR("skip inheritence policy for %s: %d",
-                              PromiseFlatCString(path).get(), localPerms);
+            SANDBOX_LOG("skip inheritence policy for %s: %d",
+                        PromiseFlatCString(path).get(), localPerms);
           }
         } else {
           inheritedPerms |= ancestorPerms & ~RECURSIVE;
@@ -343,15 +345,15 @@ void SandboxBroker::Policy::FixRecursivePermissions() {
     const int newPerms = localPerms | inheritedPerms;
     if ((newPerms & ~RECURSIVE) == inheritedPerms) {
       if (SandboxInfo::Get().Test(SandboxInfo::kVerbose)) {
-        SANDBOX_LOG_ERROR("removing redundant %s: %d -> %d",
-                          PromiseFlatCString(path).get(), localPerms, newPerms);
+        SANDBOX_LOG("removing redundant %s: %d -> %d",
+                    PromiseFlatCString(path).get(), localPerms, newPerms);
       }
       // Skip adding this entry to the new map.
       continue;
     }
     if (SandboxInfo::Get().Test(SandboxInfo::kVerbose)) {
-      SANDBOX_LOG_ERROR("new policy for %s: %d -> %d",
-                        PromiseFlatCString(path).get(), localPerms, newPerms);
+      SANDBOX_LOG("new policy for %s: %d -> %d", PromiseFlatCString(path).get(),
+                  localPerms, newPerms);
     }
     mMap.InsertOrUpdate(path, newPerms);
   }
@@ -468,11 +470,11 @@ static bool AllowOpen(int aReqFlags, int aPerms) {
   return (aPerms & needed) == needed;
 }
 
-static int DoStat(const char* aPath, void* aBuff, int aFlags) {
+static int DoStat(const char* aPath, statstruct* aBuff, int aFlags) {
   if (aFlags & O_NOFOLLOW) {
-    return lstatsyscall(aPath, (statstruct*)aBuff);
+    return lstatsyscall(aPath, aBuff);
   }
-  return statsyscall(aPath, (statstruct*)aBuff);
+  return statsyscall(aPath, aBuff);
 }
 
 static int DoLink(const char* aPath, const char* aPath2,
@@ -561,6 +563,7 @@ size_t SandboxBroker::ConvertRelativePath(char* aPath, size_t aBufSize,
   return aPathLen;
 }
 
+#if defined(MOZ_CONTENT_TEMP_DIR)
 size_t SandboxBroker::RemapTempDirs(char* aPath, size_t aBufSize,
                                     size_t aPathLen) {
   nsAutoCString path(aPath);
@@ -588,6 +591,7 @@ size_t SandboxBroker::RemapTempDirs(char* aPath, size_t aBufSize,
 
   return aPathLen;
 }
+#endif
 
 nsCString SandboxBroker::ReverseSymlinks(const nsACString& aPath) {
   // Revert any symlinks we previously resolved.
@@ -626,7 +630,7 @@ int SandboxBroker::SymlinkPermissions(const char* aPath,
       ReverseSymlinks(nsDependentCString(pathBufSymlink, aPathLen));
   if (!orig.IsEmpty()) {
     if (SandboxInfo::Get().Test(SandboxInfo::kVerbose)) {
-      SANDBOX_LOG_ERROR("Reversing %s -> %s", aPath, orig.get());
+      SANDBOX_LOG("Reversing %s -> %s", aPath, orig.get());
     }
     base::strlcpy(pathBufSymlink, orig.get(), sizeof(pathBufSymlink));
   }
@@ -653,7 +657,7 @@ void SandboxBroker::ThreadMain(void) {
   (void)NS_GetCurrentThread();
 
   char threadName[16];
-  SprintfLiteral(threadName, "FS Broker %d", mChildPid);
+  SprintfLiteral(threadName, "FSBroker%d", mChildPid);
   PlatformThread::SetName(threadName);
 
   AUTO_PROFILER_REGISTER_THREAD(threadName);
@@ -663,6 +667,7 @@ void SandboxBroker::ThreadMain(void) {
   // before the main thread loop starts
   bool permissive = SandboxInfo::Get().Test(SandboxInfo::kPermissive);
 
+#if defined(MOZ_CONTENT_TEMP_DIR)
   // Find the current temporary directory
   nsCOMPtr<nsIFile> tmpDir;
   nsresult rv =
@@ -680,11 +685,11 @@ void SandboxBroker::ThreadMain(void) {
   // always try /tmp anyway in the substitution code
   if (NS_FAILED(rv) || mTempPath.IsEmpty()) {
     if (SandboxInfo::Get().Test(SandboxInfo::kVerbose)) {
-      SANDBOX_LOG_ERROR("Tempdir: /tmp");
+      SANDBOX_LOG("Tempdir: /tmp");
     }
   } else {
     if (SandboxInfo::Get().Test(SandboxInfo::kVerbose)) {
-      SANDBOX_LOG_ERROR("Tempdir: %s", mTempPath.get());
+      SANDBOX_LOG("Tempdir: %s", mTempPath.get());
     }
     // If it's /tmp, clear it here so we don't compare against
     // it twice. Just let the fallback code do the work.
@@ -692,6 +697,7 @@ void SandboxBroker::ThreadMain(void) {
       mTempPath.Truncate();
     }
   }
+#endif
 
   while (true) {
     struct iovec ios[2];
@@ -720,7 +726,7 @@ void SandboxBroker::ThreadMain(void) {
     const ssize_t recvd = RecvWithFd(mFileDesc, ios, 2, &respfd);
     if (recvd == 0) {
       if (SandboxInfo::Get().Test(SandboxInfo::kVerbose)) {
-        SANDBOX_LOG_ERROR("EOF from pid %d", mChildPid);
+        SANDBOX_LOG("EOF from pid %d", mChildPid);
       }
       break;
     }
@@ -728,18 +734,18 @@ void SandboxBroker::ThreadMain(void) {
     // at least in some cases, but protocol violation indicates a
     // hostile client, so terminate the broker instead.
     if (recvd < 0) {
-      SANDBOX_LOG_ERROR("bad read from pid %d: %s", mChildPid, strerror(errno));
+      SANDBOX_LOG_ERRNO("bad read from pid %d", mChildPid);
       shutdown(mFileDesc, SHUT_RD);
       break;
     }
     if (recvd < static_cast<ssize_t>(sizeof(req))) {
-      SANDBOX_LOG_ERROR("bad read from pid %d (%d < %d)", mChildPid, recvd,
-                        sizeof(req));
+      SANDBOX_LOG("bad read from pid %d (%d < %d)", mChildPid, recvd,
+                  sizeof(req));
       shutdown(mFileDesc, SHUT_RD);
       break;
     }
     if (respfd == -1) {
-      SANDBOX_LOG_ERROR("no response fd from pid %d", mChildPid);
+      SANDBOX_LOG("no response fd from pid %d", mChildPid);
       shutdown(mFileDesc, SHUT_RD);
       break;
     }
@@ -761,7 +767,7 @@ void SandboxBroker::ThreadMain(void) {
     // 0 terminated.
     size_t recvBufLen = static_cast<size_t>(recvd) - sizeof(req);
     if (recvBufLen > 0 && recvBuf[recvBufLen - 1] != 0) {
-      SANDBOX_LOG_ERROR("corrupted path buffer from pid %d", mChildPid);
+      SANDBOX_LOG("corrupted path buffer from pid %d", mChildPid);
       shutdown(mFileDesc, SHUT_RD);
       break;
     }
@@ -785,11 +791,13 @@ void SandboxBroker::ThreadMain(void) {
       perms = mPolicy->Lookup(nsDependentCString(pathBuf, pathLen));
 
       // We don't have permissions on the requested dir.
+#if defined(MOZ_CONTENT_TEMP_DIR)
       if (!perms) {
         // Was it a tempdir that we can remap?
         pathLen = RemapTempDirs(pathBuf, sizeof(pathBuf), pathLen);
         perms = mPolicy->Lookup(nsDependentCString(pathBuf, pathLen));
       }
+#endif
       if (!perms) {
         // Did we arrive from a symlink in a path that is not writable?
         // Then try to figure out the original path and see if that is
@@ -870,10 +878,11 @@ void SandboxBroker::ThreadMain(void) {
           break;
 
         case SANDBOX_FILE_STAT:
-          if (DoStat(pathBuf, (struct stat*)&respBuf, req.mFlags) == 0) {
+          MOZ_ASSERT(req.mBufSize == sizeof(statstruct));
+          if (DoStat(pathBuf, (statstruct*)&respBuf, req.mFlags) == 0) {
             resp.mError = 0;
             ios[1].iov_base = &respBuf;
-            ios[1].iov_len = req.mBufSize;
+            ios[1].iov_len = sizeof(statstruct);
           } else {
             resp.mError = -errno;
           }
@@ -971,8 +980,8 @@ void SandboxBroker::ThreadMain(void) {
                 nsDependentCString xlat(respBuf, respSize);
                 if (!orig.Equals(xlat) && xlat[0] == '/') {
                   if (SandboxInfo::Get().Test(SandboxInfo::kVerbose)) {
-                    SANDBOX_LOG_ERROR("Recording mapping %s -> %s", xlat.get(),
-                                      orig.get());
+                    SANDBOX_LOG("Recording mapping %s -> %s", xlat.get(),
+                                orig.get());
                   }
                   mSymlinkMap.InsertOrUpdate(xlat, orig);
                 }
@@ -985,8 +994,8 @@ void SandboxBroker::ThreadMain(void) {
                   if (!orig.Equals(resolvedXlat) &&
                       !xlat.Equals(resolvedXlat)) {
                     if (SandboxInfo::Get().Test(SandboxInfo::kVerbose)) {
-                      SANDBOX_LOG_ERROR("Recording mapping %s -> %s",
-                                        resolvedXlat.get(), orig.get());
+                      SANDBOX_LOG("Recording mapping %s -> %s",
+                                  resolvedXlat.get(), orig.get());
                     }
                     mSymlinkMap.InsertOrUpdate(resolvedXlat, orig);
                   }
@@ -1027,8 +1036,7 @@ void SandboxBroker::ThreadMain(void) {
     const size_t numIO = ios[1].iov_len > 0 ? 2 : 1;
     const ssize_t sent = SendWithFd(respfd, ios, numIO, openedFd);
     if (sent < 0) {
-      SANDBOX_LOG_ERROR("failed to send broker response to pid %d: %s",
-                        mChildPid, strerror(errno));
+      SANDBOX_LOG_ERRNO("failed to send broker response to pid %d", mChildPid);
     } else {
       MOZ_ASSERT(static_cast<size_t>(sent) == ios[0].iov_len + ios[1].iov_len);
     }
@@ -1071,18 +1079,16 @@ void SandboxBroker::AuditPermissive(int aOp, int aFlags, int aPerms,
     errno = 0;
   }
 
-  SANDBOX_LOG_ERROR(
+  SANDBOX_LOG_ERRNO(
       "SandboxBroker: would have denied op=%s rflags=%o perms=%d path=%s for "
-      "pid=%d"
-      " permissive=1 error=\"%s\"",
-      OperationDescription[aOp], aFlags, aPerms, aPath, mChildPid,
-      strerror(errno));
+      "pid=%d permissive=1; real status",
+      OperationDescription[aOp], aFlags, aPerms, aPath, mChildPid);
 }
 
 void SandboxBroker::AuditDenial(int aOp, int aFlags, int aPerms,
                                 const char* aPath) {
   if (SandboxInfo::Get().Test(SandboxInfo::kVerbose)) {
-    SANDBOX_LOG_ERROR(
+    SANDBOX_LOG(
         "SandboxBroker: denied op=%s rflags=%o perms=%d path=%s for pid=%d",
         OperationDescription[aOp], aFlags, aPerms, aPath, mChildPid);
   }

@@ -18,8 +18,7 @@
 class nsMediaQuery;
 class nsCSSValue;
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class ResponsiveImageCandidate;
 
@@ -58,8 +57,9 @@ class ResponsiveImageSelector {
   bool SetSizesFromDescriptor(const nsAString& aSizesDescriptor);
 
   // Set the default source, treated as the least-precedence 1.0 density source.
-  void SetDefaultSource(const nsAString& aURLString,
-                        nsIPrincipal* aPrincipal = nullptr);
+  void SetDefaultSource(const nsAString& aURLString, nsIPrincipal* = nullptr);
+  void SetDefaultSource(nsIURI* aURI, nsIPrincipal* = nullptr);
+  void ClearDefaultSource();
 
   uint32_t NumCandidates(bool aIncludeDefault = true);
 
@@ -126,7 +126,7 @@ class ResponsiveImageSelector {
   nsCOMPtr<nsIURI> mSelectedCandidateURL;
 
   // Servo bits.
-  UniquePtr<RawServoSourceSizeList> mServoSourceSizeList;
+  UniquePtr<StyleSourceSizeList> mServoSourceSizeList;
 };
 
 class ResponsiveImageCandidate {
@@ -200,7 +200,6 @@ class ResponsiveImageCandidate {
   } mValue;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_responsiveimageselector_h__

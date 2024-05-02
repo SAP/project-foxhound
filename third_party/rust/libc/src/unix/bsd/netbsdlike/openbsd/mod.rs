@@ -7,6 +7,7 @@ pub type sigset_t = ::c_uint;
 pub type blksize_t = i32;
 pub type fsblkcnt_t = u64;
 pub type fsfilcnt_t = u64;
+pub type idtype_t = ::c_uint;
 pub type pthread_attr_t = *mut ::c_void;
 pub type pthread_mutex_t = *mut ::c_void;
 pub type pthread_mutexattr_t = *mut ::c_void;
@@ -35,6 +36,11 @@ pub type Elf64_Sxword = i64;
 pub type Elf64_Word = u32;
 pub type Elf64_Xword = u64;
 
+// search.h
+
+pub type ENTRY = entry;
+pub type ACTION = ::c_uint;
+
 cfg_if! {
     if #[cfg(target_pointer_width = "64")] {
         type Elf_Addr = Elf64_Addr;
@@ -48,6 +54,12 @@ cfg_if! {
 }
 
 s! {
+    pub struct ip_mreqn {
+        pub imr_multiaddr: in_addr,
+        pub imr_address: in_addr,
+        pub imr_ifindex: ::c_int,
+    }
+
     pub struct glob_t {
         pub gl_pathc:   ::size_t,
         pub gl_matchc:  ::size_t,
@@ -98,7 +110,7 @@ s! {
     pub struct mfs_args {
         pub fspec: *mut ::c_char,
         pub export_info: export_args,
-        // https://github.com/openbsd/src/blob/master/sys/sys/types.h#L134
+        // https://github.com/openbsd/src/blob/HEAD/sys/sys/types.h#L134
         pub base: *mut ::c_char,
         pub size: ::c_ulong,
     }
@@ -178,7 +190,7 @@ s! {
         pub cr_uid: ::uid_t,
         pub cr_gid: ::gid_t,
         pub cr_ngroups: ::c_short,
-        //https://github.com/openbsd/src/blob/master/sys/sys/syslimits.h#L44
+        //https://github.com/openbsd/src/blob/HEAD/sys/sys/syslimits.h#L44
         pub cr_groups: [::gid_t; 16],
     }
 
@@ -207,6 +219,12 @@ s! {
         pub sin_port: ::in_port_t,
         pub sin_addr: ::in_addr,
         pub sin_zero: [i8; 8],
+    }
+
+    pub struct splice {
+        pub sp_fd: ::c_int,
+        pub sp_max: ::off_t,
+        pub sp_idle: ::timeval,
     }
 
     pub struct kevent {
@@ -386,6 +404,104 @@ s! {
     }
 
     // sys/sysctl.h
+    pub struct kinfo_proc {
+        pub p_forw: u64,
+        pub p_back: u64,
+        pub p_paddr: u64,
+        pub p_addr: u64,
+        pub p_fd: u64,
+        pub p_stats: u64,
+        pub p_limit: u64,
+        pub p_vmspace: u64,
+        pub p_sigacts: u64,
+        pub p_sess: u64,
+        pub p_tsess: u64,
+        pub p_ru: u64,
+        pub p_eflag: i32,
+        pub p_exitsig: i32,
+        pub p_flag: i32,
+        pub p_pid: i32,
+        pub p_ppid: i32,
+        pub p_sid: i32,
+        pub p__pgid: i32,
+        pub p_tpgid: i32,
+        pub p_uid: u32,
+        pub p_ruid: u32,
+        pub p_gid: u32,
+        pub p_rgid: u32,
+        pub p_groups: [u32; KI_NGROUPS as usize],
+        pub p_ngroups: i16,
+        pub p_jobc: i16,
+        pub p_tdev: u32,
+        pub p_estcpu: u32,
+        pub p_rtime_sec: u32,
+        pub p_rtime_usec: u32,
+        pub p_cpticks: i32,
+        pub p_pctcpu: u32,
+        pub p_swtime: u32,
+        pub p_slptime: u32,
+        pub p_schedflags: i32,
+        pub p_uticks: u64,
+        pub p_sticks: u64,
+        pub p_iticks: u64,
+        pub p_tracep: u64,
+        pub p_traceflag: i32,
+        pub p_holdcnt: i32,
+        pub p_siglist: i32,
+        pub p_sigmask: u32,
+        pub p_sigignore: u32,
+        pub p_sigcatch: u32,
+        pub p_stat: i8,
+        pub p_priority: u8,
+        pub p_usrpri: u8,
+        pub p_nice: u8,
+        pub p_xstat: u16,
+        pub p_spare: u16,
+        pub p_comm: [::c_char; KI_MAXCOMLEN as usize],
+        pub p_wmesg: [::c_char; KI_WMESGLEN as usize],
+        pub p_wchan: u64,
+        pub p_login: [::c_char; KI_MAXLOGNAME as usize],
+        pub p_vm_rssize: i32,
+        pub p_vm_tsize: i32,
+        pub p_vm_dsize: i32,
+        pub p_vm_ssize: i32,
+        pub p_uvalid: i64,
+        pub p_ustart_sec: u64,
+        pub p_ustart_usec: u32,
+        pub p_uutime_sec: u32,
+        pub p_uutime_usec: u32,
+        pub p_ustime_sec: u32,
+        pub p_ustime_usec: u32,
+        pub p_uru_maxrss: u64,
+        pub p_uru_ixrss: u64,
+        pub p_uru_idrss: u64,
+        pub p_uru_isrss: u64,
+        pub p_uru_minflt: u64,
+        pub p_uru_majflt: u64,
+        pub p_uru_nswap: u64,
+        pub p_uru_inblock: u64,
+        pub p_uru_oublock: u64,
+        pub p_uru_msgsnd: u64,
+        pub p_uru_msgrcv: u64,
+        pub p_uru_nsignals: u64,
+        pub p_uru_nvcsw: u64,
+        pub p_uru_nivcsw: u64,
+        pub p_uctime_sec: u32,
+        pub p_uctime_usec: u32,
+        pub p_psflags: u32,
+        pub p_acflag: u32,
+        pub p_svuid: u32,
+        pub p_svgid: u32,
+        pub p_emul: [::c_char; KI_EMULNAMELEN as usize],
+        pub p_rlim_rss_cur: u64,
+        pub p_cpuid: u64,
+        pub p_vm_map_size: u64,
+        pub p_tid: i32,
+        pub p_rtableid: u32,
+        pub p_pledge: u64,
+        pub p_name: [::c_char; KI_MAXCOMLEN as usize],
+    }
+
     pub struct kinfo_vmentry {
         pub kve_start: ::c_ulong,
         pub kve_end: ::c_ulong,
@@ -411,6 +527,20 @@ s! {
     pub struct ptrace_thread_state {
         pub pts_tid: ::pid_t,
     }
+
+    // search.h
+    pub struct entry {
+        pub key: *mut ::c_char,
+        pub data: *mut ::c_void,
+    }
+
+    pub struct ifreq {
+        pub ifr_name: [::c_char; ::IFNAMSIZ],
+        #[cfg(libc_union)]
+        pub ifr_ifru: __c_anonymous_ifr_ifru,
+        #[cfg(not(libc_union))]
+        pub ifr_ifru: ::sockaddr,
+    }
 }
 
 impl siginfo_t {
@@ -418,12 +548,46 @@ impl siginfo_t {
         self.si_addr
     }
 
+    pub unsafe fn si_code(&self) -> ::c_int {
+        self.si_code
+    }
+
+    pub unsafe fn si_errno(&self) -> ::c_int {
+        self.si_errno
+    }
+
+    pub unsafe fn si_pid(&self) -> ::pid_t {
+        #[repr(C)]
+        struct siginfo_timer {
+            _si_signo: ::c_int,
+            _si_code: ::c_int,
+            _si_errno: ::c_int,
+            _pad: [::c_int; SI_PAD],
+            _pid: ::pid_t,
+        }
+        (*(self as *const siginfo_t as *const siginfo_timer))._pid
+    }
+
+    pub unsafe fn si_uid(&self) -> ::uid_t {
+        #[repr(C)]
+        struct siginfo_timer {
+            _si_signo: ::c_int,
+            _si_code: ::c_int,
+            _si_errno: ::c_int,
+            _pad: [::c_int; SI_PAD],
+            _pid: ::pid_t,
+            _uid: ::uid_t,
+        }
+        (*(self as *const siginfo_t as *const siginfo_timer))._uid
+    }
+
     pub unsafe fn si_value(&self) -> ::sigval {
         #[repr(C)]
         struct siginfo_timer {
             _si_signo: ::c_int,
-            _si_errno: ::c_int,
             _si_code: ::c_int,
+            _si_errno: ::c_int,
+            _pad: [::c_int; SI_PAD],
             _pid: ::pid_t,
             _uid: ::uid_t,
             value: ::sigval,
@@ -486,6 +650,18 @@ s_no_extra_traits! {
         align: [::c_char; 160],
     }
 
+    #[cfg(libc_union)]
+    pub union __c_anonymous_ifr_ifru {
+        pub ifru_addr: ::sockaddr,
+        pub ifru_dstaddr: ::sockaddr,
+        pub ifru_broadaddr: ::sockaddr,
+        pub ifru_flags: ::c_short,
+        pub ifru_metric: ::c_int,
+        pub ifru_vnetid: i64,
+        pub ifru_media: u64,
+        pub ifru_data: *mut ::c_char,
+        pub ifru_index: ::c_uint,
+    }
 }
 
 cfg_if! {
@@ -692,6 +868,60 @@ cfg_if! {
                 unsafe { self.align.hash(state) };
             }
         }
+
+        #[cfg(libc_union)]
+        impl PartialEq for __c_anonymous_ifr_ifru {
+            fn eq(&self, other: &__c_anonymous_ifr_ifru) -> bool {
+                unsafe {
+                    self.ifru_addr == other.ifru_addr
+                        && self.ifru_dstaddr == other.ifru_dstaddr
+                        && self.ifru_broadaddr == other.ifru_broadaddr
+                        && self.ifru_flags == other.ifru_flags
+                        && self.ifru_metric == other.ifru_metric
+                        && self.ifru_vnetid == other.ifru_vnetid
+                        && self.ifru_media == other.ifru_media
+                        && self.ifru_data == other.ifru_data
+                        && self.ifru_index == other.ifru_index
+                }
+            }
+        }
+
+        #[cfg(libc_union)]
+        impl Eq for __c_anonymous_ifr_ifru {}
+
+        #[cfg(libc_union)]
+        impl ::fmt::Debug for __c_anonymous_ifr_ifru {
+            fn fmt(&self, f: &mut ::fmt::Formatter) -> ::fmt::Result {
+                f.debug_struct("__c_anonymous_ifr_ifru")
+                    .field("ifru_addr", unsafe { &self.ifru_addr })
+                    .field("ifru_dstaddr", unsafe { &self.ifru_dstaddr })
+                    .field("ifru_broadaddr", unsafe { &self.ifru_broadaddr })
+                    .field("ifru_flags", unsafe { &self.ifru_flags })
+                    .field("ifru_metric", unsafe { &self.ifru_metric })
+                    .field("ifru_vnetid", unsafe { &self.ifru_vnetid })
+                    .field("ifru_media", unsafe { &self.ifru_media })
+                    .field("ifru_data", unsafe { &self.ifru_data })
+                    .field("ifru_index", unsafe { &self.ifru_index })
+                    .finish()
+            }
+        }
+
+        #[cfg(libc_union)]
+        impl ::hash::Hash for __c_anonymous_ifr_ifru {
+            fn hash<H: ::hash::Hasher>(&self, state: &mut H) {
+                unsafe {
+                    self.ifru_addr.hash(state);
+                    self.ifru_dstaddr.hash(state);
+                    self.ifru_broadaddr.hash(state);
+                    self.ifru_flags.hash(state);
+                    self.ifru_metric.hash(state);
+                    self.ifru_vnetid.hash(state);
+                    self.ifru_media.hash(state);
+                    self.ifru_data.hash(state);
+                    self.ifru_index.hash(state);
+                }
+            }
+        }
     }
 }
 
@@ -877,6 +1107,8 @@ pub const SO_NETPROC: ::c_int = 0x1020;
 pub const SO_RTABLE: ::c_int = 0x1021;
 pub const SO_PEERCRED: ::c_int = 0x1022;
 pub const SO_SPLICE: ::c_int = 0x1023;
+pub const SO_DOMAIN: ::c_int = 0x1024;
+pub const SO_PROTOCOL: ::c_int = 0x1025;
 
 // sys/netinet/in.h
 // Protocols (RFC 1700)
@@ -950,6 +1182,8 @@ pub const IP_RECVIF: ::c_int = 30;
 // sys/netinet/in.h
 pub const TCP_MD5SIG: ::c_int = 0x04;
 pub const TCP_NOPUSH: ::c_int = 0x10;
+
+pub const MSG_WAITFORONE: ::c_int = 0x1000;
 
 pub const AF_ECMA: ::c_int = 8;
 pub const AF_ROUTE: ::c_int = 17;
@@ -1142,6 +1376,10 @@ pub const _SC_NPROCESSORS_ONLN: ::c_int = 503;
 
 pub const FD_SETSIZE: usize = 1024;
 
+pub const SCHED_FIFO: ::c_int = 1;
+pub const SCHED_OTHER: ::c_int = 2;
+pub const SCHED_RR: ::c_int = 3;
+
 pub const ST_NOSUID: ::c_ulong = 2;
 
 pub const PTHREAD_MUTEX_INITIALIZER: pthread_mutex_t = 0 as *mut _;
@@ -1154,13 +1392,15 @@ pub const PTHREAD_MUTEX_NORMAL: ::c_int = 3;
 pub const PTHREAD_MUTEX_STRICT_NP: ::c_int = 4;
 pub const PTHREAD_MUTEX_DEFAULT: ::c_int = PTHREAD_MUTEX_STRICT_NP;
 
-pub const EVFILT_AIO: i16 = -3;
-pub const EVFILT_PROC: i16 = -5;
 pub const EVFILT_READ: i16 = -1;
+pub const EVFILT_WRITE: i16 = -2;
+pub const EVFILT_AIO: i16 = -3;
+pub const EVFILT_VNODE: i16 = -4;
+pub const EVFILT_PROC: i16 = -5;
 pub const EVFILT_SIGNAL: i16 = -6;
 pub const EVFILT_TIMER: i16 = -7;
-pub const EVFILT_VNODE: i16 = -4;
-pub const EVFILT_WRITE: i16 = -2;
+pub const EVFILT_DEVICE: i16 = -8;
+pub const EVFILT_EXCEPT: i16 = -9;
 
 pub const EV_ADD: u16 = 0x1;
 pub const EV_DELETE: u16 = 0x2;
@@ -1173,10 +1413,13 @@ pub const EV_DISPATCH: u16 = 0x80;
 pub const EV_FLAG1: u16 = 0x2000;
 pub const EV_ERROR: u16 = 0x4000;
 pub const EV_EOF: u16 = 0x8000;
-pub const EV_SYSFLAGS: u16 = 0xf000;
+
+#[deprecated(since = "0.2.113", note = "Not stable across OS versions")]
+pub const EV_SYSFLAGS: u16 = 0xf800;
 
 pub const NOTE_LOWAT: u32 = 0x00000001;
 pub const NOTE_EOF: u32 = 0x00000002;
+pub const NOTE_OOB: u32 = 0x00000004;
 pub const NOTE_DELETE: u32 = 0x00000001;
 pub const NOTE_WRITE: u32 = 0x00000002;
 pub const NOTE_EXTEND: u32 = 0x00000004;
@@ -1193,6 +1436,7 @@ pub const NOTE_PCTRLMASK: u32 = 0xf0000000;
 pub const NOTE_TRACK: u32 = 0x00000001;
 pub const NOTE_TRACKERR: u32 = 0x00000002;
 pub const NOTE_CHILD: u32 = 0x00000004;
+pub const NOTE_CHANGE: u32 = 0x00000001;
 
 pub const TMP_MAX: ::c_uint = 0x7fffffff;
 
@@ -1347,12 +1591,41 @@ pub const KI_WMESGLEN: ::c_int = 8;
 pub const KI_MAXLOGNAME: ::c_int = 32;
 pub const KI_EMULNAMELEN: ::c_int = 8;
 
+pub const KVE_ET_OBJ: ::c_int = 0x00000001;
+pub const KVE_ET_SUBMAP: ::c_int = 0x00000002;
+pub const KVE_ET_COPYONWRITE: ::c_int = 0x00000004;
+pub const KVE_ET_NEEDSCOPY: ::c_int = 0x00000008;
+pub const KVE_ET_HOLE: ::c_int = 0x00000010;
+pub const KVE_ET_NOFAULT: ::c_int = 0x00000020;
+pub const KVE_ET_STACK: ::c_int = 0x00000040;
+pub const KVE_ET_WC: ::c_int = 0x000000080;
+pub const KVE_ET_CONCEAL: ::c_int = 0x000000100;
+pub const KVE_ET_SYSCALL: ::c_int = 0x000000200;
+pub const KVE_ET_FREEMAPPED: ::c_int = 0x000000800;
+
+pub const KVE_PROT_NONE: ::c_int = 0x00000000;
+pub const KVE_PROT_READ: ::c_int = 0x00000001;
+pub const KVE_PROT_WRITE: ::c_int = 0x00000002;
+pub const KVE_PROT_EXEC: ::c_int = 0x00000004;
+
+pub const KVE_ADV_NORMAL: ::c_int = 0x00000000;
+pub const KVE_ADV_RANDOM: ::c_int = 0x00000001;
+pub const KVE_ADV_SEQUENTIAL: ::c_int = 0x00000002;
+
+pub const KVE_INH_SHARE: ::c_int = 0x00000000;
+pub const KVE_INH_COPY: ::c_int = 0x00000010;
+pub const KVE_INH_NONE: ::c_int = 0x00000020;
+pub const KVE_INH_ZERO: ::c_int = 0x00000030;
+
+pub const KVE_F_STATIC: ::c_int = 0x1;
+pub const KVE_F_KMEM: ::c_int = 0x2;
+
 pub const CHWFLOW: ::tcflag_t = ::MDMBUF | ::CRTSCTS;
 pub const OLCUC: ::tcflag_t = 0x20;
 pub const ONOCR: ::tcflag_t = 0x40;
 pub const ONLRET: ::tcflag_t = 0x80;
 
-//https://github.com/openbsd/src/blob/master/sys/sys/mount.h
+//https://github.com/openbsd/src/blob/HEAD/sys/sys/mount.h
 pub const ISOFSMNT_NORRIP: ::c_int = 0x1; // disable Rock Ridge Ext
 pub const ISOFSMNT_GENS: ::c_int = 0x2; // enable generation numbers
 pub const ISOFSMNT_EXTATT: ::c_int = 0x4; // enable extended attr
@@ -1413,10 +1686,13 @@ pub const NTFS_MFLAG_ALLNAMES: ::c_int = 0x2;
 
 pub const TMPFS_ARGS_VERSION: ::c_int = 1;
 
+const SI_MAXSZ: ::size_t = 128;
+const SI_PAD: ::size_t = (SI_MAXSZ / ::mem::size_of::<::c_int>()) - 3;
+
 pub const MAP_STACK: ::c_int = 0x4000;
 pub const MAP_CONCEAL: ::c_int = 0x8000;
 
-// https://github.com/openbsd/src/blob/master/sys/net/if.h#L187
+// https://github.com/openbsd/src/blob/HEAD/sys/net/if.h#L187
 pub const IFF_UP: ::c_int = 0x1; // interface is up
 pub const IFF_BROADCAST: ::c_int = 0x2; // broadcast address valid
 pub const IFF_DEBUG: ::c_int = 0x4; // turn on debugging
@@ -1455,7 +1731,104 @@ pub const BIOCSDLT: ::c_ulong = 0x8004427a;
 
 pub const PTRACE_FORK: ::c_int = 0x0002;
 
-pub const WCONTINUED: ::c_int = 8;
+pub const WCONTINUED: ::c_int = 0x08;
+pub const WEXITED: ::c_int = 0x04;
+pub const WSTOPPED: ::c_int = 0x02; // same as WUNTRACED
+pub const WNOWAIT: ::c_int = 0x10;
+pub const WTRAPPED: ::c_int = 0x20;
+
+pub const P_ALL: ::idtype_t = 0;
+pub const P_PGID: ::idtype_t = 1;
+pub const P_PID: ::idtype_t = 2;
+
+// search.h
+pub const FIND: ::ACTION = 0;
+pub const ENTER: ::ACTION = 1;
+
+// futex.h
+pub const FUTEX_WAIT: ::c_int = 1;
+pub const FUTEX_WAKE: ::c_int = 2;
+pub const FUTEX_REQUEUE: ::c_int = 3;
+pub const FUTEX_PRIVATE_FLAG: ::c_int = 128;
+
+// sysctl.h, kinfo_proc p_eflag constants
+pub const EPROC_CTTY: i32 = 0x01; // controlling tty vnode active
+pub const EPROC_SLEADER: i32 = 0x02; // session leader
+pub const EPROC_UNVEIL: i32 = 0x04; // has unveil settings
+pub const EPROC_LKUNVEIL: i32 = 0x08; // unveil is locked
+
+// Flags for chflags(2)
+pub const UF_SETTABLE: ::c_uint = 0x0000ffff;
+pub const UF_NODUMP: ::c_uint = 0x00000001;
+pub const UF_IMMUTABLE: ::c_uint = 0x00000002;
+pub const UF_APPEND: ::c_uint = 0x00000004;
+pub const UF_OPAQUE: ::c_uint = 0x00000008;
+pub const SF_SETTABLE: ::c_uint = 0xffff0000;
+pub const SF_ARCHIVED: ::c_uint = 0x00010000;
+pub const SF_IMMUTABLE: ::c_uint = 0x00020000;
+pub const SF_APPEND: ::c_uint = 0x00040000;
+
+// sys/exec_elf.h - Legal values for p_type (segment type).
+pub const PT_NULL: u32 = 0;
+pub const PT_LOAD: u32 = 1;
+pub const PT_DYNAMIC: u32 = 2;
+pub const PT_INTERP: u32 = 3;
+pub const PT_NOTE: u32 = 4;
+pub const PT_SHLIB: u32 = 5;
+pub const PT_PHDR: u32 = 6;
+pub const PT_TLS: u32 = 7;
+pub const PT_LOOS: u32 = 0x60000000;
+pub const PT_HIOS: u32 = 0x6fffffff;
+pub const PT_LOPROC: u32 = 0x70000000;
+pub const PT_HIPROC: u32 = 0x7fffffff;
+
+pub const PT_GNU_EH_FRAME: u32 = 0x6474e550;
+pub const PT_GNU_RELRO: u32 = 0x6474e552;
+
+// sys/exec_elf.h - Legal values for p_flags (segment flags).
+pub const PF_X: u32 = 0x1;
+pub const PF_W: u32 = 0x2;
+pub const PF_R: u32 = 0x4;
+pub const PF_MASKOS: u32 = 0x0ff00000;
+pub const PF_MASKPROC: u32 = 0xf0000000;
+
+// sys/mount.h
+pub const MNT_NOPERM: ::c_int = 0x00000020;
+pub const MNT_WXALLOWED: ::c_int = 0x00000800;
+pub const MNT_EXRDONLY: ::c_int = 0x00000080;
+pub const MNT_DEFEXPORTED: ::c_int = 0x00000200;
+pub const MNT_EXPORTANON: ::c_int = 0x00000400;
+pub const MNT_ROOTFS: ::c_int = 0x00004000;
+pub const MNT_NOATIME: ::c_int = 0x00008000;
+pub const MNT_DELEXPORT: ::c_int = 0x00020000;
+pub const MNT_STALLED: ::c_int = 0x00100000;
+pub const MNT_SWAPPABLE: ::c_int = 0x00200000;
+pub const MNT_WANTRDWR: ::c_int = 0x02000000;
+pub const MNT_SOFTDEP: ::c_int = 0x04000000;
+pub const MNT_DOOMED: ::c_int = 0x08000000;
+
+// For use with vfs_fsync and getfsstat
+pub const MNT_WAIT: ::c_int = 1;
+pub const MNT_NOWAIT: ::c_int = 2;
+pub const MNT_LAZY: ::c_int = 3;
+
+// sys/_time.h
+pub const CLOCK_PROCESS_CPUTIME_ID: ::clockid_t = 2;
+pub const CLOCK_THREAD_CPUTIME_ID: ::clockid_t = 4;
+pub const CLOCK_UPTIME: ::clockid_t = 5;
+pub const CLOCK_BOOTTIME: ::clockid_t = 6;
+
+pub const LC_COLLATE_MASK: ::c_int = 1 << ::LC_COLLATE;
+pub const LC_CTYPE_MASK: ::c_int = 1 << ::LC_CTYPE;
+pub const LC_MONETARY_MASK: ::c_int = 1 << ::LC_MONETARY;
+pub const LC_NUMERIC_MASK: ::c_int = 1 << ::LC_NUMERIC;
+pub const LC_TIME_MASK: ::c_int = 1 << ::LC_TIME;
+pub const LC_MESSAGES_MASK: ::c_int = 1 << ::LC_MESSAGES;
+
+const _LC_LAST: ::c_int = 7;
+pub const LC_ALL_MASK: ::c_int = (1 << _LC_LAST) - 2;
+
+pub const LC_GLOBAL_LOCALE: ::locale_t = -1isize as ::locale_t;
 
 const_fn! {
     {const} fn _ALIGN(p: usize) -> usize {
@@ -1469,7 +1842,7 @@ f! {
             .offset(_ALIGN(::mem::size_of::<::cmsghdr>()) as isize)
     }
 
-    pub fn CMSG_LEN(length: ::c_uint) -> ::c_uint {
+    pub {const} fn CMSG_LEN(length: ::c_uint) -> ::c_uint {
         _ALIGN(::mem::size_of::<::cmsghdr>()) as ::c_uint + length
     }
 
@@ -1495,6 +1868,19 @@ f! {
         (_ALIGN(::mem::size_of::<::cmsghdr>()) + _ALIGN(length as usize))
             as ::c_uint
     }
+
+    pub fn major(dev: ::dev_t) -> ::c_uint{
+        ((dev as ::c_uint) >> 8) & 0xff
+    }
+
+    pub fn minor(dev: ::dev_t) -> ::c_uint {
+        let dev = dev as ::c_uint;
+        let mut res = 0;
+        res |= (dev) & 0xff;
+        res |= ((dev) & 0xffff0000) >> 8;
+
+        res
+    }
 }
 
 safe_f! {
@@ -1513,16 +1899,21 @@ safe_f! {
     pub {const} fn WIFCONTINUED(status: ::c_int) -> bool {
         (status & 0o177777) == 0o177777
     }
+
+    pub {const} fn makedev(major: ::c_uint, minor: ::c_uint) -> ::dev_t {
+        let major = major as ::dev_t;
+        let minor = minor as ::dev_t;
+        let mut dev = 0;
+        dev |= (major & 0xff) << 8;
+        dev |= minor & 0xff;
+        dev |= (minor & 0xffff00) << 8;
+        dev
+    }
 }
 
 extern "C" {
     pub fn gettimeofday(tp: *mut ::timeval, tz: *mut ::timezone) -> ::c_int;
     pub fn settimeofday(tp: *const ::timeval, tz: *const ::timezone) -> ::c_int;
-    pub fn execvpe(
-        file: *const ::c_char,
-        argv: *const *const ::c_char,
-        envp: *const *const ::c_char,
-    ) -> ::c_int;
     pub fn pledge(promises: *const ::c_char, execpromises: *const ::c_char) -> ::c_int;
     pub fn unveil(path: *const ::c_char, permissions: *const ::c_char) -> ::c_int;
     pub fn strtonum(
@@ -1566,6 +1957,7 @@ extern "C" {
         attr: *const ::pthread_attr_t,
         guardsize: *mut ::size_t,
     ) -> ::c_int;
+    pub fn pthread_attr_setguardsize(attr: *mut ::pthread_attr_t, guardsize: ::size_t) -> ::c_int;
     pub fn pthread_attr_getstack(
         attr: *const ::pthread_attr_t,
         stackaddr: *mut *mut ::c_void,
@@ -1576,6 +1968,20 @@ extern "C" {
     pub fn pthread_set_name_np(tid: ::pthread_t, name: *const ::c_char);
     pub fn pthread_stackseg_np(thread: ::pthread_t, sinfo: *mut ::stack_t) -> ::c_int;
 
+    pub fn openpty(
+        amaster: *mut ::c_int,
+        aslave: *mut ::c_int,
+        name: *mut ::c_char,
+        termp: *const ::termios,
+        winp: *const ::winsize,
+    ) -> ::c_int;
+    pub fn forkpty(
+        amaster: *mut ::c_int,
+        name: *mut ::c_char,
+        termp: *const ::termios,
+        winp: *const ::winsize,
+    ) -> ::pid_t;
+
     pub fn sysctl(
         name: *const ::c_int,
         namelen: ::c_uint,
@@ -1584,7 +1990,6 @@ extern "C" {
         newp: *mut ::c_void,
         newlen: ::size_t,
     ) -> ::c_int;
-    pub fn getentropy(buf: *mut ::c_void, buflen: ::size_t) -> ::c_int;
     pub fn setresgid(rgid: ::gid_t, egid: ::gid_t, sgid: ::gid_t) -> ::c_int;
     pub fn setresuid(ruid: ::uid_t, euid: ::uid_t, suid: ::uid_t) -> ::c_int;
     pub fn ptrace(request: ::c_int, pid: ::pid_t, addr: caddr_t, data: ::c_int) -> ::c_int;
@@ -1619,6 +2024,39 @@ extern "C" {
     pub fn freezero(ptr: *mut ::c_void, size: ::size_t);
     pub fn malloc_conceal(size: ::size_t) -> *mut ::c_void;
     pub fn calloc_conceal(nmemb: ::size_t, size: ::size_t) -> *mut ::c_void;
+
+    pub fn srand48_deterministic(seed: ::c_long);
+    pub fn seed48_deterministic(xseed: *mut ::c_ushort) -> *mut ::c_ushort;
+    pub fn lcong48_deterministic(p: *mut ::c_ushort);
+
+    pub fn lsearch(
+        key: *const ::c_void,
+        base: *mut ::c_void,
+        nelp: *mut ::size_t,
+        width: ::size_t,
+        compar: ::Option<unsafe extern "C" fn(*const ::c_void, *const ::c_void) -> ::c_int>,
+    ) -> *mut ::c_void;
+    pub fn lfind(
+        key: *const ::c_void,
+        base: *const ::c_void,
+        nelp: *mut ::size_t,
+        width: ::size_t,
+        compar: ::Option<unsafe extern "C" fn(*const ::c_void, *const ::c_void) -> ::c_int>,
+    ) -> *mut ::c_void;
+    pub fn hcreate(nelt: ::size_t) -> ::c_int;
+    pub fn hdestroy();
+    pub fn hsearch(entry: ::ENTRY, action: ::ACTION) -> *mut ::ENTRY;
+
+    // futex.h
+    pub fn futex(
+        uaddr: *mut u32,
+        op: ::c_int,
+        val: ::c_int,
+        timeout: *const ::timespec,
+        uaddr2: *mut u32,
+    ) -> ::c_int;
+
+    pub fn mimmutable(addr: *mut ::c_void, len: ::size_t) -> ::c_int;
 }
 
 #[link(name = "execinfo")]
@@ -1643,6 +2081,8 @@ cfg_if! {
             // these functions use statfs which uses the union mount_info:
             pub fn statfs(path: *const ::c_char, buf: *mut statfs) -> ::c_int;
             pub fn fstatfs(fd: ::c_int, buf: *mut statfs) -> ::c_int;
+            pub fn getmntinfo(mntbufp: *mut *mut ::statfs, flags: ::c_int) -> ::c_int;
+            pub fn getfsstat(buf: *mut statfs, bufsize: ::size_t, flags: ::c_int) -> ::c_int;
         }
     }
 }

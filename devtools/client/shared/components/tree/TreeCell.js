@@ -4,7 +4,7 @@
 "use strict";
 
 // Make this available to both AMD and CJS environments
-define(function(require, exports, module) {
+define(function (require, exports, module) {
   const { Component } = require("devtools/client/shared/vendor/react");
   const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
   const dom = require("devtools/client/shared/vendor/react-dom-factories");
@@ -44,9 +44,9 @@ define(function(require, exports, module) {
      */
     shouldComponentUpdate(nextProps, nextState) {
       return (
-        this.props.value != nextProps.value ||
+        this.props.value !== nextProps.value ||
         this.state !== nextState ||
-        this.props.member.open != nextProps.member.open
+        this.props.member.open !== nextProps.member.open
       );
     }
 
@@ -78,14 +78,8 @@ define(function(require, exports, module) {
     }
 
     render() {
-      let {
-        member,
-        id,
-        value,
-        decorator,
-        renderValue,
-        enableInput,
-      } = this.props;
+      let { member, id, value, decorator, renderValue, enableInput } =
+        this.props;
       const type = member.type || "";
 
       // Compute class name list for the <td> element.

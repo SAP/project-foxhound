@@ -8,7 +8,7 @@
 const TEST_URI =
   "data:text/html;charset=utf-8,<!DOCTYPE html>Web Console test top-level await";
 
-add_task(async function() {
+add_task(async function () {
   // Enable await mapping.
   await pushPref("devtools.debugger.features.map-await-expression", true);
   const hud = await openNewTabAndConsole(TEST_URI);
@@ -21,10 +21,10 @@ add_task(async function() {
   );
 
   // Let's wait for the message that sould be displayed last.
-  const onMessage = waitForMessage(
+  const onMessage = waitForMessageByType(
     hud,
     "await-concurrent-9000",
-    ".message.result"
+    ".result"
   );
   for (const input of inputs) {
     execute(hud, input);

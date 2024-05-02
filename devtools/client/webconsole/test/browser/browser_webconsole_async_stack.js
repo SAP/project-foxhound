@@ -24,7 +24,7 @@ promiseThen(onPromiseThen);
 
 </script>`;
 
-add_task(async function() {
+add_task(async function () {
   await pushPref("javascript.options.asyncstack_capture_debuggee_only", false);
   const hud = await openNewTabAndConsole(TEST_URI);
 
@@ -43,14 +43,14 @@ add_task(async function() {
   ].join("\n");
 
   const traceMsgNode = await waitFor(
-    () => findMessage(hud, "Trace message", ".console-api.trace"),
+    () => findConsoleAPIMessage(hud, "Trace message", ".trace"),
     "Wait for the trace message to be logged"
   );
   let frames = await getSimplifiedStack(traceMsgNode);
   is(frames, expectedFrames, "console.trace has expected frames");
 
   const consoleErrorMsgNode = await waitFor(
-    () => findMessage(hud, "console error message", ".console-api.error"),
+    () => findConsoleAPIMessage(hud, "console error message", ".error"),
     "Wait for the console error message to be logged"
   );
   consoleErrorMsgNode.querySelector(".arrow").click();
@@ -59,10 +59,10 @@ add_task(async function() {
 
   const errorMsgNode = await waitFor(
     () =>
-      findMessage(
+      findErrorMessage(
         hud,
         "Uncaught Error: Thrown error message",
-        ".javascript.error"
+        ".javascript"
       ),
     "Wait for the thrown error message to be logged"
   );
@@ -76,14 +76,14 @@ async function getSimplifiedStack(messageEl) {
     const frames = messageEl.querySelectorAll(
       ".message-body-wrapper > .stacktrace .frame"
     );
-    return frames.length > 0 ? frames : null;
+    return frames.length ? frames : null;
   }, "Couldn't find stacktrace");
 
   return Array.from(framesEl)
     .map(frameEl =>
-      Array.from(
-        frameEl.querySelectorAll(".title,.location-async-cause")
-      ).map(el => el.textContent.trim())
+      Array.from(frameEl.querySelectorAll(".title,.location-async-cause")).map(
+        el => el.textContent.trim()
+      )
     )
     .flat()
     .join("\n");

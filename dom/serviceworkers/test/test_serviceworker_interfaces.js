@@ -21,12 +21,12 @@
 
 // IMPORTANT: Do not change this list without review from
 //            a JavaScript Engine peer!
-var wasmGlobalEntry = {
+let wasmGlobalEntry = {
   name: "WebAssembly",
   insecureContext: true,
   disabled: !getJSTestingFunctions().wasmIsSupportedByHardware(),
 };
-var wasmGlobalInterfaces = [
+let wasmGlobalInterfaces = [
   { name: "Module", insecureContext: true },
   { name: "Instance", insecureContext: true },
   { name: "Memory", insecureContext: true },
@@ -35,25 +35,18 @@ var wasmGlobalInterfaces = [
   { name: "CompileError", insecureContext: true },
   { name: "LinkError", insecureContext: true },
   { name: "RuntimeError", insecureContext: true },
-  {
-    name: "Function",
-    insecureContext: true,
-    nightly: true,
-  },
-  {
-    name: "Exception",
-    insecureContext: true,
-    nightly: true,
-  },
-  {
-    name: "Tag",
-    insecureContext: true,
-    nightly: true,
-  },
+  { name: "Function", insecureContext: true, nightly: true },
+  { name: "Exception", insecureContext: true },
+  { name: "Tag", insecureContext: true },
+  { name: "compile", insecureContext: true },
+  { name: "compileStreaming", insecureContext: true },
+  { name: "instantiate", insecureContext: true },
+  { name: "instantiateStreaming", insecureContext: true },
+  { name: "validate", insecureContext: true },
 ];
 // IMPORTANT: Do not change this list without review from
 //            a JavaScript Engine peer!
-var ecmaGlobals = [
+let ecmaGlobals = [
   "AggregateError",
   "Array",
   "ArrayBuffer",
@@ -62,8 +55,6 @@ var ecmaGlobals = [
   "BigInt",
   "BigInt64Array",
   "BigUint64Array",
-  { name: "ByteLengthQueuingStrategy", optional: true },
-  { name: "CountQueuingStrategy", optional: true },
   "DataView",
   "Date",
   "Error",
@@ -87,7 +78,6 @@ var ecmaGlobals = [
   "Promise",
   "Proxy",
   "RangeError",
-  { name: "ReadableStream", optional: true },
   "ReferenceError",
   "Reflect",
   "RegExp",
@@ -109,12 +99,25 @@ var ecmaGlobals = [
   "WeakRef",
   "WeakSet",
   wasmGlobalEntry,
+  "decodeURI",
+  "decodeURIComponent",
+  "encodeURI",
+  "encodeURIComponent",
+  "escape",
+  "eval",
+  "globalThis",
+  "isFinite",
+  "isNaN",
+  "parseFloat",
+  "parseInt",
+  "undefined",
+  "unescape",
 ];
 // IMPORTANT: Do not change the list above without review from
 //            a JavaScript Engine peer!
 
 // IMPORTANT: Do not change the list below without review from a DOM peer!
-var interfaceNamesInGlobalScope = [
+let interfaceNamesInGlobalScope = [
   // IMPORTANT: Do not change this list without review from a DOM peer!
   "AbortController",
   // IMPORTANT: Do not change this list without review from a DOM peer!
@@ -124,9 +127,15 @@ var interfaceNamesInGlobalScope = [
   // IMPORTANT: Do not change this list without review from a DOM peer!
   "BroadcastChannel",
   // IMPORTANT: Do not change this list without review from a DOM peer!
+  "ByteLengthQueuingStrategy",
+  // IMPORTANT: Do not change this list without review from a DOM peer!
   "Cache",
   // IMPORTANT: Do not change this list without review from a DOM peer!
   "CacheStorage",
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  "CanvasGradient",
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  "CanvasPattern",
   // IMPORTANT: Do not change this list without review from a DOM peer!
   "Client",
   // IMPORTANT: Do not change this list without review from a DOM peer!
@@ -134,9 +143,17 @@ var interfaceNamesInGlobalScope = [
   // IMPORTANT: Do not change this list without review from a DOM peer!
   "CloseEvent",
   // IMPORTANT: Do not change this list without review from a DOM peer!
+  "CompressionStream",
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  "CountQueuingStrategy",
+  // IMPORTANT: Do not change this list without review from a DOM peer!
   "Crypto",
   // IMPORTANT: Do not change this list without review from a DOM peer!
+  "CryptoKey",
+  // IMPORTANT: Do not change this list without review from a DOM peer!
   "CustomEvent",
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  "DecompressionStream",
   // IMPORTANT: Do not change this list without review from a DOM peer!
   "Directory",
   // IMPORTANT: Do not change this list without review from a DOM peer!
@@ -177,6 +194,20 @@ var interfaceNamesInGlobalScope = [
   "FileList",
   // IMPORTANT: Do not change this list without review from a DOM peer!
   "FileReader",
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "FileSystemDirectoryHandle" },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "FileSystemFileHandle" },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "FileSystemHandle" },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "FileSystemWritableFileStream" },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  "FontFace",
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  "FontFaceSet",
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  "FontFaceSetLoadEvent",
   // IMPORTANT: Do not change this list without review from a DOM peer!
   "FormData",
   // IMPORTANT: Do not change this list without review from a DOM peer!
@@ -224,11 +255,19 @@ var interfaceNamesInGlobalScope = [
   // IMPORTANT: Do not change this list without review from a DOM peer!
   "MessagePort",
   // IMPORTANT: Do not change this list without review from a DOM peer!
-  { name: "NetworkInformation", android: true },
+  { name: "NetworkInformation", disabled: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  "NavigationPreloadManager",
   // IMPORTANT: Do not change this list without review from a DOM peer!
   "Notification",
   // IMPORTANT: Do not change this list without review from a DOM peer!
   "NotificationEvent",
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  "OffscreenCanvas",
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  "OffscreenCanvasRenderingContext2D",
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  "Path2D",
   // IMPORTANT: Do not change this list without review from a DOM peer!
   "Performance",
   // IMPORTANT: Do not change this list without review from a DOM peer!
@@ -260,15 +299,23 @@ var interfaceNamesInGlobalScope = [
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "PushSubscriptionOptions" },
   // IMPORTANT: Do not change this list without review from a DOM peer!
-  { name: "Report", nightly: true },
+  "ReadableByteStreamController",
   // IMPORTANT: Do not change this list without review from a DOM peer!
-  { name: "ReportBody", nightly: true },
+  "ReadableStream",
   // IMPORTANT: Do not change this list without review from a DOM peer!
-  { name: "ReportingObserver", nightly: true },
+  "ReadableStreamBYOBReader",
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  "ReadableStreamBYOBRequest",
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  "ReadableStreamDefaultController",
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  "ReadableStreamDefaultReader",
   // IMPORTANT: Do not change this list without review from a DOM peer!
   "Request",
   // IMPORTANT: Do not change this list without review from a DOM peer!
   "Response",
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "Scheduler", nightly: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   "ServiceWorker",
   // IMPORTANT: Do not change this list without review from a DOM peer!
@@ -280,9 +327,25 @@ var interfaceNamesInGlobalScope = [
   // IMPORTANT: Do not change this list without review from a DOM peer!
   "SubtleCrypto",
   // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "TaskController", nightly: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "TaskPriorityChangeEvent", nightly: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "TaskSignal", nightly: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
   "TextDecoder",
   // IMPORTANT: Do not change this list without review from a DOM peer!
+  "TextDecoderStream",
+  // IMPORTANT: Do not change this list without review from a DOM peer!
   "TextEncoder",
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  "TextEncoderStream",
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  "TextMetrics",
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  "TransformStream",
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  "TransformStreamDefaultController",
   // IMPORTANT: Do not change this list without review from a DOM peer!
   "URL",
   // IMPORTANT: Do not change this list without review from a DOM peer!
@@ -290,7 +353,51 @@ var interfaceNamesInGlobalScope = [
   // IMPORTANT: Do not change this list without review from a DOM peer!
   "WebSocket",
   // IMPORTANT: Do not change this list without review from a DOM peer!
+  "WebTransport",
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  "WebTransportBidirectionalStream",
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  "WebTransportDatagramDuplexStream",
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  "WebTransportError",
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  "WebTransportReceiveStream",
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  "WebTransportSendStream",
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  "WebGL2RenderingContext",
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  "WebGLActiveInfo",
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  "WebGLBuffer",
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  "WebGLContextEvent",
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  "WebGLFramebuffer",
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  "WebGLProgram",
+  // IMPORTANT: Do not change this list without review from a DOM peer!
   "WebGLQuery",
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  "WebGLRenderbuffer",
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  "WebGLRenderingContext",
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  "WebGLSampler",
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  "WebGLShader",
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  "WebGLShaderPrecisionFormat",
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  "WebGLSync",
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  "WebGLTexture",
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  "WebGLTransformFeedback",
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  "WebGLUniformLocation",
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  "WebGLVertexArrayObject",
   // IMPORTANT: Do not change this list without review from a DOM peer!
   "WindowClient",
   // IMPORTANT: Do not change this list without review from a DOM peer!
@@ -300,8 +407,54 @@ var interfaceNamesInGlobalScope = [
   // IMPORTANT: Do not change this list without review from a DOM peer!
   "WorkerNavigator",
   // IMPORTANT: Do not change this list without review from a DOM peer!
+  "WritableStream",
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  "WritableStreamDefaultController",
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  "WritableStreamDefaultWriter",
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  "clients",
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  "console",
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  "onactivate",
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  "onfetch",
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  "oninstall",
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  "onmessage",
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  "onmessageerror",
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  "onnotificationclick",
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  "onnotificationclose",
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  "onpush",
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  "onpushsubscriptionchange",
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  "registration",
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  "skipWaiting",
+  // IMPORTANT: Do not change this list without review from a DOM peer!
 ];
 // IMPORTANT: Do not change the list above without review from a DOM peer!
+
+// List of functions defined on the global by the test harness or this test
+// file.
+let testFunctions = [
+  "ok",
+  "is",
+  "workerTestArrayEquals",
+  "workerTestDone",
+  "workerTestGetHelperData",
+  "workerTestGetStorageManager",
+  "entryDisabled",
+  "createInterfaceMap",
+  "runTest",
+];
 
 function entryDisabled(
   entry,
@@ -339,8 +492,10 @@ function createInterfaceMap(data, ...interfaceGroups) {
   function addInterfaces(interfaces) {
     for (var entry of interfaces) {
       if (typeof entry === "string") {
+        ok(!(entry in interfaceMap), "duplicate entry for " + entry);
         interfaceMap[entry] = true;
       } else {
+        ok(!(entry.name in interfaceMap), "duplicate entry for " + entry.name);
         ok(!("pref" in entry), "Bogus pref annotation for " + entry.name);
         if (entryDisabled(entry, data)) {
           interfaceMap[entry.name] = false;
@@ -363,8 +518,8 @@ function createInterfaceMap(data, ...interfaceGroups) {
 function runTest(parentName, parent, data, ...interfaceGroups) {
   var interfaceMap = createInterfaceMap(data, ...interfaceGroups);
   for (var name of Object.getOwnPropertyNames(parent)) {
-    // An interface name should start with an upper case character.
-    if (!/^[A-Z]/.test(name)) {
+    // Ignore functions on the global that are part of the test (harness).
+    if (parent === self && testFunctions.includes(name)) {
       continue;
     }
     ok(
@@ -403,7 +558,7 @@ function runTest(parentName, parent, data, ...interfaceGroups) {
   );
 }
 
-workerTestGetHelperData(function(data) {
+workerTestGetHelperData(function (data) {
   runTest("self", self, data, ecmaGlobals, interfaceNamesInGlobalScope);
   if (WebAssembly && !entryDisabled(wasmGlobalEntry, data)) {
     runTest("WebAssembly", WebAssembly, data, wasmGlobalInterfaces);

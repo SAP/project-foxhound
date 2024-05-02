@@ -6,9 +6,9 @@
 // The purpose of this test is to ensure that Firefox sanitizes site security
 // service data on shutdown if configured to do so.
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  TestUtils: "resource://testing-common/TestUtils.jsm",
-  Sanitizer: "resource:///modules/Sanitizer.jsm",
+ChromeUtils.defineESModuleGetters(this, {
+  Sanitizer: "resource:///modules/Sanitizer.sys.mjs",
+  TestUtils: "resource://testing-common/TestUtils.sys.mjs",
 });
 
 Sanitizer.onStartup();
@@ -18,43 +18,23 @@ Sanitizer.onStartup();
 // the shutdown blocker added by swm. Normally, swm should be initialized before
 // that and the similar crash signatures are fixed. So, assume this cannot
 // happen in the real world and initilaize swm here as a workaround.
-const swm = Cc["@mozilla.org/serviceworkers/manager;1"].getService(
+Cc["@mozilla.org/serviceworkers/manager;1"].getService(
   Ci.nsIServiceWorkerManager
 );
 
-function getStateFileContents() {
-  let stateFile = do_get_profile();
-  stateFile.append(SSS_STATE_FILE_NAME);
-  ok(stateFile.exists());
-  return readFile(stateFile);
-}
-
 add_task(async function run_test() {
-  Services.prefs.setIntPref("test.datastorage.write_timer_ms", 100);
   do_get_profile();
   let SSService = Cc["@mozilla.org/ssservice;1"].getService(
     Ci.nsISiteSecurityService
   );
-  let secInfo = Cc[
-    "@mozilla.org/security/transportsecurityinfo;1"
-  ].createInstance(Ci.nsITransportSecurityInfo);
   let header = "max-age=50000";
-  SSService.processHeader(
-    Services.io.newURI("http://example.com"),
-    header,
-    secInfo,
-    0,
-    Ci.nsISiteSecurityService.SOURCE_ORGANIC_REQUEST
-  );
-  await TestUtils.topicObserved(
-    "data-storage-written",
-    (_, data) => data == SSS_STATE_FILE_NAME
-  );
-  let stateFileContents = getStateFileContents();
-  ok(
-    stateFileContents.includes("example.com"),
-    "should have written out state file"
-  );
+  SSService.processHeader(Services.io.newURI("https://example.com"), header);
+  await TestUtils.waitForCondition(() => {
+    let stateFileContents = get_data_storage_contents(SSS_STATE_FILE_NAME);
+    return stateFileContents
+      ? stateFileContents.includes("example.com")
+      : false;
+  });
 
   // Configure Firefox to clear this data on shutdown.
   Services.prefs.setBoolPref(
@@ -71,5 +51,9 @@ add_task(async function run_test() {
     Services.startup.SHUTDOWN_PHASE_APPSHUTDOWN
   );
 
-  equal(getStateFileContents(), "", "state file should be empty");
+  await TestUtils.waitForCondition(() => {
+    let stateFile = do_get_profile();
+    stateFile.append(SSS_STATE_FILE_NAME);
+    return !stateFile.exists();
+  });
 });

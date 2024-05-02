@@ -138,7 +138,7 @@ async function testTables(tests) {
     // Check whether correct number of items are present in the table
     is(
       doc.querySelectorAll(
-        ".table-widget-wrapper:first-of-type .table-widget-cell"
+        ".table-widget-column:first-of-type .table-widget-cell"
       ).length,
       items.length,
       "Number of items in table is correct"
@@ -154,7 +154,7 @@ async function testTables(tests) {
   }
 }
 
-add_task(async function() {
+add_task(async function () {
   // storage-listings.html explicitly mixes secure and insecure frames.
   // We should not enforce https for tests using this page.
   await pushPref("dom.security.https_first", false);

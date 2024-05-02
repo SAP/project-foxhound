@@ -9,7 +9,7 @@ function handleRequest(request, response) {
   // Figure out whether the client wants to load the image, or just
   // to tell us to finish the previous load
   var query = {};
-  request.queryString.split("&").forEach(function(val) {
+  request.queryString.split("&").forEach(function (val) {
     var [name, value] = val.split("=");
     query[name] = unescape(value);
   });
@@ -18,7 +18,7 @@ function handleRequest(request, response) {
     dump("file_IconTestServer.js DEBUG - Got continue command\n");
 
     // Get the context structure and finish the old request
-    getObjectState("context", function(obj) {
+    getObjectState("context", function (obj) {
       // magic or goop, depending on how you look at it
       savedCtx = obj.wrappedJSObject;
 
@@ -46,11 +46,11 @@ function handleRequest(request, response) {
 
   // Context structure - we need to set this up properly to pass to setObjectState
   var ctx = {
-    QueryInterface: function(iid) {
-      if (iid.equals(Components.interfaces.nsISupports)) {
+    QueryInterface: function (iid) {
+      if (iid.equals(Ci.nsISupports)) {
         return this;
       }
-      throw Components.Exception("", Components.results.NS_ERROR_NO_INTERFACE);
+      throw Components.Exception("", Cr.NS_ERROR_NO_INTERFACE);
     },
   };
   ctx.wrappedJSObject = ctx;
@@ -65,9 +65,9 @@ function handleRequest(request, response) {
   ctx.ostream = response.bodyOutputStream;
 
   // Ugly hack, but effective - copied from dom/media/test/contentDuration1.sjs
-  var pngFile = Components.classes["@mozilla.org/file/directory_service;1"]
-    .getService(Components.interfaces.nsIProperties)
-    .get("CurWorkD", Components.interfaces.nsIFile);
+  var pngFile = Cc["@mozilla.org/file/directory_service;1"]
+    .getService(Ci.nsIProperties)
+    .get("CurWorkD", Ci.nsIFile);
   var paths = "tests/layout/generic/test/file_Dolske.png";
   var split = paths.split("/");
   for (var i = 0; i < split.length; ++i) {
@@ -76,7 +76,7 @@ function handleRequest(request, response) {
 
   // Get an input stream for the png data
   ctx.istream = Cc["@mozilla.org/network/file-input-stream;1"].createInstance(
-    Components.interfaces.nsIFileInputStream
+    Ci.nsIFileInputStream
   );
   ctx.istream.init(pngFile, -1, 0, 0);
 

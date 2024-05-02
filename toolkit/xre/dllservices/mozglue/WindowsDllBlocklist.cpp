@@ -69,47 +69,6 @@ typedef NTSTATUS(NTAPI* LdrLoadDll_func)(PWCHAR filePath, PULONG flags,
                                          PHANDLE handle);
 static WindowsDllInterceptor::FuncHookType<LdrLoadDll_func> stub_LdrLoadDll;
 
-#ifdef _M_AMD64
-typedef decltype(RtlInstallFunctionTableCallback)*
-    RtlInstallFunctionTableCallback_func;
-static WindowsDllInterceptor::FuncHookType<RtlInstallFunctionTableCallback_func>
-    stub_RtlInstallFunctionTableCallback;
-
-extern uint8_t* sMsMpegJitCodeRegionStart;
-extern size_t sMsMpegJitCodeRegionSize;
-
-BOOLEAN WINAPI patched_RtlInstallFunctionTableCallback(
-    DWORD64 TableIdentifier, DWORD64 BaseAddress, DWORD Length,
-    PGET_RUNTIME_FUNCTION_CALLBACK Callback, PVOID Context,
-    PCWSTR OutOfProcessCallbackDll) {
-  // msmpeg2vdec.dll sets up a function table callback for their JIT code that
-  // just terminates the process, because their JIT doesn't have unwind info.
-  // If we see this callback being registered, record the region address, so
-  // that StackWalk.cpp can avoid unwinding addresses in this region.
-  //
-  // To keep things simple I'm not tracking unloads of msmpeg2vdec.dll.
-  // Worst case the stack walker will needlessly avoid a few pages of memory.
-
-  // Tricky: GetModuleHandleExW adds a ref by default; GetModuleHandleW doesn't.
-  HMODULE callbackModule = nullptr;
-  DWORD moduleFlags = GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
-                      GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT;
-
-  // These GetModuleHandle calls enter a critical section on Win7.
-  AutoSuppressStackWalking suppress;
-
-  if (GetModuleHandleExW(moduleFlags, (LPWSTR)Callback, &callbackModule) &&
-      GetModuleHandleW(L"msmpeg2vdec.dll") == callbackModule) {
-    sMsMpegJitCodeRegionStart = (uint8_t*)BaseAddress;
-    sMsMpegJitCodeRegionSize = Length;
-  }
-
-  return stub_RtlInstallFunctionTableCallback(TableIdentifier, BaseAddress,
-                                              Length, Callback, Context,
-                                              OutOfProcessCallbackDll);
-}
-#endif
-
 template <class T>
 struct RVAMap {
   RVAMap(HANDLE map, DWORD offset) {
@@ -332,6 +291,97 @@ static wchar_t* lastslash(wchar_t* s, int len) {
   return nullptr;
 }
 
+static bool ShouldBlockBasedOnBlockInfo(const DllBlockInfo& info,
+                                        const char* dllName, PWCHAR filePath,
+                                        wchar_t* fname,
+                                        unsigned long long* fVersion) {
+#ifdef DEBUG_very_verbose
+  printf_stderr("LdrLoadDll: info->mName: '%s'\n", info->mName);
+#endif
+
+  if (info.mFlags & DllBlockInfoFlags::REDIRECT_TO_NOOP_ENTRYPOINT) {
+    printf_stderr(
+        "LdrLoadDll: "
+        "Ignoring the REDIRECT_TO_NOOP_ENTRYPOINT flag\n");
+  }
+
+  if ((info.mFlags & DllBlockInfoFlags::CHILD_PROCESSES_ONLY) &&
+      !(sInitFlags & eDllBlocklistInitFlagIsChildProcess)) {
+    return false;
+  }
+
+  if ((info.mFlags & DllBlockInfoFlags::UTILITY_PROCESSES_ONLY) &&
+      !(sInitFlags & eDllBlocklistInitFlagIsUtilityProcess)) {
+    return false;
+  }
+
+  if ((info.mFlags & DllBlockInfoFlags::SOCKET_PROCESSES_ONLY) &&
+      !(sInitFlags & eDllBlocklistInitFlagIsSocketProcess)) {
+    return false;
+  }
+
+  if ((info.mFlags & DllBlockInfoFlags::GPU_PROCESSES_ONLY) &&
+      !(sInitFlags & eDllBlocklistInitFlagIsGPUProcess)) {
+    return false;
+  }
+
+  if ((info.mFlags & DllBlockInfoFlags::BROWSER_PROCESS_ONLY) &&
+      (sInitFlags & eDllBlocklistInitFlagIsChildProcess)) {
+    return false;
+  }
+
+  if ((info.mFlags & DllBlockInfoFlags::GMPLUGIN_PROCESSES_ONLY) &&
+      !(sInitFlags & eDllBlocklistInitFlagIsGMPluginProcess)) {
+    return false;
+  }
+
+  *fVersion = DllBlockInfo::ALL_VERSIONS;
+
+  if (info.mMaxVersion != DllBlockInfo::ALL_VERSIONS) {
+    ReentrancySentinel sentinel(dllName);
+    if (sentinel.BailOut()) {
+      return false;
+    }
+
+    UniquePtr<wchar_t[]> full_fname = getFullPath(filePath, fname);
+    if (!full_fname) {
+      // uh, we couldn't find the DLL at all, so...
+      printf_stderr(
+          "LdrLoadDll: Blocking load of '%s' (SearchPathW didn't find "
+          "it?)\n",
+          dllName);
+      return true;
+    }
+
+    if (info.mFlags & DllBlockInfoFlags::USE_TIMESTAMP) {
+      *fVersion = GetTimestamp(full_fname.get());
+      if (*fVersion > info.mMaxVersion) {
+        return false;
+      }
+    } else {
+      LauncherResult<ModuleVersion> version =
+          GetModuleVersion(full_fname.get());
+      // If we failed to get the version information, we block.
+      if (version.isOk()) {
+        return info.IsVersionBlocked(version.unwrap());
+      }
+    }
+  }
+  // Falling through to here means we should block.
+  return true;
+}
+
+struct CaseSensitiveStringComparator {
+  explicit CaseSensitiveStringComparator(const char* aTarget)
+      : mTarget(aTarget) {}
+
+  int operator()(const DllBlockInfo& aVal) const {
+    return strcmp(mTarget, aVal.mName);
+  }
+
+  const char* mTarget;
+};
+
 static NTSTATUS NTAPI patched_LdrLoadDll(PWCHAR filePath, PULONG flags,
                                          PUNICODE_STRING moduleFileName,
                                          PHANDLE handle) {
@@ -344,7 +394,6 @@ static NTSTATUS NTAPI patched_LdrLoadDll(PWCHAR filePath, PULONG flags,
 
   int len = moduleFileName->Length / 2;
   wchar_t* fname = moduleFileName->Buffer;
-  UniquePtr<wchar_t[]> full_fname;
 
   // The filename isn't guaranteed to be null terminated, but in practice
   // it always will be; ensure that this is so, and bail if not.
@@ -426,85 +475,25 @@ static NTSTATUS NTAPI patched_LdrLoadDll(PWCHAR filePath, PULONG flags,
 
     // then compare to everything on the blocklist
     DECLARE_POINTER_TO_FIRST_DLL_BLOCKLIST_ENTRY(info);
-    while (info->mName) {
-      if (strcmp(info->mName, dllName) == 0) break;
-
-      info++;
-    }
-
-    if (info->mName) {
-      bool load_ok = false;
-
-#ifdef DEBUG_very_verbose
-      printf_stderr("LdrLoadDll: info->mName: '%s'\n", info->mName);
-#endif
-
-      if (info->mFlags & DllBlockInfo::REDIRECT_TO_NOOP_ENTRYPOINT) {
-        printf_stderr(
-            "LdrLoadDll: "
-            "Ignoring the REDIRECT_TO_NOOP_ENTRYPOINT flag\n");
-      }
-
-      if ((info->mFlags & DllBlockInfo::BLOCK_WIN8_AND_OLDER) &&
-          IsWin8Point1OrLater()) {
-        goto continue_loading;
-      }
-
-      if ((info->mFlags & DllBlockInfo::BLOCK_WIN7_AND_OLDER) &&
-          IsWin8OrLater()) {
-        goto continue_loading;
-      }
-
-      if ((info->mFlags & DllBlockInfo::CHILD_PROCESSES_ONLY) &&
-          !(sInitFlags & eDllBlocklistInitFlagIsChildProcess)) {
-        goto continue_loading;
-      }
-
-      if ((info->mFlags & DllBlockInfo::BROWSER_PROCESS_ONLY) &&
-          (sInitFlags & eDllBlocklistInitFlagIsChildProcess)) {
-        goto continue_loading;
-      }
-
-      unsigned long long fVersion = DllBlockInfo::ALL_VERSIONS;
-
-      if (info->mMaxVersion != DllBlockInfo::ALL_VERSIONS) {
-        ReentrancySentinel sentinel(dllName);
-        if (sentinel.BailOut()) {
-          goto continue_loading;
-        }
-
-        full_fname = getFullPath(filePath, fname);
-        if (!full_fname) {
-          // uh, we couldn't find the DLL at all, so...
+    DECLARE_DLL_BLOCKLIST_NUM_ENTRIES(infoNumEntries);
+    CaseSensitiveStringComparator comp(dllName);
+    size_t match = LowerBound(info, 0, infoNumEntries, comp);
+    if (match != infoNumEntries) {
+      // There may be multiple entries on the list. Since LowerBound() returns
+      // the first entry that matches (if there are any matches),
+      // search forward from there.
+      while (match < infoNumEntries && (comp(info[match]) == 0)) {
+        unsigned long long fVersion;
+        if (ShouldBlockBasedOnBlockInfo(info[match], dllName, filePath, fname,
+                                        &fVersion)) {
           printf_stderr(
-              "LdrLoadDll: Blocking load of '%s' (SearchPathW didn't find "
-              "it?)\n",
+              "LdrLoadDll: Blocking load of '%s' -- see "
+              "http://www.mozilla.com/en-US/blocklist/\n",
               dllName);
+          DllBlockSet::Add(info[match].mName, fVersion);
           return STATUS_DLL_NOT_FOUND;
         }
-
-        if (info->mFlags & DllBlockInfo::USE_TIMESTAMP) {
-          fVersion = GetTimestamp(full_fname.get());
-          if (fVersion > info->mMaxVersion) {
-            load_ok = true;
-          }
-        } else {
-          LauncherResult<ModuleVersion> version =
-              GetModuleVersion(full_fname.get());
-          // If we failed to get the version information, we block.
-          if (version.isOk()) {
-            load_ok = !info->IsVersionBlocked(version.unwrap());
-          }
-        }
-      }
-
-      if (!load_ok) {
-        printf_stderr(
-            "LdrLoadDll: Blocking load of '%s' -- see "
-            "http://www.mozilla.com/en-US/blocklist/\n",
-            dllName);
-        DllBlockSet::Add(info->mName, fVersion);
-        return STATUS_DLL_NOT_FOUND;
+        ++match;
       }
     }
   }
@@ -531,11 +520,11 @@ continue_loading:
   return ret;
 }
 
-#if defined(EARLY_BETA_OR_EARLIER)
+#if defined(NIGHTLY_BUILD)
 // Map of specific thread proc addresses we should block. In particular,
 // LoadLibrary* APIs which indicate DLL injection
 static void* gStartAddressesToBlock[4];
-#endif  // defined(EARLY_BETA_OR_EARLIER)
+#endif  // defined(NIGHTLY_BUILD)
 
 static bool ShouldBlockThread(void* aStartAddress) {
   // Allows crashfirefox.exe to continue to work. Also if your threadproc is
@@ -544,7 +533,7 @@ static bool ShouldBlockThread(void* aStartAddress) {
     return false;
   }
 
-#if defined(EARLY_BETA_OR_EARLIER)
+#if defined(NIGHTLY_BUILD)
   for (auto p : gStartAddressesToBlock) {
     if (p == aStartAddress) {
       return true;
@@ -582,7 +571,7 @@ static WindowsDllInterceptor Kernel32Intercept;
 static void GetNativeNtBlockSetWriter();
 
 static glue::LoaderObserver gMozglueLoaderObserver;
-static nt::WinLauncherFunctions gWinLauncherFunctions;
+static nt::WinLauncherServices gWinLauncher;
 
 MFBT_API void DllBlocklist_Initialize(uint32_t aInitFlags) {
   if (sBlocklistInitAttempted) {
@@ -592,18 +581,7 @@ MFBT_API void DllBlocklist_Initialize(uint32_t aInitFlags) {
 
   sInitFlags = aInitFlags;
 
-  glue::ModuleLoadFrame::StaticInit(&gMozglueLoaderObserver,
-                                    &gWinLauncherFunctions);
-
-#ifdef _M_AMD64
-  if (!IsWin8OrLater()) {
-    Kernel32Intercept.Init(L"kernel32.dll");
-    // The crash that this hook works around is only seen on Win7.
-    stub_RtlInstallFunctionTableCallback.Set(
-        Kernel32Intercept, "RtlInstallFunctionTableCallback",
-        &patched_RtlInstallFunctionTableCallback);
-  }
-#endif
+  glue::ModuleLoadFrame::StaticInit(&gMozglueLoaderObserver, &gWinLauncher);
 
   // Bug 1361410: WRusr.dll will overwrite our hook and cause a crash.
   // Workaround: If we detect WRusr.dll, don't hook.
@@ -618,7 +596,7 @@ MFBT_API void DllBlocklist_Initialize(uint32_t aInitFlags) {
     }
   }
 
-#if defined(EARLY_BETA_OR_EARLIER)
+#if defined(NIGHTLY_BUILD)
   // Populate a list of thread start addresses to block.
   HMODULE hKernel = GetModuleHandleW(L"kernel32.dll");
   if (hKernel) {
@@ -749,7 +727,7 @@ MFBT_API void DllBlocklist_SetFullDllServices(
   glue::AutoExclusiveLock lock(gDllServicesLock);
   if (aSvc) {
     aSvc->SetAuthenticodeImpl(GetAuthenticode());
-    aSvc->SetWinLauncherFunctions(gWinLauncherFunctions);
+    aSvc->SetWinLauncherServices(gWinLauncher);
     gMozglueLoaderObserver.Forward(aSvc);
   }
 

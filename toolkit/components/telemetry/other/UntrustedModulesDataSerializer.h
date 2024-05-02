@@ -18,31 +18,34 @@ namespace Telemetry {
 
 // This class owns a JS object and serializes a given UntrustedModulesData
 // into it.  Because this class uses JSAPI, an AutoJSAPI instance must be
-// on the stack before instanciating the class.
+// on the stack before instantiating the class.
 class MOZ_RAII UntrustedModulesDataSerializer final {
   using IndexMap = nsTHashMap<nsStringHashKey, uint32_t>;
 
   nsresult mCtorResult;
   JSContext* mCx;
-  JS::RootedObject mMainObj;
-  JS::RootedObject mModulesArray;
-  JS::RootedObject mPerProcObjContainer;
+  JS::Rooted<JSObject*> mMainObj;
+  JS::Rooted<JSObject*> mModulesArray;
+  JS::Rooted<JSObject*> mBlockedModulesArray;
+  JS::Rooted<JSObject*> mPerProcObjContainer;
 
   IndexMap mIndexMap;
   const uint32_t mMaxModulesArrayLen;
   uint32_t mCurModulesArrayIdx;
+  uint32_t mCurBlockedModulesArrayIdx;
 
   // Combinations of the flags defined under nsITelemetry.
   // (See "Flags for getUntrustedModuleLoadEvents" in nsITelemetry.idl)
   const uint32_t mFlags;
 
-  static bool SerializeEvent(JSContext* aCx, JS::MutableHandleValue aElement,
-                             const ProcessedModuleLoadEvent& aEvent,
-                             const IndexMap& aModuleIndices);
+  static bool SerializeEvent(
+      JSContext* aCx, JS::MutableHandle<JS::Value> aElement,
+      const ProcessedModuleLoadEventContainer& aEventContainer,
+      const IndexMap& aModuleIndices);
   nsresult GetPerProcObject(const UntrustedModulesData& aData,
-                            JS::MutableHandleObject aObj);
-  nsresult AddLoadEvents(const Vector<ProcessedModuleLoadEvent>& aEvents,
-                         JS::MutableHandleObject aPerProcObj);
+                            JS::MutableHandle<JSObject*> aObj);
+  nsresult AddLoadEvents(const UntrustedModuleLoadingEvents& aEvents,
+                         JS::MutableHandle<JSObject*> aPerProcObj);
   nsresult AddSingleData(const UntrustedModulesData& aData);
 
  public:
@@ -55,7 +58,7 @@ class MOZ_RAII UntrustedModulesDataSerializer final {
    *
    * @param  aRet  [out] This gets assigned to the newly created object.
    */
-  void GetObject(JS::MutableHandleValue aRet);
+  void GetObject(JS::MutableHandle<JS::Value> aRet);
 
   /**
    * Adds data to the JS object.
@@ -70,6 +73,9 @@ class MOZ_RAII UntrustedModulesDataSerializer final {
    * @return nsresult
    */
   nsresult Add(const UntrustedModulesBackupData& aData);
+
+  nsresult AddBlockedModules(
+      const nsTArray<nsDependentSubstring>& blockedModules);
 };
 
 }  // namespace Telemetry

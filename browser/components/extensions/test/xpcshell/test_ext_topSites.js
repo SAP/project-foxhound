@@ -1,13 +1,13 @@
 "use strict";
 
-const { PlacesUtils } = ChromeUtils.import(
-  "resource://gre/modules/PlacesUtils.jsm"
+const { PlacesUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/PlacesUtils.sys.mjs"
 );
-const { NewTabUtils } = ChromeUtils.import(
-  "resource://gre/modules/NewTabUtils.jsm"
+const { NewTabUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/NewTabUtils.sys.mjs"
 );
-const { PlacesTestUtils } = ChromeUtils.import(
-  "resource://testing-common/PlacesTestUtils.jsm"
+const { PlacesTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/PlacesTestUtils.sys.mjs"
 );
 
 const SEARCH_SHORTCUTS_EXPERIMENT_PREF =
@@ -23,28 +23,28 @@ add_task(async function test_topSites() {
   const numVisits = 15; // To make sure we get frecency.
   let visitDate = new Date(1999, 9, 9, 9, 9).getTime();
 
-  function setVisit(visit) {
+  async function setVisit(visit) {
     for (let j = 0; j < numVisits; ++j) {
       visitDate -= 1000;
       visit.visits.push({ date: new Date(visitDate) });
     }
     visits.push(visit);
+    await PlacesUtils.history.insert(visit);
   }
   // Stick a couple sites into history.
   for (let i = 0; i < 2; ++i) {
-    setVisit({
+    await setVisit({
       url: `http://example${i}.com/`,
       title: `visit${i}`,
       visits: [],
     });
-    setVisit({
+    await setVisit({
       url: `http://www.example${i}.com/foobar`,
       title: `visit${i}-www`,
       visits: [],
     });
   }
   NewTabUtils.init();
-  await PlacesUtils.history.insertMany(visits);
 
   // Insert a favicon to show that favicons are not returned by default.
   let faviconData = new Map();
@@ -75,12 +75,7 @@ add_task(async function test_topSites() {
     },
     background() {
       browser.test.onMessage.addListener(async options => {
-        let sites;
-        if (typeof options !== undefined) {
-          sites = await browser.topSites.get(options);
-        } else {
-          sites = await browser.topSites.get();
-        }
+        let sites = await browser.topSites.get(options);
         browser.test.sendMessage("sites", sites);
       });
     },
@@ -224,12 +219,7 @@ add_task(async function test_topSites_complete() {
     },
     background() {
       browser.test.onMessage.addListener(async options => {
-        let sites;
-        if (typeof options !== undefined) {
-          sites = await browser.topSites.get(options);
-        } else {
-          sites = await browser.topSites.get();
-        }
+        let sites = await browser.topSites.get(options);
         browser.test.sendMessage("sites", sites);
       });
     },

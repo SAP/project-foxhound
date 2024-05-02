@@ -2,19 +2,20 @@
 
 const TEST_URLS = ["about:robots", "about:mozilla"];
 
-add_task(async function() {
+add_task(async function bookmark_all_tabs() {
   let tabs = [];
   for (let url of TEST_URLS) {
     tabs.push(await BrowserTestUtils.openNewForegroundTab(gBrowser, url));
   }
-  registerCleanupFunction(async function() {
+  registerCleanupFunction(async function () {
     for (let tab of tabs) {
       BrowserTestUtils.removeTab(tab);
     }
+    await PlacesUtils.bookmarks.eraseEverything();
   });
 
   await withBookmarksDialog(
-    true,
+    false,
     function open() {
       document.getElementById("Browser:BookmarkAllTabs").doCommand();
     },
@@ -31,14 +32,10 @@ add_task(async function() {
         .getString("bookmarkAllTabsDefault");
       Assert.equal(namepicker.value, folderName, "Name field is correct.");
 
-      let promiseTitleChange = PlacesTestUtils.waitForNotification(
-        "bookmark-title-changed",
-        events => events.some(e => e.title === "folder"),
-        "places"
-      );
+      let promiseBookmarkAdded =
+        PlacesTestUtils.waitForNotification("bookmark-added");
 
       fillBookmarkTextField("editBMPanel_namePicker", "folder", dialog);
-      await promiseTitleChange;
 
       let folderPicker = dialog.document.getElementById(
         "editBMPanel_folderMenuList"
@@ -51,23 +48,19 @@ add_task(async function() {
         "The folder is the expected one."
       );
 
-      let savedItemId = dialog.gEditItemOverlay.itemId;
-      let savedItemGuid = await PlacesUtils.promiseItemGuid(savedItemId);
-      let entry = await PlacesUtils.bookmarks.fetch(savedItemGuid);
-      Assert.equal(
-        entry.parentGuid,
-        defaultParentGuid,
-        "Should have created the keyword in the right folder."
-      );
-    },
-    dialog => {
-      let savedItemId = dialog.gEditItemOverlay.itemId;
-      Assert.greater(savedItemId, 0, "Found the itemId");
-      return PlacesTestUtils.waitForNotification(
-        "bookmark-removed",
-        events => events.some(event => event.id === savedItemId),
-        "places"
-      );
+      EventUtils.synthesizeKey("VK_RETURN", {}, dialog);
+      await promiseBookmarkAdded;
+      for (const url of TEST_URLS) {
+        const { parentGuid } = await PlacesUtils.bookmarks.fetch({ url });
+        const folder = await PlacesUtils.bookmarks.fetch({
+          guid: parentGuid,
+        });
+        is(
+          folder.title,
+          "folder",
+          "Should have created the bookmark in the right folder."
+        );
+      }
     }
   );
 });

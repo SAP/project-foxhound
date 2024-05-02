@@ -6,10 +6,6 @@
 
 "use strict";
 
-const { AboutNewTab } = ChromeUtils.import(
-  "resource:///modules/AboutNewTab.jsm"
-);
-
 function checkUrlbarFocus(win) {
   let urlbar = win.gURLBar;
   is(
@@ -28,13 +24,13 @@ function openNewPrivateWindow() {
   });
 }
 
-add_task(async function() {
+add_task(async function () {
   let win = await openNewPrivateWindow();
   checkUrlbarFocus(win);
   win.close();
 });
 
-add_task(async function() {
+add_task(async function () {
   AboutNewTab.newTabURL = "about:blank";
   registerCleanupFunction(() => {
     AboutNewTab.resetNewTabURL();

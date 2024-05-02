@@ -24,11 +24,11 @@ add_task(async function test_sw_api_request_handling_local_process_api() {
       background: {
         service_worker: "sw.js",
       },
-      applications: { gecko: { id: "test-bg-sw@mochi.test" } },
+      browser_specific_settings: { gecko: { id: "test-bg-sw@mochi.test" } },
     },
     files: {
       "page.html": "<!DOCTYPE html><body></body>",
-      "sw.js": async function() {
+      "sw.js": async function () {
         browser.test.onMessage.addListener(async msg => {
           browser.test.succeed("call to test.succeed");
           browser.test.assertTrue(true, "call to test.assertTrue");
@@ -101,11 +101,11 @@ add_task(async function test_sw_api_request_handling_main_process_api() {
         service_worker: "sw.js",
       },
       permissions: ["alarms"],
-      applications: { gecko: { id: "test-bg-sw@mochi.test" } },
+      browser_specific_settings: { gecko: { id: "test-bg-sw@mochi.test" } },
     },
     files: {
       "page.html": "<!DOCTYPE html><body></body>",
-      "sw.js": async function() {
+      "sw.js": async function () {
         browser.alarms.create("test-alarm", { when: Date.now() + 2000000 });
         const all = await browser.alarms.getAll();
         if (all.length === 1 && all[0].name === "test-alarm") {
@@ -145,11 +145,13 @@ add_task(async function test_sw_api_request_bgsw_runtime_onMessage() {
         service_worker: "sw.js",
       },
       permissions: [],
-      applications: { gecko: { id: "test-bg-sw-on-message@mochi.test" } },
+      browser_specific_settings: {
+        gecko: { id: "test-bg-sw-on-message@mochi.test" },
+      },
     },
     files: {
       "page.html": '<!DOCTYPE html><script src="page.js"></script>',
-      "page.js": async function() {
+      "page.js": async function () {
         browser.test.onMessage.addListener(msg => {
           if (msg !== "extpage-send-message") {
             browser.test.fail(`Unexpected message received: ${msg}`);
@@ -158,7 +160,7 @@ add_task(async function test_sw_api_request_bgsw_runtime_onMessage() {
           browser.runtime.sendMessage("extpage-send-message");
         });
       },
-      "sw.js": async function() {
+      "sw.js": async function () {
         browser.runtime.onMessage.addListener(msg => {
           browser.test.sendMessage("bgsw-on-message", msg);
         });
@@ -196,18 +198,20 @@ add_task(async function test_sw_api_request_bgsw_runtime_sendMessage() {
         service_worker: "sw.js",
       },
       permissions: [],
-      applications: { gecko: { id: "test-bg-sw-sendMessage@mochi.test" } },
+      browser_specific_settings: {
+        gecko: { id: "test-bg-sw-sendMessage@mochi.test" },
+      },
     },
     files: {
       "page.html": '<!DOCTYPE html><script src="page.js"></script>',
-      "page.js": async function() {
+      "page.js": async function () {
         browser.runtime.onMessage.addListener(msg => {
           browser.test.sendMessage("extpage-on-message", msg);
         });
 
         browser.test.sendMessage("extpage-ready");
       },
-      "sw.js": async function() {
+      "sw.js": async function () {
         browser.test.onMessage.addListener(msg => {
           if (msg !== "bgsw-send-message") {
             browser.test.fail(`Unexpected message received: ${msg}`);
@@ -252,18 +256,18 @@ add_task(async function test_sw_api_request_bgsw_connnect_runtime_port() {
         service_worker: "sw.js",
       },
       permissions: [],
-      applications: { gecko: { id: "test-bg-sw@mochi.test" } },
+      browser_specific_settings: { gecko: { id: "test-bg-sw@mochi.test" } },
     },
     files: {
       "page.html": '<!DOCTYPE html><script src="page.js"></script>',
-      "page.js": async function() {
+      "page.js": async function () {
         browser.runtime.onConnect.addListener(port => {
           browser.test.sendMessage("page-got-port-from-sw");
           port.postMessage("page-to-sw");
         });
         browser.test.sendMessage("page-waiting-port");
       },
-      "sw.js": async function() {
+      "sw.js": async function () {
         browser.test.onMessage.addListener(msg => {
           if (msg !== "connect-port") {
             return;
@@ -347,11 +351,13 @@ add_task(async function test_sw_api_request_bgsw_runtime_onConnect() {
         service_worker: "sw.js",
       },
       permissions: [],
-      applications: { gecko: { id: "test-bg-sw-onConnect@mochi.test" } },
+      browser_specific_settings: {
+        gecko: { id: "test-bg-sw-onConnect@mochi.test" },
+      },
     },
     files: {
       "page.html": '<!DOCTYPE html><script src="page.js"></script>',
-      "page.js": async function() {
+      "page.js": async function () {
         browser.test.onMessage.addListener(msg => {
           if (msg !== "connect-port") {
             return;
@@ -363,7 +369,7 @@ add_task(async function test_sw_api_request_bgsw_runtime_onConnect() {
           browser.test.sendMessage("page-waiting-port-message");
         });
       },
-      "sw.js": async function() {
+      "sw.js": async function () {
         try {
           const extURL = browser.runtime.getURL("/");
           browser.test.sendMessage("ext-url", extURL);
@@ -413,11 +419,11 @@ add_task(async function test_sw_runtime_lastError() {
       background: {
         service_worker: "sw.js",
       },
-      applications: { gecko: { id: "test-bg-sw@mochi.test" } },
+      browser_specific_settings: { gecko: { id: "test-bg-sw@mochi.test" } },
     },
     files: {
       "page.html": "<!DOCTYPE html><body></body>",
-      "sw.js": async function() {
+      "sw.js": async function () {
         browser.runtime.sendMessage(() => {
           const lastError = browser.runtime.lastError;
           if (!(lastError instanceof Error)) {

@@ -188,8 +188,19 @@ nsStaticAtom* nsLanguageAtomService::GetUncachedLanguageGroup(
       langStr.Truncate(start.get() - langStr.BeginReading());
     }
 
-    Locale loc;
-    auto result = LocaleParser::TryParse(langStr, loc);
+    intl::Locale loc;
+    auto result = intl::LocaleParser::TryParse(langStr, loc);
+    if (!result.isOk()) {
+      // Did the author (wrongly) use '_' instead of '-' to separate subtags?
+      // If so, fix it up and re-try parsing.
+      if (langStr.Contains('_')) {
+        langStr.ReplaceChar('_', '-');
+
+        // Throw away the partially parsed locale and re-start parsing.
+        loc = {};
+        result = intl::LocaleParser::TryParse(langStr, loc);
+      }
+    }
     if (result.isOk() && loc.Canonicalize().isOk()) {
       // Fill in script subtag if not present.
       if (loc.Script().Missing()) {
@@ -213,7 +224,7 @@ nsStaticAtom* nsLanguageAtomService::GetUncachedLanguageGroup(
       if (BinarySearchIf(
               kScriptLangGroup, 0, ArrayLength(kScriptLangGroup),
               [script](const auto& entry) -> int {
-                return script.Compare(entry.mTag);
+                return Compare(script, nsDependentCString(entry.mTag));
               },
               &foundIndex)) {
         return kScriptLangGroup[foundIndex].mAtom;

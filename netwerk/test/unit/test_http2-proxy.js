@@ -19,6 +19,14 @@
  * - check we don't try to ask for credentials or otherwise authenticate to
  *   the proxy when 407 is returned and there is no Proxy-Authenticate
  *   response header sent
+ * - a stream reset for a connect stream to the proxy does not cause session to
+ *   be closed and the request through the proxy will failed.
+ * - a "soft" stream error on a connection to the origin server will close the
+ *   stream, but it will not close niether the HTTP/2 session to the proxy nor
+ *   to the origin server.
+ * - a "hard" stream error on a connection to the origin server will close the
+ *   HTTP/2 session to the origin server, but it will not close the HTTP/2
+ *   session to the proxy.
  */
 
 /* eslint-env node */
@@ -45,15 +53,6 @@ class ProxyFilter {
     this.QueryInterface = ChromeUtils.generateQI(["nsIProtocolProxyFilter"]);
   }
   applyFilter(uri, pi, cb) {
-    if (
-      uri.pathQueryRef.startsWith("/execute") ||
-      uri.pathQueryRef.startsWith("/fork") ||
-      uri.pathQueryRef.startsWith("/kill")
-    ) {
-      // So we allow NodeServer.execute to work
-      cb.onProxyFilterResult(pi);
-      return;
-    }
     cb.onProxyFilterResult(
       pps.newProxyInfo(
         this._type,
@@ -87,7 +86,7 @@ class SimpleAuthPrompt2 {
   }
   asyncPromptAuth(channel, callback, context, encryptionLevel, authInfo) {
     this.signal.triggered = true;
-    executeSoon(function() {
+    executeSoon(function () {
       authInfo.username = "user";
       authInfo.password = "pass";
       callback.onAuthAvailable(context, authInfo);
@@ -127,23 +126,28 @@ function make_channel(url) {
   });
 }
 
-function get_response(channel, flags = CL_ALLOW_UNKNOWN_CL) {
+function get_response(channel, flags = CL_ALLOW_UNKNOWN_CL, delay = 0) {
   return new Promise(resolve => {
-    channel.asyncOpen(
-      new ChannelListener(
-        (request, data) => {
-          request.QueryInterface(Ci.nsIHttpChannel);
-          const status = request.status;
-          const http_code = status ? undefined : request.responseStatus;
-          request.QueryInterface(Ci.nsIProxiedChannel);
-          const proxy_connect_response_code =
-            request.httpProxyConnectResponseCode;
-          resolve({ status, http_code, data, proxy_connect_response_code });
-        },
-        null,
-        flags
-      )
+    var listener = new ChannelListener(
+      (request, data) => {
+        request.QueryInterface(Ci.nsIHttpChannel);
+        const status = request.status;
+        const http_code = status ? undefined : request.responseStatus;
+        request.QueryInterface(Ci.nsIProxiedChannel);
+        const proxy_connect_response_code =
+          request.httpProxyConnectResponseCode;
+        resolve({ status, http_code, data, proxy_connect_response_code });
+      },
+      null,
+      flags
     );
+    if (delay > 0) {
+      do_timeout(delay, function () {
+        channel.asyncOpen(listener);
+      });
+    } else {
+      channel.asyncOpen(listener);
+    }
   });
 }
 
@@ -198,11 +202,19 @@ class http2ProxyCode {
     return proxy.proxy_session_count;
   }
 
+  static proxySessionToOriginServersCount() {
+    if (!proxy) {
+      return 0;
+    }
+    return proxy.sessionToOriginServersCount;
+  }
+
   static setupProxy() {
     if (!proxy) {
       throw new Error("proxy is null");
     }
     proxy.proxy_session_count = 0;
+    proxy.sessionToOriginServersCount = 0;
     proxy.on("session", () => {
       ++proxy.proxy_session_count;
     });
@@ -211,14 +223,14 @@ class http2ProxyCode {
     // connections when shutting down the proxy.
     proxy.socketIndex = 0;
     proxy.socketMap = {};
-    proxy.on("connection", function(socket) {
+    proxy.on("connection", function (socket) {
       let index = proxy.socketIndex++;
       proxy.socketMap[index] = socket;
-      socket.on("close", function() {
+      socket.on("close", function () {
         delete proxy.socketMap[index];
       });
     });
-    proxy.closeSockets = function() {
+    proxy.closeSockets = function () {
       for (let i in proxy.socketMap) {
         proxy.socketMap[i].destroy();
       }
@@ -282,7 +294,13 @@ class http2ProxyCode {
         stream.end();
         return;
       }
+      if (target == "reset.example.com:443") {
+        // always reset the stream.
+        stream.close(0x0);
+        return;
+      }
 
+      ++proxy.sessionToOriginServersCount;
       const net = require("net");
       const socket = net.connect(serverPort, "127.0.0.1", () => {
         try {
@@ -295,7 +313,9 @@ class http2ProxyCode {
         }
       });
       socket.on("error", error => {
-        throw `Unxpected error when conneting the HTTP/2 server from the HTTP/2 proxy during CONNECT handling: '${error}'`;
+        throw new Error(
+          `Unexpected error when conneting the HTTP/2 server from the HTTP/2 proxy during CONNECT handling: '${error}'`
+        );
       });
     });
   }
@@ -305,6 +325,13 @@ async function proxy_session_counter() {
   let data = await NodeServer.execute(
     processId,
     `http2ProxyCode.proxySessionCount()`
+  );
+  return parseInt(data) - initial_session_count;
+}
+async function proxy_session_to_origin_server_counter() {
+  let data = await NodeServer.execute(
+    processId,
+    `http2ProxyCode.proxySessionToOriginServersCount()`
   );
   return parseInt(data) - initial_session_count;
 }
@@ -320,28 +347,24 @@ add_task(async function setup() {
   );
   addCertFromFile(certdb, "http2-ca.pem", "CTu,u,u");
 
-  const env = Cc["@mozilla.org/process/environment;1"].getService(
-    Ci.nsIEnvironment
-  );
-  let server_port = env.get("MOZHTTP2_PORT");
+  let server_port = Services.env.get("MOZHTTP2_PORT");
   Assert.notEqual(server_port, null);
   processId = await NodeServer.fork();
   await NodeServer.execute(processId, `serverPort = ${server_port}`);
   await NodeServer.execute(processId, http2ProxyCode);
-  let proxy = await NodeServer.execute(
+  let newProxy = await NodeServer.execute(
     processId,
     `http2ProxyCode.startNewProxy()`
   );
-  proxy_port = proxy.port;
+  proxy_port = newProxy.port;
   Assert.notEqual(proxy_port, null);
 
   Services.prefs.setStringPref(
     "services.settings.server",
-    `data:text/html,test`
+    `data:,#remote-settings-dummy/v1`
   );
 
-  Services.prefs.setBoolPref("network.http.spdy.enabled", true);
-  Services.prefs.setBoolPref("network.http.spdy.enabled.http2", true);
+  Services.prefs.setBoolPref("network.http.http2.enabled", true);
 
   // Even with network state isolation active, we don't end up using the
   // partitioned principal.
@@ -359,8 +382,7 @@ add_task(async function setup() {
 
 registerCleanupFunction(async () => {
   Services.prefs.clearUserPref("services.settings.server");
-  Services.prefs.clearUserPref("network.http.spdy.enabled");
-  Services.prefs.clearUserPref("network.http.spdy.enabled.http2");
+  Services.prefs.clearUserPref("network.http.http2.enabled");
   Services.prefs.clearUserPref("network.dns.native-is-localhost");
 
   pps.unregisterFilter(filter);
@@ -538,7 +560,85 @@ add_task(async function proxy_too_many_requests_failure() {
   );
 });
 
-// Make sure that the above error codes don't kill the session and we still reach the end server
+add_task(async function proxy_stream_reset_failure() {
+  const { status, http_code, proxy_connect_response_code } = await get_response(
+    make_channel(`https://reset.example.com/`),
+    CL_EXPECT_FAILURE
+  );
+
+  Assert.equal(status, Cr.NS_ERROR_NET_INTERRUPT);
+  Assert.equal(proxy_connect_response_code, 0);
+  Assert.equal(http_code, undefined);
+  Assert.equal(
+    await proxy_session_counter(),
+    1,
+    "No new session created by 429 after 504"
+  );
+});
+
+// The soft errors are not closing the session.
+add_task(async function origin_server_stream_soft_failure() {
+  var current_num_sessions_to_origin_server =
+    await proxy_session_to_origin_server_counter();
+
+  const { status, http_code, proxy_connect_response_code } = await get_response(
+    make_channel(`https://foo.example.com/illegalhpacksoft`),
+    CL_EXPECT_FAILURE
+  );
+
+  Assert.equal(status, Cr.NS_ERROR_ILLEGAL_VALUE);
+  Assert.equal(proxy_connect_response_code, 200);
+  Assert.equal(http_code, undefined);
+  Assert.equal(
+    await proxy_session_counter(),
+    1,
+    "No session to the proxy closed by soft stream errors"
+  );
+  Assert.equal(
+    await proxy_session_to_origin_server_counter(),
+    current_num_sessions_to_origin_server,
+    "No session to the origin server closed by soft stream errors"
+  );
+});
+
+// The soft errors are not closing the session.
+add_task(
+  async function origin_server_stream_soft_failure_multiple_streams_not_affected() {
+    var current_num_sessions_to_origin_server =
+      await proxy_session_to_origin_server_counter();
+
+    let should_succeed = get_response(
+      make_channel(`https://foo.example.com/750ms`)
+    );
+
+    const failed = await get_response(
+      make_channel(`https://foo.example.com/illegalhpacksoft`),
+      CL_EXPECT_FAILURE,
+      20
+    );
+
+    const succeeded = await should_succeed;
+
+    Assert.equal(failed.status, Cr.NS_ERROR_ILLEGAL_VALUE);
+    Assert.equal(failed.proxy_connect_response_code, 200);
+    Assert.equal(failed.http_code, undefined);
+    Assert.equal(succeeded.status, Cr.NS_OK);
+    Assert.equal(succeeded.proxy_connect_response_code, 200);
+    Assert.equal(succeeded.http_code, 200);
+    Assert.equal(
+      await proxy_session_counter(),
+      1,
+      "No session to the proxy closed by soft stream errors"
+    );
+    Assert.equal(
+      await proxy_session_to_origin_server_counter(),
+      current_num_sessions_to_origin_server,
+      "No session to the origin server closed by soft stream errors"
+    );
+  }
+);
+
+// Make sure that the above error codes don't kill the session to the proxy.
 add_task(async function proxy_success_still_one_session() {
   const foo = await get_response(
     make_channel(`https://foo.example.com/random-request-1`)
@@ -558,7 +658,7 @@ add_task(async function proxy_success_still_one_session() {
   Assert.equal(
     await proxy_session_counter(),
     1,
-    "No new session created after proxy error codes"
+    "No new session to the proxy created after stream error codes"
   );
 });
 
@@ -623,3 +723,140 @@ add_task(async function proxy_bad_gateway_failure_isolated() {
     "No new session created by 502"
   );
 });
+
+add_task(async function proxy_success_check_number_of_session() {
+  const foo = await get_response(
+    make_channel(`https://foo.example.com/random-request-1`)
+  );
+  const alt1 = await get_response(
+    make_channel(`https://alt1.example.com/random-request-2`)
+  );
+  const lh = await get_response(
+    make_channel(`https://localhost/random-request-3`)
+  );
+
+  Assert.equal(foo.status, Cr.NS_OK);
+  Assert.equal(foo.proxy_connect_response_code, 200);
+  Assert.equal(foo.http_code, 200);
+  Assert.ok(foo.data.match("random-request-1"));
+  Assert.ok(foo.data.match("You Win!"));
+  Assert.equal(alt1.status, Cr.NS_OK);
+  Assert.equal(alt1.proxy_connect_response_code, 200);
+  Assert.equal(alt1.http_code, 200);
+  Assert.ok(alt1.data.match("random-request-2"));
+  Assert.ok(alt1.data.match("You Win!"));
+  Assert.equal(lh.status, Cr.NS_OK);
+  Assert.equal(lh.proxy_connect_response_code, 200);
+  Assert.equal(lh.http_code, 200);
+  Assert.ok(lh.data.match("random-request-3"));
+  Assert.ok(lh.data.match("You Win!"));
+  Assert.equal(
+    await proxy_session_counter(),
+    2,
+    "The number of sessions has not changed"
+  );
+});
+
+// The hard errors are closing the session.
+add_task(async function origin_server_stream_hard_failure() {
+  var current_num_sessions_to_origin_server =
+    await proxy_session_to_origin_server_counter();
+  const { status, http_code, proxy_connect_response_code } = await get_response(
+    make_channel(`https://foo.example.com/illegalhpackhard`),
+    CL_EXPECT_FAILURE
+  );
+
+  Assert.equal(status, 0x804b0053);
+  Assert.equal(proxy_connect_response_code, 200);
+  Assert.equal(http_code, undefined);
+  Assert.equal(
+    await proxy_session_counter(),
+    2,
+    "No new session to the proxy."
+  );
+  Assert.equal(
+    await proxy_session_to_origin_server_counter(),
+    current_num_sessions_to_origin_server,
+    "No new session to the origin server yet."
+  );
+
+  // Check the a new session ill be opened.
+  const foo = await get_response(
+    make_channel(`https://foo.example.com/random-request-1`)
+  );
+
+  Assert.equal(foo.status, Cr.NS_OK);
+  Assert.equal(foo.proxy_connect_response_code, 200);
+  Assert.equal(foo.http_code, 200);
+  Assert.ok(foo.data.match("random-request-1"));
+  Assert.ok(foo.data.match("You Win!"));
+
+  Assert.equal(
+    await proxy_session_counter(),
+    2,
+    "No new session to the proxy is created after a hard stream failure on the session to the origin server."
+  );
+  Assert.equal(
+    await proxy_session_to_origin_server_counter(),
+    current_num_sessions_to_origin_server + 1,
+    "A new session to the origin server after a hard stream error"
+  );
+});
+
+// The hard errors are closing the session.
+add_task(
+  async function origin_server_stream_hard_failure_multiple_streams_affected() {
+    var current_num_sessions_to_origin_server =
+      await proxy_session_to_origin_server_counter();
+    let should_fail = get_response(
+      make_channel(`https://foo.example.com/750msNoData`),
+      CL_EXPECT_FAILURE
+    );
+    const failed1 = await get_response(
+      make_channel(`https://foo.example.com/illegalhpackhard`),
+      CL_EXPECT_FAILURE,
+      10
+    );
+
+    const failed2 = await should_fail;
+
+    Assert.equal(failed1.status, 0x804b0053);
+    Assert.equal(failed1.proxy_connect_response_code, 200);
+    Assert.equal(failed1.http_code, undefined);
+    Assert.equal(failed2.status, 0x804b0053);
+    Assert.equal(failed2.proxy_connect_response_code, 200);
+    Assert.equal(failed2.http_code, undefined);
+    Assert.equal(
+      await proxy_session_counter(),
+      2,
+      "No new session to the proxy"
+    );
+    Assert.equal(
+      await proxy_session_to_origin_server_counter(),
+      current_num_sessions_to_origin_server,
+      "No session to the origin server yet."
+    );
+    // Check the a new session ill be opened.
+    const foo = await get_response(
+      make_channel(`https://foo.example.com/random-request-1`)
+    );
+
+    Assert.equal(foo.status, Cr.NS_OK);
+    Assert.equal(foo.proxy_connect_response_code, 200);
+    Assert.equal(foo.http_code, 200);
+    Assert.ok(foo.data.match("random-request-1"));
+    Assert.ok(foo.data.match("You Win!"));
+
+    Assert.equal(
+      await proxy_session_counter(),
+      2,
+      "No new session to the proxy is created after a hard stream failure on the session to the origin server."
+    );
+
+    Assert.equal(
+      await proxy_session_to_origin_server_counter(),
+      current_num_sessions_to_origin_server + 1,
+      "A new session to the origin server after a hard stream error"
+    );
+  }
+);

@@ -4,25 +4,17 @@
 
 "use strict";
 
-var { ExtensionParent } = ChromeUtils.import(
-  "resource://gre/modules/ExtensionParent.jsm"
+var { ExtensionParent } = ChromeUtils.importESModule(
+  "resource://gre/modules/ExtensionParent.sys.mjs"
 );
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "ExtensionControlledPopup",
-  "resource:///modules/ExtensionControlledPopup.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "ExtensionSettingsStore",
-  "resource://gre/modules/ExtensionSettingsStore.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "AboutNewTab",
-  "resource:///modules/AboutNewTab.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  AboutNewTab: "resource:///modules/AboutNewTab.sys.mjs",
+  ExtensionControlledPopup:
+    "resource:///modules/ExtensionControlledPopup.sys.mjs",
+  ExtensionSettingsStore:
+    "resource://gre/modules/ExtensionSettingsStore.sys.mjs",
+});
 
 const STORE_TYPE = "url_overrides";
 const NEW_TAB_SETTING_NAME = "newTabURL";
@@ -30,7 +22,7 @@ const NEW_TAB_CONFIRMED_TYPE = "newTabNotification";
 const NEW_TAB_PRIVATE_ALLOWED = "browser.newtab.privateAllowed";
 const NEW_TAB_EXTENSION_CONTROLLED = "browser.newtab.extensionControlled";
 
-XPCOMUtils.defineLazyGetter(this, "newTabPopup", () => {
+ChromeUtils.defineLazyGetter(this, "newTabPopup", () => {
   return new ExtensionControlledPopup({
     confirmedType: NEW_TAB_CONFIRMED_TYPE,
     observerTopic: "browser-open-newtab-start",
@@ -39,7 +31,6 @@ XPCOMUtils.defineLazyGetter(this, "newTabPopup", () => {
     settingKey: NEW_TAB_SETTING_NAME,
     descriptionId: "extension-new-tab-notification-description",
     descriptionMessageId: "newTabControlled.message2",
-    learnMoreMessageId: "newTabControlled.learnMore",
     learnMoreLink: "extension-home",
     preferencesLocation: "home-newtabOverride",
     preferencesEntrypoint: "addon-manage-newtab-override",
@@ -58,11 +49,15 @@ XPCOMUtils.defineLazyGetter(this, "newTabPopup", () => {
       //   3. Once the New Tab URL has changed, replace the tab's URL with the new New Tab URL
       let gBrowser = win.gBrowser;
       let tab = gBrowser.selectedTab;
-      await replaceUrlInTab(gBrowser, tab, "about:blank");
+      await replaceUrlInTab(gBrowser, tab, Services.io.newURI("about:blank"));
       Services.obs.addObserver(
         {
           async observe() {
-            await replaceUrlInTab(gBrowser, tab, AboutNewTab.newTabURL);
+            await replaceUrlInTab(
+              gBrowser,
+              tab,
+              Services.io.newURI(AboutNewTab.newTabURL)
+            );
             // Now that the New Tab is loading, try to open the popup again. This
             // will only open the popup if a new extension is controlling the New Tab.
             popup.open();

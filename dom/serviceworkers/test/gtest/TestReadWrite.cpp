@@ -37,7 +37,9 @@ class ServiceWorkerRegistrarTest : public ServiceWorkerRegistrar {
   }
 
   nsresult TestReadData() { return ReadData(); }
-  nsresult TestWriteData() { return WriteData(mData); }
+  nsresult TestWriteData() MOZ_NO_THREAD_SAFETY_ANALYSIS {
+    return WriteData(mData);
+  }
   void TestDeleteData() { DeleteData(); }
 
   void TestRegisterServiceWorker(const ServiceWorkerRegistrationData& aData) {
@@ -45,7 +47,10 @@ class ServiceWorkerRegistrarTest : public ServiceWorkerRegistrar {
     RegisterServiceWorkerInternal(aData);
   }
 
-  nsTArray<ServiceWorkerRegistrationData>& TestGetData() { return mData; }
+  nsTArray<ServiceWorkerRegistrationData>& TestGetData()
+      MOZ_NO_THREAD_SAFETY_ANALYSIS {
+    return mData;
+  }
 };
 
 already_AddRefed<nsIFile> GetFile() {

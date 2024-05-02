@@ -46,7 +46,8 @@ class MediaSink {
 
   // Return a promise which is resolved when the track finishes
   // or null if no such track.
-  // Must be called after playback starts.
+  // Must be called after Start().
+  // Returns null if the TrackType does not exist or if Stop() has been called.
   virtual RefPtr<EndedPromise> OnEnded(TrackType aType) = 0;
 
   // Return the end time of the audio/video data that has been consumed
@@ -54,18 +55,21 @@ class MediaSink {
   // Must be called after playback starts.
   virtual media::TimeUnit GetEndTime(TrackType aType) const = 0;
 
-  // Return playback position of the media.
+  // Return playback position for the media data.
   // Since A/V sync is always maintained by this sink, there is no need to
   // specify whether we want to get audio or video position.
   // aTimeStamp returns the timeStamp corresponding to the returned position
   // which is used by the compositor to derive the render time of video frames.
   // Must be called after playback starts.
-  virtual media::TimeUnit GetPosition(
-      TimeStamp* aTimeStamp = nullptr) const = 0;
+  virtual media::TimeUnit GetPosition(TimeStamp* aTimeStamp = nullptr) = 0;
 
   // Return true if there are data consumed but not played yet.
   // Can be called in any state.
   virtual bool HasUnplayedFrames(TrackType aType) const = 0;
+
+  // Return the duration of data consumed but not played yet.
+  // Can be called in any state.
+  virtual media::TimeUnit UnplayedDuration(TrackType aType) const = 0;
 
   // Set volume of the audio track.
   // Do nothing if this sink has no audio track.
@@ -89,6 +93,17 @@ class MediaSink {
   // Pause/resume the playback. Only work after playback starts.
   virtual void SetPlaying(bool aPlaying) = 0;
 
+  // Set the audio output device.  aDevice == nullptr indicates the default
+  // device.  The returned promise is resolved when the previous device is no
+  // longer in use and an attempt to open the new device completes
+  // (successfully or not) or is deemed unnecessary because the device is not
+  // required for output at this time.  The promise will be resolved whether
+  // or not opening the cubeb_stream succeeds because the aDevice is
+  // considered the new underlying device and will be used when it becomes
+  // available.
+  virtual RefPtr<GenericPromise> SetAudioDevice(
+      RefPtr<AudioDeviceInfo> aDevice) = 0;
+
   // Get the playback rate.
   // Can be called in any state.
   virtual double PlaybackRate() const = 0;
@@ -98,8 +113,10 @@ class MediaSink {
   // Do nothing if this sink has no video track. Can be called in any state.
   virtual void Redraw(const VideoInfo& aInfo){};
 
-  // Begin a playback session with the provided start time and media info.
-  // Must be called when playback is stopped.
+  // Begin a playback session with the provided start time in the media data
+  // and media info.  Must be called when playback is stopped.  aStartTime is
+  // compared with MediaData::mTime and continues to increase when looping,
+  // unless decoding is reset.
   virtual nsresult Start(const media::TimeUnit& aStartTime,
                          const MediaInfo& aInfo) = 0;
 
@@ -114,10 +131,6 @@ class MediaSink {
   // Return true if playback is started and not paused otherwise false.
   // Can be called in any state.
   virtual bool IsPlaying() const = 0;
-
-  // The audio output device this MediaSink is playing audio data to. The
-  // default device is used if this returns null.
-  virtual const AudioDeviceInfo* AudioDevice() { return nullptr; }
 
   // Called on the state machine thread to shut down the sink. All resources
   // allocated by this sink should be released.

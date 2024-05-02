@@ -2,15 +2,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/* import-globals-from head.js */
-
 "use strict";
 
 // Bug 1746646: Make mochitests work with TCP enabled (cookieBehavior = 5)
 // All instances of addPermission and removePermission set up 3rd-party storage
 // access in a way that allows the test to proceed with TCP enabled.
 
-add_task(async function() {
+add_task(async function () {
   // open tab
   const URL = URL_ROOT_COM_SSL + "storage-cache-basic.html";
   await SpecialPowers.addPermission(

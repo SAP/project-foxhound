@@ -1,26 +1,24 @@
-/* eslint-env mozilla/frame-script */
+/* eslint-env mozilla/chrome-script */
 
 "use strict";
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-let cs = Cc["@mozilla.org/cookieService;1"].getService(Ci.nsICookieService);
-
 var observer = {
-  observe(subject, topic, data) {
+  observe(subject, topic) {
     if (topic == "cookie-changed") {
-      let cookie = subject.QueryInterface(Ci.nsICookie);
+      let notification = subject.QueryInterface(Ci.nsICookieNotification);
+      let cookie = notification.cookie.QueryInterface(Ci.nsICookie);
       sendAsyncMessage("cookieName", cookie.name + "=" + cookie.value);
-      sendAsyncMessage("cookieOperation", data);
+      sendAsyncMessage("cookieOperation", notification.action);
     }
   },
 };
 
-addMessageListener("createObserver", function(e) {
+addMessageListener("createObserver", function (e) {
   Services.obs.addObserver(observer, "cookie-changed");
   sendAsyncMessage("createObserver:return");
 });
 
-addMessageListener("removeObserver", function(e) {
+addMessageListener("removeObserver", function (e) {
   Services.obs.removeObserver(observer, "cookie-changed");
   sendAsyncMessage("removeObserver:return");
 });

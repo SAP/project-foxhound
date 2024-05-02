@@ -227,8 +227,7 @@ let testCases = [
     },
   },
   {
-    name:
-      "Ensure a dismissed password-save doorhanger appears on an input event when editing an unsaved password",
+    name: "Ensure a dismissed password-save doorhanger appears on an input event when editing an unsaved password",
     prefEnabled: true,
     isLoggedIn: true,
     logins: [],
@@ -253,8 +252,7 @@ let testCases = [
     },
   },
   {
-    name:
-      "Ensure a dismissed password-save doorhanger appears with the latest input value upon editing an unsaved password",
+    name: "Ensure a dismissed password-save doorhanger appears with the latest input value upon editing an unsaved password",
     prefEnabled: true,
     isLoggedIn: true,
     logins: [],
@@ -281,8 +279,7 @@ let testCases = [
     },
   },
   {
-    name:
-      "Ensure a dismissed password-change doorhanger appears on an input event when editing a saved password",
+    name: "Ensure a dismissed password-change doorhanger appears on an input event when editing a saved password",
     prefEnabled: true,
     isLoggedIn: true,
     logins: [{ username: "", password: "pass1" }],
@@ -307,8 +304,7 @@ let testCases = [
     },
   },
   {
-    name:
-      "Ensure no dismissed doorhanger is shown on 'input' when Primary Password is locked",
+    name: "Ensure no dismissed doorhanger is shown on 'input' when Primary Password is locked",
     prefEnabled: true,
     isLoggedIn: false,
     logins: [],
@@ -326,8 +322,7 @@ let testCases = [
     },
   },
   {
-    name:
-      "Ensure no dismissed doorhanger is shown on 'change' when Primary Password is locked",
+    name: "Ensure no dismissed doorhanger is shown on 'change' when Primary Password is locked",
     prefEnabled: true,
     isLoggedIn: false,
     logins: [],
@@ -357,7 +352,7 @@ for (let testData of testCases) {
       });
       if (!testData.isLoggedIn) {
         // Enable Primary Password
-        LoginTestUtils.masterPassword.enable();
+        LoginTestUtils.primaryPassword.enable();
       }
       for (let passwordFieldType of ["password", "text"]) {
         info(
@@ -369,7 +364,7 @@ for (let testData of testCases) {
         await testPasswordChange(testData, { passwordFieldType });
       }
       if (!testData.isLoggedIn) {
-        LoginTestUtils.masterPassword.disable();
+        LoginTestUtils.primaryPassword.disable();
       }
       await SpecialPowers.popPrefEnv();
     },
@@ -396,7 +391,7 @@ async function testPasswordChange(
     await LoginTestUtils.addLogin(login);
   }
 
-  for (let login of Services.logins.getAllLogins()) {
+  for (let login of await Services.logins.getAllLogins()) {
     info(`Saved login: ${login.username}, ${login.password}, ${login.origin}`);
   }
 
@@ -407,7 +402,7 @@ async function testPasswordChange(
       gBrowser,
       url,
     },
-    async function(browser) {
+    async function (browser) {
       info(`Opened tab with url: ${url}, waiting for focus`);
       await SimpleTest.promiseFocus(browser.ownerGlobal);
       info("Waiting for form-processed message");
@@ -421,9 +416,8 @@ async function testPasswordChange(
         expected.doorhanger || !isLoggedIn
           ? "PasswordEditedOrGenerated"
           : "PasswordIgnoreEdit";
-      let passwordTestNotification = listenForTestNotification(
-        notificationMessage
-      );
+      let passwordTestNotification =
+        listenForTestNotification(notificationMessage);
 
       await changeContentFormValues(browser, formChanges, shouldBlur);
 
@@ -449,13 +443,13 @@ async function testPasswordChange(
             25
           );
         } catch (ex) {}
-        ok(!notif, "No doorhanger expected");
+        Assert.ok(!notif, "No doorhanger expected");
         // the remainder of the test is for doorhanger-expected cases
         return;
       }
 
       let notificationType = expected.doorhanger.type;
-      ok(
+      Assert.ok(
         /^password-save|password-change$/.test(notificationType),
         "test provided an expected notification type: " + notificationType
       );
@@ -468,7 +462,7 @@ async function testPasswordChange(
         notificationType,
         expected.doorhanger
       );
-      ok(notif, "Doorhanger was shown");
+      Assert.ok(notif, "Doorhanger was shown");
 
       let promiseHidden = BrowserTestUtils.waitForEvent(
         PopupNotifications.panel,
@@ -487,19 +481,20 @@ async function initForm(browser, formDefaults, passwordFieldType) {
   await ContentTask.spawn(
     browser,
     { passwordInputSelector, passwordFieldType },
-    async function({ passwordInputSelector, passwordFieldType }) {
-      content.document.querySelector(
-        passwordInputSelector
-      ).type = passwordFieldType;
+    async function ({ passwordInputSelector, passwordFieldType }) {
+      content.document.querySelector(passwordInputSelector).type =
+        passwordFieldType;
     }
   );
-  await ContentTask.spawn(browser, formDefaults, async function(
-    selectorValues
-  ) {
-    for (let [sel, value] of Object.entries(selectorValues)) {
-      content.document.querySelector(sel).value = value;
+  await ContentTask.spawn(
+    browser,
+    formDefaults,
+    async function (selectorValues) {
+      for (let [sel, value] of Object.entries(selectorValues)) {
+        content.document.querySelector(sel).value = value;
+      }
     }
-  });
+  );
 }
 
 async function checkForm(browser, expected) {
@@ -512,7 +507,11 @@ async function checkForm(browser, expected) {
     async function contentCheckForm(selectorValues) {
       for (let [sel, value] of Object.entries(selectorValues)) {
         let field = content.document.querySelector(sel);
-        is(field.value, value, sel + " has the expected initial value");
+        Assert.equal(
+          field.value,
+          value,
+          sel + " has the expected initial value"
+        );
       }
     }
   );
@@ -521,20 +520,20 @@ async function checkForm(browser, expected) {
 async function openAndVerifyDoorhanger(browser, type, expected) {
   // check a dismissed prompt was shown with extraAttr attribute
   let notif = getCaptureDoorhanger(type);
-  ok(notif, `${type} doorhanger was created`);
-  is(
+  Assert.ok(notif, `${type} doorhanger was created`);
+  Assert.equal(
     notif.dismissed,
     expected.dismissed,
     "Check notification dismissed property"
   );
-  is(
+  Assert.equal(
     notif.anchorElement.getAttribute("extraAttr"),
     expected.anchorExtraAttr,
     "Check icon extraAttr attribute"
   );
   let { panel } = PopupNotifications;
   // if the doorhanged is dimissed, we will open it to check panel contents
-  is(panel.state, "closed", "Panel is initially closed");
+  Assert.equal(panel.state, "closed", "Panel is initially closed");
   let promiseShown = BrowserTestUtils.waitForEvent(panel, "popupshown");
   // synthesize click on anchor as this also blurs the form field triggering
   // a change event
@@ -550,9 +549,9 @@ async function openAndVerifyDoorhanger(browser, type, expected) {
 
   if (expected.toggle == "visible") {
     // Bug 1692284
-    // ok(BrowserTestUtils.is_visible(checkbox), "Toggle checkbox visible as expected");
+    // Assert.ok(BrowserTestUtils.is_visible(checkbox), "Toggle checkbox visible as expected");
   } else if (expected.toggle == "hidden") {
-    ok(
+    Assert.ok(
       BrowserTestUtils.is_hidden(checkbox),
       "Toggle checkbox hidden as expected"
     );

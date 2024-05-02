@@ -12,6 +12,7 @@
 #include "mozilla/Assertions.h"  // for MOZ_ASSERT, etc
 #include "mozilla/Attributes.h"  // for override
 #include "mozilla/RefPtr.h"      // for RefPtr, already_AddRefed, etc
+#include "mozilla/dom/ipc/IdType.h"
 #include "mozilla/gfx/Logging.h"
 #include "mozilla/gfx/Matrix.h"
 #include "mozilla/gfx/Point.h"  // for IntSize, IntPoint
@@ -64,6 +65,7 @@ class SurfaceDescriptor;
 class HostIPCAllocator;
 class ISurfaceAllocator;
 class MacIOSurfaceTextureHostOGL;
+class ShmemTextureHost;
 class SurfaceTextureHost;
 class TextureHostOGL;
 class TextureReadLock;
@@ -71,9 +73,11 @@ class TextureSourceOGL;
 class TextureSourceD3D11;
 class DataTextureSource;
 class PTextureParent;
+class RemoteTextureHostWrapper;
 class TextureParent;
 class WebRenderTextureHost;
 class WrappingTextureSourceYCbCrBasic;
+class TextureHostWrapperD3D11;
 
 /**
  * A view on a TextureHost where the texture is internally represented as tiles
@@ -349,6 +353,21 @@ class DataTextureSource : public TextureSource {
   uint32_t mUpdateSerial;
 };
 
+enum class TextureHostType : int8_t {
+  Unknown = 0,
+  Buffer,
+  DXGI,
+  DXGIYCbCr,
+  DcompSurface,
+  DMABUF,
+  MacIOSurface,
+  AndroidSurfaceTexture,
+  AndroidHardwareBuffer,
+  EGLImage,
+  GLTexture,
+  Last
+};
+
 /**
  * TextureHost is a thin abstraction over texture data that need to be shared
  * between the content process and the compositor process. It is the
@@ -389,7 +408,7 @@ class TextureHost : public AtomicRefCountedWithFinalize<TextureHost> {
   friend class AtomicRefCountedWithFinalize<TextureHost>;
 
  public:
-  explicit TextureHost(TextureFlags aFlags);
+  TextureHost(TextureHostType aType, TextureFlags aFlags);
 
  protected:
   virtual ~TextureHost();
@@ -400,7 +419,7 @@ class TextureHost : public AtomicRefCountedWithFinalize<TextureHost> {
    */
   static already_AddRefed<TextureHost> Create(
       const SurfaceDescriptor& aDesc, ReadLockDescriptor&& aReadLock,
-      ISurfaceAllocator* aDeallocator, LayersBackend aBackend,
+      HostIPCAllocator* aDeallocator, LayersBackend aBackend,
       TextureFlags aFlags, wr::MaybeExternalImageId& aExternalImageId);
 
   /**
@@ -495,6 +514,10 @@ class TextureHost : public AtomicRefCountedWithFinalize<TextureHost> {
 
   TextureFlags GetFlags() { return mFlags; }
 
+  wr::MaybeExternalImageId GetMaybeExternalImageId() const {
+    return mExternalImageId;
+  }
+
   /**
    * Allocate and deallocate a TextureParent actor.
    *
@@ -506,8 +529,8 @@ class TextureHost : public AtomicRefCountedWithFinalize<TextureHost> {
   static PTextureParent* CreateIPDLActor(
       HostIPCAllocator* aAllocator, const SurfaceDescriptor& aSharedData,
       ReadLockDescriptor&& aDescriptor, LayersBackend aLayersBackend,
-      TextureFlags aFlags, uint64_t aSerial,
-      const wr::MaybeExternalImageId& aExternalImageId);
+      TextureFlags aFlags, const dom::ContentParentId& aContentId,
+      uint64_t aSerial, const wr::MaybeExternalImageId& aExternalImageId);
   static bool DestroyIPDLActor(PTextureParent* actor);
 
   /**
@@ -523,6 +546,8 @@ class TextureHost : public AtomicRefCountedWithFinalize<TextureHost> {
   static TextureHost* AsTextureHost(PTextureParent* actor);
 
   static uint64_t GetTextureSerial(PTextureParent* actor);
+
+  static dom::ContentParentId GetTextureContentId(PTextureParent* actor);
 
   /**
    * Return a pointer to the IPDLActor.
@@ -575,6 +600,7 @@ class TextureHost : public AtomicRefCountedWithFinalize<TextureHost> {
   TextureReadLock* GetReadLock() { return mReadLock; }
 
   virtual BufferTextureHost* AsBufferTextureHost() { return nullptr; }
+  virtual ShmemTextureHost* AsShmemTextureHost() { return nullptr; }
   virtual MacIOSurfaceTextureHostOGL* AsMacIOSurfaceTextureHost() {
     return nullptr;
   }
@@ -584,6 +610,15 @@ class TextureHost : public AtomicRefCountedWithFinalize<TextureHost> {
   AsAndroidHardwareBufferTextureHost() {
     return nullptr;
   }
+  virtual RemoteTextureHostWrapper* AsRemoteTextureHostWrapper() {
+    return nullptr;
+  }
+
+  virtual TextureHostWrapperD3D11* AsTextureHostWrapperD3D11() {
+    return nullptr;
+  }
+
+  virtual bool IsWrappingSurfaceTextureHost() { return false; }
 
   // Create the corresponding RenderTextureHost type of this texture, and
   // register the RenderTextureHost into render thread.
@@ -665,6 +700,8 @@ class TextureHost : public AtomicRefCountedWithFinalize<TextureHost> {
     return false;
   }
 
+  virtual TextureHostType GetTextureHostType() { return mTextureHostType; }
+
   // Our WebRender backend may impose restrictions on whether textures are
   // prepared as native textures or not, or it may have no restriction at
   // all. This enumerates those possibilities.
@@ -686,6 +723,11 @@ class TextureHost : public AtomicRefCountedWithFinalize<TextureHost> {
     return DONT_CARE;
   }
 
+  void SetDestroyedCallback(std::function<void()>&& aDestroyedCallback) {
+    MOZ_ASSERT(!mDestroyedCallback);
+    mDestroyedCallback = std::move(aDestroyedCallback);
+  }
+
  protected:
   virtual void ReadUnlock();
 
@@ -694,7 +736,7 @@ class TextureHost : public AtomicRefCountedWithFinalize<TextureHost> {
   /**
    * Called when mCompositableCount becomes from 0 to 1.
    */
-  virtual void PrepareForUse() {}
+  virtual void PrepareForUse();
 
   /**
    * Called when mCompositableCount becomes 0.
@@ -704,6 +746,7 @@ class TextureHost : public AtomicRefCountedWithFinalize<TextureHost> {
   // for Compositor.
   void CallNotifyNotUsed();
 
+  TextureHostType mTextureHostType;
   PTextureParent* mActor;
   RefPtr<TextureReadLock> mReadLock;
   TextureFlags mFlags;
@@ -712,11 +755,15 @@ class TextureHost : public AtomicRefCountedWithFinalize<TextureHost> {
   bool mReadLocked;
   wr::MaybeExternalImageId mExternalImageId;
 
+  std::function<void()> mDestroyedCallback;
+
   friend class Compositor;
+  friend class RemoteTextureHostWrapper;
   friend class TextureParent;
   friend class TextureSourceProvider;
   friend class GPUVideoTextureHost;
   friend class WebRenderTextureHost;
+  friend class TextureHostWrapperD3D11;
 };
 
 /**
@@ -761,6 +808,8 @@ class BufferTextureHost : public TextureHost {
 
   gfx::ColorRange GetColorRange() const override;
 
+  gfx::ChromaSubsampling GetChromaSubsampling() const;
+
   gfx::IntSize GetSize() const override { return mSize; }
 
   already_AddRefed<gfx::DataSourceSurface> GetAsSurface() override;
@@ -789,7 +838,11 @@ class BufferTextureHost : public TextureHost {
                         const Range<wr::ImageKey>& aImageKeys,
                         PushDisplayItemFlagSet aFlags) override;
 
-  void DisableExternalTextures() { mUseExternalTextures = false; }
+  uint8_t* GetYChannel();
+  uint8_t* GetCbChannel();
+  uint8_t* GetCrChannel();
+  int32_t GetYStride() const;
+  int32_t GetCbCrStride() const;
 
  protected:
   bool UseExternalTextures() const { return mUseExternalTextures; }
@@ -830,6 +883,8 @@ class ShmemTextureHost : public BufferTextureHost {
   const char* Name() override { return "ShmemTextureHost"; }
 
   void OnShutdown() override;
+
+  ShmemTextureHost* AsShmemTextureHost() override { return this; }
 
  protected:
   UniquePtr<mozilla::ipc::Shmem> mShmem;

@@ -1,13 +1,13 @@
 "use strict";
 
-// This is a test for PageActions.jsm, specifically the context menus.
+// This is a test for PageActions.sys.mjs, specifically the context menus.
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  ExtensionCommon: "resource://gre/modules/ExtensionCommon.jsm",
+ChromeUtils.defineESModuleGetters(this, {
+  ExtensionCommon: "resource://gre/modules/ExtensionCommon.sys.mjs",
 });
 
 // Initialization.  Must run first.
-add_task(async function init() {
+add_setup(async function () {
   // The page action urlbar button, and therefore the panel, is only shown when
   // the current tab is actionable -- i.e., a normal web page.  about:blank is
   // not, so open a new tab first thing, and close it when this test is done.
@@ -25,8 +25,6 @@ add_task(async function init() {
 // Opens the context menu on a non-built-in action.  (The context menu for
 // built-in actions is tested in browser_page_action_menu.js.)
 add_task(async function contextMenu() {
-  Services.telemetry.clearEvents();
-
   // Add an extension with a page action so we can test its context menu.
   let extension = ExtensionTestUtils.loadExtension({
     manifest: {
@@ -134,30 +132,8 @@ add_task(async function contextMenu() {
   cxmenu.activateItem(menuItems[removeItemIndex]);
   await contextMenuPromise;
   await promiseUninstalled;
-  let addonId = extension.id;
   await extension.unload();
   Services.prompt = prompt;
-
-  // Check the telemetry was collected properly.
-  let snapshot = Services.telemetry.snapshotEvents(
-    Ci.nsITelemetry.DATASET_PRERELEASE_CHANNELS,
-    true
-  );
-  ok(
-    snapshot.parent && !!snapshot.parent.length,
-    "Got parent telemetry events in the snapshot"
-  );
-  let relatedEvents = snapshot.parent
-    .filter(
-      ([timestamp, category, method]) =>
-        category == "addonsManager" && method == "action"
-    )
-    .map(relatedEvent => relatedEvent.slice(3, 6));
-  Assert.deepEqual(relatedEvents, [
-    ["pageAction", null, { addonId, action: "manage" }],
-    ["pageAction", null, { addonId, action: "manage" }],
-    ["pageAction", "accepted", { addonId, action: "uninstall" }],
-  ]);
 
   // urlbar tests that run after this one can break if the mouse is left over
   // the area where the urlbar popup appears, which seems to happen due to the

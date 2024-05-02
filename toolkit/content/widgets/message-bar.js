@@ -11,7 +11,9 @@
     constructor() {
       super();
       const shadowRoot = this.attachShadow({ mode: "open" });
-      MozXULElement.insertFTLIfNeeded("toolkit/global/notification.ftl");
+      window.MozXULElement?.insertFTLIfNeeded(
+        "toolkit/global/notification.ftl"
+      );
       document.l10n.connectRoot(this.shadowRoot);
       const content = this.constructor.template.content.cloneNode(true);
       shadowRoot.append(content);
@@ -45,11 +47,13 @@
       // expected message bar layout is applied on this
       // element.
       const container = document.createElement("div");
+      container.part = "container";
       container.classList.add("container");
       template.content.append(container);
 
       const icon = document.createElement("span");
       icon.classList.add("icon");
+      icon.part = "icon";
       container.append(icon);
 
       const barcontent = document.createElement("span");
@@ -63,7 +67,7 @@
 
       const closeIcon = document.createElement("button");
       closeIcon.classList.add("close", "ghost-button");
-      document.l10n.setAttributes(closeIcon, "close-button-label");
+      document.l10n.setAttributes(closeIcon, "notification-close-button");
       container.append(closeIcon);
 
       Object.defineProperty(this, "template", {

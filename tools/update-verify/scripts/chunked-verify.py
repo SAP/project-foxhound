@@ -3,22 +3,19 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this file,
 # You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, print_function
-
 import logging
 import os
-from os import path
 import sys
+from os import path
 from tempfile import mkstemp
 
 sys.path.append(path.join(path.dirname(__file__), "../python"))
 logging.basicConfig(stream=sys.stdout, level=logging.INFO, format="%(message)s")
 log = logging.getLogger(__name__)
 
+from async_download import download_from_config
 from mozrelease.update_verify import UpdateVerifyConfig
 from util.commands import run_cmd
-
-from async_download import download_from_config
 
 UPDATE_VERIFY_COMMAND = ["bash", "verify.sh", "-c"]
 UPDATE_VERIFY_DIR = path.join(path.dirname(__file__), "../release/updates")

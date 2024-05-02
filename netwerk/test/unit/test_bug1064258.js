@@ -12,9 +12,11 @@
 
 "use strict";
 
-const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
+const { HttpServer } = ChromeUtils.importESModule(
+  "resource://testing-common/httpd.sys.mjs"
+);
 
-XPCOMUtils.defineLazyGetter(this, "URL", function() {
+ChromeUtils.defineLazyGetter(this, "URL", function () {
   return "http://localhost:" + httpServer.identity.primaryPort;
 });
 
@@ -50,7 +52,7 @@ function contentHandler2(metadata, response) {
       response.bodyOutputStream.write(responseBody2b, responseBody2b.length);
       break;
     default:
-      throw "Unexpected request in the test";
+      throw new Error("Unexpected request in the test");
   }
 }
 

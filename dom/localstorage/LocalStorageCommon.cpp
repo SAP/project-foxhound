@@ -16,15 +16,14 @@
 #include "mozilla/RefPtr.h"
 #include "mozilla/StaticMutex.h"
 #include "mozilla/StaticPrefs_dom.h"
-#include "mozilla/StaticPrefs_network.h"
 #include "mozilla/dom/StorageUtils.h"
 #include "mozilla/dom/quota/ResultExtensions.h"
 #include "mozilla/ipc/PBackgroundSharedTypes.h"
-#include "mozilla/net/MozURL.h"
 #include "mozilla/net/WebSocketFrame.h"
 #include "nsDebug.h"
 #include "nsError.h"
-#include "nsICookieService.h"
+#include "nsIURL.h"
+#include "nsNetUtil.h"
 #include "nsPrintfCString.h"
 #include "nsString.h"
 #include "nsStringFlags.h"
@@ -44,20 +43,6 @@ LazyLogModule gLogger("LocalStorage");
 
 const char16_t* kLocalStorageType = u"localStorage";
 
-void MaybeEnableNextGenLocalStorage() {
-  if (StaticPrefs::dom_storage_next_gen_DoNotUseDirectly()) {
-    return;
-  }
-
-  if (!Preferences::GetBool("dom.storage.next_gen_auto_enabled_by_cause1")) {
-    if (StaticPrefs::network_cookie_lifetimePolicy() ==
-        nsICookieService::ACCEPT_SESSION) {
-      Preferences::SetBool("dom.storage.next_gen", true);
-      Preferences::SetBool("dom.storage.next_gen_auto_enabled_by_cause1", true);
-    }
-  }
-}
-
 bool NextGenLocalStorageEnabled() {
   if (XRE_IsParentProcess()) {
     StaticMutexAutoLock lock(gNextGenLocalStorageMutex);
@@ -66,7 +51,10 @@ bool NextGenLocalStorageEnabled() {
       // Ideally all this Mutex stuff would be replaced with just using
       // an AtStartup StaticPref, but there are concerns about this causing
       // deadlocks if this access needs to init the AtStartup cache.
-      bool enabled = StaticPrefs::dom_storage_next_gen_DoNotUseDirectly();
+      bool enabled =
+          !StaticPrefs::
+              dom_storage_enable_unsupported_legacy_implementation_DoNotUseDirectly();
+
       gNextGenLocalStorageEnabled = enabled ? 1 : 0;
     }
 
@@ -92,77 +80,34 @@ bool CachedNextGenLocalStorageEnabled() {
 
 Result<std::pair<nsCString, nsCString>, nsresult> GenerateOriginKey2(
     const mozilla::ipc::PrincipalInfo& aPrincipalInfo) {
-  OriginAttributes attrs;
-  nsCString spec;
-
-  switch (aPrincipalInfo.type()) {
-    case mozilla::ipc::PrincipalInfo::TNullPrincipalInfo: {
-      const auto& info = aPrincipalInfo.get_NullPrincipalInfo();
-
-      attrs = info.attrs();
-      spec = info.spec();
-
-      break;
-    }
-
-    case mozilla::ipc::PrincipalInfo::TContentPrincipalInfo: {
-      const auto& info = aPrincipalInfo.get_ContentPrincipalInfo();
-
-      attrs = info.attrs();
-      spec = info.spec();
-
-      break;
-    }
-
-    default: {
-      spec.SetIsVoid(true);
-
-      break;
-    }
-  }
-
-  if (spec.IsVoid()) {
+  if (aPrincipalInfo.type() !=
+          mozilla::ipc::PrincipalInfo::TNullPrincipalInfo &&
+      aPrincipalInfo.type() !=
+          mozilla::ipc::PrincipalInfo::TContentPrincipalInfo) {
     return Err(NS_ERROR_UNEXPECTED);
   }
 
-  nsCString originAttrSuffix;
-  attrs.CreateSuffix(originAttrSuffix);
-
-  RefPtr<MozURL> specURL;
-  QM_TRY(MOZ_TO_RESULT(MozURL::Init(getter_AddRefs(specURL), spec)));
-
-  nsCString host(specURL->Host());
-  uint32_t length = host.Length();
-  if (length > 0 && host.CharAt(0) == '[' && host.CharAt(length - 1) == ']') {
-    host = Substring(host, 1, length - 2);
+  Result<nsCOMPtr<nsIPrincipal>, nsresult> p =
+      PrincipalInfoToPrincipal(aPrincipalInfo);
+  if (p.isErr()) {
+    return Err(p.unwrapErr());
   }
 
-  nsCString domainOrigin(host);
-
-  if (domainOrigin.IsEmpty()) {
-    // For the file:/// protocol use the exact directory as domain.
-    if (specURL->Scheme().EqualsLiteral("file")) {
-      domainOrigin.Assign(specURL->Directory());
-    }
+  nsCOMPtr<nsIPrincipal> principal = p.unwrap();
+  if (!principal) {
+    return Err(NS_ERROR_NULL_POINTER);
   }
 
-  // Append reversed domain
-  nsAutoCString reverseDomain;
-  nsresult rv = StorageUtils::CreateReversedDomain(domainOrigin, reverseDomain);
+  nsCString originKey;
+  nsresult rv = principal->GetStorageOriginKey(originKey);
   if (NS_FAILED(rv)) {
     return Err(rv);
   }
 
-  nsCString originKey = reverseDomain;
-
-  // Append scheme
-  originKey.Append(':');
-  originKey.Append(specURL->Scheme());
-
-  // Append port if any
-  int32_t port = specURL->RealPort();
-  if (port != -1) {
-    originKey.AppendPrintf(":%d", port);
+  nsCString originAttrSuffix;
+  rv = principal->GetOriginSuffix(originAttrSuffix);
+  if (NS_FAILED(rv)) {
+    return Err(rv);
   }
 
   return std::make_pair(std::move(originAttrSuffix), std::move(originKey));

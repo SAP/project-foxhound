@@ -6,7 +6,6 @@
 
 #include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
 #include "js/Wrapper.h"
-#include "vm/WellKnownAtom.h"  // js_*_str
 
 #include "vm/JSObject-inl.h"
 
@@ -135,14 +134,6 @@ bool OpaqueCrossCompartmentWrapper::isArray(JSContext* cx, HandleObject obj,
   return true;
 }
 
-bool OpaqueCrossCompartmentWrapper::hasInstance(JSContext* cx,
-                                                HandleObject wrapper,
-                                                MutableHandleValue v,
-                                                bool* bp) const {
-  *bp = false;
-  return true;
-}
-
 const char* OpaqueCrossCompartmentWrapper::className(JSContext* cx,
                                                      HandleObject proxy) const {
   return "Opaque";
@@ -152,8 +143,8 @@ JSString* OpaqueCrossCompartmentWrapper::fun_toString(JSContext* cx,
                                                       HandleObject proxy,
                                                       bool isToSource) const {
   JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
-                            JSMSG_INCOMPATIBLE_PROTO, js_Function_str,
-                            js_toString_str, "object");
+                            JSMSG_INCOMPATIBLE_PROTO, "Function", "toString",
+                            "object");
   return nullptr;
 }
 

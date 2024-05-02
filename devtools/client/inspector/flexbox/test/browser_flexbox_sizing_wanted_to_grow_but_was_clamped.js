@@ -3,14 +3,16 @@
 
 "use strict";
 
-const { getStr } = require("devtools/client/inspector/layout/utils/l10n");
+const {
+  getStr,
+} = require("resource://devtools/client/inspector/layout/utils/l10n.js");
 
 // Test the specific max-clamping scenario where an item wants to grow a certain amount
 // but its max-size prevents it from growing that much.
 
 const TEST_URI = URL_ROOT + "doc_flexbox_specific_cases.html";
 
-add_task(async function() {
+add_task(async function () {
   await addTab(TEST_URI);
   const { inspector, flexboxInspector } = await openLayoutView();
   const { document: doc } = flexboxInspector;

@@ -331,7 +331,7 @@ nsresult FeatureData::Initialize(FeatureTask* aTask, nsIChannel* aChannel,
 
   rv = InitializeList(aTask, aChannel, nsIUrlClassifierFeature::entitylist,
                       mEntitylistTables);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
+  if (NS_FAILED(rv)) {
     return rv;
   }
 
@@ -576,7 +576,7 @@ class FeatureTask {
 
 // Features are able to classify particular URIs from a channel. For instance,
 // tracking-annotation feature uses the top-level URI to entitylist the current
-// channel's URI; flash feature always uses the channel's URI.  Because of
+// channel's URI.  Because of
 // this, this function aggregates feature per URI and tables.
 /* static */
 nsresult FeatureTask::Create(nsIChannel* aChannel,
@@ -608,7 +608,7 @@ nsresult FeatureTask::Create(nsIChannel* aChannel,
   for (nsIUrlClassifierFeature* feature : features) {
     FeatureData* featureData = task->mFeatures.AppendElement();
     nsresult rv = featureData->Initialize(task, aChannel, feature);
-    if (NS_WARN_IF(NS_FAILED(rv))) {
+    if (NS_FAILED(rv)) {
       return rv;
     }
   }
@@ -770,7 +770,7 @@ nsresult FeatureData::InitializeList(
   nsIUrlClassifierFeature::URIType URIType;
   nsresult rv = mFeature->GetURIByListType(aChannel, aListType, &URIType,
                                            getter_AddRefs(uri));
-  if (NS_WARN_IF(NS_FAILED(rv))) {
+  if (NS_FAILED(rv)) {
     if (UC_LOG_ENABLED()) {
       nsAutoCString errorName;
       GetErrorName(rv, errorName);
@@ -883,7 +883,7 @@ nsresult AsyncUrlChannelClassifier::CheckChannel(
   RefPtr<FeatureTask> task;
   nsresult rv =
       FeatureTask::Create(aChannel, std::move(aCallback), getter_AddRefs(task));
-  if (NS_WARN_IF(NS_FAILED(rv))) {
+  if (NS_FAILED(rv)) {
     return rv;
   }
 

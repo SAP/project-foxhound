@@ -2,29 +2,14 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const { CommonDialog } = ChromeUtils.import(
-  "resource://gre/modules/CommonDialog.jsm"
+const { CommonDialog } = ChromeUtils.importESModule(
+  "resource://gre/modules/CommonDialog.sys.mjs"
 );
 
 // imported by adjustableTitle.js loaded in the same context:
 /* globals PromptUtils */
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-
 var propBag, args, Dialog;
-
-// Inherit color scheme overrides from parent window. This is to inherit the
-// color scheme of dark themed PBM windows.
-{
-  let openerColorSchemeOverride =
-    window.opener?.browsingContext?.top.prefersColorSchemeOverride;
-  if (
-    openerColorSchemeOverride &&
-    window.browsingContext == window.browsingContext.top
-  ) {
-    window.browsingContext.prefersColorSchemeOverride = openerColorSchemeOverride;
-  }
-}
 
 function commonDialogOnLoad() {
   propBag = window.arguments[0]
@@ -108,22 +93,22 @@ function commonDialogOnLoad() {
   };
 
   Dialog = new CommonDialog(args, ui);
-  window.addEventListener("dialogclosing", function(aEvent) {
+  window.addEventListener("dialogclosing", function (aEvent) {
     if (aEvent.detail?.abort) {
       Dialog.abortPrompt();
     }
   });
-  document.addEventListener("dialogaccept", function() {
+  document.addEventListener("dialogaccept", function () {
     Dialog.onButton0();
   });
-  document.addEventListener("dialogcancel", function() {
+  document.addEventListener("dialogcancel", function () {
     Dialog.onButton1();
   });
-  document.addEventListener("dialogextra1", function() {
+  document.addEventListener("dialogextra1", function () {
     Dialog.onButton2();
     window.close();
   });
-  document.addEventListener("dialogextra2", function() {
+  document.addEventListener("dialogextra2", function () {
     Dialog.onButton3();
     window.close();
   });

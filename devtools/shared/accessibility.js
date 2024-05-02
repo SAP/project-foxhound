@@ -4,12 +4,17 @@
 
 "use strict";
 
-loader.lazyRequireGetter(this, "colorUtils", "devtools/shared/css/color", true);
+loader.lazyRequireGetter(
+  this,
+  "colorUtils",
+  "resource://devtools/shared/css/color.js",
+  true
+);
 const {
   accessibility: {
     SCORES: { FAIL, AA, AAA },
   },
-} = require("devtools/shared/constants");
+} = require("resource://devtools/shared/constants.js");
 
 /**
  * Mapping of text size to contrast ratio score levels
@@ -70,7 +75,7 @@ function getContrastRatioScore(ratio, isLargeText) {
  */
 function getTextProperties(computedStyle) {
   const { color, fontSize, fontWeight } = computedStyle;
-  let { r, g, b, a } = colorUtils.colorToRGBA(color, true);
+  let { r, g, b, a } = InspectorUtils.colorToRGBA(color);
 
   // If the element has opacity in addition to background alpha value, take it
   // into account. TODO: this does not handle opacity set on ancestor elements
@@ -152,10 +157,8 @@ function getContrastRatioAgainstBackground(
     };
   }
 
-  let {
-    min: backgroundColorMin,
-    max: backgroundColorMax,
-  } = backgroundColorData;
+  let { min: backgroundColorMin, max: backgroundColorMax } =
+    backgroundColorData;
   let min = colorUtils.calculateContrastRatio(backgroundColorMin, color);
   let max = colorUtils.calculateContrastRatio(backgroundColorMax, color);
 

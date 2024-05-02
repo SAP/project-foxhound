@@ -49,7 +49,7 @@ function findDebugger(url) {
 }
 
 function waitForRegister(url, dbgUrl) {
-  return new Promise(function(resolve) {
+  return new Promise(function (resolve) {
     wdm.addListener({
       onRegister(dbg) {
         if (dbg.url !== url) {
@@ -68,7 +68,7 @@ function waitForRegister(url, dbgUrl) {
 }
 
 function waitForUnregister(url) {
-  return new Promise(function(resolve) {
+  return new Promise(function (resolve) {
     wdm.addListener({
       onUnregister(dbg) {
         if (dbg.url !== url) {
@@ -83,7 +83,7 @@ function waitForUnregister(url) {
 }
 
 function waitForDebuggerClose(dbg) {
-  return new Promise(function(resolve) {
+  return new Promise(function (resolve) {
     dbg.addListener({
       onClose() {
         ok(true, "Debugger should be closed.");
@@ -95,7 +95,7 @@ function waitForDebuggerClose(dbg) {
 }
 
 function waitForDebuggerError(dbg) {
-  return new Promise(function(resolve) {
+  return new Promise(function (resolve) {
     dbg.addListener({
       onError(filename, lineno, message) {
         dbg.removeListener(this);
@@ -106,7 +106,7 @@ function waitForDebuggerError(dbg) {
 }
 
 function waitForDebuggerMessage(dbg, message) {
-  return new Promise(function(resolve) {
+  return new Promise(function (resolve) {
     dbg.addListener({
       onMessage(message1) {
         if (message !== message1) {
@@ -121,8 +121,8 @@ function waitForDebuggerMessage(dbg, message) {
 }
 
 function waitForWindowMessage(window, message) {
-  return new Promise(function(resolve) {
-    let onmessage = function(event) {
+  return new Promise(function (resolve) {
+    let onmessage = function (event) {
       if (event.data !== event.data) {
         return;
       }
@@ -134,7 +134,7 @@ function waitForWindowMessage(window, message) {
 }
 
 function waitForWorkerMessage(worker, message) {
-  return new Promise(function(resolve) {
+  return new Promise(function (resolve) {
     worker.addEventListener("message", function onmessage(event) {
       if (event.data !== message) {
         return;
@@ -147,25 +147,10 @@ function waitForWorkerMessage(worker, message) {
 }
 
 function waitForMultiple(promises) {
-  return new Promise(function(resolve) {
-    let values = [];
-    for (let i = 0; i < promises.length; ++i) {
-      let index = i;
-      promises[i].then(function(value) {
-        is(
-          index + 1,
-          values.length + 1,
-          "Promise " +
-            (values.length + 1) +
-            " out of " +
-            promises.length +
-            " should be resolved."
-        );
-        values.push(value);
-        if (values.length === promises.length) {
-          resolve(values);
-        }
-      });
-    }
-  });
+  // There used to be old logic which expects promises to be resolved in
+  // succession, but where it seems like this was an incorrect assumption.
+  // Assuming this change sticks, bug 1861778 tracks removing this method
+  // entirely in favor of Promise.all at the call-sites or transform the callers
+  // into explicitly documented awaited sequences.
+  return Promise.all(promises);
 }

@@ -3,7 +3,7 @@
 
 "use strict";
 
-const { waitForTick } = require("devtools/shared/DevToolsUtils");
+const { waitForTick } = require("resource://devtools/shared/DevToolsUtils.js");
 
 /**
  * Test that setting pauseOnExceptions to true and then to false will not cause
@@ -16,7 +16,7 @@ add_task(
       let onResume = null;
       let packet = null;
 
-      threadFront.once("paused", function(pkt) {
+      threadFront.once("paused", function (pkt) {
         packet = pkt;
         onResume = threadFront.resume();
       });
@@ -35,7 +35,7 @@ add_task(
       Assert.equal(packet.why.exception, "42");
       packet = null;
 
-      threadFront.once("paused", function(pkt) {
+      threadFront.once("paused", function (pkt) {
         packet = pkt;
         onResume = threadFront.resume();
       });
@@ -76,7 +76,7 @@ add_task(
 async function evaluateTestCode(debuggee, throwValue) {
   await waitForTick();
   try {
-    /* eslint-disable */
+    // prettier-ignore
     Cu.evalInSandbox(
       `                                   // 1
       function stopMeAgain() {            // 2
@@ -89,6 +89,5 @@ async function evaluateTestCode(debuggee, throwValue) {
       "test_pause_exceptions-04.js",
       1
     );
-    /* eslint-enable */
   } catch (e) {}
 }

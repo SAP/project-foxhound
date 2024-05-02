@@ -41,8 +41,11 @@ interface nsISelectionController : nsISelectionDisplay
    const short SELECTION_FIND                      = 8;
    const short SELECTION_URLSECONDARY              = 9;
    const short SELECTION_URLSTRIKEOUT              = 10;
+   // Custom Highlight API
+   // (see https://drafts.csswg.org/css-highlight-api-1/#enumdef-highlighttype)
+   const short SELECTION_HIGHLIGHT                 = 11;
    // End of RawSelectionType values.
-   const short NUM_SELECTIONTYPES                  = 11;
+   const short NUM_SELECTIONTYPES                  = 12;
 
    // SelectionRegion values:
    const short SELECTION_ANCHOR_REGION = 0;
@@ -270,22 +273,12 @@ interface nsISelectionController : nsISelectionDisplay
   /** ScrollLine will scroll line up or down dependent on the boolean
    *  @param aForward scroll forward or backwards in selection
    */
-	  void scrollLine(in boolean forward);
+    void scrollLine(in boolean forward);
 
   /** ScrollCharacter will scroll right or left dependent on the boolean
    *  @param aRight if true will scroll right. if not will scroll left.
    */
     void scrollCharacter(in boolean right);
-
-  /** CheckVisibility will return true if textnode and offsets are actually rendered
-   *  in the current precontext.
-   *  @param aNode textNode to test
-   *  @param aStartOffset  offset in dom to first char of textnode to test
-   *  @param aEndOffset    offset in dom to last char of textnode to test
-   *  @param aReturnBool   boolean returned TRUE if visible FALSE if not
-   */
-    boolean checkVisibility(in Node node, in short startOffset, in short endOffset);
-    [noscript,nostdcall] boolean checkVisibilityContent(in nsIContent node, in short startOffset, in short endOffset);
 };
 %{ C++
    #define NS_ISELECTIONCONTROLLER_CID \
@@ -318,6 +311,7 @@ enum class SelectionType : RawSelectionType
   eFind = nsISelectionController::SELECTION_FIND,
   eURLSecondary = nsISelectionController::SELECTION_URLSECONDARY,
   eURLStrikeout = nsISelectionController::SELECTION_URLSTRIKEOUT,
+  eHighlight = nsISelectionController::SELECTION_HIGHLIGHT,
 };
 
 // Using anonymous enum to define constants because these constants may be
@@ -344,6 +338,7 @@ static const SelectionType kPresentSelectionTypes[] = {
   SelectionType::eFind,
   SelectionType::eURLSecondary,
   SelectionType::eURLStrikeout,
+  SelectionType::eHighlight,
 };
 
 // Please include mozilla/dom/Selection.h for the following APIs.

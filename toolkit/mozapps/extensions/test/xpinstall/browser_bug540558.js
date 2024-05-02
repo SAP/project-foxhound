@@ -1,6 +1,9 @@
 // ----------------------------------------------------------------------------
 // Tests that calling InstallTrigger.installChrome works
 function test() {
+  // This test depends on InstallTrigger.installChrome availability.
+  setInstallTriggerPrefs();
+
   Harness.installEndedCallback = check_xpi_install;
   Harness.installsCompletedCallback = finish_test;
   Harness.setup();
@@ -12,7 +15,7 @@ function test() {
   );
 
   gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser);
-  BrowserTestUtils.loadURI(gBrowser, TESTROOT + "bug540558.html");
+  BrowserTestUtils.startLoadingURIString(gBrowser, TESTROOT + "bug540558.html");
 }
 
 function check_xpi_install(install, addon) {

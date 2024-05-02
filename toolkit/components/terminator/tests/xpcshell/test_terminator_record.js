@@ -6,15 +6,15 @@
 
 // Test that the Shutdown Terminator records durations correctly
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { OS } = ChromeUtils.import("resource://gre/modules/osfile.jsm");
-const { setTimeout } = ChromeUtils.import("resource://gre/modules/Timer.jsm");
-
-var { Path, File, Constants } = OS;
+const { setTimeout } = ChromeUtils.importESModule(
+  "resource://gre/modules/Timer.sys.mjs"
+);
 
 var PATH;
 var PATH_TMP;
 var terminator;
+
+var HEARTBEAT_MS = 100;
 
 let KEYS = [
   "quit-application",
@@ -22,14 +22,19 @@ let KEYS = [
   "profile-change-teardown",
   "profile-before-change",
   "profile-before-change-qm",
-  "profile-before-change-telemetry",
   "xpcom-will-shutdown",
   "xpcom-shutdown",
+  "xpcom-shutdown-threads",
+  "XPCOMShutdownFinal",
+  "CCPostLastCycleCollection",
 ];
+
+let DATA = [];
+let MeasuredDurations = [];
 
 add_task(async function init() {
   do_get_profile();
-  PATH = Path.join(Constants.Path.localProfileDir, "ShutdownDuration.json");
+  PATH = PathUtils.join(PathUtils.localProfileDir, "ShutdownDuration.json");
   PATH_TMP = PATH + ".tmp";
 
   // Initialize the terminator
@@ -41,86 +46,126 @@ add_task(async function init() {
   );
 });
 
-var promiseShutdownDurationData = async function() {
+var promiseShutdownDurationData = async function () {
   // Wait until PATH exists.
   // Timeout if it is never created.
-  info("Waiting for file creation: " + PATH);
   while (true) {
-    if (await OS.File.exists(PATH)) {
+    if (await IOUtils.exists(PATH)) {
       break;
     }
 
-    info("The file does not exist yet. Waiting 1 second.");
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    // Wait just a very short period to not increase measured values.
+    // Usually the file should appear almost immediately.
+    await new Promise(resolve => setTimeout(resolve, 50));
   }
 
-  info("The file has been created");
-  let raw = await OS.File.read(PATH, { encoding: "utf-8" });
-  info(raw);
-  return JSON.parse(raw);
+  return IOUtils.readJSON(PATH);
 };
 
-add_task(async function test_record() {
-  let t0 = Date.now();
+var currentPhase = 0;
 
-  info("Starting shutdown");
-  terminator.observe(null, "terminator-test-" + KEYS[2], null);
-  await new Promise(resolve => setTimeout(resolve, 200));
+var advancePhase = async function () {
+  let key = "terminator-test-" + KEYS[currentPhase];
+  let msDuration = 200 + HEARTBEAT_MS * currentPhase;
 
-  info("Moving to next phase");
-  terminator.observe(null, "terminator-test-" + KEYS[3], null);
-  await new Promise(resolve => setTimeout(resolve, 100));
+  info("Advancing shutdown phase to " + KEYS[currentPhase]);
+  terminator.observe(null, key, null);
+  await new Promise(resolve => setTimeout(resolve, msDuration));
 
   let data = await promiseShutdownDurationData();
 
-  let t1 = Date.now();
-
-  Assert.ok(KEYS[2] in data, "The file contains the expected key");
-  let duration = data[KEYS[2]];
-  Assert.equal(typeof duration, "number");
-  Assert.ok(duration >= 0, "Duration is a non-negative number");
-  Assert.ok(
-    duration <= Math.ceil((t1 - t0) / 1000) + 1,
-    "Duration is reasonable"
-  );
-
+  Assert.ok(KEYS[currentPhase] in data, "The file contains the expected key");
   Assert.equal(
     Object.keys(data).length,
-    2,
-    "Data does not contain other durations"
+    currentPhase + 1,
+    "File does not contain more durations than expected"
   );
 
-  info("Cleaning up and moving to next phase");
-  await File.remove(PATH);
-  await File.remove(PATH_TMP);
+  DATA[currentPhase] = data;
+  currentPhase++;
+  if (currentPhase < KEYS.length) {
+    return true;
+  }
+  return false;
+};
 
-  info("Waiting at least one tick");
-  let WAIT_MS = 2000;
-  await new Promise(resolve => setTimeout(resolve, WAIT_MS));
+// This is a timing affected test, as we want to check if the time measurements
+// from the terminator are reasonable. Bug 1768795 assumes that they tend to
+// be lower than wall-clock, in particular on MacOS, confirmed by the logs on
+// intermittent bug 1760094. This is not a big deal for the terminator's
+// general functionality (timeouts might just come a little later than
+// expected nominally), but it makes testing harder and the transferred
+// telemetry data slightly less reliable (shutdowns might appear shorter than
+// they really were). So this test is just happy if there is any data that
+// is not too long wrt what we expect. If we ever want to fix bug 1768795,
+// we can check for a more reasonable lower boundary, too.
+add_task(async function test_record() {
+  info("Collecting duration data for all known phases");
 
-  terminator.observe(null, "terminator-test-" + KEYS[4], null);
-  data = await promiseShutdownDurationData();
+  let morePhases = true;
+  while (morePhases) {
+    let beforeWait = Date.now();
 
-  let t2 = Date.now();
+    morePhases = await advancePhase();
 
+    await IOUtils.remove(PATH);
+    await IOUtils.remove(PATH_TMP);
+
+    // We measure the effective time that passed as wall-clock and include all
+    // file IO overhead as the terminator will do so in its measurement, too.
+    MeasuredDurations[currentPhase - 1] = Math.floor(
+      (Date.now() - beforeWait) / HEARTBEAT_MS
+    );
+  }
+
+  Assert.equal(DATA.length, KEYS.length, "We have data for each phase");
+
+  for (let i = 0; i < KEYS.length; i++) {
+    let lastDuration = DATA[KEYS.length - 1][KEYS[i]];
+    Assert.equal(
+      typeof lastDuration,
+      "number",
+      "Duration of phase " + i + ":" + KEYS[i] + " is a number"
+    );
+
+    // The durations are only meaningful after we advanced to the next phase.
+    if (i < KEYS.length - 1) {
+      // So we read it from the data written for the following phase.
+      let ticksDuration = DATA[i + 1][KEYS[i]];
+      let measuredDuration = MeasuredDurations[i];
+      info(
+        "measuredDuration:" + measuredDuration + " - " + typeof measuredDuration
+      );
+      Assert.lessOrEqual(
+        ticksDuration,
+        measuredDuration + 2,
+        "Duration of phase " + i + ":" + KEYS[i] + " is not too long"
+      );
+      Assert.greaterOrEqual(
+        ticksDuration,
+        0, // TODO: Raise the lower boundary after bug 1768795.
+        "Duration of phase " + i + ":" + KEYS[i] + " is not too short"
+      );
+    }
+    // This check is done only for phases <= xpcom-shutdown-threads
+    // where we have two data points.
+    if (i < KEYS.length - 2) {
+      let ticksDuration = DATA[i + 1][KEYS[i]];
+      Assert.equal(
+        ticksDuration,
+        DATA[KEYS.length - 1][KEYS[i]],
+        "Duration of phase " + i + ":" + KEYS[i] + " hasn't changed"
+      );
+    }
+  }
+
+  // Note that after this check the KEYS array remains sorted, so this
+  // must be the last check to not get confused.
   Assert.equal(
-    Object.keys(data)
+    Object.keys(DATA[KEYS.length - 1])
       .sort()
       .join(", "),
-    [KEYS[2], KEYS[3], KEYS[4]].sort().join(", "),
-    "The file contains the expected keys"
-  );
-  Assert.equal(data[KEYS[2]], duration, "Duration of phase 0 hasn't changed");
-  let duration2 = data[KEYS[3]];
-  Assert.equal(typeof duration2, "number");
-  // XXX: It seems, we have quite some jitter here, so we cannot rely
-  // ticks to be an accurate measure of time and thus accept lower values.
-  Assert.ok(
-    duration2 >= WAIT_MS / 100 / 2,
-    "We have waited at least " + WAIT_MS / 100 / 2 + " ticks"
-  );
-  Assert.ok(
-    duration2 <= Math.ceil((t2 - t1) / 100) + 1,
-    "Duration is reasonable"
+    KEYS.sort().join(", "),
+    "The last file contains all expected keys"
   );
 });

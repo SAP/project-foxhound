@@ -26,7 +26,7 @@ const testDevice = {
 // Add the new device to the list
 addDeviceForTest(testDevice);
 
-addRDMTask(TEST_COM_URL, async function({ ui }) {
+addRDMTask(TEST_COM_URL, async function ({ ui }) {
   await pushPref("devtools.responsive.viewport.angle", 0);
 
   info("Check the original orientation values before the orientationchange");
@@ -98,7 +98,7 @@ addRDMTask(TEST_COM_URL, async function({ ui }) {
   const previousBrowsingContextId = browser.browsingContext.id;
   const waitForReload = await watchForDevToolsReload(browser);
 
-  BrowserTestUtils.loadURI(
+  BrowserTestUtils.startLoadingURIString(
     browser,
     URL_ROOT_ORG_SSL + TEST_DOCUMENT + "?crossOriginIsolated=true"
   );

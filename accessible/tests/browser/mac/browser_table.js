@@ -297,8 +297,8 @@ addAccessibleTask(
 );
 
 /*
- * After executing function 'change', verify that the element identified by the
- * id 'elem' recieves the event 'event'. After the event, check if the given
+ * After executing function 'change' which operates on 'elem', verify the specified
+ * 'event' (if not null) is fired on elem. After the event, check if the given
  * native accessible 'table' is a layout or data table by role using 'isLayout'.
  */
 async function testIsLayout(table, elem, event, change, isLayout) {
@@ -308,12 +308,15 @@ async function testIsLayout(table, elem, event, change, isLayout) {
       ", expecting table change to " +
       (isLayout ? "AXGroup" : "AXTable")
   );
-  const toWait = waitForEvent(event, elem);
+  const toWait = event ? waitForEvent(event, elem) : null;
   await change();
-  await toWait;
-  is(
-    table.getAttributeValue("AXRole"),
-    isLayout ? "AXGroup" : "AXTable",
+  if (toWait) {
+    await toWait;
+  }
+  let intendedRole = isLayout ? "AXGroup" : "AXTable";
+  await untilCacheIs(
+    () => table.getAttributeValue("AXRole"),
+    intendedRole,
     "Table role correct after change"
   );
 }
@@ -326,7 +329,7 @@ async function testIsLayout(table, elem, event, change, isLayout) {
  * appropriately. Attrs: summary, abbr, scope, headers
  */
 addAccessibleTask(
-  `<table id="sampleTable" summary="example summary">
+  `<table id="table" summary="example summary">
     <tr role="presentation">
       <td id="cellOne">cell1</td>
       <td>cell2</td>
@@ -337,7 +340,7 @@ addAccessibleTask(
     </tr>
   </table>`,
   async (browser, accDoc) => {
-    let table = getNativeInterface(accDoc, "sampleTable");
+    let table = getNativeInterface(accDoc, "table");
     // summary attr should take precedence over role="presentation" to make this
     // a data table
     is(table.getAttributeValue("AXRole"), "AXTable", "Table is data table");
@@ -346,13 +349,11 @@ addAccessibleTask(
     // after summary is removed, we should have a layout table
     await testIsLayout(
       table,
-      "sampleTable",
+      "table",
       EVENT_OBJECT_ATTRIBUTE_CHANGED,
       async () => {
         await SpecialPowers.spawn(browser, [], () => {
-          content.document
-            .getElementById("sampleTable")
-            .removeAttribute("summary");
+          content.document.getElementById("table").removeAttribute("summary");
         });
       },
       true
@@ -362,12 +363,12 @@ addAccessibleTask(
     // after abbr is set we should have a data table again
     await testIsLayout(
       table,
-      "cellOne",
+      "cellThree",
       EVENT_OBJECT_ATTRIBUTE_CHANGED,
       async () => {
         await SpecialPowers.spawn(browser, [], () => {
           content.document
-            .getElementById("cellOne")
+            .getElementById("cellThree")
             .setAttribute("abbr", "hello world");
         });
       },
@@ -378,11 +379,11 @@ addAccessibleTask(
     // after abbr is removed we should have a layout table again
     await testIsLayout(
       table,
-      "cellOne",
+      "cellThree",
       EVENT_OBJECT_ATTRIBUTE_CHANGED,
       async () => {
         await SpecialPowers.spawn(browser, [], () => {
-          content.document.getElementById("cellOne").removeAttribute("abbr");
+          content.document.getElementById("cellThree").removeAttribute("abbr");
         });
       },
       true
@@ -392,12 +393,12 @@ addAccessibleTask(
     // after scope is set we should have a data table again
     await testIsLayout(
       table,
-      "cellOne",
+      "cellThree",
       EVENT_OBJECT_ATTRIBUTE_CHANGED,
       async () => {
         await SpecialPowers.spawn(browser, [], () => {
           content.document
-            .getElementById("cellOne")
+            .getElementById("cellThree")
             .setAttribute("scope", "col");
         });
       },
@@ -408,11 +409,11 @@ addAccessibleTask(
     // remove scope should give layout
     await testIsLayout(
       table,
-      "cellOne",
+      "cellThree",
       EVENT_OBJECT_ATTRIBUTE_CHANGED,
       async () => {
         await SpecialPowers.spawn(browser, [], () => {
-          content.document.getElementById("cellOne").removeAttribute("scope");
+          content.document.getElementById("cellThree").removeAttribute("scope");
         });
       },
       true
@@ -458,7 +459,7 @@ addAccessibleTask(
  * associated with the given table.
  */
 addAccessibleTask(
-  `<table id="sampleTable">
+  `<table id="table">
     <tr id="rowOne">
       <td id="cellOne">cell1</td>
       <td>cell2</td>
@@ -469,7 +470,7 @@ addAccessibleTask(
     </tr>
   </table>`,
   async (browser, accDoc) => {
-    let table = getNativeInterface(accDoc, "sampleTable");
+    let table = getNativeInterface(accDoc, "table");
     // we should start as a layout table
     is(table.getAttributeValue("AXRole"), "AXGroup", "Table is layout table");
 
@@ -478,7 +479,7 @@ addAccessibleTask(
     await testIsLayout(
       table,
       "cellOne",
-      EVENT_TABLE_STYLING_CHANGED,
+      null,
       async () => {
         await SpecialPowers.spawn(browser, [], () => {
           content.document
@@ -494,7 +495,7 @@ addAccessibleTask(
     await testIsLayout(
       table,
       "cellOne",
-      EVENT_TABLE_STYLING_CHANGED,
+      null,
       async () => {
         await SpecialPowers.spawn(browser, [], () => {
           content.document
@@ -510,7 +511,7 @@ addAccessibleTask(
     await testIsLayout(
       table,
       "rowOne",
-      EVENT_TABLE_STYLING_CHANGED,
+      null,
       async () => {
         await SpecialPowers.spawn(browser, [], () => {
           content.document
@@ -526,7 +527,7 @@ addAccessibleTask(
     await testIsLayout(
       table,
       "rowOne",
-      EVENT_TABLE_STYLING_CHANGED,
+      null,
       async () => {
         await SpecialPowers.spawn(browser, [], () => {
           content.document
@@ -585,8 +586,8 @@ addAccessibleTask(
       const head = content.document.getElementById("thead");
       const body = content.document.getElementById("tbody");
 
-      head.addEventListener("click", function() {});
-      body.addEventListener("click", function() {});
+      head.addEventListener("click", function () {});
+      body.addEventListener("click", function () {});
     });
     await reorder;
 

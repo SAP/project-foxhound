@@ -1,5 +1,5 @@
 requestLongerTimeout(2);
-add_task(async function() {
+add_task(async function () {
   function pushPrefs(prefs) {
     return SpecialPowers.pushPrefEnv({ set: prefs });
   }
@@ -188,7 +188,7 @@ body > div > div {width: 1000px;height: 1000px;}\
       let loadedPromise = BrowserTestUtils.browserLoaded(
         gBrowser.selectedBrowser
       );
-      BrowserTestUtils.loadURI(gBrowser, test.dataUri);
+      BrowserTestUtils.startLoadingURIString(gBrowser, test.dataUri);
       await loadedPromise;
       await ContentTask.spawn(gBrowser.selectedBrowser, {}, async () => {
         // Wait for a paint so that hit-testing works correctly.
@@ -307,7 +307,7 @@ body > div > div {width: 1000px;height: 1000px;}\
           checkWindow: test.testwindow,
         },
       ],
-      async function(args) {
+      async function (args) {
         let msg = "";
         if (args.checkWindow) {
           if (

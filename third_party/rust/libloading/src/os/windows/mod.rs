@@ -1,6 +1,6 @@
 // A hack for docs.rs to build documentation that has both windows and linux documentation in the
 // same rustdoc build visible.
-#[cfg(all(docsrs, not(windows)))]
+#[cfg(all(libloading_docs, not(windows)))]
 mod windows_imports {
     pub(super) enum WORD {}
     pub(super) struct DWORD;
@@ -23,7 +23,7 @@ mod windows_imports {
         pub(crate) const LOAD_LIBRARY_SAFE_CURRENT_DIRS: DWORD = DWORD;
     }
 }
-#[cfg(any(not(docsrs), windows))]
+#[cfg(any(not(libloading_docs), windows))]
 mod windows_imports {
     extern crate winapi;
     pub(super) use self::winapi::shared::minwindef::{WORD, DWORD, HMODULE, FARPROC};
@@ -307,7 +307,7 @@ impl fmt::Debug for Library {
             let mut buf =
                 mem::MaybeUninit::<[mem::MaybeUninit::<WCHAR>; 1024]>::uninit().assume_init();
             let len = libloaderapi::GetModuleFileNameW(self.0,
-                (&mut buf[..]).as_mut_ptr().cast(), 1024) as usize;
+                buf[..].as_mut_ptr().cast(), 1024) as usize;
             if len == 0 {
                 f.write_str(&format!("Library@{:p}", self.0))
             } else {
@@ -333,9 +333,7 @@ pub struct Symbol<T> {
 impl<T> Symbol<T> {
     /// Convert the loaded `Symbol` into a handle.
     pub fn into_raw(self) -> FARPROC {
-        let pointer = self.pointer;
-        mem::forget(self);
-        pointer
+        self.pointer
     }
 }
 

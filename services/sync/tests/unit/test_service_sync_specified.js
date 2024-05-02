@@ -1,7 +1,9 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
-const { Service } = ChromeUtils.import("resource://services-sync/service.js");
+const { Service } = ChromeUtils.importESModule(
+  "resource://services-sync/service.sys.mjs"
+);
 
 let syncedEngines = [];
 
@@ -9,21 +11,21 @@ function SteamEngine() {
   SyncEngine.call(this, "Steam", Service);
 }
 SteamEngine.prototype = {
-  __proto__: SyncEngine.prototype,
   async _sync() {
     syncedEngines.push(this.name);
   },
 };
+Object.setPrototypeOf(SteamEngine.prototype, SyncEngine.prototype);
 
 function StirlingEngine() {
   SyncEngine.call(this, "Stirling", Service);
 }
 StirlingEngine.prototype = {
-  __proto__: SteamEngine.prototype,
   async _sync() {
     syncedEngines.push(this.name);
   },
 };
+Object.setPrototypeOf(StirlingEngine.prototype, SteamEngine.prototype);
 
 // Tracking info/collections.
 var collectionsHelper = track_collections_helper();

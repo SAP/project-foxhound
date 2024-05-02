@@ -11,10 +11,14 @@ include protocol PHttpTransaction;
 
 include NeckoChannelParams;
 
+include "mozilla/net/ClassOfService.h";
+
+using mozilla::net::ClassOfService from "mozilla/net/ClassOfService.h";
+
 namespace mozilla {
 namespace net {
 
-[RefCounted] async protocol PHttpConnectionMgr
+async protocol PHttpConnectionMgr
 {
   manager PSocketProcess;
 
@@ -22,13 +26,13 @@ child:
   async __delete__();
 
   async DoShiftReloadConnectionCleanupWithConnInfo(HttpConnectionInfoCloneArgs aArgs);
-  async UpdateCurrentTopBrowsingContextId(uint64_t aId);
+  async UpdateCurrentBrowserId(uint64_t aId);
   async AddTransaction(PHttpTransaction aTrans, int32_t aPriority);
   async AddTransactionWithStickyConn(PHttpTransaction aTrans, int32_t aPriority,
                                      PHttpTransaction aTransWithStickyConn);
   async RescheduleTransaction(PHttpTransaction aTrans, int32_t aPriority);
   async UpdateClassOfServiceOnTransaction(PHttpTransaction aTrans,
-                                          uint32_t aClassOfService);
+                                          ClassOfService aClassOfService);
   async CancelTransaction(PHttpTransaction aTrans, nsresult aReason);
   async SpeculativeConnect(HttpConnectionInfoCloneArgs aConnInfo,
                            SpeculativeConnectionOverriderArgs? aOverriderArgs,

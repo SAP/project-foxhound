@@ -1,9 +1,5 @@
 "use strict";
 
-const { E10SUtils } = ChromeUtils.import(
-  "resource://gre/modules/E10SUtils.jsm"
-);
-
 const COOP_PREF = "browser.tabs.remote.useCrossOriginOpenerPolicy";
 
 async function setPref() {
@@ -49,7 +45,7 @@ async function test_coop(
       url: start,
       waitForStateStop: true,
     },
-    async function(_browser) {
+    async function (_browser) {
       info(`test_coop: Test tab ready: ${start}`);
 
       let browser = gBrowser.selectedBrowser;
@@ -68,7 +64,7 @@ async function test_coop(
           url: target,
           maybeErrorPage: false,
         },
-        async () => BrowserTestUtils.loadURI(browser, target)
+        async () => BrowserTestUtils.startLoadingURIString(browser, target)
       );
 
       info(`Navigated to: ${target}`);
@@ -153,7 +149,7 @@ async function cleanupDownloads(downloadList) {
 }
 
 async function test_download_from(initCoop, downloadCoop) {
-  return BrowserTestUtils.withNewTab("about:blank", async function(_browser) {
+  return BrowserTestUtils.withNewTab("about:blank", async function (_browser) {
     info(`test_download: Test tab ready`);
 
     let start = httpURL(
@@ -168,15 +164,15 @@ async function test_download_from(initCoop, downloadCoop) {
       },
       async () => {
         info(`test_download: Loading download page ${start}`);
-        return BrowserTestUtils.loadURI(_browser, start);
+        return BrowserTestUtils.startLoadingURIString(_browser, start);
       }
     );
 
     info(`test_download: Download page ready ${start}`);
     info(`Downloading ${downloadCoop}`);
 
-    let expectDialog = !Services.prefs.getBoolPref(
-      "browser.download.improvements_to_download_panel",
+    let expectDialog = Services.prefs.getBoolPref(
+      "browser.download.always_ask_before_handling_new_types",
       false
     );
     let resultPromise = expectDialog
@@ -212,7 +208,7 @@ add_task(async function test_multiple_nav_process_switches() {
       url: httpURL("coop_header.sjs", "https://example.org"),
       waitForStateStop: true,
     },
-    async function(browser) {
+    async function (browser) {
       let prevBC = browser.browsingContext;
 
       let target = httpURL("coop_header.sjs?.", "https://example.org");
@@ -222,7 +218,7 @@ add_task(async function test_multiple_nav_process_switches() {
           url: target,
           maybeErrorPage: false,
         },
-        async () => BrowserTestUtils.loadURI(browser, target)
+        async () => BrowserTestUtils.startLoadingURIString(browser, target)
       );
 
       Assert.equal(prevBC, browser.browsingContext);
@@ -238,7 +234,7 @@ add_task(async function test_multiple_nav_process_switches() {
           url: target,
           maybeErrorPage: false,
         },
-        async () => BrowserTestUtils.loadURI(browser, target)
+        async () => BrowserTestUtils.startLoadingURIString(browser, target)
       );
 
       Assert.notEqual(prevBC, browser.browsingContext);
@@ -254,7 +250,7 @@ add_task(async function test_multiple_nav_process_switches() {
           url: target,
           maybeErrorPage: false,
         },
-        async () => BrowserTestUtils.loadURI(browser, target)
+        async () => BrowserTestUtils.startLoadingURIString(browser, target)
       );
 
       Assert.notEqual(prevBC, browser.browsingContext);
@@ -270,7 +266,7 @@ add_task(async function test_multiple_nav_process_switches() {
           url: target,
           maybeErrorPage: false,
         },
-        async () => BrowserTestUtils.loadURI(browser, target)
+        async () => BrowserTestUtils.startLoadingURIString(browser, target)
       );
 
       Assert.equal(prevBC, browser.browsingContext);

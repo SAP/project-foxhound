@@ -11,10 +11,6 @@ const TEST_URI =
   "http://example.com/browser/devtools/client/webconsole/" +
   "test/browser/test-console.html?" +
   Date.now();
-const TEST_FILE =
-  "chrome://mochitests/content/browser/devtools/client/" +
-  "webconsole/test/browser/" +
-  "test-cu-reporterror.js";
 
 const TEST_XHR_ERROR_URI = `http://example.com/404.html?${Date.now()}`;
 
@@ -22,26 +18,22 @@ const TEST_IMAGE =
   "http://example.com/browser/devtools/client/webconsole/" +
   "test/test-image.png";
 
-add_task(async function() {
+add_task(async function () {
   // Needed for the execute() call in `testMessages`.
   await pushPref("security.allow_parent_unrestricted_js_loads", true);
-  await pushPref("devtools.browserconsole.contentMessages", true);
+  await pushPref("devtools.browserconsole.enableNetworkMonitoring", true);
+  await pushPref("devtools.browsertoolbox.scope", "everything");
+
+  // Open a parent process tab to check it doesn't have impact
+  const aboutRobotsTab = await addTab("about:robots");
+  // And open the "actual" test tab
   const tab = await addTab(TEST_URI);
 
-  info(
-    "Check browser console messages with devtools.browsertoolbox.fission set to false"
-  );
-  await pushPref("devtools.browsertoolbox.fission", false);
-  await testMessages();
-
-  info(
-    "Check browser console messages with devtools.browsertoolbox.fission set to true"
-  );
-  await pushPref("devtools.browsertoolbox.fission", true);
   await testMessages();
 
   info("Close tab");
   await removeTab(tab);
+  await removeTab(aboutRobotsTab);
 });
 
 async function testMessages() {
@@ -50,7 +42,7 @@ async function testMessages() {
   ok(!hud, "browser console is not open");
 
   // The test harness does override the global's console property to replace it with
-  // a Console.jsm instance (https://searchfox.org/mozilla-central/rev/618f9970972adc5a21194d39d690ec0865f26024/testing/mochitest/api.js#75-80)
+  // a Console.sys.mjs instance (https://searchfox.org/mozilla-central/rev/c5c002f81f08a73e04868e0c2bf0eb113f200b03/testing/mochitest/api.js#75-78)
   // So here we reset the console property with the native console (which is luckily
   // stored in `nativeConsole`).
   const overriddenConsole = globalThis.console;
@@ -66,7 +58,11 @@ async function testMessages() {
   // Wait a bit to let room for the message to be displayed
   await wait(1000);
   is(
-    findMessage(hud, "The Web Console logging API", ".warn"),
+    await findMessageVirtualizedByType({
+      hud,
+      text: "The Web Console logging API",
+      typeSelector: ".warn",
+    }),
     undefined,
     "The message about disabled console API is not displayed"
   );
@@ -99,9 +95,20 @@ async function testMessages() {
     URL.createObjectURL(blob)
   );
 
-  // Check Cu.reportError stack.
-  // Use another js script to not depend on the test file line numbers.
-  Services.scriptloader.loadSubScript(TEST_FILE, hud.iframeWindow);
+  // Spawn Chrome worker from a chrome window and log a message
+  // It's important to use the browser console global so the message gets assigned
+  // a non-numeric innerID in Console.cpp
+  const browserConsoleGlobal = Cu.getGlobalForObject(hud);
+  const chromeWorker = new browserConsoleGlobal.ChromeWorker(
+    URL.createObjectURL(
+      new browserConsoleGlobal.Blob(
+        [`console.log("message in chrome worker")`],
+        {
+          type: "application/javascript",
+        }
+      )
+    )
+  );
 
   const sandbox = new Cu.Sandbox(null, {
     wantComponents: false,
@@ -111,12 +118,17 @@ async function testMessages() {
     `new Error("error from nuked globals");`,
     sandbox
   );
-  Cu.reportError(error);
+  console.error(error);
   Cu.nukeSandbox(sandbox);
+
+  const componentsException = new Components.Exception("Components.Exception");
+  console.error(componentsException);
 
   // Check privileged error message from a content process
   await SpecialPowers.spawn(gBrowser.selectedBrowser, [], () => {
-    Cu.reportError("privileged content process error message");
+    (async function () {
+      throw new Error("privileged content process error message");
+    })();
   });
 
   // Add a message from a content window.
@@ -173,18 +185,21 @@ async function testMessages() {
     0,
     0,
     Ci.nsIScriptError.warningFlag,
-    "Test",
+    // platform-specific category to test case for Bug 1770160
+    "chrome javascript",
     gBrowser.selectedBrowser.innerWindowID
   );
   Services.console.logMessage(scriptErrorMessage);
 
-  // Check messages logged in content with Log.jsm
+  // Check messages logged in content with Log.sys.mjs
   await SpecialPowers.spawn(gBrowser.selectedBrowser, [], () => {
-    const { Log } = ChromeUtils.import("resource://gre/modules/Log.jsm");
+    const { Log } = ChromeUtils.importESModule(
+      "resource://gre/modules/Log.sys.mjs"
+    );
     const logger = Log.repository.getLogger("TEST_LOGGER_" + Date.now());
     logger.addAppender(new Log.ConsoleAppender(new Log.BasicFormatter()));
     logger.level = Log.Level.Info;
-    logger.info("Log.jsm content process messsage");
+    logger.info("Log.sys.mjs content process messsage");
   });
 
   // Check CSS warnings in parent process
@@ -193,47 +208,72 @@ async function testMessages() {
   // Wait enough so any duplicated message would have the time to be rendered
   await wait(1000);
 
-  await checkUniqueMessageExists(hud, "message from chrome window");
   await checkUniqueMessageExists(
     hud,
-    "error thrown from test-cu-reporterror.js via Cu.reportError()"
+    "message from chrome window",
+    ".console-api"
   );
-  await checkUniqueMessageExists(hud, "error from nuked globals");
+  await checkUniqueMessageExists(hud, "error from nuked globals", ".error");
   await checkUniqueMessageExists(
     hud,
-    "privileged content process error message"
+    "privileged content process error message",
+    ".error"
   );
-  await checkUniqueMessageExists(hud, "message from content window");
-  await checkUniqueMessageExists(hud, "error from content window");
+  await checkUniqueMessageExists(
+    hud,
+    "message from content window",
+    ".console-api"
+  );
+  await checkUniqueMessageExists(hud, "error from content window", ".error");
   await checkUniqueMessageExists(
     hud,
     `"Parent Process Location: chrome://browser/content/browser.xhtml"`,
     ".result"
   );
-  await checkUniqueMessageExists(hud, "framescript-message");
-  await checkUniqueMessageExists(hud, "Error from Services.console.logMessage");
-  await checkUniqueMessageExists(hud, "foobarException");
-  await checkUniqueMessageExists(hud, "test-console.html", ".message.network");
-  await checkUniqueMessageExists(hud, "404.html");
-  await checkUniqueMessageExists(hud, "test-image.png");
-  await checkUniqueMessageExists(hud, "Log.jsm content process messsage");
-  await checkUniqueMessageExists(hud, "message in content worker");
-  await checkUniqueMessageExists(hud, "error in content worker");
-  await checkUniqueMessageExists(hud, "message in parent worker");
-  await checkUniqueMessageExists(hud, "error in parent worker");
+  await checkUniqueMessageExists(hud, "framescript-message", ".console-api");
+  await checkUniqueMessageExists(
+    hud,
+    "Error from Services.console.logMessage",
+    ".warn"
+  );
+  await checkUniqueMessageExists(hud, "foobarException", ".error");
+  await checkUniqueMessageExists(hud, "test-console.html", ".network");
+  await checkUniqueMessageExists(hud, "404.html", ".network");
+  await checkUniqueMessageExists(hud, "test-image.png", ".network");
+  await checkUniqueMessageExists(
+    hud,
+    "Log.sys.mjs content process messsage",
+    ".console-api"
+  );
+  await checkUniqueMessageExists(
+    hud,
+    "message in content worker",
+    ".console-api"
+  );
+  await checkUniqueMessageExists(hud, "error in content worker", ".error");
+  await checkUniqueMessageExists(
+    hud,
+    "message in parent worker",
+    ".console-api"
+  );
+  await checkUniqueMessageExists(hud, "error in parent worker", ".error");
+  await checkUniqueMessageExists(
+    hud,
+    "message in chrome worker",
+    ".console-api"
+  );
   await checkUniqueMessageExists(
     hud,
     "Expected color but found ‘rainbow’",
     ".warn"
   );
-  // CSS messages are only available in Browser Console when the pref is enabled
-  if (SpecialPowers.getBoolPref("devtools.browsertoolbox.fission", false)) {
-    await checkUniqueMessageExists(
-      hud,
-      "Expected color but found ‘bled’",
-      ".warn"
-    );
-  }
+  await checkUniqueMessageExists(
+    hud,
+    "Expected color but found ‘bled’",
+    ".warn"
+  );
+
+  await checkComponentExceptionMessage(hud, componentsException);
 
   await resetFilters(hud);
 
@@ -242,6 +282,34 @@ async function testMessages() {
     delete content.testWorker;
   });
   chromeSpawnedWorker.terminate();
+  chromeWorker.terminate();
   info("Close the Browser Console");
   await safeCloseBrowserConsole();
+}
+
+async function checkComponentExceptionMessage(hud, exception) {
+  const msgNode = await checkUniqueMessageExists(
+    hud,
+    "Components.Exception",
+    ".error"
+  );
+  const framesNode = await waitFor(() => msgNode.querySelector(".pane.frames"));
+  ok(framesNode, "The Components.Exception stack is displayed right away");
+
+  const frameNodes = framesNode.querySelectorAll(".frame");
+  ok(frameNodes.length > 1, "Got at least one frame in the stack");
+  is(
+    frameNodes[0].querySelector(".line").textContent,
+    String(exception.lineNumber),
+    "The stack displayed by default refers to Components.Exception passed as argument"
+  );
+
+  const [, line] = msgNode
+    .querySelector(".frame-link-line")
+    .textContent.split(":");
+  is(
+    line,
+    String(exception.lineNumber + 1),
+    "The link on the top right refers to the console.error callsite"
+  );
 }

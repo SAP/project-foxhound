@@ -34,7 +34,8 @@ NS_INTERFACE_MAP_END
 NS_IMPL_ADDREF_USING_AGGREGATOR(CSSFontFaceRuleDecl, ContainingRule())
 NS_IMPL_RELEASE_USING_AGGREGATOR(CSSFontFaceRuleDecl, ContainingRule())
 
-void CSSFontFaceRuleDecl::SetRawAfterClone(RefPtr<RawServoFontFaceRule> aRaw) {
+void CSSFontFaceRuleDecl::SetRawAfterClone(
+    RefPtr<StyleLockedFontFaceRule> aRaw) {
   mRawRule = std::move(aRaw);
 }
 
@@ -61,15 +62,13 @@ void CSSFontFaceRuleDecl::SetCssText(const nsACString& aCssText,
       "Can't set cssText on CSSFontFaceRule declarations");
 }
 
-NS_IMETHODIMP
-CSSFontFaceRuleDecl::GetPropertyValue(const nsACString& aPropName,
-                                      nsACString& aResult) {
+void CSSFontFaceRuleDecl::GetPropertyValue(const nsACString& aPropName,
+                                           nsACString& aResult) {
   aResult.Truncate();
   nsCSSFontDesc descID = nsCSSProps::LookupFontDesc(aPropName);
   if (descID != eCSSFontDesc_UNKNOWN) {
     GetPropertyValue(descID, aResult);
   }
-  return NS_OK;
 }
 
 void CSSFontFaceRuleDecl::RemoveProperty(const nsACString& aPropName,
@@ -201,7 +200,7 @@ StyleCssRuleType CSSFontFaceRule::Type() const {
   return StyleCssRuleType::FontFace;
 }
 
-void CSSFontFaceRule::SetRawAfterClone(RefPtr<RawServoFontFaceRule> aRaw) {
+void CSSFontFaceRule::SetRawAfterClone(RefPtr<StyleLockedFontFaceRule> aRaw) {
   mDecl.SetRawAfterClone(std::move(aRaw));
 }
 

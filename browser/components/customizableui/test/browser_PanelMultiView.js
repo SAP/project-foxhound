@@ -7,10 +7,6 @@
  * Unit tests for the PanelMultiView module.
  */
 
-const { PanelMultiView } = ChromeUtils.import(
-  "resource:///modules/PanelMultiView.jsm"
-);
-
 const PANELS_COUNT = 2;
 let gPanelAnchors = [];
 let gPanels = [];
@@ -39,14 +35,15 @@ const EVENT_TYPES = [
  * they need to read style or layout information, like other code normally does.
  */
 function is_visible(element) {
-  var style = element.ownerGlobal.getComputedStyle(element);
+  let win = element.ownerGlobal;
+  let style = win.getComputedStyle(element);
   if (style.display == "none") {
     return false;
   }
   if (style.visibility != "visible") {
     return false;
   }
-  if (style.display == "-moz-popup" && element.state != "open") {
+  if (win.XULPopupElement.isInstance(element) && element.state != "open") {
     return false;
   }
 
@@ -85,7 +82,7 @@ async function openPopup(panelIndex, viewIndex) {
   PanelMultiView.openPopup(
     gPanels[panelIndex],
     gPanelAnchors[panelIndex],
-    "bottomcenter topright"
+    "bottomright topright"
   );
   await promiseShown;
 
@@ -440,7 +437,7 @@ add_task(async function test_cancel_mainview_event_sequence() {
   PanelMultiView.openPopup(
     gPanels[0],
     gPanelAnchors[0],
-    "bottomcenter topright"
+    "bottomright topright"
   );
   await promiseHidden;
 
@@ -519,7 +516,7 @@ add_task(async function test_close_while_showing_mainview_event_sequence() {
   PanelMultiView.openPopup(
     gPanels[0],
     gPanelAnchors[0],
-    "bottomcenter topright"
+    "bottomright topright"
   );
   await promiseHiding;
   await promiseHidden;

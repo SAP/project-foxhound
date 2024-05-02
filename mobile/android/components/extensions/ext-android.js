@@ -3,40 +3,31 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "PrivateBrowsingUtils",
-  "resource://gre/modules/PrivateBrowsingUtils.jsm"
+/**
+ * NOTE: If you change the globals in this file, you must check if the globals
+ * list in mobile/android/.eslintrc.js also needs updating.
+ */
+
+ChromeUtils.defineESModuleGetters(this, {
+  GeckoViewTabBridge: "resource://gre/modules/GeckoViewTab.sys.mjs",
+  PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
+  mobileWindowTracker: "resource://gre/modules/GeckoViewWebExtension.sys.mjs",
+});
+
+var { EventDispatcher } = ChromeUtils.importESModule(
+  "resource://gre/modules/Messaging.sys.mjs"
 );
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "GeckoViewTabBridge",
-  "resource://gre/modules/GeckoViewTab.jsm"
+var { ExtensionCommon } = ChromeUtils.importESModule(
+  "resource://gre/modules/ExtensionCommon.sys.mjs"
 );
-
-ChromeUtils.defineModuleGetter(
-  this,
-  "mobileWindowTracker",
-  "resource://gre/modules/GeckoViewWebExtension.jsm"
-);
-
-var { EventDispatcher } = ChromeUtils.import(
-  "resource://gre/modules/Messaging.jsm"
-);
-
-var { ExtensionCommon } = ChromeUtils.import(
-  "resource://gre/modules/ExtensionCommon.jsm"
-);
-var { ExtensionUtils } = ChromeUtils.import(
-  "resource://gre/modules/ExtensionUtils.jsm"
+var { ExtensionUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/ExtensionUtils.sys.mjs"
 );
 
 var { DefaultWeakMap, ExtensionError } = ExtensionUtils;
 
 var { defineLazyGetter } = ExtensionCommon;
-
-global.GlobalEventDispatcher = EventDispatcher.instance;
 
 const BrowserStatusFilter = Components.Constructor(
   "@mozilla.org/appshell/component/browser-status-filter;1",
@@ -189,7 +180,7 @@ class WindowTracker extends WindowTrackerBase {
  *        The API name of the event manager, e.g.,"runtime.onMessage".
  * @param {string} event
  *        The name of the EventDispatcher event to listen for.
- * @param {function} listener
+ * @param {Function} listener
  *        The listener function to call when an EventDispatcher event is
  *        recieved.
  *
@@ -211,9 +202,9 @@ global.makeGlobalEvent = function makeGlobalEvent(
         },
       };
 
-      GlobalEventDispatcher.registerListener(listener2, [event]);
+      EventDispatcher.instance.registerListener(listener2, [event]);
       return () => {
-        GlobalEventDispatcher.unregisterListener(listener2, [event]);
+        EventDispatcher.instance.unregisterListener(listener2, [event]);
       };
     },
   }).api();
@@ -232,10 +223,10 @@ class TabTracker extends TabTrackerBase {
     });
 
     windowTracker.addCloseListener(window => {
-      const { tab, browser } = window;
+      const { tab: nativeTab, browser } = window;
       const { windowId, tabId } = this.getBrowserData(browser);
       this.emit("tab-removed", {
-        tab,
+        nativeTab,
         tabId,
         windowId,
         // In GeckoView, it is not meaningful to speak of "window closed", because a tab is a window.
@@ -269,7 +260,7 @@ class TabTracker extends TabTrackerBase {
 
   getBrowserData(browser) {
     const window = browser.ownerGlobal;
-    const { tab } = window;
+    const tab = window?.tab;
     if (!tab) {
       return {
         tabId: -1,
@@ -363,10 +354,6 @@ class Tab extends TabBase {
     return this.active;
   }
 
-  get selected() {
-    return this.nativeTab.getActive();
-  }
-
   get status() {
     if (this.browser.webProgress.isLoadingDocument) {
       return "loading";
@@ -402,6 +389,12 @@ class Tab extends TabBase {
 
   get hidden() {
     return false;
+  }
+
+  get autoDiscardable() {
+    // This property reflects whether the browser is allowed to auto-discard.
+    // Since extensions cannot do so on Android, we return true here.
+    return true;
   }
 
   get sharingState() {
@@ -603,6 +596,11 @@ extensions.on("startup", (type, extension) => {
 extensions.on("page-shutdown", (type, context) => {
   if (context.viewType == "tab") {
     const window = context.xulBrowser.ownerGlobal;
+    if (!windowTracker.isBrowserWindow(window)) {
+      // Content in non-browser window, e.g. ContentPage in xpcshell uses
+      // chrome://extensions/content/dummy.xhtml as the window.
+      return;
+    }
     GeckoViewTabBridge.closeTab({
       window,
       extensionId: context.extension.id,
@@ -628,7 +626,7 @@ global.openOptionsPage = async extension => {
     const { browser } = tab;
     const flags = Ci.nsIWebNavigation.LOAD_FLAGS_NONE;
 
-    browser.loadURI(options_ui.page, {
+    browser.fixupAndLoadURIString(options_ui.page, {
       flags,
       triggeringPrincipal: extension.principal,
     });

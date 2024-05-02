@@ -126,12 +126,30 @@ pub struct DisplayListPayload {
 }
 
 impl DisplayListPayload {
-    fn new(capacity: DisplayListCapacity) -> Self {
+    fn default() -> Self {
         DisplayListPayload {
-            items_data: Vec::with_capacity(capacity.items_size),
-            cache_data: Vec::with_capacity(capacity.cache_size),
-            spatial_tree: Vec::with_capacity(capacity.spatial_tree_size),
+            items_data: Vec::new(),
+            cache_data: Vec::new(),
+            spatial_tree: Vec::new(),
         }
+    }
+
+    fn new(capacity: DisplayListCapacity) -> Self {
+        let mut payload = Self::default();
+
+        // We can safely ignore the preallocations failing, since we aren't
+        // certain about how much memory we need, and this gives a chance for
+        // the memory pressure events to run.
+        if let Err(_) = payload.items_data.try_reserve(capacity.items_size) {
+            return Self::default();
+        }
+        if let Err(_) = payload.cache_data.try_reserve(capacity.cache_size) {
+            return Self::default();
+        }
+        if let Err(_) = payload.spatial_tree.try_reserve(capacity.spatial_tree_size) {
+            return Self::default();
+        }
+        payload
     }
 
     fn clear(&mut self) {
@@ -1037,7 +1055,6 @@ impl SpatialNodeInfo {
     }
 }
 
-#[derive(Clone)]
 pub struct DisplayListBuilder {
     payload: DisplayListPayload,
     pub pipeline_id: PipelineId,
@@ -1350,11 +1367,17 @@ impl DisplayListBuilder {
 
     pub fn push_hit_test(
         &mut self,
-        common: &di::CommonItemProperties,
+        rect: LayoutRect,
+        clip_chain_id: di::ClipChainId,
+        spatial_id: di::SpatialId,
+        flags: di::PrimitiveFlags,
         tag: di::ItemTag,
     ) {
         let item = di::DisplayItem::HitTest(di::HitTestDisplayItem {
-            common: *common,
+            rect,
+            clip_chain_id,
+            spatial_id,
+            flags,
             tag,
         });
         self.push_item(&item);
@@ -1734,7 +1757,7 @@ impl DisplayListBuilder {
         origin: LayoutPoint,
         spatial_id: di::SpatialId,
         prim_flags: di::PrimitiveFlags,
-        clip_id: Option<di::ClipId>,
+        clip_chain_id: Option<di::ClipChainId>,
         transform_style: di::TransformStyle,
         mix_blend_mode: di::MixBlendMode,
         filters: &[di::FilterOp],
@@ -1752,7 +1775,7 @@ impl DisplayListBuilder {
             stacking_context: di::StackingContext {
                 transform_style,
                 mix_blend_mode,
-                clip_id,
+                clip_chain_id,
                 raster_space,
                 flags,
             },
@@ -1863,7 +1886,7 @@ impl DisplayListBuilder {
 
     fn generate_clip_index(&mut self) -> di::ClipId {
         self.next_clip_index += 1;
-        di::ClipId::Clip(self.next_clip_index - 1, self.pipeline_id)
+        di::ClipId(self.next_clip_index - 1, self.pipeline_id)
     }
 
     fn generate_spatial_index(&mut self) -> di::SpatialId {
@@ -1931,14 +1954,14 @@ impl DisplayListBuilder {
 
     pub fn define_clip_image_mask(
         &mut self,
-        parent_space_and_clip: &di::SpaceAndClipInfo,
+        spatial_id: di::SpatialId,
         image_mask: di::ImageMask,
         points: &[LayoutPoint],
         fill_rule: di::FillRule,
     ) -> di::ClipId {
         let id = self.generate_clip_index();
 
-        let current_offset = self.current_offset(parent_space_and_clip.spatial_id);
+        let current_offset = self.current_offset(spatial_id);
 
         let image_mask = di::ImageMask {
             rect: image_mask.rect.translate(current_offset),
@@ -1947,7 +1970,7 @@ impl DisplayListBuilder {
 
         let item = di::DisplayItem::ImageMaskClip(di::ImageMaskClipDisplayItem {
             id,
-            parent_space_and_clip: *parent_space_and_clip,
+            spatial_id,
             image_mask,
             fill_rule,
         });
@@ -1966,17 +1989,17 @@ impl DisplayListBuilder {
 
     pub fn define_clip_rect(
         &mut self,
-        parent_space_and_clip: &di::SpaceAndClipInfo,
+        spatial_id: di::SpatialId,
         clip_rect: LayoutRect,
     ) -> di::ClipId {
         let id = self.generate_clip_index();
 
-        let current_offset = self.current_offset(parent_space_and_clip.spatial_id);
+        let current_offset = self.current_offset(spatial_id);
         let clip_rect = clip_rect.translate(current_offset);
 
         let item = di::DisplayItem::RectClip(di::RectClipDisplayItem {
             id,
-            parent_space_and_clip: *parent_space_and_clip,
+            spatial_id,
             clip_rect,
         });
 
@@ -1986,12 +2009,12 @@ impl DisplayListBuilder {
 
     pub fn define_clip_rounded_rect(
         &mut self,
-        parent_space_and_clip: &di::SpaceAndClipInfo,
+        spatial_id: di::SpatialId,
         clip: di::ComplexClipRegion,
     ) -> di::ClipId {
         let id = self.generate_clip_index();
 
-        let current_offset = self.current_offset(parent_space_and_clip.spatial_id);
+        let current_offset = self.current_offset(spatial_id);
 
         let clip = di::ComplexClipRegion {
             rect: clip.rect.translate(current_offset),
@@ -2000,7 +2023,7 @@ impl DisplayListBuilder {
 
         let item = di::DisplayItem::RoundedRectClip(di::RoundedRectClipDisplayItem {
             id,
-            parent_space_and_clip: *parent_space_and_clip,
+            spatial_id,
             clip,
         });
 
@@ -2166,13 +2189,14 @@ impl DisplayListBuilder {
         ensure_red_zone::<di::SpatialTreeItem>(&mut self.payload.spatial_tree);
 
         // While the first display list after tab-switch can be large, the
-        // following ones are always smaller thanks to interning.
-        // So don't let the spike of the first allocation make us allocate a large
-        // contiguous buffer (with some likelihood of OOM, see bug 1531819).
+        // following ones are always smaller thanks to interning. We attempt
+        // to reserve the same capacity again, although it may fail. Memory
+        // pressure events will cause us to release our buffers if we ask for
+        // too much. See bug 1531819 for related OOM issues.
         let next_capacity = DisplayListCapacity {
-            cache_size: self.payload.cache_data.len().min(128 * 1024),
-            items_size: self.payload.items_data.len().min(512 * 1024),
-            spatial_tree_size: self.payload.spatial_tree.len().min(128 * 1024),
+            cache_size: self.payload.cache_data.len(),
+            items_size: self.payload.items_data.len(),
+            spatial_tree_size: self.payload.spatial_tree.len(),
         };
         let payload = mem::replace(
             &mut self.payload,

@@ -66,12 +66,12 @@ Methods
 
   - ``theme {ThemeDefinition|String}`` - The theme definition object or the theme identifier.
 
-``showToolbox(target [, toolId [, hostType [, hostOptions]]])``
+``showToolbox(commands[, toolId [, hostType [, hostOptions]]])``
   Opens a toolbox for given target either by creating a new one or activating an existing one.
 
   **Parameters:**
 
-  - ``target {Target}`` - The target the toolbox will debug.
+  - ``commands {Object}`` - The commands object designating which debugging context the toolbox will debug.
   - ``toolId {String}`` - The tool that should be activated. If unspecified the previously active tool is shown.
   - ``hostType {String}`` - The position the toolbox will be placed. One of ``bottom``, ``side``, ``window``, ``custom``. See :ref:`HostType <devtoolsapi-host-type>` for details.
   - ``hostOptions {Object}`` - An options object passed to the selected host. See :ref:`HostType <devtoolsapi-host-type>` for details.
@@ -404,15 +404,15 @@ A ``ToolDefinition`` object contains all the required information for a tool to 
 Methods
 ~~~~~~~
 
-``isTargetSupported(target)``
-  A method that is called during toolbox construction to check if the tool supports debugging the given target.
+``isToolSupported(toolbox)``
+  A method that is called during toolbox construction to check if the tool supports debugging the given target of the given toolbox.
 
   **Parameters:**
 
-  - ``target {Target}`` - The target to check.
+  - ``toolbox {Toolbox}`` - The toolbox where the tool is going to be displayed, if supported.
 
   **Return value:**
-  A boolean indicating if the tool supports the given target.
+  A boolean indicating if the tool supports the given toolbox's target.
 
 ``build(window, toolbox)``
   A method that builds the :ref:`ToolPanel <devtoolsapi-tool-panel>` for this tool.
@@ -463,7 +463,7 @@ The ToolDefinition object can contain following properties. Most of them are opt
   **Integer, optional.** The position of the tool's tab within the toolbox. **Default:** 99
 
 ``visibilityswitch``
-  **String, optional.** A preference name that controls the visibility of the tool. **Default: * ``devtools.{id}.enabled``
+  **String, optional.** A preference name that controls the visibility of the tool. **Default:** ``devtools.{id}.enabled``
 
 ``icon``
   **String, optional.** An URL for the icon to show in the toolbox tab. If undefined the label should be defined.
@@ -508,7 +508,7 @@ Here's a minimal definition for a tool.
     label: "My Tool",
     icon: "chrome://browser/skin/devtools/tool-webconsole.svg",
     url: "about:blank",
-    isTargetSupported: target => true,
+    isToolSupported: toolbox => true,
     build: (window, toolbox) => new MyToolPanel(window, toolbox)
   };
 
@@ -763,8 +763,8 @@ Register a tool
       return strings.GetStringFromName("inspector.label");
     },
 
-    isTargetSupported: function(target) {
-      return !target.isRemote;
+    isToolSupported: function(toolbox) {
+      return toolbox.commands.descriptorFront.isLocalTab;
     },
 
     build: function(iframeWindow, toolbox, node) {

@@ -2,7 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 const localeService = Services.locale;
 
 const data = {
@@ -105,15 +104,16 @@ const data = {
         ["fr-FR-windows", "de-DE"],
       ],
     ],
-    "should handle cases and underscores, returning the form given in the 'available' list": [
-      [["fr_FR"], ["fr-FR"], ["fr-FR"]],
-      [["fr_fr"], ["fr-FR"], ["fr-FR"]],
-      [["fr_Fr"], ["fr-fR"], ["fr-fR"]],
-      [["fr_lAtN_fr"], ["fr-Latn-FR"], ["fr-Latn-FR"]],
-      [["fr_FR"], ["fr_FR"], ["fr_FR"]],
-      [["fr-FR"], ["fr_FR"], ["fr_FR"]],
-      [["fr_Cyrl_FR_macos"], ["fr_Cyrl_fr-macos"], ["fr_Cyrl_fr-macos"]],
-    ],
+    "should handle cases and underscores, returning the form given in the 'available' list":
+      [
+        [["fr_FR"], ["fr-FR"], ["fr-FR"]],
+        [["fr_fr"], ["fr-FR"], ["fr-FR"]],
+        [["fr_Fr"], ["fr-fR"], ["fr-fR"]],
+        [["fr_lAtN_fr"], ["fr-Latn-FR"], ["fr-Latn-FR"]],
+        [["fr_FR"], ["fr_FR"], ["fr_FR"]],
+        [["fr-FR"], ["fr_FR"], ["fr_FR"]],
+        [["fr_Cyrl_FR_macos"], ["fr_Cyrl_fr-macos"], ["fr_Cyrl_fr-macos"]],
+      ],
     "should handle mozilla specific 3-letter variants": [
       [
         ["ja-JP-mac", "de-DE"],

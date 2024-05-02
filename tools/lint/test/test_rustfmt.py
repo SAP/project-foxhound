@@ -1,6 +1,5 @@
 import mozunit
 
-
 LINTER = "rustfmt"
 fixed = 0
 
@@ -42,7 +41,6 @@ def test_dir(lint, config, paths):
 
 
 def test_fix(lint, create_temp_file):
-
     contents = """fn main() {
     // Statements here are executed when the compiled binary is called
 

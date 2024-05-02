@@ -455,7 +455,7 @@ p12U_ReadPKCS12File(SECItem *uniPwp, char *in_file, PK11SlotInfo *slot,
             pk12uErrno = PK12UERR_DECODEVERIFY;
         }
     }
-/* rv has been set at this point */
+    /* rv has been set at this point */
 
 done:
     if (rv != SECSuccess) {
@@ -665,6 +665,17 @@ P12U_ExportPKCS12Object(char *nn, char *outfile, PK11SlotInfo *inSlot,
         goto loser;
     }
 
+    /* we are passing UTF8, drop the NULL in the normal password value.
+     * UCS2 conversion will add it back if necessary. This only affects
+     * password > Blocksize of the Hash function and pkcs5v2 pbe (if password
+     * <=Blocksize then the password is zero padded anyway, so an extra NULL
+     * at the end has not effect). This is allows us to work with openssl and
+     * gnutls. Older versions of NSS already fail to decrypt long passwords
+     * in this case, so we aren't breaking anyone with this code */
+    if ((pwitem->len > 0) && (!pwitem->data[pwitem->len - 1])) {
+        pwitem->len--;
+    }
+
     p12cxt = p12u_InitContext(PR_FALSE, outfile);
     if (!p12cxt) {
         SECU_PrintError(progName, "Initialization failed: %s", outfile);
@@ -794,7 +805,7 @@ P12U_ListPKCS12File(char *in_file, PK11SlotInfo *slot,
                     if (dumpRawFile) {
                         PRFileDesc *fd;
                         char fileName[20];
-                        sprintf(fileName, "file%04d.der", ++fileCounter);
+                        snprintf(fileName, sizeof(fileName), "file%04d.der", ++fileCounter);
                         fd = PR_Open(fileName,
                                      PR_CREATE_FILE | PR_RDWR | PR_TRUNCATE,
                                      0600);
@@ -998,27 +1009,26 @@ enum {
     opt_Mac
 };
 
-static secuCommandFlag pk12util_options[] =
-    {
-      { /* opt_CertDir	       */ 'd', PR_TRUE, 0, PR_FALSE },
-      { /* opt_TokenName	       */ 'h', PR_TRUE, 0, PR_FALSE },
-      { /* opt_Import	       */ 'i', PR_TRUE, 0, PR_FALSE },
-      { /* opt_SlotPWFile	       */ 'k', PR_TRUE, 0, PR_FALSE },
-      { /* opt_SlotPW	       */ 'K', PR_TRUE, 0, PR_FALSE },
-      { /* opt_List              */ 'l', PR_TRUE, 0, PR_FALSE },
-      { /* opt_Nickname	       */ 'n', PR_TRUE, 0, PR_FALSE },
-      { /* opt_Export	       */ 'o', PR_TRUE, 0, PR_FALSE },
-      { /* opt_Raw   	       */ 'r', PR_FALSE, 0, PR_FALSE },
-      { /* opt_P12FilePWFile     */ 'w', PR_TRUE, 0, PR_FALSE },
-      { /* opt_P12FilePW	       */ 'W', PR_TRUE, 0, PR_FALSE },
-      { /* opt_DBPrefix	       */ 'P', PR_TRUE, 0, PR_FALSE },
-      { /* opt_Debug	       */ 'v', PR_FALSE, 0, PR_FALSE },
-      { /* opt_Cipher	       */ 'c', PR_TRUE, 0, PR_FALSE },
-      { /* opt_CertCipher	       */ 'C', PR_TRUE, 0, PR_FALSE },
-      { /* opt_KeyLength         */ 'm', PR_TRUE, 0, PR_FALSE, "key_len" },
-      { /* opt_CertKeyLength     */ 0, PR_TRUE, 0, PR_FALSE, "cert_key_len" },
-      { /* opt_Mac               */ 'M', PR_TRUE, 0, PR_FALSE, PR_FALSE }
-    };
+static secuCommandFlag pk12util_options[] = {
+    { /* opt_CertDir	       */ 'd', PR_TRUE, 0, PR_FALSE },
+    { /* opt_TokenName	       */ 'h', PR_TRUE, 0, PR_FALSE },
+    { /* opt_Import	       */ 'i', PR_TRUE, 0, PR_FALSE },
+    { /* opt_SlotPWFile	       */ 'k', PR_TRUE, 0, PR_FALSE },
+    { /* opt_SlotPW	       */ 'K', PR_TRUE, 0, PR_FALSE },
+    { /* opt_List              */ 'l', PR_TRUE, 0, PR_FALSE },
+    { /* opt_Nickname	       */ 'n', PR_TRUE, 0, PR_FALSE },
+    { /* opt_Export	       */ 'o', PR_TRUE, 0, PR_FALSE },
+    { /* opt_Raw   	       */ 'r', PR_FALSE, 0, PR_FALSE },
+    { /* opt_P12FilePWFile     */ 'w', PR_TRUE, 0, PR_FALSE },
+    { /* opt_P12FilePW	       */ 'W', PR_TRUE, 0, PR_FALSE },
+    { /* opt_DBPrefix	       */ 'P', PR_TRUE, 0, PR_FALSE },
+    { /* opt_Debug	       */ 'v', PR_FALSE, 0, PR_FALSE },
+    { /* opt_Cipher	       */ 'c', PR_TRUE, 0, PR_FALSE },
+    { /* opt_CertCipher	       */ 'C', PR_TRUE, 0, PR_FALSE },
+    { /* opt_KeyLength         */ 'm', PR_TRUE, 0, PR_FALSE, "key_len" },
+    { /* opt_CertKeyLength     */ 0, PR_TRUE, 0, PR_FALSE, "cert_key_len" },
+    { /* opt_Mac               */ 'M', PR_TRUE, 0, PR_FALSE, PR_FALSE }
+};
 
 int
 main(int argc, char **argv)

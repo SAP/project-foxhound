@@ -1,10 +1,13 @@
 /* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
+
+/* eslint-env mozilla/chrome-script */
+
 "use strict";
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 
 const paymentSrv = Cc[
@@ -18,7 +21,7 @@ function emitTestPass(message) {
   sendAsyncMessage("test-pass", `${DummyUIService.testName}: ${message}`);
 }
 
-addMessageListener("close-check", function() {
+addMessageListener("close-check", function () {
   const paymentEnum = paymentSrv.enumerate();
   if (paymentEnum.hasMoreElements()) {
     emitTestFail("Non-empty PaymentRequest queue in PaymentRequestService.");
@@ -30,7 +33,7 @@ addMessageListener("close-check", function() {
 
 var setPaymentNums = 0;
 
-addMessageListener("payment-num-set", function() {
+addMessageListener("payment-num-set", function () {
   setPaymentNums = 0;
   const paymentEnum = paymentSrv.enumerate();
   while (paymentEnum.hasMoreElements()) {
@@ -40,7 +43,7 @@ addMessageListener("payment-num-set", function() {
   sendAsyncMessage("payment-num-set-complete");
 });
 
-addMessageListener("payment-num-check", function(expectedNumPayments) {
+addMessageListener("payment-num-check", function (expectedNumPayments) {
   const paymentEnum = paymentSrv.enumerate();
   let numPayments = 0;
   while (paymentEnum.hasMoreElements()) {
@@ -151,7 +154,7 @@ paymentSrv.setTestingUIService(
   DummyUIService.QueryInterface(Ci.nsIPaymentUIService)
 );
 
-addMessageListener("teardown", function() {
+addMessageListener("teardown", function () {
   paymentSrv.setTestingUIService(null);
   sendAsyncMessage("teardown-complete");
 });

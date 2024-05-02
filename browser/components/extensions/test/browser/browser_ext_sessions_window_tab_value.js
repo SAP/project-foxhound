@@ -10,7 +10,7 @@ add_task(async function test_sessions_tab_value() {
       { key: "tabkey3", value: { val: "Tab Value" } },
       {
         key: "tabkey4",
-        value: function() {
+        value: function () {
           return null;
         },
       },
@@ -99,7 +99,7 @@ add_task(async function test_sessions_tab_value() {
 
   let extension = ExtensionTestUtils.loadExtension({
     manifest: {
-      applications: {
+      browser_specific_settings: {
         gecko: {
           id: "exampleextension@mozilla.org",
         },
@@ -208,7 +208,7 @@ add_task(async function test_sessions_tab_value_persistence() {
 
   let extension = ExtensionTestUtils.loadExtension({
     manifest: {
-      applications: {
+      browser_specific_settings: {
         gecko: {
           id: "exampleextension@mozilla.org",
         },
@@ -236,7 +236,7 @@ add_task(async function test_sessions_window_value() {
       { key: "winkey3", value: { val: "Window Value" } },
       {
         key: "winkey4",
-        value: function() {
+        value: function () {
           return null;
         },
       },
@@ -322,7 +322,7 @@ add_task(async function test_sessions_window_value() {
 
   let extension = ExtensionTestUtils.loadExtension({
     manifest: {
-      applications: {
+      browser_specific_settings: {
         gecko: {
           id: "exampleextension@mozilla.org",
         },
@@ -379,7 +379,7 @@ add_task(async function test_sessions_window_value_persistence() {
 
   let extension = ExtensionTestUtils.loadExtension({
     manifest: {
-      applications: {
+      browser_specific_settings: {
         gecko: {
           id: "exampleextension@mozilla.org",
         },

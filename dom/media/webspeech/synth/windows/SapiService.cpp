@@ -17,8 +17,10 @@
 #include "mozilla/ProfilerLabels.h"
 #include "mozilla/StaticPrefs_media.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
+
+constexpr static WCHAR kSpCategoryOneCoreVoices[] =
+    L"HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Speech_OneCore\\Voices";
 
 StaticRefPtr<SapiService> SapiService::sSingleton;
 
@@ -237,13 +239,22 @@ already_AddRefed<ISpVoice> SapiService::InitSapiInstance() {
 }
 
 bool SapiService::RegisterVoices() {
-  nsresult rv;
-
   nsCOMPtr<nsISynthVoiceRegistry> registry =
       do_GetService(NS_SYNTHVOICEREGISTRY_CONTRACTID);
   if (!registry) {
     return false;
   }
+  bool result = RegisterVoices(registry, kSpCategoryOneCoreVoices);
+  result |= RegisterVoices(registry, SPCAT_VOICES);
+  if (result) {
+    registry->NotifyVoicesChanged();
+  }
+  return result;
+}
+
+bool SapiService::RegisterVoices(nsCOMPtr<nsISynthVoiceRegistry>& registry,
+                                 const WCHAR* categoryId) {
+  nsresult rv;
 
   RefPtr<ISpObjectTokenCategory> category;
   if (FAILED(CoCreateInstance(CLSID_SpObjectTokenCategory, nullptr, CLSCTX_ALL,
@@ -251,7 +262,7 @@ bool SapiService::RegisterVoices() {
                               getter_AddRefs(category)))) {
     return false;
   }
-  if (FAILED(category->SetId(SPCAT_VOICES, FALSE))) {
+  if (FAILED(category->SetId(categoryId, FALSE))) {
     return false;
   }
 
@@ -312,8 +323,6 @@ bool SapiService::RegisterVoices() {
 
     mVoices.InsertOrUpdate(uri, std::move(voiceToken));
   }
-
-  registry->NotifyVoicesChanged();
 
   return true;
 }
@@ -433,5 +442,4 @@ already_AddRefed<SapiService> SapiService::GetInstanceForService() {
   return sapiService.forget();
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

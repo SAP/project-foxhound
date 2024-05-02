@@ -11,9 +11,10 @@
  * in place for that class */
 typedef enum {
     SFTKFIPSNone = 0,
-    SFTKFIPSDH,  /* allow only specific primes */
-    SFTKFIPSECC, /* not just keys but specific curves */
-    SFTKFIPSAEAD /* single shot AEAD functions not allowed in FIPS mode */
+    SFTKFIPSDH,   /* allow only specific primes */
+    SFTKFIPSECC,  /* not just keys but specific curves */
+    SFTKFIPSAEAD, /* single shot AEAD functions not allowed in FIPS mode */
+    SFTKFIPSRSAPSS
 } SFTKFIPSSpecialClass;
 
 typedef struct SFTKFIPSAlgorithmListStr SFTKFIPSAlgorithmList;
@@ -54,7 +55,9 @@ SFTKFIPSAlgorithmList sftk_fips_mechs[] = {
 /* mechanisms using the same key types share the same key type
  * limits */
 #define RSA_FB_KEY 2048, 4096 /* min, max */
-#define RSA_FB_STEP 1024
+#define RSA_FB_STEP 1
+#define RSA_LEGACY_FB_KEY 1024, 1792 /* min, max */
+#define RSA_LEGACY_FB_STEP 256
 #define DSA_FB_KEY 2048, 4096 /* min, max */
 #define DSA_FB_STEP 1024
 #define DH_FB_KEY 2048, 4096 /* min, max */
@@ -64,17 +67,26 @@ SFTKFIPSAlgorithmList sftk_fips_mechs[] = {
 #define AES_FB_KEY 128, 256
 #define AES_FB_STEP 64
     { CKM_RSA_PKCS_KEY_PAIR_GEN, { RSA_FB_KEY, CKF_KPG }, RSA_FB_STEP, SFTKFIPSNone },
-    { CKM_RSA_PKCS_PSS, { RSA_FB_KEY, CKF_SGN }, RSA_FB_STEP, SFTKFIPSNone },
+    { CKM_RSA_PKCS_PSS, { RSA_FB_KEY, CKF_SGN }, RSA_FB_STEP, SFTKFIPSRSAPSS },
     { CKM_RSA_PKCS_OAEP, { RSA_FB_KEY, CKF_ENC }, RSA_FB_STEP, SFTKFIPSNone },
+    { CKM_RSA_PKCS_PSS, { RSA_LEGACY_FB_KEY, CKF_VERIFY }, RSA_LEGACY_FB_STEP, SFTKFIPSRSAPSS },
     /* -------------- RSA Multipart Signing Operations -------------------- */
     { CKM_SHA224_RSA_PKCS, { RSA_FB_KEY, CKF_SGN }, RSA_FB_STEP, SFTKFIPSNone },
     { CKM_SHA256_RSA_PKCS, { RSA_FB_KEY, CKF_SGN }, RSA_FB_STEP, SFTKFIPSNone },
     { CKM_SHA384_RSA_PKCS, { RSA_FB_KEY, CKF_SGN }, RSA_FB_STEP, SFTKFIPSNone },
     { CKM_SHA512_RSA_PKCS, { RSA_FB_KEY, CKF_SGN }, RSA_FB_STEP, SFTKFIPSNone },
-    { CKM_SHA224_RSA_PKCS_PSS, { RSA_FB_KEY, CKF_SGN }, RSA_FB_STEP, SFTKFIPSNone },
-    { CKM_SHA256_RSA_PKCS_PSS, { RSA_FB_KEY, CKF_SGN }, RSA_FB_STEP, SFTKFIPSNone },
-    { CKM_SHA384_RSA_PKCS_PSS, { RSA_FB_KEY, CKF_SGN }, RSA_FB_STEP, SFTKFIPSNone },
-    { CKM_SHA512_RSA_PKCS_PSS, { RSA_FB_KEY, CKF_SGN }, RSA_FB_STEP, SFTKFIPSNone },
+    { CKM_SHA224_RSA_PKCS_PSS, { RSA_FB_KEY, CKF_SGN }, RSA_FB_STEP, SFTKFIPSRSAPSS },
+    { CKM_SHA256_RSA_PKCS_PSS, { RSA_FB_KEY, CKF_SGN }, RSA_FB_STEP, SFTKFIPSRSAPSS },
+    { CKM_SHA384_RSA_PKCS_PSS, { RSA_FB_KEY, CKF_SGN }, RSA_FB_STEP, SFTKFIPSRSAPSS },
+    { CKM_SHA512_RSA_PKCS_PSS, { RSA_FB_KEY, CKF_SGN }, RSA_FB_STEP, SFTKFIPSRSAPSS },
+    { CKM_SHA224_RSA_PKCS, { RSA_LEGACY_FB_KEY, CKF_VERIFY }, RSA_LEGACY_FB_STEP, SFTKFIPSRSAPSS },
+    { CKM_SHA256_RSA_PKCS, { RSA_LEGACY_FB_KEY, CKF_VERIFY }, RSA_LEGACY_FB_STEP, SFTKFIPSRSAPSS },
+    { CKM_SHA384_RSA_PKCS, { RSA_LEGACY_FB_KEY, CKF_VERIFY }, RSA_LEGACY_FB_STEP, SFTKFIPSRSAPSS },
+    { CKM_SHA512_RSA_PKCS, { RSA_LEGACY_FB_KEY, CKF_VERIFY }, RSA_LEGACY_FB_STEP, SFTKFIPSRSAPSS },
+    { CKM_SHA224_RSA_PKCS_PSS, { RSA_LEGACY_FB_KEY, CKF_VERIFY }, RSA_LEGACY_FB_STEP, SFTKFIPSRSAPSS },
+    { CKM_SHA256_RSA_PKCS_PSS, { RSA_LEGACY_FB_KEY, CKF_VERIFY }, RSA_LEGACY_FB_STEP, SFTKFIPSRSAPSS },
+    { CKM_SHA384_RSA_PKCS_PSS, { RSA_LEGACY_FB_KEY, CKF_VERIFY }, RSA_LEGACY_FB_STEP, SFTKFIPSRSAPSS },
+    { CKM_SHA512_RSA_PKCS_PSS, { RSA_LEGACY_FB_KEY, CKF_VERIFY }, RSA_LEGACY_FB_STEP, SFTKFIPSRSAPSS },
     /* ------------------------- DSA Operations --------------------------- */
     { CKM_DSA_KEY_PAIR_GEN, { DSA_FB_KEY, CKF_KPG }, DSA_FB_STEP, SFTKFIPSNone },
     { CKM_DSA, { DSA_FB_KEY, CKF_SGN }, DSA_FB_STEP, SFTKFIPSNone },
@@ -131,7 +143,7 @@ SFTKFIPSAlgorithmList sftk_fips_mechs[] = {
     /* ---------------------- SSL/TLS operations ------------------------- */
     { CKM_SHA224_KEY_DERIVATION, { 112, 224, CKF_KDF }, 1, SFTKFIPSNone },
     { CKM_SHA256_KEY_DERIVATION, { 128, 256, CKF_KDF }, 1, SFTKFIPSNone },
-    { CKM_SHA384_KEY_DERIVATION, { 192, 284, CKF_KDF }, 1, SFTKFIPSNone },
+    { CKM_SHA384_KEY_DERIVATION, { 192, 384, CKF_KDF }, 1, SFTKFIPSNone },
     { CKM_SHA512_KEY_DERIVATION, { 256, 512, CKF_KDF }, 1, SFTKFIPSNone },
     { CKM_TLS12_MASTER_KEY_DERIVE, { 384, 384, CKF_KDF }, 1, SFTKFIPSNone },
     { CKM_TLS12_MASTER_KEY_DERIVE_DH, { DH_FB_KEY, CKF_KDF }, 1, SFTKFIPSNone },

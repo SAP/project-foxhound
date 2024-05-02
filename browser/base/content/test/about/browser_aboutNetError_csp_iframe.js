@@ -4,6 +4,7 @@
 "use strict";
 
 const BLOCKED_PAGE =
+  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
   "http://example.org:8000/browser/browser/base/content/test/about/csp_iframe.sjs";
 
 add_task(async function test_csp() {
@@ -15,18 +16,24 @@ add_task(async function test_csp() {
   let cspBrowser = gBrowser.selectedTab.linkedBrowser;
 
   // The blocked page opened in a new window/tab
-  await SpecialPowers.spawn(cspBrowser, [BLOCKED_PAGE], async function(
-    cspBlockedPage
-  ) {
-    let cookieHeader = content.document.getElementById("strictCookie");
-    let location = content.document.location.href;
+  await SpecialPowers.spawn(
+    cspBrowser,
+    [BLOCKED_PAGE],
+    async function (cspBlockedPage) {
+      let cookieHeader = content.document.getElementById("strictCookie");
+      let location = content.document.location.href;
 
-    Assert.ok(
-      cookieHeader.textContent.includes("No same site strict cookie header"),
-      "Same site strict cookie has not been set"
-    );
-    Assert.equal(location, cspBlockedPage, "Location of new page is correct!");
-  });
+      Assert.ok(
+        cookieHeader.textContent.includes("No same site strict cookie header"),
+        "Same site strict cookie has not been set"
+      );
+      Assert.equal(
+        location,
+        cspBlockedPage,
+        "Location of new page is correct!"
+      );
+    }
+  );
 
   Services.cookies.removeAll();
   BrowserTestUtils.removeTab(iframePageTab);
@@ -38,6 +45,7 @@ async function setupPage(htmlPageName, blockedPage) {
   let iFramePage =
     getRootDirectory(gTestPath).replace(
       "chrome://mochitests/content",
+      // eslint-disable-next-line @microsoft/sdl/no-insecure-url
       "http://example.com"
     ) + htmlPageName;
 
@@ -72,11 +80,11 @@ async function setupPage(htmlPageName, blockedPage) {
     true
   );
 
-  BrowserTestUtils.loadURI(browser, iFramePage);
+  BrowserTestUtils.startLoadingURIString(browser, iFramePage);
   await browserLoaded;
   info("The error page has loaded!");
 
-  await SpecialPowers.spawn(browser, [], async function() {
+  await SpecialPowers.spawn(browser, [], async function () {
     let iframe = content.document.getElementById("theIframe");
 
     await ContentTaskUtils.waitForCondition(() =>
@@ -92,11 +100,11 @@ async function setupPage(htmlPageName, blockedPage) {
 
   // In the iframe, we see the correct error page and click on the button
   // to open the blocked page in a new window/tab
-  await SpecialPowers.spawn(iframe, [], async function() {
+  await SpecialPowers.spawn(iframe, [], async function () {
     let doc = content.document;
 
-    // aboutNetError.js is using async localization to format several messages
-    // and in result the translation may be applied later.
+    // aboutNetError.mjs is using async localization to format several
+    // messages and in result the translation may be applied later.
     // We want to return the textContent of the element only after
     // the translation completes, so let's wait for it here.
     let elements = [

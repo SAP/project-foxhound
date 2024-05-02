@@ -9,6 +9,7 @@
 #include "VPXDecoder.h"
 
 #include "mozilla/Logging.h"
+#include "mozilla/java/HardwareCodecCapabilityUtilsWrappers.h"
 
 namespace mozilla {
 extern LazyLogModule sPEMLog;
@@ -27,7 +28,10 @@ bool AndroidEncoderModule::SupportsMimeType(const nsACString& aMimeType) const {
 }
 
 already_AddRefed<MediaDataEncoder> AndroidEncoderModule::CreateVideoEncoder(
-    const CreateEncoderParams& aParams) const {
+    const CreateEncoderParams& aParams, const bool aHardwareNotAllowed) const {
+  // TODO: extend AndroidDataEncoder and Java codec to accept this option.
+  MOZ_ASSERT(!aHardwareNotAllowed);
+
   RefPtr<MediaDataEncoder> encoder;
   switch (CreateEncoderParams::CodecTypeForMime(aParams.mConfig.mMimeType)) {
     case MediaDataEncoder::CodecType::H264:

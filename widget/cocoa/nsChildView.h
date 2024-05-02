@@ -44,6 +44,8 @@ class GLPresenter;
 }  // namespace
 
 namespace mozilla {
+enum class NativeKeyBindingsType : uint8_t;
+
 class InputData;
 class PanGestureInput;
 class VibrancyManager;
@@ -137,6 +139,9 @@ class WidgetRenderingContext;
 
   // Whether we're inside updateRootCALayer at the moment.
   BOOL mIsUpdatingLayer;
+
+  // Whether the drag and drop was performed.
+  BOOL mPerformedDrag;
 
   // Holds our drag service across multiple drag calls. The reference to the
   // service is obtained when the mouse enters the view and is released when
@@ -289,7 +294,7 @@ class nsChildView final : public nsBaseWidget {
   // nsIWidget interface
   [[nodiscard]] virtual nsresult Create(nsIWidget* aParent, nsNativeWidget aNativeParent,
                                         const LayoutDeviceIntRect& aRect,
-                                        nsWidgetInitData* aInitData = nullptr) override;
+                                        InitData* = nullptr) override;
 
   virtual void Destroy() override;
 
@@ -306,6 +311,10 @@ class nsChildView final : public nsBaseWidget {
 
   virtual void Enable(bool aState) override;
   virtual bool IsEnabled() const override;
+
+  virtual nsSizeMode SizeMode() override { return mSizeMode; }
+  virtual void SetSizeMode(nsSizeMode aMode) override { mSizeMode = aMode; }
+
   virtual void SetFocus(Raise, mozilla::dom::CallerType aCallerType) override;
   virtual LayoutDeviceIntRect GetBounds() override;
   virtual LayoutDeviceIntRect GetClientBounds() override;
@@ -371,7 +380,7 @@ class nsChildView final : public nsBaseWidget {
   [[nodiscard]] virtual nsresult AttachNativeKeyEvent(
       mozilla::WidgetKeyboardEvent& aEvent) override;
   MOZ_CAN_RUN_SCRIPT virtual bool GetEditCommands(
-      NativeKeyBindingsType aType, const mozilla::WidgetKeyboardEvent& aEvent,
+      mozilla::NativeKeyBindingsType aType, const mozilla::WidgetKeyboardEvent& aEvent,
       nsTArray<mozilla::CommandInt>& aCommands) override;
 
   virtual void SuppressAnimation(bool aSuppress) override;
@@ -474,7 +483,7 @@ class nsChildView final : public nsBaseWidget {
 
   virtual LayoutDeviceIntPoint GetClientOffset() override;
 
-  void DispatchAPZWheelInputEvent(mozilla::InputData& aEvent, bool aCanTriggerSwipe);
+  void DispatchAPZWheelInputEvent(mozilla::InputData& aEvent);
   nsEventStatus DispatchAPZInputEvent(mozilla::InputData& aEvent);
 
   void DispatchDoubleTapGesture(mozilla::TimeStamp aEventTimeStamp,
@@ -501,8 +510,11 @@ class nsChildView final : public nsBaseWidget {
   // Called by nsCocoaWindow when the window's fullscreen state changes.
   void UpdateFullscreen(bool aFullscreen);
 
-  // Called by nsCocoaWindow when a mouse move has occurred.
-  void NoteMouseMoveAtTime(const mozilla::TimeStamp& aTime);
+#ifdef DEBUG
+  // test only.
+  virtual nsresult SetHiDPIMode(bool aHiDPI) override;
+  virtual nsresult RestoreHiDPIMode() override;
+#endif
 
  protected:
   virtual ~nsChildView();
@@ -541,7 +553,7 @@ class nsChildView final : public nsBaseWidget {
   // Held while the compositor (or WR renderer) thread is compositing.
   // Protects from tearing down the view during compositing and from presenting
   // half-composited layers to the screen.
-  mozilla::Mutex mCompositingLock;
+  mozilla::Mutex mCompositingLock MOZ_UNANNOTATED;
 
   mozilla::ViewRegion mNonDraggableRegion;
 
@@ -552,6 +564,7 @@ class nsChildView final : public nsBaseWidget {
   mutable CGFloat mBackingScaleFactor;
 
   bool mVisible;
+  nsSizeMode mSizeMode;
   bool mDrawing;
   bool mIsDispatchPaint;  // Is a paint event being dispatched
 

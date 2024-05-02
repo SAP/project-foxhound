@@ -41,6 +41,7 @@ use std::marker::PhantomData;
 use std::{ops, u64};
 use crate::util::VecHelper;
 use crate::profiler::TransactionProfile;
+use peek_poke::PeekPoke;
 
 #[cfg_attr(feature = "capture", derive(Serialize))]
 #[cfg_attr(feature = "replay", derive(Deserialize))]
@@ -96,7 +97,7 @@ impl<S> UpdateList<S> {
 /// A globally, unique identifier
 #[cfg_attr(feature = "capture", derive(Serialize))]
 #[cfg_attr(feature = "replay", derive(Deserialize))]
-#[derive(Debug, Copy, Clone, Eq, Hash, MallocSizeOf, PartialEq)]
+#[derive(Debug, Copy, Clone, Eq, Hash, MallocSizeOf, PartialEq, PeekPoke, Default)]
 pub struct ItemUid {
     uid: u64,
 }
@@ -137,6 +138,8 @@ impl<I> Handle<I> {
             uid: ((self.index as u64) << 32) | self.epoch.0 as u64
         }
     }
+
+    pub const INVALID: Self = Handle { index: !0, epoch: Epoch(!0), _marker: PhantomData };
 }
 
 pub trait InternDebug {
@@ -394,7 +397,8 @@ macro_rules! enumerate_interners {
             picture: Picture,
             text_run: TextRun,
             filter_data: FilterDataIntern,
-            backdrop: Backdrop,
+            backdrop_capture: BackdropCapture,
+            backdrop_render: BackdropRender,
             polygon: PolygonIntern,
         }
     }

@@ -10,18 +10,23 @@
 var rule = require("../lib/rules/use-cc-etc");
 var RuleTester = require("eslint").RuleTester;
 
-const ruleTester = new RuleTester({ parserOptions: { ecmaVersion: 6 } });
+const ruleTester = new RuleTester({ parserOptions: { ecmaVersion: "latest" } });
 
 // ------------------------------------------------------------------------------
 // Tests
 // ------------------------------------------------------------------------------
 
-function invalidCode(code, originalName, newName) {
+function invalidCode(code, originalName, newName, output) {
   return {
     code,
+    output,
     errors: [
       {
-        message: `Use ${newName} rather than ${originalName}`,
+        messageId: "useCcEtc",
+        data: {
+          shortName: newName,
+          oldName: originalName,
+        },
         type: "MemberExpression",
       },
     ],
@@ -33,23 +38,27 @@ ruleTester.run("use-cc-etc", rule, {
   invalid: [
     invalidCode(
       "let foo = Components.classes['bar'];",
-      "Components.classes",
-      "Cc"
+      "classes",
+      "Cc",
+      "let foo = Cc['bar'];"
     ),
     invalidCode(
       "let bar = Components.interfaces.bar;",
-      "Components.interfaces",
-      "Ci"
+      "interfaces",
+      "Ci",
+      "let bar = Ci.bar;"
     ),
     invalidCode(
       "Components.results.NS_ERROR_ILLEGAL_INPUT;",
-      "Components.results",
-      "Cr"
+      "results",
+      "Cr",
+      "Cr.NS_ERROR_ILLEGAL_INPUT;"
     ),
     invalidCode(
       "Components.utils.reportError('fake');",
-      "Components.utils",
-      "Cu"
+      "utils",
+      "Cu",
+      "Cu.reportError('fake');"
     ),
   ],
 });

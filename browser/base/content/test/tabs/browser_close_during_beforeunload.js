@@ -13,7 +13,7 @@ const DIALOG_TOPIC = CONTENT_PROMPT_SUBDIALOG
   ? "common-dialog-loaded"
   : "tabmodal-dialog-loaded";
 
-add_task(async function() {
+add_task(async function () {
   await SpecialPowers.pushPrefEnv({
     set: [["dom.require_user_interaction_for_beforeunload", false]],
   });
@@ -21,7 +21,9 @@ add_task(async function() {
   let win = await BrowserTestUtils.openNewBrowserWindow();
 
   let browser = win.gBrowser.selectedBrowser;
-  BrowserTestUtils.loadURI(browser, "http://example.com/");
+  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
+  BrowserTestUtils.startLoadingURIString(browser, "http://example.com/");
+  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
   await BrowserTestUtils.browserLoaded(browser, false, "http://example.com/");
 
   await SpecialPowers.spawn(browser, [], () => {

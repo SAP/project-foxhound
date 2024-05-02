@@ -2,8 +2,8 @@
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
 SimpleTest.requestCompleteLog();
-const { HandlerServiceTestUtils } = ChromeUtils.import(
-  "resource://testing-common/HandlerServiceTestUtils.jsm"
+const { HandlerServiceTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/HandlerServiceTestUtils.sys.mjs"
 );
 
 let gHandlerService = Cc["@mozilla.org/uriloader/handler-service;1"].getService(
@@ -15,7 +15,7 @@ let gDummyHandlers = [];
 let gOriginalPreferredMailHandler;
 let gOriginalPreferredPDFHandler;
 
-registerCleanupFunction(function() {
+registerCleanupFunction(function () {
   function removeDummyHandlers(handlers) {
     // Remove any of the dummy handlers we created.
     for (let i = handlers.Count() - 1; i >= 0; i--) {
@@ -44,9 +44,8 @@ registerCleanupFunction(function() {
   mailHandlerInfo.preferredApplicationHandler = gOriginalPreferredMailHandler;
   gHandlerService.store(mailHandlerInfo);
 
-  let pdfHandlerInfo = HandlerServiceTestUtils.getHandlerInfo(
-    "application/pdf"
-  );
+  let pdfHandlerInfo =
+    HandlerServiceTestUtils.getHandlerInfo("application/pdf");
   pdfHandlerInfo.preferredAction = Ci.nsIHandlerInfo.handleInternally;
   pdfHandlerInfo.preferredApplicationHandler = gOriginalPreferredPDFHandler;
   let handlers = pdfHandlerInfo.possibleApplicationHandlers;
@@ -77,7 +76,7 @@ function scrubMailtoHandlers(handlerInfo) {
 
 ("use strict");
 
-add_task(async function setup() {
+add_setup(async function () {
   // Create our dummy handlers
   let handler1 = Cc["@mozilla.org/uriloader/web-handler-app;1"].createInstance(
     Ci.nsIWebHandlerApp
@@ -106,9 +105,8 @@ add_task(async function setup() {
   substituteWebHandlers(mailtoHandlerInfo);
 
   // Now add a pdf handler:
-  let pdfHandlerInfo = HandlerServiceTestUtils.getHandlerInfo(
-    "application/pdf"
-  );
+  let pdfHandlerInfo =
+    HandlerServiceTestUtils.getHandlerInfo("application/pdf");
   // PDF doesn't have built-in web handlers, so no need to scrub.
   gOriginalPreferredPDFHandler = pdfHandlerInfo.preferredApplicationHandler;
   let handlers = pdfHandlerInfo.possibleApplicationHandlers;

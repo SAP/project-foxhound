@@ -1,10 +1,11 @@
 "use strict";
 
-const { UrlClassifierTestUtils } = ChromeUtils.import(
-  "resource://testing-common/UrlClassifierTestUtils.jsm"
+const { UrlClassifierTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/UrlClassifierTestUtils.sys.mjs"
 );
-const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
-var { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const { HttpServer } = ChromeUtils.importESModule(
+  "resource://testing-common/httpd.sys.mjs"
+);
 
 // This test supports both e10s and non-e10s mode. In non-e10s mode, this test
 // drives itself by creating a profile directory, setting up the URL classifier
@@ -203,9 +204,10 @@ var tests = [
         false
       );
     }
-    var principal = Services.scriptSecurityManager.createContentPrincipalFromOrigin(
-      normalOrigin
-    );
+    var principal =
+      Services.scriptSecurityManager.createContentPrincipalFromOrigin(
+        normalOrigin
+      );
     testPriorityMap = [
       {
         path: normalOrigin + "/innocent.css",
@@ -263,9 +265,10 @@ var tests = [
         true
       );
     }
-    var principal = Services.scriptSecurityManager.createContentPrincipalFromOrigin(
-      normalOrigin
-    );
+    var principal =
+      Services.scriptSecurityManager.createContentPrincipalFromOrigin(
+        normalOrigin
+      );
     testPriorityMap = [
       {
         path: normalOrigin + "/innocent.css",

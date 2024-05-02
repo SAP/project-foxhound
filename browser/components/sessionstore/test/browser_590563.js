@@ -1,7 +1,7 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
-add_task(async function() {
+add_task(async function () {
   let sessionData = {
     windows: [
       {
@@ -50,14 +50,11 @@ async function middleClickTest(win) {
     { button: 0 },
     browser.contentWindow
   );
-  let treeContainer = browser.contentDocument.querySelector(".tree-container");
-  await BrowserTestUtils.waitForCondition(
-    () => win.getComputedStyle(treeContainer).visibility == "visible"
-  );
-  // Force a layout flush before accessing coordinates.
-  treeContainer.getBoundingClientRect();
-
   let tree = browser.contentDocument.getElementById("tabList");
+  await BrowserTestUtils.waitForCondition(() => !tree.hasAttribute("hidden"));
+  // Force a layout flush before accessing coordinates.
+  tree.getBoundingClientRect();
+
   is(tree.view.rowCount, 3, "There should be three items");
 
   // click on the first tab item

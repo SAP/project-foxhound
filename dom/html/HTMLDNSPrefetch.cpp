@@ -41,8 +41,7 @@
 
 using namespace mozilla::net;
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class NoOpDNSListener final : public nsIDNSListener {
   // This class exists to give a safe callback no-op DNSListener
@@ -97,7 +96,7 @@ class DeferredDNSPrefetches final : public nsIWebProgressListener,
   DeferredDNSPrefetches();
 
   void Activate();
-  nsresult Add(uint32_t flags, SupportsDNSPrefetch&, Element&);
+  nsresult Add(nsIDNSService::DNSFlags flags, SupportsDNSPrefetch&, Element&);
 
   void RemoveUnboundLinks();
 
@@ -106,7 +105,7 @@ class DeferredDNSPrefetches final : public nsIWebProgressListener,
   void Flush();
 
   void SubmitQueue();
-  void SubmitQueueEntry(Element&, uint32_t aFlags);
+  void SubmitQueueEntry(Element&, nsIDNSService::DNSFlags aFlags);
 
   uint16_t mHead;
   uint16_t mTail;
@@ -120,7 +119,7 @@ class DeferredDNSPrefetches final : public nsIWebProgressListener,
   static const int sMaxDeferredMask = (sMaxDeferred - 1);
 
   struct deferred_entry {
-    uint32_t mFlags;
+    nsIDNSService::DNSFlags mFlags;
     // SupportsDNSPrefetch clears this raw pointer in Destroyed().
     Element* mElement;
   } mEntries[sMaxDeferred];
@@ -185,25 +184,26 @@ bool HTMLDNSPrefetch::IsAllowed(Document* aDocument) {
   return aDocument->IsDNSPrefetchAllowed() && aDocument->GetWindow();
 }
 
-static uint32_t GetDNSFlagsFromElement(Element& aElement) {
+static nsIDNSService::DNSFlags GetDNSFlagsFromElement(Element& aElement) {
   nsIChannel* channel = aElement.OwnerDoc()->GetChannel();
   if (!channel) {
-    return 0;
+    return nsIDNSService::RESOLVE_DEFAULT_FLAGS;
   }
   return nsIDNSService::GetFlagsFromTRRMode(channel->GetTRRMode());
 }
 
-uint32_t HTMLDNSPrefetch::PriorityToDNSServiceFlags(Priority aPriority) {
+nsIDNSService::DNSFlags HTMLDNSPrefetch::PriorityToDNSServiceFlags(
+    Priority aPriority) {
   switch (aPriority) {
     case Priority::Low:
-      return uint32_t(nsIDNSService::RESOLVE_PRIORITY_LOW);
+      return nsIDNSService::RESOLVE_PRIORITY_LOW;
     case Priority::Medium:
-      return uint32_t(nsIDNSService::RESOLVE_PRIORITY_MEDIUM);
+      return nsIDNSService::RESOLVE_PRIORITY_MEDIUM;
     case Priority::High:
-      return 0u;
+      return nsIDNSService::RESOLVE_DEFAULT_FLAGS;
   }
   MOZ_ASSERT_UNREACHABLE("Unknown priority");
-  return 0u;
+  return nsIDNSService::RESOLVE_DEFAULT_FLAGS;
 }
 
 nsresult HTMLDNSPrefetch::Prefetch(SupportsDNSPrefetch& aSupports,
@@ -220,7 +220,7 @@ nsresult HTMLDNSPrefetch::Prefetch(SupportsDNSPrefetch& aSupports,
 nsresult HTMLDNSPrefetch::Prefetch(
     const nsAString& hostname, bool isHttps,
     const OriginAttributes& aPartitionedPrincipalOriginAttributes,
-    uint32_t flags) {
+    nsIDNSService::DNSFlags flags) {
   if (IsNeckoChild()) {
     // We need to check IsEmpty() because net_IsValidHostName()
     // considers empty strings to be valid hostnames
@@ -228,9 +228,8 @@ nsresult HTMLDNSPrefetch::Prefetch(
         net_IsValidHostName(NS_ConvertUTF16toUTF8(hostname))) {
       // during shutdown gNeckoChild might be null
       if (gNeckoChild) {
-        gNeckoChild->SendHTMLDNSPrefetch(nsString(hostname), isHttps,
-                                         aPartitionedPrincipalOriginAttributes,
-                                         flags);
+        gNeckoChild->SendHTMLDNSPrefetch(
+            hostname, isHttps, aPartitionedPrincipalOriginAttributes, flags);
       }
     }
     return NS_OK;
@@ -278,7 +277,7 @@ nsresult HTMLDNSPrefetch::CancelPrefetch(SupportsDNSPrefetch& aSupports,
     return NS_ERROR_NOT_AVAILABLE;
   }
 
-  uint32_t flags =
+  nsIDNSService::DNSFlags flags =
       GetDNSFlagsFromElement(aElement) | PriorityToDNSServiceFlags(aPriority);
 
   nsIURI* uri = aSupports.GetURIForDNSPrefetch(aElement);
@@ -303,7 +302,7 @@ nsresult HTMLDNSPrefetch::CancelPrefetch(SupportsDNSPrefetch& aSupports,
 nsresult HTMLDNSPrefetch::CancelPrefetch(
     const nsAString& hostname, bool isHttps,
     const OriginAttributes& aPartitionedPrincipalOriginAttributes,
-    uint32_t flags, nsresult aReason) {
+    nsIDNSService::DNSFlags flags, nsresult aReason) {
   // Forward this request to Necko Parent if we're a child process
   if (IsNeckoChild()) {
     // We need to check IsEmpty() because net_IsValidHostName()
@@ -313,8 +312,8 @@ nsresult HTMLDNSPrefetch::CancelPrefetch(
       // during shutdown gNeckoChild might be null
       if (gNeckoChild) {
         gNeckoChild->SendCancelHTMLDNSPrefetch(
-            nsString(hostname), isHttps, aPartitionedPrincipalOriginAttributes,
-            flags, aReason);
+            hostname, isHttps, aPartitionedPrincipalOriginAttributes, flags,
+            aReason);
       }
     }
     return NS_OK;
@@ -328,7 +327,7 @@ nsresult HTMLDNSPrefetch::CancelPrefetch(
   nsresult rv = sDNSService->CancelAsyncResolveNative(
       NS_ConvertUTF16toUTF8(hostname), nsIDNSService::RESOLVE_TYPE_DEFAULT,
       flags | nsIDNSService::RESOLVE_SPECULATE,
-      nullptr,  // resolverInfo
+      nullptr,  // AdditionalInfo
       sDNSListener, aReason, aPartitionedPrincipalOriginAttributes);
 
   if (StaticPrefs::network_dns_upgrade_with_https_rr() ||
@@ -336,7 +335,7 @@ nsresult HTMLDNSPrefetch::CancelPrefetch(
     Unused << sDNSService->CancelAsyncResolveNative(
         NS_ConvertUTF16toUTF8(hostname), nsIDNSService::RESOLVE_TYPE_HTTPSSVC,
         flags | nsIDNSService::RESOLVE_SPECULATE,
-        nullptr,  // resolverInfo
+        nullptr,  // AdditionalInfo
         sDNSListener, aReason, aPartitionedPrincipalOriginAttributes);
   }
   return rv;
@@ -411,7 +410,7 @@ void DeferredDNSPrefetches::Flush() {
   }
 }
 
-nsresult DeferredDNSPrefetches::Add(uint32_t flags,
+nsresult DeferredDNSPrefetches::Add(nsIDNSService::DNSFlags flags,
                                     SupportsDNSPrefetch& aSupports,
                                     Element& aElement) {
   // The FIFO has no lock, so it can only be accessed on main thread
@@ -462,7 +461,7 @@ void DeferredDNSPrefetches::SubmitQueue() {
 }
 
 void DeferredDNSPrefetches::SubmitQueueEntry(Element& aElement,
-                                             uint32_t aFlags) {
+                                             nsIDNSService::DNSFlags aFlags) {
   auto& supports = ToSupportsDNSPrefetch(aElement);
   supports.ClearIsInDNSPrefetch();
 
@@ -645,5 +644,4 @@ DeferredDNSPrefetches::Observe(nsISupports* subject, const char* topic,
   return NS_OK;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

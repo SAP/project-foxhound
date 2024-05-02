@@ -21,7 +21,7 @@ add_task(async function flush_on_tabclose() {
     {
       state: { storage },
     },
-  ] = ss.getClosedTabData(window);
+  ] = ss.getClosedTabDataForWindow(window);
   is(
     storage["http://example.com"].test,
     "on-tab-close",
@@ -46,7 +46,7 @@ add_task(async function flush_on_duplicate() {
     {
       state: { storage },
     },
-  ] = ss.getClosedTabData(window);
+  ] = ss.getClosedTabDataForWindow(window);
   is(
     storage["http://example.com"].test,
     "on-duplicate",
@@ -133,7 +133,7 @@ add_task(async function flush_on_tabclose_racy() {
     {
       state: { storage },
     },
-  ] = ss.getClosedTabData(window);
+  ] = ss.getClosedTabDataForWindow(window);
   is(
     storage["http://example.com"].test,
     "on-tab-close-racy",
@@ -152,7 +152,7 @@ async function createTabWithStorageData(urls, win = window) {
   let browser = tab.linkedBrowser;
 
   for (let url of urls) {
-    BrowserTestUtils.loadURI(browser, url);
+    BrowserTestUtils.startLoadingURIString(browser, url);
     await promiseBrowserLoaded(browser, true, url);
     dump("Loaded url: " + url + "\n");
     await modifySessionStorage(browser, { test: INITIAL_VALUE });

@@ -11,7 +11,7 @@
 var count = 0;
 const URIS = [
   "about:config",
-  "about:plugins",
+  "about:robots",
   "about:buildconfig",
   "data:text/html,<title>OK</title>",
 ];
@@ -40,10 +40,10 @@ function doTabsTest() {
   // sample of "close related tabs" feature
   gBrowser.tabContainer.addEventListener(
     "TabClose",
-    function(event) {
+    function (event) {
       var closedTab = event.originalTarget;
       var scheme = closedTab.linkedBrowser.currentURI.scheme;
-      Array.from(gBrowser.tabs).forEach(function(aTab) {
+      Array.from(gBrowser.tabs).forEach(function (aTab) {
         if (
           aTab != closedTab &&
           aTab.linkedBrowser.currentURI.scheme == scheme

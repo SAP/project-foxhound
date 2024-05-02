@@ -26,14 +26,14 @@ class nsAtom;
 class nsIFrame;
 class nsPresContext;
 enum class DisplayItemType : uint8_t;
-struct RawServoAnimationValueMap;
 
 namespace mozilla {
 
 class ComputedStyle;
 class EffectSet;
 class RestyleTracker;
-class StyleAnimationValue;
+struct StyleAnimationValue;
+struct StyleAnimationValueMap;
 struct AnimationProperty;
 struct NonOwningAnimationTarget;
 
@@ -122,13 +122,13 @@ class EffectCompositor {
   // Get the animation rule for the appropriate level of the cascade for
   // a (pseudo-)element. Called from the Servo side.
   //
-  // The animation rule is stored in |RawServoAnimationValueMap|.
+  // The animation rule is stored in |StyleAnimationValueMap|.
   // We need to be careful while doing any modification because it may cause
   // some thread-safe issues.
   bool GetServoAnimationRule(const dom::Element* aElement,
                              PseudoStyleType aPseudoType,
                              CascadeLevel aCascadeLevel,
-                             RawServoAnimationValueMap* aAnimationValues);
+                             StyleAnimationValueMap* aAnimationValues);
 
   // A variant on GetServoAnimationRule that composes all the effects for an
   // element up to and including |aEffect|.
@@ -137,7 +137,7 @@ class EffectCompositor {
   // committing the computed style of a removed Animation.
   bool ComposeServoAnimationRuleForEffect(
       dom::KeyframeEffect& aEffect, CascadeLevel aCascadeLevel,
-      RawServoAnimationValueMap* aAnimationValues);
+      StyleAnimationValueMap* aAnimationValues);
 
   bool HasPendingStyleUpdates() const;
 
@@ -217,15 +217,6 @@ class EffectCompositor {
 
   bool NeedsReducing() const { return !mElementsToReduce.empty(); }
   void ReduceAnimations();
-
-  // Returns the target element for restyling.
-  //
-  // If |aPseudoType| is ::after, ::before or ::marker, returns the generated
-  // content element of which |aElement| is the parent. If |aPseudoType| is any
-  // other pseudo type (other than PseudoStyleType::NotPseudo) returns nullptr.
-  // Otherwise, returns |aElement|.
-  static dom::Element* GetElementToRestyle(dom::Element* aElement,
-                                           PseudoStyleType aPseudoType);
 
   // Returns true if any type of compositor animations on |aFrame| allow
   // runnning on the compositor.

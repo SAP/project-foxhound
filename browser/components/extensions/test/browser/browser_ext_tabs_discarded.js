@@ -3,9 +3,6 @@
 /* global gBrowser SessionStore */
 "use strict";
 
-const { E10SUtils } = ChromeUtils.import(
-  "resource://gre/modules/E10SUtils.jsm"
-);
 const triggeringPrincipal_base64 = E10SUtils.SERIALIZED_SYSTEMPRINCIPAL;
 
 let lazyTabState = {
@@ -24,7 +21,7 @@ add_task(async function test_discarded() {
       permissions: ["tabs", "webNavigation"],
     },
 
-    background: async function() {
+    background() {
       browser.webNavigation.onCompleted.addListener(
         async details => {
           browser.test.log(`webNav onCompleted received for ${details.tabId}`);
@@ -39,7 +36,7 @@ add_task(async function test_discarded() {
         { url: [{ hostContains: "example.com" }] }
       );
 
-      browser.tabs.onCreated.addListener(function(tab) {
+      browser.tabs.onCreated.addListener(function (tab) {
         browser.test.assertEq(
           true,
           tab.discarded,
@@ -63,6 +60,81 @@ add_task(async function test_discarded() {
   BrowserTestUtils.removeTab(testTab);
 });
 
+// Regression test for Bug 1819794.
+add_task(async function test_create_discarded_with_cookieStoreId() {
+  let extension = ExtensionTestUtils.loadExtension({
+    manifest: {
+      permissions: ["contextualIdentities", "cookies"],
+    },
+    async background() {
+      const [{ cookieStoreId }] = await browser.contextualIdentities.query({});
+      browser.test.assertEq(
+        "firefox-container-1",
+        cookieStoreId,
+        "Got expected cookieStoreId"
+      );
+      await browser.tabs.create({
+        url: `http://example.com/#${cookieStoreId}`,
+        cookieStoreId,
+        discarded: true,
+      });
+      await browser.tabs.create({
+        url: `http://example.com/#no-container`,
+        discarded: true,
+      });
+    },
+    // Needed by ExtensionSettingsStore (as a side-effect of contextualIdentities permission).
+    useAddonManager: "temporary",
+  });
+
+  const tabContainerPromise = BrowserTestUtils.waitForEvent(
+    window,
+    "TabOpen",
+    false,
+    evt => {
+      return evt.target.getAttribute("usercontextid", "1");
+    }
+  ).then(evt => evt.target);
+  const tabDefaultPromise = BrowserTestUtils.waitForEvent(
+    window,
+    "TabOpen",
+    false,
+    evt => {
+      return !evt.target.hasAttribute("usercontextid");
+    }
+  ).then(evt => evt.target);
+
+  await extension.startup();
+
+  const tabContainer = await tabContainerPromise;
+  ok(
+    tabContainer.hasAttribute("pending"),
+    "new container tab should be discarded"
+  );
+  const tabContainerState = SessionStore.getTabState(tabContainer);
+  is(
+    JSON.parse(tabContainerState).userContextId,
+    1,
+    `Expect a userContextId associated to the new discarded container tab: ${tabContainerState}`
+  );
+
+  const tabDefault = await tabDefaultPromise;
+  ok(
+    tabDefault.hasAttribute("pending"),
+    "new non-container tab should be discarded"
+  );
+  const tabDefaultState = SessionStore.getTabState(tabDefault);
+  is(
+    JSON.parse(tabDefaultState).userContextId,
+    0,
+    `Expect userContextId 0 associated to the new discarded non-container tab: ${tabDefaultState}`
+  );
+
+  BrowserTestUtils.removeTab(tabContainer);
+  BrowserTestUtils.removeTab(tabDefault);
+  await extension.unload();
+});
+
 // If discard is called immediately after creating a new tab, the new tab may not have loaded,
 // and the sessionstore for that tab is not ready for discarding.  The result was a corrupted
 // sessionstore for the tab, which when the tab was activated, resulted in a tab with partial
@@ -73,7 +145,7 @@ add_task(async function test_create_then_discard() {
       permissions: ["tabs", "webNavigation"],
     },
 
-    background: async function() {
+    background: async function () {
       let createdTab;
 
       browser.tabs.onUpdated.addListener((tabId, updatedInfo) => {
@@ -126,7 +198,7 @@ add_task(async function test_create_discarded() {
       permissions: ["tabs", "webNavigation"],
     },
 
-    background: async function() {
+    background() {
       let tabOpts = {
         url: "http://example.com/",
         active: false,
@@ -185,13 +257,23 @@ add_task(async function test_discarded_private_tab_restored() {
   let extension = ExtensionTestUtils.loadExtension({
     incognitoOverride: "spanning",
 
-    background: async function() {
+    background() {
+      let isDiscarding = false;
       browser.tabs.onUpdated.addListener(
-        async (tabId, changeInfo, tab) => {
+        async function listener(tabId, changeInfo, tab) {
           const { active, discarded, incognito } = tab;
-          if (!incognito || active || discarded) {
+          if (!incognito || active || discarded || isDiscarding) {
             return;
           }
+          // Remove the onUpdated listener to prevent intermittent failure
+          // to be hit if the listener gets called again for unrelated
+          // tabs.onUpdated events that may get fired after the test case got
+          // the tab-discarded test message that was expecting.
+          isDiscarding = true;
+          browser.tabs.onUpdated.removeListener(listener);
+          browser.test.log(
+            `Test extension discarding ${tabId}: ${JSON.stringify(changeInfo)}`
+          );
           await browser.tabs.discard(tabId);
           browser.test.sendMessage("tab-discarded");
         },
@@ -235,4 +317,70 @@ add_task(async function test_discarded_private_tab_restored() {
 
   await extension.unload();
   await BrowserTestUtils.closeWindow(privateWin);
+});
+
+add_task(async function test_update_discarded() {
+  let extension = ExtensionTestUtils.loadExtension({
+    manifest: {
+      permissions: ["tabs", "<all_urls>"],
+    },
+
+    background() {
+      browser.test.onMessage.addListener(async msg => {
+        let [tab] = await browser.tabs.query({ url: "http://example.com/" });
+        if (msg == "update") {
+          await browser.tabs.update(tab.id, { url: "https://example.com/" });
+        } else {
+          browser.test.fail(`Unexpected message received: ${msg}`);
+        }
+      });
+      browser.test.sendMessage("ready");
+    },
+  });
+
+  await extension.startup();
+  await extension.awaitMessage("ready");
+
+  let lazyTab = BrowserTestUtils.addTab(gBrowser, "http://example.com/", {
+    createLazyBrowser: true,
+    lazyTabTitle: "Example Domain",
+  });
+
+  let tabBrowserInsertedPromise = BrowserTestUtils.waitForEvent(
+    lazyTab,
+    "TabBrowserInserted"
+  );
+
+  SimpleTest.waitForExplicitFinish();
+  let waitForConsole = new Promise(resolve => {
+    SimpleTest.monitorConsole(resolve, [
+      {
+        message:
+          /Lazy browser prematurely inserted via 'loadURI' property access:/,
+        forbid: true,
+      },
+    ]);
+  });
+
+  extension.sendMessage("update");
+  await tabBrowserInsertedPromise;
+
+  await BrowserTestUtils.waitForBrowserStateChange(
+    lazyTab.linkedBrowser,
+    "https://example.com/",
+    stateFlags => {
+      return (
+        stateFlags & Ci.nsIWebProgressListener.STATE_IS_WINDOW &&
+        stateFlags & Ci.nsIWebProgressListener.STATE_STOP
+      );
+    }
+  );
+
+  await TestUtils.waitForTick();
+  BrowserTestUtils.removeTab(lazyTab);
+
+  await extension.unload();
+
+  SimpleTest.endMonitorConsole();
+  await waitForConsole;
 });

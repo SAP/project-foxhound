@@ -14,8 +14,9 @@
         title="215405 test">
 
   <script type="application/javascript"><![CDATA[
-    const {BrowserTestUtils} = ChromeUtils.import("resource://testing-common/BrowserTestUtils.jsm");
-    const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
+    const {BrowserTestUtils} = ChromeUtils.importESModule(
+      "resource://testing-common/BrowserTestUtils.sys.mjs"
+    );
     Services.prefs.setBoolPref("browser.navigation.requireUserInteraction", false);
 
     /* globals SimpleTest, is, isnot, ok */
@@ -38,16 +39,23 @@
     function finish() {
       gBrowser.removeEventListener("pageshow", eventListener, true);
       // Work around bug 467960
+      let historyPurged;
       if (SpecialPowers.Services.appinfo.sessionHistoryInParent) {
         let history = gBrowser.browsingContext.sessionHistory;
         history.purgeHistory(history.count);
+        historyPurged = Promise.resolve();
       } else {
-        let history = gBrowser.webNavigation.sessionHistory;
-        history.legacySHistory.purgeHistory(history.count);
+        historyPurged = SpecialPowers.spawn(gBrowser, [], () => {
+          let history = docShell.QueryInterface(Ci.nsIWebNavigation).sessionHistory
+            .legacySHistory;
+          history.purgeHistory(history.count);
+        });
       }
 
-      window.close();
-      window.arguments[0].SimpleTest.finish();
+      historyPurged.then(_ => {
+        window.close();
+        window.arguments[0].SimpleTest.finish();
+      });
     }
 
     function onLoad(e) {
@@ -71,7 +79,7 @@
       var testName = "[nostore]";
 
       // Load a page with a no-store header
-      BrowserTestUtils.loadURI(gBrowser, nostoreURI);
+      BrowserTestUtils.startLoadingURIString(gBrowser, nostoreURI);
       yield undefined;
 
 
@@ -97,7 +105,7 @@
       // Load a new document into the browser
       var simple = "data:text/html,<html><head><title>test2</title></head>" +
                      "<body>test2</body></html>";
-      BrowserTestUtils.loadURI(gBrowser, simple);
+      BrowserTestUtils.startLoadingURIString(gBrowser, simple);
       yield undefined;
 
 
@@ -121,7 +129,7 @@
 
       // Load a page with a no-cache header. This should not be
       // restricted like no-store (bug 567365)
-      BrowserTestUtils.loadURI(gBrowser, nocacheURI);
+      BrowserTestUtils.startLoadingURIString(gBrowser, nocacheURI);
       yield undefined;
 
 
@@ -144,7 +152,7 @@
       isnot(currScrollY, originalYPosition,
             testName + " failed to scroll window vertically");
 
-      BrowserTestUtils.loadURI(gBrowser, simple);
+      BrowserTestUtils.startLoadingURIString(gBrowser, simple);
       yield undefined;
 
 

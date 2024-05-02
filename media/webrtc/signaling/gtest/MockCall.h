@@ -26,7 +26,8 @@ class MockAudioSendStream : public webrtc::AudioSendStream {
 
   const webrtc::AudioSendStream::Config& GetConfig() const override;
 
-  void Reconfigure(const Config& config) override;
+  void Reconfigure(const Config& config,
+                   webrtc::SetParametersCallback callback) override;
 
   void Start() override {}
 
@@ -52,7 +53,7 @@ class MockAudioSendStream : public webrtc::AudioSendStream {
   webrtc::AudioSendStream::Stats mStats;
 };
 
-class MockAudioReceiveStream : public webrtc::AudioReceiveStream {
+class MockAudioReceiveStream : public webrtc::AudioReceiveStreamInterface {
  public:
   explicit MockAudioReceiveStream(RefPtr<MockCallWrapper> aCallWrapper)
       : mCallWrapper(std::move(aCallWrapper)) {}
@@ -60,6 +61,8 @@ class MockAudioReceiveStream : public webrtc::AudioReceiveStream {
   void Start() override {}
 
   void Stop() override {}
+
+  bool IsRunning() const override { return true; }
 
   Stats GetStats(bool get_and_clear_legacy_stats) const override {
     return mStats;
@@ -73,14 +76,31 @@ class MockAudioReceiveStream : public webrtc::AudioReceiveStream {
     return mRtpSources;
   }
 
-  void Reconfigure(const Config& config) override;
+  virtual void SetDepacketizerToDecoderFrameTransformer(
+      rtc::scoped_refptr<webrtc::FrameTransformerInterface> frame_transformer)
+      override {
+    // Unimplemented after webrtc.org e2561e17e2 removed the Reconfigure
+    // method.
+    MOZ_ASSERT(false);
+  }
+  virtual void SetDecoderMap(
+      std::map<int, webrtc::SdpAudioFormat> decoder_map) override;
+  virtual void SetNackHistory(int history_ms) override {
+    // Unimplemented after webrtc.org e2561e17e2 removed the Reconfigure
+    // method.
+    MOZ_ASSERT(false);
+  }
+  virtual void SetNonSenderRttMeasurement(bool enabled) override {}
+  void SetFrameDecryptor(rtc::scoped_refptr<webrtc::FrameDecryptorInterface>
+                             frame_decryptor) override {}
   bool SetBaseMinimumPlayoutDelayMs(int delay_ms) override { return false; }
   int GetBaseMinimumPlayoutDelayMs() const override { return 0; }
+  uint32_t remote_ssrc() const override { return 0; }
 
   virtual ~MockAudioReceiveStream() {}
 
   const RefPtr<MockCallWrapper> mCallWrapper;
-  webrtc::AudioReceiveStream::Stats mStats;
+  webrtc::AudioReceiveStreamInterface::Stats mStats;
   std::vector<webrtc::RtpSource> mRtpSources;
 };
 
@@ -93,16 +113,20 @@ class MockVideoSendStream : public webrtc::VideoSendStream {
 
   void Stop() override {}
 
+  bool started() override { return false; }
+
   void SetSource(
       rtc::VideoSourceInterface<webrtc::VideoFrame>* source,
       const webrtc::DegradationPreference& degradation_preference) override {}
 
   void ReconfigureVideoEncoder(webrtc::VideoEncoderConfig config) override;
 
+  void ReconfigureVideoEncoder(webrtc::VideoEncoderConfig config,
+                               webrtc::SetParametersCallback callback) override;
+
   Stats GetStats() override { return mStats; }
 
-  void UpdateActiveSimulcastLayers(
-      const std::vector<bool> active_layers) override {}
+  void StartPerRtpStream(const std::vector<bool> active_layers) override {}
 
   void AddAdaptationResource(
       rtc::scoped_refptr<webrtc::Resource> resource) override {}
@@ -112,13 +136,15 @@ class MockVideoSendStream : public webrtc::VideoSendStream {
     return std::vector<rtc::scoped_refptr<webrtc::Resource>>();
   }
 
+  void GenerateKeyFrame(const std::vector<std::string>& rids) override {}
+
   virtual ~MockVideoSendStream() {}
 
   const RefPtr<MockCallWrapper> mCallWrapper;
   webrtc::VideoSendStream::Stats mStats;
 };
 
-class MockVideoReceiveStream : public webrtc::VideoReceiveStream {
+class MockVideoReceiveStream : public webrtc::VideoReceiveStreamInterface {
  public:
   explicit MockVideoReceiveStream(RefPtr<MockCallWrapper> aCallWrapper)
       : mCallWrapper(std::move(aCallWrapper)) {}
@@ -128,10 +154,6 @@ class MockVideoReceiveStream : public webrtc::VideoReceiveStream {
   void Stop() override {}
 
   Stats GetStats() const override { return mStats; }
-
-  void AddSecondarySink(webrtc::RtpPacketSinkInterface* sink) override {}
-  void RemoveSecondarySink(
-      const webrtc::RtpPacketSinkInterface* sink) override {}
 
   std::vector<webrtc::RtpSource> GetSources() const override {
     return std::vector<webrtc::RtpSource>();
@@ -155,10 +177,29 @@ class MockVideoReceiveStream : public webrtc::VideoReceiveStream {
 
   void GenerateKeyFrame() override {}
 
+  void SetRtcpMode(webrtc::RtcpMode mode) override {}
+
+  void SetFlexFecProtection(
+      webrtc::RtpPacketSinkInterface* flexfec_sink) override {}
+
+  void SetLossNotificationEnabled(bool enabled) override {}
+
+  void SetNackHistory(webrtc::TimeDelta history) override {}
+
+  void SetProtectionPayloadTypes(int red_payload_type,
+                                 int ulpfec_payload_type) override {}
+
+  void SetRtcpXr(Config::Rtp::RtcpXr rtcp_xr) override {}
+
+  virtual void SetAssociatedPayloadTypes(
+      std::map<int, int> associated_payload_types) override {}
+
+  virtual void UpdateRtxSsrc(uint32_t ssrc) override{};
+
   virtual ~MockVideoReceiveStream() {}
 
   const RefPtr<MockCallWrapper> mCallWrapper;
-  webrtc::VideoReceiveStream::Stats mStats;
+  webrtc::VideoReceiveStreamInterface::Stats mStats;
 };
 
 class MockCall : public webrtc::Call {
@@ -178,14 +219,14 @@ class MockCall : public webrtc::Call {
     delete static_cast<MockAudioSendStream*>(send_stream);
   }
 
-  webrtc::AudioReceiveStream* CreateAudioReceiveStream(
-      const webrtc::AudioReceiveStream::Config& config) override {
+  webrtc::AudioReceiveStreamInterface* CreateAudioReceiveStream(
+      const webrtc::AudioReceiveStreamInterface::Config& config) override {
     MOZ_RELEASE_ASSERT(!mAudioReceiveConfig);
     mAudioReceiveConfig = mozilla::Some(config);
     return new MockAudioReceiveStream(mCallWrapper);
   }
   void DestroyAudioReceiveStream(
-      webrtc::AudioReceiveStream* receive_stream) override {
+      webrtc::AudioReceiveStreamInterface* receive_stream) override {
     mAudioReceiveConfig = mozilla::Nothing();
     delete static_cast<MockAudioReceiveStream*>(receive_stream);
   }
@@ -206,21 +247,21 @@ class MockCall : public webrtc::Call {
     delete static_cast<MockVideoSendStream*>(send_stream);
   }
 
-  webrtc::VideoReceiveStream* CreateVideoReceiveStream(
-      webrtc::VideoReceiveStream::Config configuration) override {
+  webrtc::VideoReceiveStreamInterface* CreateVideoReceiveStream(
+      webrtc::VideoReceiveStreamInterface::Config configuration) override {
     MOZ_RELEASE_ASSERT(!mVideoReceiveConfig);
     mVideoReceiveConfig = mozilla::Some(std::move(configuration));
     return new MockVideoReceiveStream(mCallWrapper);
   }
 
   void DestroyVideoReceiveStream(
-      webrtc::VideoReceiveStream* receive_stream) override {
+      webrtc::VideoReceiveStreamInterface* receive_stream) override {
     mVideoReceiveConfig = mozilla::Nothing();
     delete static_cast<MockVideoReceiveStream*>(receive_stream);
   }
 
   webrtc::FlexfecReceiveStream* CreateFlexfecReceiveStream(
-      const webrtc::FlexfecReceiveStream::Config& config) override {
+      const webrtc::FlexfecReceiveStream::Config config) override {
     return nullptr;
   }
 
@@ -245,6 +286,16 @@ class MockCall : public webrtc::Call {
   void OnAudioTransportOverheadChanged(
       int transport_overhead_per_packet) override {}
 
+  void OnLocalSsrcUpdated(webrtc::AudioReceiveStreamInterface& stream,
+                          uint32_t local_ssrc) override {}
+  void OnLocalSsrcUpdated(webrtc::VideoReceiveStreamInterface& stream,
+                          uint32_t local_ssrc) override {}
+  void OnLocalSsrcUpdated(webrtc::FlexfecReceiveStream& stream,
+                          uint32_t local_ssrc) override {}
+
+  void OnUpdateSyncGroup(webrtc::AudioReceiveStreamInterface& stream,
+                         absl::string_view sync_group) override {}
+
   void OnSentPacket(const rtc::SentPacket& sent_packet) override {}
 
   void SetClientBitratePreferences(
@@ -255,15 +306,30 @@ class MockCall : public webrtc::Call {
         width, height, *mVideoSendEncoderConfig);
   }
 
+  virtual const webrtc::FieldTrialsView& trials() const override {
+    return mUnusedConfig;
+  }
+
+  virtual webrtc::TaskQueueBase* network_thread() const override {
+    return nullptr;
+  }
+
+  virtual webrtc::TaskQueueBase* worker_thread() const override {
+    return nullptr;
+  }
+
   virtual ~MockCall(){};
 
   const RefPtr<MockCallWrapper> mCallWrapper;
-  mozilla::Maybe<webrtc::AudioReceiveStream::Config> mAudioReceiveConfig;
+  mozilla::Maybe<webrtc::AudioReceiveStreamInterface::Config>
+      mAudioReceiveConfig;
   mozilla::Maybe<webrtc::AudioSendStream::Config> mAudioSendConfig;
-  mozilla::Maybe<webrtc::VideoReceiveStream::Config> mVideoReceiveConfig;
+  mozilla::Maybe<webrtc::VideoReceiveStreamInterface::Config>
+      mVideoReceiveConfig;
   mozilla::Maybe<webrtc::VideoSendStream::Config> mVideoSendConfig;
   mozilla::Maybe<webrtc::VideoEncoderConfig> mVideoSendEncoderConfig;
   webrtc::Call::Stats mStats;
+  webrtc::NoTrialsConfig mUnusedConfig;
 };
 
 class MockCallWrapper : public mozilla::WebrtcCallWrapper {
@@ -288,7 +354,7 @@ class MockCallWrapper : public mozilla::WebrtcCallWrapper {
         nullptr, nullptr);
     auto wrapper = mozilla::MakeRefPtr<MockCallWrapper>(
         state, nullptr, nullptr, nullptr,
-        mozilla::dom::RTCStatsTimestampMaker(), nullptr);
+        mozilla::dom::RTCStatsTimestampMaker::Create(), nullptr);
     wrapper->SetCall(mozilla::WrapUnique(new MockCall(wrapper)));
     return wrapper;
   }

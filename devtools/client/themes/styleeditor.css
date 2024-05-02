@@ -3,7 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #style-editor-chrome {
-  -moz-box-flex: 1;
+  flex: 1;
 }
 
 .splitview-nav > li,
@@ -12,11 +12,11 @@
 .stylesheet-rule-count,
 li.splitview-active > hgroup > .stylesheet-more > h3 > .stylesheet-saveButton,
 li:hover > hgroup > .stylesheet-more > h3 > .stylesheet-saveButton {
-  display: -moz-box;
+  display: flex;
 }
 
 .devtools-toolbar > spacer {
-  -moz-box-flex: 1;
+  flex: 1;
 }
 
 .style-editor-newButton {
@@ -27,12 +27,51 @@ li:hover > hgroup > .stylesheet-more > h3 > .stylesheet-saveButton {
   list-style-image: url(images/import.svg);
 }
 
-.stylesheet-details-container {
-  -moz-box-flex: 1;
+/* Filter input */
+#style-editor-chrome toolbar .devtools-searchbox {
+  /* Adjust default focused styling as it looks a bit off */
+  outline-offset: -2px;
+
+  & > .devtools-filterinput {
+    box-shadow: none;
+  }
 }
 
-.stylesheet-media-container {
+.stylesheet-details-container {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+.stylesheet-editor-status {
+  display: flex;
+  align-items: center;
+  border-block-start: 1px solid var(--theme-splitter-color) !important;
+  border-block-end: none !important;
+
+  /* Only show the editor toolbar if there's a stylesheet editor */
+  .devtools-main-content:empty + & {
+    display: none;
+  }
+
+  .style-editor-prettyPrintButton.devtools-button {
+    margin: 0;
+    /*
+     * common.css sets a pointer-events:none on disabled button,
+     * but here we want the title to be displayed since it gives extra information.
+     */
+    pointer-events: all;
+
+    &::before {
+      background-image: url(chrome://devtools/content/debugger/images/prettyPrint.svg);
+    }
+  }
+}
+
+.stylesheet-at-rules-container {
   overflow-y: auto;
+  min-width: 0;
+  min-height: 0;
 }
 
 .stylesheet-error-message {
@@ -59,15 +98,22 @@ li.error > .stylesheet-info > .stylesheet-more  > .stylesheet-error-message {
 }
 
 .stylesheet-info > h1 {
-  -moz-box-flex: 1;
+  flex: 1;
+}
+
+.stylesheet-info a.stylesheet-name:focus-visible {
+  outline-offset: -2px;
 }
 
 .splitview-nav > li > hgroup.stylesheet-info {
-  -moz-box-pack: center;
+  justify-content: center;
+  /* This prevents stylesheets with long names from breaking the layout of
+  the StyleEditor sources sidebar. */
+  overflow: hidden;
 }
 
 .stylesheet-more > spacer {
-  -moz-box-flex: 1;
+  flex: 1;
 }
 
 .stylesheet-title,
@@ -99,13 +145,13 @@ li.error > .stylesheet-info > .stylesheet-more  > .stylesheet-error-message {
 }
 
 .splitview-nav > li {
-  -moz-box-orient: horizontal;
+  flex-direction: row;
 }
 
 .splitview-nav > li > hgroup {
-  display: -moz-box;
-  -moz-box-orient: vertical;
-  -moz-box-flex: 1;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
 }
 
 .splitview-nav > li.unsaved > hgroup .stylesheet-name {
@@ -127,11 +173,18 @@ li.error > .stylesheet-info > .stylesheet-more  > .stylesheet-error-message {
   border-color: var(--theme-splitter-color);
 }
 
-.media-rule-label {
-  display: flex;
+.at-rule-label {
+  display: grid;
+  /*
+   * +----------------------------------------------+
+   * |        Rule information        | line number |
+   * +----------------------------------------------+
+   */
+  grid-template-columns: 1fr max-content;
   padding: 4px;
-  cursor: pointer;
   border-bottom: 1px solid var(--theme-splitter-color);
+  cursor: pointer;
+  word-break: break-word;
 }
 
 .media-responsive-mode-toggle {
@@ -139,7 +192,7 @@ li.error > .stylesheet-info > .stylesheet-more  > .stylesheet-error-message {
   text-decoration: underline;
 }
 
-.media-rule-line {
+.at-rule-line {
   padding-inline-start: 4px;
 }
 
@@ -147,30 +200,34 @@ li.error > .stylesheet-info > .stylesheet-more  > .stylesheet-error-message {
   opacity: 0.4;
 }
 
-.media-rule-condition {
-  flex: 1;
-  overflow: hidden;
-}
-
-.stylesheet-enabled {
-  display: -moz-box;
+.stylesheet-toggle {
+  display: flex;
   cursor: pointer;
   padding: 8px 0;
   margin: 0 8px;
-  background-image: url(images/item-toggle.svg);
+  background-image: url(images/eye-opened.svg);
   background-repeat: no-repeat;
   background-clip: content-box;
   background-position: center;
   background-size: 16px;
   width: 24px;
   height: 40px;
+  flex-shrink: 0;
 
   /* The icon color should always match the text color. */
-  -moz-context-properties: fill;
+  -moz-context-properties: fill, stroke;
   fill: currentColor;
+  stroke: currentColor;
 }
 
-.disabled > .stylesheet-enabled {
+.disabled > .stylesheet-toggle {
+  background-image: url(images/eye-closed.svg);
+}
+
+.stylesheet-system > .stylesheet-toggle {
+  /* Override the default "color: grayText" from [disabled] browser style */
+  color: currentColor;
+  cursor: auto;
   opacity: 0.3;
 }
 
@@ -203,12 +260,6 @@ li.linked-file-error .stylesheet-rule-count {
 .stylesheet-more > h3 {
   font-size: 11px;
   margin-inline-end: 2px;
-}
-
-.devtools-searchinput,
-.devtools-filterinput {
-  max-width: 25ex;
-  font-size: 11px;
 }
 
 .placeholder a {
@@ -245,15 +296,15 @@ h3 {
     background-size: 0 0, 0 0, auto;
   }
 
-  .stylesheet-enabled {
+  .stylesheet-toggle {
     padding: 0;
     height: 24px;
   }
 
   .splitview-nav > li > hgroup.stylesheet-info {
-    -moz-box-align: baseline;
-    -moz-box-orient: horizontal;
-    -moz-box-flex: 1;
+    align-items: baseline;
+    flex-direction: row;
+    flex: 1;
   }
 
   .stylesheet-sidebar {
@@ -261,11 +312,11 @@ h3 {
   }
 
   .stylesheet-more {
-    -moz-box-flex: 1;
-    -moz-box-pack: end;
+    flex: 1;
+    justify-content: flex-end;
   }
 
   .stylesheet-more > spacer {
-    -moz-box-flex: 0;
+    flex: none;
   }
 }

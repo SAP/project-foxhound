@@ -54,7 +54,7 @@ class BlobCreationDoneRunnable final : public Runnable {
   }
 
  private:
-  ~BlobCreationDoneRunnable() {
+  ~BlobCreationDoneRunnable() override {
     MOZ_ASSERT(mBlobStorage);
     // If something when wrong, we still have to release these objects in the
     // correct thread.
@@ -147,7 +147,7 @@ class WriteRunnable final : public Runnable {
     MOZ_ASSERT(aData);
   }
 
-  ~WriteRunnable() { free(mData); }
+  ~WriteRunnable() override { free(mData); }
 
   RefPtr<MutableBlobStorage> mBlobStorage;
   void* mData;
@@ -170,7 +170,7 @@ class CloseFileRunnable final : public Runnable {
   }
 
  private:
-  ~CloseFileRunnable() {
+  ~CloseFileRunnable() override {
     if (mFD) {
       PR_Close(mFD);
     }
@@ -218,7 +218,7 @@ class CreateBlobRunnable final : public Runnable,
   }
 
  private:
-  ~CreateBlobRunnable() {
+  ~CreateBlobRunnable() override {
     MOZ_ASSERT(mBlobStorage);
     // If something when wrong, we still have to release data in the correct
     // thread.
@@ -258,7 +258,7 @@ class LastRunnable final : public Runnable {
   }
 
  private:
-  ~LastRunnable() {
+  ~LastRunnable() override {
     MOZ_ASSERT(mBlobStorage);
     // If something when wrong, we still have to release data in the correct
     // thread.
@@ -288,7 +288,7 @@ MutableBlobStorage::MutableBlobStorage(MutableBlobStorageType aType,
   MOZ_ASSERT(NS_IsMainThread());
 
   if (!mEventTarget) {
-    mEventTarget = GetMainThreadEventTarget();
+    mEventTarget = GetMainThreadSerialEventTarget();
   }
 
   if (aMaxMemory == 0 && aType == eCouldBeInTemporaryFile) {
@@ -304,7 +304,7 @@ MutableBlobStorage::~MutableBlobStorage() {
 
   if (mFD) {
     RefPtr<Runnable> runnable = new CloseFileRunnable(mFD);
-    Unused << DispatchToIOThread(runnable.forget());
+    (void)DispatchToIOThread(runnable.forget());
   }
 
   if (mTaskQueue) {
@@ -349,7 +349,7 @@ void MutableBlobStorage::GetBlobImplWhenReady(
 
     // If the dispatching fails, we are shutting down and it's fine to do not
     // run the callback.
-    Unused << DispatchToIOThread(runnable.forget());
+    (void)DispatchToIOThread(runnable.forget());
     return;
   }
 
@@ -542,7 +542,7 @@ void MutableBlobStorage::TemporaryFileCreated(PRFileDesc* aFD) {
 
     // If this dispatching fails, CloseFileRunnable will close the FD in the
     // DTOR on the current thread.
-    Unused << DispatchToIOThread(runnable.forget());
+    (void)DispatchToIOThread(runnable.forget());
 
     // Let's inform the parent that we have nothing else to do.
     mActor->SendOperationFailed();
@@ -582,7 +582,7 @@ void MutableBlobStorage::TemporaryFileCreated(PRFileDesc* aFD) {
 
     RefPtr<Runnable> runnable =
         new LastRunnable(this, mPendingContentType, mPendingCallback);
-    Unused << DispatchToIOThread(runnable.forget());
+    (void)DispatchToIOThread(runnable.forget());
 
     mPendingCallback = nullptr;
   }
@@ -606,7 +606,7 @@ void MutableBlobStorage::AskForBlob(TemporaryIPCBlobChildCallback* aCallback,
   // mFD. The parent will take care of closing the duplicated file descriptor on
   // its side.
   RefPtr<Runnable> runnable = new CloseFileRunnable(mFD);
-  Unused << DispatchToIOThread(runnable.forget());
+  (void)DispatchToIOThread(runnable.forget());
 
   mFD = nullptr;
   mActor = nullptr;
@@ -631,7 +631,7 @@ nsresult MutableBlobStorage::DispatchToIOThread(
         do_GetService(NS_STREAMTRANSPORTSERVICE_CONTRACTID);
     MOZ_ASSERT(target);
 
-    mTaskQueue = new TaskQueue(target.forget(), "BlobStorage");
+    mTaskQueue = TaskQueue::Create(target.forget(), "BlobStorage");
   }
 
   nsCOMPtr<nsIRunnable> runnable(aRunnable);

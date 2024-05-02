@@ -5,7 +5,7 @@
 "use strict";
 
 // Make this available to both AMD and CJS environments
-define(function(require, exports, module) {
+define(function (require, exports, module) {
   // ReactJS
   const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
   const { span } = require("devtools/client/shared/vendor/react-dom-factories");
@@ -27,8 +27,7 @@ define(function(require, exports, module) {
 
   PromiseRep.propTypes = {
     object: PropTypes.object.isRequired,
-    // @TODO Change this to Object.values when supported in Node's version of V8
-    mode: PropTypes.oneOf(Object.keys(MODE).map(key => MODE[key])),
+    mode: PropTypes.oneOf(Object.values(MODE)),
     onDOMNodeMouseOver: PropTypes.func,
     onDOMNodeMouseOut: PropTypes.func,
     onInspectIconClick: PropTypes.func,
@@ -47,7 +46,7 @@ define(function(require, exports, module) {
       ownProperties["<state>"] = { value: state };
       let ownPropertiesLength = 1;
       if (state == "fulfilled") {
-        ownProperties["<value>"] = { value: value };
+        ownProperties["<value>"] = { value };
         ++ownPropertiesLength;
       } else if (state == "rejected") {
         ownProperties["<reason>"] = { value: reason };
@@ -60,7 +59,7 @@ define(function(require, exports, module) {
       };
     }
 
-    if (props.mode !== MODE.TINY) {
+    if (props.mode !== MODE.TINY && props.mode !== MODE.HEADER) {
       return Grip.rep(props);
     }
 
@@ -70,6 +69,10 @@ define(function(require, exports, module) {
       className: "objectBox objectBox-object",
       title: shouldRenderTooltip ? "Promise" : null,
     };
+
+    if (props.mode === MODE.HEADER) {
+      return span(config, getTitle(object));
+    }
 
     const { Rep } = require("devtools/client/shared/components/reps/reps/rep");
 

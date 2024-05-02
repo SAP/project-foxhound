@@ -11,18 +11,19 @@ function makeInputStream(aString) {
 }
 
 add_task(async function test_remoteWebNavigation_postdata() {
-  let obj = {};
-  ChromeUtils.import("resource://testing-common/httpd.js", obj);
-  ChromeUtils.import("resource://services-common/utils.js", obj);
+  let { HttpServer } = ChromeUtils.importESModule(
+    "resource://testing-common/httpd.sys.mjs"
+  );
+  let { CommonUtils } = ChromeUtils.importESModule(
+    "resource://services-common/utils.sys.mjs"
+  );
 
-  let server = new obj.HttpServer();
+  let server = new HttpServer();
   server.start(-1);
 
   await new Promise(resolve => {
     server.registerPathHandler("/test", (request, response) => {
-      let body = obj.CommonUtils.readBytesFromInputStream(
-        request.bodyInputStream
-      );
+      let body = CommonUtils.readBytesFromInputStream(request.bodyInputStream);
       is(body, "success", "request body is correct");
       is(request.method, "POST", "request was a post");
       response.write("Received from POST: " + body);
@@ -47,7 +48,7 @@ add_task(async function test_remoteWebNavigation_postdata() {
   BrowserTestUtils.removeTab(gBrowser.selectedTab);
 
   await new Promise(resolve => {
-    server.stop(function() {
+    server.stop(function () {
       resolve();
     });
   });

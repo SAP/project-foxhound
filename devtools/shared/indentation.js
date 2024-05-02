@@ -5,8 +5,6 @@
 
 "use strict";
 
-const Services = require("Services");
-
 const EXPAND_TAB = "devtools.editor.expandtab";
 const TAB_SIZE = "devtools.editor.tabsize";
 const DETECT_INDENT = "devtools.editor.detectindentation";
@@ -24,7 +22,7 @@ const DETECT_INDENT_MAX_LINES = 500;
  */
 function getTabPrefs() {
   const indentWithTabs = !Services.prefs.getBoolPref(EXPAND_TAB);
-  const indentUnit = Services.prefs.getIntPref(TAB_SIZE);
+  const indentUnit = Services.prefs.getIntPref(TAB_SIZE, 2);
   return { indentUnit, indentWithTabs };
 }
 
@@ -86,7 +84,7 @@ function getIndentationFromIteration(iterFunc) {
  *                  getIndentationFromIteration
  */
 function getIndentationFromString(string) {
-  const iteratorFn = function(start, end, callback) {
+  const iteratorFn = function (start, end, callback) {
     const split = string.split(/\r\n|\r|\n|\f/);
     split.slice(start, end).forEach(callback);
   };

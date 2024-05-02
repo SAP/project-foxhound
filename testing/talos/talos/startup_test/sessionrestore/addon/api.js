@@ -8,12 +8,13 @@
 
 /* globals Services, XPCOMUtils */
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.jsm",
-  PromiseUtils: "resource://gre/modules/PromiseUtils.jsm",
-  SessionStartup: "resource:///modules/sessionstore/SessionStartup.jsm",
-  setTimeout: "resource://gre/modules/Timer.jsm",
-  StartupPerformance: "resource:///modules/sessionstore/StartupPerformance.jsm",
+ChromeUtils.defineESModuleGetters(this, {
+  BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.sys.mjs",
+  PromiseUtils: "resource://gre/modules/PromiseUtils.sys.mjs",
+  SessionStartup: "resource:///modules/sessionstore/SessionStartup.sys.mjs",
+  StartupPerformance:
+    "resource:///modules/sessionstore/StartupPerformance.sys.mjs",
+  setTimeout: "resource://gre/modules/Timer.sys.mjs",
 });
 
 /* globals ExtensionAPI */
@@ -42,8 +43,8 @@ this.sessionrestore = class extends ExtensionAPI {
     // the profile to disk.
     async function getTalosParentProfiler() {
       try {
-        var { TalosParentProfiler } = ChromeUtils.import(
-          "resource://talos-powers/TalosParentProfiler.jsm"
+        var { TalosParentProfiler } = ChromeUtils.importESModule(
+          "resource://talos-powers/TalosParentProfiler.sys.mjs"
         );
         return TalosParentProfiler;
       } catch (err) {
@@ -91,7 +92,7 @@ this.sessionrestore = class extends ExtensionAPI {
       this.TalosParentProfiler.initFromURLQueryParams(url.search);
     }
 
-    await this.TalosParentProfiler.pause(msg);
+    await this.TalosParentProfiler.subtestEnd(msg);
     await this.TalosParentProfiler.finishStartupProfiling();
   }
 

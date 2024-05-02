@@ -116,10 +116,10 @@ nsresult CreateEncoderConfig(int32_t aWidth, int32_t aHeight,
   // ffmpeg doesn't currently support streams that use resize.
   // Therefore, for safety, we should turn it off until it does.
   config->rc_resize_allowed = 0;
-  // Allows 10% under target bitrate to compensate for prior overshoot
-  config->rc_undershoot_pct = 200;
-  // Allows 1.5% over target bitrate to compensate for prior undershoot
-  config->rc_overshoot_pct = 200;
+  // Allows 100% under target bitrate to compensate for prior overshoot
+  config->rc_undershoot_pct = 100;
+  // Allows 15% over target bitrate to compensate for prior undershoot
+  config->rc_overshoot_pct = 15;
   // Tells the decoding application to buffer 500ms before beginning playback
   config->rc_buf_initial_sz = 500;
   // The decoding application will try to keep 600ms of buffer during playback
@@ -408,7 +408,7 @@ Result<RefPtr<EncodedFrame>, nsresult> VP8TrackEncoder::ExtractEncodedData() {
   }
 
   // Convert the timestamp and duration to Usecs.
-  media::TimeUnit timestamp = FramesToTimeUnit(pkt->data.frame.pts, mTrackRate);
+  media::TimeUnit timestamp = media::TimeUnit(pkt->data.frame.pts, mTrackRate);
   if (!timestamp.IsValid()) {
     NS_ERROR("Microsecond timestamp overflow");
     return Err(NS_ERROR_DOM_MEDIA_OVERFLOW_ERR);
@@ -421,7 +421,7 @@ Result<RefPtr<EncodedFrame>, nsresult> VP8TrackEncoder::ExtractEncodedData() {
   }
 
   media::TimeUnit totalDuration =
-      FramesToTimeUnit(mExtractedDuration.value(), mTrackRate);
+      media::TimeUnit(mExtractedDuration.value(), mTrackRate);
   if (!totalDuration.IsValid()) {
     NS_ERROR("Duration overflow");
     return Err(NS_ERROR_DOM_MEDIA_OVERFLOW_ERR);
@@ -511,12 +511,12 @@ nsresult VP8TrackEncoder::Encode(VideoSegment* aSegment) {
       // Sum duration of non-key frames and force keyframe if exceeded the
       // given keyframe interval
       if (mKeyFrameInterval > TimeDuration::FromSeconds(0)) {
-        if (FramesToTimeUnit(mDurationSinceLastKeyframe, mTrackRate)
+        if (media::TimeUnit(mDurationSinceLastKeyframe, mTrackRate)
                 .ToTimeDuration() >= mKeyFrameInterval) {
           VP8LOG(LogLevel::Warning,
                  "Reached mKeyFrameInterval without seeing a keyframe. Forcing "
                  "one. time: %.2f, interval: %.2f",
-                 FramesToTimeUnit(mDurationSinceLastKeyframe, mTrackRate)
+                 media::TimeUnit(mDurationSinceLastKeyframe, mTrackRate)
                      .ToSeconds(),
                  mKeyFrameInterval.ToSeconds());
           mDurationSinceLastKeyframe = 0;
@@ -551,6 +551,10 @@ nsresult VP8TrackEncoder::Encode(VideoSegment* aSegment) {
 
       MOZ_DIAGNOSTIC_ASSERT(encodedFrame);
 
+      if (mKeyFrameInterval > TimeDuration::FromSeconds(0)) {
+        mDurationSinceLastKeyframe += chunk.GetDuration();
+      }
+
       // Move forward the mEncodedTimestamp.
       mEncodedTimestamp += chunk.GetDuration();
 
@@ -566,7 +570,7 @@ nsresult VP8TrackEncoder::Encode(VideoSegment* aSegment) {
       }
 
       media::TimeUnit totalDuration =
-          FramesToTimeUnit(mExtractedDuration.value(), mTrackRate);
+          media::TimeUnit(mExtractedDuration.value(), mTrackRate);
       media::TimeUnit skippedDuration = totalDuration - mExtractedDurationUs;
       mExtractedDurationUs = totalDuration;
       if (!skippedDuration.IsValid()) {
@@ -583,7 +587,7 @@ nsresult VP8TrackEncoder::Encode(VideoSegment* aSegment) {
 
     mMeanFrameEncodeDuration.insert(TimeStamp::Now() - timebase);
     mMeanFrameDuration.insert(
-        FramesToTimeUnit(chunk.GetDuration(), mTrackRate).ToTimeDuration());
+        media::TimeUnit(chunk.GetDuration(), mTrackRate).ToTimeDuration());
     nextEncodeOperation = GetNextEncodeOperation(
         mMeanFrameEncodeDuration.mean(), mMeanFrameDuration.mean());
 
@@ -642,7 +646,7 @@ nsresult VP8TrackEncoder::PrepareRawFrame(VideoChunk& aChunk) {
   RefPtr<Image> img;
   if (aChunk.mFrame.GetForceBlack() || aChunk.IsNull()) {
     if (!mMuteFrame || mMuteFrame->GetSize() != intrinsicSize) {
-      mMuteFrame = VideoFrame::CreateBlackImage(intrinsicSize);
+      mMuteFrame = mozilla::VideoFrame::CreateBlackImage(intrinsicSize);
     }
     if (!mMuteFrame) {
       VP8LOG(LogLevel::Warning, "Failed to allocate black image of size %dx%d",

@@ -18,11 +18,13 @@ var imports = [
 for (var name of imports) {
   window[name] = window.opener.wrappedJSObject[name];
 }
-const { BrowserTestUtils } = ChromeUtils.import(
-  "resource://testing-common/BrowserTestUtils.jsm"
+const { BrowserTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/BrowserTestUtils.sys.mjs"
 );
-var { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
+const ACTOR_MODULE_URI =
+  "chrome://mochitests/content/chrome/docshell/test/chrome/DocShellHelpers.sys.mjs";
+const { DocShellHelpersParent } = ChromeUtils.importESModule(ACTOR_MODULE_URI);
 // Some functions assume chrome-harness.js has been loaded.
 /* import-globals-from ../../../testing/mochitest/chrome-harness.js */
 
@@ -32,8 +34,9 @@ var { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 const NAV_NONE = 0;
 const NAV_BACK = 1;
 const NAV_FORWARD = 2;
-const NAV_URI = 3;
-const NAV_RELOAD = 4;
+const NAV_GOTOINDEX = 3;
+const NAV_URI = 4;
+const NAV_RELOAD = 5;
 
 var gExpectedEvents; // an array of events which are expected to
 // be triggered by this navigation
@@ -60,6 +63,9 @@ var gExtractedPath = null; // used to cache file path for extracting files from 
  *               back: if true, the browser will execute goBack()
  *
  *            forward: if true, the browser will execute goForward()
+ *
+ *          gotoIndex: if a number, the browser will execute gotoIndex() with
+ *                     the number as index
  *
  *             reload: if true, the browser will execute reload()
  *
@@ -91,13 +97,16 @@ var gExtractedPath = null; // used to cache file path for extracting files from 
  *                     This property is ignored if eventsToListenFor is
  *                     undefined or [].
  *
- *     preventBFCache: if true, an unload handler will be added to the loaded
+ *     preventBFCache: if true, an RTCPeerConnection will be added to the loaded
  *                     page to prevent it from being bfcached.  This property
  *                     has no effect when eventsToListenFor is [].
  *
  *      onNavComplete: a callback which is notified after all expected events
  *                     have occurred, or after a timeout has elapsed.  This
  *                     callback is not notified if eventsToListenFor is [].
+ *   onGlobalCreation: a callback which is notified when a DOMWindow is created
+ *                     (implemented by observing
+ *                     "content-document-global-created")
  *
  * There must be an expectedEvent object for each event of the types in
  * eventsToListenFor which is triggered by this navigation.  For example, if
@@ -110,6 +119,7 @@ function doPageNavigation(params) {
   // Parse the parameters.
   let back = params.back ? params.back : false;
   let forward = params.forward ? params.forward : false;
+  let gotoIndex = params.gotoIndex ? params.gotoIndex : false;
   let reload = params.reload ? params.reload : false;
   let uri = params.uri ? params.uri : false;
   let eventsToListenFor =
@@ -117,13 +127,11 @@ function doPageNavigation(params) {
       ? params.eventsToListenFor
       : ["pageshow"];
   gExpectedEvents =
-    typeof params.eventsToListenFor == "undefined" ||
-    eventsToListenFor.length == 0
+    typeof params.eventsToListenFor == "undefined" || !eventsToListenFor.length
       ? undefined
       : params.expectedEvents;
   gUnexpectedEvents =
-    typeof params.eventsToListenFor == "undefined" ||
-    eventsToListenFor.length == 0
+    typeof params.eventsToListenFor == "undefined" || !eventsToListenFor.length
       ? undefined
       : params.unexpectedEvents;
   let preventBFCache =
@@ -134,25 +142,20 @@ function doPageNavigation(params) {
     typeof params.waitForEventsOnly == "boolean" && params.waitForEventsOnly;
 
   // Do some sanity checking on arguments.
-  if (back && forward) {
-    throw new Error("Can't specify both back and forward");
+  let navigation = ["back", "forward", "gotoIndex", "reload", "uri"].filter(k =>
+    params.hasOwnProperty(k)
+  );
+  if (navigation.length > 1) {
+    throw new Error(`Can't specify both ${navigation[0]} and ${navigation[1]}`);
+  } else if (!navigation.length && !waitOnly) {
+    throw new Error(
+      "Must specify back or forward or gotoIndex or reload or uri"
+    );
   }
-  if (back && uri) {
-    throw new Error("Can't specify both back and a uri");
-  }
-  if (forward && uri) {
-    throw new Error("Can't specify both forward and a uri");
-  }
-  if (reload && (forward || back || uri)) {
-    throw new Error("Can't specify reload and another navigation type");
-  }
-  if (!back && !forward && !uri && !reload && !waitOnly) {
-    throw new Error("Must specify back or foward or reload or uri");
-  }
-  if (params.onNavComplete && eventsToListenFor.length == 0) {
+  if (params.onNavComplete && !eventsToListenFor.length) {
     throw new Error("Can't use onNavComplete when eventsToListenFor == []");
   }
-  if (params.preventBFCache && eventsToListenFor.length == 0) {
+  if (params.preventBFCache && !eventsToListenFor.length) {
     throw new Error("Can't use preventBFCache when eventsToListenFor == []");
   }
   if (params.preventBFCache && waitOnly) {
@@ -163,7 +166,7 @@ function doPageNavigation(params) {
       "Must specify onNavComplete when specifying waitForEventsOnly"
     );
   }
-  if (waitOnly && (back || forward || reload || uri)) {
+  if (waitOnly && navigation.length) {
     throw new Error(
       "Can't specify a navigation type when using waitForEventsOnly"
     );
@@ -197,17 +200,85 @@ function doPageNavigation(params) {
 
   // If the test explicitly sets .eventsToListenFor to [], don't wait for any
   // events.
-  gFinalEvent = eventsToListenFor.length == 0;
+  gFinalEvent = !eventsToListenFor.length;
+
+  // Add observers as needed.
+  let observers = new Map();
+  if (params.hasOwnProperty("onGlobalCreation")) {
+    observers.set("content-document-global-created", params.onGlobalCreation);
+  }
 
   // Add an event listener for each type of event in the .eventsToListenFor
-  // property of the input parameters.
-  for (let eventType of eventsToListenFor) {
-    dump("TEST: registering a listener for " + eventType + " events\n");
-    TestWindow.getBrowser().addEventListener(
-      eventType,
-      pageEventListener,
-      true
-    );
+  // property of the input parameters, and add an observer for all the topics
+  // in the observers map.
+  let cleanup;
+  let useActor = TestWindow.getBrowser().isRemoteBrowser;
+  if (useActor) {
+    ChromeUtils.registerWindowActor("DocShellHelpers", {
+      parent: {
+        esModuleURI: ACTOR_MODULE_URI,
+      },
+      child: {
+        esModuleURI: ACTOR_MODULE_URI,
+        events: {
+          pageshow: { createActor: true, capture: true },
+          pagehide: { createActor: true, capture: true },
+          load: { createActor: true, capture: true },
+          unload: { createActor: true, capture: true },
+          visibilitychange: { createActor: true, capture: true },
+        },
+        observers: observers.keys(),
+      },
+      allFrames: true,
+    });
+    DocShellHelpersParent.eventsToListenFor = eventsToListenFor;
+    DocShellHelpersParent.observers = observers;
+
+    cleanup = () => {
+      DocShellHelpersParent.eventsToListenFor = null;
+      DocShellHelpersParent.observers = null;
+      ChromeUtils.unregisterWindowActor("DocShellHelpers");
+    };
+  } else {
+    for (let eventType of eventsToListenFor) {
+      dump("TEST: registering a listener for " + eventType + " events\n");
+      TestWindow.getBrowser().addEventListener(
+        eventType,
+        pageEventListener,
+        true
+      );
+    }
+    if (observers.size > 0) {
+      let observer = (_, topic) => {
+        observers.get(topic).call();
+      };
+      for (let topic of observers.keys()) {
+        Services.obs.addObserver(observer, topic);
+      }
+
+      // We only need to do cleanup for the observer, the event listeners will
+      // go away with the window.
+      cleanup = () => {
+        for (let topic of observers.keys()) {
+          Services.obs.removeObserver(observer, topic);
+        }
+      };
+    }
+  }
+
+  if (cleanup) {
+    // Register a cleanup function on domwindowclosed, to avoid contaminating
+    // other tests if we bail out early because of an error.
+    Services.ww.registerNotification(function windowClosed(
+      subject,
+      topic,
+      data
+    ) {
+      if (topic == "domwindowclosed" && subject == window) {
+        Services.ww.unregisterNotification(windowClosed);
+        cleanup();
+      }
+    });
   }
 
   // Perform the specified navigation.
@@ -217,9 +288,12 @@ function doPageNavigation(params) {
   } else if (forward) {
     gNavType = NAV_FORWARD;
     TestWindow.getBrowser().goForward();
+  } else if (typeof gotoIndex == "number") {
+    gNavType = NAV_GOTOINDEX;
+    TestWindow.getBrowser().gotoIndex(gotoIndex);
   } else if (uri) {
     gNavType = NAV_URI;
-    BrowserTestUtils.loadURI(TestWindow.getBrowser(), uri);
+    BrowserTestUtils.startLoadingURIString(TestWindow.getBrowser(), uri);
   } else if (reload) {
     gNavType = NAV_RELOAD;
     TestWindow.getBrowser().reload();
@@ -231,19 +305,23 @@ function doPageNavigation(params) {
 
   // If we're listening for events and there is an .onNavComplete callback,
   // wait for all events to occur, and then call doPageNavigation_complete().
-  if (eventsToListenFor.length > 0 && params.onNavComplete) {
+  if (eventsToListenFor.length && params.onNavComplete) {
     waitForTrue(
-      function() {
+      function () {
         return gFinalEvent;
       },
-      function() {
+      function () {
         doPageNavigation_complete(
           eventsToListenFor,
           params.onNavComplete,
-          preventBFCache
+          preventBFCache,
+          useActor,
+          cleanup
         );
       }
     );
+  } else if (cleanup) {
+    cleanup();
   }
 }
 
@@ -256,33 +334,43 @@ function doPageNavigation(params) {
 function doPageNavigation_complete(
   eventsToListenFor,
   onNavComplete,
-  preventBFCache
+  preventBFCache,
+  useActor,
+  cleanup
 ) {
-  // Unregister our event listeners.
-  dump("TEST: removing event listeners\n");
-  for (let eventType of eventsToListenFor) {
-    TestWindow.getBrowser().removeEventListener(
-      eventType,
-      pageEventListener,
-      true
-    );
+  if (useActor) {
+    if (preventBFCache) {
+      let actor =
+        TestWindow.getBrowser().browsingContext.currentWindowGlobal.getActor(
+          "DocShellHelpers"
+        );
+      actor.sendAsyncMessage("docshell_helpers:preventBFCache");
+    }
+  } else {
+    // Unregister our event listeners.
+    dump("TEST: removing event listeners\n");
+    for (let eventType of eventsToListenFor) {
+      TestWindow.getBrowser().removeEventListener(
+        eventType,
+        pageEventListener,
+        true
+      );
+    }
+
+    // If the .preventBFCache property was set, add an RTCPeerConnection to
+    // prevent the page from being bfcached.
+    if (preventBFCache) {
+      let win = TestWindow.getWindow();
+      win.blockBFCache = new win.RTCPeerConnection();
+    }
   }
 
-  // If the .preventBFCache property was set, add an empty unload handler to
-  // prevent the page from being bfcached.
+  if (cleanup) {
+    cleanup();
+  }
+
   let uri = TestWindow.getBrowser().currentURI.spec;
   if (preventBFCache) {
-    TestWindow.getWindow().addEventListener(
-      "unload",
-      function() {
-        dump(
-          "TEST: Called dummy unload function to prevent page from " +
-            "being bfcached.\n"
-        );
-      },
-      true
-    );
-
     // Save the current uri in an array of uri's which shouldn't be
     // stored in the bfcache, for later verification.
     if (!(uri in gUrisNotInBFCache)) {
@@ -291,7 +379,7 @@ function doPageNavigation_complete(
   } else if (gNavType == NAV_URI) {
     // If we're navigating to a uri and .preventBFCache was not
     // specified, splice it out of gUrisNotInBFCache if it's there.
-    gUrisNotInBFCache.forEach(function(element, index, array) {
+    gUrisNotInBFCache.forEach(function (element, index, array) {
       if (element == uri) {
         array.splice(index, 1);
       }
@@ -300,6 +388,18 @@ function doPageNavigation_complete(
 
   // Notify the callback now that we're done.
   onNavComplete.call();
+}
+
+function promisePageNavigation(params) {
+  if (params.hasOwnProperty("onNavComplete")) {
+    throw new Error(
+      "Can't use a onNavComplete completion callback with promisePageNavigation."
+    );
+  }
+  return new Promise(resolve => {
+    params.onNavComplete = resolve;
+    doPageNavigation(params);
+  });
 }
 
 /**
@@ -312,10 +412,26 @@ function waitForPageEvents(params) {
   doPageNavigation(params);
 }
 
+function promisePageEvents(params) {
+  if (params.hasOwnProperty("onNavComplete")) {
+    throw new Error(
+      "Can't use a onNavComplete completion callback with promisePageEvents."
+    );
+  }
+  return new Promise(resolve => {
+    params.waitForEventsOnly = true;
+    params.onNavComplete = resolve;
+    doPageNavigation(params);
+  });
+}
+
 /**
  * The event listener which listens for expectedEvents.
  */
-function pageEventListener(event) {
+function pageEventListener(
+  event,
+  originalTargetIsHTMLDocument = HTMLDocument.isInstance(event.originalTarget)
+) {
   try {
     dump(
       "TEST: eventListener received a " +
@@ -336,7 +452,9 @@ function pageEventListener(event) {
   // for .persisted.
   if (
     event.type == "pageshow" &&
-    (gNavType == NAV_BACK || gNavType == NAV_FORWARD)
+    (gNavType == NAV_BACK ||
+      gNavType == NAV_FORWARD ||
+      gNavType == NAV_GOTOINDEX)
   ) {
     let uri = TestWindow.getBrowser().currentURI.spec;
     if (uri in gUrisNotInBFCache) {
@@ -360,7 +478,7 @@ function pageEventListener(event) {
   // triggered when a pageshow event is fired; this will allow
   // doPageNavigation() to return.
   if (typeof gExpectedEvents == "undefined" && event.type == "pageshow") {
-    waitForNextPaint(function() {
+    waitForNextPaint(function () {
       gFinalEvent = true;
     });
     return;
@@ -368,7 +486,7 @@ function pageEventListener(event) {
 
   // If there are explicitly no expected events, but we receive one, it's an
   // error.
-  if (gExpectedEvents.length == 0) {
+  if (!gExpectedEvents.length) {
     ok(false, "Unexpected event (" + event.type + ") occurred");
     return;
   }
@@ -389,7 +507,7 @@ function pageEventListener(event) {
 
   if (typeof expected.title != "undefined") {
     ok(
-      event.originalTarget instanceof HTMLDocument,
+      originalTargetIsHTMLDocument,
       "originalTarget for last " + event.type + " event not an HTMLDocument"
     );
     is(
@@ -437,28 +555,31 @@ function pageEventListener(event) {
   }
 
   // If we're out of expected events, let doPageNavigation() return.
-  if (gExpectedEvents.length == 0) {
-    waitForNextPaint(function() {
+  if (!gExpectedEvents.length) {
+    waitForNextPaint(function () {
       gFinalEvent = true;
     });
   }
 }
+
+DocShellHelpersParent.eventListener = pageEventListener;
 
 /**
  * End a test.
  */
 function finish() {
   // Work around bug 467960.
-  let history;
+  let historyPurged;
   if (SpecialPowers.Services.appinfo.sessionHistoryInParent) {
-    history = TestWindow.getBrowser().browsingContext?.sessionHistory;
-  } else {
-    history = TestWindow.getBrowser().webNavigation.sessionHistory
-      .legacySHistory;
-  }
-
-  if (history) {
+    let history = TestWindow.getBrowser().browsingContext?.sessionHistory;
     history.purgeHistory(history.count);
+    historyPurged = Promise.resolve();
+  } else {
+    historyPurged = SpecialPowers.spawn(TestWindow.getBrowser(), [], () => {
+      let history = docShell.QueryInterface(Ci.nsIWebNavigation).sessionHistory
+        .legacySHistory;
+      history.purgeHistory(history.count);
+    });
   }
 
   // If the test changed the value of max_total_viewers via a call to
@@ -482,7 +603,9 @@ function finish() {
     }
   });
 
-  window.close();
+  historyPurged.then(_ => {
+    window.close();
+  });
 }
 
 /**
@@ -503,7 +626,12 @@ function finish() {
  *        time out.
  */
 function waitForTrue(fn, onWaitComplete, timeout) {
-  var start = new Date().valueOf();
+  promiseTrue(fn, timeout).then(() => {
+    onWaitComplete.call();
+  });
+}
+
+function promiseTrue(fn, timeout) {
   if (typeof timeout != "undefined") {
     // If timeoutWait is less than 500, assume it represents seconds, and
     // convert to ms.
@@ -514,25 +642,41 @@ function waitForTrue(fn, onWaitComplete, timeout) {
 
   // Loop until the test function returns true, or until a timeout occurs,
   // if a timeout is defined.
-  var intervalid;
-  intervalid = setInterval(function() {
-    var timeoutHit = false;
-    if (typeof timeout != "undefined") {
-      timeoutHit = new Date().valueOf() - start >= timeout;
-      if (timeoutHit) {
-        ok(false, "Timed out waiting for condition");
+  let intervalid, timeoutid;
+  let condition = new Promise(resolve => {
+    intervalid = setInterval(async () => {
+      if (await fn.call()) {
+        resolve();
       }
-    }
-    if (timeoutHit || fn.call()) {
-      // Stop calling the test function and notify the callback.
+    }, 20);
+  });
+  if (typeof timeout != "undefined") {
+    condition = Promise.race([
+      condition,
+      new Promise((_, reject) => {
+        timeoutid = setTimeout(() => {
+          reject();
+        }, timeout);
+      }),
+    ]);
+  }
+  return condition
+    .finally(() => {
       clearInterval(intervalid);
-      onWaitComplete.call();
-    }
-  }, 20);
+    })
+    .then(() => {
+      clearTimeout(timeoutid);
+    });
 }
 
 function waitForNextPaint(cb) {
   requestAnimationFrame(_ => requestAnimationFrame(cb));
+}
+
+function promiseNextPaint() {
+  return new Promise(resolve => {
+    waitForNextPaint(resolve);
+  });
 }
 
 /**
@@ -604,12 +748,12 @@ function getHttpUrl(filename) {
  * browser, and document.
  */
 var TestWindow = {};
-TestWindow.getWindow = function() {
+TestWindow.getWindow = function () {
   return document.getElementById("content").contentWindow;
 };
-TestWindow.getBrowser = function() {
+TestWindow.getBrowser = function () {
   return document.getElementById("content");
 };
-TestWindow.getDocument = function() {
+TestWindow.getDocument = function () {
   return document.getElementById("content").contentDocument;
 };

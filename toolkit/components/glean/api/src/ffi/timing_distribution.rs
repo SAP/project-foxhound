@@ -5,11 +5,12 @@
 #![cfg(feature = "with_gecko")]
 
 use nsstring::nsACString;
+use std::time::Duration;
 use thin_vec::ThinVec;
 
 #[no_mangle]
 pub extern "C" fn fog_timing_distribution_start(id: u32) -> u64 {
-    with_metric!(TIMING_DISTRIBUTION_MAP, id, metric, metric.start())
+    with_metric!(TIMING_DISTRIBUTION_MAP, id, metric, metric.start().id)
 }
 
 #[no_mangle]
@@ -18,7 +19,17 @@ pub extern "C" fn fog_timing_distribution_stop_and_accumulate(id: u32, timing_id
         TIMING_DISTRIBUTION_MAP,
         id,
         metric,
-        metric.stop_and_accumulate(timing_id)
+        metric.stop_and_accumulate(timing_id.into())
+    );
+}
+
+#[no_mangle]
+pub extern "C" fn fog_timing_distribution_accumulate_raw_nanos(id: u32, sample: u64) {
+    with_metric!(
+        TIMING_DISTRIBUTION_MAP,
+        id,
+        metric,
+        metric.accumulate_raw_duration(Duration::from_nanos(sample))
     );
 }
 
@@ -28,7 +39,7 @@ pub extern "C" fn fog_timing_distribution_cancel(id: u32, timing_id: u64) {
         TIMING_DISTRIBUTION_MAP,
         id,
         metric,
-        metric.cancel(timing_id)
+        metric.cancel(timing_id.into())
     );
 }
 
@@ -56,24 +67,24 @@ pub extern "C" fn fog_timing_distribution_test_get_value(
         metric,
         test_get!(metric, ping_name)
     );
-    *sum = val.sum;
+    *sum = val.sum as _;
     for (&bucket, &count) in val.values.iter() {
-        buckets.push(bucket);
-        counts.push(count);
+        buckets.push(bucket as _);
+        counts.push(count as _);
     }
 }
 
 #[no_mangle]
 pub extern "C" fn fog_timing_distribution_test_get_error(
     id: u32,
-    ping_name: &nsACString,
+
     error_str: &mut nsACString,
 ) -> bool {
     let err = with_metric!(
         TIMING_DISTRIBUTION_MAP,
         id,
         metric,
-        test_get_errors!(metric, ping_name)
+        test_get_errors!(metric)
     );
     err.map(|err_str| error_str.assign(&err_str)).is_some()
 }

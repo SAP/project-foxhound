@@ -3,26 +3,26 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
-XPCOMUtils.defineLazyGlobalGetters(this, ["fetch"]);
+const lazy = {};
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.jsm",
-  RemoteL10n: "resource://activity-stream/lib/RemoteL10n.jsm",
+ChromeUtils.defineESModuleGetters(lazy, {
+  CustomizableUI: "resource:///modules/CustomizableUI.sys.mjs",
+  PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
+  RemoteL10n: "resource://activity-stream/lib/RemoteL10n.sys.mjs",
 });
 
 XPCOMUtils.defineLazyServiceGetter(
-  this,
+  lazy,
   "TrackingDBService",
   "@mozilla.org/tracking-db-service;1",
   "nsITrackingDBService"
 );
 XPCOMUtils.defineLazyPreferenceGetter(
-  this,
+  lazy,
   "milestones",
   "browser.contentblocking.cfr-milestone.milestones",
   "[]",
@@ -115,7 +115,7 @@ class PageAction {
   }
 
   reloadL10n() {
-    RemoteL10n.reloadL10n();
+    lazy.RemoteL10n.reloadL10n();
   }
 
   async showAddressBarNotifier(recommendation, shouldExpand = false) {
@@ -252,6 +252,12 @@ class PageAction {
         this.currentNotification = null;
       }
     } else if (state === "dismissed") {
+      const message = RecommendationMap.get(this.currentNotification?.browser);
+      this._sendTelemetry({
+        message_id: message?.id,
+        bucket_id: message?.content.bucket_id,
+        event: "DISMISS",
+      });
       this._collapse();
     }
   }
@@ -276,9 +282,13 @@ class PageAction {
   }
 
   _sendTelemetry(ping) {
+    const data = { action: "cfr_user_event", source: "CFR", ...ping };
+    if (lazy.PrivateBrowsingUtils.isWindowPrivate(this.window)) {
+      data.is_private = true;
+    }
     this._dispatchCFRAction({
       type: "DOORHANGER_TELEMETRY",
-      data: { action: "cfr_user_event", source: "CFR", ...ping },
+      data,
     });
   }
 
@@ -313,9 +323,7 @@ class PageAction {
           return string.attributes[subAttribute];
         }
 
-        Cu.reportError(
-          `String ${string.value} does not contain any attributes`
-        );
+        console.error(`String ${string.value} does not contain any attributes`);
         return subAttribute;
       }
 
@@ -328,7 +336,7 @@ class PageAction {
       return string;
     }
 
-    const [localeStrings] = await RemoteL10n.l10n.formatMessages([
+    const [localeStrings] = await lazy.RemoteL10n.l10n.formatMessages([
       {
         id: string.string_id,
         args: string.args,
@@ -347,10 +355,7 @@ class PageAction {
     return subAttribute ? mainString.attributes[subAttribute] : mainString;
   }
 
-  async _setAddonAuthorAndRating(document, content) {
-    const author = this.window.document.getElementById(
-      "cfr-notification-author"
-    );
+  async _setAddonRating(document, content) {
     const footerFilledStars = this.window.document.getElementById(
       "cfr-notification-footer-filled-stars"
     );
@@ -360,22 +365,19 @@ class PageAction {
     const footerUsers = this.window.document.getElementById(
       "cfr-notification-footer-users"
     );
-    const footerSpacer = this.window.document.getElementById(
-      "cfr-notification-footer-spacer"
-    );
 
-    author.textContent = await this.getStrings({
-      string_id: "cfr-doorhanger-extension-author",
-      args: { name: content.addon.author },
-    });
-
-    const { rating } = content.addon;
+    const rating = content.addon?.rating;
     if (rating) {
       const MAX_RATING = 5;
-      const STARS_WIDTH = 17 * MAX_RATING;
+      const STARS_WIDTH = 16 * MAX_RATING;
       const calcWidth = stars => `${(stars / MAX_RATING) * STARS_WIDTH}px`;
-      footerFilledStars.style.width = calcWidth(rating);
-      footerEmptyStars.style.width = calcWidth(MAX_RATING - rating);
+      const filledWidth =
+        rating <= MAX_RATING ? calcWidth(rating) : calcWidth(MAX_RATING);
+      const emptyWidth =
+        rating <= MAX_RATING ? calcWidth(MAX_RATING - rating) : calcWidth(0);
+
+      footerFilledStars.style.width = filledWidth;
+      footerEmptyStars.style.width = emptyWidth;
 
       const ratingString = await this.getStrings(
         {
@@ -393,25 +395,15 @@ class PageAction {
       footerEmptyStars.removeAttribute("tooltiptext");
     }
 
-    const { users } = content.addon;
+    const users = content.addon?.users;
     if (users) {
-      footerUsers.setAttribute(
-        "value",
-        await this.getStrings({
-          string_id: "cfr-doorhanger-extension-total-users",
-          args: { total: users },
-        })
-      );
+      footerUsers.setAttribute("value", users);
       footerUsers.hidden = false;
     } else {
       // Prevent whitespace around empty label from affecting other spacing
       footerUsers.hidden = true;
       footerUsers.removeAttribute("value");
     }
-
-    // Spacer pushes the link to the opposite end when there's other content
-
-    footerSpacer.hidden = !rating && !users;
   }
 
   _createElementAndAppend({ type, id }, parent) {
@@ -428,15 +420,15 @@ class PageAction {
 
     let { content, id } = message;
     let { primary, secondary } = content.buttons;
-    let earliestDate = await TrackingDBService.getEarliestRecordedDate();
+    let earliestDate = await lazy.TrackingDBService.getEarliestRecordedDate();
     let timestamp = new Date().getTime(earliestDate);
     let panelTitle = "";
     let headerLabel = this.window.document.getElementById(
       "cfr-notification-header-label"
     );
     let reachedMilestone = 0;
-    let totalSaved = await TrackingDBService.sumAllEvents();
-    for (let milestone of milestones) {
+    let totalSaved = await lazy.TrackingDBService.sumAllEvents();
+    for (let milestone of lazy.milestones) {
       if (totalSaved >= milestone) {
         reachedMilestone = milestone;
       }
@@ -445,7 +437,7 @@ class PageAction {
       headerLabel.firstChild.remove();
     }
     headerLabel.appendChild(
-      RemoteL10n.createElement(this.window.document, "span", {
+      lazy.RemoteL10n.createElement(this.window.document, "span", {
         content: message.content.heading_text,
         attributes: {
           blockedCount: reachedMilestone,
@@ -516,6 +508,7 @@ class PageAction {
       {
         hideClose: true,
         persistWhileVisible: true,
+        recordTelemetryInPrivateBrowsing: content.show_in_private_browsing,
       }
     );
     Services.prefs.setIntPref(
@@ -552,18 +545,24 @@ class PageAction {
     const { primary, secondary } = content.buttons;
     let primaryActionCallback;
     let persistent = !!content.persistent_doorhanger;
-    let options = { persistent, persistWhileVisible: persistent };
+    let options = {
+      persistent,
+      persistWhileVisible: persistent,
+      recordTelemetryInPrivateBrowsing: content.show_in_private_browsing,
+    };
     let panelTitle;
 
     headerLabel.value = await this.getStrings(content.heading_text);
-    headerLink.setAttribute(
-      "href",
-      SUMO_BASE_URL + content.info_icon.sumo_path
-    );
-    headerImage.setAttribute(
-      "tooltiptext",
-      await this.getStrings(content.info_icon.label, "tooltiptext")
-    );
+    if (content.info_icon) {
+      headerLink.setAttribute(
+        "href",
+        SUMO_BASE_URL + content.info_icon.sumo_path
+      );
+      headerImage.setAttribute(
+        "tooltiptext",
+        await this.getStrings(content.info_icon.label, "tooltiptext")
+      );
+    }
     headerLink.onclick = () =>
       this._sendTelemetry({
         message_id: id,
@@ -579,16 +578,19 @@ class PageAction {
       .getElementById("contextual-feature-recommendation-notification")
       .setAttribute("data-notification-bucket", content.bucket_id);
 
+    const author = this.window.document.getElementById(
+      "cfr-notification-author"
+    );
+    if (author.firstChild) {
+      author.firstChild.remove();
+    }
+
     switch (content.layout) {
       case "icon_and_message":
-        const author = this.window.document.getElementById(
-          "cfr-notification-author"
-        );
-        if (author.firstChild) {
-          author.firstChild.remove();
-        }
+        //Clearing content and styles that may have been set by a prior addon_recommendation CFR
+        this._setAddonRating(this.window.document, content);
         author.appendChild(
-          RemoteL10n.createElement(this.window.document, "span", {
+          lazy.RemoteL10n.createElement(this.window.document, "span", {
             content: content.text,
           })
         );
@@ -624,18 +626,25 @@ class PageAction {
         };
         break;
       default:
+        const authorText = await this.getStrings({
+          string_id: "cfr-doorhanger-extension-author",
+          args: { name: content.addon.author },
+        });
         panelTitle = await this.getStrings(content.addon.title);
-        await this._setAddonAuthorAndRating(this.window.document, content);
+        await this._setAddonRating(this.window.document, content);
         if (footerText.firstChild) {
           footerText.firstChild.remove();
         }
+        if (footerText.lastChild) {
+          footerText.lastChild.remove();
+        }
+
         // Main body content of the dropdown
         footerText.appendChild(
-          RemoteL10n.createElement(this.window.document, "span", {
+          lazy.RemoteL10n.createElement(this.window.document, "span", {
             content: content.text,
           })
         );
-        options = { popupIconURL: content.addon.icon, ...options };
 
         footerLink.value = await this.getStrings({
           string_id: "cfr-doorhanger-extension-learn-more-link",
@@ -648,11 +657,18 @@ class PageAction {
             event: "LEARN_MORE",
           });
 
+        footerText.appendChild(footerLink);
+        options = {
+          popupIconURL: content.addon.icon,
+          popupIconClass: content.icon_class,
+          name: authorText,
+          ...options,
+        };
+
         primaryActionCallback = async () => {
-          // eslint-disable-next-line no-use-before-define
-          primary.action.data.url = await CFRPageActions._fetchLatestAddonVersion(
-            content.addon.id
-          );
+          primary.action.data.url =
+            // eslint-disable-next-line no-use-before-define
+            await CFRPageActions._fetchLatestAddonVersion(content.addon.id);
           this._blockMessage(id);
           this.dispatchUserAction(primary.action);
           this.hideAddressBarNotifier();
@@ -790,15 +806,48 @@ class PageAction {
     }
   }
 
+  _getVisibleElement(id) {
+    const element = id && this.window.document.getElementById(id);
+    if (!element) {
+      return null; // element doesn't exist at all
+    }
+    const { visibility, display } = this.window.getComputedStyle(element);
+    if (
+      !this.window.isElementVisible(element) ||
+      visibility !== "visible" ||
+      display === "none"
+    ) {
+      // CSS rules like visibility: hidden or display: none. these result in
+      // element being invisible and unclickable.
+      return null;
+    }
+    let widget = lazy.CustomizableUI.getWidget(id);
+    if (
+      widget &&
+      (this.window.CustomizationHandler.isCustomizing() ||
+        widget.areaType?.includes("panel"))
+    ) {
+      // The element is a customizable widget (a toolbar item, e.g. the
+      // reload button or the downloads button). Widgets can be in various
+      // areas, like the overflow panel or the customization palette.
+      // Widgets in the palette are present in the chrome's DOM during
+      // customization, but can't be used.
+      return null;
+    }
+    return element;
+  }
+
   async showPopup() {
     const browser = this.window.gBrowser.selectedBrowser;
     const message = RecommendationMap.get(browser);
     const { content } = message;
 
     // A hacky way of setting the popup anchor outside the usual url bar icon box
-    // See https://searchfox.org/mozilla-central/rev/847b64cc28b74b44c379f9bff4f415b97da1c6d7/toolkit/modules/PopupNotifications.jsm#42
+    // See https://searchfox.org/mozilla-central/rev/eb07633057d66ab25f9db4c5900eeb6913da7579/toolkit/modules/PopupNotifications.sys.mjs#44
     browser.cfrpopupnotificationanchor =
-      this.window.document.getElementById(content.anchor_id) || this.container;
+      this._getVisibleElement(content.anchor_id) ||
+      this._getVisibleElement(content.alt_anchor_id) ||
+      this.container;
 
     await this._renderPopup(message, browser);
   }
@@ -809,7 +858,7 @@ class PageAction {
     const { content } = message;
 
     // A hacky way of setting the popup anchor outside the usual url bar icon box
-    // See https://searchfox.org/mozilla-central/rev/847b64cc28b74b44c379f9bff4f415b97da1c6d7/toolkit/modules/PopupNotifications.jsm#42
+    // See https://searchfox.org/mozilla-central/rev/eb07633057d66ab25f9db4c5900eeb6913da7579/toolkit/modules/PopupNotifications.sys.mjs#44
     browser.cfrpopupnotificationanchor =
       this.window.document.getElementById(content.anchor_id) || this.container;
 
@@ -887,7 +936,7 @@ const CFRPageActions = {
         url = json.current_version.files[0].url;
       }
     } catch (e) {
-      Cu.reportError(
+      console.error(
         "Failed to get the latest add-on version for this recommendation"
       );
     }
@@ -902,6 +951,9 @@ const CFRPageActions = {
    * @return                        Did adding the recommendation succeed?
    */
   async forceRecommendation(browser, recommendation, dispatchCFRAction) {
+    if (!browser) {
+      return false;
+    }
     // If we are forcing via the Admin page, the browser comes in a different format
     const win = browser.ownerGlobal;
     const { id, content } = recommendation;
@@ -932,15 +984,15 @@ const CFRPageActions = {
    * Add a recommendation specific to the given browser and host.
    * @param browser                 The browser for the recommendation
    * @param host                    The host for the recommendation
-   * @param recommendation  The recommendation to show
-   * @param dispatchCFRAction      A function to dispatch resulting actions to
+   * @param recommendation          The recommendation to show
+   * @param dispatchCFRAction       A function to dispatch resulting actions to
    * @return                        Did adding the recommendation succeed?
    */
   async addRecommendation(browser, host, recommendation, dispatchCFRAction) {
-    const win = browser.ownerGlobal;
-    if (PrivateBrowsingUtils.isWindowPrivate(win)) {
+    if (!browser) {
       return false;
     }
+    const win = browser.ownerGlobal;
     if (
       browser !== win.gBrowser.selectedBrowser ||
       // We can have recommendations without URL restrictions
@@ -953,6 +1005,12 @@ const CFRPageActions = {
       return false;
     }
     const { id, content } = recommendation;
+    if (
+      !content.show_in_private_browsing &&
+      lazy.PrivateBrowsingUtils.isWindowPrivate(win)
+    ) {
+      return false;
+    }
     RecommendationMap.set(browser, {
       id,
       host,
@@ -1009,8 +1067,5 @@ const CFRPageActions = {
     }
   },
 };
-
-this.PageAction = PageAction;
-this.CFRPageActions = CFRPageActions;
 
 const EXPORTED_SYMBOLS = ["CFRPageActions", "PageAction"];

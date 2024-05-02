@@ -9,28 +9,32 @@
 #include "chrome/common/ipc_message_utils.h"
 #include "mojo/core/ports/name.h"
 #include "mozilla/ipc/BrowserProcessSubThread.h"
+#include "mozilla/ipc/GeckoChildProcessHost.h"
 #include "mozilla/ipc/ProtocolMessageUtils.h"
 #include "mozilla/ipc/ProtocolUtils.h"
 #include "nsThreadUtils.h"
 #include "nsXULAppAPI.h"
 
+#ifdef FUZZING_SNAPSHOT
+#  include "mozilla/fuzzing/IPCFuzzController.h"
+#endif
+
 template <>
 struct IPC::ParamTraits<mozilla::ipc::NodeChannel::Introduction> {
   using paramType = mozilla::ipc::NodeChannel::Introduction;
-  static void Write(Message* aMsg, paramType&& aParam) {
-    WriteParam(aMsg, aParam.mName);
-    WriteParam(aMsg, std::move(aParam.mTransport));
-    WriteParam(aMsg, aParam.mMode);
-    WriteParam(aMsg, aParam.mMyPid);
-    WriteParam(aMsg, aParam.mOtherPid);
+  static void Write(MessageWriter* aWriter, paramType&& aParam) {
+    WriteParam(aWriter, aParam.mName);
+    WriteParam(aWriter, std::move(aParam.mHandle));
+    WriteParam(aWriter, aParam.mMode);
+    WriteParam(aWriter, aParam.mMyPid);
+    WriteParam(aWriter, aParam.mOtherPid);
   }
-  static bool Read(const Message* aMsg, PickleIterator* aIter,
-                   paramType* aResult) {
-    return ReadParam(aMsg, aIter, &aResult->mName) &&
-           ReadParam(aMsg, aIter, &aResult->mTransport) &&
-           ReadParam(aMsg, aIter, &aResult->mMode) &&
-           ReadParam(aMsg, aIter, &aResult->mMyPid) &&
-           ReadParam(aMsg, aIter, &aResult->mOtherPid);
+  static bool Read(MessageReader* aReader, paramType* aResult) {
+    return ReadParam(aReader, &aResult->mName) &&
+           ReadParam(aReader, &aResult->mHandle) &&
+           ReadParam(aReader, &aResult->mMode) &&
+           ReadParam(aReader, &aResult->mMyPid) &&
+           ReadParam(aReader, &aResult->mOtherPid);
   }
 };
 
@@ -38,18 +42,15 @@ namespace mozilla::ipc {
 
 NodeChannel::NodeChannel(const NodeName& aName,
                          UniquePtr<IPC::Channel> aChannel, Listener* aListener,
-                         int32_t aPid)
+                         base::ProcessId aPid,
+                         GeckoChildProcessHost* aChildProcessHost)
     : mListener(aListener),
       mName(aName),
       mOtherPid(aPid),
-      mChannel(std::move(aChannel)) {}
+      mChannel(std::move(aChannel)),
+      mChildProcessHost(aChildProcessHost) {}
 
-NodeChannel::~NodeChannel() {
-  AssertIOThread();
-  if (!mClosed) {
-    mChannel->Close();
-  }
-}
+NodeChannel::~NodeChannel() { Close(); }
 
 // Called when the NodeChannel's refcount drops to `0`.
 void NodeChannel::Destroy() {
@@ -81,64 +82,41 @@ void NodeChannel::FinalDestroy() {
   delete this;
 }
 
-void NodeChannel::Start(bool aCallConnect) {
+void NodeChannel::Start() {
   AssertIOThread();
 
-  mExistingListener = mChannel->set_listener(this);
-
-  std::queue<IPC::Message> pending;
-  if (mExistingListener) {
-    mExistingListener->GetQueuedMessages(pending);
-  }
-
-  if (aCallConnect) {
-    MOZ_ASSERT(pending.empty(), "unopened channel with pending messages?");
-    if (!mChannel->Connect()) {
-      OnChannelError();
-    }
-  } else {
-    // Check if our channel has already been connected, and knows the other PID.
-    int32_t otherPid = mChannel->OtherPid();
-    if (otherPid != -1) {
-      SetOtherPid(otherPid);
-    }
-
-    // Handle any events the previous listener had queued up. Make sure to stop
-    // if an error causes our channel to become closed.
-    while (!pending.empty() && !mClosed) {
-      OnMessageReceived(std::move(pending.front()));
-      pending.pop();
-    }
+  if (!mChannel->Connect(this)) {
+    OnChannelError();
   }
 }
 
 void NodeChannel::Close() {
   AssertIOThread();
 
-  if (!mClosed) {
+  if (mState.exchange(State::Closed) != State::Closed) {
     mChannel->Close();
-    mChannel->set_listener(mExistingListener);
   }
-  mClosed = true;
 }
 
-void NodeChannel::SetOtherPid(int32_t aNewPid) {
+void NodeChannel::SetOtherPid(base::ProcessId aNewPid) {
   AssertIOThread();
-  MOZ_ASSERT(aNewPid != -1);
+  MOZ_ASSERT(aNewPid != base::kInvalidProcessId);
 
-  int32_t previousPid = -1;
+  base::ProcessId previousPid = base::kInvalidProcessId;
   if (!mOtherPid.compare_exchange_strong(previousPid, aNewPid)) {
     // The PID was already set before this call, double-check that it's correct.
     MOZ_RELEASE_ASSERT(previousPid == aNewPid,
                        "Different sources disagree on the correct pid?");
   }
+
+  mChannel->SetOtherPid(aNewPid);
 }
 
 #ifdef XP_MACOSX
 void NodeChannel::SetMachTaskPort(task_t aTask) {
   AssertIOThread();
 
-  if (!mClosed) {
+  if (mState != State::Closed) {
     mChannel->SetOtherMachTask(aTask);
   }
 }
@@ -159,14 +137,16 @@ void NodeChannel::RequestIntroduction(const NodeName& aPeerName) {
   MOZ_ASSERT(aPeerName != mojo::core::ports::kInvalidNodeName);
   auto message = MakeUnique<IPC::Message>(MSG_ROUTING_CONTROL,
                                           REQUEST_INTRODUCTION_MESSAGE_TYPE);
-  WriteParam(message.get(), aPeerName);
+  IPC::MessageWriter writer(*message);
+  WriteParam(&writer, aPeerName);
   SendMessage(std::move(message));
 }
 
 void NodeChannel::Introduce(Introduction aIntroduction) {
   auto message =
       MakeUnique<IPC::Message>(MSG_ROUTING_CONTROL, INTRODUCE_MESSAGE_TYPE);
-  WriteParam(message.get(), std::move(aIntroduction));
+  IPC::MessageWriter writer(*message);
+  WriteParam(&writer, std::move(aIntroduction));
   SendMessage(std::move(message));
 }
 
@@ -182,8 +162,9 @@ void NodeChannel::AcceptInvite(const NodeName& aRealName,
   MOZ_ASSERT(aInitialPort != mojo::core::ports::kInvalidPortName);
   auto message =
       MakeUnique<IPC::Message>(MSG_ROUTING_CONTROL, ACCEPT_INVITE_MESSAGE_TYPE);
-  WriteParam(message.get(), aRealName);
-  WriteParam(message.get(), aInitialPort);
+  IPC::MessageWriter writer(*message);
+  WriteParam(&writer, aRealName);
+  WriteParam(&writer, aInitialPort);
   SendMessage(std::move(message));
 }
 
@@ -199,39 +180,48 @@ void NodeChannel::SendMessage(UniquePtr<IPC::Message> aMessage) {
   }
   aMessage->AssertAsLargeAsHeader();
 
-  XRE_GetIOMessageLoop()->PostTask(
-      NewRunnableMethod<StoreCopyPassByRRef<UniquePtr<IPC::Message>>>(
-          "NodeChannel::DoSendMessage", this, &NodeChannel::DoSendMessage,
-          std::move(aMessage)));
-}
+#ifdef FUZZING_SNAPSHOT
+  if (mBlockSendRecv) {
+    return;
+  }
+#endif
 
-void NodeChannel::DoSendMessage(UniquePtr<IPC::Message> aMessage) {
-  AssertIOThread();
-  if (mClosed) {
+  if (mState != State::Active) {
     NS_WARNING("Dropping message as channel has been closed");
     return;
   }
 
+  // NOTE: As this is not guaranteed to be running on the I/O thread, the
+  // channel may have become closed since we checked above. IPC::Channel will
+  // handle that and return `false` here, so we can re-check `mState`.
   if (!mChannel->Send(std::move(aMessage))) {
     NS_WARNING("Call to Send() failed");
-    OnChannelError();
+
+    // If we're still active, update `mState` to `State::Closing`, and dispatch
+    // a runnable to actually close our channel.
+    State expected = State::Active;
+    if (mState.compare_exchange_strong(expected, State::Closing)) {
+      XRE_GetIOMessageLoop()->PostTask(
+          NewRunnableMethod("NodeChannel::CloseForSendError", this,
+                            &NodeChannel::OnChannelError));
+    }
   }
 }
 
-void NodeChannel::OnMessageReceived(IPC::Message&& aMessage) {
+void NodeChannel::OnMessageReceived(UniquePtr<IPC::Message> aMessage) {
   AssertIOThread();
 
-  if (!aMessage.is_valid()) {
-    NS_WARNING("Received an invalid message");
-    OnChannelError();
+#ifdef FUZZING_SNAPSHOT
+  if (mBlockSendRecv && !aMessage->IsFuzzMsg()) {
     return;
   }
+#endif
 
-  PickleIterator iter(aMessage);
-  switch (aMessage.type()) {
+  IPC::MessageReader reader(*aMessage);
+  switch (aMessage->type()) {
     case REQUEST_INTRODUCTION_MESSAGE_TYPE: {
       NodeName name;
-      if (IPC::ReadParam(&aMessage, &iter, &name)) {
+      if (IPC::ReadParam(&reader, &name)) {
         mListener->OnRequestIntroduction(mName, name);
         return;
       }
@@ -239,22 +229,21 @@ void NodeChannel::OnMessageReceived(IPC::Message&& aMessage) {
     }
     case INTRODUCE_MESSAGE_TYPE: {
       Introduction introduction;
-      if (IPC::ReadParam(&aMessage, &iter, &introduction)) {
+      if (IPC::ReadParam(&reader, &introduction)) {
         mListener->OnIntroduce(mName, std::move(introduction));
         return;
       }
       break;
     }
     case BROADCAST_MESSAGE_TYPE: {
-      mListener->OnBroadcast(mName,
-                             MakeUnique<IPC::Message>(std::move(aMessage)));
+      mListener->OnBroadcast(mName, std::move(aMessage));
       return;
     }
     case ACCEPT_INVITE_MESSAGE_TYPE: {
       NodeName realName;
       PortName initialPort;
-      if (IPC::ReadParam(&aMessage, &iter, &realName) &&
-          IPC::ReadParam(&aMessage, &iter, &initialPort)) {
+      if (IPC::ReadParam(&reader, &realName) &&
+          IPC::ReadParam(&reader, &initialPort)) {
         mListener->OnAcceptInvite(mName, realName, initialPort);
         return;
       }
@@ -267,8 +256,14 @@ void NodeChannel::OnMessageReceived(IPC::Message&& aMessage) {
     // FIXME: Consider doing something cleaner in the future?
     case EVENT_MESSAGE_TYPE:
     default: {
-      mListener->OnEventMessage(mName,
-                                MakeUnique<IPC::Message>(std::move(aMessage)));
+#ifdef FUZZING_SNAPSHOT
+      if (!fuzzing::IPCFuzzController::instance().ObserveIPCMessage(
+              this, *aMessage)) {
+        return;
+      }
+#endif
+
+      mListener->OnEventMessage(mName, std::move(aMessage));
       return;
     }
   }
@@ -280,28 +275,28 @@ void NodeChannel::OnMessageReceived(IPC::Message&& aMessage) {
   OnChannelError();
 }
 
-void NodeChannel::OnChannelConnected(int32_t aPeerPid) {
+void NodeChannel::OnChannelConnected(base::ProcessId aPeerPid) {
   AssertIOThread();
 
   SetOtherPid(aPeerPid);
 
-  // We may need to tell our original listener (which will be the process launch
-  // code) that the the channel has been connected to unblock completing the
-  // process launch.
-  // FIXME: This is super sketchy, but it's also what we were already doing. We
-  // should swap this out for something less sketchy.
-  if (mExistingListener) {
-    mExistingListener->OnChannelConnected(aPeerPid);
+  // We may need to tell the GeckoChildProcessHost which we were created by that
+  // the channel has been connected to unblock completing the process launch.
+  if (mChildProcessHost) {
+    mChildProcessHost->OnChannelConnected(aPeerPid);
   }
 }
 
 void NodeChannel::OnChannelError() {
   AssertIOThread();
 
-  // Clean up the channel and make sure we're no longer the active listener.
+  State prev = mState.exchange(State::Closed);
+  if (prev == State::Closed) {
+    return;
+  }
+
+  // Clean up the channel.
   mChannel->Close();
-  MOZ_ALWAYS_TRUE(this == mChannel->set_listener(mExistingListener));
-  mClosed = true;
 
   // Tell our listener about the error.
   mListener->OnChannelError(mName);

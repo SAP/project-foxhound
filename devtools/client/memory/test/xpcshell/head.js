@@ -4,14 +4,7 @@
 "use strict";
 
 // via xpcshell.ini
-/* import-globals-from ../../../shared/test/shared-redux-head.js */
-
-var { require } = ChromeUtils.import(
-  "resource://devtools/shared/loader/Loader.jsm"
-);
-
-var Services = require("Services");
-var DevToolsUtils = require("devtools/shared/DevToolsUtils");
+/* import-globals-from ../../../shared/test/shared-head.js */
 
 Services.prefs.setBoolPref("devtools.testing", true);
 Services.prefs.setBoolPref("devtools.debugger.log", true);
@@ -20,21 +13,24 @@ registerCleanupFunction(() => {
   Services.prefs.clearUserPref("devtools.debugger.log");
 });
 
-var { OS } = require("resource://gre/modules/osfile.jsm");
-var { FileUtils } = require("resource://gre/modules/FileUtils.jsm");
-var { expectState } = require("devtools/server/actors/common");
-var HeapSnapshotFileUtils = require("devtools/shared/heapsnapshot/HeapSnapshotFileUtils");
-var HeapAnalysesClient = require("devtools/shared/heapsnapshot/HeapAnalysesClient");
-var { addDebuggerToGlobal } = require("resource://gre/modules/jsdebugger.jsm");
-var Store = require("devtools/client/memory/store");
-var { L10N } = require("devtools/client/memory/utils");
+var { FileUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/FileUtils.sys.mjs"
+);
+var { expectState } = require("resource://devtools/server/actors/common.js");
+var HeapSnapshotFileUtils = require("resource://devtools/shared/heapsnapshot/HeapSnapshotFileUtils.js");
+var HeapAnalysesClient = require("resource://devtools/shared/heapsnapshot/HeapAnalysesClient.js");
+var { addDebuggerToGlobal } = ChromeUtils.importESModule(
+  "resource://gre/modules/jsdebugger.sys.mjs"
+);
+var Store = require("resource://devtools/client/memory/store.js");
+var { L10N } = require("resource://devtools/client/memory/utils.js");
 var SYSTEM_PRINCIPAL = Cc["@mozilla.org/systemprincipal;1"].createInstance(
   Ci.nsIPrincipal
 );
 
 var EXPECTED_DTU_ASSERT_FAILURE_COUNT = 0;
 
-registerCleanupFunction(function() {
+registerCleanupFunction(function () {
   equal(
     DevToolsUtils.assertionFailureCount,
     EXPECTED_DTU_ASSERT_FAILURE_COUNT,
@@ -57,17 +53,17 @@ function StubbedMemoryFront() {
   this.dbg = initDebugger();
 }
 
-StubbedMemoryFront.prototype.attach = async function() {
+StubbedMemoryFront.prototype.attach = async function () {
   this.state = "attached";
 };
 
-StubbedMemoryFront.prototype.detach = async function() {
+StubbedMemoryFront.prototype.detach = async function () {
   this.state = "detached";
 };
 
 StubbedMemoryFront.prototype.saveHeapSnapshot = expectState(
   "attached",
-  async function() {
+  async function () {
     return ChromeUtils.saveHeapSnapshot({ runtime: true });
   },
   "saveHeapSnapshot"
@@ -75,12 +71,12 @@ StubbedMemoryFront.prototype.saveHeapSnapshot = expectState(
 
 StubbedMemoryFront.prototype.startRecordingAllocations = expectState(
   "attached",
-  async function() {}
+  async function () {}
 );
 
 StubbedMemoryFront.prototype.stopRecordingAllocations = expectState(
   "attached",
-  async function() {}
+  async function () {}
 );
 
 function waitUntilSnapshotState(store, expected) {
@@ -141,10 +137,53 @@ function waitUntilCensusState(store, getCensus, expected) {
 }
 
 async function createTempFile() {
-  const file = FileUtils.getFile("TmpD", ["tmp.fxsnapshot"]);
+  const file = new FileUtils.File(
+    PathUtils.join(PathUtils.tempDir, "tmp.fxsnapshot")
+  );
   file.createUnique(Ci.nsIFile.NORMAL_FILE_TYPE, FileUtils.PERMS_FILE);
   const destPath = file.path;
-  const stat = await OS.File.stat(destPath);
+  const stat = await IOUtils.stat(destPath);
   ok(stat.size === 0, "new file is 0 bytes at start");
   return destPath;
+}
+
+// This is a copy of the same method from shared-head.js as
+// xpcshell test aren't using shared-head.js
+/**
+ * Wait for a specific action type to be dispatched.
+ *
+ * If the action is async and defines a `status` property, this helper will wait
+ * for the status to reach either "error" or "done".
+ *
+ * @param {Object} store
+ *        Redux store where the action should be dispatched.
+ * @param {String} actionType
+ *        The actionType to wait for.
+ * @param {Number} repeat
+ *        Optional, number of time the action is expected to be dispatched.
+ *        Defaults to 1
+ * @return {Promise}
+ */
+function waitForDispatch(store, actionType, repeat = 1) {
+  let count = 0;
+  return new Promise(resolve => {
+    store.dispatch({
+      type: "@@service/waitUntil",
+      predicate: action => {
+        const isDone =
+          !action.status ||
+          action.status === "done" ||
+          action.status === "error";
+
+        if (action.type === actionType && isDone && ++count == repeat) {
+          return true;
+        }
+
+        return false;
+      },
+      run: (dispatch, getState, action) => {
+        resolve(action);
+      },
+    });
+  });
 }

@@ -2,8 +2,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import
-
 import os
 import socket
 import time
@@ -50,7 +48,7 @@ class TestMarionette(MarionetteTestCase):
             "MarionetteActivePort file contains port",
         )
 
-        self.marionette.quit(in_app=True)
+        self.marionette.quit()
         self.assertFalse(
             os.path.exists(active_port_file), "MarionetteActivePort file removed"
         )
@@ -85,7 +83,7 @@ class TestMarionette(MarionetteTestCase):
             self.assertRaises(socket.timeout, marionette.raise_for_port, timeout=1.0)
 
         finally:
-            self.marionette.quit()
+            self.marionette.quit(in_app=False)
 
     def test_client_socket_uses_expected_socket_timeout(self):
         current_socket_timeout = self.marionette.socket_timeout

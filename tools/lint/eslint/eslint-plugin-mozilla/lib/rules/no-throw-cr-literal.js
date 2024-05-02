@@ -8,10 +8,6 @@
 
 "use strict";
 
-// -----------------------------------------------------------------------------
-// Rule Definition
-// -----------------------------------------------------------------------------
-
 function isCr(object) {
   return object.type === "Identifier" && object.name === "Cr";
 }
@@ -42,6 +38,9 @@ function fixT(context, node, argument, fixer) {
 
 module.exports = {
   meta: {
+    docs: {
+      url: "https://firefox-source-docs.mozilla.org/code-quality/lint/linters/eslint-plugin-mozilla/rules/no-throw-cr-literal.html",
+    },
     fixable: "code",
     messages: {
       bareCR: "Do not throw bare Cr.ERRORs, use Components.Exception instead",
@@ -52,6 +51,8 @@ module.exports = {
       newErrorComponentsResults:
         "Do not pass Components.results.ERRORs to new Error(), use Components.Exception instead",
     },
+    schema: [],
+    type: "problem",
   },
 
   create(context) {

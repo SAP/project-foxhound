@@ -32,8 +32,7 @@
 #define REPORTING_PURGE_ALL "reporting:purge-all"
 #define REPORTING_PURGE_HOST "reporting:purge-host"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 namespace {
 
@@ -547,15 +546,10 @@ void ReportingHeader::GetEndpointForReportInternal(
 
   uint32_t randomNumber = 0;
 
-  uint8_t* buffer;
-  nsresult rv =
-      randomGenerator->GenerateRandomBytes(sizeof(randomNumber), &buffer);
+  nsresult rv = randomGenerator->GenerateRandomBytesInto(randomNumber);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return;
   }
-
-  memcpy(&randomNumber, buffer, sizeof(randomNumber));
-  free(buffer);
 
   totalWeight = randomNumber % totalWeight;
 
@@ -777,5 +771,4 @@ NS_INTERFACE_MAP_END
 NS_IMPL_ADDREF(ReportingHeader)
 NS_IMPL_RELEASE(ReportingHeader)
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

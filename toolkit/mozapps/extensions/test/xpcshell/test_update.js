@@ -6,6 +6,13 @@
 
 // The test extension uses an insecure update url.
 Services.prefs.setBoolPref(PREF_EM_CHECK_UPDATE_SECURITY, false);
+// This test uses add-on versions that follow the toolkit version but we
+// started to encourage the use of a simpler format in Bug 1793925. We disable
+// the pref below to avoid install errors.
+Services.prefs.setBoolPref(
+  "extensions.webextensions.warnings-as-errors",
+  false
+);
 
 const updateFile = "test_update.json";
 
@@ -55,7 +62,7 @@ add_task(async function setup() {
       manifest: {
         name: info.name,
         version: info.version,
-        applications: { gecko: { id: info.id } },
+        browser_specific_settings: { gecko: { id: info.id } },
       },
     });
     testserver.registerFile(`/addons/${name}.xpi`, XPIS[name]);
@@ -72,7 +79,7 @@ add_task(async function test_apply_update() {
     manifest: {
       name: "Test Addon 1",
       version: "1.0",
-      applications: {
+      browser_specific_settings: {
         gecko: {
           id: "addon1@tests.mozilla.org",
           update_url: `http://example.com/data/${updateFile}`,
@@ -116,9 +123,8 @@ add_task(async function test_apply_update() {
       installEvents: [{ event: "onNewInstall" }],
     },
     async () => {
-      ({
-        updateAvailable: install,
-      } = await AddonTestUtils.promiseFindAddonUpdates(a1));
+      ({ updateAvailable: install } =
+        await AddonTestUtils.promiseFindAddonUpdates(a1));
     }
   );
 
@@ -133,9 +139,8 @@ add_task(async function test_apply_update() {
   equal(install.releaseNotesURI.spec, "http://example.com/updateInfo.xhtml");
 
   // Verify that another update check returns the same AddonInstall
-  let {
-    updateAvailable: install2,
-  } = await AddonTestUtils.promiseFindAddonUpdates(a1);
+  let { updateAvailable: install2 } =
+    await AddonTestUtils.promiseFindAddonUpdates(a1);
 
   installs = await AddonManager.getAllInstalls();
   equal(installs.length, 1);
@@ -222,7 +227,7 @@ add_task(async function test_compat_update() {
     manifest: {
       name: "Test Addon 2",
       version: "1.0",
-      applications: {
+      browser_specific_settings: {
         gecko: {
           id: "addon2@tests.mozilla.org",
           update_url: "http://example.com/data/" + updateFile,
@@ -264,7 +269,7 @@ add_task(async function test_no_compat() {
   await promiseInstallWebExtension({
     manifest: {
       name: "Test Addon 3",
-      applications: {
+      browser_specific_settings: {
         gecko: {
           id: "addon3@tests.mozilla.org",
           update_url: `http://example.com/data/${updateFile}`,
@@ -334,7 +339,7 @@ add_task(async function test_background_update() {
     manifest: {
       name: "Test Addon 1",
       version: "1.0",
-      applications: {
+      browser_specific_settings: {
         gecko: {
           id: "addon1@tests.mozilla.org",
           update_url: `http://example.com/data/${updateFile}`,
@@ -368,7 +373,7 @@ add_task(async function test_background_update() {
       ],
     },
     () => {
-      AddonManagerInternal.backgroundUpdateCheck();
+      AddonManagerPrivate.backgroundUpdateCheck();
     }
   );
 
@@ -379,6 +384,8 @@ add_task(async function test_background_update() {
 
   await a1.uninstall();
 });
+
+const STATE_BLOCKED = Ci.nsIBlocklistService.STATE_BLOCKED;
 
 const PARAMS =
   "?" +
@@ -402,7 +409,7 @@ const PARAM_ADDONS = {
     manifest: {
       name: "Test Addon 1",
       version: "5.0",
-      applications: {
+      browser_specific_settings: {
         gecko: {
           id: "addon1@tests.mozilla.org",
           update_url: `http://example.com/data/param_test.json${PARAMS}`,
@@ -425,7 +432,7 @@ const PARAM_ADDONS = {
     manifest: {
       name: "Test Addon 2",
       version: "67.0.5b1",
-      applications: {
+      browser_specific_settings: {
         gecko: {
           id: "addon2@tests.mozilla.org",
           update_url: "http://example.com/data/param_test.json" + PARAMS,
@@ -452,7 +459,7 @@ const PARAM_ADDONS = {
     manifest: {
       name: "Test Addon 3",
       version: "1.3+",
-      applications: {
+      browser_specific_settings: {
         gecko: {
           id: "addon3@tests.mozilla.org",
           update_url: `http://example.com/data/param_test.json${PARAMS}`,
@@ -472,7 +479,7 @@ const PARAM_ADDONS = {
     manifest: {
       name: "Test Addon 4",
       version: "0.5ab6",
-      applications: {
+      browser_specific_settings: {
         gecko: {
           id: "addon4@tests.mozilla.org",
           update_url: `http://example.com/data/param_test.json${PARAMS}`,
@@ -495,7 +502,7 @@ const PARAM_ADDONS = {
     manifest: {
       name: "Test Addon 5",
       version: "1.0",
-      applications: {
+      browser_specific_settings: {
         gecko: {
           id: "addon5@tests.mozilla.org",
           update_url: `http://example.com/data/param_test.json${PARAMS}`,
@@ -519,7 +526,7 @@ const PARAM_ADDONS = {
     manifest: {
       name: "Test Addon 6",
       version: "1.0",
-      applications: {
+      browser_specific_settings: {
         gecko: {
           id: "addon6@tests.mozilla.org",
           update_url: `http://example.com/data/param_test.json${PARAMS}`,
@@ -538,35 +545,11 @@ const PARAM_ADDONS = {
     updateType: [AddonManager.UPDATE_WHEN_NEW_APP_INSTALLED],
   },
 
-  "blocklist1@tests.mozilla.org": {
-    manifest: {
-      name: "Test Addon 1",
-      version: "5.0",
-      applications: {
-        gecko: {
-          id: "blocklist1@tests.mozilla.org",
-          update_url: `http://example.com/data/param_test.json${PARAMS}`,
-          strict_min_version: "1",
-          strict_max_version: "2",
-        },
-      },
-    },
-    params: {
-      item_version: "5.0",
-      item_maxappversion: "2",
-      item_status: "userDisabled,softblocked",
-      app_version: "1",
-      update_type: "97",
-    },
-    updateType: [AddonManager.UPDATE_WHEN_USER_REQUESTED],
-    blocklistState: "STATE_SOFTBLOCKED",
-  },
-
   "blocklist2@tests.mozilla.org": {
     manifest: {
       name: "Test Addon 1",
       version: "5.0",
-      applications: {
+      browser_specific_settings: {
         gecko: {
           id: "blocklist2@tests.mozilla.org",
           update_url: `http://example.com/data/param_test.json${PARAMS}`,
@@ -583,7 +566,7 @@ const PARAM_ADDONS = {
       update_type: "97",
     },
     updateType: [AddonManager.UPDATE_WHEN_USER_REQUESTED],
-    blocklistState: "STATE_BLOCKED",
+    blocklistState: STATE_BLOCKED,
   },
 };
 
@@ -591,13 +574,14 @@ const PARAM_IDS = Object.keys(PARAM_ADDONS);
 
 // Verify the parameter escaping in update urls.
 add_task(async function test_params() {
-  let blocklistAddons = new Map();
+  let blocked = [];
   for (let [id, options] of Object.entries(PARAM_ADDONS)) {
-    if (options.blocklistState) {
-      blocklistAddons.set(id, Ci.nsIBlocklistService[options.blocklistState]);
+    if (options.blocklistState == STATE_BLOCKED) {
+      blocked.push(`${id}:${options.manifest.version}`);
     }
   }
-  let mockBlocklist = await AddonTestUtils.overrideBlocklist(blocklistAddons);
+  let extensionsMLBF = [{ stash: { blocked, unblocked: [] }, stash_time: 0 }];
+  await AddonTestUtils.loadBlocklistRawData({ extensionsMLBF });
 
   for (let [id, options] of Object.entries(PARAM_ADDONS)) {
     await promiseInstallWebExtension({ manifest: options.manifest });
@@ -611,25 +595,25 @@ add_task(async function test_params() {
   let resultsPromise = new Promise(resolve => {
     let results = new Map();
 
-    testserver.registerPathHandler("/data/param_test.json", function(
-      request,
-      response
-    ) {
-      let params = new URLSearchParams(request.queryString);
-      let itemId = params.get("item_id");
-      ok(
-        !results.has(itemId),
-        `Should not see a duplicate request for item ${itemId}`
-      );
+    testserver.registerPathHandler(
+      "/data/param_test.json",
+      function (request, response) {
+        let params = new URLSearchParams(request.queryString);
+        let itemId = params.get("item_id");
+        ok(
+          !results.has(itemId),
+          `Should not see a duplicate request for item ${itemId}`
+        );
 
-      results.set(itemId, params);
+        results.set(itemId, params);
 
-      if (results.size === PARAM_IDS.length) {
-        resolve(results);
+        if (results.size === PARAM_IDS.length) {
+          resolve(results);
+        }
+
+        request.setStatusLine(null, 500, "Server Error");
       }
-
-      request.setStatusLine(null, 500, "Server Error");
-    });
+    );
   });
 
   let addons = await getAddons(PARAM_IDS);
@@ -665,8 +649,6 @@ add_task(async function test_params() {
   for (let [, addon] of await getAddons(PARAM_IDS)) {
     await addon.uninstall();
   }
-
-  await mockBlocklist.unregister();
 });
 
 // Tests that if a manifest claims compatibility then the add-on will be
@@ -676,7 +658,7 @@ add_task(async function test_manifest_compat() {
     manifest: {
       name: "Test Addon 1",
       version: "5.0",
-      applications: {
+      browser_specific_settings: {
         gecko: {
           id: "addon4@tests.mozilla.org",
           update_url: `http://example.com/data/${updateFile}`,
@@ -718,7 +700,7 @@ add_task(async function test_no_auto_update() {
     manifest: {
       name: "Test Addon 1",
       version: "1.0",
-      applications: {
+      browser_specific_settings: {
         gecko: {
           id: "addon1@tests.mozilla.org",
           update_url: `http://example.com/data/${updateFile}`,
@@ -731,7 +713,7 @@ add_task(async function test_no_auto_update() {
     manifest: {
       name: "Test Addon 8",
       version: "1.0",
-      applications: {
+      browser_specific_settings: {
         gecko: {
           id: "addon8@tests.mozilla.org",
           update_url: `http://example.com/data/${updateFile}`,
@@ -791,7 +773,7 @@ add_task(async function test_no_auto_update() {
       },
     };
     AddonManager.addInstallListener(listener);
-    AddonManagerInternal.backgroundUpdateCheck();
+    AddonManagerPrivate.backgroundUpdateCheck();
   });
   AddonManager.removeInstallListener(listener);
 
@@ -822,7 +804,7 @@ add_task(async function run_test_locked_install() {
     manifest: {
       name: "Test Addon 13",
       version: "1.0",
-      applications: {
+      browser_specific_settings: {
         gecko: {
           id: "addon13@tests.mozilla.org",
           update_url: "http://example.com/data/test_update.json",

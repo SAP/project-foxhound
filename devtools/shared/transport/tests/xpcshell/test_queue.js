@@ -8,12 +8,14 @@
  * packets are scheduled simultaneously.
  */
 
-var { FileUtils } = ChromeUtils.import("resource://gre/modules/FileUtils.jsm");
+var { FileUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/FileUtils.sys.mjs"
+);
 
 function run_test() {
   initTestDevToolsServer();
 
-  add_task(async function() {
+  add_task(async function () {
     await test_transport(socket_transport);
     await test_transport(local_transport);
     DevToolsServer.destroy();
@@ -24,7 +26,7 @@ function run_test() {
 
 /** * Tests ***/
 
-var test_transport = async function(transportFactory) {
+var test_transport = async function (transportFactory) {
   let clientResolve;
   const clientDeferred = new Promise(resolve => {
     clientResolve = resolve;
@@ -51,7 +53,7 @@ var test_transport = async function(transportFactory) {
         uri: NetUtil.newURI(getTestTempFile("bulk-input")),
         loadUsingSystemPrincipal: true,
       },
-      function(input, status) {
+      function (input, status) {
         copyFrom(input).then(() => {
           input.close();
         });
@@ -104,7 +106,7 @@ var test_transport = async function(transportFactory) {
   }
 
   transport.hooks = {
-    onPacket: function(packet) {
+    onPacket(packet) {
       if (packet.error) {
         transport.hooks.onError(packet);
       } else if (packet.applicationType) {
@@ -114,7 +116,7 @@ var test_transport = async function(transportFactory) {
       }
     },
 
-    onServerHello: function(packet) {
+    onServerHello(packet) {
       // We've received the initial start up packet
       Assert.equal(packet.from, "root");
       Assert.equal(packet.applicationType, "xpcshell-tests");
@@ -135,13 +137,13 @@ var test_transport = async function(transportFactory) {
       send_packets();
     },
 
-    onError: function(packet) {
+    onError(packet) {
       // The explode actor doesn't exist
       Assert.equal(packet.from, "root");
       Assert.equal(packet.error, "noSuchActor");
     },
 
-    onTransportClosed: function() {
+    onTransportClosed() {
       do_throw("Transport closed before we expected");
     },
   };

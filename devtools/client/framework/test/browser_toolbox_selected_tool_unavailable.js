@@ -8,14 +8,14 @@
 
 const testToolDefinition = {
   id: "testTool",
-  isTargetSupported: () => true,
+  isToolSupported: () => true,
   visibilityswitch: "devtools.test-tool.enabled",
   url: "about:blank",
   label: "someLabel",
   build: (iframeWindow, toolbox) => {
     return {
       target: toolbox.target,
-      toolbox: toolbox,
+      toolbox,
       isReady: true,
       destroy: () => {},
       panelDoc: iframeWindow.document,
@@ -23,7 +23,7 @@ const testToolDefinition = {
   },
 };
 
-add_task(async function() {
+add_task(async function () {
   gDevTools.registerTool(testToolDefinition);
   let tab = await addTab("about:blank");
 
@@ -34,7 +34,7 @@ add_task(async function() {
   await toolbox.destroy();
 
   // Make the previously selected tool unavailable.
-  testToolDefinition.isTargetSupported = () => false;
+  testToolDefinition.isToolSupported = () => false;
 
   toolbox = await gDevTools.showToolboxForTab(tab);
   is(toolbox.currentToolId, "webconsole", "web console was selected");

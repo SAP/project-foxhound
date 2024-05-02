@@ -26,7 +26,7 @@ add_task(async function testCrossOriginFormUsesCorrectOrigin() {
       gBrowser,
       url,
     },
-    async function(browser) {
+    async function (browser) {
       await SpecialPowers.spawn(browser.browsingContext, [], () => {
         let doc = content.document;
         doc.getElementById("form-basic-username").setUserInput("username");
@@ -40,7 +40,7 @@ add_task(async function testCrossOriginFormUsesCorrectOrigin() {
   let data = await dataPromise;
   info("Origin retrieved from message listener");
 
-  is(
+  Assert.equal(
     data.origin,
     "https://example.com",
     "Message origin should match form origin"

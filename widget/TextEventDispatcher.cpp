@@ -3,15 +3,19 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "TextEventDispatcher.h"
+
+#include "IMEData.h"
+#include "PuppetWidget.h"
+#include "TextEvents.h"
+
 #include "mozilla/Preferences.h"
 #include "mozilla/StaticPrefs_dom.h"
-#include "mozilla/TextEvents.h"
-#include "mozilla/TextEventDispatcher.h"
+#include "nsCharTraits.h"
 #include "nsIFrame.h"
 #include "nsIWidget.h"
 #include "nsPIDOMWindow.h"
 #include "nsView.h"
-#include "PuppetWidget.h"
 
 namespace mozilla {
 namespace widget {
@@ -206,7 +210,6 @@ nsresult TextEventDispatcher::GetState() const {
 }
 
 void TextEventDispatcher::InitEvent(WidgetGUIEvent& aEvent) const {
-  aEvent.mTime = PR_IntervalNow();
   aEvent.mRefPoint = LayoutDeviceIntPoint(0, 0);
   aEvent.mFlags.mIsSynthesizedForTests = IsForTests();
   if (aEvent.mClass != eCompositionEventClass) {
@@ -227,12 +230,23 @@ void TextEventDispatcher::InitEvent(WidgetGUIEvent& aEvent) const {
 #endif  // #ifdef DEBUG
 }
 
-Maybe<WritingMode> TextEventDispatcher::MaybeWritingModeAtSelection() const {
-  if (mWritingMode.isSome()) {
+Maybe<WritingMode> TextEventDispatcher::MaybeQueryWritingModeAtSelection()
+    const {
+  if (mHasFocus || mWritingMode.isSome()) {
     return mWritingMode;
   }
 
   if (NS_WARN_IF(!mWidget)) {
+    return Nothing();
+  }
+
+  // If a remote content has focus and IME does not have focus, it's going to
+  // fail eQuerySelectedText in ContentCacheParent.  For avoiding to waste
+  // unnecessary runtime cost and to prevent unnecessary warnings, we should
+  // not dispatch the event in the case.
+  const InputContext inputContext = mWidget->GetInputContext();
+  if (XRE_IsE10sParentProcess() && inputContext.IsOriginContentProcess() &&
+      !inputContext.mIMEState.IsEditable()) {
     return Nothing();
   }
 
@@ -242,15 +256,9 @@ Maybe<WritingMode> TextEventDispatcher::MaybeWritingModeAtSelection() const {
   const_cast<TextEventDispatcher*>(this)->DispatchEvent(
       mWidget, querySelectedTextEvent, status);
   if (!querySelectedTextEvent.FoundSelection()) {
-    if (mHasFocus) {
-      mWritingMode.reset();
-    }
     return Nothing();
   }
 
-  if (mHasFocus) {
-    mWritingMode = Some(querySelectedTextEvent.mReply->mWritingMode);
-  }
   return Some(querySelectedTextEvent.mReply->mWritingMode);
 }
 
@@ -414,6 +422,10 @@ nsresult TextEventDispatcher::NotifyIME(
   nsresult rv = NS_ERROR_NOT_IMPLEMENTED;
 
   switch (aIMENotification.mMessage) {
+    case NOTIFY_IME_OF_FOCUS: {
+      mWritingMode = MaybeQueryWritingModeAtSelection();
+      break;
+    }
     case NOTIFY_IME_OF_BLUR:
       mHasFocus = false;
       mWritingMode.reset();
@@ -430,7 +442,7 @@ nsresult TextEventDispatcher::NotifyIME(
       }
       break;
     case NOTIFY_IME_OF_SELECTION_CHANGE:
-      if (mHasFocus) {
+      if (mHasFocus && aIMENotification.mSelectionChangeData.HasRange()) {
         mWritingMode =
             Some(aIMENotification.mSelectionChangeData.GetWritingMode());
       }
@@ -626,7 +638,60 @@ bool TextEventDispatcher::DispatchKeyboardEventInternal(
       // eKeyPress events are dispatched for every character.
       // So, each key value of eKeyPress events should be a character.
       if (ch) {
-        keyEvent.mKeyValue.Assign(ch);
+        if (!IS_SURROGATE(ch)) {
+          keyEvent.mKeyValue.Assign(ch);
+        } else {
+          const bool isHighSurrogateFollowedByLowSurrogate =
+              aIndexOfKeypress + 1 < keyEvent.mKeyValue.Length() &&
+              NS_IS_HIGH_SURROGATE(ch) &&
+              NS_IS_LOW_SURROGATE(keyEvent.mKeyValue[aIndexOfKeypress + 1]);
+          const bool isLowSurrogateFollowingHighSurrogate =
+              !isHighSurrogateFollowedByLowSurrogate && aIndexOfKeypress > 0 &&
+              NS_IS_LOW_SURROGATE(ch) &&
+              NS_IS_HIGH_SURROGATE(keyEvent.mKeyValue[aIndexOfKeypress - 1]);
+          NS_WARNING_ASSERTION(isHighSurrogateFollowedByLowSurrogate ||
+                                   isLowSurrogateFollowingHighSurrogate,
+                               "Lone surrogate input should not happen");
+          if (StaticPrefs::
+                  dom_event_keypress_dispatch_once_per_surrogate_pair()) {
+            if (isHighSurrogateFollowedByLowSurrogate) {
+              keyEvent.mKeyValue.Assign(
+                  keyEvent.mKeyValue.BeginReading() + aIndexOfKeypress, 2);
+              keyEvent.SetCharCode(
+                  SURROGATE_TO_UCS4(ch, keyEvent.mKeyValue[1]));
+            } else if (isLowSurrogateFollowingHighSurrogate) {
+              // Although not dispatching eKeyPress event (because it's already
+              // dispatched for the low surrogate above), the caller should
+              // treat that this dispatched eKeyPress event normally so that
+              // return true here.
+              return true;
+            }
+            // Do not expose ill-formed UTF-16 string because it's a
+            // problematic for Rust-running-as-wasm for example.
+            else {
+              keyEvent.mKeyValue.Truncate();
+            }
+          } else if (!StaticPrefs::
+                         dom_event_keypress_key_allow_lone_surrogate()) {
+            // If it's a high surrogate followed by a low surrogate, we should
+            // expose the surrogate pair with .key value.
+            if (isHighSurrogateFollowedByLowSurrogate) {
+              keyEvent.mKeyValue.Assign(
+                  keyEvent.mKeyValue.BeginReading() + aIndexOfKeypress, 2);
+            }
+            // Do not expose low surrogate which should be handled by the
+            // preceding keypress event.  And also do not expose ill-formed
+            // UTF-16 because it's a problematic for Rust-running-as-wasm for
+            // example.
+            else {
+              keyEvent.mKeyValue.Truncate();
+            }
+          } else {
+            // Here is a path for traditional behavior. We set `.key` to
+            // high-surrogate and low-surrogate separately.
+            keyEvent.mKeyValue.Assign(ch);
+          }
+        }
       } else {
         keyEvent.mKeyValue.Truncate();
       }
@@ -644,9 +709,8 @@ bool TextEventDispatcher::DispatchKeyboardEventInternal(
     keyEvent.mNativeKeyEvent = aKeyboardEvent.mNativeKeyEvent;
   } else {
     // If it's not a keyboard event for native key event, we should ensure that
-    // mNativeKeyEvent and mPluginEvent are null/empty.
+    // mNativeKeyEvent is null.
     keyEvent.mNativeKeyEvent = nullptr;
-    keyEvent.mPluginEvent.Clear();
   }
   // TODO: Manage mUniqueId here.
 
@@ -657,7 +721,7 @@ bool TextEventDispatcher::DispatchKeyboardEventInternal(
   keyEvent.mAlternativeCharCodes.Clear();
   if ((aMessage == eKeyDown || aMessage == eKeyPress) &&
       (aNeedsCallback || keyEvent.IsControl() || keyEvent.IsAlt() ||
-       keyEvent.IsMeta() || keyEvent.IsOS())) {
+       keyEvent.IsMeta())) {
     nsCOMPtr<TextEventDispatcherListener> listener =
         do_QueryReferent(mListener);
     if (listener) {
@@ -692,6 +756,14 @@ bool TextEventDispatcher::DispatchKeyboardEventInternal(
     // Note that even if we set it to true, this may be overwritten by
     // PresShell::DispatchEventToDOM().
     keyEvent.mFlags.mOnlySystemGroupDispatchInContent = true;
+  }
+
+  // If an editable element has focus and we're in the parent process, we should
+  // retrieve native key bindings right now because even if it matches with a
+  // reserved shortcut key, it should be handled by the editor.
+  if (XRE_IsParentProcess() && mHasFocus &&
+      (aMessage == eKeyDown || aMessage == eKeyPress)) {
+    keyEvent.InitAllEditCommands(mWritingMode);
   }
 
   DispatchInputEvent(mWidget, keyEvent, aStatus);

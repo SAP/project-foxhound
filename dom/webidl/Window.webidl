@@ -25,19 +25,11 @@ interface XULControllers;
 interface nsIDOMWindowUtils;
 interface nsIPrintSettings;
 
-typedef OfflineResourceList ApplicationCache;
-
 // http://www.whatwg.org/specs/web-apps/current-work/
 [Global, LegacyUnenumerableNamedProperties, NeedResolve,
  Exposed=Window,
  InstrumentedProps=(AbsoluteOrientationSensor,
                     Accelerometer,
-                    ApplicationCache,
-                    ApplicationCacheErrorEvent,
-                    Atomics,
-                    AudioParamMap,
-                    AudioWorklet,
-                    AudioWorkletNode,
                     BackgroundFetchManager,
                     BackgroundFetchRecord,
                     BackgroundFetchRegistration,
@@ -52,10 +44,10 @@ typedef OfflineResourceList ApplicationCache;
                     BluetoothUUID,
                     CanvasCaptureMediaStreamTrack,
                     chrome,
-                    clientInformation,
                     ClipboardItem,
                     CSSImageValue,
                     CSSKeywordValue,
+                    CSSMathClamp,
                     CSSMathInvert,
                     CSSMathMax,
                     CSSMathMin,
@@ -68,6 +60,7 @@ typedef OfflineResourceList ApplicationCache;
                     CSSNumericValue,
                     CSSPerspective,
                     CSSPositionValue,
+                    CSSPropertyRule,
                     CSSRotate,
                     CSSScale,
                     CSSSkew,
@@ -89,12 +82,12 @@ typedef OfflineResourceList ApplicationCache;
                     DeviceMotionEventAcceleration,
                     DeviceMotionEventRotationRate,
                     DOMError,
+                    EncodedVideoChunk,
                     EnterPictureInPictureEvent,
                     External,
                     FederatedCredential,
                     Gyroscope,
                     HTMLContentElement,
-                    HTMLDialogElement,
                     HTMLShadowElement,
                     ImageCapture,
                     InputDeviceCapabilities,
@@ -102,10 +95,6 @@ typedef OfflineResourceList ApplicationCache;
                     Keyboard,
                     KeyboardLayoutMap,
                     LinearAccelerationSensor,
-                    Lock,
-                    LockManager,
-                    MediaMetadata,
-                    MediaSession,
                     MediaSettingsRange,
                     MIDIAccess,
                     MIDIConnectionEvent,
@@ -115,18 +104,16 @@ typedef OfflineResourceList ApplicationCache;
                     MIDIOutput,
                     MIDIOutputMap,
                     MIDIPort,
-                    NavigationPreloadManager,
                     NetworkInformation,
                     offscreenBuffering,
-                    OffscreenCanvas,
-                    OffscreenCanvasRenderingContext2D,
                     onbeforeinstallprompt,
                     oncancel,
-                    ondeviceorientationabsolute,
                     onmousewheel,
+                    onorientationchange,
                     onsearch,
                     onselectionchange,
                     openDatabase,
+                    orientation,
                     OrientationSensor,
                     OverconstrainedError,
                     PasswordCredential,
@@ -137,10 +124,9 @@ typedef OfflineResourceList ApplicationCache;
                     PaymentRequest,
                     PaymentRequestUpdateEvent,
                     PaymentResponse,
-                    PerformanceEventTiming,
                     PerformanceLongTaskTiming,
-                    PerformancePaintTiming,
                     PhotoCapabilities,
+                    PictureInPictureEvent,
                     PictureInPictureWindow,
                     Presentation,
                     PresentationAvailability,
@@ -152,28 +138,28 @@ typedef OfflineResourceList ApplicationCache;
                     PresentationRequest,
                     RelativeOrientationSensor,
                     RemotePlayback,
+                    Report,
+                    ReportBody,
                     ReportingObserver,
-                    RTCDtlsTransport,
                     RTCError,
                     RTCErrorEvent,
                     RTCIceTransport,
-                    RTCSctpTransport,
+                    RTCPeerConnectionIceErrorEvent,
                     Sensor,
                     SensorErrorEvent,
-                    SharedArrayBuffer,
+                    SpeechRecognitionAlternative,
+                    SpeechRecognitionResult,
+                    SpeechRecognitionResultList,
                     styleMedia,
                     StylePropertyMap,
                     StylePropertyMapReadOnly,
                     SVGDiscardElement,
                     SyncManager,
                     TaskAttributionTiming,
-                    TextDecoderStream,
-                    TextEncoderStream,
                     TextEvent,
                     Touch,
                     TouchEvent,
                     TouchList,
-                    TransformStream,
                     USB,
                     USBAlternateInterface,
                     USBConfiguration,
@@ -188,7 +174,12 @@ typedef OfflineResourceList ApplicationCache;
                     USBIsochronousOutTransferResult,
                     USBOutTransferResult,
                     UserActivation,
-                    visualViewport,
+                    VideoColorSpace,
+                    VideoDecoder,
+                    VideoEncoder,
+                    VideoFrame,
+                    WakeLock,
+                    WakeLockSentinel,
                     webkitCancelAnimationFrame,
                     webkitMediaStream,
                     WebKitMutationObserver,
@@ -201,9 +192,7 @@ typedef OfflineResourceList ApplicationCache;
                     webkitSpeechRecognition,
                     webkitSpeechRecognitionError,
                     webkitSpeechRecognitionEvent,
-                    webkitStorageInfo,
-                    Worklet,
-                    WritableStream)]
+                    webkitStorageInfo)]
 /*sealed*/ interface Window : EventTarget {
   // the current browsing context
   [LegacyUnforgeable, Constant, StoreInSlot,
@@ -223,12 +212,12 @@ typedef OfflineResourceList ApplicationCache;
   [Replaceable, Throws] readonly attribute BarProp statusbar;
   [Replaceable, Throws] readonly attribute BarProp toolbar;
   [Throws] attribute DOMString status;
-  [Throws, CrossOriginCallable, NeedsCallerType] void close();
+  [Throws, CrossOriginCallable, NeedsCallerType] undefined close();
   [Throws, CrossOriginReadable] readonly attribute boolean closed;
-  [Throws] void stop();
-  [Throws, CrossOriginCallable, NeedsCallerType] void focus();
-  [Throws, CrossOriginCallable, NeedsCallerType] void blur();
-  [Replaceable, Pref="dom.window.event.enabled"] readonly attribute any event;
+  [Throws] undefined stop();
+  [Throws, CrossOriginCallable, NeedsCallerType] undefined focus();
+  [Throws, CrossOriginCallable, NeedsCallerType] undefined blur();
+  [Replaceable, Pref="dom.window.event.enabled"] readonly attribute (Event or undefined) event;
 
   // other browsing contexts
   [Replaceable, Throws, CrossOriginReadable] readonly attribute WindowProxy frames;
@@ -248,16 +237,15 @@ typedef OfflineResourceList ApplicationCache;
   [Pref="dom.window.clientinformation.enabled", BinaryName="Navigator"]
   readonly attribute Navigator clientInformation;
 
-  [Replaceable, Throws] readonly attribute External external;
-  [Throws, SecureContext, Pref="browser.cache.offline.enable"] readonly attribute ApplicationCache applicationCache;
+  [Replaceable] readonly attribute External external;
 
   // user prompts
-  [Throws, NeedsSubjectPrincipal] void alert();
-  [Throws, NeedsSubjectPrincipal] void alert(DOMString message);
+  [Throws, NeedsSubjectPrincipal] undefined alert();
+  [Throws, NeedsSubjectPrincipal] undefined alert(DOMString message);
   [Throws, NeedsSubjectPrincipal] boolean confirm(optional DOMString message = "");
   [Throws, NeedsSubjectPrincipal] DOMString? prompt(optional DOMString message = "", optional DOMString default = "");
-  [Throws, Pref="dom.enable_window_print"]
-  void print();
+  [Throws]
+  undefined print();
 
   // Returns a window that you can use for a print preview.
   //
@@ -270,10 +258,10 @@ typedef OfflineResourceList ApplicationCache;
 
   [Throws, CrossOriginCallable, NeedsSubjectPrincipal,
    BinaryName="postMessageMoz"]
-  void postMessage(any message, DOMString targetOrigin, optional sequence<object> transfer = []);
+  undefined postMessage(any message, DOMString targetOrigin, optional sequence<object> transfer = []);
   [Throws, CrossOriginCallable, NeedsSubjectPrincipal,
    BinaryName="postMessageMoz"]
-  void postMessage(any message, optional WindowPostMessageOptions options = {});
+  undefined postMessage(any message, optional WindowPostMessageOptions options = {});
 
   // also has obsolete members
 };
@@ -295,8 +283,8 @@ Window includes WindowLocalStorage;
 
 // http://www.whatwg.org/specs/web-apps/current-work/
 partial interface Window {
-  void captureEvents();
-  void releaseEvents();
+  undefined captureEvents();
+  undefined releaseEvents();
 };
 
 // https://dvcs.w3.org/hg/editing/raw-file/tip/editing.html
@@ -326,42 +314,35 @@ dictionary ScrollToOptions : ScrollOptions {
 partial interface Window {
   //[Throws, NewObject, NeedsCallerType] MediaQueryList matchMedia(DOMString query);
   [Throws, NewObject, NeedsCallerType] MediaQueryList? matchMedia(UTF8String query);
-  // Per spec, screen is SameObject, but we don't actually guarantee that given
-  // nsGlobalWindow::Cleanup.  :(
-  //[SameObject, Replaceable, Throws] readonly attribute Screen screen;
-  [Replaceable, Throws] readonly attribute Screen screen;
+
+  [SameObject, Replaceable] readonly attribute Screen screen;
 
   // browsing context
-  //[Throws] void moveTo(double x, double y);
-  //[Throws] void moveBy(double x, double y);
-  //[Throws] void resizeTo(double x, double y);
-  //[Throws] void resizeBy(double x, double y);
-  [Throws, NeedsCallerType] void moveTo(long x, long y);
-  [Throws, NeedsCallerType] void moveBy(long x, long y);
-  [Throws, NeedsCallerType] void resizeTo(long x, long y);
-  [Throws, NeedsCallerType] void resizeBy(long x, long y);
+  //[Throws] undefined moveTo(double x, double y);
+  //[Throws] undefined moveBy(double x, double y);
+  //[Throws] undefined resizeTo(double x, double y);
+  //[Throws] undefined resizeBy(double x, double y);
+  [Throws, NeedsCallerType] undefined moveTo(long x, long y);
+  [Throws, NeedsCallerType] undefined moveBy(long x, long y);
+  [Throws, NeedsCallerType] undefined resizeTo(long x, long y);
+  [Throws, NeedsCallerType] undefined resizeBy(long x, long y);
 
   // viewport
-  // These are writable because we allow chrome to write them.  And they need
-  // to use 'any' as the type, because non-chrome writing them needs to act
-  // like a [Replaceable] attribute would, which needs the original JS value.
-  //[Replaceable, Throws] readonly attribute double innerWidth;
-  //[Replaceable, Throws] readonly attribute double innerHeight;
-  [Throws, NeedsCallerType, TaintSource] attribute any innerWidth;
-  [Throws, NeedsCallerType, TaintSource] attribute any innerHeight;
+  [Replaceable, Throws, TaintSource] readonly attribute double innerWidth;
+  [Replaceable, Throws, TaintSource] readonly attribute double innerHeight;
 
   // viewport scrolling
-  void scroll(unrestricted double x, unrestricted double y);
-  void scroll(optional ScrollToOptions options = {});
-  void scrollTo(unrestricted double x, unrestricted double y);
-  void scrollTo(optional ScrollToOptions options = {});
-  void scrollBy(unrestricted double x, unrestricted double y);
-  void scrollBy(optional ScrollToOptions options = {});
+  undefined scroll(unrestricted double x, unrestricted double y);
+  undefined scroll(optional ScrollToOptions options = {});
+  undefined scrollTo(unrestricted double x, unrestricted double y);
+  undefined scrollTo(optional ScrollToOptions options = {});
+  undefined scrollBy(unrestricted double x, unrestricted double y);
+  undefined scrollBy(optional ScrollToOptions options = {});
   // mozScrollSnap is used by chrome to perform scroll snapping after the
   // user performs actions that may affect scroll position
   // mozScrollSnap is deprecated, to be replaced by a web accessible API, such
   // as an extension to the ScrollOptions dictionary.  See bug 1137937.
-  [ChromeOnly] void mozScrollSnap();
+  [ChromeOnly] undefined mozScrollSnap();
   // The four properties below are double per spec at the moment, but whether
   // that will continue is unclear.
   [Replaceable, Throws, TaintSource] readonly attribute double scrollX;
@@ -374,17 +355,10 @@ partial interface Window {
   [Replaceable, Throws, NeedsCallerType, TaintSource] readonly attribute double screenTop;
 
   // client
-  // These are writable because we allow chrome to write them.  And they need
-  // to use 'any' as the type, because non-chrome writing them needs to act
-  // like a [Replaceable] attribute would, which needs the original JS value.
-  //[Replaceable, Throws] readonly attribute double screenX;
-  //[Replaceable, Throws] readonly attribute double screenY;
-  //[Replaceable, Throws] readonly attribute double outerWidth;
-  //[Replaceable, Throws] readonly attribute double outerHeight;
-  [Throws, NeedsCallerType, TaintSource] attribute any screenX;
-  [Throws, NeedsCallerType, TaintSource] attribute any screenY;
-  [Throws, NeedsCallerType, TaintSource] attribute any outerWidth;
-  [Throws, NeedsCallerType, TaintSource] attribute any outerHeight;
+  [Replaceable, Throws, NeedsCallerType, TaintSource] readonly attribute double screenX;
+  [Replaceable, Throws, NeedsCallerType, TaintSource] readonly attribute double screenY;
+  [Replaceable, Throws, NeedsCallerType, TaintSource] readonly attribute double outerWidth;
+  [Replaceable, Throws, NeedsCallerType, TaintSource] readonly attribute double outerHeight;
 };
 
 // https://html.spec.whatwg.org/multipage/imagebitmap-and-animations.html#animation-frames
@@ -398,8 +372,11 @@ partial interface Window {
 // https://dvcs.w3.org/hg/webcrypto-api/raw-file/tip/spec/Overview.html
 Window includes GlobalCrypto;
 
-// https://fidoalliance.org/specifications/download/
-Window includes GlobalU2F;
+dictionary SizeToContentConstraints {
+  long maxWidth = 0;
+  long maxHeight = 0;
+  long prefWidth = 0;
+};
 
 #ifdef MOZ_WEBSPEECH
 // http://dvcs.w3.org/hg/speech-api/raw-file/tip/speechapi.html
@@ -419,19 +396,26 @@ partial interface Window {
   /**
    * Method for scrolling this window by a number of lines.
    */
-  void                      scrollByLines(long numLines, optional ScrollOptions options = {});
+  undefined                 scrollByLines(long numLines, optional ScrollOptions options = {});
 
   /**
    * Method for scrolling this window by a number of pages.
    */
-  void                      scrollByPages(long numPages, optional ScrollOptions options = {});
+  undefined                 scrollByPages(long numPages, optional ScrollOptions options = {});
+
+  // Gecko specific API that allows a web page to resize the browser window.
+  // Dropping support in bug 1600400.
+  [Throws, NeedsCallerType,
+   Deprecated="SizeToContent",
+   Func="nsGlobalWindowInner::IsSizeToContentEnabled"]
+  undefined sizeToContent();
 
   /**
-   * Method for sizing this window to the content in the window.
+   * Chrome-only method for sizing to content with a maximum-size constraint on
+   * either (or both) directions.
    */
-  [Throws, NeedsCallerType] void sizeToContent();
+  [Throws, ChromeOnly] undefined sizeToContentConstrained(optional SizeToContentConstraints constraints = {});
 
-  // XXX Shouldn't this be in nsIDOMChromeWindow?
   [ChromeOnly, Replaceable, Throws] readonly attribute XULControllers controllers;
 
   [ChromeOnly, Throws] readonly attribute Element? realFrameElement;
@@ -448,6 +432,21 @@ partial interface Window {
   [Replaceable, Throws, NeedsCallerType, TaintSource]
   readonly attribute double devicePixelRatio;
 
+  // Allows chrome code to convert desktop pixels to device pixels and vice
+  // versa. Useful for interacting with the screen manager.
+  [ChromeOnly, Throws]
+  readonly attribute double desktopToDeviceScale;
+
+  // Returns the amount of CSS pixels relative to this window we're allowed to
+  // go out of the screen. This is needed so that SessionRestore is able to
+  // position windows that use client-side decorations correctly, but still
+  // pull mispositioned windows into the screen.
+  [ChromeOnly]
+  readonly attribute double screenEdgeSlopX;
+  [ChromeOnly]
+  readonly attribute double screenEdgeSlopY;
+
+
   /* The maximum offset that the window can be scrolled to
      (i.e., the document width/height minus the scrollport width/height) */
   [ChromeOnly, Throws]  readonly attribute long   scrollMinX;
@@ -457,10 +456,7 @@ partial interface Window {
 
   [Throws] attribute boolean fullScreen;
 
-  // XXX Should this be in nsIDOMChromeWindow?
-  void                      updateCommands(DOMString action,
-                                           optional Selection? sel = null,
-                                           optional short reason = 0);
+  undefined                 updateCommands(DOMString action);
 
   /* Find in page.
    * @param str: the search pattern
@@ -479,29 +475,21 @@ partial interface Window {
                            optional boolean searchInFrames = false,
                            optional boolean showDialog = false);
 
-  /**
-   * Returns the number of times this document for this window has
-   * been painted to the screen.
-   *
-   * If you need this for tests use nsIDOMWindowUtils.paintCount instead.
-   */
-  [Throws, Pref="dom.mozPaintCount.enabled"] readonly attribute unsigned long long mozPaintCount;
-
            attribute EventHandler ondevicemotion;
            attribute EventHandler ondeviceorientation;
-           attribute EventHandler onabsolutedeviceorientation;
+           attribute EventHandler ondeviceorientationabsolute;
            [Pref="device.sensors.proximity.enabled"]
            attribute EventHandler onuserproximity;
            [Pref="device.sensors.ambientLight.enabled"]
            attribute EventHandler ondevicelight;
 
-  void                      dump(DOMString str);
+  undefined                 dump(DOMString str);
 
   /**
    * This method is here for backwards compatibility with 4.x only,
    * its implementation is a no-op
    */
-  void                      setResizable(boolean resizable);
+  undefined                 setResizable(boolean resizable);
 
   /**
    * This is the scriptable version of
@@ -514,7 +502,7 @@ partial interface Window {
                                                optional DOMString options = "",
                                                any... extraArguments);
 
-  [Func="nsGlobalWindowInner::ContentPropertyEnabled",
+  [ChromeOnly,
    NonEnumerable, Replaceable, Throws, NeedsCallerType]
   readonly attribute object? content;
 
@@ -538,7 +526,7 @@ partial interface Window {
    * be something like a WebIDL namespace, but we don't support
    * JS-implemented static things yet.  See bug 863952.
    */
-  [Replaceable]
+  [Replaceable, Deprecated="InstallTriggerDeprecated", Pref="extensions.InstallTrigger.enabled"]
   readonly attribute InstallTriggerImpl? InstallTrigger;
 
   /**
@@ -566,6 +554,14 @@ partial interface Window {
    */
   [ChromeOnly]
   readonly attribute Principal? clientPrincipal;
+
+  /**
+   *  Whether the chrome window is currently in a full screen transition. This
+   *  flag is updated from FullscreenTransitionTask.
+   *  Always set to false for non-chrome windows.
+   */
+  [ChromeOnly]
+  readonly attribute boolean isInFullScreenTransition;
 };
 
 Window includes TouchEventHandlers;
@@ -580,13 +576,6 @@ partial interface Window {
            attribute EventHandler onorientationchange;
 };
 #endif
-
-// Mozilla extension
-// Sidebar is deprecated and it will be removed in the next cycles. See bug 1640138.
-partial interface Window {
-  [Replaceable, Throws, UseCounter, Pref="dom.window.sidebar.enabled"]
-  readonly attribute (External or WindowProxy) sidebar;
-};
 
 [MOZ_CAN_RUN_SCRIPT_BOUNDARY]
 callback PromiseDocumentFlushedCallback = any ();
@@ -618,31 +607,31 @@ partial interface Window {
            attribute nsIBrowserDOMWindow? browserDOMWindow;
 
   [Throws, Func="nsGlobalWindowInner::IsPrivilegedChromeWindow"]
-  void                      getAttention();
+  undefined                 getAttention();
 
   [Throws, Func="nsGlobalWindowInner::IsPrivilegedChromeWindow"]
-  void                      getAttentionWithCycleCount(long aCycleCount);
+  undefined                 getAttentionWithCycleCount(long aCycleCount);
 
   [Throws, Func="nsGlobalWindowInner::IsPrivilegedChromeWindow"]
-  void                      setCursor(UTF8String cursor);
+  undefined                 setCursor(UTF8String cursor);
 
   [Func="nsGlobalWindowInner::IsPrivilegedChromeWindow"]
-  void                      maximize();
+  undefined                 maximize();
   [Func="nsGlobalWindowInner::IsPrivilegedChromeWindow"]
-  void                      minimize();
+  undefined                 minimize();
   [Func="nsGlobalWindowInner::IsPrivilegedChromeWindow"]
-  void                      restore();
+  undefined                 restore();
   [Func="nsGlobalWindowInner::IsPrivilegedChromeWindow"]
   DOMString                 getWorkspaceID();
   [Func="nsGlobalWindowInner::IsPrivilegedChromeWindow"]
-  void                      moveToWorkspace(DOMString workspaceID);
+  undefined                 moveToWorkspace(DOMString workspaceID);
 
   /**
    * Notify a default button is loaded on a dialog or a wizard.
    * defaultButton is the default button.
    */
   [Throws, Func="nsGlobalWindowInner::IsPrivilegedChromeWindow"]
-  void notifyDefaultButtonLoaded(Element defaultButton);
+  undefined notifyDefaultButtonLoaded(Element defaultButton);
 
   [Func="nsGlobalWindowInner::IsPrivilegedChromeWindow"]
   readonly attribute ChromeMessageBroadcaster messageManager;
@@ -712,15 +701,15 @@ partial interface Window {
    * @param {function} callback
    * @returns {Promise}
    */
-  [Throws, Func="nsGlobalWindowInner::IsPrivilegedChromeWindow"]
+  [NewObject, Func="nsGlobalWindowInner::IsPrivilegedChromeWindow"]
   Promise<any> promiseDocumentFlushed(PromiseDocumentFlushedCallback callback);
 
-  [ChromeOnly]
+  [Func="IsChromeOrUAWidget"]
   readonly attribute boolean isChromeWindow;
 
-  [ChromeOnly]
+  [Func="nsGlobalWindowInner::IsGleanNeeded"]
   readonly attribute GleanImpl Glean;
-  [ChromeOnly]
+  [Func="nsGlobalWindowInner::IsGleanNeeded"]
   readonly attribute GleanPingsImpl GleanPings;
 };
 
@@ -748,18 +737,17 @@ partial interface Window {
 Window includes WindowOrWorkerGlobalScope;
 
 partial interface Window {
-  [Throws, Func="nsGlobalWindowInner::IsRequestIdleCallbackEnabled"]
+  [Throws]
   unsigned long requestIdleCallback(IdleRequestCallback callback,
                                     optional IdleRequestOptions options = {});
-  [Func="nsGlobalWindowInner::IsRequestIdleCallbackEnabled"]
-  void          cancelIdleCallback(unsigned long handle);
+  undefined     cancelIdleCallback(unsigned long handle);
 };
 
 dictionary IdleRequestOptions {
   unsigned long timeout;
 };
 
-callback IdleRequestCallback = void (IdleDeadline deadline);
+callback IdleRequestCallback = undefined (IdleDeadline deadline);
 
 partial interface Window {
   /**
@@ -806,16 +794,17 @@ partial interface Window {
 };
 
 partial interface Window {
-  [SameObject, Pref="dom.visualviewport.enabled", Replaceable]
+  [SameObject, Replaceable]
   readonly attribute VisualViewport visualViewport;
 };
 
 // Used to assign marks to appear on the scrollbar when
 // finding on a page.
 partial interface Window {
-  // The marks are values between 0 and scrollMaxY.
+  // The marks are values between 0 and scrollMax{X,Y} - scrollMin{X,Y}.
   [ChromeOnly]
-  void setScrollMarks(sequence<unsigned long> marks);
+  undefined setScrollMarks(sequence<unsigned long> marks,
+                           optional boolean onHorizontalScrollbar = false);
 };
 
 dictionary WindowPostMessageOptions : StructuredSerializeOptions {

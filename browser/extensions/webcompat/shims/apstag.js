@@ -36,7 +36,9 @@ if (!window.apstag?._getSlotIdToNameMapping) {
       if (!Array.isArray(cfg?.slots)) {
         return;
       }
-      cb(cfg.slots.map(s => newBid(s)));
+      setTimeout(() => {
+        cb(cfg.slots.map(s => newBid(s)));
+      }, 1);
     },
     init() {},
     punt() {},
@@ -50,7 +52,7 @@ if (!window.apstag?._getSlotIdToNameMapping) {
 
   window.apstagLOADED = true;
 
-  _Q.push = function(prefix, args) {
+  _Q.push = function (prefix, args) {
     try {
       switch (prefix) {
         case "f":

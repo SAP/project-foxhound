@@ -19,7 +19,7 @@ const serverInfo = {
 var gEngine;
 var gEngine2;
 
-add_task(async function init() {
+add_setup(async function () {
   await PlacesUtils.history.clear();
   await UrlbarTestUtils.formHistory.clear();
   await SpecialPowers.pushPrefEnv({
@@ -28,18 +28,24 @@ add_task(async function init() {
       ["browser.urlbar.maxHistoricalSearchSuggestions", 2],
     ],
   });
-  gEngine = await SearchTestUtils.promiseNewSearchEngine(
-    getRootDirectory(gTestPath) + TEST_ENGINE_BASENAME
-  );
-  gEngine2 = await SearchTestUtils.promiseNewSearchEngine(
-    getRootDirectory(gTestPath) + TEST_ENGINE2_BASENAME
-  );
+  gEngine = await SearchTestUtils.promiseNewSearchEngine({
+    url: getRootDirectory(gTestPath) + TEST_ENGINE_BASENAME,
+  });
+  gEngine2 = await SearchTestUtils.promiseNewSearchEngine({
+    url: getRootDirectory(gTestPath) + TEST_ENGINE2_BASENAME,
+  });
   let oldDefaultEngine = await Services.search.getDefault();
   await Services.search.moveEngine(gEngine2, 0);
   await Services.search.moveEngine(gEngine, 0);
-  await Services.search.setDefault(gEngine);
-  registerCleanupFunction(async function() {
-    await Services.search.setDefault(oldDefaultEngine);
+  await Services.search.setDefault(
+    gEngine,
+    Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+  );
+  registerCleanupFunction(async function () {
+    await Services.search.setDefault(
+      oldDefaultEngine,
+      Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+    );
 
     await PlacesUtils.history.clear();
     await UrlbarTestUtils.formHistory.clear();
@@ -171,9 +177,8 @@ add_task(async function test_clickAfterSuggestion() {
   await withSuggestions(async (index, usingFormHistory) => {
     await selectSecondSuggestion(index, usingFormHistory);
 
-    let oneOffs = UrlbarTestUtils.getOneOffSearchButtons(
-      window
-    ).getSelectableButtons(true);
+    let oneOffs =
+      UrlbarTestUtils.getOneOffSearchButtons(window).getSelectableButtons(true);
     let resultsPromise = UrlbarTestUtils.promiseSearchComplete(window);
     EventUtils.synthesizeMouseAtCenter(oneOffs[1], {});
     await resultsPromise;
@@ -190,9 +195,8 @@ add_task(async function test_clickAfterSuggestion_nonDefault() {
   await withSuggestions(async (index, usingFormHistory) => {
     await selectSecondSuggestion(index, usingFormHistory);
 
-    let oneOffs = UrlbarTestUtils.getOneOffSearchButtons(
-      window
-    ).getSelectableButtons(true);
+    let oneOffs =
+      UrlbarTestUtils.getOneOffSearchButtons(window).getSelectableButtons(true);
     let resultsPromise = UrlbarTestUtils.promiseSearchComplete(window);
     EventUtils.synthesizeMouseAtCenter(oneOffs[1], {});
     await resultsPromise;

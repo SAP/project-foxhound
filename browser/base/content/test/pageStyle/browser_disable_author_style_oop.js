@@ -1,7 +1,10 @@
+/* Any copyright is dedicated to the Public Domain.
+   http://creativecommons.org/publicdomain/zero/1.0/ */
+
 "use strict";
 
 async function getColor(aSpawnTarget) {
-  return SpecialPowers.spawn(aSpawnTarget, [], function() {
+  return SpecialPowers.spawn(aSpawnTarget, [], function () {
     return content.document.defaultView.getComputedStyle(
       content.document.querySelector("p")
     ).color;
@@ -12,18 +15,19 @@ async function insertIFrame() {
   let bc = gBrowser.selectedBrowser.browsingContext;
   let len = bc.children.length;
 
-  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], function() {
-    return new Promise(function(resolve) {
+  const kURL =
+    WEB_ROOT.replace("example.com", "example.net") + "page_style.html";
+  await SpecialPowers.spawn(gBrowser.selectedBrowser, [kURL], function (url) {
+    return new Promise(function (resolve) {
       let e = content.document.createElement("iframe");
-      e.src =
-        "http://mochi.test:8888/browser/browser/base/content/test/pageStyle/page_style.html";
+      e.src = url;
       e.onload = () => resolve();
       content.document.body.append(e);
     });
   });
 
   // Wait for the new frame to get a pres shell and be styled.
-  await BrowserTestUtils.waitForCondition(async function() {
+  await BrowserTestUtils.waitForCondition(async function () {
     return (
       bc.children.length == len + 1 && (await getColor(bc.children[len])) != ""
     );
@@ -35,7 +39,7 @@ async function insertIFrame() {
 add_task(async function test_disable_style() {
   let tab = await BrowserTestUtils.openNewForegroundTab(
     gBrowser,
-    "http://example.com/browser/browser/base/content/test/pageStyle/page_style.html",
+    WEB_ROOT + "page_style.html",
     /* waitForLoad = */ true
   );
 
@@ -69,6 +73,27 @@ add_task(async function test_disable_style() {
     await getColor(bc.children[1]),
     "rgb(0, 0, 0)",
     "second child color after disabling style"
+  );
+
+  await BrowserTestUtils.reloadTab(tab, true);
+
+  // Check the menu:
+  let { menupopup } = document.getElementById("pageStyleMenu");
+  gPageStyleMenu.fillPopup(menupopup);
+  Assert.equal(
+    menupopup.querySelector("menuitem[checked='true']").dataset.l10nId,
+    "menu-view-page-style-no-style",
+    "No style menu should be checked."
+  );
+
+  // check the page content still has a disabled author style:
+  Assert.ok(
+    await SpecialPowers.spawn(
+      tab.linkedBrowser,
+      [],
+      () => content.docShell.contentViewer.authorStyleDisabled
+    ),
+    "Author style should still be disabled."
   );
 
   BrowserTestUtils.removeTab(tab);

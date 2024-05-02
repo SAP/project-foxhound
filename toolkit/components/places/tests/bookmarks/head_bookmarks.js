@@ -3,8 +3,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-var { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-
 // Import common head.
 {
   /* import-globals-from ../head_common.js */
@@ -14,45 +12,6 @@ var { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 }
 
 // Put any other stuff relative to this test folder below.
-
-function expectNotifications(checkAllArgs) {
-  let notifications = [];
-  let observer = new Proxy(NavBookmarkObserver, {
-    get(target, name) {
-      if (name == "check") {
-        PlacesUtils.bookmarks.removeObserver(observer);
-        return expectedNotifications =>
-          Assert.deepEqual(notifications, expectedNotifications);
-      }
-
-      if (name.startsWith("onItem")) {
-        return (...origArgs) => {
-          let args = Array.from(origArgs, arg => {
-            if (arg && arg instanceof Ci.nsIURI) {
-              return new URL(arg.spec);
-            }
-            if (arg && typeof arg == "number" && arg >= Date.now() * 1000) {
-              return PlacesUtils.toDate(arg);
-            }
-            return arg;
-          });
-          if (checkAllArgs) {
-            notifications.push({ name, arguments: args });
-          } else {
-            notifications.push({ name, arguments: { guid: args[5] } });
-          }
-        };
-      }
-
-      if (name in target) {
-        return target[name];
-      }
-      return undefined;
-    },
-  });
-  PlacesUtils.bookmarks.addObserver(observer);
-  return observer;
-}
 
 function expectPlacesObserverNotifications(
   types,
@@ -121,6 +80,12 @@ function expectPlacesObserverNotifications(
             oldParentGuid: event.oldParentGuid,
             oldIndex: event.oldIndex,
             isTagging: event.isTagging,
+            title: event.title,
+            tags: event.tags,
+            frecency: event.frecency,
+            hidden: event.hidden,
+            visitCount: event.visitCount,
+            lastVisitDate: event.lastVisitDate,
           });
           break;
         case "bookmark-tags-changed":

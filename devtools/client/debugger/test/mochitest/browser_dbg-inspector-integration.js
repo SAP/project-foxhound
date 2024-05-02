@@ -5,7 +5,9 @@
 // Tests that clicking the DOM node button in any ObjectInspect
 // opens the Inspector panel
 
-add_task(async function() {
+"use strict";
+
+add_task(async function () {
   // Ensures the end panel is wide enough to show the inspector icon
   await pushPref("devtools.debugger.end-panel-size", 600);
   // Disable 3-pane inspector as it might trigger unwanted server communication.
@@ -26,7 +28,7 @@ add_task(async function() {
   // TODO: Remove when Bug 1562165 lands.
   await onWhyPausedDisplayed;
   // TODO: Remove when Bug 1562165 lands.
-  waitUntil(() => !dbg.win.document.querySelector(".why-paused"));
+  await waitUntil(() => !dbg.win.document.querySelector(".why-paused"));
 
   info(
     "Check that hovering over DOM element highlights the node in content panel"
@@ -34,9 +36,7 @@ add_task(async function() {
   let onNodeHighlight = highlighter.waitForHighlighterShown();
 
   info("Mouseover the open in inspector button");
-  const inspectorNode = await waitUntilPredicate(() =>
-    findElement(dbg, "openInspector")
-  );
+  const inspectorNode = await waitFor(() => findElement(dbg, "openInspector"));
   const view = inspectorNode.ownerDocument.defaultView;
   EventUtils.synthesizeMouseAtCenter(
     inspectorNode,
@@ -103,7 +103,7 @@ add_task(async function() {
   );
 });
 
-add_task(async function() {
+add_task(async function () {
   // Disable 3-pane inspector as it might trigger unwanted server communication.
   await pushPref("devtools.inspector.three-pane-enabled", false);
 
@@ -114,12 +114,19 @@ add_task(async function() {
   await waitForPaused(dbg);
 
   findElement(dbg, "frame", 2).focus();
-  await clickElement(dbg, "frame", 2);
+  clickElement(dbg, "frame", 2);
+  await waitForPaused(dbg);
+  await waitForSelectedSource(dbg, "doc-event-handler.html");
 
   // Hover over the token to launch preview popup
   await tryHovering(dbg, 5, 8, "popup");
 
-  // Click the first inspector buttom to view node in inspector
+  info("Wait for top level node to expand and child nodes to load");
+  await waitUntil(
+    () => dbg.win.document.querySelectorAll(".preview-popup .node").length > 1
+  );
+
+  // Click the first inspector button to view node in inspector
   await waitForElement(dbg, "openInspector");
 
   // Loading the inspector panel at first, to make it possible to listen for

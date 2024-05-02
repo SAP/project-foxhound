@@ -19,7 +19,7 @@ const TEST_URI = `
   Testing the color picker tooltip with CSS variables!
 `;
 
-add_task(async function() {
+add_task(async function () {
   await addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
   const { view } = await openRuleView();
 
@@ -41,7 +41,9 @@ async function testColorPickerAppearsOnColorSwatchActivation(
   property,
   withKeyboard = false
 ) {
-  const value = getRuleViewProperty(view, "body", property).valueSpan;
+  const value = (
+    await getRuleViewProperty(view, "body", property, { wait: true })
+  ).valueSpan;
   const swatch = value.querySelector(".ruleview-colorswatch");
 
   const cPicker = view.tooltips.getTooltip("colorPicker");

@@ -8,6 +8,7 @@
 #include "mozilla/dom/PrototypeDocumentContentSink.h"
 #include "nsIParser.h"
 #include "mozilla/dom/Document.h"
+#include "mozilla/dom/URL.h"
 #include "nsIContent.h"
 #include "nsIURI.h"
 #include "nsNetUtil.h"
@@ -51,12 +52,14 @@
 #include "mozilla/PresShell.h"
 #include "mozilla/ProfilerLabels.h"
 #include "mozilla/RefPtr.h"
+#include "mozilla/Try.h"
 
 #include "nsXULPrototypeCache.h"
 #include "nsXULElement.h"
 #include "mozilla/CycleCollectedJSContext.h"
 #include "js/CompilationAndEvaluation.h"
 #include "js/experimental/JSStencil.h"
+#include "js/Utility.h"  // JS::FreePolicy
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -86,8 +89,6 @@ PrototypeDocumentContentSink::PrototypeDocumentContentSink()
     : mNextSrcLoadWaiter(nullptr),
       mCurrentScriptProto(nullptr),
       mOffThreadCompiling(false),
-      mOffThreadCompileStringBuf(nullptr),
-      mOffThreadCompileStringLength(0),
       mStillWalking(false),
       mPendingSheets(0) {}
 
@@ -95,10 +96,6 @@ PrototypeDocumentContentSink::~PrototypeDocumentContentSink() {
   NS_ASSERTION(
       mNextSrcLoadWaiter == nullptr,
       "unreferenced document still waiting for script source to load?");
-
-  if (mOffThreadCompileStringBuf) {
-    js_free(mOffThreadCompileStringBuf);
-  }
 }
 
 nsresult PrototypeDocumentContentSink::Init(Document* aDoc, nsIURI* aURI,
@@ -178,8 +175,7 @@ void PrototypeDocumentContentSink::ContinueInterruptedParsingAsync() {
   nsCOMPtr<nsIRunnable> ev = NewRunnableMethod(
       "PrototypeDocumentContentSink::ContinueInterruptedParsingIfEnabled", this,
       &PrototypeDocumentContentSink::ContinueInterruptedParsingIfEnabled);
-
-  mDocument->Dispatch(mozilla::TaskCategory::Other, ev.forget());
+  mDocument->Dispatch(ev.forget());
 }
 
 //----------------------------------------------------------------------
@@ -334,7 +330,7 @@ nsresult PrototypeDocumentContentSink::PrepareToWalk() {
 
   // TODO(emilio): Should this really notify? We don't notify of appends anyhow,
   // and we just appended the root so no styles can possibly depend on it.
-  mDocument->UpdateDocumentStates(NS_DOCUMENT_STATE_RTL_LOCALE, true);
+  mDocument->UpdateDocumentStates(DocumentState::RTL_LOCALE, true);
 
   nsContentUtils::AddScriptRunner(
       new nsDocElementCreatedNotificationRunner(mDocument));
@@ -385,7 +381,7 @@ nsresult PrototypeDocumentContentSink::InsertXMLStylesheetPI(
     XMLStylesheetProcessingInstruction* aPINode) {
   // We want to be notified when the style sheet finishes loading, so
   // disable style sheet loading for now.
-  aPINode->SetEnableUpdates(false);
+  aPINode->DisableUpdates();
   aPINode->OverrideBaseURI(mCurrentPrototype->GetURI());
 
   ErrorResult rv;
@@ -395,11 +391,9 @@ nsresult PrototypeDocumentContentSink::InsertXMLStylesheetPI(
     return rv.StealNSResult();
   }
 
-  aPINode->SetEnableUpdates(true);
-
   // load the stylesheet if necessary, passing ourselves as
   // nsICSSObserver
-  auto result = aPINode->UpdateStyleSheet(this);
+  auto result = aPINode->EnableUpdatesAndUpdateStyleSheet(this);
   if (result.isErr()) {
     // Ignore errors from UpdateStyleSheet; we don't want failure to
     // do that to break the XUL document load.  But do propagate out
@@ -426,6 +420,14 @@ void PrototypeDocumentContentSink::CloseElement(Element* aElement,
     aElement->DoneAddingChildren(false);
   }
 
+  if (auto* linkStyle = LinkStyle::FromNode(*aElement)) {
+    auto result = linkStyle->EnableUpdatesAndUpdateStyleSheet(this);
+    if (result.isOk() && result.unwrap().ShouldBlock()) {
+      ++mPendingSheets;
+    }
+    return;
+  }
+
   if (!aHadChildren) {
     return;
   }
@@ -442,15 +444,6 @@ void PrototypeDocumentContentSink::CloseElement(Element* aElement,
       DebugOnly<bool> block = sele->AttemptToExecute();
       MOZ_ASSERT(!block, "<script type=module> shouldn't block the parser");
     }
-  }
-
-  if (aElement->IsHTMLElement(nsGkAtoms::style) ||
-      aElement->IsSVGElement(nsGkAtoms::style)) {
-    auto* linkStyle = LinkStyle::FromNode(*aElement);
-    NS_ASSERTION(linkStyle,
-                 "<html:style> doesn't implement "
-                 "nsIStyleSheetLinkingElement?");
-    Unused << linkStyle->UpdateStyleSheet(nullptr);
   }
 }
 
@@ -480,7 +473,7 @@ nsresult PrototypeDocumentContentSink::ResumeWalkInternal() {
   nsCOMPtr<nsIURI> docURI =
       mCurrentPrototype ? mCurrentPrototype->GetURI() : nullptr;
 
-  while (1) {
+  while (true) {
     // Begin (or resume) walking the current prototype.
 
     while (mContextStack.Depth() > 0) {
@@ -525,10 +518,12 @@ nsresult PrototypeDocumentContentSink::ResumeWalkInternal() {
           auto* protoele = static_cast<nsXULPrototypeElement*>(childproto);
 
           RefPtr<Element> child;
+          MOZ_TRY(CreateElementFromPrototype(protoele, getter_AddRefs(child),
+                                             nodeToPushTo));
 
-          rv = CreateElementFromPrototype(protoele, getter_AddRefs(child),
-                                          nodeToPushTo);
-          if (NS_FAILED(rv)) return rv;
+          if (auto* linkStyle = LinkStyle::FromNode(*child)) {
+            linkStyle->DisableUpdates();
+          }
 
           // ...and append it to the content model.
           ErrorResult error;
@@ -656,7 +651,7 @@ nsresult PrototypeDocumentContentSink::DoneWalking() {
     mDocument->SetReadyStateInternal(Document::READYSTATE_INTERACTIVE);
     mDocument->NotifyPossibleTitleChange(false);
 
-    nsContentUtils::DispatchEventOnlyToChrome(mDocument, ToSupports(mDocument),
+    nsContentUtils::DispatchEventOnlyToChrome(mDocument, mDocument,
                                               u"MozBeforeInitialXULLayout"_ns,
                                               CanBubble::eYes, Cancelable::eNo);
   }
@@ -671,21 +666,23 @@ nsresult PrototypeDocumentContentSink::DoneWalking() {
   if (IsChromeURI(mDocumentURI) &&
       nsXULPrototypeCache::GetInstance()->IsEnabled()) {
     bool isCachedOnDisk;
-    nsXULPrototypeCache::GetInstance()->HasData(mDocumentURI, &isCachedOnDisk);
+    nsXULPrototypeCache::GetInstance()->HasPrototype(mDocumentURI,
+                                                     &isCachedOnDisk);
     if (!isCachedOnDisk) {
       nsXULPrototypeCache::GetInstance()->WritePrototype(mCurrentPrototype);
     }
   }
 
   mDocument->SetDelayFrameLoaderInitialization(false);
-  mDocument->MaybeInitializeFinalizeFrameLoaders();
+  RefPtr<Document> doc = mDocument;
+  doc->MaybeInitializeFinalizeFrameLoaders();
 
   // If the document we are loading has a reference or it is a
   // frameset document, disable the scroll bars on the views.
 
-  mDocument->SetScrollToRef(mDocument->GetDocumentURI());
+  doc->SetScrollToRef(mDocument->GetDocumentURI());
 
-  mDocument->EndLoad();
+  doc->EndLoad();
 
   return NS_OK;
 }
@@ -849,26 +846,17 @@ PrototypeDocumentContentSink::OnStreamComplete(nsIStreamLoader* aLoader,
 
     // XXX should also check nsIHttpChannel::requestSucceeded
 
-    MOZ_ASSERT(!mOffThreadCompiling && (mOffThreadCompileStringLength == 0 &&
-                                        !mOffThreadCompileStringBuf),
+    MOZ_ASSERT(!mOffThreadCompiling,
                "PrototypeDocument can't load multiple scripts at once");
 
-    rv = ScriptLoader::ConvertToUTF16(channel, string, stringLen, u""_ns,
-                                      mDocument, mOffThreadCompileStringBuf,
-                                      mOffThreadCompileStringLength);
+    UniquePtr<Utf8Unit[], JS::FreePolicy> units;
+    size_t unitsLength = 0;
+
+    rv = ScriptLoader::ConvertToUTF8(channel, string, stringLen, u""_ns,
+                                     mDocument, units, unitsLength);
     if (NS_SUCCEEDED(rv)) {
-      // Pass ownership of the buffer, carefully emptying the existing
-      // fields in the process.  Note that the |Compile| function called
-      // below always takes ownership of the buffer.
-      char16_t* units = nullptr;
-      size_t unitsLength = 0;
-
-      std::swap(units, mOffThreadCompileStringBuf);
-      std::swap(unitsLength, mOffThreadCompileStringLength);
-
-      rv = mCurrentScriptProto->Compile(units, unitsLength,
-                                        JS::SourceOwnership::TakeOwnership, uri,
-                                        1, mDocument, this);
+      rv = mCurrentScriptProto->CompileMaybeOffThread(
+          std::move(units), unitsLength, uri, 1, mDocument, this);
       if (NS_SUCCEEDED(rv) && !mCurrentScriptProto->HasStencil()) {
         mOffThreadCompiling = true;
         mDocument->BlockOnload();
@@ -899,13 +887,6 @@ PrototypeDocumentContentSink::OnScriptCompileComplete(JS::Stencil* aStencil,
   if (mOffThreadCompiling) {
     mOffThreadCompiling = false;
     mDocument->UnblockOnload(false);
-  }
-
-  // After compilation finishes the script's characters are no longer needed.
-  if (mOffThreadCompileStringBuf) {
-    js_free(mOffThreadCompileStringBuf);
-    mOffThreadCompileStringBuf = nullptr;
-    mOffThreadCompileStringLength = 0;
   }
 
   // Clear mCurrentScriptProto now, but save it first for use below in
@@ -1025,7 +1006,7 @@ nsresult PrototypeDocumentContentSink::ExecuteScript(
 
   // On failure, ~AutoScriptEntry will handle exceptions, so
   // there is no need to manually check the return value.
-  JS::RootedValue rval(cx);
+  JS::Rooted<JS::Value> rval(cx);
   Unused << JS_ExecuteScript(cx, scriptObject, &rval);
 
   return NS_OK;
@@ -1105,7 +1086,7 @@ nsresult PrototypeDocumentContentSink::CreateElementFromPrototype(
   }
 
   // FIXME(bug 1627474): Is this right if this is inside an <html:template>?
-  if (result->HasAttr(kNameSpaceID_None, nsGkAtoms::datal10nid)) {
+  if (result->HasAttr(nsGkAtoms::datal10nid)) {
     mDocument->mL10nProtoElements.InsertOrUpdate(result, RefPtr{aPrototype});
     result->SetElementCreatedFromPrototypeAndHasUnmodifiedL10n();
   }

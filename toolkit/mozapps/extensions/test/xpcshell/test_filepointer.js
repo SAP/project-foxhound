@@ -21,22 +21,22 @@ function promiseWriteWebExtension(path, data) {
 }
 
 function promiseWritePointer(aId, aName) {
-  let path = OS.Path.join(profileDir.path, aName || aId);
+  let path = PathUtils.join(profileDir.path, aName || aId);
 
-  let target = OS.Path.join(sourceDir.path, do_get_expected_addon_name(aId));
+  let target = PathUtils.join(sourceDir.path, do_get_expected_addon_name(aId));
 
-  return OS.File.writeAtomic(path, new TextEncoder().encode(target));
+  return IOUtils.writeUTF8(path, target);
 }
 
 function promiseWriteRelativePointer(aId, aName) {
-  let path = OS.Path.join(profileDir.path, aName || aId);
+  let path = PathUtils.join(profileDir.path, aName || aId);
 
   let absTarget = sourceDir.clone();
   absTarget.append(do_get_expected_addon_name(aId));
 
   let relTarget = absTarget.getRelativeDescriptor(profileDir);
 
-  return OS.File.writeAtomic(path, new TextEncoder().encode(relTarget));
+  return IOUtils.writeUTF8(path, relTarget);
 }
 
 add_task(async function setup() {
@@ -51,11 +51,11 @@ add_task(async function setup() {
 
 // Tests that installing a new add-on by pointer works
 add_task(async function test_new_pointer_install() {
-  let target = OS.Path.join(sourceDir.path, ID1);
+  let target = PathUtils.join(sourceDir.path, ID1);
   await promiseWriteWebExtension(target, {
     manifest: {
       version: "1.0",
-      applications: { gecko: { id: ID1 } },
+      browser_specific_settings: { gecko: { id: ID1 } },
     },
   });
   await promiseWritePointer(ID1);
@@ -82,7 +82,7 @@ add_task(async function test_addon_over_pointer() {
   let xpi = AddonTestUtils.createTempWebExtensionFile({
     manifest: {
       version: "2.0",
-      applications: { gecko: { id: ID1 } },
+      browser_specific_settings: { gecko: { id: ID1 } },
     },
   });
 
@@ -164,7 +164,7 @@ add_task(async function test_bad_pointer_id() {
   await promiseWriteWebExtension(dir.path, {
     manifest: {
       version: "1.0",
-      applications: { gecko: { id: ID2 } },
+      browser_specific_settings: { gecko: { id: ID2 } },
     },
   });
   setExtensionModifiedTime(dir, dir.lastModifiedTime - 5000);
@@ -192,7 +192,7 @@ add_task(async function test_remove_pointer() {
   await promiseWriteWebExtension(dir.path, {
     manifest: {
       version: "1.0",
-      applications: { gecko: { id: ID1 } },
+      browser_specific_settings: { gecko: { id: ID1 } },
     },
   });
 
@@ -228,10 +228,10 @@ add_task(async function test_replace_pointer() {
   pointer.append(ID1);
   pointer.remove(false);
 
-  await promiseWriteWebExtension(OS.Path.join(profileDir.path, ID1), {
+  await promiseWriteWebExtension(PathUtils.join(profileDir.path, ID1), {
     manifest: {
       version: "2.0",
-      applications: { gecko: { id: ID1 } },
+      browser_specific_settings: { gecko: { id: ID1 } },
     },
   });
 
@@ -258,7 +258,7 @@ add_task(async function test_change_pointer_sources() {
   await promiseWriteWebExtension(dir.path, {
     manifest: {
       version: "2.0",
-      applications: { gecko: { id: ID1 } },
+      browser_specific_settings: { gecko: { id: ID1 } },
     },
   });
   setExtensionModifiedTime(dir, dir.lastModifiedTime - 5000);
@@ -274,11 +274,11 @@ add_task(async function test_change_pointer_sources() {
 
 // Removing the add-on the pointer file points at should uninstall the add-on
 add_task(async function test_remove_pointer_target() {
-  let target = OS.Path.join(sourceDir.path, ID1);
+  let target = PathUtils.join(sourceDir.path, ID1);
   await promiseWriteWebExtension(target, {
     manifest: {
       version: "1.0",
-      applications: { gecko: { id: ID1 } },
+      browser_specific_settings: { gecko: { id: ID1 } },
     },
   });
   await promiseWritePointer(ID1);
@@ -288,7 +288,7 @@ add_task(async function test_remove_pointer_target() {
   notEqual(addon, null);
   equal(addon.version, "1.0");
 
-  await OS.File.removeDir(target);
+  await IOUtils.remove(target, { recursive: true });
 
   await promiseRestartManager();
 
@@ -302,11 +302,11 @@ add_task(async function test_remove_pointer_target() {
 
 // Tests that installing a new add-on by pointer with a relative path works
 add_task(async function test_new_relative_pointer() {
-  let target = OS.Path.join(sourceDir.path, ID1);
+  let target = PathUtils.join(sourceDir.path, ID1);
   await promiseWriteWebExtension(target, {
     manifest: {
       version: "1.0",
-      applications: { gecko: { id: ID1 } },
+      browser_specific_settings: { gecko: { id: ID1 } },
     },
   });
   await promiseWriteRelativePointer(ID1);

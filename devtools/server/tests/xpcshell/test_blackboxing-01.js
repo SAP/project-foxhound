@@ -21,7 +21,7 @@ add_task(
 const BLACK_BOXED_URL = "http://example.com/blackboxme.js";
 const SOURCE_URL = "http://example.com/source.js";
 
-const testBlackBox = async function() {
+const testBlackBox = async function () {
   const packet = await executeOnNextTickAndWaitForPause(evalCode, gThreadFront);
 
   const bpSource = await getSourceById(gThreadFront, packet.frame.where.actor);
@@ -97,7 +97,8 @@ const testBlackBox = async function() {
 };
 
 function evalCode() {
-  /* eslint-disable */
+  /* eslint-disable mozilla/var-only-at-top-level, no-undef */
+  // prettier-ignore
   Cu.evalInSandbox(
     "" + function doStuff(k) { // line 1
       var arg = 15;            // line 2 - Step in here
@@ -109,6 +110,7 @@ function evalCode() {
     1
   );
 
+  // prettier-ignore
   Cu.evalInSandbox(
     "" + function runTest() { // line 1
       doStuff(                // line 2 - Break here
@@ -124,10 +126,9 @@ function evalCode() {
     SOURCE_URL,
     1
   );
-  /* eslint-enable */
 }
 
-const runTest = async function(onSteppedLocation, onDebuggerStatementFrames) {
+const runTest = async function (onSteppedLocation, onDebuggerStatementFrames) {
   let packet = await executeOnNextTickAndWaitForPause(
     gDebuggee.runTest,
     gThreadFront
@@ -148,7 +149,7 @@ const runTest = async function(onSteppedLocation, onDebuggerStatementFrames) {
   return resume(gThreadFront);
 };
 
-const getCurrentLocation = async function() {
+const getCurrentLocation = async function () {
   const response = await getFrames(gThreadFront, 0, 1);
   return response.frames[0].where;
 };

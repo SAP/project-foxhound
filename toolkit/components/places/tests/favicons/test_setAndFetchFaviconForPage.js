@@ -55,18 +55,18 @@ let gTests = [
   },
 ];
 
-add_task(async function() {
+add_task(async function () {
   let faviconURI = SMALLPNG_DATA_URI;
   let faviconMimeType = "image/png";
 
-  registerCleanupFunction(async function() {
+  registerCleanupFunction(async function () {
     await PlacesUtils.bookmarks.eraseEverything();
     await PlacesUtils.history.clear();
   });
 
   for (let test of gTests) {
     info(test.desc);
-    let pageURI = Services.io.newURI(test.href);
+    let pageURI = PlacesUtils.toURI(test.href);
 
     await test.setup();
 
@@ -80,8 +80,7 @@ add_task(async function() {
             return true;
           }
           return false;
-        }),
-      "places"
+        })
     );
 
     PlacesUtils.favicons.setAndFetchFaviconForPage(
@@ -97,7 +96,9 @@ add_task(async function() {
 
     Assert.equal(
       pageGuid,
-      await PlacesTestUtils.fieldInDB(pageURI, "guid"),
+      await PlacesTestUtils.getDatabaseValue("moz_places", "guid", {
+        url: pageURI,
+      }),
       "Page guid is correct"
     );
     let { dataLen, data, mimeType } = await PlacesUtils.promiseFaviconData(

@@ -2,15 +2,17 @@
 
 const PROFILE_DIR = do_get_profile().path;
 
-const { PromiseUtils } = ChromeUtils.import(
-  "resource://gre/modules/PromiseUtils.jsm"
+const { PromiseUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/PromiseUtils.sys.mjs"
 );
-const { FileUtils } = ChromeUtils.import(
-  "resource://gre/modules/FileUtils.jsm"
+const { FileUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/FileUtils.sys.mjs"
 );
-const { Sqlite } = ChromeUtils.import("resource://gre/modules/Sqlite.jsm");
-const { TelemetryTestUtils } = ChromeUtils.import(
-  "resource://testing-common/TelemetryTestUtils.jsm"
+const { Sqlite } = ChromeUtils.importESModule(
+  "resource://gre/modules/Sqlite.sys.mjs"
+);
+const { TelemetryTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/TelemetryTestUtils.sys.mjs"
 );
 
 // Enable the collection (during test) for all products so even products
@@ -36,7 +38,7 @@ function sleep(ms) {
   });
 }
 
-// When testing finalization, use this to tell Sqlite.jsm to not throw
+// When testing finalization, use this to tell Sqlite.sys.mjs to not throw
 // an uncatchable `Promise.reject`
 function failTestsOnAutoClose(enabled) {
   Sqlite.failTestsOnAutoClose(enabled);
@@ -91,8 +93,8 @@ async function getDummyTempDatabase(name, extraOptions = {}) {
 }
 
 add_task(async function test_setup() {
-  const { initTestLogging } = ChromeUtils.import(
-    "resource://testing-common/services/common/logging.js"
+  const { initTestLogging } = ChromeUtils.importESModule(
+    "resource://testing-common/services/common/logging.sys.mjs"
   );
   initTestLogging("Trace");
 });
@@ -336,11 +338,12 @@ add_task(async function test_execute_invalid_statement() {
   await new Promise(resolve => {
     Assert.equal(c._connectionData._anonymousStatements.size, 0);
 
-    c.execute("SELECT invalid FROM unknown").then(do_throw, function onError(
-      error
-    ) {
-      resolve();
-    });
+    c.execute("SELECT invalid FROM unknown").then(
+      do_throw,
+      function onError(error) {
+        resolve();
+      }
+    );
   });
 
   // Ensure we don't leak the statement instance.
@@ -367,13 +370,15 @@ add_task(async function test_on_row_exception_ignored() {
   }
 
   let i = 0;
-  let hasResult = await c.execute("SELECT * FROM DIRS", null, function onRow(
-    row
-  ) {
-    i++;
+  let hasResult = await c.execute(
+    "SELECT * FROM DIRS",
+    null,
+    function onRow(row) {
+      i++;
 
-    throw new Error("Some silly error.");
-  });
+      throw new Error("Some silly error.");
+    }
+  );
 
   Assert.equal(hasResult, true);
   Assert.equal(i, 10);
@@ -391,16 +396,17 @@ add_task(async function test_on_row_stop_iteration() {
   }
 
   let i = 0;
-  let hasResult = await c.execute("SELECT * FROM dirs", null, function onRow(
-    row,
-    cancel
-  ) {
-    i++;
+  let hasResult = await c.execute(
+    "SELECT * FROM dirs",
+    null,
+    function onRow(row, cancel) {
+      i++;
 
-    if (i == 5) {
-      cancel();
+      if (i == 5) {
+        cancel();
+      }
     }
-  });
+  );
 
   Assert.equal(hasResult, true);
   Assert.equal(i, 5);
@@ -431,7 +437,7 @@ add_task(async function test_invalid_transaction_type() {
   let c = await getDummyDatabase("invalid_transaction_type");
 
   Assert.throws(
-    () => c.executeTransaction(function() {}, "foobar"),
+    () => c.executeTransaction(function () {}, "foobar"),
     /Unknown transaction type/,
     "Unknown transaction type should throw"
   );
@@ -512,7 +518,7 @@ add_task(async function test_multiple_transactions() {
 
   for (let i = 0; i < 10; ++i) {
     // We don't wait for these transactions.
-    c.executeTransaction(async function() {
+    c.executeTransaction(async function () {
       await c.execute("INSERT INTO dirs (path) VALUES (:path)", {
         path: `foo${i}`,
       });
@@ -520,7 +526,7 @@ add_task(async function test_multiple_transactions() {
     });
   }
   for (let i = 0; i < 10; ++i) {
-    await c.executeTransaction(async function() {
+    await c.executeTransaction(async function () {
       await c.execute("INSERT INTO dirs (path) VALUES (:path)", {
         path: `bar${i}`,
       });
@@ -541,20 +547,25 @@ add_task(async function test_wrapped_connection_transaction() {
     PathUtils.join(PROFILE_DIR, "test_wrapStorageConnection.sqlite")
   );
   let c = await new Promise((resolve, reject) => {
-    Services.storage.openAsyncDatabase(file, null, (status, db) => {
-      if (Components.isSuccessCode(status)) {
-        resolve(db.QueryInterface(Ci.mozIStorageAsyncConnection));
-      } else {
-        reject(new Error(status));
+    Services.storage.openAsyncDatabase(
+      file,
+      /* openFlags */ Ci.mozIStorageService.OPEN_DEFAULT,
+      /* connectionFlags */ Ci.mozIStorageService.CONNECTION_DEFAULT,
+      (status, db) => {
+        if (Components.isSuccessCode(status)) {
+          resolve(db.QueryInterface(Ci.mozIStorageAsyncConnection));
+        } else {
+          reject(new Error(status));
+        }
       }
-    });
+    );
   });
 
   let wrapper = await Sqlite.wrapStorageConnection({ connection: c });
   // Start a transaction on the raw connection.
   await c.executeSimpleSQLAsync("BEGIN");
   // Now use executeTransaction, it will be executed, but not in a transaction.
-  await wrapper.executeTransaction(async function() {
+  await wrapper.executeTransaction(async function () {
     await wrapper.execute(
       "CREATE TABLE test (id INTEGER PRIMARY KEY AUTOINCREMENT)"
     );
@@ -972,7 +983,9 @@ add_task(async function test_programmatic_binding_implicit_transaction() {
 // Test that direct binding of params and execution through mozStorage doesn't
 // error when we manually create a transaction. See Bug 856925.
 add_task(async function test_direct() {
-  let file = FileUtils.getFile("TmpD", ["test_direct.sqlite"]);
+  let file = new FileUtils.File(
+    PathUtils.join(PathUtils.tempDir, "test_direct.sqlite")
+  );
   file.createUnique(Ci.nsIFile.NORMAL_FILE_TYPE, FileUtils.PERMS_FILE);
   print("Opening " + file.path);
 
@@ -1043,7 +1056,7 @@ add_task(async function test_direct() {
   end.finalize();
 
   deferred = PromiseUtils.defer();
-  db.asyncClose(function() {
+  db.asyncClose(function () {
     deferred.resolve();
   });
   await deferred.promise;
@@ -1055,13 +1068,18 @@ add_task(async function test_cloneStorageConnection() {
     PathUtils.join(PROFILE_DIR, "test_cloneStorageConnection.sqlite")
   );
   let c = await new Promise((resolve, reject) => {
-    Services.storage.openAsyncDatabase(file, null, (status, db) => {
-      if (Components.isSuccessCode(status)) {
-        resolve(db.QueryInterface(Ci.mozIStorageAsyncConnection));
-      } else {
-        reject(new Error(status));
+    Services.storage.openAsyncDatabase(
+      file,
+      /* openFlags */ Ci.mozIStorageService.OPEN_DEFAULT,
+      /* connectionFlags */ Ci.mozIStorageService.CONNECTION_DEFAULT,
+      (status, db) => {
+        if (Components.isSuccessCode(status)) {
+          resolve(db.QueryInterface(Ci.mozIStorageAsyncConnection));
+        } else {
+          reject(new Error(status));
+        }
       }
-    });
+    );
   });
 
   let clone = await Sqlite.cloneStorageConnection({
@@ -1138,13 +1156,18 @@ add_task(async function test_wrapStorageConnection() {
     PathUtils.join(PROFILE_DIR, "test_wrapStorageConnection.sqlite")
   );
   let c = await new Promise((resolve, reject) => {
-    Services.storage.openAsyncDatabase(file, null, (status, db) => {
-      if (Components.isSuccessCode(status)) {
-        resolve(db.QueryInterface(Ci.mozIStorageAsyncConnection));
-      } else {
-        reject(new Error(status));
+    Services.storage.openAsyncDatabase(
+      file,
+      /* openFlags */ Ci.mozIStorageService.OPEN_DEFAULT,
+      /* connectionFlags */ Ci.mozIStorageService.CONNECTION_DEFAULT,
+      (status, db) => {
+        if (Components.isSuccessCode(status)) {
+          resolve(db.QueryInterface(Ci.mozIStorageAsyncConnection));
+        } else {
+          reject(new Error(status));
+        }
       }
-    });
+    );
   });
 
   let wrapper = await Sqlite.wrapStorageConnection({ connection: c });
@@ -1355,15 +1378,28 @@ add_task(async function test_interrupt() {
   // Testing the interrupt functionality is left to mozStorage unit tests, here
   // we'll just test error conditions.
   let c = await getDummyDatabase("interrupt");
-  Assert.throws(
-    () => c.interrupt(),
-    /NS_ERROR_ILLEGAL_VALUE/,
-    "Sqlite.interrupt() should throw on a writable connection"
-  );
+  await c.interrupt();
+  ok(true, "Sqlite.interrupt() should not throw on a writable connection");
   await c.close();
   Assert.throws(
     () => c.interrupt(),
     /Connection is not open/,
     "Sqlite.interrupt() should throw on a closed connection"
   );
+});
+
+add_task(async function test_pageSize() {
+  // Testing the possibility to set the page size on database creation.
+  await Assert.rejects(
+    getDummyDatabase("pagesize", { pageSize: 1234 }),
+    /Invalid pageSize/,
+    "Check invalid pageSize value"
+  );
+  let c = await getDummyDatabase("pagesize", { pageSize: 8192 });
+  Assert.equal(
+    (await c.execute("PRAGMA page_size"))[0].getResultByIndex(0),
+    8192,
+    "Check page size was set"
+  );
+  await c.close();
 });

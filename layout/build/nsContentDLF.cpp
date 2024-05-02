@@ -117,75 +117,83 @@ nsContentDLF::CreateInstance(const char* aCommand, nsIChannel* aChannel,
     contentType = TEXT_PLAIN;
   }
 
+  nsresult rv;
+  bool imageDocument = false;
   // Try html or plaintext; both use the same document CID
   if (IsTypeInList(contentType, gHTMLTypes) ||
       nsContentUtils::IsPlainTextType(contentType)) {
-    return CreateDocument(
+    rv = CreateDocument(
         aCommand, aChannel, aLoadGroup, aContainer,
         []() -> already_AddRefed<Document> {
           RefPtr<Document> doc;
-          nsresult rv = NS_NewHTMLDocument(getter_AddRefs(doc));
+          nsresult rv =
+              NS_NewHTMLDocument(getter_AddRefs(doc), nullptr, nullptr);
           NS_ENSURE_SUCCESS(rv, nullptr);
           return doc.forget();
         },
         aDocListener, aDocViewer);
-  }
-
-  // Try XML
-  if (IsTypeInList(contentType, gXMLTypes)) {
-    return CreateDocument(
+  }  // Try XML
+  else if (IsTypeInList(contentType, gXMLTypes)) {
+    rv = CreateDocument(
         aCommand, aChannel, aLoadGroup, aContainer,
         []() -> already_AddRefed<Document> {
           RefPtr<Document> doc;
-          nsresult rv = NS_NewXMLDocument(getter_AddRefs(doc));
+          nsresult rv =
+              NS_NewXMLDocument(getter_AddRefs(doc), nullptr, nullptr);
           NS_ENSURE_SUCCESS(rv, nullptr);
           return doc.forget();
         },
         aDocListener, aDocViewer);
-  }
-
-  // Try SVG
-  if (IsTypeInList(contentType, gSVGTypes)) {
-    return CreateDocument(
+  }  // Try SVG
+  else if (IsTypeInList(contentType, gSVGTypes)) {
+    rv = CreateDocument(
         aCommand, aChannel, aLoadGroup, aContainer,
         []() -> already_AddRefed<Document> {
           RefPtr<Document> doc;
-          nsresult rv = NS_NewSVGDocument(getter_AddRefs(doc));
+          nsresult rv =
+              NS_NewSVGDocument(getter_AddRefs(doc), nullptr, nullptr);
           NS_ENSURE_SUCCESS(rv, nullptr);
           return doc.forget();
         },
         aDocListener, aDocViewer);
-  }
-
-  if (mozilla::DecoderTraits::ShouldHandleMediaType(
-          contentType.get(),
-          /* DecoderDoctorDiagnostics* */ nullptr)) {
-    return CreateDocument(
+  } else if (mozilla::DecoderTraits::ShouldHandleMediaType(
+                 contentType.get(),
+                 /* DecoderDoctorDiagnostics* */ nullptr)) {
+    rv = CreateDocument(
         aCommand, aChannel, aLoadGroup, aContainer,
         []() -> already_AddRefed<Document> {
           RefPtr<Document> doc;
-          nsresult rv = NS_NewVideoDocument(getter_AddRefs(doc));
+          nsresult rv =
+              NS_NewVideoDocument(getter_AddRefs(doc), nullptr, nullptr);
           NS_ENSURE_SUCCESS(rv, nullptr);
           return doc.forget();
         },
         aDocListener, aDocViewer);
-  }
-
-  // Try image types
-  if (IsImageContentType(contentType)) {
-    return CreateDocument(
+  }  // Try image types
+  else if (IsImageContentType(contentType)) {
+    imageDocument = true;
+    rv = CreateDocument(
         aCommand, aChannel, aLoadGroup, aContainer,
         []() -> already_AddRefed<Document> {
           RefPtr<Document> doc;
-          nsresult rv = NS_NewImageDocument(getter_AddRefs(doc));
+          nsresult rv =
+              NS_NewImageDocument(getter_AddRefs(doc), nullptr, nullptr);
           NS_ENSURE_SUCCESS(rv, nullptr);
           return doc.forget();
         },
         aDocListener, aDocViewer);
+  } else {
+    // If we get here, then we weren't able to create anything. Sorry!
+    return NS_ERROR_FAILURE;
   }
 
-  // If we get here, then we weren't able to create anything. Sorry!
-  return NS_ERROR_FAILURE;
+  if (NS_SUCCEEDED(rv) && !imageDocument) {
+    Document* doc = (*aDocViewer)->GetDocument();
+    MOZ_ASSERT(doc);
+    doc->MakeBrowsingContextNonSynthetic();
+  }
+
+  return rv;
 }
 
 NS_IMETHODIMP
@@ -209,7 +217,8 @@ already_AddRefed<Document> nsContentDLF::CreateBlankDocument(
     nsIPrincipal* aPartitionedPrincipal, nsDocShell* aContainer) {
   // create a new blank HTML document
   RefPtr<Document> blankDoc;
-  mozilla::Unused << NS_NewHTMLDocument(getter_AddRefs(blankDoc));
+  mozilla::Unused << NS_NewHTMLDocument(getter_AddRefs(blankDoc), nullptr,
+                                        nullptr);
 
   if (!blankDoc) {
     return nullptr;

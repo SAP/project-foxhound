@@ -7,8 +7,8 @@
 with Files("**"):
     BUG_COMPONENT = ("Core", "Layout: Form Controls")
 
-MOCHITEST_MANIFESTS += ["test/mochitest.ini"]
-MOCHITEST_CHROME_MANIFESTS += ["test/chrome.ini"]
+MOCHITEST_MANIFESTS += ["test/mochitest.toml"]
+MOCHITEST_CHROME_MANIFESTS += ["test/chrome.toml"]
 
 EXPORTS += [
     "nsIFormControlFrame.h",
@@ -18,6 +18,7 @@ EXPORTS += [
 
 UNIFIED_SOURCES += [
     "HTMLSelectEventListener.cpp",
+    "ListMutationObserver.cpp",
     "nsButtonFrameRenderer.cpp",
     "nsCheckboxRadioFrame.cpp",
     "nsColorControlFrame.cpp",
@@ -51,5 +52,3 @@ LOCAL_INCLUDES += [
     "/dom/base",
     "/dom/html",
 ]
-
-REQUIRES_UNIFIED_BUILD = True

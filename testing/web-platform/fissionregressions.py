@@ -36,7 +36,6 @@ run_infos = {
         "early_beta_or_earlier": True,
         "healthreport": True,
         "nightly_build": True,
-        "non_native_theme": True,
         "normandy": True,
         "official": True,
         "pgo": True,
@@ -60,8 +59,12 @@ run_infos = {
         "fission": True,
         "sessionHistoryInParent": True,
         "swgl": False,
+        "privateBrowsing": False,
         "win10_2004": False,
-        "domstreams": False,
+        "win11_2009": False,
+        "domstreams": True,
+        "isolated_process": False,
+        "display": "x11",
     },
     "linux-debug": {
         "os": "linux",
@@ -88,7 +91,6 @@ run_infos = {
         "early_beta_or_earlier": True,
         "healthreport": True,
         "nightly_build": True,
-        "non_native_theme": True,
         "normandy": True,
         "official": True,
         "pgo": False,
@@ -112,8 +114,12 @@ run_infos = {
         "fission": False,
         "sessionHistoryInParent": False,
         "swgl": False,
+        "privateBrowsing": False,
         "win10_2004": False,
-        "domstreams": False,
+        "win11_2009": False,
+        "domstreams": True,
+        "isolated_process": False,
+        "display": "x11",
     },
     "win-opt": {
         "os": "win",
@@ -140,7 +146,6 @@ run_infos = {
         "early_beta_or_earlier": True,
         "healthreport": True,
         "nightly_build": True,
-        "non_native_theme": False,
         "normandy": True,
         "official": True,
         "pgo": True,
@@ -164,8 +169,12 @@ run_infos = {
         "fission": False,
         "sessionHistoryInParent": False,
         "swgl": False,
+        "privateBrowsing": False,
         "win10_2004": False,
-        "domstreams": False,
+        "win11_2009": False,
+        "domstreams": True,
+        "isolated_process": False,
+        "display": None,
     },
 }
 
@@ -385,12 +394,19 @@ def run(logger, src_root, obj_root, **kwargs):
             run_info = platform_run_info.copy()
             run_info["fission"] = kind == "fission"
 
+            subsuites = testloader.load_subsuites(logger, run_info, None, set())
             test_loader = testloader.TestLoader(
-                test_manifests, wpttest.enabled_tests, run_info, manifest_filters=[]
+                test_manifests,
+                wpttest.enabled_tests,
+                run_info,
+                subsuites=subsuites,
+                manifest_filters=[],
             )
             tests[kind] = {
                 test.id: test
-                for _, _, test in test_loader.iter_tests()
+                for _, _, test in test_loader.iter_tests(
+                    run_info, test_loader.manifest_filters
+                )
                 if test._test_metadata is not None
             }
 

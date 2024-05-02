@@ -3,10 +3,8 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-
-const { actionTypes: at } = ChromeUtils.import(
-  "resource://activity-stream/common/Actions.jsm"
+const { actionTypes: at } = ChromeUtils.importESModule(
+  "resource://activity-stream/common/Actions.sys.mjs"
 );
 
 const { shortURL } = ChromeUtils.import(
@@ -15,41 +13,33 @@ const { shortURL } = ChromeUtils.import(
 const { SectionsManager } = ChromeUtils.import(
   "resource://activity-stream/lib/SectionsManager.jsm"
 );
-const {
-  TOP_SITES_DEFAULT_ROWS,
-  TOP_SITES_MAX_SITES_PER_ROW,
-} = ChromeUtils.import("resource://activity-stream/common/Reducers.jsm");
-const { Dedupe } = ChromeUtils.import(
-  "resource://activity-stream/common/Dedupe.jsm"
+const { TOP_SITES_DEFAULT_ROWS, TOP_SITES_MAX_SITES_PER_ROW } =
+  ChromeUtils.importESModule(
+    "resource://activity-stream/common/Reducers.sys.mjs"
+  );
+const { Dedupe } = ChromeUtils.importESModule(
+  "resource://activity-stream/common/Dedupe.sys.mjs"
 );
 
+const lazy = {};
+
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "FilterAdult",
   "resource://activity-stream/lib/FilterAdult.jsm"
 );
+ChromeUtils.defineESModuleGetters(lazy, {
+  LinksCache: "resource://activity-stream/lib/LinksCache.sys.mjs",
+  NewTabUtils: "resource://gre/modules/NewTabUtils.sys.mjs",
+  PageThumbs: "resource://gre/modules/PageThumbs.sys.mjs",
+});
 ChromeUtils.defineModuleGetter(
-  this,
-  "LinksCache",
-  "resource://activity-stream/lib/LinksCache.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "NewTabUtils",
-  "resource://gre/modules/NewTabUtils.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "Screenshots",
   "resource://activity-stream/lib/Screenshots.jsm"
 );
 ChromeUtils.defineModuleGetter(
-  this,
-  "PageThumbs",
-  "resource://gre/modules/PageThumbs.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "DownloadsManager",
   "resource://activity-stream/lib/DownloadsManager.jsm"
 );
@@ -64,16 +54,16 @@ const BOOKMARKS_RESTORE_SUCCESS_EVENT = "bookmarks-restore-success";
 const BOOKMARKS_RESTORE_FAILED_EVENT = "bookmarks-restore-failed";
 const RECENT_DOWNLOAD_THRESHOLD = 36 * 60 * 60 * 1000;
 
-this.HighlightsFeed = class HighlightsFeed {
+class HighlightsFeed {
   constructor() {
     this.dedupe = new Dedupe(this._dedupeKey);
-    this.linksCache = new LinksCache(
-      NewTabUtils.activityStreamLinks,
+    this.linksCache = new lazy.LinksCache(
+      lazy.NewTabUtils.activityStreamLinks,
       "getHighlights",
       ["image"]
     );
-    PageThumbs.addExpirationFilter(this);
-    this.downloadsManager = new DownloadsManager();
+    lazy.PageThumbs.addExpirationFilter(this);
+    this.downloadsManager = new lazy.DownloadsManager();
   }
 
   _dedupeKey(site) {
@@ -101,7 +91,7 @@ this.HighlightsFeed = class HighlightsFeed {
 
   uninit() {
     SectionsManager.disableSection(SECTION_ID);
-    PageThumbs.removeExpirationFilter(this);
+    lazy.PageThumbs.removeExpirationFilter(this);
     Services.obs.removeObserver(this, SYNC_BOOKMARKS_FINISHED_EVENT);
     Services.obs.removeObserver(this, BOOKMARKS_RESTORE_SUCCESS_EVENT);
     Services.obs.removeObserver(this, BOOKMARKS_RESTORE_FAILED_EVENT);
@@ -186,15 +176,16 @@ this.HighlightsFeed = class HighlightsFeed {
     // deduping against Top Sites or multiple history from the same domain, etc.
     const manyPages = await this.linksCache.request({
       numItems: MANY_EXTRA_LENGTH,
-      excludeBookmarks: !this.store.getState().Prefs.values[
-        "section.highlights.includeBookmarks"
-      ],
-      excludeHistory: !this.store.getState().Prefs.values[
-        "section.highlights.includeVisited"
-      ],
-      excludePocket: !this.store.getState().Prefs.values[
-        "section.highlights.includePocket"
-      ],
+      excludeBookmarks:
+        !this.store.getState().Prefs.values[
+          "section.highlights.includeBookmarks"
+        ],
+      excludeHistory:
+        !this.store.getState().Prefs.values[
+          "section.highlights.includeVisited"
+        ],
+      excludePocket:
+        !this.store.getState().Prefs.values["section.highlights.includePocket"],
     });
 
     if (
@@ -217,7 +208,7 @@ this.HighlightsFeed = class HighlightsFeed {
     const orderedPages = this._orderHighlights(manyPages);
 
     // Remove adult highlights if we need to
-    const checkedAdult = FilterAdult.filter(orderedPages);
+    const checkedAdult = lazy.FilterAdult.filter(orderedPages);
 
     // Remove any Highlights that are in Top Sites already
     const [, deduped] = this.dedupe.group(
@@ -295,7 +286,7 @@ this.HighlightsFeed = class HighlightsFeed {
   fetchImage(page, isStartup = false) {
     // Request a screenshot if we don't already have one pending
     const { preview_image_url: imageUrl, url } = page;
-    return Screenshots.maybeCacheScreenshot(
+    return lazy.Screenshots.maybeCacheScreenshot(
       page,
       imageUrl || url,
       "image",
@@ -347,7 +338,7 @@ this.HighlightsFeed = class HighlightsFeed {
         break;
     }
   }
-};
+}
 
 const EXPORTED_SYMBOLS = [
   "HighlightsFeed",

@@ -7,8 +7,11 @@
  * Test for middle click behavior.
  */
 
-add_task(function test_setup() {
+add_task(async function test_setup() {
   CustomizableUI.addWidgetToArea("home-button", "nav-bar");
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.tabs.searchclipboardfor.middleclick", false]],
+  });
 
   registerCleanupFunction(() => {
     Services.prefs.clearUserPref("middlemouse.paste");
@@ -60,7 +63,7 @@ add_task(async function test_middleClickOnHomeButton() {
       isLoadInBackground: false,
       startPagePref: "https://example.com",
       expectedURLBarFocus: false,
-      expectedURLBarValue: "https://example.com",
+      expectedURLBarValue: UrlbarTestUtils.trimURL("https://example.com"),
     },
     {
       isMiddleMousePastePrefOn: true,
@@ -74,7 +77,7 @@ add_task(async function test_middleClickOnHomeButton() {
       isLoadInBackground: false,
       startPagePref: "https://example.com",
       expectedURLBarFocus: false,
-      expectedURLBarValue: "https://example.com",
+      expectedURLBarValue: UrlbarTestUtils.trimURL("https://example.com"),
     },
     {
       isMiddleMousePastePrefOn: false,
@@ -114,6 +117,30 @@ add_task(async function test_middleClickOnHomeButton() {
 add_task(async function test_middleClickOnHomeButtonWithNewWindow() {
   await testMiddleClickOnHomeButtonWithNewWindow(false);
   await testMiddleClickOnHomeButtonWithNewWindow(true);
+});
+
+add_task(async function test_middleClickOnComponentNotHandlingPasteEvent() {
+  Services.prefs.setBoolPref("middlemouse.paste", true);
+
+  info("Set initial value");
+  SpecialPowers.clipboardCopyString("test\nsample");
+  gURLBar.value = "";
+  gURLBar.focus();
+
+  info("Middle click on a component that does not handle paste event");
+  const allTabsButton = document.getElementById("alltabs-button");
+  const onMiddleClick = new Promise(r =>
+    allTabsButton.addEventListener("auxclick", r, { once: true })
+  );
+  let pastedOnURLBar = false;
+  gURLBar.addEventListener("paste", () => {
+    pastedOnURLBar = true;
+  });
+  EventUtils.synthesizeMouseAtCenter(allTabsButton, { button: 1 });
+  await onMiddleClick;
+
+  Assert.equal(gURLBar.value, "", "URLBar has no pasted value");
+  Assert.ok(!pastedOnURLBar, "URLBar should not receive paste event");
 });
 
 async function testMiddleClickOnTab(isMiddleMousePastePrefOn) {

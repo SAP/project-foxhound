@@ -17,7 +17,7 @@ Services.scriptloader.loadSubScript(
 
 /*
  * This test exercises file I/O from web and file content processes using
- * OS.File methods to validate that calls that are meant to be blocked by
+ * nsIFile etc. methods to validate that calls that are meant to be blocked by
  * content sandboxing are blocked.
  */
 
@@ -34,7 +34,7 @@ Services.scriptloader.loadSubScript(
 // Tests reading various files and directories from file and web
 // content processes.
 //
-add_task(async function() {
+add_task(async function () {
   sanityChecks();
 
   // Test creating a file in the home directory from a web content process

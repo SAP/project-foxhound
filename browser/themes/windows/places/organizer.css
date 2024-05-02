@@ -12,8 +12,10 @@
 
   --organizer-hover-background: SelectedItem;
   --organizer-hover-color: SelectedItemText;
-  --organizer-selected-background: SelectedItem;
-  --organizer-selected-color: SelectedItemText;
+  --organizer-selected-background: -moz-cellhighlight;
+  --organizer-selected-color: -moz-cellhighlighttext;
+  --organizer-focus-selected-background: SelectedItem;
+  --organizer-focus-selected-color: SelectedItemText;
   --organizer-outline-color: SelectedItem;
 
   --organizer-separator-color: ThreeDDarkShadow;
@@ -40,6 +42,8 @@
     --organizer-hover-color: var(--organizer-color);
     --organizer-selected-background: rgb(207,207,216);
     --organizer-selected-color: var(--organizer-color);
+    --organizer-focus-selected-background: rgb(0,97,224);
+    --organizer-focus-selected-color: rgb(251,251,254);
     --organizer-outline-color: rgb(0,97,224);
 
     --organizer-separator-color: var(--organizer-pane-field-border-color);
@@ -64,6 +68,8 @@
 
       --organizer-hover-background: rgb(82,82,94);
       --organizer-selected-background: rgb(91,91,102);
+      --organizer-focus-selected-background: color-mix(in srgb, rgb(0,221,255) 80%, currentColor);
+      --organizer-focus-selected-color: rgb(43,42,51);
       --organizer-outline-color: rgb(0,221,255);
 
       --organizer-toolbar-field-background: rgb(28,27,34);
@@ -197,6 +203,9 @@
 
 #placesList {
   background-color: var(--organizer-pane-background);
+  width: 200px;
+  min-width: 100px;
+  max-width: 400px;
 }
 
 #placesView > splitter {
@@ -248,6 +257,11 @@ treechildren::-moz-tree-row(selected) {
   border: 1px solid transparent;
 }
 
+treechildren::-moz-tree-row(selected, focus) {
+  background-color: var(--organizer-focus-selected-background);
+  color: var(--organizer-focus-selected-color);
+}
+
 treechildren::-moz-tree-image(hover),
 treechildren::-moz-tree-twisty(hover),
 treechildren::-moz-tree-cell-text(hover) {
@@ -258,6 +272,12 @@ treechildren::-moz-tree-image(selected),
 treechildren::-moz-tree-twisty(selected),
 treechildren::-moz-tree-cell-text(selected) {
   color: var(--organizer-selected-color);
+}
+
+treechildren::-moz-tree-image(selected, focus),
+treechildren::-moz-tree-twisty(selected, focus),
+treechildren::-moz-tree-cell-text(selected, focus) {
+  color: var(--organizer-focus-selected-color);
 }
 
 treechildren::-moz-tree-separator {
@@ -273,22 +293,51 @@ treechildren::-moz-tree-separator(selected) {
   border-color: var(--organizer-selected-color);
 }
 
+treechildren::-moz-tree-separator(selected, focus) {
+  border-color: var(--organizer-focus-selected-color);
+}
+
 /* Info box */
+#infoBox:not([hidden="true"]) {
+  display: block;
+}
+
+#editBookmarkPanelContent {
+  grid-template-columns: auto 1fr;
+}
+
+#editBookmarkPanelContent .caption-label:not([hidden="true"]) {
+  display: block;
+  grid-column: 2;
+}
+
+#editBookmarkPanelContent label {
+  align-self: center;
+}
+
+#editBMPanel_itemsCountText {
+  grid-column: auto / span 2;
+  justify-self: center;
+}
+
+#editBMPanel_tagsSelectorRow {
+  grid-column: auto / span 2;
+}
 
 #detailsPane {
   background-color: var(--organizer-pane-background);
   color: var(--organizer-color);
+  min-height: 16em;
   padding: 5px;
   border-top: 1px solid var(--organizer-border-color);
 }
 
-#editBookmarkPanelRows .expander-up,
-#editBookmarkPanelRows .expander-down {
+.expander-up,
+.expander-down {
   appearance: none;
   min-width: 0;
   padding: 5px;
-  margin: 0;
-  margin-inline-end: 4px;
+  margin: 4px;
   border: 1px solid var(--organizer-pane-field-border-color);
   border-radius: 4px;
   color: var(--organizer-color);
@@ -298,34 +347,34 @@ treechildren::-moz-tree-separator(selected) {
   fill: currentColor;
 }
 
-#editBookmarkPanelRows .expander-up:hover,
-#editBookmarkPanelRows .expander-down:hover {
+.expander-up {
+  list-style-image: url("chrome://global/skin/icons/arrow-up-12.svg");
+}
+
+.expander-up:hover,
+.expander-down:hover {
   background-color: var(--organizer-hover-background);
   color: var(--organizer-hover-color);
 }
 
-#editBookmarkPanelRows .expander-up:hover:active,
-#editBookmarkPanelRows .expander-down:hover:active {
+.expander-up:hover:active,
+.expander-down:hover:active {
   background-color: var(--organizer-selected-background);
   color: var(--organizer-selected-color);
 }
 
-#editBookmarkPanelRows .expander-up:focus-visible,
-#editBookmarkPanelRows .expander-down:focus-visible {
+.expander-up:focus-visible,
+.expander-down:focus-visible {
   outline: 2px solid var(--organizer-outline-color);
   outline-offset: -1px;
 }
 
-#editBookmarkPanelRows .expander-up {
-  list-style-image: url("chrome://global/skin/icons/arrow-up-12.svg");
-}
-
-#editBookmarkPanelRows .expander-up > .button-box,
-#editBookmarkPanelRows .expander-down > .button-box {
+.expander-up > .button-box,
+.expander-down > .button-box {
   padding: 0;
 }
 
-#places input {
+input {
   border: 1px solid var(--organizer-pane-field-border-color);
   border-radius: 4px;
   background-color: var(--organizer-content-background);
@@ -334,13 +383,17 @@ treechildren::-moz-tree-separator(selected) {
   padding-inline: 4px;
 }
 
-#places input:focus {
+input:focus {
   outline: 2px solid var(--organizer-outline-color);
   outline-offset: -1px;
 }
 
-#places input:not(:read-write):focus {
+input:not(:read-write):focus {
   outline: none;
+}
+
+#editBookmarkPanelContent input {
+  margin: 4px;
 }
 
 .caption-label {
@@ -348,24 +401,25 @@ treechildren::-moz-tree-separator(selected) {
   color: var(--organizer-deemphasized-color);
 }
 
-#editBMPanel_tagsSelectorRow > richlistbox {
+#editBMPanel_tagsSelector {
   appearance: none;
   color: var(--organizer-color);
   background-color: var(--organizer-content-background);
   border: 1px solid var(--organizer-border-color);
   border-radius: 4px;
+  margin: 4px;
 }
 
-#editBMPanel_tagsSelectorRow > richlistbox > richlistitem {
+#editBMPanel_tagsSelector > richlistitem {
   border: 1px solid transparent;
 }
 
-#editBMPanel_tagsSelectorRow > richlistbox > richlistitem:hover {
+#editBMPanel_tagsSelector > richlistitem:hover {
   background-color: var(--organizer-hover-background);
   color: var(--organizer-hover-color);
 }
 
-#editBMPanel_tagsSelectorRow > richlistbox > richlistitem[selected] {
+#editBMPanel_tagsSelector > richlistitem[selected] {
   background-color: var(--organizer-selected-background);
   color: var(--organizer-selected-color);
 }

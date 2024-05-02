@@ -94,7 +94,6 @@ extern "C" {
 }
 
 #include <set>
-#include <vector>
 #include <map>
 #include <list>
 #include <string>
@@ -160,8 +159,7 @@ class TestNat {
         block_tls_(false),
         error_code_for_drop_(0),
         delay_stun_resp_ms_(0),
-        nat_delegate_(nullptr),
-        sockets_() {}
+        nat_delegate_(nullptr) {}
 
   bool has_port_mappings() const;
 
@@ -294,10 +292,7 @@ class TestNrSocket : public NrSocketBase {
     DeferredPacket(TestNrSocket* sock, const void* data, size_t len, int flags,
                    const nr_transport_addr* addr,
                    RefPtr<NrSocketBase> internal_socket)
-        : socket_(sock),
-          buffer_(),
-          flags_(flags),
-          internal_socket_(internal_socket) {
+        : socket_(sock), flags_(flags), internal_socket_(internal_socket) {
       buffer_.Copy(reinterpret_cast<const uint8_t*>(data), len);
       nr_transport_addr_copy(&to_, addr);
     }
@@ -310,7 +305,7 @@ class TestNrSocket : public NrSocketBase {
   };
 
   bool is_port_mapping_stale(const PortMapping& port_mapping) const;
-  bool allow_ingress(const nr_transport_addr& from,
+  bool allow_ingress(const nr_transport_addr& to, const nr_transport_addr& from,
                      PortMapping** port_mapping_used) const;
   void destroy_stale_port_mappings();
 
@@ -330,6 +325,9 @@ class TestNrSocket : public NrSocketBase {
 
   PortMapping* get_port_mapping(const nr_transport_addr& remote_addr,
                                 TestNat::NatBehavior filter) const;
+  static bool port_mapping_matches(const PortMapping& port_mapping,
+                                   const nr_transport_addr& remote_addr,
+                                   TestNat::NatBehavior filter);
   PortMapping* create_port_mapping(
       const nr_transport_addr& remote_addr,
       const RefPtr<NrSocketBase>& external_socket) const;

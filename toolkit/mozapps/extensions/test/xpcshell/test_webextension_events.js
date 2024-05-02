@@ -1,10 +1,9 @@
 createAppInfo("xpcshell@tests.mozilla.org", "XPCShell", "1", "42");
 
-add_task(async function() {
+add_task(async function () {
   let triggered = {};
-  const { Management } = ChromeUtils.import(
-    "resource://gre/modules/Extension.jsm",
-    null
+  const { Management } = ChromeUtils.importESModule(
+    "resource://gre/modules/Extension.sys.mjs"
   );
   for (let event of ["install", "uninstall", "update"]) {
     triggered[event] = false;
@@ -38,7 +37,7 @@ add_task(async function() {
     await promiseInstallWebExtension({
       manifest: {
         version: "1.0",
-        applications: { gecko: { id } },
+        browser_specific_settings: { gecko: { id } },
       },
     });
   });
@@ -48,7 +47,7 @@ add_task(async function() {
     await promiseInstallWebExtension({
       manifest: {
         version: "2.0",
-        applications: { gecko: { id } },
+        browser_specific_settings: { gecko: { id } },
       },
     });
   });
@@ -58,7 +57,7 @@ add_task(async function() {
   let v3 = createTempWebExtensionFile({
     manifest: {
       version: "3.0",
-      applications: { gecko: { id } },
+      browser_specific_settings: { gecko: { id } },
     },
   });
 

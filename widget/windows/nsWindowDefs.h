@@ -42,15 +42,6 @@
 
 /**************************************************************
  *
- * SECTION: enums
- *
- **************************************************************/
-
-// nsWindow::sCanQuit
-typedef enum { TRI_UNKNOWN = -1, TRI_FALSE = 0, TRI_TRUE = 1 } TriStateBool;
-
-/**************************************************************
- *
  * SECTION: constants
  *
  **************************************************************/
@@ -63,8 +54,9 @@ typedef enum { TRI_UNKNOWN = -1, TRI_FALSE = 0, TRI_TRUE = 1 } TriStateBool;
  * External apps and drivers depend on window class names.
  * For example, changing the window classes could break
  * touchpad scrolling or screen readers.
+ *
+ * See bug 1776498.
  */
-const uint32_t kMaxClassNameLength = 40;
 const wchar_t kClassNameHidden[] = L"MozillaHiddenWindowClass";
 const wchar_t kClassNameGeneral[] = L"MozillaWindowClass";
 const wchar_t kClassNameDialog[] = L"MozillaDialogClass";
@@ -90,15 +82,6 @@ struct KeyPair {
   KeyPair(uint8_t aGeneral, uint8_t aSpecific, uint16_t aScanCode)
       : mGeneral(aGeneral), mSpecific(aSpecific), mScanCode(aScanCode) {}
 };
-
-#if (WINVER < 0x0600)
-struct TITLEBARINFOEX {
-  DWORD cbSize;
-  RECT rcTitleBar;
-  DWORD rgstate[CCHILDREN_TITLEBAR + 1];
-  RECT rgrect[CCHILDREN_TITLEBAR + 1];
-};
-#endif
 
 namespace mozilla {
 namespace widget {

@@ -1,12 +1,12 @@
 const SAVE_PER_SITE_PREF = "browser.download.lastDir.savePerSite";
 
 function test_deleted_iframe(perSitePref, windowOptions = {}) {
-  return async function() {
+  return async function () {
     await SpecialPowers.pushPrefEnv({
       set: [[SAVE_PER_SITE_PREF, perSitePref]],
     });
-    let { DownloadLastDir } = ChromeUtils.import(
-      "resource://gre/modules/DownloadLastDir.jsm"
+    let { DownloadLastDir } = ChromeUtils.importESModule(
+      "resource://gre/modules/DownloadLastDir.sys.mjs"
     );
 
     let win = await BrowserTestUtils.openNewBrowserWindow(windowOptions);
@@ -37,17 +37,13 @@ function test_deleted_iframe(perSitePref, windowOptions = {}) {
 
     let someDir = "blah";
     try {
-      someDir = await new Promise((resolve, reject) => {
-        gDownloadLastDir.getFileAsync("http://www.mozilla.org/", function(dir) {
-          resolve(dir);
-        });
-      });
+      someDir = await gDownloadLastDir.getFileAsync("http://www.mozilla.org/");
     } catch (ex) {
       ok(
         false,
         "Got an exception trying to get the directory where things should be saved."
       );
-      Cu.reportError(ex);
+      console.error(ex);
     }
     // NB: someDir can legitimately be null here when set, hence the 'blah' workaround:
     isnot(
@@ -63,7 +59,7 @@ function test_deleted_iframe(perSitePref, windowOptions = {}) {
         false,
         "Got an exception trying to set the directory where things should be saved."
       );
-      Cu.reportError(ex);
+      console.error(ex);
     }
 
     await BrowserTestUtils.closeWindow(win);

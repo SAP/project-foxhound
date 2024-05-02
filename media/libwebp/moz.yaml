@@ -2,7 +2,7 @@ schema: 1
 
 bugzilla:
   product: "Core"
-  component: "ImageLib"
+  component: "Graphics: ImageLib"
 
 origin:
   name: "libwebp"
@@ -11,15 +11,15 @@ origin:
   url: "https://chromium.googlesource.com/webm/libwebp"
   license: BSD-3-Clause
 
-  release: commit b0a860891dcd4c0c2d7c6149e5cccb6eb881cc21 (2022-01-19T23:35:26.000Z).
+  release: v1.3.2 (2023-09-13T22:11:07Z).
 
-  revision: "v1.2.2"
+  revision: "v1.3.0"
 
   license-file: COPYING
 
 updatebot:
-  maintainer-phab: aosmond
-  maintainer-bz: aosmond@mozilla.com
+  maintainer-phab: tnikkel
+  maintainer-bz: tnikkel@gmail.com
   tasks:
     - type: vendoring
       enabled: True
@@ -31,15 +31,15 @@ vendoring:
 
   exclude:
     - "**"
-    - ".*"
 
   include:
     - AUTHORS
     - COPYING
     - NEWS
     - PATENTS
-    - README
-    - README.mux
+    - README.md
+    - sharpyuv/*.h
+    - sharpyuv/*.c
     - src/webp/*.h
     - src/dec/*.h
     - src/dec/*.c
@@ -58,3 +58,5 @@ vendoring:
   update-actions:
     - action: delete-path
       path: src/dsp/cpu.c
+    - action: delete-path
+      path: sharpyuv/sharpyuv_cpu.c

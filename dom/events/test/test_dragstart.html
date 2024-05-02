@@ -2,13 +2,13 @@
 <head>
   <title>Tests for the dragstart event</title>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css">
-  <script src="/tests/SimpleTest/SimpleTest.js"></script>      
-  <script src="/tests/SimpleTest/EventUtils.js"></script>      
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/EventUtils.js"></script>
 
 <!--
  This test checks the dragstart event and the DataTransfer object
   -->
- 
+
 <script>
 
 SimpleTest.waitForExplicitFinish();
@@ -61,7 +61,7 @@ function afterDragTests()
   sendMouseEventsForDrag("link");
   sendMouseEventsForDrag("image");
 
-//  disable testing input dragging for now, as it doesn't seem to be testable 
+//  disable testing input dragging for now, as it doesn't seem to be testable
 //  draggable = $("input");
 //  draggable.setSelectionRange(0, 4);
 //  synthesizeMouse(draggable, 8, 8, { type: "mousedown" });
@@ -77,18 +77,50 @@ function afterDragTests()
   sendMouseEventsForDrag("dragtrue");
   gDragInfo = { target: $("dragtrue"), testid: "draggable true child" };
   sendMouseEventsForDrag("spantrue");
+
   gDragInfo = { target: $("dragfalse").firstChild, testid: "draggable false node" };
   sendMouseEventsForDrag("dragfalse");
+  synthesizeMouse(draggable, 12, 12, { type: "mouseup" });
+
   gDragInfo = { target: $("spanfalse").firstChild, testid: "draggable false child" };
   sendMouseEventsForDrag("spanfalse");
-
   synthesizeMouse(draggable, 12, 12, { type: "mouseup" });
-  if (gExtraDragTests == 6)
+
+  gDragInfo = { target: $("userselectnone").firstChild, testid: "user select none inside draggable false node" };
+  sendMouseEventsForDrag("userselectnone");
+  synthesizeMouse(draggable, 12, 12, { type: "mouseup" });
+
+  gDragInfo = { target: $("draggable_with_undraggable_descendant"), testid: "undraggable inside draggable" };
+  sendMouseEventsForDrag("undraggable_inside_draggable");
+  synthesizeMouse(draggable, 12, 12, { type: "mouseup" });
+
+  sendMouseEventsForDrag("link_to_file");
+  synthesizeMouse(draggable, 12, 12, { type: "mouseup" });
+
+  sendMouseEventsForDrag("broken_file_image");
+  synthesizeMouse(draggable, 12, 12, { type: "mouseup" });
+
+  if (navigator.platform.startsWith("Win")) {
+    sendMouseEventsForDrag("link_to_windows_file");
+    synthesizeMouse(draggable, 12, 12, { type: "mouseup" });
+
+    sendMouseEventsForDrag("broken_windows_file_image");
+    synthesizeMouse(draggable, 12, 12, { type: "mouseup" });
+
+    sendMouseEventsForDrag("link_to_backslash_windows_file");
+    synthesizeMouse(draggable, 12, 12, { type: "mouseup" });
+
+    sendMouseEventsForDrag("broken_backslash_windows_file_image");
+    synthesizeMouse(draggable, 12, 12, { type: "mouseup" });
+  }
+
+  if (gExtraDragTests == 7)
     SimpleTest.finish();
 }
 
 function sendMouseEventsForDrag(nodeid)
 {
+  info("Sending events for " + nodeid);
   var draggable = $(nodeid);
   synthesizeMouse(draggable, 3, 3, { type: "mousedown" });
   synthesizeMouse(draggable, 10, 10, { type: "mousemove" });
@@ -130,13 +162,14 @@ function doDragStartSelection(event)
   is(dt.getData("text/html"), "<div id=\"draggable\" ondragstart=\"doDragStartSelection(event)\">This is a <em>draggable</em> bit of text.</div>",
      "initial selection text/html");
 
-  // text/unicode and Text are available for compatibility. They retrieve the
-  // text/plain data
-  is(dt.getData("text/unicode"), "This is a draggable bit of text.", "initial selection text/unicode");
+  // text/plain and Text are available for compatibility. They retrieve the
+  // text/plain data. text/unicode is also for compatibility and retreives the plain text.
+  is(dt.getData("text/plain"), "This is a draggable bit of text.", "initial selection text/plain");
   is(dt.getData("Text"), "This is a draggable bit of text.", "initial selection Text");
   is(dt.getData("TEXT"), "This is a draggable bit of text.", "initial selection TEXT");
-  is(dt.getData("text/UNICODE"), "This is a draggable bit of text.", "initial selection text/UNICODE"); 
-
+  is(dt.getData("text/PLAIN"), "This is a draggable bit of text.", "initial selection text/PLAIN");
+  is(dt.getData("text/unicode"), "This is a draggable bit of text.", "initial selection text/unicode");
+  
   is(SpecialPowers.wrap(dt).mozItemCount, 1, "initial selection item count");
 
   dt.clearData("text/plain");
@@ -155,7 +188,7 @@ function test_DataTransfer(dt)
   var types = dt.types;
   ok(Array.isArray(types), "empty types is an Array");
   // The above test fails if we have SpecialPowers.wrap(dt).types instead of dt.types
-  // because chrome consumers get the 'ReturnValueNeedsContainsHack'.
+  // because dt.types will be wrapped and become a proxy.
   // So wrap with special powers after the test
   dt = SpecialPowers.wrap(dt);
   checkTypes(dt, [], 0, "empty");
@@ -548,7 +581,7 @@ function doDragOverSynthetic(event)
 function onDragStartDraggable(event)
 {
   var dt = event.dataTransfer;
-  ok(SpecialPowers.wrap(dt).mozItemCount == 0 && dt.types.length == 0 && event.originalTarget == gDragInfo.target, gDragInfo.testid);
+  ok(SpecialPowers.wrap(dt).mozItemCount == 0 && !dt.types.length && event.originalTarget == gDragInfo.target, gDragInfo.testid);
 
   event.preventDefault();
   gExtraDragTests++;
@@ -590,6 +623,14 @@ function checkURL(dt, url, fullurllist, index, testid)
   is(dt.getData("URL"), url, testid + " URL");
   is(dt.mozGetDataAt("text/uri-list", 0), fullurllist, testid + " text/uri-list");
   is(dt.mozGetDataAt("URL", 0), fullurllist, testid + " URL");
+}
+
+function onDragOverDraggableFalse(event) {
+  ok(false, "Triggered dragstart on draggable=false node " + event.target.id);
+}
+
+function onDragStartUnlinkable(event) {
+  ok(false, "Triggered dragstart on undraggable node " + event.target.id);
 }
 
 function expectError(fn, eid, testid)
@@ -639,7 +680,7 @@ function expectError(fn, eid, testid)
 <div draggable="true" id="shadow_host_containing_draggable"></div>
 
 <script>
-shadow_host_containing_draggable.attachShadow({ mode: 'open' }).innerHTML = 
+shadow_host_containing_draggable.attachShadow({ mode: 'open' }).innerHTML =
 `<span>Inside shadow root</span>`;
 shadow_host_containing_draggable.addEventListener("dragstart", doDragStartInShadowRoot);
 </script>
@@ -649,8 +690,27 @@ shadow_host_containing_draggable.addEventListener("dragstart", doDragStartInShad
 </a>
 
 <script>
-shadow_host_containing_image.attachShadow({ mode: 'open' }).innerHTML = 
+shadow_host_containing_image.attachShadow({ mode: 'open' }).innerHTML =
 `<img src="${$("image").src}" alt="Alt Text"></img>`;
 </script>
+
+<a href="http://example.org" id="link_user_select_none_child" draggable="false" ondragstart="onDragOverDraggableFalse(event)">
+  <span id="userselectnone" style="user-select: none">
+    This is an unselectable, undraggable area.
+  </span>
+</a>
+
+<div id="draggable_with_undraggable_descendant" draggable="true" ondragstart="onDragStartDraggable(event)">
+  <a id="undraggable_inside_draggable" href="http://example.org" draggable="false" ondragstart="onDragOverDraggableFalse(event)">
+    This is an undraggable link inside a draggable ancestor.
+  </a>
+</div>
+
+<a id="link_to_file" href="file:///" ondragstart="onDragStartUnlinkable(event)">This is an undraggable 'file' link</a>
+<a id="link_to_windows_file" href="c:/Users/" ondragstart="onDragStartUnlinkable(event)">This is an undraggable 'file' link</a>
+<a id="link_to_backslash_windows_file" href="c:\\Users\\" ondragstart="onDragStartUnlinkable(event)">This is an undraggable 'file' link</a>
+<img id="broken_file_image" src="file:///" ondragstart="onDragStartUnlinkable(event)">
+<img id="broken_windows_file_image" src="c:/Users/" ondragstart="onDragStartUnlinkable(event)">
+<img id="broken_backslash_windows_file_image" src="c:\\Users\\" ondragstart="onDragStartUnlinkable(event)">
 </body>
 </html>

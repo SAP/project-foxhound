@@ -16,10 +16,16 @@ const TEST_URI = `
   Testing the color picker tooltip!
 `;
 
-add_task(async function() {
+add_task(async function () {
   await addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
   const { view } = await openRuleView();
-  const value = getRuleViewProperty(view, "body", "background").valueSpan;
+
+  // Bug 1767679 - Use { wait: true } to avoid frequent intermittents on linux.
+  const property = await getRuleViewProperty(view, "body", "background", {
+    wait: true,
+  });
+
+  const value = property.valueSpan;
   const swatch = value.querySelectorAll(".ruleview-colorswatch")[0];
   const url = value.querySelector(".theme-link");
   await testImageTooltipAfterColorChange(swatch, url, view);

@@ -27,7 +27,7 @@ NSS Key Log Format
       hexadecimal characters.
    -  ``<Secret>`` depends on the Label (see below).
 
-   The following labels are defined, followed by a description of the secret:
+   The following labels are defined, followed by a description of the secret:
 
    -  ``RSA``: 48 bytes for the premaster secret, encoded as 96 hexadecimal characters (removed in
       NSS 3.34)
@@ -58,4 +58,4 @@ NSS Key Log Format
    secret depends on the selected cipher suite. It is 64, 96 or 128 characters for SHA256, SHA384 or
    SHA512 respectively.
 
-   For Wireshark usage, see `SSL - Wireshark Wiki <https://wiki.wireshark.org/SSL>`__.
+   For Wireshark usage, see `TLS - Wireshark Wiki <https://wiki.wireshark.org/TLS>`__.

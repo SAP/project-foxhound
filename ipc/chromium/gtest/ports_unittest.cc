@@ -4,17 +4,13 @@
 
 #include <inttypes.h>
 #include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 
 #include <map>
-#include <sstream>
 #include <utility>
 
 #include "base/logging.h"
 #include "base/waitable_event.h"
 #include "base/thread.h"
-#include "base/string_piece.h"
 #include "base/string_util.h"
 #include "mojo/core/ports/event.h"
 #include "mojo/core/ports/node.h"
@@ -306,7 +302,7 @@ class TestNode : public NodeDelegate {
   base::WaitableEvent idle_event_;
 
   // Guards fields below.
-  mozilla::Mutex lock_{"TestNode"};
+  mozilla::Mutex lock_ MOZ_UNANNOTATED{"TestNode"};
   bool started_ = false;
   bool dispatching_ = false;
   bool should_quit_ = false;
@@ -445,9 +441,9 @@ class PortsTest : public testing::Test, public MessageRouter {
 
   // Acquired before any operation which makes a Node busy, and before testing
   // if all nodes are idle.
-  mozilla::Mutex global_lock_{"PortsTest Global Lock"};
+  mozilla::Mutex global_lock_ MOZ_UNANNOTATED{"PortsTest Global Lock"};
 
-  mozilla::Mutex lock_{"PortsTest Lock"};
+  mozilla::Mutex lock_ MOZ_UNANNOTATED{"PortsTest Lock"};
   std::map<NodeName, TestNode*> nodes_;
 };
 

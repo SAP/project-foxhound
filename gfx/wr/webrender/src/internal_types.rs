@@ -4,6 +4,7 @@
 
 use api::{ColorF, DocumentId, ExternalImageId, PrimitiveFlags, Parameter, RenderReasons};
 use api::{ImageFormat, NotificationRequest, Shadow, FilterOp, ImageBufferKind};
+use api::FramePublishId;
 use api::units::*;
 use api;
 use crate::render_api::DebugCommand;
@@ -13,6 +14,8 @@ use crate::renderer::{FullFrameStats, PipelineInfo};
 use crate::gpu_cache::GpuCacheUpdateList;
 use crate::frame_builder::Frame;
 use crate::profiler::TransactionProfile;
+use crate::spatial_tree::SpatialNodeIndex;
+use crate::prim_store::PrimitiveInstanceIndex;
 use fxhash::FxHasher;
 use plane_split::BspSplitter;
 use smallvec::SmallVec;
@@ -23,6 +26,7 @@ use std::hash::BuildHasherDefault;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{UNIX_EPOCH, SystemTime};
+use peek_poke::PeekPoke;
 
 #[cfg(any(feature = "capture", feature = "replay"))]
 use crate::capture::CaptureConfig;
@@ -34,10 +38,10 @@ use crate::capture::PlainExternalImage;
 pub type FastHashMap<K, V> = HashMap<K, V, BuildHasherDefault<FxHasher>>;
 pub type FastHashSet<K> = HashSet<K, BuildHasherDefault<FxHasher>>;
 
-#[derive(Copy, Clone, Hash, MallocSizeOf, PartialEq, PartialOrd, Debug, Eq, Ord)]
+#[derive(Copy, Clone, Hash, MallocSizeOf, PartialEq, PartialOrd, Debug, Eq, Ord, PeekPoke)]
 #[cfg_attr(feature = "capture", derive(Serialize))]
 #[cfg_attr(feature = "replay", derive(Deserialize))]
-pub struct FrameId(usize);
+pub struct FrameId(u64);
 
 impl FrameId {
     /// Returns a FrameId corresponding to the first frame.
@@ -51,8 +55,8 @@ impl FrameId {
         FrameId(0)
     }
 
-    /// Returns the backing usize for this FrameId.
-    pub fn as_usize(&self) -> usize {
+    /// Returns the backing u64 for this FrameId.
+    pub fn as_u64(&self) -> u64 {
         self.0
     }
 
@@ -72,16 +76,16 @@ impl Default for FrameId {
     }
 }
 
-impl ::std::ops::Add<usize> for FrameId {
+impl ::std::ops::Add<u64> for FrameId {
     type Output = Self;
-    fn add(self, other: usize) -> FrameId {
+    fn add(self, other: u64) -> FrameId {
         FrameId(self.0 + other)
     }
 }
 
-impl ::std::ops::Sub<usize> for FrameId {
+impl ::std::ops::Sub<u64> for FrameId {
     type Output = Self;
-    fn sub(self, other: usize) -> FrameId {
+    fn sub(self, other: u64) -> FrameId {
         assert!(self.0 >= other, "Underflow subtracting FrameIds");
         FrameId(self.0 - other)
     }
@@ -169,14 +173,17 @@ impl FrameStamp {
 #[derive(Copy, Clone, Debug)]
 #[cfg_attr(feature = "capture", derive(Serialize))]
 pub struct PlaneSplitAnchor {
-    pub cluster_index: usize,
-    pub instance_index: usize,
+    pub spatial_node_index: SpatialNodeIndex,
+    pub instance_index: PrimitiveInstanceIndex,
 }
 
 impl PlaneSplitAnchor {
-    pub fn new(cluster_index: usize, instance_index: usize) -> Self {
+    pub fn new(
+        spatial_node_index: SpatialNodeIndex,
+        instance_index: PrimitiveInstanceIndex,
+    ) -> Self {
         PlaneSplitAnchor {
-            cluster_index,
+            spatial_node_index,
             instance_index,
         }
     }
@@ -185,14 +192,14 @@ impl PlaneSplitAnchor {
 impl Default for PlaneSplitAnchor {
     fn default() -> Self {
         PlaneSplitAnchor {
-            cluster_index: 0,
-            instance_index: 0,
+            spatial_node_index: SpatialNodeIndex::INVALID,
+            instance_index: PrimitiveInstanceIndex(!0),
         }
     }
 }
 
 /// A concrete plane splitter type used in WebRender.
-pub type PlaneSplitter = BspSplitter<f64, WorldPixel, PlaneSplitAnchor>;
+pub type PlaneSplitter = BspSplitter<PlaneSplitAnchor>;
 
 /// An index into the scene's list of plane splitters
 #[derive(Debug, Copy, Clone)]
@@ -208,7 +215,11 @@ const OPACITY_EPSILON: f32 = 0.001;
 #[cfg_attr(feature = "replay", derive(Deserialize))]
 pub enum Filter {
     Identity,
-    Blur(f32, f32),
+    Blur {
+        width: f32,
+        height: f32,
+        should_inflate: bool,
+    },
     Brightness(f32),
     Contrast(f32),
     Grayscale(f32),
@@ -229,7 +240,7 @@ impl Filter {
     pub fn is_visible(&self) -> bool {
         match *self {
             Filter::Identity |
-            Filter::Blur(..) |
+            Filter::Blur { .. } |
             Filter::Brightness(..) |
             Filter::Contrast(..) |
             Filter::Grayscale(..) |
@@ -254,7 +265,7 @@ impl Filter {
     pub fn is_noop(&self) -> bool {
         match *self {
             Filter::Identity => false, // this is intentional
-            Filter::Blur(width, height) => width == 0.0 && height == 0.0,
+            Filter::Blur { width, height, .. } => width == 0.0 && height == 0.0,
             Filter::Brightness(amount) => amount == 1.0,
             Filter::Contrast(amount) => amount == 1.0,
             Filter::Grayscale(amount) => amount == 0.0,
@@ -306,7 +317,7 @@ impl Filter {
             Filter::LinearToSrgb => 9,
             Filter::Flood(..) => 10,
             Filter::ComponentTransfer => 11,
-            Filter::Blur(..) => 12,
+            Filter::Blur { .. } => 12,
             Filter::DropShadows(..) => 13,
             Filter::Opacity(..) => 14,
         }
@@ -317,7 +328,7 @@ impl From<FilterOp> for Filter {
     fn from(op: FilterOp) -> Self {
         match op {
             FilterOp::Identity => Filter::Identity,
-            FilterOp::Blur(w, h) => Filter::Blur(w, h),
+            FilterOp::Blur(width, height) => Filter::Blur { width, height, should_inflate: true },
             FilterOp::Brightness(b) => Filter::Brightness(b),
             FilterOp::Contrast(c) => Filter::Contrast(c),
             FilterOp::Grayscale(g) => Filter::Grayscale(g),
@@ -706,6 +717,7 @@ pub enum ResultMsg {
     },
     PublishPipelineInfo(PipelineInfo),
     PublishDocument(
+        FramePublishId,
         DocumentId,
         RenderedDocument,
         ResourceUpdateList,
@@ -714,9 +726,6 @@ pub enum ResultMsg {
     SetParameter(Parameter),
     ForceRedraw,
 }
-
-#[derive(Clone, Debug)]
-pub struct ResourceCacheError;
 
 /// Primitive metadata we pass around in a bunch of places
 #[derive(Copy, Clone, Debug)]

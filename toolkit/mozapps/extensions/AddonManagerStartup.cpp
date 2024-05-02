@@ -16,6 +16,7 @@
 #include "js/TracingAPI.h"
 #include "xpcpublic.h"
 
+#include "mozilla/AppShutdown.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/EndianUtils.h"
 #include "mozilla/Components.h"
@@ -26,13 +27,14 @@
 #include "mozilla/URLPreloader.h"
 #include "mozilla/Unused.h"
 #include "mozilla/ErrorResult.h"
+#include "mozilla/Services.h"
+#include "mozilla/Try.h"
 #include "mozilla/dom/ipc/StructuredCloneData.h"
 
 #include "nsAppDirectoryServiceDefs.h"
 #include "nsAppRunner.h"
 #include "nsContentUtils.h"
 #include "nsChromeRegistry.h"
-#include "nsIAppStartup.h"
 #include "nsIDOMWindowUtils.h"  // for nsIJSRAIIHelper
 #include "nsIFileURL.h"
 #include "nsIIOService.h"
@@ -41,6 +43,7 @@
 #include "nsIZipReader.h"
 #include "nsJARProtocolHandler.h"
 #include "nsJSUtils.h"
+#include "nsIObserverService.h"
 #include "nsReadableUtils.h"
 #include "nsXULAppAPI.h"
 
@@ -202,7 +205,7 @@ static_assert(sizeof STRUCTURED_CLONE_MAGIC % 8 == 0,
               "Magic number should be an array of uint64_t");
 
 /**
- * Reads the contents of a LZ4-compressed file, as stored by the OS.File
+ * Reads the contents of a LZ4-compressed file, as stored by the IOUtils
  * module, and returns the decompressed contents on success.
  */
 static Result<nsCString, nsresult> ReadFileLZ4(nsIFile* file) {
@@ -219,7 +222,7 @@ static Result<nsCString, nsresult> ReadFileLZ4(nsIFile* file) {
 }
 
 static bool ParseJSON(JSContext* cx, nsACString& jsonData,
-                      JS::MutableHandleValue result) {
+                      JS::MutableHandle<JS::Value> result) {
   NS_ConvertUTF8toUTF16 str(jsonData);
   jsonData.Truncate();
 
@@ -279,7 +282,7 @@ class MOZ_STACK_CLASS WrapperBase {
 
  protected:
   JSContext* mCx;
-  JS::RootedObject mObject;
+  JS::Rooted<JSObject*> mObject;
 
   bool GetBool(const char* name, bool defVal = false);
 
@@ -291,9 +294,9 @@ class MOZ_STACK_CLASS WrapperBase {
 };
 
 bool WrapperBase::GetBool(const char* name, bool defVal) {
-  JS::RootedObject obj(mCx, mObject);
+  JS::Rooted<JSObject*> obj(mCx, mObject);
 
-  JS::RootedValue val(mCx, JS::UndefinedValue());
+  JS::Rooted<JS::Value> val(mCx, JS::UndefinedValue());
   if (!JS_GetProperty(mCx, obj, name, &val)) {
     JS_ClearPendingException(mCx);
   }
@@ -305,9 +308,9 @@ bool WrapperBase::GetBool(const char* name, bool defVal) {
 }
 
 double WrapperBase::GetNumber(const char* name, double defVal) {
-  JS::RootedObject obj(mCx, mObject);
+  JS::Rooted<JSObject*> obj(mCx, mObject);
 
-  JS::RootedValue val(mCx, JS::UndefinedValue());
+  JS::Rooted<JS::Value> val(mCx, JS::UndefinedValue());
   if (!JS_GetProperty(mCx, obj, name, &val)) {
     JS_ClearPendingException(mCx);
   }
@@ -319,9 +322,9 @@ double WrapperBase::GetNumber(const char* name, double defVal) {
 }
 
 nsString WrapperBase::GetString(const char* name, const char* defVal) {
-  JS::RootedObject obj(mCx, mObject);
+  JS::Rooted<JSObject*> obj(mCx, mObject);
 
-  JS::RootedValue val(mCx, JS::UndefinedValue());
+  JS::Rooted<JS::Value> val(mCx, JS::UndefinedValue());
   if (!JS_GetProperty(mCx, obj, name, &val)) {
     JS_ClearPendingException(mCx);
   }
@@ -336,9 +339,9 @@ nsString WrapperBase::GetString(const char* name, const char* defVal) {
 }
 
 JSObject* WrapperBase::GetObject(const char* name) {
-  JS::RootedObject obj(mCx, mObject);
+  JS::Rooted<JSObject*> obj(mCx, mObject);
 
-  JS::RootedValue val(mCx, JS::UndefinedValue());
+  JS::Rooted<JS::Value> val(mCx, JS::UndefinedValue());
   if (!JS_GetProperty(mCx, obj, name, &val)) {
     JS_ClearPendingException(mCx);
   }
@@ -360,9 +363,9 @@ class MOZ_STACK_CLASS InstallLocation : public WrapperBase {
       : InstallLocation(other.mCx, JS::ObjectValue(*other.mObject)) {}
 
   void SetChanged(bool changed) {
-    JS::RootedObject obj(mCx, mObject);
+    JS::Rooted<JSObject*> obj(mCx, mObject);
 
-    JS::RootedValue val(mCx, JS::BooleanValue(changed));
+    JS::Rooted<JS::Value> val(mCx, JS::BooleanValue(changed));
     if (!JS_SetProperty(mCx, obj, "changed", val)) {
       JS_ClearPendingException(mCx);
     }
@@ -377,7 +380,7 @@ class MOZ_STACK_CLASS InstallLocation : public WrapperBase {
   }
 
  private:
-  JS::RootedObject mAddonsObj;
+  JS::Rooted<JSObject*> mAddonsObj;
   Maybe<PropertyIter> mAddonsIter;
 };
 
@@ -440,11 +443,11 @@ Result<bool, nsresult> Addon::UpdateLastModifiedTime() {
   nsCOMPtr<nsIFile> file;
   MOZ_TRY_VAR(file, FullPath());
 
-  JS::RootedObject obj(mCx, mObject);
+  JS::Rooted<JSObject*> obj(mCx, mObject);
 
   bool result;
   if (NS_FAILED(file->Exists(&result)) || !result) {
-    JS::RootedValue value(mCx, JS::NullValue());
+    JS::Rooted<JS::Value> value(mCx, JS::NullValue());
     if (!JS_SetProperty(mCx, obj, "currentModifiedTime", value)) {
       JS_ClearPendingException(mCx);
     }
@@ -467,7 +470,7 @@ Result<bool, nsresult> Addon::UpdateLastModifiedTime() {
   }
 
   double lastModified = time;
-  JS::RootedValue value(mCx, JS::NumberValue(lastModified));
+  JS::Rooted<JS::Value> value(mCx, JS::NumberValue(lastModified));
   if (!JS_SetProperty(mCx, obj, "currentModifiedTime", value)) {
     JS_ClearPendingException(mCx);
   }
@@ -476,7 +479,7 @@ Result<bool, nsresult> Addon::UpdateLastModifiedTime() {
 }
 
 InstallLocation::InstallLocation(JSContext* cx, const JS::Value& value)
-    : WrapperBase(cx, value), mAddonsObj(cx), mAddonsIter() {
+    : WrapperBase(cx, value), mAddonsObj(cx) {
   mAddonsObj = GetObject("addons");
   if (!mAddonsObj) {
     mAddonsObj = JS_NewPlainObject(cx);
@@ -489,7 +492,7 @@ InstallLocation::InstallLocation(JSContext* cx, const JS::Value& value)
  *****************************************************************************/
 
 nsresult AddonManagerStartup::ReadStartupData(
-    JSContext* cx, JS::MutableHandleValue locations) {
+    JSContext* cx, JS::MutableHandle<JS::Value> locations) {
   locations.set(JS::UndefinedValue());
 
   nsCOMPtr<nsIFile> file =
@@ -511,7 +514,7 @@ nsresult AddonManagerStartup::ReadStartupData(
     return NS_ERROR_UNEXPECTED;
   }
 
-  JS::RootedObject locs(cx, &locations.toObject());
+  JS::Rooted<JSObject*> locs(cx, &locations.toObject());
   for (auto e1 : PropertyIter(cx, locs)) {
     InstallLocation loc(e1);
 
@@ -534,8 +537,9 @@ nsresult AddonManagerStartup::ReadStartupData(
   return NS_OK;
 }
 
-nsresult AddonManagerStartup::EncodeBlob(JS::HandleValue value, JSContext* cx,
-                                         JS::MutableHandleValue result) {
+nsresult AddonManagerStartup::EncodeBlob(JS::Handle<JS::Value> value,
+                                         JSContext* cx,
+                                         JS::MutableHandle<JS::Value> result) {
   StructuredCloneData holder;
 
   ErrorResult rv;
@@ -546,23 +550,26 @@ nsresult AddonManagerStartup::EncodeBlob(JS::HandleValue value, JSContext* cx,
 
   nsAutoCString scData;
 
-  holder.Data().ForEachDataChunk([&](const char* aData, size_t aSize) {
-    scData.Append(nsDependentCSubstring(aData, aSize));
-    return true;
-  });
+  bool ok =
+      holder.Data().ForEachDataChunk([&](const char* aData, size_t aSize) {
+        return scData.Append(nsDependentCSubstring(aData, aSize),
+                             mozilla::fallible);
+      });
+  NS_ENSURE_TRUE(ok, NS_ERROR_OUT_OF_MEMORY);
 
   nsCString lz4;
   MOZ_TRY_VAR(lz4, EncodeLZ4(scData, STRUCTURED_CLONE_MAGIC));
 
-  JS::RootedObject obj(cx);
+  JS::Rooted<JSObject*> obj(cx);
   MOZ_TRY(nsContentUtils::CreateArrayBuffer(cx, lz4, &obj.get()));
 
   result.set(JS::ObjectValue(*obj));
   return NS_OK;
 }
 
-nsresult AddonManagerStartup::DecodeBlob(JS::HandleValue value, JSContext* cx,
-                                         JS::MutableHandleValue result) {
+nsresult AddonManagerStartup::DecodeBlob(JS::Handle<JS::Value> value,
+                                         JSContext* cx,
+                                         JS::MutableHandle<JS::Value> result) {
   NS_ENSURE_TRUE(value.isObject() &&
                      JS::IsArrayBufferObject(&value.toObject()) &&
                      JS::ArrayBufferHasData(&value.toObject()),
@@ -592,7 +599,6 @@ nsresult AddonManagerStartup::DecodeBlob(JS::HandleValue value, JSContext* cx,
   ErrorResult rv;
   holder.Read(cx, result, rv);
   return rv.StealNSResult();
-  ;
 }
 
 static nsresult EnumerateZip(nsIZipReader* zip, const nsACString& pattern,
@@ -754,8 +760,7 @@ RegistryEntries::Destruct() {
 
     // No point in doing I/O to check for new chrome during shutdown, return
     // early in that case.
-    nsCOMPtr<nsIAppStartup> appStartup = components::AppStartup::Service();
-    if (!appStartup || appStartup->GetShuttingDown()) {
+    if (AppShutdown::IsInOrBeyond(ShutdownPhase::AppShutdownConfirmed)) {
       return NS_OK;
     }
 
@@ -775,9 +780,9 @@ static LinkedList<RegistryEntries>& GetRegistryEntries() {
 
 NS_IMETHODIMP
 AddonManagerStartup::RegisterChrome(nsIURI* manifestURI,
-                                    JS::HandleValue locations, JSContext* cx,
-                                    nsIJSRAIIHelper** result) {
-  auto IsArray = [cx](JS::HandleValue val) -> bool {
+                                    JS::Handle<JS::Value> locations,
+                                    JSContext* cx, nsIJSRAIIHelper** result) {
+  auto IsArray = [cx](JS::Handle<JS::Value> val) -> bool {
     bool isArray;
     return JS::IsArrayObject(cx, val, &isArray) && isArray;
   };
@@ -792,9 +797,9 @@ AddonManagerStartup::RegisterChrome(nsIURI* manifestURI,
   nsTArray<ContentEntry> content;
   nsTArray<RegistryEntries::Override> overrides;
 
-  JS::RootedObject locs(cx, &locations.toObject());
-  JS::RootedValue arrayVal(cx);
-  JS::RootedObject array(cx);
+  JS::Rooted<JSObject*> locs(cx, &locations.toObject());
+  JS::Rooted<JS::Value> arrayVal(cx);
+  JS::Rooted<JSObject*> array(cx);
 
   for (auto elem : ArrayIter(cx, locs)) {
     arrayVal = elem.Value();

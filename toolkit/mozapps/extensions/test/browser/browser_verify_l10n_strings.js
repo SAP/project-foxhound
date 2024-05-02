@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  BuiltInThemes: "resource:///modules/BuiltInThemes.jsm",
+ChromeUtils.defineESModuleGetters(this, {
+  BuiltInThemes: "resource:///modules/BuiltInThemes.sys.mjs",
 });
 
 // Maps add-on descriptors to updated Fluent IDs. Keep it in sync
@@ -42,9 +42,9 @@ add_task(async function test_ensure_bundled_addons_are_localized() {
     }
   }
 
-  let colorwayThemes = Array.from(
-    BuiltInThemes.builtInThemeMap.keys()
-  ).filter(id => id.endsWith("colorway@mozilla.org"));
+  let colorwayThemes = Array.from(BuiltInThemes.builtInThemeMap.keys()).filter(
+    id => id.endsWith("colorway@mozilla.org")
+  );
   ok(!!colorwayThemes.length, "Colorway themes should exist");
   for (let id of colorwayThemes) {
     let l10nId = id.replace("@mozilla.org", "");

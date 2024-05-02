@@ -6,12 +6,15 @@
 
 const {
   checkVersionCompatibility,
-} = require("devtools/client/shared/remote-debugging/version-checker");
+} = require("resource://devtools/client/shared/remote-debugging/version-checker.js");
 
 const {
   RUNTIME_PREFERENCE,
-} = require("devtools/client/aboutdebugging/src/constants");
-const { WorkersListener } = require("devtools/client/shared/workers-listener");
+} = require("resource://devtools/client/aboutdebugging/src/constants.js");
+const {
+  WorkersListener,
+} = require("resource://devtools/client/shared/workers-listener.js");
+const RootResourceCommand = require("resource://devtools/shared/commands/root-resource/root-resource-command.js");
 
 const PREF_TYPES = {
   BOOL: "BOOL",
@@ -86,6 +89,10 @@ class ClientWrapper {
     };
   }
 
+  createRootResourceCommand() {
+    return new RootResourceCommand({ rootFront: this.client.mainRoot });
+  }
+
   async checkVersionCompatibility() {
     return checkVersionCompatibility(this.client);
   }
@@ -139,6 +146,11 @@ class ClientWrapper {
     return this.client.mainRoot.getAddon({ id });
   }
 
+  async uninstallAddon({ id }) {
+    const addonsFront = await this.getFront("addons");
+    return addonsFront.uninstallAddon(id);
+  }
+
   async getMainProcess() {
     return this.client.mainRoot.getMainProcess();
   }
@@ -148,11 +160,8 @@ class ClientWrapper {
   }
 
   async listWorkers() {
-    const {
-      other,
-      service,
-      shared,
-    } = await this.client.mainRoot.listAllWorkers();
+    const { other, service, shared } =
+      await this.client.mainRoot.listAllWorkers();
 
     return {
       otherWorkers: other,
@@ -171,7 +180,7 @@ class ClientWrapper {
 
   // This method will be mocked to return a dummy URL during mochitests
   getPerformancePanelUrl() {
-    return "chrome://devtools/content/performance-new/index.xhtml";
+    return "chrome://devtools/content/performance-new/panel/index.xhtml";
   }
 
   /**
@@ -198,6 +207,10 @@ class ClientWrapper {
       supportedFeatures,
       openRemoteDevTools
     );
+  }
+
+  get traits() {
+    return { ...this.client.mainRoot.traits };
   }
 }
 

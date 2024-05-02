@@ -6,22 +6,15 @@
 // Test that clicking on the "custom" badge opens the debugger to the pretty-printed
 // custom element definition.
 
-/* import-globals-from ../../../debugger/test/mochitest/helpers.js */
 Services.scriptloader.loadSubScript(
-  "chrome://mochitests/content/browser/devtools/client/debugger/test/mochitest/helpers.js",
-  this
-);
-
-/* import-globals-from ../../../debugger/test/mochitest/helpers/context.js */
-Services.scriptloader.loadSubScript(
-  "chrome://mochitests/content/browser/devtools/client/debugger/test/mochitest/helpers/context.js",
+  "chrome://mochitests/content/browser/devtools/client/debugger/test/mochitest/shared-head.js",
   this
 );
 
 const TEST_URL =
   URL_ROOT + "doc_markup_shadowdom_open_debugger_pretty_printed.html";
 
-add_task(async function() {
+add_task(async function () {
   info("Open inspector.");
   await clearDebuggerPreferences();
   const { inspector, toolbox } = await openInspectorForURL(TEST_URL);
@@ -41,7 +34,7 @@ add_task(async function() {
   const dbg = createDebuggerContext(toolbox);
 
   await waitForSelectedSource(dbg, "shadowdom_open_debugger.min.js");
-  await waitForSelectedLocation(dbg, 2);
+  await waitForSelectedLocation(dbg, 1);
 
   info("Pretty-print source.");
   clickElement(dbg, "prettyPrintButton");
@@ -56,5 +49,5 @@ add_task(async function() {
   customBadge.click();
 
   await waitForSelectedSource(dbg, "shadowdom_open_debugger.min.js:formatted");
-  await waitForSelectedLocation(dbg, 4);
+  await waitForSelectedLocation(dbg, 5);
 });

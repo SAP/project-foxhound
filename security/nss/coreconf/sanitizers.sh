@@ -42,13 +42,18 @@ enable_sancov()
     enable_sanitizer sancov "$sancov"
 }
 
+enable_sourcecov()
+{
+    enable_sanitizer sourcecov
+}
+
 enable_ubsan()
 {
     local ubsan
     if [ -n "$1" ]; then
         ubsan="$1"
     else
-        ubsan=bool,signed-integer-overflow,shift,vptr
+        ubsan=undefined,local-bounds
     fi
     enable_sanitizer ubsan "$ubsan"
 }

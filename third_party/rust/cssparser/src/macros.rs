@@ -2,7 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use matches::matches;
 use std::mem::MaybeUninit;
 
 /// Expands to a `match` expression with string patterns,
@@ -13,11 +12,9 @@ use std::mem::MaybeUninit;
 /// # Example
 ///
 /// ```rust
-/// #[macro_use] extern crate cssparser;
-///
 /// # fn main() {}  // Make doctest not wrap everything in its own main
 /// # fn dummy(function_name: &String) { let _ =
-/// match_ignore_ascii_case! { &function_name,
+/// cssparser::match_ignore_ascii_case! { &function_name,
 ///     "rgb" => parse_rgb(..),
 /// #   #[cfg(not(something))]
 ///     "rgba" => parse_rgba(..),
@@ -52,7 +49,7 @@ macro_rules! match_ignore_ascii_case {
                     $( $( $pattern )+ )+
                 }
             }
-            _cssparser_internal_to_lowercase!($input, cssparser_internal::MAX_LENGTH => lowercase);
+            $crate::_cssparser_internal_to_lowercase!($input, cssparser_internal::MAX_LENGTH => lowercase);
             // "A" is a short string that we know is different for every string pattern,
             // since we’ve verified that none of them include ASCII upper case letters.
             match lowercase.unwrap_or("A") {
@@ -75,43 +72,70 @@ macro_rules! match_ignore_ascii_case {
 /// ## Example:
 ///
 /// ```rust
-/// #[macro_use] extern crate cssparser;
-///
 /// # fn main() {}  // Make doctest not wrap everything in its own main
 ///
 /// fn color_rgb(input: &str) -> Option<(u8, u8, u8)> {
-///     ascii_case_insensitive_phf_map! {
-///         keyword -> (u8, u8, u8) = {
+///     cssparser::ascii_case_insensitive_phf_map! {
+///         keywords -> (u8, u8, u8) = {
 ///             "red" => (255, 0, 0),
 ///             "green" => (0, 255, 0),
 ///             "blue" => (0, 0, 255),
 ///         }
 ///     }
-///     keyword(input).cloned()
+///     keywords::get(input).cloned()
 /// }
+/// ```
+///
+/// You can also iterate over the map entries by using `keywords::entries()`.
 #[macro_export]
 macro_rules! ascii_case_insensitive_phf_map {
     ($name: ident -> $ValueType: ty = { $( $key: tt => $value: expr ),+ }) => {
         ascii_case_insensitive_phf_map!($name -> $ValueType = { $( $key => $value, )+ })
     };
     ($name: ident -> $ValueType: ty = { $( $key: tt => $value: expr, )+ }) => {
-        pub fn $name(input: &str) -> Option<&'static $ValueType> {
-            // This dummy module works around a feature gate,
-            // see comment on the similar module in `match_ignore_ascii_case!` above.
-            mod _cssparser_internal {
-                $crate::_cssparser_internal_max_len! {
-                    $( $key )+
-                }
+        use $crate::_cssparser_internal_phf as phf;
+
+        // See macro above for context.
+        mod cssparser_internal {
+            $crate::_cssparser_internal_max_len! {
+                $( $key )+
             }
-            use $crate::_cssparser_internal_phf as phf;
-            static MAP: phf::Map<&'static str, $ValueType> = phf::phf_map! {
-                $(
-                    $key => $value,
-                )*
-            };
-            _cssparser_internal_to_lowercase!(input, _cssparser_internal::MAX_LENGTH => lowercase);
-            lowercase.and_then(|s| MAP.get(s))
         }
+
+        static MAP: phf::Map<&'static str, $ValueType> = phf::phf_map! {
+            $(
+                $key => $value,
+            )*
+        };
+
+        // While the obvious choice for this would be an inner module, it's not possible to
+        // reference from types from there, see:
+        // <https://github.com/rust-lang/rust/issues/114369>
+        //
+        // So we abuse a struct with static associated functions instead.
+        #[allow(non_camel_case_types)]
+        struct $name;
+        impl $name {
+            #[allow(dead_code)]
+            fn entries() -> impl Iterator<Item = (&'static &'static str, &'static $ValueType)> {
+                MAP.entries()
+            }
+
+            fn get(input: &str) -> Option<&'static $ValueType> {
+                $crate::_cssparser_internal_to_lowercase!(input, cssparser_internal::MAX_LENGTH => lowercase);
+                MAP.get(lowercase?)
+            }
+        }
+    }
+}
+
+/// Create a new array of MaybeUninit<T> items, in an uninitialized state.
+#[inline(always)]
+pub fn _cssparser_internal_create_uninit_array<const N: usize>() -> [MaybeUninit<u8>; N] {
+    unsafe {
+        // SAFETY: An uninitialized `[MaybeUninit<_>; LEN]` is valid.
+        // See: https://doc.rust-lang.org/stable/core/mem/union.MaybeUninit.html#method.uninit_array
+        MaybeUninit::<[MaybeUninit<u8>; N]>::uninit().assume_init()
     }
 }
 
@@ -126,11 +150,7 @@ macro_rules! ascii_case_insensitive_phf_map {
 #[doc(hidden)]
 macro_rules! _cssparser_internal_to_lowercase {
     ($input: expr, $BUFFER_SIZE: expr => $output: ident) => {
-        #[allow(unsafe_code)]
-        let mut buffer = unsafe {
-            ::std::mem::MaybeUninit::<[::std::mem::MaybeUninit<u8>; $BUFFER_SIZE]>::uninit()
-                .assume_init()
-        };
+        let mut buffer = $crate::_cssparser_internal_create_uninit_array::<{ $BUFFER_SIZE }>();
         let input: &str = $input;
         let $output = $crate::_cssparser_internal_to_lowercase(&mut buffer, input);
     };
@@ -157,22 +177,21 @@ pub fn _cssparser_internal_to_lowercase<'a>(
         input: &'a str,
         first_uppercase: usize,
     ) -> &'a str {
-        unsafe {
-            // This cast doesn't change the pointer's validity
-            // since `u8` has the same layout as `MaybeUninit<u8>`:
-            let input_bytes = &*(input.as_bytes() as *const [u8] as *const [MaybeUninit<u8>]);
+        // This cast doesn't change the pointer's validity
+        // since `u8` has the same layout as `MaybeUninit<u8>`:
+        let input_bytes =
+            unsafe { &*(input.as_bytes() as *const [u8] as *const [MaybeUninit<u8>]) };
 
-            buffer.copy_from_slice(&*input_bytes);
+        buffer.copy_from_slice(&*input_bytes);
 
-            // Same as above re layout, plus these bytes have been initialized:
-            let buffer = &mut *(buffer as *mut [MaybeUninit<u8>] as *mut [u8]);
+        // Same as above re layout, plus these bytes have been initialized:
+        let buffer = unsafe { &mut *(buffer as *mut [MaybeUninit<u8>] as *mut [u8]) };
 
-            buffer[first_uppercase..].make_ascii_lowercase();
-            // `buffer` was initialized to a copy of `input`
-            // (which is `&str` so well-formed UTF-8)
-            // then ASCII-lowercased (which preserves UTF-8 well-formedness):
-            ::std::str::from_utf8_unchecked(buffer)
-        }
+        buffer[first_uppercase..].make_ascii_lowercase();
+        // `buffer` was initialized to a copy of `input`
+        // (which is `&str` so well-formed UTF-8)
+        // then ASCII-lowercased (which preserves UTF-8 well-formedness):
+        unsafe { ::std::str::from_utf8_unchecked(buffer) }
     }
 
     Some(
@@ -182,15 +201,4 @@ pub fn _cssparser_internal_to_lowercase<'a>(
             None => input,
         },
     )
-}
-
-#[cfg(feature = "dummy_match_byte")]
-macro_rules! match_byte {
-    ($value:expr, $($rest:tt)* ) => {
-        match $value {
-            $(
-                $rest
-            )+
-        }
-    };
 }

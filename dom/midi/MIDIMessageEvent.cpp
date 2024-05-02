@@ -4,6 +4,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "js/Realm.h"
 #include "mozilla/dom/EventBinding.h"
 #include "mozilla/dom/MIDIMessageEvent.h"
 #include "mozilla/dom/MIDIMessageEventBinding.h"
@@ -18,21 +19,11 @@
 
 namespace mozilla::dom {
 
-NS_IMPL_CYCLE_COLLECTION_CLASS(MIDIMessageEvent)
+NS_IMPL_CYCLE_COLLECTION_INHERITED_WITH_JS_MEMBERS(MIDIMessageEvent, Event, (),
+                                                   (mData))
 
 NS_IMPL_ADDREF_INHERITED(MIDIMessageEvent, Event)
 NS_IMPL_RELEASE_INHERITED(MIDIMessageEvent, Event)
-
-NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(MIDIMessageEvent, Event)
-NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
-
-NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN_INHERITED(MIDIMessageEvent, Event)
-  NS_IMPL_CYCLE_COLLECTION_TRACE_JS_MEMBER_CALLBACK(mData)
-NS_IMPL_CYCLE_COLLECTION_TRACE_END
-
-NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(MIDIMessageEvent, Event)
-  tmp->mData = nullptr;
-NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(MIDIMessageEvent)
 NS_INTERFACE_MAP_END_INHERITING(Event)
@@ -72,12 +63,15 @@ already_AddRefed<MIDIMessageEvent> MIDIMessageEvent::Constructor(
   e->InitEvent(aType, aEventInitDict.mBubbles, aEventInitDict.mCancelable);
   // Set data for event. Timestamp will always be set to Now() (default for
   // event) using this constructor.
-  const auto& a = aEventInitDict.mData.Value();
-  a.ComputeState();
-  e->mData = Uint8Array::Create(aGlobal.Context(), owner, a.Length(), a.Data());
-  if (NS_WARN_IF(!e->mData)) {
-    aRv.Throw(NS_ERROR_OUT_OF_MEMORY);
-    return nullptr;
+  if (aEventInitDict.mData.WasPassed()) {
+    JSAutoRealm ar(aGlobal.Context(), aGlobal.Get());
+    JS::Rooted<JSObject*> data(aGlobal.Context(),
+                               aEventInitDict.mData.Value().Obj());
+    e->mData = JS_NewUint8ArrayFromArray(aGlobal.Context(), data);
+    if (NS_WARN_IF(!e->mData)) {
+      aRv.Throw(NS_ERROR_OUT_OF_MEMORY);
+      return nullptr;
+    }
   }
 
   e->SetTrusted(trusted);
@@ -89,10 +83,8 @@ void MIDIMessageEvent::GetData(JSContext* cx,
                                JS::MutableHandle<JSObject*> aData,
                                ErrorResult& aRv) {
   if (!mData) {
-    mData =
-        Uint8Array::Create(cx, this, mRawData.Length(), mRawData.Elements());
-    if (!mData) {
-      aRv.Throw(NS_ERROR_OUT_OF_MEMORY);
+    mData = Uint8Array::Create(cx, this, mRawData, aRv);
+    if (aRv.Failed()) {
       return;
     }
     mRawData.Clear();

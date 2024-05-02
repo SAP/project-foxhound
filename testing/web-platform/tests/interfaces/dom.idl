@@ -77,7 +77,7 @@ dictionary EventListenerOptions {
 };
 
 dictionary AddEventListenerOptions : EventListenerOptions {
-  boolean passive = false;
+  boolean passive;
   boolean once = false;
   AbortSignal signal;
 };
@@ -94,6 +94,8 @@ interface AbortController {
 [Exposed=*]
 interface AbortSignal : EventTarget {
   [NewObject] static AbortSignal abort(optional any reason);
+  [Exposed=(Window,Worker), NewObject] static AbortSignal timeout([EnforceRange] unsigned long long milliseconds);
+  [NewObject] static AbortSignal _any(sequence<AbortSignal> signals);
 
   readonly attribute boolean aborted;
   readonly attribute any reason;
@@ -617,7 +619,7 @@ callback interface XPathNSResolver {
 
 interface mixin XPathEvaluatorBase {
   [NewObject] XPathExpression createExpression(DOMString expression, optional XPathNSResolver? resolver = null);
-  XPathNSResolver createNSResolver(Node nodeResolver);
+  Node createNSResolver(Node nodeResolver); // legacy
   // XPathResult.ANY_TYPE = 0
   XPathResult evaluate(DOMString expression, Node contextNode, optional XPathNSResolver? resolver = null, optional unsigned short type = 0, optional XPathResult? result = null);
 };

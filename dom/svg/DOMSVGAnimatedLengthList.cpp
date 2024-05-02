@@ -15,8 +15,7 @@
 
 // See the architecture comment in this file's header.
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 static inline SVGAttrTearoffTable<SVGAnimatedLengthList,
                                   DOMSVGAnimatedLengthList>&
@@ -28,9 +27,6 @@ SVGAnimatedLengthListTearoffTable() {
 
 NS_SVG_VAL_IMPL_CYCLE_COLLECTION_WRAPPERCACHED(DOMSVGAnimatedLengthList,
                                                mElement)
-
-NS_IMPL_CYCLE_COLLECTION_ROOT_NATIVE(DOMSVGAnimatedLengthList, AddRef)
-NS_IMPL_CYCLE_COLLECTION_UNROOT_NATIVE(DOMSVGAnimatedLengthList, Release)
 
 JSObject* DOMSVGAnimatedLengthList::WrapObject(
     JSContext* aCx, JS::Handle<JSObject*> aGivenProto) {
@@ -127,5 +123,4 @@ const SVGAnimatedLengthList& DOMSVGAnimatedLengthList::InternalAList() const {
   return *mElement->GetAnimatedLengthList(mAttrEnum);
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

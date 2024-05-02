@@ -16,7 +16,7 @@
 using namespace mozilla;
 using mozilla::dom::HTMLInputElement;
 
-//#define FCF_NOISY
+// #define FCF_NOISY
 
 nsCheckboxRadioFrame* NS_NewCheckboxRadioFrame(PresShell* aPresShell,
                                                ComputedStyle* aStyle) {
@@ -85,27 +85,38 @@ LogicalSize nsCheckboxRadioFrame::ComputeAutoSize(
   return size;
 }
 
-nscoord nsCheckboxRadioFrame::GetLogicalBaseline(
-    WritingMode aWritingMode) const {
+Maybe<nscoord> nsCheckboxRadioFrame::GetNaturalBaselineBOffset(
+    WritingMode aWM, BaselineSharingGroup aBaselineGroup,
+    BaselineExportContext) const {
   NS_ASSERTION(!IsSubtreeDirty(), "frame must not be dirty");
+
+  if (aBaselineGroup == BaselineSharingGroup::Last) {
+    return Nothing{};
+  }
+
+  if (StyleDisplay()->IsBlockOutsideStyle()) {
+    return Nothing{};
+  }
 
   // For appearance:none we use a standard CSS baseline, i.e. synthesized from
   // our margin-box.
   if (!StyleDisplay()->HasAppearance()) {
-    return nsAtomicContainerFrame::GetLogicalBaseline(aWritingMode);
+    return Nothing{};
   }
 
+  if (aWM.IsCentralBaseline()) {
+    return Some(GetLogicalUsedBorderAndPadding(aWM).BStart(aWM) +
+                ContentBSize(aWM) / 2);
+  }
   // This is for compatibility with Chrome, Safari and Edge (Dec 2016).
   // Treat radio buttons and checkboxes as having an intrinsic baseline
   // at the block-end of the control (use the block-end content edge rather
   // than the margin edge).
   // For "inverted" lines (typically in writing-mode:vertical-lr), use the
   // block-start end instead.
-  return aWritingMode.IsLineInverted()
-             ? GetLogicalUsedBorderAndPadding(aWritingMode).BStart(aWritingMode)
-             : BSize(aWritingMode) -
-                   GetLogicalUsedBorderAndPadding(aWritingMode)
-                       .BEnd(aWritingMode);
+  return Some(aWM.IsLineInverted()
+                  ? GetLogicalUsedBorderAndPadding(aWM).BStart(aWM)
+                  : BSize(aWM) - GetLogicalUsedBorderAndPadding(aWM).BEnd(aWM));
 }
 
 void nsCheckboxRadioFrame::Reflow(nsPresContext* aPresContext,
@@ -133,7 +144,6 @@ void nsCheckboxRadioFrame::Reflow(nsPresContext* aPresContext,
   NS_FRAME_TRACE(NS_FRAME_TRACE_CALLS,
                  ("exit nsCheckboxRadioFrame::Reflow: size=%d,%d",
                   aDesiredSize.Width(), aDesiredSize.Height()));
-  NS_FRAME_SET_TRUNCATION(aStatus, aReflowInput, aDesiredSize);
 
   aDesiredSize.SetOverflowAreasToDesiredBounds();
   FinishAndStoreOverflow(&aDesiredSize);
@@ -149,13 +159,6 @@ nsresult nsCheckboxRadioFrame::HandleEvent(nsPresContext* aPresContext,
     return nsIFrame::HandleEvent(aPresContext, aEvent, aEventStatus);
   }
   return NS_OK;
-}
-
-void nsCheckboxRadioFrame::GetCurrentCheckState(bool* aState) {
-  HTMLInputElement* inputElement = HTMLInputElement::FromNode(mContent);
-  if (inputElement) {
-    *aState = inputElement->Checked();
-  }
 }
 
 nsresult nsCheckboxRadioFrame::SetFormProperty(nsAtom* aName,

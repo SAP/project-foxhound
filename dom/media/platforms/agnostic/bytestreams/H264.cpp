@@ -9,10 +9,12 @@
 #include "BitReader.h"
 #include "BitWriter.h"
 #include "BufferReader.h"
+#include "ByteStreamsUtils.h"
 #include "ByteWriter.h"
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/PodOperations.h"
 #include "mozilla/ResultExtensions.h"
+#include "mozilla/Try.h"
 
 #define READSE(var, min, max)     \
   {                               \
@@ -31,6 +33,10 @@
     }                            \
     aDest.var = uval;            \
   }
+
+mozilla::LazyLogModule gH264("H264");
+
+#define LOG(msg, ...) MOZ_LOG(gH264, LogLevel::Debug, (msg, ##__VA_ARGS__))
 
 namespace mozilla {
 
@@ -119,64 +125,6 @@ bool SPSData::operator==(const SPSData& aOther) const {
 bool SPSData::operator!=(const SPSData& aOther) const {
   return !(operator==(aOther));
 }
-
-// Described in ISO 23001-8:2016
-// Table 2
-enum class PrimaryID : uint8_t {
-  INVALID = 0,
-  BT709 = 1,
-  UNSPECIFIED = 2,
-  BT470M = 4,
-  BT470BG = 5,
-  SMPTE170M = 6,
-  SMPTE240M = 7,
-  FILM = 8,
-  BT2020 = 9,
-  SMPTEST428_1 = 10,
-  SMPTEST431_2 = 11,
-  SMPTEST432_1 = 12,
-  EBU_3213_E = 22
-};
-
-// Table 3
-enum class TransferID : uint8_t {
-  INVALID = 0,
-  BT709 = 1,
-  UNSPECIFIED = 2,
-  GAMMA22 = 4,
-  GAMMA28 = 5,
-  SMPTE170M = 6,
-  SMPTE240M = 7,
-  LINEAR = 8,
-  LOG = 9,
-  LOG_SQRT = 10,
-  IEC61966_2_4 = 11,
-  BT1361_ECG = 12,
-  IEC61966_2_1 = 13,
-  BT2020_10 = 14,
-  BT2020_12 = 15,
-  SMPTEST2084 = 16,
-  SMPTEST428_1 = 17,
-
-  // Not yet standardized
-  ARIB_STD_B67 = 18,  // AKA hybrid-log gamma, HLG.
-};
-
-// Table 4
-enum class MatrixID : uint8_t {
-  RGB = 0,
-  BT709 = 1,
-  UNSPECIFIED = 2,
-  FCC = 4,
-  BT470BG = 5,
-  SMPTE170M = 6,
-  SMPTE240M = 7,
-  YCOCG = 8,
-  BT2020_NCL = 9,
-  BT2020_CL = 10,
-  YDZDX = 11,
-  INVALID = 255,
-};
 
 static PrimaryID GetPrimaryID(int aPrimary) {
   if (aPrimary < 1 || aPrimary > 22 || aPrimary == 3) {
@@ -939,13 +887,14 @@ uint32_t H264::ComputeMaxRefFrames(const mozilla::MediaByteBuffer* aExtraData) {
 
 /* static */ H264::FrameType H264::GetFrameType(
     const mozilla::MediaRawData* aSample) {
-  if (!AnnexB::IsAVCC(aSample)) {
+  auto avcc = AVCCConfig::Parse(aSample);
+  if (avcc.isErr()) {
     // We must have a valid AVCC frame with extradata.
     return FrameType::INVALID;
   }
   MOZ_ASSERT(aSample->Data());
 
-  int nalLenSize = ((*aSample->mExtraData)[4] & 3) + 1;
+  int nalLenSize = avcc.unwrap().NALUSize();
 
   BufferReader reader(aSample->Data(), aSample->Size());
 
@@ -995,7 +944,8 @@ uint32_t H264::ComputeMaxRefFrames(const mozilla::MediaByteBuffer* aExtraData) {
 
 /* static */ already_AddRefed<mozilla::MediaByteBuffer> H264::ExtractExtraData(
     const mozilla::MediaRawData* aSample) {
-  MOZ_ASSERT(AnnexB::IsAVCC(aSample));
+  auto avcc = AVCCConfig::Parse(aSample);
+  MOZ_ASSERT(avcc.isOk());
 
   RefPtr<mozilla::MediaByteBuffer> extradata = new mozilla::MediaByteBuffer;
 
@@ -1008,7 +958,7 @@ uint32_t H264::ComputeMaxRefFrames(const mozilla::MediaByteBuffer* aExtraData) {
   ByteWriter<BigEndian> ppsw(pps);
   int numPps = 0;
 
-  int nalLenSize = ((*aSample->mExtraData)[4] & 3) + 1;
+  int nalLenSize = avcc.unwrap().NALUSize();
 
   size_t sampleSize = aSample->Size();
   if (aSample->mCrypto.IsEncrypted()) {
@@ -1117,25 +1067,14 @@ uint32_t H264::ComputeMaxRefFrames(const mozilla::MediaByteBuffer* aExtraData) {
 }
 
 /* static */
-bool H264::HasSPS(const mozilla::MediaByteBuffer* aExtraData) {
-  return NumSPS(aExtraData) > 0;
+uint8_t H264::NumSPS(const mozilla::MediaByteBuffer* aExtraData) {
+  auto avcc = AVCCConfig::Parse(aExtraData);
+  return avcc.isErr() ? 0 : avcc.unwrap().mNumSPS;
 }
 
 /* static */
-uint8_t H264::NumSPS(const mozilla::MediaByteBuffer* aExtraData) {
-  if (!aExtraData || aExtraData->IsEmpty()) {
-    return 0;
-  }
-
-  BufferReader reader(aExtraData);
-  if (!reader.Read(5)) {
-    return 0;
-  }
-  auto res = reader.ReadU8();
-  if (res.isErr()) {
-    return 0;
-  }
-  return res.unwrap() & 0x1f;
+bool H264::HasSPS(const mozilla::MediaByteBuffer* aExtraData) {
+  return H264::NumSPS(aExtraData) > 0;
 }
 
 /* static */
@@ -1277,6 +1216,8 @@ bool H264::DecodeRecoverySEI(const mozilla::MediaByteBuffer* aSEI,
     bw.WriteUE(1);  // chroma_format_idc -> always set to 4:2:0 chroma format
     bw.WriteUE(0);  // bit_depth_luma_minus8 -> always 8 bits here
     bw.WriteUE(0);  // bit_depth_chroma_minus8 -> always 8 bits here
+    bw.WriteBit(false);  // qpprime_y_zero_transform_bypass_flag
+    bw.WriteBit(false);  // seq_scaling_matrix_present_flag
   }
 
   bw.WriteBits(br.ReadBits(11),
@@ -1348,7 +1289,42 @@ void H264::WriteExtraData(MediaByteBuffer* aDestExtraData,
   aDestExtraData->AppendElements(aPPS.Elements(), aPPS.Length());
 }
 
+/* static */ Result<AVCCConfig, nsresult> AVCCConfig::Parse(
+    const mozilla::MediaRawData* aSample) {
+  if (!aSample || aSample->Size() < 3) {
+    return mozilla::Err(NS_ERROR_FAILURE);
+  }
+  if (aSample->mTrackInfo &&
+      !aSample->mTrackInfo->mMimeType.EqualsLiteral("video/avc")) {
+    LOG("Only allow 'video/avc' (mimeType=%s)",
+        aSample->mTrackInfo->mMimeType.get());
+    return mozilla::Err(NS_ERROR_FAILURE);
+  }
+  return AVCCConfig::Parse(aSample->mExtraData);
+}
+
+/* static */ Result<AVCCConfig, nsresult> AVCCConfig::Parse(
+    const mozilla::MediaByteBuffer* aExtraData) {
+  if (!aExtraData || aExtraData->Length() < 7) {
+    return mozilla::Err(NS_ERROR_FAILURE);
+  }
+  const auto& byteBuffer = *aExtraData;
+  if (byteBuffer[0] != 1) {
+    return mozilla::Err(NS_ERROR_FAILURE);
+  }
+  AVCCConfig avcc;
+  avcc.mConfigurationVersion = byteBuffer[0];
+  avcc.mAVCProfileIndication = byteBuffer[1];
+  avcc.mProfileCompatibility = byteBuffer[2];
+  avcc.mAVCLevelIndication = byteBuffer[3];
+  avcc.mLengthSizeMinusOne = byteBuffer[4] & 0x3;
+  avcc.mNumSPS = byteBuffer[5] & 0x1F;
+  return avcc;
+}
+
 #undef READUE
 #undef READSE
 
 }  // namespace mozilla
+
+#undef LOG

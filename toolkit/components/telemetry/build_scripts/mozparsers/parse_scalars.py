@@ -2,13 +2,13 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+import atexit
 import io
 import re
-import six
-import yaml
-import atexit
-from . import shared_telemetry_utils as utils
 
+import yaml
+
+from . import shared_telemetry_utils as utils
 from .shared_telemetry_utils import ParserError
 
 atexit.register(ParserError.exit_func)
@@ -113,16 +113,16 @@ class ScalarType:
         # The required and optional fields in a scalar type definition.
         REQUIRED_FIELDS = {
             "bug_numbers": list,  # This contains ints. See LIST_FIELDS_CONTENT.
-            "description": six.string_types,
-            "expires": six.string_types,
-            "kind": six.string_types,
+            "description": str,
+            "expires": str,
+            "kind": str,
             "notification_emails": list,  # This contains strings. See LIST_FIELDS_CONTENT.
             "record_in_processes": list,
             "products": list,
         }
 
         OPTIONAL_FIELDS = {
-            "release_channel_collection": six.string_types,
+            "release_channel_collection": str,
             "keyed": bool,
             "keys": list,
             "operating_systems": list,
@@ -132,12 +132,12 @@ class ScalarType:
         # The types for the data within the fields that hold lists.
         LIST_FIELDS_CONTENT = {
             "bug_numbers": int,
-            "notification_emails": six.string_types,
-            "record_in_processes": six.string_types,
-            "products": six.string_types,
-            "keys": six.string_types,
-            "operating_systems": six.string_types,
-            "record_into_store": six.string_types,
+            "notification_emails": str,
+            "record_in_processes": str,
+            "products": str,
+            "keys": str,
+            "operating_systems": str,
+            "record_into_store": str,
         }
 
         # Concatenate the required and optional field definitions.

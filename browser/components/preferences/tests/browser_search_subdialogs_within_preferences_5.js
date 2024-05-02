@@ -5,7 +5,7 @@
 requestLongerTimeout(2);
 
 // Enabling Searching functionatily. Will display search bar form this testcase forward.
-add_task(async function() {
+add_task(async function () {
   await SpecialPowers.pushPrefEnv({
     set: [["browser.preferences.search", true]],
   });
@@ -14,7 +14,7 @@ add_task(async function() {
 /**
  * Test for searching for the "Fonts" subdialog.
  */
-add_task(async function() {
+add_task(async function () {
   await openPreferencesViaOpenPreferencesAPI("paneGeneral", {
     leaveOpen: true,
   });
@@ -26,18 +26,18 @@ add_task(async function() {
 /**
  * Test for searching for the "Colors" subdialog.
  */
-add_task(async function() {
+add_task(async function () {
   await openPreferencesViaOpenPreferencesAPI("paneGeneral", {
     leaveOpen: true,
   });
-  await evaluateSearchResults("Link Colors", "fontsGroup");
+  await evaluateSearchResults("Link Colors", "colorsGroup");
   BrowserTestUtils.removeTab(gBrowser.selectedTab);
 });
 
 /**
  * Test for searching for the "Exceptions - Saved Logins" subdialog.
  */
-add_task(async function() {
+add_task(async function () {
   await openPreferencesViaOpenPreferencesAPI("paneGeneral", {
     leaveOpen: true,
   });

@@ -15,8 +15,9 @@ function waitForAboutNewTabReady(browser, url) {
 
 /**
  * Test whether a given browser has the new tab page theme applied
- * @param {Object} browser to test against
- * @param {Object} theme that is applied
+ *
+ * @param {object} browser to test against
+ * @param {object} theme that is applied
  * @param {boolean} isBrightText whether the brighttext attribute should be set
  * @returns {Promise} The task as a promise
  */
@@ -32,14 +33,14 @@ function test_ntp_theme(browser, theme, isBrightText) {
         color: hexToCSS(theme.colors.ntp_text),
       },
     ],
-    function({ isBrightText, background, card_background, color }) {
+    function ({ isBrightText, background, card_background, color }) {
       let doc = content.document;
       ok(
-        doc.body.hasAttribute("lwt-newtab"),
+        doc.documentElement.hasAttribute("lwt-newtab"),
         "New tab page should have lwt-newtab attribute"
       );
       is(
-        doc.body.hasAttribute("lwt-newtab-brighttext"),
+        doc.documentElement.hasAttribute("lwt-newtab-brighttext"),
         isBrightText,
         `New tab page should${
           !isBrightText ? " not" : ""
@@ -68,7 +69,8 @@ function test_ntp_theme(browser, theme, isBrightText) {
 
 /**
  * Test whether a given browser has the default theme applied
- * @param {Object} browser to test against
+ *
+ * @param {object} browser to test against
  * @param {string} url being tested
  * @returns {Promise} The task as a promise
  */
@@ -82,14 +84,14 @@ function test_ntp_default_theme(browser, url) {
         color: hexToCSS("#15141A"),
       },
     ],
-    function({ background, color }) {
+    function ({ background, color }) {
       let doc = content.document;
       ok(
-        !doc.body.hasAttribute("lwt-newtab"),
+        !doc.documentElement.hasAttribute("lwt-newtab"),
         "New tab page should not have lwt-newtab attribute"
       );
       ok(
-        !doc.body.hasAttribute("lwt-newtab-brighttext"),
+        !doc.documentElement.hasAttribute("lwt-newtab-brighttext"),
         `New tab page should not have lwt-newtab-brighttext attribute`
       );
 
@@ -205,7 +207,7 @@ add_task(async function test_per_window_ntp_theme() {
     async ({ theme, isBrightText, winId }) => {
       let win = Services.wm.getOuterWindowWithId(winId);
       win.NewTabPagePreloading.removePreloadedBrowser(win);
-      // These pages were initially chosen because LightweightThemeChild.jsm
+      // These pages were initially chosen because LightweightThemeChild.sys.mjs
       // treats them specially.
       for (let url of ["about:newtab", "about:home"]) {
         info("Opening url: " + url);

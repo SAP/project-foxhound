@@ -1,7 +1,7 @@
 /* import-globals-from ../../../common/tests/unit/head_helpers.js */
 
-var { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+var { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 
 try {
@@ -19,8 +19,8 @@ try {
     OS = "Linux";
   }
 
-  const { updateAppInfo } = ChromeUtils.import(
-    "resource://testing-common/AppInfo.jsm"
+  const { updateAppInfo } = ChromeUtils.importESModule(
+    "resource://testing-common/AppInfo.sys.mjs"
   );
   updateAppInfo({
     name: "XPCShell",
@@ -56,9 +56,6 @@ function base64UrlDecode(s) {
 
 // Register resource alias. Normally done in SyncComponents.manifest.
 function addResourceAlias() {
-  const { Services } = ChromeUtils.import(
-    "resource://gre/modules/Services.jsm"
-  );
   const resProt = Services.io
     .getProtocolHandler("resource")
     .QueryInterface(Ci.nsIResProtocolHandler);
@@ -76,6 +73,6 @@ addResourceAlias();
  * @usage _("Hello World") -> prints "Hello World"
  * @usage _(1, 2, 3) -> prints "1 2 3"
  */
-var _ = function(some, debug, text, to) {
+var _ = function (some, debug, text, to) {
   print(Array.from(arguments).join(" "));
 };

@@ -94,10 +94,8 @@ class nsMathMLmfracFrame final : public nsMathMLContainerFrame {
   explicit nsMathMLmfracFrame(ComputedStyle* aStyle,
                               nsPresContext* aPresContext)
       : nsMathMLContainerFrame(aStyle, aPresContext, kClassID),
-        mLineRect(),
         mSlashChar(nullptr),
-        mLineThickness(0),
-        mIsBevelled(false) {}
+        mLineThickness(0) {}
   virtual ~nsMathMLmfracFrame();
 
   nsresult PlaceInternal(DrawTarget* aDrawTarget, bool aPlaceOrigin,
@@ -110,7 +108,6 @@ class nsMathMLmfracFrame final : public nsMathMLContainerFrame {
   nsRect mLineRect;
   nsMathMLChar* mSlashChar;
   nscoord mLineThickness;
-  bool mIsBevelled;
 };
 
 #endif /* nsMathMLmfracFrame_h___ */

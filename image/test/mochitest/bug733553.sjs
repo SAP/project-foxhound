@@ -24,13 +24,11 @@ var bodyParts = [
   ["invalid.jpg", "image/jpeg"],
   ["animated-gif2.gif", "image/gif"],
 ];
-var timer = Components.classes["@mozilla.org/timer;1"];
-var partTimer = timer.createInstance(Components.interfaces.nsITimer);
+var timer = Cc["@mozilla.org/timer;1"];
+var partTimer = timer.createInstance(Ci.nsITimer);
 
 function getFileAsInputStream(aFilename) {
-  var file = Components.classes["@mozilla.org/file/directory_service;1"]
-    .getService(Components.interfaces.nsIProperties)
-    .get("CurWorkD", Components.interfaces.nsIFile);
+  var file = Services.dirsvc.get("CurWorkD", Ci.nsIFile);
 
   file.append("tests");
   file.append("image");
@@ -38,9 +36,9 @@ function getFileAsInputStream(aFilename) {
   file.append("mochitest");
   file.append(aFilename);
 
-  var fileStream = Components.classes[
+  var fileStream = Cc[
     "@mozilla.org/network/file-input-stream;1"
-  ].createInstance(Components.interfaces.nsIFileInputStream);
+  ].createInstance(Ci.nsIFileInputStream);
   fileStream.init(file, 1, 0, false);
   return fileStream;
 }
@@ -76,15 +74,11 @@ function sendParts(response) {
     if (!wait) {
       callback = getSendNextPart(response);
     } else {
-      callback = function() {
+      callback = function () {
         sendParts(response);
       };
     }
-    partTimer.initWithCallback(
-      callback,
-      1000,
-      Components.interfaces.nsITimer.TYPE_ONE_SHOT
-    );
+    partTimer.initWithCallback(callback, 1000, Ci.nsITimer.TYPE_ONE_SHOT);
   } else {
     sendClose(response);
   }
@@ -99,7 +93,7 @@ function getSendNextPart(response) {
   var part = bodyParts[bodyPartIndex];
   var nextPartHead = "Content-Type: " + part[1] + "\r\n\r\n";
   var inputStream = getFileAsInputStream(part[0]);
-  return function() {
+  return function () {
     response.bodyOutputStream.write(nextPartHead, nextPartHead.length);
     response.bodyOutputStream.writeFrom(inputStream, inputStream.available());
     inputStream.close();

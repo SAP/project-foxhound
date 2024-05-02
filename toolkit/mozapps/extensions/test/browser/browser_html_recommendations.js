@@ -4,8 +4,8 @@
 
 "use strict";
 
-const { AddonTestUtils } = ChromeUtils.import(
-  "resource://testing-common/AddonTestUtils.jsm"
+const { AddonTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/AddonTestUtils.sys.mjs"
 );
 
 AddonTestUtils.initMochitest(this);
@@ -14,7 +14,7 @@ const SUPPORT_URL = "http://support.allizom.org/support-dummy/";
 const SUMO_URL = SUPPORT_URL + "add-on-badges";
 const SUPPORTED_BADGES = ["recommended", "line", "verified"];
 
-add_task(async function setup() {
+add_setup(async function () {
   await SpecialPowers.pushPrefEnv({
     set: [["app.support.baseURL", SUPPORT_URL]],
   });
@@ -96,7 +96,7 @@ async function checkRecommendedBadge(id, badges = []) {
 add_task(async function testNotRecommended() {
   let id = "not-recommended@mochi.test";
   let extension = ExtensionTestUtils.loadExtension({
-    manifest: { applications: { gecko: { id } } },
+    manifest: { browser_specific_settings: { gecko: { id } } },
     useAddonManager: "temporary",
   });
   await extension.startup();

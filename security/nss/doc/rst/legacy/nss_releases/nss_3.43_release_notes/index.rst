@@ -11,7 +11,7 @@ NSS 3.43 release notes
    The NSS team has released Network Security Services (NSS) 3.43 on 16 March 2019, which is a minor
    release.
 
-.. _distribution_information:
+
 
 `Distribution Information <#distribution_information>`__
 --------------------------------------------------------
@@ -31,8 +31,6 @@ NSS 3.43 release notes
 
 `New in NSS 3.43 <#new_in_nss_3.43>`__
 --------------------------------------
-
-.. container::
 
 .. _new_functionality:
 
@@ -63,7 +61,7 @@ NSS 3.43 release notes
 
 .. container::
 
-   -  
+   -
 
       .. container:: field indent
 

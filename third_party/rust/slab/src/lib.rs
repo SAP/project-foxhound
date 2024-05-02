@@ -118,6 +118,8 @@ extern crate std as alloc;
 #[cfg(feature = "serde")]
 mod serde;
 
+mod builder;
+
 use alloc::vec::{self, Vec};
 use core::iter::{self, FromIterator, FusedIterator};
 use core::{fmt, mem, ops, slice};
@@ -219,14 +221,35 @@ impl<T> Slab<T> {
     /// The function does not allocate and the returned slab will have no
     /// capacity until `insert` is called or capacity is explicitly reserved.
     ///
+    /// This is `const fn` on Rust 1.39+.
+    ///
     /// # Examples
     ///
     /// ```
     /// # use slab::*;
     /// let slab: Slab<i32> = Slab::new();
     /// ```
-    pub fn new() -> Slab<T> {
-        Slab::with_capacity(0)
+    #[cfg(not(slab_no_const_vec_new))]
+    pub const fn new() -> Self {
+        Self {
+            entries: Vec::new(),
+            next: 0,
+            len: 0,
+        }
+    }
+    /// Construct a new, empty `Slab`.
+    ///
+    /// The function does not allocate and the returned slab will have no
+    /// capacity until `insert` is called or capacity is explicitly reserved.
+    ///
+    /// This is `const fn` on Rust 1.39+.
+    #[cfg(slab_no_const_vec_new)]
+    pub fn new() -> Self {
+        Self {
+            entries: Vec::new(),
+            next: 0,
+            len: 0,
+        }
     }
 
     /// Construct a new, empty `Slab` with the specified capacity.
@@ -292,7 +315,7 @@ impl<T> Slab<T> {
     ///
     /// # Panics
     ///
-    /// Panics if the new capacity overflows `usize`.
+    /// Panics if the new capacity exceeds `isize::MAX` bytes.
     ///
     /// # Examples
     ///
@@ -326,7 +349,7 @@ impl<T> Slab<T> {
     ///
     /// # Panics
     ///
-    /// Panics if the new capacity overflows `usize`.
+    /// Panics if the new capacity exceeds `isize::MAX` bytes.
     ///
     /// # Examples
     ///
@@ -419,17 +442,21 @@ impl<T> Slab<T> {
         self.next = self.entries.len();
         // We can stop once we've found all vacant entries
         let mut remaining_vacant = self.entries.len() - self.len;
+        if remaining_vacant == 0 {
+            return;
+        }
+
         // Iterate in reverse order so that lower keys are at the start of
         // the vacant list. This way future shrinks are more likely to be
         // able to remove vacant entries.
         for (i, entry) in self.entries.iter_mut().enumerate().rev() {
-            if remaining_vacant == 0 {
-                break;
-            }
             if let Entry::Vacant(ref mut next) = *entry {
                 *next = self.next;
                 self.next = i;
                 remaining_vacant -= 1;
+                if remaining_vacant == 0 {
+                    break;
+                }
             }
         }
     }
@@ -665,7 +692,7 @@ impl<T> Slab<T> {
     /// ```
     pub fn get(&self, key: usize) -> Option<&T> {
         match self.entries.get(key) {
-            Some(&Entry::Occupied(ref val)) => Some(val),
+            Some(Entry::Occupied(val)) => Some(val),
             _ => None,
         }
     }
@@ -702,6 +729,10 @@ impl<T> Slab<T> {
     ///
     /// This function can be used to get two mutable references out of one slab,
     /// so that you can manipulate both of them at the same time, eg. swap them.
+    ///
+    /// # Panics
+    ///
+    /// This function will panic if `key1` and `key2` are the same.
     ///
     /// # Examples
     ///
@@ -830,8 +861,10 @@ impl<T> Slab<T> {
     /// assert_eq!(slab[key2], 1);
     /// ```
     pub unsafe fn get2_unchecked_mut(&mut self, key1: usize, key2: usize) -> (&mut T, &mut T) {
-        let ptr1 = self.entries.get_unchecked_mut(key1) as *mut Entry<T>;
-        let ptr2 = self.entries.get_unchecked_mut(key2) as *mut Entry<T>;
+        debug_assert_ne!(key1, key2);
+        let ptr = self.entries.as_mut_ptr();
+        let ptr1 = ptr.add(key1);
+        let ptr2 = ptr.add(key2);
         match (&mut *ptr1, &mut *ptr2) {
             (&mut Entry::Occupied(ref mut val1), &mut Entry::Occupied(ref mut val2)) => {
                 (val1, val2)
@@ -875,6 +908,7 @@ impl<T> Slab<T> {
     /// slab.key_of(bad); // this will panic
     /// unreachable!();
     /// ```
+    #[cfg_attr(not(slab_no_track_caller), track_caller)]
     pub fn key_of(&self, present_element: &T) -> usize {
         let element_ptr = present_element as *const T as usize;
         let base_ptr = self.entries.as_ptr() as usize;
@@ -899,7 +933,7 @@ impl<T> Slab<T> {
     ///
     /// # Panics
     ///
-    /// Panics if the number of elements in the vector overflows a `usize`.
+    /// Panics if the new storage in the vector exceeds `isize::MAX` bytes.
     ///
     /// # Examples
     ///
@@ -915,6 +949,30 @@ impl<T> Slab<T> {
         self.insert_at(key, val);
 
         key
+    }
+
+    /// Returns the key of the next vacant entry.
+    ///
+    /// This function returns the key of the vacant entry which  will be used
+    /// for the next insertion. This is equivalent to
+    /// `slab.vacant_entry().key()`, but it doesn't require mutable access.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use slab::*;
+    /// let mut slab = Slab::new();
+    /// assert_eq!(slab.vacant_key(), 0);
+    ///
+    /// slab.insert(0);
+    /// assert_eq!(slab.vacant_key(), 1);
+    ///
+    /// slab.insert(1);
+    /// slab.remove(0);
+    /// assert_eq!(slab.vacant_key(), 0);
+    /// ```
+    pub fn vacant_key(&self) -> usize {
+        self.next
     }
 
     /// Return a handle to a vacant entry allowing for further manipulation.
@@ -1019,6 +1077,7 @@ impl<T> Slab<T> {
     /// assert_eq!(slab.remove(hello), "hello");
     /// assert!(!slab.contains(hello));
     /// ```
+    #[cfg_attr(not(slab_no_track_caller), track_caller)]
     pub fn remove(&mut self, key: usize) -> T {
         self.try_remove(key).expect("invalid key")
     }
@@ -1126,15 +1185,17 @@ impl<T> Slab<T> {
 impl<T> ops::Index<usize> for Slab<T> {
     type Output = T;
 
+    #[cfg_attr(not(slab_no_track_caller), track_caller)]
     fn index(&self, key: usize) -> &T {
         match self.entries.get(key) {
-            Some(&Entry::Occupied(ref v)) => v,
+            Some(Entry::Occupied(v)) => v,
             _ => panic!("invalid key"),
         }
     }
 }
 
 impl<T> ops::IndexMut<usize> for Slab<T> {
+    #[cfg_attr(not(slab_no_track_caller), track_caller)]
     fn index_mut(&mut self, key: usize) -> &mut T {
         match self.entries.get_mut(key) {
             Some(&mut Entry::Occupied(ref mut v)) => v,
@@ -1209,51 +1270,12 @@ impl<T> FromIterator<(usize, T)> for Slab<T> {
         I: IntoIterator<Item = (usize, T)>,
     {
         let iterator = iterable.into_iter();
-        let mut slab = Self::with_capacity(iterator.size_hint().0);
+        let mut builder = builder::Builder::with_capacity(iterator.size_hint().0);
 
-        let mut vacant_list_broken = false;
-        let mut first_vacant_index = None;
         for (key, value) in iterator {
-            if key < slab.entries.len() {
-                // iterator is not sorted, might need to recreate vacant list
-                if let Entry::Vacant(_) = slab.entries[key] {
-                    vacant_list_broken = true;
-                    slab.len += 1;
-                }
-                // if an element with this key already exists, replace it.
-                // This is consistent with HashMap and BtreeMap
-                slab.entries[key] = Entry::Occupied(value);
-            } else {
-                if first_vacant_index.is_none() && slab.entries.len() < key {
-                    first_vacant_index = Some(slab.entries.len());
-                }
-                // insert holes as necessary
-                while slab.entries.len() < key {
-                    // add the entry to the start of the vacant list
-                    let next = slab.next;
-                    slab.next = slab.entries.len();
-                    slab.entries.push(Entry::Vacant(next));
-                }
-                slab.entries.push(Entry::Occupied(value));
-                slab.len += 1;
-            }
+            builder.pair(key, value)
         }
-        if slab.len == slab.entries.len() {
-            // no vacant entries, so next might not have been updated
-            slab.next = slab.entries.len();
-        } else if vacant_list_broken {
-            slab.recreate_vacant_list();
-        } else if let Some(first_vacant_index) = first_vacant_index {
-            let next = slab.entries.len();
-            match &mut slab.entries[first_vacant_index] {
-                Entry::Vacant(n) => *n = next,
-                _ => unreachable!(),
-            }
-        } else {
-            unreachable!()
-        }
-
-        slab
+        builder.build()
     }
 }
 

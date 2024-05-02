@@ -1,12 +1,24 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  ExperimentAPI: "resource://nimbus/ExperimentAPI.jsm",
-  ExperimentFakes: "resource://testing-common/NimbusTestUtils.jsm",
-  NimbusFeatures: "resource://nimbus/ExperimentAPI.jsm",
-  sinon: "resource://testing-common/Sinon.jsm",
+ChromeUtils.defineESModuleGetters(this, {
+  ExperimentAPI: "resource://nimbus/ExperimentAPI.sys.mjs",
+  ExperimentFakes: "resource://testing-common/NimbusTestUtils.sys.mjs",
+  NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
+  sinon: "resource://testing-common/Sinon.sys.mjs",
 });
+
+const setDefaultBrowserUserChoiceStub = () => {
+  throw Components.Exception("", Cr.NS_ERROR_WDBA_NO_PROGID);
+};
+
+const defaultAgentStub = sinon
+  .stub(ShellService, "defaultAgent")
+  .value({ setDefaultBrowserUserChoice: setDefaultBrowserUserChoiceStub });
+
+const _userChoiceImpossibleTelemetryResultStub = sinon
+  .stub(ShellService, "_userChoiceImpossibleTelemetryResult")
+  .callsFake(() => null);
 
 const userChoiceStub = sinon
   .stub(ShellService, "setAsDefaultUserChoice")
@@ -15,7 +27,10 @@ const setDefaultStub = sinon.stub();
 const shellStub = sinon
   .stub(ShellService, "shellService")
   .value({ setDefaultBrowser: setDefaultStub });
+
 registerCleanupFunction(() => {
+  defaultAgentStub.restore();
+  _userChoiceImpossibleTelemetryResultStub.restore();
   userChoiceStub.restore();
   shellStub.restore();
 
@@ -87,4 +102,41 @@ add_task(async function restore_default() {
     defaultUserChoice,
     "Plain set default behavior restored to original"
   );
+});
+
+add_task(async function ensure_fallback() {
+  if (AppConstants.platform != "win") {
+    info("Nothing to test on non-Windows");
+    return;
+  }
+
+  let userChoicePromise = Promise.resolve();
+  userChoiceStub.callsFake(function (...args) {
+    return (userChoicePromise = userChoiceStub.wrappedMethod.apply(this, args));
+  });
+  userChoiceStub.resetHistory();
+  setDefaultStub.resetHistory();
+  let doCleanup = await ExperimentFakes.enrollWithRollout({
+    featureId: NimbusFeatures.shellService.featureId,
+    value: {
+      setDefaultBrowserUserChoice: true,
+      setDefaultPDFHandler: false,
+      enabled: true,
+    },
+  });
+
+  ShellService.setDefaultBrowser();
+
+  Assert.ok(userChoiceStub.called, "Set default with user choice called");
+
+  let message = "";
+  await userChoicePromise.catch(err => (message = err.message || ""));
+
+  Assert.ok(
+    message.includes("ErrExeProgID"),
+    "Set default with user choice threw an expected error"
+  );
+  Assert.ok(setDefaultStub.called, "Fallbacked to plain set default");
+
+  await doCleanup();
 });

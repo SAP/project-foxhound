@@ -7,23 +7,30 @@
 #ifndef frontend_BytecodeCompiler_h
 #define frontend_BytecodeCompiler_h
 
-#include "mozilla/Maybe.h"
-#include "mozilla/Utf8.h"  // mozilla::Utf8Unit
+#include "mozilla/AlreadyAddRefed.h"  // already_AddRefed
+#include "mozilla/Maybe.h"            // mozilla::Maybe
+#include "mozilla/Utf8.h"             // mozilla::Utf8Unit
 
-#include "NamespaceImports.h"
+#include <stdint.h>  // uint32_t
 
-#include "frontend/FunctionSyntaxKind.h"
-#include "gc/Rooting.h"
-#include "js/SourceText.h"
-#include "js/UniquePtr.h"  // js::UniquePtr
-#include "vm/TraceLogging.h"
+#include "ds/LifoAlloc.h"                 // js::LifoAlloc
+#include "frontend/FunctionSyntaxKind.h"  // FunctionSyntaxKind
+#include "frontend/ScriptIndex.h"         // ScriptIndex
+#include "js/CompileOptions.h"  // JS::ReadOnlyCompileOptions, JS::PrefableCompileOptions
+#include "js/GCVector.h"    // JS::StackGCVector
+#include "js/Id.h"          // JS::PropertyKey
+#include "js/RootingAPI.h"  // JS::Handle
+#include "js/SourceText.h"  // JS::SourceText
+#include "js/UniquePtr.h"   // js::UniquePtr
+#include "js/Value.h"       // JS::Value
+#include "vm/ScopeKind.h"   // js::ScopeKind
 
 /*
  * Structure of all of the support classes.
  *
  * Parser: described in Parser.h.
  *
- * BytecodeCompiler.cpp: BytecodeCompiler.h *and* BytecodeCompilation.h.
+ * BytecodeCompiler.cpp: BytecodeCompiler.h
  * This is the "driver", the high-level operations like "compile this source to
  * bytecode". It calls the parser, bytecode emitter, etc.
  *
@@ -95,16 +102,16 @@
  * (this gets complicated with `var`, etc., check the class for docs)
  */
 
-class JSLinearString;
-
-namespace JS {
-class JS_PUBLIC_API ReadOnlyCompileOptions;
-}
+class JSFunction;
+class JSObject;
+class JSScript;
+struct JSContext;
 
 namespace js {
 
 class ModuleObject;
-class ScriptSourceObject;
+class FrontendContext;
+class Scope;
 
 namespace frontend {
 
@@ -112,31 +119,106 @@ struct CompilationInput;
 struct CompilationStencil;
 struct ExtensibleCompilationStencil;
 struct CompilationGCOutput;
-class ErrorReporter;
-class FunctionBox;
-class ParseNode;
-class TaggedParserAtomIndex;
+class ScopeBindingCache;
+
+// Compile a script of the given source using the given options.
+extern already_AddRefed<CompilationStencil> CompileGlobalScriptToStencil(
+    JSContext* maybeCx, FrontendContext* fc, js::LifoAlloc& tempLifoAlloc,
+    CompilationInput& input, ScopeBindingCache* scopeCache,
+    JS::SourceText<char16_t>& srcBuf, ScopeKind scopeKind);
+
+extern already_AddRefed<CompilationStencil> CompileGlobalScriptToStencil(
+    JSContext* maybeCx, FrontendContext* fc, js::LifoAlloc& tempLifoAlloc,
+    CompilationInput& input, ScopeBindingCache* scopeCache,
+    JS::SourceText<mozilla::Utf8Unit>& srcBuf, ScopeKind scopeKind);
+
+extern UniquePtr<ExtensibleCompilationStencil>
+CompileGlobalScriptToExtensibleStencil(JSContext* maybeCx, FrontendContext* fc,
+                                       CompilationInput& input,
+                                       ScopeBindingCache* scopeCache,
+                                       JS::SourceText<char16_t>& srcBuf,
+                                       ScopeKind scopeKind);
+
+extern UniquePtr<ExtensibleCompilationStencil>
+CompileGlobalScriptToExtensibleStencil(
+    JSContext* maybeCx, FrontendContext* fc, CompilationInput& input,
+    ScopeBindingCache* scopeCache, JS::SourceText<mozilla::Utf8Unit>& srcBuf,
+    ScopeKind scopeKind);
+
+[[nodiscard]] extern bool InstantiateStencils(JSContext* cx,
+                                              CompilationInput& input,
+                                              const CompilationStencil& stencil,
+                                              CompilationGCOutput& gcOutput);
+
+// Perform CompileGlobalScriptToStencil and InstantiateStencils at the
+// same time, skipping some extra copy.
+extern JSScript* CompileGlobalScript(JSContext* cx, FrontendContext* fc,
+                                     const JS::ReadOnlyCompileOptions& options,
+                                     JS::SourceText<char16_t>& srcBuf,
+                                     ScopeKind scopeKind);
+
+extern JSScript* CompileGlobalScript(JSContext* cx, FrontendContext* fc,
+                                     const JS::ReadOnlyCompileOptions& options,
+                                     JS::SourceText<mozilla::Utf8Unit>& srcBuf,
+                                     ScopeKind scopeKind);
+
+// Compile a script with a list of known extra bindings.
+//
+// Bindings should be passed by a pair of unwrappedBindingKeys and
+// unwrappedBindingValues.
+//
+// If any of the bindings are accessed by the script, a WithEnvironmentObject
+// is created for the bindings and returned via env out parameter. Otherwise,
+// global lexical is returned. In both case, the same env must be used to
+// evaluate the script.
+//
+// Both unwrappedBindingKeys and unwrappedBindingValues can come from different
+// realm than the current realm.
+//
+// If a binding is shadowed by the global variables declared by the script,
+// or the existing global variables, the binding is not stored into the
+// resulting WithEnvironmentObject.
+extern JSScript* CompileGlobalScriptWithExtraBindings(
+    JSContext* cx, FrontendContext* fc,
+    const JS::ReadOnlyCompileOptions& options, JS::SourceText<char16_t>& srcBuf,
+    JS::Handle<JS::StackGCVector<JS::PropertyKey>> unwrappedBindingKeys,
+    JS::Handle<JS::StackGCVector<JS::Value>> unwrappedBindingValues,
+    JS::MutableHandle<JSObject*> env);
+
+// Compile a script for eval of the given source using the given options and
+// enclosing scope/environment.
+extern JSScript* CompileEvalScript(JSContext* cx,
+                                   const JS::ReadOnlyCompileOptions& options,
+                                   JS::SourceText<char16_t>& srcBuf,
+                                   JS::Handle<js::Scope*> enclosingScope,
+                                   JS::Handle<JSObject*> enclosingEnv);
 
 // Compile a module of the given source using the given options.
-ModuleObject* CompileModule(JSContext* cx,
+ModuleObject* CompileModule(JSContext* cx, FrontendContext* fc,
                             const JS::ReadOnlyCompileOptions& options,
                             JS::SourceText<char16_t>& srcBuf);
-ModuleObject* CompileModule(JSContext* cx,
+ModuleObject* CompileModule(JSContext* cx, FrontendContext* fc,
                             const JS::ReadOnlyCompileOptions& options,
                             JS::SourceText<mozilla::Utf8Unit>& srcBuf);
 
 // Parse a module of the given source.  This is an internal API; if you want to
 // compile a module as a user, use CompileModule above.
 already_AddRefed<CompilationStencil> ParseModuleToStencil(
-    JSContext* cx, CompilationInput& input, JS::SourceText<char16_t>& srcBuf);
+    JSContext* maybeCx, FrontendContext* fc, js::LifoAlloc& tempLifoAlloc,
+    CompilationInput& input, ScopeBindingCache* scopeCache,
+    JS::SourceText<char16_t>& srcBuf);
 already_AddRefed<CompilationStencil> ParseModuleToStencil(
-    JSContext* cx, CompilationInput& input,
+    JSContext* maybeCx, FrontendContext* fc, js::LifoAlloc& tempLifoAlloc,
+    CompilationInput& input, ScopeBindingCache* scopeCache,
     JS::SourceText<mozilla::Utf8Unit>& srcBuf);
 
 UniquePtr<ExtensibleCompilationStencil> ParseModuleToExtensibleStencil(
-    JSContext* cx, CompilationInput& input, JS::SourceText<char16_t>& srcBuf);
+    JSContext* cx, FrontendContext* fc, js::LifoAlloc& tempLifoAlloc,
+    CompilationInput& input, ScopeBindingCache* scopeCache,
+    JS::SourceText<char16_t>& srcBuf);
 UniquePtr<ExtensibleCompilationStencil> ParseModuleToExtensibleStencil(
-    JSContext* cx, CompilationInput& input,
+    JSContext* cx, FrontendContext* fc, js::LifoAlloc& tempLifoAlloc,
+    CompilationInput& input, ScopeBindingCache* scopeCache,
     JS::SourceText<mozilla::Utf8Unit>& srcBuf);
 
 //
@@ -180,57 +262,28 @@ UniquePtr<ExtensibleCompilationStencil> ParseModuleToExtensibleStencil(
     JSContext* cx, const JS::ReadOnlyCompileOptions& options,
     JS::SourceText<char16_t>& srcBuf,
     const mozilla::Maybe<uint32_t>& parameterListEnd,
-    frontend::FunctionSyntaxKind syntaxKind, HandleScope enclosingScope);
+    frontend::FunctionSyntaxKind syntaxKind, JS::Handle<Scope*> enclosingScope);
 
-/*
- * True if str consists of an IdentifierStart character, followed by one or
- * more IdentifierPart characters, i.e. it matches the IdentifierName production
- * in the language spec.
- *
- * This returns true even if str is a keyword like "if".
- *
- * Defined in TokenStream.cpp.
- */
-bool IsIdentifier(JSLinearString* str);
+extern bool DelazifyCanonicalScriptedFunction(JSContext* cx,
+                                              FrontendContext* fc,
+                                              JS::Handle<JSFunction*> fun);
 
-bool IsIdentifierNameOrPrivateName(JSLinearString* str);
-
-/*
- * As above, but taking chars + length.
- */
-bool IsIdentifier(const Latin1Char* chars, size_t length);
-bool IsIdentifier(const char16_t* chars, size_t length);
-
-/*
- * ASCII variant with known length.
- */
-bool IsIdentifierASCII(char c);
-bool IsIdentifierASCII(char c1, char c2);
-
-bool IsIdentifierNameOrPrivateName(const Latin1Char* chars, size_t length);
-bool IsIdentifierNameOrPrivateName(const char16_t* chars, size_t length);
-
-/* True if str is a keyword. Defined in TokenStream.cpp. */
-bool IsKeyword(TaggedParserAtomIndex atom);
-
-class MOZ_STACK_CLASS AutoFrontendTraceLog {
-#ifdef JS_TRACE_LOGGING
-  TraceLoggerThread* logger_;
-  mozilla::Maybe<TraceLoggerEvent> frontendEvent_;
-  mozilla::Maybe<AutoTraceLog> frontendLog_;
-  mozilla::Maybe<AutoTraceLog> typeLog_;
-#endif
-
- public:
-  AutoFrontendTraceLog(JSContext* cx, const TraceLoggerTextId id,
-                       const ErrorReporter& reporter);
-
-  AutoFrontendTraceLog(JSContext* cx, const TraceLoggerTextId id,
-                       const ErrorReporter& reporter, FunctionBox* funbox);
-
-  AutoFrontendTraceLog(JSContext* cx, const TraceLoggerTextId id,
-                       const ErrorReporter& reporter, ParseNode* pn);
+enum class DelazifyFailureReason {
+  Compressed,
+  Other,
 };
+
+extern already_AddRefed<CompilationStencil> DelazifyCanonicalScriptedFunction(
+    FrontendContext* fc, js::LifoAlloc& tempLifoAlloc,
+    const JS::PrefableCompileOptions& prefableOptions,
+    ScopeBindingCache* scopeCache, CompilationStencil& context,
+    ScriptIndex scriptIndex, DelazifyFailureReason* failureReason);
+
+// Certain compile options will disable the syntax parser entirely.
+inline bool CanLazilyParse(const JS::ReadOnlyCompileOptions& options) {
+  return !options.discardSource && !options.sourceIsLazy &&
+         !options.forceFullParse();
+}
 
 } /* namespace frontend */
 } /* namespace js */

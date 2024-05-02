@@ -3,41 +3,32 @@
  */
 "use strict";
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { SiteDataManager } = ChromeUtils.import(
-  "resource:///modules/SiteDataManager.jsm"
+const { SiteDataManager } = ChromeUtils.importESModule(
+  "resource:///modules/SiteDataManager.sys.mjs"
 );
-const { SiteDataTestUtils } = ChromeUtils.import(
-  "resource://testing-common/SiteDataTestUtils.jsm"
+const { SiteDataTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/SiteDataTestUtils.sys.mjs"
 );
-const { PermissionTestUtils } = ChromeUtils.import(
-  "resource://testing-common/PermissionTestUtils.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "setTimeout",
-  "resource://gre/modules/Timer.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "TestUtils",
-  "resource://testing-common/TestUtils.jsm"
+const { PermissionTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/PermissionTestUtils.sys.mjs"
 );
 
 const EXAMPLE_ORIGIN = "https://www.example.com";
 const EXAMPLE_ORIGIN_2 = "https://example.org";
 const EXAMPLE_ORIGIN_3 = "http://localhost:8000";
 
-let p = Services.scriptSecurityManager.createContentPrincipalFromOrigin(
-  EXAMPLE_ORIGIN
-);
+let p =
+  Services.scriptSecurityManager.createContentPrincipalFromOrigin(
+    EXAMPLE_ORIGIN
+  );
 let partitionKey = `(${p.scheme},${p.baseDomain})`;
-let EXAMPLE_ORIGIN_2_PARTITIONED = Services.scriptSecurityManager.createContentPrincipal(
-  Services.io.newURI(EXAMPLE_ORIGIN_2),
-  {
-    partitionKey,
-  }
-).origin;
+let EXAMPLE_ORIGIN_2_PARTITIONED =
+  Services.scriptSecurityManager.createContentPrincipal(
+    Services.io.newURI(EXAMPLE_ORIGIN_2),
+    {
+      partitionKey,
+    }
+  ).origin;
 
 add_task(function setup() {
   do_get_profile();

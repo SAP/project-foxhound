@@ -29,9 +29,10 @@ var {
   HTTP_505,
   HttpError,
   HttpServer,
-} = ChromeUtils.import("resource://testing-common/httpd.js");
-var { NetUtil } = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
-var { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+} = ChromeUtils.importESModule("resource://testing-common/httpd.sys.mjs");
+var { NetUtil } = ChromeUtils.importESModule(
+  "resource://gre/modules/NetUtil.sys.mjs"
+);
 
 const nsIDocumentEncoder = Ci.nsIDocumentEncoder;
 const replacementChar =

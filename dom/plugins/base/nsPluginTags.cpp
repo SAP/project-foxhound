@@ -6,7 +6,6 @@
 #include "nsPluginTags.h"
 
 #include "prlink.h"
-#include "plstr.h"
 #include "prenv.h"
 #include "nsPluginHost.h"
 #include "nsIBlocklistService.h"
@@ -15,11 +14,9 @@
 #include "mozilla/Preferences.h"
 #include "mozilla/Unused.h"
 #include "nsNetUtil.h"
-#include "prenv.h"
 #include <cctype>
 #include "mozilla/Encoding.h"
 #include "mozilla/dom/FakePluginTagInitBinding.h"
-#include "mozilla/StaticPrefs_plugin.h"
 
 using mozilla::dom::FakePluginTagInit;
 using namespace mozilla;

@@ -1,11 +1,9 @@
-from __future__ import absolute_import, division, print_function
-
 import math
+
 import mozinfo
 
 
 class Bisect(object):
-
     "Class for creating, bisecting and summarizing for --bisect-chunk option."
 
     def __init__(self, harness):

@@ -33,7 +33,7 @@ Diagram
                         <TR><TD BORDER="1">Shared Web Content<BR/>(<FONT FACE="monospace">web</FONT>)</TD></TR>
                         <TR><TD BORDER="1">Isolated Web Content<BR/>(<FONT FACE="monospace">webIsolated=$SITE</FONT>)</TD></TR>
                         <TR><TD BORDER="1">COOP+COEP Web Content<BR/>(<FONT FACE="monospace">webCOOP+COEP=$SITE</FONT>)</TD></TR>
-                        <TR><TD BORDER="1">Large Allocation Web Content<BR/>(<FONT FACE="monospace">webLargeAlloc</FONT>)</TD></TR>
+                        <TR><TD BORDER="1">ServiceWorker Web Content<BR/>(<FONT FACE="monospace">webServiceWorker</FONT>)</TD></TR>
                     </TABLE>
                 >
             ]
@@ -75,6 +75,7 @@ Diagram
     parent -> web [lhead="cluster_content"];
     parent -> helper;
 
+.. _parent-process:
 
 Parent Process
 --------------
@@ -89,6 +90,8 @@ All primary protocols establish a connection between the parent process and the 
 
 As the parent process can display HTML and JS, such as the browser UI and privileged internal pages such as ``about:preferences`` and ``about:config``, it is often treated as-if it was a content process with a *null* remote type by process selection logic. The parent process has extra protections in place to ensure it cannot load untrusted code when running in multiprocess mode. To this effect, any attempts to load web content in the parent process will lead to a browser crash, and all navigations to and from parent-process documents immediately perform full isolation, to prevent content processes from manipulating them.
 
+.. _content-process:
+
 Content Process
 ---------------
 
@@ -98,7 +101,7 @@ Content Process
 
 Content processes are used to load web content, and are the only process type (other than the parent process) which can load and execute JS code. These processes are further subdivided into specific "remote types", which specify the type of content loaded within them, their sandboxing behavior, and can gate access to certain privileged IPC methods.
 
-The specific remote type and isolation behaviour used for a specific resource is currently controlled in 2 major places. When performing a document navigation, the final process to load the document in is selected by the logic in `ProcessIsolation.cpp <https://searchfox.org/mozilla-central/source/dom/ipc/ProcessIsolation.cpp>`_. This will combine information about the specific response, such as the site and headers, with other state to select which process and other isolating actions should be taken. When selecting which process to create the initial process for a new tab in, and when selecting processes for serviceworkers and shared workers, the logic in `E10SUtils.jsm <https://searchfox.org/mozilla-central/source/toolkit/modules/E10SUtils.jsm>`_ is used to select a process. The logic in ``E10SUtils.jsm`` will likely be removed and replaced with ``ProcessIsolation.cpp`` in the future.
+The specific remote type and isolation behaviour used for a specific resource is currently controlled in 2 major places. When performing a document navigation, the final process to load the document in is selected by the logic in `ProcessIsolation.cpp <https://searchfox.org/mozilla-central/source/dom/ipc/ProcessIsolation.cpp>`_. This will combine information about the specific response, such as the site and headers, with other state to select which process and other isolating actions should be taken. When selecting which process to create the initial process for a new tab in, and when selecting processes for serviceworkers and shared workers, the logic in :searchfox:`E10SUtils.sys.mjs <toolkit/modules/E10SUtils.sys.mjs>`_ is used to select a process. The logic in ``E10SUtils.sys.mjs`` will likely be removed and replaced with ``ProcessIsolation.cpp`` in the future.
 
 .. note::
 
@@ -205,16 +208,15 @@ Like Isolated Web Content, these processes are keyed by the site loaded within t
 
     In ``about:processes``, COOP+COEP Web Content processes will be listed with a "cross-origin isolated" note after the PID, like ``https://example.com (12345, cross-origin isolated)``.
 
-Large Allocation Web Content
-""""""""""""""""""""""""""""
+ServiceWorker Web Content
+"""""""""""""""""""""""""
 
-:remoteType: ``webLargeAlloc``
-:default count: 10 (``dom.ipc.processCount.webLargeAlloc``)
-:platform: 32-bit Windows only (``dom.largeAllocation.forceEnable``)
+:remoteType: ``webServiceWorker=$SITE``
+:default count: 1 per-site using ServiceWorkers
 
-Document loads with the non-standard ``Large-Allocation`` header are requesting to be placed into a separate content process such that they can have access to a less-fragmented address space. This was originally designed to enable 32-bit Windows platforms to load and run asm.js and wasm code more easily.
+ServiceWorker web content processes are used to host ServiceWorkers on a per-site basis, so that ServiceWorker operations aren't impacted by MainThread event latency whenrunning in the same process as the content for the page.   ServiceWorkers are usually transitory, and will disappear if unused for a short period of time.
 
-This header is only supported on 32-bit Windows, and will likely be removed in the near future.
+.. _gecko-media-plugins-process:
 
 Gecko Media Plugins (GMP) Process
 ---------------------------------
@@ -223,6 +225,8 @@ Gecko Media Plugins (GMP) Process
 :sandboxed?: yes (GMP sandbox policy)
 
 The GMP process is used to sandbox third-party "Content Decryption Module" (CDM) binaries used for media playback in a sandboxed environment. This process is only launched when DRM-enabled content is loaded.
+
+.. _gpu-process:
 
 GPU Process
 -----------
@@ -235,6 +239,8 @@ The GPU process performs compositing, and is used to talk to GPU hardware in an 
 
 The GPU process is not used on all platforms. Platforms which do not use it, such as macOS and some Linux configurations, will perform compositing on a background thread in the Parent Process.
 
+.. _vr-process:
+
 VR Process
 ----------
 
@@ -242,6 +248,8 @@ VR Process
 :sandboxed?: no (`bug 1430043 <https://bugzilla.mozilla.org/show_bug.cgi?id=1430043>`_ tracks sandboxing on windows)
 
 VR headset libraries require access to specific OS level features and other requirements which we would generally like to block with the sandbox in other processes. In order to allow the GPU process to have tighter sandboxing rules, these VR libraries are loaded into the less-restricted VR process. Like the GPU process, this serves to isolate them from the rest of Firefox and reduce the impact of bugs in these libraries on the rest of the browser. The VR process is launched only after a user visits a site which uses WebVR.
+
+.. _data-decoder-process:
 
 Data Decoder (RDD) Process
 --------------------------
@@ -261,6 +269,8 @@ This process is used to run media data decoders within their own sandboxed proce
 
     For more details about the planned utility process architecture changes, see `the planning document <https://docs.google.com/document/d/1WDEY5fQetK_YE5oxGxXK9BzC1A8kJP3q6F1gAPc2UGE>`_.
 
+.. _network-socket-process:
+
 Network (Socket) Process
 ------------------------
 
@@ -268,6 +278,8 @@ Network (Socket) Process
 :sandboxed?: yes (socket sandbox policy)
 
 The socket process is used to separate certain networking operations from the parent process, allowing them to be performed more directly in a partially sandboxed process. The eventual goal is to move all TCP/UDP network operations into this dedicated process, and is being tracked in `Bug 1322426 <https://bugzilla.mozilla.org/show_bug.cgi?id=1322426>`_.
+
+.. _remote-sandbox-process:
 
 Remote Sandbox Broker Process
 -----------------------------
@@ -277,6 +289,8 @@ Remote Sandbox Broker Process
 :sandboxed?: no
 
 In order to run sandboxed x86 plugin processes from Windows-on-ARM, the remote sandbox broker process is launched in x86-mode, and used to launch sandboxed x86 subprocesses. This avoids issues with the sandboxing layer, which unfortunately assumes that pointer width matches between the sandboxer and sandboxing process. To avoid this, the remote sandbox broker is used as an x86 sandboxing process which wraps these plugins.
+
+.. _fork-server:
 
 Fork Server
 -----------
@@ -289,6 +303,8 @@ Fork Server
 The fork server process is used to reduce the memory overhead and improve launch efficiency for new processes. When a new supported process is requested and the feature is enabled, the parent process will ask the fork server to ``fork(2)`` itself, and then begin executing. This avoids the need to re-load ``libxul.so`` and re-perform relocations.
 
 The fork server must run before having initialized XPCOM or the IPC layer, and therefore uses a custom low-level IPC system called ``MiniTransceiver`` rather than IPDL to communicate.
+
+.. _launcher-process:
 
 Launcher Process
 ----------------
@@ -305,6 +321,8 @@ IPDLUnitTest
 :primary protocol: varies
 
 This test-only process type is intended for use when writing IPDL unit tests. However, it is currently broken, due to these tests having never been run in CI. The type may be removed or re-used when these unit tests are fixed.
+
+.. _utility-process:
 
 Utility Process
 ---------------

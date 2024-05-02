@@ -10,8 +10,7 @@
 #include "mozilla/dom/PClientSourceOpChild.h"
 #include "ClientOpPromise.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class ClientSource;
 
@@ -30,8 +29,8 @@ class ClientSourceOpChild final : public PClientSourceOpChild {
 
   ClientSource* GetSource() const;
 
-  template <typename Method, typename Args>
-  void DoSourceOp(Method aMethod, const Args& aArgs);
+  template <typename Method, typename... Args>
+  void DoSourceOp(Method aMethod, Args&&... aArgs);
 
   // PClientSourceOpChild interface
   void ActorDestroy(ActorDestroyReason aReason) override;
@@ -41,7 +40,6 @@ class ClientSourceOpChild final : public PClientSourceOpChild {
   FlippedOnce<false> mInitialized;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // _mozilla_dom_ClientSourceOpChild_h

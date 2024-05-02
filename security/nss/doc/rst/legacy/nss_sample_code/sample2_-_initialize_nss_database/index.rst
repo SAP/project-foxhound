@@ -10,9 +10,9 @@ Initialize NSS database - sample 2
 
 .. container::
 
-   The NSS sample code below demonstrates how to initialize the NSS database.
+   The NSS sample code below demonstrates how to initialize the NSS database.
 
-   .. code:: brush:
+   .. code:: c
 
       /*
        * Print a usage message and exit

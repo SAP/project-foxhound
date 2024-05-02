@@ -13,8 +13,7 @@
 
 class nsISpeechService;
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class RemoteVoice;
 class SpeechSynthesisUtterance;
@@ -66,6 +65,8 @@ class nsSynthVoiceRegistry final : public nsISynthVoiceRegistry {
 
   static void RecvNotifyVoicesChanged();
 
+  static void RecvNotifyVoicesError(const nsAString& aError);
+
  private:
   virtual ~nsSynthVoiceRegistry();
 
@@ -95,7 +96,6 @@ class nsSynthVoiceRegistry final : public nsISynthVoiceRegistry {
   bool mIsSpeaking;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif

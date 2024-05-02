@@ -3,7 +3,10 @@
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
 // Test that workers started by other workers show up in the debugger.
-add_task(async function() {
+
+"use strict";
+
+add_task(async function () {
   const dbg = await initDebugger("doc-nested-worker.html");
 
   await waitForThreadCount(dbg, 2);

@@ -8,25 +8,21 @@
 
 "use strict";
 
-// -----------------------------------------------------------------------------
-// Rule Definition
-// -----------------------------------------------------------------------------
-
 var helpers = require("../helpers");
 var testTypes = new Set(["browser", "xpcshell"]);
 
 module.exports = {
   meta: {
     docs: {
-      description: "disallow setTimeout with non-zero values in tests",
-      category: "Best Practices",
+      url: "https://firefox-source-docs.mozilla.org/code-quality/lint/linters/eslint-plugin-mozilla/rules/no-arbitrary-setTimeout.html",
+    },
+    messages: {
+      listenForEvents:
+        "listen for events instead of setTimeout() with arbitrary delay",
     },
     schema: [],
+    type: "problem",
   },
-
-  // ---------------------------------------------------------------------------
-  // Public
-  //  --------------------------------------------------------------------------
 
   create(context) {
     // We don't want to run this on mochitest plain as it already
@@ -58,11 +54,10 @@ module.exports = {
 
         let timeout = node.arguments[1];
         if (timeout.type !== "Literal" || timeout.value > 0) {
-          context.report(
+          context.report({
             node,
-            "listen for events instead of setTimeout() " +
-              "with arbitrary delay"
-          );
+            messageId: "listenForEvents",
+          });
         }
       },
     };

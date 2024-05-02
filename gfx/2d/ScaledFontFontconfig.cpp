@@ -6,7 +6,6 @@
 
 #include "ScaledFontFontconfig.h"
 #include "UnscaledFontFreeType.h"
-#include "NativeFontResourceFreeType.h"
 #include "Logging.h"
 #include "mozilla/StaticPrefs_gfx.h"
 #include "mozilla/webrender/WebRenderTypes.h"
@@ -74,6 +73,11 @@ void ScaledFontFontconfig::SetupSkFontDrawOptions(SkFont& aFont) {
   }
 
   aFont.setHinting(GfxHintingToSkiaHinting(mInstanceData.mHinting));
+}
+
+bool ScaledFontFontconfig::MayUseBitmaps() {
+  return mInstanceData.mFlags & InstanceData::EMBEDDED_BITMAP &&
+         !FT_IS_SCALABLE(mFace->GetFace());
 }
 
 cairo_font_face_t* ScaledFontFontconfig::CreateCairoFontFace(
@@ -398,7 +402,6 @@ bool ScaledFontFontconfig::GetWRFontInstanceOptions(
   if (UseSubpixelPosition()) {
     options.flags |= wr::FontInstanceFlags::SUBPIXEL_POSITION;
   }
-  options.bg_color = wr::ToColorU(DeviceColor());
   options.synthetic_italics =
       wr::DegreesToSyntheticItalics(GetSyntheticObliqueAngle());
 

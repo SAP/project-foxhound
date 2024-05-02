@@ -58,18 +58,23 @@ ScrollPositionUpdate ScrollPositionUpdate::NewRelativeScroll(
 
 /*static*/
 ScrollPositionUpdate ScrollPositionUpdate::NewSmoothScroll(
-    ScrollOrigin aOrigin, nsPoint aDestination,
-    ScrollTriggeredByScript aTriggeredByScript) {
+    ScrollMode aMode, ScrollOrigin aOrigin, nsPoint aDestination,
+    ScrollTriggeredByScript aTriggeredByScript,
+    UniquePtr<ScrollSnapTargetIds> aSnapTargetIds) {
   MOZ_ASSERT(aOrigin != ScrollOrigin::NotSpecified);
   MOZ_ASSERT(aOrigin != ScrollOrigin::None);
+  MOZ_ASSERT(aMode == ScrollMode::Smooth || aMode == ScrollMode::SmoothMsd);
 
   ScrollPositionUpdate ret;
   ret.mScrollGeneration = sGenerationCounter.NewMainThreadGeneration();
   ret.mType = ScrollUpdateType::Absolute;
-  ret.mScrollMode = ScrollMode::SmoothMsd;
+  ret.mScrollMode = aMode;
   ret.mScrollOrigin = aOrigin;
   ret.mDestination = CSSPoint::FromAppUnits(aDestination);
   ret.mTriggeredByScript = aTriggeredByScript;
+  if (aSnapTargetIds) {
+    ret.mSnapTargetIds = *aSnapTargetIds;
+  }
   return ret;
 }
 
@@ -85,6 +90,20 @@ ScrollPositionUpdate ScrollPositionUpdate::NewPureRelativeScroll(
   ret.mScrollMode = aMode;
   ret.mScrollOrigin = aOrigin;
   ret.mDelta = CSSPoint::FromAppUnits(aDelta);
+  return ret;
+}
+
+/*static*/
+ScrollPositionUpdate ScrollPositionUpdate::NewMergeableScroll(
+    ScrollOrigin aOrigin, nsPoint aDestination) {
+  MOZ_ASSERT(aOrigin == ScrollOrigin::AnchorAdjustment);
+
+  ScrollPositionUpdate ret;
+  ret.mScrollGeneration = sGenerationCounter.NewMainThreadGeneration();
+  ret.mType = ScrollUpdateType::MergeableAbsolute;
+  ret.mScrollMode = ScrollMode::Instant;
+  ret.mScrollOrigin = aOrigin;
+  ret.mDestination = CSSPoint::FromAppUnits(aDestination);
   return ret;
 }
 
@@ -107,6 +126,7 @@ ScrollOrigin ScrollPositionUpdate::GetOrigin() const { return mScrollOrigin; }
 
 CSSPoint ScrollPositionUpdate::GetDestination() const {
   MOZ_ASSERT(mType == ScrollUpdateType::Absolute ||
+             mType == ScrollUpdateType::MergeableAbsolute ||
              mType == ScrollUpdateType::Relative);
   return mDestination;
 }

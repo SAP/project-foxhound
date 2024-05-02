@@ -78,11 +78,6 @@ void BrowserBridgeChild::Deactivate(bool aWindowLowering, uint64_t aActionId) {
   Unused << SendDeactivate(aWindowLowering, aActionId);
 }
 
-void BrowserBridgeChild::SetIsUnderHiddenEmbedderElement(
-    bool aIsUnderHiddenEmbedderElement) {
-  Unused << SendSetIsUnderHiddenEmbedderElement(aIsUnderHiddenEmbedderElement);
-}
-
 /*static*/
 BrowserBridgeChild* BrowserBridgeChild::GetFrom(nsFrameLoader* aFrameLoader) {
   if (!aFrameLoader) {
@@ -140,16 +135,6 @@ mozilla::ipc::IPCResult BrowserBridgeChild::RecvMoveFocus(
   return IPC_OK();
 }
 
-mozilla::ipc::IPCResult
-BrowserBridgeChild::RecvSetEmbeddedDocAccessibleCOMProxy(
-    const a11y::IDispatchHolder& aCOMProxy) {
-#if defined(ACCESSIBILITY) && defined(XP_WIN)
-  MOZ_ASSERT(!aCOMProxy.IsNull());
-  mEmbeddedDocAccessible = aCOMProxy.Get();
-#endif
-  return IPC_OK();
-}
-
 mozilla::ipc::IPCResult BrowserBridgeChild::RecvMaybeFireEmbedderLoadEvents(
     EmbedderElementEventType aFireEventAtEmbeddingElement) {
   RefPtr<Element> owner = mFrameLoader->GetOwnerContent();
@@ -199,9 +184,8 @@ mozilla::ipc::IPCResult BrowserBridgeChild::RecvScrollRectIntoView(
       aRect.ScaleToOtherAppUnitsRoundOut(aAppUnitsPerDevPixel, parentAPD);
   rect += extraOffset;
   RefPtr<PresShell> presShell = frame->PresShell();
-  presShell->ScrollFrameRectIntoView(frame, rect, nsMargin(), aVertical,
-                                     aHorizontal, aScrollFlags);
-
+  presShell->ScrollFrameIntoView(frame, Some(rect), aVertical, aHorizontal,
+                                 aScrollFlags);
   return IPC_OK();
 }
 
@@ -246,6 +230,17 @@ mozilla::ipc::IPCResult BrowserBridgeChild::RecvIntrinsicSizeOrRatioChanged(
       static_cast<nsObjectLoadingContent*>(olc.get())
           ->SubdocumentIntrinsicSizeOrRatioChanged(aIntrinsicSize,
                                                    aIntrinsicRatio);
+    }
+  }
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult BrowserBridgeChild::RecvImageLoadComplete(
+    const nsresult& aResult) {
+  if (RefPtr<Element> owner = mFrameLoader->GetOwnerContent()) {
+    if (nsCOMPtr<nsIObjectLoadingContent> olc = do_QueryInterface(owner)) {
+      static_cast<nsObjectLoadingContent*>(olc.get())
+          ->SubdocumentImageLoadComplete(aResult);
     }
   }
   return IPC_OK();

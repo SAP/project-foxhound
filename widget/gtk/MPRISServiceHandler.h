@@ -58,11 +58,7 @@ class MPRISServiceHandler final : public dom::MediaControlKeySource {
   // Note that this constructor does NOT initialize the MPRIS Service but only
   // this class. The method Open() is responsible for registering and MAY FAIL.
 
-  // The image format used in MPRIS is based on the mMimeType here. Although
-  // IMAGE_JPEG or IMAGE_BMP are valid types as well but a png image with
-  // transparent background will be converted into a jpeg/bmp file with a
-  // colored background IMAGE_PNG format seems to be the best choice for now.
-  MPRISServiceHandler() : mMimeType(IMAGE_PNG){};
+  MPRISServiceHandler();
   bool Open() override;
   void Close() override;
   bool IsOpened() const override;
@@ -85,6 +81,8 @@ class MPRISServiceHandler final : public dom::MediaControlKeySource {
 
   bool IsMediaKeySupported(dom::MediaControlKey aKey) const;
 
+  void OwnName(GDBusConnection* aConnection);
+
  private:
   ~MPRISServiceHandler();
 
@@ -97,13 +95,17 @@ class MPRISServiceHandler final : public dom::MediaControlKeySource {
   guint mRootRegistrationId = 0;
   // This is for the interface org.mpris.MediaPlayer2.Player
   guint mPlayerRegistrationId = 0;
-  GDBusNodeInfo* mIntrospectionData = nullptr;
+  RefPtr<GDBusNodeInfo> mIntrospectionData;
   GDBusConnection* mConnection = nullptr;
   bool mInitialized = false;
   nsAutoCString mIdentity;
   nsAutoCString mDesktopEntry;
 
-  nsCString mMimeType;
+  // The image format used in MPRIS is based on the mMimeType here. Although
+  // IMAGE_JPEG or IMAGE_BMP are valid types as well but a png image with
+  // transparent background will be converted into a jpeg/bmp file with a
+  // colored background IMAGE_PNG format seems to be the best choice for now.
+  nsCString mMimeType{IMAGE_PNG};
 
   // A bitmask indicating what keys are enabled
   uint32_t mSupportedKeys = 0;
@@ -132,9 +134,8 @@ class MPRISServiceHandler final : public dom::MediaControlKeySource {
   nsCOMPtr<nsIFile> mLocalImageFile;
   nsCOMPtr<nsIFile> mLocalImageFolder;
 
-  mozilla::UniquePtr<mozilla::dom::FetchImageHelper> mImageFetcher;
-  mozilla::MozPromiseRequestHolder<mozilla::dom::ImagePromise>
-      mImageFetchRequest;
+  UniquePtr<dom::FetchImageHelper> mImageFetcher;
+  MozPromiseRequestHolder<dom::ImagePromise> mImageFetchRequest;
 
   nsString mFetchingUrl;
   nsString mCurrentImageUrl;
@@ -174,12 +175,18 @@ class MPRISServiceHandler final : public dom::MediaControlKeySource {
   void SetMediaMetadataInternal(const dom::MediaMetadataBase& aMetadata,
                                 bool aClearArtUrl = true);
 
-  bool EmitSupportedKeyChanged(mozilla::dom::MediaControlKey aKey,
+  bool EmitSupportedKeyChanged(dom::MediaControlKey aKey,
                                bool aSupported) const;
 
   bool EmitPropertiesChangedSignal(GVariant* aParameters) const;
 
   void ClearMetadata();
+
+  RefPtr<GCancellable> mDBusGetCancellable;
+
+  nsCString mServiceName;
+  void SetServiceName(const char* aName);
+  const char* GetServiceName();
 };
 
 }  // namespace widget

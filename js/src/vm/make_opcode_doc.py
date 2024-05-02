@@ -14,18 +14,17 @@
     https://developer.mozilla.org/en-US/docs/SpiderMonkey/Internals/Bytecode
 """
 
-import sys
 import os
-
+import sys
 
 # Allow this script to be run from anywhere.
 this_dir = os.path.dirname(os.path.realpath(__file__))
 sys.path.insert(0, this_dir)
 
 
-import jsopcode
 from xml.sax.saxutils import escape
 
+import jsopcode
 
 try:
     import markdown
@@ -166,13 +165,13 @@ def print_doc(index):
         )
     )
 
-    for (category_name, types) in index:
+    for category_name, types in index:
         print(
             '<h3 id="{id}">{name}</h3>'.format(
                 name=category_name, id=make_element_id(category_name)
             )
         )
-        for (type_name, opcodes) in types:
+        for type_name, opcodes in types:
             if type_name:
                 print(
                     '<h4 id="{id}">{name}</h4>'.format(

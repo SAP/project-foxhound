@@ -1,12 +1,13 @@
 "use strict";
 
-const { AddonSettings } = ChromeUtils.import(
-  "resource://gre/modules/addons/AddonSettings.jsm"
+const { AddonSettings } = ChromeUtils.importESModule(
+  "resource://gre/modules/addons/AddonSettings.sys.mjs"
 );
 
 // This test checks whether the theme experiments work
 add_task(async function test_experiment_static_theme() {
   let extension = ExtensionTestUtils.loadExtension({
+    useAddonManager: "temporary",
     manifest: {
       theme: {
         colors: {
@@ -129,6 +130,7 @@ add_task(async function test_experiment_static_theme() {
 
 add_task(async function test_experiment_dynamic_theme() {
   let extension = ExtensionTestUtils.loadExtension({
+    useAddonManager: "temporary",
     manifest: {
       permissions: ["theme"],
       theme_experiment: {
@@ -293,6 +295,7 @@ add_task(async function test_experiment_dynamic_theme() {
 
 add_task(async function test_experiment_stylesheet() {
   let extension = ExtensionTestUtils.loadExtension({
+    useAddonManager: "temporary",
     manifest: {
       theme: {
         colors: {
@@ -396,6 +399,52 @@ add_task(async function test_experiment_stylesheet() {
   );
 });
 
-add_task(async function cleanup() {
+// This test checks whether the theme experiments are allowed for non privileged
+// theme installed non-temporarily if AddonSettings.EXPERIMENTS_ENABLED is true.
+add_task(async function test_experiment_installed_non_temporarily() {
+  await SpecialPowers.pushPrefEnv({
+    set: [["extensions.experiments.enabled", true]],
+  });
+
+  if (!AddonSettings.EXPERIMENTS_ENABLED) {
+    info(
+      "Skipping test case on build where AddonSettings.EXPERIMENTS_ENABLED is false"
+    );
+    return;
+  }
+
+  let extension = ExtensionTestUtils.loadExtension({
+    manifest: {
+      theme: {
+        colors: {
+          some_color_property: "#ff00ff",
+        },
+      },
+      theme_experiment: {
+        colors: {
+          some_color_property: "--some-color-property",
+        },
+      },
+    },
+  });
+
+  const root = window.document.documentElement;
+
+  is(
+    root.style.getPropertyValue("--some-color-property"),
+    "",
+    "Color property should be unset"
+  );
+
+  await extension.startup();
+
+  is(
+    root.style.getPropertyValue("--some-color-property"),
+    hexToCSS("#ff00ff"),
+    "Color property should be parsed and set."
+  );
+
+  await extension.unload();
+
   await SpecialPowers.popPrefEnv();
 });

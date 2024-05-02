@@ -20,7 +20,7 @@ add_task(async function test_message_properties() {
 });
 
 add_task(async function test_level() {
-  for (const level of ["error", "info", "warning"]) {
+  for (const level of ["error", "info", "warn"]) {
     const listenerId = await listenToConsoleMessage(level);
     await logConsoleMessage({ message: "foo", level });
     const message = await getConsoleMessage(listenerId);
@@ -56,8 +56,8 @@ add_task(async function test_stacktrace() {
     stacktrace[3],
     "chrome://mochitests/content/browser/remote/shared/listeners/test/browser/head.js",
     "",
-    33,
-    27
+    34,
+    29
   );
 
   // Clear the console to avoid side effects with other tests in this file.
@@ -72,7 +72,7 @@ function logConsoleMessage(options = {}) {
     const levelToFlags = {
       error: Ci.nsIScriptError.errorFlag,
       info: Ci.nsIScriptError.infoFlag,
-      warning: Ci.nsIScriptError.warningFlag,
+      warn: Ci.nsIScriptError.warningFlag,
     };
 
     const scriptError = Cc["@mozilla.org/scripterror;1"].createInstance(
@@ -100,8 +100,8 @@ function listenToConsoleMessage(level) {
     [level],
     async _level => {
       const innerWindowId = content.windowGlobalChild.innerWindowId;
-      const { ConsoleListener } = ChromeUtils.import(
-        "chrome://remote/content/shared/listeners/ConsoleListener.jsm"
+      const { ConsoleListener } = ChromeUtils.importESModule(
+        "chrome://remote/content/shared/listeners/ConsoleListener.sys.mjs"
       );
       const consoleListener = new ConsoleListener(innerWindowId);
       const onMessage = consoleListener.once(_level);

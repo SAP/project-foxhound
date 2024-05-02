@@ -36,9 +36,10 @@ class VideoSink : public MediaSink {
 
   media::TimeUnit GetEndTime(TrackType aType) const override;
 
-  media::TimeUnit GetPosition(TimeStamp* aTimeStamp = nullptr) const override;
+  media::TimeUnit GetPosition(TimeStamp* aTimeStamp = nullptr) override;
 
   bool HasUnplayedFrames(TrackType aType) const override;
+  media::TimeUnit UnplayedDuration(TrackType aType) const override;
 
   void SetPlaybackRate(double aPlaybackRate) override;
 
@@ -49,6 +50,9 @@ class VideoSink : public MediaSink {
   void SetPreservesPitch(bool aPreservesPitch) override;
 
   void SetPlaying(bool aPlaying) override;
+
+  RefPtr<GenericPromise> SetAudioDevice(
+      RefPtr<AudioDeviceInfo> aDevice) override;
 
   double PlaybackRate() const override;
 
@@ -109,7 +113,7 @@ class VideoSink : public MediaSink {
   MediaQueue<VideoData>& VideoQueue() const { return mVideoQueue; }
 
   const RefPtr<AbstractThread> mOwnerThread;
-  RefPtr<MediaSink> mAudioSink;
+  const RefPtr<MediaSink> mAudioSink;
   MediaQueue<VideoData>& mVideoQueue;
   VideoFrameContainer* mContainer;
   RefPtr<VideoFrameContainer> mSecondaryContainer;

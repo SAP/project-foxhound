@@ -11,20 +11,19 @@ const TEST_ROOT = getRootDirectory(gTestPath).replace(
 var MockFilePicker = SpecialPowers.MockFilePicker;
 MockFilePicker.init(window);
 
-/* import-globals-from ../../../../../toolkit/content/tests/browser/common/mockTransfer.js */
 Services.scriptloader.loadSubScript(
   "chrome://mochitests/content/browser/toolkit/content/tests/browser/common/mockTransfer.js",
   this
 );
 
-add_task(async function setup() {
+add_setup(async function () {
   // head.js has helpers that write to a nice unique file we can use.
   await createDownloadedFile(gTestTargetFile.path, "Hello.\n");
   ok(gTestTargetFile.exists(), "We created a test file.");
 
   await SpecialPowers.pushPrefEnv({
     set: [
-      ["browser.download.improvements_to_download_panel", true],
+      ["browser.download.always_ask_before_handling_new_types", false],
       ["browser.download.useDownloadDir", false],
     ],
   });
@@ -32,11 +31,11 @@ add_task(async function setup() {
   let destDir = gTestTargetFile.parent;
 
   MockFilePicker.displayDirectory = destDir;
-  MockFilePicker.showCallback = function(fp) {
+  MockFilePicker.showCallback = function (fp) {
     MockFilePicker.setFiles([gTestTargetFile]);
     return MockFilePicker.returnOK;
   };
-  registerCleanupFunction(function() {
+  registerCleanupFunction(function () {
     MockFilePicker.cleanup();
     if (gTestTargetFile.exists()) {
       gTestTargetFile.remove(false);
@@ -54,13 +53,11 @@ add_task(async function test_overwrite_does_not_delete_first() {
   });
   mockTransferRegisterer.register();
 
-  registerCleanupFunction(function() {
+  registerCleanupFunction(function () {
     if (!unregisteredTransfer) {
       mockTransferRegisterer.unregister();
     }
   });
-
-  let dialogPromise = BrowserTestUtils.domWindowOpenedAndLoaded();
 
   // Now try and download a thing to the file:
   await BrowserTestUtils.withNewTab(
@@ -70,24 +67,7 @@ add_task(async function test_overwrite_does_not_delete_first() {
       waitForLoad: false,
       waitForStateStop: true,
     },
-    async function() {
-      if (
-        !Services.prefs.getBoolPref(
-          "browser.download.improvements_to_download_panel"
-        )
-      ) {
-        let dialog = await dialogPromise;
-        info("Got dialog.");
-        let saveEl = dialog.document.getElementById("save");
-        dialog.document.getElementById("mode").selectedItem = saveEl;
-        // Allow accepting the dialog (to avoid the delay helper):
-        dialog.document
-          .getElementById("unknownContentType")
-          .getButton("accept").disabled = false;
-        // Then accept it:
-        dialog.document.querySelector("dialog").acceptDialog();
-      }
-
+    async function () {
       ok(await transferCompletePromise, "download should succeed");
       ok(
         gTestTargetFile.exists(),
@@ -105,7 +85,6 @@ add_task(async function test_overwrite_does_not_delete_first() {
 // If we download a file and the user accepts overwriting an existing one,
 // we should successfully overwrite its contents.
 add_task(async function test_overwrite_works() {
-  let dialogPromise = BrowserTestUtils.domWindowOpenedAndLoaded();
   let publicDownloads = await Downloads.getList(Downloads.PUBLIC);
   // First ensure we catch the download finishing.
   let downloadFinishedPromise = new Promise(resolve => {
@@ -129,24 +108,7 @@ add_task(async function test_overwrite_works() {
       waitForLoad: false,
       waitForStateStop: true,
     },
-    async function() {
-      if (
-        !Services.prefs.getBoolPref(
-          "browser.download.improvements_to_download_panel"
-        )
-      ) {
-        let dialog = await dialogPromise;
-        info("Got dialog.");
-        let saveEl = dialog.document.getElementById("save");
-        dialog.document.getElementById("mode").selectedItem = saveEl;
-        // Allow accepting the dialog (to avoid the delay helper):
-        dialog.document
-          .getElementById("unknownContentType")
-          .getButton("accept").disabled = false;
-        // Then accept it:
-        dialog.document.querySelector("dialog").acceptDialog();
-      }
-
+    async function () {
       info("wait for download to finish");
       let download = await downloadFinishedPromise;
       ok(download.succeeded, "Download should succeed");

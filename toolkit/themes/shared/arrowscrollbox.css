@@ -13,7 +13,7 @@
 /* Scroll arrows */
 
 toolbarbutton {
-  color: inherit !important; /* override any color changes for toolbar buttons in e.g. disabled or hover states */
+  color: inherit;
   list-style-image: url("chrome://global/skin/icons/arrow-down-12.svg");
   -moz-context-properties: fill, fill-opacity;
   fill: currentColor;
@@ -22,7 +22,7 @@ toolbarbutton {
 }
 
 toolbarbutton[disabled="true"] {
-  fill-opacity: 0.4;
+  fill-opacity: var(--toolbarbutton-disabled-opacity);
 }
 
 :host([orient="horizontal"]) > toolbarbutton {
@@ -42,8 +42,14 @@ toolbarbutton > .toolbarbutton-text {
   display: none;
 }
 
-%ifndef XP_MACOSX
-:host(:not([clicktoscroll="true"])) > toolbarbutton {
-  appearance: none;
+@media not (-moz-platform: macos) {
+  :host(:not([clicktoscroll="true"])) > toolbarbutton {
+    appearance: none;
+  }
 }
-%endif
+
+scrollbox,
+.scrollbox-clip {
+  min-width: 0;
+  min-height: 0;
+}

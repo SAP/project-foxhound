@@ -2,10 +2,21 @@
 /* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "PlacesUtils",
-  "resource://gre/modules/PlacesUtils.jsm"
+const { AddonTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/AddonTestUtils.sys.mjs"
+);
+
+ChromeUtils.defineESModuleGetters(this, {
+  PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
+});
+
+AddonTestUtils.init(this);
+AddonTestUtils.overrideCertDB();
+AddonTestUtils.createAppInfo(
+  "xpcshell@tests.mozilla.org",
+  "XPCShell",
+  "1",
+  "43"
 );
 
 add_task(async function test_bookmarks() {
@@ -224,7 +235,7 @@ add_task(async function test_bookmarks() {
       );
     }
 
-    function checkOnRemoved(id, parentId, index, url, type = "folder") {
+    function checkOnRemoved(id, parentId, index, title, url, type = "folder") {
       let removedData = collectedEvents.pop();
       browser.test.assertEq(
         "onRemoved",
@@ -267,6 +278,11 @@ add_task(async function test_bookmarks() {
         url,
         node.url,
         "onRemoved event received the expected node url"
+      );
+      browser.test.assertEq(
+        title,
+        node.title,
+        "onRemoved event received the expected node title"
       );
       browser.test.assertEq(
         type,
@@ -474,6 +490,7 @@ add_task(async function test_bookmarks() {
           ourId,
           bookmarkGuids.unfiledGuid,
           0,
+          "new test title",
           "http://example.com/",
           "bookmark"
         );
@@ -1251,7 +1268,12 @@ add_task(async function test_bookmarks() {
               collectedEvents.length,
               "1 expected events received"
             );
-            checkOnRemoved(createdFolderId, bookmarkGuids.unfiledGuid, 1);
+            checkOnRemoved(
+              createdFolderId,
+              bookmarkGuids.unfiledGuid,
+              1,
+              "Mozilla Folder"
+            );
 
             return browser.bookmarks.search({}).then(searchResults => {
               browser.test.assertEq(
@@ -1327,6 +1349,7 @@ add_task(async function test_bookmarks() {
           createdSeparatorId,
           createdFolderId,
           0,
+          "",
           "data:",
           "separator"
         );
@@ -1339,7 +1362,12 @@ add_task(async function test_bookmarks() {
           collectedEvents.length,
           "1 expected events received"
         );
-        checkOnRemoved(createdFolderId, bookmarkGuids.unfiledGuid, 3);
+        checkOnRemoved(
+          createdFolderId,
+          bookmarkGuids.unfiledGuid,
+          3,
+          "Empty Folder"
+        );
 
         return browser.test.assertRejects(
           browser.bookmarks.get(createdFolderId),
@@ -1435,6 +1463,7 @@ add_task(async function test_bookmarks() {
           createdFolderId,
           bookmarkGuids.unfiledGuid,
           3,
+          "Empty Folder",
           undefined,
           "folder"
         );
@@ -1615,3 +1644,82 @@ add_task(async function test_tree_with_empty_folder() {
 
   await extension.unload();
 });
+
+add_task(
+  {
+    pref_set: [["extensions.eventPages.enabled", true]],
+  },
+  async function test_bookmarks_event_page() {
+    await AddonTestUtils.promiseStartupManager();
+    let extension = ExtensionTestUtils.loadExtension({
+      useAddonManager: "permanent",
+      manifest: {
+        browser_specific_settings: { gecko: { id: "eventpage@bookmarks" } },
+        permissions: ["bookmarks"],
+        background: { persistent: false },
+      },
+      background() {
+        browser.bookmarks.onCreated.addListener(() => {
+          browser.test.sendMessage("onCreated");
+        });
+        browser.bookmarks.onRemoved.addListener(() => {
+          browser.test.sendMessage("onRemoved");
+        });
+        browser.bookmarks.onChanged.addListener(() => {});
+        browser.bookmarks.onMoved.addListener(() => {});
+        browser.test.sendMessage("ready");
+      },
+    });
+
+    const EVENTS = ["onCreated", "onRemoved", "onChanged", "onMoved"];
+    await PlacesUtils.bookmarks.eraseEverything();
+
+    await extension.startup();
+    await extension.awaitMessage("ready");
+    for (let event of EVENTS) {
+      assertPersistentListeners(extension, "bookmarks", event, {
+        primed: false,
+      });
+    }
+
+    // test events waken background
+    await extension.terminateBackground();
+    for (let event of EVENTS) {
+      assertPersistentListeners(extension, "bookmarks", event, {
+        primed: true,
+      });
+    }
+
+    let bookmark = {
+      type: PlacesUtils.bookmarks.TYPE_BOOKMARK,
+      url: `http://example.com/12345`,
+      title: `My bookmark 12345`,
+      parentGuid: PlacesUtils.bookmarks.unfiledGuid,
+    };
+    await PlacesUtils.bookmarks.insert(bookmark);
+
+    await extension.awaitMessage("ready");
+    await extension.awaitMessage("onCreated");
+    for (let event of EVENTS) {
+      assertPersistentListeners(extension, "bookmarks", event, {
+        primed: false,
+      });
+    }
+
+    await AddonTestUtils.promiseRestartManager();
+    await extension.awaitStartup();
+
+    for (let event of EVENTS) {
+      assertPersistentListeners(extension, "bookmarks", event, {
+        primed: true,
+      });
+    }
+
+    await PlacesUtils.bookmarks.eraseEverything();
+    await extension.awaitMessage("ready");
+    await extension.awaitMessage("onRemoved");
+
+    await extension.unload();
+    await AddonTestUtils.promiseShutdownManager();
+  }
+);

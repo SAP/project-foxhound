@@ -1,16 +1,18 @@
 use crate::de::ParserNumber;
 use crate::error::Error;
-use crate::lib::*;
-use serde::de::{self, Unexpected, Visitor};
-use serde::{
-    forward_to_deserialize_any, serde_if_integer128, Deserialize, Deserializer, Serialize,
-    Serializer,
-};
-
 #[cfg(feature = "arbitrary_precision")]
 use crate::error::ErrorCode;
 #[cfg(feature = "arbitrary_precision")]
+use alloc::borrow::ToOwned;
+#[cfg(feature = "arbitrary_precision")]
+use alloc::string::{String, ToString};
+use core::fmt::{self, Debug, Display};
+#[cfg(not(feature = "arbitrary_precision"))]
+use core::hash::{Hash, Hasher};
+use serde::de::{self, Unexpected, Visitor};
+#[cfg(feature = "arbitrary_precision")]
 use serde::de::{IntoDeserializer, MapAccess};
+use serde::{forward_to_deserialize_any, Deserialize, Deserializer, Serialize, Serializer};
 
 #[cfg(feature = "arbitrary_precision")]
 pub(crate) const TOKEN: &str = "$serde_json::private::Number";
@@ -286,13 +288,13 @@ impl Number {
     }
 }
 
-impl fmt::Display for Number {
+impl Display for Number {
     #[cfg(not(feature = "arbitrary_precision"))]
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
         match self.n {
-            N::PosInt(u) => Display::fmt(&u, formatter),
-            N::NegInt(i) => Display::fmt(&i, formatter),
-            N::Float(f) => Display::fmt(&f, formatter),
+            N::PosInt(u) => formatter.write_str(itoa::Buffer::new().format(u)),
+            N::NegInt(i) => formatter.write_str(itoa::Buffer::new().format(i)),
+            N::Float(f) => formatter.write_str(ryu::Buffer::new().format_finite(f)),
         }
     }
 
@@ -303,29 +305,8 @@ impl fmt::Display for Number {
 }
 
 impl Debug for Number {
-    #[cfg(not(feature = "arbitrary_precision"))]
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        let mut debug = formatter.debug_tuple("Number");
-        match self.n {
-            N::PosInt(i) => {
-                debug.field(&i);
-            }
-            N::NegInt(i) => {
-                debug.field(&i);
-            }
-            N::Float(f) => {
-                debug.field(&f);
-            }
-        }
-        debug.finish()
-    }
-
-    #[cfg(feature = "arbitrary_precision")]
-    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        formatter
-            .debug_tuple("Number")
-            .field(&format_args!("{}", self.n))
-            .finish()
+        write!(formatter, "Number({})", self)
     }
 }
 
@@ -556,17 +537,14 @@ impl<'de> Deserializer<'de> for Number {
     deserialize_number!(deserialize_i16 => visit_i16);
     deserialize_number!(deserialize_i32 => visit_i32);
     deserialize_number!(deserialize_i64 => visit_i64);
+    deserialize_number!(deserialize_i128 => visit_i128);
     deserialize_number!(deserialize_u8 => visit_u8);
     deserialize_number!(deserialize_u16 => visit_u16);
     deserialize_number!(deserialize_u32 => visit_u32);
     deserialize_number!(deserialize_u64 => visit_u64);
+    deserialize_number!(deserialize_u128 => visit_u128);
     deserialize_number!(deserialize_f32 => visit_f32);
     deserialize_number!(deserialize_f64 => visit_f64);
-
-    serde_if_integer128! {
-        deserialize_number!(deserialize_i128 => visit_i128);
-        deserialize_number!(deserialize_u128 => visit_u128);
-    }
 
     forward_to_deserialize_any! {
         bool char str string bytes byte_buf option unit unit_struct
@@ -584,17 +562,14 @@ impl<'de, 'a> Deserializer<'de> for &'a Number {
     deserialize_number!(deserialize_i16 => visit_i16);
     deserialize_number!(deserialize_i32 => visit_i32);
     deserialize_number!(deserialize_i64 => visit_i64);
+    deserialize_number!(deserialize_i128 => visit_i128);
     deserialize_number!(deserialize_u8 => visit_u8);
     deserialize_number!(deserialize_u16 => visit_u16);
     deserialize_number!(deserialize_u32 => visit_u32);
     deserialize_number!(deserialize_u64 => visit_u64);
+    deserialize_number!(deserialize_u128 => visit_u128);
     deserialize_number!(deserialize_f32 => visit_f32);
     deserialize_number!(deserialize_f64 => visit_f64);
-
-    serde_if_integer128! {
-        deserialize_number!(deserialize_i128 => visit_i128);
-        deserialize_number!(deserialize_u128 => visit_u128);
-    }
 
     forward_to_deserialize_any! {
         bool char str string bytes byte_buf option unit unit_struct
@@ -747,19 +722,9 @@ impl_from_unsigned!(u8, u16, u32, u64, usize);
 impl_from_signed!(i8, i16, i32, i64, isize);
 
 #[cfg(feature = "arbitrary_precision")]
-serde_if_integer128! {
-    impl From<i128> for Number {
-        fn from(i: i128) -> Self {
-            Number { n: i.to_string() }
-        }
-    }
-
-    impl From<u128> for Number {
-        fn from(u: u128) -> Self {
-            Number { n: u.to_string() }
-        }
-    }
-}
+impl_from_unsigned!(u128);
+#[cfg(feature = "arbitrary_precision")]
+impl_from_signed!(i128);
 
 impl Number {
     #[cfg(not(feature = "arbitrary_precision"))]

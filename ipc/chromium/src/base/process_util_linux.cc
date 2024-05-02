@@ -7,30 +7,27 @@
 #include "base/process_util.h"
 
 #include <string>
-#include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
-
-#include "algorithm"
 
 #if defined(MOZ_CODE_COVERAGE)
 #  include "nsString.h"
 #endif
 
+#include "mozilla/ipc/LaunchError.h"
+
 #if defined(MOZ_ENABLE_FORKSERVER)
 #  include <stdlib.h>
-#  include <sys/types.h>
-#  include <sys/stat.h>
 #  include <fcntl.h>
 #  if defined(DEBUG)
 #    include "base/message_loop.h"
 #  endif
-#  include "mozilla/DebugOnly.h"
 #  include "mozilla/ipc/ForkServiceChild.h"
 
 #  include "mozilla/Unused.h"
 #  include "mozilla/ScopeExit.h"
 #  include "mozilla/ipc/ProcessUtils.h"
+#  include "mozilla/ipc/SetProcessTitle.h"
 
 using namespace mozilla::ipc;
 #endif
@@ -47,6 +44,7 @@ using namespace mozilla::ipc;
 #include "mozilla/ipc/FileDescriptorShuffle.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/StaticPtr.h"
+#include "mozilla/Result.h"
 
 // WARNING: despite the name, this file is also used on the BSDs and
 // Solaris (basically, Unixes that aren't Mac OS), not just Linux.
@@ -105,7 +103,7 @@ bool AppProcessBuilder::ForkProcess(const std::vector<std::string>& argv,
   fflush(stdout);
   fflush(stderr);
 
-#  ifdef OS_LINUX
+#  ifdef XP_LINUX
   pid_t pid = options.fork_delegate ? options.fork_delegate->Fork() : fork();
   // WARNING: if pid == 0, only async signal safe operations are permitted from
   // here until exec or _exit.
@@ -145,6 +143,7 @@ void AppProcessBuilder::ReplaceArguments(int* argcp, char*** argvp) {
   *p = nullptr;
   *argvp = argv;
   *argcp = argv_.size();
+  mozilla::SetProcessTitle(argv_);
 }
 
 void AppProcessBuilder::InitAppProcess(int* argcp, char*** argvp) {
@@ -205,9 +204,9 @@ void InitForkServerProcess() {
   SetThisProcessName("forkserver");
 }
 
-static bool LaunchAppWithForkServer(const std::vector<std::string>& argv,
-                                    const LaunchOptions& options,
-                                    ProcessHandle* process_handle) {
+static Result<Ok, LaunchError> LaunchAppWithForkServer(
+    const std::vector<std::string>& argv, const LaunchOptions& options,
+    ProcessHandle* process_handle) {
   MOZ_ASSERT(ForkServiceChild::Get());
 
   nsTArray<nsCString> _argv(argv.size());
@@ -231,8 +230,9 @@ static bool LaunchAppWithForkServer(const std::vector<std::string>& argv,
 }
 #endif  // MOZ_ENABLE_FORKSERVER
 
-bool LaunchApp(const std::vector<std::string>& argv,
-               const LaunchOptions& options, ProcessHandle* process_handle) {
+Result<Ok, LaunchError> LaunchApp(const std::vector<std::string>& argv,
+                                  const LaunchOptions& options,
+                                  ProcessHandle* process_handle) {
 #if defined(MOZ_ENABLE_FORKSERVER)
   if (options.use_forkserver && ForkServiceChild::Get()) {
     return LaunchAppWithForkServer(argv, options, process_handle);
@@ -241,11 +241,18 @@ bool LaunchApp(const std::vector<std::string>& argv,
 
   mozilla::UniquePtr<char*[]> argv_cstr(new char*[argv.size() + 1]);
 
-  EnvironmentArray envp = BuildEnvironmentArray(options.env_map);
+  EnvironmentArray env_storage;
+  const EnvironmentArray& envp =
+      options.full_env ? options.full_env
+                       : (env_storage = BuildEnvironmentArray(options.env_map));
+
+  // Init() there will call fcntl(F_DUPFD/F_DUPFD_CLOEXEC) under the hood in
+  // https://searchfox.org/mozilla-central/rev/55d5c4b9dffe5e59eb6b019c1a930ec9ada47e10/ipc/glue/FileDescriptorShuffle.cpp#72
+  // so it will set errno.
   mozilla::ipc::FileDescriptorShuffle shuffle;
   if (!shuffle.Init(options.fds_to_remap)) {
     CHROMIUM_LOG(WARNING) << "FileDescriptorShuffle::Init failed";
-    return false;
+    return Err(LaunchError("FileDescriptorShuffle", errno));
   }
 
 #ifdef MOZ_CODE_COVERAGE
@@ -257,9 +264,10 @@ bool LaunchApp(const std::vector<std::string>& argv,
   // Once we switch to gcc/clang 10, we could just remove it in the child
   // process
   void (*ccovSigHandler)(int) = signal(SIGUSR1, SIG_IGN);
+  const char* gcov_child_prefix = PR_GetEnv("GCOV_CHILD_PREFIX");
 #endif
 
-#ifdef OS_LINUX
+#ifdef XP_LINUX
   pid_t pid = options.fork_delegate ? options.fork_delegate->Fork() : fork();
   // WARNING: if pid == 0, only async signal safe operations are permitted from
   // here until exec or _exit.
@@ -272,11 +280,19 @@ bool LaunchApp(const std::vector<std::string>& argv,
 
   if (pid < 0) {
     CHROMIUM_LOG(WARNING) << "fork() failed: " << strerror(errno);
-    return false;
+    return Err(LaunchError("fork", errno));
   }
 
   if (pid == 0) {
     // In the child:
+    if (!options.workdir.empty()) {
+      if (chdir(options.workdir.c_str()) != 0) {
+        // See under execve about logging unsafety.
+        DLOG(ERROR) << "chdir failed " << options.workdir;
+        _exit(127);
+      }
+    }
+
     for (const auto& fds : shuffle.Dup2Sequence()) {
       if (HANDLE_EINTR(dup2(fds.first, fds.second)) != fds.second) {
         // This shouldn't happen, but check for it.  And see below
@@ -295,15 +311,17 @@ bool LaunchApp(const std::vector<std::string>& argv,
     argv_cstr[argv.size()] = NULL;
 
 #ifdef MOZ_CODE_COVERAGE
-    const char* gcov_child_prefix = PR_GetEnv("GCOV_CHILD_PREFIX");
-    if (gcov_child_prefix) {
+    if (gcov_child_prefix && !options.full_env) {
       const pid_t child_pid = getpid();
       nsAutoCString new_gcov_prefix(gcov_child_prefix);
       new_gcov_prefix.Append(std::to_string((size_t)child_pid));
       EnvironmentMap new_map = options.env_map;
       new_map[ENVIRONMENT_LITERAL("GCOV_PREFIX")] =
           ENVIRONMENT_STRING(new_gcov_prefix.get());
-      envp = BuildEnvironmentArray(new_map);
+      // FIXME(bug 1783305): this won't work if full_env is set, and
+      // in general this block of code is doing things it shouldn't
+      // be (async signal unsafety).
+      env_storage = BuildEnvironmentArray(new_map);
     }
 #endif
 
@@ -328,11 +346,12 @@ bool LaunchApp(const std::vector<std::string>& argv,
 
   if (process_handle) *process_handle = pid;
 
-  return true;
+  return Ok();
 }
 
-bool LaunchApp(const CommandLine& cl, const LaunchOptions& options,
-               ProcessHandle* process_handle) {
+Result<Ok, LaunchError> LaunchApp(const CommandLine& cl,
+                                  const LaunchOptions& options,
+                                  ProcessHandle* process_handle) {
   return LaunchApp(cl.argv(), options, process_handle);
 }
 

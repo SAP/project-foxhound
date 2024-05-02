@@ -1,9 +1,6 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
-/* import-globals-from ../../../shared/test/shared-head.js */
-/* import-globals-from ../../../shared/test/telemetry-test-helpers.js */
-
 // shared-head.js handles imports, constants, and utility functions
 Services.scriptloader.loadSubScript(
   "chrome://mochitests/content/browser/devtools/client/shared/test/shared-head.js",
@@ -143,21 +140,6 @@ function getDuplicatedModules(loaders) {
  *        duplicated modules.
  */
 function runDuplicatedModulesTest(loaders, allowedDupes) {
-  const { AppConstants } = require("resource://gre/modules/AppConstants.jsm");
-  if (AppConstants.DEBUG_JS_MODULES) {
-    // DevTools load different modules when DEBUG_JS_MODULES is true, which
-    // makes the hardcoded allowedDupes incorrect. Fail the test early and return.
-    // See https://bugzilla.mozilla.org/show_bug.cgi?id=1590630.
-    ok(
-      false,
-      "The DevTools metrics tests should not run with " +
-        "`--enable-debug-js-modules`. Please disable this option " +
-        "and run the test again."
-    );
-    // early return to avoid polluting the logs with irrelevant errors.
-    return;
-  }
-
   const duplicatedModules = getDuplicatedModules(loaders);
 
   // Remove allowedDupes entries, and fail if an allowed entry is not found.

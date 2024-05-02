@@ -25,7 +25,7 @@ function workify(func, blob, content) {
   return new Promise((resolve, reject) => {
     let worker = new Worker("worker_blob_reading.js");
     worker.postMessage({ func, blob, content });
-    worker.onmessage = function(e) {
+    worker.onmessage = function (e) {
       if (e.data.type == "done") {
         resolve();
         return;
@@ -43,7 +43,6 @@ function workify(func, blob, content) {
 
       if (e.data.type == "info") {
         info(e.data.message);
-        return;
       }
     };
   });

@@ -1,7 +1,7 @@
 "use strict";
 
-const { ProductAddonChecker } = ChromeUtils.import(
-  "resource://gre/modules/addons/ProductAddonChecker.jsm"
+const { ProductAddonChecker } = ChromeUtils.importESModule(
+  "resource://gre/modules/addons/ProductAddonChecker.sys.mjs"
 );
 
 Services.prefs.setBoolPref("media.gmp-manager.updateEnabled", true);
@@ -26,7 +26,6 @@ const validX5uPath = "/valid_x5u";
 const validCertChain = loadCertChain(testDataDir + "content_signing", [
   "aus_ee",
   "int",
-  "root",
 ]);
 signedTestServer.registerPathHandler(validX5uPath, (req, res) => {
   res.write(validCertChain.join("\n"));
@@ -38,7 +37,6 @@ const invalidX5uPath = "/invalid_x5u";
 const invalidCertChain = loadCertChain(testDataDir + "content_signing", [
   "aus_ee",
   // This cert chain is missing the intermediate cert!
-  "root",
 ]);
 signedTestServer.registerPathHandler(invalidX5uPath, (req, res) => {
   res.write(invalidCertChain.join("\n"));
@@ -88,9 +86,6 @@ signedTestServer.registerPathHandler(goodXmlPath, (req, res) => {
   }
   res.write(goodXml);
 });
-
-// Override our root so that test cert chains will be valid.
-setCertRoot(testDataDir + "content_signing_root.pem");
 
 // Handle aysnc load of good.xml.
 add_task(async function load_good_xml() {
@@ -154,6 +149,10 @@ add_task(async function test_missing_content_signature_header() {
   } catch (e) {
     Assert.ok(true, "Should fail to get addon list");
     Assert.equal(
+      e.addonCheckerErr,
+      ProductAddonChecker.VERIFICATION_MISSING_DATA_ERR
+    );
+    Assert.equal(
       e.message,
       "Content signature validation failed: missing content signature header"
     );
@@ -172,6 +171,10 @@ add_task(async function test_incomplete_content_signature_header() {
   } catch (e) {
     Assert.ok(true, "Should fail to get addon list");
     Assert.equal(
+      e.addonCheckerErr,
+      ProductAddonChecker.VERIFICATION_MISSING_DATA_ERR
+    );
+    Assert.equal(
       e.message,
       "Content signature validation failed: missing signature"
     );
@@ -189,6 +192,10 @@ add_task(async function test_bad_x5u_content_signature_header() {
     Assert.ok(false, "Should fail to get addon list");
   } catch (e) {
     Assert.ok(true, "Should fail to get addon list");
+    Assert.equal(
+      e.addonCheckerErr,
+      ProductAddonChecker.VERIFICATION_INVALID_ERR
+    );
     Assert.equal(e.message, "Content signature is not valid");
   }
 });

@@ -5,17 +5,16 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/Assertions.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/TypedEnumBits.h"
 
 #include <stdint.h>
 #include <type_traits>
 
 // A rough feature check for is_literal_type. Not very carefully checked.
-// Feel free to amend as needed.
+// Feel free to amend as needed. is_literal_type was removed in C++20.
 // We leave ANDROID out because it's using stlport which doesn't have
 // std::is_literal_type.
-#if __cplusplus >= 201103L && !defined(ANDROID)
+#if __cplusplus >= 201103L && __cplusplus < 202002L && !defined(ANDROID)
 #  if defined(__clang__)
 /*
  * Per Clang documentation, "Note that marketing version numbers should not

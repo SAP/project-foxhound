@@ -10,7 +10,6 @@
 #include "jit/x86-shared/MacroAssembler-x86-shared.h"
 #include "js/HeapAPI.h"
 #include "wasm/WasmBuiltins.h"
-#include "wasm/WasmTlsData.h"
 
 namespace js {
 namespace jit {
@@ -137,7 +136,6 @@ class MacroAssemblerX64 : public MacroAssemblerX86Shared {
   /////////////////////////////////////////////////////////////////
   // X86/X64-common interface.
   /////////////////////////////////////////////////////////////////
-  Address ToPayload(Address value) { return value; }
 
   void storeValue(ValueOperand val, Operand dest) {
     movq(val.valueReg(), dest);
@@ -218,6 +216,10 @@ class MacroAssemblerX64 : public MacroAssemblerX86Shared {
     push(scratch);
   }
   void pushValue(const Address& addr) { push(Operand(addr)); }
+
+  void pushValue(const BaseIndex& addr, Register scratch) {
+    push(Operand(addr));
+  }
 
   void boxValue(JSValueType type, Register src, Register dest);
 
@@ -579,15 +581,19 @@ class MacroAssemblerX64 : public MacroAssemblerX86Shared {
       loadPtr(Address(scratch, 0x0), dest);
     }
   }
-  void loadPtr(const Address& address, Register dest) {
+  FaultingCodeOffset loadPtr(const Address& address, Register dest) {
+    FaultingCodeOffset fco = FaultingCodeOffset(currentOffset());
     movq(Operand(address), dest);
+    return fco;
   }
   void load64(const Address& address, Register dest) {
     movq(Operand(address), dest);
   }
   void loadPtr(const Operand& src, Register dest) { movq(src, dest); }
-  void loadPtr(const BaseIndex& src, Register dest) {
+  FaultingCodeOffset loadPtr(const BaseIndex& src, Register dest) {
+    FaultingCodeOffset fco = FaultingCodeOffset(currentOffset());
     movq(Operand(src), dest);
+    return fco;
   }
   void loadPrivate(const Address& src, Register dest) { loadPtr(src, dest); }
   void load32(AbsoluteAddress address, Register dest) {
@@ -602,11 +608,15 @@ class MacroAssemblerX64 : public MacroAssemblerX86Shared {
   void load64(const Operand& address, Register64 dest) {
     movq(address, dest.reg);
   }
-  void load64(const Address& address, Register64 dest) {
+  FaultingCodeOffset load64(const Address& address, Register64 dest) {
+    FaultingCodeOffset fco = FaultingCodeOffset(currentOffset());
     movq(Operand(address), dest.reg);
+    return fco;
   }
-  void load64(const BaseIndex& address, Register64 dest) {
+  FaultingCodeOffset load64(const BaseIndex& address, Register64 dest) {
+    FaultingCodeOffset fco = FaultingCodeOffset(currentOffset());
     movq(Operand(address), dest.reg);
+    return fco;
   }
   template <typename S>
   void load64Unaligned(const S& src, Register64 dest) {
@@ -632,8 +642,10 @@ class MacroAssemblerX64 : public MacroAssemblerX86Shared {
     movq(imm, scratch);
     movq(scratch, Operand(address));
   }
-  void storePtr(Register src, const Address& address) {
+  FaultingCodeOffset storePtr(Register src, const Address& address) {
+    FaultingCodeOffset fco = FaultingCodeOffset(currentOffset());
     movq(src, Operand(address));
+    return fco;
   }
   void store64(Register src, const Address& address) {
     movq(src, Operand(address));
@@ -641,8 +653,10 @@ class MacroAssemblerX64 : public MacroAssemblerX86Shared {
   void store64(Register64 src, const Operand& address) {
     movq(src.reg, address);
   }
-  void storePtr(Register src, const BaseIndex& address) {
+  FaultingCodeOffset storePtr(Register src, const BaseIndex& address) {
+    FaultingCodeOffset fco = FaultingCodeOffset(currentOffset());
     movq(src, Operand(address));
+    return fco;
   }
   void storePtr(Register src, const Operand& dest) { movq(src, dest); }
   void storePtr(Register src, AbsoluteAddress address) {
@@ -672,9 +686,13 @@ class MacroAssemblerX64 : public MacroAssemblerX86Shared {
       store16(src, Address(scratch, 0x0));
     }
   }
-  void store64(Register64 src, Address address) { storePtr(src.reg, address); }
-  void store64(Register64 src, const BaseIndex& address) {
+  FaultingCodeOffset store64(Register64 src, Address address) {
+    FaultingCodeOffset fco = FaultingCodeOffset(currentOffset());
     storePtr(src.reg, address);
+    return fco;
+  }
+  FaultingCodeOffset store64(Register64 src, const BaseIndex& address) {
+    return storePtr(src.reg, address);
   }
   void store64(Imm64 imm, Address address) {
     storePtr(ImmWord(imm.value), address);
@@ -905,6 +923,28 @@ class MacroAssemblerX64 : public MacroAssemblerX86Shared {
     andq(src.valueReg(), dest);
   }
 
+  void unboxWasmAnyRefGCThingForGCBarrier(const Address& src, Register dest) {
+    movq(ImmWord(wasm::AnyRef::GCThingMask), dest);
+    andq(Operand(src), dest);
+  }
+
+  // Like unboxGCThingForGCBarrier, but loads the GC thing's chunk base.
+  void getGCThingValueChunk(const Address& src, Register dest) {
+    movq(ImmWord(JS::detail::ValueGCThingPayloadChunkMask), dest);
+    andq(Operand(src), dest);
+  }
+  void getGCThingValueChunk(const ValueOperand& src, Register dest) {
+    MOZ_ASSERT(src.valueReg() != dest);
+    movq(ImmWord(JS::detail::ValueGCThingPayloadChunkMask), dest);
+    andq(src.valueReg(), dest);
+  }
+
+  void getWasmAnyRefGCThingChunk(Register src, Register dest) {
+    MOZ_ASSERT(src != dest);
+    movq(ImmWord(wasm::AnyRef::GCThingChunkMask), dest);
+    andq(src, dest);
+  }
+
   inline void fallibleUnboxPtrImpl(const Operand& src, Register dest,
                                    JSValueType type, Label* fail);
 
@@ -1059,6 +1099,10 @@ class MacroAssemblerX64 : public MacroAssemblerX86Shared {
                      FloatRegister dest);
   void vmulpdSimd128(const SimdConstant& v, FloatRegister lhs,
                      FloatRegister dest);
+  void vandpdSimd128(const SimdConstant& v, FloatRegister lhs,
+                     FloatRegister dest);
+  void vminpdSimd128(const SimdConstant& v, FloatRegister lhs,
+                     FloatRegister dest);
   void vpacksswbSimd128(const SimdConstant& v, FloatRegister lhs,
                         FloatRegister dest);
   void vpackuswbSimd128(const SimdConstant& v, FloatRegister lhs,
@@ -1066,6 +1110,10 @@ class MacroAssemblerX64 : public MacroAssemblerX86Shared {
   void vpackssdwSimd128(const SimdConstant& v, FloatRegister lhs,
                         FloatRegister dest);
   void vpackusdwSimd128(const SimdConstant& v, FloatRegister lhs,
+                        FloatRegister dest);
+  void vpunpckldqSimd128(const SimdConstant& v, FloatRegister lhs,
+                         FloatRegister dest);
+  void vunpcklpsSimd128(const SimdConstant& v, FloatRegister lhs,
                         FloatRegister dest);
   void vpshufbSimd128(const SimdConstant& v, FloatRegister lhs,
                       FloatRegister dest);
@@ -1092,6 +1140,8 @@ class MacroAssemblerX64 : public MacroAssemblerX86Shared {
                        FloatRegister dest);
   void vcmplepsSimd128(const SimdConstant& v, FloatRegister lhs,
                        FloatRegister dest);
+  void vcmpgepsSimd128(const SimdConstant& v, FloatRegister lhs,
+                       FloatRegister dest);
   void vcmpeqpdSimd128(const SimdConstant& v, FloatRegister lhs,
                        FloatRegister dest);
   void vcmpneqpdSimd128(const SimdConstant& v, FloatRegister lhs,
@@ -1100,10 +1150,10 @@ class MacroAssemblerX64 : public MacroAssemblerX86Shared {
                        FloatRegister dest);
   void vcmplepdSimd128(const SimdConstant& v, FloatRegister lhs,
                        FloatRegister dest);
-
-  void loadWasmPinnedRegsFromTls() {
-    loadPtr(Address(WasmTlsReg, offsetof(wasm::TlsData, memoryBase)), HeapReg);
-  }
+  void vpmaddubswSimd128(const SimdConstant& v, FloatRegister lhs,
+                         FloatRegister dest);
+  void vpmuludqSimd128(const SimdConstant& v, FloatRegister lhs,
+                       FloatRegister dest);
 
  public:
   Condition testInt32Truthy(bool truthy, const ValueOperand& operand) {
@@ -1153,10 +1203,6 @@ class MacroAssemblerX64 : public MacroAssemblerX86Shared {
     }
   }
 
-  void loadInstructionPointerAfterCall(Register dest) {
-    loadPtr(Address(StackPointer, 0x0), dest);
-  }
-
   // Checks whether a double is representable as a 64-bit integer. If so, the
   // integer is written to the output register. Otherwise, a bailout is taken to
   // the given snapshot. This function overwrites the scratch float register.
@@ -1183,7 +1229,8 @@ class MacroAssemblerX64 : public MacroAssemblerX86Shared {
                            Label* failure);
 
  public:
-  void handleFailureWithHandlerTail(Label* profilerExitTail);
+  void handleFailureWithHandlerTail(Label* profilerExitTail,
+                                    Label* bailoutTail);
 
   // Instrumentation for entering and leaving the profiler.
   void profilerEnterFrame(Register framePtr, Register scratch);

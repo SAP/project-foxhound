@@ -82,8 +82,6 @@ class CompositorBridgeChild final : public PCompositorBridgeChild,
   mozilla::ipc::IPCResult RecvNotifyFrameStats(
       nsTArray<FrameStats>&& aFrameStats);
 
-  mozilla::ipc::IPCResult RecvInvalidateLayers(const LayersId& aLayersId);
-
   mozilla::ipc::IPCResult RecvNotifyJankedAnimations(
       const LayersId& aLayersId, nsTArray<uint64_t>&& aJankedAnimations);
 
@@ -99,12 +97,18 @@ class CompositorBridgeChild final : public PCompositorBridgeChild,
       nsTArray<AsyncParentMessageData>&& aMessages);
   PTextureChild* CreateTexture(
       const SurfaceDescriptor& aSharedData, ReadLockDescriptor&& aReadLock,
-      LayersBackend aLayersBackend, TextureFlags aFlags, uint64_t aSerial,
+      LayersBackend aLayersBackend, TextureFlags aFlags,
+      const dom::ContentParentId& aContentId, uint64_t aSerial,
       wr::MaybeExternalImageId& aExternalImageId) override;
 
   already_AddRefed<CanvasChild> GetCanvasChild() final;
 
   void EndCanvasTransaction();
+
+  /**
+   * Release resources until they are next required.
+   */
+  void ClearCachedResources();
 
   // Beware that these methods don't override their super-class equivalent
   // (which are not virtual), they just overload them. All of these Send*
@@ -125,6 +129,8 @@ class CompositorBridgeChild final : public PCompositorBridgeChild,
   bool IsSameProcess() const override;
 
   bool IPCOpen() const override { return mCanSend; }
+
+  bool IsPaused() const { return mPaused; }
 
   static void ShutDown();
 
@@ -152,12 +158,8 @@ class CompositorBridgeChild final : public PCompositorBridgeChild,
 
   base::ProcessId GetParentPid() const override { return OtherPid(); }
 
-  bool AllocUnsafeShmem(size_t aSize,
-                        mozilla::ipc::SharedMemory::SharedMemoryType aShmType,
-                        mozilla::ipc::Shmem* aShmem) override;
-  bool AllocShmem(size_t aSize,
-                  mozilla::ipc::SharedMemory::SharedMemoryType aShmType,
-                  mozilla::ipc::Shmem* aShmem) override;
+  bool AllocUnsafeShmem(size_t aSize, mozilla::ipc::Shmem* aShmem) override;
+  bool AllocShmem(size_t aSize, mozilla::ipc::Shmem* aShmem) override;
   bool DeallocShmem(mozilla::ipc::Shmem& aShmem) override;
 
   PCompositorWidgetChild* AllocPCompositorWidgetChild(
@@ -193,9 +195,8 @@ class CompositorBridgeChild final : public PCompositorBridgeChild,
 
   void ActorDestroy(ActorDestroyReason aWhy) override;
 
-  mozilla::ipc::IPCResult RecvObserveLayersUpdate(
-      const LayersId& aLayersId, const LayersObserverEpoch& aEpoch,
-      const bool& aActive);
+  mozilla::ipc::IPCResult RecvObserveLayersUpdate(const LayersId& aLayersId,
+                                                  const bool& aActive);
 
   mozilla::ipc::IPCResult RecvCompositorOptionsChanged(
       const LayersId& aLayersId, const CompositorOptions& aNewOptions);
@@ -220,6 +221,8 @@ class CompositorBridgeChild final : public PCompositorBridgeChild,
 
   // False until the actor is destroyed.
   bool mActorDestroyed;
+
+  bool mPaused;
 
   /**
    * Transaction id of ShadowLayerForwarder.

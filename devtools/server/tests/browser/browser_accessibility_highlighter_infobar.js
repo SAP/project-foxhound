@@ -6,20 +6,18 @@
 
 // Test the accessible highlighter's infobar content.
 
-const { truncateString } = require("devtools/shared/inspector/utils");
+const {
+  truncateString,
+} = require("resource://devtools/shared/inspector/utils.js");
 const {
   MAX_STRING_LENGTH,
-} = require("devtools/server/actors/highlighters/utils/accessibility");
+} = require("resource://devtools/server/actors/highlighters/utils/accessibility.js");
 
-add_task(async function() {
-  const {
-    target,
-    walker,
-    parentAccessibility,
-    a11yWalker,
-  } = await initAccessibilityFrontsForUrl(
-    MAIN_DOMAIN + "doc_accessibility_infobar.html"
-  );
+add_task(async function () {
+  const { target, walker, parentAccessibility, a11yWalker } =
+    await initAccessibilityFrontsForUrl(
+      MAIN_DOMAIN + "doc_accessibility_infobar.html"
+    );
 
   info("Button front checks");
   await checkNameAndRole(walker, "#button", a11yWalker, "Accessible Button");

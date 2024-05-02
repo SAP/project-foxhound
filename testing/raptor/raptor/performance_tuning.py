@@ -2,8 +2,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this file,
 # You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import
-
 from mozdevice import ADBError
 
 
@@ -163,6 +161,15 @@ class PerformanceTuner(object):
                         "cpufreq/scaling_min_freq".format(x): "1401000",
                     }
                 )
+        elif device_name == "SM-A515F":
+            commands.update(
+                {
+                    "/sys/devices/system/cpu/cpufreq/policy0/scaling_governor": "performance",
+                    "/sys/devices/system/cpu/cpufreq/policy4/scaling_governor": "performance",
+                    "/sys/devices/system/cpu/cpufreq/policy0/scaling_min_freq": "1742000",
+                    "/sys/devices/system/cpu/cpufreq/policy4/scaling_min_freq": "2314000",
+                }
+            )
         else:
             self.log.info(
                 "CPU for device with ro.product.model '{}' unknown, not scaling_governor".format(

@@ -12,7 +12,8 @@
  * and create derivative works of this document.
  */
 
-[Exposed=Window]
+[Exposed=Window,
+ InstrumentedProps=(attributeStyleMap,hidePopover,popover,showPopover,togglePopover)]
 interface HTMLElement : Element {
   [HTMLConstructor] constructor();
 
@@ -21,7 +22,8 @@ interface HTMLElement : Element {
            attribute DOMString title;
   [CEReactions]
            attribute DOMString lang;
-  //         attribute boolean translate;
+  [CEReactions, SetterThrows, Pure]
+           attribute boolean translate;
   [CEReactions, SetterThrows, Pure]
            attribute DOMString dir;
 
@@ -33,10 +35,10 @@ interface HTMLElement : Element {
   // user interaction
   [CEReactions, SetterThrows, Pure]
            attribute boolean hidden;
-  [CEReactions, SetterThrows, Pure, Pref="html5.inert.enabled"]
+  [CEReactions, SetterThrows, Pure]
            attribute boolean inert;
   [NeedsCallerType]
-  void click();
+  undefined click();
   [CEReactions, SetterThrows, Pure]
            attribute DOMString accessKey;
   [Pure]
@@ -48,15 +50,15 @@ interface HTMLElement : Element {
            attribute DOMString contentEditable;
   [Pure]
   readonly attribute boolean isContentEditable;
-  [Pure, Pref="dom.menuitem.enabled"]
-  readonly attribute HTMLMenuElement? contextMenu;
+  [CEReactions, SetterThrows, Pure, Pref="dom.element.popover.enabled"]
+           attribute DOMString? popover;
   [CEReactions, SetterThrows, Pure]
            attribute boolean spellcheck;
-  [CEReactions, Pure, SetterThrows, Pref="dom.forms.inputmode"]
+  [CEReactions, Pure, SetterThrows]
            attribute DOMString inputMode;
-  [CEReactions, Pure, SetterThrows, Pref="dom.forms.enterkeyhint"]
+  [CEReactions, Pure, SetterThrows]
            attribute DOMString enterKeyHint;
-  [CEReactions, Pure, SetterThrows, Pref="dom.forms.autocapitalize"]
+  [CEReactions, Pure, SetterThrows]
            attribute DOMString autocapitalize;
 
   attribute DOMString nonce;
@@ -70,8 +72,15 @@ interface HTMLElement : Element {
   //readonly attribute boolean? commandChecked;
 
   // https://html.spec.whatwg.org/multipage/custom-elements.html#dom-attachinternals
-  [Pref="dom.webcomponents.elementInternals.enabled", Throws]
+  [Throws]
   ElementInternals attachInternals();
+
+  [Throws, Pref="dom.element.popover.enabled"]
+  undefined showPopover();
+  [Throws, Pref="dom.element.popover.enabled"]
+  undefined hidePopover();
+  [Throws, Pref="dom.element.popover.enabled"]
+  boolean togglePopover(optional boolean force);
 };
 
 // http://dev.w3.org/csswg/cssom-view/#extensions-to-the-htmlelement-interface
@@ -107,7 +116,6 @@ interface mixin TouchEventHandlers {
 
 HTMLElement includes GlobalEventHandlers;
 HTMLElement includes HTMLOrForeignElement;
-HTMLElement includes DocumentAndElementEventHandlers;
 HTMLElement includes ElementCSSInlineStyle;
 HTMLElement includes TouchEventHandlers;
 HTMLElement includes OnErrorEventHandlerForNodes;

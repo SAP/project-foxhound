@@ -6,7 +6,7 @@
 // Test that the server ResourceCommand are destroyed when the associated target actors
 // are destroyed.
 
-add_task(async function() {
+add_task(async function () {
   const tab = await addTab("data:text/html,Test");
   const { client, resourceCommand, targetCommand } = await initResourceCommand(
     tab
@@ -28,37 +28,42 @@ add_task(async function() {
     /watcher\d+$/,
     ""
   );
-  await ContentTask.spawn(tab.linkedBrowser, [connectionPrefix], function(
-    _connectionPrefix
-  ) {
-    const { require } = ChromeUtils.import(
-      "resource://devtools/shared/loader/Loader.jsm"
-    );
-    const {
-      TargetActorRegistry,
-    } = require("devtools/server/actors/targets/target-actor-registry.jsm");
-    const {
-      getResourceWatcher,
-      TYPES,
-    } = require("devtools/server/actors/resources/index");
+  await ContentTask.spawn(
+    tab.linkedBrowser,
+    [connectionPrefix],
+    function (_connectionPrefix) {
+      const { require } = ChromeUtils.importESModule(
+        "resource://devtools/shared/loader/Loader.sys.mjs"
+      );
+      const { TargetActorRegistry } = ChromeUtils.importESModule(
+        "resource://devtools/server/actors/targets/target-actor-registry.sys.mjs"
+      );
+      const {
+        getResourceWatcher,
+        TYPES,
+      } = require("resource://devtools/server/actors/resources/index.js");
 
-    // Retrieve the target actor instance and its watcher for console messages
-    const targetActor = TargetActorRegistry.getTopLevelTargetActorForContext(
-      {
-        type: "browser-element",
-        browserId: content.browsingContext.browserId,
-      },
-      _connectionPrefix
-    );
-    ok(targetActor, "Got the top level target actor from the content process");
-    const watcher = getResourceWatcher(targetActor, TYPES.CONSOLE_MESSAGE);
+      // Retrieve the target actor instance and its watcher for console messages
+      const targetActor = TargetActorRegistry.getTargetActors(
+        {
+          type: "browser-element",
+          browserId: content.browsingContext.browserId,
+        },
+        _connectionPrefix
+      ).find(actor => actor.isTopLevelTarget);
+      ok(
+        targetActor,
+        "Got the top level target actor from the content process"
+      );
+      const watcher = getResourceWatcher(targetActor, TYPES.CONSOLE_MESSAGE);
 
-    // Storing the target actor in the global so we can retrieve it later, even if it
-    // was destroyed
-    content._testTargetActor = targetActor;
+      // Storing the target actor in the global so we can retrieve it later, even if it
+      // was destroyed
+      content._testTargetActor = targetActor;
 
-    is(!!watcher, true, "The console message resource watcher was created");
-  });
+      is(!!watcher, true, "The console message resource watcher was created");
+    }
+  );
 
   info("Close the client, which will destroy the target");
   targetCommand.destroy();
@@ -67,14 +72,14 @@ add_task(async function() {
   info(
     "Spawn a content task in order to run some assertions on actors and resource watchers directly"
   );
-  await ContentTask.spawn(tab.linkedBrowser, [], function() {
-    const { require } = ChromeUtils.import(
-      "resource://devtools/shared/loader/Loader.jsm"
+  await ContentTask.spawn(tab.linkedBrowser, [], function () {
+    const { require } = ChromeUtils.importESModule(
+      "resource://devtools/shared/loader/Loader.sys.mjs"
     );
     const {
       getResourceWatcher,
       TYPES,
-    } = require("devtools/server/actors/resources/index");
+    } = require("resource://devtools/server/actors/resources/index.js");
 
     ok(
       content._testTargetActor && !content._testTargetActor.actorID,

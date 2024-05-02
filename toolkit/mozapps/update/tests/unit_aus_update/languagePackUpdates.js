@@ -1,18 +1,20 @@
-const { AddonTestUtils } = ChromeUtils.import(
-  "resource://testing-common/AddonTestUtils.jsm"
+const { AddonTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/AddonTestUtils.sys.mjs"
 );
-const { getAppInfo } = ChromeUtils.import(
-  "resource://testing-common/AppInfo.jsm"
+const { getAppInfo } = ChromeUtils.importESModule(
+  "resource://testing-common/AppInfo.sys.mjs"
 );
 const { XPIInstall } = ChromeUtils.import(
   "resource://gre/modules/addons/XPIInstall.jsm"
 );
-const { PromiseUtils } = ChromeUtils.import(
-  "resource://gre/modules/PromiseUtils.jsm"
+const { PromiseUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/PromiseUtils.sys.mjs"
 );
-const { setTimeout } = ChromeUtils.import("resource://gre/modules/Timer.jsm");
-const { TelemetryTestUtils } = ChromeUtils.import(
-  "resource://testing-common/TelemetryTestUtils.jsm"
+const { setTimeout } = ChromeUtils.importESModule(
+  "resource://gre/modules/Timer.sys.mjs"
+);
+const { TelemetryTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/TelemetryTestUtils.sys.mjs"
 );
 
 AddonTestUtils.init(this);
@@ -62,7 +64,7 @@ function mockLangpackUpdate() {
   return stagingCall.promise;
 }
 
-add_task(async function init() {
+add_setup(async function () {
   // Thunderbird doesn't have one or more of the probes used in this test.
   // Ensure the data is collected anyway.
   Services.prefs.setBoolPref(
@@ -263,7 +265,7 @@ add_task(async function testRedownload() {
   gAUS.addDownloadListener(listener);
 
   let bestUpdate = gAUS.selectUpdate(updates);
-  gAUS.downloadUpdate(bestUpdate, false);
+  await gAUS.downloadUpdate(bestUpdate, false);
 
   await waitForEvent("update-downloaded");
 

@@ -12,8 +12,7 @@
 
 class nsGlobalWindowInner;
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 /**
  * This class encapsulates a permission request to allow media key system
@@ -61,7 +60,7 @@ class MediaKeySystemAccessPermissionRequest
 
   // nsIContentPermissionRequest methods
   NS_IMETHOD Cancel(void) override;
-  NS_IMETHOD Allow(JS::HandleValue choices) override;
+  NS_IMETHOD Allow(JS::Handle<JS::Value> choices) override;
 
  private:
   explicit MediaKeySystemAccessPermissionRequest(nsGlobalWindowInner* aWindow);
@@ -70,7 +69,6 @@ class MediaKeySystemAccessPermissionRequest
   MozPromiseHolder<RequestPromise> mPromiseHolder;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // DOM_MEDIA_EME_MEDIAKEYSYSTEMACCESSPERMISSIONREQUEST_H_

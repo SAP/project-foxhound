@@ -28,6 +28,83 @@ Released YYYY-MM-DD.
 
 --------------------------------------------------------------------------------
 
+## 3.12.0
+
+Released 2023-01-17.
+
+### Added
+
+* Added the `bumpalo::boxed::Box::bump` and `bumpalo::collections::String::bump`
+  getters to get the underlying `Bump` that a string or box was allocated into.
+
+### Changed
+
+* Some uses of `Box` that MIRI did not previously consider as UB are now
+  reported as UB, and `bumpalo`'s internals have been adjusted to avoid the new
+  UB.
+
+--------------------------------------------------------------------------------
+
+## 3.11.1
+
+Released 2022-10-18.
+
+### Security
+
+* Fixed a bug where when `std::vec::IntoIter` was ported to
+  `bumpalo::collections::vec::IntoIter`, it didn't get its underlying `Bump`'s
+  lifetime threaded through. This meant that `rustc` was not checking the
+  borrows for `bumpalo::collections::IntoIter` and this could result in
+  use-after-free bugs.
+
+--------------------------------------------------------------------------------
+
+## 3.11.0
+
+Released 2022-08-17.
+
+### Added
+
+* Added support for per-`Bump` allocation limits. These are enforced only in the
+  slow path when allocating new chunks in the `Bump`, not in the bump allocation
+  hot path, and therefore impose near zero overhead.
+* Added the `bumpalo::boxed::Box::into_inner` method.
+
+### Changed
+
+* Updated to Rust 2021 edition.
+* The minimum supported Rust version (MSRV) is now 1.56.0.
+
+--------------------------------------------------------------------------------
+
+## 3.10.0
+
+Released 2022-06-01.
+
+### Added
+
+* Implement `bumpalo::collections::FromIteratorIn` for `Option` and `Result`,
+  just like `core` does for `FromIterator`.
+* Implement `bumpalo::collections::FromIteratorIn` for `bumpalo::boxed::Box<'a,
+  [T]>`.
+* Added running tests under MIRI in CI for additional confidence in unsafe code.
+* Publicly exposed `bumpalo::collections::Vec::drain_filter` since the
+  corresponding `std::vec::Vec` method has stabilized.
+
+### Changed
+
+* `Bump::new` will not allocate a backing chunk until the first allocation
+  inside the bump arena now.
+
+### Fixed
+
+* Properly account for alignment changes when growing or shrinking an existing
+  allocation.
+* Removed all internal integer-to-pointer casts, to play better with UB checkers
+  like MIRI.
+
+--------------------------------------------------------------------------------
+
 ## 3.9.1
 
 Released 2022-01-06.
@@ -161,7 +238,7 @@ Released 2020-01-22.
 
   ```toml
   [dependencies]
-  bumpalo = { version = "3.4.0", features = ["allocator_api"] }
+  bumpalo = { version = "3.5", features = ["allocator_api"] }
   ```
 
   Next, enable the `allocator_api` nightly Rust feature in your `src/lib.rs` or `src/main.rs`:

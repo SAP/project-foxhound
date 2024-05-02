@@ -46,7 +46,7 @@ class CookiePersistentStorage final : public CookieStorage {
 
   void Close() override;
 
-  void EnsureReadComplete();
+  void EnsureInitialized() override;
 
   void CleanupCachedStatements();
   void CleanupDBConnection();
@@ -56,7 +56,7 @@ class CookiePersistentStorage final : public CookieStorage {
   void RebuildCorruptDB();
   void HandleDBClosed();
 
-  nsresult RunInTransaction(nsICookieTransactionCallback* aCallback);
+  nsresult RunInTransaction(nsICookieTransactionCallback* aCallback) override;
 
   // State of the database connection.
   enum CorruptFlag {
@@ -72,12 +72,12 @@ class CookiePersistentStorage final : public CookieStorage {
  protected:
   const char* NotificationTopic() const override { return "cookie-changed"; }
 
-  void NotifyChangedInternal(nsISupports* aSubject, const char16_t* aData,
-                             bool aOldCOokieIsSession) override;
+  void NotifyChangedInternal(nsICookieNotification* aNotification,
+                             bool aOldCookieIsSession) override;
 
   void RemoveAllInternal() override;
 
-  void RemoveCookieFromDB(const CookieListIter& aIter) override;
+  void RemoveCookieFromDB(const Cookie& aCookie) override;
 
   void StoreCookie(const nsACString& aBaseDomain,
                    const OriginAttributes& aOriginAttributes,
@@ -89,7 +89,7 @@ class CookiePersistentStorage final : public CookieStorage {
   static void UpdateCookieInList(Cookie* aCookie, int64_t aLastAccessed,
                                  mozIStorageBindingParamsArray* aParamsArray);
 
-  void PrepareCookieRemoval(const CookieListIter& aIter,
+  void PrepareCookieRemoval(const Cookie& aCookie,
                             mozIStorageBindingParamsArray* aParamsArray);
 
   void InitDBConn();
@@ -128,7 +128,7 @@ class CookiePersistentStorage final : public CookieStorage {
   TimeStamp mEndInitDBConn;
   nsTArray<CookieDomainTuple> mReadArray;
 
-  Monitor mMonitor;
+  Monitor mMonitor MOZ_UNANNOTATED;
 
   Atomic<bool> mInitialized;
   Atomic<bool> mInitializedDBConn;

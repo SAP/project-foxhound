@@ -14,31 +14,16 @@ export function getFramework(symbols) {
   if (isVueComponent(symbols)) {
     return "Vue";
   }
+
+  return null;
 }
 
-function isReactComponent({ imports, classes, callExpressions, identifiers }) {
+function isReactComponent({ importsReact, classes, identifiers }) {
   return (
-    importsReact(imports) ||
-    requiresReact(callExpressions) ||
+    importsReact ||
     extendsReactComponent(classes) ||
     isReact(identifiers) ||
     isRedux(identifiers)
-  );
-}
-
-function importsReact(imports) {
-  return imports.some(
-    importObj =>
-      importObj.source === "react" &&
-      importObj.specifiers.some(specifier => specifier === "React")
-  );
-}
-
-function requiresReact(callExpressions) {
-  return callExpressions.some(
-    callExpression =>
-      callExpression.name === "require" &&
-      callExpression.values.some(value => value === "react")
   );
 }
 

@@ -1,4 +1,3 @@
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 var ssm = Services.scriptSecurityManager;
 function makeURI(uri) {
   return Services.io.newURI(uri);
@@ -52,6 +51,7 @@ function checkSandboxOriginAttributes(arr, attrs, options) {
 }
 
 // utility function useful for debugging
+// eslint-disable-next-line no-unused-vars
 function printAttrs(name, attrs) {
   info(
     name +
@@ -127,7 +127,7 @@ function run_test() {
   // nsEP origins should be in lexical order.
   Assert.equal(
     ep.origin,
-    `[Expanded Principal [${exampleOrg.origin}, ${exampleCom.origin}, ${nullPrin.origin}]]`
+    `[Expanded Principal [${exampleCom.origin}, ${nullPrin.origin}, ${exampleOrg.origin}]]`
   );
 
   // Make sure createContentPrincipal does what the rest of gecko does.

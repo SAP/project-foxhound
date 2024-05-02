@@ -15,8 +15,10 @@ namespace mozilla::widget {
 
 static constexpr gfx::sRGBColor sDefaultAccent(
     gfx::sRGBColor::UnusualFromARGB(0xff0060df));  // Luminance: 13.69346%
-static constexpr gfx::sRGBColor sDefaultAccentForeground(
+static constexpr gfx::sRGBColor sDefaultAccentText(
     gfx::sRGBColor::OpaqueWhite());
+
+struct ColorPalette;
 
 class ThemeAccentColor {
  protected:
@@ -24,9 +26,10 @@ class ThemeAccentColor {
   using ComputedStyle = mozilla::ComputedStyle;
 
   Maybe<nscolor> mAccentColor;
+  const ColorPalette* mDefaultPalette = nullptr;
 
  public:
-  explicit ThemeAccentColor(const ComputedStyle& aStyle);
+  explicit ThemeAccentColor(const ComputedStyle&, ColorScheme);
   virtual ~ThemeAccentColor() = default;
 
   sRGBColor Get() const;
@@ -45,17 +48,17 @@ class ThemeColors {
   using StyleSystemColor = mozilla::StyleSystemColor;
   using AccentColor = ThemeAccentColor;
 
-  const AccentColor mAccentColor;
   const Document& mDoc;
   const bool mHighContrast;
-  const LookAndFeel::ColorScheme mColorScheme;
+  const ColorScheme mColorScheme;
+  const AccentColor mAccentColor;
 
  public:
-  explicit ThemeColors(const nsIFrame* aFrame)
-      : mAccentColor(*aFrame->Style()),
-        mDoc(*aFrame->PresContext()->Document()),
+  explicit ThemeColors(const nsIFrame* aFrame, StyleAppearance aAppearance)
+      : mDoc(*aFrame->PresContext()->Document()),
         mHighContrast(ShouldBeHighContrast(*aFrame->PresContext())),
-        mColorScheme(LookAndFeel::ColorSchemeForFrame(aFrame)) {}
+        mColorScheme(ColorSchemeForWidget(aFrame, aAppearance, mHighContrast)),
+        mAccentColor(*aFrame->Style(), mColorScheme) {}
   virtual ~ThemeColors() = default;
 
   [[nodiscard]] static float ScaleLuminanceBy(float aLuminance, float aFactor) {
@@ -64,7 +67,7 @@ class ThemeColors {
 
   const AccentColor& Accent() const { return mAccentColor; }
   bool HighContrast() const { return mHighContrast; }
-  bool IsDark() const { return mColorScheme == LookAndFeel::ColorScheme::Dark; }
+  bool IsDark() const { return mColorScheme == ColorScheme::Dark; }
 
   nscolor SystemNs(StyleSystemColor aColor) const {
     return LookAndFeel::Color(aColor, mColorScheme,
@@ -92,13 +95,15 @@ class ThemeColors {
 
   // Whether we should use system colors (for high contrast mode).
   static bool ShouldBeHighContrast(const nsPresContext&);
+  static ColorScheme ColorSchemeForWidget(const nsIFrame*, StyleAppearance,
+                                          bool aHighContrast);
 
   static void RecomputeAccentColors();
 
   static nscolor ComputeCustomAccentForeground(nscolor aColor);
 
   static nscolor AdjustUnthemedScrollbarThumbColor(nscolor aFaceColor,
-                                                   EventStates aStates);
+                                                   dom::ElementState aStates);
 };
 
 }  // namespace mozilla::widget

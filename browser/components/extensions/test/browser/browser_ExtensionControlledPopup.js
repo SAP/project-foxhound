@@ -2,18 +2,16 @@
 /* vim: set sts=2 sw=2 et tw=80: */
 
 "use strict";
-const { sinon } = ChromeUtils.import("resource://testing-common/Sinon.jsm");
+const { sinon } = ChromeUtils.importESModule(
+  "resource://testing-common/Sinon.sys.mjs"
+);
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "ExtensionSettingsStore",
-  "resource://gre/modules/ExtensionSettingsStore.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "ExtensionControlledPopup",
-  "resource:///modules/ExtensionControlledPopup.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  ExtensionControlledPopup:
+    "resource:///modules/ExtensionControlledPopup.sys.mjs",
+  ExtensionSettingsStore:
+    "resource://gre/modules/ExtensionSettingsStore.sys.mjs",
+});
 
 function createMarkup(doc, popup) {
   let panel = ExtensionControlledPopup._getAndMaybeCreatePanel(doc);
@@ -59,7 +57,7 @@ add_task(async function testExtensionControlledPopup() {
   let id = "ext-controlled@mochi.test";
   let extension = ExtensionTestUtils.loadExtension({
     manifest: {
-      applications: { gecko: { id } },
+      browser_specific_settings: { gecko: { id } },
       name: "Ext Controlled",
     },
     // We need to be able to find the extension using AddonManager.
@@ -85,7 +83,6 @@ add_task(async function testExtensionControlledPopup() {
     settingKey,
     descriptionId: "extension-controlled-description",
     descriptionMessageId: "newTabControlled.message2",
-    learnMoreMessageId: "newTabControlled.learnMore",
     learnMoreLink: "extension-controlled",
     onObserverAdded,
     onObserverRemoved,
@@ -164,7 +161,7 @@ add_task(async function testExtensionControlledPopup() {
     "An extension,  Ext Controlled, changed the page you see when you open a new tab.Learn more",
     "The extension name is in the description"
   );
-  let link = description.querySelector("label");
+  let link = description.querySelector("a.learnMore");
   is(
     link.href,
     "http://127.0.0.1:8888/support-dummy/extension-controlled",

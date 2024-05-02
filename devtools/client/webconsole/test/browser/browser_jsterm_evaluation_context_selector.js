@@ -10,7 +10,7 @@ const IFRAME_PATH = `${FILE_FOLDER}/test-console-evaluation-context-selector-chi
 
 requestLongerTimeout(2);
 
-add_task(async function() {
+add_task(async function () {
   await pushPref("devtools.webconsole.input.context", true);
 
   const hud = await openNewTabWithIframesAndConsole(TEST_URI, [
@@ -41,18 +41,15 @@ add_task(async function() {
     "The button has the expected 'Top' text"
   );
   is(
-    evaluationContextSelectorButton.classList.contains(
-      "webconsole-evaluation-selector-button-non-top"
-    ),
+    evaluationContextSelectorButton.classList.contains("checked"),
     false,
-    "The non-top class isn't applied"
+    "The checked class isn't applied"
   );
 
-  const topLevelDocumentMessage = await executeAndWaitForMessage(
+  const topLevelDocumentMessage = await executeAndWaitForResultMessage(
     hud,
     "document.location",
-    "example.com",
-    ".result"
+    "example.com"
   );
 
   setInputValue(hud, "document.location.host");
@@ -97,21 +94,18 @@ add_task(async function() {
   );
   ok(true, "The context was set to the selected iframe document");
   is(
-    evaluationContextSelectorButton.classList.contains(
-      "webconsole-evaluation-selector-button-non-top"
-    ),
+    evaluationContextSelectorButton.classList.contains("checked"),
     true,
-    "The non-top class is applied"
+    "The checked class is applied"
   );
 
   await waitForEagerEvaluationResult(hud, `"example.org"`);
   ok(true, "The instant evaluation result is updated in the iframe context");
 
-  const iframe1DocumentMessage = await executeAndWaitForMessage(
+  const iframe1DocumentMessage = await executeAndWaitForResultMessage(
     hud,
     "document.location",
-    "example.org",
-    ".result"
+    "example.org"
   );
   setInputValue(hud, "document.location.host");
 
@@ -138,21 +132,18 @@ add_task(async function() {
   );
   ok(true, "The context was set to the selected iframe document");
   is(
-    evaluationContextSelectorButton.classList.contains(
-      "webconsole-evaluation-selector-button-non-top"
-    ),
+    evaluationContextSelectorButton.classList.contains("checked"),
     true,
-    "The non-top class is applied"
+    "The checked class is applied"
   );
 
   await waitForEagerEvaluationResult(hud, `"example.net"`);
   ok(true, "The instant evaluation result is updated in the iframe context");
 
-  const iframe2DocumentMessage = await executeAndWaitForMessage(
+  const iframe2DocumentMessage = await executeAndWaitForResultMessage(
     hud,
     "document.location",
-    "example.net",
-    ".result"
+    "example.net"
   );
   setInputValue(hud, "document.location.host");
 
@@ -179,11 +170,9 @@ add_task(async function() {
     evaluationContextSelectorButton.innerText.includes("Top")
   );
   is(
-    evaluationContextSelectorButton.classList.contains(
-      "webconsole-evaluation-selector-button-non-top"
-    ),
+    evaluationContextSelectorButton.classList.contains("checked"),
     false,
-    "The non-top class isn't applied"
+    "The checked class isn't applied"
   );
 
   info("Check that 'Store as global variable' selects the right context");
@@ -228,6 +217,35 @@ add_task(async function() {
     evaluationContextSelectorButton.innerText.includes("Top")
   );
   ok(true, "The context was set to the top document");
+
+  info("Check that autocomplete data are cleared when changing context");
+  await setInputValueForAutocompletion(hud, "foo");
+  ok(
+    hasExactPopupLabels(hud.jsterm.autocompletePopup, ["foobar", "foobaz"]),
+    "autocomplete has expected items from top level document"
+  );
+  checkInputCompletionValue(hud, "bar", `completeNode has expected value`);
+
+  info("Select iframe document");
+  // We need to hide the popup to be able to select the target in the context selector.
+  // Don't use `closeAutocompletePopup` as it uses the Escape key, which explicitely hides
+  // the completion node.
+  const onPopupHidden = hud.jsterm.autocompletePopup.once("popuphidden");
+  hud.jsterm.autocompletePopup.hidePopup();
+  onPopupHidden;
+
+  selectTargetInContextSelector(hud, expectedSecondIframeItem.label);
+  await waitFor(() => getInputCompletionValue(hud) === "");
+  ok(true, `completeNode was cleared`);
+
+  const updated = hud.jsterm.once("autocomplete-updated");
+  EventUtils.sendString("b", hud.iframeWindow);
+  await updated;
+
+  ok(
+    hasExactPopupLabels(hud.jsterm.autocompletePopup, []),
+    "autocomplete data was cleared"
+  );
 });
 
 async function testStoreAsGlobalVariable(
@@ -252,11 +270,10 @@ async function testStoreAsGlobalVariable(
 
   is(getInputValue(hud), variableName, "Input was set");
 
-  await executeAndWaitForMessage(
+  await executeAndWaitForResultMessage(
     hud,
     `${variableName}`,
-    expectedTextResult,
-    ".result"
+    expectedTextResult
   );
   ok(true, "Correct variable assigned into console.");
 }

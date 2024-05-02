@@ -14,6 +14,7 @@
 #include "jsapi.h"
 #include "js/Array.h"
 #include "js/CharacterEncoding.h"
+#include "js/ErrorReport.h"
 #include "js/UniquePtr.h"
 #include "vm/FrameIter.h"
 #include "vm/JSContext.h"
@@ -142,12 +143,12 @@ std::u16string JS::taintarg(JSContext* cx, HandleObject obj)
   return taintarg(cx, str);
 }
 
-std::u16string JS::taintarg(JSContext* cx, HandleValue val)
+std::u16string JS::taintarg(JSContext* cx, HandleValue val, bool fullArgs)
 {
   RootedString str(cx, ToString(cx, val));
   if (!str)
     return std::u16string();
-  return taintarg(cx, str);
+  return fullArgs ? taintarg_full(cx, str) : taintarg(cx, str);
 }
 
 std::u16string JS::taintarg(JSContext* cx, int32_t num)
@@ -156,7 +157,7 @@ std::u16string JS::taintarg(JSContext* cx, int32_t num)
   return taintarg(cx, val);
 }
 
-std::vector<std::u16string> JS::taintargs(JSContext* cx, HandleValue val)
+std::vector<std::u16string> JS::taintargs(JSContext* cx, HandleValue val, bool fullArgs)
 {
   std::vector<std::u16string> args;
   bool isArray;
@@ -176,7 +177,7 @@ std::vector<std::u16string> JS::taintargs(JSContext* cx, HandleValue val)
       if (!JS_GetElement(cx, array, i, &v)) {
         continue;
       }
-      args.push_back(taintarg(cx, v));
+      args.push_back(taintarg(cx, v, fullArgs));
     }
   } else {
     args.push_back(taintarg(cx, val));
@@ -242,16 +243,20 @@ TaintLocation JS::TaintLocationFromContext(JSContext* cx)
     if (i.hasScript()) {
       // Get source
       JSScript* script = i.script();
-      ScriptSource* ss = script->scriptSource();
+      js::ScriptSource* ss = script->scriptSource();
       if (ss) {
         scriptStartline = ss->startLine();
         hash = ss->md5Checksum(cx);
       }
       filename = JS_GetScriptFilename(i.script());
-      line = PCToLineNumber(i.script(), i.pc(), &pos);
+      JS::LimitedColumnNumberOneOrigin column;
+      line = PCToLineNumber(i.script(), i.pc(), &column);
+      pos = column.oneOriginValue();
     } else {
+      JS::TaggedColumnNumberOneOrigin column;
       filename = i.filename();
-      line = i.computeLine(&pos);
+      line = i.computeLine(&column);
+      pos = column.oneOriginValue();
     }
 
     if (i.maybeFunctionDisplayAtom()) {
@@ -273,8 +278,8 @@ TaintLocation JS::TaintLocationFromContext(JSContext* cx)
   return TaintLocation(ascii2utf16(std::string(filename)), line, pos, scriptStartline, hash, taintarg(cx, function));
 }
 
-TaintOperation JS::TaintOperationFromContext(JSContext* cx, const char* name, bool is_native, JS::HandleValue args) {
-  return TaintOperation(name, is_native, TaintLocationFromContext(cx), taintargs(cx, args));
+TaintOperation JS::TaintOperationFromContext(JSContext* cx, const char* name, bool is_native, JS::HandleValue args, bool fullArgs) {
+  return TaintOperation(name, is_native, TaintLocationFromContext(cx), taintargs(cx, args, fullArgs));
 }
 
 TaintOperation JS::TaintOperationFromContext(JSContext* cx, const char* name, bool is_native, JS::HandleString arg ) {
@@ -333,8 +338,10 @@ void JS::MarkTaintedFunctionArguments(JSContext* cx, JSFunction* function, const
     return;
 
   RootedValue name(cx);
-  if (function->displayAtom()) {
-    name = StringValue(function->displayAtom());
+
+  JS::Rooted<JSAtom*> atom(cx);
+  if (function->getDisplayAtom(cx, &atom)) {
+    name = StringValue(atom);
   }
 
   RootedFunction fun(cx, function);
@@ -369,13 +376,13 @@ bool JS::isTaintedNumber(const Value& val)
     return false;
 }
 
-TaintFlow JS::getNumberTaint(const Value& val)
+const TaintFlow& JS::getNumberTaint(const Value& val)
 {
     if (val.isObject() && val.toObject().is<NumberObject>()) {
         NumberObject& number = val.toObject().as<NumberObject>();
         return number.taint();
     }
-    return TaintFlow();
+    return TaintFlow::getEmptyTaintFlow();
 }
 
 bool JS::isAnyTaintedNumber(const Value& val1, const Value& val2)
@@ -388,7 +395,7 @@ TaintFlow JS::getAnyNumberTaint(const Value& val1, const Value& val2)
   // add info for operation
   // add getting combined taint flow 
   if (isTaintedNumber(val1) && isTaintedNumber(val2)){
-    return TaintFlow::extend(getNumberTaint(val1),getNumberTaint(val2));
+    return TaintFlow::append(getNumberTaint(val1), getNumberTaint(val2));
   }
   else if (isTaintedNumber(val1)) {
     return getNumberTaint(val1);

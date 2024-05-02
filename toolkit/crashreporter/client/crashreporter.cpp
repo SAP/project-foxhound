@@ -68,8 +68,8 @@ void UIError(const string& message) {
   string errorMessage;
   if (!gStrings[ST_CRASHREPORTERERROR].empty()) {
     char buf[2048];
-    UI_SNPRINTF(buf, 2048, gStrings[ST_CRASHREPORTERERROR].c_str(),
-                message.c_str());
+    snprintf(buf, 2048, gStrings[ST_CRASHREPORTERERROR].c_str(),
+             message.c_str());
     errorMessage = buf;
   } else {
     errorMessage = message;
@@ -99,7 +99,6 @@ static string Unescape(const string& str) {
 }
 
 bool ReadStrings(istream& in, StringTable& strings, bool unescape) {
-  string currentSection;
   while (!in.eof()) {
     string line;
     std::getline(in, line);
@@ -147,15 +146,6 @@ static string Basename(const string& file) {
     return file.substr(slashIndex + 1);
   }
   return file;
-}
-
-static string GetDumpLocalID() {
-  string localId = Basename(gReporterDumpFile);
-  string::size_type dot = localId.rfind('.');
-
-  if (dot == string::npos) return "";
-
-  return localId.substr(0, dot);
 }
 
 static bool ReadEventFile(const string& aPath, string& aEventVersion,
@@ -207,7 +197,7 @@ static void UpdateEventFile(const Json::Value& aExtraData, const string& aHash,
     return;
   }
 
-  string localId = GetDumpLocalID();
+  string localId = CrashReporter::GetDumpLocalID();
   string path = gEventsPath + UI_DIR_SEPARATOR + localId;
   string eventVersion;
   string crashTime;
@@ -240,7 +230,7 @@ static void WriteSubmissionEvent(SubmissionResult result,
     return;
   }
 
-  string localId = GetDumpLocalID();
+  string localId = CrashReporter::GetDumpLocalID();
   string fpath = gEventsPath + UI_DIR_SEPARATOR + localId + "-submission";
   ofstream* f = UIOpenWrite(fpath, ios::binary);
   time_t tm;
@@ -266,7 +256,7 @@ void LogMessage(const std::string& message) {
     time(&tm);
     if (strftime(date, sizeof(date) - 1, "%c", localtime(&tm)) == 0)
       date[0] = '\0';
-    (*gLogStream) << "[" << date << "] " << message << std::endl;
+    (*gLogStream) << "[" << date << "] " << message << '\n';
   }
 }
 
@@ -379,13 +369,13 @@ static bool AddSubmittedReport(const string& serverResponse) {
   }
 
   char buf[1024];
-  UI_SNPRINTF(buf, 1024, gStrings["CrashID"].c_str(),
-              responseItems["CrashID"].c_str());
+  snprintf(buf, 1024, gStrings["CrashID"].c_str(),
+           responseItems["CrashID"].c_str());
   *file << buf << "\n";
 
   if (responseItems.find("ViewURL") != responseItems.end()) {
-    UI_SNPRINTF(buf, 1024, gStrings["CrashDetailsURL"].c_str(),
-                responseItems["ViewURL"].c_str());
+    snprintf(buf, 1024, gStrings["CrashDetailsURL"].c_str(),
+             responseItems["ViewURL"].c_str());
     *file << buf << "\n";
   }
 
@@ -532,70 +522,16 @@ static string ComputeDumpHash() {
   return "";  // If we encountered an error, return an empty hash
 }
 
-}  // namespace CrashReporter
+string GetDumpLocalID() {
+  string localId = Basename(gReporterDumpFile);
+  string::size_type dot = localId.rfind('.');
 
-using namespace CrashReporter;
+  if (dot == string::npos) return "";
 
-Json::Value kEmptyJsonString("");
-
-void RewriteStrings(Json::Value& aExtraData) {
-  // rewrite some UI strings with the values from the query parameters
-  string product = aExtraData.get("ProductName", kEmptyJsonString).asString();
-  Json::Value mozilla("Mozilla");
-  string vendor = aExtraData.get("Vendor", mozilla).asString();
-
-  char buf[4096];
-  UI_SNPRINTF(buf, sizeof(buf), gStrings[ST_CRASHREPORTERVENDORTITLE].c_str(),
-              vendor.c_str());
-  gStrings[ST_CRASHREPORTERTITLE] = buf;
-
-  string str = gStrings[ST_CRASHREPORTERPRODUCTERROR];
-  // Only do the replacement here if the string has two
-  // format specifiers to start.  Otherwise
-  // we assume it has the product name hardcoded.
-  string::size_type pos = str.find("%s");
-  if (pos != string::npos) pos = str.find("%s", pos + 2);
-  if (pos != string::npos) {
-    // Leave a format specifier for UIError to fill in
-    UI_SNPRINTF(buf, sizeof(buf),
-                gStrings[ST_CRASHREPORTERPRODUCTERROR].c_str(), product.c_str(),
-                "%s");
-    gStrings[ST_CRASHREPORTERERROR] = buf;
-  } else {
-    // product name is hardcoded
-    gStrings[ST_CRASHREPORTERERROR] = str;
-  }
-
-  UI_SNPRINTF(buf, sizeof(buf), gStrings[ST_CRASHREPORTERDESCRIPTION].c_str(),
-              product.c_str());
-  gStrings[ST_CRASHREPORTERDESCRIPTION] = buf;
-
-  UI_SNPRINTF(buf, sizeof(buf), gStrings[ST_CHECKSUBMIT].c_str(),
-              vendor.c_str());
-  gStrings[ST_CHECKSUBMIT] = buf;
-
-  UI_SNPRINTF(buf, sizeof(buf), gStrings[ST_RESTART].c_str(), product.c_str());
-  gStrings[ST_RESTART] = buf;
-
-  UI_SNPRINTF(buf, sizeof(buf), gStrings[ST_QUIT].c_str(), product.c_str());
-  gStrings[ST_QUIT] = buf;
-
-  UI_SNPRINTF(buf, sizeof(buf), gStrings[ST_ERROR_ENDOFLIFE].c_str(),
-              product.c_str());
-  gStrings[ST_ERROR_ENDOFLIFE] = buf;
+  return localId.substr(0, dot);
 }
 
-bool CheckEndOfLifed(const Json::Value& aVersion) {
-  if (!aVersion.isString()) {
-    return false;
-  }
-
-  string reportPath =
-      gSettingsPath + UI_DIR_SEPARATOR + "EndOfLife" + aVersion.asString();
-  return UIFileExists(reportPath);
-}
-
-static string GetProgramPath(const string& exename) {
+string GetProgramPath(const string& exename) {
   string path = gArgv[0];
   size_t pos = path.rfind(UI_CRASH_REPORTER_FILENAME BIN_SUFFIX);
   path.erase(pos);
@@ -612,6 +548,67 @@ static string GetProgramPath(const string& exename) {
   path.append(exename + BIN_SUFFIX);
 
   return path;
+}
+
+}  // namespace CrashReporter
+
+using namespace CrashReporter;
+
+Json::Value kEmptyJsonString("");
+
+void RewriteStrings(Json::Value& aExtraData) {
+  // rewrite some UI strings with the values from the query parameters
+  string product = aExtraData.get("ProductName", kEmptyJsonString).asString();
+  Json::Value mozilla("Mozilla");
+  string vendor = aExtraData.get("Vendor", mozilla).asString();
+
+  char buf[4096];
+  snprintf(buf, sizeof(buf), gStrings[ST_CRASHREPORTERVENDORTITLE].c_str(),
+           vendor.c_str());
+  gStrings[ST_CRASHREPORTERTITLE] = buf;
+
+  string str = gStrings[ST_CRASHREPORTERPRODUCTERROR];
+  // Only do the replacement here if the string has two
+  // format specifiers to start.  Otherwise
+  // we assume it has the product name hardcoded.
+  string::size_type pos = str.find("%s");
+  if (pos != string::npos) pos = str.find("%s", pos + 2);
+  if (pos != string::npos) {
+    // Leave a format specifier for UIError to fill in
+    snprintf(buf, sizeof(buf), gStrings[ST_CRASHREPORTERPRODUCTERROR].c_str(),
+             product.c_str(), "%s");
+    gStrings[ST_CRASHREPORTERERROR] = buf;
+  } else {
+    // product name is hardcoded
+    gStrings[ST_CRASHREPORTERERROR] = str;
+  }
+
+  snprintf(buf, sizeof(buf), gStrings[ST_CRASHREPORTERDESCRIPTION].c_str(),
+           product.c_str());
+  gStrings[ST_CRASHREPORTERDESCRIPTION] = buf;
+
+  snprintf(buf, sizeof(buf), gStrings[ST_CHECKSUBMIT].c_str(), vendor.c_str());
+  gStrings[ST_CHECKSUBMIT] = buf;
+
+  snprintf(buf, sizeof(buf), gStrings[ST_RESTART].c_str(), product.c_str());
+  gStrings[ST_RESTART] = buf;
+
+  snprintf(buf, sizeof(buf), gStrings[ST_QUIT].c_str(), product.c_str());
+  gStrings[ST_QUIT] = buf;
+
+  snprintf(buf, sizeof(buf), gStrings[ST_ERROR_ENDOFLIFE].c_str(),
+           product.c_str());
+  gStrings[ST_ERROR_ENDOFLIFE] = buf;
+}
+
+bool CheckEndOfLifed(const Json::Value& aVersion) {
+  if (!aVersion.isString()) {
+    return false;
+  }
+
+  string reportPath =
+      gSettingsPath + UI_DIR_SEPARATOR + "EndOfLife" + aVersion.asString();
+  return UIFileExists(reportPath);
 }
 
 int main(int argc, char** argv) {
@@ -647,7 +644,8 @@ int main(int argc, char** argv) {
     if (!dumpAllThreadsEnv.empty()) {
       args.insert(args.begin(), "--full");
     }
-    UIRunProgram(GetProgramPath(UI_MINIDUMP_ANALYZER_FILENAME), args,
+    UIRunProgram(CrashReporter::GetProgramPath(UI_MINIDUMP_ANALYZER_FILENAME),
+                 args,
                  /* wait */ true);
 
     // go ahead with the crash reporter
@@ -734,6 +732,7 @@ int main(int argc, char** argv) {
     extraData.removeMember("ServerURL");
     extraData.removeMember("StackTraces");
 
+    extraData["SubmittedFrom"] = "Client";
     extraData["Throttleable"] = "1";
 
     // re-set XUL_APP_FILE for xulrunner wrapped apps

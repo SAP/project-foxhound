@@ -38,10 +38,27 @@ void JSWindowActorChild::Init(const nsACString& aName,
   InvokeCallback(CallbackFunction::ActorCreated);
 }
 
+#ifdef DEBUG
+#  define DEBUG_WARN_MESSAGE_UNSENT(aMeta, aWarning)                    \
+    NS_DebugBreak(                                                      \
+        NS_DEBUG_WARNING,                                               \
+        nsPrintfCString(                                                \
+            "JSWindowActorChild::SendRawMessage (%s, %s) not sent: %s", \
+            (aMeta).actorName().get(),                                  \
+            NS_LossyConvertUTF16toASCII((aMeta).messageName()).get(),   \
+            (aWarning))                                                 \
+            .get(),                                                     \
+        nullptr, __FILE__, __LINE__)
+#else
+#  define DEBUG_WARN_MESSAGE_UNSENT(aMeta, aWarning)
+#endif
+
 void JSWindowActorChild::SendRawMessage(
     const JSActorMessageMeta& aMeta, Maybe<ipc::StructuredCloneData>&& aData,
     Maybe<ipc::StructuredCloneData>&& aStack, ErrorResult& aRv) {
-  if (NS_WARN_IF(!CanSend() || !mManager || !mManager->CanSend())) {
+  if (!CanSend() || !mManager || !mManager->CanSend()) {
+    DEBUG_WARN_MESSAGE_UNSENT(
+        aMeta, "!CanSend() || !mManager || !mManager->CanSend()");
     aRv.ThrowInvalidStateError("JSWindowActorChild cannot send at the moment");
     return;
   }
@@ -53,28 +70,13 @@ void JSWindowActorChild::SendRawMessage(
     return;
   }
 
-  size_t length = 0;
-  if (aData) {
-    length += aData->DataLength();
-  }
-  if (aStack) {
-    length += aStack->DataLength();
-  }
-
-  if (NS_WARN_IF(!AllowMessage(aMeta, length))) {
-    aRv.ThrowDataCloneError(
-        nsPrintfCString("JSWindowActorChild serialization error: data too "
-                        "large, in actor '%s'",
-                        PromiseFlatCString(aMeta.actorName()).get()));
-    return;
-  }
-
   // Cross-process case - send data over WindowGlobalChild to other side.
-  ContentChild* cc = ContentChild::GetSingleton();
   Maybe<ClonedMessageData> msgData;
   if (aData) {
     msgData.emplace();
-    if (NS_WARN_IF(!aData->BuildClonedMessageDataForChild(cc, *msgData))) {
+    if (!aData->BuildClonedMessageData(*msgData)) {
+      DEBUG_WARN_MESSAGE_UNSENT(aMeta,
+                                "!aData->BuildClonedMessageData(*msgData)");
       aRv.ThrowDataCloneError(
           nsPrintfCString("JSWindowActorChild serialization error: cannot "
                           "clone, in actor '%s'",
@@ -86,12 +88,14 @@ void JSWindowActorChild::SendRawMessage(
   Maybe<ClonedMessageData> stackData;
   if (aStack) {
     stackData.emplace();
-    if (!aStack->BuildClonedMessageDataForChild(cc, *stackData)) {
+    if (!aStack->BuildClonedMessageData(*stackData)) {
       stackData.reset();
     }
   }
 
-  if (NS_WARN_IF(!mManager->SendRawMessage(aMeta, msgData, stackData))) {
+  if (!mManager->SendRawMessage(aMeta, msgData, stackData)) {
+    DEBUG_WARN_MESSAGE_UNSENT(
+        aMeta, "!mManager->SendRawMessage(aMeta, msgData, stackData)");
     aRv.ThrowOperationError(
         nsPrintfCString("JSWindowActorChild send error in actor '%s'",
                         PromiseFlatCString(aMeta.actorName()).get()));
@@ -146,9 +150,6 @@ Nullable<WindowProxyHolder> JSWindowActorChild::GetContentWindow(
 void JSWindowActorChild::ClearManager() { mManager = nullptr; }
 
 NS_IMPL_CYCLE_COLLECTION_INHERITED(JSWindowActorChild, JSActor, mManager)
-
-NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN_INHERITED(JSWindowActorChild, JSActor)
-NS_IMPL_CYCLE_COLLECTION_TRACE_END
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(JSWindowActorChild)
 NS_INTERFACE_MAP_END_INHERITING(JSActor)

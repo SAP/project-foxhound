@@ -1,0 +1,46 @@
+<!DOCTYPE HTML>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>Test Cookie Sinks</title>
+    <script src="/tests/SimpleTest/SimpleTest.js"></script>
+    <link rel="stylesheet" href="/tests/SimpleTest/test.css"/>
+    <script>
+
+      let string_content = "hello";
+      let sink_names = [
+	  "eval",
+	  "setTimeout",
+	  "setInterval"
+      ];
+
+      let i = 0;
+      
+      SimpleTest.waitForExplicitFinish();
+      SimpleTest.requestFlakyTimeout("Checking taint sink");
+      
+      addEventListener("__taintreport", (report) => {
+          let flow = report.detail.str.taint[0].flow;
+          is(flow[1].operation, sink_names[i], "Check taint sink");
+
+	  i += 1;
+	  if (i >= sink_names.length) {
+              SimpleTest.finish();
+	  }
+      }, false);
+
+      function startTest() {
+	  let taint_string = String.tainted(string_content);
+
+	  eval("let s = '" + taint_string + "';");
+	  setTimeout("let s = '" + taint_string + "';", 1000);
+	  const i = setInterval("let s = '" + taint_string + "';", 1000);
+	  clearInterval(i);
+      }
+      
+    </script>
+  </head>
+
+  <body onload="startTest();">
+
+</html>

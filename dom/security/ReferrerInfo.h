@@ -40,10 +40,7 @@ class nsHttpChannel;
 }  // namespace net
 }  // namespace mozilla
 
-using mozilla::Maybe;
-
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 /**
  * The ReferrerInfo class holds the raw referrer and potentially a referrer
@@ -73,6 +70,10 @@ class ReferrerInfo : public nsIReferrerInfo {
   // Creates already initialized ReferrerInfo from an element or a document.
   explicit ReferrerInfo(const Element&);
   explicit ReferrerInfo(const Document&);
+
+  // Creates already initialized ReferrerInfo from an element or a document with
+  // a specific referrer policy.
+  ReferrerInfo(const Element&, ReferrerPolicyEnum);
 
   // create an exact copy of the ReferrerInfo
   already_AddRefed<ReferrerInfo> Clone() const;
@@ -138,21 +139,11 @@ class ReferrerInfo : public nsIReferrerInfo {
    * Helper function to create new ReferrerInfo object from a given document.
    * The returned nsIReferrerInfo object will be used for any requests or
    * resources referenced by internal stylesheet (for example style="" or
-   * wrapped by <style> tag).
+   * wrapped by <style> tag), as well as SVG resources.
    *
    * @param aDocument the document to init referrerInfo object.
    */
-  static already_AddRefed<nsIReferrerInfo> CreateForInternalCSSResources(
-      Document* aDocument);
-
-  /**
-   * Helper function to create new ReferrerInfo object from a given document.
-   * The returned nsIReferrerInfo object will be used for any requests or
-   * resources referenced by SVG.
-   *
-   * @param aDocument the document to init referrerInfo object.
-   */
-  static already_AddRefed<nsIReferrerInfo> CreateForSVGResources(
+  static already_AddRefed<nsIReferrerInfo> CreateForInternalCSSAndSVGResources(
       Document* aDocument);
 
   /**
@@ -182,6 +173,12 @@ class ReferrerInfo : public nsIReferrerInfo {
    * do that in cases where we're going to use this information later on.
    */
   static bool IsCrossOriginRequest(nsIHttpChannel* aChannel);
+
+  /**
+   * Returns true if aReferrer's origin and aChannel's URI are cross-origin.
+   */
+  static bool IsReferrerCrossOrigin(nsIHttpChannel* aChannel,
+                                    nsIURI* aReferrer);
 
   /**
    * Returns true if the given channel is cross-site request.
@@ -227,7 +224,16 @@ class ReferrerInfo : public nsIReferrerInfo {
    */
   static ReferrerPolicyEnum GetDefaultReferrerPolicy(
       nsIHttpChannel* aChannel = nullptr, nsIURI* aURI = nullptr,
-      bool privateBrowsing = false);
+      bool aPrivateBrowsing = false);
+
+  /**
+   * Return default referrer policy for third party which is controlled by user
+   * prefs:
+   * network.http.referer.defaultPolicy.trackers for regular mode
+   * network.http.referer.defaultPolicy.trackers.pbmode for private mode
+   */
+  static ReferrerPolicyEnum GetDefaultThirdPartyReferrerPolicy(
+      bool aPrivateBrowsing = false);
 
   /*
    * Helper function to parse ReferrerPolicy from meta tag referrer content.
@@ -284,16 +290,6 @@ class ReferrerInfo : public nsIReferrerInfo {
   ReferrerInfo(const ReferrerInfo& rhs);
 
   /*
-   * Default referrer policy to use
-   */
-  enum DefaultReferrerPolicy : uint32_t {
-    eDefaultPolicyNoReferrer = 0,
-    eDefaultPolicySameOrgin = 1,
-    eDefaultPolicyStrictWhenXorigin = 2,
-    eDefaultPolicyNoReferrerWhenDownGrade = 3,
-  };
-
-  /*
    * Trimming policy when compute referrer, indicate how much information in the
    * referrer will be sent. Order matters here.
    */
@@ -342,7 +338,8 @@ class ReferrerInfo : public nsIReferrerInfo {
    * This function is called when we already made sure a nonempty referrer is
    * allowed to send.
    */
-  TrimmingPolicy ComputeTrimmingPolicy(nsIHttpChannel* aChannel) const;
+  TrimmingPolicy ComputeTrimmingPolicy(nsIHttpChannel* aChannel,
+                                       nsIURI* aReferrer) const;
 
   // HttpBaseChannel could access IsInitialized() and ComputeReferrer();
   friend class mozilla::net::HttpBaseChannel;
@@ -431,6 +428,13 @@ class ReferrerInfo : public nsIReferrerInfo {
                                TrimmingPolicy aTrimmingPolicy,
                                nsACString& aInAndOutTrimmedReferrer) const;
 
+  /**
+   * The helper function to read the old data format before gecko 100 for
+   * deserialization.
+   */
+  nsresult ReadTailDataBeforeGecko100(const uint32_t& aData,
+                                      nsIObjectInputStream* aInputStream);
+
   /*
    * Write message to the error console
    */
@@ -442,6 +446,12 @@ class ReferrerInfo : public nsIReferrerInfo {
   nsCOMPtr<nsIURI> mOriginalReferrer;
 
   ReferrerPolicyEnum mPolicy;
+
+  // The referrer policy that has been set originally for the channel. Note that
+  // the policy may have been overridden by the default referrer policy, so we
+  // need to keep track of this if we need to recover the original referrer
+  // policy.
+  ReferrerPolicyEnum mOriginalPolicy;
 
   // Indicates if the referrer should be sent or not even when it's available
   // (default is true).
@@ -465,7 +475,6 @@ class ReferrerInfo : public nsIReferrerInfo {
 #endif  // DEBUG
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_ReferrerInfo_h

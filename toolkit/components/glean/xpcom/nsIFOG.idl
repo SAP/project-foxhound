@@ -8,12 +8,10 @@
 [scriptable, uuid(98d0e975-9cad-4ce3-ae2f-f878b8be6307)]
 interface nsIFOG : nsISupports
 {
-
   /**
    * Initialize FOG.
    *
-   * To be scheduled at some opportune time after the bulk of Firefox startup
-   * has completed.
+   * Call it eventually. Metric data recorded beforehand will be buffered.
    *
    * @param aDataPathOverride - The path of a custom Glean data path to use
    *        instead of the profile dir.
@@ -103,6 +101,19 @@ interface nsIFOG : nsISupports
   jsval testGetExperimentData(in ACString aExperimentId);
 
   /**
+   * Set remote-configuration for metrics' disabled property.
+   *
+   * See [`glean_core::Glean::set_metrics_enabled_config`]
+   *
+   * Logs on error, but does not throw.
+   *
+   * @param aJsonConfig - The stringified JSON object in the form
+   *        {metric_base_identifier: boolean,}
+   *        which may contain multiple metric object entries.
+   */
+  void setMetricsFeatureConfig(in ACString aJsonConfig);
+
+  /**
    * ** Test-only Method **
    *
    * Flush all data from all child processes.
@@ -133,4 +144,47 @@ interface nsIFOG : nsISupports
    */
   [implicit_jscontext]
   Promise testTriggerMetrics(in unsigned long aProcessType);
+
+  /**
+   * ** Test-only Method **
+   *
+   * Register a metric.
+   *
+   * This function is deliberately not too friendly to use. You probably aren't
+   * supposed to use it unless you're testing metric registration itself.
+   *
+   * @param aType - The metric's type.
+   * @param aCategory - The metric's category.
+   * @param aName - The metric's name.
+   * @param aPings - The pings to send it in.
+   * @param aLifetime - The metric's lifetime.
+   * @param aDisabled - Whether the metric, though existing, isn't enabled.
+   * @param aExtraArgs - Optional JSON string of extra args.
+   */
+  uint32_t testRegisterRuntimeMetric(in ACString aType,
+                                 in ACString aCategory,
+                                 in ACString aName,
+                                 in Array<ACString> aPings,
+                                 in ACString aLifetime,
+                                 in boolean aDisabled,
+                                 [optional] in ACString aExtraArgs);
+
+  /**
+   * ** Test-only Method **
+   *
+   * Register a ping.
+   *
+   * This function is deliberately not too friendly to use. You probably aren't
+   * supposed to use it unless you're testing ping registration itself.
+   *
+   * @param aName - The ping's name.
+   * @param aIncludeClientId - Whether the ping should include the client_id.
+   * @param aSendIfEmpty - Whether the ping should send even if empty.
+   * @param aReasonCodes - The list of valid reasons for ping submission.
+   */
+  uint32_t testRegisterRuntimePing(in ACString aName,
+                                   in boolean aIncludeClientId,
+                                   in boolean aSendIfEmpty,
+                                   in boolean aPreciseTimestamps,
+                                   in Array<ACString> aReasonCodes);
 };

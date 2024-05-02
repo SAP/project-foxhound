@@ -48,10 +48,6 @@ void BaselineFrame::trace(JSTracer* trc, const JSJitFrameIter& frameIterator) {
     TraceRoot(trc, returnValue().address(), "baseline-rval");
   }
 
-  if (isEvalFrame() && script()->isDirectEvalInFunction()) {
-    TraceRoot(trc, evalNewTargetAddress(), "baseline-evalNewTarget");
-  }
-
   if (hasArgsObj()) {
     TraceRoot(trc, &argsObj_, "baseline-args-obj");
   }
@@ -105,7 +101,7 @@ bool BaselineFrame::initFunctionEnvironmentObjects(JSContext* cx) {
   return js::InitFunctionEnvironmentObjects(cx, this);
 }
 
-bool BaselineFrame::pushVarEnvironment(JSContext* cx, HandleScope scope) {
+bool BaselineFrame::pushVarEnvironment(JSContext* cx, Handle<Scope*> scope) {
   return js::PushVarEnvironmentObject(cx, scope, this);
 }
 

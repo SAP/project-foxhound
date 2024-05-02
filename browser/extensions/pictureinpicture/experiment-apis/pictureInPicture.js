@@ -6,17 +6,10 @@
 
 /* global AppConstants, ChromeUtils, ExtensionAPI, Services */
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "KEYBOARD_CONTROLS",
-  "resource://gre/modules/PictureInPictureControls.jsm"
-);
-
-ChromeUtils.defineModuleGetter(
-  this,
-  "TOGGLE_POLICIES",
-  "resource://gre/modules/PictureInPictureControls.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  KEYBOARD_CONTROLS: "resource://gre/modules/PictureInPictureControls.sys.mjs",
+  TOGGLE_POLICIES: "resource://gre/modules/PictureInPictureControls.sys.mjs",
+});
 
 const TOGGLE_ENABLED_PREF =
   "media.videocontrols.picture-in-picture.video-toggle.enabled";
@@ -28,8 +21,9 @@ this.pictureInPictureParent = class extends ExtensionAPI {
   /**
    * Override ExtensionAPI with PiP override's specific API
    * Relays the site overrides to this extension's child process
+   *
    * @param {ExtensionContext} context the context of our extension
-   * @returns {Object} returns the necessary API structure required to manage sharedData in PictureInPictureParent
+   * @returns {object} returns the necessary API structure required to manage sharedData in PictureInPictureParent
    */
   getAPI(context) {
     return {
@@ -61,8 +55,9 @@ this.pictureInPictureChild = class extends ExtensionAPI {
   /**
    * Override ExtensionAPI with PiP override's specific API
    * Clone constants into the Picture-in-Picture child process
+   *
    * @param {ExtensionContext} context the context of our extension
-   * @returns returns the necessary API structure required to get data from PictureInPictureChild
+   * @returns {object} returns the necessary API structure required to get data from PictureInPictureChild
    */
   getAPI(context) {
     return {

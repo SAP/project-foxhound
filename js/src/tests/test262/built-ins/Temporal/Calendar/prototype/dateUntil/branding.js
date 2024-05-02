@@ -1,4 +1,4 @@
-// |reftest| skip -- Temporal is not supported
+// |reftest| skip-if(!this.hasOwnProperty('Temporal')) -- Temporal is not enabled unconditionally
 // Copyright (C) 2021 Igalia, S.L. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 
@@ -12,14 +12,16 @@ const dateUntil = Temporal.Calendar.prototype.dateUntil;
 
 assert.sameValue(typeof dateUntil, "function");
 
-assert.throws(TypeError, () => dateUntil.call(undefined), "undefined");
-assert.throws(TypeError, () => dateUntil.call(null), "null");
-assert.throws(TypeError, () => dateUntil.call(true), "true");
-assert.throws(TypeError, () => dateUntil.call(""), "empty string");
-assert.throws(TypeError, () => dateUntil.call(Symbol()), "symbol");
-assert.throws(TypeError, () => dateUntil.call(1), "1");
-assert.throws(TypeError, () => dateUntil.call({}), "plain object");
-assert.throws(TypeError, () => dateUntil.call(Temporal.Calendar), "Temporal.Calendar");
-assert.throws(TypeError, () => dateUntil.call(Temporal.Calendar.prototype), "Temporal.Calendar.prototype");
+const args = [new Temporal.PlainDate(2021, 7, 16), new Temporal.PlainDate(2021, 7, 17)];
+
+assert.throws(TypeError, () => dateUntil.apply(undefined, args), "undefined");
+assert.throws(TypeError, () => dateUntil.apply(null, args), "null");
+assert.throws(TypeError, () => dateUntil.apply(true, args), "true");
+assert.throws(TypeError, () => dateUntil.apply("", args), "empty string");
+assert.throws(TypeError, () => dateUntil.apply(Symbol(), args), "symbol");
+assert.throws(TypeError, () => dateUntil.apply(1, args), "1");
+assert.throws(TypeError, () => dateUntil.apply({}, args), "plain object");
+assert.throws(TypeError, () => dateUntil.apply(Temporal.Calendar, args), "Temporal.Calendar");
+assert.throws(TypeError, () => dateUntil.apply(Temporal.Calendar.prototype, args), "Temporal.Calendar.prototype");
 
 reportCompare(0, 0);

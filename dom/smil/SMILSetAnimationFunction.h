@@ -19,47 +19,18 @@ namespace mozilla {
 // by a <set> element.
 //
 class SMILSetAnimationFunction : public SMILAnimationFunction {
- public:
-  /*
-   * Sets animation-specific attributes (or marks them dirty, in the case
-   * of from/to/by/values).
-   *
-   * @param aAttribute The attribute being set
-   * @param aValue     The updated value of the attribute.
-   * @param aResult    The nsAttrValue object that may be used for storing the
-   *                   parsed result.
-   * @param aParseResult  Outparam used for reporting parse errors. Will be set
-   *                      to NS_OK if everything succeeds.
-   * @returns true if aAttribute is a recognized animation-related
-   *          attribute; false otherwise.
-   */
-  virtual bool SetAttr(nsAtom* aAttribute, const nsAString& aValue,
-                       nsAttrValue& aResult,
-                       nsresult* aParseResult = nullptr) override;
-
-  /*
-   * Unsets the given attribute.
-   *
-   * @returns true if aAttribute is a recognized animation-related
-   *          attribute; false otherwise.
-   */
-  virtual bool UnsetAttr(nsAtom* aAttribute) override;
-
  protected:
+  bool IsDisallowedAttribute(const nsAtom* aAttribute) const override;
+
   // Although <set> animation might look like to-animation, unlike to-animation,
   // it never interpolates values.
   // Returning false here will mean this animation function gets treated as
   // a single-valued function and no interpolation will be attempted.
-  virtual bool IsToAnimation() const override { return false; }
+  bool IsToAnimation() const override { return false; }
 
   // <set> applies the exact same value across the simple duration.
-  virtual bool IsValueFixedForSimpleDuration() const override { return true; }
-  virtual bool HasAttr(nsAtom* aAttName) const override;
-  virtual const nsAttrValue* GetAttr(nsAtom* aAttName) const override;
-  virtual bool GetAttr(nsAtom* aAttName, nsAString& aResult) const override;
-  virtual bool WillReplace() const override;
-
-  bool IsDisallowedAttribute(const nsAtom* aAttribute) const;
+  bool IsValueFixedForSimpleDuration() const override { return true; }
+  bool WillReplace() const override { return true; }
 };
 
 }  // namespace mozilla

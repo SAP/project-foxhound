@@ -307,14 +307,17 @@ struct CodeSizes {
 struct GCSizes {
   // |nurseryDecommitted| is marked as NonHeap rather than GCHeapDecommitted
   // because we don't consider the nursery to be part of the GC heap.
-#define FOR_EACH_SIZE(MACRO)                   \
-  MACRO(_, MallocHeap, marker)                 \
-  MACRO(_, NonHeap, nurseryCommitted)          \
-  MACRO(_, MallocHeap, nurseryMallocedBuffers) \
-  MACRO(_, MallocHeap, storeBufferVals)        \
-  MACRO(_, MallocHeap, storeBufferCells)       \
-  MACRO(_, MallocHeap, storeBufferSlots)       \
-  MACRO(_, MallocHeap, storeBufferWholeCells)  \
+#define FOR_EACH_SIZE(MACRO)                      \
+  MACRO(_, MallocHeap, marker)                    \
+  MACRO(_, NonHeap, nurseryCommitted)             \
+  MACRO(_, MallocHeap, nurseryMallocedBuffers)    \
+  MACRO(_, MallocHeap, nurseryMallocedBlockCache) \
+  MACRO(_, MallocHeap, nurseryTrailerBlockSets)   \
+  MACRO(_, MallocHeap, storeBufferVals)           \
+  MACRO(_, MallocHeap, storeBufferCells)          \
+  MACRO(_, MallocHeap, storeBufferSlots)          \
+  MACRO(_, MallocHeap, storeBufferWasmAnyRefs)    \
+  MACRO(_, MallocHeap, storeBufferWholeCells)     \
   MACRO(_, MallocHeap, storeBufferGenerics)
 
   GCSizes() = default;
@@ -459,7 +462,6 @@ struct NotableScriptSourceInfo : public ScriptSourceInfo {
 struct HelperThreadStats {
 #define FOR_EACH_SIZE(MACRO)           \
   MACRO(_, MallocHeap, stateData)      \
-  MACRO(_, MallocHeap, parseTask)      \
   MACRO(_, MallocHeap, ionCompileTask) \
   MACRO(_, MallocHeap, wasmCompile)    \
   MACRO(_, MallocHeap, contexts)
@@ -478,18 +480,12 @@ struct HelperThreadStats {
  * Measurements that not associated with any individual runtime.
  */
 struct GlobalStats {
-#define FOR_EACH_SIZE(MACRO) MACRO(_, MallocHeap, tracelogger)
-
   explicit GlobalStats(mozilla::MallocSizeOf mallocSizeOf)
       : mallocSizeOf_(mallocSizeOf) {}
-
-  FOR_EACH_SIZE(DECL_SIZE_ZERO);
 
   HelperThreadStats helperThread;
 
   mozilla::MallocSizeOf mallocSizeOf_;
-
-#undef FOR_EACH_SIZE
 };
 
 /**
@@ -509,7 +505,6 @@ struct RuntimeSizes {
   MACRO(_, MallocHeap, sharedIntlData)              \
   MACRO(_, MallocHeap, uncompressedSourceCache)     \
   MACRO(_, MallocHeap, scriptData)                  \
-  MACRO(_, MallocHeap, tracelogger)                 \
   MACRO(_, MallocHeap, wasmRuntime)                 \
   MACRO(_, Ignore, wasmGuardPages)                  \
   MACRO(_, MallocHeap, jitLazyLink)
@@ -649,7 +644,7 @@ struct ZoneStats {
   MACRO(Other, MallocHeap, regExpSharedsMallocHeap)        \
   MACRO(Other, MallocHeap, regexpZone)                     \
   MACRO(Other, MallocHeap, jitZone)                        \
-  MACRO(Other, MallocHeap, baselineStubsOptimized)         \
+  MACRO(Other, MallocHeap, cacheIRStubs)                   \
   MACRO(Other, MallocHeap, uniqueIdMap)                    \
   MACRO(Other, MallocHeap, initialPropMapTable)            \
   MACRO(Other, MallocHeap, shapeTables)                    \
@@ -730,21 +725,20 @@ struct RealmStats {
   // actually guaranteed. But for Servo, at least, it's a moot point because
   // it doesn't provide an ObjectPrivateVisitor so the value will always be
   // zero.
-#define FOR_EACH_SIZE(MACRO)                               \
-  MACRO(Private, MallocHeap, objectsPrivate)               \
-  MACRO(Other, GCHeapUsed, scriptsGCHeap)                  \
-  MACRO(Other, MallocHeap, scriptsMallocHeapData)          \
-  MACRO(Other, MallocHeap, baselineData)                   \
-  MACRO(Other, MallocHeap, baselineStubsFallback)          \
-  MACRO(Other, MallocHeap, ionData)                        \
-  MACRO(Other, MallocHeap, jitScripts)                     \
-  MACRO(Other, MallocHeap, realmObject)                    \
-  MACRO(Other, MallocHeap, realmTables)                    \
-  MACRO(Other, MallocHeap, innerViewsTable)                \
-  MACRO(Other, MallocHeap, objectMetadataTable)            \
-  MACRO(Other, MallocHeap, savedStacksSet)                 \
-  MACRO(Other, MallocHeap, nonSyntacticLexicalScopesTable) \
-  MACRO(Other, MallocHeap, jitRealm)
+#define FOR_EACH_SIZE(MACRO)                      \
+  MACRO(Private, MallocHeap, objectsPrivate)      \
+  MACRO(Other, GCHeapUsed, scriptsGCHeap)         \
+  MACRO(Other, MallocHeap, scriptsMallocHeapData) \
+  MACRO(Other, MallocHeap, baselineData)          \
+  MACRO(Other, MallocHeap, allocSites)            \
+  MACRO(Other, MallocHeap, ionData)               \
+  MACRO(Other, MallocHeap, jitScripts)            \
+  MACRO(Other, MallocHeap, realmObject)           \
+  MACRO(Other, MallocHeap, realmTables)           \
+  MACRO(Other, MallocHeap, innerViewsTable)       \
+  MACRO(Other, MallocHeap, objectMetadataTable)   \
+  MACRO(Other, MallocHeap, savedStacksSet)        \
+  MACRO(Other, MallocHeap, nonSyntacticLexicalScopesTable)
 
   RealmStats() = default;
   RealmStats(RealmStats&& other) = default;

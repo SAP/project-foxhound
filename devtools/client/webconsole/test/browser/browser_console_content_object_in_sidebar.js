@@ -18,28 +18,46 @@ const TEST_URI = `data:text/html;charset=utf8,<!DOCTYPE html><script>
   );
 </script>`;
 
-add_task(async function() {
+add_task(async function () {
   // Enable sidebar
   await pushPref("devtools.webconsole.sidebarToggle", true);
   // Show the content messages
-  await pushPref("devtools.browserconsole.contentMessages", true);
-  // Enable Fission browser console to see the logged content object
-  await pushPref("devtools.browsertoolbox.fission", true);
+  await pushPref("devtools.browsertoolbox.scope", "everything");
 
   await addTab(TEST_URI);
 
   info("Open the Browser Console");
   const hud = await BrowserConsoleManager.toggleBrowserConsole();
 
-  const message = await waitFor(() => findMessage(hud, "foo"));
+  const message = await waitFor(() => findConsoleAPIMessage(hud, "foo"));
   const [objectA, objectB] = message.querySelectorAll(
     ".object-inspector .objectBox-object"
   );
-  const number = findMessage(hud, "100", ".objectBox");
-  const string = findMessage(hud, "foo", ".objectBox");
-  const bool = findMessage(hud, "false", ".objectBox");
-  const nullMessage = findMessage(hud, "null", ".objectBox");
-  const undefinedMsg = findMessage(hud, "undefined", ".objectBox");
+  const number = findMessagePartByType(hud, {
+    text: "100",
+    typeSelector: ".console-api",
+    partSelector: ".objectBox",
+  });
+  const string = findMessagePartByType(hud, {
+    text: "foo",
+    typeSelector: ".console-api",
+    partSelector: ".objectBox",
+  });
+  const bool = findMessagePartByType(hud, {
+    text: "false",
+    typeSelector: ".console-api",
+    partSelector: ".objectBox",
+  });
+  const nullMessage = findMessagePartByType(hud, {
+    text: "null",
+    typeSelector: ".console-api",
+    partSelector: ".objectBox",
+  });
+  const undefinedMsg = findMessagePartByType(hud, {
+    text: "undefined",
+    typeSelector: ".console-api",
+    partSelector: ".objectBox",
+  });
 
   info("Showing sidebar for {a:1}");
   await showSidebarWithContextMenu(hud, objectA, true);
@@ -54,8 +72,8 @@ add_task(async function() {
     });
   }
 
-  let sidebarText = hud.ui.document.querySelector(".sidebar-contents")
-    .textContent;
+  let sidebarText =
+    hud.ui.document.querySelector(".sidebar-contents").textContent;
   ok(sidebarText.includes("a: 1"), "Sidebar is shown for {a:1}");
 
   info("Showing sidebar for {a:1} again");

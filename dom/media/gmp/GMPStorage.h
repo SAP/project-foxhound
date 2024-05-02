@@ -12,30 +12,28 @@
 #include "nsString.h"
 #include "nsTArray.h"
 
-namespace mozilla {
-namespace gmp {
+namespace mozilla::gmp {
 
 class GMPStorage {
  public:
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(GMPStorage)
 
-  virtual GMPErr Open(const nsCString& aRecordName) = 0;
-  virtual bool IsOpen(const nsCString& aRecordName) const = 0;
-  virtual GMPErr Read(const nsCString& aRecordName,
+  virtual GMPErr Open(const nsACString& aRecordName) = 0;
+  virtual bool IsOpen(const nsACString& aRecordName) const = 0;
+  virtual GMPErr Read(const nsACString& aRecordName,
                       nsTArray<uint8_t>& aOutBytes) = 0;
-  virtual GMPErr Write(const nsCString& aRecordName,
+  virtual GMPErr Write(const nsACString& aRecordName,
                        const nsTArray<uint8_t>& aBytes) = 0;
-  virtual void Close(const nsCString& aRecordName) = 0;
+  virtual void Close(const nsACString& aRecordName) = 0;
 
  protected:
   virtual ~GMPStorage() = default;
 };
 
 already_AddRefed<GMPStorage> CreateGMPMemoryStorage();
-already_AddRefed<GMPStorage> CreateGMPDiskStorage(const nsCString& aNodeId,
-                                                  const nsString& aGMPName);
+already_AddRefed<GMPStorage> CreateGMPDiskStorage(const nsACString& aNodeId,
+                                                  const nsAString& aGMPName);
 
-}  // namespace gmp
-}  // namespace mozilla
+}  // namespace mozilla::gmp
 
 #endif

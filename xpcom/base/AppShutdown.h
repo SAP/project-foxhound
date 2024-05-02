@@ -9,7 +9,7 @@
 
 #include <type_traits>
 #include "nsCOMPtr.h"
-#include "nsISupportsBase.h"
+#include "nsISupports.h"
 #include "ShutdownPhase.h"
 
 namespace mozilla {
@@ -19,9 +19,25 @@ enum class AppShutdownMode {
   Restart,
 };
 
+enum class AppShutdownReason {
+  // No reason.
+  Unknown,
+  // Normal application shutdown.
+  AppClose,
+  // The application wants to restart.
+  AppRestart,
+  // The OS is force closing us.
+  OSForceClose,
+  // The user is logging off from the OS session, the system may stay alive.
+  OSSessionEnd,
+  // The system is shutting down (and maybe restarting).
+  OSShutdown,
+  // We unexpectedly received MOZ_WM_APP_QUIT, see bug 1827807.
+  WinUnexpectedMozQuit,
+};
+
 class AppShutdown {
  public:
-  static bool IsShuttingDown();
   static ShutdownPhase GetCurrentShutdownPhase();
   static bool IsInOrBeyond(ShutdownPhase aPhase);
 
@@ -37,9 +53,11 @@ class AppShutdown {
   static void SaveEnvVarsForPotentialRestart();
 
   /**
-   * Init the shutdown with the requested shutdown mode and exit code.
+   * Init the shutdown with the requested shutdown mode, exit code and optional
+   * a reason (if missing it will be derived from aMode).
    */
-  static void Init(AppShutdownMode aMode, int aExitCode);
+  static void Init(AppShutdownMode aMode, int aExitCode,
+                   AppShutdownReason aReason);
 
   /**
    * Confirm that we are in fact going to be shutting down.
@@ -86,15 +104,14 @@ class AppShutdown {
   static void AdvanceShutdownPhaseWithoutNotify(ShutdownPhase aPhase);
 
   /**
-   * This will perform a fast shutdown via _exit(0) or similar if the user's
-   * prefs are configured to do so at this phase.
-   */
-  static void MaybeFastShutdown(ShutdownPhase aPhase);
-
-  /**
    * Map shutdown phase to observer key
    */
   static const char* GetObserverKey(ShutdownPhase aPhase);
+
+  /**
+   * Map shutdown phase to readable name
+   */
+  static const char* GetShutdownPhaseName(ShutdownPhase aPhase);
 
   /**
    * Map observer topic key to shutdown phase
@@ -109,6 +126,25 @@ class AppShutdown {
    */
   static bool IsNoOrLegalShutdownTopic(const char* aTopic);
 #endif
+
+ private:
+  /**
+   * Set the shutdown reason annotation.
+   */
+  static void AnnotateShutdownReason(AppShutdownReason aReason);
+
+  /**
+   * This will perform a fast shutdown via _exit(0) or similar if the user's
+   * prefs are configured to do so at this phase.
+   */
+  static void MaybeFastShutdown(ShutdownPhase aPhase);
+
+  /**
+   * Internal helper function, uses MaybeFastShutdown.
+   */
+  static void AdvanceShutdownPhaseInternal(
+      ShutdownPhase aPhase, bool doNotify, const char16_t* aNotificationData,
+      const nsCOMPtr<nsISupports>& aNotificationSubject);
 };
 
 }  // namespace mozilla

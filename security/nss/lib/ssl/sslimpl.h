@@ -24,7 +24,7 @@
 #include "hasht.h"
 #include "nssilock.h"
 #include "pkcs11t.h"
-#if defined(XP_UNIX) || defined(XP_BEOS)
+#if defined(XP_UNIX)
 #include "unistd.h"
 #endif
 #include "nssrwlk.h"
@@ -290,6 +290,8 @@ typedef struct sslOptionsStr {
     unsigned int enableTls13GreaseEch : 1;
     unsigned int enableTls13BackendEch : 1;
     unsigned int callExtensionWriterOnEchInner : 1;
+    unsigned int enableGrease : 1;
+    unsigned int enableChXtnPermutation : 1;
 } sslOptions;
 
 typedef enum { sslHandshakingUndetermined = 0,
@@ -610,6 +612,24 @@ typedef struct {
     PRUint32 timeout;
 } dtlsTimer;
 
+/* TLS 1.3 client GREASE entry indices. */
+typedef enum {
+    grease_cipher,
+    grease_extension1,
+    grease_extension2,
+    grease_group,
+    grease_sigalg,
+    grease_version,
+    grease_alpn,
+    grease_entries
+} tls13ClientGreaseEntry;
+
+/* TLS 1.3 client GREASE values struct. */
+typedef struct tls13ClientGreaseStr {
+    PRUint16 idx[grease_entries];
+    PRUint8 pskKem;
+} tls13ClientGrease;
+
 /*
 ** This is the "hs" member of the "ssl3" struct.
 ** This entire struct is protected by ssl3HandshakeLock
@@ -665,6 +685,12 @@ typedef struct SSL3HandshakeStateStr {
         SSL3Finished sFinished[2];
         PRUint8 data[72];
     } finishedMsgs;
+
+    /* True when handshake is blocked on client certificate selection */
+    PRBool clientCertificatePending;
+    /* Parameters stored whilst waiting for client certificate */
+    SSLSignatureScheme *clientAuthSignatureSchemes;
+    unsigned int clientAuthSignatureSchemesLen;
 
     PRBool authCertificatePending;
     /* Which function should SSL_RestartHandshake* call if we're blocked?
@@ -747,6 +773,7 @@ typedef struct SSL3HandshakeStateStr {
                                 * used to generate ACKs. */
 
     /* TLS 1.3 ECH state. */
+    PRUint8 greaseEchSize;
     PRBool echAccepted; /* Client/Server: True if we've commited to using CHInner. */
     PRBool echDecided;
     HpkeContext *echHpkeCtx;    /* Client/Server: HPKE context for ECH. */
@@ -755,6 +782,12 @@ typedef struct SSL3HandshakeStateStr {
     sslBuffer greaseEchBuf;     /* Client: Remember GREASE ECH, as advertised, for CH2 (HRR case).
                                   Server: Remember HRR Grease Value, for transcript calculations */
     PRBool echInvalidExtension; /* Client: True if the server offered an invalid extension for the ClientHelloInner */
+
+    /* TLS 1.3 GREASE state. */
+    tls13ClientGrease *grease;
+
+    /* ClientHello Extension Permutation state. */
+    sslExtensionBuilder *chExtensionPermutation;
 } SSL3HandshakeState;
 
 #define SSL_ASSERT_HASHES_EMPTY(ss)                                  \
@@ -1261,7 +1294,7 @@ extern void ssl3_SetAlwaysBlock(sslSocket *ss);
 
 extern SECStatus ssl_EnableNagleDelay(sslSocket *ss, PRBool enabled);
 
-extern void ssl_FinishHandshake(sslSocket *ss);
+extern SECStatus ssl_FinishHandshake(sslSocket *ss);
 
 extern SECStatus ssl_CipherPolicySet(PRInt32 which, PRInt32 policy);
 
@@ -1463,6 +1496,7 @@ extern SECStatus SSL3_SendAlert(sslSocket *ss, SSL3AlertLevel level,
 extern SECStatus ssl3_DecodeError(sslSocket *ss);
 
 extern SECStatus ssl3_AuthCertificateComplete(sslSocket *ss, PRErrorCode error);
+extern SECStatus ssl3_ClientCertCallbackComplete(sslSocket *ss, SECStatus outcome, SECKEYPrivateKey *clientPrivateKey, CERTCertificate *clientCertificate);
 
 /*
  * for dealing with SSL 3.0 clients sending SSL 2.0 format hellos
@@ -1732,10 +1766,10 @@ SECStatus ssl3_AuthCertificate(sslSocket *ss);
 SECStatus ssl_ReadCertificateStatus(sslSocket *ss, PRUint8 *b,
                                     PRUint32 length);
 SECStatus ssl3_EncodeSigAlgs(const sslSocket *ss, PRUint16 minVersion, PRBool forCert,
-                             sslBuffer *buf);
+                             PRBool grease, sslBuffer *buf);
 SECStatus ssl3_EncodeFilteredSigAlgs(const sslSocket *ss,
                                      const SSLSignatureScheme *schemes,
-                                     PRUint32 numSchemes, sslBuffer *buf);
+                                     PRUint32 numSchemes, PRBool grease, sslBuffer *buf);
 SECStatus ssl3_FilterSigAlgs(const sslSocket *ss, PRUint16 minVersion, PRBool disableRsae, PRBool forCert,
                              unsigned int maxSchemes, SSLSignatureScheme *filteredSchemes,
                              unsigned int *numFilteredSchemes);
@@ -1745,7 +1779,7 @@ SECStatus ssl_GetCertificateRequestCAs(const sslSocket *ss,
                                        unsigned int *nnamesp);
 SECStatus ssl3_ParseCertificateRequestCAs(sslSocket *ss, PRUint8 **b,
                                           PRUint32 *length, CERTDistNames *ca_list);
-SECStatus ssl3_CompleteHandleCertificateRequest(
+SECStatus ssl3_BeginHandleCertificateRequest(
     sslSocket *ss, const SSLSignatureScheme *signatureSchemes,
     unsigned int signatureSchemeCount, CERTDistNames *ca_list);
 SECStatus ssl_ConstructServerHello(sslSocket *ss, PRBool helloRetry,
@@ -1778,6 +1812,8 @@ PRBool ssl3_CipherSuiteAllowedForVersionRange(ssl3CipherSuite cipherSuite,
 
 SECStatus ssl3_SelectServerCert(sslSocket *ss);
 SECStatus ssl_PrivateKeySupportsRsaPss(SECKEYPrivateKey *privKey,
+                                       CERTCertificate *cert,
+                                       void *pwArg,
                                        PRBool *supportsRsaPss);
 SECStatus ssl_PickSignatureScheme(sslSocket *ss,
                                   CERTCertificate *cert,
@@ -1785,7 +1821,14 @@ SECStatus ssl_PickSignatureScheme(sslSocket *ss,
                                   SECKEYPrivateKey *privKey,
                                   const SSLSignatureScheme *peerSchemes,
                                   unsigned int peerSchemeCount,
-                                  PRBool requireSha1);
+                                  PRBool requireSha1,
+                                  SSLSignatureScheme *schemPtr);
+SECStatus ssl_PickClientSignatureScheme(sslSocket *ss,
+                                        CERTCertificate *clientCertificate,
+                                        SECKEYPrivateKey *privKey,
+                                        const SSLSignatureScheme *schemes,
+                                        unsigned int numSchemes,
+                                        SSLSignatureScheme *schemePtr);
 SECOidTag ssl3_HashTypeToOID(SSLHashType hashType);
 SECOidTag ssl3_AuthTypeToOID(SSLAuthType hashType);
 SSLHashType ssl_SignatureSchemeToHashType(SSLSignatureScheme scheme);
@@ -1958,13 +2001,14 @@ SECStatus SSLExp_CreateMask(SSLMaskingContext *ctx, const PRUint8 *sample,
 SECStatus SSLExp_DestroyMaskingContext(SSLMaskingContext *ctx);
 
 SECStatus SSLExp_EnableTls13GreaseEch(PRFileDesc *fd, PRBool enabled);
+SECStatus SSLExp_SetTls13GreaseEchSize(PRFileDesc *fd, PRUint8 size);
 
 SECStatus SSLExp_EnableTls13BackendEch(PRFileDesc *fd, PRBool enabled);
 SECStatus SSLExp_CallExtensionWriterOnEchInner(PRFileDesc *fd, PRBool enabled);
 
 SEC_END_PROTOS
 
-#if defined(XP_UNIX) || defined(XP_OS2) || defined(XP_BEOS)
+#if defined(XP_UNIX) || defined(XP_OS2)
 #define SSL_GETPID getpid
 #elif defined(WIN32)
 extern int __cdecl _getpid(void);

@@ -2,11 +2,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "TestUtils",
-  "resource://testing-common/TestUtils.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  TestUtils: "resource://testing-common/TestUtils.sys.mjs",
+});
 
 function promiseExpiration() {
   let promise = TestUtils.topicObserved(
@@ -24,7 +22,7 @@ function promiseExpiration() {
   return promise;
 }
 
-add_task(async function() {
+add_task(async function () {
   // ===== test init =====
   let testfile = do_get_file("asyncformhistory_expire.sqlite");
   let profileDir = do_get_profile();
@@ -47,7 +45,7 @@ add_task(async function() {
   Assert.ok((await promiseCountEntries("name-A", "value-A")) > 0); // lastUsed == distant past
   Assert.ok((await promiseCountEntries("name-B", "value-B")) > 0); // lastUsed == distant future
 
-  Assert.equal(CURRENT_SCHEMA, getDBVersion(dbFile));
+  Assert.equal(CURRENT_SCHEMA, await getDBVersion(dbFile));
 
   // Add a new entry
   Assert.equal(0, await promiseCountEntries("name-C", "value-C"));

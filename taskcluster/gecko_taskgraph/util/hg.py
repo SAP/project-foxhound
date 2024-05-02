@@ -4,12 +4,11 @@
 
 
 import logging
+import subprocess
 
 import requests
-import subprocess
-from redo import retry
-
 from mozbuild.util import memoize
+from redo import retry
 
 logger = logging.getLogger(__name__)
 
@@ -128,9 +127,9 @@ def get_hg_revision_branch(root, revision):
 # For these functions, we assume that run-task has correctly checked out the
 # revision indicated by GECKO_HEAD_REF, so all that remains is to see what the
 # current revision is.  Mercurial refers to that as `.`.
-def get_hg_commit_message(root):
+def get_hg_commit_message(root, rev="."):
     return subprocess.check_output(
-        ["hg", "log", "-r", ".", "-T", "{desc}"], cwd=root, universal_newlines=True
+        ["hg", "log", "-r", rev, "-T", "{desc}"], cwd=root, universal_newlines=True
     )
 
 

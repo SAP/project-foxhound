@@ -50,7 +50,8 @@ class MainThreadReleaseRunnable final : public Runnable {
   NS_IMETHOD
   Run() override {
     if (mLoadGroupToCancel) {
-      mLoadGroupToCancel->Cancel(NS_BINDING_ABORTED);
+      mLoadGroupToCancel->CancelWithReason(
+          NS_BINDING_ABORTED, "WorkerLoadInfo::MainThreadReleaseRunnable"_ns);
       mLoadGroupToCancel = nullptr;
     }
 
@@ -86,18 +87,18 @@ inline void SwapToISupportsArray(SmartPtr<T>& aSrc,
 WorkerLoadInfoData::WorkerLoadInfoData()
     : mLoadFlags(nsIRequest::LOAD_NORMAL),
       mWindowID(UINT64_MAX),
+      mAssociatedBrowsingContextID(0),
       mReferrerInfo(new ReferrerInfo(nullptr)),
-      mPrincipalHashValue(0),
       mFromWindow(false),
       mEvalAllowed(false),
-      mReportCSPViolations(false),
+      mReportEvalCSPViolations(false),
+      mWasmEvalAllowed(false),
+      mReportWasmEvalCSPViolations(false),
       mXHRParamsAllowed(false),
-      mPrincipalIsSystem(false),
-      mPrincipalIsAddonOrExpandedAddon(false),
       mWatchedByDevTools(false),
       mStorageAccess(StorageAccess::eDeny),
       mUseRegularPrincipal(false),
-      mHasStorageAccessPermissionGranted(false),
+      mUsingStorageAccess(false),
       mServiceWorkersTestingInWindow(false),
       mShouldResistFingerprinting(false),
       mIsThirdPartyContextToTopWindow(true),
@@ -111,14 +112,12 @@ nsresult WorkerLoadInfo::SetPrincipalsAndCSPOnMainThread(
 
   mPrincipal = aPrincipal;
   mPartitionedPrincipal = aPartitionedPrincipal;
-  mPrincipalIsSystem = aPrincipal->IsSystemPrincipal();
-  mPrincipalIsAddonOrExpandedAddon =
-      aPrincipal->GetIsAddonOrExpandedAddonPrincipal();
 
   mCSP = aCsp;
 
   if (mCSP) {
-    mCSP->GetAllowsEval(&mReportCSPViolations, &mEvalAllowed);
+    mCSP->GetAllowsEval(&mReportEvalCSPViolations, &mEvalAllowed);
+    mCSP->GetAllowsWasmEval(&mReportWasmEvalCSPViolations, &mWasmEvalAllowed);
     mCSPInfo = MakeUnique<CSPInfo>();
     nsresult rv = CSPToCSPInfo(aCsp, mCSPInfo.get());
     if (NS_WARN_IF(NS_FAILED(rv))) {
@@ -126,7 +125,9 @@ nsresult WorkerLoadInfo::SetPrincipalsAndCSPOnMainThread(
     }
   } else {
     mEvalAllowed = true;
-    mReportCSPViolations = false;
+    mReportEvalCSPViolations = false;
+    mWasmEvalAllowed = true;
+    mReportWasmEvalCSPViolations = false;
   }
 
   mLoadGroup = aLoadGroup;
@@ -139,26 +140,14 @@ nsresult WorkerLoadInfo::SetPrincipalsAndCSPOnMainThread(
   nsresult rv = PrincipalToPrincipalInfo(aPrincipal, mPrincipalInfo.get());
   NS_ENSURE_SUCCESS(rv, rv);
 
-  rv = nsContentUtils::GetUTFOrigin(aPrincipal, mOriginNoSuffix);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  rv = aPrincipal->GetOrigin(mOrigin);
-  NS_ENSURE_SUCCESS(rv, rv);
-
   if (aPrincipal->Equals(aPartitionedPrincipal)) {
     *mPartitionedPrincipalInfo = *mPrincipalInfo;
-    mPartitionedOrigin = mOrigin;
   } else {
     mPartitionedPrincipalInfo = MakeUnique<PrincipalInfo>();
     rv = PrincipalToPrincipalInfo(aPartitionedPrincipal,
                                   mPartitionedPrincipalInfo.get());
     NS_ENSURE_SUCCESS(rv, rv);
-
-    rv = aPartitionedPrincipal->GetOrigin(mPartitionedOrigin);
-    NS_ENSURE_SUCCESS(rv, rv);
   }
-
-  mPrincipalHashValue = aPrincipal->GetHashValue();
   return NS_OK;
 }
 
@@ -340,10 +329,7 @@ bool WorkerLoadInfo::PrincipalURIMatchesScriptURL() {
     return true;
   }
 
-  bool isSameOrigin = false;
-  rv = mPrincipal->IsSameOrigin(mBaseURI, false, &isSameOrigin);
-
-  if (NS_SUCCEEDED(rv) && isSameOrigin) {
+  if (mPrincipal->IsSameOrigin(mBaseURI)) {
     return true;
   }
 

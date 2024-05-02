@@ -5,7 +5,7 @@
   "background": {
     "scripts": ["background-script.js"]
   },
-  "applications": {
+  "browser_specific_settings": {
     "gecko": {
       "id": "extension-page-update@tests.mozilla.org"
     }
@@ -17,10 +17,5 @@
       "run_at": "document_idle"
     }
   ],
-  "permissions": [
-    "geckoViewAddons",
-    "nativeMessaging",
-    "tabs",
-    "<all_urls>"
-  ]
+  "permissions": ["geckoViewAddons", "nativeMessaging", "tabs", "<all_urls>"]
 }

@@ -1,11 +1,11 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
-const { SearchTestUtils } = ChromeUtils.import(
-  "resource://testing-common/SearchTestUtils.jsm"
+const { SearchTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/SearchTestUtils.sys.mjs"
 );
-const { SearchUtils } = ChromeUtils.import(
-  "resource://gre/modules/SearchUtils.jsm"
+const { SearchUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/SearchUtils.sys.mjs"
 );
 add_task(async function test_restore_functionality() {
   // Ensure no engines are hidden to begin with.
@@ -144,10 +144,15 @@ add_task(async function test_removeOutOfOrder() {
     );
   }
 
-  // Remove the remaining engines from top to bottom except for the final
-  // remaining engine, which by design can't be removed.
+  // Remove the remaining engines from top to bottom except for the default engine
+  // which can't be removed.
   for (let i = 0; i < defaultEngines.length - 3; i++) {
     tree.view.selection.select(0);
+
+    if (defaultEngines[0].name == Services.search.defaultEngine.name) {
+      tree.view.selection.select(1);
+    }
+
     let updatedPromise = SearchTestUtils.promiseSearchNotification(
       SearchUtils.MODIFIED_TYPE.CHANGED,
       SearchUtils.TOPIC_ENGINE_MODIFIED
@@ -186,6 +191,68 @@ add_task(async function test_removeOutOfOrder() {
     tree.view.rowCount,
     defaultEngines.length + UrlbarUtils.LOCAL_SEARCH_MODES.length,
     "All engines are restored"
+  );
+
+  gBrowser.removeCurrentTab();
+});
+
+add_task(async function test_removeAndRestoreMultiple() {
+  await openPreferencesViaOpenPreferencesAPI("search", { leaveOpen: true });
+
+  let doc = gBrowser.selectedBrowser.contentDocument;
+  let restoreDefaultsButton = doc.getElementById("restoreDefaultSearchEngines");
+  let tree = doc.querySelector("#engineList");
+  let removeEngineButton = doc.getElementById("removeEngineButton");
+  removeEngineButton.scrollIntoView();
+
+  let defaultEngines = await Services.search.getAppProvidedEngines();
+
+  // Remove the second and fourth engines.
+  for (let i = 0; i < 2; i++) {
+    tree.view.selection.select(i * 2 + 1);
+    let updatedPromise = SearchTestUtils.promiseSearchNotification(
+      SearchUtils.MODIFIED_TYPE.CHANGED,
+      SearchUtils.TOPIC_ENGINE_MODIFIED
+    );
+    removeEngineButton.click();
+    await updatedPromise;
+  }
+
+  // Click the restore-defaults button.
+  let updatedPromise = SearchTestUtils.promiseSearchNotification(
+    SearchUtils.MODIFIED_TYPE.CHANGED,
+    SearchUtils.TOPIC_ENGINE_MODIFIED
+  );
+  restoreDefaultsButton.click();
+  await updatedPromise;
+
+  // Remove the third engine.
+  tree.view.selection.select(3);
+  updatedPromise = SearchTestUtils.promiseSearchNotification(
+    SearchUtils.MODIFIED_TYPE.CHANGED,
+    SearchUtils.TOPIC_ENGINE_MODIFIED
+  );
+  removeEngineButton.click();
+  await updatedPromise;
+
+  // Now restore again.
+  updatedPromise = SearchTestUtils.promiseSearchNotification(
+    SearchUtils.MODIFIED_TYPE.CHANGED,
+    SearchUtils.TOPIC_ENGINE_MODIFIED
+  );
+  restoreDefaultsButton.click();
+  await updatedPromise;
+
+  // Wait for the restore-defaults button to update its state.
+  await TestUtils.waitForCondition(
+    () => restoreDefaultsButton.disabled,
+    "Waiting for the restore-defaults button to become disabled"
+  );
+
+  Assert.equal(
+    tree.view.rowCount,
+    defaultEngines.length + UrlbarUtils.LOCAL_SEARCH_MODES.length,
+    "Should have the correct amount of engines"
   );
 
   gBrowser.removeCurrentTab();

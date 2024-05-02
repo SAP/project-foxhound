@@ -22,7 +22,7 @@ function mockPromptService() {
 add_task(async function test_save_link_blocked_by_extension() {
   let ext = ExtensionTestUtils.loadExtension({
     manifest: {
-      applications: { gecko: { id: "cancel@test" } },
+      browser_specific_settings: { gecko: { id: "cancel@test" } },
       name: "Cancel Test",
       permissions: ["webRequest", "webRequestBlocking", "<all_urls>"],
     },
@@ -31,6 +31,7 @@ add_task(async function test_save_link_blocked_by_extension() {
       // eslint-disable-next-line no-undef
       browser.webRequest.onBeforeRequest.addListener(
         details => {
+          // eslint-disable-next-line @microsoft/sdl/no-insecure-url
           return { cancel: details.url === "http://example.com/" };
         },
         { urls: ["*://*/*"] },
@@ -63,7 +64,7 @@ add_task(async function test_save_link_blocked_by_extension() {
           setTimeout(resolve, 0);
         };
 
-        MockFilePicker.showCallback = function(fp) {
+        MockFilePicker.showCallback = function (fp) {
           ok(false, "filepicker should never been shown");
           setTimeout(resolve, 0);
           return Ci.nsIFilePicker.returnCancel;

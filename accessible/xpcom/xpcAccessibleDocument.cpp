@@ -9,7 +9,7 @@
 #include "xpcAccessibleTable.h"
 #include "xpcAccessibleTableCell.h"
 
-#include "mozilla/a11y/DocAccessibleParent.h"
+#include "nsAccUtils.h"
 #include "DocAccessible-inl.h"
 
 using namespace mozilla;
@@ -42,9 +42,9 @@ NS_IMETHODIMP_(MozExternalRefCountType) xpcAccessibleDocument::Release(void) {
 
 NS_IMETHODIMP
 xpcAccessibleDocument::GetURL(nsAString& aURL) {
-  if (!Intl()) return NS_ERROR_FAILURE;
+  if (!mIntl) return NS_ERROR_FAILURE;
 
-  Intl()->URL(aURL);
+  nsAccUtils::DocumentURL(mIntl, aURL);
   return NS_OK;
 }
 
@@ -60,9 +60,9 @@ xpcAccessibleDocument::GetTitle(nsAString& aTitle) {
 
 NS_IMETHODIMP
 xpcAccessibleDocument::GetMimeType(nsAString& aType) {
-  if (!Intl()) return NS_ERROR_FAILURE;
+  if (!mIntl) return NS_ERROR_FAILURE;
 
-  Intl()->MimeType(aType);
+  nsAccUtils::DocumentMimeType(mIntl, aType);
   return NS_OK;
 }
 
@@ -129,17 +129,6 @@ xpcAccessibleDocument::GetChildDocumentAt(uint32_t aIndex,
 
   NS_IF_ADDREF(*aDocument = ToXPCDocument(Intl()->GetChildDocumentAt(aIndex)));
   return *aDocument ? NS_OK : NS_ERROR_INVALID_ARG;
-}
-
-NS_IMETHODIMP
-xpcAccessibleDocument::GetVirtualCursor(nsIAccessiblePivot** aVirtualCursor) {
-  NS_ENSURE_ARG_POINTER(aVirtualCursor);
-  *aVirtualCursor = nullptr;
-
-  if (!Intl()) return NS_ERROR_FAILURE;
-
-  NS_ADDREF(*aVirtualCursor = Intl()->VirtualCursor());
-  return NS_OK;
 }
 
 ////////////////////////////////////////////////////////////////////////////////

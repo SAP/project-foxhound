@@ -3,8 +3,9 @@
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
 import React, { Component } from "react";
+import { div, span } from "react-dom-factories";
+import PropTypes from "prop-types";
 import { connect } from "../../../utils/connect";
-import classnames from "classnames";
 
 import Reps from "devtools/client/shared/components/reps/index";
 const {
@@ -13,13 +14,8 @@ const {
 
 import actions from "../../../actions";
 
-import { getThreadContext } from "../../../selectors";
-
 import AccessibleImage from "../../shared/AccessibleImage";
-
-const DevToolsUtils = require("devtools/shared/DevToolsUtils");
-
-const POPUP_SELECTOR = ".preview-popup.exception-popup";
+const classnames = require("devtools/client/shared/classnames.js");
 const ANONYMOUS_FN_NAME = "<anonymous>";
 
 // The exception popup works in two modes:
@@ -31,58 +27,58 @@ class ExceptionPopup extends Component {
   constructor(props) {
     super(props);
     this.state = {
-      isStacktraceExpanded: false,
+      isStacktraceExpanded: true,
     };
   }
 
-  updateTopWindow() {
-    // The ChromeWindow is used when the stacktrace is expanded to capture all clicks
-    // outside the popup so the popup can be closed only by clicking outside of it.
-    if (this.topWindow) {
-      this.topWindow.removeEventListener(
-        "mousedown",
-        this.onTopWindowClick,
-        true
-      );
-      this.topWindow = null;
-    }
-    this.topWindow = DevToolsUtils.getTopWindow(window.parent);
-    this.topWindow.addEventListener("mousedown", this.onTopWindowClick, true);
+  static get propTypes() {
+    return {
+      mouseout: PropTypes.func.isRequired,
+      selectSourceURL: PropTypes.func.isRequired,
+      exception: PropTypes.object.isRequired,
+    };
   }
-
-  onTopWindowClick = e => {
-    const { cx, clearPreview } = this.props;
-
-    // When the stactrace is expaned the exception popup gets closed
-    // only by clicking ouside the popup.
-    if (!e.target.closest(POPUP_SELECTOR)) {
-      clearPreview(cx);
-    }
-  };
 
   onExceptionMessageClick() {
     const isStacktraceExpanded = this.state.isStacktraceExpanded;
-
-    this.updateTopWindow();
     this.setState({ isStacktraceExpanded: !isStacktraceExpanded });
   }
 
   buildStackFrame(frame) {
-    const { cx, selectSourceURL } = this.props;
     const { filename, lineNumber } = frame;
     const functionName = frame.functionName || ANONYMOUS_FN_NAME;
-
-    return (
-      <div
-        className="frame"
-        onClick={() => selectSourceURL(cx, filename, { line: lineNumber })}
-      >
-        <span className="title">{functionName}</span>
-        <span className="location">
-          <span className="filename">{filename}</span>:
-          <span className="line">{lineNumber}</span>
-        </span>
-      </div>
+    return div(
+      {
+        className: "frame",
+        onClick: () =>
+          this.props.selectSourceURL(filename, {
+            line: lineNumber,
+          }),
+      },
+      span(
+        {
+          className: "title",
+        },
+        functionName
+      ),
+      span(
+        {
+          className: "location",
+        },
+        span(
+          {
+            className: "filename",
+          },
+          filename
+        ),
+        ":",
+        span(
+          {
+            className: "line",
+          },
+          lineNumber
+        )
+      )
     );
   }
 
@@ -90,10 +86,11 @@ class ExceptionPopup extends Component {
     const isStacktraceExpanded = this.state.isStacktraceExpanded;
 
     if (stacktrace.length && isStacktraceExpanded) {
-      return (
-        <div className="exception-stacktrace">
-          {stacktrace.map(frame => this.buildStackFrame(frame))}
-        </div>
+      return div(
+        {
+          className: "exception-stacktrace",
+        },
+        stacktrace.map(frame => this.buildStackFrame(frame))
       );
     }
     return null;
@@ -101,13 +98,11 @@ class ExceptionPopup extends Component {
 
   renderArrowIcon(stacktrace) {
     if (stacktrace.length) {
-      return (
-        <AccessibleImage
-          className={classnames("arrow", {
-            expanded: this.state.isStacktraceExpanded,
-          })}
-        />
-      );
+      return React.createElement(AccessibleImage, {
+        className: classnames("arrow", {
+          expanded: this.state.isStacktraceExpanded,
+        }),
+      });
     }
     return null;
   }
@@ -117,37 +112,31 @@ class ExceptionPopup extends Component {
       exception: { stacktrace, errorMessage },
       mouseout,
     } = this.props;
-
-    return (
-      <div
-        className="preview-popup exception-popup"
-        dir="ltr"
-        onMouseLeave={() => mouseout(true, this.state.isStacktraceExpanded)}
-      >
-        <div
-          className="exception-message"
-          onClick={() => this.onExceptionMessageClick()}
-        >
-          {this.renderArrowIcon(stacktrace)}
-          {StringRep.rep({
-            object: errorMessage,
-            useQuotes: false,
-            className: "exception-text",
-          })}
-        </div>
-        {this.renderStacktrace(stacktrace)}
-      </div>
+    return div(
+      {
+        className: "preview-popup exception-popup",
+        dir: "ltr",
+        onMouseLeave: () => mouseout(true, this.state.isStacktraceExpanded),
+      },
+      div(
+        {
+          className: "exception-message",
+          onClick: () => this.onExceptionMessageClick(),
+        },
+        this.renderArrowIcon(stacktrace),
+        StringRep.rep({
+          object: errorMessage,
+          useQuotes: false,
+          className: "exception-text",
+        })
+      ),
+      this.renderStacktrace(stacktrace)
     );
   }
 }
 
-const mapStateToProps = state => ({
-  cx: getThreadContext(state),
-});
-
 const mapDispatchToProps = {
   selectSourceURL: actions.selectSourceURL,
-  clearPreview: actions.clearPreview,
 };
 
-export default connect(mapStateToProps, mapDispatchToProps)(ExceptionPopup);
+export default connect(null, mapDispatchToProps)(ExceptionPopup);

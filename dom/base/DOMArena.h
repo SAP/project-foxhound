@@ -29,13 +29,17 @@
     }                                                                \
   }
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class DOMArena {
  public:
   friend class DocGroup;
-  DOMArena() { mArenaId = moz_create_arena(); }
+  DOMArena() {
+    arena_params_t params;
+    params.mMaxDirtyIncreaseOverride = 7;
+    params.mFlags = ARENA_FLAG_THREAD_MAIN_THREAD_ONLY;
+    mArenaId = moz_create_arena_with_params(&params);
+  }
 
   NS_INLINE_DECL_REFCOUNTING(DOMArena)
 
@@ -51,6 +55,5 @@ class DOMArena {
   ~DOMArena() { moz_dispose_arena(mArenaId); }
   arena_id_t mArenaId;
 };
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 #endif

@@ -58,8 +58,7 @@ TextTrackCue::TextTrackCue(nsPIDOMWindowInner* aOwnerWindow, double aStartTime,
       mLine(0.0),
       mReset(false, "TextTrackCue::mReset"),
       mHaveStartedWatcher(false),
-      mWatchManager(
-          this, GetOwnerGlobal()->AbstractMainThreadFor(TaskCategory::Other)) {
+      mWatchManager(this, AbstractThread::MainThread()) {
   LOG("create TextTrackCue");
   SetDefaultCueSettings();
   MOZ_ASSERT(aOwnerWindow);
@@ -80,8 +79,7 @@ TextTrackCue::TextTrackCue(nsPIDOMWindowInner* aOwnerWindow, double aStartTime,
       mLine(0.0),
       mReset(false, "TextTrackCue::mReset"),
       mHaveStartedWatcher(false),
-      mWatchManager(
-          this, GetOwnerGlobal()->AbstractMainThreadFor(TaskCategory::Other)) {
+      mWatchManager(this, AbstractThread::MainThread()) {
   LOG("create TextTrackCue");
   SetDefaultCueSettings();
   MOZ_ASSERT(aOwnerWindow);
@@ -131,7 +129,8 @@ already_AddRefed<DocumentFragment> TextTrackCue::GetCueAsHTML() {
   }
 
   RefPtr<DocumentFragment> frag;
-  sParserWrapper->ConvertCueToDOMTree(window, this, getter_AddRefs(frag));
+  sParserWrapper->ConvertCueToDOMTree(window, static_cast<EventTarget*>(this),
+                                      getter_AddRefs(frag));
   if (!frag) {
     return mDocument->CreateDocumentFragment();
   }

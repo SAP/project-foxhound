@@ -17,6 +17,7 @@
 #include "gfxPlatform.h"
 #include "gfxPlatformFontList.h"
 #include "gfxUserFontSet.h"
+#include "gfxUtils.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/intl/UnicodeScriptCodes.h"
@@ -51,7 +52,7 @@ enum class StyleHyphens : uint8_t;
  * Callback for Draw() to use when drawing text with mode
  * DrawMode::GLYPH_PATH.
  */
-struct gfxTextRunDrawCallbacks {
+struct MOZ_STACK_CLASS gfxTextRunDrawCallbacks {
   /**
    * Constructs a new DrawCallbacks object.
    *
@@ -252,15 +253,18 @@ class gfxTextRun : public gfxShapedText {
     gfxContext* context;
     DrawMode drawMode = DrawMode::GLYPH_FILL;
     nscolor textStrokeColor = 0;
+    nsAtom* fontPalette = nullptr;
+    mozilla::gfx::FontPaletteValueSet* paletteValueSet = nullptr;
     gfxPattern* textStrokePattern = nullptr;
     const mozilla::gfx::StrokeOptions* strokeOpts = nullptr;
     const mozilla::gfx::DrawOptions* drawOpts = nullptr;
-    PropertyProvider* provider = nullptr;
+    const PropertyProvider* provider = nullptr;
     // If non-null, the advance width of the substring is set.
     gfxFloat* advanceWidth = nullptr;
     mozilla::SVGContextPaint* contextPaint = nullptr;
     gfxTextRunDrawCallbacks* callbacks = nullptr;
     bool allowGDI = true;
+    bool hasTextShadow = false;
     explicit DrawParams(gfxContext* aContext) : context(aContext) {}
   };
 
@@ -294,7 +298,7 @@ class gfxTextRun : public gfxShapedText {
    */
   void DrawEmphasisMarks(gfxContext* aContext, gfxTextRun* aMark,
                          gfxFloat aMarkAdvance, mozilla::gfx::Point aPt,
-                         Range aRange, PropertyProvider* aProvider) const;
+                         Range aRange, const PropertyProvider* aProvider) const;
 
   /**
    * Computes the ReflowMetrics for a substring.
@@ -303,13 +307,19 @@ class gfxTextRun : public gfxShapedText {
    */
   Metrics MeasureText(Range aRange, gfxFont::BoundingBoxType aBoundingBoxType,
                       DrawTarget* aDrawTargetForTightBoundingBox,
-                      PropertyProvider* aProvider) const;
+                      const PropertyProvider* aProvider) const;
 
   Metrics MeasureText(gfxFont::BoundingBoxType aBoundingBoxType,
                       DrawTarget* aDrawTargetForTightBoundingBox,
-                      PropertyProvider* aProvider = nullptr) const {
+                      const PropertyProvider* aProvider = nullptr) const {
     return MeasureText(Range(this), aBoundingBoxType,
                        aDrawTargetForTightBoundingBox, aProvider);
+  }
+
+  void GetLineHeightMetrics(Range aRange, gfxFloat& aAscent,
+                            gfxFloat& aDescent) const;
+  void GetLineHeightMetrics(gfxFloat& aAscent, gfxFloat& aDescent) const {
+    GetLineHeightMetrics(Range(this), aAscent, aDescent);
   }
 
   /**
@@ -319,7 +329,7 @@ class gfxTextRun : public gfxShapedText {
    * the substring would be returned in it. NOTE: the spacing is
    * included in the advance width.
    */
-  gfxFloat GetAdvanceWidth(Range aRange, PropertyProvider* aProvider,
+  gfxFloat GetAdvanceWidth(Range aRange, const PropertyProvider* aProvider,
                            PropertyProvider::Spacing* aSpacing = nullptr) const;
 
   gfxFloat GetAdvanceWidth() const {
@@ -375,6 +385,13 @@ class gfxTextRun : public gfxShapedText {
                                 nsTArray<HyphenType>& aHyphenBuffer,
                                 HyphenationState* aWordState);
 
+  // Struct used by BreakAndMeasureText to return the amount of trimmable
+  // trailing whitespace included in the run.
+  struct TrimmableWS {
+    mozilla::gfx::Float mAdvance = 0;
+    uint32_t mCount = 0;
+  };
+
   /**
    * Finds the longest substring that will fit into the given width.
    * Uses GetHyphenationBreaks and GetSpacing from aProvider.
@@ -406,23 +423,19 @@ class gfxTextRun : public gfxShapedText {
    * @param aLineBreakBefore set to true if and only if there is an actual
    * line break at the start of this string.
    * @param aSuppressBreak what break should be suppressed.
-   * @param aTrimWhitespace if non-null, then we allow a trailing run of
-   * spaces to be trimmed; the width of the space(s) will not be included in
-   * the measured string width for comparison with the limit aWidth, and
-   * trimmed spaces will not be included in returned metrics. The width
-   * of the trimmed spaces will be returned in aTrimWhitespace.
-   * Trimmed spaces are still counted in the "characters fit" result.
-   * @param aHangWhitespace true if we allow whitespace to overflow the
-   * container at a soft-wrap
-   * @param aMetrics if non-null, we fill this in for the returned substring.
+   * @param aOutTrimmableWhitespace if non-null, returns the advance of any
+   * run of trailing spaces that might be trimmed if the run ends up at
+   * end-of-line.
+   * Trimmable spaces are still counted in the "characters fit" result, and
+   * contribute to the returned Metrics values.
+   * @param aOutMetrics we fill this in for the returned substring.
    * If a hyphenation break was used, the hyphen is NOT included in the returned
    * metrics.
    * @param aBoundingBoxType whether to make the bounding box in aMetrics tight
-   * @param aDrawTargetForTightBoundingbox a reference DrawTarget to get the
-   * tight bounding box, if requested
-   * @param aUsedHyphenation if non-null, records if we selected a hyphenation
-   * break
-   * @param aLastBreak if non-null and result is aMaxLength, we set this to
+   * @param aRefDrawTarget a reference DrawTarget to get the tight bounding box,
+   * if requested
+   * @param aOutUsedHyphenation records if we selected a hyphenation break
+   * @param aOutLastBreak if result is aMaxLength, we set this to
    * the maximal N such that
    *       N < aMaxLength && line break at N &&
    *       GetAdvanceWidth(Range(aStart, N), aProvider) <= aWidth
@@ -444,17 +457,16 @@ class gfxTextRun : public gfxShapedText {
    * Note that negative advance widths are possible especially if negative
    * spacing is provided.
    */
-  uint32_t BreakAndMeasureText(uint32_t aStart, uint32_t aMaxLength,
-                               bool aLineBreakBefore, gfxFloat aWidth,
-                               PropertyProvider* aProvider,
-                               SuppressBreak aSuppressBreak,
-                               gfxFloat* aTrimWhitespace, bool aHangWhitespace,
-                               Metrics* aMetrics,
-                               gfxFont::BoundingBoxType aBoundingBoxType,
-                               DrawTarget* aDrawTargetForTightBoundingBox,
-                               bool* aUsedHyphenation, uint32_t* aLastBreak,
-                               bool aCanWordWrap, bool aCanWhitespaceWrap,
-                               gfxBreakPriority* aBreakPriority);
+  uint32_t BreakAndMeasureText(
+      uint32_t aStart, uint32_t aMaxLength, bool aLineBreakBefore,
+      gfxFloat aWidth, const PropertyProvider& aProvider,
+      SuppressBreak aSuppressBreak, gfxFont::BoundingBoxType aBoundingBoxType,
+      DrawTarget* aRefDrawTarget, bool aCanWordWrap, bool aCanWhitespaceWrap,
+      // Output parameters:
+      TrimmableWS* aOutTrimmableWhitespace,  // may be null
+      Metrics& aOutMetrics, bool& aOutUsedHyphenation, uint32_t& aOutLastBreak,
+      // In/out:
+      gfxBreakPriority& aBreakPriority);
 
   // Utility getters
 
@@ -507,6 +519,16 @@ class gfxTextRun : public gfxShapedText {
       }
       return false;
     }
+
+    bool IsSidewaysLeft() const {
+      return (mOrientation & mozilla::gfx::ShapedTextFlags::TEXT_ORIENT_MASK) ==
+             mozilla::gfx::ShapedTextFlags::TEXT_ORIENT_VERTICAL_SIDEWAYS_LEFT;
+    }
+
+    bool IsSidewaysRight() const {
+      return (mOrientation & mozilla::gfx::ShapedTextFlags::TEXT_ORIENT_MASK) ==
+             mozilla::gfx::ShapedTextFlags::TEXT_ORIENT_VERTICAL_SIDEWAYS_RIGHT;
+    }
   };
 
   // Script run codes that we will mark as CJK to suppress skip-ink behavior.
@@ -535,26 +557,35 @@ class gfxTextRun : public gfxShapedText {
     GlyphRunIterator(const gfxTextRun* aTextRun, Range aRange,
                      bool aReverse = false)
         : mTextRun(aTextRun),
-          mDirection(aReverse ? -1 : 1),
           mStartOffset(aRange.start),
-          mEndOffset(aRange.end) {
-      mNextIndex = mTextRun->FindFirstGlyphRunContaining(
+          mEndOffset(aRange.end),
+          mReverse(aReverse) {
+      mGlyphRun = mTextRun->FindFirstGlyphRunContaining(
           aReverse ? aRange.end - 1 : aRange.start);
+      if (!mGlyphRun) {
+        mStringEnd = mStringStart = mStartOffset;
+        return;
+      }
+      uint32_t glyphRunEndOffset = mGlyphRun == mTextRun->mGlyphRuns.end() - 1
+                                       ? mTextRun->GetLength()
+                                       : (mGlyphRun + 1)->mCharacterOffset;
+      mStringEnd = std::min(mEndOffset, glyphRunEndOffset);
+      mStringStart = std::max(mStartOffset, mGlyphRun->mCharacterOffset);
     }
-    bool NextRun();
-    const GlyphRun* GetGlyphRun() const { return mGlyphRun; }
-    uint32_t GetStringStart() const { return mStringStart; }
-    uint32_t GetStringEnd() const { return mStringEnd; }
+    void NextRun();
+    bool AtEnd() const { return mGlyphRun == nullptr; }
+    const struct GlyphRun* GlyphRun() const { return mGlyphRun; }
+    uint32_t StringStart() const { return mStringStart; }
+    uint32_t StringEnd() const { return mStringEnd; }
 
    private:
     const gfxTextRun* mTextRun;
-    MOZ_INIT_OUTSIDE_CTOR const GlyphRun* mGlyphRun;
-    MOZ_INIT_OUTSIDE_CTOR uint32_t mStringStart;
-    MOZ_INIT_OUTSIDE_CTOR uint32_t mStringEnd;
-    const int32_t mDirection;
-    int32_t mNextIndex;
+    const struct GlyphRun* mGlyphRun;
+    uint32_t mStringStart;
+    uint32_t mStringEnd;
     uint32_t mStartOffset;
     uint32_t mEndOffset;
+    bool mReverse;
   };
 
   class GlyphRunOffsetComparator {
@@ -567,9 +598,6 @@ class gfxTextRun : public gfxShapedText {
       return a.mCharacterOffset < b.mCharacterOffset;
     }
   };
-
-  friend class GlyphRunIterator;
-  friend class FontSelector;
 
   // API for setting up the textrun glyphs. Should only be called by
   // things that construct textruns.
@@ -589,18 +617,7 @@ class gfxTextRun : public gfxShapedText {
   void AddGlyphRun(gfxFont* aFont, FontMatchType aMatchType,
                    uint32_t aUTF16Offset, bool aForceNewRun,
                    mozilla::gfx::ShapedTextFlags aOrientation, bool aIsCJK);
-  void ResetGlyphRuns() {
-    if (mHasGlyphRunArray) {
-      MOZ_ASSERT(mGlyphRunArray.Length() > 1);
-      // Discard all but the first GlyphRun...
-      mGlyphRunArray.TruncateLength(1);
-      // ...and then convert to the single-run representation.
-      ConvertFromGlyphRunArray();
-    }
-    // Clear out the one remaining GlyphRun.
-    mSingleGlyphRun.mFont = nullptr;
-  }
-  void SortGlyphRuns();
+  void ResetGlyphRuns() { mGlyphRuns.Clear(); }
   void SanitizeGlyphRuns();
 
   const CompressedGlyph* GetCharacterGlyphs() const final {
@@ -659,27 +676,23 @@ class gfxTextRun : public gfxShapedText {
    * that some glyph extents might not be fetched due to OOM or other
    * errors.
    */
-  void FetchGlyphExtents(DrawTarget* aRefDrawTarget);
+  void FetchGlyphExtents(DrawTarget* aRefDrawTarget) const;
 
   const GlyphRun* GetGlyphRuns(uint32_t* aNumGlyphRuns) const {
-    if (mHasGlyphRunArray) {
-      *aNumGlyphRuns = mGlyphRunArray.Length();
-      return mGlyphRunArray.Elements();
-    } else {
-      *aNumGlyphRuns = mSingleGlyphRun.mFont ? 1 : 0;
-      return &mSingleGlyphRun;
-    }
+    *aNumGlyphRuns = mGlyphRuns.Length();
+    return mGlyphRuns.begin();
   }
+
+  uint32_t GlyphRunCount() const { return mGlyphRuns.Length(); }
 
   const GlyphRun* TrailingGlyphRun() const {
-    uint32_t count;
-    const GlyphRun* runs = GetGlyphRuns(&count);
-    return count ? runs + count - 1 : nullptr;
+    return mGlyphRuns.IsEmpty() ? nullptr : mGlyphRuns.end() - 1;
   }
 
-  // Returns the index of the GlyphRun containing the given offset.
-  // Returns mGlyphRuns.Length() when aOffset is mCharacterCount.
-  uint32_t FindFirstGlyphRunContaining(uint32_t aOffset) const;
+  // Returns the GlyphRun containing the given offset.
+  // (Returns mGlyphRuns.end()-1 when aOffset is mCharacterCount; returns
+  // nullptr if textrun is empty and no glyph runs are present.)
+  const GlyphRun* FindFirstGlyphRunContaining(uint32_t aOffset) const;
 
   // Copy glyph data from a ShapedWord into this textrun.
   void CopyGlyphDataFrom(gfxShapedWord* aSource, uint32_t aStart);
@@ -781,6 +794,9 @@ class gfxTextRun : public gfxShapedText {
              gfxFontGroup* aFontGroup, mozilla::gfx::ShapedTextFlags aFlags,
              nsTextFrameUtils::Flags aFlags2);
 
+  // Whether we need to fetch actual glyph extents from the fonts.
+  bool NeedsGlyphExtents() const;
+
   /**
    * Helper for the Create() factory method to allocate the required
    * glyph storage for a textrun object with the basic size aSize,
@@ -803,7 +819,7 @@ class gfxTextRun : public gfxShapedText {
   // This is useful to protect aProvider from being passed character indices
   // it is not currently able to handle.
   bool GetAdjustedSpacingArray(
-      Range aRange, PropertyProvider* aProvider, Range aSpacingRange,
+      Range aRange, const PropertyProvider* aProvider, Range aSpacingRange,
       nsTArray<PropertyProvider::Spacing>* aSpacing) const;
 
   CompressedGlyph& EnsureComplexGlyph(uint32_t aIndex) {
@@ -817,63 +833,44 @@ class gfxTextRun : public gfxShapedText {
 
   // if aProvider is null then mBeforeSpacing and mAfterSpacing are set to zero
   LigatureData ComputeLigatureData(Range aPartRange,
-                                   PropertyProvider* aProvider) const;
+                                   const PropertyProvider* aProvider) const;
   gfxFloat ComputePartialLigatureWidth(Range aPartRange,
-                                       PropertyProvider* aProvider) const;
+                                       const PropertyProvider* aProvider) const;
   void DrawPartialLigature(gfxFont* aFont, Range aRange,
                            mozilla::gfx::Point* aPt,
-                           PropertyProvider* aProvider,
+                           const PropertyProvider* aProvider,
                            TextRunDrawParams& aParams,
                            mozilla::gfx::ShapedTextFlags aOrientation) const;
   // Advance aRange.start to the start of the nearest ligature, back
   // up aRange.end to the nearest ligature end; may result in
   // aRange->start == aRange->end.
-  void ShrinkToLigatureBoundaries(Range* aRange) const;
+  // Returns whether any adjustment was made.
+  bool ShrinkToLigatureBoundaries(Range* aRange) const;
   // result in appunits
   gfxFloat GetPartialLigatureWidth(Range aRange,
-                                   PropertyProvider* aProvider) const;
+                                   const PropertyProvider* aProvider) const;
   void AccumulatePartialLigatureMetrics(
       gfxFont* aFont, Range aRange, gfxFont::BoundingBoxType aBoundingBoxType,
-      DrawTarget* aRefDrawTarget, PropertyProvider* aProvider,
+      DrawTarget* aRefDrawTarget, const PropertyProvider* aProvider,
       mozilla::gfx::ShapedTextFlags aOrientation, Metrics* aMetrics) const;
 
   // **** measurement helper ****
   void AccumulateMetricsForRun(gfxFont* aFont, Range aRange,
                                gfxFont::BoundingBoxType aBoundingBoxType,
                                DrawTarget* aRefDrawTarget,
-                               PropertyProvider* aProvider, Range aSpacingRange,
+                               const PropertyProvider* aProvider,
+                               Range aSpacingRange,
                                mozilla::gfx::ShapedTextFlags aOrientation,
                                Metrics* aMetrics) const;
 
   // **** drawing helper ****
   void DrawGlyphs(gfxFont* aFont, Range aRange, mozilla::gfx::Point* aPt,
-                  PropertyProvider* aProvider, Range aSpacingRange,
+                  const PropertyProvider* aProvider, Range aSpacingRange,
                   TextRunDrawParams& aParams,
                   mozilla::gfx::ShapedTextFlags aOrientation) const;
 
-  // The textrun holds either a single GlyphRun -or- an array;
-  // the flag mHasGlyphRunArray tells us which is present.
-  union {
-    GlyphRun mSingleGlyphRun;
-    nsTArray<GlyphRun> mGlyphRunArray;
-  };
-
-  void ConvertToGlyphRunArray() {
-    MOZ_ASSERT(!mHasGlyphRunArray && mSingleGlyphRun.mFont);
-    GlyphRun tmp = std::move(mSingleGlyphRun);
-    mSingleGlyphRun.~GlyphRun();
-    new (&mGlyphRunArray) nsTArray<GlyphRun>(2);
-    mGlyphRunArray.AppendElement(std::move(tmp));
-    mHasGlyphRunArray = true;
-  }
-
-  void ConvertFromGlyphRunArray() {
-    MOZ_ASSERT(mHasGlyphRunArray && mGlyphRunArray.Length() == 1);
-    GlyphRun tmp = std::move(mGlyphRunArray[0]);
-    mGlyphRunArray.~nsTArray<GlyphRun>();
-    new (&mSingleGlyphRun) GlyphRun(std::move(tmp));
-    mHasGlyphRunArray = false;
-  }
+  // The textrun holds either a single GlyphRun -or- an array.
+  mozilla::ElementOrArray<GlyphRun> mGlyphRuns;
 
   void* mUserData;
 
@@ -894,8 +891,6 @@ class gfxTextRun : public gfxShapedText {
                                           // mFontGroup, so don't do it again
   bool mReleasedFontGroupSkippedDrawing;  // whether our old mFontGroup value
                                           // was set to skip drawing
-  bool mHasGlyphRunArray;                 // whether we're using an array or
-                                          // just storing a single glyphrun
 
   // shaping state for handling variant fallback features
   // such as subscript/superscript variant glyphs
@@ -914,7 +909,8 @@ class gfxFontGroup final : public gfxTextRunFactory {
                const mozilla::StyleFontFamilyList& aFontFamilyList,
                const gfxFontStyle* aStyle, nsAtom* aLanguage,
                bool aExplicitLanguage, gfxTextPerfMetrics* aTextPerf,
-               gfxUserFontSet* aUserFontSet, gfxFloat aDevToCssSize);
+               gfxUserFontSet* aUserFontSet, gfxFloat aDevToCssSize,
+               StyleFontVariantEmoji aVariantEmoji);
 
   virtual ~gfxFontGroup();
 
@@ -922,17 +918,29 @@ class gfxFontGroup final : public gfxTextRunFactory {
 
   // Returns first valid font in the fontlist or default font.
   // Initiates userfont loads if userfont not loaded.
+  // aCh: character to look for, or kCSSFirstAvailableFont for default "first
+  //      available font" as defined by CSS Fonts (i.e. the first font whose
+  //      unicode-range includes <space>, but does not require space to
+  //      actually be present)
   // aGeneric: if non-null, returns the CSS generic type that was mapped to
   //           this font
-  gfxFont* GetFirstValidFont(
-      uint32_t aCh = 0x20, mozilla::StyleGenericFontFamily* aGeneric = nullptr);
+  // aIsFirst: if non-null, returns whether the font was first in the list
+  static constexpr uint32_t kCSSFirstAvailableFont = UINT32_MAX;
+  already_AddRefed<gfxFont> GetFirstValidFont(
+      uint32_t aCh = kCSSFirstAvailableFont,
+      mozilla::StyleGenericFontFamily* aGeneric = nullptr,
+      bool* aIsFirst = nullptr);
 
   // Returns the first font in the font-group that has an OpenType MATH table,
   // or null if no such font is available. The GetMathConstant methods may be
   // called on the returned font.
-  gfxFont* GetFirstMathFont();
+  already_AddRefed<gfxFont> GetFirstMathFont();
 
   const gfxFontStyle* GetStyle() const { return &mStyle; }
+
+  // Get the presContext for which this fontGroup was constructed. This may be
+  // null! (In the case of canvas not connected to a document.)
+  nsPresContext* GetPresContext() const { return mPresContext; }
 
   /**
    * The listed characters should be treated as invisible and zero-width
@@ -947,20 +955,8 @@ class gfxFontGroup final : public gfxTextRunFactory {
    * textrun will copy it.
    * This calls FetchGlyphExtents on the textrun.
    */
-  already_AddRefed<gfxTextRun> MakeTextRun(const char16_t* aString,
-                                           uint32_t aLength,
-                                           const Parameters* aParams,
-                                           mozilla::gfx::ShapedTextFlags aFlags,
-                                           nsTextFrameUtils::Flags aFlags2,
-                                           gfxMissingFontRecorder* aMFR);
-  /**
-   * Make a textrun for a given string.
-   * If aText is not persistent (aFlags & TEXT_IS_PERSISTENT), the
-   * textrun will copy it.
-   * This calls FetchGlyphExtents on the textrun.
-   */
-  already_AddRefed<gfxTextRun> MakeTextRun(const uint8_t* aString,
-                                           uint32_t aLength,
+  template <typename T>
+  already_AddRefed<gfxTextRun> MakeTextRun(const T* aString, uint32_t aLength,
                                            const Parameters* aParams,
                                            mozilla::gfx::ShapedTextFlags aFlags,
                                            nsTextFrameUtils::Flags aFlags2,
@@ -1008,12 +1004,13 @@ class gfxFontGroup final : public gfxTextRunFactory {
   // initialized mUnderlineOffset. The value should be lower value of
   // first font's metrics and the bad font's metrics. Otherwise, this
   // returns from first font's metrics.
-  enum { UNDERLINE_OFFSET_NOT_SET = INT16_MAX };
+  static constexpr gfxFloat UNDERLINE_OFFSET_NOT_SET = INT16_MAX;
   gfxFloat GetUnderlineOffset();
 
-  gfxFont* FindFontForChar(uint32_t ch, uint32_t prevCh, uint32_t aNextCh,
-                           Script aRunScript, gfxFont* aPrevMatchedFont,
-                           FontMatchType* aMatchType);
+  already_AddRefed<gfxFont> FindFontForChar(uint32_t ch, uint32_t prevCh,
+                                            uint32_t aNextCh, Script aRunScript,
+                                            gfxFont* aPrevMatchedFont,
+                                            FontMatchType* aMatchType);
 
   gfxUserFontSet* GetUserFontSet();
 
@@ -1076,6 +1073,14 @@ class gfxFontGroup final : public gfxTextRunFactory {
 
   nsAtom* Language() const { return mLanguage.get(); }
 
+  // Get font metrics to be used as the basis for CSS font-relative units.
+  // Note that these may be a "composite" of metrics from multiple fonts,
+  // because the 'ch' and 'ic' units depend on the font that would be used
+  // to render specific characters, not simply the "first available" font.
+  // https://drafts.csswg.org/css-values-4/#ch
+  // https://drafts.csswg.org/css-values-4/#ic
+  gfxFont::Metrics GetMetricsForCSSUnits(gfxFont::Orientation aOrientation);
+
  protected:
   friend class mozilla::PostTraversalTask;
 
@@ -1097,12 +1102,12 @@ class gfxFontGroup final : public gfxTextRunFactory {
 
   // search through pref fonts for a character, return nullptr if no matching
   // pref font
-  gfxFont* WhichPrefFontSupportsChar(uint32_t aCh, uint32_t aNextCh,
-                                     eFontPresentation aPresentation);
+  already_AddRefed<gfxFont> WhichPrefFontSupportsChar(
+      uint32_t aCh, uint32_t aNextCh, eFontPresentation aPresentation);
 
-  gfxFont* WhichSystemFontSupportsChar(uint32_t aCh, uint32_t aNextCh,
-                                       Script aRunScript,
-                                       eFontPresentation aPresentation);
+  already_AddRefed<gfxFont> WhichSystemFontSupportsChar(
+      uint32_t aCh, uint32_t aNextCh, Script aRunScript,
+      eFontPresentation aPresentation);
 
   template <typename T>
   void ComputeRanges(nsTArray<TextRange>& aRanges, const T* aString,
@@ -1393,6 +1398,8 @@ class gfxFontGroup final : public gfxTextRunFactory {
 
   bool mExplicitLanguage;  // Does mLanguage come from an explicit attribute?
 
+  eFontPresentation mEmojiPresentation = eFontPresentation::Any;
+
   // Generic font family used to select among font prefs during fallback.
   mozilla::StyleGenericFontFamily mFallbackGeneric =
       mozilla::StyleGenericFontFamily::None;
@@ -1427,17 +1434,17 @@ class gfxFontGroup final : public gfxTextRunFactory {
   // If *aLoading is true, a relevant resource is already being loaded so no
   // new download will be initiated; if a download is started, *aLoading will
   // be set to true on return.
-  gfxFont* GetFontAt(int32_t i, uint32_t aCh, bool* aLoading);
+  already_AddRefed<gfxFont> GetFontAt(uint32_t i, uint32_t aCh, bool* aLoading);
 
   // Simplified version of GetFontAt() for use where we just need a font for
   // metrics, math layout tables, etc.
-  gfxFont* GetFontAt(int32_t i, uint32_t aCh = 0x20) {
+  already_AddRefed<gfxFont> GetFontAt(uint32_t i, uint32_t aCh = 0x20) {
     bool loading = false;
     return GetFontAt(i, aCh, &loading);
   }
 
   // will always return a font or force a shutdown
-  gfxFont* GetDefaultFont();
+  already_AddRefed<gfxFont> GetDefaultFont();
 
   // Init this font group's font metrics. If there no bad fonts, you don't need
   // to call this. But if there are one or more bad fonts which have bad
@@ -1462,17 +1469,17 @@ class gfxFontGroup final : public gfxTextRunFactory {
   // Helper for font-matching:
   // search all faces in a family for a fallback in cases where it's unclear
   // whether the family might have a font for a given character
-  gfxFont* FindFallbackFaceForChar(const FamilyFace& aFamily, uint32_t aCh,
-                                   uint32_t aNextCh,
-                                   eFontPresentation aPresentation);
+  already_AddRefed<gfxFont> FindFallbackFaceForChar(
+      const FamilyFace& aFamily, uint32_t aCh, uint32_t aNextCh,
+      eFontPresentation aPresentation);
 
-  gfxFont* FindFallbackFaceForChar(mozilla::fontlist::Family* aFamily,
-                                   uint32_t aCh, uint32_t aNextCh,
-                                   eFontPresentation aPresentation);
+  already_AddRefed<gfxFont> FindFallbackFaceForChar(
+      mozilla::fontlist::Family* aFamily, uint32_t aCh, uint32_t aNextCh,
+      eFontPresentation aPresentation);
 
-  gfxFont* FindFallbackFaceForChar(gfxFontFamily* aFamily, uint32_t aCh,
-                                   uint32_t aNextCh,
-                                   eFontPresentation aPresentation);
+  already_AddRefed<gfxFont> FindFallbackFaceForChar(
+      gfxFontFamily* aFamily, uint32_t aCh, uint32_t aNextCh,
+      eFontPresentation aPresentation);
 
   // helper methods for looking up fonts
 

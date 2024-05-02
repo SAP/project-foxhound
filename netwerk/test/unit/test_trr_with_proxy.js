@@ -12,6 +12,10 @@
 
 "use strict";
 
+var { setTimeout } = ChromeUtils.importESModule(
+  "resource://gre/modules/Timer.sys.mjs"
+);
+
 /* import-globals-from trr_common.js */
 
 let filter;
@@ -21,7 +25,6 @@ const pps = Cc["@mozilla.org/network/protocol-proxy-service;1"].getService();
 
 function setup() {
   h2Port = trr_test_setup();
-  runningODoHTests = false;
   SetParentalControlEnabled(false);
 }
 
@@ -45,15 +48,6 @@ class ProxyFilter {
     this.QueryInterface = ChromeUtils.generateQI(["nsIProtocolProxyFilter"]);
   }
   applyFilter(uri, pi, cb) {
-    if (
-      uri.pathQueryRef.startsWith("/execute") ||
-      uri.pathQueryRef.startsWith("/fork") ||
-      uri.pathQueryRef.startsWith("/kill")
-    ) {
-      // So we allow NodeServer.execute to work
-      cb.onProxyFilterResult(pi);
-      return;
-    }
     cb.onProxyFilterResult(
       pps.newProxyInfo(
         this._type,
@@ -71,7 +65,12 @@ class ProxyFilter {
 
 async function doTest(proxySetup, delay) {
   info("Verifying a basic A record");
-  dns.clearCache(true);
+  Services.dns.clearCache(true);
+  // Close all previous connections.
+  Services.obs.notifyObservers(null, "net:cancel-all-connections");
+  // eslint-disable-next-line mozilla/no-arbitrary-setTimeout
+  await new Promise(resolve => setTimeout(resolve, 1000));
+
   setModeAndURI(2, "doh?responseIP=2.2.2.2"); // TRR-first
 
   trrProxy = new TRRProxy();
@@ -86,11 +85,11 @@ async function doTest(proxySetup, delay) {
 
   await new TRRDNSListener("bar.example.com", "2.2.2.2");
 
-  // Session count is 2 because of we send two TRR queries (A and AAAA).
-  Assert.equal(
-    await trrProxy.proxy_session_counter(),
-    2,
-    `Session count should be 2`
+  // A non-zero request count indicates that TRR requests are being routed
+  // through the proxy.
+  Assert.ok(
+    (await trrProxy.request_count()) >= 1,
+    `Request count should be at least 1`
   );
 
   // clean up
@@ -200,12 +199,12 @@ add_task(async function test_trr_proxy() {
 add_task(async function test_trr_uri_change() {
   Services.prefs.setIntPref("network.proxy.type", 0);
   Services.prefs.setBoolPref("network.trr.async_connInfo", true);
-  dns.clearCache(true);
+  Services.dns.clearCache(true);
   setModeAndURI(2, "doh?responseIP=2.2.2.2", "127.0.0.1");
 
   await new TRRDNSListener("car.example.com", "127.0.0.1");
 
-  dns.clearCache(true);
+  Services.dns.clearCache(true);
   setModeAndURI(2, "doh?responseIP=2.2.2.2");
   await new TRRDNSListener("car.example.net", "2.2.2.2");
 });

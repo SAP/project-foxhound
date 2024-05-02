@@ -10,18 +10,17 @@
 #include "AccessibleTable2_i.c"
 #include "AccessibleTableCell_i.c"
 
-#include "AccessibleWrap.h"
-#include "TableAccessible.h"
-#include "TableCellAccessible.h"
 #include "IUnknownImpl.h"
-
+#include "mozilla/a11y/Accessible.h"
+#include "mozilla/a11y/TableAccessible.h"
+#include "mozilla/a11y/TableCellAccessible.h"
 #include "nsCOMPtr.h"
 #include "nsString.h"
 
 using namespace mozilla::a11y;
 
 TableCellAccessible* ia2AccessibleTableCell::CellAcc() {
-  AccessibleWrap* acc = LocalAcc();
+  Accessible* acc = Acc();
   return acc ? acc->AsTableCell() : nullptr;
 }
 
@@ -44,9 +43,8 @@ ia2AccessibleTableCell::get_table(IUnknown** aTable) {
   TableAccessible* table = tableCell->Table();
   if (!table) return E_FAIL;
 
-  AccessibleWrap* wrap = static_cast<AccessibleWrap*>(table->AsAccessible());
-  RefPtr<IAccessibleTable> result;
-  wrap->GetNativeInterface(getter_AddRefs(result));
+  Accessible* tableAcc = table->AsAccessible();
+  RefPtr<IAccessible> result = MsaaAccessible::GetFrom(tableAcc);
   result.forget(aTable);
   return S_OK;
 }
@@ -74,7 +72,7 @@ ia2AccessibleTableCell::get_columnHeaderCells(IUnknown*** aCellAccessibles,
   TableCellAccessible* tableCell = CellAcc();
   if (!tableCell) return CO_E_OBJNOTCONNECTED;
 
-  AutoTArray<LocalAccessible*, 10> cells;
+  AutoTArray<Accessible*, 10> cells;
   tableCell->ColHeaderCells(&cells);
 
   *aNColumnHeaderCells = cells.Length();
@@ -84,9 +82,7 @@ ia2AccessibleTableCell::get_columnHeaderCells(IUnknown*** aCellAccessibles,
   if (!*aCellAccessibles) return E_OUTOFMEMORY;
 
   for (uint32_t i = 0; i < cells.Length(); i++) {
-    AccessibleWrap* cell = static_cast<AccessibleWrap*>(cells[i]);
-    RefPtr<IAccessible> iaCell;
-    cell->GetNativeInterface(getter_AddRefs(iaCell));
+    RefPtr<IAccessible> iaCell = MsaaAccessible::GetFrom(cells[i]);
     iaCell.forget(&(*aCellAccessibles)[i]);
   }
 
@@ -127,7 +123,7 @@ ia2AccessibleTableCell::get_rowHeaderCells(IUnknown*** aCellAccessibles,
   TableCellAccessible* tableCell = CellAcc();
   if (!tableCell) return CO_E_OBJNOTCONNECTED;
 
-  AutoTArray<LocalAccessible*, 10> cells;
+  AutoTArray<Accessible*, 10> cells;
   tableCell->RowHeaderCells(&cells);
 
   *aNRowHeaderCells = cells.Length();
@@ -136,9 +132,7 @@ ia2AccessibleTableCell::get_rowHeaderCells(IUnknown*** aCellAccessibles,
   if (!*aCellAccessibles) return E_OUTOFMEMORY;
 
   for (uint32_t i = 0; i < cells.Length(); i++) {
-    AccessibleWrap* cell = static_cast<AccessibleWrap*>(cells[i]);
-    RefPtr<IAccessible> iaCell;
-    cell->GetNativeInterface(getter_AddRefs(iaCell));
+    RefPtr<IAccessible> iaCell = MsaaAccessible::GetFrom(cells[i]);
     iaCell.forget(&(*aCellAccessibles)[i]);
   }
 

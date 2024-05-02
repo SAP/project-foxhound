@@ -8,7 +8,6 @@
 // non-native version will be less than optimal.
 
 #include "MurmurHash3.h"
-#include <stdlib.h>
 
 namespace {
 
@@ -32,7 +31,7 @@ namespace {
 
 // We can't do always_inline, becasue -Werror -Wattribute will trigger
 // a "might not be able to inline" warning.
-//#define	FORCE_INLINE __attribute__((always_inline))
+// #define	FORCE_INLINE __attribute__((always_inline))
 #  define FORCE_INLINE inline
 
 inline uint32_t rotl32(uint32_t x, int8_t r) {

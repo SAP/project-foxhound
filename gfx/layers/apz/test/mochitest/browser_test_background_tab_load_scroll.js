@@ -23,7 +23,7 @@ add_task(async function test_main() {
   requestLongerTimeout(2);
 
   async function twoRafsInContent(browser) {
-    await SpecialPowers.spawn(browser, [], async function() {
+    await SpecialPowers.spawn(browser, [], async function () {
       await new Promise(r =>
         content.requestAnimationFrame(() => content.requestAnimationFrame(r))
       );
@@ -38,7 +38,7 @@ add_task(async function test_main() {
   }
 
   async function checkScrollPosInContent(browser, iter, num) {
-    let visualScrollPos = await SpecialPowers.spawn(browser, [], function() {
+    let visualScrollPos = await SpecialPowers.spawn(browser, [], function () {
       const offsetX = {};
       const offsetY = {};
       SpecialPowers.getDOMWindowUtils(content).getVisualViewportOffset(
@@ -48,47 +48,23 @@ add_task(async function test_main() {
       return offsetY.value;
     });
 
-    let scrollPos = await SpecialPowers.spawn(browser, [], function() {
+    let scrollPos = await SpecialPowers.spawn(browser, [], function () {
       return content.window.scrollY;
     });
 
-    // todo we fail a few checks on different platforms, bug 1753881 would fix this.
-    let expectPass = true;
-    if (iter == 0 && num == 2) {
-      expectPass = false;
-    }
-    if (navigator.platform.includes("Mac")) {
-      if (iter == 0 && num == 1) {
-        expectPass = false;
-      }
-    }
-    if (navigator.platform.includes("Win")) {
-      if (iter == 1 && num == 2) {
-        expectPass = false;
-      }
-      if (iter == 2 && num == 1) {
-        expectPass = false;
-      }
-      if (iter == 2 && num == 2) {
-        expectPass = false;
-      }
-    }
-
-    if (expectPass) {
-      // When this fails the difference is at least 10000.
-      ok(
-        Math.abs(scrollPos - visualScrollPos) < 2,
-        "expect scroll position and visual scroll position to be the same: visual " +
-          visualScrollPos +
-          " scroll " +
-          scrollPos +
-          " (" +
-          iter +
-          "," +
-          num +
-          ")"
-      );
-    }
+    // When this fails the difference is at least 10000.
+    ok(
+      Math.abs(scrollPos - visualScrollPos) < 2,
+      "expect scroll position and visual scroll position to be the same: visual " +
+        visualScrollPos +
+        " scroll " +
+        scrollPos +
+        " (" +
+        iter +
+        "," +
+        num +
+        ")"
+    );
   }
 
   for (let i = 0; i < 5; i++) {

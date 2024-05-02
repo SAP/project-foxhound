@@ -2,8 +2,8 @@
   "name": "Bing",
   "description": "Microsoft Bing",
   "manifest_version": 2,
-  "version": "1.3",
-  "applications": {
+  "version": "1.6",
+  "browser_specific_settings": {
     "gecko": {
       "id": "bing@search.mozilla.org"
     }
@@ -12,15 +12,13 @@
   "icons": {
     "16": "favicon.ico"
   },
-  "web_accessible_resources": [
-    "favicon.ico"
-  ],
+  "web_accessible_resources": ["favicon.ico"],
   "chrome_settings_overrides": {
     "search_provider": {
       "keyword": "@bing",
       "name": "Bing",
       "search_url": "https://www.bing.com/search",
-      "search_form": "https://www.bing.com/search?pc=MOZI&q={searchTerms}",
+      "search_form": "https://www.bing.com/search",
       "search_url_get_params": "pc=MOZI&q={searchTerms}",
       "params": [
         {
@@ -55,7 +53,7 @@
         }
       ],
       "suggest_url": "https://www.bing.com/osjson.aspx",
-      "suggest_url_get_params": "query={searchTerms}&form=OSDJAS&language={moz:locale}"
+      "suggest_url_get_params": "query={searchTerms}&form=OSDJAS"
     }
   }
 }

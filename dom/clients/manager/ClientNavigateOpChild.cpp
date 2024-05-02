@@ -162,7 +162,7 @@ RefPtr<ClientOpPromise> ClientNavigateOpChild::DoNavigate(
   // access the ClientSource again.
   {
     ClientSourceChild* targetActor =
-        static_cast<ClientSourceChild*>(aArgs.targetChild());
+        static_cast<ClientSourceChild*>(aArgs.target().AsChild().get());
     MOZ_DIAGNOSTIC_ASSERT(targetActor);
 
     ClientSource* target = targetActor->GetSource();
@@ -182,7 +182,7 @@ RefPtr<ClientOpPromise> ClientNavigateOpChild::DoNavigate(
 
   MOZ_ASSERT(NS_IsMainThread());
 
-  mSerialEventTarget = window->EventTargetFor(TaskCategory::Other);
+  mSerialEventTarget = GetMainThreadSerialEventTarget();
 
   // In theory we could do the URL work before paying the IPC overhead
   // cost, but in practice its easier to do it here.  The ClientHandle

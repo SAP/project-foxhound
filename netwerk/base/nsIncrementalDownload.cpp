@@ -29,6 +29,7 @@
 #include <algorithm>
 #include "nsIContentPolicy.h"
 #include "nsContentUtils.h"
+#include "mozilla/Logging.h"
 #include "mozilla/UniquePtr.h"
 
 // Default values used to initialize a nsIncrementalDownload object.
@@ -42,6 +43,10 @@
 
 using namespace mozilla;
 using namespace mozilla::net;
+
+static LazyLogModule gIDLog("IncrementalDownload");
+#undef LOG
+#define LOG(args) MOZ_LOG(gIDLog, mozilla::LogLevel::Debug, args)
 
 //-----------------------------------------------------------------------------
 
@@ -287,8 +292,7 @@ nsresult nsIncrementalDownload::ProcessTimeout() {
 nsresult nsIncrementalDownload::ReadCurrentSize() {
   int64_t size;
   nsresult rv = mDest->GetFileSize((int64_t*)&size);
-  if (rv == NS_ERROR_FILE_NOT_FOUND ||
-      rv == NS_ERROR_FILE_TARGET_DOES_NOT_EXIST) {
+  if (rv == NS_ERROR_FILE_NOT_FOUND) {
     mCurrentSize = 0;
     return NS_OK;
   }
@@ -324,6 +328,20 @@ NS_IMETHODIMP
 nsIncrementalDownload::GetStatus(nsresult* status) {
   *status = mStatus;
   return NS_OK;
+}
+
+NS_IMETHODIMP nsIncrementalDownload::SetCanceledReason(
+    const nsACString& aReason) {
+  return SetCanceledReasonImpl(aReason);
+}
+
+NS_IMETHODIMP nsIncrementalDownload::GetCanceledReason(nsACString& aReason) {
+  return GetCanceledReasonImpl(aReason);
+}
+
+NS_IMETHODIMP nsIncrementalDownload::CancelWithReason(
+    nsresult aStatus, const nsACString& aReason) {
+  return CancelWithReasonImpl(aStatus, aReason);
 }
 
 NS_IMETHODIMP
@@ -854,10 +872,7 @@ nsIncrementalDownload::OnRedirectVerifyCallback(nsresult result) {
   return NS_OK;
 }
 
-extern nsresult net_NewIncrementalDownload(nsISupports* outer, const nsIID& iid,
-                                           void** result) {
-  if (outer) return NS_ERROR_NO_AGGREGATION;
-
+extern nsresult net_NewIncrementalDownload(const nsIID& iid, void** result) {
   RefPtr<nsIncrementalDownload> d = new nsIncrementalDownload();
   return d->QueryInterface(iid, result);
 }

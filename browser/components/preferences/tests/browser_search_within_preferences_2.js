@@ -6,7 +6,7 @@
 /**
  * Enabling searching functionality. Will display search bar from this testcase forward.
  */
-add_task(async function() {
+add_task(async function () {
   await SpecialPowers.pushPrefEnv({
     set: [["browser.preferences.search", true]],
   });
@@ -17,15 +17,14 @@ add_task(async function() {
  * When we search "Remove Account",
  * it should not show the "Remove Account" button if the Firefox account is not logged in yet.
  */
-add_task(async function() {
+add_task(async function () {
   await openPreferencesViaOpenPreferencesAPI("paneSync", { leaveOpen: true });
 
-  let weavePrefsDeck = gBrowser.contentDocument.getElementById(
-    "weavePrefsDeck"
-  );
+  let weavePrefsDeck =
+    gBrowser.contentDocument.getElementById("weavePrefsDeck");
   is(
     weavePrefsDeck.selectedIndex,
-    "0",
+    0,
     "Should select the #noFxaAccount child node"
   );
 
@@ -93,7 +92,7 @@ add_task(async function() {
  * l10n id `language-and-appearance-header` and expects the element
  * to be matched on the first word from the l10n id value ("Language" in en-US).
  */
-add_task(async function() {
+add_task(async function () {
   let l10nId = "language-and-appearance-header";
 
   await openPreferencesViaOpenPreferencesAPI("paneGeneral", {
@@ -161,10 +160,20 @@ add_task(async function() {
     EventUtils.sendString(query);
     await searchCompletedPromise;
 
-    is_element_visible(
-      suhElem,
-      "showUpdateHistory should be in search results"
-    );
+    if (
+      AppConstants.platform === "win" &&
+      Services.sysinfo.getProperty("hasWinPackageId")
+    ) {
+      is_element_hidden(
+        suhElem,
+        "showUpdateHistory should not be in search results"
+      );
+    } else {
+      is_element_visible(
+        suhElem,
+        "showUpdateHistory should be in search results"
+      );
+    }
   }
 
   await BrowserTestUtils.removeTab(gBrowser.selectedTab);

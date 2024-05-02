@@ -10,9 +10,7 @@
 #include "mozilla/Mutex.h"
 #include "mozilla/RefPtr.h"
 #include "nsCycleCollectionTraversalCallback.h"
-#include "nsHashKeys.h"
 #include "nsTArray.h"
-#include "nsTHashSet.h"
 #include "nsThreadUtils.h"
 
 class nsIGlobalObject;
@@ -51,15 +49,10 @@ class GetFilesHelperBase {
 
   nsresult ExploreDirectory(const nsAString& aDOMPath, nsIFile* aFile);
 
-  nsresult AddExploredDirectory(nsIFile* aDirectory);
-
-  bool ShouldFollowSymLink(nsIFile* aDirectory);
-
   bool mRecursiveFlag;
 
   // We populate this array in the I/O thread with the BlobImpl.
   FallibleTArray<RefPtr<BlobImpl>> mTargetBlobImplArray;
-  nsTHashSet<nsString> mExploredDirectories;
 };
 
 // Retrieving the list of files can be very time/IO consuming. We use this
@@ -118,7 +111,7 @@ class GetFilesHelper : public Runnable, public GetFilesHelperBase {
   nsTArray<RefPtr<Promise>> mPromises;
   nsTArray<RefPtr<GetFilesCallback>> mCallbacks;
 
-  Mutex mMutex;
+  Mutex mMutex MOZ_UNANNOTATED;
 
   // This variable is protected by mutex.
   bool mCanceled;

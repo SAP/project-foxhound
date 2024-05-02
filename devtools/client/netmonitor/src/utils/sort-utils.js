@@ -24,7 +24,7 @@ function sortObjectKeys(object) {
   }
 
   return Object.keys(object)
-    .sort(function(left, right) {
+    .sort(function (left, right) {
       return left.toLowerCase().localeCompare(right.toLowerCase());
     })
     .reduce((acc, key) => {
@@ -34,7 +34,7 @@ function sortObjectKeys(object) {
         acc[key] = object[key];
       }
       return acc;
-    }, {});
+    }, Object.create(null));
 }
 
 module.exports = {

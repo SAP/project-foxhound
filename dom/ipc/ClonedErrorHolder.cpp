@@ -56,7 +56,7 @@ void ClonedErrorHolder::Init(JSContext* aCx, JS::Handle<JSObject*> aError,
       mMessage = err->message().c_str();
     }
     if (err->filename) {
-      mFilename = err->filename;
+      mFilename = err->filename.c_str();
     }
     if (err->linebuf()) {
       AppendUTF16toUTF8(
@@ -120,7 +120,7 @@ void ClonedErrorHolder::Init(JSContext* aCx, JS::Handle<JSObject*> aError,
   if (stack) {
     ar.emplace(aCx, stack);
   }
-  JS::RootedValue stackValue(aCx, JS::ObjectOrNullValue(stack));
+  JS::Rooted<JS::Value> stackValue(aCx, JS::ObjectOrNullValue(stack));
   mStack.Write(aCx, stackValue, aRv);
 }
 
@@ -178,7 +178,8 @@ bool ClonedErrorHolder::WriteStructuredClone(JSContext* aCx,
   return JS_WriteUint32Pair(aWriter, SCTAG_DOM_CLONED_ERROR_OBJECT, 0) &&
          WriteStringPair(aWriter, mName, mMessage) &&
          WriteStringPair(aWriter, mFilename, mSourceLine) &&
-         JS_WriteUint32Pair(aWriter, mLineNumber, mColumn) &&
+         JS_WriteUint32Pair(aWriter, mLineNumber,
+                            *mColumn.addressOfValueForTranscode()) &&
          JS_WriteUint32Pair(aWriter, mTokenOffset, mErrorNumber) &&
          JS_WriteUint32Pair(aWriter, uint32_t(mType), uint32_t(mExnType)) &&
          JS_WriteUint32Pair(aWriter, mCode, uint32_t(mResult)) &&
@@ -193,7 +194,8 @@ bool ClonedErrorHolder::Init(JSContext* aCx, JSStructuredCloneReader* aReader) {
   uint32_t type, exnType, result, code;
   if (!(ReadStringPair(aReader, mName, mMessage) &&
         ReadStringPair(aReader, mFilename, mSourceLine) &&
-        JS_ReadUint32Pair(aReader, &mLineNumber, &mColumn) &&
+        JS_ReadUint32Pair(aReader, &mLineNumber,
+                          mColumn.addressOfValueForTranscode()) &&
         JS_ReadUint32Pair(aReader, &mTokenOffset, &mErrorNumber) &&
         JS_ReadUint32Pair(aReader, &type, &exnType) &&
         JS_ReadUint32Pair(aReader, &code, &result) &&
@@ -256,7 +258,7 @@ static bool ToJSString(JSContext* aCx, const nsACString& aStr,
 }
 
 bool ClonedErrorHolder::ToErrorValue(JSContext* aCx,
-                                     JS::MutableHandleValue aResult) {
+                                     JS::MutableHandle<JS::Value> aResult) {
   JS::Rooted<JS::Value> stackVal(aCx);
   JS::Rooted<JSObject*> stack(aCx);
 
@@ -288,6 +290,12 @@ bool ClonedErrorHolder::ToErrorValue(JSContext* aCx,
     // strings as the empty string.
     if (mFilename.IsVoid()) {
       mFilename.Assign(""_ns);
+    }
+
+    // When fuzzing, we can also end up with the message to be null,
+    // so we should handle that case as well.
+    if (mMessage.IsVoid()) {
+      mMessage.Assign(""_ns);
     }
 
     if (!ToJSString(aCx, mFilename, &filename) ||

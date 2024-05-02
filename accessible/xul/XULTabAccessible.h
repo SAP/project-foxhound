@@ -7,7 +7,7 @@
 #define mozilla_a11y_XULTabAccessible_h__
 
 // NOTE: alphabetically ordered
-#include "HyperTextAccessibleWrap.h"
+#include "HyperTextAccessible.h"
 #include "XULMenuAccessible.h"
 #include "XULSelectControlAccessible.h"
 
@@ -17,7 +17,7 @@ namespace a11y {
 /**
  * An individual tab, xul:tab element.
  */
-class XULTabAccessible : public HyperTextAccessibleWrap {
+class XULTabAccessible : public HyperTextAccessible {
  public:
   enum { eAction_Switch = 0 };
 
@@ -31,7 +31,7 @@ class XULTabAccessible : public HyperTextAccessibleWrap {
   virtual void ApplyARIAState(uint64_t* aState) const override;
 
   // ActionAccessible
-  virtual uint8_t ActionCount() const override;
+  virtual bool HasPrimaryAction() const override;
   virtual void ActionNameAt(uint8_t aIndex, nsAString& aName) override;
   virtual bool DoAction(uint8_t aIndex) const override;
 };
@@ -49,12 +49,12 @@ class XULTabsAccessible : public XULSelectControlAccessible {
   virtual void ApplyARIAState(uint64_t* aState) const override;
 
   // ActionAccessible
-  virtual uint8_t ActionCount() const override;
+  virtual bool HasPrimaryAction() const override;
 
   // SelectAccessible
-  virtual void SelectedItems(nsTArray<LocalAccessible*>* aItems) override;
+  virtual void SelectedItems(nsTArray<Accessible*>* aItems) override;
   virtual uint32_t SelectedItemCount() override;
-  virtual LocalAccessible* GetSelectedItem(uint32_t aIndex) override;
+  virtual Accessible* GetSelectedItem(uint32_t aIndex) override;
   virtual bool IsItemSelected(uint32_t aIndex) override;
 
  protected:

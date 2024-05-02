@@ -6,11 +6,6 @@
  * UrlbarProviderSearchSuggestions when available.
  */
 
-const { FormHistory } = ChromeUtils.import(
-  "resource://gre/modules/FormHistory.jsm"
-);
-
-const SUGGEST_PREF = "browser.urlbar.suggest.searches";
 const SUGGEST_ENABLED_PREF = "browser.search.suggest.enabled";
 const PRIVATE_SEARCH_PREF = "browser.search.separatePrivateDefault.ui.enabled";
 const TAIL_SUGGESTIONS_PREF = "browser.urlbar.richSuggestions.tail";
@@ -20,7 +15,8 @@ var previousSuggestionsFn;
 
 /**
  * Set the current suggestion funciton.
- * @param {function} fn
+ *
+ * @param {Function} fn
  *   A function that that a search string and returns an array of strings that
  *   will be used as search suggestions.
  *   Note: `fn` should return > 1 suggestion in most cases. Otherwise, you may
@@ -45,7 +41,7 @@ async function cleanUpSuggestions() {
   }
 }
 
-add_task(async function setup() {
+add_setup(async function () {
   let engine = await addTestTailSuggestionsEngine(searchStr => {
     return suggestionsFn(searchStr);
   });
@@ -68,13 +64,15 @@ add_task(async function setup() {
   // Install the test engine.
   let oldDefaultEngine = await Services.search.getDefault();
   registerCleanupFunction(async () => {
-    Services.search.setDefault(oldDefaultEngine);
+    Services.search.setDefault(
+      oldDefaultEngine,
+      Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+    );
     Services.prefs.clearUserPref(PRIVATE_SEARCH_PREF);
     Services.prefs.clearUserPref(TAIL_SUGGESTIONS_PREF);
     Services.prefs.clearUserPref(SUGGEST_ENABLED_PREF);
-    UrlbarPrefs.clear("resultGroups");
   });
-  Services.search.setDefault(engine);
+  Services.search.setDefault(engine, Ci.nsISearchService.CHANGE_REASON_UNKNOWN);
   Services.prefs.setBoolPref(PRIVATE_SEARCH_PREF, false);
   Services.prefs.setBoolPref(TAIL_SUGGESTIONS_PREF, true);
   Services.prefs.setBoolPref(SUGGEST_ENABLED_PREF, true);
@@ -87,7 +85,7 @@ add_task(async function setup() {
 add_task(async function normal_suggestions_provider() {
   let engine = await addTestSuggestionsEngine();
   let tailEngine = await Services.search.getDefault();
-  Services.search.setDefault(engine);
+  Services.search.setDefault(engine, Ci.nsISearchService.CHANGE_REASON_UNKNOWN);
 
   const query = "hello world";
   let context = createContext(query, { isPrivate: false });
@@ -109,7 +107,10 @@ add_task(async function normal_suggestions_provider() {
     ],
   });
 
-  Services.search.setDefault(tailEngine);
+  Services.search.setDefault(
+    tailEngine,
+    Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+  );
   await cleanUpSuggestions();
 });
 
@@ -250,6 +251,7 @@ add_task(async function mixed_results() {
     url: "http://example.com/2",
     title: "what time is",
   });
+  await PlacesFrecencyRecalculator.recalculateAnyOutdatedFrecencies();
 
   // Tail suggestions should not be shown.
   const query = "what time is";

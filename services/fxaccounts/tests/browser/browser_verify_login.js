@@ -1,19 +1,21 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
-add_task(async function() {
+add_task(async function () {
   let payload = {
     data: {
       deviceName: "Laptop",
       url: "https://example.com/newLogin",
       title: "Sign-in Request",
-      body:
-        "New sign-in request from vershwal's Nighty on Intel Mac OS X 10.12",
+      body: "New sign-in request from vershwal's Nighty on Intel Mac OS X 10.12",
     },
   };
   info("testVerifyNewSignin");
   setupMockAlertsService();
-  BrowserTestUtils.loadURI(gBrowser.selectedBrowser, "about:mozilla");
+  BrowserTestUtils.startLoadingURIString(
+    gBrowser.selectedBrowser,
+    "about:mozilla"
+  );
   await waitForDocLoadComplete();
 
   let waitForTabPromise = BrowserTestUtils.waitForNewTab(gBrowser);

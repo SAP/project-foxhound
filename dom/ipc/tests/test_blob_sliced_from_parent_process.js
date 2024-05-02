@@ -1,13 +1,13 @@
 "use strict";
-/* eslint-env mozilla/frame-script */
 
-const { XPCShellContentUtils } = ChromeUtils.import(
-  "resource://testing-common/XPCShellContentUtils.jsm"
+const { XPCShellContentUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/XPCShellContentUtils.sys.mjs"
 );
 
 XPCShellContentUtils.init(this);
 
 function childFrameScript() {
+  /* eslint-env mozilla/frame-script */
   const messageName = "test:blob-slice-test";
   const blobData = ["So", " ", "many", " ", "blobs!"];
   const blobText = blobData.join("");
@@ -134,7 +134,7 @@ add_task(async function test() {
     testGenerator.next();
 
     let mm = page.browser.messageManager;
-    mm.addMessageListener(messageName, function(message) {
+    mm.addMessageListener(messageName, function (message) {
       let data = message.data;
       switch (data.op) {
         case "info": {

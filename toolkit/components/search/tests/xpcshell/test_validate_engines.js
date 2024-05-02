@@ -6,8 +6,8 @@
 
 "use strict";
 
-const { SearchService } = ChromeUtils.import(
-  "resource://gre/modules/SearchService.jsm"
+const { SearchService } = ChromeUtils.importESModule(
+  "resource://gre/modules/SearchService.sys.mjs"
 );
 
 const ss = new SearchService();
@@ -24,9 +24,7 @@ add_task(async function test_validate_engines() {
           },
         },
       ],
-      webExtension: {
-        id: e.webExtension.id,
-      },
+      webExtension: e.webExtension,
     };
   });
 

@@ -2,11 +2,16 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-import { actionCreators as ac, actionTypes as at } from "common/Actions.jsm";
+import {
+  actionCreators as ac,
+  actionTypes as at,
+} from "common/Actions.sys.mjs";
 import { ASRouterUtils } from "../../asrouter/asrouter-utils";
 import { connect } from "react-redux";
 import React from "react";
 import { SimpleHashRouter } from "./SimpleHashRouter";
+import { CopyButton } from "./CopyButton";
+import { ImpressionsSection } from "./ImpressionsSection";
 
 const Row = props => (
   <tr className="message-item" {...props}>
@@ -31,14 +36,6 @@ function relativeTime(timestamp) {
   }
   return new Date(timestamp).toLocaleString();
 }
-
-const LAYOUT_VARIANTS = {
-  basic: "Basic default layout (on by default in nightly)",
-  staging_spocs: "A layout with all spocs shown",
-  "dev-test-all":
-    "A little bit of everything. Good layout for testing all components",
-  "dev-test-feeds": "Stress testing for slow feeds",
-};
 
 export class ToggleStoryButton extends React.PureComponent {
   constructor(props) {
@@ -156,7 +153,6 @@ export class DiscoveryStreamAdmin extends React.PureComponent {
     this.idleDaily = this.idleDaily.bind(this);
     this.systemTick = this.systemTick.bind(this);
     this.syncRemoteSettings = this.syncRemoteSettings.bind(this);
-    this.changeEndpointVariant = this.changeEndpointVariant.bind(this);
     this.onStoryToggle = this.onStoryToggle.bind(this);
     this.state = {
       toggledStories: {},
@@ -214,19 +210,6 @@ export class DiscoveryStreamAdmin extends React.PureComponent {
     this.dispatchSimpleAction(at.DISCOVERY_STREAM_DEV_SYNC_RS);
   }
 
-  changeEndpointVariant(event) {
-    const endpoint = this.props.state.DiscoveryStream.config.layout_endpoint;
-    if (endpoint) {
-      this.setConfigValue(
-        "layout_endpoint",
-        endpoint.replace(
-          /layout_variant=.+/,
-          `layout_variant=${event.target.value}`
-        )
-      );
-    }
-  }
-
   renderComponent(width, component) {
     return (
       <table>
@@ -245,12 +228,6 @@ export class DiscoveryStreamAdmin extends React.PureComponent {
     );
   }
 
-  isCurrentVariant(id) {
-    const endpoint = this.props.state.DiscoveryStream.config.layout_endpoint;
-    const isMatch = endpoint && !!endpoint.match(`layout_variant=${id}`);
-    return isMatch;
-  }
-
   renderFeedData(url) {
     const { feeds } = this.props.state.DiscoveryStream;
     const feed = feeds.data[url].data;
@@ -259,7 +236,7 @@ export class DiscoveryStreamAdmin extends React.PureComponent {
         <h4>Feed url: {url}</h4>
         <table>
           <tbody>
-            {feed.recommendations.map(story => this.renderStoryData(story))}
+            {feed.recommendations?.map(story => this.renderStoryData(story))}
           </tbody>
         </table>
       </React.Fragment>
@@ -364,13 +341,10 @@ export class DiscoveryStreamAdmin extends React.PureComponent {
   }
 
   render() {
-    const prefToggles = "enabled hardcoded_layout show_spocs collapsible".split(
-      " "
-    );
-    const { config, lastUpdated, layout } = this.props.state.DiscoveryStream;
-    const personalized = this.props.otherPrefs[
-      "discoverystream.personalization.enabled"
-    ];
+    const prefToggles = "enabled collapsible".split(" ");
+    const { config, layout } = this.props.state.DiscoveryStream;
+    const personalized =
+      this.props.otherPrefs["discoverystream.personalization.enabled"];
     return (
       <div>
         <button className="button" onClick={this.restorePrefDefaults}>
@@ -408,42 +382,6 @@ export class DiscoveryStreamAdmin extends React.PureComponent {
             ))}
           </tbody>
         </table>
-        <h3>Endpoint variant</h3>
-        <p>
-          You can also change this manually by changing this pref:{" "}
-          <code>browser.newtabpage.activity-stream.discoverystream.config</code>
-        </p>
-        <table
-          style={
-            config.enabled && !config.hardcoded_layout ? null : { opacity: 0.5 }
-          }
-        >
-          <tbody>
-            {Object.keys(LAYOUT_VARIANTS).map(id => (
-              <Row key={id}>
-                <td className="min">
-                  <input
-                    type="radio"
-                    value={id}
-                    checked={this.isCurrentVariant(id)}
-                    onChange={this.changeEndpointVariant}
-                  />
-                </td>
-                <td className="min">{id}</td>
-                <td>{LAYOUT_VARIANTS[id]}</td>
-              </Row>
-            ))}
-          </tbody>
-        </table>
-        <h3>Caching info</h3>
-        <table style={config.enabled ? null : { opacity: 0.5 }}>
-          <tbody>
-            <Row>
-              <td className="min">Data last fetched</td>
-              <td>{relativeTime(lastUpdated) || "(no data)"}</td>
-            </Row>
-          </tbody>
-        </table>
         <h3>Layout</h3>
         {layout.map((row, rowIndex) => (
           <div key={`row-${rowIndex}`}>
@@ -477,28 +415,23 @@ export class ASRouterAdminInner extends React.PureComponent {
     this.handleEnabledToggle = this.handleEnabledToggle.bind(this);
     this.handleUserPrefToggle = this.handleUserPrefToggle.bind(this);
     this.onChangeMessageFilter = this.onChangeMessageFilter.bind(this);
-    this.onChangeMessageGroupsFilter = this.onChangeMessageGroupsFilter.bind(
-      this
-    );
+    this.onChangeMessageGroupsFilter =
+      this.onChangeMessageGroupsFilter.bind(this);
     this.unblockAll = this.unblockAll.bind(this);
-    this.handleClearAllImpressionsByProvider = this.handleClearAllImpressionsByProvider.bind(
-      this
-    );
+    this.handleClearAllImpressionsByProvider =
+      this.handleClearAllImpressionsByProvider.bind(this);
     this.handleExpressionEval = this.handleExpressionEval.bind(this);
-    this.onChangeTargetingParameters = this.onChangeTargetingParameters.bind(
-      this
-    );
-    this.onChangeAttributionParameters = this.onChangeAttributionParameters.bind(
-      this
-    );
+    this.onChangeTargetingParameters =
+      this.onChangeTargetingParameters.bind(this);
+    this.onChangeAttributionParameters =
+      this.onChangeAttributionParameters.bind(this);
     this.setAttribution = this.setAttribution.bind(this);
     this.onCopyTargetingParams = this.onCopyTargetingParams.bind(this);
     this.onNewTargetingParams = this.onNewTargetingParams.bind(this);
-    this.handleUpdateWNMessages = this.handleUpdateWNMessages.bind(this);
-    this.handleForceWNP = this.handleForceWNP.bind(this);
-    this.handleCloseWNP = this.handleCloseWNP.bind(this);
-    this.resetPanel = this.resetPanel.bind(this);
-    this.restoreWNMessageState = this.restoreWNMessageState.bind(this);
+    this.handleOpenPB = this.handleOpenPB.bind(this);
+    this.selectPBMessage = this.selectPBMessage.bind(this);
+    this.resetPBJSON = this.resetPBJSON.bind(this);
+    this.resetPBMessageState = this.resetPBMessageState.bind(this);
     this.toggleJSON = this.toggleJSON.bind(this);
     this.toggleAllMessages = this.toggleAllMessages.bind(this);
     this.resetGroups = this.resetGroups.bind(this);
@@ -508,9 +441,9 @@ export class ASRouterAdminInner extends React.PureComponent {
     this.state = {
       messageFilter: "all",
       messageGroupsFilter: "all",
-      WNMessages: [],
       collapsedMessages: [],
       modifiedMessages: [],
+      selectedPBMessage: "",
       evaluationStatus: {},
       stringTargetingParameters: null,
       newStringTargetingParameters: null,
@@ -587,31 +520,6 @@ export class ASRouterAdminInner extends React.PureComponent {
     }));
   }
 
-  resetAllJSON() {
-    let messageCheckboxes = document.querySelectorAll('input[type="checkbox"]');
-
-    for (const checkbox of messageCheckboxes) {
-      let trimmedId = checkbox.id.replace(" checkbox", "");
-
-      let message = this.state.messages.filter(msg => msg.id === trimmedId);
-      let msgId = message[0].id;
-
-      document.getElementById(`${msgId}-textarea`).value = JSON.stringify(
-        message[0],
-        null,
-        2
-      );
-    }
-    this.setState({
-      WNMessages: [],
-    });
-  }
-
-  resetPanel() {
-    this.resetAllJSON();
-    this.handleCloseWNP();
-  }
-
   handleOverride(id) {
     return () =>
       ASRouterUtils.overrideMessage(id).then(state => {
@@ -622,21 +530,37 @@ export class ASRouterAdminInner extends React.PureComponent {
       });
   }
 
-  async handleUpdateWNMessages() {
-    await this.restoreWNMessageState();
-    let messages = this.state.WNMessages;
+  resetPBMessageState() {
+    // Iterate over Private Browsing messages and block/unblock each one to clear impressions
+    const PBMessages = this.state.messages.filter(
+      message => message.template === "pb_newtab"
+    ); // messages from state go here
 
-    for (const msg of messages) {
-      ASRouterUtils.modifyMessageJson(JSON.parse(msg));
-    }
+    PBMessages.forEach(message => {
+      if (message?.id) {
+        ASRouterUtils.blockById(message.id);
+        ASRouterUtils.unblockById(message.id);
+      }
+    });
+    // Clear the selected messages & radio buttons
+    document.getElementById("clear radio").checked = true;
+    this.selectPBMessage("clear");
   }
 
-  handleForceWNP() {
-    ASRouterUtils.sendMessage({ type: "FORCE_WHATSNEW_PANEL" });
+  resetPBJSON(msg) {
+    // reset the displayed JSON for the given message
+    document.getElementById(`${msg.id}-textarea`).value = JSON.stringify(
+      msg,
+      null,
+      2
+    );
   }
 
-  handleCloseWNP() {
-    ASRouterUtils.sendMessage({ type: "CLOSE_WHATSNEW_PANEL" });
+  handleOpenPB() {
+    ASRouterUtils.sendMessage({
+      type: "FORCE_PRIVATE_BROWSING_WINDOW",
+      data: { message: { content: this.state.selectedPBMessage } },
+    });
   }
 
   expireCache() {
@@ -679,7 +603,7 @@ export class ASRouterAdminInner extends React.PureComponent {
       try {
         JSON.parse(value);
       } catch (e) {
-        console.log(`Error parsing value of parameter ${name}`); // eslint-disable-line no-console
+        console.error(`Error parsing value of parameter ${name}`);
         targetingParametersError = { id: name };
       }
 
@@ -857,6 +781,11 @@ export class ASRouterAdminInner extends React.PureComponent {
       : 0;
     const isCollapsed = this.state.collapsedMessages.includes(msg.id);
     const isModified = this.state.modifiedMessages.includes(msg.id);
+    const aboutMessagePreviewSupported = [
+      "infobar",
+      "spotlight",
+      "cfr_doorhanger",
+    ].includes(msg.template);
 
     let itemClassName = "message-item";
     if (isBlocked) {
@@ -886,23 +815,25 @@ export class ASRouterAdminInner extends React.PureComponent {
           >
             {isBlocked ? "Unblock" : "Block"}
           </button>
-          {// eslint-disable-next-line no-nested-ternary
-          isBlocked ? null : isModified ? (
-            <button
-              className="button restore"
-              // eslint-disable-next-line react/jsx-no-bind
-              onClick={e => this.resetJSON(msg)}
-            >
-              Reset
-            </button>
-          ) : (
-            <button
-              className="button show"
-              onClick={this.handleOverride(msg.id)}
-            >
-              Show
-            </button>
-          )}
+          {
+            // eslint-disable-next-line no-nested-ternary
+            isBlocked ? null : isModified ? (
+              <button
+                className="button restore"
+                // eslint-disable-next-line react/jsx-no-bind
+                onClick={e => this.resetJSON(msg)}
+              >
+                Reset
+              </button>
+            ) : (
+              <button
+                className="button show"
+                onClick={this.handleOverride(msg.id)}
+              >
+                Show
+              </button>
+            )
+          }
           {isBlocked ? null : (
             <button
               className="button modify"
@@ -912,6 +843,17 @@ export class ASRouterAdminInner extends React.PureComponent {
               Modify
             </button>
           )}
+          {aboutMessagePreviewSupported ? (
+            <CopyButton
+              transformer={text =>
+                `about:messagepreview?json=${encodeURIComponent(btoa(text))}`
+              }
+              label="Share"
+              copiedLabel="Copied!"
+              inputSelector={`#${msg.id}-textarea`}
+              className={"button share"}
+            />
+          ) : null}
           <br />({impressions} impressions)
         </td>
         <td className="message-summary">
@@ -942,23 +884,25 @@ export class ASRouterAdminInner extends React.PureComponent {
     );
   }
 
-  restoreWNMessageState() {
-    // check the page for checked boxes, and reset the state of WNMessages based on that.
-    let tempState = [];
-    let messageCheckboxes = document.querySelectorAll('input[type="checkbox"]');
-    // put the JSON of all the checked checkboxes in the array
-    for (const checkbox of messageCheckboxes) {
-      let trimmedId = checkbox.id.replace(" checkbox", "");
-      let msg = document.getElementById(`${trimmedId}-textarea`).value;
+  selectPBMessage(msgId) {
+    if (msgId === "clear") {
+      this.setState({
+        selectedPBMessage: "",
+      });
+    } else {
+      let selected = document.getElementById(`${msgId} radio`);
+      let msg = JSON.parse(document.getElementById(`${msgId}-textarea`).value);
 
-      if (checkbox.checked) {
-        tempState.push(msg);
+      if (selected.checked) {
+        this.setState({
+          selectedPBMessage: msg?.content,
+        });
+      } else {
+        this.setState({
+          selectedPBMessage: "",
+        });
       }
     }
-
-    this.setState({
-      WNMessages: tempState,
-    });
   }
 
   modifyJson(content) {
@@ -973,7 +917,7 @@ export class ASRouterAdminInner extends React.PureComponent {
     });
   }
 
-  renderWNMessageItem(msg) {
+  renderPBMessageItem(msg) {
     const isBlocked =
       this.state.messageBlockList.includes(msg.id) ||
       this.state.messageBlockList.includes(msg.campaign);
@@ -1005,10 +949,27 @@ export class ASRouterAdminInner extends React.PureComponent {
         </td>
         <td>
           <input
-            type="checkbox"
-            id={`${msg.id} checkbox`}
-            name={`${msg.id} checkbox`}
+            type="radio"
+            id={`${msg.id} radio`}
+            name="PB_message_radio"
+            style={{ marginBottom: 20 }}
+            onClick={() => this.selectPBMessage(msg.id)}
+            disabled={isBlocked}
           />
+          <button
+            className={`button ${isBlocked ? "" : " primary"}`}
+            onClick={
+              isBlocked ? this.handleUnblock(msg) : this.handleBlock(msg)
+            }
+          >
+            {isBlocked ? "Unblock" : "Block"}
+          </button>
+          <button
+            className="ASRouterButton slim button"
+            onClick={e => this.resetPBJSON(msg)}
+          >
+            Reset JSON
+          </button>
         </td>
         <td className={`message-summary`}>
           <pre className={isCollapsed ? "collapsed" : "expanded"}>
@@ -1047,7 +1008,9 @@ export class ASRouterAdminInner extends React.PureComponent {
       this.state.messageFilter === "all"
         ? this.state.messages
         : this.state.messages.filter(
-            message => message.provider === this.state.messageFilter
+            message =>
+              message.provider === this.state.messageFilter &&
+              message.template !== "pb_newtab"
           );
 
     return (
@@ -1063,7 +1026,9 @@ export class ASRouterAdminInner extends React.PureComponent {
           <span className="icon icon-small-spacer icon-info" />{" "}
           <span>
             To modify a message, change the JSON and click 'Modify' to see your
-            changes. Click 'Reset' to restore the JSON to the original.
+            changes. Click 'Reset' to restore the JSON to the original. Click
+            'Share' to copy a link to the clipboard that can be used to preview
+            the message by opening the link in Nightly/local builds.
           </span>
         </p>
         <table>
@@ -1093,17 +1058,17 @@ export class ASRouterAdminInner extends React.PureComponent {
     );
   }
 
-  renderWNMessages() {
+  renderPBMessages() {
     if (!this.state.messages) {
       return null;
     }
     const messagesToShow = this.state.messages.filter(
-      message => message.provider === "whats-new-panel" && message.content.body
+      message => message.template === "pb_newtab"
     );
     return (
       <table>
         <tbody>
-          {messagesToShow.map(msg => this.renderWNMessageItem(msg))}
+          {messagesToShow.map(msg => this.renderPBMessageItem(msg))}
         </tbody>
       </table>
     );
@@ -1122,8 +1087,7 @@ export class ASRouterAdminInner extends React.PureComponent {
         >
           Unblock All Snippets
         </button>
-        {/* eslint-disable-next-line prettier/prettier */}
-        Show messages from {/* eslint-disable-next-line jsx-a11y/no-onchange */}
+        Show messages from{" "}
         <select
           value={this.state.messageFilter}
           onChange={this.onChangeMessageFilter}
@@ -1218,7 +1182,7 @@ export class ASRouterAdminInner extends React.PureComponent {
                 </span>
               );
             } else if (provider.type === "remote-settings") {
-              label = `remote settings (${provider.bucket})`;
+              label = `remote settings (${provider.collection})`;
             } else if (provider.type === "remote-experiments") {
               label = (
                 <span>
@@ -1419,27 +1383,6 @@ export class ASRouterAdminInner extends React.PureComponent {
     return "n/a";
   }
 
-  renderDiscoveryStream() {
-    const { config } = this.props.DiscoveryStream;
-
-    return (
-      <div>
-        <table>
-          <tbody>
-            <tr className="message-item">
-              <td className="min">Enabled</td>
-              <td>{config.enabled ? "yes" : "no"}</td>
-            </tr>
-            <tr className="message-item">
-              <td className="min">Endpoint</td>
-              <td>{config.endpoint || "(empty)"}</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    );
-  }
-
   renderAttributionParamers() {
     return (
       <div>
@@ -1633,12 +1576,12 @@ export class ASRouterAdminInner extends React.PureComponent {
     return <p>No errors</p>;
   }
 
-  renderWNPTests() {
+  renderPBTab() {
     if (!this.state.messages) {
       return null;
     }
     let messagesToShow = this.state.messages.filter(
-      message => message.provider === "whats-new-panel"
+      message => message.template === "pb_newtab"
     );
 
     return (
@@ -1646,37 +1589,41 @@ export class ASRouterAdminInner extends React.PureComponent {
         <p className="helpLink">
           <span className="icon icon-small-spacer icon-info" />{" "}
           <span>
-            To correctly render selected messages, click 'Open What's New
-            Panel', select the messages you want to see, and click 'Render
-            Selected Messages'.
+            To view an available message, select its radio button and click
+            "Open a Private Browsing Window".
             <br />
+            To modify a message, make changes to the JSON first, then select the
+            radio button. (To make new changes, click "Reset Message State",
+            make your changes, and reselect the radio button.)
             <br />
-            To modify a message, select it, modify the JSON and click 'Render
-            Selected Messages' again to see your changes.
+            Click "Reset Message State" to clear all message impressions and
+            view messages in a clean state.
             <br />
-            Click 'Reset Panel' to close the panel and reset all JSON to its
-            original state.
+            Note that ContentSearch functions do not work in debug mode.
           </span>
         </p>
         <div>
           <button
             className="ASRouterButton primary button"
-            onClick={this.handleForceWNP}
+            onClick={this.handleOpenPB}
           >
-            Open What's New Panel
+            Open a Private Browsing Window
           </button>
           <button
-            className="ASRouterButton secondary button"
-            onClick={this.handleUpdateWNMessages}
+            className="ASRouterButton primary button"
+            style={{ marginInlineStart: 12 }}
+            onClick={this.resetPBMessageState}
           >
-            Render Selected Messages
+            Reset Message State
           </button>
-          <button
-            className="ASRouterButton secondary button"
-            onClick={this.resetPanel}
-          >
-            Reset Panel
-          </button>
+          <br />
+          <input
+            type="radio"
+            id={`clear radio`}
+            name="PB_message_radio"
+            value="clearPBMessage"
+            style={{ display: "none" }}
+          />
           <h2>Messages</h2>
           <button
             className="ASRouterButton slim button"
@@ -1685,7 +1632,7 @@ export class ASRouterAdminInner extends React.PureComponent {
           >
             Collapse/Expand All
           </button>
-          {this.renderWNMessages()}
+          {this.renderPBMessages()}
         </div>
       </div>
     );
@@ -1694,11 +1641,11 @@ export class ASRouterAdminInner extends React.PureComponent {
   getSection() {
     const [section] = this.props.location.routes;
     switch (section) {
-      case "wnpanel":
+      case "private":
         return (
           <React.Fragment>
-            <h2>What's New Panel</h2>
-            {this.renderWNPTests()}
+            <h2>Private Browsing Messages</h2>
+            {this.renderPBTab()}
           </React.Fragment>
         );
       case "targeting":
@@ -1757,6 +1704,17 @@ export class ASRouterAdminInner extends React.PureComponent {
             {this.renderMessagesByGroup()}
           </React.Fragment>
         );
+      case "impressions":
+        return (
+          <React.Fragment>
+            <h2>Impressions</h2>
+            <ImpressionsSection
+              messageImpressions={this.state.messageImpressions}
+              groupImpressions={this.state.groupImpressions}
+              screenImpressions={this.state.screenImpressions}
+            />
+          </React.Fragment>
+        );
       case "ds":
         return (
           <React.Fragment>
@@ -1813,13 +1771,16 @@ export class ASRouterAdminInner extends React.PureComponent {
               <a href="#devtools">General</a>
             </li>
             <li>
-              <a href="#devtools-wnpanel">What's New Panel</a>
+              <a href="#devtools-private">Private Browsing</a>
             </li>
             <li>
               <a href="#devtools-targeting">Targeting</a>
             </li>
             <li>
               <a href="#devtools-groups">Message Groups</a>
+            </li>
+            <li>
+              <a href="#devtools-impressions">Impressions</a>
             </li>
             <li>
               <a href="#devtools-ds">Discovery Stream</a>
@@ -1838,7 +1799,7 @@ export class ASRouterAdminInner extends React.PureComponent {
               Need help using these tools? Check out our{" "}
               <a
                 target="blank"
-                href="https://firefox-source-docs.mozilla.org/browser/components/newtab/content-src/asrouter/docs/index.html"
+                href="https://firefox-source-docs.mozilla.org/browser/components/newtab/content-src/asrouter/docs/debugging-docs.html"
               >
                 documentation
               </a>

@@ -241,7 +241,8 @@ add_suggestedIndex_task({
       type: UrlbarUtils.RESULT_TYPE.URL,
       suggestedIndex: 1,
     },
-    { count: 8, type: UrlbarUtils.RESULT_TYPE.SEARCH },
+    { count: 1, type: UrlbarUtils.RESULT_TYPE.SEARCH },
+    { count: 7, type: UrlbarUtils.RESULT_TYPE.URL },
   ],
 });
 
@@ -516,7 +517,8 @@ add_suggestedIndex_task({
   },
   duringUpdate: [
     { count: 1 },
-    { count: 8, type: UrlbarUtils.RESULT_TYPE.SEARCH },
+    { count: 1, type: UrlbarUtils.RESULT_TYPE.SEARCH },
+    { count: 7, type: UrlbarUtils.RESULT_TYPE.URL },
     {
       count: 1,
       type: UrlbarUtils.RESULT_TYPE.URL,
@@ -708,7 +710,8 @@ add_suggestedIndex_task({
   },
   duringUpdate: [
     { count: 1 },
-    { count: 8, type: UrlbarUtils.RESULT_TYPE.SEARCH },
+    { count: 1, type: UrlbarUtils.RESULT_TYPE.SEARCH },
+    { count: 7, type: UrlbarUtils.RESULT_TYPE.URL },
     {
       count: 1,
       type: UrlbarUtils.RESULT_TYPE.URL,
@@ -909,7 +912,8 @@ add_suggestedIndex_task({
       type: UrlbarUtils.RESULT_TYPE.URL,
       suggestedIndex: -9,
     },
-    { count: 8, type: UrlbarUtils.RESULT_TYPE.SEARCH },
+    { count: 1, type: UrlbarUtils.RESULT_TYPE.SEARCH },
+    { count: 7, type: UrlbarUtils.RESULT_TYPE.URL },
   ],
 });
 

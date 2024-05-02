@@ -54,7 +54,7 @@ function handleRequest(request, response) {
   }
 
   // just in case error handling for unexpected queries
-  if (expectedQueries.indexOf(queryString) == -1) {
+  if (!expectedQueries.includes(queryString)) {
     response.write("unexpected-response");
     return;
   }
@@ -100,7 +100,7 @@ function handleRequest(request, response) {
   // if we have received all the requests, we return
   // the result back.
   if (totaltests == 0) {
-    getObjectState("queryResult", function(queryResponse) {
+    getObjectState("queryResult", function (queryResponse) {
       if (!queryResponse) {
         return;
       }

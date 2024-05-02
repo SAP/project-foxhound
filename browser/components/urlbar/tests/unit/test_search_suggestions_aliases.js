@@ -20,19 +20,18 @@ const TEST_SPACES = [" ", "\u3000", " \u3000", "\u3000 "];
 let engine;
 let port;
 
-add_task(async function setup() {
+add_setup(async function () {
   engine = await addTestSuggestionsEngine();
   port = engine.getSubmission("").uri.port;
 
   // Set a mock engine as the default so we don't hit the network below when we
   // do searches that return the default engine heuristic result.
-  await SearchTestUtils.installSearchExtension({
-    name: DEFAULT_ENGINE_NAME,
-    search_url: "https://my.search.com/",
-  });
-
-  Services.search.defaultEngine = Services.search.getEngineByName(
-    DEFAULT_ENGINE_NAME
+  await SearchTestUtils.installSearchExtension(
+    {
+      name: DEFAULT_ENGINE_NAME,
+      search_url: "https://my.search.com/",
+    },
+    { setAsDefault: true }
   );
 
   // History matches should not appear with @aliases, so this visit should not
@@ -357,7 +356,7 @@ add_task(async function suggestionsDisabled_private() {
  *
  * @param {string} str
  *   The code points of this string will be returned.
- * @returns {array}
+ * @returns {Array}
  *   Array of code points in the string, where each is a hexidecimal string.
  */
 function codePoints(str) {

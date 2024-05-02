@@ -7,19 +7,15 @@
 
 "use strict";
 
-ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
-
 let prefs;
 let httpserv;
 
-const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
+const { HttpServer } = ChromeUtils.importESModule(
+  "resource://testing-common/httpd.sys.mjs"
+);
 
-XPCOMUtils.defineLazyGetter(this, "URL", function() {
+ChromeUtils.defineLazyGetter(this, "URL", function () {
   return "http://localhost:" + httpserv.identity.primaryPort;
-});
-
-XPCOMUtils.defineLazyGetter(this, "PORT", function() {
-  return httpserv.identity.primaryPort;
 });
 
 function makeChan(url, loadingUrl) {
@@ -64,14 +60,6 @@ registerCleanupFunction(async () => {
   prefs.clearUserPref("network.negotiate-auth.trusted-uris");
   await httpserv.stop();
 });
-
-function makeChan(url) {
-  let chan = NetUtil.newChannel({
-    uri: url,
-    loadUsingSystemPrincipal: true,
-  }).QueryInterface(Ci.nsIHttpChannel);
-  return chan;
-}
 
 function channelOpenPromise(chan) {
   return new Promise(resolve => {

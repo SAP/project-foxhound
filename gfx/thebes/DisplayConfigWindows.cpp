@@ -3,11 +3,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include <iostream>
 #include <windows.h>
-#include <wingdi.h>
-#include <optional>
-#include <vector>
 
 #include "DisplayConfigWindows.h"
 
@@ -15,11 +11,6 @@ namespace mozilla {
 namespace gfx {
 
 using namespace std;
-
-struct DisplayConfig {
-  vector<DISPLAYCONFIG_PATH_INFO> mPaths;
-  vector<DISPLAYCONFIG_MODE_INFO> mModes;
-};
 
 optional<DisplayConfig> GetDisplayConfig() {
   LONG result;

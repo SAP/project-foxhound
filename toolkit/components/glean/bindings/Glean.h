@@ -8,6 +8,7 @@
 #define mozilla_glean_Glean_h
 
 #include "js/TypeDecls.h"
+#include "nsGlobalWindowInner.h"
 #include "nsISupports.h"
 #include "nsTArrayForwardDeclare.h"
 #include "nsWrapperCache.h"
@@ -19,17 +20,33 @@ class Category;
 class Glean final : public nsISupports, public nsWrapperCache {
  public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(Glean)
+  NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(Glean)
+
+  explicit Glean(nsIGlobalObject* aGlobal) : mParent(aGlobal) {}
 
   JSObject* WrapObject(JSContext* aCx,
                        JS::Handle<JSObject*> aGivenProto) override;
-  nsISupports* GetParentObject() { return nullptr; }
+  nsISupports* GetParentObject() { return mParent; }
 
   static bool DefineGlean(JSContext* aCx, JS::Handle<JSObject*> aGlobal);
 
   already_AddRefed<Category> NamedGetter(const nsAString& aName, bool& aFound);
   bool NameIsEnumerable(const nsAString& aName);
   void GetSupportedNames(nsTArray<nsString>& aNames);
+
+  /*
+   * Test-only method.
+   *
+   * Set whether we should treat runtime-registered metrics as the
+   * comprehensive list of all metrics, or whether compile-time-registered
+   * metrics are allowed to count too.
+   *
+   * Allows us to test Artifact Build support flexibly.
+   */
+  static void TestSetRuntimeMetricsComprehensive(bool aIsComprehensive);
+
+ private:
+  nsCOMPtr<nsISupports> mParent;
 
  protected:
   virtual ~Glean() = default;

@@ -69,7 +69,8 @@ static cdm::HostFile TakeToCDMHostFile(HostFileData& aHostFileData) {
 GMPErr ChromiumCDMAdapter::GMPInit(const GMPPlatformAPI* aPlatformAPI) {
   GMP_LOG_DEBUG("ChromiumCDMAdapter::GMPInit");
   sPlatform = aPlatformAPI;
-  if (!mLib) {
+  if (NS_WARN_IF(!mLib)) {
+    MOZ_CRASH("Missing library!");
     return GMPGenericErr;
   }
 
@@ -85,12 +86,14 @@ GMPErr ChromiumCDMAdapter::GMPInit(const GMPPlatformAPI* aPlatformAPI) {
     }
     bool result = verify(files.Elements(), files.Length());
     GMP_LOG_DEBUG("%s VerifyCdmHost_0 returned %d", __func__, result);
+    MOZ_DIAGNOSTIC_ASSERT(result, "Verification failed!");
   }
 #endif
 
   auto init = reinterpret_cast<decltype(::INITIALIZE_CDM_MODULE)*>(
       PR_FindFunctionSymbol(mLib, MOZ_STRINGIFY(INITIALIZE_CDM_MODULE)));
   if (!init) {
+    MOZ_CRASH("Missing init method!");
     return GMPGenericErr;
   }
 
@@ -102,7 +105,7 @@ GMPErr ChromiumCDMAdapter::GMPInit(const GMPPlatformAPI* aPlatformAPI) {
 
 GMPErr ChromiumCDMAdapter::GMPGetAPI(const char* aAPIName, void* aHostAPI,
                                      void** aPluginAPI,
-                                     const nsCString& aKeySystem) {
+                                     const nsACString& aKeySystem) {
   MOZ_ASSERT(
       aKeySystem.EqualsLiteral(kWidevineKeySystemName) ||
           aKeySystem.EqualsLiteral(kClearKeyKeySystemName) ||
@@ -111,7 +114,8 @@ GMPErr ChromiumCDMAdapter::GMPGetAPI(const char* aAPIName, void* aHostAPI,
       "Should not get an unrecognized key system. Why didn't it get "
       "blocked by MediaKeySystemAccess?");
   GMP_LOG_DEBUG("ChromiumCDMAdapter::GMPGetAPI(%s, 0x%p, 0x%p, %s) this=0x%p",
-                aAPIName, aHostAPI, aPluginAPI, aKeySystem.get(), this);
+                aAPIName, aHostAPI, aPluginAPI,
+                PromiseFlatCString(aKeySystem).get(), this);
   bool isCdm10 = !strcmp(aAPIName, CHROMIUM_CDM_API);
 
   if (!isCdm10) {
@@ -133,7 +137,7 @@ GMPErr ChromiumCDMAdapter::GMPGetAPI(const char* aAPIName, void* aHostAPI,
   }
 
   const int version = cdm::ContentDecryptionModule_10::kVersion;
-  void* cdm = create(version, aKeySystem.get(), aKeySystem.Length(),
+  void* cdm = create(version, aKeySystem.BeginReading(), aKeySystem.Length(),
                      &ChromiumCdmHost, aHostAPI);
   if (!cdm) {
     GMP_LOG_DEBUG(
@@ -223,7 +227,7 @@ static std::vector<std::wstring> GetDosDeviceNames() {
     if (drive.back() == '\\') {
       drive.erase(drive.end() - 1);
     }
-    v.push_back(move(drive));
+    v.push_back(std::move(drive));
     p += l + 1;
   }
   return v;

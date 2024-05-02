@@ -10,7 +10,6 @@
 #include "mozilla/AlreadyAddRefed.h"
 #include "mozilla/CondVar.h"
 #include "mozilla/Mutex.h"
-#include "mozilla/PerformanceCounter.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/dom/SafeRefPtr.h"
 #include "nsISupports.h"
@@ -48,7 +47,7 @@ class WorkerThreadFriendKey {
 class WorkerThread final : public nsThread {
   class Observer;
 
-  Mutex mLock;
+  Mutex mLock MOZ_UNANNOTATED;
   CondVar mWorkerPrivateCondVar;
 
   // Protected by nsThread::mLock.
@@ -85,7 +84,10 @@ class WorkerThread final : public nsThread {
 
   uint32_t RecursionDepth(const WorkerThreadFriendKey& aKey) const;
 
-  PerformanceCounter* GetPerformanceCounter(nsIRunnable* aEvent) const override;
+  // Override HasPendingEvents to allow HasPendingEvents could be accessed by
+  // the parent thread. WorkerPrivate::IsEligibleForCC calls this method on the
+  // parent thread to check if there is any pending events on the worker thread.
+  NS_IMETHOD HasPendingEvents(bool* aHasPendingEvents) override;
 
   NS_INLINE_DECL_REFCOUNTING_INHERITED(WorkerThread, nsThread)
 
@@ -102,8 +104,6 @@ class WorkerThread final : public nsThread {
 
   NS_IMETHOD
   DelayedDispatch(already_AddRefed<nsIRunnable>, uint32_t) override;
-
-  void IncrementDispatchCounter();
 };
 
 }  // namespace dom

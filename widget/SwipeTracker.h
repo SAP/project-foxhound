@@ -54,7 +54,8 @@ class SwipeTracker final : public nsARefreshObserver {
 
   void Destroy();
 
-  nsEventStatus ProcessEvent(const PanGestureInput& aEvent);
+  nsEventStatus ProcessEvent(const PanGestureInput& aEvent,
+                             bool aProcessingFirstEvent = false);
   void CancelSwipe(const TimeStamp& aTimeStamp);
 
   static WidgetSimpleGestureEvent CreateSwipeGestureEvent(
@@ -75,7 +76,7 @@ class SwipeTracker final : public nsARefreshObserver {
   double SwipeSuccessTargetValue() const;
   double ClampToAllowedRange(double aGestureAmount) const;
   bool ComputeSwipeSuccess() const;
-  void StartAnimating(double aTargetValue);
+  void StartAnimating(double aStartValue, double aTargetValue);
   void SwipeFinished(const TimeStamp& aTimeStamp);
   void UnregisterFromRefreshDriver();
   bool SendSwipeEvent(EventMessage aMsg, uint32_t aDirection, double aDelta,
@@ -89,11 +90,12 @@ class SwipeTracker final : public nsARefreshObserver {
   TimeStamp mLastAnimationFrameTime;
   const uint32_t mAllowedDirections;
   const uint32_t mSwipeDirection;
-  double mGestureAmount;
-  double mCurrentVelocity;
-  bool mEventsAreControllingSwipe;
-  bool mEventsHaveStartedNewGesture;
-  bool mRegisteredWithRefreshDriver;
+  double mGestureAmount = 0.0;
+  double mCurrentVelocity = 0.0;
+  bool mDeltaTypeIsPage = false;
+  bool mEventsAreControllingSwipe = true;
+  bool mEventsHaveStartedNewGesture = false;
+  bool mRegisteredWithRefreshDriver = false;
 };
 
 struct SwipeEventQueue {

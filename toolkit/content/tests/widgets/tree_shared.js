@@ -191,7 +191,7 @@ async function testtag_tree_treecolpicker(tree, expectedColumns, testid) {
       treecolpickerMenupopup.addEventListener("popupshown", resolve, {
         once: true,
       });
-      treecolpicker.click();
+      treecolpicker.querySelector("button").click();
     });
     let menuitems = treecolpicker.querySelectorAll("menuitem");
     // Ignore the last "Restore Column Order" menu in the count:
@@ -229,7 +229,11 @@ function testtag_tree_columns(tree, expectedColumns, testid) {
 
   var columns = tree.columns;
 
-  is(columns instanceof TreeColumns, true, testid + "columns is a TreeColumns");
+  is(
+    TreeColumns.isInstance(columns),
+    true,
+    testid + "columns is a TreeColumns"
+  );
   is(columns.count, expectedColumns.length, testid + "TreeColumns count");
   is(columns.length, expectedColumns.length, testid + "TreeColumns length");
 
@@ -279,7 +283,7 @@ function testtag_tree_columns(tree, expectedColumns, testid) {
     x = column.x + column.width;
 
     // now check the TreeColumn properties
-    is(column instanceof TreeColumn, true, adjtestid + "is a TreeColumn");
+    is(TreeColumn.isInstance(column), true, adjtestid + "is a TreeColumn");
     is(column.element, treecol[c], adjtestid + "element is treecol");
     is(column.columns, columns, adjtestid + "columns is TreeColumns");
     is(column.id, expectedColumn.name, adjtestid + "name");
@@ -431,16 +435,12 @@ function testtag_tree_TreeSelection(tree, testid, multiple) {
   selection.toggleSelect(1);
   if (multiple) {
     selection.selectAll();
-    testtag_tree_TreeSelection_State(tree, testid + "selectAll 2", 1, [
-      0,
+    testtag_tree_TreeSelection_State(
+      tree,
+      testid + "selectAll 2",
       1,
-      2,
-      3,
-      4,
-      5,
-      6,
-      7,
-    ]);
+      [0, 1, 2, 3, 4, 5, 6, 7]
+    );
   }
   selection.currentIndex = 2;
   selection.clearSelection();
@@ -470,11 +470,12 @@ function testtag_tree_TreeSelection(tree, testid, multiple) {
   if (multiple) {
     selection.select(1);
     selection.rangedSelect(0, 2, true);
-    testtag_tree_TreeSelection_State(tree, testid + "rangedSelect augment", 2, [
-      0,
-      1,
+    testtag_tree_TreeSelection_State(
+      tree,
+      testid + "rangedSelect augment",
       2,
-    ]);
+      [0, 1, 2]
+    );
     is(
       selection.shiftSelectPivot,
       0,
@@ -488,11 +489,12 @@ function testtag_tree_TreeSelection(tree, testid, multiple) {
 
     // check that rangedSelect can take a start value higher than end
     selection.rangedSelect(3, 1, false);
-    testtag_tree_TreeSelection_State(tree, testid + "rangedSelect reverse", 1, [
+    testtag_tree_TreeSelection_State(
+      tree,
+      testid + "rangedSelect reverse",
       1,
-      2,
-      3,
-    ]);
+      [1, 2, 3]
+    );
     is(
       selection.shiftSelectPivot,
       3,
@@ -1241,7 +1243,7 @@ function testtag_tree_UI_editing(tree, testid, rowInfo) {
   var ci = tree.currentIndex;
 
   // cursor navigation should not change the selection while editing
-  var testKey = function(key) {
+  var testKey = function (key) {
     synthesizeKeyExpectEvent(
       key,
       {},
@@ -1737,7 +1739,7 @@ function testtag_tree_wheel(aTree) {
   }
   window.addEventListener("wheel", wheelListener);
 
-  deltaModes.forEach(function(aDeltaMode) {
+  deltaModes.forEach(function (aDeltaMode) {
     var delta = aDeltaMode == WheelEvent.DOM_DELTA_PIXEL ? 5.0 : 0.3;
     helper(2, -delta, 0, aDeltaMode);
     helper(2, -delta, -1, aDeltaMode);
@@ -1751,6 +1753,252 @@ function testtag_tree_wheel(aTree) {
 
   window.removeEventListener("wheel", wheelListener);
   is(defaultPrevented, 48, "wheel event default prevented");
+}
+
+async function testtag_tree_scroll() {
+  const tree = document.querySelector("tree");
+
+  info("Scroll down with the content scrollbar at the top");
+  await doScrollTest({
+    tree,
+    initialTreeScrollRow: 0,
+    initialContainerScrollTop: 0,
+    scrollDelta: 10,
+    isTreeScrollExpected: true,
+  });
+
+  info("Scroll down with the content scrollbar at the middle");
+  await doScrollTest({
+    tree,
+    initialTreeScrollRow: 3,
+    initialContainerScrollTop: 0,
+    scrollDelta: 10,
+    isTreeScrollExpected: true,
+  });
+
+  info("Scroll down with the content scrollbar at the bottom");
+  await doScrollTest({
+    tree,
+    initialTreeScrollRow: 9,
+    initialContainerScrollTop: 0,
+    scrollDelta: 10,
+    isTreeScrollExpected: false,
+  });
+
+  info("Scroll up with the content scrollbar at the bottom");
+  await doScrollTest({
+    tree,
+    initialTreeScrollRow: 9,
+    initialContainerScrollTop: 50,
+    scrollDelta: -10,
+    isTreeScrollExpected: true,
+  });
+
+  info("Scroll up with the content scrollbar at the middle");
+  await doScrollTest({
+    tree,
+    initialTreeScrollRow: 5,
+    initialContainerScrollTop: 50,
+    scrollDelta: -10,
+    isTreeScrollExpected: true,
+  });
+
+  info("Scroll up with the content scrollbar at the top");
+  await doScrollTest({
+    tree,
+    initialTreeScrollRow: 0,
+    initialContainerScrollTop: 50,
+    scrollDelta: -10,
+    isTreeScrollExpected: false,
+  });
+
+  info("Check whether the tree is not scrolled when the parent is scrolling");
+  await doScrollWhileScrollingParent(tree);
+
+  info(
+    "Check whether the tree component consumes wheel events even if the scroll is located at edge as long as the events are handled as the same series"
+  );
+  await doScrollInSameSeries({
+    tree,
+    initialTreeScrollRow: 0,
+    initialContainerScrollTop: 0,
+    scrollDelta: 10,
+  });
+  await doScrollInSameSeries({
+    tree,
+    initialTreeScrollRow: 9,
+    initialContainerScrollTop: 50,
+    scrollDelta: -10,
+  });
+
+  SimpleTest.finish();
+}
+
+async function doScrollInSameSeries({
+  tree,
+  initialTreeScrollRow,
+  initialContainerScrollTop,
+  scrollDelta,
+}) {
+  // Set enough value to mousewheel.scroll_series_timeout pref to ensure the wheel
+  // event fired as the same series.
+  Services.prefs.setIntPref("mousewheel.scroll_series_timeout", 1000);
+
+  const scrollbar = tree.shadowRoot.querySelector(
+    "scrollbar[orient='vertical']"
+  );
+  const parent = tree.parentElement;
+
+  tree.scrollToRow(initialTreeScrollRow);
+  parent.scrollTop = initialContainerScrollTop;
+
+  // Scroll until the scrollbar was moved to the specified amount.
+  await SimpleTest.promiseWaitForCondition(async () => {
+    await nativeScroll(tree, 10, 10, scrollDelta);
+    const curpos = scrollbar.getAttribute("curpos");
+    return (
+      (scrollDelta < 0 && curpos == 0) ||
+      (scrollDelta > 0 && curpos == scrollbar.getAttribute("maxpos"))
+    );
+  });
+
+  // More scroll as the same series.
+  for (let i = 0; i < 10; i++) {
+    await nativeScroll(tree, 10, 10, scrollDelta);
+  }
+
+  is(
+    parent.scrollTop,
+    initialContainerScrollTop,
+    "The wheel events are condumed in tree component"
+  );
+  const utils = SpecialPowers.getDOMWindowUtils(window);
+  ok(!utils.getWheelScrollTarget(), "The parent should not handle the event");
+
+  Services.prefs.clearUserPref("mousewheel.scroll_series_timeout");
+}
+
+async function doScrollWhileScrollingParent(tree) {
+  // Set enough value to mousewheel.scroll_series_timeout pref to ensure the wheel
+  // event fired as the same series.
+  Services.prefs.setIntPref("mousewheel.scroll_series_timeout", 1000);
+
+  const scrollbar = tree.shadowRoot.querySelector(
+    "scrollbar[orient='vertical']"
+  );
+  const parent = tree.parentElement;
+
+  // Set initial scroll amount.
+  tree.scrollToRow(0);
+  parent.scrollTop = 0;
+
+  const scrollAmount = scrollbar.getAttribute("curpos");
+
+  // Scroll parent from top to bottom.
+  await SimpleTest.promiseWaitForCondition(async () => {
+    await nativeScroll(parent, 10, 10, 10);
+    return parent.scrollTop === parent.scrollTopMax;
+  });
+
+  is(
+    scrollAmount,
+    scrollbar.getAttribute("curpos"),
+    "The tree should not be scrolled"
+  );
+
+  const utils = SpecialPowers.getDOMWindowUtils(window);
+  await SimpleTest.promiseWaitForCondition(() => !utils.getWheelScrollTarget());
+  Services.prefs.clearUserPref("mousewheel.scroll_series_timeout");
+}
+
+async function doScrollTest({
+  tree,
+  initialTreeScrollRow,
+  initialContainerScrollTop,
+  scrollDelta,
+  isTreeScrollExpected,
+}) {
+  const scrollbar = tree.shadowRoot.querySelector(
+    "scrollbar[orient='vertical']"
+  );
+  const container = tree.parentElement;
+
+  // Set initial scroll amount.
+  tree.scrollToRow(initialTreeScrollRow);
+  container.scrollTop = initialContainerScrollTop;
+
+  const treeScrollAmount = scrollbar.getAttribute("curpos");
+  const containerScrollAmount = container.scrollTop;
+
+  // Wait until changing either scroll.
+  await SimpleTest.promiseWaitForCondition(async () => {
+    await nativeScroll(tree, 10, 10, scrollDelta);
+    return (
+      treeScrollAmount !== scrollbar.getAttribute("curpos") ||
+      containerScrollAmount !== container.scrollTop
+    );
+  });
+
+  is(
+    treeScrollAmount !== scrollbar.getAttribute("curpos"),
+    isTreeScrollExpected,
+    "Scroll of tree is expected"
+  );
+  is(
+    containerScrollAmount !== container.scrollTop,
+    !isTreeScrollExpected,
+    "Scroll of container is expected"
+  );
+
+  // Wait until finishing wheel scroll transaction.
+  const utils = SpecialPowers.getDOMWindowUtils(window);
+  await SimpleTest.promiseWaitForCondition(() => !utils.getWheelScrollTarget());
+}
+
+async function nativeScroll(component, offsetX, offsetY, scrollDelta) {
+  const utils = SpecialPowers.getDOMWindowUtils(window);
+  const x = component.screenX + offsetX;
+  const y = component.screenY + offsetY;
+
+  // Mouse move event.
+  await new Promise(resolve => {
+    info("waiting for mousemove");
+    window.addEventListener("mousemove", resolve, { once: true });
+    utils.sendNativeMouseEvent(
+      x * window.devicePixelRatio,
+      y * window.devicePixelRatio,
+      utils.NATIVE_MOUSE_MESSAGE_MOVE,
+      0,
+      {},
+      component
+    );
+  });
+
+  // Wheel event.
+  await new Promise(resolve => {
+    info("waiting for wheel");
+    window.addEventListener("wheel", resolve, { once: true });
+    utils.sendNativeMouseScrollEvent(
+      x * window.devicePixelRatio,
+      y * window.devicePixelRatio,
+      // nativeVerticalWheelEventMsg is defined in apz_test_native_event_utils.js
+      // eslint-disable-next-line no-undef
+      nativeVerticalWheelEventMsg(),
+      0,
+      // nativeScrollUnits is defined in apz_test_native_event_utils.js
+      // eslint-disable-next-line no-undef
+      -nativeScrollUnits(component, scrollDelta),
+      0,
+      0,
+      0,
+      component
+    );
+  });
+
+  info("waiting for apz");
+  // promiseApzFlushedRepaints is defined in apz_test_utils.js
+  // eslint-disable-next-line no-undef
+  await promiseApzFlushedRepaints();
 }
 
 function synthesizeColumnDrag(
@@ -1810,9 +2058,9 @@ function getSortedColumnArray(aTree) {
     array.push(columns.getColumnAt(i));
   }
 
-  array.sort(function(a, b) {
-    var o1 = parseInt(a.element.style.MozBoxOrdinalGroup);
-    var o2 = parseInt(b.element.style.MozBoxOrdinalGroup);
+  array.sort(function (a, b) {
+    var o1 = parseInt(a.element.style.order);
+    var o2 = parseInt(b.element.style.order);
     return o1 - o2;
   });
   return array;
@@ -1821,7 +2069,7 @@ function getSortedColumnArray(aTree) {
 function checkColumns(aTree, aReference, aMessage) {
   var columns = getSortedColumnArray(aTree);
   var ids = [];
-  columns.forEach(function(e) {
+  columns.forEach(function (e) {
     ids.push(e.element.id);
   });
   is(compareArrays(ids, aReference), true, aMessage);

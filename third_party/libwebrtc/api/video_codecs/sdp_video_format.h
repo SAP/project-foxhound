@@ -14,6 +14,10 @@
 #include <map>
 #include <string>
 
+#include "absl/container/inlined_vector.h"
+#include "absl/types/optional.h"
+#include "api/array_view.h"
+#include "api/video_codecs/scalability_mode.h"
 #include "rtc_base/system/rtc_export.h"
 
 namespace webrtc {
@@ -25,12 +29,24 @@ struct RTC_EXPORT SdpVideoFormat {
 
   explicit SdpVideoFormat(const std::string& name);
   SdpVideoFormat(const std::string& name, const Parameters& parameters);
+  SdpVideoFormat(
+      const std::string& name,
+      const Parameters& parameters,
+      const absl::InlinedVector<ScalabilityMode, kScalabilityModeCount>&
+          scalability_modes);
   SdpVideoFormat(const SdpVideoFormat&);
   SdpVideoFormat(SdpVideoFormat&&);
   SdpVideoFormat& operator=(const SdpVideoFormat&);
   SdpVideoFormat& operator=(SdpVideoFormat&&);
 
   ~SdpVideoFormat();
+
+  // Returns true if the SdpVideoFormats have the same names as well as codec
+  // specific parameters. Please note that two SdpVideoFormats can represent the
+  // same codec even though not all parameters are the same.
+  bool IsSameCodec(const SdpVideoFormat& other) const;
+  bool IsCodecInList(
+      rtc::ArrayView<const webrtc::SdpVideoFormat> formats) const;
 
   std::string ToString() const;
 
@@ -43,7 +59,16 @@ struct RTC_EXPORT SdpVideoFormat {
 
   std::string name;
   Parameters parameters;
+  absl::InlinedVector<ScalabilityMode, kScalabilityModeCount> scalability_modes;
 };
+
+// For not so good reasons sometimes additional parameters are added to an
+// SdpVideoFormat, which makes instances that should compare equal to not match
+// anymore. Until we stop misusing SdpVideoFormats provide this convenience
+// function to perform fuzzy matching.
+absl::optional<SdpVideoFormat> FuzzyMatchSdpVideoFormat(
+    rtc::ArrayView<const SdpVideoFormat> supported_formats,
+    const SdpVideoFormat& format);
 
 }  // namespace webrtc
 

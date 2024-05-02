@@ -9,29 +9,29 @@
 
 "use strict";
 
-var { Integration } = ChromeUtils.import(
-  "resource://gre/modules/Integration.jsm"
+var { Integration } = ChromeUtils.importESModule(
+  "resource://gre/modules/Integration.sys.mjs"
 );
-var { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+var { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
+);
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  AppConstants: "resource://gre/modules/AppConstants.jsm",
-  DownloadPaths: "resource://gre/modules/DownloadPaths.jsm",
-  Downloads: "resource://gre/modules/Downloads.jsm",
-  E10SUtils: "resource://gre/modules/E10SUtils.jsm",
-  FileTestUtils: "resource://testing-common/FileTestUtils.jsm",
-  FileUtils: "resource://gre/modules/FileUtils.jsm",
-  HttpServer: "resource://testing-common/httpd.js",
-  MockRegistrar: "resource://testing-common/MockRegistrar.jsm",
-  NetUtil: "resource://gre/modules/NetUtil.jsm",
-  OS: "resource://gre/modules/osfile.jsm",
-  PlacesUtils: "resource://gre/modules/PlacesUtils.jsm",
-  PromiseUtils: "resource://gre/modules/PromiseUtils.jsm",
-  Services: "resource://gre/modules/Services.jsm",
-  TelemetryTestUtils: "resource://testing-common/TelemetryTestUtils.jsm",
-  TestUtils: "resource://testing-common/TestUtils.jsm",
+ChromeUtils.defineESModuleGetters(this, {
+  DownloadPaths: "resource://gre/modules/DownloadPaths.sys.mjs",
+  Downloads: "resource://gre/modules/Downloads.sys.mjs",
+  E10SUtils: "resource://gre/modules/E10SUtils.sys.mjs",
+  FileTestUtils: "resource://testing-common/FileTestUtils.sys.mjs",
+  FileUtils: "resource://gre/modules/FileUtils.sys.mjs",
+  HttpServer: "resource://testing-common/httpd.sys.mjs",
+  MockRegistrar: "resource://testing-common/MockRegistrar.sys.mjs",
+  NetUtil: "resource://gre/modules/NetUtil.sys.mjs",
+  PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
+  PromiseUtils: "resource://gre/modules/PromiseUtils.sys.mjs",
+  TelemetryTestUtils: "resource://testing-common/TelemetryTestUtils.sys.mjs",
+  TestUtils: "resource://testing-common/TestUtils.sys.mjs",
 });
 
 XPCOMUtils.defineLazyServiceGetter(
@@ -42,10 +42,10 @@ XPCOMUtils.defineLazyServiceGetter(
 );
 
 /* global DownloadIntegration */
-Integration.downloads.defineModuleGetter(
+Integration.downloads.defineESModuleGetter(
   this,
   "DownloadIntegration",
-  "resource://gre/modules/DownloadIntegration.jsm"
+  "resource://gre/modules/DownloadIntegration.sys.mjs"
 );
 
 const ServerSocket = Components.Constructor(
@@ -80,59 +80,14 @@ const TEST_STORE_FILE_NAME = "test-downloads.json";
 const TEST_REFERRER_URL = "https://www.example.com/referrer.html";
 
 const TEST_DATA_SHORT = "This test string is downloaded.";
-// Generate using gzipCompressString in TelemetryController.jsm.
+// Generate using gzipCompressString in TelemetryController.sys.mjs.
 const TEST_DATA_SHORT_GZIP_ENCODED_FIRST = [
-  31,
-  139,
-  8,
-  0,
-  0,
-  0,
-  0,
-  0,
-  0,
-  3,
-  11,
-  201,
-  200,
-  44,
-  86,
-  40,
-  73,
-  45,
-  46,
-  81,
-  40,
-  46,
-  41,
-  202,
-  204,
+  31, 139, 8, 0, 0, 0, 0, 0, 0, 3, 11, 201, 200, 44, 86, 40, 73, 45, 46, 81, 40,
+  46, 41, 202, 204,
 ];
 const TEST_DATA_SHORT_GZIP_ENCODED_SECOND = [
-  75,
-  87,
-  0,
-  114,
-  83,
-  242,
-  203,
-  243,
-  114,
-  242,
-  19,
-  83,
-  82,
-  83,
-  244,
-  0,
-  151,
-  222,
-  109,
-  43,
-  31,
-  0,
-  0,
-  0,
+  75, 87, 0, 114, 83, 242, 203, 243, 114, 242, 19, 83, 82, 83, 244, 0, 151, 222,
+  109, 43, 31, 0, 0, 0,
 ];
 const TEST_DATA_SHORT_GZIP_ENCODED = TEST_DATA_SHORT_GZIP_ENCODED_FIRST.concat(
   TEST_DATA_SHORT_GZIP_ENCODED_SECOND
@@ -337,7 +292,7 @@ function promiseStartLegacyDownload(aSourceUrl, aOptions) {
 
   return new Promise(resolve => {
     Downloads.getList(Downloads.ALL)
-      .then(function(aList) {
+      .then(function (aList) {
         // Temporarily register a view that will get notified when the download we
         // are controlling becomes visible in the list of downloads.
         aList
@@ -368,6 +323,7 @@ function promiseStartLegacyDownload(aSourceUrl, aOptions) {
         // the Download object to be created and added to the public downloads.
         transfer.init(
           sourceURI,
+          null,
           NetUtil.newURI(targetFile),
           null,
           mimeInfo,
@@ -381,7 +337,7 @@ function promiseStartLegacyDownload(aSourceUrl, aOptions) {
         persist.progressListener = transfer;
 
         // Start the actual download process.
-        persist.savePrivacyAwareURI(
+        persist.saveURI(
           sourceURI,
           Services.scriptSecurityManager.getSystemPrincipal(),
           0,
@@ -419,7 +375,7 @@ function promiseStartExternalHelperAppServiceDownload(aSourceUrl) {
 
   return new Promise(resolve => {
     Downloads.getList(Downloads.PUBLIC)
-      .then(function(aList) {
+      .then(function (aList) {
         // Temporarily register a view that will get notified when the download we
         // are controlling becomes visible in the list of downloads.
         aList
@@ -492,7 +448,7 @@ function promiseStartExternalHelperAppServiceDownload(aSourceUrl) {
 function promiseDownloadMidway(aDownload) {
   return new Promise(resolve => {
     // Wait for the download to reach half of its progress.
-    let onchange = function() {
+    let onchange = function () {
       if (
         !aDownload.stopped &&
         !aDownload.canceled &&
@@ -523,7 +479,7 @@ function promiseDownloadMidway(aDownload) {
 function promiseDownloadStarted(aDownload) {
   return new Promise(resolve => {
     // Wait for the download to transfer some amount of bytes.
-    let onchange = function() {
+    let onchange = function () {
       if (
         !aDownload.stopped &&
         !aDownload.canceled &&
@@ -554,7 +510,7 @@ function promiseDownloadStarted(aDownload) {
 function promiseDownloadFinished(aDownload) {
   return new Promise(resolve => {
     // Wait for the download to finish.
-    let onchange = function() {
+    let onchange = function () {
       if (aDownload.succeeded || aDownload.error) {
         aDownload.onchange = null;
         resolve();
@@ -640,7 +596,7 @@ async function promiseVerifyContents(aPath, aExpectedContents) {
   await new Promise(resolve => {
     NetUtil.asyncFetch(
       { uri: NetUtil.newURI(file), loadUsingSystemPrincipal: true },
-      function(aInputStream, aStatus) {
+      function (aInputStream, aStatus) {
         Assert.ok(Components.isSuccessCode(aStatus));
         let contents = NetUtil.readInputStreamToString(
           aInputStream,
@@ -885,7 +841,7 @@ function continueResponses() {
  *        the server, when the continueResponses function is called.
  */
 function registerInterruptibleHandler(aPath, aFirstPartFn, aSecondPartFn) {
-  gHttpServer.registerPathHandler(aPath, function(aRequest, aResponse) {
+  gHttpServer.registerPathHandler(aPath, function (aRequest, aResponse) {
     info("Interruptible request started.");
 
     // Process the first part of the response.
@@ -899,7 +855,7 @@ function registerInterruptibleHandler(aPath, aFirstPartFn, aSecondPartFn) {
         aResponse.finish();
         info("Interruptible request finished.");
       })
-      .catch(Cu.reportError);
+      .catch(console.error);
   });
 }
 
@@ -939,12 +895,15 @@ function checkEqualReferrerInfos(aActualInfo, aExpectedInfo) {
  * Waits for the download annotations to be set for the given page, required
  * because the addDownload method will add these to the database asynchronously.
  */
-function waitForAnnotation(sourceUriSpec, annotationName) {
+function waitForAnnotation(sourceUriSpec, annotationName, optionalValue) {
   return TestUtils.waitForCondition(async () => {
     let pageInfo = await PlacesUtils.history.fetch(sourceUriSpec, {
       includeAnnotations: true,
     });
-    return pageInfo && pageInfo.annotations.has(annotationName);
+    if (optionalValue) {
+      return pageInfo?.annotations.get(annotationName) == optionalValue;
+    }
+    return pageInfo?.annotations.has(annotationName);
   }, `Should have found annotation ${annotationName} for ${sourceUriSpec}`);
 }
 
@@ -956,7 +915,7 @@ var gMostRecentFirstBytePos;
 
 // Initialization functions common to all tests
 
-add_task(function test_common_initialize() {
+add_setup(function test_common_initialize() {
   // Start the HTTP server.
   gHttpServer = new HttpServer();
   gHttpServer.registerDirectory("/", do_get_file("../data"));
@@ -977,7 +936,7 @@ add_task(function test_common_initialize() {
     gHttpServer.identity.primaryPort
   );
   Services.prefs.setCharPref("network.dns.localDomains", "www.example.com");
-  registerCleanupFunction(function() {
+  registerCleanupFunction(function () {
     Services.prefs.clearUserPref("network.dns.localDomains");
   });
 
@@ -985,7 +944,7 @@ add_task(function test_common_initialize() {
   // this may block tests that use the interruptible handlers.
   Services.prefs.setBoolPref("browser.cache.disk.enable", false);
   Services.prefs.setBoolPref("browser.cache.memory.enable", false);
-  registerCleanupFunction(function() {
+  registerCleanupFunction(function () {
     Services.prefs.clearUserPref("browser.cache.disk.enable");
     Services.prefs.clearUserPref("browser.cache.memory.enable");
   });
@@ -995,7 +954,7 @@ add_task(function test_common_initialize() {
     "network.http.referer.disallowCrossSiteRelaxingDefault",
     false
   );
-  registerCleanupFunction(function() {
+  registerCleanupFunction(function () {
     Services.prefs.clearUserPref(
       "network.http.referer.disallowCrossSiteRelaxingDefault"
     );
@@ -1101,7 +1060,7 @@ add_task(function test_common_initialize() {
 
   gHttpServer.registerPathHandler(
     "/shorter-than-content-length-http-1-1.txt",
-    function(aRequest, aResponse) {
+    function (aRequest, aResponse) {
       aResponse.processAsync();
       aResponse.setStatusLine("1.1", 200, "OK");
       aResponse.setHeader("Content-Type", "text/plain", false);
@@ -1115,14 +1074,14 @@ add_task(function test_common_initialize() {
     }
   );
 
-  gHttpServer.registerPathHandler("/busy.txt", function(aRequest, aResponse) {
+  gHttpServer.registerPathHandler("/busy.txt", function (aRequest, aResponse) {
     aResponse.setStatusLine("1.1", 504, "Gateway Timeout");
     aResponse.setHeader("Content-Type", "text/plain", false);
     aResponse.setHeader("Content-Length", "" + TEST_DATA_SHORT.length, false);
     aResponse.write(TEST_DATA_SHORT);
   });
 
-  gHttpServer.registerPathHandler("/redirect", function(aRequest, aResponse) {
+  gHttpServer.registerPathHandler("/redirect", function (aRequest, aResponse) {
     aResponse.setStatusLine("1.1", 301, "Moved Permanently");
     aResponse.setHeader("Location", httpUrl("busy.txt"), false);
     aResponse.setHeader("Content-Type", "text/javascript", false);
@@ -1130,70 +1089,72 @@ add_task(function test_common_initialize() {
   });
 
   // This URL will emulate being blocked by Windows Parental controls
-  gHttpServer.registerPathHandler("/parentalblocked.zip", function(
-    aRequest,
-    aResponse
-  ) {
-    aResponse.setStatusLine(
-      aRequest.httpVersion,
-      450,
-      "Blocked by Windows Parental Controls"
-    );
-  });
+  gHttpServer.registerPathHandler(
+    "/parentalblocked.zip",
+    function (aRequest, aResponse) {
+      aResponse.setStatusLine(
+        aRequest.httpVersion,
+        450,
+        "Blocked by Windows Parental Controls"
+      );
+    }
+  );
 
   // This URL sends some data followed by an RST packet
-  gHttpServer.registerPathHandler("/netreset.txt", function(
-    aRequest,
-    aResponse
-  ) {
-    info("Starting response that will be aborted.");
-    aResponse.processAsync();
-    aResponse.setHeader("Content-Type", "text/plain", false);
-    aResponse.write(TEST_DATA_SHORT);
-    promiseExecuteSoon()
-      .then(() => {
-        aResponse.abort(null, true);
-        aResponse.finish();
-        info("Aborting response with network reset.");
-      })
-      .then(null, Cu.reportError);
-  });
+  gHttpServer.registerPathHandler(
+    "/netreset.txt",
+    function (aRequest, aResponse) {
+      info("Starting response that will be aborted.");
+      aResponse.processAsync();
+      aResponse.setHeader("Content-Type", "text/plain", false);
+      aResponse.write(TEST_DATA_SHORT);
+      promiseExecuteSoon()
+        .then(() => {
+          aResponse.abort(null, true);
+          aResponse.finish();
+          info("Aborting response with network reset.");
+        })
+        .then(null, console.error);
+    }
+  );
 
   // During unit tests, most of the functions that require profile access or
   // operating system features will be disabled. Individual tests may override
   // them again to check for specific behaviors.
-  Integration.downloads.register(base => ({
-    __proto__: base,
-    loadPublicDownloadListFromStore: () => Promise.resolve(),
-    shouldKeepBlockedData: () => Promise.resolve(false),
-    shouldBlockForParentalControls: () => Promise.resolve(false),
-    shouldBlockForRuntimePermissions: () => Promise.resolve(false),
-    shouldBlockForReputationCheck: () =>
-      Promise.resolve({
-        shouldBlock: false,
-        verdict: "",
-      }),
-    confirmLaunchExecutable: () => Promise.resolve(),
-    launchFile: () => Promise.resolve(),
-    showContainingDirectory: () => Promise.resolve(),
-    // This flag allows re-enabling the default observers during their tests.
-    allowObservers: false,
-    addListObservers() {
-      return this.allowObservers
-        ? super.addListObservers(...arguments)
-        : Promise.resolve();
-    },
-    // This flag allows re-enabling the download directory logic for its tests.
-    _allowDirectories: false,
-    set allowDirectories(value) {
-      this._allowDirectories = value;
-      // We have to invalidate the previously computed directory path.
-      this._downloadsDirectory = null;
-    },
-    _getDirectory(name) {
-      return super._getDirectory(this._allowDirectories ? name : "TmpD");
-    },
-  }));
+  Integration.downloads.register(base => {
+    let override = {
+      loadPublicDownloadListFromStore: () => Promise.resolve(),
+      shouldKeepBlockedData: () => Promise.resolve(false),
+      shouldBlockForParentalControls: () => Promise.resolve(false),
+      shouldBlockForReputationCheck: () =>
+        Promise.resolve({
+          shouldBlock: false,
+          verdict: "",
+        }),
+      confirmLaunchExecutable: () => Promise.resolve(),
+      launchFile: () => Promise.resolve(),
+      showContainingDirectory: () => Promise.resolve(),
+      // This flag allows re-enabling the default observers during their tests.
+      allowObservers: false,
+      addListObservers() {
+        return this.allowObservers
+          ? super.addListObservers(...arguments)
+          : Promise.resolve();
+      },
+      // This flag allows re-enabling the download directory logic for its tests.
+      _allowDirectories: false,
+      set allowDirectories(value) {
+        this._allowDirectories = value;
+        // We have to invalidate the previously computed directory path.
+        this._downloadsDirectory = null;
+      },
+      _getDirectory(name) {
+        return super._getDirectory(this._allowDirectories ? name : "TmpD");
+      },
+    };
+    Object.setPrototypeOf(override, base);
+    return override;
+  });
 
   // Make sure that downloads started using nsIExternalHelperAppService are
   // saved to disk without asking for a destination interactively.

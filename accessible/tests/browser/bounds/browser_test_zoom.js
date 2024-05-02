@@ -7,12 +7,8 @@
 /* import-globals-from ../../mochitest/layout.js */
 
 async function testContentBounds(browser, acc) {
-  let [
-    expectedX,
-    expectedY,
-    expectedWidth,
-    expectedHeight,
-  ] = await getContentBoundsForDOMElm(browser, getAccessibleDOMNodeID(acc));
+  let [expectedX, expectedY, expectedWidth, expectedHeight] =
+    await getContentBoundsForDOMElm(browser, getAccessibleDOMNodeID(acc));
 
   let contentDPR = await getContentDPR(browser);
   let [x, y, width, height] = getBounds(acc, contentDPR);
@@ -40,8 +36,8 @@ async function runTests(browser, accDoc) {
   await testContentBounds(browser, area);
 
   await SpecialPowers.spawn(browser, [], () => {
-    const { Layout } = ChromeUtils.import(
-      "chrome://mochitests/content/browser/accessible/tests/browser/Layout.jsm"
+    const { Layout } = ChromeUtils.importESModule(
+      "chrome://mochitests/content/browser/accessible/tests/browser/Layout.sys.mjs"
     );
     Layout.zoomDocument(content.document, 2.0);
   });

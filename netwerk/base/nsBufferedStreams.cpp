@@ -39,18 +39,21 @@ static struct {
 #endif
 
 using namespace mozilla::ipc;
-using mozilla::DebugOnly;
-using mozilla::Maybe;
-using mozilla::MutexAutoLock;
-using mozilla::Nothing;
-using mozilla::Some;
+using namespace mozilla;
 
 ////////////////////////////////////////////////////////////////////////////////
 // nsBufferedStream
 
 nsBufferedStream::~nsBufferedStream() { Close(); }
 
-NS_IMPL_ISUPPORTS(nsBufferedStream, nsITellableStream, nsISeekableStream)
+NS_IMPL_ADDREF(nsBufferedStream)
+NS_IMPL_RELEASE(nsBufferedStream)
+
+NS_INTERFACE_MAP_BEGIN(nsBufferedStream)
+  NS_INTERFACE_MAP_ENTRY(nsISupports)
+  NS_INTERFACE_MAP_ENTRY(nsITellableStream)
+  NS_INTERFACE_MAP_ENTRY_CONDITIONAL(nsISeekableStream, mSeekable)
+NS_INTERFACE_MAP_END
 
 nsresult nsBufferedStream::Init(nsISupports* aStream, uint32_t bufferSize) {
   NS_ASSERTION(aStream, "need to supply a stream");
@@ -59,6 +62,9 @@ nsresult nsBufferedStream::Init(nsISupports* aStream, uint32_t bufferSize) {
   mBufferSize = bufferSize;
   mBufferStartOffset = 0;
   mCursor = 0;
+  nsCOMPtr<nsISeekableStream> seekable = do_QueryInterface(mStream);
+  mSeekable = seekable;
+  RecursiveMutexAutoLock lock(mBufferMutex);
   mBuffer = new (mozilla::fallible) char[bufferSize];
   if (mBuffer == nullptr) {
     return NS_ERROR_OUT_OF_MEMORY;
@@ -69,6 +75,7 @@ nsresult nsBufferedStream::Init(nsISupports* aStream, uint32_t bufferSize) {
 void nsBufferedStream::Close() {
   // Drop the reference from nsBufferedStream::Init()
   mStream = nullptr;
+  RecursiveMutexAutoLock lock(mBufferMutex);
   if (mBuffer) {
     delete[] mBuffer;
     mBuffer = nullptr;
@@ -302,10 +309,7 @@ NS_IMPL_CI_INTERFACE_GETTER(nsBufferedInputStream, nsIInputStream,
                             nsIBufferedInputStream, nsISeekableStream,
                             nsITellableStream, nsIStreamBufferAccess)
 
-nsresult nsBufferedInputStream::Create(nsISupports* aOuter, REFNSIID aIID,
-                                       void** aResult) {
-  NS_ENSURE_NO_AGGREGATION(aOuter);
-
+nsresult nsBufferedInputStream::Create(REFNSIID aIID, void** aResult) {
   RefPtr<nsBufferedInputStream> stream = new nsBufferedInputStream();
   return stream->QueryInterface(aIID, aResult);
 }
@@ -397,6 +401,19 @@ nsBufferedInputStream::Available(uint64_t* result) {
 }
 
 NS_IMETHODIMP
+nsBufferedInputStream::StreamStatus() {
+  if (!mStream) {
+    return NS_OK;
+  }
+
+  if (mFillPoint - mCursor) {
+    return NS_OK;
+  }
+
+  return Source()->StreamStatus();
+}
+
+NS_IMETHODIMP
 nsBufferedInputStream::Read(char* buf, uint32_t count, uint32_t* result) {
   if (mBufferDisabled) {
     if (!mStream) {
@@ -426,6 +443,7 @@ nsBufferedInputStream::ReadSegments(nsWriteSegmentFun writer, void* closure,
   }
 
   nsresult rv = NS_OK;
+  RecursiveMutexAutoLock lock(mBufferMutex);
   while (count > 0) {
     uint32_t amt = std::min(count, mFillPoint - mCursor);
     if (amt > 0) {
@@ -442,7 +460,13 @@ nsBufferedInputStream::ReadSegments(nsWriteSegmentFun writer, void* closure,
       mCursor += read;
     } else {
       rv = Fill();
-      if (NS_FAILED(rv) || mFillPoint == mCursor) {
+      if (rv == NS_BASE_STREAM_WOULD_BLOCK) {
+        break;
+      }
+      if (NS_FAILED(rv)) {
+        return rv;
+      }
+      if (mFillPoint == mCursor) {
         break;
       }
     }
@@ -464,6 +488,8 @@ nsBufferedInputStream::Fill() {
     return NS_OK;
   }
   NS_ENSURE_TRUE(mStream, NS_ERROR_NOT_INITIALIZED);
+
+  RecursiveMutexAutoLock lock(mBufferMutex);
 
   nsresult rv;
   int32_t rem = int32_t(mFillPoint - mCursor);
@@ -502,6 +528,7 @@ nsBufferedInputStream::GetBuffer(uint32_t aLength, uint32_t aAlignMask) {
     return nullptr;
   }
 
+  RecursiveMutexAutoLock lock(mBufferMutex);
   char* buf = mBuffer + mCursor;
   uint32_t rem = mFillPoint - mCursor;
   if (rem == 0) {
@@ -577,26 +604,21 @@ nsBufferedInputStream::GetUnbufferedStream(nsISupports** aStream) {
   return NS_OK;
 }
 
-void nsBufferedInputStream::Serialize(
-    InputStreamParams& aParams, FileDescriptorArray& aFileDescriptors,
-    bool aDelayedStart, uint32_t aMaxSize, uint32_t* aSizeUsed,
-    mozilla::ipc::ParentToChildStreamActorManager* aManager) {
-  SerializeInternal(aParams, aFileDescriptors, aDelayedStart, aMaxSize,
-                    aSizeUsed, aManager);
+void nsBufferedInputStream::SerializedComplexity(uint32_t aMaxSize,
+                                                 uint32_t* aSizeUsed,
+                                                 uint32_t* aPipes,
+                                                 uint32_t* aTransferables) {
+  if (mStream) {
+    nsCOMPtr<nsIInputStream> stream = do_QueryInterface(mStream);
+    MOZ_ASSERT(stream);
+
+    InputStreamHelper::SerializedComplexity(stream, aMaxSize, aSizeUsed, aPipes,
+                                            aTransferables);
+  }
 }
 
-void nsBufferedInputStream::Serialize(
-    InputStreamParams& aParams, FileDescriptorArray& aFileDescriptors,
-    bool aDelayedStart, uint32_t aMaxSize, uint32_t* aSizeUsed,
-    mozilla::ipc::ChildToParentStreamActorManager* aManager) {
-  SerializeInternal(aParams, aFileDescriptors, aDelayedStart, aMaxSize,
-                    aSizeUsed, aManager);
-}
-
-template <typename M>
-void nsBufferedInputStream::SerializeInternal(
-    InputStreamParams& aParams, FileDescriptorArray& aFileDescriptors,
-    bool aDelayedStart, uint32_t aMaxSize, uint32_t* aSizeUsed, M* aManager) {
+void nsBufferedInputStream::Serialize(InputStreamParams& aParams,
+                                      uint32_t aMaxSize, uint32_t* aSizeUsed) {
   MOZ_ASSERT(aSizeUsed);
   *aSizeUsed = 0;
 
@@ -607,9 +629,8 @@ void nsBufferedInputStream::SerializeInternal(
     MOZ_ASSERT(stream);
 
     InputStreamParams wrappedParams;
-    InputStreamHelper::SerializeInputStream(stream, wrappedParams,
-                                            aFileDescriptors, aDelayedStart,
-                                            aMaxSize, aSizeUsed, aManager);
+    InputStreamHelper::SerializeInputStream(stream, wrappedParams, aMaxSize,
+                                            aSizeUsed);
 
     params.optionalStream().emplace(wrappedParams);
   }
@@ -619,9 +640,7 @@ void nsBufferedInputStream::SerializeInternal(
   aParams = params;
 }
 
-bool nsBufferedInputStream::Deserialize(
-    const InputStreamParams& aParams,
-    const FileDescriptorArray& aFileDescriptors) {
+bool nsBufferedInputStream::Deserialize(const InputStreamParams& aParams) {
   if (aParams.type() != InputStreamParams::TBufferedInputStreamParams) {
     NS_ERROR("Received unknown parameters from the other process!");
     return false;
@@ -633,8 +652,7 @@ bool nsBufferedInputStream::Deserialize(
 
   nsCOMPtr<nsIInputStream> stream;
   if (wrappedParams.isSome()) {
-    stream = InputStreamHelper::DeserializeInputStream(wrappedParams.ref(),
-                                                       aFileDescriptors);
+    stream = InputStreamHelper::DeserializeInputStream(wrappedParams.ref());
     if (!stream) {
       NS_WARNING("Failed to deserialize wrapped stream!");
       return false;
@@ -676,7 +694,8 @@ nsBufferedInputStream::AsyncWait(nsIInputStreamCallback* aCallback,
   {
     MutexAutoLock lock(mMutex);
 
-    if (mAsyncWaitCallback && aCallback) {
+    if (NS_WARN_IF(mAsyncWaitCallback && aCallback &&
+                   mAsyncWaitCallback != aCallback)) {
       return NS_ERROR_FAILURE;
     }
 
@@ -719,6 +738,8 @@ NS_IMETHODIMP
 nsBufferedInputStream::GetCloneable(bool* aCloneable) {
   *aCloneable = false;
 
+  RecursiveMutexAutoLock lock(mBufferMutex);
+
   // If we don't have the buffer, the inputStream has been already closed.
   // If mBufferStartOffset is not 0, the stream has been seeked or read.
   // In both case the cloning is not supported.
@@ -736,6 +757,8 @@ nsBufferedInputStream::GetCloneable(bool* aCloneable) {
 
 NS_IMETHODIMP
 nsBufferedInputStream::Clone(nsIInputStream** aResult) {
+  RecursiveMutexAutoLock lock(mBufferMutex);
+
   if (!mBuffer || mBufferStartOffset) {
     return NS_ERROR_FAILURE;
   }
@@ -836,10 +859,7 @@ NS_INTERFACE_MAP_BEGIN(nsBufferedOutputStream)
   NS_INTERFACE_MAP_ENTRY(nsIStreamBufferAccess)
 NS_INTERFACE_MAP_END_INHERITING(nsBufferedStream)
 
-nsresult nsBufferedOutputStream::Create(nsISupports* aOuter, REFNSIID aIID,
-                                        void** aResult) {
-  NS_ENSURE_NO_AGGREGATION(aOuter);
-
+nsresult nsBufferedOutputStream::Create(REFNSIID aIID, void** aResult) {
   RefPtr<nsBufferedOutputStream> stream = new nsBufferedOutputStream();
   return stream->QueryInterface(aIID, aResult);
 }
@@ -854,6 +874,10 @@ nsBufferedOutputStream::Init(nsIOutputStream* stream, uint32_t bufferSize) {
 
 NS_IMETHODIMP
 nsBufferedOutputStream::Close() {
+  if (!mStream) {
+    return NS_OK;
+  }
+
   nsresult rv1, rv2 = NS_OK;
 
   rv1 = Flush();
@@ -891,6 +915,11 @@ nsBufferedOutputStream::Close() {
 }
 
 NS_IMETHODIMP
+nsBufferedOutputStream::StreamStatus() {
+  return mStream ? Sink()->StreamStatus() : NS_BASE_STREAM_CLOSED;
+}
+
+NS_IMETHODIMP
 nsBufferedOutputStream::Write(const char* buf, uint32_t count,
                               uint32_t* result) {
   nsresult rv = NS_OK;
@@ -912,6 +941,7 @@ nsBufferedOutputStream::Write(const char* buf, uint32_t count,
     return NS_BASE_STREAM_CLOSED;
   }
 
+  RecursiveMutexAutoLock lock(mBufferMutex);
   while (count > 0) {
     uint32_t amt = std::min(count, mBufferSize - mCursor);
     if (amt > 0) {
@@ -948,6 +978,7 @@ nsBufferedOutputStream::Flush() {
   if (mFillPoint == 0) {
     return NS_OK;
   }
+  RecursiveMutexAutoLock lock(mBufferMutex);
   rv = Sink()->Write(mBuffer, mFillPoint, &amt);
   if (NS_FAILED(rv)) {
     return rv;
@@ -1011,17 +1042,10 @@ nsBufferedOutputStream::Finish() {
   return NS_OK;
 }
 
-static nsresult nsReadFromInputStream(nsIOutputStream* outStr, void* closure,
-                                      char* toRawSegment, uint32_t offset,
-                                      uint32_t count, uint32_t* readCount) {
-  nsIInputStream* fromStream = (nsIInputStream*)closure;
-  return fromStream->Read(toRawSegment, count, readCount);
-}
-
 NS_IMETHODIMP
 nsBufferedOutputStream::WriteFrom(nsIInputStream* inStr, uint32_t count,
                                   uint32_t* _retval) {
-  return WriteSegments(nsReadFromInputStream, inStr, count, _retval);
+  return WriteSegments(NS_CopyStreamToSegment, inStr, count, _retval);
 }
 
 NS_IMETHODIMP
@@ -1029,6 +1053,7 @@ nsBufferedOutputStream::WriteSegments(nsReadSegmentFun reader, void* closure,
                                       uint32_t count, uint32_t* _retval) {
   *_retval = 0;
   nsresult rv;
+  RecursiveMutexAutoLock lock(mBufferMutex);
   while (count > 0) {
     uint32_t left = std::min(count, mBufferSize - mCursor);
     if (left == 0) {
@@ -1073,6 +1098,7 @@ nsBufferedOutputStream::GetBuffer(uint32_t aLength, uint32_t aAlignMask) {
     return nullptr;
   }
 
+  RecursiveMutexAutoLock lock(mBufferMutex);
   char* buf = mBuffer + mCursor;
   uint32_t rem = mBufferSize - mCursor;
   if (rem == 0) {

@@ -14,9 +14,6 @@
 namespace mozilla {
 
 struct ModuleLoadInfo final {
-  // If you add a new value or change the meaning of the values, please
-  // update createLoadStatusElement in aboutSupport.js accordingly, which
-  // defines text labels of these enum values displayed on about:support.
   enum class Status : uint32_t {
     Loaded = 0,
     Blocked,
@@ -147,6 +144,11 @@ struct ModuleLoadInfo final {
     return mStatus == ModuleLoadInfo::Status::Blocked ||
            mStatus == ModuleLoadInfo::Status::Redirected;
   }
+
+  /**
+   * Returns true for a DLL load which was blocked by our blocklist.
+   */
+  bool WasBlocked() const { return mStatus == ModuleLoadInfo::Status::Blocked; }
 
   // Timestamp for the creation of this event
   LARGE_INTEGER mBeginTimestamp;

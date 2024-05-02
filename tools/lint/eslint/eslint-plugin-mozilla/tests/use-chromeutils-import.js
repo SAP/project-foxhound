@@ -10,71 +10,38 @@
 var rule = require("../lib/rules/use-chromeutils-import");
 var RuleTester = require("eslint").RuleTester;
 
-const ruleTester = new RuleTester({ parserOptions: { ecmaVersion: 6 } });
+const ruleTester = new RuleTester({ parserOptions: { ecmaVersion: "latest" } });
 
 // ------------------------------------------------------------------------------
 // Tests
 // ------------------------------------------------------------------------------
 
-function callError(message) {
-  return [{ message, type: "CallExpression" }];
+function callError(messageId) {
+  return [{ messageId, type: "CallExpression" }];
 }
-
-const MESSAGE_IMPORT = "Please use ChromeUtils.import instead of Cu.import";
-const MESSAGE_DEFINE =
-  "Please use ChromeUtils.defineModuleGetter instead of " +
-  "XPCOMUtils.defineLazyModuleGetter";
 
 ruleTester.run("use-chromeutils-import", rule, {
   valid: [
-    `ChromeUtils.import("resource://gre/modules/Service.jsm");`,
-    `ChromeUtils.import("resource://gre/modules/Service.jsm", this);`,
-    `ChromeUtils.defineModuleGetter(this, "Services",
-                                    "resource://gre/modules/Service.jsm");`,
-    `XPCOMUtils.defineLazyModuleGetter(this, "Services",
-                                       "resource://gre/modules/Service.jsm",
-                                       "Foo");`,
-    `XPCOMUtils.defineLazyModuleGetter(this, "Services",
-                                       "resource://gre/modules/Service.jsm",
-                                       undefined, preServicesLambda);`,
-    {
-      options: [{ allowCu: true }],
-      code: `Cu.import("resource://gre/modules/Service.jsm");`,
-    },
+    `ChromeUtils.import("resource://gre/modules/AppConstants.jsm");`,
+    `ChromeUtils.import("resource://gre/modules/AppConstants.jsm", this);`,
+    `ChromeUtils.defineModuleGetter(this, "AppConstants",
+                                    "resource://gre/modules/AppConstants.jsm");`,
   ],
   invalid: [
     {
-      code: `Cu.import("resource://gre/modules/Services.jsm");`,
-      output: `ChromeUtils.import("resource://gre/modules/Services.jsm");`,
-      errors: callError(MESSAGE_IMPORT),
+      code: `Cu.import("resource://gre/modules/AppConstants.jsm");`,
+      output: `ChromeUtils.import("resource://gre/modules/AppConstants.jsm");`,
+      errors: callError("useChromeUtilsImport"),
     },
     {
-      code: `Cu.import("resource://gre/modules/Services.jsm", this);`,
-      output: `ChromeUtils.import("resource://gre/modules/Services.jsm", this);`,
-      errors: callError(MESSAGE_IMPORT),
+      code: `Cu.import("resource://gre/modules/AppConstants.jsm", this);`,
+      output: `ChromeUtils.import("resource://gre/modules/AppConstants.jsm", this);`,
+      errors: callError("useChromeUtilsImport"),
     },
     {
-      code: `Components.utils.import("resource://gre/modules/Services.jsm");`,
-      output: `ChromeUtils.import("resource://gre/modules/Services.jsm");`,
-      errors: callError(MESSAGE_IMPORT),
-    },
-    {
-      code: `Components.utils.import("resource://gre/modules/Services.jsm");`,
-      output: `ChromeUtils.import("resource://gre/modules/Services.jsm");`,
-      errors: callError(MESSAGE_IMPORT),
-    },
-    {
-      options: [{ allowCu: true }],
-      code: `Components.utils.import("resource://gre/modules/Services.jsm", this);`,
-      output: `ChromeUtils.import("resource://gre/modules/Services.jsm", this);`,
-      errors: callError(MESSAGE_IMPORT),
-    },
-    {
-      code: `XPCOMUtils.defineLazyModuleGetter(this, "Services",
-                                               "resource://gre/modules/Services.jsm");`,
-      output: `ChromeUtils.defineModuleGetter(this, "Services",
-                                               "resource://gre/modules/Services.jsm");`,
-      errors: callError(MESSAGE_DEFINE),
+      code: `Components.utils.import("resource://gre/modules/AppConstants.jsm");`,
+      output: `ChromeUtils.import("resource://gre/modules/AppConstants.jsm");`,
+      errors: callError("useChromeUtilsImport"),
     },
   ],
 });

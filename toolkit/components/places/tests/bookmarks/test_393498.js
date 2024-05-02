@@ -5,8 +5,6 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 var observer = {
-  __proto__: NavBookmarkObserver.prototype,
-
   handlePlacesEvents(events) {
     for (const event of events) {
       switch (event.type) {
@@ -30,22 +28,15 @@ var observer = {
       }
     }
   },
-  onItemChanged(id, property, isAnnotationProperty, value) {
-    this._itemChangedId = id;
-    this._itemChangedProperty = property;
-    this._itemChanged_isAnnotationProperty = isAnnotationProperty;
-    this._itemChangedValue = value;
-  },
 };
-PlacesUtils.bookmarks.addObserver(observer);
+
 observer.handlePlacesEvents = observer.handlePlacesEvents.bind(observer);
 PlacesUtils.observers.addListener(
   ["bookmark-added", "bookmark-time-changed", "bookmark-title-changed"],
   observer.handlePlacesEvents
 );
 
-registerCleanupFunction(function() {
-  PlacesUtils.bookmarks.removeObserver(observer);
+registerCleanupFunction(function () {
   PlacesUtils.observers.removeListener(
     ["bookmark-added", "bookmark-time-changed", "bookmark-title-changed"],
     observer.handlePlacesEvents
@@ -117,7 +108,7 @@ add_task(async function test_bookmark_update_notifications() {
   // Test notifications.
   Assert.equal(
     observer._itemTitleChangedId,
-    await PlacesUtils.promiseItemId(bookmark.guid)
+    await PlacesTestUtils.promiseItemId(bookmark.guid)
   );
   Assert.equal(observer._itemTitleChangedTitle, "Google");
 

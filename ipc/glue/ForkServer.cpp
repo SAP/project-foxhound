@@ -1,21 +1,25 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
-/* vim: set ts=8 sts=4 et sw=4 tw=80: */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 #include "mozilla/ipc/ForkServer.h"
-#include "mozilla/Logging.h"
+
 #include "chrome/common/chrome_switches.h"
+#include "ipc/IPCMessageUtilsSpecializations.h"
 #include "mozilla/BlockingResourceBase.h"
-#include "mozilla/ipc/ProtocolMessageUtils.h"
+#include "mozilla/Logging.h"
+#include "mozilla/Omnijar.h"
 #include "mozilla/ipc/FileDescriptor.h"
 #include "mozilla/ipc/IPDLParamTraits.h"
-#include "ipc/IPCMessageUtilsSpecializations.h"
+#include "mozilla/ipc/ProtocolMessageUtils.h"
+#include "mozilla/ipc/SetProcessTitle.h"
 #include "nsTraceRefcnt.h"
 
+#include <fcntl.h>
 #include <string.h>
 #include <unistd.h>
-#include <fcntl.h>
 
 #if defined(XP_LINUX) && defined(MOZ_SANDBOX)
 #  include "mozilla/SandboxLaunch.h"
@@ -25,8 +29,6 @@
 
 namespace mozilla {
 namespace ipc {
-
-static const int sClientFd = 3;
 
 LazyLogModule gForkServiceLog("ForkService");
 
@@ -38,28 +40,26 @@ ForkServer::ForkServer() {}
 void ForkServer::InitProcess(int* aArgc, char*** aArgv) {
   base::InitForkServerProcess();
 
-  int fd = sClientFd;
-  int fd_flags = fcntl(sClientFd, F_GETFL, 0);
-  fcntl(fd, F_SETFL, fd_flags & ~O_NONBLOCK);
-  mTcver = MakeUnique<MiniTransceiver>(fd, DataBufferClear::AfterReceiving);
+  mTcver = MakeUnique<MiniTransceiver>(kClientPipeFd,
+                                       DataBufferClear::AfterReceiving);
+}
+
+/**
+ * Preload any resources that the forked child processes might need,
+ * and which might change incompatibly or become unavailable by the
+ * time they're started.  For example: the omnijar files, or certain
+ * shared libraries.
+ */
+static void ForkServerPreload(int& aArgc, char** aArgv) {
+  Omnijar::ChildProcessInit(aArgc, aArgv);
 }
 
 /**
  * Start providing the service at the IPC channel.
  */
 bool ForkServer::HandleMessages() {
-  // |sClientFd| is created by an instance of |IPC::Channel|.
-  // It sends a HELLO automatically.
-  IPC::Message hello;
-  mTcver->RecvInfallible(
-      hello, "Expect to receive a HELLO message from the parent process!");
-  MOZ_ASSERT(hello.type() == kHELLO_MESSAGE_TYPE);
-
-  // Send it back
-  mTcver->SendInfallible(hello, "Fail to ack the received HELLO!");
-
   while (true) {
-    IPC::Message msg;
+    UniquePtr<IPC::Message> msg;
     if (!mTcver->Recv(msg)) {
       break;
     }
@@ -108,8 +108,8 @@ inline void PrepareArguments(std::vector<std::string>& aArgv,
 inline void PrepareEnv(base::LaunchOptions* aOptions,
                        nsTArray<EnvVar>& aEnvMap) {
   for (auto& elt : aEnvMap) {
-    nsCString& var = Get<0>(elt);
-    nsCString& val = Get<1>(elt);
+    nsCString& var = std::get<0>(elt);
+    nsCString& val = std::get<1>(elt);
     aOptions->env_map[var.get()] = val.get();
     CleanCString(var);
     CleanCString(val);
@@ -122,11 +122,19 @@ inline void PrepareFdsRemap(base::LaunchOptions* aOptions,
   MOZ_LOG(gForkServiceLog, LogLevel::Verbose, ("fds mapping:"));
   for (auto& elt : aFdsRemap) {
     // FDs are duplicated here.
-    int fd = Get<0>(elt).ClonePlatformHandle().release();
-    std::pair<int, int> fdmap(fd, Get<1>(elt));
+    int fd = std::get<0>(elt).ClonePlatformHandle().release();
+    std::pair<int, int> fdmap(fd, std::get<1>(elt));
     aOptions->fds_to_remap.push_back(fdmap);
     MOZ_LOG(gForkServiceLog, LogLevel::Verbose,
             ("\t%d => %d", fdmap.first, fdmap.second));
+  }
+}
+
+template <class P>
+static void ReadParamInfallible(IPC::MessageReader* aReader, P* aResult,
+                                const char* aCrashMessage) {
+  if (!IPC::ReadParam(aReader, aResult)) {
+    MOZ_CRASH_UNSAFE(aCrashMessage);
   }
 }
 
@@ -142,18 +150,16 @@ inline bool ParseForkNewSubprocess(IPC::Message& aMsg,
     return false;
   }
 
-  PickleIterator iter(aMsg);
+  IPC::MessageReader reader(aMsg);
   nsTArray<nsCString> argv_array;
   nsTArray<EnvVar> env_map;
   nsTArray<FdMapping> fds_remap;
 
-  ReadIPDLParamInfallible(&aMsg, &iter, nullptr, &argv_array,
-                          "Error deserializing 'nsCString[]'");
-  ReadIPDLParamInfallible(&aMsg, &iter, nullptr, &env_map,
-                          "Error deserializing 'EnvVar[]'");
-  ReadIPDLParamInfallible(&aMsg, &iter, nullptr, &fds_remap,
-                          "Error deserializing 'FdMapping[]'");
-  aMsg.EndRead(iter, aMsg.type());
+  ReadParamInfallible(&reader, &argv_array,
+                      "Error deserializing 'nsCString[]'");
+  ReadParamInfallible(&reader, &env_map, "Error deserializing 'EnvVar[]'");
+  ReadParamInfallible(&reader, &fds_remap, "Error deserializing 'FdMapping[]'");
+  reader.EndRead();
 
   PrepareArguments(aArgv, argv_array);
   PrepareEnv(aOptions, env_map);
@@ -190,12 +196,10 @@ inline void SanitizeBuffers(IPC::Message& aMsg, std::vector<std::string>& aArgv,
  * It will return in both the fork server process and the new content
  * process.  |mAppProcBuilder| is null for the fork server.
  */
-void ForkServer::OnMessageReceived(IPC::Message&& message) {
-  IPC::Message msg(std::move(message));
-
+void ForkServer::OnMessageReceived(UniquePtr<IPC::Message> message) {
   std::vector<std::string> argv;
   base::LaunchOptions options;
-  if (!ParseForkNewSubprocess(msg, argv, &options)) {
+  if (!ParseForkNewSubprocess(*message, argv, &options)) {
     return;
   }
 
@@ -220,13 +224,14 @@ void ForkServer::OnMessageReceived(IPC::Message&& message) {
   mAppProcBuilder = nullptr;
 
   IPC::Message reply(MSG_ROUTING_CONTROL, Reply_ForkNewSubprocess__ID);
-  WriteIPDLParam(&reply, nullptr, child_pid);
+  IPC::MessageWriter writer(reply);
+  WriteIPDLParam(&writer, nullptr, child_pid);
   mTcver->SendInfallible(reply, "failed to send a reply message");
 
   // Without this, the content processes that is forked later are
   // able to read the content of buffers even the buffers have been
   // released.
-  SanitizeBuffers(msg, argv, options);
+  SanitizeBuffers(*message, argv, options);
 }
 
 /**
@@ -252,6 +257,8 @@ bool ForkServer::RunForkServer(int* aArgc, char*** aArgv) {
   bool sleep_newproc = !!getenv("MOZ_FORKSERVER_WAIT_GDB_NEWPROC");
 #endif
 
+  SetProcessTitleInit(*aArgv);
+
   // Do this before NS_LogInit() to avoid log files taking lower
   // FDs.
   ForkServer forkserver;
@@ -260,6 +267,7 @@ bool ForkServer::RunForkServer(int* aArgc, char*** aArgv) {
   XRE_SetProcessType("forkserver");
   NS_LogInit();
   mozilla::LogModule::Init(0, nullptr);
+  ForkServerPreload(*aArgc, *aArgv);
   MOZ_LOG(gForkServiceLog, LogLevel::Verbose, ("Start a fork server"));
   {
     DebugOnly<base::ProcessHandle> forkserver_pid = base::GetCurrentProcId();
@@ -268,6 +276,7 @@ bool ForkServer::RunForkServer(int* aArgc, char*** aArgv) {
       // The server has stopped.
       MOZ_LOG(gForkServiceLog, LogLevel::Verbose,
               ("Terminate the fork server"));
+      Omnijar::CleanUp();
       NS_LogTerm();
       return true;
     }
@@ -294,8 +303,6 @@ bool ForkServer::RunForkServer(int* aArgc, char*** aArgv) {
   // content process by closing wrong file descriptors.
   forkserver.mAppProcBuilder->InitAppProcess(aArgc, aArgv);
   forkserver.mAppProcBuilder.reset();
-
-  MOZ_ASSERT("tab"_ns == (*aArgv)[*aArgc - 1], "Only |tab| is allowed!");
 
   // Open log files again with right names and the new PID.
   nsTraceRefcnt::ResetLogFiles((*aArgv)[*aArgc - 1]);

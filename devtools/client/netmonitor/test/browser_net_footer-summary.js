@@ -7,11 +7,11 @@
  * Test if the summary text displayed in the network requests menu footer is correct.
  */
 
-add_task(async function() {
+add_task(async function () {
   const {
     getFormattedSize,
     getFormattedTime,
-  } = require("devtools/client/netmonitor/src/utils/format-utils");
+  } = require("resource://devtools/client/netmonitor/src/utils/format-utils.js");
 
   requestLongerTimeout(2);
 
@@ -34,7 +34,7 @@ add_task(async function() {
   for (let i = 0; i < 2; i++) {
     info(`Performing requests in batch #${i}`);
     const wait = waitForNetworkEvents(monitor, 8);
-    await SpecialPowers.spawn(tab.linkedBrowser, [], async function() {
+    await SpecialPowers.spawn(tab.linkedBrowser, [], async function () {
       content.wrappedJSObject.performRequests(
         '{ "getMedia": true, "getFlash": true }'
       );

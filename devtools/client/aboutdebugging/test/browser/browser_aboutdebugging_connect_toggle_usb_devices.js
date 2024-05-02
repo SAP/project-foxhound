@@ -6,12 +6,10 @@
 /* import-globals-from helper-adb.js */
 Services.scriptloader.loadSubScript(CHROME_URL_ROOT + "helper-adb.js", this);
 
-const { AddonManager } = require("resource://gre/modules/AddonManager.jsm");
-
 /**
  * Check that USB Devices scanning can be enabled and disabled from the connect page.
  */
-add_task(async function() {
+add_task(async function () {
   await pushPref(
     "devtools.remote.adb.extensionURL",
     CHROME_URL_ROOT + "resources/test-adb-extension/adb-extension-#OS#.xpi"

@@ -278,20 +278,16 @@ struct nsCSSRendering {
   static nsIFrame* FindBackgroundStyleFrame(nsIFrame* aForFrame);
 
   /**
-   * @return true if |aFrame| is a canvas frame, in the CSS sense.
+   * Returns the ComputedStyle to be used to paint the background for the given
+   * frame, if its element has a meaningful background.  This applies the rules
+   * for propagating backgrounds between BODY, the root element, and the
+   * canvas.
+   *
+   * @return the ComputedStyle (if any) to be used for painting aForFrame's
+   *         background.
    */
-  static bool IsCanvasFrame(const nsIFrame* aFrame);
-
-  /**
-   * Fill in an aBackgroundSC to be used to paint the background
-   * for an element.  This applies the rules for propagating
-   * backgrounds between BODY, the root element, and the canvas.
-   * @return true if there is some meaningful background.
-   */
-  static bool FindBackground(const nsIFrame* aForFrame,
-                             mozilla::ComputedStyle** aBackgroundSC);
-  static bool FindBackgroundFrame(const nsIFrame* aForFrame,
-                                  nsIFrame** aBackgroundFrame);
+  static mozilla::ComputedStyle* FindBackground(const nsIFrame* aForFrame);
+  static nsIFrame* FindBackgroundFrame(const nsIFrame* aForFrame);
 
   /**
    * As FindBackground, but the passed-in frame is known to be a root frame
@@ -301,54 +297,34 @@ struct nsCSSRendering {
   static mozilla::ComputedStyle* FindRootFrameBackground(nsIFrame* aForFrame);
 
   /**
-   * Returns background style information for the canvas.
+   * Find a non-transparent background color on an ancestor, for various
+   * contrast checks. Note that this only accounts for background-color and
+   * might stop at themed frames (depending on the argument), so it might not be
+   * what you want. Note that if we stop at themed frames we might, in fact, end
+   * up returning a transparent color (but then mIsThemed will be set to true).
    *
-   * @param aForFrame
-   *   the frame used to represent the canvas, in the CSS sense (i.e.
-   *   nsCSSRendering::IsCanvasFrame(aForFrame) must be true)
-   * @param aRootElementFrame
-   *   the frame representing the root element of the document
-   * @param aBackground
-   *   contains background style information for the canvas on return
+   * For semi-transparent colors, right now we blend with the default
+   * background-color rather than with all ancestor backgrounds.
+   *
+   * If aPreferBodyToCanvas is true, we prefer the background color of the
+   * <body> frame, even though we found a canvas background, because the body
+   * background color is most likely what will be visible as the background
+   * color of the page, even if the html element has a different background
+   * color which prevents that of the body frame to propagate to the viewport.
    */
-
-  static nsIFrame* FindCanvasBackgroundFrame(const nsIFrame* aForFrame,
-                                             nsIFrame* aRootElementFrame) {
-    MOZ_ASSERT(IsCanvasFrame(aForFrame), "not a canvas frame");
-    if (aRootElementFrame) {
-      return FindBackgroundStyleFrame(aRootElementFrame);
-    }
-
-    // This should always give transparent, so we'll fill it in with the
-    // default color if needed.  This seems to happen a bit while a page is
-    // being loaded.
-    return const_cast<nsIFrame*>(aForFrame);
-  }
-
-  static mozilla::ComputedStyle* FindCanvasBackground(
-      nsIFrame* aForFrame, nsIFrame* aRootElementFrame) {
-    return FindCanvasBackgroundFrame(aForFrame, aRootElementFrame)->Style();
-  }
-
-  /**
-   * Find a frame which draws a non-transparent background, for various contrast
-   * checks. Note that this only accounts for background-color and might stop at
-   * themed frames (depending on the argument), so it might not be what you
-   * want.
-   */
-  struct NonTransparentBackgroundFrame {
-    nsIFrame* mFrame = nullptr;
+  struct EffectiveBackgroundColor {
+    nscolor mColor = 0;
     bool mIsThemed = false;
-    bool mIsForCanvas = false;
   };
-  static NonTransparentBackgroundFrame FindNonTransparentBackgroundFrame(
-      nsIFrame* aFrame, bool aStopAtThemed = true);
+  static EffectiveBackgroundColor FindEffectiveBackgroundColor(
+      nsIFrame* aFrame, bool aStopAtThemed = true,
+      bool aPreferBodyToCanvas = false);
 
   /**
    * Determine the background color to draw taking into account print settings.
    */
   static nscolor DetermineBackgroundColor(nsPresContext* aPresContext,
-                                          mozilla::ComputedStyle* aStyle,
+                                          const mozilla::ComputedStyle* aStyle,
                                           nsIFrame* aFrame,
                                           bool& aDrawBackgroundImage,
                                           bool& aDrawBackgroundColor);
@@ -442,7 +418,7 @@ struct nsCSSRendering {
      * When this flag is passed, images are downscaled during decode. This
      * is also implied by PAINTBG_TO_WINDOW.
      */
-    PAINTBG_HIGH_QUALITY_SCALING = 0x16,
+    PAINTBG_HIGH_QUALITY_SCALING = 0x10,
   };
 
   struct PaintBGParams {
@@ -502,7 +478,8 @@ struct nsCSSRendering {
    */
   static ImgDrawResult PaintStyleImageLayerWithSC(
       const PaintBGParams& aParams, gfxContext& aRenderingCtx,
-      mozilla::ComputedStyle* mBackgroundSC, const nsStyleBorder& aBorder);
+      const mozilla::ComputedStyle* aBackgroundSC,
+      const nsStyleBorder& aBorder);
 
   static bool CanBuildWebRenderDisplayItemsForStyleImageLayer(
       WebRenderLayerManager* aManager, nsPresContext& aPresCtx,
@@ -611,9 +588,9 @@ struct nsCSSRendering {
     // UNDERLINE or OVERLINE or LINE_THROUGH.
     mozilla::StyleTextDecorationLine decoration =
         mozilla::StyleTextDecorationLine::UNDERLINE;
-    // The style of the decoration line such as
-    // NS_STYLE_TEXT_DECORATION_STYLE_*.
-    uint8_t style = NS_STYLE_TEXT_DECORATION_STYLE_NONE;
+    // The style of the decoration line
+    mozilla::StyleTextDecorationStyle style =
+        mozilla::StyleTextDecorationStyle::None;
     bool vertical = false;
     bool sidewaysLeft = false;
     gfxTextRun::Range glyphRange;
@@ -684,8 +661,8 @@ struct nsCSSRendering {
   static nsRect GetTextDecorationRect(nsPresContext* aPresContext,
                                       const DecorationRectParams& aParams);
 
-  static CompositionOp GetGFXBlendMode(mozilla::StyleBlend mBlendMode) {
-    switch (mBlendMode) {
+  static CompositionOp GetGFXBlendMode(mozilla::StyleBlend aBlendMode) {
+    switch (aBlendMode) {
       case mozilla::StyleBlend::Normal:
         return CompositionOp::OP_OVER;
       case mozilla::StyleBlend::Multiply:
@@ -718,6 +695,8 @@ struct nsCSSRendering {
         return CompositionOp::OP_COLOR;
       case mozilla::StyleBlend::Luminosity:
         return CompositionOp::OP_LUMINOSITY;
+      case mozilla::StyleBlend::PlusLighter:
+        return CompositionOp::OP_ADD;
       default:
         MOZ_ASSERT(false);
         return CompositionOp::OP_OVER;
@@ -755,9 +734,6 @@ struct nsCSSRendering {
    * input:
    *     @param aFrame            the frame which needs the decoration line.
    *     @param aStyle            the style of the complex decoration line
-   *                              NS_STYLE_TEXT_DECORATION_STYLE_DOTTED or
-   *                              NS_STYLE_TEXT_DECORATION_STYLE_DASHED or
-   *                              NS_STYLE_TEXT_DECORATION_STYLE_WAVY.
    *     @param aClippedRect      the clipped rect for the decoration line.
    *                              in other words, visible area of the line.
    *     @param aICoordInFrame  the distance between inline-start edge of aFrame
@@ -765,8 +741,9 @@ struct nsCSSRendering {
    *     @param aCycleLength      the width of one cycle of the line style.
    */
   static Rect ExpandPaintingRectForDecorationLine(
-      nsIFrame* aFrame, const uint8_t aStyle, const Rect& aClippedRect,
-      const Float aICoordInFrame, const Float aCycleLength, bool aVertical);
+      nsIFrame* aFrame, const mozilla::StyleTextDecorationStyle aStyle,
+      const Rect& aClippedRect, const Float aICoordInFrame,
+      const Float aCycleLength, bool aVertical);
 };
 
 /*
@@ -935,7 +912,8 @@ class nsContextBoxBlur {
                                      bool aConstrainSpreadRadius = true);
 
   gfxAlphaBoxBlur mAlphaBoxBlur;
-  RefPtr<gfxContext> mContext;
+  mozilla::UniquePtr<gfxContext> mOwnedContext;
+  gfxContext* mContext;  // may be either mOwnedContext or mDestinationContext
   gfxContext* mDestinationCtx;
 
   /* This is true if the blur already has it's content transformed

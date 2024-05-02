@@ -128,9 +128,9 @@ class UsedNameTracker {
     mozilla::Maybe<TokenPos> firstUsePos_;
 
    public:
-    explicit UsedNameInfo(JSContext* cx, NameVisibility visibility,
+    explicit UsedNameInfo(FrontendContext* fc, NameVisibility visibility,
                           mozilla::Maybe<TokenPos> position)
-        : uses_(cx), visibility_(visibility), firstUsePos_(position) {}
+        : uses_(fc), visibility_(visibility), firstUsePos_(position) {}
 
     UsedNameInfo(UsedNameInfo&& other) = default;
 
@@ -163,9 +163,20 @@ class UsedNameTracker {
     // To allow disambiguating public and private symbols
     bool isPublic() { return visibility_ == NameVisibility::Public; }
 
-    bool empty() { return uses_.empty(); }
+    bool empty() const { return uses_.empty(); }
 
     mozilla::Maybe<TokenPos> pos() { return firstUsePos_; }
+
+    // When we leave a scope, and subsequently find a new private name
+    // reference, we don't want our error messages to be attributed to an old
+    // scope, so we update the position in that scenario.
+    void maybeUpdatePos(mozilla::Maybe<TokenPos> p) {
+      MOZ_ASSERT_IF(!isPublic(), p.isSome());
+
+      if (empty() && !isPublic()) {
+        firstUsePos_ = p;
+      }
+    }
   };
 
   using UsedNameMap =
@@ -186,8 +197,8 @@ class UsedNameTracker {
   bool hasPrivateNames_;
 
  public:
-  explicit UsedNameTracker(JSContext* cx)
-      : map_(cx),
+  explicit UsedNameTracker(FrontendContext* fc)
+      : map_(fc),
         scriptCounter_(0),
         scopeCounter_(0),
         hasPrivateNames_(false) {}
@@ -208,14 +219,15 @@ class UsedNameTracker {
   }
 
   [[nodiscard]] bool noteUse(
-      JSContext* cx, TaggedParserAtomIndex name, NameVisibility visibility,
-      uint32_t scriptId, uint32_t scopeId,
+      FrontendContext* fc, TaggedParserAtomIndex name,
+      NameVisibility visibility, uint32_t scriptId, uint32_t scopeId,
       mozilla::Maybe<TokenPos> tokenPosition = mozilla::Nothing());
 
   // Fill maybeUnboundName with the first (source order) unbound name, or
   // Nothing() if there are no unbound names.
   [[nodiscard]] bool hasUnboundPrivateNames(
-      JSContext* cx, mozilla::Maybe<UnboundPrivateName>& maybeUnboundName);
+      FrontendContext* fc,
+      mozilla::Maybe<UnboundPrivateName>& maybeUnboundName);
 
   // Return a list of unbound private names, sorted by increasing location in
   // the source.
@@ -239,6 +251,12 @@ class UsedNameTracker {
   // Resets state so that scriptId and scopeId are the innermost script and
   // scope, respectively. Used for rewinding state on syntax parse failure.
   void rewind(RewindToken token);
+
+  const UsedNameMap& map() const { return map_; }
+
+#if defined(DEBUG) || defined(JS_JITSPEW)
+  void dump(ParserAtomsTable& table);
+#endif
 };
 
 }  // namespace frontend

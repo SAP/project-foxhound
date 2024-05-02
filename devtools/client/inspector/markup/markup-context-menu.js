@@ -4,23 +4,28 @@
 
 "use strict";
 
-const Services = require("Services");
-const { PSEUDO_CLASSES } = require("devtools/shared/css/constants");
-const { LocalizationHelper } = require("devtools/shared/l10n");
+const {
+  PSEUDO_CLASSES,
+} = require("resource://devtools/shared/css/constants.js");
+const { LocalizationHelper } = require("resource://devtools/shared/l10n.js");
 
-loader.lazyRequireGetter(this, "Menu", "devtools/client/framework/menu");
+loader.lazyRequireGetter(
+  this,
+  "Menu",
+  "resource://devtools/client/framework/menu.js"
+);
 loader.lazyRequireGetter(
   this,
   "MenuItem",
-  "devtools/client/framework/menu-item"
+  "resource://devtools/client/framework/menu-item.js"
 );
 loader.lazyRequireGetter(
   this,
   "clipboardHelper",
-  "devtools/shared/platform/clipboard"
+  "resource://devtools/shared/platform/clipboard.js"
 );
 
-loader.lazyGetter(this, "TOOLBOX_L10N", function() {
+loader.lazyGetter(this, "TOOLBOX_L10N", function () {
   return new LocalizationHelper("devtools/client/locales/toolbox.properties");
 });
 
@@ -54,7 +59,7 @@ class MarkupContextMenu {
 
   show(event) {
     if (
-      !(event.originalTarget instanceof Element) ||
+      !Element.isInstance(event.originalTarget) ||
       event.originalTarget.closest("input[type=text]") ||
       event.originalTarget.closest("input:not([type])") ||
       event.originalTarget.closest("textarea")
@@ -209,11 +214,8 @@ class MarkupContextMenu {
    * Jumps to the custom element definition in the debugger.
    */
   _jumpToCustomElementDefinition() {
-    const {
-      url,
-      line,
-      column,
-    } = this.selection.nodeFront.customElementLocation;
+    const { url, line, column } =
+      this.selection.nodeFront.customElementLocation;
     this.toolbox.viewSourceInDebugger(
       url,
       line,
@@ -369,6 +371,7 @@ class MarkupContextMenu {
 
     const res = await this.toolbox.commands.scriptCommand.execute(evalString, {
       selectedNodeActor: this.selection.nodeFront.actorID,
+      disableBreaks: true,
     });
     hud.setInputValue(res.result);
     this.inspector.emit("console-var-ready");
@@ -437,7 +440,7 @@ class MarkupContextMenu {
    */
   _getClipboardContentForPaste() {
     const content = clipboardHelper.getText();
-    if (content && content.trim().length > 0) {
+    if (content && content.trim().length) {
       return content;
     }
     return null;
@@ -569,7 +572,7 @@ class MarkupContextMenu {
     const type = popupNode.dataset.type;
     if (type === "uri" || type === "cssresource" || type === "jsresource") {
       // Links can't be opened in new tabs in the browser toolbox.
-      if (type === "uri" && !this.target.chrome) {
+      if (type === "uri" && !this.toolbox.isBrowserToolbox) {
         linkFollow.visible = true;
         linkFollow.label = INSPECTOR_L10N.getStr(
           "inspector.menu.openUrlInNewTab.label"
@@ -790,12 +793,7 @@ class MarkupContextMenu {
       })
     );
 
-    if (
-      Services.prefs.getBoolPref(
-        "devtools.markup.mutationBreakpoints.enabled"
-      ) &&
-      this.selection.nodeFront.mutationBreakpoints
-    ) {
+    if (this.selection.nodeFront.mutationBreakpoints) {
       menu.append(
         new MenuItem({
           label: INSPECTOR_L10N.getStr("inspectorBreakpointSubmenu.label"),
@@ -928,7 +926,7 @@ class MarkupContextMenu {
     );
 
     const nodeLinkMenuItems = this._getNodeLinkMenuItems();
-    if (nodeLinkMenuItems.filter(item => item.visible).length > 0) {
+    if (nodeLinkMenuItems.filter(item => item.visible).length) {
       menu.append(
         new MenuItem({
           id: "node-menu-link-separator",

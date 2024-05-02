@@ -88,6 +88,7 @@ static inline void profiler_shutdown() {}
 #  include "mozilla/Assertions.h"
 #  include "mozilla/Atomics.h"
 #  include "mozilla/Attributes.h"
+#  include "mozilla/BaseProfilerRAIIMacro.h"
 #  include "mozilla/Maybe.h"
 #  include "mozilla/PowerOfTwo.h"
 #  include "mozilla/TimeStamp.h"
@@ -116,22 +117,26 @@ class SpliceableJSONWriter;
 
 static constexpr PowerOfTwo32 BASE_PROFILER_DEFAULT_ENTRIES =
 #  if !defined(GP_PLAT_arm_android)
-    MakePowerOfTwo32<1024 * 1024>();  // 1M entries = 8MB
+    MakePowerOfTwo32<16 * 1024 * 1024>();  // 16M entries = 128MiB
 #  else
-    MakePowerOfTwo32<128 * 1024>();  // 128k entries = 1MB
+    MakePowerOfTwo32<4 * 1024 * 1024>();            // 4M entries = 32MiB
 #  endif
 
 // Startup profiling usually need to capture more data, especially on slow
 // systems.
+// Note: Keep in sync with GeckoThread.maybeStartGeckoProfiler:
+// https://searchfox.org/mozilla-central/source/mobile/android/geckoview/src/main/java/org/mozilla/gecko/GeckoThread.java
 static constexpr PowerOfTwo32 BASE_PROFILER_DEFAULT_STARTUP_ENTRIES =
 #  if !defined(GP_PLAT_arm_android)
-    MakePowerOfTwo32<4 * 1024 * 1024>();  // 4M entries = 32MB
+    mozilla::MakePowerOfTwo32<64 * 1024 * 1024>();  // 64M entries = 512MiB
 #  else
-    MakePowerOfTwo32<256 * 1024>();  // 256k entries = 2MB
+    mozilla::MakePowerOfTwo32<16 * 1024 * 1024>();  // 16M entries = 128MiB
 #  endif
 
-#  define BASE_PROFILER_DEFAULT_DURATION 20
-#  define BASE_PROFILER_DEFAULT_INTERVAL 1
+// Note: Keep in sync with GeckoThread.maybeStartGeckoProfiler:
+// https://searchfox.org/mozilla-central/source/mobile/android/geckoview/src/main/java/org/mozilla/gecko/GeckoThread.java
+#  define BASE_PROFILER_DEFAULT_INTERVAL 1 /* millisecond */
+#  define BASE_PROFILER_MAX_INTERVAL 5000  /* milliseconds */
 
 // Initialize the profiler. If MOZ_PROFILER_STARTUP is set the profiler will
 // also be started. This call must happen before any other profiler calls
@@ -140,7 +145,7 @@ static constexpr PowerOfTwo32 BASE_PROFILER_DEFAULT_STARTUP_ENTRIES =
 MFBT_API void profiler_init(void* stackTop);
 
 #  define AUTO_BASE_PROFILER_INIT \
-    ::mozilla::baseprofiler::AutoProfilerInit BASE_PROFILER_RAII
+    ::mozilla::baseprofiler::AutoProfilerInit PROFILER_RAII
 
 // Clean up the profiler module, stopping it if required. This function may
 // also save a shutdown profile if requested. No profiler calls should happen
@@ -235,7 +240,7 @@ MFBT_API void profiler_remove_sampled_counter(BaseProfilerCount* aCounter);
 
 // Register and unregister a thread within a scope.
 #  define AUTO_BASE_PROFILER_REGISTER_THREAD(name) \
-    ::mozilla::baseprofiler::AutoProfilerRegisterThread BASE_PROFILER_RAII(name)
+    ::mozilla::baseprofiler::AutoProfilerRegisterThread PROFILER_RAII(name)
 
 // Pause and resume the profiler. No-ops if the profiler is inactive. While
 // paused the profile will not take any samples and will not record any data
@@ -259,9 +264,9 @@ MFBT_API void profiler_thread_wake();
 
 // Mark a thread as asleep/awake within a scope.
 #  define AUTO_BASE_PROFILER_THREAD_SLEEP \
-    ::mozilla::baseprofiler::AutoProfilerThreadSleep BASE_PROFILER_RAII
+    ::mozilla::baseprofiler::AutoProfilerThreadSleep PROFILER_RAII
 #  define AUTO_BASE_PROFILER_THREAD_WAKE \
-    ::mozilla::baseprofiler::AutoProfilerThreadWake BASE_PROFILER_RAII
+    ::mozilla::baseprofiler::AutoProfilerThreadWake PROFILER_RAII
 
 //---------------------------------------------------------------------------
 // Get information from the profiler
@@ -421,7 +426,9 @@ MFBT_API bool profiler_stream_json_for_this_process(
 
 // Get the profile and write it into a file. A no-op if the profile is
 // inactive.
-MFBT_API void profiler_save_profile_to_file(const char* aFilename);
+// Prefixed with "base" to avoid clashing with Gecko Profiler's extern "C"
+// profiler_save_profile_to_file when called from debugger.
+MFBT_API void baseprofiler_save_profile_to_file(const char* aFilename);
 
 //---------------------------------------------------------------------------
 // RAII classes

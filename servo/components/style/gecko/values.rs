@@ -6,47 +6,39 @@
 
 //! Different kind of helpers to interact with Gecko values.
 
+use crate::color::{AbsoluteColor, ColorSpace};
 use crate::counter_style::{Symbol, Symbols};
 use crate::gecko_bindings::bindings;
 use crate::gecko_bindings::structs::CounterStylePtr;
 use crate::values::generics::CounterStyle;
 use crate::values::Either;
 use crate::Atom;
-use app_units::Au;
-use cssparser::RGBA;
-use std::cmp::max;
 
-/// Convert a given RGBA value to `nscolor`.
-pub fn convert_rgba_to_nscolor(rgba: &RGBA) -> u32 {
-    ((rgba.alpha as u32) << 24) |
-        ((rgba.blue as u32) << 16) |
-        ((rgba.green as u32) << 8) |
-        (rgba.red as u32)
+/// Convert a color value to `nscolor`.
+pub fn convert_absolute_color_to_nscolor(color: &AbsoluteColor) -> u32 {
+    let srgb = color.to_color_space(ColorSpace::Srgb);
+    u32::from_le_bytes([
+        (srgb.components.0 * 255.0).round() as u8,
+        (srgb.components.1 * 255.0).round() as u8,
+        (srgb.components.2 * 255.0).round() as u8,
+        (srgb.alpha * 255.0).round() as u8,
+    ])
 }
 
-/// Convert a given `nscolor` to a Servo RGBA value.
-pub fn convert_nscolor_to_rgba(color: u32) -> RGBA {
-    RGBA::new(
-        (color & 0xff) as u8,
-        (color >> 8 & 0xff) as u8,
-        (color >> 16 & 0xff) as u8,
-        (color >> 24 & 0xff) as u8,
-    )
+/// Convert a given `nscolor` to a Servo AbsoluteColor value.
+pub fn convert_nscolor_to_absolute_color(color: u32) -> AbsoluteColor {
+    let [r, g, b, a] = color.to_le_bytes();
+    AbsoluteColor::srgb_legacy(r, g, b, a as f32 / 255.0)
 }
 
-/// Round `width` down to the nearest device pixel, but any non-zero value that
-/// would round down to zero is clamped to 1 device pixel.  Used for storing
-/// computed values of border-*-width and outline-width.
-#[inline]
-pub fn round_border_to_device_pixels(width: Au, au_per_device_px: Au) -> Au {
-    if width == Au(0) {
-        Au(0)
-    } else {
-        max(
-            au_per_device_px,
-            Au(width.0 / au_per_device_px.0 * au_per_device_px.0),
-        )
-    }
+#[test]
+fn convert_ns_color_to_absolute_color_should_be_in_legacy_syntax() {
+    use crate::color::ColorFlags;
+
+    let result = convert_nscolor_to_absolute_color(0x336699CC);
+    assert!(result.flags.contains(ColorFlags::IS_LEGACY_SRGB));
+
+    assert!(result.is_legacy_syntax());
 }
 
 impl CounterStyle {

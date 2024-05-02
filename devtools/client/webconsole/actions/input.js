@@ -4,16 +4,21 @@
 
 "use strict";
 
-const { Utils: WebConsoleUtils } = require("devtools/client/webconsole/utils");
+const {
+  Utils: WebConsoleUtils,
+} = require("resource://devtools/client/webconsole/utils.js");
 const {
   EVALUATE_EXPRESSION,
   SET_TERMINAL_INPUT,
   SET_TERMINAL_EAGER_RESULT,
   EDITOR_PRETTY_PRINT,
-} = require("devtools/client/webconsole/constants");
-const { getAllPrefs } = require("devtools/client/webconsole/selectors/prefs");
-const ResourceCommand = require("devtools/shared/commands/resource/resource-command");
-const l10n = require("devtools/client/webconsole/utils/l10n");
+  HELP_URL,
+} = require("resource://devtools/client/webconsole/constants.js");
+const {
+  getAllPrefs,
+} = require("resource://devtools/client/webconsole/selectors/prefs.js");
+const ResourceCommand = require("resource://devtools/shared/commands/resource/resource-command.js");
+const l10n = require("resource://devtools/client/webconsole/utils/l10n.js");
 
 loader.lazyServiceGetter(
   this,
@@ -24,39 +29,43 @@ loader.lazyServiceGetter(
 loader.lazyRequireGetter(
   this,
   "messagesActions",
-  "devtools/client/webconsole/actions/messages"
+  "resource://devtools/client/webconsole/actions/messages.js"
 );
 loader.lazyRequireGetter(
   this,
   "historyActions",
-  "devtools/client/webconsole/actions/history"
+  "resource://devtools/client/webconsole/actions/history.js"
 );
 loader.lazyRequireGetter(
   this,
   "ConsoleCommand",
-  "devtools/client/webconsole/types",
+  "resource://devtools/client/webconsole/types.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "netmonitorBlockingActions",
-  "devtools/client/netmonitor/src/actions/request-blocking"
+  "resource://devtools/client/netmonitor/src/actions/request-blocking.js"
 );
 
 loader.lazyRequireGetter(
   this,
   ["saveScreenshot", "captureAndSaveScreenshot"],
-  "devtools/client/shared/screenshot",
+  "resource://devtools/client/shared/screenshot.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "createSimpleTableMessage",
-  "devtools/client/webconsole/utils/messages",
+  "resource://devtools/client/webconsole/utils/messages.js",
   true
 );
-
-const HELP_URL = "https://developer.mozilla.org/docs/Tools/Web_Console/Helpers";
+loader.lazyRequireGetter(
+  this,
+  "getSelectedTarget",
+  "resource://devtools/shared/commands/target/selectors/targets.js",
+  true
+);
 
 async function getMappedExpression(hud, expression) {
   let mapResult;
@@ -110,10 +119,14 @@ function evaluateExpression(expression, from = "input") {
 
     const response = await commands.scriptCommand
       .execute(expression, {
-        frameActor: webConsoleUI.getFrameActor(),
+        frameActor: hud.getSelectedFrameActorID(),
         selectedNodeActor: webConsoleUI.getSelectedNodeActorID(),
-        selectedTargetFront: toolbox && toolbox.getSelectedTargetFront(),
+        selectedTargetFront: getSelectedTarget(
+          webConsoleUI.hud.commands.targetCommand.store.getState()
+        ),
         mapped,
+        // Allow breakpoints to be triggerred and the evaluated source to be shown in debugger UI
+        disableBreaks: false,
       })
       .then(onSettled, onSettled);
 
@@ -177,17 +190,23 @@ function handleHelperResult(response) {
   return async ({ dispatch, hud, toolbox, webConsoleUI, getState }) => {
     const { result, helperResult } = response;
     const helperHasRawOutput = !!helperResult?.rawOutput;
-    const hasNetworkResourceCommandSupport = hud.resourceCommand.hasResourceCommandSupport(
-      hud.resourceCommand.TYPES.NETWORK_EVENT
-    );
-    let networkFront = null;
-    // @backward-compat { version 86 } default network events watcher support
-    if (hasNetworkResourceCommandSupport) {
-      networkFront = await hud.resourceCommand.watcherFront.getNetworkParentActor();
-    }
 
     if (helperResult?.type) {
       switch (helperResult.type) {
+        case "exception":
+          dispatch(
+            messagesActions.messagesAdd([
+              {
+                message: {
+                  level: "error",
+                  arguments: [helperResult.message],
+                  chromeContext: true,
+                },
+                resourceType: ResourceCommand.TYPES.CONSOLE_MESSAGE,
+              },
+            ])
+          );
+          break;
         case "clearOutput":
           dispatch(messagesActions.messagesClear());
           break;
@@ -241,7 +260,8 @@ function handleHelperResult(response) {
         case "screenshotOutput":
           const { args, value } = helperResult;
           const targetFront =
-            toolbox?.getSelectedTargetFront() || hud.currentTarget;
+            getSelectedTarget(hud.commands.targetCommand.store.getState()) ||
+            hud.currentTarget;
           let screenshotMessages;
 
           // @backward-compat { version 87 } The screenshot-content actor isn't available
@@ -264,13 +284,14 @@ function handleHelperResult(response) {
             );
           }
 
-          if (screenshotMessages && screenshotMessages.length > 0) {
+          if (screenshotMessages && screenshotMessages.length) {
             dispatch(
               messagesActions.messagesAdd(
                 screenshotMessages.map(message => ({
                   message: {
                     level: message.level || "log",
                     arguments: [message.text],
+                    chromeContext: true,
                   },
                   resourceType: ResourceCommand.TYPES.CONSOLE_MESSAGE,
                 }))
@@ -284,10 +305,7 @@ function handleHelperResult(response) {
           // process, while the request has to be blocked from the parent process.
           // Then, calling the Netmonitor action will only update the visual state of the Netmonitor,
           // but we also have to block the request via the NetworkParentActor.
-          // @backward-compat { version 86 } default network events watcher support
-          if (hasNetworkResourceCommandSupport && networkFront) {
-            await networkFront.blockRequest({ url: blockURL });
-          }
+          await hud.commands.networkCommand.blockRequestForUrl(blockURL);
           toolbox
             .getPanel("netmonitor")
             ?.panelWin.store.dispatch(
@@ -308,10 +326,7 @@ function handleHelperResult(response) {
           break;
         case "unblockURL":
           const unblockURL = helperResult.args.url;
-          // @backward-compat { version 86 } see related comments in block url above
-          if (hasNetworkResourceCommandSupport && networkFront) {
-            await networkFront.unblockRequest({ url: unblockURL });
-          }
+          await hud.commands.networkCommand.unblockRequestForUrl(unblockURL);
           toolbox
             .getPanel("netmonitor")
             ?.panelWin.store.dispatch(
@@ -369,14 +384,7 @@ function setInputValue(value) {
  *                         the previous evaluation.
  */
 function terminalInputChanged(expression, force = false) {
-  return async ({
-    dispatch,
-    webConsoleUI,
-    hud,
-    toolbox,
-    commands,
-    getState,
-  }) => {
+  return async ({ dispatch, webConsoleUI, hud, commands, getState }) => {
     const prefs = getAllPrefs(getState());
     if (!prefs.eagerEvaluation) {
       return null;
@@ -412,12 +420,24 @@ function terminalInputChanged(expression, force = false) {
     let mapped;
     ({ expression, mapped } = await getMappedExpression(hud, expression));
 
+    // We don't want to evaluate top-level await expressions (see Bug 1786805)
+    if (mapped?.await) {
+      return dispatch({
+        type: SET_TERMINAL_EAGER_RESULT,
+        expression,
+        result: null,
+      });
+    }
+
     const response = await commands.scriptCommand.execute(expression, {
-      frameActor: await webConsoleUI.getFrameActor(),
+      frameActor: hud.getSelectedFrameActorID(),
       selectedNodeActor: webConsoleUI.getSelectedNodeActorID(),
-      selectedTargetFront: toolbox && toolbox.getSelectedTargetFront(),
+      selectedTargetFront: getSelectedTarget(
+        hud.commands.targetCommand.store.getState()
+      ),
       mapped,
       eager: true,
+      disableBreaks: true,
     });
 
     return dispatch({

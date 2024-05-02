@@ -11,12 +11,12 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1170484
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
   <script type="application/javascript">
 
-  /** Test for Bug 1170484 **/
+  /** Test for Bug 1170484 */
   SimpleTest.waitForExplicitFinish();
 
-  /* global onSpellCheck */
-  SpecialPowers.Cu.import(
-    "resource://testing-common/AsyncSpellCheckTestHelper.jsm", window);
+  var { maybeOnSpellCheck } = SpecialPowers.ChromeUtils.importESModule(
+    "resource://testing-common/AsyncSpellCheckTestHelper.sys.mjs"
+  );
 
   SimpleTest.waitForFocus(doTest, window);
   function doTest() {
@@ -30,7 +30,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1170484
     // Not sure why, but postponing through the event loop seems to be enough.
     SimpleTest.executeSoon(function() {
       synthesizeMouseAtCenter($('misspelled'), {}, window);
-      onSpellCheck($('area'), function() {
+      maybeOnSpellCheck($('area'), function() {
         synthesizeMouseAtCenter($('misspelled'), {type: 'contextmenu'}, window);
         var mm = SpecialPowers.loadChromeScript(SimpleTest.getTestFileURL('helper_bug1170484.js'))
         info("Loaded chrome script");

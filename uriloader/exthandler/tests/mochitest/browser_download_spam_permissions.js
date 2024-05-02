@@ -4,8 +4,8 @@
 
 "use strict";
 
-const { PermissionTestUtils } = ChromeUtils.import(
-  "resource://testing-common/PermissionTestUtils.jsm"
+const { PermissionTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/PermissionTestUtils.sys.mjs"
 );
 
 const TEST_URI = "https://example.com";
@@ -23,7 +23,7 @@ registerCleanupFunction(() => MockFilePicker.cleanup());
 
 let gTempDownloadDir;
 
-add_task(async function setup() {
+add_setup(async function () {
   // Create temp directory
   let time = new Date().getTime();
   let tempDir = Services.dirsvc.get("TmpD", Ci.nsIFile);
@@ -35,14 +35,14 @@ add_task(async function setup() {
   PermissionTestUtils.add(
     TEST_URI,
     "automatic-download",
-    Services.perms.UNKNOWN
+    Services.perms.UNKNOWN_ACTION
   );
   await SpecialPowers.pushPrefEnv({
     set: [
-      // We enable browser.download.improvements_to_download_panel here since
-      // the test expects the download to be saved directly to disk and not
-      // prompted by the UnknownContentType window.
-      ["browser.download.improvements_to_download_panel", true],
+      // We disable browser.download.always_ask_before_handling_new_types here
+      // since the test expects the download to be saved directly to disk and
+      // not prompted by the UnknownContentType window.
+      ["browser.download.always_ask_before_handling_new_types", false],
       ["browser.download.enable_spam_prevention", true],
     ],
   });
@@ -52,8 +52,6 @@ add_task(async function setup() {
     Services.prefs.clearUserPref("browser.download.dir");
     await IOUtils.remove(tempDir.path, { recursive: true });
   });
-
-  Services.telemetry.clearEvents();
 });
 
 add_task(async function check_download_spam_permissions() {
@@ -80,7 +78,10 @@ add_task(async function check_download_spam_permissions() {
     TEST_PATH + "test_spammy_page.html"
   );
   registerCleanupFunction(async () => {
-    DownloadIntegration.downloadSpamProtection.clearDownloadSpam(TEST_URI);
+    DownloadIntegration.downloadSpamProtection.removeDownloadSpamForWindow(
+      TEST_URI,
+      window
+    );
     DownloadsPanel.hidePanel();
     await publicList.removeFinished();
     BrowserTestUtils.removeTab(newTab);
@@ -121,22 +122,6 @@ add_task(async function check_download_spam_permissions() {
     "The test URI should have blocked automatic downloads"
   );
 
-  let events = Services.telemetry.snapshotEvents(
-    Ci.nsITelemetry.DATASET_PRERELEASE_CHANNELS,
-    true
-  );
-  events = (events.parent || []).filter(
-    e => e[1] == "downloads" && e[2] == "helpertype"
-  );
-  is(events.length, 100, "should be 100 events");
-
-  let initialEvent = events.shift();
-  is(initialEvent[4], "save", "download is saved");
-
-  for (let event of events) {
-    is(event[4], "spam", "download is blocked");
-  }
-
   await savelink();
 });
 
@@ -155,7 +140,7 @@ async function savelink() {
   await popupShown;
 
   await new Promise(resolve => {
-    MockFilePicker.showCallback = function(fp) {
+    MockFilePicker.showCallback = function (fp) {
       resolve();
       let file = gTempDownloadDir.clone();
       file.append("file_with__funny_name.png");

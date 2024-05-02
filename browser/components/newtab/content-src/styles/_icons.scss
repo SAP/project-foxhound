@@ -39,7 +39,7 @@
   }
 
   &.icon-clear-input {
-    background-image: url('chrome://activity-stream/content/data/content/assets/glyph-cancel-16.svg');
+    background-image: url('chrome://global/skin/icons/close-fill.svg');
   }
 
   &.icon-delete {
@@ -52,7 +52,7 @@
 
   &.icon-modal-delete {
     flex-shrink: 0;
-    background-image: url('chrome://activity-stream/content/data/content/assets/glyph-modal-delete-32.svg');
+    background-image: url('chrome://activity-stream/content/data/content/assets/glyph-modal-delete-20.svg');
     background-size: $larger-icon-size;
     height: $larger-icon-size;
     width: $larger-icon-size;
@@ -72,6 +72,7 @@
 
   &.icon-new-window {
     @include flip-icon;
+
     background-image: url('chrome://activity-stream/content/data/content/assets/glyph-newWindow-16.svg');
   }
 
@@ -85,16 +86,18 @@
 
   &.icon-pin {
     @include flip-icon;
+
     background-image: url('chrome://activity-stream/content/data/content/assets/glyph-pin-16.svg');
   }
 
   &.icon-unpin {
     @include flip-icon;
+
     background-image: url('chrome://activity-stream/content/data/content/assets/glyph-unpin-16.svg');
   }
 
   &.icon-edit {
-    background-image: url('chrome://activity-stream/content/data/content/assets/glyph-edit-16.svg');
+    background-image: url('chrome://global/skin/icons/edit.svg');
   }
 
   &.icon-pocket {
@@ -102,7 +105,8 @@
   }
 
   &.icon-pocket-save {
-    background-image: url('chrome://global/skin/icons/pocket-outline.svg');
+    background-image: url('chrome://global/skin/icons/pocket.svg');
+    fill: $white;
   }
 
   &.icon-pocket-delete {
@@ -118,7 +122,7 @@
   }
 
   &.icon-trending {
-    background-image: url('chrome://activity-stream/content/data/content/assets/glyph-trending-16.svg');
+    background-image: url('chrome://browser/skin/trending.svg');
     transform: translateY(2px); // trending bolt is visually top heavy
   }
 
@@ -127,11 +131,12 @@
   }
 
   &.icon-topsites {
-    background-image: url('chrome://activity-stream/content/data/content/assets/glyph-topsites-16.svg');
+    background-image: url('chrome://browser/skin/topsites.svg');
   }
 
   &.icon-pin-small {
     @include flip-icon;
+
     background-image: url('chrome://browser/skin/pin-12.svg');
     background-size: $smaller-icon-size;
     height: $smaller-icon-size;

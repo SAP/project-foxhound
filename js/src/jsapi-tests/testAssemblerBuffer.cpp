@@ -6,7 +6,6 @@
 
 #include "jit/shared/IonAssemblerBufferWithConstantPools.h"
 #include "jsapi-tests/tests.h"
-#include "vm/JSAtom.h"
 
 // Tests for classes in:
 //
@@ -523,8 +522,8 @@ BEGIN_TEST(testAssemblerBuffer_ARM64) {
 
   js::LifoAlloc lifo(4096);
   TempAllocator alloc(&lifo);
-  JitContext jc(cx, &alloc);
-  StackMacroAssembler masm;
+  JitContext jc(cx);
+  StackMacroAssembler masm(cx, alloc);
   AutoCreatedBy acb(masm, __func__);
 
   // Branches to an unbound label.

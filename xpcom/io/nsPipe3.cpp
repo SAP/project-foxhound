@@ -25,12 +25,12 @@
 #include "mozilla/Logging.h"
 #include "nsIClassInfoImpl.h"
 #include "nsAlgorithm.h"
-#include "nsMemory.h"
 #include "nsPipe.h"
 #include "nsIAsyncInputStream.h"
 #include "nsIAsyncOutputStream.h"
 #include "nsIInputStreamPriority.h"
 #include "nsITaintawareInputStream.h"
+#include "nsThreadUtils.h"
 
 using namespace mozilla;
 
@@ -62,6 +62,76 @@ enum SegmentChangeResult { SegmentNotChanged, SegmentAdvanceBufferRead };
 
 //-----------------------------------------------------------------------------
 
+class CallbackHolder {
+ public:
+  CallbackHolder() = default;
+  MOZ_IMPLICIT CallbackHolder(std::nullptr_t) {}
+
+  CallbackHolder(nsIAsyncInputStream* aStream,
+                 nsIInputStreamCallback* aCallback, uint32_t aFlags,
+                 nsIEventTarget* aEventTarget)
+      : mRunnable(aCallback ? NS_NewCancelableRunnableFunction(
+                                  "nsPipeInputStream AsyncWait Callback",
+                                  [stream = nsCOMPtr{aStream},
+                                   callback = nsCOMPtr{aCallback}]() {
+                                    callback->OnInputStreamReady(stream);
+                                  })
+                            : nullptr),
+        mEventTarget(aEventTarget),
+        mFlags(aFlags) {}
+
+  CallbackHolder(nsIAsyncOutputStream* aStream,
+                 nsIOutputStreamCallback* aCallback, uint32_t aFlags,
+                 nsIEventTarget* aEventTarget)
+      : mRunnable(aCallback ? NS_NewCancelableRunnableFunction(
+                                  "nsPipeOutputStream AsyncWait Callback",
+                                  [stream = nsCOMPtr{aStream},
+                                   callback = nsCOMPtr{aCallback}]() {
+                                    callback->OnOutputStreamReady(stream);
+                                  })
+                            : nullptr),
+        mEventTarget(aEventTarget),
+        mFlags(aFlags) {}
+
+  CallbackHolder(const CallbackHolder&) = delete;
+  CallbackHolder(CallbackHolder&&) = default;
+  CallbackHolder& operator=(const CallbackHolder&) = delete;
+  CallbackHolder& operator=(CallbackHolder&&) = default;
+
+  CallbackHolder& operator=(std::nullptr_t) {
+    mRunnable = nullptr;
+    mEventTarget = nullptr;
+    mFlags = 0;
+    return *this;
+  }
+
+  MOZ_IMPLICIT operator bool() const { return mRunnable; }
+
+  uint32_t Flags() const {
+    MOZ_ASSERT(mRunnable, "Should only be called when a callback is present");
+    return mFlags;
+  }
+
+  void Notify() {
+    nsCOMPtr<nsIRunnable> runnable = mRunnable.forget();
+    nsCOMPtr<nsIEventTarget> eventTarget = mEventTarget.forget();
+    if (runnable) {
+      if (eventTarget) {
+        eventTarget->Dispatch(runnable.forget());
+      } else {
+        runnable->Run();
+      }
+    }
+  }
+
+ private:
+  nsCOMPtr<nsIRunnable> mRunnable;
+  nsCOMPtr<nsIEventTarget> mEventTarget;
+  uint32_t mFlags = 0;
+};
+
+//-----------------------------------------------------------------------------
+
 // this class is used to delay notifications until the end of a particular
 // scope.  it helps avoid the complexity of issuing callbacks while inside
 // a critical section.
@@ -70,34 +140,12 @@ class nsPipeEvents {
   nsPipeEvents() = default;
   ~nsPipeEvents();
 
-  inline void NotifyInputReady(nsIAsyncInputStream* aStream,
-                               nsIInputStreamCallback* aCallback) {
-    mInputList.AppendElement(InputEntry(aStream, aCallback));
-  }
-
-  inline void NotifyOutputReady(nsIAsyncOutputStream* aStream,
-                                nsIOutputStreamCallback* aCallback) {
-    MOZ_DIAGNOSTIC_ASSERT(!mOutputCallback);
-    mOutputStream = aStream;
-    mOutputCallback = aCallback;
+  inline void NotifyReady(CallbackHolder aCallback) {
+    mCallbacks.AppendElement(std::move(aCallback));
   }
 
  private:
-  struct InputEntry {
-    InputEntry(nsIAsyncInputStream* aStream, nsIInputStreamCallback* aCallback)
-        : mStream(aStream), mCallback(aCallback) {
-      MOZ_DIAGNOSTIC_ASSERT(mStream);
-      MOZ_DIAGNOSTIC_ASSERT(mCallback);
-    }
-
-    nsCOMPtr<nsIAsyncInputStream> mStream;
-    nsCOMPtr<nsIInputStreamCallback> mCallback;
-  };
-
-  nsTArray<InputEntry> mInputList;
-
-  nsCOMPtr<nsIAsyncOutputStream> mOutputStream;
-  nsCOMPtr<nsIOutputStreamCallback> mOutputCallback;
+  nsTArray<CallbackHolder> mCallbacks;
 };
 
 //-----------------------------------------------------------------------------
@@ -115,21 +163,25 @@ struct nsPipeReadState {
         mNeedDrain(false),
         mBytesRead(0) {}
 
-  char* mReadCursor;
-  char* mReadLimit;
-  int32_t mSegment;
-  uint32_t mAvailable;
+  // All members of this type are guarded by the pipe monitor, however it cannot
+  // be named from this type, so the less-reliable MOZ_GUARDED_VAR is used
+  // instead. In the future it would be nice to avoid this, especially as
+  // MOZ_GUARDED_VAR is deprecated.
+  char* mReadCursor MOZ_GUARDED_VAR;
+  char* mReadLimit MOZ_GUARDED_VAR;
+  int32_t mSegment MOZ_GUARDED_VAR;
+  uint32_t mAvailable MOZ_GUARDED_VAR;
 
   // This flag is managed using the AutoReadSegment RAII stack class.
-  bool mActiveRead;
+  bool mActiveRead MOZ_GUARDED_VAR;
 
   // Set to indicate that the input stream has closed and should be drained,
   // but that drain has been delayed due to an active read.  When the read
   // completes, this flag indicate the drain should then be performed.
-  bool mNeedDrain;
+  bool mNeedDrain MOZ_GUARDED_VAR;
 
   // TaintFox: Required for accessing the associated taint information.
-  int32_t mBytesRead;
+  int32_t mBytesRead MOZ_GUARDED_VAR;
 };
 
 //-----------------------------------------------------------------------------
@@ -161,7 +213,6 @@ class nsPipeInputStream final : public nsIAsyncInputStream,
         mInputStatus(NS_OK),
         mBlocking(true),
         mBlocked(false),
-        mCallbackFlags(0),
         mPriority(nsIRunnablePriority::PRIORITY_NORMAL) {}
 
   nsPipeInputStream(const nsPipeInputStream& aOther)
@@ -170,14 +221,12 @@ class nsPipeInputStream final : public nsIAsyncInputStream,
         mInputStatus(aOther.mInputStatus),
         mBlocking(aOther.mBlocking),
         mBlocked(false),
-        mCallbackFlags(0),
         mReadState(aOther.mReadState),
         mPriority(nsIRunnablePriority::PRIORITY_NORMAL) {}
 
-  nsresult Fill();
   void SetNonBlocking(bool aNonBlocking) { mBlocking = !aNonBlocking; }
 
-  uint32_t Available();
+  uint32_t Available() MOZ_REQUIRES(Monitor());
 
   // synchronously wait for the pipe to become readable.
   nsresult Wait();
@@ -186,9 +235,11 @@ class nsPipeInputStream final : public nsIAsyncInputStream,
   // expect their caller to have done so and to pass the monitor as
   // evidence.
   MonitorAction OnInputReadable(uint32_t aBytesWritten, nsPipeEvents&,
-                                const ReentrantMonitorAutoEnter& ev);
+                                const ReentrantMonitorAutoEnter& ev)
+      MOZ_REQUIRES(Monitor());
   MonitorAction OnInputException(nsresult, nsPipeEvents&,
-                                 const ReentrantMonitorAutoEnter& ev);
+                                 const ReentrantMonitorAutoEnter& ev)
+      MOZ_REQUIRES(Monitor());
 
   nsPipeReadState& ReadState() { return mReadState; }
 
@@ -197,14 +248,18 @@ class nsPipeInputStream final : public nsIAsyncInputStream,
   nsresult Status() const;
 
   // A version of Status() that doesn't acquire the monitor.
-  nsresult Status(const ReentrantMonitorAutoEnter& ev) const;
+  nsresult Status(const ReentrantMonitorAutoEnter& ev) const
+      MOZ_REQUIRES(Monitor());
 
   // The status of this input stream, ignoring the status of the underlying
   // monitor. If this status is errored, the input stream has either already
   // been removed from the pipe, or will be removed from the pipe shortly.
-  nsresult InputStatus(const ReentrantMonitorAutoEnter&) const {
+  nsresult InputStatus(const ReentrantMonitorAutoEnter&) const
+      MOZ_REQUIRES(Monitor()) {
     return mInputStatus;
   }
+
+  ReentrantMonitor& Monitor() const;
 
  private:
   virtual ~nsPipeInputStream();
@@ -223,15 +278,15 @@ class nsPipeInputStream final : public nsIAsyncInputStream,
   // Individual input streams can be closed without effecting the rest of the
   // pipe.  So track individual input stream status separately.  |mInputStatus|
   // is protected by |mPipe->mReentrantMonitor|.
-  nsresult mInputStatus;
+  nsresult mInputStatus MOZ_GUARDED_BY(Monitor());
   bool mBlocking;
 
   // these variables can only be accessed while inside the pipe's monitor
-  bool mBlocked;
-  nsCOMPtr<nsIInputStreamCallback> mCallback;
-  uint32_t mCallbackFlags;
+  bool mBlocked MOZ_GUARDED_BY(Monitor());
+  CallbackHolder mCallback MOZ_GUARDED_BY(Monitor());
 
-  // requires pipe's monitor; usually treat as an opaque token to pass to nsPipe
+  // requires pipe's monitor to access members; usually treat as an opaque token
+  // to pass to nsPipe
   nsPipeReadState mReadState;
   Atomic<uint32_t, Relaxed> mPriority;
 };
@@ -258,17 +313,21 @@ class nsPipeOutputStream : public nsIAsyncOutputStream, public nsIClassInfo {
         mLogicalOffset(0),
         mBlocking(true),
         mBlocked(false),
-        mWritable(true),
-        mCallbackFlags(0) {}
+        mWritable(true) {}
 
   void SetNonBlocking(bool aNonBlocking) { mBlocking = !aNonBlocking; }
-  void SetWritable(bool aWritable) { mWritable = aWritable; }
+  void SetWritable(bool aWritable) MOZ_REQUIRES(Monitor()) {
+    mWritable = aWritable;
+  }
 
   // synchronously wait for the pipe to become writable.
   nsresult Wait();
 
-  MonitorAction OnOutputWritable(nsPipeEvents&);
-  MonitorAction OnOutputException(nsresult, nsPipeEvents&);
+  MonitorAction OnOutputWritable(nsPipeEvents&) MOZ_REQUIRES(Monitor());
+  MonitorAction OnOutputException(nsresult, nsPipeEvents&)
+      MOZ_REQUIRES(Monitor());
+
+  ReentrantMonitor& Monitor() const;
 
  private:
   nsPipe* mPipe;
@@ -279,27 +338,27 @@ class nsPipeOutputStream : public nsIAsyncOutputStream, public nsIClassInfo {
   bool mBlocking;
 
   // these variables can only be accessed while inside the pipe's monitor
-  bool mBlocked;
-  bool mWritable;
-  nsCOMPtr<nsIOutputStreamCallback> mCallback;
-  uint32_t mCallbackFlags;
+  bool mBlocked MOZ_GUARDED_BY(Monitor());
+  bool mWritable MOZ_GUARDED_BY(Monitor());
+  CallbackHolder mCallback MOZ_GUARDED_BY(Monitor());
 };
 
 //-----------------------------------------------------------------------------
 
-class nsPipe final : public nsIPipe {
+class nsPipe final {
  public:
   friend class nsPipeInputStream;
   friend class nsPipeOutputStream;
   friend class AutoReadSegment;
 
-  NS_DECL_THREADSAFE_ISUPPORTS
-  NS_DECL_NSIPIPE
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(nsPipe)
 
-  // nsPipe methods:
-  nsPipe();
+  // public constructor
+  friend void NS_NewPipe2(nsIAsyncInputStream**, nsIAsyncOutputStream**, bool,
+                          bool, uint32_t, uint32_t, StringTaint**);
 
  private:
+  nsPipe(uint32_t aSegmentSize, uint32_t aSegmentCount);
   ~nsPipe();
 
   //
@@ -309,19 +368,26 @@ class nsPipe final : public nsIPipe {
   //
 
   void PeekSegment(const nsPipeReadState& aReadState, uint32_t aIndex,
-                   char*& aCursor, char*& aLimit);
+                   char*& aCursor, char*& aLimit)
+      MOZ_REQUIRES(mReentrantMonitor);
   SegmentChangeResult AdvanceReadSegment(nsPipeReadState& aReadState,
-                                         const ReentrantMonitorAutoEnter& ev);
-  bool ReadSegmentBeingWritten(nsPipeReadState& aReadState);
-  uint32_t CountSegmentReferences(int32_t aSegment);
-  void SetAllNullReadCursors();
-  bool AllReadCursorsMatchWriteCursor();
-  void RollBackAllReadCursors(char* aWriteCursor);
-  void UpdateAllReadCursors(char* aWriteCursor);
-  void ValidateAllReadCursors();
+                                         const ReentrantMonitorAutoEnter& ev)
+      MOZ_REQUIRES(mReentrantMonitor);
+  bool ReadSegmentBeingWritten(nsPipeReadState& aReadState)
+      MOZ_REQUIRES(mReentrantMonitor);
+  uint32_t CountSegmentReferences(int32_t aSegment)
+      MOZ_REQUIRES(mReentrantMonitor);
+  void SetAllNullReadCursors() MOZ_REQUIRES(mReentrantMonitor);
+  bool AllReadCursorsMatchWriteCursor() MOZ_REQUIRES(mReentrantMonitor);
+  void RollBackAllReadCursors(char* aWriteCursor)
+      MOZ_REQUIRES(mReentrantMonitor);
+  void UpdateAllReadCursors(char* aWriteCursor) MOZ_REQUIRES(mReentrantMonitor);
+  void ValidateAllReadCursors() MOZ_REQUIRES(mReentrantMonitor);
   uint32_t GetBufferSegmentCount(const nsPipeReadState& aReadState,
-                                 const ReentrantMonitorAutoEnter& ev) const;
-  bool IsAdvanceBufferFull(const ReentrantMonitorAutoEnter& ev) const;
+                                 const ReentrantMonitorAutoEnter& ev) const
+      MOZ_REQUIRES(mReentrantMonitor);
+  bool IsAdvanceBufferFull(const ReentrantMonitorAutoEnter& ev) const
+      MOZ_REQUIRES(mReentrantMonitor);
 
   //
   // methods below may be called while outside the pipe's monitor
@@ -352,29 +418,22 @@ class nsPipe final : public nsIPipe {
   // a weak reference as the streams will clear their entry here in their
   // destructor.  Using a strong reference would create a reference cycle.
   // Only usable while mReentrantMonitor is locked.
-  nsTArray<nsPipeInputStream*> mInputList;
-
-  // But hold a strong ref to our original input stream.  For backward
-  // compatibility we need to be able to consistently return this same
-  // object from GetInputStream().  Note, mOriginalInput is also stored
-  // in mInputList as a weak ref.
-  RefPtr<nsPipeInputStream> mOriginalInput;
+  nsTArray<nsPipeInputStream*> mInputList MOZ_GUARDED_BY(mReentrantMonitor);
 
   ReentrantMonitor mReentrantMonitor;
-  nsSegmentedBuffer mBuffer;
+  nsSegmentedBuffer mBuffer MOZ_GUARDED_BY(mReentrantMonitor);
 
   // The maximum number of segments to allow to be buffered in advance
   // of the fastest reader.  This is collection of segments is called
   // the "advance buffer".
-  uint32_t mMaxAdvanceBufferSegmentCount;
+  uint32_t mMaxAdvanceBufferSegmentCount MOZ_GUARDED_BY(mReentrantMonitor);
 
-  int32_t mWriteSegment;
-  char* mWriteCursor;
-  char* mWriteLimit;
+  int32_t mWriteSegment MOZ_GUARDED_BY(mReentrantMonitor);
+  char* mWriteCursor MOZ_GUARDED_BY(mReentrantMonitor);
+  char* mWriteLimit MOZ_GUARDED_BY(mReentrantMonitor);
 
   // |mStatus| is protected by |mReentrantMonitor|.
-  nsresult mStatus;
-  bool mInited;
+  nsresult mStatus MOZ_GUARDED_BY(mReentrantMonitor);
 
   // TaintFox: taint information for all data in this pipe.
   // It would be cleaner to obtain the taint information through the
@@ -382,8 +441,26 @@ class nsPipe final : public nsIPipe {
   // providing all taint information at once is perfectly fine since
   // the taint information for incoming HTTP responses is fully available
   // before the data.
-  StringTaint         mTaint;
+  SafeStringTaint mTaint MOZ_GUARDED_BY(mReentrantMonitor);
 };
+
+//-----------------------------------------------------------------------------
+
+// Declarations of Monitor() methods on the streams.
+//
+// These must be placed early to provide MOZ_RETURN_CAPABILITY annotations for
+// the thread-safety analysis. This couldn't be done at the declaration due to
+// nsPipe not yet being defined.
+
+ReentrantMonitor& nsPipeOutputStream::Monitor() const
+    MOZ_RETURN_CAPABILITY(mPipe->mReentrantMonitor) {
+  return mPipe->mReentrantMonitor;
+}
+
+ReentrantMonitor& nsPipeInputStream::Monitor() const
+    MOZ_RETURN_CAPABILITY(mPipe->mReentrantMonitor) {
+  return mPipe->mReentrantMonitor;
+}
 
 //-----------------------------------------------------------------------------
 
@@ -430,10 +507,10 @@ class MOZ_STACK_CLASS AutoReadSegment final {
     return mSegment + mOffset;
   }
 
-  StringTaint Taint() const
+  SafeStringTaint Taint() const
   {
     MOZ_ASSERT(NS_SUCCEEDED(mStatus));
-    return mTaint.safeCopy().subtaint(mOffset, mLength);
+    return mTaint.safeSubTaint(mOffset, mLength);
   }
 
   uint32_t Length() const {
@@ -460,7 +537,7 @@ class MOZ_STACK_CLASS AutoReadSegment final {
   uint32_t mOffset;
 
   // TaintFox: taint information for the current segment
-  StringTaint mTaint;
+  SafeStringTaint mTaint;
 };
 
 //
@@ -518,103 +595,24 @@ class MOZ_STACK_CLASS AutoReadSegment final {
 // nsPipe methods:
 //-----------------------------------------------------------------------------
 
-nsPipe::nsPipe()
+nsPipe::nsPipe(uint32_t aSegmentSize, uint32_t aSegmentCount)
     : mOutput(this),
-      mOriginalInput(new nsPipeInputStream(this)),
       mReentrantMonitor("nsPipe.mReentrantMonitor"),
-      mMaxAdvanceBufferSegmentCount(0),
+      // protect against overflow
+      mMaxAdvanceBufferSegmentCount(
+          std::min(aSegmentCount, UINT32_MAX / aSegmentSize)),
       mWriteSegment(-1),
       mWriteCursor(nullptr),
       mWriteLimit(nullptr),
-      mStatus(NS_OK),
-      mInited(false) {
-  mInputList.AppendElement(mOriginalInput);
-}
-
-nsPipe::~nsPipe() = default;
-
-NS_IMPL_ADDREF(nsPipe)
-NS_IMPL_QUERY_INTERFACE(nsPipe, nsIPipe)
-
-NS_IMETHODIMP_(MozExternalRefCountType)
-nsPipe::Release() {
-  MOZ_DIAGNOSTIC_ASSERT(int32_t(mRefCnt) > 0, "dup release");
-  nsrefcnt count = --mRefCnt;
-  NS_LOG_RELEASE(this, count, "nsPipe");
-  if (count == 0) {
-    delete (this);
-    return 0;
-  }
-  // Avoid racing on |mOriginalInput| by only looking at it when
-  // the refcount is 1, that is, we are the only pointer (hence only
-  // thread) to access it.
-  if (count == 1 && mOriginalInput) {
-    mOriginalInput = nullptr;
-    return 1;
-  }
-  return count;
-}
-
-NS_IMETHODIMP
-nsPipe::Init(bool aNonBlockingIn, bool aNonBlockingOut, uint32_t aSegmentSize,
-             uint32_t aSegmentCount) {
-  mInited = true;
-
-  if (aSegmentSize == 0) {
-    aSegmentSize = DEFAULT_SEGMENT_SIZE;
-  }
-  if (aSegmentCount == 0) {
-    aSegmentCount = DEFAULT_SEGMENT_COUNT;
-  }
-
-  // protect against overflow
-  uint32_t maxCount = uint32_t(-1) / aSegmentSize;
-  if (aSegmentCount > maxCount) {
-    aSegmentCount = maxCount;
-  }
-
+      mStatus(NS_OK) {
   // The internal buffer is always "infinite" so that we can allow
   // the size to expand when cloned streams are read at different
   // rates.  We enforce a limit on how much data can be buffered
   // ahead of the fastest reader in GetWriteSegment().
-  nsresult rv = mBuffer.Init(aSegmentSize, UINT32_MAX);
-  if (NS_FAILED(rv)) {
-    return rv;
-  }
-
-  mMaxAdvanceBufferSegmentCount = aSegmentCount;
-
-  mOutput.SetNonBlocking(aNonBlockingOut);
-  mOriginalInput->SetNonBlocking(aNonBlockingIn);
-
-  return NS_OK;
+  MOZ_ALWAYS_SUCCEEDS(mBuffer.Init(aSegmentSize));
 }
 
-NS_IMETHODIMP
-nsPipe::GetInputStream(nsIAsyncInputStream** aInputStream) {
-  if (NS_WARN_IF(!mInited)) {
-    return NS_ERROR_NOT_INITIALIZED;
-  }
-  RefPtr<nsPipeInputStream> ref = mOriginalInput;
-  ref.forget(aInputStream);
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsPipe::GetOutputStream(nsIAsyncOutputStream** aOutputStream) {
-  if (NS_WARN_IF(!mInited)) {
-    return NS_ERROR_NOT_INITIALIZED;
-  }
-  NS_ADDREF(*aOutputStream = &mOutput);
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsPipe::SetTaint(StringTaint aTaint)
-{
-  mTaint = aTaint;
-  return NS_OK;
-}
+nsPipe::~nsPipe() = default;
 
 void nsPipe::PeekSegment(const nsPipeReadState& aReadState, uint32_t aIndex,
                          char*& aCursor, char*& aLimit) {
@@ -662,7 +660,7 @@ nsPipe::GetReadSegment(nsPipeReadState& aReadState, const char*& aSegment,
 
   // Taintfox
   if (aTaint)
-    *aTaint = mTaint.safeCopy().subtaint(aReadState.mBytesRead, aReadState.mBytesRead + aLength);
+    *aTaint = mTaint.safeSubTaint(aReadState.mBytesRead, aReadState.mBytesRead + aLength);
 
   return NS_OK;
 }
@@ -711,6 +709,7 @@ void nsPipe::AdvanceReadCursor(nsPipeReadState& aReadState,
         !ReadSegmentBeingWritten(aReadState)) {
       // Advance the segment position.  If we have read any segments from the
       // advance buffer then we can potentially notify blocked writers.
+      mOutput.Monitor().AssertCurrentThreadIn();
       if (AdvanceReadSegment(aReadState, mon) == SegmentAdvanceBufferRead &&
           mOutput.OnOutputWritable(events) == NotifyMonitor) {
         mon.NotifyAll();
@@ -837,6 +836,7 @@ void nsPipe::DrainInputStream(nsPipeReadState& aReadState,
 
   // If we have read any segments from the advance buffer then we can
   // potentially notify blocked writers.
+  mOutput.Monitor().AssertCurrentThreadIn();
   if (!IsAdvanceBufferFull(mon) &&
       mOutput.OnOutputWritable(aEvents) == NotifyMonitor) {
     mon.NotifyAll();
@@ -919,12 +919,14 @@ void nsPipe::AdvanceWriteCursor(uint32_t aBytesWritten) {
 
     // update the writable flag on the output stream
     if (mWriteCursor == mWriteLimit) {
+      mOutput.Monitor().AssertCurrentThreadIn();
       mOutput.SetWritable(!IsAdvanceBufferFull(mon));
     }
 
     // notify input stream that pipe now contains additional data
     bool needNotify = false;
     for (uint32_t i = 0; i < mInputList.Length(); ++i) {
+      mInputList[i]->Monitor().AssertCurrentThreadIn();
       if (mInputList[i]->OnInputReadable(aBytesWritten, events, mon) ==
           NotifyMonitor) {
         needNotify = true;
@@ -966,6 +968,7 @@ void nsPipe::OnInputStreamException(nsPipeInputStream* aStream,
         continue;
       }
 
+      mInputList[i]->Monitor().AssertCurrentThreadIn();
       MonitorAction action =
           mInputList[i]->OnInputException(aReason, events, mon);
 
@@ -1002,6 +1005,7 @@ void nsPipe::OnPipeException(nsresult aReason, bool aOutputOnly) {
     for (uint32_t i = 0; i < list.Length(); ++i) {
       // an output-only exception applies to the input end if the pipe has
       // zero bytes available.
+      list[i]->Monitor().AssertCurrentThreadIn();
       if (aOutputOnly && list[i]->Available()) {
         continue;
       }
@@ -1011,6 +1015,7 @@ void nsPipe::OnPipeException(nsresult aReason, bool aOutputOnly) {
       }
     }
 
+    mOutput.Monitor().AssertCurrentThreadIn();
     if (mOutput.OnOutputException(aReason, events) == NotifyMonitor) {
       needNotify = true;
     }
@@ -1027,6 +1032,7 @@ nsresult nsPipe::CloneInputStream(nsPipeInputStream* aOriginal,
   ReentrantMonitorAutoEnter mon(mReentrantMonitor);
   RefPtr<nsPipeInputStream> ref = new nsPipeInputStream(*aOriginal);
   // don't add clones of closed pipes to mInputList.
+  ref->Monitor().AssertCurrentThreadIn();
   if (NS_SUCCEEDED(ref->InputStatus(mon))) {
     mInputList.AppendElement(ref);
   }
@@ -1159,6 +1165,7 @@ bool nsPipe::IsAdvanceBufferFull(const ReentrantMonitorAutoEnter& ev) const {
   uint32_t minBufferSegments = UINT32_MAX;
   for (uint32_t i = 0; i < mInputList.Length(); ++i) {
     // Only count buffer segments from input streams that are open.
+    mInputList[i]->Monitor().AssertCurrentThreadIn();
     if (NS_FAILED(mInputList[i]->Status(ev))) {
       continue;
     }
@@ -1188,17 +1195,10 @@ bool nsPipe::IsAdvanceBufferFull(const ReentrantMonitorAutoEnter& ev) const {
 
 nsPipeEvents::~nsPipeEvents() {
   // dispatch any pending events
-
-  for (uint32_t i = 0; i < mInputList.Length(); ++i) {
-    mInputList[i].mCallback->OnInputStreamReady(mInputList[i].mStream);
+  for (auto& callback : mCallbacks) {
+    callback.Notify();
   }
-  mInputList.Clear();
-
-  if (mOutputCallback) {
-    mOutputCallback->OnOutputStreamReady(mOutputStream);
-    mOutputCallback = nullptr;
-    mOutputStream = nullptr;
-  }
+  mCallbacks.Clear();
 }
 
 //-----------------------------------------------------------------------------
@@ -1278,10 +1278,8 @@ MonitorAction nsPipeInputStream::OnInputReadable(
   mPipe->mReentrantMonitor.AssertCurrentThreadIn();
   mReadState.mAvailable += aBytesWritten;
 
-  if (mCallback && !(mCallbackFlags & WAIT_CLOSURE_ONLY)) {
-    aEvents.NotifyInputReady(this, mCallback);
-    mCallback = nullptr;
-    mCallbackFlags = 0;
+  if (mCallback && !(mCallback.Flags() & WAIT_CLOSURE_ONLY)) {
+    aEvents.NotifyReady(std::move(mCallback));
   } else if (mBlocked) {
     result = NotifyMonitor;
   }
@@ -1307,9 +1305,7 @@ MonitorAction nsPipeInputStream::OnInputException(
   mPipe->DrainInputStream(mReadState, aEvents);
 
   if (mCallback) {
-    aEvents.NotifyInputReady(this, mCallback);
-    mCallback = nullptr;
-    mCallbackFlags = 0;
+    aEvents.NotifyReady(std::move(mCallback));
   } else if (mBlocked) {
     result = NotifyMonitor;
   }
@@ -1365,9 +1361,15 @@ nsPipeInputStream::Available(uint64_t* aResult) {
   return NS_OK;
 }
 
-nsresult
+NS_IMETHODIMP
+nsPipeInputStream::StreamStatus() {
+  ReentrantMonitorAutoEnter mon(mPipe->mReentrantMonitor);
+  return mReadState.mAvailable ? NS_OK : Status(mon);
+}
+
+NS_IMETHODIMP
 nsPipeInputStream::ReadSegmentsInternal(nsWriteSegmentFun aWriter, nsWriteTaintedSegmentFun aTaintedWriter, void* aClosure,
-                                        uint32_t aCount, uint32_t* aReadCount) {
+                                uint32_t aCount, uint32_t* aReadCount) {
   LOG(("III ReadSegmentsInternal [this=%p count=%u]\n", this, aCount));
   MOZ_ASSERT(!aWriter || !aTaintedWriter, "one of aWriter and aTaintedWriter must be null");
 
@@ -1462,27 +1464,20 @@ nsPipeInputStream::AsyncWait(nsIInputStreamCallback* aCallback, uint32_t aFlags,
 
     // replace a pending callback
     mCallback = nullptr;
-    mCallbackFlags = 0;
 
     if (!aCallback) {
       return NS_OK;
     }
 
-    nsCOMPtr<nsIInputStreamCallback> proxy;
-    if (aTarget) {
-      proxy = NS_NewInputStreamReadyEvent("nsPipeInputStream::AsyncWait",
-                                          aCallback, aTarget, mPriority);
-      aCallback = proxy;
-    }
+    CallbackHolder callback(this, aCallback, aFlags, aTarget);
 
     if (NS_FAILED(Status(mon)) ||
         (mReadState.mAvailable && !(aFlags & WAIT_CLOSURE_ONLY))) {
       // stream is already closed or readable; post event.
-      pipeEvents.NotifyInputReady(this, aCallback);
+      pipeEvents.NotifyReady(std::move(callback));
     } else {
       // queue up callback object to be notified when data becomes available
-      mCallback = aCallback;
-      mCallbackFlags = aFlags;
+      mCallback = std::move(callback);
     }
   }
   return NS_OK;
@@ -1668,10 +1663,8 @@ MonitorAction nsPipeOutputStream::OnOutputWritable(nsPipeEvents& aEvents) {
 
   mWritable = true;
 
-  if (mCallback && !(mCallbackFlags & WAIT_CLOSURE_ONLY)) {
-    aEvents.NotifyOutputReady(this, mCallback);
-    mCallback = nullptr;
-    mCallbackFlags = 0;
+  if (mCallback && !(mCallback.Flags() & WAIT_CLOSURE_ONLY)) {
+    aEvents.NotifyReady(std::move(mCallback));
   } else if (mBlocked) {
     result = NotifyMonitor;
   }
@@ -1690,9 +1683,7 @@ MonitorAction nsPipeOutputStream::OnOutputException(nsresult aReason,
   mWritable = false;
 
   if (mCallback) {
-    aEvents.NotifyOutputReady(this, mCallback);
-    mCallback = nullptr;
-    mCallbackFlags = 0;
+    aEvents.NotifyReady(std::move(mCallback));
   } else if (mBlocked) {
     result = NotifyMonitor;
   }
@@ -1800,39 +1791,30 @@ nsPipeOutputStream::WriteSegments(nsReadSegmentFun aReader, void* aClosure,
   return rv;
 }
 
-static nsresult nsReadFromRawBuffer(nsIOutputStream* aOutStr, void* aClosure,
-                                    char* aToRawSegment, uint32_t aOffset,
-                                    uint32_t aCount, uint32_t* aReadCount) {
-  const char* fromBuf = (const char*)aClosure;
-  memcpy(aToRawSegment, &fromBuf[aOffset], aCount);
-  *aReadCount = aCount;
-  return NS_OK;
-}
-
 NS_IMETHODIMP
 nsPipeOutputStream::Write(const char* aFromBuf, uint32_t aBufLen,
                           uint32_t* aWriteCount) {
-  return WriteSegments(nsReadFromRawBuffer, (void*)aFromBuf, aBufLen,
+  return WriteSegments(NS_CopyBufferToSegment, (void*)aFromBuf, aBufLen,
                        aWriteCount);
 }
 
 NS_IMETHODIMP
-nsPipeOutputStream::Flush(void) {
+nsPipeOutputStream::Flush() {
   // nothing to do
   return NS_OK;
 }
 
-static nsresult nsReadFromInputStream(nsIOutputStream* aOutStr, void* aClosure,
-                                      char* aToRawSegment, uint32_t aOffset,
-                                      uint32_t aCount, uint32_t* aReadCount) {
-  nsIInputStream* fromStream = (nsIInputStream*)aClosure;
-  return fromStream->Read(aToRawSegment, aCount, aReadCount);
+NS_IMETHODIMP
+nsPipeOutputStream::StreamStatus() {
+  ReentrantMonitorAutoEnter mon(mPipe->mReentrantMonitor);
+  return mPipe->mStatus;
 }
 
 NS_IMETHODIMP
 nsPipeOutputStream::WriteFrom(nsIInputStream* aFromStream, uint32_t aCount,
                               uint32_t* aWriteCount) {
-  return WriteSegments(nsReadFromInputStream, aFromStream, aCount, aWriteCount);
+  return WriteSegments(NS_CopyStreamToSegment, aFromStream, aCount,
+                       aWriteCount);
 }
 
 NS_IMETHODIMP
@@ -1853,26 +1835,20 @@ nsPipeOutputStream::AsyncWait(nsIOutputStreamCallback* aCallback,
 
     // replace a pending callback
     mCallback = nullptr;
-    mCallbackFlags = 0;
 
     if (!aCallback) {
       return NS_OK;
     }
 
-    nsCOMPtr<nsIOutputStreamCallback> proxy;
-    if (aTarget) {
-      proxy = NS_NewOutputStreamReadyEvent(aCallback, aTarget);
-      aCallback = proxy;
-    }
+    CallbackHolder callback(this, aCallback, aFlags, aTarget);
 
     if (NS_FAILED(mPipe->mStatus) ||
         (mWritable && !(aFlags & WAIT_CLOSURE_ONLY))) {
       // stream is already closed or writable; post event.
-      pipeEvents.NotifyOutputReady(this, aCallback);
+      pipeEvents.NotifyReady(std::move(callback));
     } else {
       // queue up callback object to be notified when data becomes available
-      mCallback = aCallback;
-      mCallbackFlags = aFlags;
+      mCallback = std::move(callback);
     }
   }
   return NS_OK;
@@ -1880,9 +1856,9 @@ nsPipeOutputStream::AsyncWait(nsIOutputStreamCallback* aCallback,
 
 ////////////////////////////////////////////////////////////////////////////////
 
-nsresult NS_NewPipe(nsIInputStream** aPipeIn, nsIOutputStream** aPipeOut,
-                    uint32_t aSegmentSize, uint32_t aMaxSize,
-                    bool aNonBlockingInput, bool aNonBlockingOutput) {
+void NS_NewPipe(nsIInputStream** aPipeIn, nsIOutputStream** aPipeOut,
+                uint32_t aSegmentSize, uint32_t aMaxSize,
+                bool aNonBlockingInput, bool aNonBlockingOutput) {
   if (aSegmentSize == 0) {
     aSegmentSize = DEFAULT_SEGMENT_SIZE;
   }
@@ -1897,55 +1873,89 @@ nsresult NS_NewPipe(nsIInputStream** aPipeIn, nsIOutputStream** aPipeOut,
 
   nsIAsyncInputStream* in;
   nsIAsyncOutputStream* out;
-  nsresult rv = NS_NewPipe2(&in, &out, aNonBlockingInput, aNonBlockingOutput,
-                            aSegmentSize, segmentCount);
-  if (NS_FAILED(rv)) {
-    return rv;
-  }
+  NS_NewPipe2(&in, &out, aNonBlockingInput, aNonBlockingOutput, aSegmentSize,
+              segmentCount);
 
   *aPipeIn = in;
   *aPipeOut = out;
+}
+
+// Disable thread safety analysis as this is logically a constructor, and no
+// additional threads can observe these objects yet.
+void NS_NewPipe2(nsIAsyncInputStream** aPipeIn, nsIAsyncOutputStream** aPipeOut,
+                 bool aNonBlockingInput, bool aNonBlockingOutput,
+                 uint32_t aSegmentSize,
+                 uint32_t aSegmentCount, StringTaint** aTaint) MOZ_NO_THREAD_SAFETY_ANALYSIS {
+  RefPtr<nsPipe> pipe =
+      new nsPipe(aSegmentSize ? aSegmentSize : DEFAULT_SEGMENT_SIZE,
+                 aSegmentCount ? aSegmentCount : DEFAULT_SEGMENT_COUNT);
+
+  RefPtr<nsPipeInputStream> pipeIn = new nsPipeInputStream(pipe);
+  pipe->mInputList.AppendElement(pipeIn);
+  RefPtr<nsPipeOutputStream> pipeOut = &pipe->mOutput;
+
+  pipeIn->SetNonBlocking(aNonBlockingInput);
+  pipeOut->SetNonBlocking(aNonBlockingOutput);
+
+  pipeIn.forget(aPipeIn);
+  pipeOut.forget(aPipeOut);
+
+  if (aTaint) {
+    // do nothing for the moment
+  }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+// Thin nsIPipe implementation for consumers of the component manager interface
+// for creating pipes. Acts as a thin wrapper around NS_NewPipe2 for JS callers.
+class nsPipeHolder final : public nsIPipe {
+ public:
+  NS_DECL_THREADSAFE_ISUPPORTS
+  NS_DECL_NSIPIPE
+
+ private:
+  ~nsPipeHolder() = default;
+
+  nsCOMPtr<nsIAsyncInputStream> mInput;
+  nsCOMPtr<nsIAsyncOutputStream> mOutput;
+};
+
+NS_IMPL_ISUPPORTS(nsPipeHolder, nsIPipe)
+
+NS_IMETHODIMP
+nsPipeHolder::Init(bool aNonBlockingInput, bool aNonBlockingOutput,
+                   uint32_t aSegmentSize, uint32_t aSegmentCount) {
+  if (mInput || mOutput) {
+    return NS_ERROR_ALREADY_INITIALIZED;
+  }
+  NS_NewPipe2(getter_AddRefs(mInput), getter_AddRefs(mOutput),
+              aNonBlockingInput, aNonBlockingOutput, aSegmentSize,
+              aSegmentCount);
   return NS_OK;
 }
 
-nsresult
-NS_NewPipe2(nsIAsyncInputStream** aPipeIn,
-            nsIAsyncOutputStream** aPipeOut,
-            bool aNonBlockingInput,
-            bool aNonBlockingOutput,
-            uint32_t aSegmentSize,
-            uint32_t aSegmentCount,
-            nsIPipe** aPipe)
-{
-  nsPipe* pipe = new nsPipe();
-  nsresult rv = pipe->Init(aNonBlockingInput, aNonBlockingOutput, aSegmentSize,
-                           aSegmentCount);
-  if (NS_FAILED(rv)) {
-    NS_ADDREF(pipe);
-    NS_RELEASE(pipe);
-    return rv;
+NS_IMETHODIMP
+nsPipeHolder::GetInputStream(nsIAsyncInputStream** aInputStream) {
+  if (mInput) {
+    *aInputStream = do_AddRef(mInput).take();
+    return NS_OK;
   }
-
-  // These always succeed because the pipe is initialized above.
-  MOZ_ALWAYS_SUCCEEDS(pipe->GetInputStream(aPipeIn));
-  MOZ_ALWAYS_SUCCEEDS(pipe->GetOutputStream(aPipeOut));
-
-  if (aPipe) {
-    RefPtr<nsIPipe> ref = pipe;
-    ref.forget(aPipe);
-  }
-  
-  return NS_OK;
+  return NS_ERROR_NOT_INITIALIZED;
 }
 
-nsresult nsPipeConstructor(nsISupports* aOuter, REFNSIID aIID, void** aResult) {
-  if (aOuter) {
-    return NS_ERROR_NO_AGGREGATION;
+NS_IMETHODIMP
+nsPipeHolder::GetOutputStream(nsIAsyncOutputStream** aOutputStream) {
+  if (mOutput) {
+    *aOutputStream = do_AddRef(mOutput).take();
+    return NS_OK;
   }
-  nsPipe* pipe = new nsPipe();
-  NS_ADDREF(pipe);
+  return NS_ERROR_NOT_INITIALIZED;
+}
+
+nsresult nsPipeConstructor(REFNSIID aIID, void** aResult) {
+  RefPtr<nsPipeHolder> pipe = new nsPipeHolder();
   nsresult rv = pipe->QueryInterface(aIID, aResult);
-  NS_RELEASE(pipe);
   return rv;
 }
 

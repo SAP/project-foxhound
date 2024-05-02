@@ -8,14 +8,14 @@
 const TEST_URI = "data:text/html;charset=UTF-8,<!DOCTYPE html>test";
 const COMMANDS = ["document", "window", "window.location"];
 
-add_task(async function() {
+add_task(async function () {
   const hud = await openNewTabAndConsole(TEST_URI);
   const { jsterm } = hud;
   jsterm.focus();
 
   for (const command of COMMANDS) {
     info(`Executing command ${command}`);
-    await executeAndWaitForMessage(hud, command, "", ".result");
+    await executeAndWaitForResultMessage(hud, command, "");
   }
 
   for (let x = COMMANDS.length - 1; x != -1; x--) {

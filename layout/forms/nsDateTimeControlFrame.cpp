@@ -64,11 +64,11 @@ nscoord nsDateTimeControlFrame::GetPrefISize(gfxContext* aRenderingContext) {
   return result;
 }
 
-bool nsDateTimeControlFrame::GetNaturalBaselineBOffset(
-    mozilla::WritingMode aWM, BaselineSharingGroup aBaselineGroup,
-    nscoord* aBaseline) const {
+Maybe<nscoord> nsDateTimeControlFrame::GetNaturalBaselineBOffset(
+    WritingMode aWM, BaselineSharingGroup aBaselineGroup,
+    BaselineExportContext) const {
   return nsTextControlFrame::GetSingleLineTextControlBaseline(
-      this, mFirstBaseline, aWM, aBaselineGroup, aBaseline);
+      this, mFirstBaseline, aWM, aBaselineGroup);
 }
 
 void nsDateTimeControlFrame::Reflow(nsPresContext* aPresContext,
@@ -135,9 +135,8 @@ void nsDateTimeControlFrame::Reflow(nsPresContext* aPresContext,
     LogicalMargin childMargin = childReflowInput.ComputedLogicalMargin(myWM);
 
     // offsets of input area frame within this frame:
-    LogicalPoint childOffset(
-        myWM, borderPadding.IStart(myWM) + childMargin.IStart(myWM),
-        borderPadding.BStart(myWM) + childMargin.BStart(myWM));
+    LogicalPoint childOffset =
+        borderPadding.StartOffset(myWM) + childMargin.StartOffset(myWM);
 
     nsReflowStatus childStatus;
     // We initially reflow the child with a dummy containerSize; positioning
@@ -187,7 +186,6 @@ void nsDateTimeControlFrame::Reflow(nsPresContext* aPresContext,
 
   LogicalSize logicalDesiredSize(myWM, borderBoxISize, borderBoxBSize);
   aDesiredSize.SetSize(myWM, logicalDesiredSize);
-
   aDesiredSize.SetOverflowAreasToDesiredBounds();
 
   if (inputAreaFrame) {
@@ -199,5 +197,4 @@ void nsDateTimeControlFrame::Reflow(nsPresContext* aPresContext,
   NS_FRAME_TRACE(NS_FRAME_TRACE_CALLS,
                  ("exit nsDateTimeControlFrame::Reflow: size=%d,%d",
                   aDesiredSize.Width(), aDesiredSize.Height()));
-  NS_FRAME_SET_TRUNCATION(aStatus, aReflowInput, aDesiredSize);
 }

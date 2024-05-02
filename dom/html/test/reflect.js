@@ -158,11 +158,11 @@ function reflectString(aParameters) {
     ],
   ];
 
-  otherValues.forEach(function(v) {
+  otherValues.forEach(function (v) {
     stringsToTest.push([v, v]);
   });
 
-  stringsToTest.forEach(function([v, r]) {
+  stringsToTest.forEach(function ([v, r]) {
     element.setAttribute(contentAttr, v);
     is(
       element[idlAttr],
@@ -451,7 +451,7 @@ function reflectLimitedEnumerated(aParameters) {
   );
 
   // Check valid values.
-  validValues.forEach(function(v) {
+  validValues.forEach(function (v) {
     element.setAttribute(contentAttr, v);
     is(
       element[idlAttr],
@@ -506,7 +506,7 @@ function reflectLimitedEnumerated(aParameters) {
   });
 
   // Check invalid values.
-  invalidValues.forEach(function(v) {
+  invalidValues.forEach(function (v) {
     element.setAttribute(contentAttr, v);
     is(
       element[idlAttr],
@@ -536,7 +536,7 @@ function reflectLimitedEnumerated(aParameters) {
 
   // Check valid values we currently do not support.
   // Basically, it's like the checks for the valid values but with some todo's.
-  unsupportedValues.forEach(function(v) {
+  unsupportedValues.forEach(function (v) {
     element.setAttribute(contentAttr, v);
     todo_is(
       element[idlAttr],
@@ -596,7 +596,7 @@ function reflectLimitedEnumerated(aParameters) {
       null,
       "Missing default value should be null for nullable attributes"
     );
-    ok(validValues.length > 0, "We better have at least one valid value");
+    ok(validValues.length, "We better have at least one valid value");
     element.setAttribute(contentAttr, validValues[0]);
     ok(
       element.hasAttribute(contentAttr),
@@ -736,7 +736,7 @@ function reflectBoolean(aParameters) {
     { value: {}, stringified: "[object Object]", result: true },
   ];
 
-  valuesToTest.forEach(function(v) {
+  valuesToTest.forEach(function (v) {
     element.setAttribute(contentAttr, v.value);
     is(
       element[idlAttr],
@@ -932,7 +932,7 @@ function reflectInt(aParameters) {
     -Infinity,
   ];
 
-  valuesToTest.forEach(function(v) {
+  valuesToTest.forEach(function (v) {
     var intValue = stringToInteger(v, nonNegative, defaultValue);
 
     element.setAttribute(attr, v);

@@ -64,6 +64,8 @@ struct BaseEventFlags {
   bool mInBubblingPhase : 1;
   // If mInCapturePhase is true, the event is in capture phase or target phase.
   bool mInCapturePhase : 1;
+  // If mInTargetPhase is true, the event is in target phase.
+  bool mInTargetPhase : 1;
   // If mInSystemGroup is true, the event is being dispatched in system group.
   bool mInSystemGroup : 1;
   // If mCancelable is true, the event can be consumed.  I.e., calling
@@ -97,8 +99,6 @@ struct BaseEventFlags {
   // the first <label> element is clicked, that one may set this true.
   // Then, the second <label> element won't handle the event.
   bool mMultipleActionsPrevented : 1;
-  // Similar to above but expected to be used during PreHandleEvent phase.
-  bool mMultiplePreActionsPrevented : 1;
   // If mIsBeingDispatched is true, the DOM event created from the event is
   // dispatching into the DOM tree and not completed.
   bool mIsBeingDispatched : 1;
@@ -181,15 +181,6 @@ struct BaseEventFlags {
   bool mPostedToRemoteProcess : 1;
   // If mCameFromAnotherProcess is true, the event came from another process.
   bool mCameFromAnotherProcess : 1;
-
-  // At lease one of the event in the event path had non privileged click
-  // listener.
-  bool mHadNonPrivilegedClickListeners : 1;
-
-  // If the event is being handled in target phase, returns true.
-  inline bool InTargetPhase() const {
-    return (mInBubblingPhase && mInCapturePhase);
-  }
 
   /**
    * Helper methods for methods of DOM Event.
@@ -322,10 +313,13 @@ struct BaseEventFlags {
   inline void ResetCrossProcessDispatchingState() {
     MOZ_ASSERT(!IsCrossProcessForwardingStopped());
     mPostedToRemoteProcess = false;
-    // Ignore propagation state in the different process if it's marked as
+    // Ignore propagation state in the remote process if it's marked as
     // "waiting reply from remote process" because the process needs to
     // stop propagation in the process until receiving a reply event.
-    if (IsWaitingReplyFromRemoteProcess()) {
+    // Note that the propagation stopped flag is important for the reply event
+    // handler in the main process because it's used for making whether it's
+    // ignored by the remote process or not.
+    if (!XRE_IsParentProcess() && IsWaitingReplyFromRemoteProcess()) {
       mPropagationStopped = mImmediatePropagationStopped = false;
     }
     // mDispatchedAtLeastOnce indicates the state in current process.
@@ -416,20 +410,20 @@ struct EventFlags : public BaseEventFlags {
 
 class WidgetEventTime {
  public:
-  // Elapsed time, in milliseconds, from a platform-specific zero time
-  // to the time the message was created
-  uint64_t mTime;
-  // Timestamp when the message was created. Set in parallel to 'time' until we
-  // determine if it is safe to drop 'time' (see bug 77992).
+  // Timestamp when the message was created.
   TimeStamp mTimeStamp;
 
-  WidgetEventTime() : mTime(0), mTimeStamp(TimeStamp::Now()) {}
+  WidgetEventTime() : mTimeStamp(TimeStamp::Now()) {}
 
-  WidgetEventTime(uint64_t aTime, TimeStamp aTimeStamp)
-      : mTime(aTime), mTimeStamp(aTimeStamp) {}
+  explicit WidgetEventTime(const WidgetEventTime* aTime)
+      : mTimeStamp(aTime ? aTime->mTimeStamp : TimeStamp::Now()) {
+    MOZ_ASSERT(aTime != this);
+    MOZ_ASSERT_IF(aTime, !aTime->mTimeStamp.IsNull());
+  }
+
+  explicit WidgetEventTime(TimeStamp aTimeStamp) : mTimeStamp(aTimeStamp) {}
 
   void AssignEventTime(const WidgetEventTime& aOther) {
-    mTime = aOther.mTime;
     mTimeStamp = aOther.mTimeStamp;
   }
 };
@@ -495,8 +489,9 @@ class WidgetEvent : public WidgetEventTime {
 
  protected:
   WidgetEvent(bool aIsTrusted, EventMessage aMessage,
-              EventClassID aEventClassID)
-      : WidgetEventTime(),
+              EventClassID aEventClassID,
+              const WidgetEventTime* aTime = nullptr)
+      : WidgetEventTime(aTime),
         mClass(aEventClassID),
         mMessage(aMessage),
         mRefPoint(0, 0),
@@ -513,17 +508,16 @@ class WidgetEvent : public WidgetEventTime {
     SetDefaultComposedInNativeAnonymousContent();
   }
 
-  WidgetEvent() : WidgetEventTime(), mPath(nullptr) {
-    MOZ_COUNT_CTOR(WidgetEvent);
-  }
+  WidgetEvent() : mPath(nullptr) { MOZ_COUNT_CTOR(WidgetEvent); }
 
  public:
-  WidgetEvent(bool aIsTrusted, EventMessage aMessage)
-      : WidgetEvent(aIsTrusted, aMessage, eBasicEventClass) {}
+  WidgetEvent(bool aIsTrusted, EventMessage aMessage,
+              const WidgetEventTime* aTime = nullptr)
+      : WidgetEvent(aIsTrusted, aMessage, eBasicEventClass, aTime) {}
 
   MOZ_COUNTED_DTOR_VIRTUAL(WidgetEvent)
 
-  WidgetEvent(const WidgetEvent& aOther) : WidgetEventTime() {
+  WidgetEvent(const WidgetEvent& aOther) : WidgetEventTime(aOther) {
     MOZ_COUNT_CTOR(WidgetEvent);
     *this = aOther;
   }
@@ -552,7 +546,7 @@ class WidgetEvent : public WidgetEventTime {
   virtual WidgetEvent* Duplicate() const {
     MOZ_ASSERT(mClass == eBasicEventClass,
                "Duplicate() must be overridden by sub class");
-    WidgetEvent* result = new WidgetEvent(false, mMessage);
+    WidgetEvent* result = new WidgetEvent(false, mMessage, this);
     result->AssignEventData(*this, true);
     result->mFlags = mFlags;
     return result;
@@ -790,10 +784,6 @@ class WidgetEvent : public WidgetEventTime {
    * event.
    */
   bool HasIMEEventMessage() const;
-  /**
-   * Returns true if the event mMessage is one of plugin activation events.
-   */
-  bool HasPluginActivationEventMessage() const;
 
   /**
    * Returns true if the event can be sent to remote process.
@@ -854,6 +844,10 @@ class WidgetEvent : public WidgetEventTime {
    * Whether the event should be blocked for fingerprinting resistance.
    */
   bool IsBlockedForFingerprintingResistance() const;
+  /**
+   * Whether the event handler can flush pending notifications or not.
+   */
+  bool AllowFlushingPendingNotifications() const;
   /**
    * Initialize mComposed
    */
@@ -1010,72 +1004,32 @@ class WidgetEvent : public WidgetEventTime {
 };
 
 /******************************************************************************
- * mozilla::NativeEventData
- *
- * WidgetGUIEvent's mPluginEvent member used to be a void* pointer,
- * used to reference external, OS-specific data structures.
- *
- * That void* pointer wasn't serializable by itself, causing
- * certain plugin events not to function in e10s. See bug 586656.
- *
- * To make this serializable, we changed this void* pointer into
- * a proper buffer, and copy these external data structures into this
- * buffer.
- *
- * That buffer is NativeEventData::mBuffer below.
- *
- * We wrap this in that NativeEventData class providing operators to
- * be compatible with existing code that was written around
- * the old void* field.
- ******************************************************************************/
-
-class NativeEventData final {
-  CopyableTArray<uint8_t> mBuffer;
-
-  friend struct IPC::ParamTraits<mozilla::NativeEventData>;
-
- public:
-  explicit operator bool() const { return !mBuffer.IsEmpty(); }
-
-  template <typename T>
-  explicit operator const T*() const {
-    return mBuffer.IsEmpty() ? nullptr
-                             : reinterpret_cast<const T*>(mBuffer.Elements());
-  }
-
-  template <typename T>
-  void Copy(const T& other) {
-    static_assert(!std::is_pointer_v<T>, "Don't want a pointer!");
-    mBuffer.SetLength(sizeof(T));
-    memcpy(mBuffer.Elements(), &other, mBuffer.Length());
-  }
-
-  void Clear() { mBuffer.Clear(); }
-};
-
-/******************************************************************************
  * mozilla::WidgetGUIEvent
  ******************************************************************************/
 
 class WidgetGUIEvent : public WidgetEvent {
  protected:
   WidgetGUIEvent(bool aIsTrusted, EventMessage aMessage, nsIWidget* aWidget,
-                 EventClassID aEventClassID)
-      : WidgetEvent(aIsTrusted, aMessage, aEventClassID), mWidget(aWidget) {}
+                 EventClassID aEventClassID,
+                 const WidgetEventTime* aTime = nullptr)
+      : WidgetEvent(aIsTrusted, aMessage, aEventClassID, aTime),
+        mWidget(aWidget) {}
 
   WidgetGUIEvent() = default;
 
  public:
   virtual WidgetGUIEvent* AsGUIEvent() override { return this; }
 
-  WidgetGUIEvent(bool aIsTrusted, EventMessage aMessage, nsIWidget* aWidget)
-      : WidgetEvent(aIsTrusted, aMessage, eGUIEventClass), mWidget(aWidget) {}
+  WidgetGUIEvent(bool aIsTrusted, EventMessage aMessage, nsIWidget* aWidget,
+                 const WidgetEventTime* aTime = nullptr)
+      : WidgetEvent(aIsTrusted, aMessage, eGUIEventClass, aTime),
+        mWidget(aWidget) {}
 
   virtual WidgetEvent* Duplicate() const override {
     MOZ_ASSERT(mClass == eGUIEventClass,
                "Duplicate() must be overridden by sub class");
     // Not copying widget, it is a weak reference.
-    WidgetGUIEvent* result = new WidgetGUIEvent(false, mMessage, nullptr);
+    WidgetGUIEvent* result = new WidgetGUIEvent(false, mMessage, nullptr, this);
     result->AssignGUIEventData(*this, true);
     result->mFlags = mFlags;
     return result;
@@ -1084,25 +1038,9 @@ class WidgetGUIEvent : public WidgetEvent {
   // Originator of the event
   nsCOMPtr<nsIWidget> mWidget;
 
-  /*
-   * Ideally though, we wouldn't allow arbitrary reinterpret_cast'ing here;
-   * instead, we would at least store type information here so that
-   * this class can't be used to reinterpret one structure type into another.
-   * We can also wonder if it would be possible to properly extend
-   * WidgetGUIEvent and other Event classes to remove the need for this
-   * mPluginEvent field.
-   */
-  typedef NativeEventData PluginEvent;
-
-  // Event for NPAPI plugin
-  PluginEvent mPluginEvent;
-
   void AssignGUIEventData(const WidgetGUIEvent& aEvent, bool aCopyTargets) {
     AssignEventData(aEvent, aCopyTargets);
-
     // widget should be initialized with the constructor.
-
-    mPluginEvent = aEvent.mPluginEvent;
   }
 };
 
@@ -1127,7 +1065,6 @@ enum Modifier {
   MODIFIER_SHIFT = 0x0200,
   MODIFIER_SYMBOL = 0x0400,
   MODIFIER_SYMBOLLOCK = 0x0800,
-  MODIFIER_OS = 0x1000
 };
 
 /******************************************************************************
@@ -1204,10 +1141,6 @@ class MOZ_STACK_CLASS GetModifiersName final : public nsAutoCString {
       MaybeAppendSeparator();
       AppendLiteral(NS_DOM_KEYNAME_SYMBOLLOCK);
     }
-    if (aModifiers & MODIFIER_OS) {
-      MaybeAppendSeparator();
-      AppendLiteral(NS_DOM_KEYNAME_OS);
-    }
     if (IsEmpty()) {
       AssignLiteral("none");
     }
@@ -1228,8 +1161,9 @@ class MOZ_STACK_CLASS GetModifiersName final : public nsAutoCString {
 class WidgetInputEvent : public WidgetGUIEvent {
  protected:
   WidgetInputEvent(bool aIsTrusted, EventMessage aMessage, nsIWidget* aWidget,
-                   EventClassID aEventClassID)
-      : WidgetGUIEvent(aIsTrusted, aMessage, aWidget, aEventClassID),
+                   EventClassID aEventClassID,
+                   const WidgetEventTime* aTime = nullptr)
+      : WidgetGUIEvent(aIsTrusted, aMessage, aWidget, aEventClassID, aTime),
         mModifiers(0) {}
 
   WidgetInputEvent() : mModifiers(0) {}
@@ -1237,15 +1171,17 @@ class WidgetInputEvent : public WidgetGUIEvent {
  public:
   virtual WidgetInputEvent* AsInputEvent() override { return this; }
 
-  WidgetInputEvent(bool aIsTrusted, EventMessage aMessage, nsIWidget* aWidget)
-      : WidgetGUIEvent(aIsTrusted, aMessage, aWidget, eInputEventClass),
+  WidgetInputEvent(bool aIsTrusted, EventMessage aMessage, nsIWidget* aWidget,
+                   const WidgetEventTime* aTime = nullptr)
+      : WidgetGUIEvent(aIsTrusted, aMessage, aWidget, eInputEventClass, aTime),
         mModifiers(0) {}
 
   virtual WidgetEvent* Duplicate() const override {
     MOZ_ASSERT(mClass == eInputEventClass,
                "Duplicate() must be overridden by sub class");
     // Not copying widget, it is a weak reference.
-    WidgetInputEvent* result = new WidgetInputEvent(false, mMessage, nullptr);
+    WidgetInputEvent* result =
+        new WidgetInputEvent(false, mMessage, nullptr, this);
     result->AssignInputEventData(*this, true);
     result->mFlags = mFlags;
     return result;
@@ -1271,11 +1207,9 @@ class WidgetInputEvent : public WidgetGUIEvent {
   bool IsControl() const { return ((mModifiers & MODIFIER_CONTROL) != 0); }
   // true indicates the alt key is down
   bool IsAlt() const { return ((mModifiers & MODIFIER_ALT) != 0); }
-  // true indicates the meta key is down (or, on Mac, the Command key)
+  // true indicates the meta key is down (Command key on macOS, Windows logo key
+  // on Windows, Super/Hyper key on Linux, Meta key on Android).
   bool IsMeta() const { return ((mModifiers & MODIFIER_META) != 0); }
-  // true indicates the win key is down on Windows. Or the Super or Hyper key
-  // is down on Linux.
-  bool IsOS() const { return ((mModifiers & MODIFIER_OS) != 0); }
   // true indicates the alt graph key is down
   // NOTE: on Mac, the option key press causes both IsAlt() and IsAltGrpah()
   //       return true.
@@ -1341,14 +1275,16 @@ class InternalUIEvent : public WidgetGUIEvent {
   InternalUIEvent() : mDetail(0), mCausedByUntrustedEvent(false) {}
 
   InternalUIEvent(bool aIsTrusted, EventMessage aMessage, nsIWidget* aWidget,
-                  EventClassID aEventClassID)
-      : WidgetGUIEvent(aIsTrusted, aMessage, aWidget, aEventClassID),
+                  EventClassID aEventClassID,
+                  const WidgetEventTime* aTime = nullptr)
+      : WidgetGUIEvent(aIsTrusted, aMessage, aWidget, aEventClassID, aTime),
         mDetail(0),
         mCausedByUntrustedEvent(false) {}
 
   InternalUIEvent(bool aIsTrusted, EventMessage aMessage,
-                  EventClassID aEventClassID)
-      : WidgetGUIEvent(aIsTrusted, aMessage, nullptr, aEventClassID),
+                  EventClassID aEventClassID,
+                  const WidgetEventTime* aTime = nullptr)
+      : WidgetGUIEvent(aIsTrusted, aMessage, nullptr, aEventClassID, aTime),
         mDetail(0),
         mCausedByUntrustedEvent(false) {}
 
@@ -1361,8 +1297,9 @@ class InternalUIEvent : public WidgetGUIEvent {
    * this should be nullptr.
    */
   InternalUIEvent(bool aIsTrusted, EventMessage aMessage,
-                  const WidgetEvent* aEventCausesThisEvent)
-      : WidgetGUIEvent(aIsTrusted, aMessage, nullptr, eUIEventClass),
+                  const WidgetEvent* aEventCausesThisEvent,
+                  const WidgetEventTime* aTime = nullptr)
+      : WidgetGUIEvent(aIsTrusted, aMessage, nullptr, eUIEventClass, aTime),
         mDetail(0),
         mCausedByUntrustedEvent(aEventCausesThisEvent &&
                                 !aEventCausesThisEvent->IsTrusted()) {}
@@ -1370,7 +1307,8 @@ class InternalUIEvent : public WidgetGUIEvent {
   virtual WidgetEvent* Duplicate() const override {
     MOZ_ASSERT(mClass == eUIEventClass,
                "Duplicate() must be overridden by sub class");
-    InternalUIEvent* result = new InternalUIEvent(false, mMessage, nullptr);
+    InternalUIEvent* result =
+        new InternalUIEvent(false, mMessage, nullptr, this);
     result->AssignUIEventData(*this, true);
     result->mFlags = mFlags;
     return result;

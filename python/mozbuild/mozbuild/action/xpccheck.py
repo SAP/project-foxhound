@@ -8,11 +8,10 @@ corresponding .ini file.
 Usage: xpccheck.py <directory> [<directory> ...]
 """
 
-from __future__ import absolute_import, print_function
-
-import sys
 import os
+import sys
 from glob import glob
+
 import manifestparser
 
 
@@ -63,7 +62,6 @@ def verifyIniFile(initests, directory):
 
         found = False
         for f in files:
-
             fname = f.split("/")[-1]
             if fname.endswith(".in"):
                 fname = ".in".join(fname.split(".in")[:-1])

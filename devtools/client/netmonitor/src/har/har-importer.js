@@ -4,10 +4,12 @@
 
 "use strict";
 
-const { TIMING_KEYS } = require("devtools/client/netmonitor/src/constants");
+const {
+  TIMING_KEYS,
+} = require("resource://devtools/client/netmonitor/src/constants.js");
 const {
   getUrlDetails,
-} = require("devtools/client/netmonitor/src/utils/request-utils");
+} = require("resource://devtools/client/netmonitor/src/utils/request-utils.js");
 
 var guid = 0;
 
@@ -16,7 +18,7 @@ var guid = 0;
  * https://dvcs.w3.org/hg/webperf/raw-file/tip/specs/HAR/Overview.html
  * http://www.softwareishard.com/blog/har-12-spec/
  */
-var HarImporter = function(actions) {
+var HarImporter = function (actions) {
   this.actions = actions;
 };
 
@@ -24,12 +26,12 @@ HarImporter.prototype = {
   /**
    * This is the main method used to import HAR data.
    */
-  import: function(har) {
+  import(har) {
     const json = JSON.parse(har);
     this.doImport(json);
   },
 
-  doImport: function(har) {
+  doImport(har) {
     this.actions.clearRequests();
 
     // Helper map for pages.
@@ -47,7 +49,7 @@ HarImporter.prototype = {
       this.actions.addRequest(
         requestId,
         {
-          startedMs: startedMs,
+          startedMs,
           method: entry.request.method,
           url: entry.request.url,
           urlDetails: getUrlDetails(entry.request.url),
@@ -122,7 +124,8 @@ HarImporter.prototype = {
             expires: afterRequest.expires,
             fetchCount: afterRequest.fetchCount,
             lastFetched: afterRequest.lastFetched,
-            eTag: afterRequest.eTag,
+            // TODO: eTag support, see Bug 1799844.
+            // eTag: afterRequest.eTag,
             _dataSize: afterRequest._dataSize,
             _lastModified: afterRequest._lastModified,
             _device: afterRequest._device,

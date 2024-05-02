@@ -17,7 +17,9 @@
 #include <limits.h>
 #include <time.h>
 
+#include "blapi.h"
 #include "mpi.h"
+#include "secmpi.h"
 #include "mpprime.h"
 
 #include "test-info.c"
@@ -956,7 +958,7 @@ test_div_d(void)
         ++err;
     }
 
-    sprintf(g_intbuf, ZS_DIGIT_FMT, r);
+    snprintf(g_intbuf, sizeof(g_intbuf), ZS_DIGIT_FMT, r);
 
     if (strcmp(g_intbuf, r_mp3d6) != 0) {
         reason("error: computed r = %s, expected %s\n", g_intbuf, r_mp3d6);
@@ -972,7 +974,7 @@ test_div_d(void)
         ++err;
     }
 
-    sprintf(g_intbuf, ZS_DIGIT_FMT, r);
+    snprintf(g_intbuf, sizeof(g_intbuf), ZS_DIGIT_FMT, r);
 
     if (strcmp(g_intbuf, r_mp9c16) != 0) {
         reason("error: computed r = %s, expected %s\n", g_intbuf, r_mp9c16);
@@ -1190,7 +1192,7 @@ test_mod_d(void)
     mp_init(&a);
     mp_read_radix(&a, mp5, 16);
     IFOK(mp_mod_d(&a, md5, &r));
-    sprintf(g_intbuf, ZS_DIGIT_FMT, r);
+    snprintf(g_intbuf, sizeof(g_intbuf), ZS_DIGIT_FMT, r);
     mp_clear(&a);
 
     if (strcmp(g_intbuf, r_mp5d5) != 0) {
@@ -2009,9 +2011,11 @@ test_raw(void)
 {
     int len, out = 0;
     mp_int a;
+    mp_int b;
     char *buf;
 
     mp_init(&a);
+    mp_init(&b);
     mp_read_radix(&a, mp4, 16);
 
     len = mp_raw_size(&a);
@@ -2030,8 +2034,22 @@ test_raw(void)
         out = 1;
     }
 
+    // read the binary output back and compare with the original number
+    memcpy(buf, b_mp4, sizeof(b_mp4));
+    mp_err read_err = mp_read_raw(&b, buf, sizeof(b_mp4));
+    if (read_err != MP_OKAY) {
+        reason("error: reading raw mp_int failed: %d\n", read_err);
+        out = 1;
+    }
+
+    if (mp_cmp(&a, &b) != 0) {
+        reason("error: test_raw: mp_int from read_raw does not match the original number\n");
+        out = 1;
+    }
+
     free(buf);
     mp_clear(&a);
+    mp_clear(&b);
 
     return out;
 }
@@ -2045,31 +2063,32 @@ test_pprime(void)
     int err = 0;
     mp_err res;
 
+    RNG_RNGInit();
     mp_init(&p);
     mp_read_radix(&p, mp7, 16);
 
-    if (mpp_pprime(&p, 5) != MP_YES) {
+    if (mpp_pprime_secure(&p, 5) != MP_YES) {
         reason("error: %s failed Rabin-Miller test, but is prime\n", mp7);
         err = 1;
     }
 
     IFOK(mp_set_int(&p, 9));
-    res = mpp_pprime(&p, 50);
+    res = mpp_pprime_secure(&p, 50);
     if (res == MP_YES) {
         reason("error: 9 is composite but passed Rabin-Miller test\n");
         err = 1;
     } else if (res != MP_NO) {
-        reason("test mpp_pprime(9, 50) failed: error %d\n", res);
+        reason("test mpp_pprime_secure(9, 50) failed: error %d\n", res);
         err = 1;
     }
 
     IFOK(mp_set_int(&p, 15));
-    res = mpp_pprime(&p, 50);
+    res = mpp_pprime_secure(&p, 50);
     if (res == MP_YES) {
         reason("error: 15 is composite but passed Rabin-Miller test\n");
         err = 1;
     } else if (res != MP_NO) {
-        reason("test mpp_pprime(15, 50) failed: error %d\n", res);
+        reason("test mpp_pprime_secure(15, 50) failed: error %d\n", res);
         err = 1;
     }
 

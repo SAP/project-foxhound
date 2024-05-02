@@ -36,10 +36,10 @@
 #include "mozilla/dom/Document.h"
 #include "nsIObjectInputStream.h"
 #include "nsIObjectOutputStream.h"
-#include "nsITextToSubURI.h"
 #include "nsIWritablePropertyBag2.h"
 #include "nsIContentSecurityPolicy.h"
 #include "nsSandboxFlags.h"
+#include "nsTextToSubURI.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/CycleCollectedJSContext.h"
 #include "mozilla/dom/AutoEntryScript.h"
@@ -132,21 +132,36 @@ static nsIScriptGlobalObject* GetGlobalObject(nsIChannel* aChannel) {
 }
 
 static bool AllowedByCSP(nsIContentSecurityPolicy* aCSP,
-                         const nsAString& aContentOfPseudoScript) {
+                         const nsACString& aJavaScriptURL) {
   if (!aCSP) {
     return true;
   }
 
+  // https://w3c.github.io/webappsec-csp/#should-block-navigation-request
+  // Step 3. If result is "Allowed", and if navigation request’s current URL’s
+  // scheme is javascript:
+  //
+  // Step 3.1.1.2 If directive’s inline check returns "Allowed" when executed
+  // upon null, "navigation" and navigation request’s current URL, skip to the
+  // next directive.
+  //
+  // This means /type/ is "navigation" and /source string/ is the
+  // "navigation request’s current URL".
+  //
+  // Per
+  // https://w3c.github.io/webappsec-csp/#effective-directive-for-inline-check
+  // type "navigation" maps to the effective directive script-src-elem.
   bool allowsInlineScript = true;
   nsresult rv =
-      aCSP->GetAllowsInline(nsIContentSecurityPolicy::SCRIPT_SRC_DIRECTIVE,
-                            u""_ns,                  // aNonce
-                            true,                    // aParserCreated
-                            nullptr,                 // aElement,
-                            nullptr,                 // nsICSPEventListener
-                            aContentOfPseudoScript,  // aContent
-                            0,                       // aLineNumber
-                            0,                       // aColumnNumber
+      aCSP->GetAllowsInline(nsIContentSecurityPolicy::SCRIPT_SRC_ELEM_DIRECTIVE,
+                            true,     // aHasUnsafeHash
+                            u""_ns,   // aNonce
+                            true,     // aParserCreated
+                            nullptr,  // aElement,
+                            nullptr,  // nsICSPEventListener
+                            NS_ConvertASCIItoUTF16(aJavaScriptURL),  // aContent
+                            0,  // aLineNumber
+                            0,  // aColumnNumber
                             &allowsInlineScript);
 
   return (NS_SUCCEEDED(rv) && allowsInlineScript);
@@ -208,11 +223,7 @@ nsresult nsJSThunk::EvaluateScript(
   // once we have determined the target document.
   nsCOMPtr<nsIContentSecurityPolicy> csp = loadInfo->GetCspToInherit();
 
-  nsAutoCString script(mScript);
-  // Unescape the script
-  NS_UnescapeURL(script);
-
-  if (!AllowedByCSP(csp, NS_ConvertASCIItoUTF16(script))) {
+  if (!AllowedByCSP(csp, mURL)) {
     return NS_ERROR_DOM_RETVAL_UNDEFINED;
   }
 
@@ -232,18 +243,19 @@ nsresult nsJSThunk::EvaluateScript(
 
   mozilla::dom::Document* targetDoc = innerWin->GetExtantDoc();
 
-  if (targetDoc) {
-    // Sandboxed document check: javascript: URI execution is disabled
-    // in a sandboxed document unless 'allow-scripts' was specified.
-    if (targetDoc->HasScriptsBlockedBySandbox()) {
-      if (nsCOMPtr<nsIObserverService> obs =
-              mozilla::services::GetObserverService()) {
-        obs->NotifyWhenScriptSafe(ToSupports(innerWin),
-                                  "javascript-uri-blocked-by-sandbox");
-      }
-      return NS_ERROR_DOM_RETVAL_UNDEFINED;
+  // Sandboxed document check: javascript: URI execution is disabled in a
+  // sandboxed document unless 'allow-scripts' was specified.
+  if ((targetDoc && !targetDoc->IsScriptEnabled()) ||
+      (loadInfo->GetTriggeringSandboxFlags() & SANDBOXED_SCRIPTS)) {
+    if (nsCOMPtr<nsIObserverService> obs =
+            mozilla::services::GetObserverService()) {
+      obs->NotifyWhenScriptSafe(ToSupports(innerWin),
+                                "javascript-uri-blocked-by-sandbox");
     }
+    return NS_ERROR_DOM_RETVAL_UNDEFINED;
+  }
 
+  if (targetDoc) {
     // Perform a Security check against the CSP of the document we are
     // running against. javascript: URIs are disabled unless "inline"
     // scripts are allowed. We only do that if targetDoc->NodePrincipal()
@@ -261,7 +273,7 @@ nsresult nsJSThunk::EvaluateScript(
     // against if the triggering principal is system.
     if (targetDoc->NodePrincipal()->Subsumes(loadInfo->TriggeringPrincipal())) {
       nsCOMPtr<nsIContentSecurityPolicy> targetCSP = targetDoc->GetCsp();
-      if (!AllowedByCSP(targetCSP, NS_ConvertASCIItoUTF16(script))) {
+      if (!AllowedByCSP(targetCSP, mURL)) {
         return NS_ERROR_DOM_RETVAL_UNDEFINED;
       }
     }
@@ -301,6 +313,10 @@ nsresult nsJSThunk::EvaluateScript(
   if (objectPrincipal->IsSystemPrincipal()) {
     return NS_ERROR_DOM_SECURITY_ERR;
   }
+
+  nsAutoCString script(mScript);
+  // Unescape the script
+  NS_UnescapeURL(script);
 
   JS::Rooted<JS::Value> v(cx, JS::UndefinedValue());
   // Finally, we have everything needed to evaluate the expression.
@@ -506,6 +522,19 @@ nsJSChannel::GetStatus(nsresult* aResult) {
   return NS_OK;
 }
 
+NS_IMETHODIMP nsJSChannel::SetCanceledReason(const nsACString& aReason) {
+  return SetCanceledReasonImpl(aReason);
+}
+
+NS_IMETHODIMP nsJSChannel::GetCanceledReason(nsACString& aReason) {
+  return GetCanceledReasonImpl(aReason);
+}
+
+NS_IMETHODIMP nsJSChannel::CancelWithReason(nsresult aStatus,
+                                            const nsACString& aReason) {
+  return CancelWithReasonImpl(aStatus, aReason);
+}
+
 NS_IMETHODIMP
 nsJSChannel::Cancel(nsresult aStatus) {
   mStatus = aStatus;
@@ -679,7 +708,7 @@ nsJSChannel::AsyncOpen(nsIStreamListener* aListener) {
   nsCOMPtr<nsIRunnable> runnable =
       mozilla::NewRunnableMethod(name, this, method);
   nsGlobalWindowInner* window = nsGlobalWindowInner::Cast(mOriginalInnerWindow);
-  rv = window->Dispatch(mozilla::TaskCategory::Other, runnable.forget());
+  rv = window->Dispatch(runnable.forget());
 
   if (NS_FAILED(rv)) {
     loadGroup->RemoveRequest(this, nullptr, rv);
@@ -943,7 +972,7 @@ nsJSChannel::SetNotificationCallbacks(nsIInterfaceRequestor* aCallbacks) {
 }
 
 NS_IMETHODIMP
-nsJSChannel::GetSecurityInfo(nsISupports** aSecurityInfo) {
+nsJSChannel::GetSecurityInfo(nsITransportSecurityInfo** aSecurityInfo) {
   return mStreamChannel->GetSecurityInfo(aSecurityInfo);
 }
 
@@ -1099,15 +1128,9 @@ NS_IMPL_ISUPPORTS(nsJSProtocolHandler, nsIProtocolHandler)
     const nsCString& aSpec, const char* aCharset, nsACString& aUTF8Spec) {
   aUTF8Spec.Truncate();
 
-  nsresult rv;
-
-  nsCOMPtr<nsITextToSubURI> txtToSubURI =
-      do_GetService(NS_ITEXTTOSUBURI_CONTRACTID, &rv);
-  NS_ENSURE_SUCCESS(rv, rv);
-
   nsAutoString uStr;
-  rv = txtToSubURI->UnEscapeNonAsciiURI(nsDependentCString(aCharset), aSpec,
-                                        uStr);
+  nsresult rv = nsTextToSubURI::UnEscapeNonAsciiURI(
+      nsDependentCString(aCharset), aSpec, uStr);
   NS_ENSURE_SUCCESS(rv, rv);
 
   if (!IsAscii(uStr)) {
@@ -1126,20 +1149,6 @@ NS_IMPL_ISUPPORTS(nsJSProtocolHandler, nsIProtocolHandler)
 NS_IMETHODIMP
 nsJSProtocolHandler::GetScheme(nsACString& result) {
   result = "javascript";
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsJSProtocolHandler::GetDefaultPort(int32_t* result) {
-  *result = -1;  // no port for javascript: URLs
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsJSProtocolHandler::GetProtocolFlags(uint32_t* result) {
-  *result = URI_NORELATIVE | URI_NOAUTH | URI_INHERITS_SECURITY_CONTEXT |
-            URI_LOADABLE_BY_ANYONE | URI_NON_PERSISTABLE |
-            URI_OPENING_EXECUTES_SCRIPT;
   return NS_OK;
 }
 

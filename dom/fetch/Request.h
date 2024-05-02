@@ -17,8 +17,7 @@
 #include "mozilla/dom/RequestBinding.h"
 #include "mozilla/dom/SafeRefPtr.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class Headers;
 class InternalHeaders;
@@ -26,8 +25,8 @@ class RequestOrUSVString;
 
 class Request final : public FetchBody<Request>, public nsWrapperCache {
   NS_DECL_ISUPPORTS_INHERITED
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS_INHERITED(Request,
-                                                         FetchBody<Request>)
+  NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS_INHERITED(Request,
+                                                        FetchBody<Request>)
 
  public:
   Request(nsIGlobalObject* aOwner, SafeRefPtr<InternalRequest> aRequest,
@@ -139,7 +138,6 @@ class Request final : public FetchBody<Request>, public nsWrapperCache {
   RefPtr<AbortSignal> mSignal;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_Request_h

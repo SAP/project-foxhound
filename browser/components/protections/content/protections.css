@@ -65,17 +65,15 @@ body[focuseddatatype=cryptominer] {
 }
 
 h2 {
-  font-weight: 700;
+  font-weight: var(--font-weight-bold);
 }
 
 #report-title {
-  font-size: 20px;
-  font-weight: 300;
   margin-block-end: 20px;
 }
 
 #report-summary {
-  color: var(--in-content-deemphasized-text);
+  color: var(--text-color-deemphasized);
   line-height: 26px;
   font-size: 16px;
   margin: 0;
@@ -256,7 +254,7 @@ a.hidden,
   margin-block: 5px 0;
   font-size: .93em;
   cursor: default;
-  color: var(--in-content-deemphasized-text);
+  color: var(--text-color-deemphasized);
 }
 
 .exit-icon {
@@ -271,21 +269,13 @@ a.hidden,
   background-position: center;
   background-repeat: no-repeat;
   -moz-context-properties: fill;
-  fill: var(--in-content-deemphasized-text);
+  fill: currentColor;
 
-  /* Override margin, padding, min-height and min-width set in common.inc.css */
+  /* Override margin, padding, min-height and min-width set in common-shared.css */
   padding: 0;
   margin: 0;
   min-width: 1px;
   min-height: 1px;
-}
-
-.exit-icon:enabled:hover {
-  background-color: var(--in-content-button-background);
-}
-
-.exit-icon:enabled:hover:active {
-  background-color: var(--in-content-button-background-hover);
 }
 
 .custom-not-blocking .content {
@@ -300,12 +290,11 @@ a.hidden,
   -moz-context-properties: fill;
   fill: var(--gear-icon-fill);
   background: url("chrome://global/skin/icons/settings.svg") no-repeat 0;
-  font-size: 0.75em;
   cursor: pointer;
   width: max-content;
-  color: var(--in-content-deemphasized-text);
+  color: var(--text-color-deemphasized);
   margin-block: 6px 0;
-  font-size: 12px;
+  font-size: 0.8em;
   padding-block: 4px;
   padding-inline: 24px 4px;
 }
@@ -586,7 +575,7 @@ label:hover {
 }
 
 .tab-content p:nth-of-type(2) {
-  color: var(--in-content-deemphasized-text);
+  color: var(--text-color-deemphasized);
 }
 
 #tab-social:checked ~ #social,
@@ -761,7 +750,7 @@ label[for="tab-cryptominer"]:hover ~ #highlight-hover {
 #monitor-partial-breaches-percentage {
   font-size: .93em;
   cursor: default;
-  color: var(--in-content-deemphasized-text);
+  color: var(--text-color-deemphasized);
   float: inline-end;
 }
 
@@ -999,21 +988,11 @@ label[for="tab-cryptominer"]:hover ~ #highlight-hover {
 .monitor-partial-breaches-link-wrapper,
 .monitor-breaches-link-wrapper {
   background-color: var(--in-content-primary-button-background);
-  border: 1px solid transparent;
-  border-radius: 2px;
+  border: 1px solid var(--in-content-primary-button-border-color);
+  border-radius: 4px;
   text-decoration: none;
   color: var(--in-content-primary-button-text-color);
   font-weight: 600;
-}
-
-#manage-protections:active,
-#sign-up-for-monitor-link:active,
-#get-proxy-extension-link:active,
-#get-vpn-link:active,
-#vpn-banner-link:active,
-#monitor-partial-breaches-link:active,
-#monitor-breaches-link:active {
-  background-color: var(--in-content-primary-button-background-active);
 }
 
 #manage-protections:hover,
@@ -1025,18 +1004,31 @@ label[for="tab-cryptominer"]:hover ~ #highlight-hover {
 #monitor-breaches-link:hover {
   background-color: var(--in-content-primary-button-background-hover);
   color: var(--in-content-primary-button-text-color-hover);
+  border-color: var(--in-content-button-border-color-hover);
 }
 
-#manage-protections:focus,
-#sign-up-for-monitor-link:focus,
-#get-proxy-extension-link:focus,
-#get-vpn-link:focus,
-#vpn-banner-link:focus,
-#monitor-partial-breaches-link:focus,
-.monitor-block > a:focus,
-#monitor-breaches-link:focus {
-  outline: 2px solid var(--in-content-focus-outline-color);
-  outline-offset: 2px;
+#manage-protections:hover:active,
+#sign-up-for-monitor-link:hover:active,
+#get-proxy-extension-link:hover:active,
+#get-vpn-link:hover:active,
+#vpn-banner-link:hover:active,
+#monitor-partial-breaches-link:hover:active,
+#monitor-breaches-link:hover:active {
+  background-color: var(--in-content-primary-button-background-active);
+  color: var(--in-content-primary-button-text-color-active);
+  border-color: var(--in-content-button-border-color-active);
+}
+
+#manage-protections:focus-visible,
+#sign-up-for-monitor-link:focus-visible,
+#get-proxy-extension-link:focus-visible,
+#get-vpn-link:focus-visible,
+#vpn-banner-link:focus-visible,
+#monitor-partial-breaches-link:focus-visible,
+.monitor-block > a:focus-visible,
+#monitor-breaches-link:focus-visible {
+  outline: var(--in-content-focus-outline);
+  outline-offset: var(--in-content-focus-outline-offset);
 }
 
 .monitor-card.loading::after,
@@ -1109,7 +1101,7 @@ label[for="tab-cryptominer"]:hover ~ #highlight-hover {
   margin-block: 5px 0;
   font-size: 0.88em;
   cursor: default;
-  color: var(--in-content-deemphasized-text);
+  color: var(--text-color-deemphasized);
 }
 
 .new-banner .exit-icon {

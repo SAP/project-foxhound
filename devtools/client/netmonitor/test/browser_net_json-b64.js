@@ -7,8 +7,10 @@
  * Tests if JSON responses encoded in base64 are handled correctly.
  */
 
-add_task(async function() {
-  const { L10N } = require("devtools/client/netmonitor/src/utils/l10n");
+add_task(async function () {
+  const {
+    L10N,
+  } = require("resource://devtools/client/netmonitor/src/utils/l10n.js");
   const { tab, monitor } = await initNetMonitor(JSON_B64_URL, {
     requestCount: 1,
   });

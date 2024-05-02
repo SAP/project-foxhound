@@ -7,15 +7,19 @@
 #include "ChannelMediaDecoder.h"
 #include "ChannelMediaResource.h"
 #include "DecoderTraits.h"
+#include "ExternalEngineStateMachine.h"
 #include "MediaDecoderStateMachine.h"
 #include "MediaFormatReader.h"
 #include "BaseMediaResource.h"
 #include "MediaShutdownManager.h"
+#include "base/process_util.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/StaticPrefs_media.h"
 #include "VideoUtils.h"
 
 namespace mozilla {
+
+using TimeUnit = media::TimeUnit;
 
 extern LazyLogModule gMediaDecoderLog;
 #define LOG(x, ...) \
@@ -139,8 +143,7 @@ void ChannelMediaDecoder::NotifyPrincipalChanged() {
     mInitialChannelPrincipalKnown = true;
     return;
   }
-  if (!mSameOriginMedia &&
-      Preferences::GetBool("media.block-midflight-redirects", true)) {
+  if (!mSameOriginMedia) {
     // Block mid-flight redirects to non CORS same origin destinations.
     // See bugs 1441153, 1443942.
     LOG("ChannnelMediaDecoder prohibited cross origin redirect blocked.");
@@ -201,7 +204,8 @@ already_AddRefed<ChannelMediaDecoder> ChannelMediaDecoder::Clone(
   return decoder.forget();
 }
 
-MediaDecoderStateMachine* ChannelMediaDecoder::CreateStateMachine() {
+MediaDecoderStateMachineBase* ChannelMediaDecoder::CreateStateMachine(
+    bool aDisableExternalEngine) {
   MOZ_ASSERT(NS_IsMainThread());
   MediaFormatReaderInit init;
   init.mVideoFrameContainer = GetVideoFrameContainer();
@@ -210,7 +214,21 @@ MediaDecoderStateMachine* ChannelMediaDecoder::CreateStateMachine() {
   init.mFrameStats = mFrameStats;
   init.mResource = mResource;
   init.mMediaDecoderOwnerID = mOwner;
+  static Atomic<uint32_t> sTrackingIdCounter(0);
+  init.mTrackingId.emplace(TrackingId::Source::ChannelDecoder,
+                           sTrackingIdCounter++,
+                           TrackingId::TrackAcrossProcesses::Yes);
   mReader = DecoderTraits::CreateReader(ContainerType(), init);
+
+#ifdef MOZ_WMF_MEDIA_ENGINE
+  // TODO : Only for testing development for now. In the future this should be
+  // used for encrypted content only.
+  if (StaticPrefs::media_wmf_media_engine_enabled() &&
+      StaticPrefs::media_wmf_media_engine_channel_decoder_enabled() &&
+      !aDisableExternalEngine) {
+    return new ExternalEngineStateMachine(this, mReader);
+  }
+#endif
   return new MediaDecoderStateMachine(this, mReader);
 }
 
@@ -259,13 +277,7 @@ nsresult ChannelMediaDecoder::Load(nsIChannel* aChannel,
 
   rv = mResource->Open(aStreamListener);
   NS_ENSURE_SUCCESS(rv, rv);
-
-  SetStateMachine(CreateStateMachine());
-  NS_ENSURE_TRUE(GetStateMachine(), NS_ERROR_FAILURE);
-
-  GetStateMachine()->DispatchIsLiveStream(mResource->IsLiveStream());
-
-  return InitializeStateMachine();
+  return CreateAndInitStateMachine(mResource->IsLiveStream());
 }
 
 nsresult ChannelMediaDecoder::Load(BaseMediaResource* aOriginal) {
@@ -282,13 +294,7 @@ nsresult ChannelMediaDecoder::Load(BaseMediaResource* aOriginal) {
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
-
-  SetStateMachine(CreateStateMachine());
-  NS_ENSURE_TRUE(GetStateMachine(), NS_ERROR_FAILURE);
-
-  GetStateMachine()->DispatchIsLiveStream(mResource->IsLiveStream());
-
-  return InitializeStateMachine();
+  return CreateAndInitStateMachine(mResource->IsLiveStream());
 }
 
 void ChannelMediaDecoder::NotifyDownloadEnded(nsresult aStatus) {
@@ -308,7 +314,8 @@ void ChannelMediaDecoder::NotifyDownloadEnded(nsresult aStatus) {
         "ChannelMediaDecoder::UpdatePlaybackRate",
         [stats = mPlaybackStatistics,
          res = RefPtr<BaseMediaResource>(mResource), duration = mDuration]() {
-          auto rate = ComputePlaybackRate(stats, res, duration);
+          auto rate = ComputePlaybackRate(stats, res,
+                                          duration.match(DurationToTimeUnit()));
           UpdatePlaybackRate(rate, res);
         });
     nsresult rv = GetStateMachine()->OwnerThread()->Dispatch(r.forget());
@@ -366,7 +373,8 @@ void ChannelMediaDecoder::DurationChanged() {
       "ChannelMediaDecoder::UpdatePlaybackRate",
       [stats = mPlaybackStatistics, res = RefPtr<BaseMediaResource>(mResource),
        duration = mDuration]() {
-        auto rate = ComputePlaybackRate(stats, res, duration);
+        auto rate = ComputePlaybackRate(stats, res,
+                                        duration.match(DurationToTimeUnit()));
         UpdatePlaybackRate(rate, res);
       });
   nsresult rv = GetStateMachine()->OwnerThread()->Dispatch(r.forget());
@@ -385,7 +393,8 @@ void ChannelMediaDecoder::DownloadProgressed() {
               [playbackStats = mPlaybackStatistics,
                res = RefPtr<BaseMediaResource>(mResource), duration = mDuration,
                pos = mPlaybackPosition]() {
-                auto rate = ComputePlaybackRate(playbackStats, res, duration);
+                auto rate = ComputePlaybackRate(
+                    playbackStats, res, duration.match(DurationToTimeUnit()));
                 UpdatePlaybackRate(rate, res);
                 MediaStatistics stats = GetStatistics(rate, res, pos);
                 return StatsPromise::CreateAndResolve(stats, __func__);
@@ -409,13 +418,14 @@ void ChannelMediaDecoder::DownloadProgressed() {
 /* static */ ChannelMediaDecoder::PlaybackRateInfo
 ChannelMediaDecoder::ComputePlaybackRate(const MediaChannelStatistics& aStats,
                                          BaseMediaResource* aResource,
-                                         double aDuration) {
+                                         const TimeUnit& aDuration) {
   MOZ_ASSERT(!NS_IsMainThread());
 
   int64_t length = aResource->GetLength();
-  if (mozilla::IsFinite<double>(aDuration) && aDuration > 0 && length >= 0 &&
-      length / aDuration < UINT32_MAX) {
-    return {uint32_t(length / aDuration), true};
+  if (aDuration.IsValid() && !aDuration.IsInfinite() &&
+      aDuration.IsPositive() && length >= 0 &&
+      length / aDuration.ToSeconds() < UINT32_MAX) {
+    return {uint32_t(length / aDuration.ToSeconds()), true};
   }
 
   bool reliable = false;

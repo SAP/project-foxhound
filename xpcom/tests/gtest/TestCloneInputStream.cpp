@@ -6,6 +6,7 @@
 
 #include "gtest/gtest.h"
 #include "Helpers.h"
+#include "mozilla/gtest/MozAssertions.h"
 #include "mozilla/Unused.h"
 #include "nsICloneableInputStream.h"
 #include "nsIMultiplexInputStream.h"
@@ -18,7 +19,7 @@ TEST(CloneInputStream, InvalidInput)
 {
   nsCOMPtr<nsIInputStream> clone;
   nsresult rv = NS_CloneInputStream(nullptr, getter_AddRefs(clone));
-  ASSERT_TRUE(NS_FAILED(rv));
+  ASSERT_NS_FAILED(rv);
   ASSERT_FALSE(clone);
 }
 
@@ -30,11 +31,11 @@ TEST(CloneInputStream, CloneableInput)
 
   nsCOMPtr<nsIInputStream> stream;
   nsresult rv = NS_NewCStringInputStream(getter_AddRefs(stream), inputString);
-  ASSERT_TRUE(NS_SUCCEEDED(rv));
+  ASSERT_NS_SUCCEEDED(rv);
 
   nsCOMPtr<nsIInputStream> clone;
   rv = NS_CloneInputStream(stream, getter_AddRefs(clone));
-  ASSERT_TRUE(NS_SUCCEEDED(rv));
+  ASSERT_NS_SUCCEEDED(rv);
 
   testing::ConsumeAndValidateStream(stream, inputString);
   testing::ConsumeAndValidateStream(clone, inputString);
@@ -50,6 +51,9 @@ class NonCloneableInputStream final : public nsIInputStream {
 
   NS_IMETHOD
   Available(uint64_t* aLength) override { return mStream->Available(aLength); }
+
+  NS_IMETHOD
+  StreamStatus() override { return mStream->StreamStatus(); }
 
   NS_IMETHOD
   Read(char* aBuffer, uint32_t aCount, uint32_t* aReadCount) override {
@@ -86,7 +90,7 @@ TEST(CloneInputStream, NonCloneableInput_NoFallback)
 
   nsCOMPtr<nsIInputStream> base;
   nsresult rv = NS_NewCStringInputStream(getter_AddRefs(base), inputString);
-  ASSERT_TRUE(NS_SUCCEEDED(rv));
+  ASSERT_NS_SUCCEEDED(rv);
 
   nsCOMPtr<nsIInputStream> stream = new NonCloneableInputStream(base.forget());
 
@@ -95,7 +99,7 @@ TEST(CloneInputStream, NonCloneableInput_NoFallback)
 
   nsCOMPtr<nsIInputStream> clone;
   rv = NS_CloneInputStream(stream, getter_AddRefs(clone));
-  ASSERT_TRUE(NS_FAILED(rv));
+  ASSERT_NS_FAILED(rv);
   ASSERT_TRUE(clone == nullptr);
 
   testing::ConsumeAndValidateStream(stream, inputString);
@@ -109,7 +113,7 @@ TEST(CloneInputStream, NonCloneableInput_Fallback)
 
   nsCOMPtr<nsIInputStream> base;
   nsresult rv = NS_NewCStringInputStream(getter_AddRefs(base), inputString);
-  ASSERT_TRUE(NS_SUCCEEDED(rv));
+  ASSERT_NS_SUCCEEDED(rv);
 
   nsCOMPtr<nsIInputStream> stream = new NonCloneableInputStream(base.forget());
 
@@ -120,7 +124,7 @@ TEST(CloneInputStream, NonCloneableInput_Fallback)
   nsCOMPtr<nsIInputStream> replacement;
   rv = NS_CloneInputStream(stream, getter_AddRefs(clone),
                            getter_AddRefs(replacement));
-  ASSERT_TRUE(NS_SUCCEEDED(rv));
+  ASSERT_NS_SUCCEEDED(rv);
   ASSERT_TRUE(clone != nullptr);
   ASSERT_TRUE(replacement != nullptr);
   ASSERT_TRUE(stream.get() != replacement.get());
@@ -135,7 +139,7 @@ TEST(CloneInputStream, NonCloneableInput_Fallback)
   do {
     mozilla::Unused << PR_Sleep(PR_INTERVAL_NO_WAIT);
     rv = stream->Available(&available);
-    ASSERT_TRUE(NS_SUCCEEDED(rv));
+    ASSERT_NS_SUCCEEDED(rv);
   } while (available < inputString.Length());
 
   testing::ConsumeAndValidateStream(stream, inputString);
@@ -157,10 +161,10 @@ TEST(CloneInputStream, CloneMultiplexStream)
 
     nsCOMPtr<nsIInputStream> base;
     nsresult rv = NS_NewCStringInputStream(getter_AddRefs(base), inputString);
-    ASSERT_TRUE(NS_SUCCEEDED(rv));
+    ASSERT_NS_SUCCEEDED(rv);
 
     rv = multiplexStream->AppendStream(base);
-    ASSERT_TRUE(NS_SUCCEEDED(rv));
+    ASSERT_NS_SUCCEEDED(rv);
   }
 
   // Unread stream should clone successfully.
@@ -170,18 +174,18 @@ TEST(CloneInputStream, CloneMultiplexStream)
 
   nsCOMPtr<nsIInputStream> clone;
   nsresult rv = NS_CloneInputStream(stream, getter_AddRefs(clone));
-  ASSERT_TRUE(NS_SUCCEEDED(rv));
+  ASSERT_NS_SUCCEEDED(rv);
   testing::ConsumeAndValidateStream(clone, doubled);
 
   // Stream that has been read should fail.
   char buffer[512];
   uint32_t read;
   rv = stream->Read(buffer, 512, &read);
-  ASSERT_TRUE(NS_SUCCEEDED(rv));
+  ASSERT_NS_SUCCEEDED(rv);
 
   nsCOMPtr<nsIInputStream> clone2;
   rv = NS_CloneInputStream(stream, getter_AddRefs(clone2));
-  ASSERT_TRUE(NS_FAILED(rv));
+  ASSERT_NS_FAILED(rv);
 }
 
 TEST(CloneInputStream, CloneMultiplexStreamPartial)
@@ -199,34 +203,34 @@ TEST(CloneInputStream, CloneMultiplexStreamPartial)
 
     nsCOMPtr<nsIInputStream> base;
     nsresult rv = NS_NewCStringInputStream(getter_AddRefs(base), inputString);
-    ASSERT_TRUE(NS_SUCCEEDED(rv));
+    ASSERT_NS_SUCCEEDED(rv);
 
     rv = multiplexStream->AppendStream(base);
-    ASSERT_TRUE(NS_SUCCEEDED(rv));
+    ASSERT_NS_SUCCEEDED(rv);
   }
 
   // Fail when first stream read, but second hasn't been started.
   char buffer[1024];
   uint32_t read;
   nsresult rv = stream->Read(buffer, 1024, &read);
-  ASSERT_TRUE(NS_SUCCEEDED(rv));
+  ASSERT_NS_SUCCEEDED(rv);
 
   nsCOMPtr<nsIInputStream> clone;
   rv = NS_CloneInputStream(stream, getter_AddRefs(clone));
-  ASSERT_TRUE(NS_FAILED(rv));
+  ASSERT_NS_FAILED(rv);
 
   // Fail after beginning read of second stream.
   rv = stream->Read(buffer, 512, &read);
   ASSERT_TRUE(NS_SUCCEEDED(rv) && read == 512);
 
   rv = NS_CloneInputStream(stream, getter_AddRefs(clone));
-  ASSERT_TRUE(NS_FAILED(rv));
+  ASSERT_NS_FAILED(rv);
 
   // Fail at the end.
   nsAutoCString consumed;
   rv = NS_ConsumeStream(stream, UINT32_MAX, consumed);
-  ASSERT_TRUE(NS_SUCCEEDED(rv));
+  ASSERT_NS_SUCCEEDED(rv);
 
   rv = NS_CloneInputStream(stream, getter_AddRefs(clone));
-  ASSERT_TRUE(NS_FAILED(rv));
+  ASSERT_NS_FAILED(rv);
 }

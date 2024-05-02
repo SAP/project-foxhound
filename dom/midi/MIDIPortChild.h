@@ -7,8 +7,8 @@
 #ifndef mozilla_dom_MIDIPortChild_h
 #define mozilla_dom_MIDIPortChild_h
 
-#include "mozilla/dom/PMIDIPortChild.h"
 #include "mozilla/dom/MIDIPortInterface.h"
+#include "mozilla/dom/PMIDIPortChild.h"
 
 namespace mozilla::dom {
 
@@ -23,7 +23,7 @@ class MIDIPortInfo;
  */
 class MIDIPortChild final : public PMIDIPortChild, public MIDIPortInterface {
  public:
-  NS_INLINE_DECL_REFCOUNTING(MIDIPortChild);
+  NS_INLINE_DECL_REFCOUNTING(MIDIPortChild, override);
   mozilla::ipc::IPCResult RecvReceive(nsTArray<MIDIMessage>&& aMsgs);
 
   virtual void ActorDestroy(ActorDestroyReason aWhy) override;
@@ -33,17 +33,17 @@ class MIDIPortChild final : public PMIDIPortChild, public MIDIPortInterface {
 
   MIDIPortChild(const MIDIPortInfo& aPortInfo, bool aSysexEnabled,
                 MIDIPort* aPort);
-  // virtual void Shutdown() override;
-  void SetActorAlive();
+  nsresult GenerateStableId(const nsACString& aOrigin);
+  const nsString& StableId() { return mStableId; };
 
-  void Teardown();
+  void DetachOwner() { mDOMPort = nullptr; }
 
  private:
   ~MIDIPortChild() = default;
   // Pointer to the DOM object this actor represents. The actor cannot outlive
   // the DOM object.
   MIDIPort* mDOMPort;
-  bool mActorWasAlive;
+  nsString mStableId;
 };
 }  // namespace mozilla::dom
 

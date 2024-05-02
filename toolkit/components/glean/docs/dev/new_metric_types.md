@@ -29,7 +29,7 @@ Put another way, what shape of storage will this take up in the
     and send a stream of high-precision samples across IPC.
 
 To implement IPC support in a metric type,
-we split the metric into three pieces:
+we split FOG's Rust implementation of the metric into three pieces:
 1. An umbrella `enum` with the name `MetricTypeMetric`.
     * It has a `Child` and a `Parent` variant.
     * It is IPC-aware and is responsible for
@@ -66,6 +66,25 @@ If you add a GIFFT mirror, don't forget to test that the mirror works.
 You should be able to do this by adding a task to
 [`toolkit/components/glean/tests/xpcshell/test_GIFFT.js`](https://hg.mozilla.org/mozilla-central/file/tip/toolkit/components/glean/tests/xpcshell/test_GIFFT.js).
 
+### GIFFT C++ State: Typical Locking and Shutdown
+
+Some metric types (`labeled_*`, `timespan`, `timing_distribution`)
+require holding state in C++ to make GIFFT work.
+Pings also hold state to support `testBeforeNextSubmit()`.
+If your new metric type requires state in C++,
+the current state-of-the-art is a `StaticDataMutex`-locked `UniquePtr` to a `nsTHashTable`.
+Access to the inner map is guarded by the lock and is controlled and lazily-instantiated through a single access function.
+[See Ping's `GetCallbackMapLock()`](https://searchfox.org/mozilla-central/source/toolkit/components/glean/bindings/private/Ping.cpp)
+for example.
+
+It is important to clear this state to avoid leaks.
+(See [bug 1752417](https://bugzilla.mozilla.org/show_bug.cgi?id=1752417).)
+However, instrumentation may call metrics APIs at any time.
+
+Therefore, GIFFT explicitly stops supporting these state-requiring operations after the
+[`AppShutdownTelemetry` shutdown phase](https://searchfox.org/mozilla-central/source/xpcom/base/ShutdownPhase.h).
+This is because during the next phase (`XPCOMWillShutdown`) we clear the state.
+
 ## Rust
 
 FOG uses the Rust Language Binding APIs (the `glean` crate) with a layer of IPC on top.
@@ -86,6 +105,15 @@ Every method on the metric type is public for now,
 including test methods,
 and is at least all the methods exposed via the
 [metric traits](https://github.com/mozilla/glean/tree/main/glean-core/src/traits).
+
+To support IPC and the MLA FFI (see below)
+we identify metric instances by MetricId and store them in maps in
+[the `__glean_metric_maps` mod of `metrics.rs`](https://hg.mozilla.org/mozilla-central/toolkit/components/glean/api/src/metrics.rs).
+This work is done by the `rust.py` and `rust(_pings).jinja2` extensions to `glean_parser` found
+[in the `build_scripts/glean_parser_ext/` folder](https://searchfox.org/mozilla-central/source/toolkit/components/glean/build_scripts/glean_parser_ext).
+
+You shouldn't have to edit these files for new metric types,
+as the original modifications to `glean_parser` for this type should already be generating correct code.
 
 ### Rust Tests
 
@@ -132,32 +160,35 @@ Each metric type has six pieces you'll need to cover:
 ### 3. IDL
 
 - Duplicate the public API (including its docs) to
-  [`xpcom/nsIGleanMetrics.idl`](https://hg.mozilla.org/mozilla-central/file/tip/toolkit/components/glean/xpcom/nsIGleanMetrics.idl)
-  with the name `nsIGleanX` (e.g. `nsIGleanCounter`).
-    - Inherit from `nsISupports`.
-    - The naming style for members here is `lowerCamelCase`.
-      You'll need a
-      [GUID](https://developer.mozilla.org/en-US/docs/Mozilla/Tech/XPCOM/Generating_GUIDs)
-      because this is XPCOM, but you'll only need the canonical form since we're only exposing to JS.
-    - The `testGetValue` method will return a
-      `jsval` to permit it to return `undefined` when there is no value.
+  {searchfox}`dom/webidl/GleanMetrics.webidl`
+  with the name `GleanX` (e.g. `GleanCounter`).
+    - Inherit from `GleanMetric`.
+    - The naming style for methods here is `lowerCamelCase`.
+    - If the metric method is a reserved word, prepend it with a `_`.
+    - Web IDL bindings use
+      [their own mapping for types](/dom/webIdlBindings/index.md).
+      If you choose ones that most closely resemble the C++ types,
+      you'll make your life easier.
+- Add a new mapping in `dom/bindings/Bindings.conf`:
+  ```idl
+  'GleanX': {
+      'nativeType': 'mozilla::glean::GleanX',
+      'headerFile': 'mozilla/glean/bindings/X.h',
+  },
+  ```
+    - If you don't, you will get a build error complaining `fatal error: 'mozilla/dom/GleanX.h' file not found`.
 
 ### 4. JS Impl
 
-- Add an `nsIGleanX`-deriving, `XMetric`-owning type called
-  `GleanX` (e.g. `GleanCounter`) in the same header and `.cpp` as `XMetric` in
-  [`bindings/private/`](https://hg.mozilla.org/mozilla-central/file/tip/toolkit/components/glean/bindings/private/).
-    - Don't declare any methods beyond a ctor
-      (takes a `uint32_t` metric id, init-constructs a `impl::XMetric` member)
-      and dtor (`default`): the IDL will do the rest so long as you remember to add
-      `NS_DECL_ISUPPORTS` and `NS_DECL_NSIGLEANX`.
+- Implement the `GleanX` (e.g. `GleanCounter`) type
+  in the same header and `.cpp` as `XMetric` in
+  {searchfox}`toolkit/components/glean/bindings/private/`
+    - It should own an instance of and delegate method implementations to `XMetric`.
     - In the definition of `GleanX`, member identifiers are back to
-      `CamelCase` and need macros like `NS_IMETHODIMP`.
-      Delegate operations to the owned `XMetric`, returning
-      `NS_OK` no matter what in non-test methods.
-    - Test-only methods can return `NS_ERROR` codes on failures,
-      but mostly return `NS_OK` and use `undefined` in the
-      `JS::MutableHandleValue` result to signal no value.
+      `CamelCase`.
+    - Test-only methods can throw `DataError` on failure.
+    - Review the [Web IDL Bindings documentation](/dom/webIdlBindings/index.html)
+      for help with optional, nullable, and non-primitive types.
 
 ### 6. Tests
 
@@ -171,7 +202,10 @@ Two languages means two test suites.
   [`gtest/TestFog.cpp`](https://hg.mozilla.org/mozilla-central/file/tip/toolkit/components/glean/tests/gtest/TestFog.cpp).
     - For more details, peruse the [testing docs](testing.md).
 - **JS Tests (xpcshell)** - Add a small test case to
-  [`xpcshell/test_Glean.js`](https://hg.mozilla.org/mozilla-central/file/tip/toolkit/components/glean/tests/xpcshell/test_Glean.js).
+  [`xpcshell/test_Glean.js`](https://hg.mozilla.org/mozilla-central/file/tip/toolkit/components/glean/tests/xpcshell/test_Glean.js)
+  and
+  [`xpcshell/test_JOG.js`](https://hg.mozilla.org/mozilla-central/file/tip/toolkit/components/glean/tests/xpcshell/test_JOG.js).
+  If your metric type has supported IPC operations, also add cases to the `IPC` variants of these test files.
     - For more details, peruse the [testing docs](testing.md).
 
 ### 7. API Documentation
@@ -235,7 +269,7 @@ There are four pieces to this:
 
 #### JS
 
-- Already handled for you since the JS types all inherit from `nsISupports`
+- Already handled for you since the JS types all inherit from `GleanMetric`
   and the JS template knows to add your new type to `NewSubMetricFromIds(...)`
   (see `GleanLabeled::NamedGetter` if you're curious).
 

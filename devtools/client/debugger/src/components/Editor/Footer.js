@@ -3,22 +3,31 @@
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
 import React, { PureComponent } from "react";
+import { div, button, span } from "react-dom-factories";
+import PropTypes from "prop-types";
 import { connect } from "../../utils/connect";
-import classnames from "classnames";
+import { createLocation } from "../../utils/location";
 import actions from "../../actions";
 import {
-  getSelectedSourceWithContent,
+  getSelectedSource,
+  getSelectedLocation,
+  getSelectedSourceTextContent,
   getPrettySource,
   getPaneCollapse,
-  getContext,
   getGeneratedSource,
+  isSourceBlackBoxed,
   canPrettyPrintSource,
+  getPrettyPrintMessage,
+  isSourceOnSourceMapIgnoreList,
+  isSourceMapIgnoreListEnabled,
 } from "../../selectors";
 
 import { isPretty, getFilename, shouldBlackbox } from "../../utils/source";
 
 import { PaneToggleButton } from "../shared/Button";
 import AccessibleImage from "../shared/AccessibleImage";
+
+const classnames = require("devtools/client/shared/classnames.js");
 
 import "./Footer.css";
 
@@ -27,6 +36,24 @@ class SourceFooter extends PureComponent {
     super();
 
     this.state = { cursorPosition: { line: 0, column: 0 } };
+  }
+
+  static get propTypes() {
+    return {
+      canPrettyPrint: PropTypes.bool.isRequired,
+      prettyPrintMessage: PropTypes.string.isRequired,
+      endPanelCollapsed: PropTypes.bool.isRequired,
+      horizontal: PropTypes.bool.isRequired,
+      jumpToMappedLocation: PropTypes.func.isRequired,
+      mappedSource: PropTypes.object,
+      selectedSource: PropTypes.object,
+      isSelectedSourceBlackBoxed: PropTypes.bool.isRequired,
+      sourceLoaded: PropTypes.bool.isRequired,
+      toggleBlackBox: PropTypes.func.isRequired,
+      togglePaneCollapse: PropTypes.func.isRequired,
+      prettyPrintAndSelectSource: PropTypes.func.isRequired,
+      isSourceOnIgnoreList: PropTypes.bool.isRequired,
+    };
   }
 
   componentDidUpdate() {
@@ -55,98 +82,104 @@ class SourceFooter extends PureComponent {
 
   prettyPrintButton() {
     const {
-      cx,
       selectedSource,
       canPrettyPrint,
-      togglePrettyPrint,
+      prettyPrintMessage,
+      prettyPrintAndSelectSource,
+      sourceLoaded,
     } = this.props;
 
     if (!selectedSource) {
-      return;
+      return null;
     }
 
-    if (!selectedSource.content && selectedSource.isPrettyPrinted) {
-      return (
-        <div className="action" key="pretty-loader">
-          <AccessibleImage className="loader spin" />
-        </div>
+    if (!sourceLoaded && selectedSource.isPrettyPrinted) {
+      return div(
+        {
+          className: "action",
+          key: "pretty-loader",
+        },
+        React.createElement(AccessibleImage, {
+          className: "loader spin",
+        })
       );
     }
 
-    if (!canPrettyPrint) {
-      return;
-    }
-
-    const tooltip = L10N.getStr("sourceTabs.prettyPrint");
-    const sourceLoaded = !!selectedSource.content;
-
     const type = "prettyPrint";
-    return (
-      <button
-        onClick={() => togglePrettyPrint(cx, selectedSource.id)}
-        className={classnames("action", type, {
-          active: sourceLoaded,
+    return button(
+      {
+        onClick: () => {
+          if (!canPrettyPrint) {
+            return;
+          }
+          prettyPrintAndSelectSource(selectedSource);
+        },
+        className: classnames("action", type, {
+          active: sourceLoaded && canPrettyPrint,
           pretty: isPretty(selectedSource),
-        })}
-        key={type}
-        title={tooltip}
-        aria-label={tooltip}
-      >
-        <AccessibleImage className={type} />
-      </button>
+        }),
+        key: type,
+        title: prettyPrintMessage,
+        "aria-label": prettyPrintMessage,
+        disabled: !canPrettyPrint,
+      },
+      React.createElement(AccessibleImage, {
+        className: type,
+      })
     );
   }
 
   blackBoxButton() {
-    const { cx, selectedSource, toggleBlackBox } = this.props;
-    const sourceLoaded = selectedSource?.content;
+    const {
+      selectedSource,
+      isSelectedSourceBlackBoxed,
+      toggleBlackBox,
+      sourceLoaded,
+      isSourceOnIgnoreList,
+    } = this.props;
 
-    if (!selectedSource) {
-      return;
+    if (!selectedSource || !shouldBlackbox(selectedSource)) {
+      return null;
     }
 
-    if (!shouldBlackbox(selectedSource)) {
-      return;
-    }
-
-    const blackboxed = selectedSource.isBlackBoxed;
-
-    const tooltip = blackboxed
+    let tooltip = isSelectedSourceBlackBoxed
       ? L10N.getStr("sourceFooter.unignore")
       : L10N.getStr("sourceFooter.ignore");
 
-    const type = "black-box";
+    if (isSourceOnIgnoreList) {
+      tooltip = L10N.getStr("sourceFooter.ignoreList");
+    }
 
-    return (
-      <button
-        onClick={() => toggleBlackBox(cx, selectedSource)}
-        className={classnames("action", type, {
+    const type = "black-box";
+    return button(
+      {
+        onClick: () => toggleBlackBox(selectedSource),
+        className: classnames("action", type, {
           active: sourceLoaded,
-          blackboxed,
-        })}
-        key={type}
-        title={tooltip}
-        aria-label={tooltip}
-      >
-        <AccessibleImage className="blackBox" />
-      </button>
+          blackboxed: isSelectedSourceBlackBoxed || isSourceOnIgnoreList,
+        }),
+        key: type,
+        title: tooltip,
+        "aria-label": tooltip,
+        disabled: isSourceOnIgnoreList,
+      },
+      React.createElement(AccessibleImage, {
+        className: "blackBox",
+      })
     );
   }
 
   renderToggleButton() {
     if (this.props.horizontal) {
-      return;
+      return null;
     }
-
-    return (
-      <PaneToggleButton
-        key="toggle"
-        collapsed={this.props.endPanelCollapsed}
-        horizontal={this.props.horizontal}
-        handleClick={this.props.togglePaneCollapse}
-        position="end"
-      />
-    );
+    return React.createElement(PaneToggleButton, {
+      key: "toggle",
+      collapsed: this.props.endPanelCollapsed,
+      horizontal: this.props.horizontal,
+      handleClick: this.props.togglePaneCollapse,
+      position: "end",
+    });
   }
 
   renderCommands() {
@@ -154,16 +187,18 @@ class SourceFooter extends PureComponent {
       Boolean
     );
 
-    return commands.length ? <div className="commands">{commands}</div> : null;
+    return commands.length
+      ? div(
+          {
+            className: "commands",
+          },
+          commands
+        )
+      : null;
   }
 
   renderSourceSummary() {
-    const {
-      cx,
-      mappedSource,
-      jumpToMappedLocation,
-      selectedSource,
-    } = this.props;
+    const { mappedSource, jumpToMappedLocation, selectedSource } = this.props;
 
     if (!mappedSource || !selectedSource || !selectedSource.isOriginal) {
       return null;
@@ -175,22 +210,20 @@ class SourceFooter extends PureComponent {
       filename
     );
     const title = L10N.getFormatStr("sourceFooter.mappedSource", filename);
-    const mappedSourceLocation = {
-      sourceId: selectedSource.id,
+    const mappedSourceLocation = createLocation({
+      source: selectedSource,
       line: 1,
       column: 1,
-    };
-    return (
-      <button
-        className="mapped-source"
-        onClick={() => jumpToMappedLocation(cx, mappedSourceLocation)}
-        title={tooltip}
-      >
-        <span>{title}</span>
-      </button>
+    });
+    return button(
+      {
+        className: "mapped-source",
+        onClick: () => jumpToMappedLocation(mappedSourceLocation),
+        title: tooltip,
+      },
+      span(null, title)
     );
   }
-
   onCursorChange = event => {
     const { line, ch } = event.doc.getCursor();
     this.setState({ cursorPosition: { line, column: ch } });
@@ -213,47 +246,69 @@ class SourceFooter extends PureComponent {
       line + 1,
       column + 1
     );
-    return (
-      <div className="cursor-position" title={title}>
-        {text}
-      </div>
+    return div(
+      {
+        className: "cursor-position",
+        title,
+      },
+      text
     );
   }
 
   render() {
-    return (
-      <div className="source-footer">
-        <div className="source-footer-start">{this.renderCommands()}</div>
-        <div className="source-footer-end">
-          {this.renderSourceSummary()}
-          {this.renderCursorPosition()}
-          {this.renderToggleButton()}
-        </div>
-      </div>
+    return div(
+      {
+        className: "source-footer",
+      },
+      div(
+        {
+          className: "source-footer-start",
+        },
+        this.renderCommands()
+      ),
+      div(
+        {
+          className: "source-footer-end",
+        },
+        this.renderSourceSummary(),
+        this.renderCursorPosition(),
+        this.renderToggleButton()
+      )
     );
   }
 }
 
 const mapStateToProps = state => {
-  const selectedSource = getSelectedSourceWithContent(state);
+  const selectedSource = getSelectedSource(state);
+  const selectedLocation = getSelectedLocation(state);
+  const sourceTextContent = getSelectedSourceTextContent(state);
 
   return {
-    cx: getContext(state),
     selectedSource,
+    isSelectedSourceBlackBoxed: selectedSource
+      ? isSourceBlackBoxed(state, selectedSource)
+      : null,
+    isSourceOnIgnoreList:
+      isSourceMapIgnoreListEnabled(state) &&
+      isSourceOnSourceMapIgnoreList(state, selectedSource),
+    sourceLoaded: !!sourceTextContent,
     mappedSource: getGeneratedSource(state, selectedSource),
     prettySource: getPrettySource(
       state,
       selectedSource ? selectedSource.id : null
     ),
     endPanelCollapsed: getPaneCollapse(state, "end"),
-    canPrettyPrint: selectedSource
-      ? canPrettyPrintSource(state, selectedSource.id)
+    canPrettyPrint: selectedLocation
+      ? canPrettyPrintSource(state, selectedLocation)
       : false,
+    prettyPrintMessage: selectedLocation
+      ? getPrettyPrintMessage(state, selectedLocation)
+      : null,
   };
 };
 
 export default connect(mapStateToProps, {
-  togglePrettyPrint: actions.togglePrettyPrint,
+  prettyPrintAndSelectSource: actions.prettyPrintAndSelectSource,
   toggleBlackBox: actions.toggleBlackBox,
   jumpToMappedLocation: actions.jumpToMappedLocation,
   togglePaneCollapse: actions.togglePaneCollapse,

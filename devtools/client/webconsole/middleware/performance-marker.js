@@ -4,20 +4,22 @@
 
 "use strict";
 
-const { MESSAGES_ADD } = require("devtools/client/webconsole/constants");
+const {
+  MESSAGES_ADD,
+} = require("resource://devtools/client/webconsole/constants.js");
 
 const {
   createPerformanceMarkerMiddleware,
-} = require("devtools/client/shared/redux/middleware/performance-marker");
+} = require("resource://devtools/client/shared/redux/middleware/performance-marker.js");
 
-module.exports = function(sessionId) {
+module.exports = function (sessionId) {
   return createPerformanceMarkerMiddleware({
     [MESSAGES_ADD]: {
       label: "WebconsoleAddMessages",
       sessionId,
-      getMarkerDescription: function({ action, state }) {
+      getMarkerDescription({ action, state }) {
         const { messages } = action;
-        const totalMessageCount = state.messages.messagesById.size;
+        const totalMessageCount = state.messages.mutableMessagesById.size;
         return `${messages.length} messages handled, store now has ${totalMessageCount} messages`;
       },
     },

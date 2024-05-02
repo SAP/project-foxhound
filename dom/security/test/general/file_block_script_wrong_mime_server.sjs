@@ -2,7 +2,6 @@
 // Bug 1288361 - Block scripts with wrong MIME type
 
 "use strict";
-Components.utils.importGlobalProperties(["URLSearchParams"]);
 
 const WORKER = `
   onmessage = function(event) {

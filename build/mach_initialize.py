@@ -2,8 +2,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import division, print_function, unicode_literals
-
 import math
 import os
 import shutil
@@ -16,13 +14,10 @@ if sys.version_info[0] < 3:
     class MetaPathFinder(object):
         pass
 
-
 else:
     from importlib.abc import MetaPathFinder
 
-
 from types import ModuleType
-
 
 STATE_DIR_FIRST_RUN = """
 Mach and the build system store shared state in a common directory
@@ -30,11 +25,9 @@ on the filesystem. The following directory will be created:
 
   {}
 
-If you would like to use a different directory, hit CTRL+c, set the
-MOZBUILD_STATE_PATH environment variable to the directory you'd like to
-use, and run Mach again.
-
-Press ENTER/RETURN to continue or CTRL+c to abort.
+If you would like to use a different directory, rename or move it to your
+desired location, and set the MOZBUILD_STATE_PATH environment variable
+accordingly.
 """.strip()
 
 
@@ -104,6 +97,7 @@ def _maybe_activate_mozillabuild_environment():
         return
 
     mozillabuild = Path(os.environ.get("MOZILLABUILD", r"C:\mozilla-build"))
+    os.environ.setdefault("MOZILLABUILD", str(mozillabuild))
     assert mozillabuild.exists(), (
         f'MozillaBuild was not found at "{mozillabuild}".\n'
         "If it's installed in a different location, please "
@@ -111,28 +105,38 @@ def _maybe_activate_mozillabuild_environment():
         "accordingly."
     )
 
-    for entry in os.environ.get("PATH", "").split(":"):
-        entry = Path(entry)
-        if mozillabuild in entry.parents:
-            # We're already running with MozillaBuild directories in our PATH: either
-            # that's because we're inside the MozillaBuild shell, or the active developer
-            # has manually set up the PATH entries.
-            return
-
     use_msys2 = (mozillabuild / "msys2").exists()
     if use_msys2:
         mozillabuild_msys_tools_path = mozillabuild / "msys2" / "usr" / "bin"
     else:
         mozillabuild_msys_tools_path = mozillabuild / "msys" / "bin"
 
-    os.environ.setdefault("MOZILLABUILD", str(mozillabuild))
-    os.environ["PATH"] += (
-        f"{os.pathsep}{mozillabuild_msys_tools_path}"
-        f"{os.pathsep}{mozillabuild / 'bin'}"
-    )
+    paths_to_add = [mozillabuild_msys_tools_path, mozillabuild / "bin"]
+    existing_paths = [Path(p) for p in os.environ.get("PATH", "").split(os.pathsep)]
+    for new_path in paths_to_add:
+        if new_path not in existing_paths:
+            os.environ["PATH"] += f"{os.pathsep}{new_path}"
 
 
-def initialize(topsrcdir):
+def check_for_spaces(topsrcdir):
+    if " " in topsrcdir:
+        raise Exception(
+            f"Your checkout at path '{topsrcdir}' contains a space, which "
+            f"is not supported. Please move it to somewhere that does not "
+            f"have a space in the path before rerunning mach."
+        )
+
+    mozillabuild_dir = os.environ.get("MOZILLABUILD", "")
+    if sys.platform == "win32" and " " in mozillabuild_dir:
+        raise Exception(
+            f"Your installation of MozillaBuild appears to be installed on a path that "
+            f"contains a space ('{mozillabuild_dir}') which is not supported. Please "
+            f"reinstall MozillaBuild on a path without a space and restart your shell"
+            f"from the new installation."
+        )
+
+
+def initialize(topsrcdir, args=()):
     # This directory was deleted in bug 1666345, but there may be some ignored
     # files here. We can safely just delete it for the user so they don't have
     # to clean the repo themselves.
@@ -141,20 +145,20 @@ def initialize(topsrcdir):
         shutil.rmtree(deleted_dir, ignore_errors=True)
 
     # We need the "mach" module to access the logic to parse virtualenv
-    # requirements. Since that depends on "packaging" (and, transitively,
-    # "pyparsing"), we add those to the path too.
+    # requirements. Since that depends on "packaging", we add it to the path too.
     sys.path[0:0] = [
         os.path.join(topsrcdir, module)
         for module in (
             os.path.join("python", "mach"),
             os.path.join("third_party", "python", "packaging"),
-            os.path.join("third_party", "python", "pyparsing"),
         )
     ]
 
-    from mach.util import setenv, get_state_dir
+    from mach.util import get_state_dir, get_virtualenv_base_dir, setenv
 
     state_dir = _create_state_dir()
+
+    check_for_spaces(topsrcdir)
 
     # normpath state_dir to normalize msys-style slashes.
     _activate_python_environment(
@@ -162,204 +166,37 @@ def initialize(topsrcdir):
     )
     _maybe_activate_mozillabuild_environment()
 
-    import mach.base
     import mach.main
+    from mach.command_util import (
+        MACH_COMMANDS,
+        DetermineCommandVenvAction,
+        load_commands_from_spec,
+    )
+    from mach.main import get_argument_parser
 
-    from mach.main import MachCommandReference
+    parser = get_argument_parser(
+        action=DetermineCommandVenvAction,
+        topsrcdir=topsrcdir,
+    )
+    namespace = parser.parse_args()
 
-    # Centralized registry of available mach commands
-    MACH_COMMANDS = {
-        "valgrind-test": MachCommandReference("build/valgrind/mach_commands.py"),
-        "devtools-css-db": MachCommandReference(
-            "devtools/shared/css/generated/mach_commands.py"
-        ),
-        "webidl-example": MachCommandReference("dom/bindings/mach_commands.py"),
-        "webidl-parser-test": MachCommandReference("dom/bindings/mach_commands.py"),
-        "hazards": MachCommandReference(
-            "js/src/devtools/rootAnalysis/mach_commands.py"
-        ),
-        "reftest": MachCommandReference("layout/tools/reftest/mach_commands.py"),
-        "jstestbrowser": MachCommandReference("layout/tools/reftest/mach_commands.py"),
-        "crashtest": MachCommandReference("layout/tools/reftest/mach_commands.py"),
-        "android": MachCommandReference("mobile/android/mach_commands.py"),
-        "gradle": MachCommandReference("mobile/android/mach_commands.py"),
-        "gradle-install": MachCommandReference("mobile/android/mach_commands.py"),
-        "mach-commands": MachCommandReference(
-            "python/mach/mach/commands/commandinfo.py"
-        ),
-        "mach-debug-commands": MachCommandReference(
-            "python/mach/mach/commands/commandinfo.py"
-        ),
-        "mach-completion": MachCommandReference(
-            "python/mach/mach/commands/commandinfo.py"
-        ),
-        "settings": MachCommandReference("python/mach/mach/commands/settings.py"),
-        "python": MachCommandReference("python/mach_commands.py"),
-        "python-test": MachCommandReference("python/mach_commands.py"),
-        "bootstrap": MachCommandReference("python/mozboot/mozboot/mach_commands.py"),
-        "vcs-setup": MachCommandReference("python/mozboot/mozboot/mach_commands.py"),
-        "artifact": MachCommandReference(
-            "python/mozbuild/mozbuild/artifact_commands.py"
-        ),
-        "ide": MachCommandReference(
-            "python/mozbuild/mozbuild/backend/mach_commands.py"
-        ),
-        "build": MachCommandReference("python/mozbuild/mozbuild/build_commands.py"),
-        "configure": MachCommandReference("python/mozbuild/mozbuild/build_commands.py"),
-        "resource-usage": MachCommandReference(
-            "python/mozbuild/mozbuild/build_commands.py"
-        ),
-        "build-backend": MachCommandReference(
-            "python/mozbuild/mozbuild/build_commands.py"
-        ),
-        "clang-tidy": MachCommandReference(
-            "python/mozbuild/mozbuild/code_analysis/mach_commands.py"
-        ),
-        "static-analysis": MachCommandReference(
-            "python/mozbuild/mozbuild/code_analysis/mach_commands.py"
-        ),
-        "prettier-format": MachCommandReference(
-            "python/mozbuild/mozbuild/code_analysis/mach_commands.py"
-        ),
-        "clang-format": MachCommandReference(
-            "python/mozbuild/mozbuild/code_analysis/mach_commands.py"
-        ),
-        "compileflags": MachCommandReference(
-            "python/mozbuild/mozbuild/compilation/codecomplete.py"
-        ),
-        "mozbuild-reference": MachCommandReference(
-            "python/mozbuild/mozbuild/frontend/mach_commands.py"
-        ),
-        "file-info": MachCommandReference(
-            "python/mozbuild/mozbuild/frontend/mach_commands.py"
-        ),
-        "vendor": MachCommandReference(
-            "python/mozbuild/mozbuild/vendor/mach_commands.py"
-        ),
-        "watch": MachCommandReference("python/mozbuild/mozbuild/mach_commands.py"),
-        "cargo": MachCommandReference("python/mozbuild/mozbuild/mach_commands.py"),
-        "doctor": MachCommandReference("python/mozbuild/mozbuild/mach_commands.py"),
-        "clobber": MachCommandReference("python/mozbuild/mozbuild/mach_commands.py"),
-        "show-log": MachCommandReference("python/mozbuild/mozbuild/mach_commands.py"),
-        "warnings-summary": MachCommandReference(
-            "python/mozbuild/mozbuild/mach_commands.py"
-        ),
-        "warnings-list": MachCommandReference(
-            "python/mozbuild/mozbuild/mach_commands.py"
-        ),
-        "gtest": MachCommandReference("python/mozbuild/mozbuild/mach_commands.py"),
-        "package": MachCommandReference("python/mozbuild/mozbuild/mach_commands.py"),
-        "install": MachCommandReference("python/mozbuild/mozbuild/mach_commands.py"),
-        "run": MachCommandReference("python/mozbuild/mozbuild/mach_commands.py"),
-        "buildsymbols": MachCommandReference(
-            "python/mozbuild/mozbuild/mach_commands.py"
-        ),
-        "environment": MachCommandReference(
-            "python/mozbuild/mozbuild/mach_commands.py"
-        ),
-        "repackage": MachCommandReference("python/mozbuild/mozbuild/mach_commands.py"),
-        "package-multi-locale": MachCommandReference(
-            "python/mozbuild/mozbuild/mach_commands.py"
-        ),
-        "perftest": MachCommandReference(
-            "python/mozperftest/mozperftest/mach_commands.py"
-        ),
-        "perftest-test": MachCommandReference(
-            "python/mozperftest/mozperftest/mach_commands.py"
-        ),
-        "release": MachCommandReference(
-            "python/mozrelease/mozrelease/mach_commands.py"
-        ),
-        "remote": MachCommandReference("remote/mach_commands.py"),
-        "puppeteer-test": MachCommandReference("remote/mach_commands.py"),
-        "generate-test-certs": MachCommandReference(
-            "security/manager/tools/mach_commands.py"
-        ),
-        "taskgraph": MachCommandReference("taskcluster/mach_commands.py"),
-        "taskcluster-load-image": MachCommandReference("taskcluster/mach_commands.py"),
-        "taskcluster-build-image": MachCommandReference("taskcluster/mach_commands.py"),
-        "taskcluster-image-digest": MachCommandReference(
-            "taskcluster/mach_commands.py"
-        ),
-        "release-history": MachCommandReference("taskcluster/mach_commands.py"),
-        "awsy-test": MachCommandReference("testing/awsy/mach_commands.py"),
-        "fetch-condprofile": MachCommandReference(
-            "testing/condprofile/mach_commands.py"
-        ),
-        "run-condprofile": MachCommandReference("testing/condprofile/mach_commands.py"),
-        "firefox-ui-functional": MachCommandReference(
-            "testing/firefox-ui/mach_commands.py"
-        ),
-        "geckodriver": MachCommandReference("testing/geckodriver/mach_commands.py"),
-        "addtest": MachCommandReference("testing/mach_commands.py"),
-        "test": MachCommandReference("testing/mach_commands.py"),
-        "cppunittest": MachCommandReference("testing/mach_commands.py"),
-        "jstests": MachCommandReference("testing/mach_commands.py"),
-        "jit-test": MachCommandReference("testing/mach_commands.py"),
-        "jsapi-tests": MachCommandReference("testing/mach_commands.py"),
-        "jsshell-bench": MachCommandReference("testing/mach_commands.py"),
-        "cramtest": MachCommandReference("testing/mach_commands.py"),
-        "test-info": MachCommandReference("testing/mach_commands.py"),
-        "rusttests": MachCommandReference("testing/mach_commands.py"),
-        "fluent-migration-test": MachCommandReference("testing/mach_commands.py"),
-        "marionette-test": MachCommandReference("testing/marionette/mach_commands.py"),
-        "mochitest": MachCommandReference("testing/mochitest/mach_commands.py"),
-        "geckoview-junit": MachCommandReference("testing/mochitest/mach_commands.py"),
-        "mozharness": MachCommandReference("testing/mozharness/mach_commands.py"),
-        "raptor": MachCommandReference("testing/raptor/mach_commands.py"),
-        "raptor-test": MachCommandReference("testing/raptor/mach_commands.py"),
-        "talos-test": MachCommandReference("testing/talos/mach_commands.py"),
-        "tps-build": MachCommandReference("testing/tps/mach_commands.py"),
-        "web-platform-tests": MachCommandReference(
-            "testing/web-platform/mach_commands.py"
-        ),
-        "wpt": MachCommandReference("testing/web-platform/mach_commands.py"),
-        "web-platform-tests-update": MachCommandReference(
-            "testing/web-platform/mach_commands.py"
-        ),
-        "wpt-update": MachCommandReference("testing/web-platform/mach_commands.py"),
-        "wpt-manifest-update": MachCommandReference(
-            "testing/web-platform/mach_commands.py"
-        ),
-        "wpt-serve": MachCommandReference("testing/web-platform/mach_commands.py"),
-        "wpt-metadata-summary": MachCommandReference(
-            "testing/web-platform/mach_commands.py"
-        ),
-        "wpt-metadata-merge": MachCommandReference(
-            "testing/web-platform/mach_commands.py"
-        ),
-        "wpt-unittest": MachCommandReference("testing/web-platform/mach_commands.py"),
-        "wpt-test-paths": MachCommandReference("testing/web-platform/mach_commands.py"),
-        "wpt-fission-regressions": MachCommandReference(
-            "testing/web-platform/mach_commands.py"
-        ),
-        "xpcshell-test": MachCommandReference("testing/xpcshell/mach_commands.py"),
-        "telemetry-tests-client": MachCommandReference(
-            "toolkit/components/telemetry/tests/marionette/mach_commands.py"
-        ),
-        "data-review": MachCommandReference(
-            "toolkit/components/glean/build_scripts/mach_commands.py"
-        ),
-        "update-glean-tags": MachCommandReference(
-            "toolkit/components/glean/build_scripts/mach_commands.py"
-        ),
-        "browsertime": MachCommandReference("tools/browsertime/mach_commands.py"),
-        "compare-locales": MachCommandReference(
-            "tools/compare-locales/mach_commands.py"
-        ),
-        "l10n-cross-channel": MachCommandReference("tools/lint/mach_commands.py"),
-        "busted": MachCommandReference("tools/mach_commands.py"),
-        "pastebin": MachCommandReference("tools/mach_commands.py"),
-        "mozregression": MachCommandReference("tools/mach_commands.py"),
-        "node": MachCommandReference("tools/mach_commands.py"),
-        "npm": MachCommandReference("tools/mach_commands.py"),
-        "logspam": MachCommandReference("tools/mach_commands.py"),
-        "doc": MachCommandReference("tools/moztreedocs/mach_commands.py"),
-        "install-moz-phab": MachCommandReference("tools/phabricator/mach_commands.py"),
-        "power": MachCommandReference("tools/power/mach_commands.py"),
-        "try": MachCommandReference("tools/tryselect/mach_commands.py"),
-        "import-pr": MachCommandReference("tools/vcs/mach_commands.py"),
-    }
+    command_name = getattr(namespace, "command_name", None)
+    site_name = getattr(namespace, "site_name", "common")
+    command_site_manager = None
+
+    # the 'clobber' command needs to run in the 'mach' venv, so we
+    # don't want to activate any other virtualenv for it.
+    if command_name != "clobber":
+        from mach.site import CommandSiteManager
+
+        command_site_manager = CommandSiteManager.from_environment(
+            topsrcdir,
+            lambda: os.path.normpath(get_state_dir(True, topsrcdir=topsrcdir)),
+            site_name,
+            get_virtualenv_base_dir(topsrcdir),
+        )
+
+        command_site_manager.activate()
 
     # Set a reasonable limit to the number of open files.
     #
@@ -484,7 +321,7 @@ def initialize(topsrcdir):
     if "MACH_MAIN_PID" not in os.environ:
         setenv("MACH_MAIN_PID", str(os.getpid()))
 
-    driver = mach.main.Mach(os.getcwd())
+    driver = mach.main.Mach(os.getcwd(), command_site_manager)
     driver.populate_context_handler = populate_context
 
     if not driver.settings_paths:
@@ -499,11 +336,53 @@ def initialize(topsrcdir):
     # Sparse checkouts may not have all mach_commands.py files. Ignore
     # errors from missing files. Same for spidermonkey tarballs.
     repo = resolve_repository()
-    missing_ok = (
-        repo is not None and repo.sparse_checkout_present()
-    ) or os.path.exists(os.path.join(topsrcdir, "INSTALL"))
+    if repo != "SOURCE":
+        missing_ok = (
+            repo is not None and repo.sparse_checkout_present()
+        ) or os.path.exists(os.path.join(topsrcdir, "INSTALL"))
+    else:
+        missing_ok = ()
 
-    driver.load_commands_from_spec(MACH_COMMANDS, topsrcdir, missing_ok=missing_ok)
+    commands_that_need_all_modules_loaded = [
+        "busted",
+        "help",
+        "mach-commands",
+        "mach-completion",
+        "mach-debug-commands",
+    ]
+
+    def commands_to_load(top_level_command: str):
+        visited = set()
+
+        def find_downstream_commands_recursively(command: str):
+            if not MACH_COMMANDS.get(command):
+                return
+
+            if command in visited:
+                return
+
+            visited.add(command)
+
+            for command_dependency in MACH_COMMANDS[command].command_dependencies:
+                find_downstream_commands_recursively(command_dependency)
+
+        find_downstream_commands_recursively(top_level_command)
+
+        return list(visited)
+
+    if (
+        command_name not in MACH_COMMANDS
+        or command_name in commands_that_need_all_modules_loaded
+    ):
+        command_modules_to_load = MACH_COMMANDS
+    else:
+        command_names_to_load = commands_to_load(command_name)
+        command_modules_to_load = {
+            command_name: MACH_COMMANDS[command_name]
+            for command_name in command_names_to_load
+        }
+
+    load_commands_from_spec(command_modules_to_load, topsrcdir, missing_ok=missing_ok)
 
     return driver
 
@@ -545,7 +424,8 @@ def _finalize_telemetry_glean(telemetry, is_bootstrap, success):
         # psutil may not be available (we may not have been able to download
         # a wheel or build it from source).
         system_metrics.logical_cores.add(logical_cores)
-        system_metrics.physical_cores.add(physical_cores)
+        if physical_cores is not None:
+            system_metrics.physical_cores.add(physical_cores)
         if memory_total is not None:
             system_metrics.memory.accumulate(
                 int(math.ceil(float(memory_total) / (1024 * 1024 * 1024)))
@@ -574,11 +454,6 @@ def _create_state_dir():
         if not os.path.exists(state_dir):
             if not os.environ.get("MOZ_AUTOMATION"):
                 print(STATE_DIR_FIRST_RUN.format(state_dir))
-                try:
-                    sys.stdin.readline()
-                    print("\n")
-                except KeyboardInterrupt:
-                    sys.exit(1)
 
             print("Creating default state directory: {}".format(state_dir))
 

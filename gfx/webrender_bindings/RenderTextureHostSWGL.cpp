@@ -13,17 +13,16 @@
 namespace mozilla {
 namespace wr {
 
-bool RenderTextureHostSWGL::UpdatePlanes(RenderCompositor* aCompositor,
-                                         wr::ImageRendering aRendering) {
+bool RenderTextureHostSWGL::UpdatePlanes(RenderCompositor* aCompositor) {
   wr_swgl_make_current(mContext);
   size_t planeCount = GetPlaneCount();
-  bool filterUpdate = IsFilterUpdateNecessary(aRendering);
+  bool texInit = false;
   if (mPlanes.size() < planeCount) {
     mPlanes.reserve(planeCount);
     while (mPlanes.size() < planeCount) {
       mPlanes.push_back(PlaneInfo(wr_swgl_gen_texture(mContext)));
     }
-    filterUpdate = true;
+    texInit = true;
   }
   gfx::SurfaceFormat format = GetFormat();
   gfx::ColorDepth colorDepth = GetColorDepth();
@@ -55,8 +54,20 @@ bool RenderTextureHostSWGL::UpdatePlanes(RenderCompositor* aCompositor,
         }
         break;
       case gfx::SurfaceFormat::NV12:
-        MOZ_ASSERT(colorDepth == gfx::ColorDepth::COLOR_8);
-        internalFormat = i > 0 ? LOCAL_GL_RG8 : LOCAL_GL_R8;
+        switch (colorDepth) {
+          case gfx::ColorDepth::COLOR_8:
+            internalFormat = i > 0 ? LOCAL_GL_RG8 : LOCAL_GL_R8;
+            break;
+          case gfx::ColorDepth::COLOR_10:
+          case gfx::ColorDepth::COLOR_12:
+          case gfx::ColorDepth::COLOR_16:
+            internalFormat = i > 0 ? LOCAL_GL_RG16 : LOCAL_GL_R16;
+            break;
+        }
+        break;
+      case gfx::SurfaceFormat::P010:
+        MOZ_ASSERT(colorDepth == gfx::ColorDepth::COLOR_10);
+        internalFormat = i > 0 ? LOCAL_GL_RG16 : LOCAL_GL_R16;
         break;
       case gfx::SurfaceFormat::YUV422:
         MOZ_ASSERT(colorDepth == gfx::ColorDepth::COLOR_8);
@@ -70,16 +81,15 @@ bool RenderTextureHostSWGL::UpdatePlanes(RenderCompositor* aCompositor,
                                plane.mSize.width, plane.mSize.height,
                                plane.mStride, plane.mData, 0, 0);
   }
-  if (filterUpdate) {
-    mCachedRendering = aRendering;
-    GLenum filter = aRendering == wr::ImageRendering::Pixelated
-                        ? LOCAL_GL_NEAREST
-                        : LOCAL_GL_LINEAR;
+  if (texInit) {
+    // Initialize the mip filters to linear by default.
     for (const auto& plane : mPlanes) {
       wr_swgl_set_texture_parameter(mContext, plane.mTexture,
-                                    LOCAL_GL_TEXTURE_MIN_FILTER, filter);
+                                    LOCAL_GL_TEXTURE_MIN_FILTER,
+                                    LOCAL_GL_LINEAR);
       wr_swgl_set_texture_parameter(mContext, plane.mTexture,
-                                    LOCAL_GL_TEXTURE_MAG_FILTER, filter);
+                                    LOCAL_GL_TEXTURE_MAG_FILTER,
+                                    LOCAL_GL_LINEAR);
     }
   }
   return true;
@@ -95,13 +105,12 @@ bool RenderTextureHostSWGL::SetContext(void* aContext) {
 }
 
 wr::WrExternalImage RenderTextureHostSWGL::LockSWGL(
-    uint8_t aChannelIndex, void* aContext, RenderCompositor* aCompositor,
-    wr::ImageRendering aRendering) {
+    uint8_t aChannelIndex, void* aContext, RenderCompositor* aCompositor) {
   if (!SetContext(aContext)) {
     return InvalidToWrExternalImage();
   }
   if (!mLocked) {
-    if (!UpdatePlanes(aCompositor, aRendering)) {
+    if (!UpdatePlanes(aCompositor)) {
       return InvalidToWrExternalImage();
     }
     mLocked = true;
@@ -111,15 +120,22 @@ wr::WrExternalImage RenderTextureHostSWGL::LockSWGL(
   }
   const PlaneInfo& plane = mPlanes[aChannelIndex];
 
+  const auto uvs = GetUvCoords(plane.mSize);
+
   // Prefer native textures, unless our backend forbids it.
+  // If the GetUvCoords call above returned anything other than the default,
+  // for example if this is a RenderAndroidSurfaceTextureHost, then this won't
+  // be handled correctly in the RawDataToWrExternalImage path. But we shouldn't
+  // hit this path in practice with a RenderAndroidSurfaceTextureHost.
   layers::TextureHost::NativeTexturePolicy policy =
       layers::TextureHost::BackendNativeTexturePolicy(
           layers::WebRenderBackend::SOFTWARE, plane.mSize);
   return policy == layers::TextureHost::NativeTexturePolicy::FORBID
              ? RawDataToWrExternalImage((uint8_t*)plane.mData,
                                         plane.mStride * plane.mSize.height)
-             : NativeTextureToWrExternalImage(
-                   plane.mTexture, 0, 0, plane.mSize.width, plane.mSize.height);
+             : NativeTextureToWrExternalImage(plane.mTexture, uvs.first.x,
+                                              uvs.first.y, uvs.second.x,
+                                              uvs.second.y);
 }
 
 void RenderTextureHostSWGL::UnlockSWGL() {
@@ -152,7 +168,7 @@ bool RenderTextureHostSWGL::LockSWGLCompositeSurface(
     return false;
   }
   if (!mLocked) {
-    if (!UpdatePlanes(nullptr, mCachedRendering)) {
+    if (!UpdatePlanes(nullptr)) {
       return false;
     }
     mLocked = true;
@@ -164,6 +180,7 @@ bool RenderTextureHostSWGL::LockSWGLCompositeSurface(
   switch (GetFormat()) {
     case gfx::SurfaceFormat::YUV:
     case gfx::SurfaceFormat::NV12:
+    case gfx::SurfaceFormat::P010:
     case gfx::SurfaceFormat::YUV422: {
       aInfo->yuv_planes = mPlanes.size();
       auto colorSpace = GetYUVColorSpace();

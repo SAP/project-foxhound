@@ -14,10 +14,11 @@ const serverInfo = {
 let gAliasEngine;
 let gPrivateEngine;
 
-add_task(async function setup() {
+add_setup(async function () {
   await SpecialPowers.pushPrefEnv({
     set: [
       ["browser.search.separatePrivateDefault.ui.enabled", true],
+      ["browser.search.separatePrivateDefault.urlbarResult.enabled", true],
       ["browser.search.separatePrivateDefault", true],
       ["browser.urlbar.suggest.searches", true],
     ],
@@ -33,21 +34,19 @@ add_task(async function setup() {
 
   // Add a search suggestion engine and move it to the front so that it appears
   // as the first one-off.
-  let oldDefaultEngine = await Services.search.getDefault();
-  let oldDefaultPrivateEngine = await Services.search.getDefaultPrivate();
-  let engine = await SearchTestUtils.promiseNewSearchEngine(
-    getRootDirectory(gTestPath) + "searchSuggestionEngine.xml"
-  );
-  await Services.search.setDefault(engine);
-  gPrivateEngine = await SearchTestUtils.promiseNewSearchEngine(
-    getRootDirectory(gTestPath) + "searchSuggestionEngine2.xml"
-  );
-  await Services.search.setDefaultPrivate(gPrivateEngine);
+  await SearchTestUtils.promiseNewSearchEngine({
+    url: getRootDirectory(gTestPath) + "searchSuggestionEngine.xml",
+    setAsDefault: true,
+  });
+  gPrivateEngine = await SearchTestUtils.promiseNewSearchEngine({
+    url: getRootDirectory(gTestPath) + "searchSuggestionEngine2.xml",
+    setAsDefaultPrivate: true,
+  });
 
   // Add another engine in the first one-off position.
-  let engine2 = await SearchTestUtils.promiseNewSearchEngine(
-    getRootDirectory(gTestPath) + "POSTSearchEngine.xml"
-  );
+  let engine2 = await SearchTestUtils.promiseNewSearchEngine({
+    url: getRootDirectory(gTestPath) + "POSTSearchEngine.xml",
+  });
   await Services.search.moveEngine(engine2, 0);
 
   // Add an engine with an alias.
@@ -58,8 +57,6 @@ add_task(async function setup() {
   gAliasEngine = Services.search.getEngineByName("MozSearch");
 
   registerCleanupFunction(async () => {
-    await Services.search.setDefault(oldDefaultEngine);
-    await Services.search.setDefaultPrivate(oldDefaultPrivateEngine);
     await PlacesUtils.history.clear();
   });
 });

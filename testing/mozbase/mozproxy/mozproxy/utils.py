@@ -3,19 +3,17 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import
-
-import subprocess
-import time
 import bz2
 import gzip
 import os
 import signal
-import sys
 import socket
+import sys
+import time
+from subprocess import PIPE, Popen
 
-from six.moves.urllib.request import urlretrieve
 from redo import retriable, retry
+from six.moves.urllib.request import urlretrieve
 
 try:
     import zstandard
@@ -27,9 +25,8 @@ except ImportError:
     lzma = None
 
 from mozlog import get_proxy_logger
-from mozprocess import ProcessHandler
-from mozproxy import mozharness_dir, mozbase_dir
 
+from mozproxy import mozbase_dir, mozharness_dir
 
 LOG = get_proxy_logger(component="mozproxy")
 
@@ -93,13 +90,10 @@ def transform_platform(str_to_transform, config_platform, config_processor=None)
 def tooltool_download(manifest, run_local, raptor_dir):
     """Download a file from tooltool using the provided tooltool manifest"""
 
-    def outputHandler(line):
-        LOG.info(line)
-
     tooltool_path = None
 
     for path in TOOLTOOL_PATHS:
-        if os.path.exists(os.path.dirname(path)):
+        if os.path.exists(path):
             tooltool_path = path
             break
     if tooltool_path is None:
@@ -134,10 +128,7 @@ def tooltool_download(manifest, run_local, raptor_dir):
         ]
 
     try:
-        proc = ProcessHandler(
-            command, processOutputLine=outputHandler, storeOutput=False, cwd=raptor_dir
-        )
-        proc.run()
+        proc = Popen(command, cwd=raptor_dir, text=True)
         if proc.wait() != 0:
             raise Exception("Command failed")
     except Exception as e:
@@ -202,7 +193,7 @@ def extract_archive(path, dest_dir, typ):
     LOG.info("Extracting %s to %s using %r" % (path, dest_dir, args))
     t0 = time.time()
     with ifh:
-        p = subprocess.Popen(args, cwd=str(dest_dir), bufsize=0, stdin=subprocess.PIPE)
+        p = Popen(args, cwd=str(dest_dir), bufsize=0, stdin=PIPE)
         while True:
             if not pipe_stdin:
                 break

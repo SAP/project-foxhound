@@ -93,11 +93,6 @@ class nsUserIdleServiceDaily : public nsIObserver,
   nsCategoryCache<nsIObserver> mCategoryObservers;
 
   /**
-   * Boolean set to true when daily idle notifications should be disabled.
-   */
-  bool mShutdownInProgress;
-
-  /**
    * Next time we expect an idle-daily timer to fire, in case timers aren't
    * very reliable on the platform. Value is in PR_Now microsecond units.
    */
@@ -140,12 +135,8 @@ class nsUserIdleService : public nsIUserIdleServiceInternal {
    */
   virtual bool PollIdleTime(uint32_t* aIdleTime);
 
-  /**
-   * Function that determines if we are in poll mode or not.
-   *
-   * @return true if polling is supported, false otherwise.
-   */
-  virtual bool UsePollMode();
+ public:
+  void SetDisabledForShutdown();
 
  private:
   /**

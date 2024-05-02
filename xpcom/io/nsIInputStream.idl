@@ -56,13 +56,16 @@ native nsWriteSegmentFun(nsWriteSegmentFun);
  * the case that a blocking input stream should be implemented using thread-
  * safe AddRef and Release.
  */
-[scriptable, uuid(53cdbc97-c2d7-4e30-b2c3-45b2ee79db18)]
+[scriptable, builtinclass, uuid(53cdbc97-c2d7-4e30-b2c3-45b2ee79db18)]
 interface nsIInputStream : nsISupports
 {
     /**
      * Close the stream.  This method causes subsequent calls to Read and
      * ReadSegments to return 0 bytes read to indicate end-of-file.  Any
-     * subsequent calls to Available should throw NS_BASE_STREAM_CLOSED.
+     * subsequent calls to Available or StreamStatus should throw
+     * NS_BASE_STREAM_CLOSED.
+     *
+     * Succeeds (without side effects) if already closed.
      */
     void close();
 
@@ -80,6 +83,10 @@ interface nsIInputStream : nsISupports
      * this method returns 0 bytes available.  (Note: some nsIInputStream
      * implementations automatically close when eof is reached; some do not).
      *
+     * NOTE: Streams implementing nsIAsyncInputStream must automatically close
+     * when eof is reached, as otherwise it is impossible to distinguish between
+     * a stream waiting for more data and a stream at EOF using Available().
+     *
      * @return number of bytes currently available in the stream.
      *
      * @throws NS_BASE_STREAM_CLOSED if the stream is closed normally.
@@ -87,6 +94,24 @@ interface nsIInputStream : nsISupports
      *   condition
      */
     unsigned long long available();
+
+    /**
+     * Check the current status of the stream.  A stream that is closed will
+     * throw an exception when this method is called.  That enables the caller
+     * to know the condition of the stream before attempting to read from it.
+     *
+     * This method will not throw NS_BASE_STREAM_WOULD_BLOCK, even if the stream
+     * is an non-blocking stream with no data. A non-blocking stream that does
+     * not yet have any data to read should return NS_OK.
+     *
+     * NOTE: Unlike available, his method should not block the calling thread
+     * (e.g. to query the state of a file descriptor), even when called on a
+     * blocking stream.
+     *
+     * @throws NS_BASE_STREAM_CLOSED if the stream closed normally
+     * @throws <other-error> if the stream closed with a different status
+     */
+    void streamStatus();
 
     /**
      * Read data from the stream.

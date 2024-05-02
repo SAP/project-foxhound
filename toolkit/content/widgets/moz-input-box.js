@@ -169,9 +169,8 @@
       for (var i = 0; i < children.length; i++) {
         var command = children[i].getAttribute("cmd");
         if (command) {
-          var controller = document.commandDispatcher.getControllerForCommand(
-            command
-          );
+          var controller =
+            document.commandDispatcher.getControllerForCommand(command);
           var enabled = controller.isCommandEnabled(command);
           if (enabled) {
             children[i].removeAttribute("disabled");
@@ -187,8 +186,8 @@
         this._spellCheckInitialized = true;
 
         try {
-          const { InlineSpellChecker } = ChromeUtils.import(
-            "resource://gre/modules/InlineSpellChecker.jsm"
+          const { InlineSpellChecker } = ChromeUtils.importESModule(
+            "resource://gre/modules/InlineSpellChecker.sys.mjs"
           );
           this.InlineSpellCheckerUI = new InlineSpellChecker(
             this._input.editor
@@ -208,9 +207,8 @@
     }
 
     doCommand(command) {
-      var controller = document.commandDispatcher.getControllerForCommand(
-        command
-      );
+      var controller =
+        document.commandDispatcher.getControllerForCommand(command);
       controller.doCommand(command);
     }
 

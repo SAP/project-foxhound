@@ -28,17 +28,13 @@ with Files("nsAboutRedirector.*"):
 with Files("nsIScrollObserver.*"):
     BUG_COMPONENT = ("Core", "Panning and Zooming")
 
-DIRS += [
-    "timeline",
-]
-
 XPIDL_SOURCES += [
     "nsIContentViewer.idl",
-    "nsIContentViewerEdit.idl",
     "nsIDocShell.idl",
     "nsIDocShellTreeItem.idl",
     "nsIDocShellTreeOwner.idl",
     "nsIDocumentLoaderFactory.idl",
+    "nsIDocumentViewerEdit.idl",
     "nsILoadContext.idl",
     "nsILoadURIDelegate.idl",
     "nsIPrivacyTransitionObserver.idl",
@@ -60,6 +56,7 @@ EXPORTS += [
     "nsDocShellLoadState.h",
     "nsDocShellLoadTypes.h",
     "nsDocShellTreeOwner.h",
+    "nsDSURIContentListener.h",
     "nsIScrollObserver.h",
     "nsWebNavigationInfo.h",
     "SerializedLoadContext.h",
@@ -124,4 +121,6 @@ LOCAL_INCLUDES += [
     "/tools/profiler",
 ]
 
-EXTRA_JS_MODULES += ["URIFixup.jsm"]
+EXTRA_JS_MODULES += ["URIFixup.sys.mjs"]
+
+include("/tools/fuzzing/libfuzzer-config.mozbuild")

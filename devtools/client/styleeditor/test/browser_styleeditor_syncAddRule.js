@@ -10,14 +10,14 @@ const expectedText = `
 #testid {
 }`;
 
-add_task(async function() {
+add_task(async function () {
   await addTab(TESTCASE_URI);
   const { inspector, view } = await openRuleView();
   await selectNode("#testid", inspector);
 
-  const onRuleViewChanged = once(view, "ruleview-changed");
+  const onNewRuleAdded = once(view, "new-rule-added");
   view.addRuleButton.click();
-  await onRuleViewChanged;
+  await onNewRuleAdded;
 
   const { ui } = await openStyleEditor();
 

@@ -13,7 +13,6 @@
 #include "nsIStreamListener.h"
 #include "nsIInputStreamPump.h"
 #include "nsComponentManagerUtils.h"
-#include "nsMemory.h"
 #include "nsError.h"
 #include "nsStreamUtils.h"
 #include "nsThreadUtils.h"
@@ -379,8 +378,7 @@ NS_IMETHODIMP nsZipWriter::AddEntryChannel(const nsACString& aZipEntry,
   if (mEntryHash.Get(aZipEntry, nullptr)) return NS_ERROR_FILE_ALREADY_EXISTS;
 
   nsCOMPtr<nsIInputStream> inputStream;
-  nsresult rv =
-      NS_MaybeOpenChannelUsingOpen(aChannel, getter_AddRefs(inputStream));
+  nsresult rv = aChannel->Open(getter_AddRefs(inputStream));
 
   NS_ENSURE_SUCCESS(rv, rv);
 
@@ -935,7 +933,7 @@ inline nsresult nsZipWriter::BeginProcessingAddition(nsZipQueueItem* aItem,
       rv = pump->AsyncRead(stream);
       NS_ENSURE_SUCCESS(rv, rv);
     } else {
-      rv = NS_MaybeOpenChannelUsingAsyncOpen(aItem->mChannel, stream);
+      rv = aItem->mChannel->AsyncOpen(stream);
       NS_ENSURE_SUCCESS(rv, rv);
     }
 

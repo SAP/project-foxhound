@@ -5,23 +5,27 @@
 "use strict";
 
 // React
-const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
+const PropTypes = require("resource://devtools/client/shared/vendor/react-prop-types.js");
 const {
   MESSAGE_TYPE,
   JSTERM_COMMANDS,
-} = require("devtools/client/webconsole/constants");
+} = require("resource://devtools/client/webconsole/constants.js");
+const {
+  cleanupStyle,
+} = require("resource://devtools/client/shared/components/reps/reps/rep-utils.js");
 const {
   getObjectInspector,
-} = require("devtools/client/webconsole/utils/object-inspector");
-const actions = require("devtools/client/webconsole/actions/index");
+} = require("resource://devtools/client/webconsole/utils/object-inspector.js");
+const actions = require("resource://devtools/client/webconsole/actions/index.js");
 
-loader.lazyGetter(this, "objectInspector", function() {
-  return require("devtools/client/shared/components/reps/index")
+loader.lazyGetter(this, "objectInspector", function () {
+  return require("resource://devtools/client/shared/components/reps/index.js")
     .objectInspector;
 });
 
-loader.lazyGetter(this, "MODE", function() {
-  return require("devtools/client/shared/components/reps/index").MODE;
+loader.lazyGetter(this, "MODE", function () {
+  return require("resource://devtools/client/shared/components/reps/index.js")
+    .MODE;
 });
 
 GripMessageBody.displayName = "GripMessageBody";
@@ -42,6 +46,7 @@ GripMessageBody.propTypes = {
   type: PropTypes.string,
   helperType: PropTypes.string,
   maybeScrollToBottom: PropTypes.func,
+  setExpanded: PropTypes.func,
 };
 
 GripMessageBody.defaultProps = {
@@ -58,6 +63,7 @@ function GripMessageBody(props) {
     mode = MODE.LONG,
     dispatch,
     maybeScrollToBottom,
+    setExpanded,
     customFormat = false,
   } = props;
 
@@ -73,6 +79,7 @@ function GripMessageBody(props) {
     autoExpandDepth: shouldAutoExpandObjectInspector(props) ? 1 : 0,
     mode,
     maybeScrollToBottom,
+    setExpanded,
     customFormat,
     onCmdCtrlClick: (node, { depth, event, focused, expanded }) => {
       const front = objectInspector.utils.node.getFront(node);
@@ -96,47 +103,6 @@ function GripMessageBody(props) {
   }
 
   return getObjectInspector(grip, serviceContainer, objectInspectorProps);
-}
-
-// Regular expression that matches the allowed CSS property names.
-const allowedStylesRegex = new RegExp(
-  "^(?:-moz-)?(?:background|border|box|clear|color|cursor|display|float|font|line|" +
-    "margin|padding|text|transition|outline|white-space|word|writing|" +
-    "(?:min-|max-)?width|(?:min-|max-)?height)"
-);
-
-// Regular expression that matches the forbidden CSS property values.
-const forbiddenValuesRegexs = [
-  // -moz-element()
-  /\b((?:-moz-)?element)[\s('"]+/gi,
-
-  // various URL protocols
-  /['"(]*(?:chrome|resource|about|app|https?|ftp|file):+\/*/gi,
-];
-
-function cleanupStyle(userProvidedStyle, createElement) {
-  // Use a dummy element to parse the style string.
-  const dummy = createElement("div");
-  dummy.style = userProvidedStyle;
-
-  // Return a style object as expected by React DOM components, e.g.
-  // {color: "red"}
-  // without forbidden properties and values.
-  return Array.from(dummy.style)
-    .filter(name => {
-      return (
-        allowedStylesRegex.test(name) &&
-        !forbiddenValuesRegexs.some(regex => regex.test(dummy.style[name]))
-      );
-    })
-    .reduce((object, name) => {
-      return Object.assign(
-        {
-          [name]: dummy.style[name],
-        },
-        object
-      );
-    }, {});
 }
 
 function shouldAutoExpandObjectInspector(props) {

@@ -20,12 +20,12 @@
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsIPK11Token.h"
 #include "nsIPromptService.h"
-#include "nsIProtectedAuthThread.h"
 #include "nsIWindowWatcher.h"
 #include "nsIX509CertDB.h"
 #include "nsIX509Cert.h"
 #include "nsNSSDialogHelper.h"
 #include "nsPromiseFlatString.h"
+#include "nsServiceManagerUtils.h"
 #include "nsString.h"
 #include "nsVariant.h"
 
@@ -35,8 +35,7 @@ nsNSSDialogs::nsNSSDialogs() = default;
 
 nsNSSDialogs::~nsNSSDialogs() = default;
 
-NS_IMPL_ISUPPORTS(nsNSSDialogs, nsITokenPasswordDialogs, nsICertificateDialogs,
-                  nsIClientAuthDialogs, nsITokenDialogs)
+NS_IMPL_ISUPPORTS(nsNSSDialogs, nsITokenPasswordDialogs, nsICertificateDialogs)
 
 nsresult nsNSSDialogs::Init() {
   nsresult rv;
@@ -155,103 +154,6 @@ nsNSSDialogs::ConfirmDownloadCACert(nsIInterfaceRequestor* ctx,
 }
 
 NS_IMETHODIMP
-nsNSSDialogs::ChooseCertificate(const nsACString& hostname, int32_t port,
-                                const nsACString& organization,
-                                const nsACString& issuerOrg, nsIArray* certList,
-                                /*out*/ uint32_t* selectedIndex,
-                                /*out*/ bool* rememberClientAuthCertificate,
-                                /*out*/ bool* certificateChosen) {
-  NS_ENSURE_ARG_POINTER(certList);
-  NS_ENSURE_ARG_POINTER(selectedIndex);
-  NS_ENSURE_ARG_POINTER(rememberClientAuthCertificate);
-  NS_ENSURE_ARG_POINTER(certificateChosen);
-
-  *certificateChosen = false;
-  *rememberClientAuthCertificate = false;
-
-  nsCOMPtr<nsIMutableArray> argArray = nsArrayBase::Create();
-  if (!argArray) {
-    return NS_ERROR_FAILURE;
-  }
-
-  nsCOMPtr<nsIWritableVariant> hostnameVariant = new nsVariant();
-  nsresult rv = hostnameVariant->SetAsAUTF8String(hostname);
-  if (NS_FAILED(rv)) {
-    return rv;
-  }
-  rv = argArray->AppendElement(hostnameVariant);
-  if (NS_FAILED(rv)) {
-    return rv;
-  }
-
-  nsCOMPtr<nsIWritableVariant> organizationVariant = new nsVariant();
-  rv = organizationVariant->SetAsAUTF8String(organization);
-  if (NS_FAILED(rv)) {
-    return rv;
-  }
-  rv = argArray->AppendElement(organizationVariant);
-  if (NS_FAILED(rv)) {
-    return rv;
-  }
-
-  nsCOMPtr<nsIWritableVariant> issuerOrgVariant = new nsVariant();
-  rv = issuerOrgVariant->SetAsAUTF8String(issuerOrg);
-  if (NS_FAILED(rv)) {
-    return rv;
-  }
-  rv = argArray->AppendElement(issuerOrgVariant);
-  if (NS_FAILED(rv)) {
-    return rv;
-  }
-
-  nsCOMPtr<nsIWritableVariant> portVariant = new nsVariant();
-  rv = portVariant->SetAsInt32(port);
-  if (NS_FAILED(rv)) {
-    return rv;
-  }
-  rv = argArray->AppendElement(portVariant);
-  if (NS_FAILED(rv)) {
-    return rv;
-  }
-
-  rv = argArray->AppendElement(certList);
-  if (NS_FAILED(rv)) {
-    return rv;
-  }
-
-  nsCOMPtr<nsIWritablePropertyBag2> retVals = new nsHashPropertyBag();
-  rv = argArray->AppendElement(retVals);
-  if (NS_FAILED(rv)) {
-    return rv;
-  }
-
-  rv = nsNSSDialogHelper::openDialog(
-      nullptr, "chrome://pippki/content/clientauthask.xhtml", argArray);
-  if (NS_FAILED(rv)) {
-    return rv;
-  }
-
-  rv = retVals->GetPropertyAsBool(u"rememberSelection"_ns,
-                                  rememberClientAuthCertificate);
-  if (NS_FAILED(rv)) {
-    return rv;
-  }
-
-  rv = retVals->GetPropertyAsBool(u"certChosen"_ns, certificateChosen);
-  if (NS_FAILED(rv)) {
-    return rv;
-  }
-  if (*certificateChosen) {
-    rv = retVals->GetPropertyAsUint32(u"selectedIndex"_ns, selectedIndex);
-    if (NS_FAILED(rv)) {
-      return rv;
-    }
-  }
-
-  return NS_OK;
-}
-
-NS_IMETHODIMP
 nsNSSDialogs::SetPKCS12FilePassword(nsIInterfaceRequestor* ctx,
                                     /*out*/ nsAString& password,
                                     /*out*/ bool* confirmedPassword) {
@@ -311,34 +213,4 @@ nsNSSDialogs::GetPKCS12FilePassword(nsIInterfaceRequestor* ctx,
   }
 
   return NS_OK;
-}
-
-NS_IMETHODIMP
-nsNSSDialogs::DisplayProtectedAuth(nsIInterfaceRequestor* aCtx,
-                                   nsIProtectedAuthThread* runnable) {
-  // We cannot use nsNSSDialogHelper here. We cannot allow close widget
-  // in the window because protected authentication is interruptible
-  // from user interface and changing nsNSSDialogHelper's static variable
-  // would not be thread-safe
-
-  nsresult rv = NS_ERROR_FAILURE;
-
-  // Get the parent window for the dialog
-  nsCOMPtr<mozIDOMWindowProxy> parent = do_GetInterface(aCtx);
-
-  nsCOMPtr<nsIWindowWatcher> windowWatcher =
-      do_GetService("@mozilla.org/embedcomp/window-watcher;1", &rv);
-  if (NS_FAILED(rv)) return rv;
-
-  if (!parent) {
-    windowWatcher->GetActiveWindow(getter_AddRefs(parent));
-  }
-
-  nsCOMPtr<mozIDOMWindowProxy> newWindow;
-  rv = windowWatcher->OpenWindow(
-      parent, "chrome://pippki/content/protectedAuth.xhtml"_ns, "_blank"_ns,
-      "centerscreen,chrome,modal,titlebar,close=no"_ns, runnable,
-      getter_AddRefs(newWindow));
-
-  return rv;
 }

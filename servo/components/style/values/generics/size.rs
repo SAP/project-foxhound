@@ -18,9 +18,11 @@ use style_traits::{CssWriter, ParseError, ToCss};
     ComputeSquaredDistance,
     Copy,
     Debug,
+    Deserialize,
     MallocSizeOf,
     PartialEq,
     SpecifiedValueInfo,
+    Serialize,
     ToAnimatedZero,
     ToAnimatedValue,
     ToComputedValue,
@@ -80,7 +82,7 @@ where
         self.width.to_css(dest)?;
 
         if self.height != self.width {
-            dest.write_str(" ")?;
+            dest.write_char(' ')?;
             self.height.to_css(dest)?;
         }
 

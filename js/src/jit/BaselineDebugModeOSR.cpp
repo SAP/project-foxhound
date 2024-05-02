@@ -206,7 +206,7 @@ static void SpewPatchBaselineFrame(const uint8_t* oldReturnAddress,
   JitSpew(JitSpew_BaselineDebugModeOSR,
           "Patch return %p -> %p on BaselineJS frame (%s:%u:%u) from %s at %s",
           oldReturnAddress, newReturnAddress, script->filename(),
-          script->lineno(), script->column(),
+          script->lineno(), script->column().zeroOriginValue(),
           RetAddrEntryKindToString(frameKind), CodeName(JSOp(*pc)));
 }
 
@@ -411,12 +411,13 @@ static bool RecompileBaselineScriptForDebugMode(
   }
 
   JitSpew(JitSpew_BaselineDebugModeOSR, "Recompiling (%s:%u:%u) for %s",
-          script->filename(), script->lineno(), script->column(),
+          script->filename(), script->lineno(),
+          script->column().zeroOriginValue(),
           observing ? "DEBUGGING" : "NORMAL EXECUTION");
 
   AutoKeepJitScripts keepJitScripts(cx);
   BaselineScript* oldBaselineScript =
-      script->jitScript()->clearBaselineScript(cx->defaultFreeOp(), script);
+      script->jitScript()->clearBaselineScript(cx->gcContext(), script);
 
   MethodStatus status =
       BaselineCompile(cx, script, /* forceDebugMode = */ observing);
@@ -477,7 +478,7 @@ static void UndoRecompileBaselineScriptsForDebugMode(
     BaselineScript* baselineScript = script->baselineScript();
     if (entry.recompiled()) {
       script->jitScript()->setBaselineScript(script, entry.oldBaselineScript);
-      BaselineScript::Destroy(cx->runtime()->defaultFreeOp(), baselineScript);
+      BaselineScript::Destroy(cx->gcContext(), baselineScript);
     }
   }
 }
@@ -543,8 +544,7 @@ bool jit::RecompileOnStackBaselineScriptsForDebugMode(
   for (UniqueScriptOSREntryIter iter(entries); !iter.done(); ++iter) {
     const DebugModeOSREntry& entry = iter.entry();
     if (entry.recompiled()) {
-      BaselineScript::Destroy(cx->runtime()->defaultFreeOp(),
-                              entry.oldBaselineScript);
+      BaselineScript::Destroy(cx->gcContext(), entry.oldBaselineScript);
     }
   }
 

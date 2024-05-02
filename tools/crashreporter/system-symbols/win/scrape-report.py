@@ -14,16 +14,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from __future__ import absolute_import
-
 import csv
 import json
 import logging
 import os
-import requests
 import sys
-import urlparse
 
+import requests
+import urlparse
 
 log = logging.getLogger()
 

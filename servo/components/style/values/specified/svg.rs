@@ -239,7 +239,7 @@ impl ToCss for SVGPaintOrder {
 
         for pos in 0..last_pos_to_serialize + 1 {
             if pos != 0 {
-                dest.write_str(" ")?
+                dest.write_char(' ')?
             }
             self.order_at(pos).to_css(dest)?;
         }
@@ -247,11 +247,12 @@ impl ToCss for SVGPaintOrder {
     }
 }
 
+/// The context properties we understand.
+#[derive(Clone, Copy, Eq, Debug, Default, MallocSizeOf, PartialEq, SpecifiedValueInfo, ToComputedValue, ToResolvedValue, ToShmem)]
+#[repr(C)]
+pub struct ContextPropertyBits(u8);
 bitflags! {
-    /// The context properties we understand.
-    #[derive(Default, MallocSizeOf, SpecifiedValueInfo, ToComputedValue, ToResolvedValue, ToShmem)]
-    #[repr(C)]
-    pub struct ContextPropertyBits: u8 {
+    impl ContextPropertyBits: u8 {
         /// `fill`
         const FILL = 1 << 0;
         /// `stroke`
@@ -385,7 +386,7 @@ impl Parse for DProperty {
 
         // Parse possible functions.
         input.expect_function_matching("path")?;
-        let path_data = input.parse_nested_block(|i| SVGPathData::parse(context, i))?;
+        let path_data = input.parse_nested_block(|i| Parse::parse(context, i))?;
         Ok(DProperty::Path(path_data))
     }
 }

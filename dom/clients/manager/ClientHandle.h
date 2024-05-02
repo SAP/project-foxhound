@@ -15,9 +15,7 @@
 #  undef PostMessage
 #endif
 
-namespace mozilla {
-
-namespace dom {
+namespace mozilla::dom {
 
 class ClientManager;
 class ClientHandleChild;
@@ -99,10 +97,16 @@ class ClientHandle final : public ClientThing<ClientHandleChild> {
   //       but the MozPromise lets you Then() to another thread.
   RefPtr<GenericPromise> OnDetach();
 
+  // This is intended to allow the ServiceWorkerManager to evict controlled
+  // clients when their controlling registration changes. This should not be
+  // used by other holders of ClientHandles. This method can probably be removed
+  // when ServiceWorkerManager and ClientManagerService both live on the same
+  // thread.
+  void EvictFromBFCache();
+
   NS_INLINE_DECL_REFCOUNTING(ClientHandle);
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // _mozilla_dom_ClientHandle_h

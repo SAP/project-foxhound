@@ -53,9 +53,8 @@ add_task(async function testSheetCount() {
       Ci.nsIPrintSettings.kOutputFormatNative;
     mockPrinterInfo.settings.printerName = realPrinterName;
 
-    helper.win.PrintSettingsViewProxy.availablePrinters[
-      realPrinterName
-    ] = mockPrinterInfo;
+    helper.win.PrintSettingsViewProxy.availablePrinters[realPrinterName] =
+      mockPrinterInfo;
     await helper.dispatchSettingsChange({
       printerName: realPrinterName,
     });
@@ -267,10 +266,7 @@ add_task(async function testPagesPerSheetCount() {
     helper.addMockPrinter(mockPrinterName);
 
     await SpecialPowers.pushPrefEnv({
-      set: [
-        ["print.pages_per_sheet.enabled", true],
-        ["print_printer", mockPrinterName],
-      ],
+      set: [["print_printer", mockPrinterName]],
     });
 
     await helper.startPrint();
@@ -295,10 +291,7 @@ add_task(async function testPagesPerSheetCount() {
     ok(BrowserTestUtils.is_visible(pagesPerSheet), "Pages per sheet is shown");
     pagesPerSheet.focus();
 
-    let popupOpen = BrowserTestUtils.waitForEvent(
-      document.getElementById("ContentSelectDropdown"),
-      "popupshown"
-    );
+    let popupOpen = BrowserTestUtils.waitForSelectPopupShown(window);
 
     EventUtils.sendKey("space", helper.win);
 
@@ -326,23 +319,6 @@ add_task(async function testPagesPerSheetCount() {
 
     sheets = helper.sheetCount;
     is(sheets, 5, "Copies are handled with pages per sheet correctly");
-
-    await helper.closeDialog();
-  });
-});
-
-add_task(async function testPagesPerSheetPref() {
-  await SpecialPowers.pushPrefEnv({
-    set: [["print.pages_per_sheet.enabled", false]],
-  });
-
-  await PrintHelper.withTestPage(async helper => {
-    await helper.startPrint();
-
-    ok(
-      BrowserTestUtils.is_hidden(helper.get("pages-per-sheet")),
-      "Pages per sheet is hidden"
-    );
 
     await helper.closeDialog();
   });

@@ -26,7 +26,7 @@ job-defaults:
         download-domain:
             by-release-level:
                 production: download.mozilla.org
-                staging: bouncer-bouncer-releng.stage.mozaws.net
+                staging: dev.bouncer.nonprod.webservices.mozgcp.net
     whats-new-config: browser/config/whats_new_page.yml
 
 jobs:
@@ -38,6 +38,7 @@ jobs:
             product: firefox
             channel-names: ["beta", "beta-localtest", "beta-cdntest"]
             rules-to-update: ["firefox-beta-cdntest", "firefox-beta-localtest"]
+            pin-channels: ["beta-localtest", "beta-cdntest"]
         treeherder:
             platform: firefox-release/opt
             symbol: Rel(BPFxRC)

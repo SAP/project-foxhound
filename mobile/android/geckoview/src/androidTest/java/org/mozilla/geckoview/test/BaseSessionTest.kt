@@ -8,13 +8,7 @@ package org.mozilla.geckoview.test
 import android.os.Parcel
 import android.os.SystemClock
 import android.view.KeyEvent
-
 import androidx.test.platform.app.InstrumentationRegistry
-
-import org.mozilla.geckoview.GeckoRuntimeSettings
-import org.mozilla.geckoview.GeckoSession
-import org.mozilla.geckoview.test.rule.GeckoSessionTestRule
-
 import org.hamcrest.Matcher
 import org.hamcrest.Matchers
 import org.json.JSONArray
@@ -23,22 +17,31 @@ import org.junit.Assume.assumeThat
 import org.junit.Rule
 import org.junit.rules.ErrorCollector
 import org.junit.rules.RuleChain
-
+import org.mozilla.geckoview.GeckoRuntimeSettings
+import org.mozilla.geckoview.GeckoSession
+import org.mozilla.geckoview.test.rule.GeckoSessionTestRule
+import org.mozilla.geckoview.test.util.TestServer
 import kotlin.reflect.KClass
 
 /**
  * Common base class for tests using GeckoSessionTestRule,
  * providing the test rule and other utilities.
  */
-open class BaseSessionTest(noErrorCollector: Boolean = false) {
+open class BaseSessionTest(
+    noErrorCollector: Boolean = false,
+    serverCustomHeaders: Map<String, String>? = null,
+    responseModifiers: Map<String, TestServer.ResponseModifier>? = null,
+) {
     companion object {
         const val RESUBMIT_CONFIRM = "/assets/www/resubmit.html"
         const val BEFORE_UNLOAD = "/assets/www/beforeunload.html"
         const val CLICK_TO_RELOAD_HTML_PATH = "/assets/www/clickToReload.html"
+        const val CLIPBOARD_READ_HTML_PATH = "/assets/www/clipboard_read.html"
         const val CONTENT_CRASH_URL = "about:crashcontent"
         const val DOWNLOAD_HTML_PATH = "/assets/www/download.html"
         const val FORM_BLANK_HTML_PATH = "/assets/www/form_blank.html"
         const val FORMS_HTML_PATH = "/assets/www/forms.html"
+        const val FORMS_XORIGIN_HTML_PATH = "/assets/www/forms_xorigin.html"
         const val FORMS2_HTML_PATH = "/assets/www/forms2.html"
         const val FORMS3_HTML_PATH = "/assets/www/forms3.html"
         const val FORMS4_HTML_PATH = "/assets/www/forms4.html"
@@ -50,6 +53,8 @@ open class BaseSessionTest(noErrorCollector: Boolean = false) {
         const val FORMS_AUTOCOMPLETE_HTML_PATH = "/assets/www/forms_autocomplete.html"
         const val FORMS_ID_VALUE_HTML_PATH = "/assets/www/forms_id_value.html"
         const val CC_FORM_HTML_PATH = "/assets/www/cc_form.html"
+        const val FEDCM_RP_HTML_PATH = "/assets/www/fedcm_rp.html"
+        const val FEDCM_IDP_MANIFEST_PATH = "/assets/www/fedcm_idp_manifest.json"
         const val HELLO_HTML_PATH = "/assets/www/hello.html"
         const val HELLO2_HTML_PATH = "/assets/www/hello2.html"
         const val HELLO_IFRAME_HTML_PATH = "/assets/www/iframe_hello.html"
@@ -62,8 +67,11 @@ open class BaseSessionTest(noErrorCollector: Boolean = false) {
         const val NEW_SESSION_CHILD_HTML_PATH = "/assets/www/newSession_child.html"
         const val NEW_SESSION_HTML_PATH = "/assets/www/newSession.html"
         const val POPUP_HTML_PATH = "/assets/www/popup.html"
+        const val PRINT_CONTENT_CHANGE = "/assets/www/print_content_change.html"
+        const val PRINT_IFRAME = "/assets/www/print_iframe.html"
         const val PROMPT_HTML_PATH = "/assets/www/prompts.html"
         const val SAVE_STATE_PATH = "/assets/www/saveState.html"
+        const val TEST_GIF_PATH = "/assets/www/images/test.gif"
         const val TITLE_CHANGE_HTML_PATH = "/assets/www/titleChange.html"
         const val TRACKERS_PATH = "/assets/www/trackers.html"
         const val VIDEO_OGG_PATH = "/assets/www/ogg.html"
@@ -91,7 +99,9 @@ open class BaseSessionTest(noErrorCollector: Boolean = false) {
         const val IFRAME_UNKNOWN_PROTOCOL = "/assets/www/iframe_unknown_protocol.html"
         const val MEDIA_SESSION_DOM1_PATH = "/assets/www/media_session_dom1.html"
         const val MEDIA_SESSION_DEFAULT1_PATH = "/assets/www/media_session_default1.html"
+        const val PULL_TO_REFRESH_SUBFRAME_PATH = "/assets/www/pull-to-refresh-subframe.html"
         const val TOUCH_HTML_PATH = "/assets/www/touch.html"
+        const val TOUCH_XORIGIN_HTML_PATH = "/assets/www/touch_xorigin.html"
         const val GETUSERMEDIA_XORIGIN_CONTAINER_HTML_PATH = "/assets/www/getusermedia_xorigin_container.html"
         const val ROOT_100_PERCENT_HEIGHT_HTML_PATH = "/assets/www/root_100_percent_height.html"
         const val ROOT_98VH_HTML_PATH = "/assets/www/root_98vh.html"
@@ -102,6 +112,7 @@ open class BaseSessionTest(noErrorCollector: Boolean = false) {
         const val IFRAME_98VH_NO_SCROLLABLE_HTML_PATH = "/assets/www/iframe_98vh_no_scrollable.html"
         const val TOUCHSTART_HTML_PATH = "/assets/www/touchstart.html"
         const val TOUCH_ACTION_HTML_PATH = "/assets/www/touch-action.html"
+        const val TOUCH_ACTION_WHEEL_LISTENER_HTML_PATH = "/assets/www/touch-action-wheel-listener.html"
         const val OVERSCROLL_BEHAVIOR_AUTO_HTML_PATH = "/assets/www/overscroll-behavior-auto.html"
         const val OVERSCROLL_BEHAVIOR_AUTO_NONE_HTML_PATH = "/assets/www/overscroll-behavior-auto-none.html"
         const val OVERSCROLL_BEHAVIOR_NONE_AUTO_HTML_PATH = "/assets/www/overscroll-behavior-none-auto.html"
@@ -115,13 +126,24 @@ open class BaseSessionTest(noErrorCollector: Boolean = false) {
         const val CONTEXT_MENU_VIDEO_HTML_PATH = "/assets/www/context_menu_video.html"
         const val CONTEXT_MENU_BLOB_FULL_HTML_PATH = "/assets/www/context_menu_blob_full.html"
         const val CONTEXT_MENU_BLOB_BUFFERED_HTML_PATH = "/assets/www/context_menu_blob_buffered.html"
+        const val REMOTE_IFRAME = "/assets/www/accessibility/test-remote-iframe.html"
+        const val LOCAL_IFRAME = "/assets/www/accessibility/test-local-iframe.html"
+        const val BODY_FULLY_COVERED_BY_GREEN_ELEMENT = "/assets/www/red-background-body-fully-covered-by-green-element.html"
+        const val COLOR_GRID_HTML_PATH = "/assets/www/color_grid.html"
+        const val COLOR_ORANGE_BACKGROUND_HTML_PATH = "/assets/www/color_orange_background.html"
+        const val TRACEMONKEY_PDF_PATH = "/assets/www/tracemonkey.pdf"
+        const val HELLO_PDF_WORLD_PDF_PATH = "/assets/www/helloPDFWorld.pdf"
+        const val ORANGE_PDF_PATH = "/assets/www/orange.pdf"
+        const val NO_META_VIEWPORT_HTML_PATH = "/assets/www/no-meta-viewport.html"
+        const val TRANSLATIONS_EN = "/assets/www/translations-tester-en.html"
+        const val TRANSLATIONS_ES = "/assets/www/translations-tester-es.html"
 
         const val TEST_ENDPOINT = GeckoSessionTestRule.TEST_ENDPOINT
         const val TEST_HOST = GeckoSessionTestRule.TEST_HOST
         const val TEST_PORT = GeckoSessionTestRule.TEST_PORT
     }
 
-    val sessionRule = GeckoSessionTestRule()
+    val sessionRule = GeckoSessionTestRule(serverCustomHeaders, responseModifiers)
 
     // Override this to include more `evaluate` rules in the chain
     @get:Rule
@@ -135,8 +157,11 @@ open class BaseSessionTest(noErrorCollector: Boolean = false) {
 
     fun <T> assertThat(reason: String, v: T, m: Matcher<in T>) = sessionRule.checkThat(reason, v, m)
     fun <T> assertInAutomationThat(reason: String, v: T, m: Matcher<in T>) =
-            if (sessionRule.env.isAutomation) assertThat(reason, v, m)
-            else assumeThat(reason, v, m)
+        if (sessionRule.env.isAutomation) {
+            assertThat(reason, v, m)
+        } else {
+            assumeThat(reason, v, m)
+        }
 
     init {
         if (!noErrorCollector) {
@@ -147,13 +172,13 @@ open class BaseSessionTest(noErrorCollector: Boolean = false) {
     fun <T> forEachCall(vararg values: T): T = sessionRule.forEachCall(*values)
 
     fun getTestBytes(path: String) =
-            InstrumentationRegistry.getInstrumentation().targetContext.resources.assets
-                    .open(path.removePrefix("/assets/")).readBytes()
+        InstrumentationRegistry.getInstrumentation().targetContext.resources.assets
+            .open(path.removePrefix("/assets/")).readBytes()
 
     fun createTestUrl(path: String) = GeckoSessionTestRule.TEST_ENDPOINT + path
 
     fun GeckoSession.loadTestPath(path: String) =
-            this.loadUri(createTestUrl(path))
+        this.loadUri(createTestUrl(path))
 
     inline fun GeckoRuntimeSettings.toParcel(lambda: (Parcel) -> Unit) {
         val parcel = Parcel.obtain()
@@ -165,70 +190,76 @@ open class BaseSessionTest(noErrorCollector: Boolean = false) {
 
             lambda(parcel)
 
-            assertThat("Read parcel matches written parcel",
-                       parcel.dataPosition(), Matchers.equalTo(pos))
+            assertThat(
+                "Read parcel matches written parcel",
+                parcel.dataPosition(),
+                Matchers.equalTo(pos),
+            )
         } finally {
             parcel.recycle()
         }
     }
 
     fun GeckoSession.open() =
-            sessionRule.openSession(this)
+        sessionRule.openSession(this)
 
     fun GeckoSession.waitForPageStop() =
-            sessionRule.waitForPageStop(this)
+        sessionRule.waitForPageStop(this)
 
     fun GeckoSession.waitForPageStops(count: Int) =
-            sessionRule.waitForPageStops(this, count)
+        sessionRule.waitForPageStops(this, count)
 
     fun GeckoSession.waitUntilCalled(ifce: KClass<*>, vararg methods: String) =
-            sessionRule.waitUntilCalled(this, ifce, *methods)
+        sessionRule.waitUntilCalled(this, ifce, *methods)
 
     fun GeckoSession.waitUntilCalled(callback: Any) =
-            sessionRule.waitUntilCalled(this, callback)
+        sessionRule.waitUntilCalled(this, callback)
 
     fun GeckoSession.addDisplay(x: Int, y: Int) =
-            sessionRule.addDisplay(this, x, y)
+        sessionRule.addDisplay(this, x, y)
 
     fun GeckoSession.releaseDisplay() =
-            sessionRule.releaseDisplay(this)
+        sessionRule.releaseDisplay(this)
 
     fun GeckoSession.forCallbacksDuringWait(callback: Any) =
-            sessionRule.forCallbacksDuringWait(this, callback)
+        sessionRule.forCallbacksDuringWait(this, callback)
 
     fun GeckoSession.delegateUntilTestEnd(callback: Any) =
-            sessionRule.delegateUntilTestEnd(this, callback)
+        sessionRule.delegateUntilTestEnd(this, callback)
 
     fun GeckoSession.delegateDuringNextWait(callback: Any) =
-            sessionRule.delegateDuringNextWait(this, callback)
+        sessionRule.delegateDuringNextWait(this, callback)
 
     fun GeckoSession.synthesizeTap(x: Int, y: Int) =
-            sessionRule.synthesizeTap(this, x, y)
+        sessionRule.synthesizeTap(this, x, y)
 
     fun GeckoSession.synthesizeMouseMove(x: Int, y: Int) =
-            sessionRule.synthesizeMouseMove(this, x, y)
+        sessionRule.synthesizeMouseMove(this, x, y)
 
     fun GeckoSession.evaluateJS(js: String): Any? =
-            sessionRule.evaluateJS(this, js)
+        sessionRule.evaluateJS(this, js)
 
     fun GeckoSession.evaluatePromiseJS(js: String): GeckoSessionTestRule.ExtensionPromise =
-            sessionRule.evaluatePromiseJS(this, js)
+        sessionRule.evaluatePromiseJS(this, js)
 
     fun GeckoSession.waitForJS(js: String): Any? =
-            sessionRule.waitForJS(this, js)
+        sessionRule.waitForJS(this, js)
 
     fun GeckoSession.waitForRoundTrip() = sessionRule.waitForRoundTrip(this)
 
     fun GeckoSession.pressKey(keyCode: Int) {
         // Create a Promise to listen to the key event, and wait on it below.
         val promise = this.evaluatePromiseJS(
-                """new Promise(r => window.addEventListener(
-                    'keyup', r, { once: true }))""")
+            """new Promise(r => window.addEventListener(
+                    'keyup', r, { once: true }))""",
+        )
         val time = SystemClock.uptimeMillis()
         val keyEvent = KeyEvent(time, time, KeyEvent.ACTION_DOWN, keyCode, 0)
         this.textInput.onKeyDown(keyCode, keyEvent)
         this.textInput.onKeyUp(
-                keyCode, KeyEvent.changeAction(keyEvent, KeyEvent.ACTION_UP))
+            keyCode,
+            KeyEvent.changeAction(keyEvent, KeyEvent.ACTION_UP),
+        )
         promise.value
     }
 
@@ -239,18 +270,29 @@ open class BaseSessionTest(noErrorCollector: Boolean = false) {
     fun GeckoSession.getLinkColor(selector: String) = sessionRule.getLinkColor(this, selector)
 
     fun GeckoSession.setResolutionAndScaleTo(resolution: Float) =
-            sessionRule.setResolutionAndScaleTo(this, resolution)
+        sessionRule.setResolutionAndScaleTo(this, resolution)
 
+    fun GeckoSession.triggerCookieBannerDetected() =
+        sessionRule.triggerCookieBannerDetected(this)
+
+    fun GeckoSession.triggerCookieBannerHandled() =
+        sessionRule.triggerCookieBannerHandled(this)
+
+    fun GeckoSession.triggerTranslationsOffer() =
+        sessionRule.triggerTranslationsOffer(this)
+
+    fun GeckoSession.triggerLanguageStateChange(languageState: JSONObject) =
+        sessionRule.triggerLanguageStateChange(this, languageState)
     var GeckoSession.active: Boolean
-            get() = sessionRule.getActive(this)
-            set(value) = setActive(value)
+        get() = sessionRule.getActive(this)
+        set(value) = setActive(value)
 
     @Suppress("UNCHECKED_CAST")
     fun Any?.asJsonArray(): JSONArray = this as JSONArray
 
     @Suppress("UNCHECKED_CAST")
-    fun<V> JSONObject.asMap(): Map<String?,V?> {
-        val result = HashMap<String?,V?>()
+    fun<V> JSONObject.asMap(): Map<String?, V?> {
+        val result = HashMap<String?, V?>()
         for (key in this.keys()) {
             result[key] = this[key] as V
         }

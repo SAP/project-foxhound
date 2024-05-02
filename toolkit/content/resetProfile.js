@@ -4,8 +4,6 @@
 
 "use strict";
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-
 document.addEventListener("dialogaccept", onResetProfileAccepted);
 document
   .getElementById("refreshProfileLearnMore")
@@ -16,7 +14,7 @@ document
     window.close();
   });
 
-document.addEventListener("DOMContentLoaded", function() {
+document.addEventListener("DOMContentLoaded", function () {
   document
     .getElementById("resetProfileDialog")
     .getButton("accept")

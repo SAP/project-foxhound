@@ -5,14 +5,20 @@
 # You can obtain one at http://mozilla.org/MPL/2.0/.
 # ***** END LICENSE BLOCK *****
 
-from __future__ import absolute_import
-import re
 import os
+import re
 
+from mozsystemmonitor.resourcemonitor import SystemResourceMonitor
+
+from mozharness.base.log import CRITICAL, ERROR, INFO, WARNING, OutputParser
+from mozharness.mozilla.automation import (
+    TBPL_FAILURE,
+    TBPL_RETRY,
+    TBPL_SUCCESS,
+    TBPL_WARNING,
+    TBPL_WORST_LEVEL_TUPLE,
+)
 from mozharness.mozilla.testing.errors import TinderBoxPrintRe
-from mozharness.base.log import OutputParser, WARNING, INFO, CRITICAL, ERROR
-from mozharness.mozilla.automation import TBPL_WARNING, TBPL_FAILURE, TBPL_RETRY
-from mozharness.mozilla.automation import TBPL_SUCCESS, TBPL_WORST_LEVEL_TUPLE
 
 SUITE_CATEGORIES = ["mochitest", "reftest", "xpcshell"]
 
@@ -182,6 +188,18 @@ class DesktopUnittestOutputParser(OutputParser):
                 TBPL_RETRY, self.tbpl_status, levels=TBPL_WORST_LEVEL_TUPLE
             )
             return  # skip base parse_single_line
+        if line.startswith("SUITE-START "):
+            SystemResourceMonitor.begin_marker("suite", "")
+        elif line.startswith("SUITE-END "):
+            SystemResourceMonitor.end_marker("suite", "")
+        elif line.startswith("TEST-"):
+            part = line.split(" | ")
+            if part[0] == "TEST-START":
+                SystemResourceMonitor.begin_marker("test", part[1])
+            elif part[0] in ("TEST-PASS", "TEST-SKIP", "TEST-TIMEOUT"):
+                SystemResourceMonitor.end_marker("test", part[1])
+            else:
+                SystemResourceMonitor.record_event(line)
         super(DesktopUnittestOutputParser, self).parse_single_line(line)
 
     def evaluate_parser(self, return_code, success_codes=None, previous_summary=None):

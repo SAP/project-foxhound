@@ -11,7 +11,7 @@ const { shallow } = require("enzyme");
 const React = require("react");
 
 const UnsupportedBrowserList = React.createFactory(
-  require("devtools/client/inspector/compatibility/components/UnsupportedBrowserList")
+  require("resource://devtools/client/inspector/compatibility/components/UnsupportedBrowserList.js")
 );
 
 describe("UnsupportedBrowserList component", () => {
@@ -24,6 +24,30 @@ describe("UnsupportedBrowserList component", () => {
           { id: "test-browser", name: "Test Browser", version: "1" },
           { id: "test-browser", name: "Test Browser", version: "2" },
           { id: "sample-browser", name: "Sample Browser", version: "100" },
+        ],
+      })
+    );
+    expect(list).toMatchSnapshot();
+  });
+
+  it("does not show ESR version if newer version is not supported", () => {
+    const list = shallow(
+      UnsupportedBrowserList({
+        browsers: [
+          { id: "firefox", name: "Firefox", version: "102", status: "esr" },
+          { id: "firefox", name: "Firefox", version: "112", status: "current" },
+        ],
+      })
+    );
+    expect(list).toMatchSnapshot();
+  });
+
+  it("shows ESR version if newer version is supported", () => {
+    const list = shallow(
+      UnsupportedBrowserList({
+        browsers: [
+          { id: "firefox", name: "Firefox", version: "102", status: "esr" },
+          { id: "test-browser", name: "Test Browser", version: "1" },
         ],
       })
     );

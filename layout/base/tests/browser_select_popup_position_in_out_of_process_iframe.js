@@ -16,23 +16,18 @@ const PAGECONTENT_TRANSLATED =
   "</iframe>" +
   "</div></body></html>";
 
-function openSelectPopup(selectPopup, x, y, win) {
-  const popupShownPromise = BrowserTestUtils.waitForEvent(
-    selectPopup,
-    "popupshown"
-  );
-
+function openSelectPopup(x, y, win) {
+  const popupShownPromise = BrowserTestUtils.waitForSelectPopupShown(win);
   EventUtils.synthesizeNativeMouseEvent({
     type: "click",
     target: win.document.documentElement,
     screenX: x,
     screenY: y,
   });
-
   return popupShownPromise;
 }
 
-add_task(async function() {
+add_task(async function () {
   const pageUrl = "data:text/html," + escape(PAGECONTENT_TRANSLATED);
 
   const newWin = await BrowserTestUtils.openNewBrowserWindow({ fission: true });
@@ -41,7 +36,10 @@ add_task(async function() {
     newWin.gBrowser.selectedBrowser,
     true /* includeSubFrames */
   );
-  BrowserTestUtils.loadURI(newWin.gBrowser.selectedBrowser, pageUrl);
+  BrowserTestUtils.startLoadingURIString(
+    newWin.gBrowser.selectedBrowser,
+    pageUrl
+  );
   await browserLoadedPromise;
 
   newWin.gBrowser.selectedBrowser.focus();
@@ -50,53 +48,34 @@ add_task(async function() {
 
   // We need to explicitly call Element.focus() since dataURL is treated as
   // cross-origin, thus autofocus doesn't work there.
-  const iframe = await SpecialPowers.spawn(tab.linkedBrowser, [], () => {
+  const iframeBC = await SpecialPowers.spawn(tab.linkedBrowser, [], () => {
     return content.document.querySelector("iframe").browsingContext;
   });
 
-  await SpecialPowers.spawn(iframe, [], async () => {
+  const [iframeBorderLeft, iframeBorderTop, iframeX, iframeY] =
+    await SpecialPowers.spawn(tab.linkedBrowser, [], async function () {
+      await SpecialPowers.contentTransformsReceived(content);
+      const iframe = content.document.querySelector("iframe");
+      const rect = iframe.getBoundingClientRect();
+      const x = content.window.mozInnerScreenX + rect.left;
+      const y = content.window.mozInnerScreenY + rect.top;
+      const cs = content.window.getComputedStyle(iframe);
+      return [parseInt(cs.borderLeftWidth), parseInt(cs.borderTopWidth), x, y];
+    });
+
+  const selectRect = await SpecialPowers.spawn(iframeBC, [], async function () {
+    await SpecialPowers.contentTransformsReceived(content);
     const input = content.document.getElementById("select");
     const focusPromise = new Promise(resolve => {
       input.addEventListener("focus", resolve, { once: true });
     });
     input.focus();
     await focusPromise;
+    return input.getBoundingClientRect();
   });
-
-  const [iframeBorderLeft, iframeBorderTop] = await SpecialPowers.spawn(
-    tab.linkedBrowser,
-    [],
-    () => {
-      const cs = content.window.getComputedStyle(
-        content.document.querySelector("iframe")
-      );
-      return [parseInt(cs.borderLeftWidth), parseInt(cs.borderTopWidth)];
-    }
-  );
-
-  const [iframeX, iframeY] = await SpecialPowers.spawn(
-    tab.linkedBrowser,
-    [],
-    () => {
-      const rect = content.document
-        .querySelector("iframe")
-        .getBoundingClientRect();
-      const x = content.window.mozInnerScreenX + rect.left;
-      const y = content.window.mozInnerScreenY + rect.top;
-      return [x, y];
-    }
-  );
-
-  const selectRect = await SpecialPowers.spawn(iframe, [], () => {
-    return content.document.querySelector("select").getBoundingClientRect();
-  });
-
-  const menulist = newWin.document.getElementById("ContentSelectDropdown");
-  const selectPopup = menulist.menupopup;
 
   // Open the select popup.
-  await openSelectPopup(
-    selectPopup,
+  const selectPopup = await openSelectPopup(
     iframeX + selectRect.x + selectRect.width / 2,
     iframeY + selectRect.y + selectRect.height / 2,
     newWin
@@ -120,20 +99,27 @@ add_task(async function() {
     iframeBorderTop -
     newWin.mozInnerScreenY +
     parseFloat(getComputedStyle(selectPopup).marginTop);
-  // On platforms other than MaxOSX the popup menu is positioned below the
-  // option element.
-  if (!navigator.platform.includes("Mac")) {
+
+  // On platforms other than macOS the popup menu is positioned below the
+  // option element. On macOS the top is aligned to the selected item (so the
+  // first label).
+  if (navigator.platform.includes("Mac")) {
+    const offsetToSelectedItem =
+      selectPopup.querySelector("menuitem[selected]").getBoundingClientRect()
+        .top - popupRect.top;
+    expectedYPosition -= offsetToSelectedItem;
+  } else {
     expectedYPosition += selectRect.height;
   }
 
   isfuzzy(
     popupRect.y,
     expectedYPosition,
-    window.windowUtils.screenPixelsPerCSSPixel,
+    window.devicePixelRatio,
     "y position of the popup"
   );
 
-  await hideSelectPopup(selectPopup, "enter", newWin);
+  await hideSelectPopup("enter", newWin);
 
   await BrowserTestUtils.closeWindow(newWin);
 });

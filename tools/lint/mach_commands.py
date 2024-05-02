@@ -6,17 +6,9 @@ import argparse
 import copy
 import os
 
-from mozbuild.base import (
-    BuildEnvironmentNotFoundException,
-    MachCommandConditions as conditions,
-)
-
-
-from mach.decorators import (
-    CommandArgument,
-    Command,
-)
-
+from mach.decorators import Command, CommandArgument
+from mozbuild.base import BuildEnvironmentNotFoundException
+from mozbuild.base import MachCommandConditions as conditions
 
 here = os.path.abspath(os.path.dirname(__file__))
 EXCLUSION_FILES = [
@@ -29,10 +21,19 @@ thunderbird_excludes = os.path.join("comm", "tools", "lint", "GlobalExclude.txt"
 if os.path.exists(thunderbird_excludes):
     EXCLUSION_FILES_OPTIONAL.append(thunderbird_excludes)
 
-GLOBAL_EXCLUDES = ["node_modules", "tools/lint/test/files", ".hg", ".git"]
+GLOBAL_EXCLUDES = ["**/node_modules", "tools/lint/test/files", ".hg", ".git"]
 
-VALID_FORMATTERS = {"black", "clang-format", "rustfmt"}
+VALID_FORMATTERS = {"black", "clang-format", "rustfmt", "isort"}
 VALID_ANDROID_FORMATTERS = {"android-format"}
+
+# Code-review bot must index issues from the whole codebase when pushing
+# to autoland or try repositories. In such cases, output warnings in the
+# task's JSON artifact but do not fail if only warnings are found.
+REPORT_WARNINGS = os.environ.get("GECKO_HEAD_REPOSITORY", "").rstrip("/") in (
+    "https://hg.mozilla.org/mozilla-central",
+    "https://hg.mozilla.org/integration/autoland",
+    "https://hg.mozilla.org/try",
+)
 
 
 def setup_argument_parser():
@@ -72,6 +73,7 @@ def get_global_excludes(**lintargs):
     category="devenv",
     description="Run linters.",
     parser=setup_argument_parser,
+    virtualenv_name="lint",
 )
 def lint(command_context, *runargs, **lintargs):
     """Run linters."""
@@ -92,11 +94,16 @@ def lint(command_context, *runargs, **lintargs):
     lintargs["config_paths"].insert(0, here)
     lintargs["virtualenv_bin_path"] = command_context.virtualenv_manager.bin_path
     lintargs["virtualenv_manager"] = command_context.virtualenv_manager
+    if REPORT_WARNINGS and lintargs.get("show_warnings") is None:
+        lintargs["show_warnings"] = "soft"
     for path in EXCLUSION_FILES:
         parser.GLOBAL_SUPPORT_FILES.append(
             os.path.join(command_context.topsrcdir, path)
         )
-    return cli.run(*runargs, **lintargs)
+    setupargs = {
+        "mach_command_context": command_context,
+    }
+    return cli.run(*runargs, setupargs=setupargs, **lintargs)
 
 
 @Command(
@@ -125,6 +132,13 @@ def lint(command_context, *runargs, **lintargs):
     default=False,
     action="store_true",
     help="Request that eslint automatically fix errors, where possible.",
+)
+@CommandArgument(
+    "--rule",
+    default=[],
+    dest="rules",
+    action="append",
+    help="Specify an additional rule for ESLint to run, e.g. 'no-new-object: error'",
 )
 @CommandArgument(
     "extra_args",

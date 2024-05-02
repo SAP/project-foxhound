@@ -22,6 +22,12 @@
 #include "secitem.h"
 #include "blapii.h"
 
+/* The minimal required randomness is 64 bits */
+/* EXP_BLINDING_RANDOMNESS_LEN is the length of the randomness in mp_digits */
+/* for 32 bits platforts it is 2 mp_digits (= 2 * 32 bits), for 64 bits it is equal to 128 bits */
+#define EXP_BLINDING_RANDOMNESS_LEN ((128 + MP_DIGIT_BIT - 1) / MP_DIGIT_BIT)
+#define EXP_BLINDING_RANDOMNESS_LEN_BYTES (EXP_BLINDING_RANDOMNESS_LEN * sizeof(mp_digit))
+
 /*
 ** Number of times to attempt to generate a prime (p or q) from a random
 ** seed (the seed changes for each iteration).
@@ -208,7 +214,7 @@ generate_prime(mp_int *prime, int primeLen)
         pb[0] |= 0xC0;            /* set two high-order bits */
         pb[primeLen - 1] |= 0x01; /* set low-order bit       */
         CHECK_MPI_OK(mp_read_unsigned_octets(prime, pb, primeLen));
-        err = mpp_make_prime(prime, primeLen * 8, PR_FALSE);
+        err = mpp_make_prime_secure(prime, primeLen * 8, PR_FALSE);
         if (err != MP_NO)
             goto cleanup;
         /* keep going while err == MP_NO */
@@ -391,7 +397,7 @@ rsa_is_prime(mp_int *p)
     }
 
     /* If that passed, run some Miller-Rabin tests */
-    res = mpp_pprime(p, 2);
+    res = mpp_pprime_secure(p, 2);
     return res;
 }
 
@@ -597,6 +603,11 @@ rsa_get_prime_from_exponents(mp_int *e, mp_int *d, mp_int *p, mp_int *q,
      * keySizeBits.
      */
     order_k = (unsigned)mpl_significant_bits(&kphi) - keySizeInBits;
+
+    if (order_k <= 1) {
+        err = MP_RANGE;
+        goto cleanup;
+    }
 
     /* for (k=kinit; order(k) >= order_k; k--) { */
     /* k=kinit: k can't be bigger than  kphi/2^(keySizeInBits -1) */
@@ -893,6 +904,9 @@ cleanup:
 static unsigned int
 rsa_modulusLen(SECItem *modulus)
 {
+    if (modulus->len == 0) {
+        return 0;
+    };
     unsigned char byteZero = modulus->data[0];
     unsigned int modLen = modulus->len - !byteZero;
     return modLen;
@@ -925,6 +939,13 @@ RSA_PublicKeyOp(RSAPublicKey *key,
     CHECK_MPI_OK(mp_init(&c));
     modLen = rsa_modulusLen(&key->modulus);
     expLen = rsa_modulusLen(&key->publicExponent);
+
+    if (modLen == 0) {
+        PORT_SetError(SEC_ERROR_INVALID_ARGS);
+        rv = SECFailure;
+        goto cleanup;
+    }
+
     /* 1.  Obtain public key (n, e) */
     if (BAD_RSA_KEY_SIZE(modLen, expLen)) {
         PORT_SetError(SEC_ERROR_INVALID_KEY);
@@ -1003,6 +1024,13 @@ static SECStatus
 rsa_PrivateKeyOpCRTNoCheck(RSAPrivateKey *key, mp_int *m, mp_int *c)
 {
     mp_int p, q, d_p, d_q, qInv;
+    /*
+            The length of the randomness comes from the papers: 
+            https://link.springer.com/chapter/10.1007/978-3-642-29912-4_7
+            https://link.springer.com/chapter/10.1007/978-3-642-21554-4_5. 
+        */
+    mp_int blinding_dp, blinding_dq, r1, r2;
+    unsigned char random_block[EXP_BLINDING_RANDOMNESS_LEN_BYTES];
     mp_int m1, m2, h, ctmp;
     mp_err err = MP_OKAY;
     SECStatus rv = SECSuccess;
@@ -1015,6 +1043,11 @@ rsa_PrivateKeyOpCRTNoCheck(RSAPrivateKey *key, mp_int *m, mp_int *c)
     MP_DIGITS(&m2) = 0;
     MP_DIGITS(&h) = 0;
     MP_DIGITS(&ctmp) = 0;
+    MP_DIGITS(&blinding_dp) = 0;
+    MP_DIGITS(&blinding_dq) = 0;
+    MP_DIGITS(&r1) = 0;
+    MP_DIGITS(&r2) = 0;
+
     CHECK_MPI_OK(mp_init(&p));
     CHECK_MPI_OK(mp_init(&q));
     CHECK_MPI_OK(mp_init(&d_p));
@@ -1024,12 +1057,44 @@ rsa_PrivateKeyOpCRTNoCheck(RSAPrivateKey *key, mp_int *m, mp_int *c)
     CHECK_MPI_OK(mp_init(&m2));
     CHECK_MPI_OK(mp_init(&h));
     CHECK_MPI_OK(mp_init(&ctmp));
+    CHECK_MPI_OK(mp_init(&blinding_dp));
+    CHECK_MPI_OK(mp_init(&blinding_dq));
+    CHECK_MPI_OK(mp_init_size(&r1, EXP_BLINDING_RANDOMNESS_LEN));
+    CHECK_MPI_OK(mp_init_size(&r2, EXP_BLINDING_RANDOMNESS_LEN));
+
     /* copy private key parameters into mp integers */
     SECITEM_TO_MPINT(key->prime1, &p);         /* p */
     SECITEM_TO_MPINT(key->prime2, &q);         /* q */
     SECITEM_TO_MPINT(key->exponent1, &d_p);    /* d_p  = d mod (p-1) */
     SECITEM_TO_MPINT(key->exponent2, &d_q);    /* d_q  = d mod (q-1) */
     SECITEM_TO_MPINT(key->coefficient, &qInv); /* qInv = q**-1 mod p */
+
+    // blinding_dp = 1
+    CHECK_MPI_OK(mp_set_int(&blinding_dp, 1));
+    // blinding_dp = p - 1
+    CHECK_MPI_OK(mp_sub(&p, &blinding_dp, &blinding_dp));
+    // generating a random value
+    RNG_GenerateGlobalRandomBytes(random_block, EXP_BLINDING_RANDOMNESS_LEN_BYTES);
+    MP_USED(&r1) = EXP_BLINDING_RANDOMNESS_LEN;
+    memcpy(MP_DIGITS(&r1), random_block, sizeof(random_block));
+    // blinding_dp = random * (p - 1)
+    CHECK_MPI_OK(mp_mul(&blinding_dp, &r1, &blinding_dp));
+    //d_p = d_p + random * (p - 1)
+    CHECK_MPI_OK(mp_add(&d_p, &blinding_dp, &d_p));
+
+    // blinding_dq = 1
+    CHECK_MPI_OK(mp_set_int(&blinding_dq, 1));
+    // blinding_dq = q - 1
+    CHECK_MPI_OK(mp_sub(&q, &blinding_dq, &blinding_dq));
+    // generating a random value
+    RNG_GenerateGlobalRandomBytes(random_block, EXP_BLINDING_RANDOMNESS_LEN_BYTES);
+    memcpy(MP_DIGITS(&r2), random_block, sizeof(random_block));
+    MP_USED(&r2) = EXP_BLINDING_RANDOMNESS_LEN;
+    // blinding_dq = random * (q - 1)
+    CHECK_MPI_OK(mp_mul(&blinding_dq, &r2, &blinding_dq));
+    //d_q = d_q + random * (q-1)
+    CHECK_MPI_OK(mp_add(&d_q, &blinding_dq, &d_q));
+
     /* 1. m1 = c**d_p mod p */
     CHECK_MPI_OK(mp_mod(c, &p, &ctmp));
     CHECK_MPI_OK(mp_exptmod(&ctmp, &d_p, &p, &m1));
@@ -1052,6 +1117,10 @@ cleanup:
     mp_clear(&m2);
     mp_clear(&h);
     mp_clear(&ctmp);
+    mp_clear(&blinding_dp);
+    mp_clear(&blinding_dq);
+    mp_clear(&r1);
+    mp_clear(&r2);
     if (err) {
         MP_TO_SEC_ERROR(err);
         rv = SECFailure;
@@ -1249,10 +1318,16 @@ get_blinding_params(RSAPrivateKey *key, mp_int *n, unsigned int modLen,
          * Now, search its list of ready blinding params for a usable one.
          */
         while (0 != (bp = rsabp->bp)) {
-#ifndef UNSAFE_FUZZER_MODE
-            if (--(bp->counter) > 0)
-#endif
-            {
+#ifdef UNSAFE_FUZZER_MODE
+            /* Found a match and there are still remaining uses left */
+            /* Return the parameters */
+            CHECK_MPI_OK(mp_copy(&bp->f, f));
+            CHECK_MPI_OK(mp_copy(&bp->g, g));
+
+            PZ_Unlock(blindingParamsList.lock);
+            return SECSuccess;
+#else
+            if (--(bp->counter) > 0) {
                 /* Found a match and there are still remaining uses left */
                 /* Return the parameters */
                 CHECK_MPI_OK(mp_copy(&bp->f, f));
@@ -1282,6 +1357,7 @@ get_blinding_params(RSAPrivateKey *key, mp_int *n, unsigned int modLen,
             }
             PZ_Unlock(blindingParamsList.lock);
             return SECSuccess;
+#endif
         }
         /* We did not find a usable set of blinding params.  Can we make one? */
         /* Find a free bp struct. */
@@ -1380,6 +1456,10 @@ rsa_PrivateKeyOp(RSAPrivateKey *key,
     }
     /* check input out of range (needs to be in range [0..n-1]) */
     modLen = rsa_modulusLen(&key->modulus);
+    if (modLen == 0) {
+        PORT_SetError(SEC_ERROR_INVALID_ARGS);
+        return SECFailure;
+    }
     offset = (key->modulus.data[0] == 0) ? 1 : 0; /* may be leading 0 */
     if (memcmp(input, key->modulus.data + offset, modLen) >= 0) {
         PORT_SetError(SEC_ERROR_INVALID_ARGS);

@@ -7,9 +7,7 @@
  * Test that WS messages can be navigated between using the keyboard.
  */
 
-add_task(async function() {
-  await pushPref("devtools.netmonitor.features.webSockets", true);
-
+add_task(async function () {
   const { tab, monitor } = await initNetMonitor(WS_PAGE_URL, {
     requestCount: 1,
   });

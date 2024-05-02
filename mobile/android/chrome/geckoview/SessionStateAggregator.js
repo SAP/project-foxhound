@@ -3,26 +3,22 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+/* eslint-env mozilla/frame-script */
+
 "use strict";
 
-const { GeckoViewChildModule } = ChromeUtils.import(
-  "resource://gre/modules/GeckoViewChildModule.jsm"
+const { GeckoViewChildModule } = ChromeUtils.importESModule(
+  "resource://gre/modules/GeckoViewChildModule.sys.mjs"
 );
-// TODO: Bug 1692217
-/* eslint-disable mozilla/reject-chromeutils-import-params */
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm", this);
-ChromeUtils.import("resource://gre/modules/Timer.jsm", this);
-const { Services } = ChromeUtils.import(
-  "resource://gre/modules/Services.jsm",
-  this
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-/* eslint-enable mozilla/reject-chromeutils-import-params */
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "SessionHistory",
-  "resource://gre/modules/sessionstore/SessionHistory.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  SessionHistory: "resource://gre/modules/sessionstore/SessionHistory.sys.mjs",
+  clearTimeout: "resource://gre/modules/Timer.sys.mjs",
+  setTimeoutWithTarget: "resource://gre/modules/Timer.sys.mjs",
+});
 
 const NO_INDEX = Number.MAX_SAFE_INTEGER;
 const LAST_INDEX = Number.MAX_SAFE_INTEGER - 1;
@@ -33,6 +29,7 @@ const DEFAULT_INTERVAL_MS = 1500;
 const TIMEOUT_DISABLED_PREF = "browser.sessionstore.debug.no_auto_updates";
 
 const PREF_INTERVAL = "browser.sessionstore.interval";
+const PREF_SESSION_COLLECTION = "browser.sessionstore.platform_collection";
 
 class Handler {
   constructor(store) {
@@ -162,8 +159,9 @@ class SessionHistoryListener extends Handler {
   }
 
   uninit() {
-    const sessionHistory = this.mm.docShell.QueryInterface(Ci.nsIWebNavigation)
-      .sessionHistory;
+    const sessionHistory = this.mm.docShell.QueryInterface(
+      Ci.nsIWebNavigation
+    ).sessionHistory;
     if (sessionHistory) {
       sessionHistory.legacySHistory.removeSHistoryListener(this);
     }
@@ -604,12 +602,17 @@ class SessionStateAggregator extends GeckoViewChildModule {
     this.stateChangeNotifier = new StateChangeNotifier(this);
 
     this.handlers = [
-      new FormDataListener(this),
       new SessionHistoryListener(this),
-      new ScrollPositionListener(this),
       this.stateChangeNotifier,
       this.messageQueue,
     ];
+
+    if (!Services.prefs.getBoolPref(PREF_SESSION_COLLECTION, false)) {
+      this.handlers.push(
+        new FormDataListener(this),
+        new ScrollPositionListener(this)
+      );
+    }
 
     this.messageManager.addMessageListener("GeckoView:FlushSessionState", this);
   }

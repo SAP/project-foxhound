@@ -6,8 +6,12 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "IPCClientCertsParent.h"
+#include "ScopedNSSTypes.h"
+#include "nsNetCID.h"
+#include "nsNSSComponent.h"
+#include "nsNSSIOLayer.h"
 
-#include "mozilla/ipc/BackgroundParent.h"
+#include "mozilla/SyncRunnable.h"
 
 namespace mozilla::psm {
 
@@ -19,7 +23,19 @@ IPCClientCertsParent::IPCClientCertsParent() = default;
 // private keys (because these are potential client certificates).
 mozilla::ipc::IPCResult IPCClientCertsParent::RecvFindObjects(
     nsTArray<IPCClientCertObject>* aObjects) {
-  UniqueCERTCertList certList(psm::FindClientCertificatesWithPrivateKeys());
+  nsCOMPtr<nsIEventTarget> socketThread(
+      do_GetService(NS_SOCKETTRANSPORTSERVICE_CONTRACTID));
+  if (!socketThread) {
+    return IPC_OK();
+  }
+  // Look for client certificates on the socket thread.
+  UniqueCERTCertList certList;
+  mozilla::SyncRunnable::DispatchToThread(
+      socketThread, NS_NewRunnableFunction(
+                        "IPCClientCertsParent::RecvFindObjects", [&certList]() {
+                          certList =
+                              psm::FindClientCertificatesWithPrivateKeys();
+                        }));
   if (!certList) {
     return IPC_OK();
   }
@@ -65,8 +81,8 @@ mozilla::ipc::IPCResult IPCClientCertsParent::RecvFindObjects(
 
 // When the IPC client certs module needs to sign data using a key managed by
 // the parent process, it will cause this function to be called in the parent
-// process. The parent process needs to find the key corresponding to the given
-// certificate and sign the given data with the given parameters.
+// process. The parent process needs to find the key corresponding to the
+// given certificate and sign the given data with the given parameters.
 mozilla::ipc::IPCResult IPCClientCertsParent::RecvSign(ByteArray aCert,
                                                        ByteArray aData,
                                                        ByteArray aParams,

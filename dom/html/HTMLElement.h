@@ -13,19 +13,25 @@ namespace mozilla::dom {
 
 class HTMLElement final : public nsGenericHTMLFormElement {
  public:
-  explicit HTMLElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
+  explicit HTMLElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo,
+                       FromParser aFromParser = NOT_FROM_PARSER);
 
   // nsISupports
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(HTMLElement,
                                            nsGenericHTMLFormElement)
 
+  // EventTarget
+  void GetEventTargetParent(EventChainPreVisitor& aVisitor) override;
+
   // nsINode
   nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
+  nsINode* GetScopeChainParent() const override;
 
   // nsIContent
   nsresult BindToTree(BindContext&, nsINode& aParent) override;
   void UnbindFromTree(bool aNullParent = true) override;
+  void DoneCreatingElement() override;
 
   // Element
   void SetCustomElementDefinition(
@@ -36,13 +42,20 @@ class HTMLElement final : public nsGenericHTMLFormElement {
   // https://html.spec.whatwg.org/multipage/custom-elements.html#dom-attachinternals
   already_AddRefed<mozilla::dom::ElementInternals> AttachInternals(
       ErrorResult& aRv) override;
+  bool IsDisabledForEvents(WidgetEvent* aEvent) override;
 
   // nsGenericHTMLFormElement
   bool IsFormAssociatedElement() const override;
   void AfterClearForm(bool aUnbindOrDelete) override;
   void FieldSetDisabledChanged(bool aNotify) override;
+  void SaveState() override;
+  void UpdateValidityElementStates(bool aNotify) final;
 
   void UpdateFormOwner();
+
+  void MaybeRestoreFormAssociatedCustomElementState();
+
+  void InhibitRestoration(bool aShouldInhibit);
 
  protected:
   virtual ~HTMLElement() = default;
@@ -51,11 +64,10 @@ class HTMLElement final : public nsGenericHTMLFormElement {
                      JS::Handle<JSObject*> aGivenProto) override;
 
   // Element
-  nsresult AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
-                        const nsAttrValue* aValue, const nsAttrValue* aOldValue,
-                        nsIPrincipal* aMaybeScriptedPrincipal,
-                        bool aNotify) override;
-  EventStates IntrinsicState() const override;
+  void AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
+                    const nsAttrValue* aValue, const nsAttrValue* aOldValue,
+                    nsIPrincipal* aMaybeScriptedPrincipal,
+                    bool aNotify) override;
 
   // nsGenericHTMLFormElement
   void SetFormInternal(HTMLFormElement* aForm, bool aBindToTree) override;
@@ -70,6 +82,9 @@ class HTMLElement final : public nsGenericHTMLFormElement {
   void UpdateBarredFromConstraintValidation();
 
   ElementInternals* GetElementInternals() const;
+
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY
+  void RestoreFormAssociatedCustomElementState();
 };
 
 }  // namespace mozilla::dom

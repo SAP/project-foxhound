@@ -28,7 +28,7 @@ class EventQueue {
   /**
    * Puts name and/or description change events into the queue, if needed.
    */
-  bool PushNameOrDescriptionChange(LocalAccessible* aTarget);
+  bool PushNameOrDescriptionChange(AccEvent* aOrigEvent);
 
   /**
    * Process events from the queue and fires events.
@@ -68,6 +68,9 @@ class EventQueue {
    * SwapElements() on it.
    */
   nsTArray<RefPtr<AccEvent>> mEvents;
+
+  // Pending focus event.
+  RefPtr<AccEvent> mFocusEvent;
 };
 
 }  // namespace a11y

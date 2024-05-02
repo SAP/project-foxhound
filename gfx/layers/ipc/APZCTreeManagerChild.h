@@ -53,6 +53,9 @@ class APZCTreeManagerChild : public IAPZCTreeManager,
       uint64_t aInputBlockId,
       const nsTArray<TouchBehaviorFlags>& aValues) override;
 
+  void SetBrowserGestureResponse(uint64_t aInputBlockId,
+                                 BrowserGestureResponse aResponse) override;
+
   void StartScrollbarDrag(const ScrollableLayerGuid& aGuid,
                           const AsyncDragMetrics& aDragMetrics) override;
 
@@ -64,9 +67,6 @@ class APZCTreeManagerChild : public IAPZCTreeManager,
   void SetLongTapEnabled(bool aTapGestureEnabled) override;
 
   APZInputBridge* InputBridge() override;
-
-  void AddInputBlockCallback(uint64_t aInputBlockId,
-                             InputBlockCallback&& aCallback) override;
 
   void AddIPDLReference();
   void ReleaseIPDLReference();
@@ -88,8 +88,8 @@ class APZCTreeManagerChild : public IAPZCTreeManager,
   mozilla::ipc::IPCResult RecvCancelAutoscroll(
       const ScrollableLayerGuid::ViewID& aScrollId);
 
-  mozilla::ipc::IPCResult RecvCallInputBlockCallback(
-      uint64_t aInputBlockId, const APZHandledResult& handledResult);
+  mozilla::ipc::IPCResult RecvNotifyScaleGestureComplete(
+      const ScrollableLayerGuid::ViewID& aScrollId, float aScale);
 
   virtual ~APZCTreeManagerChild();
 
@@ -97,10 +97,6 @@ class APZCTreeManagerChild : public IAPZCTreeManager,
   MOZ_NON_OWNING_REF RemoteCompositorSession* mCompositorSession;
   RefPtr<APZInputBridgeChild> mInputBridge;
   bool mIPCOpen;
-
-  using InputBlockCallbackMap =
-      std::unordered_map<uint64_t, InputBlockCallback>;
-  InputBlockCallbackMap mInputBlockCallbacks;
 };
 
 }  // namespace layers

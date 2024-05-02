@@ -2,20 +2,19 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
-import { createThread, createFrame } from "./create";
-import { makePendingLocationId } from "../../utils/breakpoint";
+import { createFrame } from "./create";
+import { makeBreakpointServerLocationId } from "../../utils/breakpoint";
 
 import Reps from "devtools/client/shared/components/reps/index";
 
-let targets;
 let commands;
 let breakpoints;
 
+// The maximal number of stackframes to retrieve when pausing
 const CALL_STACK_PAGE_SIZE = 1000;
 
 function setupCommands(innerCommands) {
   commands = innerCommands;
-  targets = {};
   breakpoints = {};
 }
 
@@ -27,12 +26,23 @@ function currentThreadFront() {
   return currentTarget().threadFront;
 }
 
-function createObjectFront(grip) {
+/**
+ * Create an object front for the passed grip
+ *
+ * @param {Object} grip
+ * @param {Object} frame: An optional frame that will manage the created object front.
+ *                        if not passed, the current thread front will manage the object.
+ * @returns {ObjectFront}
+ */
+function createObjectFront(grip, frame) {
   if (!grip.actor) {
     throw new Error("Actor is missing");
   }
-
-  return commands.client.createObjectFront(grip, currentThreadFront());
+  const threadFront = frame?.thread
+    ? lookupThreadFront(frame.thread)
+    : currentThreadFront();
+  const frameFront = frame ? threadFront.getActorByID(frame.id) : null;
+  return commands.client.createObjectFront(grip, threadFront, frameFront);
 }
 
 async function loadObjectProperties(root, threadActorID) {
@@ -51,18 +61,15 @@ async function loadObjectProperties(root, threadActorID) {
 
 function releaseActor(actor) {
   if (!actor) {
-    return;
+    return Promise.resolve();
   }
   const objFront = commands.client.getFrontByID(actor);
 
-  if (objFront) {
-    return objFront.release().catch(() => {});
+  if (!objFront) {
+    return Promise.resolve();
   }
-}
 
-// Get a copy of the current targets.
-function getTargetsMap() {
-  return Object.assign({}, targets);
+  return objFront.release().catch(() => {});
 }
 
 function lookupTarget(thread) {
@@ -70,12 +77,10 @@ function lookupTarget(thread) {
     return currentTarget();
   }
 
-  const targetsMap = getTargetsMap();
-  if (!targetsMap[thread]) {
-    throw new Error(`Unknown thread front: ${thread}`);
-  }
-
-  return targetsMap[thread];
+  const targets = commands.targetCommand.getAllTargets(
+    commands.targetCommand.ALL_TYPES
+  );
+  return targets.find(target => target.targetForm.threadActor == thread);
 }
 
 function lookupThreadFront(thread) {
@@ -84,8 +89,10 @@ function lookupThreadFront(thread) {
 }
 
 function listThreadFronts() {
-  const list = Object.values(getTargetsMap());
-  return list.map(target => target.threadFront).filter(t => !!t);
+  const targets = commands.targetCommand.getAllTargets(
+    commands.targetCommand.ALL_TYPES
+  );
+  return targets.map(target => target.threadFront).filter(front => !!front);
 }
 
 function forEachThread(iteratee) {
@@ -95,13 +102,46 @@ function forEachThread(iteratee) {
   // resolve in FIFO order, and this could result in client and server state
   // going out of sync.
 
-  const promises = [currentThreadFront(), ...listThreadFronts()].map(
+  const promises = listThreadFronts().map(
     // If a thread shuts down while sending the message then it will
     // throw. Ignore these exceptions.
     t => iteratee(t).catch(e => console.log(e))
   );
 
   return Promise.all(promises);
+}
+
+/**
+ * Start JavaScript tracing for all targets.
+ *
+ * @param {String} logMethod
+ *        Where to log the traces. Can be stdout or console.
+ */
+async function startTracing(logMethod) {
+  const targets = commands.targetCommand.getAllTargets(
+    commands.targetCommand.ALL_TYPES
+  );
+  await Promise.all(
+    targets.map(async targetFront => {
+      const tracerFront = await targetFront.getFront("tracer");
+      return tracerFront.startTracing(logMethod);
+    })
+  );
+}
+
+/**
+ * Stop JavaScript tracing for all targets.
+ */
+async function stopTracing() {
+  const targets = commands.targetCommand.getAllTargets(
+    commands.targetCommand.ALL_TYPES
+  );
+  await Promise.all(
+    targets.map(async targetFront => {
+      const tracerFront = await targetFront.getFront("tracer");
+      return tracerFront.stopTracing();
+    })
+  );
 }
 
 function resume(thread, frameId) {
@@ -139,9 +179,11 @@ async function setXHRBreakpoint(path, method) {
   const hasWatcherSupport = commands.targetCommand.hasTargetWatcherSupport();
   if (!hasWatcherSupport) {
     // Without watcher support, forward setXHRBreakpoint to all threads.
-    return forEachThread(thread => thread.setXHRBreakpoint(path, method));
+    await forEachThread(thread => thread.setXHRBreakpoint(path, method));
+    return;
   }
-  const breakpointsFront = await commands.targetCommand.watcherFront.getBreakpointListActor();
+  const breakpointsFront =
+    await commands.targetCommand.watcherFront.getBreakpointListActor();
   await breakpointsFront.setXHRBreakpoint(path, method);
 }
 
@@ -149,9 +191,11 @@ async function removeXHRBreakpoint(path, method) {
   const hasWatcherSupport = commands.targetCommand.hasTargetWatcherSupport();
   if (!hasWatcherSupport) {
     // Without watcher support, forward removeXHRBreakpoint to all threads.
-    return forEachThread(thread => thread.removeXHRBreakpoint(path, method));
+    await forEachThread(thread => thread.removeXHRBreakpoint(path, method));
+    return;
   }
-  const breakpointsFront = await commands.targetCommand.watcherFront.getBreakpointListActor();
+  const breakpointsFront =
+    await commands.targetCommand.watcherFront.getBreakpointListActor();
   await breakpointsFront.removeXHRBreakpoint(path, method);
 }
 
@@ -161,33 +205,39 @@ export function toggleJavaScriptEnabled(enabled) {
   });
 }
 
-function addWatchpoint(object, property, label, watchpointType) {
-  if (currentTarget().getTrait("watchpoints")) {
-    const objectFront = createObjectFront(object);
-    return objectFront.addWatchpoint(property, label, watchpointType);
+async function addWatchpoint(object, property, label, watchpointType) {
+  if (!currentTarget().getTrait("watchpoints")) {
+    return;
   }
+  const objectFront = createObjectFront(object);
+  await objectFront.addWatchpoint(property, label, watchpointType);
 }
 
 async function removeWatchpoint(object, property) {
-  if (currentTarget().getTrait("watchpoints")) {
-    const objectFront = createObjectFront(object);
-    await objectFront.removeWatchpoint(property);
+  if (!currentTarget().getTrait("watchpoints")) {
+    return;
   }
+  const objectFront = createObjectFront(object);
+  await objectFront.removeWatchpoint(property);
 }
 
 function hasBreakpoint(location) {
-  return !!breakpoints[makePendingLocationId(location)];
+  return !!breakpoints[makeBreakpointServerLocationId(location)];
+}
+
+function getServerBreakpointsList() {
+  return Object.values(breakpoints);
 }
 
 async function setBreakpoint(location, options) {
-  const breakpoint = breakpoints[makePendingLocationId(location)];
+  const breakpoint = breakpoints[makeBreakpointServerLocationId(location)];
   if (
     breakpoint &&
     JSON.stringify(breakpoint.options) == JSON.stringify(options)
   ) {
-    return;
+    return null;
   }
-  breakpoints[makePendingLocationId(location)] = { location, options };
+  breakpoints[makeBreakpointServerLocationId(location)] = { location, options };
 
   // Map frontend options to a more restricted subset of what
   // the server supports. For example frontend uses `hidden` attribute
@@ -205,7 +255,8 @@ async function setBreakpoint(location, options) {
       thread.setBreakpoint(location, serverOptions)
     );
   }
-  const breakpointsFront = await commands.targetCommand.watcherFront.getBreakpointListActor();
+  const breakpointsFront =
+    await commands.targetCommand.watcherFront.getBreakpointListActor();
   await breakpointsFront.setBreakpoint(location, serverOptions);
 
   // Call setBreakpoint for threads linked to targets
@@ -218,18 +269,21 @@ async function setBreakpoint(location, options) {
     ) {
       return thread.setBreakpoint(location, serverOptions);
     }
+
+    return Promise.resolve();
   });
 }
 
 async function removeBreakpoint(location) {
-  delete breakpoints[makePendingLocationId(location)];
+  delete breakpoints[makeBreakpointServerLocationId(location)];
 
   const hasWatcherSupport = commands.targetCommand.hasTargetWatcherSupport();
   if (!hasWatcherSupport) {
     // Without watcher support, unconditionally forward removeBreakpoint to all threads.
     return forEachThread(async thread => thread.removeBreakpoint(location));
   }
-  const breakpointsFront = await commands.targetCommand.watcherFront.getBreakpointListActor();
+  const breakpointsFront =
+    await commands.targetCommand.watcherFront.getBreakpointListActor();
   await breakpointsFront.removeBreakpoint(location);
 
   // Call removeBreakpoint for threads linked to targets
@@ -242,6 +296,8 @@ async function removeBreakpoint(location) {
     ) {
       return thread.removeBreakpoint(location);
     }
+
+    return Promise.resolve();
   });
 }
 
@@ -259,6 +315,7 @@ async function evaluate(script, { frameId, threadId } = {}) {
   return commands.scriptCommand.execute(script, {
     frameActor: frameId,
     selectedTargetFront,
+    disableBreaks: true,
   });
 }
 
@@ -308,6 +365,12 @@ async function getFrameScopes(frame) {
   return frameFront.getEnvironment();
 }
 
+async function pauseOnDebuggerStatement(shouldPauseOnDebuggerStatement) {
+  await commands.threadConfigurationCommand.updateConfiguration({
+    shouldPauseOnDebuggerStatement,
+  });
+}
+
 async function pauseOnExceptions(
   shouldPauseOnExceptions,
   shouldPauseOnCaughtExceptions
@@ -319,19 +382,10 @@ async function pauseOnExceptions(
 }
 
 async function blackBox(sourceActor, shouldBlackBox, ranges) {
-  // @backward-compat { version 98 } Introduced the Blackboxing actor
-  //                  The trait can be removed, but as for other code of this module,
-  //                  we still have to support cases where we don't support the Watcher actor at all.
-  //                  For example in the regular non-multiprocess browser toolbox.
-  //                  There, we still have to communicate with each individual source front.
-  //  Once we drop 97 support, we can do:
-  //  const hasWatcherSupport = commands.targetCommand.hasTargetWatcherSupport();
-  //  (Like other method of this module)
-  const hasWatcherSupport = commands.targetCommand.hasTargetWatcherSupport(
-    "blackboxing"
-  );
+  const hasWatcherSupport = commands.targetCommand.hasTargetWatcherSupport();
   if (hasWatcherSupport) {
-    const blackboxingFront = await commands.targetCommand.watcherFront.getBlackboxingActor();
+    const blackboxingFront =
+      await commands.targetCommand.watcherFront.getBlackboxingActor();
     if (shouldBlackBox) {
       await blackboxingFront.blackbox(sourceActor.url, ranges);
     } else {
@@ -370,9 +424,11 @@ async function setSkipPausing(shouldSkip) {
 async function setEventListenerBreakpoints(ids) {
   const hasWatcherSupport = commands.targetCommand.hasTargetWatcherSupport();
   if (!hasWatcherSupport) {
-    return forEachThread(thread => thread.setActiveEventBreakpoints(ids));
+    await forEachThread(thread => thread.setActiveEventBreakpoints(ids));
+    return;
   }
-  const breakpointListFront = await commands.targetCommand.watcherFront.getBreakpointListActor();
+  const breakpointListFront =
+    await commands.targetCommand.watcherFront.getBreakpointListActor();
   await breakpointListFront.setActiveEventBreakpoints(ids);
 }
 
@@ -388,18 +444,6 @@ async function toggleEventLogging(logEventBreakpoints) {
   await commands.threadConfigurationCommand.updateConfiguration({
     logEventBreakpoints,
   });
-}
-
-async function addThread(targetFront) {
-  const threadActorID = targetFront.targetForm.threadActor;
-  if (!targets[threadActorID]) {
-    targets[threadActorID] = targetFront;
-  }
-  return createThread(threadActorID, targetFront);
-}
-
-function removeThread(thread) {
-  delete targets[thread.actor];
 }
 
 function getMainThread() {
@@ -434,6 +478,25 @@ function fetchAncestorFramePositions(index) {
   currentThreadFront().fetchAncestorFramePositions(index);
 }
 
+async function setOverride(url, path) {
+  const hasWatcherSupport = commands.targetCommand.hasTargetWatcherSupport();
+  if (hasWatcherSupport) {
+    const networkFront =
+      await commands.targetCommand.watcherFront.getNetworkParentActor();
+    return networkFront.override(url, path);
+  }
+  return null;
+}
+
+async function removeOverride(url) {
+  const hasWatcherSupport = commands.targetCommand.hasTargetWatcherSupport();
+  if (hasWatcherSupport) {
+    const networkFront =
+      await commands.targetCommand.watcherFront.getNetworkParentActor();
+    networkFront.removeOverride(url);
+  }
+}
+
 const clientCommands = {
   autocomplete,
   blackBox,
@@ -441,6 +504,8 @@ const clientCommands = {
   loadObjectProperties,
   releaseActor,
   pauseGrip,
+  startTracing,
+  stopTracing,
   resume,
   stepIn,
   stepOut,
@@ -451,6 +516,7 @@ const clientCommands = {
   getSourceActorBreakpointPositions,
   getSourceActorBreakableLines,
   hasBreakpoint,
+  getServerBreakpointsList,
   setBreakpoint,
   setXHRBreakpoint,
   removeXHRBreakpoint,
@@ -462,18 +528,18 @@ const clientCommands = {
   getProperties,
   getFrameScopes,
   getFrames,
+  pauseOnDebuggerStatement,
   pauseOnExceptions,
   toggleEventLogging,
-  addThread,
-  removeThread,
   getMainThread,
   setSkipPausing,
   setEventListenerBreakpoints,
   getEventListenerBreakpointTypes,
-  lookupTarget,
   getFrontByID,
   fetchAncestorFramePositions,
   toggleJavaScriptEnabled,
+  setOverride,
+  removeOverride,
 };
 
 export { setupCommands, clientCommands };

@@ -17,6 +17,8 @@
 #include "nsCRT.h"
 #include "nsIContentSerializer.h"
 #include "nsIDocumentEncoder.h"
+#include "nsINode.h"
+#include "nsIContentInlines.h"
 #include "nsComponentManagerUtils.h"
 #include "nsIOutputStream.h"
 #include "nsRange.h"
@@ -1554,7 +1556,7 @@ nsHTMLCopyEncoder::Init(Document* aDocument, const nsAString& aMimeType,
   mIsCopying = true;
   mDocument = aDocument;
 
-  // Hack, hack! Traditionally, the caller passes text/unicode, which is
+  // Hack, hack! Traditionally, the caller passes text/plain, which is
   // treated as "guess text/html or text/plain" in this context. (It has a
   // different meaning in other contexts. Sigh.) From now on, "text/plain"
   // means forcing text/plain instead of guessing.
@@ -1651,8 +1653,8 @@ nsHTMLCopyEncoder::SetSelection(Selection* aSelection) {
     ErrorResult result;
     RefPtr<Selection> selection(mEncodingScope.mSelection);
     RefPtr<Document> document(mDocument);
-    selection->AddRangeAndSelectFramesAndNotifyListeners(*myRange, document,
-                                                         result);
+    selection->AddRangeAndSelectFramesAndNotifyListenersInternal(
+        *myRange, document, result);
     rv = result.StealNSResult();
     NS_ENSURE_SUCCESS(rv, rv);
   }

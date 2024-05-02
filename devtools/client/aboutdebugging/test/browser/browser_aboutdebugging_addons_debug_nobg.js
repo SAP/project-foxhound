@@ -7,8 +7,8 @@ Services.scriptloader.loadSubScript(CHROME_URL_ROOT + "helper-addons.js", this);
 
 // There are shutdown issues for which multiple rejections are left uncaught.
 // See bug 1018184 for resolving these issues.
-const { PromiseTestUtils } = ChromeUtils.import(
-  "resource://testing-common/PromiseTestUtils.jsm"
+const { PromiseTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/PromiseTestUtils.sys.mjs"
 );
 PromiseTestUtils.allowMatchingRejectionsGlobally(/File closed/);
 
@@ -37,7 +37,7 @@ add_task(async function testWebExtensionsToolboxNoBackgroundPage() {
   );
 
   info("Open a toolbox to debug the addon");
-  const { devtoolsTab, devtoolsWindow } = await openAboutDevtoolsToolbox(
+  const { devtoolsWindow } = await openAboutDevtoolsToolbox(
     document,
     tab,
     window,
@@ -45,9 +45,11 @@ add_task(async function testWebExtensionsToolboxNoBackgroundPage() {
   );
   const toolbox = getToolbox(devtoolsWindow);
 
+  ok(
+    toolbox.commands.descriptorFront.isWebExtensionDescriptor,
+    "Toolbox is debugging an addon"
+  );
   const targetName = toolbox.target.name;
-  const isAddonTarget = toolbox.target.isAddon;
-  ok(isAddonTarget, "Toolbox target is an addon");
   is(targetName, ADDON_NOBG_NAME, "Toolbox has the expected target");
 
   const inspector = await toolbox.selectTool("inspector");
@@ -70,7 +72,7 @@ add_task(async function testWebExtensionsToolboxNoBackgroundPage() {
     "nodeActor has the expected inlineTextChild value"
   );
 
-  await closeAboutDevtoolsToolbox(document, devtoolsTab, window);
+  await closeWebExtAboutDevtoolsToolbox(devtoolsWindow, window);
   await removeTemporaryExtension(ADDON_NOBG_NAME, document);
   await removeTab(tab);
 });

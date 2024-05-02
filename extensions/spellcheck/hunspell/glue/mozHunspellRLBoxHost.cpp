@@ -8,6 +8,7 @@
 
 #include "mozHunspellRLBoxHost.h"
 #include "mozilla/DebugOnly.h"
+#include "mozilla/Try.h"
 #include "nsContentUtils.h"
 #include "nsILoadInfo.h"
 #include "nsNetUtil.h"
@@ -39,7 +40,7 @@ Result<Ok, nsresult> mozHunspellFileMgrHost::Open(
   return Ok();
 }
 
-Result<Ok, nsresult> mozHunspellFileMgrHost::ReadLine(nsCString& aLine) {
+Result<Ok, nsresult> mozHunspellFileMgrHost::ReadLine(nsACString& aLine) {
   if (!mStream) {
     return Err(NS_ERROR_NOT_INITIALIZED);
   }
@@ -67,21 +68,14 @@ Result<int64_t, nsresult> mozHunspellFileMgrHost::GetSize(
   return ret;
 }
 
-bool mozHunspellFileMgrHost::GetLine(std::string& aResult) {
-  nsAutoCString line;
-  auto res = ReadLine(line);
-  if (res.isErr()) {
-    return false;
-  }
-
-  aResult.assign(line.BeginReading(), line.Length());
-  return true;
+bool mozHunspellFileMgrHost::GetLine(nsACString& aResult) {
+  return !ReadLine(aResult).isErr();
 }
 
 /* static */
 uint32_t mozHunspellCallbacks::sCurrentFreshId = 0;
 /* static */
-mozilla::detail::StaticRWLock mozHunspellCallbacks::sFileMgrMapLock;
+mozilla::StaticRWLock mozHunspellCallbacks::sFileMgrMapLock;
 /* static */
 std::map<uint32_t, std::unique_ptr<mozHunspellFileMgrHost>>
     mozHunspellCallbacks::sFileMgrMap;
@@ -90,13 +84,13 @@ std::set<nsCString> mozHunspellCallbacks::sFileMgrAllowList;
 
 /* static */
 void mozHunspellCallbacks::AllowFile(const nsCString& aFilename) {
-  mozilla::detail::StaticAutoWriteLock lock(sFileMgrMapLock);
+  mozilla::StaticAutoWriteLock lock(sFileMgrMapLock);
   sFileMgrAllowList.insert(aFilename);
 }
 
 /* static */
 void mozHunspellCallbacks::Clear() {
-  mozilla::detail::StaticAutoWriteLock lock(sFileMgrMapLock);
+  mozilla::StaticAutoWriteLock lock(sFileMgrMapLock);
   sCurrentFreshId = 0;
   sFileMgrMap.clear();
   sFileMgrAllowList.clear();
@@ -106,7 +100,7 @@ void mozHunspellCallbacks::Clear() {
 tainted_hunspell<uint32_t> mozHunspellCallbacks::CreateFilemgr(
     rlbox_sandbox_hunspell& aSandbox,
     tainted_hunspell<const char*> t_aFilename) {
-  mozilla::detail::StaticAutoWriteLock lock(sFileMgrMapLock);
+  mozilla::StaticAutoWriteLock lock(sFileMgrMapLock);
 
   return t_aFilename.copy_and_verify_string(
       [&](std::unique_ptr<char[]> aFilename) {
@@ -146,7 +140,7 @@ uint32_t mozHunspellCallbacks::GetFreshId() {
 /* static */
 mozHunspellFileMgrHost& mozHunspellCallbacks::GetMozHunspellFileMgrHost(
     tainted_hunspell<uint32_t> t_aFd) {
-  mozilla::detail::StaticAutoReadLock lock(sFileMgrMapLock);
+  mozilla::StaticAutoReadLock lock(sFileMgrMapLock);
   uint32_t aFd = t_aFd.copy_and_verify([](uint32_t aFd) { return aFd; });
   auto iter = sFileMgrMap.find(aFd);
   MOZ_RELEASE_ASSERT(iter != sFileMgrMap.end());
@@ -159,20 +153,20 @@ tainted_hunspell<bool> mozHunspellCallbacks::GetLine(
     tainted_hunspell<char**> t_aLinePtr) {
   mozHunspellFileMgrHost& inst =
       mozHunspellCallbacks::GetMozHunspellFileMgrHost(t_aFd);
-  std::string line;
+  nsAutoCString line;
   bool ok = inst.GetLine(line);
   // If the getline fails, return a null which is "graceful" failure
   if (ok) {
     // Copy the line into the sandbox. This memory is eventually freed by
     // hunspell.
-    size_t size = line.size() + 1;
+    size_t size = line.Length() + 1;
     tainted_hunspell<char*> t_line = aSandbox.malloc_in_sandbox<char>(size);
 
     if (t_line == nullptr) {
       // If malloc fails, we should go to "graceful" failure path
       ok = false;
     } else {
-      rlbox::memcpy(aSandbox, t_line, line.c_str(), size);
+      rlbox::memcpy(aSandbox, t_line, line.get(), size);
     }
     *t_aLinePtr = t_line;
   } else {
@@ -193,7 +187,7 @@ tainted_hunspell<int> mozHunspellCallbacks::GetLineNum(
 /* static */
 void mozHunspellCallbacks::DestructFilemgr(rlbox_sandbox_hunspell& aSandbox,
                                            tainted_hunspell<uint32_t> t_aFd) {
-  mozilla::detail::StaticAutoWriteLock lock(sFileMgrMapLock);
+  mozilla::StaticAutoWriteLock lock(sFileMgrMapLock);
   uint32_t aFd = t_aFd.copy_and_verify([](uint32_t aFd) { return aFd; });
 
   auto iter = sFileMgrMap.find(aFd);

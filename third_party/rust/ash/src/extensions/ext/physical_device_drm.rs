@@ -6,6 +6,7 @@ use std::ffi::CStr;
 pub struct PhysicalDeviceDrm;
 
 impl PhysicalDeviceDrm {
+    #[inline]
     pub unsafe fn get_properties(
         instance: &Instance,
         pdevice: vk::PhysicalDevice,
@@ -18,7 +19,8 @@ impl PhysicalDeviceDrm {
         props_drm
     }
 
-    pub fn name() -> &'static CStr {
+    #[inline]
+    pub const fn name() -> &'static CStr {
         vk::ExtPhysicalDeviceDrmFn::name()
     }
 }

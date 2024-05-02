@@ -36,21 +36,48 @@ third-party-tag-background = Background
     .title =
         This module did not block the application because it was loaded
         in the background.
-third-party-unsigned-icon =
+third-party-icon-unsigned =
     .title = This module is not signed
-third-party-warning-icon =
+    .alt = This module is not signed
+third-party-icon-warning =
     .title = { -brand-short-name } crashed in code from this module
+    .alt = { -brand-short-name } crashed in code from this module
 
 third-party-status-loaded = Loaded
 third-party-status-blocked = Blocked
 third-party-status-redirected = Redirected
 
 third-party-button-copy-to-clipboard = Copy raw data to clipboard
+third-party-loading-data =
+    .alt = Loading system information…
+    .title = Loading system information…
 third-party-button-reload = Reload with system info
     .title = Reload with system information
 third-party-button-open =
     .title = Open file location…
+third-party-button-to-block-module = Block this module
+    .title = Block this module
+    .aria-label = Block this module
+third-party-button-to-unblock-module = Unblock this module
+    .title = Currently blocked. Click to unblock it.
+    .aria-label = Currently blocked. Click to unblock it.
+third-party-button-to-unblock-module-disabled = Unblock this module (blocklist currently disabled)
+    .title =
+        Currently marked as blocked, although the blocklist is disabled for this run
+        of { -brand-short-name }. Click to unblock it.
+    .aria-label =
+        Currently marked as blocked, although the blocklist is disabled for this run
+        of { -brand-short-name }. Click to unblock it.
 third-party-button-expand =
     .title = Show detailed information
 third-party-button-collapse =
     .title = Collapse detailed information
+third-party-blocking-requires-restart =
+    To block a third-party module, { -brand-short-name } must restart.
+third-party-should-restart-title = Restart { -brand-short-name }
+third-party-restart-now = Restart now
+third-party-restart-later = Restart later
+
+third-party-blocked-by-builtin =
+    .title = Blocked by { -brand-short-name }
+    .alt = Blocked by { -brand-short-name }

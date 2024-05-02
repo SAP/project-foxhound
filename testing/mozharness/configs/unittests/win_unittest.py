@@ -2,7 +2,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import
 import os
 import platform
 import sys
@@ -15,9 +14,11 @@ NODEJS_PATH = None
 if "MOZ_FETCHES_DIR" in os.environ:
     NODEJS_PATH = os.path.join(os.environ["MOZ_FETCHES_DIR"], "node/node.exe")
 
-PYWIN32 = "pypiwin32==219"
-if sys.version_info > (3, 0):
-    PYWIN32 = "pywin32==300"
+REQUIRE_GPU = False
+if "REQUIRE_GPU" in os.environ:
+    REQUIRE_GPU = os.environ["REQUIRE_GPU"] == "1"
+
+PYWIN32 = "pywin32==306"
 
 XPCSHELL_NAME = "xpcshell.exe"
 EXE_SUFFIX = ".exe"
@@ -30,8 +31,8 @@ DESKTOP_VISUALFX_THEME = {
     "Custom": 3,
 }.get("Best appearance")
 TASKBAR_AUTOHIDE_REG_PATH = {
-    "Windows 7": "HKCU:SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\StuckRects2",
-    "Windows 10": "HKCU:SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\StuckRects3",
+    "Windows 7": r"HKCU:SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\StuckRects2",
+    "Windows 10": r"HKCU:SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\StuckRects3",
 }.get("{} {}".format(platform.system(), platform.release()))
 #####
 config = {
@@ -97,7 +98,6 @@ config = {
                 "--symbols-path=%(symbols_path)s",
                 "--certificate-path=tests/certs",
                 "--quiet",
-                "--log-raw=%(raw_log_file)s",
                 "--log-errorsummary=%(error_summary_file)s",
                 "--screenshot-on-fail",
                 "--cleanup-crashes",
@@ -112,7 +112,6 @@ config = {
                 "--utility-path=tests/bin",
                 "--extra-profile-file=tests/bin/plugins",
                 "--symbols-path=%(symbols_path)s",
-                "--log-raw=%(raw_log_file)s",
                 "--log-errorsummary=%(error_summary_file)s",
                 "--cleanup-crashes",
                 "--marionette-startup-timeout=180",
@@ -125,10 +124,9 @@ config = {
             "options": [
                 "--self-test",
                 "--symbols-path=%(symbols_path)s",
-                "--test-plugin-path=%(test_plugin_path)s",
-                "--log-raw=%(raw_log_file)s",
                 "--log-errorsummary=%(error_summary_file)s",
                 "--utility-path=tests/bin",
+                "--manifest=tests/xpcshell/tests/xpcshell.ini",
             ],
             "run_filename": "runxpcshelltests.py",
             "testsdir": "xpcshell",
@@ -167,6 +165,8 @@ config = {
             "--subsuite=devtools",
             "--chunk-by-runtime",
         ],
+        "mochitest-browser-a11y": ["--flavor=browser", "--subsuite=a11y"],
+        "mochitest-browser-media": ["--flavor=browser", "--subsuite=media-bc"],
         "mochitest-a11y": ["--flavor=a11y", "--disable-e10s"],
         "mochitest-remote": ["--flavor=browser", "--subsuite=remote"],
     },
@@ -201,7 +201,14 @@ config = {
         "xpcshell": {
             "options": [
                 "--xpcshell=%(abs_app_dir)s/" + XPCSHELL_NAME,
-                "--manifest=tests/xpcshell/tests/xpcshell.ini",
+            ],
+            "tests": [],
+        },
+        "xpcshell-msix": {
+            "options": [
+                "--app-binary=%(binary_path)s",
+                "--app-path=%(install_dir)s",
+                "--xre-path=%(install_dir)s",
             ],
             "tests": [],
         },
@@ -238,6 +245,11 @@ config = {
                     "external_tools",
                     "machine-configuration.json",
                 ),
+                "--platform=win10-vm"
+                if REQUIRE_GPU and (platform.uname().version == "10.0.19045")
+                else "--platform=win11-hw"
+                if REQUIRE_GPU and (platform.uname().version == "10.0.22621")
+                else "--platform=win7",
             ],
             "architectures": ["32bit", "64bit"],
             "halt_on_failure": True,
@@ -248,23 +260,34 @@ config = {
             "cmd": [
                 "powershell",
                 "-command",
-                "\"&{$p='HKCU:SOFTWARE\Microsoft\Windows\CurrentVersion\\Notifications\Settings\Windows.SystemToast.SecurityAndMaintenance';if(!(Test-Path -Path $p)){&New-Item -Path $p -Force}&Set-ItemProperty -Path $p -Name Enabled -Value 0}\"",  # noqa
+                "\"&{$p='HKCU:SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Notifications\\Settings\\Windows.SystemToast.SecurityAndMaintenance';if(!(Test-Path -Path $p)){&New-Item -Path $p -Force}&Set-ItemProperty -Path $p -Name Enabled -Value 0}\"",  # noqa
             ],
             "architectures": ["32bit", "64bit"],
             "halt_on_failure": True,
-            "enabled": (platform.release() == 10),
+            "enabled": (platform.release() == "10"),
         },
         {
             "name": "set windows VisualFX",
             "cmd": [
                 "powershell",
                 "-command",
-                "\"&{{&Set-ItemProperty -Path 'HKCU:Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects' -Name VisualFXSetting -Value {}}}\"".format(
+                "\"&{{&Set-ItemProperty -Path 'HKCU:Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\VisualEffects' -Name VisualFXSetting -Value {}}}\"".format(
                     DESKTOP_VISUALFX_THEME
                 ),
             ],
             "architectures": ["32bit", "64bit"],
             "halt_on_failure": True,
+            "enabled": True,
+        },
+        {
+            "name": "create scrollbars always show key",
+            "cmd": [
+                "powershell",
+                "-command",
+                "New-ItemProperty -Path 'HKCU:\\Control Panel\\Accessibility' -Name 'DynamicScrollbars' -Value 0",
+            ],
+            "architectures": ["32bit", "64bit"],
+            "halt_on_failure": False,
             "enabled": True,
         },
         {
@@ -296,7 +319,7 @@ config = {
             "cmd": [
                 "powershell",
                 "-command",
-                "if (test-path ${env:ProgramFiles(x86)}\Google\Chrome\Application\chrome.exe) {start chrome; Start-Sleep -s 30; taskkill /F /IM chrome.exe /T}",
+                "if (test-path ${env:ProgramFiles(x86)}\\Google\\Chrome\\Application\\chrome.exe) {start chrome; Start-Sleep -s 30; taskkill /F /IM chrome.exe /T}",
             ],
             "architectures": ["32bit", "64bit"],
             "halt_on_failure": True,

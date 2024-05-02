@@ -21,6 +21,7 @@
 #include "modules/rtp_rtcp/source/forward_error_correction_internal.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/random.h"
+#include "test/gmock.h"
 #include "test/gtest.h"
 
 namespace webrtc {
@@ -29,6 +30,7 @@ namespace {
 
 using Packet = ForwardErrorCorrection::Packet;
 using ReceivedFecPacket = ForwardErrorCorrection::ReceivedFecPacket;
+using ::testing::SizeIs;
 
 constexpr uint32_t kMediaSsrc = 1254983;
 constexpr uint16_t kMediaStartSeqNum = 825;
@@ -53,11 +55,15 @@ std::unique_ptr<Packet> WriteHeader(const uint8_t* packet_mask,
   UlpfecHeaderWriter writer;
   std::unique_ptr<Packet> written_packet(new Packet());
   written_packet->data.SetSize(kMediaPacketLength);
+  uint8_t* data = written_packet->data.MutableData();
   for (size_t i = 0; i < written_packet->data.size(); ++i) {
-    written_packet->data[i] = i;  // Actual content doesn't matter.
+    data[i] = i;  // Actual content doesn't matter.
   }
-  writer.FinalizeFecHeader(kMediaSsrc, kMediaStartSeqNum, packet_mask,
-                           packet_mask_size, written_packet.get());
+  const FecHeaderWriter::ProtectedStream protected_streams[] = {
+      {.ssrc = kMediaSsrc,
+       .seq_num_base = kMediaStartSeqNum,
+       .packet_mask = {packet_mask, packet_mask_size}}};
+  writer.FinalizeFecHeader(protected_streams, *written_packet);
   return written_packet;
 }
 
@@ -78,15 +84,19 @@ void VerifyHeaders(size_t expected_fec_header_size,
                    const ReceivedFecPacket& read_packet) {
   EXPECT_EQ(kMediaSsrc, read_packet.ssrc);
   EXPECT_EQ(expected_fec_header_size, read_packet.fec_header_size);
-  EXPECT_EQ(kMediaSsrc, read_packet.protected_ssrc);
-  EXPECT_EQ(kMediaStartSeqNum, read_packet.seq_num_base);
-  EXPECT_EQ(kUlpfecPacketMaskOffset, read_packet.packet_mask_offset);
-  ASSERT_EQ(expected_packet_mask_size, read_packet.packet_mask_size);
+  ASSERT_THAT(read_packet.protected_streams, SizeIs(1));
+  EXPECT_EQ(read_packet.protected_streams[0].ssrc, kMediaSsrc);
+  EXPECT_EQ(read_packet.protected_streams[0].seq_num_base, kMediaStartSeqNum);
+  EXPECT_EQ(read_packet.protected_streams[0].packet_mask_offset,
+            kUlpfecPacketMaskOffset);
+  ASSERT_EQ(read_packet.protected_streams[0].packet_mask_size,
+            expected_packet_mask_size);
   EXPECT_EQ(written_packet.data.size() - expected_fec_header_size,
             read_packet.protection_length);
   EXPECT_EQ(0, memcmp(expected_packet_mask,
-                      &read_packet.pkt->data[read_packet.packet_mask_offset],
-                      read_packet.packet_mask_size));
+                      read_packet.pkt->data.MutableData() +
+                          read_packet.protected_streams[0].packet_mask_offset,
+                      read_packet.protected_streams[0].packet_mask_size));
   // Verify that the call to ReadFecHeader did not tamper with the payload.
   EXPECT_EQ(0, memcmp(written_packet.data.data() + expected_fec_header_size,
                       read_packet.pkt->data.cdata() + expected_fec_header_size,
@@ -112,9 +122,9 @@ TEST(UlpfecHeaderReaderTest, ReadsSmallHeader) {
   EXPECT_TRUE(reader.ReadFecHeader(&read_packet));
 
   EXPECT_EQ(14U, read_packet.fec_header_size);
-  EXPECT_EQ(0xabcdU, read_packet.seq_num_base);
-  EXPECT_EQ(12U, read_packet.packet_mask_offset);
-  EXPECT_EQ(2U, read_packet.packet_mask_size);
+  EXPECT_EQ(0xabcdU, read_packet.protected_streams[0].seq_num_base);
+  EXPECT_EQ(12U, read_packet.protected_streams[0].packet_mask_offset);
+  EXPECT_EQ(2U, read_packet.protected_streams[0].packet_mask_size);
   EXPECT_EQ(0x1122U, read_packet.protection_length);
 }
 
@@ -136,9 +146,9 @@ TEST(UlpfecHeaderReaderTest, ReadsLargeHeader) {
   EXPECT_TRUE(reader.ReadFecHeader(&read_packet));
 
   EXPECT_EQ(18U, read_packet.fec_header_size);
-  EXPECT_EQ(0xabcdU, read_packet.seq_num_base);
-  EXPECT_EQ(12U, read_packet.packet_mask_offset);
-  EXPECT_EQ(6U, read_packet.packet_mask_size);
+  EXPECT_EQ(0xabcdU, read_packet.protected_streams[0].seq_num_base);
+  EXPECT_EQ(12U, read_packet.protected_streams[0].packet_mask_offset);
+  EXPECT_EQ(6U, read_packet.protected_streams[0].packet_mask_size);
   EXPECT_EQ(0x1122U, read_packet.protection_length);
 }
 
@@ -147,13 +157,17 @@ TEST(UlpfecHeaderWriterTest, FinalizesSmallHeader) {
   auto packet_mask = GeneratePacketMask(packet_mask_size, 0xabcd);
   Packet written_packet;
   written_packet.data.SetSize(kMediaPacketLength);
+  uint8_t* data = written_packet.data.MutableData();
   for (size_t i = 0; i < written_packet.data.size(); ++i) {
-    written_packet.data[i] = i;
+    data[i] = i;
   }
 
   UlpfecHeaderWriter writer;
-  writer.FinalizeFecHeader(kMediaSsrc, kMediaStartSeqNum, packet_mask.get(),
-                           packet_mask_size, &written_packet);
+  const FecHeaderWriter::ProtectedStream protected_streams[] = {
+      {.ssrc = kMediaSsrc,
+       .seq_num_base = kMediaStartSeqNum,
+       .packet_mask = {packet_mask.get(), packet_mask_size}}};
+  writer.FinalizeFecHeader(protected_streams, written_packet);
 
   const uint8_t* packet = written_packet.data.cdata();
   EXPECT_EQ(0x00, packet[0] & 0x80);  // E bit.
@@ -171,13 +185,17 @@ TEST(UlpfecHeaderWriterTest, FinalizesLargeHeader) {
   auto packet_mask = GeneratePacketMask(packet_mask_size, 0xabcd);
   Packet written_packet;
   written_packet.data.SetSize(kMediaPacketLength);
+  uint8_t* data = written_packet.data.MutableData();
   for (size_t i = 0; i < written_packet.data.size(); ++i) {
-    written_packet.data[i] = i;
+    data[i] = i;
   }
 
   UlpfecHeaderWriter writer;
-  writer.FinalizeFecHeader(kMediaSsrc, kMediaStartSeqNum, packet_mask.get(),
-                           packet_mask_size, &written_packet);
+  const FecHeaderWriter::ProtectedStream protected_streams[] = {
+      {.ssrc = kMediaSsrc,
+       .seq_num_base = kMediaStartSeqNum,
+       .packet_mask = {packet_mask.get(), packet_mask_size}}};
+  writer.FinalizeFecHeader(protected_streams, written_packet);
 
   const uint8_t* packet = written_packet.data.cdata();
   EXPECT_EQ(0x00, packet[0] & 0x80);  // E bit.

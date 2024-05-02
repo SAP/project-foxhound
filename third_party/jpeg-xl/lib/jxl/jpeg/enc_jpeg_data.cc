@@ -6,9 +6,11 @@
 #include "lib/jxl/jpeg/enc_jpeg_data.h"
 
 #include <brotli/encode.h>
-#include <stdio.h>
 
+#include "lib/jxl/enc_fields.h"
+#include "lib/jxl/image_bundle.h"
 #include "lib/jxl/jpeg/enc_jpeg_data_reader.h"
+#include "lib/jxl/luminance.h"
 #include "lib/jxl/sanitizers.h"
 
 namespace jxl {
@@ -99,7 +101,7 @@ Status DetectBlobs(jpeg::JPEGData& jpeg_data) {
 }
 
 Status ParseChunkedMarker(const jpeg::JPEGData& src, uint8_t marker_type,
-                          const ByteSpan& tag, PaddedBytes* output,
+                          const ByteSpan& tag, IccBytes* output,
                           bool allow_permutations = false) {
   output->clear();
 
@@ -162,7 +164,7 @@ Status ParseChunkedMarker(const jpeg::JPEGData& src, uint8_t marker_type,
     if (!presence[index]) {
       return JXL_FAILURE("Missing chunk.");
     }
-    output->append(chunks[index]);
+    chunks[index].AppendTo(output);
   }
 
   return true;
@@ -213,9 +215,9 @@ static inline bool IsJPG(const Span<const uint8_t> bytes) {
 
 }  // namespace
 
-Status SetColorEncodingFromJpegData(const jpeg::JPEGData& jpg,
-                                    ColorEncoding* color_encoding) {
-  PaddedBytes icc_profile;
+void SetColorEncodingFromJpegData(const jpeg::JPEGData& jpg,
+                                  ColorEncoding* color_encoding) {
+  IccBytes icc_profile;
   if (!ParseChunkedMarker(jpg, kApp2, ByteSpan(kIccProfileTag), &icc_profile)) {
     JXL_WARNING("ReJPEG: corrupted ICC profile\n");
     icc_profile.clear();
@@ -224,13 +226,13 @@ Status SetColorEncodingFromJpegData(const jpeg::JPEGData& jpg,
   if (icc_profile.empty()) {
     bool is_gray = (jpg.components.size() == 1);
     *color_encoding = ColorEncoding::SRGB(is_gray);
-    return true;
+  } else {
+    color_encoding->SetICCRaw(std::move(icc_profile));
   }
-
-  return color_encoding->SetICC(std::move(icc_profile));
 }
 
-Status EncodeJPEGData(JPEGData& jpeg_data, PaddedBytes* bytes) {
+Status EncodeJPEGData(JPEGData& jpeg_data, PaddedBytes* bytes,
+                      const CompressParams& cparams) {
   jpeg_data.app_marker_type.resize(jpeg_data.app_data.size(),
                                    AppMarkerType::kUnknown);
   JXL_RETURN_IF_ERROR(DetectIccProfile(jpeg_data));
@@ -241,7 +243,9 @@ Status EncodeJPEGData(JPEGData& jpeg_data, PaddedBytes* bytes) {
   *bytes = std::move(writer).TakeBytes();
   BrotliEncoderState* brotli_enc =
       BrotliEncoderCreateInstance(nullptr, nullptr, nullptr);
-  BrotliEncoderSetParameter(brotli_enc, BROTLI_PARAM_QUALITY, 11);
+  int effort = cparams.brotli_effort;
+  if (effort < 0) effort = 11 - static_cast<int>(cparams.speed_tier);
+  BrotliEncoderSetParameter(brotli_enc, BROTLI_PARAM_QUALITY, effort);
   size_t total_data = 0;
   for (size_t i = 0; i < jpeg_data.app_data.size(); i++) {
     if (jpeg_data.app_marker_type[i] != AppMarkerType::kUnknown) {
@@ -304,8 +308,7 @@ Status DecodeImageJPG(const Span<const uint8_t> bytes, CodecInOut* io) {
                       jpeg_data)) {
     return JXL_FAILURE("Error reading JPEG");
   }
-  JXL_RETURN_IF_ERROR(
-      SetColorEncodingFromJpegData(*jpeg_data, &io->metadata.m.color_encoding));
+  SetColorEncodingFromJpegData(*jpeg_data, &io->metadata.m.color_encoding);
   JXL_RETURN_IF_ERROR(SetBlobsFromJpegData(*jpeg_data, &io->blobs));
   size_t nbcomp = jpeg_data->components.size();
   if (nbcomp != 1 && nbcomp != 3) {
@@ -370,7 +373,7 @@ Status DecodeImageJPG(const Span<const uint8_t> bytes, CodecInOut* io) {
   io->metadata.m.SetUintSamples(BITS_IN_JSAMPLE);
   io->SetFromImage(Image3F(jpeg_data->width, jpeg_data->height),
                    io->metadata.m.color_encoding);
-  SetIntensityTarget(io);
+  SetIntensityTarget(&io->metadata.m);
   return true;
 }
 

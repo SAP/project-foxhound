@@ -9,9 +9,9 @@
 const {
   TAKE_SCREENSHOT_START,
   TAKE_SCREENSHOT_END,
-} = require("devtools/client/responsive/actions/index");
+} = require("resource://devtools/client/responsive/actions/index.js");
 
-const message = require("devtools/client/responsive/utils/message");
+const message = require("resource://devtools/client/responsive/utils/message.js");
 
 const animationFrame = () =>
   new Promise(resolve => {
@@ -20,7 +20,7 @@ const animationFrame = () =>
 
 module.exports = {
   takeScreenshot() {
-    return async function({ dispatch }) {
+    return async function ({ dispatch }) {
       await dispatch({ type: TAKE_SCREENSHOT_START });
 
       // Waiting the next repaint, to ensure the react components

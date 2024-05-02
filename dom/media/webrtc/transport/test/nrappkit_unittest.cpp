@@ -8,9 +8,6 @@
 // Original author: ekr@rtfm.com
 #include <iostream>
 
-#include "nsThreadUtils.h"
-#include "nsXPCOM.h"
-
 // nrappkit includes
 extern "C" {
 #include "nr_api.h"
@@ -29,15 +26,14 @@ namespace {
 
 class TimerTest : public MtransportTest {
  public:
-  TimerTest() : MtransportTest(), handle_(nullptr), fired_(false) {}
+  TimerTest() : handle_(nullptr), fired_(false) {}
   virtual ~TimerTest() = default;
 
   int ArmTimer(int timeout) {
     int ret;
 
-    test_utils_->sts_target()->Dispatch(
-        WrapRunnableRet(&ret, this, &TimerTest::ArmTimer_w, timeout),
-        NS_DISPATCH_SYNC);
+    test_utils_->SyncDispatchToSTS(
+        WrapRunnableRet(&ret, this, &TimerTest::ArmTimer_w, timeout));
 
     return ret;
   }
@@ -45,9 +41,8 @@ class TimerTest : public MtransportTest {
   int ArmCancelTimer(int timeout) {
     int ret;
 
-    test_utils_->sts_target()->Dispatch(
-        WrapRunnableRet(&ret, this, &TimerTest::ArmCancelTimer_w, timeout),
-        NS_DISPATCH_SYNC);
+    test_utils_->SyncDispatchToSTS(
+        WrapRunnableRet(&ret, this, &TimerTest::ArmCancelTimer_w, timeout));
 
     return ret;
   }
@@ -67,9 +62,8 @@ class TimerTest : public MtransportTest {
   int CancelTimer() {
     int ret;
 
-    test_utils_->sts_target()->Dispatch(
-        WrapRunnableRet(&ret, this, &TimerTest::CancelTimer_w),
-        NS_DISPATCH_SYNC);
+    test_utils_->SyncDispatchToSTS(
+        WrapRunnableRet(&ret, this, &TimerTest::CancelTimer_w));
 
     return ret;
   }
@@ -79,8 +73,8 @@ class TimerTest : public MtransportTest {
   int Schedule() {
     int ret;
 
-    test_utils_->sts_target()->Dispatch(
-        WrapRunnableRet(&ret, this, &TimerTest::Schedule_w), NS_DISPATCH_SYNC);
+    test_utils_->SyncDispatchToSTS(
+        WrapRunnableRet(&ret, this, &TimerTest::Schedule_w));
 
     return ret;
   }
@@ -92,7 +86,7 @@ class TimerTest : public MtransportTest {
   }
 
   static void cb(NR_SOCKET r, int how, void* arg) {
-    std::cerr << "Timer fired " << std::endl;
+    std::cerr << "Timer fired\n";
 
     TimerTest* t = static_cast<TimerTest*>(arg);
 

@@ -14,7 +14,6 @@
 
 #include "ipc/IPCMessageUtils.h"
 #include "mozilla/Mutex.h"
-#include "mozilla/SeekableStreamWrapper.h"
 #include "mozilla/ipc/InputStreamUtils.h"
 #include "nsCOMPtr.h"
 #include "nsComponentManagerUtils.h"
@@ -58,14 +57,6 @@ class nsMIMEInputStream : public nsIMIMEInputStream,
   NS_DECL_NSICLONEABLEINPUTSTREAM
 
  private:
-  void InitStreams();
-
-  template <typename M>
-  void SerializeInternal(InputStreamParams& aParams,
-                         FileDescriptorArray& aFileDescriptors,
-                         bool aDelayedStart, uint32_t aMaxSize,
-                         uint32_t* aSizeUsed, M* aManager);
-
   struct MOZ_STACK_CLASS ReadSegmentsState {
     nsCOMPtr<nsIInputStream> mThisStream;
     nsWriteSegmentFun mWriter{nullptr};
@@ -84,12 +75,10 @@ class nsMIMEInputStream : public nsIMIMEInputStream,
   nsTArray<HeaderEntry> mHeaders;
 
   nsCOMPtr<nsIInputStream> mStream;
-  bool mStartedReading{false};
+  mozilla::Atomic<bool, mozilla::Relaxed> mStartedReading{false};
 
   mozilla::Mutex mMutex{"nsMIMEInputStream::mMutex"};
-
-  // This is protected by mutex.
-  nsCOMPtr<nsIInputStreamCallback> mAsyncWaitCallback;
+  nsCOMPtr<nsIInputStreamCallback> mAsyncWaitCallback MOZ_GUARDED_BY(mMutex);
 
   // This is protected by mutex.
   nsCOMPtr<nsIInputStreamLengthCallback> mAsyncInputStreamLengthCallback;
@@ -154,11 +143,6 @@ NS_IMETHODIMP
 nsMIMEInputStream::SetData(nsIInputStream* aStream) {
   NS_ENSURE_FALSE(mStartedReading, NS_ERROR_FAILURE);
 
-  nsCOMPtr<nsISeekableStream> seekable = do_QueryInterface(aStream);
-  if (!seekable) {
-    return NS_ERROR_INVALID_ARG;
-  }
-
   mStream = aStream;
   return NS_OK;
 }
@@ -170,18 +154,10 @@ nsMIMEInputStream::GetData(nsIInputStream** aStream) {
   return NS_OK;
 }
 
-// set up the internal streams
-void nsMIMEInputStream::InitStreams() {
-  NS_ASSERTION(!mStartedReading,
-               "Don't call initStreams twice without rewinding");
-
-  mStartedReading = true;
-}
-
 #define INITSTREAMS                               \
   if (!mStartedReading) {                         \
     NS_ENSURE_TRUE(mStream, NS_ERROR_UNEXPECTED); \
-    InitStreams();                                \
+    mStartedReading = true;                       \
   }
 
 // Reset mStartedReading when Seek-ing to start
@@ -227,7 +203,7 @@ nsresult nsMIMEInputStream::ReadSegCb(nsIInputStream* aIn, void* aClosure,
 }
 
 /**
- * Forward everything else to the mStream after calling InitStreams()
+ * Forward everything else to the mStream after calling INITSTREAMS
  */
 
 // nsIInputStream
@@ -238,6 +214,10 @@ NS_IMETHODIMP nsMIMEInputStream::Close(void) {
 NS_IMETHODIMP nsMIMEInputStream::Available(uint64_t* _retval) {
   INITSTREAMS;
   return mStream->Available(_retval);
+}
+NS_IMETHODIMP nsMIMEInputStream::StreamStatus() {
+  INITSTREAMS;
+  return mStream->StreamStatus();
 }
 NS_IMETHODIMP nsMIMEInputStream::Read(char* buf, uint32_t count,
                                       uint32_t* _retval) {
@@ -269,8 +249,9 @@ nsMIMEInputStream::AsyncWait(nsIInputStreamCallback* aCallback, uint32_t aFlags,
 
   nsCOMPtr<nsIInputStreamCallback> callback = aCallback ? this : nullptr;
   {
-    MutexAutoLock lock(mMutex);
-    if (mAsyncWaitCallback && aCallback) {
+    mozilla::MutexAutoLock lock(mMutex);
+    if (NS_WARN_IF(mAsyncWaitCallback && aCallback &&
+                   mAsyncWaitCallback != aCallback)) {
       return NS_ERROR_FAILURE;
     }
 
@@ -288,7 +269,7 @@ nsMIMEInputStream::OnInputStreamReady(nsIAsyncInputStream* aStream) {
   nsCOMPtr<nsIInputStreamCallback> callback;
 
   {
-    MutexAutoLock lock(mMutex);
+    mozilla::MutexAutoLock lock(mMutex);
 
     // We have been canceled in the meanwhile.
     if (!mAsyncWaitCallback) {
@@ -320,11 +301,8 @@ NS_IMETHODIMP nsMIMEInputStream::SetEOF(void) {
  * Factory method used by do_CreateInstance
  */
 
-nsresult nsMIMEInputStreamConstructor(nsISupports* outer, REFNSIID iid,
-                                      void** result) {
+nsresult nsMIMEInputStreamConstructor(REFNSIID iid, void** result) {
   *result = nullptr;
-
-  if (outer) return NS_ERROR_NO_AGGREGATION;
 
   RefPtr<nsMIMEInputStream> inst = new nsMIMEInputStream();
   if (!inst) return NS_ERROR_OUT_OF_MEMORY;
@@ -332,27 +310,21 @@ nsresult nsMIMEInputStreamConstructor(nsISupports* outer, REFNSIID iid,
   return inst->QueryInterface(iid, result);
 }
 
-void nsMIMEInputStream::Serialize(
-    InputStreamParams& aParams, FileDescriptorArray& aFileDescriptors,
-    bool aDelayedStart, uint32_t aMaxSize, uint32_t* aSizeUsed,
-    mozilla::ipc::ParentToChildStreamActorManager* aManager) {
-  SerializeInternal(aParams, aFileDescriptors, aDelayedStart, aMaxSize,
-                    aSizeUsed, aManager);
+void nsMIMEInputStream::SerializedComplexity(uint32_t aMaxSize,
+                                             uint32_t* aSizeUsed,
+                                             uint32_t* aPipes,
+                                             uint32_t* aTransferables) {
+  if (nsCOMPtr<nsIIPCSerializableInputStream> serializable =
+          do_QueryInterface(mStream)) {
+    InputStreamHelper::SerializedComplexity(mStream, aMaxSize, aSizeUsed,
+                                            aPipes, aTransferables);
+  } else {
+    *aPipes = 1;
+  }
 }
 
-void nsMIMEInputStream::Serialize(
-    InputStreamParams& aParams, FileDescriptorArray& aFileDescriptors,
-    bool aDelayedStart, uint32_t aMaxSize, uint32_t* aSizeUsed,
-    mozilla::ipc::ChildToParentStreamActorManager* aManager) {
-  SerializeInternal(aParams, aFileDescriptors, aDelayedStart, aMaxSize,
-                    aSizeUsed, aManager);
-}
-
-template <typename M>
-void nsMIMEInputStream::SerializeInternal(InputStreamParams& aParams,
-                                          FileDescriptorArray& aFileDescriptors,
-                                          bool aDelayedStart, uint32_t aMaxSize,
-                                          uint32_t* aSizeUsed, M* aManager) {
+void nsMIMEInputStream::Serialize(InputStreamParams& aParams, uint32_t aMaxSize,
+                                  uint32_t* aSizeUsed) {
   MOZ_ASSERT(aSizeUsed);
   *aSizeUsed = 0;
 
@@ -369,17 +341,15 @@ void nsMIMEInputStream::SerializeInternal(InputStreamParams& aParams,
 
   if (nsCOMPtr<nsIIPCSerializableInputStream> serializable =
           do_QueryInterface(mStream)) {
-    InputStreamHelper::SerializeInputStream(mStream, wrappedParams,
-                                            aFileDescriptors, aDelayedStart,
-                                            aMaxSize, aSizeUsed, aManager);
+    InputStreamHelper::SerializeInputStream(mStream, wrappedParams, aMaxSize,
+                                            aSizeUsed);
   } else {
     // Falling back to sending the underlying stream over a pipe when
     // sending an nsMIMEInputStream over IPC is potentially wasteful
     // if it is sent several times. This can possibly happen with
     // fission. There are two ways to improve this, see bug 1648369
     // and bug 1648370.
-    InputStreamHelper::SerializeInputStreamAsPipe(mStream, wrappedParams,
-                                                  aDelayedStart, aManager);
+    InputStreamHelper::SerializeInputStreamAsPipe(mStream, wrappedParams);
   }
 
   NS_ASSERTION(wrappedParams.type() != InputStreamParams::T__None,
@@ -389,9 +359,7 @@ void nsMIMEInputStream::SerializeInternal(InputStreamParams& aParams,
   aParams = params;
 }
 
-bool nsMIMEInputStream::Deserialize(
-    const InputStreamParams& aParams,
-    const FileDescriptorArray& aFileDescriptors) {
+bool nsMIMEInputStream::Deserialize(const InputStreamParams& aParams) {
   if (aParams.type() != InputStreamParams::TMIMEInputStreamParams) {
     NS_ERROR("Received unknown parameters from the other process!");
     return false;
@@ -402,25 +370,13 @@ bool nsMIMEInputStream::Deserialize(
 
   if (wrappedParams.isSome()) {
     nsCOMPtr<nsIInputStream> stream;
-    stream = InputStreamHelper::DeserializeInputStream(wrappedParams.ref(),
-                                                       aFileDescriptors);
+    stream = InputStreamHelper::DeserializeInputStream(wrappedParams.ref());
     if (!stream) {
       NS_WARNING("Failed to deserialize wrapped stream!");
       return false;
     }
 
-    // nsMIMEInputStream requires that the underlying data stream be seekable,
-    // as is checked in `SetData`. Ensure that the stream we deserialized is
-    // seekable before using it.
-    nsCOMPtr<nsIInputStream> seekable;
-    nsresult rv = mozilla::SeekableStreamWrapper::MaybeWrap(
-        stream.forget(), getter_AddRefs(seekable));
-    if (NS_FAILED(rv)) {
-      NS_WARNING("Failed to ensure wrapped input stream is seekable");
-      return false;
-    }
-
-    MOZ_ALWAYS_SUCCEEDS(SetData(seekable));
+    MOZ_ALWAYS_SUCCEEDS(SetData(stream));
   }
 
   mHeaders = params.headers().Clone();
@@ -449,7 +405,7 @@ nsMIMEInputStream::AsyncLengthWait(nsIInputStreamLengthCallback* aCallback,
 
   nsCOMPtr<nsIInputStreamLengthCallback> callback = aCallback ? this : nullptr;
   {
-    MutexAutoLock lock(mMutex);
+    mozilla::MutexAutoLock lock(mMutex);
     mAsyncInputStreamLengthCallback = aCallback;
   }
 
@@ -461,7 +417,7 @@ nsMIMEInputStream::OnInputStreamLengthReady(nsIAsyncInputStreamLength* aStream,
                                             int64_t aLength) {
   nsCOMPtr<nsIInputStreamLengthCallback> callback;
   {
-    MutexAutoLock lock(mMutex);
+    mozilla::MutexAutoLock lock(mMutex);
     // We have been canceled in the meanwhile.
     if (!mAsyncInputStreamLengthCallback) {
       return NS_OK;
@@ -537,7 +493,7 @@ nsMIMEInputStream::Clone(nsIInputStream** aResult) {
   }
 
   static_cast<nsMIMEInputStream*>(mimeStream.get())->mStartedReading =
-      mStartedReading;
+      static_cast<bool>(mStartedReading);
 
   mimeStream.forget(aResult);
   return NS_OK;

@@ -26,6 +26,7 @@ class nsITimer;
 typedef void (*nsTimerCallbackFunc) (nsITimer *aTimer, void *aClosure);
 %}
 
+native MallocSizeOf(mozilla::MallocSizeOf);
 native nsTimerCallbackFunc(nsTimerCallbackFunc);
 [ref] native TimeDuration(mozilla::TimeDuration);
 
@@ -236,15 +237,15 @@ interface nsITimer : nsISupports
    */
   attribute nsIEventTarget target;
 
+  readonly attribute ACString name;
+
   /**
    * The number of microseconds this nsITimer implementation can possibly
    * fire early.
    */
   [noscript] readonly attribute unsigned long allowedEarlyFiringMicroseconds;
 
-%{C++
-  virtual size_t SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf) const = 0;
-%}
+  [notxpcom, nostdcall] size_t sizeOfIncludingThis(in MallocSizeOf aMallocSizeOf);
 };
 
 %{C++
@@ -350,7 +351,6 @@ NS_NewTimerWithFuncCallback(nsTimerCallbackFunc aCallback,
                             const char* aNameString,
                             nsIEventTarget* aTarget = nullptr);
 
-#define NS_TIMER_CONTRACTID "@mozilla.org/timer;1"
 #define NS_TIMER_CALLBACK_TOPIC "timer-callback"
 
 #ifndef RELEASE_OR_BETA
@@ -363,3 +363,14 @@ NS_NewTimerWithFuncCallback(nsTimerCallbackFunc aCallback,
   }
 #endif
 %}
+
+[scriptable, builtinclass, uuid(5482506d-1d21-4d08-b01c-95c87e1295ad)]
+interface nsITimerManager : nsISupports
+{
+  /**
+   * Returns a read-only list of nsITimer objects, implementing only the name,
+   * delay and type attribute getters.
+   * This is meant to be used for tests, to verify that no timer is leftover
+   * at the end of a test. */
+  Array<nsITimer> getTimers();
+};

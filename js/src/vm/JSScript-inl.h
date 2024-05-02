@@ -16,16 +16,12 @@
 #include "vm/RegExpObject.h"
 #include "wasm/AsmJS.h"
 
-#include "vm/Realm-inl.h"
-#include "vm/Shape-inl.h"
-
 namespace js {
 
-ScriptCounts::ScriptCounts()
-    : pcCounts_(), throwCounts_(), ionCounts_(nullptr) {}
+ScriptCounts::ScriptCounts() : ionCounts_(nullptr) {}
 
 ScriptCounts::ScriptCounts(PCCountsVector&& jumpTargets)
-    : pcCounts_(std::move(jumpTargets)), throwCounts_(), ionCounts_(nullptr) {}
+    : pcCounts_(std::move(jumpTargets)), ionCounts_(nullptr) {}
 
 ScriptCounts::ScriptCounts(ScriptCounts&& src)
     : pcCounts_(std::move(src.pcCounts_)),
@@ -44,8 +40,7 @@ ScriptCounts& ScriptCounts::operator=(ScriptCounts&& src) {
 
 ScriptCounts::~ScriptCounts() { js_delete(ionCounts_); }
 
-ScriptAndCounts::ScriptAndCounts(JSScript* script)
-    : script(script), scriptCounts() {
+ScriptAndCounts::ScriptAndCounts(JSScript* script) : script(script) {
   script->releaseScriptCounts(&scriptCounts);
 }
 
@@ -228,11 +223,11 @@ inline uint32_t JSScript::getWarmUpCount() const {
   return warmUpData_.toJitScript()->warmUpCount();
 }
 
-inline void JSScript::incWarmUpCounter(uint32_t amount) {
+inline void JSScript::incWarmUpCounter() {
   if (warmUpData_.isWarmUpCount()) {
-    warmUpData_.incWarmUpCount(amount);
+    warmUpData_.incWarmUpCount();
   } else {
-    warmUpData_.toJitScript()->incWarmUpCount(amount);
+    warmUpData_.toJitScript()->incWarmUpCount();
   }
 }
 

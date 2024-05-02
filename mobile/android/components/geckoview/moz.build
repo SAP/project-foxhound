@@ -4,8 +4,23 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-SOURCES += ["GeckoViewExternalAppService.cpp", "GeckoViewStreamListener.cpp"]
-EXPORTS += ["GeckoViewExternalAppService.h", "GeckoViewStreamListener.h"]
+SOURCES += [
+    "GeckoViewContentChannel.cpp",
+    "GeckoViewContentProtocolHandler.cpp",
+    "GeckoViewExternalAppService.cpp",
+    "GeckoViewInputStream.cpp",
+    "GeckoViewOutputStream.cpp",
+    "GeckoViewStreamListener.cpp",
+]
+
+EXPORTS += [
+    "GeckoViewContentChannel.h",
+    "GeckoViewContentProtocolHandler.h",
+    "GeckoViewExternalAppService.h",
+    "GeckoViewInputStream.h",
+    "GeckoViewOutputStream.h",
+    "GeckoViewStreamListener.h",
+]
 
 if CONFIG["MOZ_ANDROID_HISTORY"]:
     EXPORTS += [
@@ -25,16 +40,16 @@ EXTRA_COMPONENTS += [
 ]
 
 EXTRA_JS_MODULES += [
-    "ColorPickerDelegate.jsm",
-    "FilePickerDelegate.jsm",
-    "GeckoViewPermission.jsm",
-    "GeckoViewPrompt.jsm",
-    "GeckoViewPrompter.jsm",
-    "GeckoViewPush.jsm",
-    "GeckoViewStartup.jsm",
-    "LoginStorageDelegate.jsm",
-    "PromptCollection.jsm",
-    "ShareDelegate.jsm",
+    "ColorPickerDelegate.sys.mjs",
+    "FilePickerDelegate.sys.mjs",
+    "GeckoViewPermission.sys.mjs",
+    "GeckoViewPrompt.sys.mjs",
+    "GeckoViewPrompter.sys.mjs",
+    "GeckoViewPush.sys.mjs",
+    "GeckoViewStartup.sys.mjs",
+    "LoginStorageDelegate.sys.mjs",
+    "PromptCollection.sys.mjs",
+    "ShareDelegate.sys.mjs",
 ]
 
 FINAL_LIBRARY = "xul"

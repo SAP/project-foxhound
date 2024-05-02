@@ -1,15 +1,17 @@
-const { BlocklistPrivate } = ChromeUtils.import(
-  "resource://gre/modules/Blocklist.jsm"
+const { BlocklistPrivate } = ChromeUtils.importESModule(
+  "resource://gre/modules/Blocklist.sys.mjs"
 );
-const { Utils: RemoteSettingsUtils } = ChromeUtils.import(
-  "resource://services-settings/Utils.jsm"
+const { Utils: RemoteSettingsUtils } = ChromeUtils.importESModule(
+  "resource://services-settings/Utils.sys.mjs"
 );
-
-const IS_ANDROID = AppConstants.platform == "android";
-
+const { RemoteSettings } = ChromeUtils.importESModule(
+  "resource://services-settings/remote-settings.sys.mjs"
+);
 let gBlocklistClients;
 
 async function clear_state() {
+  RemoteSettings.enablePreviewMode(undefined);
+
   for (let { client } of gBlocklistClients) {
     // Remove last server times.
     Services.prefs.clearUserPref(client.lastCheckTimePref);
@@ -35,11 +37,11 @@ add_task(async function setup() {
   gBlocklistClients = [
     {
       client: BlocklistPrivate.ExtensionBlocklistRS._client,
-      expectHasDump: IS_ANDROID,
+      expectHasDump: false,
     },
     {
       client: BlocklistPrivate.GfxBlocklistRS._client,
-      expectHasDump: !IS_ANDROID,
+      expectHasDump: true,
     },
   ];
 
@@ -198,8 +200,10 @@ add_task(
       for (const record of records) {
         await client.db.create(record);
       }
-      await client.db.importChanges({}, 42); // Prevent from loading JSON dump.
-      const list = await client.get({ syncIfEmpty: false });
+      const list = await client.get({
+        loadDumpIfNewer: false,
+        syncIfEmpty: false,
+      });
       equal(list.length, 4);
       ok(list.every(e => e.willMatch));
     }
@@ -207,16 +211,15 @@ add_task(
 );
 add_task(clear_state);
 
-add_task(async function test_bucketname_changes_when_bucket_pref_changes() {
+add_task(async function test_bucketname_changes_when_preview_mode_is_enabled() {
   for (const { client } of gBlocklistClients) {
     equal(client.bucketName, "blocklists");
   }
 
-  Services.prefs.setCharPref("services.blocklist.bucket", "blocklists-preview");
+  RemoteSettings.enablePreviewMode(true);
 
   for (const { client } of gBlocklistClients) {
     equal(client.bucketName, "blocklists-preview", client.identifier);
   }
-  Services.prefs.clearUserPref("services.blocklist.bucket");
 });
 add_task(clear_state);

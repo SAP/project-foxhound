@@ -64,6 +64,19 @@ BaseWebSocketChannel::BaseWebSocketChannel()
   mSerial = (processBits << kWebSocketIDWebSocketBits) | webSocketBits;
 }
 
+BaseWebSocketChannel::~BaseWebSocketChannel() {
+  NS_ReleaseOnMainThread("BaseWebSocketChannel::mLoadGroup",
+                         mLoadGroup.forget());
+  NS_ReleaseOnMainThread("BaseWebSocketChannel::mLoadInfo", mLoadInfo.forget());
+  nsCOMPtr<nsISerialEventTarget> target;
+  {
+    auto lock = mTargetThread.Lock();
+    target.swap(*lock);
+  }
+  NS_ReleaseOnMainThread("BaseWebSocketChannel::mTargetThread",
+                         target.forget());
+}
+
 //-----------------------------------------------------------------------------
 // BaseWebSocketChannel::nsIWebSocketChannel
 //-----------------------------------------------------------------------------
@@ -276,31 +289,6 @@ BaseWebSocketChannel::GetScheme(nsACString& aScheme) {
 }
 
 NS_IMETHODIMP
-BaseWebSocketChannel::GetDefaultPort(int32_t* aDefaultPort) {
-  LOG(("BaseWebSocketChannel::GetDefaultPort() %p\n", this));
-
-  if (mEncrypted) {
-    *aDefaultPort = kDefaultWSSPort;
-  } else {
-    *aDefaultPort = kDefaultWSPort;
-  }
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-BaseWebSocketChannel::GetProtocolFlags(uint32_t* aProtocolFlags) {
-  LOG(("BaseWebSocketChannel::GetProtocolFlags() %p\n", this));
-
-  *aProtocolFlags = URI_NORELATIVE | URI_NON_PERSISTABLE | ALLOWS_PROXY |
-                    ALLOWS_PROXY_HTTP | URI_DOES_NOT_RETURN_DATA |
-                    URI_DANGEROUS_TO_LOAD;
-  if (mEncrypted) {
-    *aProtocolFlags |= URI_IS_POTENTIALLY_TRUSTWORTHY;
-  }
-  return NS_OK;
-}
-
-NS_IMETHODIMP
 BaseWebSocketChannel::NewChannel(nsIURI* aURI, nsILoadInfo* aLoadInfo,
                                  nsIChannel** outChannel) {
   LOG(("BaseWebSocketChannel::NewChannel() %p\n", this));
@@ -322,28 +310,49 @@ BaseWebSocketChannel::AllowPort(int32_t port, const char* scheme,
 //-----------------------------------------------------------------------------
 
 NS_IMETHODIMP
-BaseWebSocketChannel::RetargetDeliveryTo(nsIEventTarget* aTargetThread) {
+BaseWebSocketChannel::RetargetDeliveryTo(nsISerialEventTarget* aTargetThread) {
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(aTargetThread);
-  MOZ_ASSERT(!mTargetThread,
-             "Delivery target should be set once, before AsyncOpen");
   MOZ_ASSERT(!mWasOpened, "Should not be called after AsyncOpen!");
+  MOZ_ASSERT(aTargetThread);
 
-  mTargetThread = aTargetThread;
-  MOZ_ASSERT(mTargetThread);
+  auto lock = mTargetThread.Lock();
+  MOZ_ASSERT(!lock.ref(),
+             "Delivery target should be set once, before AsyncOpen");
+  lock.ref() = aTargetThread;
   return NS_OK;
 }
 
 NS_IMETHODIMP
-BaseWebSocketChannel::GetDeliveryTarget(nsIEventTarget** aTargetThread) {
+BaseWebSocketChannel::GetDeliveryTarget(nsISerialEventTarget** aTargetThread) {
   MOZ_ASSERT(NS_IsMainThread());
 
-  nsCOMPtr<nsIEventTarget> target = mTargetThread;
+  nsCOMPtr<nsISerialEventTarget> target = GetTargetThread();
   if (!target) {
-    target = GetCurrentEventTarget();
+    target = GetCurrentSerialEventTarget();
   }
   target.forget(aTargetThread);
   return NS_OK;
+}
+
+already_AddRefed<nsISerialEventTarget> BaseWebSocketChannel::GetTargetThread() {
+  nsCOMPtr<nsISerialEventTarget> target;
+  auto lock = mTargetThread.Lock();
+  target = *lock;
+  return target.forget();
+}
+
+bool BaseWebSocketChannel::IsOnTargetThread() {
+  nsCOMPtr<nsISerialEventTarget> target = GetTargetThread();
+  if (!target) {
+    MOZ_ASSERT(false);
+    return false;
+  }
+
+  bool isOnTargetThread = false;
+  nsresult rv = target->IsOnCurrentThread(&isOnTargetThread);
+  MOZ_ASSERT(NS_SUCCEEDED(rv));
+  return NS_FAILED(rv) ? false : isOnTargetThread;
 }
 
 BaseWebSocketChannel::ListenerAndContextContainer::ListenerAndContextContainer(

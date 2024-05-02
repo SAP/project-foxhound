@@ -12,29 +12,37 @@
 
 typedef sequence<ClipboardItem> ClipboardItems;
 
-[SecureContext, Exposed=Window, Pref="dom.events.asyncClipboard"]
+[SecureContext,
+ Exposed=Window,
+ InstrumentedProps=(read,readText,write)]
 interface Clipboard : EventTarget {
-  [Pref="dom.events.asyncClipboard.read", Throws, NeedsSubjectPrincipal]
+  [Pref="dom.events.asyncClipboard.clipboardItem", NewObject, NeedsSubjectPrincipal]
   Promise<ClipboardItems> read();
-  [Func="Clipboard::ReadTextEnabled", Throws, NeedsSubjectPrincipal]
+  [Func="Clipboard::ReadTextEnabled", NewObject, NeedsSubjectPrincipal]
   Promise<DOMString> readText();
 
-  [Pref="dom.events.asyncClipboard.clipboardItem", Throws, NeedsSubjectPrincipal]
-  Promise<void> write(ClipboardItems data);
+  [Pref="dom.events.asyncClipboard.clipboardItem", NewObject, NeedsSubjectPrincipal]
+  Promise<undefined> write(ClipboardItems data);
 
-  [Throws, NeedsSubjectPrincipal]
-  Promise<void> writeText(DOMString data);
+  [NewObject, NeedsSubjectPrincipal]
+  Promise<undefined> writeText(DOMString data);
+};
+
+partial interface Clipboard {
+  // @param allowed true, if the user allowed (e.g. clicked) the "Paste" menuitem.
+  //                false, when the menupopup was dismissed.
+  [ChromeOnly]
+  undefined onUserReactedToPasteMenuPopup(boolean allowed);
 };
 
 typedef (DOMString or Blob) ClipboardItemDataType;
-// typedef Promise<ClipboardItemDataType> ClipboardItemData;
+typedef Promise<ClipboardItemDataType> ClipboardItemData;
 // callback ClipboardItemDelayedCallback = ClipboardItemData ();
 
 [SecureContext, Exposed=Window, Pref="dom.events.asyncClipboard.clipboardItem"]
 interface ClipboardItem {
-  // Note: The spec uses Promise<ClipboardItemDataType>.
   [Throws]
-  constructor(record<DOMString, ClipboardItemDataType> items,
+  constructor(record<DOMString, ClipboardItemData> items,
               optional ClipboardItemOptions options = {});
 
   // static ClipboardItem createDelayed(
@@ -50,7 +58,7 @@ interface ClipboardItem {
   [Frozen, Cached, Pure]
   readonly attribute sequence<DOMString> types;
 
-  [Throws]
+  [NewObject]
   Promise<Blob> getType(DOMString type);
 };
 

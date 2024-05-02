@@ -16,7 +16,7 @@ function expectNotAllowedError(aResult) {
 }
 
 function promiseMakeCredential(tab) {
-  return ContentTask.spawn(tab.linkedBrowser, null, async function() {
+  return ContentTask.spawn(tab.linkedBrowser, null, async function () {
     const cose_alg_ECDSA_w_SHA256 = -7;
 
     let publicKey = {
@@ -37,7 +37,7 @@ function promiseMakeCredential(tab) {
 }
 
 function promiseGetAssertion(tab) {
-  return ContentTask.spawn(tab.linkedBrowser, null, async function() {
+  return ContentTask.spawn(tab.linkedBrowser, null, async function () {
     let newCredential = {
       type: "public-key",
       id: content.crypto.getRandomValues(new Uint8Array(16)),
@@ -109,11 +109,8 @@ add_task(async function test_background_window() {
 });
 
 add_task(async function test_minimized() {
-  let env = Cc["@mozilla.org/process/environment;1"].getService(
-    Ci.nsIEnvironment
-  );
   // Minimizing windows doesn't supported in headless mode.
-  if (env.get("MOZ_HEADLESS")) {
+  if (Services.env.get("MOZ_HEADLESS")) {
     return;
   }
 

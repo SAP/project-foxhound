@@ -6,10 +6,10 @@
 
 const {
   isNodeValid,
-} = require("devtools/server/actors/highlighters/utils/markup");
+} = require("resource://devtools/server/actors/highlighters/utils/markup.js");
 const {
   BoxModelHighlighter,
-} = require("devtools/server/actors/highlighters/box-model");
+} = require("resource://devtools/server/actors/highlighters/box-model.js");
 
 // How many maximum nodes can be highlighted at the same time by the SelectorHighlighter
 const MAX_HIGHLIGHTED_ELEMENTS = 100;
@@ -19,12 +19,12 @@ const MAX_HIGHLIGHTED_ELEMENTS = 100;
  * document of the provided context node and then uses the BoxModelHighlighter
  * to highlight the matching nodes
  */
-function SelectorHighlighter(highlighterEnv) {
-  this.highlighterEnv = highlighterEnv;
-  this._highlighters = [];
-}
+class SelectorHighlighter {
+  constructor(highlighterEnv) {
+    this.highlighterEnv = highlighterEnv;
+    this._highlighters = [];
+  }
 
-SelectorHighlighter.prototype = {
   /**
    * Show a BoxModelHighlighter on each node that matches a given selector.
    *
@@ -37,7 +37,7 @@ SelectorHighlighter.prototype = {
    * @param {String} options.selector
    *        Required. CSS selector used with querySelectorAll() to find matching elements.
    */
-  show: async function(node, options = {}) {
+  async show(node, options = {}) {
     this.hide();
 
     if (!isNodeValid(node) || !options.selector) {
@@ -61,7 +61,7 @@ SelectorHighlighter.prototype = {
 
     await Promise.all(promises);
     return true;
-  },
+  }
 
   /**
    * Create an instance of BoxModelHighlighter, wait for it to be ready
@@ -74,24 +74,24 @@ SelectorHighlighter.prototype = {
    *         Configuration options for the BoxModelHighlighter
    * @return {Promise} Promise that resolves when the BoxModelHighlighter is ready
    */
-  _showHighlighter: async function(node, options) {
+  async _showHighlighter(node, options) {
     const highlighter = new BoxModelHighlighter(this.highlighterEnv);
     await highlighter.isReady;
 
     highlighter.show(node, options);
     this._highlighters.push(highlighter);
-  },
+  }
 
-  hide: function() {
+  hide() {
     for (const highlighter of this._highlighters) {
       highlighter.destroy();
     }
     this._highlighters = [];
-  },
+  }
 
-  destroy: function() {
+  destroy() {
     this.hide();
     this.highlighterEnv = null;
-  },
-};
+  }
+}
 exports.SelectorHighlighter = SelectorHighlighter;

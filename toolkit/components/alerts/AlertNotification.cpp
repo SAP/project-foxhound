@@ -53,6 +53,13 @@ AlertNotification::Init(const nsAString& aName, const nsAString& aImageURL,
 }
 
 NS_IMETHODIMP
+AlertNotification::SetActions(
+    const nsTArray<RefPtr<nsIAlertAction>>& aActions) {
+  mActions = aActions.Clone();
+  return NS_OK;
+}
+
+NS_IMETHODIMP
 AlertNotification::GetName(nsAString& aName) {
   aName = mName;
   return NS_OK;
@@ -153,8 +160,26 @@ AlertNotification::GetVibrate(nsTArray<uint32_t>& aVibrate) {
 }
 
 NS_IMETHODIMP
+AlertNotification::GetActions(nsTArray<RefPtr<nsIAlertAction>>& aActions) {
+  aActions = mActions.Clone();
+  return NS_OK;
+}
+
+NS_IMETHODIMP
 AlertNotification::GetSource(nsAString& aSource) {
   nsAlertsUtils::GetSourceHostPort(mPrincipal, aSource);
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+AlertNotification::GetOpaqueRelaunchData(nsAString& aOpaqueRelaunchData) {
+  aOpaqueRelaunchData = mOpaqueRelaunchData;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+AlertNotification::SetOpaqueRelaunchData(const nsAString& aOpaqueRelaunchData) {
+  mOpaqueRelaunchData = aOpaqueRelaunchData;
   return NS_OK;
 }
 

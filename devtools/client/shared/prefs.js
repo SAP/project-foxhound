@@ -3,8 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-const Services = require("Services");
-const EventEmitter = require("devtools/shared/event-emitter");
+const EventEmitter = require("resource://devtools/shared/event-emitter.js");
 
 /**
  * Shortcuts for lazily accessing and setting various preferences.
@@ -188,14 +187,14 @@ function accessorNameForPref(somePrefName, prefsBlueprint) {
  */
 function makeObserver(self, cache, prefsRoot, prefsBlueprint) {
   return {
-    register: function() {
+    register() {
       this._branch = Services.prefs.getBranch(prefsRoot + ".");
       this._branch.addObserver("", this);
     },
-    unregister: function() {
+    unregister() {
       this._branch.removeObserver("", this);
     },
-    observe: function(subject, topic, prefName) {
+    observe(subject, topic, prefName) {
       // If this particular pref isn't handled by the blueprint object,
       // even though it's in the specified branch, ignore it.
       const accessorName = accessorNameForPref(prefName, prefsBlueprint);
@@ -214,26 +213,27 @@ exports.PrefsHelper = PrefsHelper;
  * A PreferenceObserver observes a pref branch for pref changes.
  * It emits an event for each preference change.
  */
-function PrefObserver(branchName) {
-  this.branchName = branchName;
-  this.branch = Services.prefs.getBranch(branchName);
-  this.branch.addObserver("", this);
+class PrefObserver extends EventEmitter {
+  constructor(branchName) {
+    super();
 
-  EventEmitter.decorate(this);
+    this.#branchName = branchName;
+    this.#branch = Services.prefs.getBranch(branchName);
+    this.#branch.addObserver("", this);
+  }
+
+  #branchName;
+  #branch;
+
+  observe(subject, topic, data) {
+    if (topic == "nsPref:changed") {
+      this.emit(this.#branchName + data);
+    }
+  }
+
+  destroy() {
+    this.#branch.removeObserver("", this);
+  }
 }
 
 exports.PrefObserver = PrefObserver;
-
-PrefObserver.prototype = {
-  observe: function(subject, topic, data) {
-    if (topic == "nsPref:changed") {
-      this.emit(this.branchName + data);
-    }
-  },
-
-  destroy: function() {
-    if (this.branch) {
-      this.branch.removeObserver("", this);
-    }
-  },
-};

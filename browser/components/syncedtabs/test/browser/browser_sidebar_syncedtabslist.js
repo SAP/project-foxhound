@@ -1,9 +1,11 @@
 "use strict";
 
-const { SyncedTabs } = ChromeUtils.import(
-  "resource://services-sync/SyncedTabs.jsm"
+const { SyncedTabs } = ChromeUtils.importESModule(
+  "resource://services-sync/SyncedTabs.sys.mjs"
 );
-const { UIState } = ChromeUtils.import("resource://services-sync/UIState.jsm");
+const { UIState } = ChromeUtils.importESModule(
+  "resource://services-sync/UIState.sys.mjs"
+);
 
 const FIXTURE = [
   {
@@ -17,8 +19,7 @@ const FIXTURE = [
         type: "tab",
         title:
           "Firefox for Android — Mobile Web browser — More ways to customize and protect your privacy — Mozilla",
-        url:
-          "https://www.mozilla.org/en-US/firefox/android/?utm_source=firefox-browser&utm_medium=firefox-browser&utm_campaign=synced-tabs-sidebar",
+        url: "https://www.mozilla.org/en-US/firefox/android/?utm_source=firefox-browser&utm_medium=firefox-browser&utm_campaign=synced-tabs-sidebar",
         icon: "chrome://global/skin/icons/defaultFavicon.svg",
         client: "7cqCr77ptzX3",
         lastUsed: 1452124677,
@@ -36,20 +37,16 @@ const FIXTURE = [
         type: "tab",
         title:
           "Firefox for iOS — Mobile Web browser for your iPhone, iPad and iPod touch — Mozilla",
-        url:
-          "https://www.mozilla.org/en-US/firefox/ios/?utm_source=firefox-browser&utm_medium=firefox-browser&utm_campaign=synced-tabs-sidebar",
-        icon:
-          "moz-anno:favicon:https://www.mozilla.org/media/img/firefox/favicon.dc6635050bf5.ico",
+        url: "https://www.mozilla.org/en-US/firefox/ios/?utm_source=firefox-browser&utm_medium=firefox-browser&utm_campaign=synced-tabs-sidebar",
+        icon: "moz-anno:favicon:https://www.mozilla.org/media/img/firefox/favicon.dc6635050bf5.ico",
         client: "2xU5h-4bkWqA",
         lastUsed: 1451519425,
       },
       {
         type: "tab",
         title: "Firefox Nightly First Run Page",
-        url:
-          "https://www.mozilla.org/en-US/firefox/nightly/firstrun/?oldversion=45.0a1",
-        icon:
-          "moz-anno:favicon:https://www.mozilla.org/media/img/firefox/favicon-nightly.560395bbb2e1.png",
+        url: "https://www.mozilla.org/en-US/firefox/nightly/firstrun/?oldversion=45.0a1",
+        icon: "moz-anno:favicon:https://www.mozilla.org/media/img/firefox/favicon-nightly.560395bbb2e1.png",
         client: "2xU5h-4bkWqA",
         lastUsed: 1451519420,
       },
@@ -58,8 +55,7 @@ const FIXTURE = [
         type: "tab",
         title: "Mozilla Developer Network",
         url: "https://developer.mozilla.org/en-US/",
-        icon:
-          "moz-anno:favicon:https://developer.cdn.mozilla.net/static/img/favicon32.e02854fdcf73.png",
+        icon: "moz-anno:favicon:https://developer.cdn.mozilla.net/static/img/favicon32.e02854fdcf73.png",
         client: "2xU5h-4bkWqA",
         lastUsed: 1451519725,
       },
@@ -97,7 +93,7 @@ async function testClean() {
   await new Promise(resolve => {
     window.SidebarUI.browser.contentWindow.addEventListener(
       "unload",
-      function() {
+      function () {
         resolve();
       },
       { once: true }
@@ -186,9 +182,8 @@ add_task(async function testSyncedTabsSidebarFilteredList() {
 
   await syncedTabsDeckComponent.updatePanel();
 
-  let filterInput = syncedTabsDeckComponent._window.document.querySelector(
-    ".tabsFilter"
-  );
+  let filterInput =
+    syncedTabsDeckComponent._window.document.querySelector(".tabsFilter");
   filterInput.value = "filter text";
   filterInput.blur();
 
@@ -423,6 +418,14 @@ add_task(async function testSyncedTabsSidebarContextMenu() {
   let tabMenuItems = [
     ["menuitem#syncedTabsOpenSelected", { hidden: false }],
     ["menuitem#syncedTabsOpenSelectedInTab", { hidden: false }],
+    [
+      "menu#syncedTabsOpenSelectedInContainerTab",
+      {
+        hidden:
+          !Services.prefs.getBoolPref("privacy.userContext.enabled", false) ||
+          PrivateBrowsingUtils.isWindowPrivate(window),
+      },
+    ],
     ["menuitem#syncedTabsOpenSelectedInWindow", { hidden: false }],
     ["menuitem#syncedTabsOpenSelectedInPrivateWindow", { hidden: false }],
     ["menuseparator", { hidden: false }],
@@ -446,6 +449,7 @@ add_task(async function testSyncedTabsSidebarContextMenu() {
   let sidebarMenuItems = [
     ["menuitem#syncedTabsOpenSelected", { hidden: true }],
     ["menuitem#syncedTabsOpenSelectedInTab", { hidden: true }],
+    ["menu#syncedTabsOpenSelectedInContainerTab", { hidden: true }],
     ["menuitem#syncedTabsOpenSelectedInWindow", { hidden: true }],
     ["menuitem#syncedTabsOpenSelectedInPrivateWindow", { hidden: true }],
     ["menuseparator", { hidden: true }],
@@ -469,6 +473,7 @@ add_task(async function testSyncedTabsSidebarContextMenu() {
   let menuItems = [
     ["menuitem#syncedTabsOpenSelected", { hidden: true }],
     ["menuitem#syncedTabsOpenSelectedInTab", { hidden: true }],
+    ["menu#syncedTabsOpenSelectedInContainerTab", { hidden: true }],
     ["menuitem#syncedTabsOpenSelectedInWindow", { hidden: true }],
     ["menuitem#syncedTabsOpenSelectedInPrivateWindow", { hidden: true }],
     ["menuseparator", { hidden: true }],
@@ -531,9 +536,8 @@ async function testContextMenu(
   menuSelectors
 ) {
   let contextMenu = document.querySelector(contextSelector);
-  let triggerElement = syncedTabsDeckComponent._window.document.querySelector(
-    triggerSelector
-  );
+  let triggerElement =
+    syncedTabsDeckComponent._window.document.querySelector(triggerSelector);
   let isClosed = triggerElement.classList.contains("closed");
 
   let promisePopupShown = BrowserTestUtils.waitForEvent(
@@ -567,18 +571,20 @@ async function testContextMenu(
     isClosed,
     "Showing the context menu shouldn't toggle the tab list"
   );
-  checkChildren(contextMenu, menuSelectors);
-
-  let promisePopupHidden = BrowserTestUtils.waitForEvent(
-    contextMenu,
-    "popuphidden"
-  );
-  contextMenu.hidePopup();
-  await promisePopupHidden;
+  let menuitemClicked = await checkChildren(contextMenu, menuSelectors);
+  if (!menuitemClicked) {
+    let promisePopupHidden = BrowserTestUtils.waitForEvent(
+      contextMenu,
+      "popuphidden"
+    );
+    contextMenu.hidePopup();
+    await promisePopupHidden;
+  }
 }
 
 function checkChildren(node, selectors) {
   is(node.children.length, selectors.length, "Menu item count doesn't match");
+  let containerMenuShown;
   for (let index = 0; index < node.children.length; index++) {
     let child = node.children[index];
     let [selector, props] = [].concat(selectors[index]);
@@ -589,5 +595,52 @@ function checkChildren(node, selectors) {
         is(child[prop], props[prop], `${prop} value at ${index} should match`);
       });
     }
+    if (
+      selector === "menu#syncedTabsOpenSelectedInContainerTab" &&
+      !props.hidden
+    ) {
+      containerMenuShown = child;
+    }
   }
+  if (containerMenuShown) {
+    return testContainerMenu(containerMenuShown);
+  }
+  return false;
+}
+
+async function testContainerMenu(menu) {
+  await SpecialPowers.pushPrefEnv({
+    set: [["privacy.userContext.enabled", true]],
+  });
+  let menupopup = menu.getElementsByTagName("menupopup")[0];
+  let menupopupShown = BrowserTestUtils.waitForEvent(menupopup, "popupshown");
+  menu.openMenu(true);
+  await menupopupShown;
+  let shown = [1, 2, 3, 4];
+  let hidden = [0];
+  for (let id of shown) {
+    ok(
+      menupopup.querySelector(`menuitem[data-usercontextid="${id}"]`),
+      `User context id ${id} should exist`
+    );
+  }
+  for (let id of hidden) {
+    ok(
+      !menupopup.querySelector(`menuitem[data-usercontextid="${id}"]`),
+      `User context id ${id} shouldn't exist`
+    );
+  }
+  const newTabPromise = BrowserTestUtils.waitForNewTab(gBrowser);
+  menupopup.activateItem(
+    menupopup.querySelector(
+      `menuitem[data-usercontextid="${shown[shown.length - 1]}"]`
+    )
+  );
+  let newTab = await newTabPromise;
+  ok(
+    newTab.hasAttribute("usercontextid"),
+    `Tab with usercontextid = ${shown[shown.length - 1]} should be opened`
+  );
+  registerCleanupFunction(() => BrowserTestUtils.removeTab(newTab));
+  return true;
 }

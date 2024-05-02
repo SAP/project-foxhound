@@ -9,14 +9,15 @@ Services.scriptloader.loadSubScript(
   this
 );
 
-const SW_TAB_URL = URL_ROOT + "resources/service-workers/controlled-sw.html";
-const SW_URL = URL_ROOT + "resources/service-workers/controlled-sw.js";
+const SW_TAB_URL =
+  URL_ROOT_SSL + "resources/service-workers/controlled-sw.html";
+const SW_URL = URL_ROOT_SSL + "resources/service-workers/controlled-sw.js";
 
 /**
  * Test that the service worker has the status "registering" when the service worker is
  * not installed yet. Other states (stopped, running) are covered by the existing tests.
  */
-add_task(async function() {
+add_task(async function () {
   await enableServiceWorkerDebugging();
 
   const { document, tab, window } = await openAboutDebugging({

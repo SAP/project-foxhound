@@ -13,21 +13,23 @@ const SUGGESTIONS_ENGINE_NAME = "searchSuggestionEngine.xml";
 
 let engine;
 
-add_task(async function setup() {
+add_setup(async function () {
   await SpecialPowers.pushPrefEnv({
-    set: [["browser.urlbar.suggest.searches", true]],
+    set: [
+      ["browser.urlbar.suggest.searches", true],
+      ["browser.urlbar.suggest.quickactions", false],
+      ["browser.urlbar.shortcuts.quickactions", false],
+    ],
   });
-  engine = await SearchTestUtils.promiseNewSearchEngine(
-    getRootDirectory(gTestPath) + SUGGESTIONS_ENGINE_NAME
-  );
-  let oldDefaultEngine = await Services.search.getDefault();
-  await Services.search.setDefault(engine);
+  engine = await SearchTestUtils.promiseNewSearchEngine({
+    url: getRootDirectory(gTestPath) + SUGGESTIONS_ENGINE_NAME,
+    setAsDefault: true,
+  });
   await Services.search.moveEngine(engine, 0);
 
   await PlacesUtils.history.clear();
 
   registerCleanupFunction(async () => {
-    await Services.search.setDefault(oldDefaultEngine);
     await PlacesUtils.history.clear();
   });
 });
@@ -164,17 +166,12 @@ add_task(async function localOneOff_withVisit() {
   Assert.ok(UrlbarTestUtils.getResultCount(window) > 1, "Sanity check results");
   let oneOffButtons = UrlbarTestUtils.getOneOffSearchButtons(window);
 
-  let [
-    actionHistory,
-    actionTabs,
-    actionBookmarks,
-    actionVisit,
-  ] = await document.l10n.formatValues([
-    { id: "urlbar-result-action-search-history" },
-    { id: "urlbar-result-action-search-tabs" },
-    { id: "urlbar-result-action-search-bookmarks" },
-    { id: "urlbar-result-action-visit" },
-  ]);
+  let [actionHistory, actionTabs, actionBookmarks] =
+    await document.l10n.formatValues([
+      { id: "urlbar-result-action-search-history" },
+      { id: "urlbar-result-action-search-tabs" },
+      { id: "urlbar-result-action-search-bookmarks" },
+    ]);
 
   info("Alt UP to select the history one-off.");
   EventUtils.synthesizeKey("KEY_ArrowUp", { altKey: true });
@@ -284,8 +281,8 @@ add_task(async function localOneOff_withVisit() {
   );
   Assert.equal(result.type, UrlbarUtils.RESULT_TYPE.URL);
   Assert.equal(
-    result.displayed.action,
-    actionVisit,
+    result.displayed.url,
+    result.result.payload.displayUrl,
     "Check the heuristic action"
   );
   Assert.notEqual(
@@ -296,7 +293,7 @@ add_task(async function localOneOff_withVisit() {
   row = await UrlbarTestUtils.waitForAutocompleteResultAt(window, 0);
   Assert.equal(
     row.querySelector(".urlbarView-title").textContent,
-    `https://${searchString}`,
+    result.result.payload.title || `https://${searchString}`,
     "Check that the result title has been restored to the fixed-up URI."
   );
 

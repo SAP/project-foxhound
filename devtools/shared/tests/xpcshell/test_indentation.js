@@ -11,7 +11,7 @@ const {
   getIndentationFromPrefs,
   getIndentationFromIteration,
   getIndentationFromString,
-} = require("devtools/shared/indentation");
+} = require("resource://devtools/shared/indentation.js");
 
 function test_indent_from_prefs() {
   Services.prefs.setBoolPref(DETECT_INDENT, true);
@@ -118,7 +118,7 @@ function test_indent_detection() {
   Services.prefs.setBoolPref(DETECT_INDENT, true);
 
   for (const test of TESTS) {
-    const iterFn = function(start, end, callback) {
+    const iterFn = function (start, end, callback) {
       test.input.slice(start, end).forEach(callback);
     };
 

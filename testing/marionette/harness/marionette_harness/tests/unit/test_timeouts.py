@@ -2,15 +2,13 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import
-
 from marionette_driver.by import By
 from marionette_driver.errors import (
     MarionetteException,
     NoSuchElementException,
     ScriptTimeoutException,
 )
-from marionette_driver.marionette import HTMLElement
+from marionette_driver.marionette import WebElement
 
 from marionette_harness import MarionetteTestCase, run_if_manage_instance
 
@@ -56,7 +54,7 @@ class TestTimeouts(MarionetteTestCase):
         button.click()
         self.marionette.timeout.implicit = 8
         self.assertEqual(
-            HTMLElement, type(self.marionette.find_element(By.ID, "newDiv"))
+            WebElement, type(self.marionette.find_element(By.ID, "newDiv"))
         )
 
     def test_search_timeout_found(self):

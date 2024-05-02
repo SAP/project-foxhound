@@ -162,7 +162,7 @@ add_task(async function testLocalStorage() {
     useAddonManager: "permanent",
     manifest: {
       name: "Open tabs",
-      applications: { gecko: { id: "open-tabs@tests.mozilla.org" }, },
+      browser_specific_settings: { gecko: { id: "open-tabs@tests.mozilla.org" }, },
       permissions: ["cookies"],
     },
     async background() {
@@ -220,7 +220,7 @@ add_task(async function testLocalStorage() {
     background,
     manifest: {
       name: "Test Extension",
-      applications: { gecko: { id: "localStorage@tests.mozilla.org" } },
+      browser_specific_settings: { gecko: { id: "localStorage@tests.mozilla.org" } },
       permissions: ["browsingData", "tabs"],
       content_scripts: [
         {
@@ -262,19 +262,19 @@ add_task(async function test_browserData_on_aboutnewtab_and_file_data() {
       browser.test.sendMessage("done");
     },
     manifest: {
-      applications: { gecko: { id: "indexed-db-file@test.mozilla.org" } },
+      browser_specific_settings: { gecko: { id: "indexed-db-file@test.mozilla.org" } },
       permissions: ["browsingData"],
     },
   });
 
   await new Promise(resolve => {
     const chromeScript = SpecialPowers.loadChromeScript(async () => {
-      const { SiteDataTestUtils } = ChromeUtils.import(
-        "resource://testing-common/SiteDataTestUtils.jsm"
+      /* eslint-env mozilla/chrome-script */
+      const { SiteDataTestUtils } = ChromeUtils.importESModule(
+        "resource://testing-common/SiteDataTestUtils.sys.mjs"
       );
       await SiteDataTestUtils.addToIndexedDB("about:newtab");
       await SiteDataTestUtils.addToIndexedDB("file:///fake/file");
-      // eslint-disable-next-line no-undef
       sendAsyncMessage("done");
     });
 
@@ -290,7 +290,7 @@ add_task(async function test_browserData_on_aboutnewtab_and_file_data() {
 });
 
 add_task(async function test_browserData_should_not_remove_extension_data() {
-  if (!SpecialPowers.getBoolPref("dom.storage.next_gen")) {
+  if (SpecialPowers.getBoolPref("dom.storage.enable_unsupported_legacy_implementation")) {
     // When LSNG isn't enabled, the browsingData API does still clear
     // all the extensions localStorage if called without a list of specific
     // origins to clear.
@@ -308,7 +308,7 @@ add_task(async function test_browserData_should_not_remove_extension_data() {
       browser.test.sendMessage("done", window.localStorage.getItem("key"));
     },
     manifest: {
-      applications: { gecko: { id: "extension-data@tests.mozilla.org" } },
+      browser_specific_settings: { gecko: { id: "extension-data@tests.mozilla.org" } },
       permissions: ["browsingData"],
     },
   });

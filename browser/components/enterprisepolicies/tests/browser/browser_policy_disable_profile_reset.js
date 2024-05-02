@@ -2,13 +2,13 @@
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 "use strict";
 
-let { ResetProfile } = ChromeUtils.import(
-  "resource://gre/modules/ResetProfile.jsm"
+let { ResetProfile } = ChromeUtils.importESModule(
+  "resource://gre/modules/ResetProfile.sys.mjs"
 );
 
 // For this test to work properly, this profile actually needs to be
 // "reset-able", which requires that it be recognized by the profile service
-add_task(async function setup() {
+add_setup(async function () {
   let profileDirectory = Services.dirsvc.get("ProfD", Ci.nsIFile);
   let profileName = profileDirectory.leafName;
   let profileService = Cc["@mozilla.org/toolkit/profile-service;1"].getService(
@@ -46,19 +46,23 @@ async function test_reset_disabled({ disabled }) {
     gBrowser,
     "about:support"
   );
-  await SpecialPowers.spawn(tab.linkedBrowser, [{ disabled }], async function({
-    // eslint-disable-next-line no-shadow
-    disabled,
-  }) {
-    let resetBox = content.document.getElementById("reset-box");
-    let elementStyle = content.window.getComputedStyle(resetBox);
-    let expectedDisplayValue = disabled ? "none" : "block";
-    is(
-      elementStyle.display,
-      expectedDisplayValue,
-      "about:support Reset button box should be hidden"
-    );
-  });
+  await SpecialPowers.spawn(
+    tab.linkedBrowser,
+    [{ disabled }],
+    async function ({
+      // eslint-disable-next-line no-shadow
+      disabled,
+    }) {
+      let resetBox = content.document.getElementById("reset-box");
+      let elementStyle = content.window.getComputedStyle(resetBox);
+      let expectedDisplayValue = disabled ? "none" : "block";
+      is(
+        elementStyle.display,
+        expectedDisplayValue,
+        "about:support Reset button box should be hidden"
+      );
+    }
+  );
   await BrowserTestUtils.removeTab(tab);
 }
 

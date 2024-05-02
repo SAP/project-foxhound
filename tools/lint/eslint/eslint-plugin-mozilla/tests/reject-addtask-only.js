@@ -10,20 +10,18 @@
 var rule = require("../lib/rules/reject-addtask-only");
 var RuleTester = require("eslint").RuleTester;
 
-const ruleTester = new RuleTester({ parserOptions: { ecmaVersion: 8 } });
+const ruleTester = new RuleTester({ parserOptions: { ecmaVersion: "latest" } });
 
 // ------------------------------------------------------------------------------
 // Tests
 // ------------------------------------------------------------------------------
 
 function invalidError(output) {
-  let message =
-    "add_task(...).only() not allowed - add an exception if this is intentional";
   return [
     {
-      message,
+      messageId: "addTaskNotAllowed",
       type: "CallExpression",
-      suggestions: [{ desc: "Remove only() call from task", output }],
+      suggestions: [{ messageId: "addTaskNotAllowedSuggestion", output }],
     },
   ];
 }

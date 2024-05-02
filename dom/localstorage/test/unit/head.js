@@ -8,8 +8,6 @@
 
 const NS_ERROR_DOM_QUOTA_EXCEEDED_ERR = 22;
 
-var { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-
 function is(a, b, msg) {
   Assert.equal(a, b, msg);
 }
@@ -18,39 +16,16 @@ function ok(cond, msg) {
   Assert.ok(!!cond, msg);
 }
 
-function run_test() {
-  runTest();
-}
+add_setup(function () {
+  do_get_profile();
 
-if (!this.runTest) {
-  this.runTest = function() {
-    do_get_profile();
+  enableTesting();
 
-    enableTesting();
-
-    Cu.importGlobalProperties(["crypto"]);
-
-    Assert.ok(
-      typeof testSteps === "function",
-      "There should be a testSteps function"
-    );
-    Assert.ok(
-      testSteps.constructor.name === "AsyncFunction",
-      "testSteps should be an async function"
-    );
-
-    registerCleanupFunction(resetTesting);
-
-    add_task(testSteps);
-
-    // Since we defined run_test, we must invoke run_next_test() to start the
-    // async test.
-    run_next_test();
-  };
-}
+  registerCleanupFunction(resetTesting);
+});
 
 function returnToEventLoop() {
-  return new Promise(function(resolve) {
+  return new Promise(function (resolve) {
     executeSoon(resolve);
   });
 }
@@ -128,7 +103,7 @@ function initTemporaryOrigin(persistence, principal) {
 function getOriginUsage(principal, fromMemory = false) {
   let request = Services.qms.getUsageForPrincipal(
     principal,
-    function() {},
+    function () {},
     fromMemory
   );
 
@@ -148,11 +123,9 @@ function clearOriginsByPattern(pattern) {
 }
 
 function clearOriginsByPrefix(principal, persistence) {
-  let request = Services.qms.clearStoragesForPrincipal(
+  let request = Services.qms.clearStoragesForOriginPrefix(
     principal,
-    persistence,
-    null,
-    true
+    persistence
   );
 
   return request;
@@ -242,7 +215,7 @@ function getRelativeFile(relativePath) {
   let profileDir = getProfileDir();
 
   let file = profileDir.clone();
-  relativePath.split("/").forEach(function(component) {
+  relativePath.split("/").forEach(function (component) {
     file.append(component);
   });
 
@@ -319,8 +292,8 @@ class RequestError extends Error {
 }
 
 async function requestFinished(request) {
-  await new Promise(function(resolve) {
-    request.callback = function() {
+  await new Promise(function (resolve) {
+    request.callback = function () {
       resolve();
     };
   });

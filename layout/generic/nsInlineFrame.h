@@ -68,8 +68,8 @@ class nsInlineFrame : public nsContainerFrame {
       PeekOffsetCharacterOptions aOptions =
           PeekOffsetCharacterOptions()) override;
 
-  virtual void DestroyFrom(nsIFrame* aDestructRoot,
-                           PostDestroyData& aPostDestroyData) override;
+  void Destroy(DestroyContext&) override;
+
   void StealFrame(nsIFrame* aChild) override;
 
   // nsIHTMLReflow overrides
@@ -95,8 +95,10 @@ class nsInlineFrame : public nsContainerFrame {
   virtual bool CanContinueTextRun() const override;
 
   virtual void PullOverflowsFromPrevInFlow() override;
-  virtual nscoord GetLogicalBaseline(
-      mozilla::WritingMode aWritingMode) const override;
+
+  Maybe<nscoord> GetNaturalBaselineBOffset(
+      mozilla::WritingMode aWM, BaselineSharingGroup aBaselineGroup,
+      BaselineExportContext) const override;
   virtual bool DrainSelfOverflowList() override;
 
   /**

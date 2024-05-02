@@ -10,8 +10,8 @@
 let faviconURI = Services.io.newURI(
   "http://example.org/tests/toolkit/components/places/tests/browser/favicon-normal16.png"
 );
-add_task(async function() {
-  registerCleanupFunction(async function() {
+add_task(async function () {
+  registerCleanupFunction(async function () {
     await PlacesUtils.bookmarks.eraseEverything();
     await PlacesUtils.history.clear();
   });
@@ -25,8 +25,7 @@ add_task(async function() {
     events =>
       events.some(
         e => e.url == lastPageURI.spec && e.faviconUrl == SMALLPNG_DATA_URI.spec
-      ),
-    "places"
+      )
   );
 
   info("Test null page uri");
@@ -109,7 +108,7 @@ add_task(async function() {
 
   info("Test error icon");
   // This error icon must stay in sync with FAVICON_ERRORPAGE_URL in
-  // nsIFaviconService.idl, aboutCertError.xhtml and netError.xhtml.
+  // nsIFaviconService.idl and aboutNetError.xhtml.
   let faviconErrorPageURI = Services.io.newURI(
     "chrome://global/skin/icons/info.svg"
   );

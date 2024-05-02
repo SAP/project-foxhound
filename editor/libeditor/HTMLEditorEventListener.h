@@ -7,7 +7,10 @@
 #define HTMLEditorEventListener_h
 
 #include "EditorEventListener.h"
-#include "mozilla/HTMLEditor.h"
+
+#include "EditorForwards.h"
+#include "HTMLEditor.h"
+
 #include "nscore.h"
 
 namespace mozilla {
@@ -16,13 +19,10 @@ namespace dom {
 class Element;
 }
 
-class EditorBase;
-
 class HTMLEditorEventListener final : public EditorEventListener {
  public:
   HTMLEditorEventListener()
-      : EditorEventListener(),
-        mListeningToMouseMoveEventForResizers(false),
+      : mListeningToMouseMoveEventForResizers(false),
         mListeningToMouseMoveEventForGrabber(false),
         mListeningToResizeEvent(false) {}
 

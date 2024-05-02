@@ -5,7 +5,6 @@
  * bug 1174913, bug 1175736, bug 1184781
  */
 
-Components.utils.importGlobalProperties(["URLSearchParams"]);
 const SJS = "referrer_testserver.sjs?";
 const SJS_PATH = "/tests/dom/base/test/";
 const BASE_ORIGIN = "example.com";
@@ -436,6 +435,7 @@ function buildLinkString(
   return `<link ${relString} ${href} ${policy} ${asString} id="test_link" onload='${onChildComplete}' onerror='${onChildComplete}'>`;
 }
 
+// eslint-disable-next-line complexity
 function handleRequest(request, response) {
   var params = new URLSearchParams(request.queryString);
   var action = params.get("ACTION");
@@ -688,5 +688,4 @@ function handleRequest(request, response) {
   }
 
   response.write("I don't know action " + action);
-  return;
 }

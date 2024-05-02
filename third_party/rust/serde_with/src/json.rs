@@ -1,22 +1,30 @@
 //! De/Serialization of JSON
 //!
-//! This modules is only available if using the `json` feature of the crate.
+//! This modules is only available when using the `json` feature of the crate.
+
+use crate::prelude::*;
 
 /// Serialize value as string containing JSON
+///
+/// *Note*: This type is not necessary for normal usage of serde with JSON.
+/// It is only required if the serialized format contains a string, which itself contains JSON.
+///
+/// # Errors
+///
+/// Serialization can fail if `T`'s implementation of `Serialize` decides to
+/// fail, or if `T` contains a map with non-string keys.
 ///
 /// # Examples
 ///
 /// ```
-/// # extern crate serde;
-/// # extern crate serde_derive;
-/// # extern crate serde_json;
-/// # extern crate serde_with;
+/// # #[cfg(feature = "macros")] {
+/// # use serde::{Deserialize, Serialize};
+/// # use serde_with::{serde_as, json::JsonString};
 /// #
-/// # use serde_derive::{Deserialize, Serialize};
-/// #
+/// #[serde_as]
 /// #[derive(Deserialize, Serialize)]
 /// struct A {
-///     #[serde(with = "serde_with::json::nested")]
+///     #[serde_as(as = "JsonString")]
 ///     other_struct: B,
 /// }
 /// #[derive(Deserialize, Serialize)]
@@ -30,59 +38,84 @@
 /// let x = A {
 ///     other_struct: B { value: 10 },
 /// };
-/// assert_eq!(r#"{"other_struct":"{\"value\":10}"}"#, serde_json::to_string(&x).unwrap());
+/// assert_eq!(
+///     r#"{"other_struct":"{\"value\":10}"}"#,
+///     serde_json::to_string(&x).unwrap()
+/// );
+/// # }
 /// ```
 ///
-pub mod nested {
-    use serde::{
-        de::{DeserializeOwned, Deserializer, Error, Visitor},
-        ser::{self, Serialize, Serializer},
-    };
-    use serde_json;
-    use std::{fmt, marker::PhantomData};
+/// The `JsonString` converter takes a type argument, which allows altering the serialization behavior of the inner value, before it gets turned into a JSON string.
+///
+/// ```
+/// # #[cfg(feature = "macros")] {
+/// # use serde::{Deserialize, Serialize};
+/// # use serde_with::{serde_as, json::JsonString};
+/// # use std::collections::BTreeMap;
+/// #
+/// #[serde_as]
+/// #[derive(Debug, Serialize, Deserialize, PartialEq)]
+/// struct Struct {
+///     #[serde_as(as = "JsonString<Vec<(JsonString, _)>>")]
+///     value: BTreeMap<[u8; 2], u32>,
+/// }
+///
+/// let value = Struct {
+///     value: BTreeMap::from([([1, 2], 3), ([4, 5], 6)]),
+/// };
+/// assert_eq!(
+///     r#"{"value":"[[\"[1,2]\",3],[\"[4,5]\",6]]"}"#,
+///     serde_json::to_string(&value).unwrap()
+/// );
+/// # }
+/// ```
+pub struct JsonString<T = Same>(PhantomData<T>);
 
-    /// Deserialize value from a string which is valid JSON
-    pub fn deserialize<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+impl<T, TAs> SerializeAs<T> for JsonString<TAs>
+where
+    TAs: SerializeAs<T>,
+{
+    fn serialize_as<S>(source: &T, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(
+            &serde_json::to_string(&SerializeAsWrap::<T, TAs>::new(source))
+                .map_err(SerError::custom)?,
+        )
+    }
+}
+
+impl<'de, T, TAs> DeserializeAs<'de, T> for JsonString<TAs>
+where
+    TAs: for<'a> DeserializeAs<'a, T>,
+{
+    fn deserialize_as<D>(deserializer: D) -> Result<T, D::Error>
     where
         D: Deserializer<'de>,
-        T: DeserializeOwned,
     {
-        #[derive(Default)]
-        struct Helper<S: DeserializeOwned>(PhantomData<S>);
+        struct Helper<S, SAs>(PhantomData<(S, SAs)>);
 
-        impl<'de, S> Visitor<'de> for Helper<S>
+        impl<'de, S, SAs> Visitor<'de> for Helper<S, SAs>
         where
-            S: DeserializeOwned,
+            SAs: for<'a> DeserializeAs<'a, S>,
         {
             type Value = S;
 
-            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                write!(formatter, "valid json object")
+            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                formatter.write_str("valid json object")
             }
 
             fn visit_str<E>(self, value: &str) -> Result<S, E>
             where
-                E: Error,
+                E: DeError,
             {
-                serde_json::from_str(value).map_err(Error::custom)
+                serde_json::from_str(value)
+                    .map(DeserializeAsWrap::<S, SAs>::into_inner)
+                    .map_err(DeError::custom)
             }
         }
 
-        deserializer.deserialize_str(Helper(PhantomData))
-    }
-
-    /// Serialize value as string containing JSON
-    ///
-    /// # Errors
-    ///
-    /// Serialization can fail if `T`'s implementation of `Serialize` decides to
-    /// fail, or if `T` contains a map with non-string keys.
-    pub fn serialize<T, S>(value: &T, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        T: Serialize,
-        S: Serializer,
-    {
-        let s = serde_json::to_string(value).map_err(ser::Error::custom)?;
-        serializer.serialize_str(&*s)
+        deserializer.deserialize_str(Helper::<T, TAs>(PhantomData))
     }
 }

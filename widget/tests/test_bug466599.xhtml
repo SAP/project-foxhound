@@ -20,7 +20,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=466599
   <script class="testbody" type="application/javascript">
   <![CDATA[
 
-  /** Test for Bug 466599 **/
+  /** Test for Bug 466599 */
 
 function getLoadContext() {
   return window.docShell.QueryInterface(Ci.nsILoadContext);
@@ -92,7 +92,6 @@ function initAndRunTests()
   result = readFromClipboard();
   ok(expect.test(result), "data on system pasteboard is wrapped with charset metadata");
 
-  // eslint-disable-next-line no-unsanitized/property
   $("display").innerHTML =
     '<em>source:</em> <pre>' + encodeHtmlEntities(source) + '</pre><br/>' +
     '<em>result:</em> <pre>' + encodeHtmlEntities(result) + '</pre>';

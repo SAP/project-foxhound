@@ -8,7 +8,6 @@
 
 #include "mozilla/BinarySearch.h"
 #include "mozilla/ClearOnShutdown.h"
-#include "mozilla/dom/ContentChild.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/Promise-inl.h"
 #include "mozilla/ExtensionPolicyService.h"
@@ -17,8 +16,10 @@
 #include "mozilla/ipc/IPCStreamUtils.h"
 #include "mozilla/ipc/URIUtils.h"
 #include "mozilla/net/NeckoChild.h"
+#include "mozilla/Omnijar.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/ResultExtensions.h"
+#include "mozilla/Try.h"
 
 #include "FileDescriptorFile.h"
 #include "LoadInfo.h"
@@ -133,11 +134,7 @@ class ExtensionStreamGetter final : public nsICancelable {
   }
 
   void SetupEventTarget() {
-    mMainThreadEventTarget = nsContentUtils::GetEventTargetByLoadInfo(
-        mLoadInfo, TaskCategory::Other);
-    if (!mMainThreadEventTarget) {
-      mMainThreadEventTarget = GetMainThreadSerialEventTarget();
-    }
+    mMainThreadEventTarget = GetMainThreadSerialEventTarget();
   }
 
   // Get an input stream or file descriptor from the parent asynchronously.
@@ -279,12 +276,12 @@ ExtensionStreamGetter::Cancel(nsresult aStatus) {
   mStatus = aStatus;
 
   if (mPump) {
-    mPump->Cancel(aStatus);
+    mPump->CancelWithReason(aStatus, "ExtensionStreamGetter::Cancel"_ns);
     mPump = nullptr;
   }
 
   if (mIsJarChannel && mJarChannel) {
-    mJarChannel->Cancel(aStatus);
+    mJarChannel->CancelWithReason(aStatus, "ExtensionStreamGetter::Cancel"_ns);
   }
 
   return NS_OK;
@@ -299,7 +296,8 @@ void ExtensionStreamGetter::CancelRequest(nsIStreamListener* aListener,
 
   aListener->OnStartRequest(aChannel);
   aListener->OnStopRequest(aChannel, aResult);
-  aChannel->Cancel(NS_BINDING_ABORTED);
+  aChannel->CancelWithReason(NS_BINDING_ABORTED,
+                             "ExtensionStreamGetter::CancelRequest"_ns);
 }
 
 // Handle an input stream sent from the parent.
@@ -416,15 +414,21 @@ nsresult ExtensionProtocolHandler::GetFlagsForURI(nsIURI* aURI,
 
   URLInfo url(aURI);
   if (auto* policy = EPS().GetByURL(url)) {
-    // In general a moz-extension URI is only loadable by chrome, but a
-    // whitelisted subset are web-accessible (and cross-origin fetchable). Check
-    // that whitelist.  For Manifest V3 extensions, an additional whitelist
-    // for the source loading the url must be checked so we add the flag
-    // WEBEXT_URI_WEB_ACCESSIBLE, which is then checked in
-    // nsScriptSecurityManager.
+    // In general a moz-extension URI is only loadable by chrome, but an
+    // allowlist subset are web-accessible (and cross-origin fetchable).
+    // The allowlist is checked using EPS.SourceMayLoadExtensionURI in
+    // BasePrincipal and nsScriptSecurityManager.
     if (policy->IsWebAccessiblePath(url.FilePath())) {
-      flags |= URI_LOADABLE_BY_ANYONE | URI_FETCHABLE_BY_ANYONE |
-               WEBEXT_URI_WEB_ACCESSIBLE;
+      if (policy->ManifestVersion() < 3) {
+        flags |= URI_LOADABLE_BY_ANYONE | URI_FETCHABLE_BY_ANYONE;
+      } else {
+        flags |= WEBEXT_URI_WEB_ACCESSIBLE;
+      }
+    } else if (policy->Type() == nsGkAtoms::theme) {
+      // Static themes cannot set web accessible resources, however using this
+      // flag here triggers SourceMayAccessPath calls necessary to allow another
+      // extension to access static theme resources in this extension.
+      flags |= WEBEXT_URI_WEB_ACCESSIBLE;
     } else {
       flags |= URI_DANGEROUS_TO_LOAD;
     }
@@ -508,7 +512,7 @@ void OpenWhenReady(
 
   Unused << aPromise->ThenWithCycleCollectedArgs(
       [channel, aCallback](
-          JSContext* aCx, JS::HandleValue aValue,
+          JSContext* aCx, JS::Handle<JS::Value> aValue, ErrorResult& aRv,
           nsIStreamListener* aListener) -> already_AddRefed<Promise> {
         nsresult rv = aCallback(aListener, channel);
         if (NS_FAILED(rv)) {
@@ -584,7 +588,9 @@ nsresult ExtensionProtocolHandler::SubstituteChannel(nsIURI* aURI,
     size_t matchIdx;
     if (BinarySearchIf(
             sStaticFileExtensions, 0, ArrayLength(sStaticFileExtensions),
-            [&ext](const char* aOther) { return ext.Compare(aOther); },
+            [&ext](const char* aOther) {
+              return Compare(ext, nsDependentCString(aOther));
+            },
             &matchIdx)) {
       // This is a static resource that shouldn't depend on the extension being
       // ready. Don't bother waiting for it.
@@ -623,11 +629,11 @@ Result<bool, nsresult> ExtensionProtocolHandler::AllowExternalResource(
   MOZ_ASSERT(!IsNeckoChild());
 
 #if defined(XP_WIN)
-  // On Windows, dev builds don't use symlinks so we never need to
+  // On Windows, non-package builds don't use symlinks so we never need to
   // allow a resource from outside of the extension dir.
   return false;
 #else
-  if (!mozilla::IsDevelopmentBuild()) {
+  if (mozilla::IsPackagedBuild()) {
     return false;
   }
 
@@ -657,7 +663,7 @@ Result<bool, nsresult> ExtensionProtocolHandler::AllowExternalResource(
 // The |aRequestedFile| argument must already be Normalize()'d
 Result<bool, nsresult> ExtensionProtocolHandler::DevRepoContains(
     nsIFile* aRequestedFile) {
-  MOZ_ASSERT(mozilla::IsDevelopmentBuild());
+  MOZ_ASSERT(!mozilla::IsPackagedBuild());
   MOZ_ASSERT(!IsNeckoChild());
 
   // On the first invocation, set mDevRepo
@@ -682,7 +688,7 @@ Result<bool, nsresult> ExtensionProtocolHandler::DevRepoContains(
 #if !defined(XP_WIN)
 Result<bool, nsresult> ExtensionProtocolHandler::AppDirContains(
     nsIFile* aExtensionDir) {
-  MOZ_ASSERT(mozilla::IsDevelopmentBuild());
+  MOZ_ASSERT(!mozilla::IsPackagedBuild());
   MOZ_ASSERT(!IsNeckoChild());
 
   // On the first invocation, set mAppDir
@@ -874,7 +880,7 @@ Result<Ok, nsresult> ExtensionProtocolHandler::NewFD(
 
   if (!mFileOpenerThread) {
     mFileOpenerThread = new LazyIdleThread(DEFAULT_THREAD_TIMEOUT_MS,
-                                           "ExtensionProtocolHandler"_ns);
+                                           "ExtensionProtocolHandler");
   }
 
   RefPtr<ExtensionJARFileOpener> fileOpener =

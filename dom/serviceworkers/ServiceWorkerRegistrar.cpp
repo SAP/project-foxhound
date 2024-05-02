@@ -8,7 +8,6 @@
 #include "ServiceWorkerManager.h"
 #include "mozilla/dom/ServiceWorkerRegistrarTypes.h"
 #include "mozilla/dom/DOMException.h"
-#include "mozilla/net/MozURL.h"
 #include "mozilla/StaticPrefs_dom.h"
 
 #include "nsIEventTarget.h"
@@ -18,6 +17,7 @@
 #include "nsIOutputStream.h"
 #include "nsISafeOutputStream.h"
 #include "nsIServiceWorkerManager.h"
+#include "nsIURI.h"
 #include "nsIWritablePropertyBag2.h"
 
 #include "MainThreadUtils.h"
@@ -53,8 +53,7 @@ extern mozilla::LazyLogModule sWorkerTelemetryLog;
 #endif
 #define LOG(_args) MOZ_LOG(sWorkerTelemetryLog, LogLevel::Debug, _args);
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 namespace {
 
@@ -67,15 +66,25 @@ StaticRefPtr<ServiceWorkerRegistrar> gServiceWorkerRegistrar;
 
 nsresult GetOriginAndBaseDomain(const nsACString& aURL, nsACString& aOrigin,
                                 nsACString& aBaseDomain) {
-  RefPtr<net::MozURL> url;
-  nsresult rv = net::MozURL::Init(getter_AddRefs(url), aURL);
+  nsCOMPtr<nsIURI> url;
+  nsresult rv = NS_NewURI(getter_AddRefs(url), aURL);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
 
-  url->Origin(aOrigin);
+  OriginAttributes attrs;
+  nsCOMPtr<nsIPrincipal> principal =
+      BasePrincipal::CreateContentPrincipal(url, attrs);
+  if (!principal) {
+    return NS_ERROR_NULL_POINTER;
+  }
 
-  rv = url->BaseDomain(aBaseDomain);
+  rv = principal->GetOriginNoSuffix(aOrigin);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
+
+  rv = principal->GetBaseDomain(aBaseDomain);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
@@ -874,13 +883,18 @@ nsresult ServiceWorkerRegistrar::ReadData() {
       }
     }
   }
-
   // Overwrite previous version.
   // Cannot call SaveData directly because gtest uses main-thread.
+
+  // XXX NOTE: if we could be accessed multi-threaded here, we would need to
+  // find a way to lock around access to mData.  Since we can't, suppress the
+  // thread-safety warnings.
+  MOZ_PUSH_IGNORE_THREAD_SAFETY
   if (overwrite && NS_FAILED(WriteData(mData))) {
     NS_WARNING("Failed to write data for the ServiceWorker Registations.");
     DeleteData();
   }
+  MOZ_POP_THREAD_SAFETY
 
   return NS_OK;
 }
@@ -967,7 +981,7 @@ class ServiceWorkerRegistrarSaveDataRunnable final : public Runnable {
   ServiceWorkerRegistrarSaveDataRunnable(
       nsTArray<ServiceWorkerRegistrationData>&& aData, uint32_t aGeneration)
       : Runnable("dom::ServiceWorkerRegistrarSaveDataRunnable"),
-        mEventTarget(GetCurrentEventTarget()),
+        mEventTarget(GetCurrentSerialEventTarget()),
         mData(std::move(aData)),
         mGeneration(aGeneration) {
     AssertIsOnBackgroundThread();
@@ -1308,48 +1322,53 @@ void ServiceWorkerRegistrar::ProfileStopped() {
     nsresult rv = NS_GetSpecialDirectory(NS_APP_USER_PROFILE_50_DIR,
                                          getter_AddRefs(mProfileDir));
     if (NS_WARN_IF(NS_FAILED(rv))) {
-      return;
+      // If we do not have a profile directory, we are somehow screwed.
+      MOZ_DIAGNOSTIC_ASSERT(
+          false,
+          "NS_GetSpecialDirectory for NS_APP_USER_PROFILE_50_DIR failed!");
     }
   }
 
+  // Mutations to the ServiceWorkerRegistrar happen on the PBackground thread,
+  // issued by the ServiceWorkerManagerService, so the appropriate place to
+  // trigger shutdown is on that thread.
+  //
+  // However, it's quite possible that the PBackground thread was not brought
+  // into existence for xpcshell tests.  We don't cause it to be created
+  // ourselves for any reason, for example.
+  //
+  // In this scenario, we know that:
+  // - We will receive exactly one call to ourself from BlockShutdown() and
+  //   BlockShutdown() will be called (at most) once.
+  // - The only way our Shutdown() method gets called is via
+  //   BackgroundParentImpl::RecvShutdownServiceWorkerRegistrar() being
+  //   invoked, which only happens if we get to that send below here that we
+  //   can't get to.
+  // - All Shutdown() does is set mShuttingDown=true (essential for
+  //   invariants) and invoke MaybeScheduleShutdownCompleted().
+  // - Since there is no PBackground thread, mSaveDataRunnableDispatched must
+  //   be false because only MaybeScheduleSaveData() set it and it only runs
+  //   on the background thread, so it cannot have run.  And so we would
+  //   expect MaybeScheduleShutdownCompleted() to schedule an invocation of
+  //   ShutdownCompleted on the main thread.
   PBackgroundChild* child = BackgroundChild::GetForCurrentThread();
-  if (!child) {
-    // Mutations to the ServiceWorkerRegistrar happen on the PBackground thread,
-    // issued by the ServiceWorkerManagerService, so the appropriate place to
-    // trigger shutdown is on that thread.
-    //
-    // However, it's quite possible that the PBackground thread was not brought
-    // into existence for xpcshell tests.  We don't cause it to be created
-    // ourselves for any reason, for example.
-    //
-    // In this scenario, we know that:
-    // - We will receive exactly one call to ourself from BlockShutdown() and
-    //   BlockShutdown() will be called (at most) once.
-    // - The only way our Shutdown() method gets called is via
-    //   BackgroundParentImpl::RecvShutdownServiceWorkerRegistrar() being
-    //   invoked, which only happens if we get to that send below here that we
-    //   can't get to.
-    // - All Shutdown() does is set mShuttingDown=true (essential for
-    //   invariants) and invoke MaybeScheduleShutdownCompleted().
-    // - Since there is no PBackground thread, mSaveDataRunnableDispatched must
-    //   be false because only MaybeScheduleSaveData() set it and it only runs
-    //   on the background thread, so it cannot have run.  And so we would
-    //   expect MaybeScheduleShutdownCompleted() to schedule an invocation of
-    //   ShutdownCompleted on the main thread.
-    //
-    // So it's appropriate for us to set mShuttingDown=true (as Shutdown would
-    // do) and directly invoke ShutdownCompleted() (as Shutdown would indirectly
-    // do via MaybeScheduleShutdownCompleted).
-    mShuttingDown = true;
-    ShutdownCompleted();
-    return;
+  if (mProfileDir && child) {
+    if (child->SendShutdownServiceWorkerRegistrar()) {
+      // Normal shutdown sequence has been initiated, go home.
+      return;
+    }
+    // If we get here, the PBackground thread has probably gone nuts and we
+    // want to know it.
+    MOZ_DIAGNOSTIC_ASSERT(
+        false, "Unable to send the ShutdownServiceWorkerRegistrar message.");
   }
 
-  if (!child->SendShutdownServiceWorkerRegistrar()) {
-    // If we get here, the PBackground thread has probably gone nuts and we
-    // want to know it. We could try to mitigate as above for xpcshell.
-    MOZ_CRASH("Unable to send the ShutdownServiceWorkerRegistrar message.");
-  }
+  // On any error it's appropriate to set mShuttingDown=true (as Shutdown
+  // would do) and directly invoke ShutdownCompleted() (as Shutdown would
+  // indirectly do via MaybeScheduleShutdownCompleted) in order to unblock
+  // shutdown.
+  mShuttingDown = true;
+  ShutdownCompleted();
 }
 
 // Async shutdown blocker methods
@@ -1384,7 +1403,7 @@ ServiceWorkerRegistrar::GetState(nsIPropertyBag** aBagOut) {
 #define RELEASE_ASSERT_SUCCEEDED(rv, name)                                    \
   do {                                                                        \
     if (NS_FAILED(rv)) {                                                      \
-      if (rv == NS_ERROR_XPC_JAVASCRIPT_ERROR_WITH_DETAILS) {                 \
+      if ((rv) == NS_ERROR_XPC_JAVASCRIPT_ERROR_WITH_DETAILS) {               \
         if (auto* context = CycleCollectedJSContext::Get()) {                 \
           if (RefPtr<Exception> exn = context->GetPendingException()) {       \
             MOZ_CRASH_UNSAFE_PRINTF("Failed to get " name ": %s",             \
@@ -1446,5 +1465,4 @@ ServiceWorkerRegistrar::Observe(nsISupports* aSubject, const char* aTopic,
   return NS_ERROR_UNEXPECTED;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

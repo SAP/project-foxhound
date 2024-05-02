@@ -3,11 +3,7 @@
 
 "use strict";
 
-const { PrivateBrowsingUtils } = ChromeUtils.import(
-  "resource://gre/modules/PrivateBrowsingUtils.jsm"
-);
-
-add_task(async function setup() {
+add_setup(async function () {
   await setupPolicyEngineWithJson({
     policies: {
       DisablePrivateBrowsing: true,
@@ -15,7 +11,7 @@ add_task(async function setup() {
   });
 });
 
-add_task(async function test_menu_shown() {
+add_task(async function test_privatebrowsing_disabled() {
   is(
     PrivateBrowsingUtils.enabled,
     false,
@@ -31,4 +27,6 @@ add_task(async function test_menu_shown() {
     "The private browsing command should be hidden"
   );
   await BrowserTestUtils.closeWindow(newWin);
+
+  await testPageBlockedByPolicy("about:privatebrowsing");
 });

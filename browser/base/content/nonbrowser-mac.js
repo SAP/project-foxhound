@@ -5,13 +5,17 @@
 
 /* eslint-env mozilla/browser-window */
 
+ChromeUtils.defineESModuleGetters(this, {
+  NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
+});
+
 let delayedStartupTimeoutId = null;
 
 function OpenBrowserWindowFromDockMenu(options) {
   let win = OpenBrowserWindow(options);
   win.addEventListener(
     "load",
-    function() {
+    function () {
       let dockSupport = Cc["@mozilla.org/widget/macdocksupport;1"].getService(
         Ci.nsIMacDockSupport
       );
@@ -46,6 +50,7 @@ function nonBrowserWindowStartup() {
     "Browser:BookmarkAllTabs",
     "View:PageInfo",
     "History:UndoCloseTab",
+    "menu_openFirefoxView",
   ];
   var element;
 
@@ -127,6 +132,10 @@ function nonBrowserWindowDelayedStartup() {
 
   // initialize the private browsing UI
   gPrivateBrowsingUI.init();
+
+  if (!NimbusFeatures.majorRelease2022.getVariable("firefoxView")) {
+    document.getElementById("menu_openFirefoxView").hidden = true;
+  }
 }
 
 function nonBrowserWindowShutdown() {

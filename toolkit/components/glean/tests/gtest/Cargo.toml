@@ -6,7 +6,9 @@ license = "MPL-2.0"
 description = "Tests for the FOG crate"
 
 [dependencies]
-fog = { path = "../../api" }
+firefox-on-glean = { path = "../../api" }
+jog = { path = "../../bindings/jog" }
+nsstring = { path = "../../../../../xpcom/rust/nsstring" }
 
 [lib]
 path = "test.rs"

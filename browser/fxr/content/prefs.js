@@ -5,10 +5,8 @@
 
 /* import-globals-from common.js */
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-
-var { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+var { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
 
 const PREF_UPLOAD_ENABLED = "datareporting.healthreport.uploadEnabled";
@@ -51,17 +49,18 @@ function initClearAllData() {
 
   // When the confirm option is visible, do the work to actually clear the data
   document.getElementById("eClearConfirm").addEventListener("click", () => {
-    Services.clearData.deleteData(Ci.nsIClearDataService.CLEAR_ALL, function(
-      aFailedFlags
-    ) {
-      if (aFailedFlags == 0) {
-        eClearTry.textContent = "Data cleared";
-        eClearTry.disabled = true;
-        document.body.appendChild(clearModalContainer());
-      } else {
-        eClearTry.textContent = "Error";
+    Services.clearData.deleteData(
+      Ci.nsIClearDataService.CLEAR_ALL,
+      function (aFailedFlags) {
+        if (aFailedFlags == 0) {
+          eClearTry.textContent = "Data cleared";
+          eClearTry.disabled = true;
+          document.body.appendChild(clearModalContainer());
+        } else {
+          eClearTry.textContent = "Error";
+        }
       }
-    });
+    );
   });
 }
 

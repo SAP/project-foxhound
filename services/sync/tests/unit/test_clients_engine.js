@@ -1,13 +1,15 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
-const { ClientEngine, ClientsRec } = ChromeUtils.import(
-  "resource://services-sync/engines/clients.js"
+const { ClientEngine, ClientsRec } = ChromeUtils.importESModule(
+  "resource://services-sync/engines/clients.sys.mjs"
 );
-const { CryptoWrapper } = ChromeUtils.import(
-  "resource://services-sync/record.js"
+const { CryptoWrapper } = ChromeUtils.importESModule(
+  "resource://services-sync/record.sys.mjs"
 );
-const { Service } = ChromeUtils.import("resource://services-sync/service.js");
+const { Service } = ChromeUtils.importESModule(
+  "resource://services-sync/service.sys.mjs"
+);
 
 const MORE_THAN_CLIENTS_TTL_REFRESH = 691200; // 8 days
 const LESS_THAN_CLIENTS_TTL_REFRESH = 86400; // 1 day
@@ -61,7 +63,9 @@ add_task(async function setup() {
 });
 
 async function cleanup() {
-  Svc.Prefs.resetBranch("");
+  for (const pref of Svc.PrefBranch.getChildList("")) {
+    Svc.PrefBranch.clearUserPref(pref);
+  }
   await engine._tracker.clearChangedIDs();
   await engine._resetClient();
   // un-cleanup the logs (the resetBranch will have reset their levels), since
@@ -76,7 +80,6 @@ add_task(async function test_bad_hmac() {
   let deletedCollections = [];
   let deletedItems = [];
   let callback = {
-    __proto__: SyncServerCallback,
     onItemDeleted(username, coll, wboID) {
       deletedItems.push(coll + "/" + wboID);
     },
@@ -84,6 +87,7 @@ add_task(async function test_bad_hmac() {
       deletedCollections.push(coll);
     },
   };
+  Object.setPrototypeOf(callback, SyncServerCallback);
   let server = await serverForFoo(engine, callback);
   let user = server.user("foo");
 
@@ -214,7 +218,10 @@ add_task(async function test_bad_hmac() {
 add_task(async function test_properties() {
   _("Test lastRecordUpload property");
   try {
-    equal(Svc.Prefs.get("clients.lastRecordUpload"), undefined);
+    equal(
+      Svc.PrefBranch.getPrefType("clients.lastRecordUpload"),
+      Ci.nsIPrefBranch.PREF_INVALID
+    );
     equal(engine.lastRecordUpload, 0);
 
     let now = Date.now();
@@ -271,10 +278,7 @@ add_task(async function test_full_sync() {
     ok(engine.lastRecordUpload > 0);
     ok(!engine.isFirstSync);
     deepEqual(
-      user
-        .collection("clients")
-        .keys()
-        .sort(),
+      user.collection("clients").keys().sort(),
       [activeID, deletedID, engine.localID].sort(),
       "Our record should be uploaded on first sync"
     );
@@ -650,7 +654,7 @@ add_task(async function test_process_incoming_commands() {
   let ev = "weave:service:logout:finish";
 
   let logoutPromise = new Promise(resolve => {
-    var handler = function() {
+    var handler = function () {
       Svc.Obs.remove(ev, handler);
 
       resolve();
@@ -731,10 +735,7 @@ add_task(async function test_filter_duplicate_names() {
     ok(engine.lastRecordUpload > 0);
     ok(!engine.isFirstSync);
     deepEqual(
-      user
-        .collection("clients")
-        .keys()
-        .sort(),
+      user.collection("clients").keys().sort(),
       [recentID, dupeID, oldID, engine.localID].sort(),
       "Our record should be uploaded on first sync"
     );
@@ -919,7 +920,7 @@ add_task(async function test_command_sync() {
 
     notEqual(clientWBO(remoteId).payload, undefined);
 
-    Svc.Prefs.set("client.GUID", remoteId);
+    Svc.PrefBranch.setCharPref("client.GUID", remoteId);
     await engine._resetClient();
     equal(engine.localID, remoteId);
     _("Performing sync on resetted client.");

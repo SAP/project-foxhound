@@ -234,6 +234,29 @@ void MacroAssembler::sub64(Imm64 imm, Register64 dest) {
   subPtr(ImmWord(imm.value), dest.reg);
 }
 
+void MacroAssembler::mulHighUnsigned32(Imm32 imm, Register src, Register dest) {
+  // To compute the unsigned multiplication using imulq, we have to ensure both
+  // operands don't have any bits set in the high word.
+
+  if (imm.value >= 0) {
+    // Clear the high word of |src|.
+    movl(src, src);
+
+    // |imm| and |src| are both positive, so directly perform imulq.
+    imulq(imm, src, dest);
+  } else {
+    // Store the low word of |src| into |dest|.
+    movl(src, dest);
+
+    // Compute the unsigned value of |imm| before performing imulq.
+    movl(imm, ScratchReg);
+    imulq(ScratchReg, dest);
+  }
+
+  // Move the high word into |dest|.
+  shrq(Imm32(32), dest);
+}
+
 void MacroAssembler::mulPtr(Register rhs, Register srcDest) {
   imulq(rhs, srcDest);
 }
@@ -886,19 +909,6 @@ void MacroAssembler::spectreBoundsCheckPtr(Register index,
 
 // ========================================================================
 // SIMD.
-//
-// These are x64-only because they use ScratchRegister or they use a quadword
-// operation.  SSE4.1 or better is assumed.
-
-// Any lane true, ie any bit set
-
-void MacroAssembler::anyTrueSimd128(FloatRegister src, Register dest) {
-  ScratchRegisterScope one(*this);
-  movl(Imm32(1), one);
-  movl(Imm32(0), dest);
-  vptest(src, src);
-  cmovCCl(NonZero, one, dest);
-}
 
 // Extract lane as scalar
 
@@ -926,8 +936,12 @@ void MacroAssembler::replaceLaneInt64x2(unsigned lane, FloatRegister lhs,
 // Splat
 
 void MacroAssembler::splatX2(Register64 src, FloatRegister dest) {
-  vpinsrq(0, src.reg, dest, dest);
-  vpinsrq(1, src.reg, dest, dest);
+  vmovq(src.reg, dest);
+  if (HasAVX2()) {
+    vbroadcastq(Operand(dest), dest);
+  } else {
+    vpunpcklqdq(dest, dest, dest);
+  }
 }
 
 // ========================================================================

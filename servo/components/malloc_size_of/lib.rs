@@ -427,6 +427,31 @@ where
     }
 }
 
+impl<T> MallocShallowSizeOf for thin_vec::ThinVec<T> {
+    fn shallow_size_of(&self, ops: &mut MallocSizeOfOps) -> usize {
+        if self.capacity() == 0 {
+            // If it's the singleton we might not be a heap pointer.
+            return 0;
+        }
+
+        assert_eq!(
+            std::mem::size_of::<Self>(),
+            std::mem::size_of::<*const ()>()
+        );
+        unsafe { ops.malloc_size_of(*(self as *const Self as *const *const ())) }
+    }
+}
+
+impl<T: MallocSizeOf> MallocSizeOf for thin_vec::ThinVec<T> {
+    fn size_of(&self, ops: &mut MallocSizeOfOps) -> usize {
+        let mut n = self.shallow_size_of(ops);
+        for elem in self.iter() {
+            n += elem.size_of(ops);
+        }
+        n
+    }
+}
+
 macro_rules! malloc_size_of_hash_set {
     ($ty:ty) => {
         impl<T, S> MallocShallowSizeOf for $ty
@@ -689,12 +714,12 @@ impl MallocSizeOf for selectors::parser::AncestorHashes {
     }
 }
 
-impl<Impl: selectors::parser::SelectorImpl> MallocSizeOf for selectors::parser::Selector<Impl>
+impl<Impl: selectors::parser::SelectorImpl> MallocUnconditionalSizeOf for selectors::parser::Selector<Impl>
 where
     Impl::NonTSPseudoClass: MallocSizeOf,
     Impl::PseudoElement: MallocSizeOf,
 {
-    fn size_of(&self, ops: &mut MallocSizeOfOps) -> usize {
+    fn unconditional_size_of(&self, ops: &mut MallocSizeOfOps) -> usize {
         let mut n = 0;
 
         // It's OK to measure this ThinArc directly because it's the
@@ -709,22 +734,44 @@ where
     }
 }
 
-impl<Impl: selectors::parser::SelectorImpl> MallocSizeOf for selectors::parser::Component<Impl>
+impl<Impl: selectors::parser::SelectorImpl> MallocUnconditionalSizeOf for selectors::parser::SelectorList<Impl>
 where
     Impl::NonTSPseudoClass: MallocSizeOf,
     Impl::PseudoElement: MallocSizeOf,
 {
-    fn size_of(&self, ops: &mut MallocSizeOfOps) -> usize {
+    fn unconditional_size_of(&self, ops: &mut MallocSizeOfOps) -> usize {
+        let mut n = 0;
+
+        // It's OK to measure this ThinArc directly because it's the "primary" reference. (The
+        // secondary references are on the Stylist.)
+        n += unsafe { ops.malloc_size_of(self.thin_arc_heap_ptr()) };
+        if self.len() > 1 {
+            for selector in self.slice().iter() {
+                n += selector.size_of(ops);
+            }
+        }
+        n
+    }
+}
+
+impl<Impl: selectors::parser::SelectorImpl> MallocUnconditionalSizeOf for selectors::parser::Component<Impl>
+where
+    Impl::NonTSPseudoClass: MallocSizeOf,
+    Impl::PseudoElement: MallocSizeOf,
+{
+    fn unconditional_size_of(&self, ops: &mut MallocSizeOfOps) -> usize {
         use selectors::parser::Component;
 
         match self {
             Component::AttributeOther(ref attr_selector) => attr_selector.size_of(ops),
-            Component::Negation(ref components) => components.size_of(ops),
+            Component::Negation(ref components) => components.unconditional_size_of(ops),
             Component::NonTSPseudoClass(ref pseudo) => (*pseudo).size_of(ops),
             Component::Slotted(ref selector) | Component::Host(Some(ref selector)) => {
-                selector.size_of(ops)
+                selector.unconditional_size_of(ops)
             },
-            Component::Is(ref list) | Component::Where(ref list) => list.size_of(ops),
+            Component::Is(ref list) | Component::Where(ref list) => list.unconditional_size_of(ops),
+            Component::Has(ref relative_selectors) => relative_selectors.size_of(ops),
+            Component::NthOf(ref nth_of_data) => nth_of_data.size_of(ops),
             Component::PseudoElement(ref pseudo) => (*pseudo).size_of(ops),
             Component::Combinator(..) |
             Component::ExplicitAnyNamespace |
@@ -738,20 +785,14 @@ where
             Component::Class(..) |
             Component::AttributeInNoNamespaceExists { .. } |
             Component::AttributeInNoNamespace { .. } |
-            Component::FirstChild |
-            Component::LastChild |
-            Component::OnlyChild |
             Component::Root |
             Component::Empty |
             Component::Scope |
-            Component::NthChild(..) |
-            Component::NthLastChild(..) |
-            Component::NthOfType(..) |
-            Component::NthLastOfType(..) |
-            Component::FirstOfType |
-            Component::LastOfType |
-            Component::OnlyOfType |
-            Component::Host(None) => 0,
+            Component::ParentSelector |
+            Component::Nth(..) |
+            Component::Host(None) |
+            Component::RelativeSelectorAnchor |
+            Component::Invalid(..) => 0,
         }
     }
 }
@@ -818,7 +859,9 @@ malloc_size_of_is_0!(Range<f32>, Range<f64>);
 
 malloc_size_of_is_0!(app_units::Au);
 
-malloc_size_of_is_0!(cssparser::RGBA, cssparser::TokenSerializationType);
+malloc_size_of_is_0!(cssparser::TokenSerializationType, cssparser::SourceLocation);
+
+malloc_size_of_is_0!(dom::ElementState, dom::DocumentState);
 
 #[cfg(feature = "servo")]
 malloc_size_of_is_0!(csp::Destination);

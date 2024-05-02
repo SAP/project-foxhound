@@ -1,6 +1,6 @@
 use crate::io::blocking::Blocking;
+use crate::io::stdio_common::SplitByUtf8BoundaryIfWindows;
 use crate::io::AsyncWrite;
-
 use std::io;
 use std::pin::Pin;
 use std::task::Context;
@@ -35,7 +35,7 @@ cfg_io_std! {
     /// ```
     #[derive(Debug)]
     pub struct Stdout {
-        std: Blocking<std::io::Stdout>,
+        std: SplitByUtf8BoundaryIfWindows<Blocking<std::io::Stdout>>,
     }
 
     /// Constructs a new handle to the standard output of the current process.
@@ -67,22 +67,49 @@ cfg_io_std! {
     pub fn stdout() -> Stdout {
         let std = io::stdout();
         Stdout {
-            std: Blocking::new(std),
+            std: SplitByUtf8BoundaryIfWindows::new(Blocking::new(std)),
         }
     }
 }
 
 #[cfg(unix)]
-impl std::os::unix::io::AsRawFd for Stdout {
-    fn as_raw_fd(&self) -> std::os::unix::io::RawFd {
-        std::io::stdout().as_raw_fd()
+mod sys {
+    #[cfg(not(tokio_no_as_fd))]
+    use std::os::unix::io::{AsFd, BorrowedFd};
+    use std::os::unix::io::{AsRawFd, RawFd};
+
+    use super::Stdout;
+
+    impl AsRawFd for Stdout {
+        fn as_raw_fd(&self) -> RawFd {
+            std::io::stdout().as_raw_fd()
+        }
+    }
+
+    #[cfg(not(tokio_no_as_fd))]
+    impl AsFd for Stdout {
+        fn as_fd(&self) -> BorrowedFd<'_> {
+            unsafe { BorrowedFd::borrow_raw(self.as_raw_fd()) }
+        }
     }
 }
 
-#[cfg(windows)]
-impl std::os::windows::io::AsRawHandle for Stdout {
-    fn as_raw_handle(&self) -> std::os::windows::io::RawHandle {
-        std::io::stdout().as_raw_handle()
+cfg_windows! {
+    #[cfg(not(tokio_no_as_fd))]
+    use crate::os::windows::io::{AsHandle, BorrowedHandle};
+    use crate::os::windows::io::{AsRawHandle, RawHandle};
+
+    impl AsRawHandle for Stdout {
+        fn as_raw_handle(&self) -> RawHandle {
+            std::io::stdout().as_raw_handle()
+        }
+    }
+
+    #[cfg(not(tokio_no_as_fd))]
+    impl AsHandle for Stdout {
+        fn as_handle(&self) -> BorrowedHandle<'_> {
+            unsafe { BorrowedHandle::borrow_raw(self.as_raw_handle()) }
+        }
     }
 }
 

@@ -6,16 +6,19 @@ type DeriveInputShape = String;
 type FieldName = String;
 type MetaFormat = String;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 // Don't want to publicly commit to ErrorKind supporting equality yet, but
 // not having it makes testing very difficult.
-#[cfg_attr(test, derive(Clone, PartialEq, Eq))]
+#[cfg_attr(test, derive(PartialEq, Eq))]
 pub(in crate::error) enum ErrorKind {
     /// An arbitrary error message.
     Custom(String),
     DuplicateField(FieldName),
     MissingField(FieldName),
-    UnsupportedShape(DeriveInputShape),
+    UnsupportedShape {
+        observed: DeriveInputShape,
+        expected: Option<String>,
+    },
     UnknownField(ErrorUnknownField),
     UnexpectedFormat(MetaFormat),
     UnexpectedType(String),
@@ -39,7 +42,7 @@ impl ErrorKind {
             DuplicateField(_) => "Duplicate field",
             MissingField(_) => "Missing field",
             UnknownField(_) => "Unexpected field",
-            UnsupportedShape(_) => "Unsupported shape",
+            UnsupportedShape { .. } => "Unsupported shape",
             UnexpectedFormat(_) => "Unexpected meta-item format",
             UnexpectedType(_) => "Unexpected literal type",
             UnknownValue(_) => "Unknown literal value",
@@ -69,7 +72,17 @@ impl fmt::Display for ErrorKind {
             DuplicateField(ref field) => write!(f, "Duplicate field `{}`", field),
             MissingField(ref field) => write!(f, "Missing field `{}`", field),
             UnknownField(ref field) => field.fmt(f),
-            UnsupportedShape(ref shape) => write!(f, "Unsupported shape `{}`", shape),
+            UnsupportedShape {
+                ref observed,
+                ref expected,
+            } => {
+                write!(f, "Unsupported shape `{}`", observed)?;
+                if let Some(expected) = &expected {
+                    write!(f, ". Expected {}.", expected)?;
+                }
+
+                Ok(())
+            }
             UnexpectedFormat(ref format) => write!(f, "Unexpected meta-item format `{}`", format),
             UnexpectedType(ref ty) => write!(f, "Unexpected literal type `{}`", ty),
             UnknownValue(ref val) => write!(f, "Unknown literal value `{}`", val),
@@ -104,10 +117,10 @@ impl From<ErrorUnknownField> for ErrorKind {
 
 /// An error for an unknown field, with a possible "did-you-mean" suggestion to get
 /// the user back on the right track.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 // Don't want to publicly commit to ErrorKind supporting equality yet, but
 // not having it makes testing very difficult.
-#[cfg_attr(test, derive(Clone, PartialEq, Eq))]
+#[cfg_attr(test, derive(PartialEq, Eq))]
 pub(in crate::error) struct ErrorUnknownField {
     name: String,
     did_you_mean: Option<String>,

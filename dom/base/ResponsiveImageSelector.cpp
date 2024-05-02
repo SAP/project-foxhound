@@ -24,9 +24,6 @@ namespace mozilla::dom {
 
 NS_IMPL_CYCLE_COLLECTION(ResponsiveImageSelector, mOwnerNode)
 
-NS_IMPL_CYCLE_COLLECTION_ROOT_NATIVE(ResponsiveImageSelector, AddRef)
-NS_IMPL_CYCLE_COLLECTION_UNROOT_NATIVE(ResponsiveImageSelector, Release)
-
 static bool ParseInteger(const nsAString& aString, int32_t& aInt) {
   nsContentUtils::ParseHTMLIntegerResultFlags parseResult;
   aInt = nsContentUtils::ParseHTMLInteger(aString, &parseResult);
@@ -203,19 +200,32 @@ dom::Document* ResponsiveImageSelector::Document() {
   return mOwnerNode->OwnerDoc();
 }
 
-void ResponsiveImageSelector::SetDefaultSource(const nsAString& aURLString,
-                                               nsIPrincipal* aPrincipal) {
+void ResponsiveImageSelector::ClearDefaultSource() {
   ClearSelectedCandidate();
-
   // Check if the last element of our candidates is a default
   if (!mCandidates.IsEmpty() && mCandidates.LastElement().IsDefault()) {
     mCandidates.RemoveLastElement();
   }
+}
 
-  mDefaultSourceURL = aURLString;
+void ResponsiveImageSelector::SetDefaultSource(nsIURI* aURI,
+                                               nsIPrincipal* aPrincipal) {
+  ClearDefaultSource();
   mDefaultSourceTriggeringPrincipal = aPrincipal;
+  mDefaultSourceURL = VoidString();
+  if (aURI) {
+    nsAutoCString spec;
+    aURI->GetSpec(spec);
+    CopyUTF8toUTF16(spec, mDefaultSourceURL);
+  }
+  MaybeAppendDefaultCandidate();
+}
 
-  // Add new default to end of list
+void ResponsiveImageSelector::SetDefaultSource(const nsAString& aURLString,
+                                               nsIPrincipal* aPrincipal) {
+  ClearDefaultSource();
+  mDefaultSourceTriggeringPrincipal = aPrincipal;
+  mDefaultSourceURL = aURLString;
   MaybeAppendDefaultCandidate();
 }
 
@@ -228,7 +238,7 @@ bool ResponsiveImageSelector::SetSizesFromDescriptor(const nsAString& aSizes) {
   ClearSelectedCandidate();
 
   NS_ConvertUTF16toUTF8 sizes(aSizes);
-  mServoSourceSizeList = Servo_SourceSizeList_Parse(&sizes).Consume();
+  mServoSourceSizeList.reset(Servo_SourceSizeList_Parse(&sizes));
   return !!mServoSourceSizeList;
 }
 

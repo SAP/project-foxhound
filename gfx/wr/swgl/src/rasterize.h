@@ -571,7 +571,8 @@ static ALWAYS_INLINE IntRange clip_distance_range(const E& left,
   // Get the change in clip dist per X step.
   Float clipStep = (rightClip - leftClip) / (right.cur_x() - left.cur_x());
   // Find the zero intercepts starting from the left edge.
-  Float clipDist = left.cur_x() - leftClip * recip(clipStep);
+  Float clipDist =
+      clamp(left.cur_x() - leftClip * recip(clipStep), 0.0f, 1.0e6f);
   // Find the distance to the start of the span for any clip distances that
   // are increasing in value. If the clip distance is constant or decreasing
   // in value, then check if it starts outside the clip volume.
@@ -889,7 +890,7 @@ static inline void draw_quad_spans(int nump, Point2D p[4], uint32_t z,
   // Find the start y, clip to within the clip rect, and round to row center.
   // If AA is enabled, round out conservatively rather than round to nearest.
   float aaRound = swgl_ClipFlags & SWGL_CLIP_FLAG_AA ? 0.0f : 0.5f;
-  float y = floor(max(l0.y, clipRect.y0) + aaRound) + 0.5f;
+  float y = floor(max(min(l0.y, clipRect.y1), clipRect.y0) + aaRound) + 0.5f;
   // Initialize left and right edges from end points and start Y
   Edge left(y, l0, l1, interp_outs[l0i], interp_outs[l1i], l1i);
   Edge right(y, r0, r1, interp_outs[r0i], interp_outs[r1i], r0i);
@@ -898,7 +899,9 @@ static inline void draw_quad_spans(int nump, Point2D p[4], uint32_t z,
   if (flipped) swap(left, right);
   // Get pointer to color buffer and depth buffer at current Y
   P* fbuf = (P*)colortex.sample_ptr(0, int(y));
-  DepthRun* fdepth = (DepthRun*)depthtex.sample_ptr(0, int(y));
+  DepthRun* fdepth = depthtex.buf != nullptr
+                         ? (DepthRun*)depthtex.sample_ptr(0, int(y))
+                         : nullptr;
   // Loop along advancing Ys, rasterizing spans at each row
   float checkY = min(min(l1.y, r1.y), clipRect.y1);
   // Ensure we don't rasterize out edge bounds
@@ -1002,9 +1005,12 @@ static inline void draw_quad_spans(int nump, Point2D p[4], uint32_t z,
       fragment_shader->gl_FragCoord.y = y;
       {
         // Change in interpolants is difference between current right and left
-        // edges per the change in right and left X.
-        Interpolants step =
-            (right.interp - left.interp) * (1.0f / (right.x - left.x));
+        // edges per the change in right and left X. If the left and right X
+        // positions are extremely close together, then avoid stepping the
+        // interpolants.
+        float stepScale = 1.0f / (right.x - left.x);
+        if (!isfinite(stepScale)) stepScale = 0.0f;
+        Interpolants step = (right.interp - left.interp) * stepScale;
         // Advance current interpolants to X at start of span.
         Interpolants o = left.interp + step * (span.start + 0.5f - left.x);
         fragment_shader->init_span(&o, &step);
@@ -1152,7 +1158,7 @@ static inline void draw_perspective_spans(int nump, Point3D* p,
   // Find the start y, clip to within the clip rect, and round to row center.
   // If AA is enabled, round out conservatively rather than round to nearest.
   float aaRound = swgl_ClipFlags & SWGL_CLIP_FLAG_AA ? 0.0f : 0.5f;
-  float y = floor(max(l0.y, clipRect.y0) + aaRound) + 0.5f;
+  float y = floor(max(min(l0.y, clipRect.y1), clipRect.y0) + aaRound) + 0.5f;
   // Initialize left and right edges from end points and start Y
   Edge left(y, l0, l1, interp_outs[l0i], interp_outs[l1i], l1i);
   Edge right(y, r0, r1, interp_outs[r0i], interp_outs[r1i], r0i);
@@ -1161,7 +1167,9 @@ static inline void draw_perspective_spans(int nump, Point3D* p,
   if (flipped) swap(left, right);
   // Get pointer to color buffer and depth buffer at current Y
   P* fbuf = (P*)colortex.sample_ptr(0, int(y));
-  DepthRun* fdepth = (DepthRun*)depthtex.sample_ptr(0, int(y));
+  DepthRun* fdepth = depthtex.buf != nullptr
+                         ? (DepthRun*)depthtex.sample_ptr(0, int(y))
+                         : nullptr;
   // Loop along advancing Ys, rasterizing spans at each row
   float checkY = min(min(l1.y, r1.y), clipRect.y1);
   // Ensure we don't rasterize out edge bounds
@@ -1229,8 +1237,11 @@ static inline void draw_perspective_spans(int nump, Point3D* p,
       fragment_shader->gl_FragCoord.y = y;
       {
         // Calculate the fragment Z and W change per change in fragment X step.
-        vec2_scalar stepZW =
-            (right.zw() - left.zw()) * (1.0f / (right.x() - left.x()));
+        // If the left and right X positions are extremely close together, then
+        // avoid stepping.
+        float stepScale = 1.0f / (right.x() - left.x());
+        if (!isfinite(stepScale)) stepScale = 0.0f;
+        vec2_scalar stepZW = (right.zw() - left.zw()) * stepScale;
         // Calculate initial Z and W values for span start.
         vec2_scalar zw = left.zw() + stepZW * (span.start + 0.5f - left.x());
         // Set fragment shader's Z and W values so that it can use them to
@@ -1242,8 +1253,7 @@ static inline void draw_perspective_spans(int nump, Point3D* p,
         // edges per the change in right and left X. The left and right
         // interpolant values were previously multipled by 1/w, so the step and
         // initial span values take this into account.
-        Interpolants step =
-            (right.interp - left.interp) * (1.0f / (right.x() - left.x()));
+        Interpolants step = (right.interp - left.interp) * stepScale;
         // Advance current interpolants to X at start of span.
         Interpolants o = left.interp + step * (span.start + 0.5f - left.x());
         fragment_shader->init_span<true>(&o, &step);

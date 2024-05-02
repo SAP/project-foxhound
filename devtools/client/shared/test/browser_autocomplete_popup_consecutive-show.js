@@ -5,8 +5,8 @@
 
 // Test that calling `showPopup` multiple time does not lead to invalid state.
 
-add_task(async function() {
-  const AutocompletePopup = require("devtools/client/shared/autocomplete-popup");
+add_task(async function () {
+  const AutocompletePopup = require("resource://devtools/client/shared/autocomplete-popup.js");
 
   info("Create an autocompletion popup");
   const { doc } = await createHost();

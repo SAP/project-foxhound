@@ -19,7 +19,8 @@
 #ifndef MODULES_AUDIO_CODING_CODECS_ILBC_MAIN_SOURCE_NEAREST_NEIGHBOR_H_
 #define MODULES_AUDIO_CODING_CODECS_ILBC_MAIN_SOURCE_NEAREST_NEIGHBOR_H_
 
-#include "modules/audio_coding/codecs/ilbc/defines.h"
+#include <stddef.h>
+#include <stdint.h>
 
 /*----------------------------------------------------------------*
  * Find index in array such that the array element with said
@@ -31,6 +32,6 @@ void WebRtcIlbcfix_NearestNeighbor(
     const size_t* array, /* (i) data array (Q2) */
     size_t value,        /* (i) value (Q2) */
     size_t arlength      /* (i) dimension of data array (==ENH_NBLOCKS_TOT) */
-    );
+);
 
 #endif

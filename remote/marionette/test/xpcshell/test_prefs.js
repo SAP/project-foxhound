@@ -4,21 +4,10 @@
 
 "use strict";
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
-);
-
-XPCOMUtils.defineLazyServiceGetter(
-  this,
-  "env",
-  "@mozilla.org/process/environment;1",
-  "nsIEnvironment"
-);
-
-const { Branch, EnvironmentPrefs, MarionettePrefs } = ChromeUtils.import(
-  "chrome://remote/content/marionette/prefs.js"
-);
+const { Branch, EnvironmentPrefs, MarionettePrefs } =
+  ChromeUtils.importESModule(
+    "chrome://remote/content/marionette/prefs.sys.mjs"
+  );
 
 function reset() {
   Services.prefs.setBoolPref("test.bool", false);
@@ -29,27 +18,23 @@ function reset() {
 // Give us something to work with:
 reset();
 
-add_test(function test_Branch_get_root() {
+add_task(function test_Branch_get_root() {
   let root = new Branch(null);
   equal(false, root.get("test.bool"));
   equal("foo", root.get("test.string"));
   equal(777, root.get("test.int"));
   Assert.throws(() => root.get("doesnotexist"), /TypeError/);
-
-  run_next_test();
 });
 
-add_test(function test_Branch_get_branch() {
+add_task(function test_Branch_get_branch() {
   let test = new Branch("test.");
   equal(false, test.get("bool"));
   equal("foo", test.get("string"));
   equal(777, test.get("int"));
   Assert.throws(() => test.get("doesnotexist"), /TypeError/);
-
-  run_next_test();
 });
 
-add_test(function test_Branch_set_root() {
+add_task(function test_Branch_set_root() {
   let root = new Branch(null);
 
   try {
@@ -63,11 +48,9 @@ add_test(function test_Branch_set_root() {
   } finally {
     reset();
   }
-
-  run_next_test();
 });
 
-add_test(function test_Branch_set_branch() {
+add_task(function test_Branch_set_branch() {
   let test = new Branch("test.");
 
   try {
@@ -81,43 +64,35 @@ add_test(function test_Branch_set_branch() {
   } finally {
     reset();
   }
-
-  run_next_test();
 });
 
-add_test(function test_EnvironmentPrefs_from() {
+add_task(function test_EnvironmentPrefs_from() {
   let prefsTable = {
     "test.bool": true,
     "test.int": 888,
     "test.string": "bar",
   };
-  env.set("FOO", JSON.stringify(prefsTable));
+  Services.env.set("FOO", JSON.stringify(prefsTable));
 
   try {
     for (let [key, value] of EnvironmentPrefs.from("FOO")) {
       equal(prefsTable[key], value);
     }
   } finally {
-    env.set("FOO", null);
+    Services.env.set("FOO", null);
   }
-
-  run_next_test();
 });
 
-add_test(function test_MarionettePrefs_getters() {
+add_task(function test_MarionettePrefs_getters() {
   equal(false, MarionettePrefs.clickToStart);
   equal(2828, MarionettePrefs.port);
-
-  run_next_test();
 });
 
-add_test(function test_MarionettePrefs_setters() {
+add_task(function test_MarionettePrefs_setters() {
   try {
     MarionettePrefs.port = 777;
     equal(777, MarionettePrefs.port);
   } finally {
     Services.prefs.clearUserPref("marionette.port");
   }
-
-  run_next_test();
 });

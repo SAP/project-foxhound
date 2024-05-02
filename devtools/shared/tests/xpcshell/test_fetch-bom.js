@@ -4,10 +4,10 @@
 
 // Tests for DevToolsUtils.fetch BOM detection.
 
-const CC = Components.Constructor;
-
-const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
-const BinaryOutputStream = CC(
+const { HttpServer } = ChromeUtils.importESModule(
+  "resource://testing-common/httpd.sys.mjs"
+);
+const BinaryOutputStream = Components.Constructor(
   "@mozilla.org/binaryoutputstream;1",
   "nsIBinaryOutputStream",
   "setOutputStream"
@@ -41,7 +41,7 @@ function write16le(bos) {
 }
 
 function getHandler(writer) {
-  return function(request, response) {
+  return function (request, response) {
     response.setStatusLine(request.httpVersion, 200, "OK");
 
     const bos = new BinaryOutputStream(response.bodyOutputStream);
@@ -65,7 +65,7 @@ registerCleanupFunction(() => {
   return new Promise(resolve => server.stop(resolve));
 });
 
-add_task(async function() {
+add_task(async function () {
   await test_one(serverURL + "/u8", "UTF-8");
   await test_one(serverURL + "/u16be", "UTF-16BE");
   await test_one(serverURL + "/u16le", "UTF-16LE");

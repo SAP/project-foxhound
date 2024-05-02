@@ -13,58 +13,47 @@
 #include "jsep/JsepTransport.h"
 #include "jsep/JsepTrack.h"
 
-#include <mozilla/OwningNonNull.h>
-#include "nsISupportsImpl.h"
 #include "nsError.h"
 
 namespace mozilla {
 
-class JsepTransceiver {
- private:
-  ~JsepTransceiver(){};
+class JsepUuidGenerator {
+ public:
+  virtual ~JsepUuidGenerator() = default;
+  virtual bool Generate(std::string* id) = 0;
+  virtual JsepUuidGenerator* Clone() const = 0;
+};
 
+class JsepTransceiver {
  public:
   explicit JsepTransceiver(SdpMediaSection::MediaType type,
+                           JsepUuidGenerator& aUuidGen,
                            SdpDirectionAttribute::Direction jsDirection =
                                SdpDirectionAttribute::kSendrecv)
       : mJsDirection(jsDirection),
         mSendTrack(type, sdp::kSend),
-        mRecvTrack(type, sdp::kRecv),
-        mLevel(SIZE_MAX),
-        mBundleLevel(SIZE_MAX),
-        mAddTrackMagic(false),
-        mWasCreatedBySetRemote(false),
-        mStopped(false),
-        mRemoved(false),
-        mNegotiated(false),
-        mCanRecycle(false) {}
+        mRecvTrack(type, sdp::kRecv) {
+    if (!aUuidGen.Generate(&mUuid)) {
+      MOZ_CRASH();
+    }
+  }
 
-  // Can't use default copy c'tor because of the refcount members. Ugh.
-  JsepTransceiver(const JsepTransceiver& orig)
-      : mJsDirection(orig.mJsDirection),
-        mSendTrack(orig.mSendTrack),
-        mRecvTrack(orig.mRecvTrack),
-        mTransport(orig.mTransport),
-        mMid(orig.mMid),
-        mLevel(orig.mLevel),
-        mBundleLevel(orig.mBundleLevel),
-        mAddTrackMagic(orig.mAddTrackMagic),
-        mWasCreatedBySetRemote(orig.mWasCreatedBySetRemote),
-        mStopped(orig.mStopped),
-        mRemoved(orig.mRemoved),
-        mNegotiated(orig.mNegotiated),
-        mCanRecycle(orig.mCanRecycle) {}
+  JsepTransceiver(const JsepTransceiver& orig) = default;
+  JsepTransceiver(JsepTransceiver&& orig) = default;
+  JsepTransceiver& operator=(const JsepTransceiver& aRhs) = default;
+  JsepTransceiver& operator=(JsepTransceiver&& aRhs) = default;
 
-  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(JsepTransceiver);
+  ~JsepTransceiver() = default;
 
-  void Rollback(JsepTransceiver& oldTransceiver, bool rollbackLevel) {
+  void Rollback(JsepTransceiver& oldTransceiver, bool aRemote) {
     MOZ_ASSERT(oldTransceiver.GetMediaType() == GetMediaType());
     MOZ_ASSERT(!oldTransceiver.IsNegotiated() || !oldTransceiver.HasLevel() ||
                !HasLevel() || oldTransceiver.GetLevel() == GetLevel());
     mTransport = oldTransceiver.mTransport;
-    if (rollbackLevel) {
+    if (aRemote) {
       mLevel = oldTransceiver.mLevel;
       mBundleLevel = oldTransceiver.mBundleLevel;
+      mSendTrack = oldTransceiver.mSendTrack;
     }
     mRecvTrack = oldTransceiver.mRecvTrack;
 
@@ -109,13 +98,21 @@ class JsepTransceiver {
     return mLevel;
   }
 
-  void Stop() { mStopped = true; }
+  void Stop() { mStopping = true; }
+
+  bool IsStopping() const { return mStopping; }
 
   bool IsStopped() const { return mStopped; }
 
+  void SetStopped() { mStopped = true; }
+
+  bool IsFreeToUse() const { return !mStopping && !mStopped && !HasLevel(); }
+
   void RestartDatachannelTransceiver() {
     MOZ_RELEASE_ASSERT(GetMediaType() == SdpMediaSection::kApplication);
+    mStopping = false;
     mStopped = false;
+    mCanRecycleMyMsection = false;
   }
 
   void SetRemoved() { mRemoved = true; }
@@ -148,9 +145,13 @@ class JsepTransceiver {
 
   bool HasAddTrackMagic() const { return mAddTrackMagic; }
 
-  void SetCreatedBySetRemote() { mWasCreatedBySetRemote = true; }
+  void SetOnlyExistsBecauseOfSetRemote(bool aValue) {
+    mOnlyExistsBecauseOfSetRemote = aValue;
+  }
 
-  bool WasCreatedBySetRemote() const { return mWasCreatedBySetRemote; }
+  bool OnlyExistsBecauseOfSetRemote() const {
+    return mOnlyExistsBecauseOfSetRemote;
+  }
 
   void SetNegotiated() {
     MOZ_ASSERT(IsAssociated());
@@ -160,9 +161,11 @@ class JsepTransceiver {
 
   bool IsNegotiated() const { return mNegotiated; }
 
-  void SetCanRecycle() { mCanRecycle = true; }
+  void SetCanRecycleMyMsection() { mCanRecycleMyMsection = true; }
 
-  bool CanRecycle() const { return mCanRecycle; }
+  bool CanRecycleMyMsection() const { return mCanRecycleMyMsection; }
+
+  const std::string& GetUuid() const { return mUuid; }
 
   // Convenience function
   SdpMediaSection::MediaType GetMediaType() const {
@@ -170,8 +173,10 @@ class JsepTransceiver {
     return mRecvTrack.GetMediaType();
   }
 
+  bool HasTransport() const { return mTransport.mComponents != 0; }
+
   bool HasOwnTransport() const {
-    if (mTransport.mComponents &&
+    if (HasTransport() &&
         (!HasBundleLevel() || (GetLevel() == BundleLevel()))) {
       return true;
     }
@@ -192,19 +197,22 @@ class JsepTransceiver {
   JsepTransport mTransport;
 
  private:
+  std::string mUuid;
   // Stuff that is not negotiated
   std::string mMid;
-  size_t mLevel;  // SIZE_MAX if no level
+  size_t mLevel = SIZE_MAX;  // SIZE_MAX if no level
   // Is this track pair sharing a transport with another?
-  size_t mBundleLevel;  // SIZE_MAX if no bundle level
+  size_t mBundleLevel = SIZE_MAX;  // SIZE_MAX if no bundle level
   // The w3c and IETF specs have a lot of "magical" behavior that happens
-  // when addTrack is used. This was a deliberate design choice. Sadface.
-  bool mAddTrackMagic;
-  bool mWasCreatedBySetRemote;
-  bool mStopped;
-  bool mRemoved;
-  bool mNegotiated;
-  bool mCanRecycle;
+  // when addTrack is used to create a transceiver. This was a deliberate
+  // design choice. Sadface.
+  bool mAddTrackMagic = false;
+  bool mOnlyExistsBecauseOfSetRemote = false;
+  bool mStopping = false;
+  bool mStopped = false;
+  bool mRemoved = false;
+  bool mNegotiated = false;
+  bool mCanRecycleMyMsection = false;
 };
 
 }  // namespace mozilla

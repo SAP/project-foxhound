@@ -8,17 +8,18 @@ use std::env;
 use std::path::PathBuf;
 use webrender;
 use winit;
+use winit::platform::run_return::EventLoopExtRunReturn;
 use webrender::{DebugFlags, ShaderPrecacheFlags};
 use webrender::api::*;
 use webrender::render_api::*;
 use webrender::api::units::*;
 
 struct Notifier {
-    events_proxy: winit::EventsLoopProxy,
+    events_proxy: winit::event_loop::EventLoopProxy<()>,
 }
 
 impl Notifier {
-    fn new(events_proxy: winit::EventsLoopProxy) -> Notifier {
+    fn new(events_proxy: winit::event_loop::EventLoopProxy<()>) -> Notifier {
         Notifier { events_proxy }
     }
 }
@@ -32,14 +33,14 @@ impl RenderNotifier for Notifier {
 
     fn wake_up(&self, _composite_needed: bool) {
         #[cfg(not(target_os = "android"))]
-        let _ = self.events_proxy.wakeup();
+        let _ = self.events_proxy.send_event(());
     }
 
     fn new_frame_ready(&self,
                        _: DocumentId,
                        _scrolled: bool,
                        composite_needed: bool,
-                       _render_time: Option<u64>) {
+                       _: FramePublishId) {
         self.wake_up(composite_needed);
     }
 }
@@ -83,7 +84,8 @@ pub trait Example {
     );
     fn on_event(
         &mut self,
-        _: winit::WindowEvent,
+        _: winit::event::WindowEvent,
+        _: &winit::window::Window,
         _: &mut RenderApi,
         _: DocumentId,
     ) -> bool {
@@ -101,7 +103,7 @@ pub trait Example {
 
 pub fn main_wrapper<E: Example>(
     example: &mut E,
-    options: Option<webrender::RendererOptions>,
+    options: Option<webrender::WebRenderOptions>,
 ) {
     env_logger::init();
 
@@ -123,11 +125,10 @@ pub fn main_wrapper<E: Example>(
         None
     };
 
-    let mut events_loop = winit::EventsLoop::new();
-    let window_builder = winit::WindowBuilder::new()
+    let mut events_loop = winit::event_loop::EventLoop::new();
+    let window_builder = winit::window::WindowBuilder::new()
         .with_title(E::TITLE)
-        .with_multitouch()
-        .with_dimensions(winit::dpi::LogicalSize::new(E::WIDTH as f64, E::HEIGHT as f64));
+        .with_inner_size(winit::dpi::LogicalSize::new(E::WIDTH as f64, E::HEIGHT as f64));
     let windowed_context = glutin::ContextBuilder::new()
         .with_gl(glutin::GlRequest::GlThenGles {
             opengl_version: (3, 2),
@@ -154,30 +155,28 @@ pub fn main_wrapper<E: Example>(
 
     println!("OpenGL version {}", gl.get_string(gl::VERSION));
     println!("Shader resource path: {:?}", res_path);
-    let device_pixel_ratio = windowed_context.window().get_hidpi_factor() as f32;
+    let device_pixel_ratio = windowed_context.window().scale_factor() as f32;
     println!("Device pixel ratio: {}", device_pixel_ratio);
 
     println!("Loading shaders...");
     let mut debug_flags = DebugFlags::ECHO_DRIVER_MESSAGES | DebugFlags::TEXTURE_CACHE_DBG;
-    let opts = webrender::RendererOptions {
+    let opts = webrender::WebRenderOptions {
         resource_override_path: res_path,
         precache_flags: E::PRECACHE_SHADER_FLAGS,
         clear_color: ColorF::new(0.3, 0.0, 0.0, 1.0),
         debug_flags,
         //allow_texture_swizzling: false,
-        ..options.unwrap_or(webrender::RendererOptions::default())
+        ..options.unwrap_or(webrender::WebRenderOptions::default())
     };
 
     let device_size = {
         let size = windowed_context
             .window()
-            .get_inner_size()
-            .unwrap()
-            .to_physical(device_pixel_ratio as f64);
+            .inner_size();
         DeviceIntSize::new(size.width as i32, size.height as i32)
     };
     let notifier = Box::new(Notifier::new(events_loop.create_proxy()));
-    let (mut renderer, sender) = webrender::Renderer::new(
+    let (mut renderer, sender) = webrender::create_webrender_instance(
         gl.clone(),
         notifier,
         opts,
@@ -194,7 +193,6 @@ pub fn main_wrapper<E: Example>(
 
     let epoch = Epoch(0);
     let pipeline_id = PipelineId(0, 0);
-    let layout_size = device_size.to_f32() / euclid::Scale::new(device_pixel_ratio);
     let mut builder = DisplayListBuilder::new(pipeline_id);
     let mut txn = Transaction::new();
     builder.begin();
@@ -209,8 +207,6 @@ pub fn main_wrapper<E: Example>(
     );
     txn.set_display_list(
         epoch,
-        Some(ColorF::new(0.3, 0.0, 0.0, 1.0)),
-        layout_size,
         builder.end(),
     );
     txn.set_root_pipeline(pipeline_id);
@@ -218,48 +214,55 @@ pub fn main_wrapper<E: Example>(
     api.send_transaction(document_id, txn);
 
     println!("Entering event loop");
-    events_loop.run_forever(|global_event| {
+    events_loop.run_return(|global_event, _elwt, control_flow| {
         let mut txn = Transaction::new();
         let mut custom_event = true;
 
         let old_flags = debug_flags;
         let win_event = match global_event {
-            winit::Event::WindowEvent { event, .. } => event,
-            _ => return winit::ControlFlow::Continue,
+            winit::event::Event::WindowEvent { event, .. } => event,
+            _ => return,
         };
         match win_event {
-            winit::WindowEvent::CloseRequested => return winit::ControlFlow::Break,
-            winit::WindowEvent::AxisMotion { .. } |
-            winit::WindowEvent::CursorMoved { .. } => {
+            winit::event::WindowEvent::CloseRequested => {
+                *control_flow = winit::event_loop::ControlFlow::Exit;
+                return;
+            }
+            winit::event::WindowEvent::AxisMotion { .. } |
+            winit::event::WindowEvent::CursorMoved { .. } => {
                 custom_event = example.on_event(
-                        win_event,
-                        &mut api,
-                        document_id,
-                    );
+                    win_event,
+                    windowed_context.window(),
+                    &mut api,
+                    document_id,
+                );
                 // skip high-frequency events from triggering a frame draw.
                 if !custom_event {
-                    return winit::ControlFlow::Continue;
+                    return;
                 }
             },
-            winit::WindowEvent::KeyboardInput {
-                input: winit::KeyboardInput {
-                    state: winit::ElementState::Pressed,
+            winit::event::WindowEvent::KeyboardInput {
+                input: winit::event::KeyboardInput {
+                    state: winit::event::ElementState::Pressed,
                     virtual_keycode: Some(key),
                     ..
                 },
                 ..
             } => match key {
-                winit::VirtualKeyCode::Escape => return winit::ControlFlow::Break,
-                winit::VirtualKeyCode::P => debug_flags.toggle(DebugFlags::PROFILER_DBG),
-                winit::VirtualKeyCode::O => debug_flags.toggle(DebugFlags::RENDER_TARGET_DBG),
-                winit::VirtualKeyCode::I => debug_flags.toggle(DebugFlags::TEXTURE_CACHE_DBG),
-                winit::VirtualKeyCode::T => debug_flags.toggle(DebugFlags::PICTURE_CACHING_DBG),
-                winit::VirtualKeyCode::Q => debug_flags.toggle(
+                winit::event::VirtualKeyCode::Escape => {
+                    *control_flow = winit::event_loop::ControlFlow::Exit;
+                    return;
+                }
+                winit::event::VirtualKeyCode::P => debug_flags.toggle(DebugFlags::PROFILER_DBG),
+                winit::event::VirtualKeyCode::O => debug_flags.toggle(DebugFlags::RENDER_TARGET_DBG),
+                winit::event::VirtualKeyCode::I => debug_flags.toggle(DebugFlags::TEXTURE_CACHE_DBG),
+                winit::event::VirtualKeyCode::T => debug_flags.toggle(DebugFlags::PICTURE_CACHING_DBG),
+                winit::event::VirtualKeyCode::Q => debug_flags.toggle(
                     DebugFlags::GPU_TIME_QUERIES | DebugFlags::GPU_SAMPLE_QUERIES
                 ),
-                winit::VirtualKeyCode::G => debug_flags.toggle(DebugFlags::GPU_CACHE_DBG),
-                winit::VirtualKeyCode::M => api.notify_memory_pressure(),
-                winit::VirtualKeyCode::C => {
+                winit::event::VirtualKeyCode::G => debug_flags.toggle(DebugFlags::GPU_CACHE_DBG),
+                winit::event::VirtualKeyCode::M => api.notify_memory_pressure(),
+                winit::event::VirtualKeyCode::C => {
                     let path: PathBuf = "../captures/example".into();
                     //TODO: switch between SCENE/FRAME capture types
                     // based on "shift" modifier, when `glutin` is updated.
@@ -269,6 +272,7 @@ pub fn main_wrapper<E: Example>(
                 _ => {
                     custom_event = example.on_event(
                         win_event,
+                        windowed_context.window(),
                         &mut api,
                         document_id,
                     )
@@ -276,6 +280,7 @@ pub fn main_wrapper<E: Example>(
             },
             other => custom_event = example.on_event(
                 other,
+                windowed_context.window(),
                 &mut api,
                 document_id,
             ),
@@ -299,8 +304,6 @@ pub fn main_wrapper<E: Example>(
             );
             txn.set_display_list(
                 epoch,
-                Some(ColorF::new(0.3, 0.0, 0.0, 1.0)),
-                layout_size,
                 builder.end(),
             );
             txn.generate_frame(0, RenderReasons::empty());
@@ -313,7 +316,7 @@ pub fn main_wrapper<E: Example>(
         example.draw_custom(&*gl);
         windowed_context.swap_buffers().ok();
 
-        winit::ControlFlow::Continue
+        *control_flow = winit::event_loop::ControlFlow::Wait;
     });
 
     renderer.deinit();

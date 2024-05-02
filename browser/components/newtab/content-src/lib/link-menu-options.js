@@ -2,7 +2,10 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-import { actionCreators as ac, actionTypes as at } from "common/Actions.jsm";
+import {
+  actionCreators as ac,
+  actionTypes as at,
+} from "common/Actions.sys.mjs";
 
 const _OpenInPrivateWindow = site => ({
   id: "newtab-menu-open-new-private-window",
@@ -35,6 +38,11 @@ export const LinkMenuOptions = {
     icon: "info",
     action: ac.AlsoToMain({
       type: at.ABOUT_SPONSORED_TOP_SITES,
+      data: {
+        advertiser_name: (site.label || site.hostname).toLocaleLowerCase(),
+        position: site.sponsored_position,
+        tile_id: site.sponsored_tile_id,
+      },
     }),
     userEvent: "TOPSITE_SPONSOR_INFO",
   }),
@@ -65,6 +73,7 @@ export const LinkMenuOptions = {
         referrer: site.referrer,
         typedBonus: site.typedBonus,
         url: site.url,
+        sponsored_tile_id: site.sponsored_tile_id,
       },
     }),
     userEvent: "OPEN_NEW_WINDOW",
@@ -89,6 +98,18 @@ export const LinkMenuOptions = {
         // used by PlacesFeed and TopSitesFeed for sponsored top sites blocking.
         isSponsoredTopSite: site.sponsored_position,
         ...(site.flight_id ? { flight_id: site.flight_id } : {}),
+        // If not sponsored, hostname could be anything (Cat3 Data!).
+        // So only put in advertiser_name for sponsored topsites.
+        ...(site.sponsored_position
+          ? {
+              advertiser_name: (
+                site.label || site.hostname
+              )?.toLocaleLowerCase(),
+            }
+          : {}),
+        position: pos,
+        ...(site.sponsored_tile_id ? { tile_id: site.sponsored_tile_id } : {}),
+        is_pocket_card: site.type === "CardGrid",
       })),
     }),
     impression: ac.ImpressionStats({
@@ -216,7 +237,9 @@ export const LinkMenuOptions = {
     icon: "pocket-save",
     action: ac.AlsoToMain({
       type: at.SAVE_TO_POCKET,
-      data: { site: { url: site.url, title: site.title } },
+      data: {
+        site: { url: site.url, title: site.title },
+      },
     }),
     impression: ac.ImpressionStats({
       source: eventSource,

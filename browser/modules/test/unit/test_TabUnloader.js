@@ -3,8 +3,8 @@
  */
 "use strict";
 
-const { TabUnloader } = ChromeUtils.import(
-  "resource:///modules/TabUnloader.jsm"
+const { TabUnloader } = ChromeUtils.importESModule(
+  "resource:///modules/TabUnloader.sys.mjs"
 );
 
 let TestTabUnloaderMethods = {
@@ -34,6 +34,10 @@ let TestTabUnloaderMethods = {
 
   usingWebRTC(tab, weight) {
     return /\bwebrtc\b/.test(tab.keywords) ? weight : 0;
+  },
+
+  isPrivate(tab, weight) {
+    return /\bprivate\b/.test(tab.keywords) ? weight : 0;
   },
 
   getMinTabCount() {
@@ -136,6 +140,17 @@ let unloadTests = [
       "6 selected",
     ],
     result: "2,0,3,5,1,4",
+  },
+  {
+    tabs: [
+      "10 selected",
+      "20 private",
+      "30 webrtc",
+      "40 pictureinpicture",
+      "50 loading pinned",
+      "60",
+    ],
+    result: "5,4,0,1,2,3",
   },
   {
     // Since TestTabUnloaderMethods.getNow() returns 100 and the test

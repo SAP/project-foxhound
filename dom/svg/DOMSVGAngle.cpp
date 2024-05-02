@@ -9,13 +9,9 @@
 #include "mozilla/dom/SVGAngleBinding.h"
 #include "mozilla/dom/SVGSVGElement.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 NS_SVG_VAL_IMPL_CYCLE_COLLECTION_WRAPPERCACHED(DOMSVGAngle, mSVGElement)
-
-NS_IMPL_CYCLE_COLLECTION_ROOT_NATIVE(DOMSVGAngle, AddRef)
-NS_IMPL_CYCLE_COLLECTION_UNROOT_NATIVE(DOMSVGAngle, Release)
 
 DOMSVGAngle::DOMSVGAngle(SVGSVGElement* aSVGElement)
     : mSVGElement(aSVGElement), mType(AngleType::CreatedValue) {
@@ -29,11 +25,16 @@ JSObject* DOMSVGAngle::WrapObject(JSContext* aCx,
 }
 
 uint16_t DOMSVGAngle::UnitType() const {
+  uint16_t unitType;
   if (mType == AngleType::AnimValue) {
     mSVGElement->FlushAnimations();
-    return mVal->mAnimValUnit;
+    unitType = mVal->mAnimValUnit;
+  } else {
+    unitType = mVal->mBaseValUnit;
   }
-  return mVal->mBaseValUnit;
+  return SVGAnimatedOrient::IsValidUnitType(unitType)
+             ? unitType
+             : SVGAngle_Binding::SVG_ANGLETYPE_UNKNOWN;
 }
 
 float DOMSVGAngle::Value() const {
@@ -113,5 +114,4 @@ void DOMSVGAngle::GetValueAsString(nsAString& aValue) {
   }
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

@@ -74,8 +74,6 @@ TEST(AnaBitrateControllerTest, OutputInitValueWhenOverheadUnknown) {
 }
 
 TEST(AnaBitrateControllerTest, ChangeBitrateOnTargetBitrateChanged) {
-  test::ScopedFieldTrials override_field_trials(
-      "WebRTC-SendSideBwe-WithOverhead/Enabled/");
   constexpr int kInitialFrameLengthMs = 20;
   BitrateController controller(
       BitrateController::Config(32000, kInitialFrameLengthMs, 0, 0));
@@ -85,7 +83,7 @@ TEST(AnaBitrateControllerTest, ChangeBitrateOnTargetBitrateChanged) {
                                                       1000 /
                                                       kInitialFrameLengthMs;
   // Frame length unchanged, bitrate changes in accordance with
-  // |metrics.target_audio_bitrate_bps| and |metrics.overhead_bytes_per_packet|.
+  // `metrics.target_audio_bitrate_bps` and `metrics.overhead_bytes_per_packet`.
   UpdateNetworkMetrics(&controller, kTargetBitrateBps, kOverheadBytesPerPacket);
   CheckDecision(&controller, kInitialFrameLengthMs, kBitrateBps);
 }
@@ -98,8 +96,6 @@ TEST(AnaBitrateControllerTest, UpdateMultipleNetworkMetricsAtOnce) {
   // BitrateController::UpdateNetworkMetrics(...) can handle multiple
   // network updates at once. This is, however, not a common use case in current
   // audio_network_adaptor_impl.cc.
-  test::ScopedFieldTrials override_field_trials(
-      "WebRTC-SendSideBwe-WithOverhead/Enabled/");
   constexpr int kInitialFrameLengthMs = 20;
   BitrateController controller(
       BitrateController::Config(32000, kInitialFrameLengthMs, 0, 0));
@@ -116,8 +112,6 @@ TEST(AnaBitrateControllerTest, UpdateMultipleNetworkMetricsAtOnce) {
 }
 
 TEST(AnaBitrateControllerTest, TreatUnknownFrameLengthAsFrameLengthUnchanged) {
-  test::ScopedFieldTrials override_field_trials(
-      "WebRTC-SendSideBwe-WithOverhead/Enabled/");
   constexpr int kInitialFrameLengthMs = 20;
   BitrateController controller(
       BitrateController::Config(32000, kInitialFrameLengthMs, 0, 0));
@@ -131,8 +125,6 @@ TEST(AnaBitrateControllerTest, TreatUnknownFrameLengthAsFrameLengthUnchanged) {
 }
 
 TEST(AnaBitrateControllerTest, IncreaseBitrateOnFrameLengthIncreased) {
-  test::ScopedFieldTrials override_field_trials(
-      "WebRTC-SendSideBwe-WithOverhead/Enabled/");
   constexpr int kInitialFrameLengthMs = 20;
   BitrateController controller(
       BitrateController::Config(32000, kInitialFrameLengthMs, 0, 0));
@@ -155,8 +147,6 @@ TEST(AnaBitrateControllerTest, IncreaseBitrateOnFrameLengthIncreased) {
 }
 
 TEST(AnaBitrateControllerTest, DecreaseBitrateOnFrameLengthDecreased) {
-  test::ScopedFieldTrials override_field_trials(
-      "WebRTC-SendSideBwe-WithOverhead/Enabled/");
   constexpr int kInitialFrameLengthMs = 60;
   BitrateController controller(
       BitrateController::Config(32000, kInitialFrameLengthMs, 0, 0));
@@ -179,8 +169,6 @@ TEST(AnaBitrateControllerTest, DecreaseBitrateOnFrameLengthDecreased) {
 }
 
 TEST(AnaBitrateControllerTest, BitrateNeverBecomesNegative) {
-  test::ScopedFieldTrials override_field_trials(
-      "WebRTC-SendSideBwe-WithOverhead/Enabled/");
   BitrateController controller(BitrateController::Config(32000, 20, 0, 0));
   constexpr size_t kOverheadBytesPerPacket = 64;
   constexpr int kFrameLengthMs = 60;
@@ -192,8 +180,6 @@ TEST(AnaBitrateControllerTest, BitrateNeverBecomesNegative) {
 }
 
 TEST(AnaBitrateControllerTest, CheckBehaviorOnChangingCondition) {
-  test::ScopedFieldTrials override_field_trials(
-      "WebRTC-SendSideBwe-WithOverhead/Enabled/");
   BitrateController controller(BitrateController::Config(32000, 20, 0, 0));
 
   // Start from an arbitrary overall bitrate.

@@ -22,9 +22,7 @@
     }                                                \
   }
 
-class nsUnknownDecoder : public nsIStreamConverter,
-                         public nsIContentSniffer,
-                         public nsIThreadRetargetableStreamListener {
+class nsUnknownDecoder : public nsIStreamConverter, public nsIContentSniffer {
  public:
   // nsISupports methods
   NS_DECL_ISUPPORTS
@@ -71,13 +69,6 @@ class nsUnknownDecoder : public nsIStreamConverter,
 
  protected:
   nsCOMPtr<nsIStreamListener> mNextListener;
-
-  // Function to use to check whether sniffing some potentially
-  // dangerous types (eg HTML) is ok for this request.  We can disable
-  // sniffing for local files if needed using this.  Just a security
-  // precation thingy... who knows when we suddenly need to flip this
-  // pref?
-  bool AllowSniffing(nsIRequest* aRequest);
 
   // Various sniffer functions.  Returning true means that a type
   // was determined; false means no luck.
@@ -126,12 +117,11 @@ class nsUnknownDecoder : public nsIStreamConverter,
   // we do not need proper locking for mBuffer.
   mozilla::Atomic<char*> mBuffer;
   mozilla::Atomic<uint32_t> mBufferLen;
-  mozilla::Atomic<bool> mRequireHTMLsuffix;
 
   nsCString mContentType;
 
   // This mutex syncs: mContentType, mDecodedData and mNextListener.
-  mutable mozilla::Mutex mMutex;
+  mutable mozilla::Mutex mMutex MOZ_UNANNOTATED;
 
  protected:
   nsresult ConvertEncodedData(nsIRequest* request, const char* data,
@@ -156,11 +146,5 @@ class nsBinaryDetector : public nsUnknownDecoder {
  protected:
   virtual void DetermineContentType(nsIRequest* aRequest) override;
 };
-
-#define NS_BINARYDETECTOR_CATEGORYENTRY             \
-  {                                                 \
-    NS_CONTENT_SNIFFER_CATEGORY, "Binary Detector", \
-        NS_BINARYDETECTOR_CONTRACTID                \
-  }
 
 #endif /* nsUnknownDecoder_h__ */

@@ -5,9 +5,11 @@
 
 #include "nsITransport.idl"
 #include "nsIRequest.idl"
+#include "nsITRRSkipReason.idl"
 
 interface nsIInterfaceRequestor;
 interface nsINetAddr;
+interface nsITLSSocketControl;
 
 %{ C++
 #include "mozilla/BasePrincipal.h"
@@ -94,17 +96,14 @@ interface nsISocketTransport : nsITransport
     nsINetAddr getScriptableSelfAddr();
 
     /**
-     * Security info object returned from the secure socket provider.  This
-     * object supports nsISSLSocketControl, nsITransportSecurityInfo, and
-     * possibly other interfaces.
-     *
-     * This attribute is only available once the socket is connected.
+     * TLS socket control object. This attribute is only available once the
+     * socket is connected.
      */
-    readonly attribute nsISupports securityInfo;
+    readonly attribute nsITLSSocketControl tlsSocketControl;
 
     /**
      * Security notification callbacks passed to the secure socket provider
-     * via nsISSLSocketControl at socket creation time.
+     * via nsITLSSocketControl at socket creation time.
      *
      * NOTE: this attribute cannot be changed once a stream has been opened.
      */
@@ -161,15 +160,15 @@ interface nsISocketTransport : nsITransport
      * the NS_NET_STATUS_* constants defined below, which have a type of
      * nsresult.
      */
-    const unsigned long STATUS_RESOLVING      = 0x804b0003;
-    const unsigned long STATUS_RESOLVED       = 0x804b000b;
-    const unsigned long STATUS_CONNECTING_TO  = 0x804b0007;
-    const unsigned long STATUS_CONNECTED_TO   = 0x804b0004;
-    const unsigned long STATUS_SENDING_TO     = 0x804b0005;
-    const unsigned long STATUS_WAITING_FOR    = 0x804b000a;
-    const unsigned long STATUS_RECEIVING_FROM = 0x804b0006;
-    const unsigned long STATUS_TLS_HANDSHAKE_STARTING = 0x804b000c;
-    const unsigned long STATUS_TLS_HANDSHAKE_ENDED    = 0x804b000d;
+    const unsigned long STATUS_RESOLVING      = 0x4b0003;
+    const unsigned long STATUS_RESOLVED       = 0x4b000b;
+    const unsigned long STATUS_CONNECTING_TO  = 0x4b0007;
+    const unsigned long STATUS_CONNECTED_TO   = 0x4b0004;
+    const unsigned long STATUS_SENDING_TO     = 0x4b0005;
+    const unsigned long STATUS_WAITING_FOR    = 0x4b000a;
+    const unsigned long STATUS_RECEIVING_FROM = 0x4b0006;
+    const unsigned long STATUS_TLS_HANDSHAKE_STARTING = 0x4b000c;
+    const unsigned long STATUS_TLS_HANDSHAKE_ENDED    = 0x4b000d;
 
     /**
      * connectionFlags is a bitmask that can be used to modify underlying
@@ -284,7 +283,17 @@ interface nsISocketTransport : nsITransport
      * only set on CORS preflight request to allowed sending client certificates
      * on a connection for an anonymous request.
      */
-    const long ANONYMOUS_CONNECT_ALLOW_CLIENT_CERT = (1 << 14);
+    const unsigned long ANONYMOUS_CONNECT_ALLOW_CLIENT_CERT = (1 << 14);
+
+    /**
+     * If set, we've retrying after a failed connection attempt.
+     */
+    const unsigned long IS_RETRY = (1 << 15);
+
+    /**
+     * If set, this is a speculative connection.
+     */
+    const unsigned long IS_SPECULATIVE_CONNECTION = (1 << 16);
 
     /**
      * An opaque flags for non-standard behavior of the TLS system.
@@ -341,6 +350,16 @@ interface nsISocketTransport : nsITransport
      * IP address resolved using TRR.
      */
     bool resolvedByTRR();
+
+    /**
+     * Returns the effectiveTRRMode used for the DNS resolution.
+     */
+    readonly attribute nsIRequest_TRRMode effectiveTRRMode;
+
+    /**
+     * Returns the TRR skip reason used for the DNS resolution.
+     */
+    readonly attribute nsITRRSkipReason_value trrSkipReason;
 
     /**
      * Indicate whether this socket is created from a private window. If yes,

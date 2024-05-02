@@ -6,11 +6,7 @@
 /* import-globals-from head_cookies.js */
 
 async function http3_setup_tests(http3version) {
-  let env = Cc["@mozilla.org/process/environment;1"].getService(
-    Ci.nsIEnvironment
-  );
-
-  let h3Port = env.get("MOZHTTP3_PORT");
+  let h3Port = Services.env.get("MOZHTTP3_PORT");
   Assert.notEqual(h3Port, null);
   Assert.notEqual(h3Port, "");
   let h3Route = "foo.example.com:" + h3Port;
@@ -27,7 +23,8 @@ async function http3_setup_tests(http3version) {
   let certdb = Cc["@mozilla.org/security/x509certdb;1"].getService(
     Ci.nsIX509CertDB
   );
-  addCertFromFile(certdb, "http2-ca.pem", "CTu,u,u");
+  // `../unit/` so that unit_ipc tests can use as well
+  addCertFromFile(certdb, "../unit/http2-ca.pem", "CTu,u,u");
 
   await setup_altsvc("https://foo.example.com/", h3Route, http3version);
 }
@@ -41,7 +38,7 @@ function makeChan(uri) {
   return chan;
 }
 
-let CheckHttp3Listener = function() {};
+let CheckHttp3Listener = function () {};
 
 CheckHttp3Listener.prototype = {
   expectedRoute: "",

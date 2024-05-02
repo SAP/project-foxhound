@@ -4,15 +4,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const { SitePermissions } = ChromeUtils.import(
-  "resource:///modules/SitePermissions.jsm"
-);
-const { PermissionTestUtils } = ChromeUtils.import(
-  "resource://testing-common/PermissionTestUtils.jsm"
+const { PermissionTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/PermissionTestUtils.sys.mjs"
 );
 
 const baseURL = getRootDirectory(gTestPath).replace(
   "chrome://mochitests/content",
+  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
   "http://example.com"
 );
 const URL = baseURL + "popup_blocker2.html";
@@ -144,8 +142,11 @@ add_task(async function check_permission_state_change() {
   let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, URL);
 
   // Initially the permission state is BLOCK for popups (set by the prefs).
-  let state = SitePermissions.getForPrincipal(PRINCIPAL, "popup", gBrowser)
-    .state;
+  let state = SitePermissions.getForPrincipal(
+    PRINCIPAL,
+    "popup",
+    gBrowser
+  ).state;
   Assert.equal(state, SitePermissions.BLOCK);
 
   await SpecialPowers.spawn(gBrowser.selectedBrowser, [], async () => {
@@ -219,7 +220,7 @@ add_task(async function check_explicit_default_permission() {
   let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, URL);
 
   // DENY only works if triggered through Services.perms (it's very edge-casey),
-  // since SitePermissions.jsm considers setting default permissions to be removal.
+  // since SitePermissions.sys.mjs considers setting default permissions to be removal.
   PermissionTestUtils.add(URI, "popup", Ci.nsIPermissionManager.DENY_ACTION);
 
   await openPermissionPopup();

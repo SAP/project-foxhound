@@ -10,7 +10,10 @@
 DEF_TEST(DoesntCrossCompartmentBoundaries, {
   // Create a new global to get a new compartment.
   JS::RealmOptions options;
-  JS::RootedObject newGlobal(
+  // dummy
+  options.behaviors().setReduceTimerPrecisionCallerType(
+      JS::RTPCallerTypeToken{0});
+  JS::Rooted<JSObject*> newGlobal(
       cx, JS_NewGlobalObject(cx, getGlobalClass(), nullptr,
                              JS::FireOnNewGlobalHook, options));
   ASSERT_TRUE(newGlobal);

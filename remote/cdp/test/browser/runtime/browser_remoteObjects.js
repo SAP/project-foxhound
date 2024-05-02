@@ -5,7 +5,7 @@
 
 // Test the Runtime remote object
 
-add_task(async function({ client }) {
+add_task(async function ({ client }) {
   const firstContext = await testRuntimeEnable(client);
   const contextId = firstContext.id;
 
@@ -55,29 +55,22 @@ async function testObjectRelease({ Runtime }, contextId) {
   });
   info("Object is released");
 
-  try {
-    await Runtime.callFunctionOn({
+  await Assert.rejects(
+    Runtime.callFunctionOn({
       executionContextId: contextId,
       functionDeclaration: "() => {}",
       arguments: [{ objectId: result.objectId }],
-    });
-    ok(false, "callFunctionOn with a released object as argument should throw");
-  } catch (e) {
-    ok(
-      e.message.includes("Could not find object with given id"),
-      "callFunctionOn throws on released argument"
-    );
-  }
-  try {
-    await Runtime.callFunctionOn({
+    }),
+    err => err.message.includes("Could not find object with given id"),
+    "callFunctionOn throws on released argument"
+  );
+
+  await Assert.rejects(
+    Runtime.callFunctionOn({
       objectId: result.objectId,
       functionDeclaration: "() => {}",
-    });
-    ok(false, "callFunctionOn with a released object as target should throw");
-  } catch (e) {
-    ok(
-      e.message.includes("Unable to get the context for object with id"),
-      "callFunctionOn throws on released target"
-    );
-  }
+    }),
+    err => err.message.includes("Cannot find context with specified id"),
+    "callFunctionOn throws on released target"
+  );
 }

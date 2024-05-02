@@ -4,9 +4,9 @@
 
 "use strict";
 
-const { Front, types } = require("devtools/shared/protocol.js");
+const { Front, types } = require("resource://devtools/shared/protocol.js");
 
-module.exports = function({ resource, watcherFront, targetFront }) {
+module.exports = function ({ resource, watcherFront, targetFront }) {
   // only "paused" have a frame attribute, and legacy listeners are already passing a FrameFront
   if (resource.frame && !(resource.frame instanceof Front)) {
     // Use ThreadFront as parent as debugger's commands.js expects FrameFront to be children

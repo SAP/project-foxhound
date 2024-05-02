@@ -49,10 +49,10 @@ UniqueCERTCertList FindClientCertificatesWithPrivateKeys();
     }                                                \
   }
 
-extern bool EnsureNSSInitializedChromeOrContent();
-extern bool HandleTLSPrefChange(const nsCString& aPref);
-extern void SetValidationOptionsCommon();
-extern void NSSShutdownForSocketProcess();
+bool EnsureNSSInitializedChromeOrContent();
+bool HandleTLSPrefChange(const nsCString& aPref);
+void SetValidationOptionsCommon();
+void PrepareForShutdownInSocketProcess();
 
 // Implementation of the PSM component interface.
 class nsNSSComponent final : public nsINSSComponent, public nsIObserver {
@@ -91,7 +91,7 @@ class nsNSSComponent final : public nsINSSComponent, public nsIObserver {
 
  private:
   nsresult InitializeNSS();
-  void ShutdownNSS();
+  void PrepareForShutdown();
 
   void setValidationOptions(bool isInitialSetting,
                             const mozilla::MutexAutoLock& proofOfLock);
@@ -100,8 +100,7 @@ class nsNSSComponent final : public nsINSSComponent, public nsIObserver {
       /*out*/ mozilla::psm::CertVerifier::OcspStrictConfig* osc,
       /*out*/ uint32_t* certShortLifetimeInDays,
       /*out*/ TimeDuration& softTimeout,
-      /*out*/ TimeDuration& hardTimeout,
-      const mozilla::MutexAutoLock& proofOfLock);
+      /*out*/ TimeDuration& hardTimeout);
   void UpdateCertVerifierWithEnterpriseRoots();
   nsresult RegisterObservers();
 
@@ -111,14 +110,13 @@ class nsNSSComponent final : public nsINSSComponent, public nsIObserver {
   nsresult CommonGetEnterpriseCerts(
       nsTArray<nsTArray<uint8_t>>& enterpriseCerts, bool getRoots);
 
-  bool ShouldEnableEnterpriseRootsForFamilySafety(uint32_t familySafetyMode);
-
   nsresult MaybeEnableIntermediatePreloadingHealer();
 
   // mLoadableCertsLoadedMonitor protects mLoadableCertsLoaded.
   mozilla::Monitor mLoadableCertsLoadedMonitor;
-  bool mLoadableCertsLoaded;
-  nsresult mLoadableCertsLoadedResult;
+  bool mLoadableCertsLoaded MOZ_GUARDED_BY(mLoadableCertsLoadedMonitor);
+  nsresult mLoadableCertsLoadedResult
+      MOZ_GUARDED_BY(mLoadableCertsLoadedMonitor);
 
   // mMutex protects all members that are accessed from more than one thread.
   mozilla::Mutex mMutex;
@@ -126,24 +124,16 @@ class nsNSSComponent final : public nsINSSComponent, public nsIObserver {
   // The following members are accessed from more than one thread:
 
 #ifdef DEBUG
-  nsString mTestBuiltInRootHash;
+  nsCString mTestBuiltInRootHash MOZ_GUARDED_BY(mMutex);
 #endif
-  nsCString mContentSigningRootHash;
-  RefPtr<mozilla::psm::SharedCertVerifier> mDefaultCertVerifier;
-  nsString mMitmCanaryIssuer;
-  bool mMitmDetecionEnabled;
-  mozilla::Vector<EnterpriseCert> mEnterpriseCerts;
+  RefPtr<mozilla::psm::SharedCertVerifier> mDefaultCertVerifier
+      MOZ_GUARDED_BY(mMutex);
+  nsString mMitmCanaryIssuer MOZ_GUARDED_BY(mMutex);
+  bool mMitmDetecionEnabled MOZ_GUARDED_BY(mMutex);
+  mozilla::Vector<EnterpriseCert> mEnterpriseCerts MOZ_GUARDED_BY(mMutex);
 
   // The following members are accessed only on the main thread:
   static int mInstanceCount;
-  // If InitializeNSS succeeds, then we have dispatched an event to load the
-  // loadable roots module, enterprise certificates (if enabled), and the os
-  // client certs module (if enabled) on a background thread. We must wait for
-  // it to complete before attempting to unload the modules again in
-  // ShutdownNSS. If we never dispatched the event, then we can't wait for it
-  // to complete (because it will never complete) so we use this boolean to keep
-  // track of if we should wait.
-  bool mLoadLoadableCertsTaskDispatched;
   // If the intermediate preloading healer is enabled, the following timer
   // periodically dispatches events to the background task queue. Each of these
   // events scans the NSS certdb for preloaded intermediates that are in

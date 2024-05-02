@@ -11,7 +11,7 @@
 const TEST_URI = `${URL_ROOT_COM_SSL}test-console-evaluation-context-selector.html`;
 const IFRAME_FILE = `test-console-evaluation-context-selector-child.html`;
 
-add_task(async function() {
+add_task(async function () {
   await pushPref("devtools.webconsole.input.context", true);
 
   const tab = await addTab(TEST_URI);
@@ -64,12 +64,7 @@ add_task(async function() {
   await waitForEagerEvaluationResult(hud, /example\.org/);
   ok(true, "Instant evaluation has the expected result");
 
-  await keyboardExecuteAndWaitForMessage(
-    hud,
-    `localVar`,
-    "example.org",
-    ".result"
-  );
+  await keyboardExecuteAndWaitForResultMessage(hud, `localVar`, "example.org");
   ok(true, "Evaluation result is the expected one");
 
   // Cleanup
@@ -96,12 +91,7 @@ add_task(async function() {
   await waitForEagerEvaluationResult(hud, /example\.net/);
   ok(true, "Instant evaluation has the expected result");
 
-  await keyboardExecuteAndWaitForMessage(
-    hud,
-    `localVar`,
-    "example.net",
-    ".result"
-  );
+  await keyboardExecuteAndWaitForResultMessage(hud, `localVar`, "example.net");
   ok(true, "Evaluation result is the expected one");
 
   info("Resume the debugger");

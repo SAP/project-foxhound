@@ -5,8 +5,9 @@
 
 #include "lib/jxl/modular/modular_image.h"
 
+#include <sstream>
+
 #include "lib/jxl/base/status.h"
-#include "lib/jxl/common.h"
 #include "lib/jxl/modular/transform/transform.h"
 
 namespace jxl {
@@ -27,8 +28,8 @@ void Image::undo_transforms(const weighted::Header &wp_header,
   }
 }
 
-Image::Image(size_t iw, size_t ih, int bd, int nb_chans)
-    : w(iw), h(ih), bitdepth(bd), nb_meta_channels(0), error(false) {
+Image::Image(size_t iw, size_t ih, int bitdepth, int nb_chans)
+    : w(iw), h(ih), bitdepth(bitdepth), nb_meta_channels(0), error(false) {
   for (int i = 0; i < nb_chans; i++) channel.emplace_back(Channel(iw, ih));
 }
 
@@ -57,5 +58,21 @@ Image Image::clone() {
   }
   return c;
 }
+
+#if JXL_DEBUG_V_LEVEL >= 1
+std::string Image::DebugString() const {
+  std::ostringstream os;
+  os << w << "x" << h << ", depth: " << bitdepth;
+  if (!channel.empty()) {
+    os << ", channels:";
+    for (size_t i = 0; i < channel.size(); ++i) {
+      os << " " << channel[i].w << "x" << channel[i].h
+         << "(shift: " << channel[i].hshift << "," << channel[i].vshift << ")";
+      if (i < nb_meta_channels) os << "*";
+    }
+  }
+  return os.str();
+}
+#endif
 
 }  // namespace jxl

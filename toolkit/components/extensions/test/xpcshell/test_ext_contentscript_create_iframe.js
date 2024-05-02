@@ -20,12 +20,12 @@ add_task(async function test_contentscript_create_iframe() {
       );
 
       let {
-        applications: {
+        browser_specific_settings: {
           gecko: { id: expectedManifestGeckoId },
         },
       } = chrome.runtime.getManifest();
       let {
-        applications: {
+        browser_specific_settings: {
           gecko: { id: actualManifestGeckoId },
         },
       } = manifest;
@@ -37,7 +37,7 @@ add_task(async function test_contentscript_create_iframe() {
       );
 
       let {
-        applications: {
+        browser_specific_settings: {
           gecko: { id: testGetManifestGeckoId },
         },
       } = testGetManifest;
@@ -79,7 +79,7 @@ add_task(async function test_contentscript_create_iframe() {
   const ID = "contentscript@tests.mozilla.org";
   let extensionData = {
     manifest: {
-      applications: { gecko: { id: ID } },
+      browser_specific_settings: { gecko: { id: ID } },
       content_scripts: [
         {
           matches: ["http://example.com/data/file_sample.html"],
@@ -120,7 +120,7 @@ add_task(async function test_contentscript_create_iframe() {
 
   info("testing APIs availability once the extension is unloaded...");
 
-  await contentPage.spawn(null, () => {
+  await contentPage.legacySpawn(null, () => {
     this.iframeWindow = this.content[0];
 
     Assert.ok(this.iframeWindow, "content script enabled iframe found");
@@ -136,7 +136,7 @@ add_task(async function test_contentscript_create_iframe() {
     "test content script APIs not accessible from the frame once the extension is unloaded"
   );
 
-  await contentPage.spawn(null, () => {
+  await contentPage.legacySpawn(null, () => {
     let win = Cu.waiveXrays(this.iframeWindow);
     ok(
       !Cu.isDeadWrapper(win.browser),

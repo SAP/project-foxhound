@@ -159,7 +159,7 @@
 
 #prefs > tr.deleted > th > span {
   font-weight: bold;
-  color: var(--in-content-deemphasized-text);
+  color: var(--text-color-deemphasized);
 }
 
 #prefs > tr > td.cell-edit,
@@ -286,11 +286,5 @@ td.cell-value > form > input[type="number"] {
 @media (prefers-contrast) {
   #prefs > tr.deleted:hover > th > span {
     color: inherit;
-  }
-
-  td:is(.cell-edit, .cell-reset) > button:hover,
-  tr:hover > td > button.primary,
-  tr.deleted:hover input[type="radio"]:checked:not(:hover) {
-    border-color: ThreeDShadow;
   }
 }

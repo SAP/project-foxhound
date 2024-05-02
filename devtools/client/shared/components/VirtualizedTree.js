@@ -7,18 +7,20 @@
 const {
   Component,
   createFactory,
-} = require("devtools/client/shared/vendor/react");
-const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
-const dom = require("devtools/client/shared/vendor/react-dom-factories");
-const { scrollIntoView } = require("devtools/client/shared/scroll");
+} = require("resource://devtools/client/shared/vendor/react.js");
+const PropTypes = require("resource://devtools/client/shared/vendor/react-prop-types.js");
+const dom = require("resource://devtools/client/shared/vendor/react-dom-factories.js");
+const {
+  scrollIntoView,
+} = require("resource://devtools/client/shared/scroll.js");
 const {
   preventDefaultAndStopPropagation,
-} = require("devtools/client/shared/events");
+} = require("resource://devtools/client/shared/events.js");
 
 loader.lazyRequireGetter(
   this,
   ["wrapMoveFocus", "getFocusableElements"],
-  "devtools/client/shared/focus",
+  "resource://devtools/client/shared/focus.js",
   true
 );
 
@@ -297,7 +299,8 @@ class Tree extends Component {
     this._scrollItemIntoView();
   }
 
-  componentWillReceiveProps(nextProps) {
+  // FIXME: https://bugzilla.mozilla.org/show_bug.cgi?id=1774507
+  UNSAFE_componentWillReceiveProps(nextProps) {
     this._autoExpand();
     this._updateHeight();
   }
@@ -1051,7 +1054,7 @@ const TreeNode = createFactory(TreeNodeClass);
 function oncePerAnimationFrame(fn) {
   let animationId = null;
   let argsToPass = null;
-  return function(...args) {
+  return function (...args) {
     argsToPass = args;
     if (animationId !== null) {
       return;

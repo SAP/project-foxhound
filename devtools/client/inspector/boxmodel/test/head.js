@@ -1,8 +1,7 @@
 /* Any copyright is dedicated to the Public Domain.
  http://creativecommons.org/publicdomain/zero/1.0/ */
 /* eslint no-unused-vars: [2, {"vars": "local"}] */
-/* import-globals-from ../../../shared/test/shared-head.js */
-/* import-globals-from ../../test/head.js */
+
 "use strict";
 
 // Import the inspector's head.js first (which itself imports shared-head.js).
@@ -71,21 +70,22 @@ function waitForMarkupLoaded(inspector) {
 }
 
 function getStyle(browser, selector, propertyName) {
-  return SpecialPowers.spawn(browser, [selector, propertyName], async function(
-    _selector,
-    _propertyName
-  ) {
-    return content.document
-      .querySelector(_selector)
-      .style.getPropertyValue(_propertyName);
-  });
+  return SpecialPowers.spawn(
+    browser,
+    [selector, propertyName],
+    async function (_selector, _propertyName) {
+      return content.document
+        .querySelector(_selector)
+        .style.getPropertyValue(_propertyName);
+    }
+  );
 }
 
 function setStyle(browser, selector, propertyName, value) {
   return SpecialPowers.spawn(
     browser,
     [selector, propertyName, value],
-    async function(_selector, _propertyName, _value) {
+    async function (_selector, _propertyName, _value) {
       content.document.querySelector(_selector).style[_propertyName] = _value;
     }
   );
@@ -97,7 +97,7 @@ function setStyle(browser, selector, propertyName, value) {
  * finished updating. We also need to wait for the "boxmodel-view-updated" event.
  */
 var _selectNode = selectNode;
-selectNode = async function(node, inspector, reason) {
+selectNode = async function (node, inspector, reason) {
   const onUpdate = waitForUpdate(inspector, true);
   await _selectNode(node, inspector, reason);
   await onUpdate;

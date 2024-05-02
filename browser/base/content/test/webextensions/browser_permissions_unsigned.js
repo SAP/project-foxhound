@@ -8,6 +8,10 @@ add_task(async function test_unsigned() {
     set: [
       ["extensions.webapi.testing", true],
       ["extensions.install.requireBuiltInCerts", false],
+      ["extensions.InstallTrigger.enabled", true],
+      ["extensions.InstallTriggerImpl.enabled", true],
+      // Relax the user input requirements while running this test.
+      ["xpinstall.userActivation.required", false],
     ],
   });
 
@@ -17,7 +21,7 @@ add_task(async function test_unsigned() {
 
   let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser);
 
-  BrowserTestUtils.loadURI(
+  BrowserTestUtils.startLoadingURIString(
     gBrowser.selectedBrowser,
     `${BASE}/file_install_extensions.html`
   );
@@ -26,7 +30,7 @@ add_task(async function test_unsigned() {
   SpecialPowers.spawn(
     gBrowser.selectedBrowser,
     [`${BASE}/browser_webext_unsigned.xpi`],
-    async function(url) {
+    async function (url) {
       content.wrappedJSObject.installTrigger(url);
     }
   );
@@ -34,19 +38,24 @@ add_task(async function test_unsigned() {
   let panel = await promisePopupNotificationShown("addon-webext-permissions");
 
   is(panel.getAttribute("icon"), WARNING_ICON);
-  let description = panel.querySelector(".popup-notification-description")
-    .textContent;
-  checkPermissionString(
-    description,
-    "webextPerms.headerUnsignedWithPerms",
-    undefined,
-    `Install notification includes unsigned warning`
-  );
+  let description = panel.querySelector(
+    ".popup-notification-description"
+  ).textContent;
+  const expected = formatExtValue("webext-perms-header-unsigned-with-perms", {
+    extension: "<>",
+  });
+  for (let part of expected.split("<>")) {
+    ok(
+      description.includes(part),
+      "Install notification includes unsigned warning"
+    );
+  }
 
   // cancel the install
   let promise = promiseInstallEvent({ id: ID }, "onInstallCancelled");
   panel.secondaryButton.click();
-  await promise;
+  const cancelledByUser = await promise;
+  is(cancelledByUser, true, "Install cancelled by user");
 
   let addon = await AddonManager.getAddonByID(ID);
   is(addon, null, "Extension is not installed");

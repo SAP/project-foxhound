@@ -11,8 +11,8 @@
 
 #include "mozilla/HashFunctions.h"
 #include "mozilla/Mutex.h"
+#include "mozilla/OriginAttributes.h"
 #include "mozilla/TaskQueue.h"
-#include "mozilla/TypedEnumBits.h"
 #include "nsIAsyncShutdown.h"
 #include "nsICertOverrideService.h"
 #include "nsIFile.h"
@@ -27,33 +27,17 @@ class nsCertOverride final : public nsICertOverride {
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSICERTOVERRIDE
 
-  enum class OverrideBits {
-    None = 0,
-    Untrusted = nsICertOverrideService::ERROR_UNTRUSTED,
-    Mismatch = nsICertOverrideService::ERROR_MISMATCH,
-    Time = nsICertOverrideService::ERROR_TIME,
-  };
-
-  nsCertOverride()
-      : mPort(-1), mIsTemporary(false), mOverrideBits(OverrideBits::None) {}
+  nsCertOverride() : mPort(-1), mIsTemporary(false) {}
 
   nsCString mAsciiHost;
   int32_t mPort;
-  OriginAttributes mOriginAttributes;
+  mozilla::OriginAttributes mOriginAttributes;
   bool mIsTemporary;  // true: session only, false: stored on disk
   nsCString mFingerprint;
-  OverrideBits mOverrideBits;
-  nsCString mDBKey;
-  nsCOMPtr<nsIX509Cert> mCert;
-
-  static void convertBitsToString(OverrideBits ob, nsACString& str);
-  static void convertStringToBits(const nsACString& str, OverrideBits& ob);
 
  private:
   ~nsCertOverride() = default;
 };
-
-MOZ_MAKE_ENUM_CLASS_BITWISE_OPERATORS(nsCertOverride::OverrideBits)
 
 // hash entry class
 class nsCertOverrideEntry final : public PLDHashEntryHdr {
@@ -120,7 +104,7 @@ class nsCertOverrideService final : public nsICertOverrideService,
 
   // Concatenates host name, port number, and origin attributes.
   static void GetKeyString(const nsACString& aHostName, int32_t aPort,
-                           const OriginAttributes& aOriginAttributes,
+                           const mozilla::OriginAttributes& aOriginAttributes,
                            nsACString& aRetval);
 
   void AssertOnTaskQueue() const {
@@ -133,23 +117,23 @@ class nsCertOverrideService final : public nsICertOverrideService,
   ~nsCertOverrideService();
 
   mozilla::Mutex mMutex;
-  bool mDisableAllSecurityCheck;
-  nsCOMPtr<nsIFile> mSettingsFile;
-  nsTHashtable<nsCertOverrideEntry> mSettingsTable;
+  bool mDisableAllSecurityCheck MOZ_GUARDED_BY(mMutex);
+  nsCOMPtr<nsIFile> mSettingsFile MOZ_GUARDED_BY(mMutex);
+  nsTHashtable<nsCertOverrideEntry> mSettingsTable MOZ_GUARDED_BY(mMutex);
 
   void CountPermanentOverrideTelemetry(
       const mozilla::MutexAutoLock& aProofOfLock);
 
-  void RemoveAllFromMemory();
   nsresult Read(const mozilla::MutexAutoLock& aProofOfLock);
   nsresult Write(const mozilla::MutexAutoLock& aProofOfLock);
   nsresult AddEntryToList(const nsACString& host, int32_t port,
-                          const OriginAttributes& aOriginAttributes,
-                          nsIX509Cert* aCert, const bool aIsTemporary,
+                          const mozilla::OriginAttributes& aOriginAttributes,
+                          const bool aIsTemporary,
                           const nsACString& fingerprint,
-                          nsCertOverride::OverrideBits ob,
-                          const nsACString& dbKey,
                           const mozilla::MutexAutoLock& aProofOfLock);
+  already_AddRefed<nsCertOverride> GetOverrideFor(
+      const nsACString& aHostName, int32_t aPort,
+      const mozilla::OriginAttributes& aOriginAttributes);
 
   // Set in constructor only
   RefPtr<mozilla::TaskQueue> mWriterTaskQueue;

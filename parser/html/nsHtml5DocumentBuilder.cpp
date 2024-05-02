@@ -32,7 +32,7 @@ nsresult nsHtml5DocumentBuilder::Init(mozilla::dom::Document* aDoc,
   return nsContentSink::Init(aDoc, aURI, aContainer, aChannel);
 }
 
-nsHtml5DocumentBuilder::~nsHtml5DocumentBuilder() {}
+nsHtml5DocumentBuilder::~nsHtml5DocumentBuilder() = default;
 
 nsresult nsHtml5DocumentBuilder::MarkAsBroken(nsresult aReason) {
   mBroken = aReason;
@@ -47,28 +47,14 @@ void nsHtml5DocumentBuilder::UpdateStyleSheet(nsIContent* aElement) {
     return;
   }
 
-  // Break out of the doc update created by Flush() to zap a runnable
-  // waiting to call UpdateStyleSheet without the right observer
-  EndDocUpdate();
-
-  if (MOZ_UNLIKELY(!mParser)) {
-    // EndDocUpdate ran stuff that called nsIParser::Terminate()
-    return;
-  }
-
-  linkStyle->SetEnableUpdates(true);
-
-  auto updateOrError =
-      linkStyle->UpdateStyleSheet(mRunsToCompletion ? nullptr : this);
+  auto updateOrError = linkStyle->EnableUpdatesAndUpdateStyleSheet(
+      mRunsToCompletion ? nullptr : this);
 
   if (updateOrError.isOk() && updateOrError.unwrap().ShouldBlock() &&
       !mRunsToCompletion) {
     ++mPendingSheetCount;
     mScriptLoader->AddParserBlockingScriptExecutionBlocker();
   }
-
-  // Re-open update
-  BeginDocUpdate();
 }
 
 void nsHtml5DocumentBuilder::SetDocumentMode(nsHtml5DocumentMode m) {
@@ -89,7 +75,23 @@ void nsHtml5DocumentBuilder::SetDocumentMode(nsHtml5DocumentMode m) {
       break;
   }
   mDocument->SetCompatibilityMode(mode);
-  if (errMsgId) {
+
+  if (errMsgId && !mDocument->IsLoadedAsData()) {
+    nsCOMPtr<nsIURI> docURI = mDocument->GetDocumentURI();
+    bool isData = false;
+    docURI->SchemeIs("data", &isData);
+    bool isHttp = false;
+    docURI->SchemeIs("http", &isHttp);
+    bool isHttps = false;
+    docURI->SchemeIs("https", &isHttps);
+
+    nsCOMPtr<nsIPrincipal> principal = mDocument->GetPrincipal();
+    if (principal->GetIsNullPrincipal() && !isData && !isHttp && !isHttps) {
+      // Don't normally warn for null principals. It may well be internal
+      // documents for which the warning is not applicable.
+      return;
+    }
+
     nsContentUtils::ReportToConsole(
         nsIScriptError::warningFlag, "HTML_PARSER__DOCTYPE"_ns, mDocument,
         nsContentUtils::eHTMLPARSER_PROPERTIES, errMsgId);

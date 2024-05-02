@@ -2,34 +2,28 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, print_function, unicode_literals
-
 import logging
 import os
+import sys
 import tempfile
 import textwrap
 import unittest
-import six
-import sys
 
+import six
+from buildconfig import topsrcdir
+from mozpack import path as mozpath
+from mozunit import main
 from six import StringIO
 
-from mozunit import main
-from mozpack import path as mozpath
-
+from common import ConfigureTestSandbox
+from mozbuild.configure import ConfigureSandbox
 from mozbuild.configure.util import (
     ConfigureOutputHandler,
-    getpreferredencoding,
     LineIO,
     Version,
+    getpreferredencoding,
 )
-
-from mozbuild.configure import ConfigureSandbox
-
 from mozbuild.util import exec_
-
-from buildconfig import topsrcdir
-from common import ConfigureTestSandbox
 
 
 class TestConfigureOutputHandler(unittest.TestCase):
@@ -411,11 +405,11 @@ class TestLogSubprocessOutput(unittest.TestCase):
         except SystemExit as e:
             status = e.code
 
-        self.assertEquals(status, 0)
+        self.assertEqual(status, 0)
         quote_char = "'"
         if getpreferredencoding().lower() == "utf-8":
             quote_char = "\u00B4"
-        self.assertEquals(six.ensure_text(out.getvalue().strip()), quote_char)
+        self.assertEqual(six.ensure_text(out.getvalue().strip()), quote_char)
 
 
 class TestVersion(unittest.TestCase):

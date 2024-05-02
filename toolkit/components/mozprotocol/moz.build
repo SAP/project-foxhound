@@ -8,11 +8,11 @@ with Files("**"):
     BUG_COMPONENT = ("Toolkit", "General")
 
 EXTRA_JS_MODULES += [
-    "MozProtocolHandler.jsm",
+    "MozProtocolHandler.sys.mjs",
 ]
 
 XPCOM_MANIFESTS += [
     "components.conf",
 ]
 
-BROWSER_CHROME_MANIFESTS += ["tests/browser.ini"]
+BROWSER_CHROME_MANIFESTS += ["tests/browser.toml"]

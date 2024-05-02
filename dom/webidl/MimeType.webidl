@@ -7,10 +7,10 @@
 [Exposed=Window]
 interface MimeType {
   [TaintSource]
+  readonly attribute DOMString type;
+  [TaintSource]
   readonly attribute DOMString description;
-  readonly attribute Plugin? enabledPlugin;
   [TaintSource]
   readonly attribute DOMString suffixes;
-  [TaintSource]
-  readonly attribute DOMString type;
+  readonly attribute Plugin enabledPlugin;
 };

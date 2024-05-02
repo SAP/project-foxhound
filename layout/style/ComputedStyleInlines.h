@@ -19,15 +19,24 @@
 #include "MainThreadUtils.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/Unused.h"
-#include "nsStyleStruct.h"
+#include "nsStyleStructInlines.h"
 
 namespace mozilla {
 
 namespace detail {
+
+template <typename T, typename Enable = void>
+struct HasTriggerImageLoads : public std::false_type {};
+
+template <typename T>
+struct HasTriggerImageLoads<T, decltype(std::declval<T&>().TriggerImageLoads(
+                                   std::declval<dom::Document&>(), nullptr))>
+    : public std::true_type {};
+
 template <typename T, const T* (ComputedStyle::*Method)() const>
 void TriggerImageLoads(dom::Document& aDocument, const ComputedStyle* aOldStyle,
                        ComputedStyle* aStyle) {
-  if constexpr (T::kHasTriggerImageLoads) {
+  if constexpr (HasTriggerImageLoads<T>::value) {
     auto* old = aOldStyle ? (aOldStyle->*Method)() : nullptr;
     auto* current = const_cast<T*>((aStyle->*Method)());
     current->TriggerImageLoads(aDocument, old);
@@ -36,6 +45,7 @@ void TriggerImageLoads(dom::Document& aDocument, const ComputedStyle* aOldStyle,
     Unused << aStyle;
   }
 }
+
 }  // namespace detail
 
 void ComputedStyle::StartImageLoads(dom::Document& aDocument,
@@ -56,7 +66,7 @@ StylePointerEvents ComputedStyle::PointerEvents() const {
     // work.
     return StylePointerEvents::Auto;
   }
-  auto& ui = *StyleUI();
+  const auto& ui = *StyleUI();
   if (ui.IsInert()) {
     return StylePointerEvents::None;
   }
@@ -66,6 +76,55 @@ StylePointerEvents ComputedStyle::PointerEvents() const {
 StyleUserSelect ComputedStyle::UserSelect() const {
   return StyleUI()->IsInert() ? StyleUserSelect::None
                               : StyleUIReset()->ComputedUserSelect();
+}
+
+bool ComputedStyle::IsFixedPosContainingBlockForNonSVGTextFrames() const {
+  // NOTE: Any CSS properties that influence the output of this function
+  // should return FIXPOS_CB_NON_SVG for will-change.
+  if (IsRootElementStyle()) {
+    return false;
+  }
+
+  const auto& disp = *StyleDisplay();
+  if (disp.mWillChange.bits & mozilla::StyleWillChangeBits::FIXPOS_CB_NON_SVG) {
+    return true;
+  }
+
+  const auto& effects = *StyleEffects();
+  return effects.HasFilters() || effects.HasBackdropFilters();
+}
+
+bool ComputedStyle::IsFixedPosContainingBlock(
+    const nsIFrame* aContextFrame) const {
+  // NOTE: Any CSS properties that influence the output of this function
+  // should also handle will-change appropriately.
+  if (aContextFrame->IsInSVGTextSubtree()) {
+    return false;
+  }
+  if (IsFixedPosContainingBlockForNonSVGTextFrames()) {
+    return true;
+  }
+  const auto& disp = *StyleDisplay();
+  if (disp.IsFixedPosContainingBlockForContainLayoutAndPaintSupportingFrames() &&
+      aContextFrame->IsFrameOfType(nsIFrame::eSupportsContainLayoutAndPaint)) {
+    return true;
+  }
+  if (disp.IsFixedPosContainingBlockForTransformSupportingFrames() &&
+      aContextFrame->IsFrameOfType(nsIFrame::eSupportsCSSTransforms)) {
+    return true;
+  }
+  return false;
+}
+
+bool ComputedStyle::IsAbsPosContainingBlock(
+    const nsIFrame* aContextFrame) const {
+  if (IsFixedPosContainingBlock(aContextFrame)) {
+    return true;
+  }
+  // NOTE: Any CSS properties that influence the output of this function
+  // should also handle will-change appropriately.
+  return StyleDisplay()->IsPositionedStyle() &&
+         !aContextFrame->IsInSVGTextSubtree();
 }
 
 }  // namespace mozilla

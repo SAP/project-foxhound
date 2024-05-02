@@ -7,13 +7,12 @@
 #include "nsISupports.idl"
 #include "domstubs.idl"
 
-interface nsIURI;
-interface nsIContent;
+%{C++
+#include "mozilla/Debug.h"
+%}
+
 interface nsISelectionController;
 interface nsIDocumentStateListener;
-interface nsIOutputStream;
-interface nsITransactionManager;
-interface nsITransaction;
 interface nsIEditActionListener;
 interface nsIInlineSpellChecker;
 interface nsITransferable;
@@ -46,11 +45,51 @@ interface nsIEditor  : nsISupports
   const short eToBeginningOfLine = 5;
   const short eToEndOfLine = 6;
 
+%{C++
+  static bool EDirectionIsValid(EDirection aDirectionAndAmount) {
+    return aDirectionAndAmount == nsIEditor::eNone ||
+           aDirectionAndAmount == nsIEditor::eNext ||
+           aDirectionAndAmount == nsIEditor::ePrevious ||
+           aDirectionAndAmount == nsIEditor::eNextWord ||
+           aDirectionAndAmount == nsIEditor::ePreviousWord ||
+           aDirectionAndAmount == nsIEditor::eToBeginningOfLine ||
+           aDirectionAndAmount == nsIEditor::eToEndOfLine;
+  }
+  static bool EDirectionIsValidExceptNone(EDirection aDirectionAndAmount) {
+    return aDirectionAndAmount != nsIEditor::eNone &&
+           EDirectionIsValid(aDirectionAndAmount);
+  }
+
+  /**
+   * Return true if nsIEditor::EDirection value means the direction of pressing
+   * `Backspace` key.
+   */
+  [[nodiscard]] static bool DirectionIsBackspace(
+    EDirection aDirectionAndAmount) {
+    MOZ_ASSERT(EDirectionIsValid(aDirectionAndAmount));
+    return aDirectionAndAmount == nsIEditor::ePrevious ||
+           aDirectionAndAmount == nsIEditor::ePreviousWord ||
+           aDirectionAndAmount == nsIEditor::eToBeginningOfLine;
+  }
+
+  /**
+   * Return true if nsIEditor::EDirection value means the direction of pressing
+   * `Delete` key (forwardDelete).
+   */
+  [[nodiscard]] static bool DirectionIsDelete(
+    EDirection aDirectionAndAmount) {
+    MOZ_ASSERT(EDirectionIsValid(aDirectionAndAmount));
+    return aDirectionAndAmount == nsIEditor::eNext ||
+           aDirectionAndAmount == nsIEditor::eNextWord ||
+           aDirectionAndAmount == nsIEditor::eToEndOfLine;
+  }
+%}
+
   const short eStrip = 0;
   const short eNoStrip = 1;
 
   // If you want an HTML editor to behave as a plaintext editor, specify this
-  // flag.  Note that this is always set if the instance is a text editor.
+  // flag.  This is currently used only with plaintext email composer.
   const long eEditorPlaintextMask       = 0x0001;
   // We don't support single line editor mode with HTML editors.  Therefore,
   // don't specify this for HTML editor.
@@ -59,9 +98,14 @@ interface nsIEditor  : nsISupports
   // don't specify this for HTML editor.
   const long eEditorPasswordMask        = 0x0004;
   // When the editor should be in readonly mode (currently, same as "disabled"),
-  // you can specify this flag with any editor instances.  Note that setting
-  // this flag does not change the style of editor.  This just changes the
-  // internal editor's readonly state.
+  // you can specify this flag with any editor instances.
+  // NOTE: Setting this flag does not change the style of editor.  This just
+  // changes the internal editor's readonly state.
+  // NOTE: The readonly mode does NOT block XPCOM APIs which modify the editor
+  // content.  This just blocks edit operations from user input and editing
+  // commands (both HTML Document.execCommand and the XUL commands).
+  // FIXME: XPCOM methods of TextEditor may be blocked by this flag.  If you
+  // find it, file a bug.
   const long eEditorReadonlyMask        = 0x0008;
   // If you want an HTML editor to work as an email composer, specify this flag.
   // And you can specify this to text editor too for making spellchecker for
@@ -190,10 +234,6 @@ interface nsIEditor  : nsISupports
 
   /* ------------ Transaction methods -------------- */
 
-  /** transactionManager Get the transaction manager the editor is using.
-    */
-  readonly attribute nsITransactionManager transactionManager;
-
   /** turn the undo system on or off
     * @param aEnable  if PR_TRUE, the undo system is turned on if available
     *                 if PR_FALSE the undo system is turned off if it
@@ -204,45 +244,55 @@ interface nsIEditor  : nsISupports
     */
   void enableUndo(in boolean enable);
 
-  /** undo reverses the effects of the last Do operation,
-    * if Undo is enabled in the editor.
-    * It is provided here so clients need no knowledge of whether
-    * the editor has a transaction manager or not.
-    * If a transaction manager is present, it is told to undo,
-    * and the result of that undo is returned.
-    * Otherwise, the Undo request is ignored and an
-    * error NS_ERROR_NOT_AVAILABLE is returned.
-    *
-    */
+  /**
+   * Returns true when undo/redo is enabled (by default).
+   */
+  [infallible] readonly attribute boolean undoRedoEnabled;
+
+  /**
+   * Retruns true when undo/redo is enabled and there is one or more transaction
+   * in the undo stack.
+   */
+  [infallible] readonly attribute boolean canUndo;
+
+  /**
+   * Returns true when undo/redo is enabled and there is one or more transaction
+   * in the redo stack.
+   */
+  [infallible] readonly attribute boolean canRedo;
+
+  /**
+   * Clears the transactions both for undo and redo.
+   * This may fail if you call this while editor is handling something, i.e.,
+   * don't call this from a legacy mutation event listeners, then, you won't
+   * see any exceptions.
+   */
+  [binaryname(ClearUndoRedoXPCOM)]
+  void clearUndoRedo();
+
+  /**
+   * Undo the topmost transaction in the undo stack.
+   * This may throw exception when this is called while editor is handling
+   * transactions.
+   */
   [can_run_script]
-  void undo(in unsigned long count);
+  void undo();
 
-  /** returns state information about the undo system.
-    * @param aIsEnabled [OUT] PR_TRUE if undo is enabled
-    * @param aCanUndo   [OUT] PR_TRUE if at least one transaction is
-    *                         currently ready to be undone.
-    */
-  void canUndo(out boolean isEnabled, out boolean canUndo);
-
-  /** redo reverses the effects of the last Undo operation
-    * It is provided here so clients need no knowledge of whether
-    * the editor has a transaction manager or not.
-    * If a transaction manager is present, it is told to redo and the
-    * result of the previously undone transaction is reapplied to the document.
-    * If no transaction is available for Redo, or if the document
-    * has no transaction manager, the Redo request is ignored and an
-    * error NS_ERROR_NOT_AVAILABLE is returned.
-    *
-    */
+  /**
+   * Undo all transactions in the undo stack.
+   * This may throw exception when this is called while editor is handling
+   * transactions.
+   */
   [can_run_script]
-  void redo(in unsigned long count);
+  void undoAll();
 
-  /** returns state information about the redo system.
-    * @param aIsEnabled [OUT] PR_TRUE if redo is enabled
-    * @param aCanRedo   [OUT] PR_TRUE if at least one transaction is
-                              currently ready to be redone.
-    */
-  void canRedo(out boolean isEnabled, out boolean canRedo);
+  /**
+   * Redo the topmost transaction in the redo stack.
+   * This may throw exception when this is called while editor is handling
+   * transactions.
+   */
+  [can_run_script]
+  void redo();
 
   /** beginTransaction is a signal from the caller to the editor that
     * the caller will execute multiple updates to the content tree
@@ -267,10 +317,9 @@ interface nsIEditor  : nsISupports
   void endTransaction();
 
   /**
-   * While setting the flag with this method to false, CreateElementTransaction,
-   * DeleteRangeTransaction, DeleteTextTransaction, InsertNodeTransaction,
-   * InsertTextTransaction and SplitNodeTransaction won't change Selection
-   * after modifying the DOM tree.
+   * While setting the flag with this method to false,  DeleteRangeTransaction,
+   * DeleteTextTransaction, InsertNodeTransaction, InsertTextTransaction and
+   * SplitNodeTransaction won't change Selection after modifying the DOM tree.
    * Note that calling this with false does not guarantee that Selection won't
    * be changed because other transaction may ignore this flag, editor itself
    * may change selection, and current selection may become invalid after
@@ -329,6 +378,7 @@ interface nsIEditor  : nsISupports
     * What about mixed selections?
     * What are the clipboard formats?
     */
+  [can_run_script]
   void copy();
 
   /**
@@ -379,7 +429,11 @@ interface nsIEditor  : nsISupports
   [can_run_script]
   void beginningOfDocument();
 
-  /** sets the document selection to the end of the document */
+  /**
+   * Sets the selection to the end of the last leaf child/descendant or the root
+   * element.
+   */
+  [can_run_script]
   void endOfDocument();
 
   /* ------------ Node manipulation methods -------------- */
@@ -545,14 +599,6 @@ interface nsIEditor  : nsISupports
     * The length of the contents in characters.
     */
   readonly attribute unsigned long textLength;
-
-  /** Get and set the body wrap width.
-    *
-    * Special values:
-    *    0 = wrap to window width
-    *   -1 = no wrap at all
-    */
-  attribute long wrapWidth;
 
   /** Get and set newline handling.
    *

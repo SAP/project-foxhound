@@ -8,7 +8,9 @@
 #define COMPATIBILITY_MANAGER_H
 
 #include <windows.h>
-#include "mozilla/Maybe.h"
+#include "nsTArray.h"
+#include "nsString.h"
+
 #include <stdint.h>
 
 namespace mozilla {
@@ -58,9 +60,7 @@ class Compatibility {
    */
   static void Init();
 
-  static Maybe<bool> OnUIAMessage(WPARAM aWParam, LPARAM aLParam);
-
-  static Maybe<DWORD> GetUiaRemotePid() { return sUiaRemotePid; }
+  static void GetUiaClientPids(nsTArray<DWORD>& aPids);
 
   /**
    * return true if a known, non-UIA a11y consumer is present
@@ -76,6 +76,9 @@ class Compatibility {
    */
   static bool IsModuleVersionLessThan(HMODULE aModuleHandle,
                                       unsigned long long aVersion);
+
+  static void SuppressA11yForClipboardCopy();
+  static bool IsA11ySuppressedForClipboardCopy();
 
  private:
   Compatibility();
@@ -107,7 +110,6 @@ class Compatibility {
 
  private:
   static uint32_t sConsumers;
-  static Maybe<DWORD> sUiaRemotePid;
 };
 
 }  // namespace a11y

@@ -1,8 +1,24 @@
+# 0.4.8 (January 20, 2022)
+
+* Fixed documentation about overflow (#124)
+* Document panic in `get2_mut` (#131)
+* Refactoring (#129, #132)
+
+# 0.4.7 (July 19, 2022)
+
+* Use `#[track_caller]` on Rust 1.46+ (#119)
+* Make `Slab::new` const on Rust 1.39+ (#119)
+
+# 0.4.6 (April 2, 2022)
+
+* Add `Slab::vacant_key` (#114)
+* Fix stacked borrows violation in `Slab::get2_unchecked_mut` (#115)
+
 # 0.4.5 (October 13, 2021)
 
- * Add alternate debug output for listing items in the slab (#108)
- * Fix typo in debug output of IntoIter (#109)
- * Impl 'Clone' for 'Iter' (#110)
+* Add alternate debug output for listing items in the slab (#108)
+* Fix typo in debug output of IntoIter (#109)
+* Impl 'Clone' for 'Iter' (#110)
 
 # 0.4.4 (August 06, 2021)
 

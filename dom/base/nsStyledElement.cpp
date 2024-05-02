@@ -13,6 +13,7 @@
 #include "nsAttrValue.h"
 #include "nsAttrValueOrString.h"
 #include "nsAttrValueInlines.h"
+#include "mozilla/dom/BindContext.h"
 #include "mozilla/dom/CustomElementRegistry.h"
 #include "mozilla/dom/ElementInlines.h"
 #include "mozilla/dom/MutationEventBinding.h"
@@ -28,6 +29,7 @@
 #include "nsXULElement.h"
 #include "nsContentUtils.h"
 #include "nsStyleUtil.h"
+#include "nsTaintingUtils.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -57,23 +59,17 @@ bool nsStyledElement::ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
 nsresult nsStyledElement::CheckTaintSinkSetAttr(int32_t aNamespaceID, nsAtom* aName,
                                                   const nsAString& aValue) {
   if (aNamespaceID == kNameSpaceID_None && aName == nsGkAtoms::style) {
-    nsAutoString id;
-    this->GetId(id);
-    ReportTaintSink(aValue, "element.style", id);
+    ReportTaintSink(aValue, "element.style", this);
   }
 
   return nsStyledElementBase::CheckTaintSinkSetAttr(aNamespaceID, aName, aValue);
 }
 
-nsresult nsStyledElement::BeforeSetAttr(int32_t aNamespaceID, nsAtom* aName,
-                                        const nsAttrValueOrString* aValue,
-                                        bool aNotify) {
-  if (aNamespaceID == kNameSpaceID_None) {
-    if (aName == nsGkAtoms::style) {
-      if (aValue) {
-        SetMayHaveStyle();
-      }
-    }
+void nsStyledElement::BeforeSetAttr(int32_t aNamespaceID, nsAtom* aName,
+                                    const nsAttrValue* aValue, bool aNotify) {
+  if (aNamespaceID == kNameSpaceID_None && aName == nsGkAtoms::style &&
+      aValue) {
+    SetMayHaveStyle();
   }
 
   return nsStyledElementBase::BeforeSetAttr(aNamespaceID, aName, aValue,
@@ -101,13 +97,13 @@ void nsStyledElement::InlineStyleDeclarationWillChange(
 
     if (needsOldValue) {
       nsAutoString oldValueStr;
-      modification = GetAttr(kNameSpaceID_None, nsGkAtoms::style, oldValueStr);
+      modification = GetAttr(nsGkAtoms::style, oldValueStr);
       if (modification) {
         aData.mOldValue.emplace();
         aData.mOldValue->SetTo(oldValueStr);
       }
     } else {
-      modification = HasAttr(kNameSpaceID_None, nsGkAtoms::style);
+      modification = HasAttr(nsGkAtoms::style);
     }
   }
 
@@ -210,9 +206,8 @@ void nsStyledElement::ParseStyleAttribute(const nsAString& aValue,
       nsAutoString styleType;
       doc->GetHeaderData(nsGkAtoms::headerContentStyleType, styleType);
       if (!styleType.IsEmpty()) {
-        static const char textCssStr[] = "text/css";
-        isCSS =
-            (styleType.EqualsIgnoreCase(textCssStr, sizeof(textCssStr) - 1));
+        isCSS = StringBeginsWith(styleType, u"text/css"_ns,
+                                 nsASCIICaseInsensitiveStringComparator);
       }
     }
 
@@ -223,4 +218,16 @@ void nsStyledElement::ParseStyleAttribute(const nsAString& aValue,
   }
 
   aResult.SetTo(aValue);
+}
+
+nsresult nsStyledElement::BindToTree(BindContext& aContext, nsINode& aParent) {
+  nsresult rv = nsStyledElementBase::BindToTree(aContext, aParent);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  if (HasAttr(nsGkAtoms::autofocus) && aContext.AllowsAutoFocus() &&
+      (!IsSVGElement() || IsFocusable())) {
+    aContext.OwnerDoc().ElementWithAutoFocusInserted(this);
+  }
+
+  return NS_OK;
 }

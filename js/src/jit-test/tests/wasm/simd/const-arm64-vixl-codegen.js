@@ -1,4 +1,4 @@
-// |jit-test| skip-if: !wasmSimdEnabled() || !hasDisassembler() || wasmCompileMode() != "baseline" || !getBuildConfiguration().arm64
+// |jit-test| skip-if: !wasmSimdEnabled() || !hasDisassembler() || wasmCompileMode() != "baseline" || !getBuildConfiguration("arm64")
 
 // Test that the vixl logic for v128 constant loads is at least somewhat
 // reasonable.
@@ -92,20 +92,6 @@ ${suffix}
     set(mem, 0, iota(16).map(x => -1-x));
     ins.exports.run();
     assertSame(get(mem, 0, 16), values);
-}
-
-function iota(len) {
-    let xs = [];
-    for ( let i=0 ; i < len ; i++ )
-        xs.push(i);
-    return xs;
-}
-
-function assertSame(got, expected) {
-    assertEq(got.length, expected.length);
-    for ( let i=0; i < got.length; i++ ) {
-        assertEq(got[i], expected[i]);
-    }
 }
 
 function get(arr, loc, len) {

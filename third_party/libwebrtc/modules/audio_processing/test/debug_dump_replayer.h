@@ -12,8 +12,8 @@
 #define MODULES_AUDIO_PROCESSING_TEST_DEBUG_DUMP_REPLAYER_H_
 
 #include <memory>
-#include <string>
 
+#include "absl/strings/string_view.h"
 #include "common_audio/channel_buffer.h"
 #include "modules/audio_processing/include/audio_processing.h"
 #include "rtc_base/ignore_wundef.h"
@@ -31,7 +31,7 @@ class DebugDumpReplayer {
   ~DebugDumpReplayer();
 
   // Set dump file
-  bool SetDumpFile(const std::string& filename);
+  bool SetDumpFile(absl::string_view filename);
 
   // Return next event.
   absl::optional<audioproc::Event> GetNextEvent() const;
@@ -60,7 +60,7 @@ class DebugDumpReplayer {
   std::unique_ptr<ChannelBuffer<float>> reverse_;
   std::unique_ptr<ChannelBuffer<float>> output_;
 
-  std::unique_ptr<AudioProcessing> apm_;
+  rtc::scoped_refptr<AudioProcessing> apm_;
 
   FILE* debug_file_;
 

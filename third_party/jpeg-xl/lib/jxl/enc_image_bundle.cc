@@ -5,18 +5,18 @@
 
 #include "lib/jxl/enc_image_bundle.h"
 
+#include <jxl/cms_interface.h>
+
+#include <atomic>
 #include <limits>
 #include <utility>
 
 #include "lib/jxl/alpha.h"
 #include "lib/jxl/base/byte_order.h"
 #include "lib/jxl/base/padded_bytes.h"
-#include "lib/jxl/base/profiler.h"
-#include "lib/jxl/codec_in_out.h"
-#include "lib/jxl/enc_color_management.h"
+#include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/fields.h"
 #include "lib/jxl/image_bundle.h"
-#include "lib/jxl/luminance.h"
 
 namespace jxl {
 
@@ -26,7 +26,6 @@ namespace {
 Status CopyToT(const ImageMetadata* metadata, const ImageBundle* ib,
                const Rect& rect, const ColorEncoding& c_desired,
                const JxlCmsInterface& cms, ThreadPool* pool, Image3F* out) {
-  PROFILER_FUNC;
   ColorSpaceTransform c_transform(cms);
   // Changing IsGray is probably a bug.
   JXL_CHECK(ib->IsGray() == c_desired.IsGray());
@@ -50,6 +49,25 @@ Status CopyToT(const ImageMetadata* metadata, const ImageBundle* ib,
         // Interleave input.
         if (is_gray) {
           src_buf = rect.ConstPlaneRow(ib->color(), 0, y);
+        } else if (ib->c_current().IsCMYK()) {
+          if (!ib->HasBlack()) {
+            ok.store(false);
+            return;
+          }
+          const float* JXL_RESTRICT row_in0 =
+              rect.ConstPlaneRow(ib->color(), 0, y);
+          const float* JXL_RESTRICT row_in1 =
+              rect.ConstPlaneRow(ib->color(), 1, y);
+          const float* JXL_RESTRICT row_in2 =
+              rect.ConstPlaneRow(ib->color(), 2, y);
+          const float* JXL_RESTRICT row_in3 = rect.ConstRow(ib->black(), y);
+          for (size_t x = 0; x < rect.xsize(); x++) {
+            // CMYK convention in JXL: 0 = max ink, 1 = white
+            mutable_src_buf[4 * x + 0] = row_in0[x];
+            mutable_src_buf[4 * x + 1] = row_in1[x];
+            mutable_src_buf[4 * x + 2] = row_in2[x];
+            mutable_src_buf[4 * x + 3] = row_in3[x];
+          }
         } else {
           const float* JXL_RESTRICT row_in0 =
               rect.ConstPlaneRow(ib->color(), 0, y);
@@ -94,7 +112,6 @@ Status CopyToT(const ImageMetadata* metadata, const ImageBundle* ib,
 
 Status ImageBundle::TransformTo(const ColorEncoding& c_desired,
                                 const JxlCmsInterface& cms, ThreadPool* pool) {
-  PROFILER_FUNC;
   JXL_RETURN_IF_ERROR(CopyTo(Rect(color_), c_desired, cms, &color_, pool));
   c_current_ = c_desired;
   return true;
@@ -107,19 +124,23 @@ Status ImageBundle::CopyTo(const Rect& rect, const ColorEncoding& c_desired,
 Status TransformIfNeeded(const ImageBundle& in, const ColorEncoding& c_desired,
                          const JxlCmsInterface& cms, ThreadPool* pool,
                          ImageBundle* store, const ImageBundle** out) {
-  if (in.c_current().SameColorEncoding(c_desired)) {
+  if (in.c_current().SameColorEncoding(c_desired) && !in.HasBlack()) {
     *out = &in;
     return true;
   }
   // TODO(janwas): avoid copying via createExternal+copyBackToIO
   // instead of copy+createExternal+copyBackToIO
-  store->SetFromImage(CopyImage(in.color()), in.c_current());
+  Image3F color(in.color().xsize(), in.color().ysize());
+  CopyImageTo(in.color(), &color);
+  store->SetFromImage(std::move(color), in.c_current());
 
   // Must at least copy the alpha channel for use by external_image.
   if (in.HasExtraChannels()) {
     std::vector<ImageF> extra_channels;
     for (const ImageF& extra_channel : in.extra_channels()) {
-      extra_channels.emplace_back(CopyImage(extra_channel));
+      ImageF ec(extra_channel.xsize(), extra_channel.ysize());
+      CopyImageTo(extra_channel, &ec);
+      extra_channels.emplace_back(std::move(ec));
     }
     store->SetExtraChannels(std::move(extra_channels));
   }

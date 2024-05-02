@@ -7,7 +7,7 @@
  * Tests if copying a request's request/response headers works.
  */
 
-add_task(async function() {
+add_task(async function () {
   const { monitor } = await initNetMonitor(SIMPLE_URL, {
     requestCount: 1,
   });
@@ -39,7 +39,7 @@ add_task(async function() {
   is(selectedRequest, requestItem, "Proper request is selected");
 
   const EXPECTED_REQUEST_HEADERS = [
-    `${method} ${SIMPLE_URL} ${httpVersion}`,
+    `${method} ${SIMPLE_URL.split("example.com")[1]} ${httpVersion}`,
     "Host: example.com",
     "User-Agent: " + navigator.userAgent + "",
     "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
@@ -52,11 +52,11 @@ add_task(async function() {
   ].join("\n");
 
   await waitForClipboardPromise(
-    function setup() {
-      getContextMenuItem(
+    async function setup() {
+      await selectContextMenuItem(
         monitor,
         "request-list-context-copy-request-headers"
-      ).click();
+      );
     },
     function validate(result) {
       // Sometimes, a "Cookie" header is left over from other tests. Remove it:
@@ -82,11 +82,11 @@ add_task(async function() {
   );
 
   await waitForClipboardPromise(
-    function setup() {
-      getContextMenuItem(
+    async function setup() {
+      await selectContextMenuItem(
         monitor,
         "response-list-context-copy-response-headers"
-      ).click();
+      );
     },
     function validate(result) {
       // Fake the "Last-Modified" and "Date" headers because they will vary:

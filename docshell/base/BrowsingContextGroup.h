@@ -38,7 +38,7 @@ class DocGroup;
 class BrowsingContextGroup final : public nsWrapperCache {
  public:
   NS_INLINE_DECL_CYCLE_COLLECTING_NATIVE_REFCOUNTING(BrowsingContextGroup)
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_NATIVE_CLASS(BrowsingContextGroup)
+  NS_DECL_CYCLE_COLLECTION_NATIVE_WRAPPERCACHE_CLASS(BrowsingContextGroup)
 
   // Interact with the list of synced contexts. This controls the lifecycle of
   // the BrowsingContextGroup and contexts loaded within them.
@@ -114,9 +114,14 @@ class BrowsingContextGroup final : public nsWrapperCache {
   // Get or create a BrowsingContextGroup with the given ID.
   static already_AddRefed<BrowsingContextGroup> GetOrCreate(uint64_t aId);
   static already_AddRefed<BrowsingContextGroup> GetExisting(uint64_t aId);
-  static already_AddRefed<BrowsingContextGroup> Create();
+  static already_AddRefed<BrowsingContextGroup> Create(
+      bool aPotentiallyCrossOriginIsolated = false);
   static already_AddRefed<BrowsingContextGroup> Select(
       WindowContext* aParent, BrowsingContext* aOpener);
+
+  // Like `Create` but only generates and reserves a new ID without actually
+  // creating the BrowsingContextGroup object.
+  static uint64_t CreateId(bool aPotentiallyCrossOriginIsolated = false);
 
   // For each 'ContentParent', except for 'aExcludedParent',
   // associated with this group call 'aCallback'.
@@ -186,6 +191,14 @@ class BrowsingContextGroup final : public nsWrapperCache {
   void SetLastDialogQuitTime(TimeStamp aLastDialogQuitTime) {
     mLastDialogQuitTime = aLastDialogQuitTime;
   }
+
+  // Whether all toplevel documents loaded in this group are allowed to be
+  // Cross-Origin Isolated.
+  //
+  // This does not reflect the actual value of `crossOriginIsolated`, as that
+  // also requires that the document is loaded within a `webCOOP+COEP` content
+  // process.
+  bool IsPotentiallyCrossOriginIsolated();
 
   static void GetAllGroups(nsTArray<RefPtr<BrowsingContextGroup>>& aGroups);
 

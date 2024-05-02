@@ -6,10 +6,16 @@
 
 #include "MsaaDocAccessible.h"
 
+#include "MsaaDocAccessible.h"
 #include "DocAccessibleChild.h"
-#include "mozilla/StaticPrefs_accessibility.h"
+#include "mozilla/a11y/DocAccessibleParent.h"
+#include "nsAccessibilityService.h"
+#include "nsAccUtils.h"
 #include "nsWinUtils.h"
-#include "Role.h"
+#include "Statistics.h"
+#include "sdnDocAccessible.h"
+#include "mozilla/a11y/Role.h"
+#include "ISimpleDOM.h"
 
 using namespace mozilla;
 using namespace mozilla::a11y;
@@ -25,7 +31,6 @@ MsaaDocAccessible* MsaaDocAccessible::GetFrom(DocAccessible* aDoc) {
 
 /* static */
 MsaaDocAccessible* MsaaDocAccessible::GetFrom(DocAccessibleParent* aDoc) {
-  MOZ_ASSERT(StaticPrefs::accessibility_cache_enabled_AtStartup());
   return static_cast<MsaaDocAccessible*>(
       reinterpret_cast<MsaaAccessible*>(aDoc->GetWrapper()));
 }
@@ -64,7 +69,6 @@ MsaaDocAccessible::get_accParent(
   }
 
   if (mAcc->IsRemote()) {
-    MOZ_ASSERT(StaticPrefs::accessibility_cache_enabled_AtStartup());
     DocAccessibleParent* remoteDoc = mAcc->AsRemote()->AsDoc();
     if (nsWinUtils::IsWindowEmulationStarted() && remoteDoc->IsTopLevel()) {
       // Window emulation is enabled and this is a top level document. Return
@@ -72,7 +76,7 @@ MsaaDocAccessible::get_accParent(
       HWND hwnd = remoteDoc->GetEmulatedWindowHandle();
       MOZ_ASSERT(hwnd);
       if (hwnd &&
-          SUCCEEDED(::AccessibleObjectFromWindow(
+          SUCCEEDED(::CreateStdAccessibleObject(
               hwnd, OBJID_WINDOW, IID_IAccessible, (void**)ppdispParent))) {
         return S_OK;
       }
@@ -83,31 +87,10 @@ MsaaDocAccessible::get_accParent(
   DocAccessible* docAcc = DocAcc();
   MOZ_ASSERT(docAcc);
 
-  // We might be a top-level document in a content process.
-  DocAccessibleChild* ipcDoc = docAcc->IPCDoc();
-  if (ipcDoc && static_cast<dom::BrowserChild*>(ipcDoc->Manager())
-                        ->GetTopLevelDocAccessibleChild() == ipcDoc) {
-    MOZ_ASSERT(!StaticPrefs::accessibility_cache_enabled_AtStartup());
-    // Emulated window proxy is only set for the top level content document when
-    // emulation is enabled.
-    RefPtr<IDispatch> dispParent = ipcDoc->GetEmulatedWindowIAccessible();
-    if (!dispParent) {
-      dispParent = ipcDoc->GetParentIAccessible();
-    }
-
-    if (!dispParent) {
-      return S_FALSE;
-    }
-
-    dispParent.forget(ppdispParent);
-    return S_OK;
-  }
-
-  // In the parent process, return window system accessible object for root
-  // document accessibles, as well as tab document accessibles if window
-  // emulation is enabled.
-  if (XRE_IsParentProcess() &&
-      (!docAcc->ParentDocument() ||
+  // Return window system accessible object for root document accessibles, as
+  // well as tab document accessibles if window emulation is enabled.
+  MOZ_ASSERT(XRE_IsParentProcess());
+  if ((!docAcc->ParentDocument() ||
        (nsWinUtils::IsWindowEmulationStarted() &&
         nsCoreUtils::IsTopLevelContentDocInProcess(docAcc->DocumentNode())))) {
     HWND hwnd = static_cast<HWND>(docAcc->GetNativeWindow());
@@ -115,7 +98,8 @@ MsaaDocAccessible::get_accParent(
       nsIFrame* frame = docAcc->GetFrame();
       if (frame) {
         nsIWidget* widget = frame->GetNearestWidget();
-        if (widget->WindowType() == eWindowType_child && !widget->GetParent()) {
+        if (widget->GetWindowType() == widget::WindowType::Child &&
+            !widget->GetParent()) {
           // Bug 1427304: Windows opened with popup=yes (such as the WebRTC
           // sharing indicator) get two HWNDs. The root widget is associated
           // with the inner HWND, but the outer HWND still answers to
@@ -134,7 +118,7 @@ MsaaDocAccessible::get_accParent(
       }
     }
     if (hwnd &&
-        SUCCEEDED(::AccessibleObjectFromWindow(
+        SUCCEEDED(::CreateStdAccessibleObject(
             hwnd, OBJID_WINDOW, IID_IAccessible, (void**)ppdispParent))) {
       return S_OK;
     }
@@ -153,19 +137,18 @@ MsaaDocAccessible::get_accValue(VARIANT aVarChild, BSTR __RPC_FAR* aValue) {
   HRESULT hr = MsaaAccessible::get_accValue(aVarChild, aValue);
   if (FAILED(hr) || *aValue || aVarChild.lVal != CHILDID_SELF) return hr;
 
-  DocAccessible* docAcc = DocAcc();
   // MsaaAccessible::get_accValue should have failed (and thus we should have
   // returned early) if the Accessible is dead.
-  MOZ_ASSERT(docAcc);
+  MOZ_ASSERT(mAcc);
   // If document is being used to create a widget, don't use the URL hack
-  roles::Role role = docAcc->Role();
+  roles::Role role = mAcc->Role();
   if (role != roles::DOCUMENT && role != roles::APPLICATION &&
       role != roles::DIALOG && role != roles::ALERT &&
       role != roles::NON_NATIVE_DOCUMENT)
     return hr;
 
   nsAutoString url;
-  docAcc->URL(url);
+  nsAccUtils::DocumentURL(mAcc, url);
   if (url.IsEmpty()) return S_FALSE;
 
   *aValue = ::SysAllocStringLen(url.get(), url.Length());

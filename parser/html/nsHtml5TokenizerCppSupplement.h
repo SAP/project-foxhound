@@ -79,10 +79,16 @@ void nsHtml5Tokenizer::StartPlainText() {
 }
 
 void nsHtml5Tokenizer::EnableViewSource(nsHtml5Highlighter* aHighlighter) {
-  mViewSource = WrapUnique(aHighlighter);
+  mViewSource = mozilla::WrapUnique(aHighlighter);
 }
 
-bool nsHtml5Tokenizer::FlushViewSource() { return mViewSource->FlushOps(); }
+bool nsHtml5Tokenizer::ShouldFlushViewSource() {
+  return mViewSource->ShouldFlushOps();
+}
+
+mozilla::Result<bool, nsresult> nsHtml5Tokenizer::FlushViewSource() {
+  return mViewSource->FlushOps();
+}
 
 void nsHtml5Tokenizer::StartViewSource(const nsAutoString& aTitle) {
   mViewSource->Start(aTitle);
@@ -92,7 +98,9 @@ void nsHtml5Tokenizer::StartViewSourceCharacters() {
   mViewSource->StartCharacters();
 }
 
-void nsHtml5Tokenizer::EndViewSource() { mViewSource->End(); }
+[[nodiscard]] bool nsHtml5Tokenizer::EndViewSource() {
+  return mViewSource->End();
+}
 
 void nsHtml5Tokenizer::SetViewSourceOpSink(nsAHtml5TreeOpSink* aOpSink) {
   mViewSource->SetOpSink(aOpSink);

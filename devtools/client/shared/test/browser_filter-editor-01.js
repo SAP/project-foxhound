@@ -7,10 +7,10 @@
 
 const {
   CSSFilterEditorWidget,
-} = require("devtools/client/shared/widgets/FilterWidget");
+} = require("resource://devtools/client/shared/widgets/FilterWidget.js");
 
 const TEST_URI = CHROME_URL_ROOT + "doc_filter-editor-01.html";
-const { getCSSLexer } = require("devtools/shared/css/lexer");
+const { getCSSLexer } = require("resource://devtools/shared/css/lexer.js");
 
 // Verify that the given string consists of a valid CSS URL token.
 // Return true on success, false on error.
@@ -25,7 +25,7 @@ function verifyURL(string) {
   return lexer.nextToken() === null;
 }
 
-add_task(async function() {
+add_task(async function () {
   const { doc } = await createHost("bottom", TEST_URI);
 
   const container = doc.querySelector("#filter-container");

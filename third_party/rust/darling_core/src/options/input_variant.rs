@@ -5,7 +5,7 @@ use crate::codegen;
 use crate::options::{Core, InputField, ParseAttribute};
 use crate::{Error, FromMeta, Result};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct InputVariant {
     ident: syn::Ident,
     attr_name: Option<String>,
@@ -73,7 +73,7 @@ impl InputVariant {
         }
 
         if self.allow_unknown_fields.is_none() {
-            self.allow_unknown_fields = Some(parent.allow_unknown_fields.is_some());
+            self.allow_unknown_fields = Some(parent.allow_unknown_fields.unwrap_or_default());
         }
 
         self

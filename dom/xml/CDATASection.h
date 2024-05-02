@@ -10,8 +10,7 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/dom/Text.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class CDATASection final : public Text {
  private:
@@ -39,23 +38,19 @@ class CDATASection final : public Text {
   NS_INLINE_DECL_REFCOUNTING_INHERITED(CDATASection, Text)
 
   // nsINode
-  virtual bool IsNodeOfType(uint32_t aFlags) const override;
-
-  virtual already_AddRefed<CharacterData> CloneDataNode(
+  already_AddRefed<CharacterData> CloneDataNode(
       mozilla::dom::NodeInfo* aNodeInfo, bool aCloneText) const override;
 
 #ifdef MOZ_DOM_LIST
-  virtual void List(FILE* out, int32_t aIndent) const override;
-  virtual void DumpContent(FILE* out, int32_t aIndent,
-                           bool aDumpAll) const override;
+  void List(FILE* out, int32_t aIndent) const override;
+  void DumpContent(FILE* out, int32_t aIndent, bool aDumpAll) const override;
 #endif
 
  protected:
-  virtual JSObject* WrapNode(JSContext* aCx,
-                             JS::Handle<JSObject*> aGivenProto) override;
+  JSObject* WrapNode(JSContext* aCx,
+                     JS::Handle<JSObject*> aGivenProto) override;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_CDATASection_h

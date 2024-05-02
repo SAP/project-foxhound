@@ -8,14 +8,17 @@
 const {
   takeSnapshotAndCensus,
   clearSnapshots,
-} = require("devtools/client/memory/actions/snapshot");
-const { actions, treeMapState } = require("devtools/client/memory/constants");
+} = require("resource://devtools/client/memory/actions/snapshot.js");
+const {
+  actions,
+  treeMapState,
+} = require("resource://devtools/client/memory/constants.js");
 const {
   toggleDiffing,
   selectSnapshotForDiffingAndRefresh,
-} = require("devtools/client/memory/actions/diffing");
+} = require("resource://devtools/client/memory/actions/diffing.js");
 
-add_task(async function() {
+add_task(async function () {
   const front = new StubbedMemoryFront();
   const heapWorker = new HeapAnalysesClient();
   await front.attach();
@@ -41,13 +44,13 @@ add_task(async function() {
 
   ok(getState().diffing, "We should be in diffing view");
 
-  await waitUntilAction(store, actions.TAKE_CENSUS_DIFF_END);
+  await waitForDispatch(store, actions.TAKE_CENSUS_DIFF_END);
   ok(true, "Received TAKE_CENSUS_DIFF_END action");
 
   ok(true, "Dispatch clearSnapshots action");
   const deleteEvents = Promise.all([
-    waitUntilAction(store, actions.DELETE_SNAPSHOTS_START),
-    waitUntilAction(store, actions.DELETE_SNAPSHOTS_END),
+    waitForDispatch(store, actions.DELETE_SNAPSHOTS_START),
+    waitForDispatch(store, actions.DELETE_SNAPSHOTS_END),
   ]);
   dispatch(clearSnapshots(heapWorker));
   await deleteEvents;

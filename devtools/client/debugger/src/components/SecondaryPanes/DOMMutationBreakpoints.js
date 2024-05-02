@@ -3,6 +3,8 @@
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
 import React, { Component } from "react";
+import { div, input, li, ul } from "react-dom-factories";
+import PropTypes from "prop-types";
 
 import Reps from "devtools/client/shared/components/reps/index";
 const {
@@ -30,6 +32,19 @@ const localizationTerms = {
 };
 
 class DOMMutationBreakpointsContents extends Component {
+  static get propTypes() {
+    return {
+      breakpoints: PropTypes.array.isRequired,
+      deleteBreakpoint: PropTypes.func.isRequired,
+      highlightDomElement: PropTypes.func.isRequired,
+      openElementInInspector: PropTypes.func.isRequired,
+      openInspector: PropTypes.func.isRequired,
+      setSkipPausing: PropTypes.func.isRequired,
+      toggleBreakpoint: PropTypes.func.isRequired,
+      unHighlightDomElement: PropTypes.func.isRequired,
+    };
+  }
+
   handleBreakpoint(breakpointId, shouldEnable) {
     const { toggleBreakpoint, setSkipPausing } = this.props;
 
@@ -50,32 +65,42 @@ class DOMMutationBreakpointsContents extends Component {
     } = this.props;
     const { enabled, id: breakpointId, nodeFront, mutationType } = breakpoint;
 
-    return (
-      <li key={breakpoint.id}>
-        <input
-          type="checkbox"
-          checked={enabled}
-          onChange={() => this.handleBreakpoint(breakpointId, !enabled)}
-        />
-        <div className="dom-mutation-info">
-          <div className="dom-mutation-label">
-            {Rep({
-              object: translateNodeFrontToGrip(nodeFront),
-              mode: MODE.TINY,
-              onDOMNodeClick: () => openElementInInspector(nodeFront),
-              onInspectIconClick: () => openElementInInspector(nodeFront),
-              onDOMNodeMouseOver: () => highlightDomElement(nodeFront),
-              onDOMNodeMouseOut: () => unHighlightDomElement(),
-            })}
-          </div>
-          <div className="dom-mutation-type">
-            {localizationTerms[mutationType] || mutationType}
-          </div>
-        </div>
-        <CloseButton
-          handleClick={() => deleteBreakpoint(nodeFront, mutationType)}
-        />
-      </li>
+    return li(
+      {
+        key: breakpoint.id,
+      },
+      input({
+        type: "checkbox",
+        checked: enabled,
+        onChange: () => this.handleBreakpoint(breakpointId, !enabled),
+      }),
+      div(
+        {
+          className: "dom-mutation-info",
+        },
+        div(
+          {
+            className: "dom-mutation-label",
+          },
+          Rep({
+            object: translateNodeFrontToGrip(nodeFront),
+            mode: MODE.TINY,
+            onDOMNodeClick: () => openElementInInspector(nodeFront),
+            onInspectIconClick: () => openElementInInspector(nodeFront),
+            onDOMNodeMouseOver: () => highlightDomElement(nodeFront),
+            onDOMNodeMouseOut: () => unHighlightDomElement(),
+          })
+        ),
+        div(
+          {
+            className: "dom-mutation-type",
+          },
+          localizationTerms[mutationType] || mutationType
+        )
+      ),
+      React.createElement(CloseButton, {
+        handleClick: () => deleteBreakpoint(nodeFront, mutationType),
+      })
     );
   }
 
@@ -86,14 +111,16 @@ class DOMMutationBreakpointsContents extends Component {
       "noDomMutationBreakpoints",
       `<a>${L10N.getStr("inspectorTool")}</a>`
     );
-
-    return (
-      <div className="dom-mutation-empty">
-        <div
-          onClick={() => openInspector()}
-          dangerouslySetInnerHTML={{ __html: text }}
-        />
-      </div>
+    return div(
+      {
+        className: "dom-mutation-empty",
+      },
+      div({
+        onClick: () => openInspector(),
+        dangerouslySetInnerHTML: {
+          __html: text,
+        },
+      })
     );
   }
 
@@ -103,11 +130,11 @@ class DOMMutationBreakpointsContents extends Component {
     if (breakpoints.length === 0) {
       return this.renderEmpty();
     }
-
-    return (
-      <ul className="dom-mutation-list">
-        {breakpoints.map(breakpoint => this.renderItem(breakpoint))}
-      </ul>
+    return ul(
+      {
+        className: "dom-mutation-list",
+      },
+      breakpoints.map(breakpoint => this.renderItem(breakpoint))
     );
   }
 }
@@ -127,16 +154,24 @@ const DOMMutationBreakpointsPanel = connect(
 )(DOMMutationBreakpointsContents);
 
 class DomMutationBreakpoints extends Component {
+  static get propTypes() {
+    return {
+      highlightDomElement: PropTypes.func.isRequired,
+      openElementInInspector: PropTypes.func.isRequired,
+      openInspector: PropTypes.func.isRequired,
+      setSkipPausing: PropTypes.func.isRequired,
+      unHighlightDomElement: PropTypes.func.isRequired,
+    };
+  }
+
   render() {
-    return (
-      <DOMMutationBreakpointsPanel
-        openElementInInspector={this.props.openElementInInspector}
-        highlightDomElement={this.props.highlightDomElement}
-        unHighlightDomElement={this.props.unHighlightDomElement}
-        setSkipPausing={this.props.setSkipPausing}
-        openInspector={this.props.openInspector}
-      />
-    );
+    return React.createElement(DOMMutationBreakpointsPanel, {
+      openElementInInspector: this.props.openElementInInspector,
+      highlightDomElement: this.props.highlightDomElement,
+      unHighlightDomElement: this.props.unHighlightDomElement,
+      setSkipPausing: this.props.setSkipPausing,
+      openInspector: this.props.openInspector,
+    });
   }
 }
 

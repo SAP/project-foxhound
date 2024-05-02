@@ -10,14 +10,16 @@ function serverOwnershipTree(walkerArg) {
   return SpecialPowers.spawn(
     gBrowser.selectedBrowser,
     [[walkerArg.actorID]],
-    function(actorID) {
-      const { require } = ChromeUtils.import(
-        "resource://devtools/shared/loader/Loader.jsm"
+    function (actorID) {
+      const { require } = ChromeUtils.importESModule(
+        "resource://devtools/shared/loader/Loader.sys.mjs"
       );
-      const { DevToolsServer } = require("devtools/server/devtools-server");
+      const {
+        DevToolsServer,
+      } = require("resource://devtools/server/devtools-server.js");
       const {
         DocumentWalker,
-      } = require("devtools/server/actors/inspector/document-walker");
+      } = require("resource://devtools/server/actors/inspector/document-walker.js");
 
       // Convert actorID to current compartment string otherwise
       // searchAllConnectionsForActor is confused and won't find the actor.
@@ -104,31 +106,26 @@ async function assertOwnershipTrees(walker) {
 }
 
 // Verify that an actorID is inaccessible both from the client library and the server.
-function checkMissing({ client }, actorID) {
-  return new Promise(resolve => {
-    const front = client.getFrontByID(actorID);
-    ok(
-      !front,
-      "Front shouldn't be accessible from the client for actorID: " + actorID
-    );
+async function checkMissing({ client }, actorID) {
+  const front = client.getFrontByID(actorID);
+  ok(
+    !front,
+    "Front shouldn't be accessible from the client for actorID: " + actorID
+  );
 
-    client
-      .request(
-        {
-          to: actorID,
-          type: "request",
-        },
-        response => {
-          is(
-            response.error,
-            "noSuchActor",
-            "node list actor should no longer be contactable."
-          );
-          resolve(undefined);
-        }
-      )
-      .catch(() => {});
-  });
+  try {
+    await client.request({
+      to: actorID,
+      type: "request",
+    });
+    ok(false, "The actor wasn't missing as the request worked");
+  } catch (e) {
+    is(
+      e.error,
+      "noSuchActor",
+      "node list actor should no longer be contactable."
+    );
+  }
 }
 
 // Load mutations aren't predictable, so keep accumulating mutations until

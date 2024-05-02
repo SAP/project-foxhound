@@ -14,10 +14,10 @@
 
 #include "mozilla/Assertions.h"
 #include "mozilla/FloatingPoint.h"
+#include "mozilla/gfx/ScaleFactors2D.h"
 #include "Types.h"
 
-namespace mozilla {
-namespace gfx {
+namespace mozilla::gfx {
 
 /**
  * Rectangles have two interpretations: a set of (zero-size) points,
@@ -66,10 +66,9 @@ struct BaseRect {
   bool IsFinite() const {
     using FloatType =
         std::conditional_t<std::is_same_v<T, float>, float, double>;
-    return (mozilla::IsFinite(FloatType(x)) &&
-            mozilla::IsFinite(FloatType(y)) &&
-            mozilla::IsFinite(FloatType(width)) &&
-            mozilla::IsFinite(FloatType(height)));
+    return (std::isfinite(FloatType(x)) && std::isfinite(FloatType(y)) &&
+            std::isfinite(FloatType(width)) &&
+            std::isfinite(FloatType(height)));
   }
 
   // Returns true if this rectangle contains the interior of aRect. Always
@@ -96,6 +95,14 @@ struct BaseRect {
   // are on the right or bottom edge.
   bool Contains(const Point& aPoint) const {
     return Contains(aPoint.x, aPoint.y);
+  }
+
+  // Returns true if this rectangle contains the point, considering points on
+  // all edges of the rectangle to be contained (as compared to Contains()
+  // which only includes points on the top & left but not bottom & right edges).
+  MOZ_ALWAYS_INLINE bool ContainsInclusively(const Point& aPoint) const {
+    return x <= aPoint.x && aPoint.x <= XMost() && y <= aPoint.y &&
+           aPoint.y <= YMost();
   }
 
   // Intersection. Returns TRUE if the receiver's area has non-empty
@@ -311,6 +318,39 @@ struct BaseRect {
     width = aSize.width;
     height = aSize.height;
   }
+
+  // Variant of MoveBy that ensures that even after translation by a point that
+  // the rectangle coordinates will still fit within numeric limits. The origin
+  // and size will be clipped within numeric limits to ensure this.
+  void SafeMoveByX(T aDx) {
+    T x2 = XMost();
+    if (aDx >= T(0)) {
+      T limit = std::numeric_limits<T>::max();
+      x = limit - aDx < x ? limit : x + aDx;
+      width = (limit - aDx < x2 ? limit : x2 + aDx) - x;
+    } else {
+      T limit = std::numeric_limits<T>::min();
+      x = limit - aDx > x ? limit : x + aDx;
+      width = (limit - aDx > x2 ? limit : x2 + aDx) - x;
+    }
+  }
+  void SafeMoveByY(T aDy) {
+    T y2 = YMost();
+    if (aDy >= T(0)) {
+      T limit = std::numeric_limits<T>::max();
+      y = limit - aDy < y ? limit : y + aDy;
+      height = (limit - aDy < y2 ? limit : y2 + aDy) - y;
+    } else {
+      T limit = std::numeric_limits<T>::min();
+      y = limit - aDy > y ? limit : y + aDy;
+      height = (limit - aDy > y2 ? limit : y2 + aDy) - y;
+    }
+  }
+  void SafeMoveBy(T aDx, T aDy) {
+    SafeMoveByX(aDx);
+    SafeMoveByY(aDy);
+  }
+  void SafeMoveBy(const Point& aPoint) { SafeMoveBy(aPoint.x, aPoint.y); }
 
   void Inflate(T aD) { Inflate(aD, aD); }
   void Inflate(T aDx, T aDy) {
@@ -551,6 +591,11 @@ struct BaseRect {
     height = y1 - y0;
   }
 
+  // Scale 'this' by aScale.xScale and aScale.yScale without doing any rounding.
+  template <class Src, class Dst>
+  void Scale(const BaseScaleFactors2D<Src, Dst, T>& aScale) {
+    Scale(aScale.xScale, aScale.yScale);
+  }
   // Scale 'this' by aScale without doing any rounding.
   void Scale(T aScale) { Scale(aScale, aScale); }
   // Scale 'this' by aXScale and aYScale, without doing any rounding.
@@ -634,8 +679,9 @@ struct BaseRect {
    * edge of the rectangle.
    */
   [[nodiscard]] Point ClampPoint(const Point& aPoint) const {
-    return Point(std::max(x, std::min(XMost(), aPoint.x)),
-                 std::max(y, std::min(YMost(), aPoint.y)));
+    using Coord = decltype(aPoint.x);
+    return Point(std::max(Coord(x), std::min(Coord(XMost()), aPoint.x)),
+                 std::max(Coord(y), std::min(Coord(YMost()), aPoint.y)));
   }
 
   /**
@@ -700,7 +746,6 @@ struct BaseRect {
   }
 };
 
-}  // namespace gfx
-}  // namespace mozilla
+}  // namespace mozilla::gfx
 
 #endif /* MOZILLA_GFX_BASERECT_H_ */

@@ -20,8 +20,9 @@ windows.
   <!-- test code goes here -->
   <script type="application/javascript"><![CDATA[
   SimpleTest.waitForExplicitFinish();
-  const {BrowserTestUtils} = ChromeUtils.import("resource://testing-common/BrowserTestUtils.jsm");
-  const {ContentTask} = ChromeUtils.import("resource://testing-common/ContentTask.jsm");
+  const {BrowserTestUtils} = ChromeUtils.importESModule(
+    "resource://testing-common/BrowserTestUtils.sys.mjs"
+  );
 
   const BROWSER_DOC = "window_chromeOuterWindowID.xhtml";
   const TEST_PAGE = "http://example.com";
@@ -86,9 +87,9 @@ windows.
     ok(nonRemote && !nonRemote.isRemoteBrowser,
        "Should have found a non-remote browser in test window " + num);
 
-    BrowserTestUtils.loadURI(remote, page);
+    BrowserTestUtils.startLoadingURIString(remote, page);
     await BrowserTestUtils.browserLoaded(remote);
-    BrowserTestUtils.loadURI(nonRemote, page);
+    BrowserTestUtils.startLoadingURIString(nonRemote, page);
     await BrowserTestUtils.browserLoaded(nonRemote);
 
     let result = {};

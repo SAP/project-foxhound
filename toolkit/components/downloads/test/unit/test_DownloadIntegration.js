@@ -58,7 +58,7 @@ function allowDirectoriesInTest() {
   return cleanup;
 }
 
-XPCOMUtils.defineLazyGetter(this, "gStringBundle", function() {
+ChromeUtils.defineLazyGetter(this, "gStringBundle", function () {
   return Services.strings.createBundle(
     "chrome://mozapps/locale/downloads/downloads.properties"
   );
@@ -135,10 +135,19 @@ add_task(async function test_getPreferredDownloadsDirectory() {
   }
   registerCleanupFunction(cleanupPrefs);
 
-  // Should return the system downloads directory.
-  Services.prefs.setIntPref(folderListPrefName, 1);
+  // For legacy cloudstorage users with folderListPrefName as 3,
+  // Should return the system downloads directory because the dir preference
+  // is not set.
+  Services.prefs.setIntPref(folderListPrefName, 3);
   let systemDir = await DownloadIntegration.getSystemDownloadsDirectory();
   let downloadDir = await DownloadIntegration.getPreferredDownloadsDirectory();
+  Assert.notEqual(downloadDir, "");
+  Assert.equal(downloadDir, systemDir);
+
+  // Should return the system downloads directory.
+  Services.prefs.setIntPref(folderListPrefName, 1);
+  systemDir = await DownloadIntegration.getSystemDownloadsDirectory();
+  downloadDir = await DownloadIntegration.getPreferredDownloadsDirectory();
   Assert.notEqual(downloadDir, "");
   Assert.equal(downloadDir, systemDir);
 
@@ -196,7 +205,8 @@ add_task(async function test_getTemporaryDownloadsDirectory() {
   Assert.notEqual(downloadDir, "");
 
   if ("nsILocalFileMac" in Ci) {
-    let preferredDownloadDir = await DownloadIntegration.getPreferredDownloadsDirectory();
+    let preferredDownloadDir =
+      await DownloadIntegration.getPreferredDownloadsDirectory();
     Assert.equal(downloadDir, preferredDownloadDir);
   } else {
     let tempDir = Services.dirsvc.get("TmpD", Ci.nsIFile);
@@ -216,7 +226,7 @@ add_task(async function test_getTemporaryDownloadsDirectory() {
  */
 add_task(async function test_observers_setup() {
   DownloadIntegration.allowObservers = true;
-  registerCleanupFunction(function() {
+  registerCleanupFunction(function () {
     DownloadIntegration.allowObservers = false;
   });
 });
@@ -324,8 +334,8 @@ add_task(async function test_suspend_resume() {
   // faster for these tests.
   Services.prefs.setIntPref("browser.download.manager.resumeOnWakeDelay", 5);
 
-  let addDownload = function(list) {
-    return (async function() {
+  let addDownload = function (list) {
+    return (async function () {
       let download = await promiseNewDownload(httpUrl("interruptible.txt"));
       download.start().catch(() => {});
       list.add(download);

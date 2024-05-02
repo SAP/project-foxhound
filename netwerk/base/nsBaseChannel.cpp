@@ -12,6 +12,7 @@
 #include "nsUnknownDecoder.h"
 #include "nsIScriptSecurityManager.h"
 #include "nsMimeTypes.h"
+#include "nsICancelable.h"
 #include "nsIChannelEventSink.h"
 #include "nsIStreamConverterService.h"
 #include "nsChannelClassifier.h"
@@ -56,7 +57,9 @@ nsBaseChannel::nsBaseChannel() : NeckoTargetHolder(nullptr) {
   mContentType.AssignLiteral(UNKNOWN_CONTENT_TYPE);
 }
 
-nsBaseChannel::~nsBaseChannel() {}
+nsBaseChannel::~nsBaseChannel() {
+  NS_ReleaseOnMainThread("nsBaseChannel::mLoadInfo", mLoadInfo.forget());
+}
 
 nsresult nsBaseChannel::Redirect(nsIChannel* newChannel, uint32_t redirectFlags,
                                  bool openNewChannel) {
@@ -165,31 +168,6 @@ bool nsBaseChannel::HasContentTypeHint() const {
   return !mContentType.EqualsLiteral(UNKNOWN_CONTENT_TYPE);
 }
 
-nsresult nsBaseChannel::PushStreamConverter(const char* fromType,
-                                            const char* toType,
-                                            bool invalidatesContentLength,
-                                            nsIStreamListener** result) {
-  NS_ASSERTION(mListener, "no listener");
-
-  nsresult rv;
-  nsCOMPtr<nsIStreamConverterService> scs =
-      do_GetService(NS_STREAMCONVERTERSERVICE_CONTRACTID, &rv);
-  if (NS_FAILED(rv)) return rv;
-
-  nsCOMPtr<nsIStreamListener> converter;
-  rv = scs->AsyncConvertData(fromType, toType, mListener, nullptr,
-                             getter_AddRefs(converter));
-  if (NS_SUCCEEDED(rv)) {
-    mListener = converter;
-    if (invalidatesContentLength) mContentLength = -1;
-    if (result) {
-      *result = nullptr;
-      converter.swap(*result);
-    }
-  }
-  return rv;
-}
-
 nsresult nsBaseChannel::BeginPumpingData() {
   nsresult rv;
 
@@ -225,7 +203,7 @@ nsresult nsBaseChannel::BeginPumpingData() {
   // and especially when we call into the loadgroup.  Our caller takes care to
   // release mPump if we return an error.
 
-  nsCOMPtr<nsIEventTarget> target = GetNeckoTarget();
+  nsCOMPtr<nsISerialEventTarget> target = GetNeckoTarget();
   rv = nsInputStreamPump::Create(getter_AddRefs(mPump), stream, 0, 0, true,
                                  target);
   if (NS_FAILED(rv)) {
@@ -249,11 +227,9 @@ nsresult nsBaseChannel::BeginPumpingData() {
     mPump->Suspend();
 
     RefPtr<nsBaseChannel> self(this);
-    nsCOMPtr<nsISerialEventTarget> serialTarget(do_QueryInterface(target));
-    MOZ_ASSERT(serialTarget);
 
     promise->Then(
-        serialTarget, __func__,
+        target, __func__,
         [self, this](nsresult rv) {
           MOZ_ASSERT(mPump);
           MOZ_ASSERT(NS_SUCCEEDED(rv));
@@ -362,6 +338,19 @@ nsBaseChannel::GetStatus(nsresult* status) {
     *status = mStatus;
   }
   return NS_OK;
+}
+
+NS_IMETHODIMP nsBaseChannel::SetCanceledReason(const nsACString& aReason) {
+  return SetCanceledReasonImpl(aReason);
+}
+
+NS_IMETHODIMP nsBaseChannel::GetCanceledReason(nsACString& aReason) {
+  return GetCanceledReasonImpl(aReason);
+}
+
+NS_IMETHODIMP nsBaseChannel::CancelWithReason(nsresult aStatus,
+                                              const nsACString& aReason) {
+  return CancelWithReasonImpl(aStatus, aReason);
 }
 
 NS_IMETHODIMP
@@ -519,9 +508,8 @@ nsBaseChannel::SetNotificationCallbacks(nsIInterfaceRequestor* aCallbacks) {
 }
 
 NS_IMETHODIMP
-nsBaseChannel::GetSecurityInfo(nsISupports** aSecurityInfo) {
-  nsCOMPtr<nsISupports> securityInfo(mSecurityInfo);
-  securityInfo.forget(aSecurityInfo);
+nsBaseChannel::GetSecurityInfo(nsITransportSecurityInfo** aSecurityInfo) {
+  *aSecurityInfo = do_AddRef(mSecurityInfo).take();
   return NS_OK;
 }
 
@@ -686,7 +674,7 @@ nsBaseChannel::AsyncOpen(nsIStreamListener* aListener) {
 
   // Store the listener and context early so that OpenContentStream and the
   // stream's AsyncWait method (called by AsyncRead) can have access to them
-  // via PushStreamConverter and the StreamListener methods.  However, since
+  // via the StreamListener methods.  However, since
   // this typically introduces a reference cycle between this and the listener,
   // we need to be sure to break the reference if this method does not succeed.
   mListener = listener;
@@ -907,10 +895,12 @@ nsBaseChannel::OnRedirectVerifyCallback(nsresult result) {
 }
 
 NS_IMETHODIMP
-nsBaseChannel::RetargetDeliveryTo(nsIEventTarget* aEventTarget) {
+nsBaseChannel::RetargetDeliveryTo(nsISerialEventTarget* aEventTarget) {
   MOZ_ASSERT(NS_IsMainThread());
 
-  NS_ENSURE_TRUE(mRequest, NS_ERROR_NOT_INITIALIZED);
+  if (!mRequest) {
+    return NS_ERROR_NOT_INITIALIZED;
+  }
 
   nsCOMPtr<nsIThreadRetargetableRequest> req;
   if (mAllowThreadRetargeting) {
@@ -923,7 +913,7 @@ nsBaseChannel::RetargetDeliveryTo(nsIEventTarget* aEventTarget) {
 }
 
 NS_IMETHODIMP
-nsBaseChannel::GetDeliveryTarget(nsIEventTarget** aEventTarget) {
+nsBaseChannel::GetDeliveryTarget(nsISerialEventTarget** aEventTarget) {
   MOZ_ASSERT(NS_IsMainThread());
 
   NS_ENSURE_TRUE(mRequest, NS_ERROR_NOT_INITIALIZED);
@@ -952,12 +942,86 @@ nsBaseChannel::CheckListenerChain() {
   return listener->CheckListenerChain();
 }
 
+NS_IMETHODIMP
+nsBaseChannel::OnDataFinished(nsresult aStatus) {
+  if (!mListener) {
+    return NS_ERROR_FAILURE;
+  }
+
+  if (!mAllowThreadRetargeting) {
+    return NS_ERROR_NOT_IMPLEMENTED;
+  }
+
+  nsCOMPtr<nsIThreadRetargetableStreamListener> listener =
+      do_QueryInterface(mListener);
+  if (listener) {
+    return listener->OnDataFinished(aStatus);
+  }
+
+  return NS_OK;
+}
+
 NS_IMETHODIMP nsBaseChannel::GetCanceled(bool* aCanceled) {
   *aCanceled = mCanceled;
   return NS_OK;
 }
 
 void nsBaseChannel::SetupNeckoTarget() {
-  mNeckoTarget =
-      nsContentUtils::GetEventTargetByLoadInfo(mLoadInfo, TaskCategory::Other);
+  mNeckoTarget = GetMainThreadSerialEventTarget();
+}
+
+nsBaseChannel::ContentRange::ContentRange(const nsACString& aRangeHeader,
+                                          uint64_t aSize)
+    : mStart(0), mEnd(0), mSize(0) {
+  auto parsed = nsContentUtils::ParseSingleRangeRequest(aRangeHeader, true);
+  // https://fetch.spec.whatwg.org/#ref-for-simple-range-header-value%E2%91%A1
+  // If rangeValue is failure, then return a network error.
+  if (!parsed) {
+    return;
+  }
+
+  // Sanity check: ParseSingleRangeRequest should handle these two cases.
+  // If rangeEndValue and rangeStartValue are null, then return failure.
+  MOZ_ASSERT(parsed->Start().isSome() || parsed->End().isSome());
+  // If rangeStartValue and rangeEndValue are numbers, and rangeStartValue
+  // is greater than rangeEndValue, then return failure.
+  MOZ_ASSERT(parsed->Start().isNothing() || parsed->End().isNothing() ||
+             *parsed->Start() <= *parsed->End());
+
+  // https://fetch.spec.whatwg.org/#ref-for-simple-range-header-value%E2%91%A1
+  // If rangeStart is null:
+  if (parsed->Start().isNothing()) {
+    // Set rangeStart to fullLength − rangeEnd.
+    mStart = aSize - *parsed->End();
+
+    // Set rangeEnd to rangeStart + rangeEnd − 1.
+    mEnd = mStart + *parsed->End() - 1;
+
+    // Otherwise:
+  } else {
+    // If rangeStart is greater than or equal to fullLength, then return a
+    // network error.
+    if (*parsed->Start() >= aSize) {
+      return;
+    }
+    mStart = *parsed->Start();
+
+    // If rangeEnd is null or rangeEnd is greater than or equal to fullLength,
+    // then set rangeEnd to fullLength − 1.
+    if (parsed->End().isNothing() || *parsed->End() >= aSize) {
+      mEnd = aSize - 1;
+    } else {
+      mEnd = *parsed->End();
+    }
+  }
+  mSize = aSize;
+}
+
+void nsBaseChannel::ContentRange::AsHeader(nsACString& aOutString) const {
+  aOutString.Assign("bytes "_ns);
+  aOutString.AppendInt(mStart);
+  aOutString.AppendLiteral("-");
+  aOutString.AppendInt(mEnd);
+  aOutString.AppendLiteral("/");
+  aOutString.AppendInt(mSize);
 }

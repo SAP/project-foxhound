@@ -20,11 +20,11 @@ async function testFirstPartyDomain(pageInfo) {
     info("preview.src=" + preview.src);
 
     // For <img>, we will query imgIRequest.imagePrincipal later, so we wait
-    // for loadend event. For <audio> and <video>, so far we only can get
+    // for load event. For <audio> and <video>, so far we only can get
     // the triggeringprincipal attribute on the node, so we simply wait for
     // loadstart.
     if (i == 0) {
-      await BrowserTestUtils.waitForEvent(preview, "loadend");
+      await BrowserTestUtils.waitForEvent(preview, "load");
     } else {
       await BrowserTestUtils.waitForEvent(preview, "loadstart");
     }
@@ -58,7 +58,7 @@ async function test() {
   waitForExplicitFinish();
 
   Services.prefs.setBoolPref("privacy.firstparty.isolate", true);
-  registerCleanupFunction(function() {
+  registerCleanupFunction(function () {
     Services.prefs.clearUserPref("privacy.firstparty.isolate");
   });
 
@@ -70,7 +70,7 @@ async function test() {
     false,
     url
   );
-  BrowserTestUtils.loadURI(gBrowser.selectedBrowser, url);
+  BrowserTestUtils.startLoadingURIString(gBrowser.selectedBrowser, url);
   await loadPromise;
 
   // Pass a dummy imageElement, if there isn't an imageElement, pageInfo.js

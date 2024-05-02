@@ -60,13 +60,18 @@ async function assertSubmittedReport(expectedReportProps) {
   );
 }
 
-add_task(async function setup() {
+add_setup(async function () {
   await AbuseReportTestUtils.setup();
 
   await SpecialPowers.pushPrefEnv({
     set: [
       ["extensions.webapi.testing", true],
       ["extensions.abuseReport.amWebAPI.enabled", true],
+      // Make sure the integrated abuse report panel is the one enabled
+      // while this test file runs (instead of the AMO hosted form).
+      // NOTE: behaviors expected when amoFormEnabled is true are tested
+      // in the separate browser_amo_abuse_report.js test file.
+      ["extensions.abuseReport.amoFormEnabled", false],
     ],
   });
 });

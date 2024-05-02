@@ -35,12 +35,9 @@ interface XULPopupElement : XULElement
   [HTMLConstructor] constructor();
 
   /**
-   * Allow the popup to automatically position itself.
-   */
-  attribute boolean autoPosition;
-
-  /**
    * Open the popup relative to a specified node at a specific location.
+   *
+   * If the popup is already open, calling this method has no effect.
    *
    * The popup may be either anchored to another node or opened freely.
    * To anchor a popup to a node, supply an anchor node and set the position
@@ -75,13 +72,13 @@ interface XULPopupElement : XULElement
    * @param attributesOverride true if popup node attributes override position
    * @param triggerEvent the event that triggered this popup (mouse click for example)
    */
-  void openPopup(optional Element? anchorElement = null,
-                 optional StringOrOpenPopupOptions options = {},
-                 optional long x = 0,
-                 optional long y = 0,
-                 optional boolean isContextMenu = false,
-                 optional boolean attributesOverride = false,
-                 optional Event? triggerEvent = null);
+  undefined openPopup(optional Element? anchorElement = null,
+                      optional StringOrOpenPopupOptions options = {},
+                      optional long x = 0,
+                      optional long y = 0,
+                      optional boolean isContextMenu = false,
+                      optional boolean attributesOverride = false,
+                      optional Event? triggerEvent = null);
 
   /**
    * Open the popup at a specific screen position specified by x and y. This
@@ -95,24 +92,26 @@ interface XULPopupElement : XULElement
    * @param y vertical screen position
    * @param triggerEvent the event that triggered this popup (mouse click for example)
    */
-  void openPopupAtScreen(optional long x = 0, optional long y = 0,
-                         optional boolean isContextMenu = false,
-                         optional Event? triggerEvent = null);
+  undefined openPopupAtScreen(optional long x = 0, optional long y = 0,
+                              optional boolean isContextMenu = false,
+                              optional Event? triggerEvent = null);
 
   /**
    * Open the popup anchored at a specific screen rectangle. This function is
    * similar to openPopup except that that rectangle of the anchor is supplied
    * rather than an element. The anchor rectangle arguments are screen
    * coordinates.
+   *
+   * If the popup is already open, calling this method has no effect.
    */
-  void openPopupAtScreenRect(optional DOMString position = "",
-                             optional long x = 0,
-                             optional long y = 0,
-                             optional long width = 0,
-                             optional long height = 0,
-                             optional boolean isContextMenu = false,
-                             optional boolean attributesOverride = false,
-                             optional Event? triggerEvent = null);
+  undefined openPopupAtScreenRect(optional DOMString position = "",
+                                  optional long x = 0,
+                                  optional long y = 0,
+                                  optional long width = 0,
+                                  optional long height = 0,
+                                  optional boolean isContextMenu = false,
+                                  optional boolean attributesOverride = false,
+                                  optional Event? triggerEvent = null);
 
   /**
    *  Hide the popup if it is open. The cancel argument is used as a hint that
@@ -121,7 +120,7 @@ interface XULPopupElement : XULElement
    *
    * @param cancel if true, then the popup is being cancelled.
    */
-  void hidePopup(optional boolean cancel = false);
+  undefined hidePopup(optional boolean cancel = false);
 
   /**
    * Activate the item itemElement. This is the recommended way to "click" a
@@ -137,8 +136,8 @@ interface XULPopupElement : XULElement
    *                event.
    */
   [Throws]
-  void activateItem(Element itemElement,
-                    optional ActivateMenuItemOptions options = {});
+  undefined activateItem(Element itemElement,
+                         optional ActivateMenuItemOptions options = {});
 
   /**
    * Attribute getter and setter for label.
@@ -168,12 +167,6 @@ interface XULPopupElement : XULElement
   readonly attribute Node? triggerNode;
 
   /**
-   * True if the popup is anchored to a point or rectangle. False if it
-   * appears at a fixed screen coordinate.
-   */
-  readonly attribute boolean isAnchored;
-
-  /**
    * Retrieve the anchor that was specified to openPopup or for menupopups in a
    * menu, the parent menu.
    */
@@ -188,22 +181,25 @@ interface XULPopupElement : XULElement
   /**
    * Move the popup to a point on screen in CSS pixels.
    */
-  void moveTo(long left, long top);
+  undefined moveTo(long left, long top);
 
   /**
    * Move an open popup to the given anchor position. The arguments have the same
    * meaning as the corresponding argument to openPopup. This method has no effect
    * on popups that are not open.
    */
-  void moveToAnchor(optional Element? anchorElement = null,
-                    optional DOMString position = "",
-                    optional long x = 0, optional long y = 0,
-                    optional boolean attributesOverride = false);
+  undefined moveToAnchor(optional Element? anchorElement = null,
+                         optional DOMString position = "",
+                         optional long x = 0, optional long y = 0,
+                         optional boolean attributesOverride = false);
 
   /**
    * Size the popup to the given dimensions
    */
-  void sizeTo(long width, long height);
+  undefined sizeTo(long width, long height);
 
-  void setConstraintRect(DOMRectReadOnly rect);
+  undefined setConstraintRect(DOMRectReadOnly rect);
+
+  readonly attribute boolean isWaylandDragSource;
+  readonly attribute boolean isWaylandPopup;
 };

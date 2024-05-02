@@ -89,42 +89,6 @@ TEST(IntlDateTimeFormat, Style_enUS_fallback_to_default_styles)
   ASSERT_TRUE(buffer.verboseMatches("Sep 23, 2002, 8:07:30 PM"));
 }
 
-TEST(IntlDateTimeFormat, Skeleton_enUS_utf8_in)
-{
-  UniquePtr<DateTimePatternGenerator> gen = nullptr;
-  auto dateTimePatternGenerator =
-      DateTimePatternGenerator::TryCreate("en").unwrap();
-
-  UniquePtr<DateTimeFormat> dtFormat =
-      DateTimeFormat::TryCreateFromSkeleton(
-          MakeStringSpan("en-US"), MakeStringSpan("yMdhhmmss"),
-          dateTimePatternGenerator.get(), Nothing(),
-          Some(MakeStringSpan("GMT+3")))
-          .unwrap();
-  TestBuffer<char> buffer;
-  dtFormat->TryFormat(DATE, buffer).unwrap();
-
-  ASSERT_TRUE(buffer.verboseMatches("9/23/2002, 08:07:30 PM"));
-}
-
-TEST(IntlDateTimeFormat, Skeleton_enUS_utf16_in)
-{
-  UniquePtr<DateTimePatternGenerator> gen = nullptr;
-  auto dateTimePatternGenerator =
-      DateTimePatternGenerator::TryCreate("en").unwrap();
-
-  UniquePtr<DateTimeFormat> dtFormat =
-      DateTimeFormat::TryCreateFromSkeleton(
-          MakeStringSpan("en-US"), MakeStringSpan(u"yMdhhmmss"),
-          dateTimePatternGenerator.get(), Nothing(),
-          Some(MakeStringSpan(u"GMT+3")))
-          .unwrap();
-  TestBuffer<char> buffer;
-  dtFormat->TryFormat(DATE, buffer).unwrap();
-
-  ASSERT_TRUE(buffer.verboseMatches("9/23/2002, 08:07:30 PM"));
-}
-
 TEST(IntlDateTimeFormat, Time_zone_IANA_identifier)
 {
   auto gen = DateTimePatternGenerator::TryCreate("en").unwrap();
@@ -543,10 +507,17 @@ TEST(IntlDateTimeFormat, TryFormatToParts)
   auto dateTimePatternGenerator =
       DateTimePatternGenerator::TryCreate("en").unwrap();
 
+  DateTimeFormat::ComponentsBag components;
+  components.year = Some(DateTimeFormat::Numeric::Numeric);
+  components.month = Some(DateTimeFormat::Month::TwoDigit);
+  components.day = Some(DateTimeFormat::Numeric::TwoDigit);
+  components.hour = Some(DateTimeFormat::Numeric::TwoDigit);
+  components.minute = Some(DateTimeFormat::Numeric::TwoDigit);
+  components.hour12 = Some(false);
+
   UniquePtr<DateTimeFormat> dtFormat =
-      DateTimeFormat::TryCreateFromSkeleton(
-          MakeStringSpan("en-US"), MakeStringSpan(u"yMMddHHmm"),
-          dateTimePatternGenerator.get(), Nothing(),
+      DateTimeFormat::TryCreateFromComponents(
+          MakeStringSpan("en-US"), components, dateTimePatternGenerator.get(),
           Some(MakeStringSpan(u"GMT")))
           .unwrap();
 
@@ -592,5 +563,59 @@ TEST(IntlDateTimeFormat, TryFormatToParts)
   ASSERT_EQ(getSubStringView(8), u"07");
 
   ASSERT_EQ(parts.length(), 9u);
+}
+
+TEST(IntlDateTimeFormat, SetStartTimeIfGregorian)
+{
+  DateTimeFormat::StyleBag style{};
+  style.date = Some(DateTimeFormat::Style::Long);
+
+  auto timeZone = Some(MakeStringSpan(u"UTC"));
+
+  // Beginning of ECMAScript time.
+  constexpr double StartOfTime = -8.64e15;
+
+  // Gregorian change date defaults to October 15, 1582 in ICU. Test with a date
+  // before the default change date, in this case January 1, 1582.
+  constexpr double FirstJanuary1582 = -12244089600000.0;
+
+  // One year expressed in milliseconds.
+  constexpr double oneYear = (365 * 24 * 60 * 60) * 1000.0;
+
+  // Test with and without explicit calendar. The start time of the calendar can
+  // only be adjusted for the Gregorian and the ISO-8601 calendar.
+  for (const char* locale : {
+           "en-US",
+           "en-US-u-ca-gregory",
+           "en-US-u-ca-iso8601",
+       }) {
+    auto gen = DateTimePatternGenerator::TryCreate(locale).unwrap();
+
+    auto dtFormat = DateTimeFormat::TryCreateFromStyle(
+                        MakeStringSpan(locale), style, gen.get(), timeZone)
+                        .unwrap();
+
+    TestBuffer<char> buffer;
+
+    // Before the default Gregorian change date, so interpreted in the Julian
+    // calendar, which is December 22, 1581.
+    dtFormat->TryFormat(FirstJanuary1582, buffer).unwrap();
+    ASSERT_TRUE(buffer.verboseMatches("December 22, 1581"));
+
+    // After default Gregorian change date, so January 1, 1583.
+    dtFormat->TryFormat(FirstJanuary1582 + oneYear, buffer).unwrap();
+    ASSERT_TRUE(buffer.verboseMatches("January 1, 1583"));
+
+    // Adjust the start time to use a proleptic Gregorian calendar.
+    dtFormat->SetStartTimeIfGregorian(StartOfTime);
+
+    // Now interpreted in proleptic Gregorian calendar at January 1, 1582.
+    dtFormat->TryFormat(FirstJanuary1582, buffer).unwrap();
+    ASSERT_TRUE(buffer.verboseMatches("January 1, 1582"));
+
+    // Still January 1, 1583.
+    dtFormat->TryFormat(FirstJanuary1582 + oneYear, buffer).unwrap();
+    ASSERT_TRUE(buffer.verboseMatches("January 1, 1583"));
+  }
 }
 }  // namespace mozilla::intl

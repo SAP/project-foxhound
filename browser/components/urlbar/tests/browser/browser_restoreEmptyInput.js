@@ -7,6 +7,10 @@
 "use strict";
 
 add_task(async function test() {
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.urlbar.suggest.quickactions", false]],
+  });
+
   for (let i = 0; i < 5; i++) {
     await PlacesTestUtils.addVisits("http://example.com/");
   }
@@ -21,7 +25,7 @@ add_task(async function test() {
     );
   });
 
-  registerCleanupFunction(async function() {
+  registerCleanupFunction(async function () {
     await PlacesUtils.history.clear();
   });
 

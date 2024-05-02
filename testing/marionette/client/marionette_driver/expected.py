@@ -2,12 +2,10 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import
-
 import types
 
 from . import errors
-from .marionette import HTMLElement
+from .marionette import WebElement
 
 """This file provides a set of expected conditions for common use
 cases when writing Marionette tests.
@@ -173,8 +171,8 @@ class element_displayed(object):
     Stale elements, meaning elements that have been detached from the
     DOM of the current context are treated as not being displayed,
     meaning this expectation is not analogous to the behaviour of
-    calling :func:`~marionette_driver.marionette.HTMLElement.is_displayed`
-    on an :class:`~marionette_driver.marionette.HTMLElement`.
+    calling :func:`~marionette_driver.marionette.WebElement.is_displayed`
+    on an :class:`~marionette_driver.marionette.WebElement`.
 
     You can select which element to be checked for visibility by
     supplying a locator::
@@ -193,7 +191,7 @@ class element_displayed(object):
 
     def __init__(self, *args):
         self.el = None
-        if len(args) == 1 and isinstance(args[0], HTMLElement):
+        if len(args) == 1 and isinstance(args[0], WebElement):
             self.el = args[0]
         else:
             self.locator = lambda m: m.find_element(*args)
@@ -218,8 +216,8 @@ class element_not_displayed(element_displayed):
     Stale elements, meaning elements that have been detached fom the
     DOM of the current context are treated as not being displayed,
     meaning this expectation is not analogous to the behaviour of
-    calling :func:`~marionette_driver.marionette.HTMLElement.is_displayed`
-    on an :class:`~marionette_driver.marionette.HTMLElement`.
+    calling :func:`~marionette_driver.marionette.WebElement.is_displayed`
+    on an :class:`~marionette_driver.marionette.WebElement`.
 
     You can select which element to be checked for visibility by
     supplying a locator::

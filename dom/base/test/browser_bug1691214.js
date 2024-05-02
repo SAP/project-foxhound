@@ -9,8 +9,8 @@ const BASE_URL = "http://mochi.test:8888/browser/dom/base/test/";
 add_task(async function bug1691214() {
   await BrowserTestUtils.withNewTab(
     BASE_URL + "file_bug1691214.html",
-    async function(browser) {
-      let win = await newFocusedWindow(function() {
+    async function (browser) {
+      let win = await newFocusedWindow(function () {
         return BrowserTestUtils.synthesizeMouseAtCenter("#link-1", {}, browser);
       });
       is(Services.focus.focusedWindow, win, "New window should be focused");
@@ -51,8 +51,8 @@ add_task(async function bug1691214() {
 add_task(async function bug1700871() {
   await BrowserTestUtils.withNewTab(
     BASE_URL + "file_bug1700871.html",
-    async function(browser) {
-      let win = await newFocusedWindow(function() {
+    async function (browser) {
+      let win = await newFocusedWindow(function () {
         return BrowserTestUtils.synthesizeMouseAtCenter("#link-1", {}, browser);
       });
 
@@ -60,12 +60,12 @@ add_task(async function bug1700871() {
 
       info("waiting for three submit events and ensuring focus hasn't moved");
 
-      await SpecialPowers.spawn(browser, [], function() {
+      await SpecialPowers.spawn(browser, [], function () {
         let pending = 3;
         return new Promise(resolve => {
           content.document
             .querySelector("iframe")
-            .addEventListener("load", function(e) {
+            .addEventListener("load", function (e) {
               info("Got load on the frame: " + pending);
               if (!--pending) {
                 resolve();
@@ -75,6 +75,47 @@ add_task(async function bug1700871() {
       });
 
       is(Services.focus.focusedWindow, win, "Focus shouldn't have moved");
+      win.close();
+    }
+  );
+});
+
+add_task(async function bug1793829() {
+  await BrowserTestUtils.withNewTab(
+    BASE_URL + "file_bug1691214.html",
+    async function (browser) {
+      let win = await newFocusedWindow(function () {
+        return BrowserTestUtils.synthesizeMouseAtCenter("#link-1", {}, browser);
+      });
+      is(Services.focus.focusedWindow, win, "New window should be focused");
+
+      info("re-focusing the original window");
+
+      {
+        let focusBack = BrowserTestUtils.waitForEvent(window, "focus", true);
+        window.focus();
+        await focusBack;
+        is(Services.focus.focusedWindow, window, "should focus back");
+      }
+
+      info("Trying to steal focus.");
+
+      await SpecialPowers.spawn(browser, [], function () {
+        content.document.clearUserGestureActivation();
+        content.document.getElementById("link-2").click();
+      });
+
+      // We need to test that nothing happened, which is hard without an
+      // arbitrary timeout.
+      // eslint-disable-next-line mozilla/no-arbitrary-setTimeout
+      await new Promise(c => setTimeout(c, 2000));
+
+      is(
+        Services.focus.focusedWindow,
+        window,
+        "Shouldn't steal focus without user gesture"
+      );
+
       win.close();
     }
   );

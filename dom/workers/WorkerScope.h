@@ -8,6 +8,7 @@
 #define mozilla_dom_workerscope_h__
 
 #include "js/TypeDecls.h"
+#include "js/loader/ModuleLoaderBase.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/DOMEventTargetHelper.h"
@@ -19,6 +20,7 @@
 #include "mozilla/dom/AnimationFrameProvider.h"
 #include "mozilla/dom/ImageBitmapBinding.h"
 #include "mozilla/dom/ImageBitmapSource.h"
+#include "mozilla/dom/PerformanceWorker.h"
 #include "mozilla/dom/SafeRefPtr.h"
 #include "mozilla/dom/WorkerPrivate.h"
 #include "nsCOMPtr.h"
@@ -26,7 +28,6 @@
 #include "nsIGlobalObject.h"
 #include "nsISupports.h"
 #include "nsWeakReference.h"
-#include "mozilla/dom/ImageBitmapBinding.h"
 
 #ifdef XP_WIN
 #  undef PostMessage
@@ -58,6 +59,7 @@ class DOMString;
 class DebuggerNotificationManager;
 enum class EventCallbackDebuggerNotificationType : uint8_t;
 class EventHandlerNonNull;
+class FontFaceSet;
 class Function;
 class IDBFactory;
 class OnErrorEventHandlerNonNull;
@@ -77,6 +79,8 @@ class WorkerLocation;
 class WorkerNavigator;
 class WorkerPrivate;
 class VsyncWorkerChild;
+class WebTaskScheduler;
+class WebTaskSchedulerWorker;
 struct RequestInit;
 
 namespace cache {
@@ -86,6 +90,7 @@ class CacheStorage;
 }  // namespace cache
 
 class WorkerGlobalScopeBase : public DOMEventTargetHelper,
+                              public nsSupportsWeakReference,
                               public nsIGlobalObject {
   friend class WorkerPrivate;
 
@@ -113,9 +118,9 @@ class WorkerGlobalScopeBase : public DOMEventTargetHelper,
 
   bool IsSharedMemoryAllowed() const final;
 
-  bool ShouldResistFingerprinting() const final;
+  bool ShouldResistFingerprinting(RFPTarget aTarget) const final;
 
-  uint32_t GetPrincipalHashValue() const final;
+  OriginTrials Trials() const final;
 
   StorageAccess GetStorageAccess() final;
 
@@ -123,17 +128,13 @@ class WorkerGlobalScopeBase : public DOMEventTargetHelper,
 
   Maybe<ServiceWorkerDescriptor> GetController() const final;
 
+  mozilla::Result<mozilla::ipc::PrincipalInfo, nsresult> GetStorageKey() final;
+
   virtual void Control(const ServiceWorkerDescriptor& aServiceWorker);
 
   // DispatcherTrait implementation
-  nsresult Dispatch(TaskCategory aCategory,
-                    already_AddRefed<nsIRunnable>&& aRunnable) final;
-
-  nsISerialEventTarget* EventTargetFor(TaskCategory) const final;
-
-  AbstractThread* AbstractMainThreadFor(TaskCategory) final {
-    MOZ_CRASH("AbstractMainThreadFor not supported for workers.");
-  }
+  nsresult Dispatch(already_AddRefed<nsIRunnable>&& aRunnable) const final;
+  nsISerialEventTarget* SerialEventTarget() const final;
 
   MOZ_CAN_RUN_SCRIPT
   void ReportError(JSContext* aCx, JS::Handle<JS::Value> aError,
@@ -149,9 +150,24 @@ class WorkerGlobalScopeBase : public DOMEventTargetHelper,
 
   Console* GetConsoleIfExists() const { return mConsole; }
 
+  void InitModuleLoader(JS::loader::ModuleLoaderBase* aModuleLoader) {
+    if (!mModuleLoader) {
+      mModuleLoader = aModuleLoader;
+    }
+  }
+
+  // The nullptr here is not used, but is required to make the override method
+  // have the same signature as other GetModuleLoader methods on globals.
+  JS::loader::ModuleLoaderBase* GetModuleLoader(
+      JSContext* aCx = nullptr) override {
+    return mModuleLoader;
+  };
+
   uint64_t WindowID() const;
 
-  void NoteTerminating() { StartDying(); }
+  // Usually global scope dies earlier than the WorkerPrivate, but if we see
+  // it leak at least we can tell it to not carry away a dead pointer.
+  void NoteWorkerTerminated() { mWorkerPrivate = nullptr; }
 
   ClientSource& MutableClientSourceRef() const { return *mClientSource; }
 
@@ -165,10 +181,18 @@ class WorkerGlobalScopeBase : public DOMEventTargetHelper,
 
   CheckedUnsafePtr<WorkerPrivate> mWorkerPrivate;
 
+  void AssertIsOnWorkerThread() const {
+    MOZ_ASSERT(mWorkerThreadUsedOnlyForAssert == PR_GetCurrentThread());
+  }
+
  private:
   RefPtr<Console> mConsole;
+  RefPtr<JS::loader::ModuleLoaderBase> mModuleLoader;
   const UniquePtr<ClientSource> mClientSource;
   nsCOMPtr<nsISerialEventTarget> mSerialEventTarget;
+#ifdef DEBUG
+  PRThread* mWorkerThreadUsedOnlyForAssert;
+#endif
 };
 
 namespace workerinternals {
@@ -188,14 +212,17 @@ class NamedWorkerGlobalScopeMixin {
 
 }  // namespace workerinternals
 
-class WorkerGlobalScope : public WorkerGlobalScopeBase,
-                          public nsSupportsWeakReference {
+class WorkerGlobalScope : public WorkerGlobalScopeBase {
  public:
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(WorkerGlobalScope,
                                            WorkerGlobalScopeBase)
 
   using WorkerGlobalScopeBase::WorkerGlobalScopeBase;
+
+  void NoteTerminating();
+
+  void NoteShuttingDown();
 
   // nsIGlobalObject implementation
   RefPtr<ServiceWorkerRegistration> GetServiceWorkerRegistration(
@@ -211,6 +238,12 @@ class WorkerGlobalScope : public WorkerGlobalScopeBase,
   Maybe<EventCallbackDebuggerNotificationType> GetDebuggerNotificationType()
       const final;
 
+  mozilla::dom::StorageManager* GetStorageManager() final;
+
+  void SetIsNotEligibleForMessaging() { mIsEligibleForMessaging = false; }
+
+  bool IsEligibleForMessaging() final;
+
   // WorkerGlobalScope WebIDL implementation
   WorkerGlobalScope* Self() { return this; }
 
@@ -219,6 +252,9 @@ class WorkerGlobalScope : public WorkerGlobalScopeBase,
   already_AddRefed<WorkerNavigator> Navigator();
 
   already_AddRefed<WorkerNavigator> GetExistingNavigator() const;
+
+  FontFaceSet* GetFonts(ErrorResult&);
+  FontFaceSet* GetFonts() final { return GetFonts(IgnoreErrors()); }
 
   void ImportScripts(JSContext* aCx, const Sequence<nsString>& aScriptURLs,
                      ErrorResult& aRv);
@@ -295,9 +331,13 @@ class WorkerGlobalScope : public WorkerGlobalScopeBase,
 
   bool IsSecureContext() const;
 
-  already_AddRefed<IDBFactory> GetIndexedDB(ErrorResult& aErrorResult);
+  already_AddRefed<IDBFactory> GetIndexedDB(JSContext* aCx,
+                                            ErrorResult& aErrorResult);
 
   already_AddRefed<cache::CacheStorage> GetCaches(ErrorResult& aRv);
+
+  WebTaskScheduler* Scheduler();
+  WebTaskScheduler* GetExistingScheduler() const;
 
   bool WindowInteractionAllowed() const;
 
@@ -330,11 +370,14 @@ class WorkerGlobalScope : public WorkerGlobalScopeBase,
   RefPtr<Crypto> mCrypto;
   RefPtr<WorkerLocation> mLocation;
   RefPtr<WorkerNavigator> mNavigator;
+  RefPtr<FontFaceSet> mFontFaceSet;
   RefPtr<Performance> mPerformance;
   RefPtr<IDBFactory> mIndexedDB;
   RefPtr<cache::CacheStorage> mCacheStorage;
   RefPtr<DebuggerNotificationManager> mDebuggerNotificationManager;
+  RefPtr<WebTaskSchedulerWorker> mWebTaskScheduler;
   uint32_t mWindowInteractionsAllowed = 0;
+  bool mIsEligibleForMessaging{true};
 };
 
 class DedicatedWorkerGlobalScope final
@@ -375,6 +418,7 @@ class DedicatedWorkerGlobalScope final
 
   IMPL_EVENT_HANDLER(message)
   IMPL_EVENT_HANDLER(messageerror)
+  IMPL_EVENT_HANDLER(rtctransform)
 
  private:
   ~DedicatedWorkerGlobalScope() = default;
@@ -488,6 +532,8 @@ class WorkerDebuggerGlobalScope final : public WorkerGlobalScopeBase {
 
   void RetrieveConsoleEvents(JSContext* aCx, nsTArray<JS::Value>& aEvents,
                              ErrorResult& aRv);
+
+  void ClearConsoleEvents(JSContext* aCx, ErrorResult& aRv);
 
   void SetConsoleEventHandler(JSContext* aCx, AnyCallback* aHandler,
                               ErrorResult& aRv);

@@ -7,6 +7,8 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include "nsUpdateDriver.h"
+
+#include "nsDebug.h"
 #include "nsXULAppAPI.h"
 #include "nsAppRunner.h"
 #include "nsIFile.h"
@@ -23,12 +25,15 @@
 #include "mozilla/Preferences.h"
 #include "nsPrintfCString.h"
 #include "mozilla/DebugOnly.h"
+#include "mozilla/ErrorNames.h"
 #include "mozilla/Printf.h"
 #include "mozilla/UniquePtr.h"
 #include "nsIObserverService.h"
 #include "nsNetCID.h"
+#include "mozilla/ScopeExit.h"
 #include "mozilla/Services.h"
 #include "mozilla/dom/Promise.h"
+#include "mozilla/CmdLineAndEnvUtils.h"
 
 #ifdef XP_MACOSX
 #  include "nsILocalFileMac.h"
@@ -36,6 +41,7 @@
 #  include "MacLaunchHelper.h"
 #  include "updaterfileutils_osx.h"
 #  include "mozilla/Monitor.h"
+#  include "gfxPlatformMac.h"
 #endif
 
 #if defined(XP_WIN)
@@ -44,6 +50,7 @@
 #  include <windows.h>
 #  include <shlwapi.h>
 #  include <strsafe.h>
+#  include <shellapi.h>
 #  include "commonupdatedir.h"
 #  include "nsWindowsHelpers.h"
 #  include "pathhash.h"
@@ -77,7 +84,7 @@ static void UpdateDriverSetupMacCommandLine(int& argc, char**& argv,
   // result from it, so we can't just dispatch and return, we have to wait
   // until the dispatched operation actually completes. So we also set up a
   // monitor to signal us when that happens, and block until then.
-  Monitor monitor("nsUpdateDriver SetupMacCommandLine");
+  Monitor monitor MOZ_UNANNOTATED("nsUpdateDriver SetupMacCommandLine");
 
   nsresult rv = NS_DispatchToMainThread(NS_NewRunnableFunction(
       "UpdateDriverSetupMacCommandLine",
@@ -90,7 +97,7 @@ static void UpdateDriverSetupMacCommandLine(int& argc, char**& argv,
     LOG(
         ("Update driver error dispatching SetupMacCommandLine to main thread: "
          "%d\n",
-         rv));
+         uint32_t(rv)));
     return;
   }
 
@@ -208,14 +215,14 @@ static bool GetStatusFileContents(nsIFile* statusFile, char (&buf)[Size]) {
   return (n >= 0);
 }
 
-typedef enum {
+enum UpdateStatus {
   eNoUpdateAction,
   ePendingUpdate,
   ePendingService,
   ePendingElevate,
   eAppliedUpdate,
   eAppliedService,
-} UpdateStatus;
+};
 
 /**
  * Returns a value indicating what needs to be done in order to handle an
@@ -432,6 +439,12 @@ static void ApplyUpdate(nsIFile* greDir, nsIFile* updateDir, nsIFile* appDir,
   }
 
 #if defined(XP_MACOSX)
+  // If we're going to do a restart, we need to make sure the font registration
+  // thread has finished before this process exits (bug 1777332).
+  if (restart) {
+    gfxPlatformMac::WaitForFontRegistration();
+  }
+
   // We need to detect whether elevation is required for this update. This can
   // occur when an admin user installs the application, but another admin
   // user attempts to update (see bug 394984).
@@ -466,7 +479,10 @@ static void ApplyUpdate(nsIFile* greDir, nsIFile* updateDir, nsIFile* appDir,
     // The install directory is the same as the apply to directory.
     applyToDirPath.Assign(installDirPath);
   } else {
-    // Get the directory where the update is staged or will be staged.
+    // Get the directory where the update is staged or will be staged. This is
+    // `updateDir` for macOS and `appDir` for all other platforms. macOS cannot
+    // stage updates inside the .app bundle (`appDir`) without breaking the code
+    // signature on the bundle, so we use `updateDir` instead.
 #if defined(XP_MACOSX)
     if (!GetFile(updateDir, "Updated.app"_ns, updatedDir)) {
 #else
@@ -633,20 +649,17 @@ if (isStaged) {
   }
 }
 
+#if !defined(XP_WIN)
 /**
  * Wait briefly to see if a process terminates, then return true if it has.
+ *
+ * (Not implemented on Windows, where HandleWatcher is used instead.)
  */
 static bool ProcessHasTerminated(ProcessType pt) {
-#if defined(XP_WIN)
-  if (WaitForSingleObject(pt, 1000)) {
-    return false;
-  }
-  CloseHandle(pt);
-  return true;
-#elif defined(XP_MACOSX)
+#  if defined(XP_MACOSX)
   // We're waiting for the process to terminate in LaunchChildMac.
   return true;
-#elif defined(XP_UNIX)
+#  elif defined(XP_UNIX)
   int exitStatus;
   pid_t exited = waitpid(pt, &exitStatus, WNOHANG);
   if (exited == 0) {
@@ -665,7 +678,7 @@ static bool ProcessHasTerminated(ProcessType pt) {
     LOG(("Error while running the updater process, check update.log"));
   }
   return true;
-#else
+#  else
   // No way to have a non-blocking implementation on these platforms,
   // because we're using NSPR and it only provides a blocking wait.
   int32_t exitCode;
@@ -674,8 +687,9 @@ static bool ProcessHasTerminated(ProcessType pt) {
     LOG(("Error while running the updater process, check update.log"));
   }
   return true;
-#endif
+#  endif
 }
+#endif
 
 nsresult ProcessUpdates(nsIFile* greDir, nsIFile* appDir, nsIFile* updRootDir,
                         int argc, char** argv, const char* appVersion,
@@ -737,7 +751,11 @@ NS_IMPL_ISUPPORTS(nsUpdateProcessor, nsIUpdateProcessor)
 
 nsUpdateProcessor::nsUpdateProcessor() : mUpdaterPID(0) {}
 
+#ifdef XP_WIN
+nsUpdateProcessor::~nsUpdateProcessor() { mProcessWatcher.Stop(); }
+#else
 nsUpdateProcessor::~nsUpdateProcessor() = default;
+#endif
 
 NS_IMETHODIMP
 nsUpdateProcessor::ProcessUpdate() {
@@ -781,7 +799,7 @@ nsUpdateProcessor::ProcessUpdate() {
   NS_ENSURE_SUCCESS(rv, rv);
 
   // Copy the parameters to the StagedUpdateInfo structure shared with the
-  // watcher thread.
+  // worker thread.
   mInfo.mGREDir = greDir;
   mInfo.mAppDir = appDir;
   mInfo.mUpdateRoot = updRoot;
@@ -793,41 +811,75 @@ nsUpdateProcessor::ProcessUpdate() {
   nsCOMPtr<nsIRunnable> r =
       NewRunnableMethod("nsUpdateProcessor::StartStagedUpdate", this,
                         &nsUpdateProcessor::StartStagedUpdate);
-  return NS_NewNamedThread("Update Watcher", getter_AddRefs(mProcessWatcher),
-                           r);
+  return NS_NewNamedThread("UpdateProcessor", getter_AddRefs(mWorkerThread), r);
 }
 
 void nsUpdateProcessor::StartStagedUpdate() {
   MOZ_ASSERT(!NS_IsMainThread(), "main thread");
 
+  // If we fail to launch the updater process or its monitor for some reason, we
+  // need to shut down the worker thread, as there isn't anything more for us to
+  // do.
+  auto onExitStopThread = mozilla::MakeScopeExit([&] {
+    nsresult rv = NS_DispatchToMainThread(
+        NewRunnableMethod("nsUpdateProcessor::ShutdownWorkerThread", this,
+                          &nsUpdateProcessor::ShutdownWorkerThread));
+    NS_ENSURE_SUCCESS_VOID(rv);
+  });
+
+  // Launch updater. (We do this on a worker thread to avoid blocking the main
+  // thread with file I/O.)
   nsresult rv = ProcessUpdates(mInfo.mGREDir, mInfo.mAppDir, mInfo.mUpdateRoot,
                                mInfo.mArgc, mInfo.mArgv,
                                mInfo.mAppVersion.get(), false, &mUpdaterPID);
-  NS_ENSURE_SUCCESS_VOID(rv);
-
-  if (mUpdaterPID) {
-    // Track the state of the updater process while it is staging an update.
-    rv = NS_DispatchToCurrentThread(
-        NewRunnableMethod("nsUpdateProcessor::WaitForProcess", this,
-                          &nsUpdateProcessor::WaitForProcess));
-    NS_ENSURE_SUCCESS_VOID(rv);
-  } else {
-    // Failed to launch the updater process for some reason.
-    // We need to shutdown the current thread as there isn't anything more for
-    // us to do...
-    rv = NS_DispatchToMainThread(
-        NewRunnableMethod("nsUpdateProcessor::ShutdownWatcherThread", this,
-                          &nsUpdateProcessor::ShutdownWatcherThread));
-    NS_ENSURE_SUCCESS_VOID(rv);
+  if (NS_FAILED(rv)) {
+    MOZ_LOG(sUpdateLog, mozilla::LogLevel::Error,
+            ("could not start updater process: %s", GetStaticErrorName(rv)));
+    return;
   }
+
+  if (!mUpdaterPID) {
+    // not an error
+    MOZ_LOG(sUpdateLog, mozilla::LogLevel::Verbose,
+            ("ProcessUpdates() indicated nothing to do"));
+    return;
+  }
+
+#ifdef WIN32
+  // Set up a HandleWatcher to report to the main thread when we're done.
+  RefPtr<nsIThread> mainThread;
+  NS_GetMainThread(getter_AddRefs(mainThread));
+  mProcessWatcher.Watch(mUpdaterPID, mainThread,
+                        NewRunnableMethod("nsUpdateProcessor::UpdateDone", this,
+                                          &nsUpdateProcessor::UpdateDone));
+
+// On Windows, that's all we need the worker thread for. Let
+// `onExitStopThread` shut us down.
+#else
+  // Monitor the state of the updater process while it is staging an update.
+  rv = NS_DispatchToCurrentThread(
+      NewRunnableMethod("nsUpdateProcessor::WaitForProcess", this,
+                        &nsUpdateProcessor::WaitForProcess));
+  if (NS_FAILED(rv)) {
+    MOZ_LOG(sUpdateLog, mozilla::LogLevel::Error,
+            ("could not start updater process poll: error %s",
+             GetStaticErrorName(rv)));
+    return;
+  }
+
+  // Leave the worker thread alive to run WaitForProcess. Either it or its
+  // successors will be responsible for shutting down the worker thread.
+  onExitStopThread.release();
+#endif
 }
 
-void nsUpdateProcessor::ShutdownWatcherThread() {
+void nsUpdateProcessor::ShutdownWorkerThread() {
   MOZ_ASSERT(NS_IsMainThread(), "not main thread");
-  mProcessWatcher->Shutdown();
-  mProcessWatcher = nullptr;
+  mWorkerThread->Shutdown();
+  mWorkerThread = nullptr;
 }
 
+#ifndef WIN32
 void nsUpdateProcessor::WaitForProcess() {
   MOZ_ASSERT(!NS_IsMainThread(), "main thread");
   if (ProcessHasTerminated(mUpdaterPID)) {
@@ -839,6 +891,7 @@ void nsUpdateProcessor::WaitForProcess() {
                           &nsUpdateProcessor::WaitForProcess));
   }
 }
+#endif
 
 void nsUpdateProcessor::UpdateDone() {
   MOZ_ASSERT(NS_IsMainThread(), "not main thread");
@@ -852,7 +905,11 @@ void nsUpdateProcessor::UpdateDone() {
     um->RefreshUpdateStatus(getter_AddRefs(outPromise));
   }
 
-  ShutdownWatcherThread();
+// On Windows, shutting down the worker thread is taken care of by another task.
+// (Which may not have run yet, so we can't assert.)
+#ifndef XP_WIN
+  ShutdownWorkerThread();
+#endif
 }
 
 NS_IMETHODIMP
@@ -897,4 +954,50 @@ nsUpdateProcessor::GetServiceRegKeyExists(bool* aResult) {
   // We got an error we weren't expecting reading the registry.
   return NS_ERROR_NOT_AVAILABLE;
 #endif  // #ifdef XP_WIN
+}
+
+NS_IMETHODIMP
+nsUpdateProcessor::RegisterApplicationRestartWithLaunchArgs(
+    const nsTArray<nsString>& argvExtra) {
+#ifndef XP_WIN
+  return NS_ERROR_NOT_IMPLEMENTED;
+#else
+  // Retrieve current command line arguments for restart
+  // GetCommandLineW() returns a read only pointer to
+  // the arguments the process was launched with.
+  LPWSTR currentCommandLine = GetCommandLineW();
+
+  // Register a restart flag for the application based on the current
+  // command line. The program will then automatically restart
+  // upon termination.
+  // The application must have been running for a minimum of 60
+  // seconds for a restart to be correctly registered.
+  if (currentCommandLine) {
+    // Append additional command line arguments to current command line for
+    // restart
+    nsTArray<const wchar_t*> additionalArgv(argvExtra.Length());
+    for (const nsString& arg : argvExtra) {
+      additionalArgv.AppendElement(static_cast<const wchar_t*>(arg.get()));
+    }
+
+    int currentArgc = 0;
+    LPWSTR* currentCommandLineArgv =
+        CommandLineToArgvW(currentCommandLine, &currentArgc);
+    UniquePtr<LPWSTR, LocalFreeDeleter> uniqueCurrentArgv(
+        currentCommandLineArgv);
+    mozilla::UniquePtr<wchar_t[]> restartCommandLine = mozilla::MakeCommandLine(
+        currentArgc, uniqueCurrentArgv.get(), additionalArgv.Length(),
+        additionalArgv.Elements());
+    ::RegisterApplicationRestart(restartCommandLine.get(),
+                                 RESTART_NO_CRASH | RESTART_NO_HANG);
+
+    MOZ_LOG(sUpdateLog, mozilla::LogLevel::Debug,
+            ("register application restart succeeded"));
+  } else {
+    MOZ_LOG(sUpdateLog, mozilla::LogLevel::Error,
+            ("could not register application restart"));
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+  return NS_OK;
+#endif  // #ifndef XP_WIN
 }

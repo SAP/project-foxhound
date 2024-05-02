@@ -12,10 +12,11 @@ What is a Triaged Bug
 
 The new definition of Triaged will be Firefox-related bugs of type
 ``defect`` where the component is not
-``UNTRIAGED``, and a severity value not equal to ``--`` or ``N/A``.
+``UNTRIAGED``, and a :ref:`Severity <Defect Severity>` value not equal
+to ``--`` or ``N/A``.
 
-Bugs of type Task or Enhancement may have a severity of ``N/A``,
-but defects must have a severity that is neither ``--`` or
+Bugs of type Task or Enhancement may have a Severity of ``N/A``,
+but defects must have a Severity that is neither ``--`` nor
 ``N/A``.
 
 Why Triage
@@ -57,19 +58,17 @@ Rotating triage
 ~~~~~~~~~~~~~~~
 
 Some components are monitored by a rotation of triagers. In those cases,
-the triage owner should be seen as the person responsible for assuring
-the component is triaged, but the work is done by the people in the
-rotation. The `rotations are managed as
-calendars <https://github.com/mozilla/relman-auto-nag/tree/master/auto_nag/scripts/configs>`__.
+the triage owner on Bugzilla will be automatically updated to reflect the
+person on the rotation. The rotations are managed as calendars.
 
 If you wish to set up a rotation for triaging one or more components,
-contact the Bugzilla team on Slack (#bmo.)
+add a link to your rotation calendar in the `triage rotations spreadsheet <https://docs.google.com/spreadsheets/d/1EK6iCtdD8KP4UflIHscuZo6W5er2vy_TX7vsmaaBVd4>`__.
 
 Firefox::General and Toolkit::General
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Bugs in Firefox::General are fitted with Bug Bug’s model to see if
-there’s another component with a high liklihood of fit, and if a
+there’s another component with a high likelihood of fit, and if a
 threshold confidence is achieved, the bug is moved to that component.
 
 Members of the community also review bugs in this component and try to
@@ -89,8 +88,8 @@ are:
 -  All bugs with a needinfo request unanswered for more than 10 days
 
 There’s a tool with these queries to help you find bugs
-https://mozilla.github.io/triage-center/ and the source is at
-https://github.com/mozilla/triage-center/.
+https://bugdash.moz.tools/ and the source is at
+https://github.com/mozilla/bugdash/.
 
 If a bug is an enhancement it needs a priority set and a target release
 or program milestone. These bugs are normally reviewed by product
@@ -225,7 +224,7 @@ Multiple times weekly
 ~~~~~~~~~~~~~~~~~~~~~
 
 Use queries for the components you are responsible for in
-https://mozilla.github.io/triage-center/ to find bugs in
+https://github.com/mozilla/bugdash/ to find bugs in
 need of triage.
 
 For each untriaged bug:
@@ -245,7 +244,7 @@ Close minor bugs with unresponded needinfo flags.
 
 Follow up on needinfo flag requests.
 
-The `Triage Center tool <https://mozilla.github.io/triage-center/>`__ will help you find these.
+`BugDash <https://github.com/mozilla/bugdash/>`__ will help you find these.
 
 End of Iteration/Release Cycle
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

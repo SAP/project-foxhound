@@ -2,15 +2,15 @@
 /* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
-const { AddonManager } = ChromeUtils.import(
-  "resource://gre/modules/AddonManager.jsm"
+const { AddonManager } = ChromeUtils.importESModule(
+  "resource://gre/modules/AddonManager.sys.mjs"
 );
-const { Preferences } = ChromeUtils.import(
-  "resource://gre/modules/Preferences.jsm"
+const { Preferences } = ChromeUtils.importESModule(
+  "resource://gre/modules/Preferences.sys.mjs"
 );
 
-const { TestUtils } = ChromeUtils.import(
-  "resource://testing-common/TestUtils.jsm"
+const { TestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/TestUtils.sys.mjs"
 );
 
 AddonTestUtils.init(this);
@@ -23,11 +23,6 @@ AddonTestUtils.createAppInfo(
   "42"
 );
 
-Services.prefs.setBoolPref(
-  "extensions.webextensions.background-delayed-startup",
-  false
-);
-
 const ADDON_ID = "test-startup-cache@xpcshell.mozilla.org";
 
 function makeExtension(opts) {
@@ -36,7 +31,7 @@ function makeExtension(opts) {
 
     manifest: {
       version: opts.version,
-      applications: { gecko: { id: ADDON_ID } },
+      browser_specific_settings: { gecko: { id: ADDON_ID } },
 
       name: "__MSG_name__",
 
@@ -68,7 +63,7 @@ function makeExtension(opts) {
   };
 }
 
-add_task(async function() {
+add_task(async function test_langpack_startup_cache() {
   Preferences.set("extensions.logging.enabled", false);
   await AddonTestUtils.promiseStartupManager();
 
@@ -78,7 +73,7 @@ add_task(async function() {
       name: "test Language Pack",
       version: "1.0",
       manifest_version: 2,
-      applications: {
+      browser_specific_settings: {
         gecko: {
           id: "@test-langpack",
           strict_min_version: "42.0",
@@ -132,7 +127,7 @@ add_task(async function() {
 
   info("Restart and re-check");
   await AddonTestUtils.promiseRestartManager();
-  await extension.awaitStartup();
+  await extension.awaitBackgroundStarted();
 
   equal(extension.version, "1.0", "Expected extension version");
   manifest = await getManifest();
@@ -141,7 +136,7 @@ add_task(async function() {
   info("Change locale to 'fr' and restart");
   Services.locale.requestedLocales = ["fr"];
   await AddonTestUtils.promiseRestartManager();
-  await extension.awaitStartup();
+  await extension.awaitBackgroundStarted();
 
   equal(extension.version, "1.0", "Expected extension version");
   manifest = await getManifest();
@@ -157,7 +152,7 @@ add_task(async function() {
   info("Change locale to 'en-US' and restart");
   Services.locale.requestedLocales = ["en-US"];
   await AddonTestUtils.promiseRestartManager();
-  await extension.awaitStartup();
+  await extension.awaitBackgroundStarted();
 
   equal(extension.version, "1.1", "Expected extension version");
   manifest = await getManifest();

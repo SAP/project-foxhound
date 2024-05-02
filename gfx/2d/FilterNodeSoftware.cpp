@@ -618,19 +618,15 @@ already_AddRefed<DataSourceSurface> FilterNodeSoftware::GetOutput(
   IntRect requestedRect;
   RefPtr<DataSourceSurface> cachedOutput;
 
-  // Lock the cache and retrieve a cached surface if we have one and it can
+  // Retrieve a cached surface if we have one and it can
   // satisfy this request, or else request a rect we will compute and cache
-  {
-    MutexAutoLock lock(mCacheMutex);
-
-    if (!mCachedRect.Contains(aRect)) {
-      RequestRect(aRect);
-      requestedRect = mRequestedRect;
-    } else {
-      MOZ_ASSERT(mCachedOutput, "cached rect but no cached output?");
-      cachedRect = mCachedRect;
-      cachedOutput = mCachedOutput;
-    }
+  if (!mCachedRect.Contains(aRect)) {
+    RequestRect(aRect);
+    requestedRect = mRequestedRect;
+  } else {
+    MOZ_ASSERT(mCachedOutput, "cached rect but no cached output?");
+    cachedRect = mCachedRect;
+    cachedOutput = mCachedOutput;
   }
 
   if (!cachedOutput) {
@@ -638,8 +634,6 @@ already_AddRefed<DataSourceSurface> FilterNodeSoftware::GetOutput(
     cachedOutput = Render(requestedRect);
 
     // Update the cache for future requests
-    MutexAutoLock lock(mCacheMutex);
-
     mCachedOutput = cachedOutput;
     if (!mCachedOutput) {
       mCachedRect = IntRect();
@@ -710,6 +704,7 @@ void FilterNodeSoftware::RequestInputRect(uint32_t aInputEnumIndex,
   }
   RefPtr<FilterNodeSoftware> filter = mInputFilters[inputIndex];
   MOZ_ASSERT(filter, "missing input");
+
   filter->RequestRect(filter->GetOutputRectInRect(aRect));
 }
 
@@ -896,7 +891,6 @@ void FilterNodeSoftware::FilterInvalidated(FilterNodeSoftware* aFilter) {
 }
 
 void FilterNodeSoftware::Invalidate() {
-  MutexAutoLock lock(mCacheMutex);
   mCachedOutput = nullptr;
   mCachedRect = IntRect();
   for (std::vector<FilterInvalidationListener*>::iterator it =
@@ -906,8 +900,7 @@ void FilterNodeSoftware::Invalidate() {
   }
 }
 
-FilterNodeSoftware::FilterNodeSoftware()
-    : mCacheMutex("FilterNodeSoftware::mCacheMutex") {}
+FilterNodeSoftware::FilterNodeSoftware() {}
 
 FilterNodeSoftware::~FilterNodeSoftware() {
   MOZ_ASSERT(
@@ -2549,12 +2542,12 @@ IntRect FilterNodeConvolveMatrixSoftware::InflatedSourceRect(
   }
 
   IntMargin margin;
-  margin.left = ceil(mTarget.x * mKernelUnitLength.width);
-  margin.top = ceil(mTarget.y * mKernelUnitLength.height);
-  margin.right =
-      ceil((mKernelSize.width - mTarget.x - 1) * mKernelUnitLength.width);
-  margin.bottom =
-      ceil((mKernelSize.height - mTarget.y - 1) * mKernelUnitLength.height);
+  margin.left = static_cast<int32_t>(ceil(mTarget.x * mKernelUnitLength.width));
+  margin.top = static_cast<int32_t>(ceil(mTarget.y * mKernelUnitLength.height));
+  margin.right = static_cast<int32_t>(
+      ceil((mKernelSize.width - mTarget.x - 1) * mKernelUnitLength.width));
+  margin.bottom = static_cast<int32_t>(
+      ceil((mKernelSize.height - mTarget.y - 1) * mKernelUnitLength.height));
 
   IntRect srcRect = aDestRect;
   srcRect.Inflate(margin);
@@ -2568,12 +2561,14 @@ IntRect FilterNodeConvolveMatrixSoftware::InflatedDestRect(
   }
 
   IntMargin margin;
-  margin.left =
-      ceil((mKernelSize.width - mTarget.x - 1) * mKernelUnitLength.width);
-  margin.top =
-      ceil((mKernelSize.height - mTarget.y - 1) * mKernelUnitLength.height);
-  margin.right = ceil(mTarget.x * mKernelUnitLength.width);
-  margin.bottom = ceil(mTarget.y * mKernelUnitLength.height);
+  margin.left = static_cast<int32_t>(
+      ceil((mKernelSize.width - mTarget.x - 1) * mKernelUnitLength.width));
+  margin.top = static_cast<int32_t>(
+      ceil((mKernelSize.height - mTarget.y - 1) * mKernelUnitLength.height));
+  margin.right =
+      static_cast<int32_t>(ceil(mTarget.x * mKernelUnitLength.width));
+  margin.bottom =
+      static_cast<int32_t>(ceil(mTarget.y * mKernelUnitLength.height));
 
   IntRect destRect = aSourceRect;
   destRect.Inflate(margin);
@@ -3348,8 +3343,7 @@ static inline Point3D Normalized(const Point3D& vec) {
 template <typename LightType, typename LightingType>
 FilterNodeLightingSoftware<LightType, LightingType>::FilterNodeLightingSoftware(
     const char* aTypeName)
-    : mLock("FilterNodeLightingSoftware"),
-      mSurfaceScale(0)
+    : mSurfaceScale(0)
 #if defined(MOZILLA_INTERNAL_API) && defined(NS_BUILD_REFCNT_LOGGING)
       ,
       mTypeName(aTypeName)
@@ -3621,8 +3615,6 @@ FilterNodeLightingSoftware<LightType, LightingType>::DoRender(
   uint8_t* targetData = targetMap.GetData();
   int32_t targetStride = targetMap.GetStride();
 
-  MutexAutoLock lock(mLock);
-
   uint32_t lightColor = ColorToBGRA(mColor);
   mLight.Prepare();
   mLighting.Prepare();
@@ -3716,7 +3708,11 @@ uint32_t SpecularLightingSoftware::LightPixel(const Point3D& aNormal,
                                               const Point3D& aVectorToLight,
                                               uint32_t aColor) {
   Point3D vectorToEye(0, 0, 1);
-  Point3D halfwayVector = Normalized(aVectorToLight + vectorToEye);
+  Point3D halfwayVector = aVectorToLight + vectorToEye;
+  Float halfwayLength = halfwayVector.Length();
+  if (halfwayLength > 0) {
+    halfwayVector /= halfwayLength;
+  }
   Float dotNH = aNormal.DotProduct(halfwayVector);
   uint16_t dotNHi =
       uint16_t(dotNH * (dotNH >= 0) * (1 << PowCache::sInputIntPrecisionBits));

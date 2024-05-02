@@ -4,8 +4,8 @@
 
 "use strict";
 
-const { AddonTestUtils } = ChromeUtils.import(
-  "resource://testing-common/AddonTestUtils.jsm"
+const { AddonTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/AddonTestUtils.sys.mjs"
 );
 
 AddonTestUtils.initMochitest(this);
@@ -13,6 +13,19 @@ AddonTestUtils.initMochitest(this);
 // ----------------------------------------------------------------------------
 // Tests installing an unsigned add-on by navigating directly to the url
 function test() {
+  waitForExplicitFinish();
+  SpecialPowers.pushPrefEnv(
+    {
+      set: [
+        // Relax the user input requirements while running this test.
+        ["xpinstall.userActivation.required", false],
+      ],
+    },
+    runTest
+  );
+}
+
+function runTest() {
   Harness.installConfirmCallback = confirm_install;
   Harness.installEndedCallback = install_ended;
   Harness.installsCompletedCallback = finish_test;
@@ -20,7 +33,10 @@ function test() {
 
   gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser, "about:blank");
   BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser).then(() => {
-    BrowserTestUtils.loadURI(gBrowser, TESTROOT + "amosigned.xpi");
+    BrowserTestUtils.startLoadingURIString(
+      gBrowser,
+      TESTROOT + "amosigned.xpi"
+    );
   });
 }
 

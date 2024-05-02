@@ -48,12 +48,15 @@ class MediaTransportHandler {
   explicit MediaTransportHandler(nsISerialEventTarget* aCallbackThread)
       : mCallbackThread(aCallbackThread) {}
 
+  // Exposed so we can synchronously validate ICE servers from PeerConnection
   static nsresult ConvertIceServers(
       const nsTArray<dom::RTCIceServer>& aIceServers,
       std::vector<NrIceStunServer>* aStunServers,
       std::vector<NrIceTurnServer>* aTurnServers);
 
   typedef MozPromise<dom::Sequence<nsString>, nsresult, true> IceLogPromise;
+
+  virtual void Initialize() {}
 
   // There's a wrinkle here; the ICE logging is not separated out by
   // MediaTransportHandler. These are a little more like static methods, but
@@ -63,8 +66,9 @@ class MediaTransportHandler {
   virtual void EnterPrivateMode() = 0;
   virtual void ExitPrivateMode() = 0;
 
-  virtual nsresult CreateIceCtx(const std::string& aName,
-                                const nsTArray<dom::RTCIceServer>& aIceServers,
+  virtual void CreateIceCtx(const std::string& aName) = 0;
+
+  virtual nsresult SetIceConfig(const nsTArray<dom::RTCIceServer>& aIceServers,
                                 dom::RTCIceTransportPolicy aIcePolicy) = 0;
 
   // We will probably be able to move the proxy lookup stuff into

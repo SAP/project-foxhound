@@ -19,7 +19,8 @@
 #ifndef MODULES_AUDIO_CODING_CODECS_ILBC_MAIN_SOURCE_CB_SEARCH_CORE_H_
 #define MODULES_AUDIO_CODING_CODECS_ILBC_MAIN_SOURCE_CB_SEARCH_CORE_H_
 
-#include "modules/audio_coding/codecs/ilbc/defines.h"
+#include <stddef.h>
+#include <stdint.h>
 
 void WebRtcIlbcfix_CbSearchCore(
     int32_t* cDot,               /* (i) Cross Correlation */
@@ -32,9 +33,9 @@ void WebRtcIlbcfix_CbSearchCore(
     size_t* bestIndex,           /* (o) Index that corresponds to
                                            maximum criteria (in this
                                            vector) */
-    int32_t* bestCrit, /* (o) Value of critera for the
-                                chosen index */
-    int16_t* bestCritSh); /* (o) The domain of the chosen
-                                   criteria */
+    int32_t* bestCrit,           /* (o) Value of critera for the
+                                          chosen index */
+    int16_t* bestCritSh);        /* (o) The domain of the chosen
+                                          criteria */
 
 #endif

@@ -2,9 +2,8 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import
-import sys
 import os
+import sys
 
 import mozharness
 
@@ -18,7 +17,7 @@ config = {
     "tooltool_manifest_file": "win.manifest",
     "exes": {
         "gittool.py": [sys.executable, os.path.join(external_tools_path, "gittool.py")],
-        "python2.7": "c:\\mozilla-build\\python\\python.exe",
+        "python3": "c:\\mozilla-build\\python\\python3.exe",
     },
     "dump_syms_binary": "{}/dump_syms/dump_syms.exe".format(
         os.environ["MOZ_FETCHES_DIR"]
@@ -48,5 +47,6 @@ config = {
             "{_VSPATH}/SDK/lib/10.0.17134.0/ucrt/x86;"
             "{_VSPATH}/SDK/lib/10.0.17134.0/um/x86;"
         ).format(_VSPATH=VSPATH),
+        "CFLAGS": ("-m32"),
     },
 }

@@ -38,7 +38,7 @@ mozilla::dom::ValidityState* nsIConstraintValidation::Validity() {
 }
 
 bool nsIConstraintValidation::CheckValidity(nsIContent& aEventTarget,
-                                            bool* aEventDefaultAction) {
+                                            bool* aEventDefaultAction) const {
   if (!IsCandidateForConstraintValidation() || IsValid()) {
     return true;
   }
@@ -85,11 +85,11 @@ bool nsIConstraintValidation::ReportValidity() {
   element->DispatchEvent(*event);
 
   auto* inputElement = HTMLInputElement::FromNode(element);
-  if (inputElement && inputElement->State().HasState(NS_EVENT_STATE_FOCUS)) {
+  if (inputElement && inputElement->State().HasState(ElementState::FOCUS)) {
     inputElement->UpdateValidityUIBits(true);
+    inputElement->UpdateValidityElementStates(true);
   }
 
-  element->UpdateState(true);
   return false;
 }
 
@@ -111,8 +111,7 @@ void nsIConstraintValidation::SetValidityState(ValidityStateType aState,
     if (HTMLFormElement* form = formCtrl->GetForm()) {
       form->UpdateValidity(IsValid());
     }
-    HTMLFieldSetElement* fieldSet = formCtrl->GetFieldSet();
-    if (fieldSet) {
+    if (HTMLFieldSetElement* fieldSet = formCtrl->GetFieldSet()) {
       fieldSet->UpdateValidity(IsValid());
     }
   }

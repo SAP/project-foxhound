@@ -18,8 +18,11 @@
 #include "nsPIDOMWindow.h"
 #include "xpcAccessibilityService.h"
 
-namespace mozilla {
-namespace dom {
+#ifdef FUZZING_SNAPSHOT
+#  include "mozilla/dom/ContentChild.h"
+#endif
+
+namespace mozilla::dom {
 
 /* static */
 void FuzzingFunctions::GarbageCollect(const GlobalObject&) {
@@ -57,6 +60,13 @@ void FuzzingFunctions::MemoryPressure(const GlobalObject&) {
 }
 
 /* static */
+void FuzzingFunctions::SignalIPCReady(const GlobalObject&) {
+#ifdef FUZZING_SNAPSHOT
+  ContentChild::GetSingleton()->SendSignalFuzzingReady();
+#endif
+}
+
+/* static */
 void FuzzingFunctions::EnableAccessibility(const GlobalObject&,
                                            ErrorResult& aRv) {
   RefPtr<nsIAccessibilityService> a11y;
@@ -85,7 +95,6 @@ static const ModifierKey kModifierKeys[] = {
     ModifierKey(MODIFIER_CONTROL, KEY_NAME_INDEX_Control, false),
     ModifierKey(MODIFIER_FN, KEY_NAME_INDEX_Fn, false),
     ModifierKey(MODIFIER_META, KEY_NAME_INDEX_Meta, false),
-    ModifierKey(MODIFIER_OS, KEY_NAME_INDEX_OS, false),
     ModifierKey(MODIFIER_SHIFT, KEY_NAME_INDEX_Shift, false),
     ModifierKey(MODIFIER_SYMBOL, KEY_NAME_INDEX_Symbol, false),
     ModifierKey(MODIFIER_CAPSLOCK, KEY_NAME_INDEX_CapsLock, true),
@@ -231,7 +240,6 @@ void FuzzingFunctions::SynthesizeKeyboardEvents(
   SET_MODIFIER(ModifierFn, MODIFIER_FN)
   SET_MODIFIER(ModifierFnLock, MODIFIER_FNLOCK)
   SET_MODIFIER(ModifierNumLock, MODIFIER_NUMLOCK)
-  SET_MODIFIER(ModifierOS, MODIFIER_OS)
   SET_MODIFIER(ModifierScrollLock, MODIFIER_SCROLLLOCK)
   SET_MODIFIER(ModifierSymbol, MODIFIER_SYMBOL)
   SET_MODIFIER(ModifierSymbolLock, MODIFIER_SYMBOLLOCK)
@@ -377,5 +385,4 @@ void FuzzingFunctions::SynthesizeKeyboardEvents(
   // to want
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

@@ -2,22 +2,23 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { FxAccounts } = ChromeUtils.import(
-  "resource://gre/modules/FxAccounts.jsm"
+const { FxAccounts } = ChromeUtils.importESModule(
+  "resource://gre/modules/FxAccounts.sys.mjs"
 );
-const { Weave } = ChromeUtils.import("resource://services-sync/main.js");
+const { Weave } = ChromeUtils.importESModule(
+  "resource://services-sync/main.sys.mjs"
+);
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  EventEmitter: "resource://gre/modules/EventEmitter.jsm",
-  FxAccountsPairingFlow: "resource://gre/modules/FxAccountsPairing.jsm",
+ChromeUtils.defineESModuleGetters(this, {
+  EventEmitter: "resource://gre/modules/EventEmitter.sys.mjs",
+  FxAccountsPairingFlow: "resource://gre/modules/FxAccountsPairing.sys.mjs",
 });
-const { require } = ChromeUtils.import(
-  "resource://devtools/shared/loader/Loader.jsm",
-  {}
+
+const { require } = ChromeUtils.importESModule(
+  "resource://devtools/shared/loader/Loader.sys.mjs"
 );
 const QR = require("devtools/shared/qrcode/index");
 
@@ -35,18 +36,18 @@ const MIN_PAIRING_LOADING_TIME_MS = 1000;
 var gFxaPairDeviceDialog = {
   init() {
     this._resetBackgroundQR();
-    FxAccounts.config
-      .promiseConnectDeviceURI("pairing-modal")
-      .then(connectURI => {
-        document
-          .getElementById("connect-another-device-link")
-          .setAttribute("href", connectURI);
-      });
-    // We let the modal show itself before eventually showing a master-password dialog later.
+    // We let the modal show itself before eventually showing a primary-password dialog later.
     Services.tm.dispatchToMainThread(() => this.startPairingFlow());
   },
 
   uninit() {
+    // When the modal closes we want to remove any query params
+    // To prevent refreshes/restores from reopening the dialog
+    const browser = window.docShell.chromeEventHandler;
+    browser.loadURI(Services.io.newURI("about:preferences#sync"), {
+      triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
+    });
+
     this.teardownListeners();
     this._emitter.emit("view:Closed");
   },
@@ -62,6 +63,10 @@ var gFxaPairDeviceDialog = {
       if (!Weave.Utils.ensureMPUnlocked()) {
         throw new Error("Master-password locked.");
       }
+      // To keep consistent with our accounts.firefox.com counterpart
+      // we restyle the parent dialog this is contained in
+      this._styleParentDialog();
+
       const [, uri] = await Promise.all([
         new Promise(res => setTimeout(res, MIN_PAIRING_LOADING_TIME_MS)),
         FxAccountsPairingFlow.start({ emitter: this._emitter }),
@@ -78,6 +83,21 @@ var gFxaPairDeviceDialog = {
     }
   },
 
+  _styleParentDialog() {
+    // Since the dialog title is in the above document, we can't query the
+    // document in this level and need to go up one
+    let dialogParent = window.parent.document;
+
+    // To allow the firefox icon to go over the dialog
+    let dialogBox = dialogParent.querySelector(".dialogBox");
+    dialogBox.style.overflow = "visible";
+    dialogBox.style.borderRadius = "12px";
+
+    let dialogTitle = dialogParent.querySelector(".dialogTitleBar");
+    dialogTitle.style.borderBottom = "none";
+    dialogTitle.classList.add("fxaPairDeviceIcon");
+  },
+
   _resetBackgroundQR() {
     // The text we encode doesn't really matter as it is un-scannable (blurry and very transparent).
     const imgData = QR.encodeToDataURI(
@@ -90,7 +110,7 @@ var gFxaPairDeviceDialog = {
   },
 
   onError(err) {
-    Cu.reportError(err);
+    console.error(err);
     this.teardownListeners();
     document
       .getElementById("qrWrapper")
@@ -99,7 +119,7 @@ var gFxaPairDeviceDialog = {
 
   _switchToUrl(url) {
     const browser = window.docShell.chromeEventHandler;
-    browser.loadURI(url, {
+    browser.fixupAndLoadURIString(url, {
       triggeringPrincipal: Services.scriptSecurityManager.createNullPrincipal(
         {}
       ),

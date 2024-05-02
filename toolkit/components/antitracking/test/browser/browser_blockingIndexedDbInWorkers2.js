@@ -1,5 +1,3 @@
-/* import-globals-from antitracking_head.js */
-
 requestLongerTimeout(6);
 
 AntiTracking.runTestInNormalAndPrivateMode(
@@ -31,7 +29,7 @@ AntiTracking.runTestInNormalAndPrivateMode(
     ok(worker, "Worker has been created");
 
     await new Promise((resolve, reject) => {
-      worker.onmessage = function(e) {
+      worker.onmessage = function (e) {
         if (e.data) {
           resolve();
         } else {
@@ -39,7 +37,7 @@ AntiTracking.runTestInNormalAndPrivateMode(
         }
       };
 
-      worker.onerror = function(e) {
+      worker.onerror = function (e) {
         reject();
       };
     });
@@ -74,7 +72,7 @@ AntiTracking.runTestInNormalAndPrivateMode(
     ok(worker, "Worker has been created");
 
     await new Promise((resolve, reject) => {
-      worker.onmessage = function(e) {
+      worker.onmessage = function (e) {
         if (e.data) {
           resolve();
         } else {
@@ -82,7 +80,7 @@ AntiTracking.runTestInNormalAndPrivateMode(
         }
       };
 
-      worker.onerror = function(e) {
+      worker.onerror = function (e) {
         reject();
       };
     });
@@ -106,7 +104,7 @@ AntiTracking.runTestInNormalAndPrivateMode(
     ok(worker, "Worker has been created");
 
     await new Promise((resolve, reject) => {
-      worker.onmessage = function(e) {
+      worker.onmessage = function (e) {
         if (e.data) {
           resolve();
         } else {
@@ -114,7 +112,7 @@ AntiTracking.runTestInNormalAndPrivateMode(
         }
       };
 
-      worker.onerror = function(e) {
+      worker.onerror = function (e) {
         reject();
       };
     });
@@ -128,7 +126,7 @@ AntiTracking.runTestInNormalAndPrivateMode(
     ok(worker, "Worker has been created");
 
     await new Promise((resolve, reject) => {
-      worker.onmessage = function(e) {
+      worker.onmessage = function (e) {
         if (e.data) {
           resolve();
         } else {
@@ -136,7 +134,7 @@ AntiTracking.runTestInNormalAndPrivateMode(
         }
       };
 
-      worker.onerror = function(e) {
+      worker.onerror = function (e) {
         reject();
       };
     });
@@ -148,7 +146,7 @@ AntiTracking.runTestInNormalAndPrivateMode(
       );
     });
   },
-  null,
+  [["dom.indexedDB.hide_in_pbmode.enabled", false]],
   false,
   false
 );

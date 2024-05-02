@@ -14,7 +14,7 @@ class TestDeletionRequestPing(FOGTestCase):
     def test_deletion_request_ping_across_sessions(self):
         """Test the "deletion-request" ping behaviour across sessions."""
 
-        self.search_in_new_tab("mozilla firefox")
+        self.navigate_in_new_tab("about:glean")
 
         ping1 = self.wait_for_ping(
             self.disable_telemetry,
@@ -31,21 +31,24 @@ class TestDeletionRequestPing(FOGTestCase):
 
         self.restart_browser()
 
-        self.assertEqual(self.fog_ping_server.pings[-1], ping1)
+        # We'd like to assert that a "deletion-request" is the last ping we
+        # ever receive, but it's possible there's another ping on another
+        # thread that gets sent after the sync-sent "deletion-request".
+        # (This is fine, it'll be deleted within 28 days on the server.)
+        # self.assertEqual(self.fog_ping_server.pings[-1], ping1)
 
         self.enable_telemetry()
         self.restart_browser()
 
         debug_tag = "my-test-tag"
         tagging_script = """\
-        const {{ Services }} = ChromeUtils.import("resource://gre/modules/Services.jsm");
         Services.fog.setTagPings("{}");
         """.format(
             debug_tag
         )
         with self.marionette.using_context(self.marionette.CONTEXT_CHROME):
             self.marionette.execute_script(textwrap.dedent(tagging_script))
-        self.search_in_new_tab("python unittest")
+        self.navigate_in_new_tab("about:glean")
 
         ping2 = self.wait_for_ping(
             self.disable_telemetry,

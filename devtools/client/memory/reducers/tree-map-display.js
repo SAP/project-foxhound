@@ -7,16 +7,16 @@
 const {
   actions,
   treeMapDisplays,
-} = require("devtools/client/memory/constants");
+} = require("resource://devtools/client/memory/constants.js");
 const DEFAULT_TREE_MAP_DISPLAY = treeMapDisplays.coarseType;
 
 const handlers = Object.create(null);
 
-handlers[actions.SET_TREE_MAP_DISPLAY] = function(_, { display }) {
+handlers[actions.SET_TREE_MAP_DISPLAY] = function (_, { display }) {
   return display;
 };
 
-module.exports = function(state = DEFAULT_TREE_MAP_DISPLAY, action) {
+module.exports = function (state = DEFAULT_TREE_MAP_DISPLAY, action) {
   const handler = handlers[action.type];
   return handler ? handler(state, action) : state;
 };

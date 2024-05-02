@@ -18,28 +18,34 @@ const EXAMPLE_URI =
   "test/browser/test-console.html";
 
 /* global gToolbox */
-/* import-globals-from ../../../framework/browser-toolbox/test/helpers-browser-toolbox.js */
 Services.scriptloader.loadSubScript(
   "chrome://mochitests/content/browser/devtools/client/framework/browser-toolbox/test/helpers-browser-toolbox.js",
   this
 );
 
-add_task(async function() {
-  await pushPref("devtools.browsertoolbox.fission", true);
+add_task(async function () {
   // Needed for the invokeInTab() function below
   await pushPref("security.allow_parent_unrestricted_js_loads", true);
 
   await addTab(TEST_URI);
-  const ToolboxTask = await initBrowserToolboxTask({
-    enableContentMessages: true,
+  const ToolboxTask = await initBrowserToolboxTask();
+  await ToolboxTask.importFunctions({
+    findMessagesVirtualized,
+    findMessageVirtualizedByType,
+    waitUntil,
   });
-  await ToolboxTask.importFunctions({ findMessages, findMessage, waitUntil });
 
   // Make sure the data: URL message appears in the OBT.
   await ToolboxTask.spawn(null, async () => {
     await gToolbox.selectTool("webconsole");
     const hud = gToolbox.getCurrentPanel().hud;
-    await waitUntil(() => findMessage(hud, "Data Message"));
+    await waitUntil(() =>
+      findMessageVirtualizedByType({
+        hud,
+        text: "Data Message",
+        typeSelector: ".console-api",
+      })
+    );
   });
   ok(true, "First message appeared in toolbox");
 
@@ -49,7 +55,13 @@ add_task(async function() {
   // Make sure the example.com message appears in the OBT.
   await ToolboxTask.spawn(null, async () => {
     const hud = gToolbox.getCurrentPanel().hud;
-    await waitUntil(() => findMessage(hud, "stringLog"));
+    await waitUntil(() =>
+      findMessageVirtualizedByType({
+        hud,
+        text: "stringLog",
+        typeSelector: ".console-api",
+      })
+    );
   });
   ok(true, "New message appeared in toolbox");
 

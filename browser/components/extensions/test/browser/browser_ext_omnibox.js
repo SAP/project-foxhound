@@ -2,15 +2,34 @@
 /* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
-const { UrlbarTestUtils } = ChromeUtils.import(
-  "resource://testing-common/UrlbarTestUtils.jsm"
+const { UrlbarTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/UrlbarTestUtils.sys.mjs"
 );
 
-add_task(async function() {
+const keyword = "VeryUniqueKeywordThatDoesNeverMatchAnyTestUrl";
+
+// This test does a lot. To ease debugging, we'll sometimes print the lines.
+function getCallerLines() {
+  const lines = Array.from(
+    new Error().stack.split("\n").slice(1),
+    line => /browser_ext_omnibox.js:(\d+):\d+$/.exec(line)?.[1]
+  );
+  return "Caller lines: " + lines.filter(lineno => lineno != null).join(", ");
+}
+
+add_setup(async () => {
+  // Override default timeout of 3000 ms, to make sure that the test progresses
+  // reasonably quickly. See comment in "function waitForResult" below.
+  // In this whole test, we respond ASAP to omnibox.onInputChanged events, so
+  // it should be safe to choose a relatively low timeout.
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.urlbar.extension.omnibox.timeout", 500]],
+  });
+});
+
+add_task(async function () {
   // This keyword needs to be unique to prevent history entries from unrelated
   // tests from appearing in the suggestions list.
-  let keyword = "VeryUniqueKeywordThatDoesNeverMatchAnyTestUrl";
-
   let extension = ExtensionTestUtils.loadExtension({
     manifest: {
       omnibox: {
@@ -18,7 +37,7 @@ add_task(async function() {
       },
     },
 
-    background: function() {
+    background: function () {
       browser.omnibox.onInputStarted.addListener(() => {
         browser.test.sendMessage("on-input-started-fired");
       });
@@ -45,6 +64,10 @@ add_task(async function() {
           text,
           disposition,
         });
+      });
+
+      browser.omnibox.onDeleteSuggestion.addListener(text => {
+        browser.test.sendMessage("on-delete-suggestion-fired", { text });
       });
 
       browser.test.onMessage.addListener((msg, data) => {
@@ -76,9 +99,14 @@ add_task(async function() {
     },
   });
 
-  async function expectEvent(event, expected = {}) {
+  async function expectEvent(event, expected) {
+    info(`Waiting for event: ${event} (${getCallerLines()})`);
     let actual = await extension.awaitMessage(event);
-    if (expected.text) {
+    if (!expected) {
+      ok(true, `Expected "${event} to have fired."`);
+      return;
+    }
+    if (expected.text != undefined) {
       is(
         actual.text,
         expected.text,
@@ -94,8 +122,21 @@ add_task(async function() {
     }
   }
 
-  async function waitForResult(index, searchString) {
+  async function waitForResult(index) {
+    info(`waitForResult (${getCallerLines()})`);
+    // When omnibox.onInputChanged is triggered, the "startQuery" method in
+    // UrlbarProviderOmnibox.sys.mjs's startQuery will wait for a fixed amount
+    // of time before releasing the promise, which we observe by the call to
+    // UrlbarTestUtils here.
+    //
+    // To reduce the time that the test takes, we lower this in add_setup, by
+    // overriding the browser.urlbar.extension.omnibox.timeout preference.
+    //
+    // While this is not specific to the "waitForResult" test helper here, the
+    // issue is only observed in waitForResult because it is usually the first
+    // method called after observing "on-input-changed-fired".
     let result = await UrlbarTestUtils.getDetailsOfResultAt(window, index);
+
     // Ensure the addition is complete, for proper mouse events on the entries.
     await new Promise(resolve =>
       window.requestIdleCallback(resolve, { timeout: 1000 })
@@ -195,6 +236,28 @@ add_task(async function() {
     // The active session should cancel if the input blurs.
     gURLBar.blur();
     await expectEvent("on-input-cancelled-fired");
+  }
+
+  async function testSuggestionDeletion() {
+    extension.sendMessage("set-suggestions", {
+      suggestions: [{ content: "a", description: "select a", deletable: true }],
+    });
+    await extension.awaitMessage("suggestions-set");
+
+    gURLBar.focus();
+
+    EventUtils.sendString(keyword);
+    EventUtils.sendString(" select a");
+
+    await expectEvent("on-input-changed-fired");
+
+    // Select the suggestion
+    await EventUtils.synthesizeKey("KEY_ArrowDown");
+
+    // Delete the suggestion
+    await EventUtils.synthesizeKey("KEY_Delete", { shiftKey: true });
+
+    await expectEvent("on-delete-suggestion-fired", { text: "select a" });
   }
 
   async function testHeuristicResult(expectedText, setDefaultSuggestion) {
@@ -300,6 +363,8 @@ add_task(async function() {
 
   await testInputEvents();
 
+  await testSuggestionDeletion();
+
   // Test the heuristic result with default suggestions.
   await testHeuristicResult(
     "Generated extension",
@@ -367,4 +432,73 @@ add_task(async function() {
 
   await extension2.unload();
   await extension.unload();
+});
+
+add_task(async function test_omnibox_event_page() {
+  await SpecialPowers.pushPrefEnv({
+    set: [["extensions.eventPages.enabled", true]],
+  });
+
+  let extension = ExtensionTestUtils.loadExtension({
+    useAddonManager: "permanent",
+    manifest: {
+      browser_specific_settings: { gecko: { id: "eventpage@omnibox" } },
+      omnibox: {
+        keyword: keyword,
+      },
+      background: { persistent: false },
+    },
+    background() {
+      browser.omnibox.onInputStarted.addListener(() => {
+        browser.test.sendMessage("onInputStarted");
+      });
+      browser.omnibox.onInputEntered.addListener(() => {});
+      browser.omnibox.onInputChanged.addListener(() => {});
+      browser.omnibox.onInputCancelled.addListener(() => {});
+      browser.omnibox.onDeleteSuggestion.addListener(() => {});
+      browser.test.sendMessage("ready");
+    },
+  });
+
+  const EVENTS = [
+    "onInputStarted",
+    "onInputEntered",
+    "onInputChanged",
+    "onInputCancelled",
+    "onDeleteSuggestion",
+  ];
+
+  await extension.startup();
+  await extension.awaitMessage("ready");
+  for (let event of EVENTS) {
+    assertPersistentListeners(extension, "omnibox", event, {
+      primed: false,
+    });
+  }
+
+  // test events waken background
+  await extension.terminateBackground();
+  for (let event of EVENTS) {
+    assertPersistentListeners(extension, "omnibox", event, {
+      primed: true,
+    });
+  }
+
+  // Activate the keyword by typing a space.
+  // Expect onInputStarted to fire.
+  gURLBar.focus();
+  gURLBar.value = keyword;
+  EventUtils.sendString(" ");
+
+  await extension.awaitMessage("ready");
+  await extension.awaitMessage("onInputStarted");
+  ok(true, "persistent event woke background");
+  for (let event of EVENTS) {
+    assertPersistentListeners(extension, "omnibox", event, {
+      primed: false,
+    });
+  }
+
+  await extension.unload();
+  await SpecialPowers.popPrefEnv();
 });

@@ -8,10 +8,11 @@
 #include "mozilla/Telemetry.h"
 #include "nsContentUtils.h"
 #include "nsIAsyncVerifyRedirectCallback.h"
-#include "nsIChannel.h"
+#include "nsIHttpChannel.h"
 #include "nsILoadGroup.h"
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsIRedirectResultListener.h"
+#include "nsNetUtil.h"
 
 // Change this if we want to cancel and remove the associated preload on removal
 // of all <link rel=preload> tags from the tree.
@@ -79,8 +80,8 @@ NS_IMETHODIMP PreloaderBase::RedirectSink::AsyncOnChannelRedirect(
   return NS_OK;
 }
 
-NS_IMETHODIMP PreloaderBase::RedirectSink::OnRedirectResult(bool proceeding) {
-  if (proceeding && mRedirectChannel) {
+NS_IMETHODIMP PreloaderBase::RedirectSink::OnRedirectResult(nsresult status) {
+  if (NS_SUCCEEDED(status) && mRedirectChannel) {
     mPreloader->mChannel = std::move(mRedirectChannel);
   } else {
     mRedirectChannel = nullptr;
@@ -89,7 +90,7 @@ NS_IMETHODIMP PreloaderBase::RedirectSink::OnRedirectResult(bool proceeding) {
   if (mCallbacks) {
     nsCOMPtr<nsIRedirectResultListener> sink(do_GetInterface(mCallbacks));
     if (sink) {
-      return sink->OnRedirectResult(proceeding);
+      return sink->OnRedirectResult(status);
     }
   }
 
@@ -123,7 +124,8 @@ void PreloaderBase::AddLoadBackgroundFlag(nsIChannel* aChannel) {
 }
 
 void PreloaderBase::NotifyOpen(const PreloadHashKey& aKey,
-                               dom::Document* aDocument, bool aIsPreload) {
+                               dom::Document* aDocument, bool aIsPreload,
+                               bool aIsModule) {
   if (aDocument) {
     DebugOnly<bool> alreadyRegistered =
         aDocument->Preloads().RegisterPreload(aKey, this);
@@ -136,7 +138,10 @@ void PreloaderBase::NotifyOpen(const PreloadHashKey& aKey,
   mKey = aKey;
   mIsUsed = !aIsPreload;
 
-  if (!mIsUsed && !mUsageTimer) {
+  // Start usage timer for rel="preload", but not for rel="modulepreload"
+  // because modules may be loaded for functionality the user does not
+  // immediately interact with after page load (e.g. a docs search box)
+  if (!aIsModule && !mIsUsed && !mUsageTimer) {
     auto callback = MakeRefPtr<UsageTimer>(this, aDocument);
     NS_NewTimerWithCallback(getter_AddRefs(mUsageTimer), callback, 10000,
                             nsITimer::TYPE_ONE_SHOT);
@@ -146,8 +151,9 @@ void PreloaderBase::NotifyOpen(const PreloadHashKey& aKey,
 }
 
 void PreloaderBase::NotifyOpen(const PreloadHashKey& aKey, nsIChannel* aChannel,
-                               dom::Document* aDocument, bool aIsPreload) {
-  NotifyOpen(aKey, aDocument, aIsPreload);
+                               dom::Document* aDocument, bool aIsPreload,
+                               bool aIsModule) {
+  NotifyOpen(aKey, aDocument, aIsPreload, aIsModule);
   mChannel = aChannel;
 
   nsCOMPtr<nsIInterfaceRequestor> callbacks;
@@ -156,7 +162,8 @@ void PreloaderBase::NotifyOpen(const PreloadHashKey& aKey, nsIChannel* aChannel,
   mChannel->SetNotificationCallbacks(sink);
 }
 
-void PreloaderBase::NotifyUsage(LoadBackground aLoadBackground) {
+void PreloaderBase::NotifyUsage(dom::Document* aDocument,
+                                LoadBackground aLoadBackground) {
   if (!mIsUsed && mChannel && aLoadBackground == LoadBackground::Drop) {
     nsLoadFlags loadFlags;
     mChannel->GetLoadFlags(&loadFlags);
@@ -185,6 +192,9 @@ void PreloaderBase::NotifyUsage(LoadBackground aLoadBackground) {
   mIsUsed = true;
   ReportUsageTelemetry();
   CancelUsageTimer();
+  if (mIsEarlyHintsPreload) {
+    aDocument->Preloads().SetEarlyHintUsed();
+  }
 }
 
 void PreloaderBase::RemoveSelf(dom::Document* aDocument) {
@@ -253,12 +263,6 @@ void PreloaderBase::NotifyStop(nsresult aStatus) {
   mChannel = nullptr;
 }
 
-void PreloaderBase::NotifyValidating() { mOnStopStatus.reset(); }
-
-void PreloaderBase::NotifyValidated(nsresult aStatus) {
-  NotifyStop(nullptr, aStatus);
-}
-
 void PreloaderBase::AddLinkPreloadNode(nsINode* aNode) {
   if (mOnStopStatus) {
     return NotifyNodeEvent(aNode);
@@ -282,7 +286,8 @@ void PreloaderBase::RemoveLinkPreloadNode(nsINode* aNode) {
     RemoveSelf(aNode->OwnerDoc());
 
     if (mChannel) {
-      mChannel->Cancel(NS_BINDING_ABORTED);
+      mChannel->CancelWithReason(NS_BINDING_ABORTED,
+                                 "PreloaderBase::RemoveLinkPreloadNode"_ns);
     }
   }
 }

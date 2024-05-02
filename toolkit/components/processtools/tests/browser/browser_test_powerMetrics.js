@@ -21,13 +21,15 @@ const kNS_PER_MS = 1000000;
 
 function printProcInfo(procInfo) {
   info(
-    `  pid: ${procInfo.pid}, type = parent, cpu time = ${procInfo.cpuTime /
-      kNS_PER_MS}ms`
+    `  pid: ${procInfo.pid}, type = parent, cpu time = ${
+      procInfo.cpuTime / kNS_PER_MS
+    }ms`
   );
   for (let child of procInfo.children) {
     info(
-      `  pid: ${child.pid}, type = ${child.type}, cpu time = ${child.cpuTime /
-        kNS_PER_MS}ms`
+      `  pid: ${child.pid}, type = ${child.type}, cpu time = ${
+        child.cpuTime / kNS_PER_MS
+      }ms`
     );
   }
 }
@@ -109,12 +111,10 @@ add_task(async () => {
   let cpuTimeByType = {},
     gpuTimeByType = {};
   for (let label of kGleanProcessTypeLabels) {
-    cpuTimeByType[label] = Glean.power.cpuTimePerProcessTypeMs[
-      label
-    ].testGetValue();
-    gpuTimeByType[label] = Glean.power.gpuTimePerProcessTypeMs[
-      label
-    ].testGetValue();
+    cpuTimeByType[label] =
+      Glean.power.cpuTimePerProcessTypeMs[label].testGetValue();
+    gpuTimeByType[label] =
+      Glean.power.gpuTimePerProcessTypeMs[label].testGetValue();
   }
   let totalCpuTime = Glean.power.totalCpuTimeMs.testGetValue();
   let totalGpuTime = Glean.power.totalGpuTimeMs.testGetValue();
@@ -161,8 +161,8 @@ add_task(async () => {
     .forEach(label => {
       Assert.strictEqual(
         cpuTimeByType[label],
-        undefined,
-        `no media was played so the CPU time for ${label} should be undefined`
+        null,
+        `no media was played so the CPU time for ${label} should be null`
       );
     });
 
@@ -255,21 +255,21 @@ add_task(async () => {
   // played in a background tab.
   Assert.strictEqual(
     cpuTimeByType["web.background-perceivable"],
-    undefined,
+    null,
     "CPU time should only be recorded in the web.background-perceivable label"
   );
 
-  // __other__ should be undefined, if it is not, we have a missing label in the metrics.yaml file.
+  // __other__ should be null, if it is not, we have a missing label in the metrics.yaml file.
   Assert.strictEqual(
     cpuTimeByType.__other__,
-    undefined,
+    null,
     "no CPU time should be recorded in the __other__ label"
   );
 
   info("GPU time for each label:");
   let totalGpuTimeByType = undefined;
   for (let label of kGleanProcessTypeLabels) {
-    if (gpuTimeByType[label] !== undefined) {
+    if (gpuTimeByType[label] !== null) {
       totalGpuTimeByType = (totalGpuTimeByType || 0) + gpuTimeByType[label];
     }
     info(`  ${label} = ${gpuTimeByType[label]}`);
@@ -281,10 +281,120 @@ add_task(async () => {
     "The sum of GPU time used by all process types should match totalGpuTimeMs"
   );
 
-  // __other__ should be undefined, if it is not, we have a missing label in the metrics.yaml file.
+  // __other__ should be null, if it is not, we have a missing label in the metrics.yaml file.
   Assert.strictEqual(
     gpuTimeByType.__other__,
-    undefined,
+    null,
     "no GPU time should be recorded in the __other__ label"
   );
+
+  // Now test per-thread CPU time.
+  // We don't test parentActive as the user is not marked active on infra.
+  let processTypes = [
+    "parentInactive",
+    "contentBackground",
+    "contentForeground",
+  ];
+  if (beforeProcInfo.children.some(p => p.type == "gpu")) {
+    processTypes.push("gpuProcess");
+  }
+  // The list of accepted labels is not accessible to the JS code, so test only the main thread.
+  const kThreadName = "geckomain";
+  if (AppConstants.NIGHTLY_BUILD) {
+    for (let processType of processTypes) {
+      Assert.greater(
+        Glean.powerCpuMsPerThread[processType][kThreadName].testGetValue(),
+        0,
+        `some CPU time should have been recorded for the ${processType} main thread`
+      );
+      Assert.greater(
+        Glean.powerWakeupsPerThread[processType][kThreadName].testGetValue(),
+        0,
+        `some thread wake ups should have been recorded for the ${processType} main thread`
+      );
+    }
+  } else {
+    // We are not recording per thread CPU use outside of the Nightly channel.
+    for (let processType of processTypes) {
+      Assert.equal(
+        Glean.powerCpuMsPerThread[processType][kThreadName].testGetValue(),
+        null,
+        `no CPU time should have been recorded for the ${processType} main thread`
+      );
+      Assert.equal(
+        Glean.powerWakeupsPerThread[processType][kThreadName].testGetValue(),
+        null,
+        `no thread wake ups should have been recorded for the ${processType} main thread`
+      );
+    }
+  }
+});
+
+add_task(async function test_tracker_power() {
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["privacy.trackingprotection.enabled", false],
+      ["privacy.trackingprotection.annotate_channels", true],
+    ],
+  });
+  let initialValues = [];
+  for (let trackerType of [
+    "ad",
+    "analytics",
+    "cryptomining",
+    "fingerprinting",
+    "social",
+    "unknown",
+  ]) {
+    initialValues[trackerType] =
+      Glean.power.cpuTimePerTrackerTypeMs[trackerType].testGetValue() || 0;
+  }
+
+  await BrowserTestUtils.withNewTab(
+    GetTestWebBasedURL("dummy.html"),
+    async () => {
+      // Load a tracker in a subframe, as we only record CPU time used by third party trackers.
+      await SpecialPowers.spawn(
+        gBrowser.selectedTab.linkedBrowser,
+        [
+          GetTestWebBasedURL("dummy.html").replace(
+            "example.org",
+            "trackertest.org"
+          ),
+        ],
+        async frameUrl => {
+          let iframe = content.document.createElement("iframe");
+          iframe.setAttribute("src", frameUrl);
+          await new content.Promise(resolve => {
+            iframe.onload = resolve;
+            content.document.body.appendChild(iframe);
+          });
+        }
+      );
+    }
+  );
+
+  await Services.fog.testFlushAllChildren();
+
+  let unknownTrackerCPUTime =
+    Glean.power.cpuTimePerTrackerTypeMs.unknown.testGetValue() || 0;
+  Assert.greater(
+    unknownTrackerCPUTime,
+    initialValues.unknown,
+    "The CPU time of unknown trackers should have increased"
+  );
+
+  for (let trackerType of [
+    "ad",
+    "analytics",
+    "cryptomining",
+    "fingerprinting",
+    "social",
+  ]) {
+    Assert.equal(
+      Glean.power.cpuTimePerTrackerTypeMs[trackerType].testGetValue() || 0,
+      initialValues[trackerType],
+      `no new CPU time should have been recorded for ${trackerType} trackers`
+    );
+  }
 });

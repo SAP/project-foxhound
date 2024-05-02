@@ -63,12 +63,31 @@ typedef size_t arena_id_t;
 #define ARENA_FLAG_RANDOMIZE_SMALL_ENABLED 1
 #define ARENA_FLAG_RANDOMIZE_SMALL_DISABLED 2
 
+// Arenas are usually protected by a lock (ARENA_FLAG_THREAD_SAFE) however some
+// arenas are accessed by only the main thread
+// (ARENA_FLAG_THREAD_MAIN_THREAD_ONLY) and their locking can be skipped.
+#define ARENA_FLAG_THREAD_MASK 0x4
+#define ARENA_FLAG_THREAD_MAIN_THREAD_ONLY 0x4
+#define ARENA_FLAG_THREAD_SAFE 0x0
+
 typedef struct arena_params_s {
   size_t mMaxDirty;
+  // Arena specific modifiers which override the value passed to
+  // moz_set_max_dirty_page_modifier. If value > 0 is passed to that function,
+  // and mMaxDirtyIncreaseOverride != 0, mMaxDirtyIncreaseOverride will be used
+  // instead, and similarly if value < 0 is passed and mMaxDirtyDecreaseOverride
+  // != 0, mMaxDirtyDecreaseOverride will be used as the modifier.
+  int32_t mMaxDirtyIncreaseOverride;
+  int32_t mMaxDirtyDecreaseOverride;
+
   uint32_t mFlags;
 
 #ifdef __cplusplus
-  arena_params_s() : mMaxDirty(0), mFlags(0) {}
+  arena_params_s()
+      : mMaxDirty(0),
+        mMaxDirtyIncreaseOverride(0),
+        mMaxDirtyDecreaseOverride(0),
+        mFlags(0) {}
 #endif
 } arena_params_t;
 

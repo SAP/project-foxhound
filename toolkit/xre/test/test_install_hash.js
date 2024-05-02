@@ -6,9 +6,8 @@
  * They should all result in the same installation hash.
  */
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { Subprocess } = ChromeUtils.import(
-  "resource://gre/modules/Subprocess.jsm"
+const { Subprocess } = ChromeUtils.importESModule(
+  "resource://gre/modules/Subprocess.sys.mjs"
 );
 
 const XRE = Cc["@mozilla.org/xre/directory-provider;1"].getService(
@@ -20,9 +19,17 @@ const SCRIPT = do_get_file("show_hash.js", false);
 
 async function getHash(bin) {
   try {
+    // If this test is running through firefox.exe -xpcshell, we need
+    // to make sure to execute the script through it as well.
+    let args = [];
+    if (!bin.leafName.startsWith("xpcshell")) {
+      args.push("-xpcshell");
+    }
+    args.push(SCRIPT.path);
+
     let proc = await Subprocess.call({
       command: bin.path,
-      arguments: [SCRIPT.path],
+      arguments: args,
     });
 
     let result = "";

@@ -17,6 +17,7 @@ class nsIFrame;
 
 namespace mozilla {
 class EventChainPreVisitor;
+class HTMLEditor;
 struct URLExtraData;
 namespace dom {
 struct BindContext;
@@ -64,7 +65,8 @@ class nsIContent : public nsINode {
 
   NS_DECLARE_STATIC_IID_ACCESSOR(NS_ICONTENT_IID)
 
-  NS_DECL_CYCLE_COLLECTING_ISUPPORTS_FINAL_DELETECYCLECOLLECTABLE
+  NS_DECL_ISUPPORTS_INHERITED
+  NS_IMETHOD_(void) DeleteCycleCollectable(void) final;
 
   NS_DECL_CYCLE_COLLECTION_CLASS(nsIContent)
 
@@ -134,12 +136,6 @@ class nsIContent : public nsINode {
      */
     eSkipDocumentLevelNativeAnonymousContent = 1 << 1,
   };
-
-  /**
-   * Return the flattened tree children of the node, depending on the filter, as
-   * well as native anonymous children.
-   */
-  virtual already_AddRefed<nsINodeList> GetChildren(uint32_t aFilter) = 0;
 
   /**
    * Makes this content anonymous
@@ -249,6 +245,8 @@ class nsIContent : public nsINode {
    */
   virtual uint32_t TextLength() const = 0;
 
+  virtual void GetTextForTaintCheck(nsAString& aStr) = 0;
+
   /**
    * Determines if an event attribute name (such as onclick) is valid for
    * a given element type.
@@ -295,6 +293,12 @@ class nsIContent : public nsINode {
    */
   bool IsFocusable(int32_t* aTabIndex = nullptr, bool aWithMouse = false);
   virtual bool IsFocusableInternal(int32_t* aTabIndex, bool aWithMouse);
+
+  // https://html.spec.whatwg.org/multipage/interaction.html#focus-delegate
+  mozilla::dom::Element* GetFocusDelegate(bool aWithMouse) const;
+
+  // https://html.spec.whatwg.org/multipage/interaction.html#autofocus-delegate
+  mozilla::dom::Element* GetAutofocusDelegate(bool aWithMouse) const;
 
   /*
    * Get desired IME state for the content.
@@ -372,6 +376,17 @@ class nsIContent : public nsINode {
    */
   inline nsIContent* GetFlattenedTreeParent() const;
 
+  /**
+   * Get the index of a child within this content's flat tree children.
+   *
+   * @param aPossibleChild the child to get the index of.
+   * @return the index of the child, or Nothing if not a child. Be aware that
+   *         anonymous children (e.g. a <div> child of an <input> element) will
+   *         result in Nothing.
+   */
+  mozilla::Maybe<uint32_t> ComputeFlatTreeIndexOf(
+      const nsINode* aPossibleChild) const;
+
  protected:
   // Handles getting inserted or removed directly under a <slot> element.
   // This is meant to only be called from the two functions below.
@@ -388,30 +403,6 @@ class nsIContent : public nsINode {
   inline void HandleShadowDOMRelatedRemovalSteps(bool aNullParent);
 
  public:
-  /**
-   * API to check if this is a link that's traversed in response to user input
-   * (e.g. a click event). Specializations for HTML/SVG/generic XML allow for
-   * different types of link in different types of content.
-   *
-   * @param aURI Required out param. If this content is a link, a new nsIURI
-   *             set to this link's URI will be passed out.
-   *
-   * @note The out param, aURI, is guaranteed to be set to a non-null pointer
-   *   when the return value is true.
-   *
-   * XXXjwatt: IMO IsInteractiveLink would be a better name.
-   */
-  virtual bool IsLink(nsIURI** aURI) const = 0;
-
-  /**
-   * Get a pointer to the full href URI (fully resolved and canonicalized,
-   * since it's an nsIURI object) for link elements.
-   *
-   * @return A pointer to the URI or null if the element is not a link or it
-   *         has no HREF attribute.
-   */
-  virtual already_AddRefed<nsIURI> GetHrefURI() const { return nullptr; }
-
   /**
    * This method is called when the parser finishes creating the element.  This
    * particularly means that it has done everything you would expect it to have
@@ -460,19 +451,6 @@ class nsIContent : public nsINode {
   virtual void DoneAddingChildren(bool aHaveNotified) {}
 
   /**
-   * For HTML textarea, select, and object elements, returns true if all
-   * children have been added OR if the element was not created by the parser.
-   * Returns true for all other elements.
-   *
-   * @returns false if the element was created by the parser and
-   *                   it is an HTML textarea, select, or object
-   *                   element and not all children have been added.
-   *
-   * @returns true otherwise.
-   */
-  virtual bool IsDoneAddingChildren() { return true; }
-
-  /**
    * Returns true if an element needs its DoneCreatingElement method to be
    * called after it has been created.
    * @see nsIContent::DoneCreatingElement
@@ -482,15 +460,20 @@ class nsIContent : public nsINode {
    */
   static inline bool RequiresDoneCreatingElement(int32_t aNamespace,
                                                  nsAtom* aName) {
-    if (aNamespace == kNameSpaceID_XHTML &&
-        (aName == nsGkAtoms::input || aName == nsGkAtoms::button ||
-         aName == nsGkAtoms::menuitem || aName == nsGkAtoms::audio ||
-         aName == nsGkAtoms::video)) {
-      MOZ_ASSERT(
-          !RequiresDoneAddingChildren(aNamespace, aName),
-          "Both DoneCreatingElement and DoneAddingChildren on a same element "
-          "isn't supported.");
-      return true;
+    if (aNamespace == kNameSpaceID_XHTML) {
+      if (aName == nsGkAtoms::input || aName == nsGkAtoms::button ||
+          aName == nsGkAtoms::audio || aName == nsGkAtoms::video) {
+        MOZ_ASSERT(!RequiresDoneAddingChildren(aNamespace, aName),
+                   "Both DoneCreatingElement and DoneAddingChildren on a "
+                   "same element isn't supported.");
+        return true;
+      }
+      if (aName->IsDynamic()) {
+        // This could be a form-associated custom element, so check if its
+        // name includes a -.
+        nsDependentString name(aName->GetUTF16String());
+        return name.Contains('-');
+      }
     }
     return false;
   }
@@ -626,14 +609,26 @@ class nsIContent : public nsINode {
 
   void RemovePurple() { mRefCnt.RemovePurple(); }
 
-  bool OwnedOnlyByTheDOMTree() {
+  // Note, currently this doesn't handle the case when frame tree has multiple
+  // references to the nsIContent object.
+  bool OwnedOnlyByTheDOMAndFrameTrees() {
+    return OwnedOnlyByTheDOMTree(GetPrimaryFrame() ? 1 : 0);
+  }
+
+  bool OwnedOnlyByTheDOMTree(uint32_t aExpectedRefs = 0) {
     uint32_t rc = mRefCnt.get();
     if (GetParent()) {
       --rc;
     }
     rc -= GetChildCount();
-    return rc == 0;
+    return rc == aExpectedRefs;
   }
+
+  /**
+   * Use this method with designMode and contentEditable to check if the
+   * node may need spellchecking.
+   */
+  bool InclusiveDescendantMayNeedSpellchecking(mozilla::HTMLEditor* aEditor);
 
  protected:
   /**
@@ -650,7 +645,7 @@ class nsIContent : public nsINode {
     virtual ~nsExtendedContentSlots();
 
     virtual void TraverseExtendedSlots(nsCycleCollectionTraversalCallback&);
-    virtual void UnlinkExtendedSlots();
+    virtual void UnlinkExtendedSlots(nsIContent&);
 
     virtual size_t SizeOfExcludingThis(
         mozilla::MallocSizeOf aMallocSizeOf) const;
@@ -670,7 +665,7 @@ class nsIContent : public nsINode {
 
   class nsContentSlots : public nsINode::nsSlots {
    public:
-    nsContentSlots() : nsINode::nsSlots(), mExtendedSlots(0) {}
+    nsContentSlots() : mExtendedSlots(0) {}
 
     ~nsContentSlots() {
       if (!(mExtendedSlots & sNonOwningExtendedSlotsFlag)) {
@@ -685,10 +680,10 @@ class nsIContent : public nsINode {
       }
     }
 
-    void Unlink() override {
-      nsINode::nsSlots::Unlink();
+    void Unlink(nsINode& aNode) override {
+      nsINode::nsSlots::Unlink(aNode);
       if (mExtendedSlots) {
-        GetExtendedContentSlots()->UnlinkExtendedSlots();
+        GetExtendedContentSlots()->UnlinkExtendedSlots(*aNode.AsContent());
       }
     }
 
@@ -803,6 +798,8 @@ class nsIContent : public nsINode {
   // the tabfocus bit field applies to xul elements.
   static bool sTabFocusModelAppliesToXUL;
 };
+
+NON_VIRTUAL_ADDREF_RELEASE(nsIContent)
 
 NS_DEFINE_STATIC_IID_ACCESSOR(nsIContent, NS_ICONTENT_IID)
 

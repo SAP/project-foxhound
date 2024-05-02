@@ -7,11 +7,11 @@
 #ifndef mozilla_dom_BaseBlobImpl_h
 #define mozilla_dom_BaseBlobImpl_h
 
+#include "nsIGlobalObject.h"
 #include "mozilla/dom/BlobImpl.h"
 #include "mozilla/ErrorResult.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class FileBlobImpl;
 
@@ -57,24 +57,22 @@ class BaseBlobImpl : public BlobImpl {
     mContentType.SetIsVoid(false);
   }
 
-  virtual void GetName(nsAString& aName) const override;
+  void GetName(nsAString& aName) const override;
 
-  virtual void GetDOMPath(nsAString& aName) const override;
+  void GetDOMPath(nsAString& aPath) const override;
 
-  virtual void SetDOMPath(const nsAString& aName) override;
+  void SetDOMPath(const nsAString& aPath) override;
 
-  virtual int64_t GetLastModified(ErrorResult& aRv) override;
+  int64_t GetLastModified(ErrorResult& aRv) override;
 
-  virtual void GetMozFullPath(nsAString& aName,
-                              SystemCallerGuarantee /* unused */,
-                              ErrorResult& aRv) override;
+  void GetMozFullPath(nsAString& aFileName, SystemCallerGuarantee /* unused */,
+                      ErrorResult& aRv) override;
 
-  virtual void GetMozFullPathInternal(nsAString& aFileName,
-                                      ErrorResult& aRv) override;
+  void GetMozFullPathInternal(nsAString& aFileName, ErrorResult& aRv) override;
 
-  virtual uint64_t GetSize(ErrorResult& aRv) override { return mLength; }
+  uint64_t GetSize(ErrorResult& aRv) override { return mLength; }
 
-  virtual void GetType(nsAString& aType) override;
+  void GetType(nsAString& aType) override;
 
   size_t GetAllocationSize() const override { return 0; }
 
@@ -83,29 +81,27 @@ class BaseBlobImpl : public BlobImpl {
     return GetAllocationSize();
   }
 
-  virtual uint64_t GetSerialNumber() const override { return mSerialNumber; }
+  uint64_t GetSerialNumber() const override { return mSerialNumber; }
 
-  virtual already_AddRefed<BlobImpl> CreateSlice(uint64_t aStart,
-                                                 uint64_t aLength,
-                                                 const nsAString& aContentType,
-                                                 ErrorResult& aRv) override {
+  already_AddRefed<BlobImpl> CreateSlice(uint64_t aStart, uint64_t aLength,
+                                         const nsAString& aContentType,
+                                         ErrorResult& aRv) const override {
     return nullptr;
   }
 
-  virtual const nsTArray<RefPtr<BlobImpl>>* GetSubBlobImpls() const override {
+  const nsTArray<RefPtr<BlobImpl>>* GetSubBlobImpls() const override {
     return nullptr;
   }
 
-  virtual void CreateInputStream(nsIInputStream** aStream,
-                                 ErrorResult& aRv) override {
+  void CreateInputStream(nsIInputStream** aStream,
+                         ErrorResult& aRv) const override {
     aRv.Throw(NS_ERROR_NOT_IMPLEMENTED);
   }
 
-  virtual int64_t GetFileId() override;
+  int64_t GetFileId() const override;
 
-  virtual void SetLazyData(const nsAString& aName,
-                           const nsAString& aContentType, uint64_t aLength,
-                           int64_t aLastModifiedDate) override {
+  void SetLazyData(const nsAString& aName, const nsAString& aContentType,
+                   uint64_t aLength, int64_t aLastModifiedDate) override {
     mName = aName;
     mContentType = aContentType;
     mLength = aLength;
@@ -113,16 +109,16 @@ class BaseBlobImpl : public BlobImpl {
     mIsFile = !aName.IsVoid();
   }
 
-  virtual bool IsMemoryFile() const override { return false; }
+  bool IsMemoryFile() const override { return false; }
 
-  virtual bool IsFile() const override { return mIsFile; }
+  bool IsFile() const override { return mIsFile; }
 
-  virtual void GetBlobImplType(nsAString& aBlobImplType) const override {
+  void GetBlobImplType(nsAString& aBlobImplType) const override {
     aBlobImplType = u"BaseBlobImpl"_ns;
   }
 
  protected:
-  virtual ~BaseBlobImpl() = default;
+  ~BaseBlobImpl() override = default;
 
   /**
    * Returns a new, effectively-unique serial number. This should be used
@@ -131,7 +127,7 @@ class BaseBlobImpl : public BlobImpl {
    */
   static uint64_t NextSerialNumber();
 
-  void SetLastModificationDate(bool aCrossOriginIsolated, int64_t aDate);
+  void SetLastModificationDate(RTPCallerType aRTPCallerType, int64_t aDate);
   void SetLastModificationDatePrecisely(int64_t aDate);
 
 #ifdef DEBUG
@@ -157,7 +153,6 @@ class BaseBlobImpl : public BlobImpl {
   int64_t mLastModificationDate;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_BaseBlobImpl_h

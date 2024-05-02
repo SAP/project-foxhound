@@ -1,7 +1,3 @@
-function setup_tests() {
-  SpecialPowers.pushPrefEnv({ set: [["dom.input.dirpicker", true]] }, next);
-}
-
 function getType(a) {
   if (a === null || a === undefined) {
     return "null";
@@ -126,15 +122,18 @@ function create_directory() {
     var fileList = document.getElementById("fileList");
     SpecialPowers.wrap(fileList).mozSetDirectory(message.dir);
 
-    fileList.getFilesAndDirectories().then(function(list) {
-      // Just a simple test
-      is(list.length, 1, "This list has 1 element");
-      ok(list[0] instanceof Directory, "We have a directory.");
+    SpecialPowers.wrap(fileList)
+      .getFilesAndDirectories()
+      .then(function (list) {
+        list = SpecialPowers.unwrap(list);
+        // Just a simple test
+        is(list.length, 1, "This list has 1 element");
+        ok(list[0] instanceof Directory, "We have a directory.");
 
-      clonableObjects.push({ target: "all", data: list[0] });
-      script.destroy();
-      next();
-    });
+        clonableObjects.push({ target: "all", data: list[0] });
+        script.destroy();
+        next();
+      });
   }
 
   script.addMessageListener("dir.opened", onOpened);
@@ -163,7 +162,7 @@ function create_wasmModule() {
       print(t)
     '
   */
-  // eslint-disable-next-line
+  // prettier-ignore
   const fooModuleCode = new Uint8Array([0,97,115,109,1,0,0,0,1,5,1,96,0,1,127,3,2,1,0,7,7,1,3,102,111,111,0,0,10,6,1,4,0,65,42,11,0,13,4,110,97,109,101,1,6,1,0,3,102,111,111]);
 
   WebAssembly.compile(fooModuleCode).then(
@@ -190,7 +189,7 @@ function runTests(obj) {
   );
 
   // cloning tests - everyWhere
-  new Promise(function(resolve, reject) {
+  new Promise(function (resolve, reject) {
     var clonableObjectsId = 0;
     function runClonableTest() {
       if (clonableObjectsId >= clonableObjects.length) {
@@ -225,8 +224,8 @@ function runTests(obj) {
   })
 
     // clonable same process
-    .then(function() {
-      return new Promise(function(resolve, reject) {
+    .then(function () {
+      return new Promise(function (resolve, reject) {
         var clonableObjectsId = 0;
         function runClonableTest() {
           if (clonableObjectsId >= clonableObjects.length) {
@@ -262,18 +261,18 @@ function runTests(obj) {
     })
 
     // transfering tests
-    .then(function() {
+    .then(function () {
       if (!obj.transferableObjects) {
         return;
       }
 
       // MessagePort
-      return new Promise(function(r, rr) {
+      return new Promise(function (r, rr) {
         var mc = new MessageChannel();
-        obj.send(42, [mc.port1]).then(function(received) {
+        obj.send(42, [mc.port1]).then(function (received) {
           is(received.ports.length, 1, "MessagePort has been transferred");
           mc.port2.postMessage("hello world");
-          received.ports[0].onmessage = function(e) {
+          received.ports[0].onmessage = function (e) {
             is(e.data, "hello world", "Ports are connected!");
             r();
           };
@@ -282,21 +281,21 @@ function runTests(obj) {
     })
 
     // no dup transfering
-    .then(function() {
+    .then(function () {
       if (!obj.transferableObjects) {
         return;
       }
 
       // MessagePort
-      return new Promise(function(r, rr) {
+      return new Promise(function (r, rr) {
         var mc = new MessageChannel();
         obj
           .send(42, [mc.port1, mc.port1])
           .then(
-            function(received) {
+            function (received) {
               ok(false, "Duplicate ports should throw!");
             },
-            function() {
+            function () {
               ok(true, "Duplicate ports should throw!");
             }
           )
@@ -305,13 +304,13 @@ function runTests(obj) {
     })
 
     // maintaining order of transferred ports
-    .then(function() {
+    .then(function () {
       if (!obj.transferableObjects) {
         return;
       }
 
       // MessagePort
-      return new Promise(function(r, rr) {
+      return new Promise(function (r, rr) {
         var mcs = [];
         const NPORTS = 50;
         for (let i = 0; i < NPORTS; i++) {
@@ -322,7 +321,7 @@ function runTests(obj) {
             42,
             mcs.map(channel => channel.port1)
           )
-          .then(function(received) {
+          .then(function (received) {
             is(
               received.ports.length,
               NPORTS,
@@ -332,14 +331,14 @@ function runTests(obj) {
               .fill()
               .map(
                 (_, i) =>
-                  new Promise(function(subr, subrr) {
+                  new Promise(function (subr, subrr) {
                     mcs[i].port2.postMessage(i);
                     received.ports[i].onmessage = e => subr(e.data == i);
                   })
               );
             return Promise.all(promises);
           })
-          .then(function(result) {
+          .then(function (result) {
             let in_order = 0;
             for (const correct of result) {
               if (correct) {
@@ -353,21 +352,21 @@ function runTests(obj) {
     })
 
     // non transfering tests
-    .then(function() {
+    .then(function () {
       if (obj.transferableObjects) {
         return;
       }
 
       // MessagePort
-      return new Promise(function(r, rr) {
+      return new Promise(function (r, rr) {
         var mc = new MessageChannel();
         obj
           .send(42, [mc.port1])
           .then(
-            function(received) {
+            function (received) {
               ok(false, "This object should not support port transferring");
             },
-            function() {
+            function () {
               ok(true, "This object should not support port transferring");
             }
           )
@@ -376,7 +375,7 @@ function runTests(obj) {
     })
 
     // done.
-    .then(function() {
+    .then(function () {
       obj.finished();
     });
 }
@@ -391,4 +390,4 @@ function next() {
   test();
 }
 
-var tests = [setup_tests, create_fileList, create_directory, create_wasmModule];
+var tests = [create_fileList, create_directory, create_wasmModule];

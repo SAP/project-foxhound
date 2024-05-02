@@ -24,8 +24,8 @@ add_task(async () => {
 
   await BrowserTestUtils.withNewTab(
     GetTestWebBasedURL("empty_file.html"),
-    async function(browser) {
-      await SpecialPowers.spawn(browser, [], async function() {
+    async function (browser) {
+      await SpecialPowers.spawn(browser, [], async function () {
         try {
           let config = [
             {
@@ -55,7 +55,7 @@ add_task(async () => {
       Services.fog.testResetFOG();
 
       is(
-        undefined,
+        null,
         Glean.testOnlyIpc.aCounter.testGetValue(),
         "Ensure we begin without value."
       );

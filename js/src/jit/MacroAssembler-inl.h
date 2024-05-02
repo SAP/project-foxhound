@@ -18,6 +18,7 @@
 #include "jit/JitFrames.h"
 #include "jit/JSJitFrameIter.h"
 #include "util/DifferentialTesting.h"
+#include "vm/BigIntType.h"
 #include "vm/JSObject.h"
 #include "vm/ProxyObject.h"
 #include "vm/Runtime.h"
@@ -37,6 +38,12 @@
 #  include "jit/mips32/MacroAssembler-mips32-inl.h"
 #elif defined(JS_CODEGEN_MIPS64)
 #  include "jit/mips64/MacroAssembler-mips64-inl.h"
+#elif defined(JS_CODEGEN_LOONG64)
+#  include "jit/loong64/MacroAssembler-loong64-inl.h"
+#elif defined(JS_CODEGEN_RISCV64)
+#  include "jit/riscv64/MacroAssembler-riscv64-inl.h"
+#elif defined(JS_CODEGEN_WASM32)
+#  include "jit/wasm32/MacroAssembler-wasm32-inl.h"
 #elif !defined(JS_CODEGEN_NONE)
 #  error "Unknown architecture!"
 #endif
@@ -56,20 +63,24 @@ DynFn DynamicFunction(Sig fun) {
 inline DynFn JitPreWriteBarrier(MIRType type) {
   switch (type) {
     case MIRType::Value: {
-      using Fn = void (*)(JSRuntime * rt, Value * vp);
+      using Fn = void (*)(JSRuntime* rt, Value* vp);
       return DynamicFunction<Fn>(JitValuePreWriteBarrier);
     }
     case MIRType::String: {
-      using Fn = void (*)(JSRuntime * rt, JSString * *stringp);
+      using Fn = void (*)(JSRuntime* rt, JSString** stringp);
       return DynamicFunction<Fn>(JitStringPreWriteBarrier);
     }
     case MIRType::Object: {
-      using Fn = void (*)(JSRuntime * rt, JSObject * *objp);
+      using Fn = void (*)(JSRuntime* rt, JSObject** objp);
       return DynamicFunction<Fn>(JitObjectPreWriteBarrier);
     }
     case MIRType::Shape: {
-      using Fn = void (*)(JSRuntime * rt, Shape * *shapep);
+      using Fn = void (*)(JSRuntime* rt, Shape** shapep);
       return DynamicFunction<Fn>(JitShapePreWriteBarrier);
+    }
+    case MIRType::WasmAnyRef: {
+      using Fn = void (*)(JSRuntime* rt, wasm::AnyRef* refp);
+      return DynamicFunction<Fn>(JitWasmAnyRefPreWriteBarrier);
     }
     default:
       MOZ_CRASH();
@@ -254,22 +265,49 @@ uint32_t MacroAssembler::callJit(ImmPtr callee) {
   return currentOffset();
 }
 
-void MacroAssembler::makeFrameDescriptor(Register frameSizeReg, FrameType type,
-                                         uint32_t headerSize) {
-  // See JitFrames.h for a description of the frame descriptor format.
-  // The saved-frame bit is zero for new frames. See js::SavedStacks.
-
-  lshiftPtr(Imm32(FRAMESIZE_SHIFT), frameSizeReg);
-
-  headerSize = EncodeFrameHeaderSize(headerSize);
-  orPtr(Imm32((headerSize << FRAME_HEADER_SIZE_SHIFT) | uint32_t(type)),
-        frameSizeReg);
+void MacroAssembler::pushFrameDescriptor(FrameType type) {
+  uint32_t descriptor = MakeFrameDescriptor(type);
+  push(Imm32(descriptor));
 }
 
-void MacroAssembler::pushStaticFrameDescriptor(FrameType type,
-                                               uint32_t headerSize) {
-  uint32_t descriptor = MakeFrameDescriptor(framePushed(), type, headerSize);
+void MacroAssembler::PushFrameDescriptor(FrameType type) {
+  uint32_t descriptor = MakeFrameDescriptor(type);
   Push(Imm32(descriptor));
+}
+
+void MacroAssembler::pushFrameDescriptorForJitCall(FrameType type,
+                                                   uint32_t argc) {
+  uint32_t descriptor = MakeFrameDescriptorForJitCall(type, argc);
+  push(Imm32(descriptor));
+}
+
+void MacroAssembler::PushFrameDescriptorForJitCall(FrameType type,
+                                                   uint32_t argc) {
+  uint32_t descriptor = MakeFrameDescriptorForJitCall(type, argc);
+  Push(Imm32(descriptor));
+}
+
+void MacroAssembler::pushFrameDescriptorForJitCall(FrameType type,
+                                                   Register argc,
+                                                   Register scratch) {
+  if (argc != scratch) {
+    mov(argc, scratch);
+  }
+  lshift32(Imm32(NUMACTUALARGS_SHIFT), scratch);
+  or32(Imm32(int32_t(type)), scratch);
+  push(scratch);
+}
+
+void MacroAssembler::PushFrameDescriptorForJitCall(FrameType type,
+                                                   Register argc,
+                                                   Register scratch) {
+  pushFrameDescriptorForJitCall(type, argc, scratch);
+  framePushed_ += sizeof(uintptr_t);
+}
+
+void MacroAssembler::loadNumActualArgs(Register framePtr, Register dest) {
+  loadPtr(Address(framePtr, JitFrameLayout::offsetOfDescriptor()), dest);
+  rshift32(Imm32(NUMACTUALARGS_SHIFT), dest);
 }
 
 void MacroAssembler::PushCalleeToken(Register callee, bool constructing) {
@@ -302,8 +340,9 @@ void MacroAssembler::loadFunctionFromCalleeToken(Address token, Register dest) {
 uint32_t MacroAssembler::buildFakeExitFrame(Register scratch) {
   mozilla::DebugOnly<uint32_t> initialDepth = framePushed();
 
-  pushStaticFrameDescriptor(FrameType::IonJS, ExitFrameLayout::Size());
+  PushFrameDescriptor(FrameType::IonJS);
   uint32_t retAddr = pushFakeReturnAddress(scratch);
+  Push(FramePointer);
 
   MOZ_ASSERT(framePushed() == initialDepth + ExitFrameLayout::Size());
   return retAddr;
@@ -313,11 +352,13 @@ uint32_t MacroAssembler::buildFakeExitFrame(Register scratch) {
 // Exit frame footer.
 
 void MacroAssembler::enterExitFrame(Register cxreg, Register scratch,
-                                    const VMFunctionData* f) {
-  MOZ_ASSERT(f);
+                                    VMFunctionId f) {
   linkExitFrame(cxreg, scratch);
-  // Push VMFunction pointer, to mark arguments.
-  Push(ImmPtr(f));
+  // Push `ExitFrameType::VMFunction + VMFunctionId`, for marking the arguments.
+  // See ExitFooterFrame::data_.
+  uintptr_t type = uintptr_t(ExitFrameType::VMFunction) + uintptr_t(f);
+  MOZ_ASSERT(type <= INT32_MAX);
+  Push(Imm32(type));
 }
 
 void MacroAssembler::enterFakeExitFrame(Register cxreg, Register scratch,
@@ -349,6 +390,24 @@ void MacroAssembler::moveValue(const ConstantOrRegister& src,
   }
 
   moveValue(src.reg(), dest);
+}
+
+// ===============================================================
+// Copy instructions
+
+void MacroAssembler::copy64(const Address& src, const Address& dest,
+                            Register scratch) {
+#if JS_BITS_PER_WORD == 32
+  MOZ_RELEASE_ASSERT(src.base != scratch && dest.base != scratch);
+  load32(LowWord(src), scratch);
+  store32(scratch, LowWord(dest));
+  load32(HighWord(src), scratch);
+  store32(scratch, HighWord(dest));
+#else
+  Register64 scratch64(scratch);
+  load64(src, scratch64);
+  store64(scratch64, dest);
+#endif
 }
 
 // ===============================================================
@@ -425,11 +484,11 @@ void MacroAssembler::branchIfNotFunctionIsNonBuiltinCtor(Register fun,
   // Guard the function has the BASESCRIPT and CONSTRUCTOR flags and does NOT
   // have the SELF_HOSTED flag.
   // This is equivalent to JSFunction::isNonBuiltinConstructor.
-  constexpr int32_t mask =
-      Imm32_16Adj(FunctionFlags::BASESCRIPT | FunctionFlags::SELF_HOSTED |
-                  FunctionFlags::CONSTRUCTOR);
+  constexpr int32_t mask = FunctionFlags::BASESCRIPT |
+                           FunctionFlags::SELF_HOSTED |
+                           FunctionFlags::CONSTRUCTOR;
   constexpr int32_t expected =
-      Imm32_16Adj(FunctionFlags::BASESCRIPT | FunctionFlags::CONSTRUCTOR);
+      FunctionFlags::BASESCRIPT | FunctionFlags::CONSTRUCTOR;
 
   load32(Address(fun, JSFunction::offsetOfFlagsAndArgCount()), scratch);
   and32(Imm32(mask), scratch);
@@ -482,6 +541,11 @@ void MacroAssembler::loadJitScript(Register script, Register dest) {
   static_assert(ScriptWarmUpData::JitScriptTag == 0,
                 "Code below depends on tag value");
   loadPtr(Address(script, JSScript::offsetOfWarmUpData()), dest);
+}
+
+void MacroAssembler::loadFunctionArgCount(Register func, Register output) {
+  load32(Address(func, JSFunction::offsetOfFlagsAndArgCount()), output);
+  rshift32(Imm32(JSFunction::ArgCountShift), output);
 }
 
 void MacroAssembler::branchIfObjectEmulatesUndefined(Register objReg,
@@ -686,8 +750,13 @@ void MacroAssembler::branchTestClassIsProxy(bool proxy, Register clasp,
 
 void MacroAssembler::branchTestObjectIsProxy(bool proxy, Register object,
                                              Register scratch, Label* label) {
-  loadObjClassUnsafe(object, scratch);
-  branchTestClassIsProxy(proxy, scratch, label);
+  constexpr uint32_t ShiftedMask = (Shape::kindMask() << Shape::kindShift());
+  static_assert(uint32_t(Shape::Kind::Proxy) == 0,
+                "branchTest32 below depends on proxy kind being 0");
+  loadPtr(Address(object, JSObject::offsetOfShape()), scratch);
+  branchTest32(proxy ? Assembler::Zero : Assembler::NonZero,
+               Address(scratch, Shape::offsetOfImmutableFlags()),
+               Imm32(ShiftedMask), label);
 }
 
 void MacroAssembler::branchTestProxyHandlerFamily(Condition cond,
@@ -697,8 +766,7 @@ void MacroAssembler::branchTestProxyHandlerFamily(Condition cond,
                                                   Label* label) {
 #ifdef DEBUG
   Label ok;
-  loadObjClassUnsafe(proxy, scratch);
-  branchTestClassIsProxy(true, scratch, &ok);
+  branchTestObjectIsProxy(true, proxy, scratch, &ok);
   assumeUnreachable("Expected ProxyObject in branchTestProxyHandlerFamily");
   bind(&ok);
 #endif
@@ -712,7 +780,7 @@ void MacroAssembler::branchTestProxyHandlerFamily(Condition cond,
 void MacroAssembler::branchTestNeedsIncrementalBarrier(Condition cond,
                                                        Label* label) {
   MOZ_ASSERT(cond == Zero || cond == NonZero);
-  CompileZone* zone = GetJitContext()->realm()->zone();
+  CompileZone* zone = realm()->zone();
   const uint32_t* needsBarrierAddr = zone->addressOfNeedsIncrementalBarrier();
   branchTest32(cond, AbsoluteAddress(needsBarrierAddr), Imm32(0x1), label);
 }
@@ -720,13 +788,12 @@ void MacroAssembler::branchTestNeedsIncrementalBarrier(Condition cond,
 void MacroAssembler::branchTestNeedsIncrementalBarrierAnyZone(
     Condition cond, Label* label, Register scratch) {
   MOZ_ASSERT(cond == Zero || cond == NonZero);
-  if (GetJitContext()->maybeRealm()) {
+  if (maybeRealm_) {
     branchTestNeedsIncrementalBarrier(cond, label);
   } else {
     // We are compiling the interpreter or another runtime-wide trampoline, so
     // we have to load cx->zone.
-    loadPtr(AbsoluteAddress(GetJitContext()->runtime->addressOfZone()),
-            scratch);
+    loadPtr(AbsoluteAddress(runtime()->addressOfZone()), scratch);
     Address needsBarrierAddr(scratch, Zone::offsetOfNeedsIncrementalBarrier());
     branchTest32(cond, needsBarrierAddr, Imm32(0x1), label);
   }
@@ -836,15 +903,16 @@ void MacroAssembler::canonicalizeDoubleIfDeterministic(FloatRegister reg) {
 // ========================================================================
 // Memory access primitives.
 template <class T>
-void MacroAssembler::storeDouble(FloatRegister src, const T& dest) {
+FaultingCodeOffset MacroAssembler::storeDouble(FloatRegister src,
+                                               const T& dest) {
   canonicalizeDoubleIfDeterministic(src);
-  storeUncanonicalizedDouble(src, dest);
+  return storeUncanonicalizedDouble(src, dest);
 }
 
-template void MacroAssembler::storeDouble(FloatRegister src,
-                                          const Address& dest);
-template void MacroAssembler::storeDouble(FloatRegister src,
-                                          const BaseIndex& dest);
+template FaultingCodeOffset MacroAssembler::storeDouble(FloatRegister src,
+                                                        const Address& dest);
+template FaultingCodeOffset MacroAssembler::storeDouble(FloatRegister src,
+                                                        const BaseIndex& dest);
 
 template <class T>
 void MacroAssembler::boxDouble(FloatRegister src, const T& dest) {
@@ -852,15 +920,16 @@ void MacroAssembler::boxDouble(FloatRegister src, const T& dest) {
 }
 
 template <class T>
-void MacroAssembler::storeFloat32(FloatRegister src, const T& dest) {
+FaultingCodeOffset MacroAssembler::storeFloat32(FloatRegister src,
+                                                const T& dest) {
   canonicalizeFloatIfDeterministic(src);
-  storeUncanonicalizedFloat32(src, dest);
+  return storeUncanonicalizedFloat32(src, dest);
 }
 
-template void MacroAssembler::storeFloat32(FloatRegister src,
-                                           const Address& dest);
-template void MacroAssembler::storeFloat32(FloatRegister src,
-                                           const BaseIndex& dest);
+template FaultingCodeOffset MacroAssembler::storeFloat32(FloatRegister src,
+                                                         const Address& dest);
+template FaultingCodeOffset MacroAssembler::storeFloat32(FloatRegister src,
+                                                         const BaseIndex& dest);
 
 template <typename T>
 void MacroAssembler::fallibleUnboxInt32(const T& src, Register dest,
@@ -1001,12 +1070,7 @@ void MacroAssembler::assertStackAlignment(uint32_t alignment,
 }
 
 void MacroAssembler::storeCallBoolResult(Register reg) {
-  if (reg != ReturnReg) {
-    mov(ReturnReg, reg);
-  }
-  // C++ compilers like to only use the bottom byte for bools, but we
-  // need to maintain the entire register.
-  and32(Imm32(0xFF), reg);
+  convertBoolToInt32(ReturnReg, reg);
 }
 
 void MacroAssembler::storeCallInt32Result(Register reg) {

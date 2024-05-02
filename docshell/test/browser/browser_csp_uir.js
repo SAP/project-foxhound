@@ -2,17 +2,19 @@
 
 const TEST_PATH = getRootDirectory(gTestPath).replace(
   "chrome://mochitests/content",
+  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
   "http://example.com"
 );
 const TEST_URI = TEST_PATH + "file_csp_uir.html"; // important to be http: to test upgrade-insecure-requests
 const RESULT_URI =
+  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
   TEST_PATH.replace("http://", "https://") + "file_csp_uir_dummy.html";
 
 function verifyCSP(aTestName, aBrowser, aResultURI) {
   return SpecialPowers.spawn(
     aBrowser,
     [{ aTestName, aResultURI }],
-    async function({ aTestName, aResultURI }) {
+    async function ({ aTestName, aResultURI }) {
       let channel = content.docShell.currentDocumentChannel;
       is(channel.URI.asciiSpec, aResultURI, "testing CSP for " + aTestName);
     }
@@ -20,7 +22,7 @@ function verifyCSP(aTestName, aBrowser, aResultURI) {
 }
 
 add_task(async function test_csp_inheritance_regular_click() {
-  await BrowserTestUtils.withNewTab(TEST_URI, async function(browser) {
+  await BrowserTestUtils.withNewTab(TEST_URI, async function (browser) {
     let loadPromise = BrowserTestUtils.browserLoaded(
       browser,
       false,
@@ -38,7 +40,7 @@ add_task(async function test_csp_inheritance_regular_click() {
 });
 
 add_task(async function test_csp_inheritance_ctrl_click() {
-  await BrowserTestUtils.withNewTab(TEST_URI, async function(browser) {
+  await BrowserTestUtils.withNewTab(TEST_URI, async function (browser) {
     let loadPromise = BrowserTestUtils.waitForNewTab(
       gBrowser,
       RESULT_URI,
@@ -59,7 +61,7 @@ add_task(async function test_csp_inheritance_ctrl_click() {
 
 add_task(
   async function test_csp_inheritance_right_click_open_link_in_new_tab() {
-    await BrowserTestUtils.withNewTab(TEST_URI, async function(browser) {
+    await BrowserTestUtils.withNewTab(TEST_URI, async function (browser) {
       let loadPromise = BrowserTestUtils.waitForNewTab(gBrowser, RESULT_URI);
       // set the data href + simulate right-click open link in tab
       BrowserTestUtils.waitForEvent(document, "popupshown", false, event => {

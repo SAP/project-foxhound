@@ -4,8 +4,10 @@
 
 use crate::attr::CaseSensitivity;
 use crate::bloom::BloomFilter;
-use crate::nth_index_cache::NthIndexCache;
-use crate::parser::SelectorImpl;
+use crate::nth_index_cache::{NthIndexCache, NthIndexCacheInner};
+use crate::parser::{Selector, SelectorImpl};
+use crate::relative_selector::cache::RelativeSelectorCache;
+use crate::relative_selector::filter::RelativeSelectorFilterMap;
 use crate::tree::{Element, OpaqueElement};
 
 /// What kind of selector matching mode we should use.
@@ -68,6 +70,21 @@ impl VisitedHandlingMode {
     }
 }
 
+/// Whether we need to set selector invalidation flags on elements for this
+/// match request.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum NeedsSelectorFlags {
+    No,
+    Yes,
+}
+
+/// Whether we're matching in the contect of invalidation.
+#[derive(PartialEq)]
+pub enum MatchingForInvalidation {
+    No,
+    Yes,
+}
+
 /// Which quirks mode is this document in.
 ///
 /// See: https://quirks.spec.whatwg.org/
@@ -91,6 +108,51 @@ impl QuirksMode {
     }
 }
 
+/// Whether or not this matching considered relative selector.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum RelativeSelectorMatchingState {
+    /// Was not considered for any relative selector.
+    None,
+    /// Relative selector was considered for a match, but the element to be
+    /// under matching would not anchor the relative selector. i.e. The
+    /// relative selector was not part of the first compound selector (in match
+    /// order).
+    Considered,
+    /// Same as above, but the relative selector was part of the first compound
+    /// selector (in match order).
+    ConsideredAnchor,
+}
+
+impl RelativeSelectorMatchingState {
+    /// Update the matching state to indicate that the relative selector matching
+    /// happened in the subject position.
+    pub fn considered_anchor(&mut self) {
+        *self = Self::ConsideredAnchor;
+    }
+
+    /// Update the matching state to indicate that the relative selector matching
+    /// happened in a non-subject position.
+    pub fn considered(&mut self) {
+        // Being considered an anchor is stronger (e.g. `:has(.a):is(:has(.b) .c)`).
+        if *self == Self::ConsideredAnchor {
+            *self = Self::ConsideredAnchor;
+        } else {
+            *self = Self::Considered;
+        }
+    }
+}
+
+/// Set of caches (And cache-likes) that speed up expensive selector matches.
+#[derive(Default)]
+pub struct SelectorCaches {
+    /// A cache to speed up nth-index-like selectors.
+    pub nth_index: NthIndexCache,
+    /// A cache to speed up relative selector matches. See module documentation.
+    pub relative_selector: RelativeSelectorCache,
+    /// A map of bloom filters to fast-reject relative selector matches.
+    pub relative_selector_filter_map: RelativeSelectorFilterMap,
+}
+
 /// Data associated with the matching process for a element.  This context is
 /// used across many selectors for an element, so it's not appropriate for
 /// transient data that applies to only a single selector.
@@ -102,8 +164,6 @@ where
     matching_mode: MatchingMode,
     /// Input with the bloom filter used to fast-reject selectors.
     pub bloom_filter: Option<&'a BloomFilter>,
-    /// An optional cache to speed up nth-index-like selectors.
-    pub nth_index_cache: Option<&'a mut NthIndexCache>,
     /// The element which is going to match :scope pseudo-class. It can be
     /// either one :scope element, or the scoping element.
     ///
@@ -124,9 +184,6 @@ where
     visited_handling: VisitedHandlingMode,
 
     /// The current nesting level of selectors that we're matching.
-    ///
-    /// FIXME(emilio): Consider putting the mutable stuff in a Cell, then make
-    /// MatchingContext immutable again.
     nesting_level: usize,
 
     /// Whether we're inside a negation or not.
@@ -137,9 +194,21 @@ where
     pub pseudo_element_matching_fn: Option<&'a dyn Fn(&Impl::PseudoElement) -> bool>,
 
     /// Extra implementation-dependent matching data.
-    pub extra_data: Impl::ExtraMatchingData,
+    pub extra_data: Impl::ExtraMatchingData<'a>,
+
+    /// The current element we're anchoring on for evaluating the relative selector.
+    current_relative_selector_anchor: Option<OpaqueElement>,
+    pub considered_relative_selector: RelativeSelectorMatchingState,
 
     quirks_mode: QuirksMode,
+    needs_selector_flags: NeedsSelectorFlags,
+
+    /// Whether we're matching in the contect of invalidation.
+    matching_for_invalidation: MatchingForInvalidation,
+
+    /// Caches to speed up expensive selector matches.
+    pub selector_caches: &'a mut SelectorCaches,
+
     classes_and_ids_case_sensitivity: CaseSensitivity,
     _impl: ::std::marker::PhantomData<Impl>,
 }
@@ -152,15 +221,19 @@ where
     pub fn new(
         matching_mode: MatchingMode,
         bloom_filter: Option<&'a BloomFilter>,
-        nth_index_cache: Option<&'a mut NthIndexCache>,
+        selector_caches: &'a mut SelectorCaches,
         quirks_mode: QuirksMode,
+        needs_selector_flags: NeedsSelectorFlags,
+        matching_for_invalidation: MatchingForInvalidation,
     ) -> Self {
         Self::new_for_visited(
             matching_mode,
             bloom_filter,
-            nth_index_cache,
+            selector_caches,
             VisitedHandlingMode::AllLinksUnvisited,
             quirks_mode,
+            needs_selector_flags,
+            matching_for_invalidation,
         )
     }
 
@@ -168,25 +241,44 @@ where
     pub fn new_for_visited(
         matching_mode: MatchingMode,
         bloom_filter: Option<&'a BloomFilter>,
-        nth_index_cache: Option<&'a mut NthIndexCache>,
+        selector_caches: &'a mut SelectorCaches,
         visited_handling: VisitedHandlingMode,
         quirks_mode: QuirksMode,
+        needs_selector_flags: NeedsSelectorFlags,
+        matching_for_invalidation: MatchingForInvalidation,
     ) -> Self {
         Self {
             matching_mode,
             bloom_filter,
             visited_handling,
-            nth_index_cache,
             quirks_mode,
             classes_and_ids_case_sensitivity: quirks_mode.classes_and_ids_case_sensitivity(),
+            needs_selector_flags,
+            matching_for_invalidation,
             scope_element: None,
             current_host: None,
             nesting_level: 0,
             in_negation: false,
             pseudo_element_matching_fn: None,
             extra_data: Default::default(),
+            current_relative_selector_anchor: None,
+            considered_relative_selector: RelativeSelectorMatchingState::None,
+            selector_caches,
             _impl: ::std::marker::PhantomData,
         }
+    }
+
+    // Grab a reference to the appropriate cache.
+    #[inline]
+    pub fn nth_index_cache(
+        &mut self,
+        is_of_type: bool,
+        is_from_end: bool,
+        selectors: &[Selector<Impl>],
+    ) -> &mut NthIndexCacheInner {
+        self.selector_caches
+            .nth_index
+            .get(is_of_type, is_from_end, selectors)
     }
 
     /// Whether we're matching a nested selector.
@@ -211,6 +303,18 @@ where
     #[inline]
     pub fn matching_mode(&self) -> MatchingMode {
         self.matching_mode
+    }
+
+    /// Whether we need to set selector flags.
+    #[inline]
+    pub fn needs_selector_flags(&self) -> bool {
+        self.needs_selector_flags == NeedsSelectorFlags::Yes
+    }
+
+    /// Whether or not we're matching to invalidate.
+    #[inline]
+    pub fn matching_for_invalidation(&self) -> bool {
+        self.matching_for_invalidation == MatchingForInvalidation::Yes
     }
 
     /// The case-sensitivity for class and ID selectors
@@ -287,5 +391,28 @@ where
     #[inline]
     pub fn shadow_host(&self) -> Option<OpaqueElement> {
         self.current_host
+    }
+
+    /// Runs F with a deeper nesting level, with the given element as the anchor,
+    /// for a :has(...) selector, for example.
+    #[inline]
+    pub fn nest_for_relative_selector<F, R>(&mut self, anchor: OpaqueElement, f: F) -> R
+    where
+        F: FnOnce(&mut Self) -> R,
+    {
+        debug_assert!(
+            self.current_relative_selector_anchor.is_none(),
+            "Nesting should've been rejected at parse time"
+        );
+        self.current_relative_selector_anchor = Some(anchor);
+        let result = self.nest(f);
+        self.current_relative_selector_anchor = None;
+        result
+    }
+
+    /// Returns the current anchor element to evaluate the relative selector against.
+    #[inline]
+    pub fn relative_selector_anchor(&self) -> Option<OpaqueElement> {
+        self.current_relative_selector_anchor
     }
 }

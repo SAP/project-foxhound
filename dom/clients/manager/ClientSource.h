@@ -104,6 +104,10 @@ class ClientSource final : public ClientThing<ClientSourceChild> {
 
   void Thaw();
 
+  void EvictFromBFCache();
+
+  RefPtr<ClientOpPromise> EvictFromBFCacheOp();
+
   const ClientInfo& Info() const;
 
   // Trigger a synchronous IPC ping to the parent process to confirm that
@@ -139,7 +143,9 @@ class ClientSource final : public ClientThing<ClientSourceChild> {
   // clients.
   void NoteDOMContentLoaded();
 
-  RefPtr<ClientOpPromise> Focus(const ClientFocusArgs& aArgs);
+  // TODO: Convert Focus() to MOZ_CAN_RUN_SCRIPT
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY RefPtr<ClientOpPromise> Focus(
+      const ClientFocusArgs& aArgs);
 
   RefPtr<ClientOpPromise> PostMessage(const ClientPostMessageArgs& aArgs);
 

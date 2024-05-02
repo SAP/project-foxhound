@@ -17,7 +17,7 @@ XPIDL_SOURCES += [
 XPIDL_MODULE = "url-classifier"
 
 EXTRA_JS_MODULES += [
-    "UrlClassifierExceptionListService.jsm",
+    "UrlClassifierExceptionListService.sys.mjs",
 ]
 
 XPCOM_MANIFESTS += [
@@ -36,11 +36,11 @@ UNIFIED_SOURCES += [
     "UrlClassifierFeatureCryptominingAnnotation.cpp",
     "UrlClassifierFeatureCryptominingProtection.cpp",
     "UrlClassifierFeatureCustomTables.cpp",
+    "UrlClassifierFeatureEmailTrackingDataCollection.cpp",
+    "UrlClassifierFeatureEmailTrackingProtection.cpp",
     "UrlClassifierFeatureFactory.cpp",
     "UrlClassifierFeatureFingerprintingAnnotation.cpp",
     "UrlClassifierFeatureFingerprintingProtection.cpp",
-    "UrlClassifierFeatureFlash.cpp",
-    "UrlClassifierFeatureLoginReputation.cpp",
     "UrlClassifierFeaturePhishingProtection.cpp",
     "UrlClassifierFeatureResult.cpp",
     "UrlClassifierFeatureSocialTrackingAnnotation.cpp",

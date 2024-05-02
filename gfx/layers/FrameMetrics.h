@@ -22,17 +22,17 @@
 #include "mozilla/layers/LayersTypes.h"          // for ScrollDirection
 #include "mozilla/layers/ScrollableLayerGuid.h"  // for ScrollableLayerGuid
 #include "mozilla/ScrollPositionUpdate.h"        // for ScrollPositionUpdate
-#include "mozilla/StaticPtr.h"                   // for StaticAutoPtr
-#include "mozilla/TimeStamp.h"                   // for TimeStamp
-#include "nsTHashMap.h"                          // for nsTHashMap
+#include "mozilla/ScrollSnapInfo.h"
+#include "mozilla/ScrollSnapTargetId.h"
+#include "mozilla/StaticPtr.h"  // for StaticAutoPtr
+#include "mozilla/TimeStamp.h"  // for TimeStamp
+#include "nsTHashMap.h"         // for nsTHashMap
 #include "nsString.h"
 #include "PLDHashTable.h"  // for PLDHashNumber
 
 struct nsStyleDisplay;
 namespace mozilla {
-enum class StyleScrollSnapStrictness : uint8_t;
 enum class StyleOverscrollBehavior : uint8_t;
-class WritingMode;
 }  // namespace mozilla
 
 namespace IPC {
@@ -88,18 +88,13 @@ struct FrameMetrics {
         mCompositionBoundsWidthIgnoringScrollbars(0),
         mDisplayPort(0, 0, 0, 0),
         mScrollableRect(0, 0, 0, 0),
-        mCumulativeResolution(),
         mDevPixelsPerCSSPixel(1),
         mScrollOffset(0, 0),
-        mZoom(),
         mBoundingCompositionSize(0, 0),
         mPresShellId(-1),
         mLayoutViewport(0, 0, 0, 0),
-        mTransformToAncestorScale(),
-        mPaintRequestTime(),
         mVisualDestination(0, 0),
         mVisualScrollUpdateType(eNone),
-        mCompositionSizeWithoutDynamicToolbar(),
         mIsRootContent(false),
         mIsScrollInfoLayer(false),
         mHasNonZeroDisplayPortMargins(false),
@@ -203,22 +198,21 @@ struct FrameMetrics {
 
   /*
    * Calculate the composition bounds of this frame in the CSS pixels of
-   * the content surrounding the scroll frame. (This can be thought of as
-   * "parent CSS" pixels).
+   * the content surrounding the scroll frame (OuterCSS pixels).
    * Note that it does not make sense to ask for the composition bounds in the
    * CSS pixels of the scrolled content (that is, regular CSS pixels),
    * because the origin of the composition bounds is not meaningful in that
    * coordinate space. (The size is, use CalculateCompositedSizeInCssPixels()
    * for that.)
    */
-  CSSRect CalculateCompositionBoundsInCssPixelsOfSurroundingContent() const {
+  OuterCSSRect CalculateCompositionBoundsInOuterCssPixels() const {
     if (GetZoom() == CSSToParentLayerScale(0)) {
-      return CSSRect();  // avoid division by zero
+      return OuterCSSRect();  // avoid division by zero
     }
     // The CSS pixels of the scrolled content and the CSS pixels of the
     // surrounding content only differ if the scrolled content is rendered
     // at a higher resolution, and the difference is the resolution.
-    return mCompositionBounds / GetZoom() * CSSToCSSScale{mPresShellResolution};
+    return mCompositionBounds / GetZoom() * GetCSSToOuterCSSScale();
   }
 
   CSSSize CalculateBoundedCompositedSizeInCssPixels() const {
@@ -249,9 +243,11 @@ struct FrameMetrics {
   }
 
   /*
-   * Returns true if the layout scroll offset or visual scroll offset changed.
+   * Returns true if the layout scroll offset or visual scroll offset changed
+   * and returns the visual scroll offset change delta.
    */
-  bool ApplyScrollUpdateFrom(const ScrollPositionUpdate& aUpdate);
+  std::pair<bool, CSSPoint> ApplyAbsoluteScrollUpdateFrom(
+      const ScrollPositionUpdate& aUpdate);
 
   /**
    * Applies the relative scroll offset update contained in aOther to the
@@ -314,6 +310,13 @@ struct FrameMetrics {
 
   const CSSToLayoutDeviceScale& GetDevPixelsPerCSSPixel() const {
     return mDevPixelsPerCSSPixel;
+  }
+
+  CSSToOuterCSSScale GetCSSToOuterCSSScale() const {
+    // The scale difference between CSS and OuterCSS pixels is the
+    // part of the zoom that's not subject to all enclosing content,
+    // i.e. the pres shell resolution.
+    return CSSToOuterCSSScale(mPresShellResolution);
   }
 
   void SetIsRootContent(bool aIsRootContent) {
@@ -687,66 +690,6 @@ struct FrameMetrics {
   // Please add new fields above this comment.
 };
 
-struct ScrollSnapInfo {
-  ScrollSnapInfo();
-
-  bool operator==(const ScrollSnapInfo& aOther) const {
-    return mScrollSnapStrictnessX == aOther.mScrollSnapStrictnessX &&
-           mScrollSnapStrictnessY == aOther.mScrollSnapStrictnessY &&
-           mSnapPositionX == aOther.mSnapPositionX &&
-           mSnapPositionY == aOther.mSnapPositionY &&
-           mXRangeWiderThanSnapport == aOther.mXRangeWiderThanSnapport &&
-           mYRangeWiderThanSnapport == aOther.mYRangeWiderThanSnapport &&
-           mSnapportSize == aOther.mSnapportSize;
-  }
-
-  bool HasScrollSnapping() const;
-  bool HasSnapPositions() const;
-
-  void InitializeScrollSnapStrictness(WritingMode aWritingMode,
-                                      const nsStyleDisplay* aDisplay);
-
-  // The scroll frame's scroll-snap-type.
-  StyleScrollSnapStrictness mScrollSnapStrictnessX;
-  StyleScrollSnapStrictness mScrollSnapStrictnessY;
-
-  // The scroll positions corresponding to scroll-snap-align values.
-  CopyableTArray<nscoord> mSnapPositionX;
-  CopyableTArray<nscoord> mSnapPositionY;
-
-  struct ScrollSnapRange {
-    ScrollSnapRange() = default;
-
-    ScrollSnapRange(nscoord aStart, nscoord aEnd)
-        : mStart(aStart), mEnd(aEnd) {}
-
-    nscoord mStart;
-    nscoord mEnd;
-    bool operator==(const ScrollSnapRange& aOther) const {
-      return mStart == aOther.mStart && mEnd == aOther.mEnd;
-    }
-
-    // Returns true if |aPoint| is a valid snap position in this range.
-    bool IsValid(nscoord aPoint, nscoord aSnapportSize) const {
-      MOZ_ASSERT(mEnd - mStart > aSnapportSize);
-      return mStart <= aPoint && aPoint <= mEnd - aSnapportSize;
-    }
-  };
-  // An array of the range that the target element is larger than the snapport
-  // on the axis.
-  // Snap positions in this range will be valid snap positions in the case where
-  // the distance between the closest snap position and the second closest snap
-  // position is still larger than the snapport size.
-  // See https://drafts.csswg.org/css-scroll-snap-1/#snap-overflow
-  //
-  // Note: This range contains scroll-margin values.
-  CopyableTArray<ScrollSnapRange> mXRangeWiderThanSnapport;
-  CopyableTArray<ScrollSnapRange> mYRangeWiderThanSnapport;
-
-  // Note: This snapport size has been already deflated by scroll-padding.
-  nsSize mSnapportSize;
-};
-
 // clang-format off
 MOZ_DEFINE_ENUM_CLASS_WITH_BASE(
   OverscrollBehavior, uint8_t, (
@@ -794,11 +737,7 @@ struct ScrollMetadata {
       sNullMetadata;  // We sometimes need an empty metadata
 
   ScrollMetadata()
-      : mMetrics(),
-        mSnapInfo(),
-        mScrollParentId(ScrollableLayerGuid::NULL_SCROLL_ID),
-        mBackgroundColor(),
-        mContentDescription(),
+      : mScrollParentId(ScrollableLayerGuid::NULL_SCROLL_ID),
         mLineScrollAmount(0, 0),
         mPageScrollAmount(0, 0),
         mHasScrollgrab(false),
@@ -808,15 +747,13 @@ struct ScrollMetadata {
         mResolutionUpdated(false),
         mIsRDMTouchSimulationActive(false),
         mDidContentGetPainted(true),
-        mPrefersReducedMotion(false),
         mForceMousewheelAutodir(false),
         mForceMousewheelAutodirHonourRoot(false),
-        mOverscrollBehavior() {}
+        mIsPaginatedPresentation(false) {}
 
   bool operator==(const ScrollMetadata& aOther) const {
     return mMetrics == aOther.mMetrics && mSnapInfo == aOther.mSnapInfo &&
            mScrollParentId == aOther.mScrollParentId &&
-           mBackgroundColor == aOther.mBackgroundColor &&
            // don't compare mContentDescription
            mLineScrollAmount == aOther.mLineScrollAmount &&
            mPageScrollAmount == aOther.mPageScrollAmount &&
@@ -827,10 +764,10 @@ struct ScrollMetadata {
            mResolutionUpdated == aOther.mResolutionUpdated &&
            mIsRDMTouchSimulationActive == aOther.mIsRDMTouchSimulationActive &&
            mDidContentGetPainted == aOther.mDidContentGetPainted &&
-           mPrefersReducedMotion == aOther.mPrefersReducedMotion &&
            mForceMousewheelAutodir == aOther.mForceMousewheelAutodir &&
            mForceMousewheelAutodirHonourRoot ==
                aOther.mForceMousewheelAutodirHonourRoot &&
+           mIsPaginatedPresentation == aOther.mIsPaginatedPresentation &&
            mDisregardedDirection == aOther.mDisregardedDirection &&
            mOverscrollBehavior == aOther.mOverscrollBehavior &&
            mScrollUpdates == aOther.mScrollUpdates;
@@ -858,10 +795,6 @@ struct ScrollMetadata {
   ViewID GetScrollParentId() const { return mScrollParentId; }
 
   void SetScrollParentId(ViewID aParentId) { mScrollParentId = aParentId; }
-  const gfx::DeviceColor& GetBackgroundColor() const {
-    return mBackgroundColor;
-  }
-  void SetBackgroundColor(const gfx::sRGBColor& aBackgroundColor);
   const nsCString& GetContentDescription() const { return mContentDescription; }
   void SetContentDescription(const nsCString& aContentDescription) {
     mContentDescription = aContentDescription;
@@ -902,9 +835,6 @@ struct ScrollMetadata {
     return mIsRDMTouchSimulationActive;
   }
 
-  void SetPrefersReducedMotion(bool aValue) { mPrefersReducedMotion = aValue; }
-  bool PrefersReducedMotion() const { return mPrefersReducedMotion; }
-
   void SetForceMousewheelAutodir(bool aValue) {
     mForceMousewheelAutodir = aValue;
   }
@@ -916,6 +846,11 @@ struct ScrollMetadata {
   bool ForceMousewheelAutodirHonourRoot() const {
     return mForceMousewheelAutodirHonourRoot;
   }
+
+  void SetIsPaginatedPresentation(bool aValue) {
+    mIsPaginatedPresentation = aValue;
+  }
+  bool IsPaginatedPresentation() const { return mIsPaginatedPresentation; }
 
   bool DidContentGetPainted() const { return mDidContentGetPainted; }
 
@@ -968,9 +903,6 @@ struct ScrollMetadata {
   // off.
   ViewID mScrollParentId;
 
-  // The background color to use when overscrolling.
-  gfx::DeviceColor mBackgroundColor;
-
   // A description of the content element corresponding to this frame.
   // This is empty unless this is a scrollable layer and the
   // apz.printtree pref is turned on.
@@ -1022,15 +954,17 @@ struct ScrollMetadata {
   // can use the correct transforms.
   bool mDidContentGetPainted : 1;
 
-  // Whether the user has requested the system minimze the amount of
-  // non-essential motion it uses (see the prefers-reduced-motion
-  // media query).
-  bool mPrefersReducedMotion : 1;
-
   // Whether privileged code has requested that autodir behaviour be
   // enabled for the scroll frame.
   bool mForceMousewheelAutodir : 1;
   bool mForceMousewheelAutodirHonourRoot : 1;
+
+  // Whether this content is being displayed in a paginated fashion
+  // such as printing or print preview. In such cases, content that
+  // would normally only generate one display item may generated one
+  // display item per page, and the different instances may be subject
+  // to different transforms, which constrains the assumptions APZ can make.
+  bool mIsPaginatedPresentation : 1;
 
   // The disregarded direction means the direction which is disregarded anyway,
   // even if the scroll frame overflows in that direction and the direction is

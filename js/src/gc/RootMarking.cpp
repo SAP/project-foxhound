@@ -10,22 +10,17 @@
 
 #include "jstypes.h"
 
-#include "builtin/MapObject.h"
 #include "debugger/DebugAPI.h"
 #include "gc/ClearEdgesTracer.h"
 #include "gc/GCInternals.h"
-#include "gc/Marking.h"
+#include "gc/PublicIterators.h"
 #include "jit/JitFrames.h"
 #include "jit/JitRuntime.h"
-#include "js/HashTable.h"
 #include "js/ValueArray.h"
+#include "vm/BigIntType.h"
+#include "vm/Compartment.h"
 #include "vm/HelperThreadState.h"
 #include "vm/JSContext.h"
-#include "vm/JSONParser.h"
-
-#include "gc/Nursery-inl.h"
-#include "gc/PrivateIterators-inl.h"
-#include "vm/JSObject-inl.h"
 
 using namespace js;
 using namespace js::gc;
@@ -232,7 +227,7 @@ void js::gc::GCRuntime::traceRuntimeForMajorGC(JSTracer* trc,
 
   // We only need to trace atoms when we're marking; atoms are never moved by
   // compacting GC.
-  if (atomsZone->isGCMarking()) {
+  if (atomsZone()->isGCMarking()) {
     traceRuntimeAtoms(trc);
   }
 
@@ -243,8 +238,6 @@ void js::gc::GCRuntime::traceRuntimeForMajorGC(JSTracer* trc,
     Compartment::traceIncomingCrossCompartmentEdgesForZoneGC(
         trc, Compartment::NonGrayEdges);
   }
-
-  markFinalizationRegistryRoots(trc);
 
   traceRuntimeCommon(trc, MarkRuntime);
 }
@@ -324,9 +317,6 @@ void js::gc::GCRuntime::traceRuntimeCommon(JSTracer* trc,
   // Trace runtime global roots.
   TracePersistentRooted(rt, trc);
 
-  // Trace the self-hosting stencil.
-  rt->traceSelfHostingStencil(trc);
-
 #ifdef JS_HAS_INTL_API
   // Trace the shared Intl data.
   rt->traceSharedIntlData(trc);
@@ -341,13 +331,18 @@ void js::gc::GCRuntime::traceRuntimeCommon(JSTracer* trc,
     r->traceRoots(trc, traceOrMark);
   }
 
-  // Trace zone script-table roots. See comment in
-  // Zone::traceScriptTableRoots() for justification re: calling this only
-  // during major (non-nursery) collections.
   if (!JS::RuntimeHeapIsMinorCollecting()) {
+    // Trace the self-hosting stencil. The contents of this are always tenured.
+    rt->traceSelfHostingStencil(trc);
+
     for (ZonesIter zone(this, ZoneSelector::SkipAtoms); !zone.done();
          zone.next()) {
-      zone->traceScriptTableRoots(trc);
+      zone->traceRootsInMajorGC(trc);
+    }
+
+    // Trace interpreter entry code generated with --emit-interpreter-entry
+    if (rt->hasJitRuntime() && rt->jitRuntime()->hasInterpreterEntryMap()) {
+      rt->jitRuntime()->getInterpreterEntryMap()->traceTrampolineCode(trc);
     }
   }
 
@@ -384,9 +379,8 @@ void GCRuntime::traceEmbeddingBlackRoots(JSTracer* trc) {
   // The analysis doesn't like the function pointer below.
   JS::AutoSuppressGCAnalysis nogc;
 
-  for (size_t i = 0; i < blackRootTracers.ref().length(); i++) {
-    const Callback<JSTraceDataOp>& e = blackRootTracers.ref()[i];
-    (*e.op)(trc, e.data);
+  for (const auto& callback : blackRootTracers.ref()) {
+    (*callback.op)(trc, callback.data);
   }
 }
 
@@ -410,7 +404,7 @@ IncrementalProgress GCRuntime::traceEmbeddingGrayRoots(JSTracer* trc,
 
 #ifdef DEBUG
 class AssertNoRootsTracer final : public JS::CallbackTracer {
-  void onChild(JS::GCCellPtr thing) override {
+  void onChild(JS::GCCellPtr thing, const char* name) override {
     MOZ_CRASH("There should not be any roots during runtime shutdown");
   }
 
@@ -425,8 +419,8 @@ class AssertNoRootsTracer final : public JS::CallbackTracer {
 void js::gc::GCRuntime::finishRoots() {
   AutoNoteSingleThreadedRegion anstr;
 
-  rt->finishParserAtoms();
   rt->finishAtoms();
+  restoreSharedAtomsZone();
 
   rootsHash.ref().clear();
 
@@ -441,6 +435,9 @@ void js::gc::GCRuntime::finishRoots() {
 #ifdef JS_GC_ZEAL
   clearSelectedForMarking();
 #endif
+
+  // Clear out the interpreter entry map before the final gc.
+  ClearInterpreterEntryMap(rt);
 
   // Clear any remaining roots from the embedding (as otherwise they will be
   // left dangling after we shut down) and remove the callbacks.

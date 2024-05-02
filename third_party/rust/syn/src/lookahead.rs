@@ -18,10 +18,13 @@ use std::cell::RefCell;
 /// [`ParseStream::peek`]: crate::parse::ParseBuffer::peek
 /// [`ParseStream::lookahead1`]: crate::parse::ParseBuffer::lookahead1
 ///
+/// Consuming tokens from the source stream after constructing a lookahead
+/// object does not also advance the lookahead object.
+///
 /// # Example
 ///
 /// ```
-/// use syn::{ConstParam, Ident, Lifetime, LifetimeDef, Result, Token, TypeParam};
+/// use syn::{ConstParam, Ident, Lifetime, LifetimeParam, Result, Token, TypeParam};
 /// use syn::parse::{Parse, ParseStream};
 ///
 /// // A generic parameter, a single one of the comma-separated elements inside
@@ -37,7 +40,7 @@ use std::cell::RefCell;
 /// //       |          ^
 /// enum GenericParam {
 ///     Type(TypeParam),
-///     Lifetime(LifetimeDef),
+///     Lifetime(LifetimeParam),
 ///     Const(ConstParam),
 /// }
 ///
@@ -62,7 +65,7 @@ pub struct Lookahead1<'a> {
     comparisons: RefCell<Vec<&'static str>>,
 }
 
-pub fn new(scope: Span, cursor: Cursor) -> Lookahead1 {
+pub(crate) fn new(scope: Span, cursor: Cursor) -> Lookahead1 {
     Lookahead1 {
         scope,
         cursor,
@@ -159,7 +162,7 @@ impl<S> IntoSpans<S> for TokenMarker {
     }
 }
 
-pub fn is_delimiter(cursor: Cursor, delimiter: Delimiter) -> bool {
+pub(crate) fn is_delimiter(cursor: Cursor, delimiter: Delimiter) -> bool {
     cursor.group(delimiter).is_some()
 }
 

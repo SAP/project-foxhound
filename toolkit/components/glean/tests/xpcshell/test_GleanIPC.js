@@ -3,17 +3,19 @@
 
 "use strict";
 
-const { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
-const { setTimeout } = ChromeUtils.import("resource://gre/modules/Timer.jsm");
+const { setTimeout } = ChromeUtils.importESModule(
+  "resource://gre/modules/Timer.sys.mjs"
+);
 
 function sleep(ms) {
   /* eslint-disable mozilla/no-arbitrary-setTimeout */
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-add_task(
+add_setup(
   /* on Android FOG is set up through head.js */
   { skip_if: () => !runningInParent || AppConstants.platform == "android" },
   function test_setup() {
@@ -69,7 +71,7 @@ add_task({ skip_if: () => runningInParent }, async function run_child_stuff() {
     COUNTERS_WITH_JUNK_ON_THEM
   );
 
-  Glean.testOnly.mabelsBathroomCounters.InvalidLabel.add(INVALID_COUNTERS);
+  Glean.testOnly.mabelsBathroomCounters["1".repeat(72)].add(INVALID_COUNTERS);
 
   Glean.testOnlyIpc.irate.addToNumerator(44);
   Glean.testOnlyIpc.irate.addToDenominator(14);
@@ -143,7 +145,7 @@ add_task(
 
     Assert.throws(
       () => Glean.testOnly.mabelsBathroomCounters.__other__.testGetValue(),
-      /NS_ERROR_LOSS_OF_SIGNIFICANT_DATA/,
+      /DataError/,
       "Invalid labels record errors, which throw"
     );
 

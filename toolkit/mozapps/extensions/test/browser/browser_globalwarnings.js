@@ -17,7 +17,11 @@ function checkMessageShown(win, type, hasButton) {
   is(stack.childElementCount, 1, "There is one message");
   let messageBar = stack.firstElementChild;
   ok(messageBar, "There is a message bar");
-  is(messageBar.localName, "message-bar", "The message bar is a message-bar");
+  is(
+    messageBar.localName,
+    "moz-message-bar",
+    "The message bar is a moz-message-bar"
+  );
   is_element_visible(messageBar, "Message bar is visible");
   is(messageBar.getAttribute("warning-type"), type);
   if (hasButton) {
@@ -53,7 +57,7 @@ add_task(async function checkCompatibility() {
 
   let id = "test@mochi.test";
   let extension = ExtensionTestUtils.loadExtension({
-    manifest: { applications: { gecko: { id } } },
+    manifest: { browser_specific_settings: { gecko: { id } } },
     useAddonManager: "temporary",
   });
   await extension.startup();
@@ -99,7 +103,7 @@ add_task(async function checkSecurity() {
 
   let id = "test-security@mochi.test";
   let extension = ExtensionTestUtils.loadExtension({
-    manifest: { applications: { gecko: { id } } },
+    manifest: { browser_specific_settings: { gecko: { id } } },
     useAddonManager: "temporary",
   });
   await extension.startup();
@@ -139,7 +143,7 @@ add_task(async function checkSafeMode() {
 
   let id = "test-safemode@mochi.test";
   let extension = ExtensionTestUtils.loadExtension({
-    manifest: { applications: { gecko: { id } } },
+    manifest: { browser_specific_settings: { gecko: { id } } },
     useAddonManager: "temporary",
   });
   await extension.startup();

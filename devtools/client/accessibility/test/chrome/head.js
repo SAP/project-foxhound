@@ -5,13 +5,13 @@
 
 "use strict";
 
-var { require } = ChromeUtils.import(
-  "resource://devtools/shared/loader/Loader.jsm"
+var { require } = ChromeUtils.importESModule(
+  "resource://devtools/shared/loader/Loader.sys.mjs"
 );
 var { BrowserLoader } = ChromeUtils.import(
   "resource://devtools/shared/loader/browser-loader.js"
 );
-var DevToolsUtils = require("devtools/shared/DevToolsUtils");
+var DevToolsUtils = require("resource://devtools/shared/DevToolsUtils.js");
 
 var { require: browserRequire } = BrowserLoader({
   baseURI: "resource://devtools/client/shared/",
@@ -19,8 +19,8 @@ var { require: browserRequire } = BrowserLoader({
 });
 
 window.EVENTS = {};
-window.on = function() {};
-window.off = function() {};
+window.on = function () {};
+window.off = function () {};
 
 SimpleTest.registerCleanupFunction(() => {
   window.EVENTS = null;

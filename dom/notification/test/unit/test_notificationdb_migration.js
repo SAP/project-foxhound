@@ -1,9 +1,8 @@
 "use strict";
 
-const { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
-const { OS } = ChromeUtils.import("resource://gre/modules/osfile.jsm");
 
 const fooNotification = getNotificationObject(
   "foo",
@@ -21,8 +20,8 @@ const msg = "Notification:GetAll";
 const msgReply = "Notification:GetAll:Return:OK";
 
 do_get_profile();
-const OLD_STORE_PATH = OS.Path.join(
-  OS.Constants.Path.profileDir,
+const OLD_STORE_PATH = PathUtils.join(
+  PathUtils.profileDir,
   "notificationstore.json"
 );
 
@@ -47,7 +46,7 @@ add_task(
       },
     };
 
-    await OS.File.writeAtomic(OLD_STORE_PATH, JSON.stringify(notifications));
+    await IOUtils.writeJSON(OLD_STORE_PATH, notifications);
 
     startNotificationDB();
   }
@@ -59,7 +58,7 @@ add_test(
   },
   function test_get_system_notification() {
     const requestID = nextRequestID++;
-    const msgHandler = function(message) {
+    const msgHandler = function (message) {
       Assert.equal(requestID, message.data.requestID);
       Assert.equal(0, message.data.notifications.length);
     };
@@ -77,7 +76,7 @@ add_test(
   },
   function test_get_foo_notification() {
     const requestID = nextRequestID++;
-    const msgHandler = function(message) {
+    const msgHandler = function (message) {
       Assert.equal(requestID, message.data.requestID);
       Assert.equal(1, message.data.notifications.length);
       Assert.deepEqual(
@@ -100,7 +99,7 @@ add_test(
   },
   function test_get_bar_notification() {
     const requestID = nextRequestID++;
-    const msgHandler = function(message) {
+    const msgHandler = function (message) {
       Assert.equal(requestID, message.data.requestID);
       Assert.equal(1, message.data.notifications.length);
       Assert.deepEqual(
@@ -123,7 +122,7 @@ add_task(
   },
   async function test_old_datastore_deleted() {
     Assert.ok(
-      !(await OS.File.exists(OLD_STORE_PATH)),
+      !(await IOUtils.exists(OLD_STORE_PATH)),
       "old datastore no longer exists"
     );
   }

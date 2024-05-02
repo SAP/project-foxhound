@@ -5,6 +5,7 @@
 
 #include "ExtensionAPIRequestForwarder.h"
 #include "ExtensionEventListener.h"
+#include "ExtensionAPIBase.h"
 
 #include "js/Promise.h"
 #include "js/PropertyAndElement.h"  // JS_GetElement
@@ -51,7 +52,7 @@ ExtensionAPIRequestForwarder::ExtensionAPIRequestForwarder(
 
 // static
 nsresult ExtensionAPIRequestForwarder::JSArrayToSequence(
-    JSContext* aCx, JS::HandleValue aJSValue,
+    JSContext* aCx, JS::Handle<JS::Value> aJSValue,
     dom::Sequence<JS::Value>& aResult) {
   bool isArray;
   JS::Rooted<JSObject*> obj(aCx, aJSValue.toObjectOrNull());
@@ -67,7 +68,7 @@ nsresult ExtensionAPIRequestForwarder::JSArrayToSequence(
     }
 
     for (uint32_t i = 0; i < len; i++) {
-      JS::RootedValue v(aCx);
+      JS::Rooted<JS::Value> v(aCx);
       JS_GetElement(aCx, obj, i, &v);
       if (NS_WARN_IF(!aResult.AppendElement(v, fallible))) {
         return NS_ERROR_OUT_OF_MEMORY;
@@ -107,7 +108,7 @@ void ExtensionAPIRequestForwarder::SetSerializedCallerStack(
 void ExtensionAPIRequestForwarder::Run(nsIGlobalObject* aGlobal, JSContext* aCx,
                                        const dom::Sequence<JS::Value>& aArgs,
                                        ExtensionEventListener* aListener,
-                                       JS::MutableHandleValue aRetVal,
+                                       JS::MutableHandle<JS::Value> aRetVal,
                                        ErrorResult& aRv) {
   MOZ_ASSERT(dom::IsCurrentThreadRunningWorker());
 
@@ -198,7 +199,7 @@ void ExtensionAPIRequestForwarder::Run(nsIGlobalObject* aGlobal, JSContext* aCx,
 
 void ExtensionAPIRequestForwarder::Run(nsIGlobalObject* aGlobal, JSContext* aCx,
                                        const dom::Sequence<JS::Value>& aArgs,
-                                       JS::MutableHandleValue aRetVal,
+                                       JS::MutableHandle<JS::Value> aRetVal,
                                        ErrorResult& aRv) {
   Run(aGlobal, aCx, aArgs, nullptr, aRetVal, aRv);
 }
@@ -233,7 +234,7 @@ void ExtensionAPIRequestForwarder::Run(
 }
 
 void ExtensionAPIRequestForwarder::Run(nsIGlobalObject* aGlobal, JSContext* aCx,
-                                       JS::MutableHandleValue aRetVal,
+                                       JS::MutableHandle<JS::Value> aRetVal,
                                        ErrorResult& aRv) {
   Run(aGlobal, aCx, {}, aRetVal, aRv);
 }
@@ -259,7 +260,7 @@ JSObject* ExtensionAPIRequestStructuredCloneRead(
 bool ExtensionAPIRequestStructuredCloneWrite(JSContext* aCx,
                                              JSStructuredCloneWriter* aWriter,
                                              dom::PromiseWorkerProxy* aProxy,
-                                             JS::HandleObject aObj) {
+                                             JS::Handle<JSObject*> aObj) {
   // Try to serialize the object as a CloneErrorHolder, if it fails then
   // the object wasn't an error.
   IgnoredErrorResult rv;
@@ -337,9 +338,15 @@ void RequestWorkerRunnable::Init(nsIGlobalObject* aGlobal, JSContext* aCx,
     return;
   }
 
-  mPromiseProxy = dom::PromiseWorkerProxy::Create(
-      mWorkerPrivate, aPromiseRetval,
-      &kExtensionAPIRequestStructuredCloneCallbacks);
+  RefPtr<dom::PromiseWorkerProxy> promiseProxy =
+      dom::PromiseWorkerProxy::Create(
+          mWorkerPrivate, aPromiseRetval,
+          &kExtensionAPIRequestStructuredCloneCallbacks);
+  if (!promiseProxy) {
+    aRv.Throw(NS_ERROR_DOM_ABORT_ERR);
+    return;
+  }
+  mPromiseProxy = promiseProxy.forget();
 }
 
 void RequestWorkerRunnable::SetSerializedCallerStack(
@@ -356,10 +363,10 @@ void RequestWorkerRunnable::SerializeCallerStack(JSContext* aCx) {
 }
 
 void RequestWorkerRunnable::DeserializeCallerStack(
-    JSContext* aCx, JS::MutableHandleValue aRetval) {
+    JSContext* aCx, JS::MutableHandle<JS::Value> aRetval) {
   MOZ_ASSERT(NS_IsMainThread());
   if (mStackHolder.isSome()) {
-    JS::RootedObject savedFrame(aCx, mStackHolder->get()->ReadStack(aCx));
+    JS::Rooted<JSObject*> savedFrame(aCx, mStackHolder->get()->ReadStack(aCx));
     MOZ_ASSERT(savedFrame);
     aRetval.set(JS::ObjectValue(*savedFrame));
     mStackHolder = Nothing();
@@ -447,8 +454,8 @@ RequestWorkerRunnable::GetWebExtensionPolicy() {
   return policy.forget();
 }
 
-bool RequestWorkerRunnable::HandleAPIRequest(JSContext* aCx,
-                                             JS::MutableHandleValue aRetval) {
+bool RequestWorkerRunnable::HandleAPIRequest(
+    JSContext* aCx, JS::MutableHandle<JS::Value> aRetval) {
   MOZ_ASSERT(NS_IsMainThread());
 
   RefPtr<WebExtensionPolicy> policy = GetWebExtensionPolicy();
@@ -499,7 +506,7 @@ bool RequestWorkerRunnable::HandleAPIRequest(JSContext* aCx,
     RefPtr<dom::ClonedErrorHolder> ceh =
         dom::ClonedErrorHolder::Create(aCx, errObj, rv);
     if (!rv.Failed() && ceh) {
-      JS::RootedObject obj(aCx);
+      JS::Rooted<JSObject*> obj(aCx);
       // Note: `ToJSValue` cannot be used because ClonedErrorHolder isn't
       // wrapper cached.
       okSerializedError = ceh->WrapObject(aCx, nullptr, &obj);
@@ -535,7 +542,7 @@ bool RequestWorkerRunnable::HandleAPIRequest(JSContext* aCx,
 }
 
 bool RequestWorkerRunnable::ProcessHandlerResult(
-    JSContext* aCx, JS::MutableHandleValue aRetval) {
+    JSContext* aCx, JS::MutableHandle<JS::Value> aRetval) {
   MOZ_ASSERT(NS_IsMainThread());
 
   if (mOuterRequest->GetRequestType() == APIRequestType::CALL_FUNCTION_ASYNC) {
@@ -591,7 +598,7 @@ bool RequestWorkerRunnable::ProcessHandlerResult(
 }
 
 void RequestWorkerRunnable::ReadResult(JSContext* aCx,
-                                       JS::MutableHandleValue aResult,
+                                       JS::MutableHandle<JS::Value> aResult,
                                        ErrorResult& aRv) {
   MOZ_ASSERT(mWorkerPrivate->IsOnCurrentThread());
   if (mResultHolder.isNothing() || !mResultHolder->get()->HasData()) {
@@ -609,7 +616,7 @@ void RequestWorkerRunnable::ReadResult(JSContext* aCx,
                                  aRv);
       return;
     case mozIExtensionAPIRequestResult::ResultType::EXTENSION_ERROR:
-      JS::RootedValue exn(aCx);
+      JS::Rooted<JS::Value> exn(aCx);
       IgnoredErrorResult rv;
       mResultHolder->get()->Read(xpc::CurrentNativeGlobal(aCx), aCx, &exn, rv);
       if (rv.Failed()) {

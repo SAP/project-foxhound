@@ -8,7 +8,6 @@
 #include "AudioCaptureTrack.h"
 #include "AudioChannelAgent.h"
 #include "AudioStreamTrack.h"
-#include "Layers.h"
 #include "MediaTrackGraph.h"
 #include "MediaTrackGraphImpl.h"
 #include "MediaTrackListener.h"
@@ -113,7 +112,7 @@ NS_IMPL_ADDREF_INHERITED(DOMMediaStream, DOMEventTargetHelper)
 NS_IMPL_RELEASE_INHERITED(DOMMediaStream, DOMEventTargetHelper)
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(DOMMediaStream)
-  NS_INTERFACE_MAP_ENTRY(DOMMediaStream)
+  NS_INTERFACE_MAP_ENTRY_CONCRETE(DOMMediaStream)
 NS_INTERFACE_MAP_END_INHERITING(DOMEventTargetHelper)
 
 DOMMediaStream::DOMMediaStream(nsPIDOMWindowInner* aWindow)
@@ -335,8 +334,16 @@ void DOMMediaStream::AddTrack(MediaStreamTrack& aTrack) {
 }
 
 void DOMMediaStream::RemoveTrack(MediaStreamTrack& aTrack) {
-  LOG(LogLevel::Info, ("DOMMediaStream %p Removing track %p (from track %p)",
-                       this, &aTrack, aTrack.GetTrack()));
+  if (static_cast<LogModule*>(gMediaStreamLog)->ShouldLog(LogLevel::Info)) {
+    if (aTrack.Ended()) {
+      LOG(LogLevel::Info,
+          ("DOMMediaStream %p Removing (ended) track %p", this, &aTrack));
+    } else {
+      LOG(LogLevel::Info,
+          ("DOMMediaStream %p Removing track %p (from track %p)", this, &aTrack,
+           aTrack.GetTrack()));
+    }
+  }
 
   if (!mTracks.RemoveElement(&aTrack)) {
     LOG(LogLevel::Debug,
@@ -402,6 +409,9 @@ void DOMMediaStream::RemoveTrackInternal(MediaStreamTrack* aTrack) {
 }
 
 already_AddRefed<nsIPrincipal> DOMMediaStream::GetPrincipal() {
+  if (!GetOwner()) {
+    return nullptr;
+  }
   nsCOMPtr<nsIPrincipal> principal =
       nsGlobalWindowInner::Cast(GetOwner())->GetPrincipal();
   for (const auto& t : mTracks) {

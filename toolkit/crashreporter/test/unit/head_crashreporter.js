@@ -1,14 +1,12 @@
-var { OS, require } = ChromeUtils.import("resource://gre/modules/osfile.jsm");
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { makeFakeAppDir } = ChromeUtils.import(
-  "resource://testing-common/AppData.jsm"
+const { makeFakeAppDir } = ChromeUtils.importESModule(
+  "resource://testing-common/AppData.sys.mjs"
 );
-var { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+var { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
 
 function getEventDir() {
-  return OS.Path.join(do_get_tempdir().path, "crash-events");
+  return PathUtils.join(do_get_tempdir().path, "crash-events");
 }
 
 function sendCommandAsync(command) {
@@ -69,24 +67,20 @@ async function do_crash(setup, callback, canReturnZero) {
   }
   args.push("-f", tailfile.path);
 
-  let env = Cc["@mozilla.org/process/environment;1"].getService(
-    Ci.nsIEnvironment
-  );
-
   let crashD = do_get_tempdir();
   crashD.append("crash-events");
   if (!crashD.exists()) {
     crashD.create(crashD.DIRECTORY_TYPE, 0o700);
   }
 
-  env.set("CRASHES_EVENTS_DIR", crashD.path);
+  Services.env.set("CRASHES_EVENTS_DIR", crashD.path);
 
   try {
     process.run(true, args, args.length);
   } catch (ex) {
     // on Windows we exit with a -1 status when crashing.
   } finally {
-    env.set("CRASHES_EVENTS_DIR", "");
+    Services.env.set("CRASHES_EVENTS_DIR", "");
   }
 
   if (!canReturnZero) {
@@ -145,27 +139,30 @@ async function handleMinidump(callback) {
   let memoryfile = minidump.clone();
   memoryfile.leafName = memoryfile.leafName.slice(0, -4) + ".memory.json.gz";
 
-  let cleanup = function() {
-    [minidump, extrafile, memoryfile].forEach(file => {
-      if (file.exists()) {
-        file.remove(false);
+  let cleanup = async function () {
+    for (let file of [minidump, extrafile, memoryfile]) {
+      while (file.exists()) {
+        try {
+          file.remove(false);
+        } catch (e) {
+          // On Windows the file may be locked, wait briefly and try again
+          await new Promise(resolve => do_timeout(50, resolve));
+        }
       }
-    });
+    }
   };
 
   // Just in case, don't let these files linger.
   registerCleanupFunction(cleanup);
 
   Assert.ok(extrafile.exists());
-  let data = await OS.File.read(extrafile.path);
-  let decoder = new TextDecoder();
-  let extra = JSON.parse(decoder.decode(data));
+  let extra = await IOUtils.readJSON(extrafile.path);
 
   if (callback) {
-    await callback(minidump, extra, extrafile);
+    await callback(minidump, extra, extrafile, memoryfile);
   }
 
-  cleanup();
+  await cleanup();
 }
 
 function spinEventLoop() {
@@ -186,10 +183,7 @@ async function do_content_crash(setup, callback) {
 
   // Setting the minidump path won't work in the child, so we need to do
   // that here.
-  let crashReporter = Cc["@mozilla.org/toolkit/crash-reporter;1"].getService(
-    Ci.nsICrashReporter
-  );
-  crashReporter.minidumpPath = do_get_tempdir();
+  Services.appinfo.minidumpPath = do_get_tempdir();
 
   /* import-globals-from ../unit/crasher_subprocess_head.js */
   /* import-globals-from ../unit/crasher_subprocess_tail.js */
@@ -233,10 +227,7 @@ async function do_triggered_content_crash(trigger, callback) {
 
   // Setting the minidump path won't work in the child, so we need to do
   // that here.
-  let crashReporter = Cc["@mozilla.org/toolkit/crash-reporter;1"].getService(
-    Ci.nsICrashReporter
-  );
-  crashReporter.minidumpPath = do_get_tempdir();
+  Services.appinfo.minidumpPath = do_get_tempdir();
 
   /* import-globals-from ../unit/crasher_subprocess_head.js */
 
@@ -314,17 +305,13 @@ async function do_backgroundtask_crash(
     args.push(value);
   }
 
-  let env = Cc["@mozilla.org/process/environment;1"].getService(
-    Ci.nsIEnvironment
-  );
-
   let crashD = do_get_tempdir();
   crashD.append("crash-events");
   if (!crashD.exists()) {
     crashD.create(crashD.DIRECTORY_TYPE, 0o700);
   }
 
-  env.set("CRASHES_EVENTS_DIR", crashD.path);
+  Services.env.set("CRASHES_EVENTS_DIR", crashD.path);
 
   // Ensure `resource://testing-common` gets mapped.
   let protocolHandler = Services.io
@@ -335,15 +322,15 @@ async function do_backgroundtask_crash(
   Assert.ok(uri, "resource://testing-common is not substituted");
 
   // The equivalent of _TESTING_MODULES_DIR in xpcshell.
-  env.set("XPCSHELL_TESTING_MODULES_URI", uri.spec);
+  Services.env.set("XPCSHELL_TESTING_MODULES_URI", uri.spec);
 
   try {
     process.run(true, args, args.length);
   } catch (ex) {
     // on Windows we exit with a -1 status when crashing.
   } finally {
-    env.set("CRASHES_EVENTS_DIR", "");
-    env.set("XPCSHELL_TESTING_MODULES_URI", "");
+    Services.env.set("CRASHES_EVENTS_DIR", "");
+    Services.env.set("XPCSHELL_TESTING_MODULES_URI", "");
   }
 
   if (!canReturnZero) {
@@ -355,6 +342,6 @@ async function do_backgroundtask_crash(
 }
 
 // Import binary APIs via js-ctypes.
-var { CrashTestUtils } = ChromeUtils.import(
-  "resource://test/CrashTestUtils.jsm"
+var { CrashTestUtils } = ChromeUtils.importESModule(
+  "resource://test/CrashTestUtils.sys.mjs"
 );

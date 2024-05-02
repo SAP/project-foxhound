@@ -7,14 +7,14 @@
 const {
   openToolbox,
   closeToolboxAndLog,
-  getBrowserWindow,
   runTest,
   testSetup,
   testTeardown,
   SIMPLE_URL,
+  waitForDOMPredicate,
 } = require("damp-test/tests/head");
 
-module.exports = async function() {
+module.exports = async function () {
   let tab = await testSetup(SIMPLE_URL);
 
   let messageManager = tab.linkedBrowser.messageManager;
@@ -64,9 +64,8 @@ module.exports = async function() {
   // Expand an object when there are many objectInspector instances in the console (See Bug 1599317)
   // First print a lot of objects and wait for them to be rendered
   const waitForInfoMessage = async () => {
-    const infoMessage = webconsole.hud.ui.outputNode.querySelector(
-      ".info.message"
-    );
+    const infoMessage =
+      webconsole.hud.ui.outputNode.querySelector(".info.message");
     if (
       infoMessage &&
       infoMessage.querySelectorAll(".tree").length === WARMUP_INFO_COUNT
@@ -100,9 +99,8 @@ async function logAndWaitForExpandedObjectDirMessage(
   expectedTreeItemCount
 ) {
   const waitForDirMessage = async () => {
-    const dirMessage = webconsole.hud.ui.outputNode.querySelector(
-      ".dir.message"
-    );
+    const dirMessage =
+      webconsole.hud.ui.outputNode.querySelector(".dir.message");
     if (dirMessage) {
       return dirMessage;
     }
@@ -118,19 +116,10 @@ async function logAndWaitForExpandedObjectDirMessage(
   // The tree can be collapsed since the properties are fetched asynchronously.
   if (tree.querySelectorAll(".node").length === 1) {
     // If this is the case, we wait for the properties to be fetched and displayed.
-    await new Promise(resolve => {
-      const observer = new (getBrowserWindow().MutationObserver)(mutations => {
-        for (const mutation of mutations) {
-          if (mutation.target.childElementCount === expectedTreeItemCount) {
-            resolve(mutations);
-            observer.disconnect();
-            break;
-          }
-        }
-      });
-      observer.observe(tree, {
-        childList: true,
-      });
-    });
+    await waitForDOMPredicate(
+      tree,
+      () => tree.childElementCount === expectedTreeItemCount,
+      { childList: true }
+    );
   }
 }

@@ -25,6 +25,7 @@
 #include "mozilla/dom/BrowserParent.h"
 #include "mozilla/dom/TreeWalker.h"
 #include "mozilla/Encoding.h"
+#include "mozilla/Try.h"
 #include "mozilla/Unused.h"
 #include "nsComponentManagerUtils.h"
 #include "nsContentUtils.h"
@@ -458,7 +459,9 @@ nsresult ResourceReader::OnWalkDOMNode(nsINode* aNode) {
     return NS_OK;
   }
 
-  if (aNode->IsSVGElement(nsGkAtoms::img)) {
+  if (aNode->IsSVGElement(nsGkAtoms::image)) {
+    MOZ_TRY(OnWalkAttribute(aNode->AsElement(), nsIContentPolicy::TYPE_IMAGE,
+                            "href"));
     return OnWalkAttribute(aNode->AsElement(), nsIContentPolicy::TYPE_IMAGE,
                            "href", "http://www.w3.org/1999/xlink");
   }
@@ -500,6 +503,8 @@ nsresult ResourceReader::OnWalkDOMNode(nsINode* aNode) {
   }
 
   if (aNode->IsSVGElement(nsGkAtoms::script)) {
+    MOZ_TRY(OnWalkAttribute(aNode->AsElement(), nsIContentPolicy::TYPE_SCRIPT,
+                            "href"));
     return OnWalkAttribute(aNode->AsElement(), nsIContentPolicy::TYPE_SCRIPT,
                            "href", "http://www.w3.org/1999/xlink");
   }
@@ -993,7 +998,7 @@ PersistNodeFixup::FixupNode(nsINode* aNodeIn, bool* aSerializeCloneKids,
     return rv;
   }
 
-  if (content->IsSVGElement(nsGkAtoms::img)) {
+  if (content->IsSVGElement(nsGkAtoms::image)) {
     nsresult rv = GetNodeToFixup(aNodeIn, aNodeOut);
     if (NS_SUCCEEDED(rv) && *aNodeOut) {
       // Disable image loads
@@ -1001,6 +1006,7 @@ PersistNodeFixup::FixupNode(nsINode* aNodeIn, bool* aSerializeCloneKids,
       if (imgCon) imgCon->SetLoadingEnabled(false);
 
       // FixupAnchor(*aNodeOut);  // XXXjwatt: is this line needed?
+      FixupAttribute(*aNodeOut, "href");
       FixupAttribute(*aNodeOut, "href", "http://www.w3.org/1999/xlink");
     }
     return rv;
@@ -1017,6 +1023,7 @@ PersistNodeFixup::FixupNode(nsINode* aNodeIn, bool* aSerializeCloneKids,
   if (content->IsSVGElement(nsGkAtoms::script)) {
     nsresult rv = GetNodeToFixup(aNodeIn, aNodeOut);
     if (NS_SUCCEEDED(rv) && *aNodeOut) {
+      FixupAttribute(*aNodeOut, "href");
       FixupAttribute(*aNodeOut, "href", "http://www.w3.org/1999/xlink");
     }
     return rv;

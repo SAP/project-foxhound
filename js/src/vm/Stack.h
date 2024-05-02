@@ -7,26 +7,20 @@
 #ifndef vm_Stack_h
 #define vm_Stack_h
 
-#include "mozilla/Atomics.h"
 #include "mozilla/HashFunctions.h"
-#include "mozilla/Maybe.h"
 #include "mozilla/MemoryReporting.h"
-#include "mozilla/Span.h"  // for Span
 
 #include <algorithm>
 #include <type_traits>
 
-#include "gc/Rooting.h"
 #include "js/ErrorReport.h"
 #include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
 #include "js/RootingAPI.h"
 #include "js/TypeDecls.h"
-#include "js/UniquePtr.h"
 #include "js/ValueArray.h"
 #include "vm/ArgumentsObject.h"
 #include "vm/JSFunction.h"
 #include "vm/JSScript.h"
-#include "vm/SavedFrame.h"
 #include "wasm/WasmDebugFrame.h"  // js::wasm::DebugFrame
 
 namespace js {
@@ -42,8 +36,6 @@ class GeckoProfilerRuntime;
 class InterpreterFrame;
 class EnvironmentIter;
 class EnvironmentCoordinate;
-
-class SavedFrame;
 
 namespace jit {
 class CommonFrameLayout;
@@ -105,11 +97,11 @@ class AbstractFramePtr {
   uintptr_t ptr_;
 
   enum {
-    Tag_InterpreterFrame = 0x1,
-    Tag_BaselineFrame = 0x2,
-    Tag_RematerializedFrame = 0x3,
-    Tag_WasmDebugFrame = 0x4,
-    TagMask = 0x7
+    Tag_InterpreterFrame = 0x0,
+    Tag_BaselineFrame = 0x1,
+    Tag_RematerializedFrame = 0x2,
+    Tag_WasmDebugFrame = 0x3,
+    TagMask = 0x3
   };
 
  public:
@@ -186,7 +178,7 @@ class AbstractFramePtr {
   inline JSObject* environmentChain() const;
   inline CallObject& callObj() const;
   inline bool initFunctionEnvironmentObjects(JSContext* cx);
-  inline bool pushVarEnvironment(JSContext* cx, HandleScope scope);
+  inline bool pushVarEnvironment(JSContext* cx, Handle<Scope*> scope);
   template <typename SpecificEnvironment>
   inline void pushOnEnvironmentChain(SpecificEnvironment& env);
   template <typename SpecificEnvironment>
@@ -210,7 +202,6 @@ class AbstractFramePtr {
   inline Value& thisArgument() const;
 
   inline bool isConstructing() const;
-  inline Value newTarget() const;
 
   inline bool debuggerNeedsCheckPrimitiveReturn() const;
 
@@ -262,7 +253,7 @@ class AbstractFramePtr {
 
 class NullFramePtr : public AbstractFramePtr {
  public:
-  NullFramePtr() : AbstractFramePtr() {}
+  NullFramePtr() = default;
 };
 
 enum MaybeConstruct { NO_CONSTRUCT = false, CONSTRUCT = true };
@@ -365,8 +356,7 @@ class InterpreterFrame {
 
   /* Used for eval, module or global frames. */
   void initExecuteFrame(JSContext* cx, HandleScript script,
-                        AbstractFramePtr prev, HandleValue newTargetValue,
-                        HandleObject envChain);
+                        AbstractFramePtr prev, HandleObject envChain);
 
  public:
   /*
@@ -534,7 +524,7 @@ class InterpreterFrame {
 
   // Push a VarEnvironmentObject for function frames of functions that have
   // parameter expressions with closed over var bindings.
-  bool pushVarEnvironment(JSContext* cx, HandleScope scope);
+  bool pushVarEnvironment(JSContext* cx, Handle<Scope*> scope);
 
   /*
    * For lexical envs with aliased locals, these interfaces push and pop
@@ -607,20 +597,11 @@ class InterpreterFrame {
   /*
    * New Target
    *
-   * Only function frames have a meaningful newTarget. An eval frame in a
-   * function will have a copy of the newTarget of the enclosing function
-   * frame.
+   * Only non-arrow function frames have a meaningful newTarget.
    */
   Value newTarget() const {
-    if (isEvalFrame()) {
-      return ((Value*)this)[-1];
-    }
-
     MOZ_ASSERT(isFunctionFrame());
-
-    if (callee().isArrow()) {
-      return callee().getExtendedSlot(FunctionExtended::ARROW_NEWTARGET_SLOT);
-    }
+    MOZ_ASSERT(!callee().isArrow());
 
     if (isConstructing()) {
       unsigned pushedArgs = std::max(numFormalArgs(), numActualArgs());
@@ -832,7 +813,6 @@ class InterpreterStack {
 
   // For execution of eval, module or global code.
   InterpreterFrame* pushExecuteFrame(JSContext* cx, HandleScript script,
-                                     HandleValue newTargetValue,
                                      HandleObject envChain,
                                      AbstractFramePtr evalInFrame);
 
@@ -996,6 +976,24 @@ inline bool FillArgumentsFromArraylike(JSContext* cx, Args& args,
 
   return true;
 }
+
+#ifdef ENABLE_PORTABLE_BASELINE_INTERP
+struct PortableBaselineStack {
+  static const size_t DEFAULT_SIZE = 512 * 1024;
+
+  void* base;
+  void* top;
+
+  bool valid() { return base != nullptr; }
+
+  PortableBaselineStack() {
+    base = js_calloc(DEFAULT_SIZE);
+    top = reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(base) +
+                                  DEFAULT_SIZE);
+  }
+  ~PortableBaselineStack() { js_free(base); }
+};
+#endif  // ENABLE_PORTABLE_BASELINE_INTERP
 
 }  // namespace js
 

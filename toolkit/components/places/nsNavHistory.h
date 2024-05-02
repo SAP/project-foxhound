@@ -57,6 +57,8 @@
 #define TAGS_ROOT_GUID "tags________"
 #define MOBILE_ROOT_GUID "mobile______"
 
+#define SQL_QUOTE(text) "'" text "'"
+
 class mozIStorageValueArray;
 class nsIAutoCompleteController;
 class nsIEffectiveTLDService;
@@ -149,16 +151,6 @@ class nsNavHistory final : public nsSupportsWeakReference,
                                 nsCString& _GUID);
 
   /**
-   * Asynchronously recalculates frecency for a given page.
-   *
-   * @param aPlaceId
-   *        Place id to recalculate the frecency for.
-   * @note If the new frecency is a non-zero value it will also unhide the page,
-   *       otherwise will reuse the old hidden value.
-   */
-  nsresult UpdateFrecency(int64_t aPlaceId);
-
-  /**
    * These functions return non-owning references to the locale-specific
    * objects for places components.
    */
@@ -194,6 +186,9 @@ class nsNavHistory final : public nsSupportsWeakReference,
   static const int32_t kGetInfoIndex_VisitId;
   static const int32_t kGetInfoIndex_FromVisitId;
   static const int32_t kGetInfoIndex_VisitType;
+  static const int32_t kGetTargetFolder_Guid;
+  static const int32_t kGetTargetFolder_ItemId;
+  static const int32_t kGetTargetFolder_Title;
 
   int64_t GetTagsFolder();
 
@@ -209,20 +204,15 @@ class nsNavHistory final : public nsSupportsWeakReference,
   nsresult RowToResult(mozIStorageValueArray* aRow,
                        nsNavHistoryQueryOptions* aOptions,
                        nsNavHistoryResultNode** aResult);
-  nsresult QueryRowToResult(int64_t aItemId, const nsACString& aBookmarkGuid,
-                            const nsACString& aURI, const nsACString& aTitle,
+
+  nsresult QueryUriToResult(const nsACString& aQueryURI, int64_t aItemId,
+                            const nsACString& aBookmarkGuid,
+                            const nsACString& aTitle,
+                            int64_t aTargetFolderItemId,
+                            const nsACString& aTargetFolderGuid,
+                            const nsACString& aTargetFolderTitle,
                             uint32_t aAccessCount, PRTime aTime,
                             nsNavHistoryResultNode** aNode);
-
-  nsresult VisitIdToResultNode(int64_t visitId,
-                               nsNavHistoryQueryOptions* aOptions,
-                               nsNavHistoryResultNode** aResult);
-
-  nsresult BookmarkIdToResultNode(int64_t aBookmarkId,
-                                  nsNavHistoryQueryOptions* aOptions,
-                                  nsNavHistoryResultNode** aResult);
-  nsresult URIToResultNode(nsIURI* aURI, nsNavHistoryQueryOptions* aOptions,
-                           nsNavHistoryResultNode** aResult);
 
   /**
    * Returns current number of days stored in history.
@@ -278,21 +268,6 @@ class nsNavHistory final : public nsSupportsWeakReference,
     return mDefaultWeight;
   }
 
-  int32_t GetFrecencyBucketWeight(int32_t aBucketIndex) const {
-    switch (aBucketIndex) {
-      case 1:
-        return mFirstBucketWeight;
-      case 2:
-        return mSecondBucketWeight;
-      case 3:
-        return mThirdBucketWeight;
-      case 4:
-        return mFourthBucketWeight;
-      default:
-        return mDefaultWeight;
-    }
-  }
-
   int32_t GetFrecencyTransitionBonus(int32_t aTransitionType, bool aVisited,
                                      bool aRedirect = false) const {
     if (aRedirect) {
@@ -335,17 +310,33 @@ class nsNavHistory final : public nsSupportsWeakReference,
   void UpdateDaysOfHistory(PRTime visitTime);
 
   /**
-   * Returns true if frecency is currently being decayed.
-   *
-   * @return True if frecency is being decayed, false if not.
+   * Get a SQL fragment to pre-cache all the tagged bookmark into a `tagged`
+   * CTE.
    */
-  bool IsFrecencyDecaying() const;
+  static nsLiteralCString GetTagsSqlFragment(const uint16_t aQueryType,
+                                             bool aExcludeItems);
+
+  /**
+   * Get target folder guid from given query URI.
+   * If the folder guid is not found, returns Nonthing().
+   */
+  static mozilla::Maybe<nsCString> GetTargetFolderGuid(
+      const nsACString& aQueryURI);
 
   /**
    * Store last insterted id for a table.
    */
   static mozilla::Atomic<int64_t> sLastInsertedPlaceId;
   static mozilla::Atomic<int64_t> sLastInsertedVisitId;
+
+  /**
+   * Tracks whether frecency is currently being decayed.
+   */
+  static mozilla::Atomic<bool> sIsFrecencyDecaying;
+  /**
+   * Tracks whether there's frecency to be recalculated.
+   */
+  static mozilla::Atomic<bool> sShouldStartFrecencyRecalculation;
 
   static void StoreLastInsertedId(const nsACString& aTable,
                                   const int64_t aLastInsertedId);
@@ -357,9 +348,11 @@ class nsNavHistory final : public nsSupportsWeakReference,
       const RefPtr<nsNavHistoryQuery>& aQuery,
       nsNavHistoryQueryOptions* aOptions);
 
-  void DecayFrecencyCompleted();
-
   static void InvalidateDaysOfHistory();
+
+  static nsresult TokensToQuery(
+      const nsTArray<mozilla::places::QueryKeyValuePair>& aTokens,
+      nsNavHistoryQuery* aQuery, nsNavHistoryQueryOptions* aOptions);
 
  private:
   ~nsNavHistory();
@@ -461,17 +454,7 @@ class nsNavHistory final : public nsSupportsWeakReference,
   int32_t mUnvisitedTypedBonus;
   int32_t mReloadVisitBonus;
 
-  uint32_t mDecayFrecencyPendingCount;
-
-  nsresult RecalculateOriginFrecencyStatsInternal();
-
-  // in nsNavHistoryQuery.cpp
-  nsresult TokensToQuery(
-      const nsTArray<mozilla::places::QueryKeyValuePair>& aTokens,
-      nsNavHistoryQuery* aQuery, nsNavHistoryQueryOptions* aOptions);
-
   int64_t mTagsFolder;
-
   int64_t mLastCachedStartOfDay;
   int64_t mLastCachedEndOfDay;
 };
@@ -479,7 +462,7 @@ class nsNavHistory final : public nsSupportsWeakReference,
 #define PLACES_URI_PREFIX "place:"
 
 /* Returns true if the given URI represents a history query. */
-inline bool IsQueryURI(const nsCString& uri) {
+inline static bool IsQueryURI(const nsACString& uri) {
   return StringBeginsWith(uri, nsLiteralCString(PLACES_URI_PREFIX));
 }
 

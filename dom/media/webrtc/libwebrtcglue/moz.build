@@ -5,9 +5,6 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 include("/dom/media/webrtc/third_party_build/webrtc.mozbuild")
 
-# Allow outputing trace points from the libwebrtc glue code
-DEFINES["TRACING"] = True
-
 LOCAL_INCLUDES += [
     "!/ipc/ipdl/_ipdlheaders",
     "/dom/media/gmp",  # for GMPLog.h,
@@ -22,6 +19,8 @@ LOCAL_INCLUDES += [
 
 UNIFIED_SOURCES += [
     "AudioConduit.cpp",
+    "FrameTransformer.cpp",
+    "FrameTransformerProxy.cpp",
     "GmpVideoCodec.cpp",
     "MediaConduitInterface.cpp",
     "MediaDataCodec.cpp",

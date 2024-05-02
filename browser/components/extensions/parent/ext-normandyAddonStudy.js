@@ -4,16 +4,16 @@
 
 "use strict";
 
-const { AddonStudies } = ChromeUtils.import(
-  "resource://normandy/lib/AddonStudies.jsm"
+const { AddonStudies } = ChromeUtils.importESModule(
+  "resource://normandy/lib/AddonStudies.sys.mjs"
 );
-const { ClientID } = ChromeUtils.import("resource://gre/modules/ClientID.jsm");
+const { ClientID } = ChromeUtils.importESModule(
+  "resource://gre/modules/ClientID.sys.mjs"
+);
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "AddonManager",
-  "resource://gre/modules/AddonManager.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  AddonManager: "resource://gre/modules/AddonManager.sys.mjs",
+});
 
 this.normandyAddonStudy = class extends ExtensionAPI {
   getAPI(context) {
@@ -53,7 +53,7 @@ this.normandyAddonStudy = class extends ExtensionAPI {
          * Returns an object with metadata about the client which may
          * be required for constructing survey URLs.
          *
-         * @returns {Object}
+         * @returns {object}
          */
         async getClientMetadata() {
           return {

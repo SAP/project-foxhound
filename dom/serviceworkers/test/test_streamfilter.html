@@ -11,6 +11,7 @@
 </head>
 <body>
 <script>
+// eslint-disable-next-line mozilla/no-addtask-setup
 add_task(async function setup() {
   SimpleTest.waitForExplicitFinish();
 
@@ -75,7 +76,7 @@ async function getExtension() {
 
           filter.onerror = () => {
             // We only ever expect a redirect error here.
-            browser.test.assertEq(filter.error, "Channel redirected");
+            browser.test.assertEq(filter.error, "ServiceWorker fallback redirection");
             browser.test.sendMessage("error");
           };
         }

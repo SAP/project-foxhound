@@ -1,0 +1,28 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+@import url("chrome://global/skin/in-content/common.css");
+
+#shopping-settings-wrapper {
+  display: grid;
+  grid-template-rows: auto;
+  row-gap: 8px;
+  margin-top: 12px;
+}
+
+#shopping-settings-opt-out-button {
+  display: flex;
+  justify-self: center;
+  align-items: center;
+}
+
+#powered-by-fakespot {
+  font-size: 12px;
+  color: var(--text-color-deemphasized);
+}
+
+#shopping-ads-learn-more {
+  margin-inline-end: 20px;
+  color: var(--text-color-deemphasized);
+}

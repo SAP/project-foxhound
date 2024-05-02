@@ -7,7 +7,7 @@ import re
 import sys
 from abc import ABCMeta, abstractmethod
 
-from mozlog import get_default_logger, commandline, structuredlog
+from mozlog import commandline, get_default_logger, structuredlog
 from mozlog.reader import LogHandler
 from mozpack.files import FileFinder
 
@@ -67,6 +67,21 @@ class BaseType(object):
             pass
         return errors
 
+    def _lint_dir(self, path, config, **lintargs):
+        if not config.get("extensions"):
+            patterns = ["**"]
+        else:
+            patterns = ["**/*.{}".format(e) for e in config["extensions"]]
+
+        exclude = [os.path.relpath(e, path) for e in config.get("exclude", [])]
+        finder = FileFinder(path, ignore=exclude)
+
+        errors = []
+        for pattern in patterns:
+            for p, f in finder.find(pattern):
+                errors.extend(self._lint(os.path.join(path, p), config, **lintargs))
+        return errors
+
     @abstractmethod
     def _lint(self, path, config, **lintargs):
         pass
@@ -84,21 +99,6 @@ class LineType(BaseType):
     @abstractmethod
     def condition(payload, line, config):
         pass
-
-    def _lint_dir(self, path, config, **lintargs):
-        if not config.get("extensions"):
-            patterns = ["**"]
-        else:
-            patterns = ["**/*.{}".format(e) for e in config["extensions"]]
-
-        exclude = [os.path.relpath(e, path) for e in config.get("exclude", [])]
-        finder = FileFinder(path, ignore=exclude)
-
-        errors = []
-        for pattern in patterns:
-            for p, f in finder.find(pattern):
-                errors.extend(self._lint(os.path.join(path, p), config, **lintargs))
-        return errors
 
     def _lint(self, path, config, **lintargs):
         if os.path.isdir(path):
@@ -146,6 +146,10 @@ class ExternalType(BaseType):
     def _lint(self, files, config, **lintargs):
         func = findobject(config["payload"])
         return func(files, config, **lintargs)
+
+
+class ExternalFileType(ExternalType):
+    batch = False
 
 
 class GlobalType(ExternalType):
@@ -203,6 +207,7 @@ supported_types = {
     "string": StringType(),
     "regex": RegexType(),
     "external": ExternalType(),
+    "external-file": ExternalFileType(),
     "global": GlobalType(),
     "structured_log": StructuredLogType(),
 }

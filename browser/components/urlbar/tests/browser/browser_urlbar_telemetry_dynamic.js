@@ -8,11 +8,11 @@
 
 "use strict";
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  UrlbarProvidersManager: "resource:///modules/UrlbarProvidersManager.jsm",
-  UrlbarResult: "resource:///modules/UrlbarResult.jsm",
-  UrlbarTestUtils: "resource://testing-common/UrlbarTestUtils.jsm",
-  UrlbarView: "resource:///modules/UrlbarView.jsm",
+ChromeUtils.defineESModuleGetters(this, {
+  UrlbarProvidersManager: "resource:///modules/UrlbarProvidersManager.sys.mjs",
+  UrlbarResult: "resource:///modules/UrlbarResult.sys.mjs",
+  UrlbarTestUtils: "resource://testing-common/UrlbarTestUtils.sys.mjs",
+  UrlbarView: "resource:///modules/UrlbarView.sys.mjs",
 });
 
 const DYNAMIC_TYPE_NAME = "test";
@@ -118,15 +118,6 @@ function snapshotHistograms() {
   Services.telemetry.clearScalars();
   Services.telemetry.clearEvents();
   return {
-    resultIndexHist: TelemetryTestUtils.getAndClearHistogram(
-      "FX_URLBAR_SELECTED_RESULT_INDEX"
-    ),
-    resultTypeHist: TelemetryTestUtils.getAndClearHistogram(
-      "FX_URLBAR_SELECTED_RESULT_TYPE_2"
-    ),
-    resultIndexByTypeHist: TelemetryTestUtils.getAndClearKeyedHistogram(
-      "FX_URLBAR_SELECTED_RESULT_INDEX_BY_TYPE_2"
-    ),
     resultMethodHist: TelemetryTestUtils.getAndClearHistogram(
       "FX_URLBAR_SELECTED_RESULT_METHOD"
     ),
@@ -134,21 +125,6 @@ function snapshotHistograms() {
 }
 
 function assertTelemetryResults(histograms, type, index, method) {
-  TelemetryTestUtils.assertHistogram(histograms.resultIndexHist, index, 1);
-
-  TelemetryTestUtils.assertHistogram(
-    histograms.resultTypeHist,
-    UrlbarUtils.SELECTED_RESULT_TYPES[type],
-    1
-  );
-
-  TelemetryTestUtils.assertKeyedHistogramValue(
-    histograms.resultIndexByTypeHist,
-    type,
-    index,
-    1
-  );
-
   TelemetryTestUtils.assertHistogram(histograms.resultMethodHist, method, 1);
 
   TelemetryTestUtils.assertKeyedScalar(

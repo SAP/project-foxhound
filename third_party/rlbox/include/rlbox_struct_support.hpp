@@ -30,6 +30,9 @@ template<typename T, typename T_Sbx>
 using convert_to_sandbox_equivalent_t =
   typename convert_to_sandbox_equivalent_helper<T, T_Sbx>::type;
 
+// This is used by rlbox_load_structs_from_library to test the current namespace
+struct markerStruct
+{};
 }
 
 #define helper_create_converted_field(fieldType, fieldName, isFrozen)          \
@@ -124,18 +127,6 @@ using convert_to_sandbox_equivalent_t =
       return *ret_ptr;                                                         \
     }                                                                          \
                                                                                \
-    inline std::remove_cv_t<T> get_raw_value() noexcept                        \
-    {                                                                          \
-      rlbox_detail_forward_to_const(get_raw_value, std::remove_cv_t<T>);       \
-    }                                                                          \
-                                                                               \
-    inline std::remove_cv_t<Sbx_##libId##_##T<T_Sbx>>                          \
-    get_raw_sandbox_value() noexcept                                           \
-    {                                                                          \
-      rlbox_detail_forward_to_const(                                           \
-        get_raw_sandbox_value, std::remove_cv_t<Sbx_##libId##_##T<T_Sbx>>);    \
-    }                                                                          \
-                                                                               \
     tainted_volatile() = default;                                              \
     tainted_volatile(const tainted_volatile<MaybeConst T, T_Sbx>& p) =         \
       default;                                                                 \
@@ -147,7 +138,7 @@ using convert_to_sandbox_equivalent_t =
       MaybeConst)                                                              \
                                                                                \
       inline tainted<MaybeConst T*, T_Sbx>                                     \
-      operator&() noexcept                                                     \
+      operator&() const noexcept                                               \
     {                                                                          \
       auto ref_cast =                                                          \
         reinterpret_cast<MaybeConst T*>(&get_sandbox_value_ref());             \
@@ -155,23 +146,12 @@ using convert_to_sandbox_equivalent_t =
       return ret;                                                              \
     }                                                                          \
                                                                                \
-    inline auto UNSAFE_unverified() { return get_raw_value(); }                \
     inline auto UNSAFE_unverified() const { return get_raw_value(); }          \
-    inline auto UNSAFE_sandboxed(rlbox_sandbox<T_Sbx>& sandbox)                \
-    {                                                                          \
-      return get_raw_sandbox_value(sandbox);                                   \
-    }                                                                          \
     inline auto UNSAFE_sandboxed(rlbox_sandbox<T_Sbx>& sandbox) const          \
     {                                                                          \
       return get_raw_sandbox_value(sandbox);                                   \
     }                                                                          \
                                                                                \
-    template<size_t N>                                                         \
-    inline auto unverified_safe_because(const char (&reason)[N])               \
-    {                                                                          \
-      RLBOX_UNUSED(reason);                                                    \
-      return UNSAFE_unverified();                                              \
-    }                                                                          \
     template<size_t N>                                                         \
     inline auto unverified_safe_because(const char (&reason)[N]) const         \
     {                                                                          \
@@ -231,20 +211,6 @@ using convert_to_sandbox_equivalent_t =
         return lhs;                                                            \
     }                                                                          \
                                                                                \
-    inline std::remove_cv_t<T> get_raw_value() noexcept                        \
-    {                                                                          \
-      rlbox_detail_forward_to_const(get_raw_value, std::remove_cv_t<T>);       \
-    }                                                                          \
-                                                                               \
-    inline std::remove_cv_t<Sbx_##libId##_##T<T_Sbx>> get_raw_sandbox_value(   \
-      rlbox_sandbox<T_Sbx>& sandbox) noexcept                                  \
-    {                                                                          \
-      rlbox_detail_forward_to_const_a(                                         \
-        get_raw_sandbox_value,                                                 \
-        std::remove_cv_t<Sbx_##libId##_##T<T_Sbx>>,                            \
-        sandbox);                                                              \
-    }                                                                          \
-                                                                               \
     inline const void* find_example_pointer_or_null() const noexcept           \
     {                                                                          \
       sandbox_fields_reflection_##libId##_class_##T(                           \
@@ -281,23 +247,12 @@ using convert_to_sandbox_equivalent_t =
       return *reinterpret_cast<tainted_opaque<MaybeConst T, T_Sbx>*>(this);    \
     }                                                                          \
                                                                                \
-    inline auto UNSAFE_unverified() { return get_raw_value(); }                \
     inline auto UNSAFE_unverified() const { return get_raw_value(); }          \
-    inline auto UNSAFE_sandboxed(rlbox_sandbox<T_Sbx>& sandbox)                \
-    {                                                                          \
-      return get_raw_sandbox_value(sandbox);                                   \
-    }                                                                          \
     inline auto UNSAFE_sandboxed(rlbox_sandbox<T_Sbx>& sandbox) const          \
     {                                                                          \
       return get_raw_sandbox_value(sandbox);                                   \
     }                                                                          \
                                                                                \
-    template<size_t N>                                                         \
-    inline auto unverified_safe_because(const char (&reason)[N])               \
-    {                                                                          \
-      RLBOX_UNUSED(reason);                                                    \
-      return UNSAFE_unverified();                                              \
-    }                                                                          \
     template<size_t N>                                                         \
     inline auto unverified_safe_because(const char (&reason)[N]) const         \
     {                                                                          \
@@ -380,10 +335,6 @@ using convert_to_sandbox_equivalent_t =
 // clang-format off
 #define rlbox_load_structs_from_library(libId)                                 \
   namespace rlbox {                                                            \
-    namespace detail {                                                         \
-      struct markerStruct                                                      \
-      {};                                                                      \
-    }                                                                          \
     /* check that this macro is called in a global namespace */                \
     static_assert(                                                             \
       ::rlbox::detail::is_member_of_rlbox_detail<detail::markerStruct>,        \

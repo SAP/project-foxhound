@@ -2,60 +2,17 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-
 const {
   DebounceCallback,
   IdlePromise,
   PollPromise,
   Sleep,
   TimedPromise,
-  waitForEvent,
   waitForMessage,
   waitForObserverTopic,
-} = ChromeUtils.import("chrome://remote/content/marionette/sync.js");
-
-/**
- * Mimic a DOM node for listening for events.
- */
-class MockElement {
-  constructor() {
-    this.capture = false;
-    this.func = null;
-    this.eventName = null;
-    this.untrusted = false;
-  }
-
-  addEventListener(name, func, capture, untrusted) {
-    this.eventName = name;
-    this.func = func;
-    if (capture != null) {
-      this.capture = capture;
-    }
-    if (untrusted != null) {
-      this.untrusted = untrusted;
-    }
-  }
-
-  click() {
-    if (this.func) {
-      let details = {
-        capture: this.capture,
-        target: this,
-        type: this.eventName,
-        untrusted: this.untrusted,
-      };
-      this.func(details);
-    }
-  }
-
-  removeEventListener(name, func) {
-    this.capture = false;
-    this.func = null;
-    this.eventName = null;
-    this.untrusted = false;
-  }
-}
+} = ChromeUtils.importESModule(
+  "chrome://remote/content/marionette/sync.sys.mjs"
+);
 
 /**
  * Mimic a message manager for sending messages.
@@ -110,11 +67,12 @@ class MockTimer {
   }
 }
 
-add_test(function test_executeSoon_callback() {
+add_task(function test_executeSoon_callback() {
   // executeSoon() is already defined for xpcshell in head.js. As such import
   // our implementation into a custom namespace.
-  let sync = {};
-  ChromeUtils.import("chrome://remote/content/marionette/sync.js", sync);
+  let sync = ChromeUtils.importESModule(
+    "chrome://remote/content/marionette/sync.sys.mjs"
+  );
 
   for (let func of ["foo", null, true, [], {}]) {
     Assert.throws(() => sync.executeSoon(func), /TypeError/);
@@ -125,21 +83,17 @@ add_test(function test_executeSoon_callback() {
     a = 1;
   });
   executeSoon(() => equal(1, a));
-
-  run_next_test();
 });
 
-add_test(function test_PollPromise_funcTypes() {
+add_task(function test_PollPromise_funcTypes() {
   for (let type of ["foo", 42, null, undefined, true, [], {}]) {
     Assert.throws(() => new PollPromise(type), /TypeError/);
   }
   new PollPromise(() => {});
-  new PollPromise(function() {});
-
-  run_next_test();
+  new PollPromise(function () {});
 });
 
-add_test(function test_PollPromise_timeoutTypes() {
+add_task(function test_PollPromise_timeoutTypes() {
   for (let timeout of ["foo", true, [], {}]) {
     Assert.throws(() => new PollPromise(() => {}, { timeout }), /TypeError/);
   }
@@ -149,11 +103,9 @@ add_test(function test_PollPromise_timeoutTypes() {
   for (let timeout of [null, undefined, 42]) {
     new PollPromise(resolve => resolve(1), { timeout });
   }
-
-  run_next_test();
 });
 
-add_test(function test_PollPromise_intervalTypes() {
+add_task(function test_PollPromise_intervalTypes() {
   for (let interval of ["foo", null, true, [], {}]) {
     Assert.throws(() => new PollPromise(() => {}, { interval }), /TypeError/);
   }
@@ -161,8 +113,6 @@ add_test(function test_PollPromise_intervalTypes() {
     Assert.throws(() => new PollPromise(() => {}, { interval }), /RangeError/);
   }
   new PollPromise(() => {}, { interval: 42 });
-
-  run_next_test();
 });
 
 add_task(async function test_PollPromise_retvalTypes() {
@@ -238,19 +188,17 @@ add_task(async function test_PollPromise_interval() {
   equal(2, nevals);
 });
 
-add_test(function test_TimedPromise_funcTypes() {
+add_task(function test_TimedPromise_funcTypes() {
   for (let type of ["foo", 42, null, undefined, true, [], {}]) {
     Assert.throws(() => new TimedPromise(type), /TypeError/);
   }
   new TimedPromise(resolve => resolve());
-  new TimedPromise(function(resolve) {
+  new TimedPromise(function (resolve) {
     resolve();
   });
-
-  run_next_test();
 });
 
-add_test(function test_TimedPromise_timeoutTypes() {
+add_task(function test_TimedPromise_timeoutTypes() {
   for (let timeout of ["foo", null, true, [], {}]) {
     Assert.throws(
       () => new TimedPromise(resolve => resolve(), { timeout }),
@@ -264,11 +212,9 @@ add_test(function test_TimedPromise_timeoutTypes() {
     );
   }
   new TimedPromise(resolve => resolve(), { timeout: 42 });
-
-  run_next_test();
 });
 
-add_test(async function test_TimedPromise_errorMessage() {
+add_task(async function test_TimedPromise_errorMessage() {
   try {
     await new TimedPromise(resolve => {}, { timeout: 0 });
     ok(false, "Expected Timeout error not raised");
@@ -291,8 +237,6 @@ add_test(async function test_TimedPromise_errorMessage() {
       "Expected custom error message found"
     );
   }
-
-  run_next_test();
 });
 
 add_task(async function test_Sleep() {
@@ -324,7 +268,7 @@ add_task(async function test_IdlePromiseAbortWhenWindowClosed() {
   await IdlePromise(win);
 });
 
-add_test(function test_DebounceCallback_constructor() {
+add_task(function test_DebounceCallback_constructor() {
   for (let cb of [42, "foo", true, null, undefined, [], {}]) {
     Assert.throws(() => new DebounceCallback(cb), /TypeError/);
   }
@@ -340,8 +284,6 @@ add_test(function test_DebounceCallback_constructor() {
       /RangeError/
     );
   }
-
-  run_next_test();
 });
 
 add_task(async function test_DebounceCallback_repeatedCallback() {
@@ -365,92 +307,6 @@ add_task(async function test_DebounceCallback_repeatedCallback() {
   ok(debouncer.timer.cancelled);
 });
 
-add_task(async function test_waitForEvent_subjectAndEventNameTypes() {
-  let element = new MockElement();
-
-  for (let subject of ["foo", 42, null, undefined, true, [], {}]) {
-    Assert.throws(() => waitForEvent(subject, "click"), /TypeError/);
-  }
-
-  for (let eventName of [42, null, undefined, true, [], {}]) {
-    Assert.throws(() => waitForEvent(element, eventName), /TypeError/);
-  }
-
-  let clicked = waitForEvent(element, "click");
-  element.click();
-  let event = await clicked;
-  equal(element, event.target);
-});
-
-add_task(async function test_waitForEvent_captureTypes() {
-  let element = new MockElement();
-
-  for (let capture of ["foo", 42, [], {}]) {
-    Assert.throws(
-      () => waitForEvent(element, "click", { capture }),
-      /TypeError/
-    );
-  }
-
-  for (let capture of [null, undefined, false, true]) {
-    let expected_capture = capture == null ? false : capture;
-
-    element = new MockElement();
-    let clicked = waitForEvent(element, "click", { capture });
-    element.click();
-    let event = await clicked;
-    equal(element, event.target);
-    equal(expected_capture, event.capture);
-  }
-});
-
-add_task(async function test_waitForEvent_checkFnTypes() {
-  let element = new MockElement();
-
-  for (let checkFn of ["foo", 42, true, [], {}]) {
-    Assert.throws(
-      () => waitForEvent(element, "click", { checkFn }),
-      /TypeError/
-    );
-  }
-
-  let count;
-  for (let checkFn of [null, undefined, event => count++ > 0]) {
-    let expected_count = checkFn == null ? 0 : 2;
-    count = 0;
-
-    element = new MockElement();
-    let clicked = waitForEvent(element, "click", { checkFn });
-    element.click();
-    element.click();
-    let event = await clicked;
-    equal(element, event.target);
-    equal(expected_count, count);
-  }
-});
-
-add_task(async function test_waitForEvent_wantsUntrustedTypes() {
-  let element = new MockElement();
-
-  for (let wantsUntrusted of ["foo", 42, [], {}]) {
-    Assert.throws(
-      () => waitForEvent(element, "click", { wantsUntrusted }),
-      /TypeError/
-    );
-  }
-
-  for (let wantsUntrusted of [null, undefined, false, true]) {
-    let expected_untrusted = wantsUntrusted == null ? false : wantsUntrusted;
-
-    element = new MockElement();
-    let clicked = waitForEvent(element, "click", { wantsUntrusted });
-    element.click();
-    let event = await clicked;
-    equal(element, event.target);
-    equal(expected_untrusted, event.untrusted);
-  }
-});
-
 add_task(async function test_waitForMessage_messageManagerAndMessageTypes() {
   let messageManager = new MessageManager();
 
@@ -459,7 +315,7 @@ add_task(async function test_waitForMessage_messageManagerAndMessageTypes() {
   }
 
   for (let message of [42, null, undefined, true, [], {}]) {
-    Assert.throws(() => waitForEvent(messageManager, message), /TypeError/);
+    Assert.throws(() => waitForMessage(messageManager, message), /TypeError/);
   }
 
   let data = { foo: "bar" };
@@ -524,5 +380,40 @@ add_task(async function test_waitForObserverTopic_checkFnTypes() {
     Services.obs.notifyObservers(this, "message", data2);
     let result = await sent;
     equal(expected_data, result.data);
+  }
+});
+
+add_task(async function test_waitForObserverTopic_timeoutTypes() {
+  for (let timeout of ["foo", true, [], {}]) {
+    Assert.throws(
+      () => waitForObserverTopic("message", { timeout }),
+      /TypeError/
+    );
+  }
+  for (let timeout of [1.2, -1]) {
+    Assert.throws(
+      () => waitForObserverTopic("message", { timeout }),
+      /RangeError/
+    );
+  }
+  for (let timeout of [null, undefined, 42]) {
+    let data = { foo: "bar" };
+    let sent = waitForObserverTopic("message", { timeout });
+    Services.obs.notifyObservers(this, "message", data);
+    let result = await sent;
+    equal(this, result.subject);
+    equal(data, result.data);
+  }
+});
+
+add_task(async function test_waitForObserverTopic_timeoutElapse() {
+  try {
+    await waitForObserverTopic("message", { timeout: 0 });
+    ok(false, "Expected Timeout error not raised");
+  } catch (e) {
+    ok(
+      e.message.includes("waitForObserverTopic timed out after"),
+      "Expected error received"
+    );
   }
 });

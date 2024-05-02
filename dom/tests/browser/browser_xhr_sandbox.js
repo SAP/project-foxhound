@@ -1,9 +1,9 @@
 // This code is evaluated in a sandbox courtesy of toSource();
 var sandboxCode =
-  function() {
+  function () {
     let req = new XMLHttpRequest();
     req.open("GET", "http://mochi.test:8888/browser/dom/tests/browser/", true);
-    req.onreadystatechange = function() {
+    req.onreadystatechange = function () {
       if (req.readyState === 4) {
         // If we get past the problem above, we end up with a req.status of zero
         // (ie, blocked due to CORS) even though we are fetching from the same
@@ -11,7 +11,7 @@ var sandboxCode =
         let result;
         if (req.status != 200) {
           result = "ERROR: got request status of " + req.status;
-        } else if (req.responseText.length == 0) {
+        } else if (!req.responseText.length) {
           result = "ERROR: got zero byte response text";
         } else {
           result = "ok";

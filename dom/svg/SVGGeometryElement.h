@@ -9,7 +9,7 @@
 
 #include "mozilla/dom/SVGGraphicsElement.h"
 #include "mozilla/gfx/2D.h"
-#include "SVGAnimatedNumber.h"
+#include "mozilla/dom/SVGAnimatedNumber.h"
 
 namespace mozilla {
 
@@ -52,12 +52,12 @@ class SVGGeometryElement : public SVGGeometryElementBase {
   explicit SVGGeometryElement(
       already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
 
-  virtual nsresult AfterSetAttr(int32_t aNamespaceID, nsAtom* aName,
-                                const nsAttrValue* aValue,
-                                const nsAttrValue* aOldValue,
-                                nsIPrincipal* aSubjectPrincipal,
-                                bool aNotify) override;
-  bool IsNodeOfType(uint32_t aFlags) const override;
+  NS_IMPL_FROMNODE_HELPER(SVGGeometryElement, IsSVGGeometryElement())
+
+  void AfterSetAttr(int32_t aNamespaceID, nsAtom* aName,
+                    const nsAttrValue* aValue, const nsAttrValue* aOldValue,
+                    nsIPrincipal* aSubjectPrincipal, bool aNotify) override;
+  bool IsSVGGeometryElement() const override { return true; }
 
   /**
    * Causes this element to discard any Path object that GetOrBuildPath may
@@ -203,6 +203,20 @@ class SVGGeometryElement : public SVGGeometryElementBase {
   virtual already_AddRefed<Path> GetOrBuildPathForMeasuring();
 
   /**
+   * If this shape element is a closed loop, this returns true. If it is an
+   * unclosed interval, this returns false. This function is used for motion
+   * path especially.
+   *
+   * 1. SVG Paths are closed loops only if the final command in the path list is
+   *    a closepath command ("z" or "Z"), otherwise they are unclosed intervals.
+   * 2. SVG circles, ellipses, polygons and rects are closed loops.
+   * 3. SVG lines and polylines are unclosed intervals.
+   *
+   * https://drafts.fxtf.org/motion/#path-distance
+   */
+  virtual bool IsClosedLoop() const { return false; }
+
+  /**
    * Return |true| if some geometry properties (|x|, |y|, etc) are changed
    * because of CSS change.
    */
@@ -235,7 +249,7 @@ class SVGGeometryElement : public SVGGeometryElementBase {
 
  protected:
   // SVGElement method
-  virtual NumberAttributesInfo GetNumberInfo() override;
+  NumberAttributesInfo GetNumberInfo() override;
 
   // d is a presentation attribute, so we would like to make sure style is
   // up-to-date. This function flushes the style if the path attribute is d.

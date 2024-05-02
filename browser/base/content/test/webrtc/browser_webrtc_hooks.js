@@ -2,12 +2,10 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const { webrtcUI } = ChromeUtils.import("resource:///modules/webrtcUI.jsm");
-
 const ORIGIN = "https://example.com";
 
 async function tryPeerConnection(browser, expectedError = null) {
-  let errtype = await SpecialPowers.spawn(browser, [], async function() {
+  let errtype = await SpecialPowers.spawn(browser, [], async function () {
     let pc = new content.RTCPeerConnection();
     try {
       await pc.createOffer({ offerToReceiveAudio: true });
@@ -323,7 +321,7 @@ var gTests = [
         });
       webrtcUI.addPeerConnectionBlocker(blocker);
 
-      await SpecialPowers.spawn(browser, [], async function() {
+      await SpecialPowers.spawn(browser, [], async function () {
         new content.RTCPeerConnection().createOffer({
           offerToReceiveAudio: true,
         });
@@ -338,7 +336,7 @@ var gTests = [
         });
       });
 
-      await SpecialPowers.spawn(browser, [], async function() {
+      await SpecialPowers.spawn(browser, [], async function () {
         content.location.reload();
       });
 

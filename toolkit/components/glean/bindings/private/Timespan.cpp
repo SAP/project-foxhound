@@ -6,13 +6,12 @@
 
 #include "mozilla/glean/bindings/Timespan.h"
 
-#include "Common.h"
 #include "nsString.h"
 #include "mozilla/Components.h"
 #include "mozilla/ResultVariant.h"
+#include "mozilla/dom/GleanMetricsBinding.h"
 #include "mozilla/glean/bindings/ScalarGIFFTMap.h"
 #include "mozilla/glean/fog_ffi_generated.h"
-#include "nsIClassInfoImpl.h"
 
 namespace mozilla::glean {
 
@@ -22,9 +21,10 @@ void TimespanMetric::Start() const {
   auto optScalarId = ScalarIdForMetric(mId);
   if (optScalarId) {
     auto scalarId = optScalarId.extract();
-    auto lock = GetTimesToStartsLock();
-    (void)NS_WARN_IF(lock.ref()->Remove(scalarId));
-    lock.ref()->InsertOrUpdate(scalarId, TimeStamp::Now());
+    GetTimesToStartsLock().apply([&](auto& lock) {
+      (void)NS_WARN_IF(lock.ref()->Remove(scalarId));
+      lock.ref()->InsertOrUpdate(scalarId, TimeStamp::Now());
+    });
   }
   fog_timespan_start(mId);
 }
@@ -33,18 +33,19 @@ void TimespanMetric::Stop() const {
   auto optScalarId = ScalarIdForMetric(mId);
   if (optScalarId) {
     auto scalarId = optScalarId.extract();
-    auto lock = GetTimesToStartsLock();
-    auto optStart = lock.ref()->Extract(scalarId);
-    if (!NS_WARN_IF(!optStart)) {
-      double delta = (TimeStamp::Now() - optStart.extract()).ToMilliseconds();
-      uint32_t theDelta = static_cast<uint32_t>(delta);
-      if (delta > std::numeric_limits<uint32_t>::max()) {
-        theDelta = std::numeric_limits<uint32_t>::max();
-      } else if (MOZ_UNLIKELY(delta < 0)) {
-        theDelta = 0;
+    GetTimesToStartsLock().apply([&](auto& lock) {
+      auto optStart = lock.ref()->Extract(scalarId);
+      if (!NS_WARN_IF(!optStart)) {
+        double delta = (TimeStamp::Now() - optStart.extract()).ToMilliseconds();
+        uint32_t theDelta = static_cast<uint32_t>(delta);
+        if (delta > std::numeric_limits<uint32_t>::max()) {
+          theDelta = std::numeric_limits<uint32_t>::max();
+        } else if (MOZ_UNLIKELY(delta < 0)) {
+          theDelta = 0;
+        }
+        Telemetry::ScalarSet(scalarId, theDelta);
       }
-      Telemetry::ScalarSet(scalarId, theDelta);
-    }
+    });
   }
   fog_timespan_stop(mId);
 }
@@ -53,8 +54,8 @@ void TimespanMetric::Cancel() const {
   auto optScalarId = ScalarIdForMetric(mId);
   if (optScalarId) {
     auto scalarId = optScalarId.extract();
-    auto lock = GetTimesToStartsLock();
-    lock.ref()->Remove(scalarId);
+    GetTimesToStartsLock().apply(
+        [&](auto& lock) { lock.ref()->Remove(scalarId); });
   }
   fog_timespan_cancel(mId);
 }
@@ -70,6 +71,10 @@ void TimespanMetric::SetRaw(uint32_t aDuration) const {
 
 Result<Maybe<uint64_t>, nsCString> TimespanMetric::TestGetValue(
     const nsACString& aPingName) const {
+  nsCString err;
+  if (fog_timespan_test_get_error(mId, &err)) {
+    return Err(err);
+  }
   if (!fog_timespan_test_has_value(mId, &aPingName)) {
     return Maybe<uint64_t>();
   }
@@ -78,50 +83,33 @@ Result<Maybe<uint64_t>, nsCString> TimespanMetric::TestGetValue(
 
 }  // namespace impl
 
-NS_IMPL_CLASSINFO(GleanTimespan, nullptr, 0, {0})
-NS_IMPL_ISUPPORTS_CI(GleanTimespan, nsIGleanTimespan)
-
-NS_IMETHODIMP
-GleanTimespan::Start() {
-  mTimespan.Start();
-  return NS_OK;
+/* virtual */
+JSObject* GleanTimespan::WrapObject(JSContext* aCx,
+                                    JS::Handle<JSObject*> aGivenProto) {
+  return dom::GleanTimespan_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-NS_IMETHODIMP
-GleanTimespan::Stop() {
-  mTimespan.Stop();
-  return NS_OK;
-}
+void GleanTimespan::Start() { mTimespan.Start(); }
 
-NS_IMETHODIMP
-GleanTimespan::Cancel() {
-  mTimespan.Cancel();
-  return NS_OK;
-}
+void GleanTimespan::Stop() { mTimespan.Stop(); }
 
-NS_IMETHODIMP
-GleanTimespan::SetRaw(uint32_t aDuration) {
-  mTimespan.SetRaw(aDuration);
-  return NS_OK;
-}
+void GleanTimespan::Cancel() { mTimespan.Cancel(); }
 
-NS_IMETHODIMP
-GleanTimespan::TestGetValue(const nsACString& aStorageName,
-                            JS::MutableHandleValue aResult) {
-  auto result = mTimespan.TestGetValue(aStorageName);
+void GleanTimespan::SetRaw(uint32_t aDuration) { mTimespan.SetRaw(aDuration); }
+
+dom::Nullable<uint64_t> GleanTimespan::TestGetValue(const nsACString& aPingName,
+                                                    ErrorResult& aRv) {
+  dom::Nullable<uint64_t> ret;
+  auto result = mTimespan.TestGetValue(aPingName);
   if (result.isErr()) {
-    aResult.set(JS::UndefinedValue());
-    LogToBrowserConsole(nsIScriptError::errorFlag,
-                        NS_ConvertUTF8toUTF16(result.unwrapErr()));
-    return NS_ERROR_LOSS_OF_SIGNIFICANT_DATA;
+    aRv.ThrowDataError(result.unwrapErr());
+    return ret;
   }
   auto optresult = result.unwrap();
-  if (optresult.isNothing()) {
-    aResult.set(JS::UndefinedValue());
-  } else {
-    aResult.set(JS::DoubleValue(static_cast<double>(optresult.value())));
+  if (!optresult.isNothing()) {
+    ret.SetValue(optresult.value());
   }
-  return NS_OK;
+  return ret;
 }
 
 }  // namespace mozilla::glean

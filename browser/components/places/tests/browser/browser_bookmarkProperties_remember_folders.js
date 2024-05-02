@@ -19,8 +19,7 @@ async function openPopupAndSelectFolder(guid, newBookmark = false) {
   if (!newBookmark) {
     notificationPromise = PlacesTestUtils.waitForNotification(
       "bookmark-moved",
-      events => events.some(e => guid === e.parentGuid),
-      "places"
+      events => events.some(e => guid === e.parentGuid)
     );
   }
 
@@ -84,7 +83,7 @@ async function assertRecentFolders(expectedGuids, msg) {
   );
 }
 
-add_task(async function setup() {
+add_setup(async function () {
   await PlacesUtils.bookmarks.eraseEverything();
   await PlacesUtils.metadata.delete(PlacesUIUtils.LAST_USED_FOLDERS_META_KEY);
 

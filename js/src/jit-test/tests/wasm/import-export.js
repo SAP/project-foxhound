@@ -389,7 +389,7 @@ assertEq(e4.baz, e4.tbl.get(2));
 
 var code1 = wasmTextToBinary('(module (func $exp (param i64) (result i64) (i64.add (local.get 0) (i64.const 10))) (export "exp" (func $exp)))');
 var e1 = new Instance(new Module(code1)).exports;
-var code2 = wasmTextToBinary('(module (import "a" "b" (func $i (param i64) (result i64))) (func $f (result i32) (i32.wrap/i64 (call $i (i64.const 42)))) (export "f" (func $f)))');
+var code2 = wasmTextToBinary('(module (import "a" "b" (func $i (param i64) (result i64))) (func $f (result i32) (i32.wrap_i64 (call $i (i64.const 42)))) (export "f" (func $f)))');
 var e2 = new Instance(new Module(code2), {a:{b:e1.exp}}).exports;
 assertEq(e2.f(), 52);
 
@@ -780,3 +780,19 @@ assertEq(e.call(), 1090);
     for (var i = 0; i < 20; i++)
         assertEq(g.i2.exports.test(), 147);
 })();
+
+// The name presented in toString and as the fn.name property is the index of the
+// function within the module.  See bug 1714505 for analysis.
+
+var ins = new WebAssembly.Instance(new WebAssembly.Module(wasmTextToBinary(`
+(module
+  (func (export "myfunc") (result i32)
+    (i32.const 1337))
+  (func $hi (result i32)
+    (i32.const 3))
+  (func $abracadabra (export "bletch") (result i32)
+    (i32.const -1)))`)))
+assertEq(String(ins.exports.myfunc), "function 0() {\n    [native code]\n}")
+assertEq(ins.exports.myfunc.name, "0");
+assertEq(String(ins.exports.bletch), "function 2() {\n    [native code]\n}")
+assertEq(ins.exports.bletch.name, "2")

@@ -21,7 +21,7 @@ const TEST_DATA = [
   { node: "input", draggable: true },
   { node: "div", draggable: true },
   {
-    node: async function(inspector) {
+    async node(inspector) {
       const parentFront = await getNodeFront("#before", inspector);
       const { nodes } = await inspector.walker.children(parentFront);
       // Getting the comment node.
@@ -30,7 +30,7 @@ const TEST_DATA = [
     draggable: true,
   },
   {
-    node: async function(inspector) {
+    async node(inspector) {
       const parentFront = await getNodeFront("#test", inspector);
       const { nodes } = await inspector.walker.children(parentFront);
       // Getting the ::before pseudo element.
@@ -40,7 +40,7 @@ const TEST_DATA = [
   },
 ];
 
-add_task(async function() {
+add_task(async function () {
   const { inspector } = await openInspectorForURL(TEST_URL);
   await inspector.markup.expandAll();
 

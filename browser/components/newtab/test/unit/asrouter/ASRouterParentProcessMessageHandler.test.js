@@ -1,6 +1,6 @@
 import { ASRouterParentProcessMessageHandler } from "lib/ASRouterParentProcessMessageHandler.jsm";
 import { _ASRouter } from "lib/ASRouter.jsm";
-import { MESSAGE_TYPE_HASH as msg } from "common/ActorConstants.jsm";
+import { MESSAGE_TYPE_HASH as msg } from "common/ActorConstants.sys.mjs";
 
 describe("ASRouterParentProcessMessageHandler", () => {
   let handler = null;
@@ -11,14 +11,17 @@ describe("ASRouterParentProcessMessageHandler", () => {
     const returnValue = { value: 1 };
     const router = new _ASRouter();
     [
-      "_updateOnboardingState",
       "addImpression",
       "addPreviewEndpoint",
       "evaluateExpression",
       "forceAttribution",
       "forceWNPanel",
       "closeWNPanel",
+      "forcePBWindow",
       "resetGroupsState",
+      "resetMessageState",
+      "resetScreenImpressions",
+      "editState",
     ].forEach(method => sandbox.stub(router, `${method}`).resolves());
     [
       "blockMessageById",
@@ -172,12 +175,6 @@ describe("ASRouterParentProcessMessageHandler", () => {
       });
     });
     describe("USER_ACTION action", () => {
-      it("with INSTALL_ADDON_FROM_URL calls _updateOnboardingState", () => {
-        handler.handleMessage(msg.USER_ACTION, {
-          type: "INSTALL_ADDON_FROM_URL",
-        });
-        assert.calledOnce(config.router._updateOnboardingState);
-      });
       it("default calls SpecialMessageActions.handleAction", async () => {
         await handler.handleMessage(
           msg.USER_ACTION,
@@ -186,7 +183,6 @@ describe("ASRouterParentProcessMessageHandler", () => {
           },
           { browser: { ownerGlobal: {} } }
         );
-        assert.notCalled(config.router._updateOnboardingState);
         assert.calledOnce(config.specialMessageActions.handleAction);
         assert.calledWith(
           config.specialMessageActions.handleAction,
@@ -356,6 +352,17 @@ describe("ASRouterParentProcessMessageHandler", () => {
         assert.calledWith(config.router.closeWNPanel, { ownerGlobal: {} });
       });
     });
+    describe("FORCE_PRIVATE_BROWSING_WINDOW action", () => {
+      it("default calls forcePBWindow", () => {
+        handler.handleMessage(
+          msg.FORCE_PRIVATE_BROWSING_WINDOW,
+          {},
+          { browser: { ownerGlobal: {} } }
+        );
+        assert.calledOnce(config.router.forcePBWindow);
+        assert.calledWith(config.router.forcePBWindow, { ownerGlobal: {} });
+      });
+    });
     describe("MODIFY_MESSAGE_JSON action", () => {
       it("default calls routeCFRMessage", async () => {
         const result = await handler.handleMessage(
@@ -418,6 +425,24 @@ describe("ASRouterParentProcessMessageHandler", () => {
         assert.calledOnce(config.router.resetGroupsState);
         assert.calledOnce(config.router.loadMessagesFromAllProviders);
         assert.deepEqual(result, { value: 1 });
+      });
+    });
+    describe("RESET_MESSAGE_STATE action", () => {
+      it("default calls resetMessageState", () => {
+        handler.handleMessage(msg.RESET_MESSAGE_STATE);
+        assert.calledOnce(config.router.resetMessageState);
+      });
+    });
+    describe("RESET_SCREEN_IMPRESSIONS action", () => {
+      it("default calls resetScreenImpressions", () => {
+        handler.handleMessage(msg.RESET_SCREEN_IMPRESSIONS);
+        assert.calledOnce(config.router.resetScreenImpressions);
+      });
+    });
+    describe("EDIT_STATE action", () => {
+      it("default calls editState with correct args", () => {
+        handler.handleMessage(msg.EDIT_STATE, { property: "value" });
+        assert.calledWith(config.router.editState, "property", "value");
       });
     });
   });

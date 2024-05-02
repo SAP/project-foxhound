@@ -15,14 +15,12 @@ add_task(async function test_main_process_crash() {
   let basename;
   let count = await new Promise((resolve, reject) => {
     do_crash(
-      function() {
+      function () {
         // TelemetrySession setup will trigger the session annotation
-        let scope = {};
-        ChromeUtils.import(
-          "resource://gre/modules/TelemetryController.jsm",
-          scope
+        let { TelemetryController } = ChromeUtils.importESModule(
+          "resource://gre/modules/TelemetryController.sys.mjs"
         );
-        scope.TelemetryController.testSetup();
+        TelemetryController.testSetup();
         crashType = CrashTestUtils.CRASH_MOZ_CRASH;
         crashReporter.annotateCrashReport("ShutdownProgress", "event-test");
       },

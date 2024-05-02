@@ -17,15 +17,14 @@
 
 class nsIGlobalObject;
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 class GlobalObject;
 
 class TestingDeprecatedInterface final : public nsISupports,
                                          public nsWrapperCache {
  public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(TestingDeprecatedInterface)
+  NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(TestingDeprecatedInterface)
 
   static already_AddRefed<TestingDeprecatedInterface> Constructor(
       const GlobalObject& aGlobal);
@@ -46,7 +45,6 @@ class TestingDeprecatedInterface final : public nsISupports,
   nsCOMPtr<nsIGlobalObject> mGlobal;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_TestingDeprecatedInterface_h

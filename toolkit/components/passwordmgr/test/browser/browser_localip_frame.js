@@ -1,21 +1,19 @@
 "use strict";
 
-add_task(async function setup() {
-  let login = LoginTestUtils.testData.formLogin({
+add_setup(async () => {
+  const login1 = LoginTestUtils.testData.formLogin({
     origin: "http://10.0.0.0",
     formActionOrigin: "https://example.org",
     username: "username1",
     password: "password1",
   });
-  Services.logins.addLogin(login);
-
-  login = LoginTestUtils.testData.formLogin({
-    origin: "http://example.org",
-    formActionOrigin: "http://example.org",
+  const login2 = LoginTestUtils.testData.formLogin({
+    origin: "https://example.org",
+    formActionOrigin: "https://example.org",
     username: "username2",
     password: "password2",
   });
-  Services.logins.addLogin(login);
+  await Services.logins.addLogins([login1, login2]);
 });
 
 add_task(async function test_warningForLocalIP() {
@@ -28,7 +26,7 @@ add_task(async function test_warningForLocalIP() {
     },
     {
       top: "http://192.168.0.0",
-      iframe: "http://example.org",
+      iframe: "https://example.org",
       expected: `[type="insecureWarning"]`,
     },
     {
@@ -61,10 +59,10 @@ add_task(async function test_warningForLocalIP() {
     });
 
     let popup = document.getElementById("PopupAutoComplete");
-    ok(popup, "Got popup");
+    Assert.ok(popup, "Got popup");
 
     let ifr = browser.browsingContext.children[0];
-    ok(ifr, "Got iframe");
+    Assert.ok(ifr, "Got iframe");
 
     let popupShown = openACPopup(
       popup,
@@ -75,7 +73,7 @@ add_task(async function test_warningForLocalIP() {
     await popupShown;
 
     let item = popup.querySelector(test.expected);
-    ok(item, "Got expected richlistitem");
+    Assert.ok(item, "Got expected richlistitem");
 
     await BrowserTestUtils.waitForCondition(
       () => !item.collapsed,

@@ -9,13 +9,13 @@
 #include "mozilla/dom/Document.h"
 
 #include "mozilla/PresShell.h"
+#include "mozilla/ServoStyleSet.h"
 #include "mozilla/dom/HTMLBodyElement.h"
 #include "nsContentUtils.h"
 #include "nsPresContext.h"
 #include "nsStyleSheetService.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 inline PresShell* Document::GetObservingPresShell() const {
   return mPresShell && mPresShell->IsObservingDocument() ? mPresShell : nullptr;
@@ -53,7 +53,15 @@ inline void Document::SetServoRestyleRootDirtyBits(uint32_t aDirtyBits) {
   mServoRestyleRootDirtyBits = aDirtyBits;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+inline ServoStyleSet& Document::EnsureStyleSet() const {
+  MOZ_ASSERT(NS_IsMainThread());
+  if (!mStyleSet) {
+    Document* doc = const_cast<Document*>(this);
+    doc->mStyleSet = MakeUnique<ServoStyleSet>(*doc);
+  }
+  return *(mStyleSet.get());
+}
+
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_DocumentInlines_h

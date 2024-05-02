@@ -6,16 +6,17 @@ Transform the partner attribution task into an actual task description.
 """
 
 
-from collections import defaultdict
 import json
 import logging
+from collections import defaultdict
 
-from gecko_taskgraph.transforms.base import TransformSequence
+from taskgraph.transforms.base import TransformSequence
+
 from gecko_taskgraph.util.partners import (
     apply_partner_priority,
     check_if_partners_enabled,
-    get_partner_config_by_kind,
     generate_attribution_code,
+    get_partner_config_by_kind,
 )
 
 log = logging.getLogger(__name__)
@@ -122,7 +123,7 @@ def add_command_arguments(config, tasks):
                 "type": "directory",
             }
         ]
-        task["release-artifacts"] = release_artifacts
+        task.setdefault("attributes", {})["release_artifacts"] = release_artifacts
         task["label"] = config.kind
 
         yield task

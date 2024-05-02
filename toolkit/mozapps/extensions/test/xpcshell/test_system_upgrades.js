@@ -13,11 +13,11 @@ AddonTestUtils.createAppInfo(
 BootstrapMonitor.init();
 
 // A test directory for default/builtin system addons.
-const systemDefaults = FileUtils.getDir(
-  "ProfD",
-  ["app-system-defaults", "features"],
-  true
-);
+const systemDefaults = FileUtils.getDir("ProfD", [
+  "app-system-defaults",
+  "features",
+]);
+systemDefaults.create(Ci.nsIFile.DIRECTORY_TYPE, FileUtils.PERMS_DIRECTORY);
 registerDirectory("XREAppFeat", systemDefaults);
 
 AddonTestUtils.usePrivilegedSignatures = id => "system";
@@ -51,7 +51,7 @@ function createWebExtensionFile(id, version, update_url) {
   return AddonTestUtils.createTempWebExtensionFile({
     manifest: {
       version,
-      applications: {
+      browser_specific_settings: {
         gecko: { id, update_url },
       },
     },
@@ -72,7 +72,7 @@ async function promiseInstallProfileExtension(id, version, update_url) {
   return promiseInstallWebExtension({
     manifest: {
       version,
-      applications: {
+      browser_specific_settings: {
         gecko: { id, update_url },
       },
     },
@@ -316,7 +316,7 @@ add_task(async function test_builtin_addon_upgrades() {
     installBuiltinExtension({
       manifest: {
         version: "1.0",
-        applications: {
+        browser_specific_settings: {
           gecko: { id: ADDON_ID },
         },
       },
@@ -376,7 +376,7 @@ add_task(async function test_builtin_addon_version_precedence() {
     installBuiltinExtension({
       manifest: {
         version: "1.0",
-        applications: {
+        browser_specific_settings: {
           gecko: { id: ADDON_ID },
         },
       },
@@ -399,7 +399,7 @@ add_task(async function test_builtin_addon_version_precedence() {
       {
         manifest: {
           version: "1.5",
-          applications: {
+          browser_specific_settings: {
             gecko: { id: ADDON_ID },
           },
         },

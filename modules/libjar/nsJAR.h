@@ -8,12 +8,11 @@
 
 #include "nscore.h"
 #include "prio.h"
-#include "plstr.h"
 #include "mozilla/Logging.h"
 #include "prinrval.h"
 
 #include "mozilla/Atomics.h"
-#include "mozilla/Mutex.h"
+#include "mozilla/RecursiveMutex.h"
 #include "nsCOMPtr.h"
 #include "nsClassHashtable.h"
 #include "nsString.h"
@@ -53,8 +52,10 @@ class nsJAR final : public nsIZipReader {
 
   NS_DECL_NSIZIPREADER
 
-  nsresult GetJarPath(nsACString& aResult);
+  nsresult GetFullJarPath(nsACString& aResult);
 
+  // These access to mReleaseTime, which is locked by nsZipReaderCache's
+  // mLock, not nsJAR's mLock
   PRIntervalTime GetReleaseTime() { return mReleaseTime; }
 
   bool IsReleased() { return mReleaseTime != PR_INTERVAL_NO_TIMEOUT; }
@@ -64,29 +65,30 @@ class nsJAR final : public nsIZipReader {
   void ClearReleaseTime() { mReleaseTime = PR_INTERVAL_NO_TIMEOUT; }
 
   void SetZipReaderCache(nsZipReaderCache* aCache) {
-    mozilla::MutexAutoLock lock(mLock);
+    mozilla::RecursiveMutexAutoLock lock(mLock);
     mCache = aCache;
   }
 
   nsresult GetNSPRFileDesc(PRFileDesc** aNSPRFileDesc);
 
  protected:
-  //-- Private data members
-  nsCOMPtr<nsIFile> mZipFile;   // The zip/jar file on disk
-  nsCString mOuterZipEntry;     // The entry in the zip this zip is reading from
-  RefPtr<nsZipArchive> mZip;    // The underlying zip archive
-  PRIntervalTime mReleaseTime;  // used by nsZipReaderCache for flushing entries
-  nsZipReaderCache*
-      mCache;  // if cached, this points to the cache it's contained in
-  mozilla::Mutex mLock;  // protect mCache and mZip
-  int64_t mMtime;
-  bool mOpened;
-
-  // true if mZip was adopted from elsewhere and should not be closed by us.
-  bool mSkipArchiveClosing;
-
   nsresult LoadEntry(const nsACString& aFilename, nsCString& aBuf);
   int32_t ReadLine(const char** src);
+
+  // used by nsZipReaderCache for flushing entries; access is locked by
+  // nsZipReaderCache's mLock
+  PRIntervalTime mReleaseTime;
+
+  //-- Private data members, protected by mLock
+  mozilla::RecursiveMutex mLock;
+  // The entry in the zip this zip is reading from
+  nsCString mOuterZipEntry MOZ_GUARDED_BY(mLock);
+  // The zip/jar file on disk
+  nsCOMPtr<nsIFile> mZipFile MOZ_GUARDED_BY(mLock);
+  // The underlying zip archive
+  RefPtr<nsZipArchive> mZip MOZ_GUARDED_BY(mLock);
+  // if cached, this points to the cache it's contained in
+  nsZipReaderCache* mCache MOZ_GUARDED_BY(mLock);
 };
 
 /**
@@ -105,14 +107,14 @@ class nsJARItem : public nsIZipEntry {
  private:
   virtual ~nsJARItem() {}
 
-  uint32_t mSize;     /* size in original file */
-  uint32_t mRealsize; /* inflated size */
-  uint32_t mCrc32;
-  PRTime mLastModTime;
-  uint16_t mCompression;
-  uint32_t mPermissions;
-  bool mIsDirectory;
-  bool mIsSynthetic;
+  const uint32_t mSize;     /* size in original file */
+  const uint32_t mRealsize; /* inflated size */
+  const uint32_t mCrc32;
+  const PRTime mLastModTime;
+  const uint16_t mCompression;
+  const uint32_t mPermissions;
+  const bool mIsDirectory;
+  const bool mIsSynthetic;
 };
 
 /**
@@ -150,6 +152,8 @@ class nsJAREnumerator final : public nsStringEnumeratorBase {
 class nsZipReaderCache : public nsIZipReaderCache,
                          public nsIObserver,
                          public nsSupportsWeakReference {
+  friend class nsJAR;
+
  public:
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSIZIPREADERCACHE
@@ -162,17 +166,19 @@ class nsZipReaderCache : public nsIZipReaderCache,
   typedef nsRefPtrHashtable<nsCStringHashKey, nsJAR> ZipsHashtable;
 
  protected:
+  void AssertLockOwned() { mLock.AssertCurrentThreadOwns(); }
+
   virtual ~nsZipReaderCache();
 
   mozilla::Mutex mLock;
-  uint32_t mCacheSize;
-  ZipsHashtable mZips;
+  uint32_t mCacheSize MOZ_GUARDED_BY(mLock);
+  ZipsHashtable mZips MOZ_GUARDED_BY(mLock);
 
 #ifdef ZIP_CACHE_HIT_RATE
-  uint32_t mZipCacheLookups;
-  uint32_t mZipCacheHits;
-  uint32_t mZipCacheFlushes;
-  uint32_t mZipSyncMisses;
+  uint32_t mZipCacheLookups MOZ_GUARDED_BY(mLock);
+  uint32_t mZipCacheHits MOZ_GUARDED_BY(mLock);
+  uint32_t mZipCacheFlushes MOZ_GUARDED_BY(mLock);
+  uint32_t mZipSyncMisses MOZ_GUARDED_BY(mLock);
 #endif
 
  private:

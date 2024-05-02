@@ -8,7 +8,6 @@
 #include "RemoteLazyInputStream.h"
 #include "RemoteLazyInputStreamChild.h"
 #include "RemoteLazyInputStreamParent.h"
-#include "RemoteLazyInputStreamUtils.h"
 #include "mozilla/dom/IPCBlob.h"
 #include "mozilla/ipc/BackgroundParent.h"
 #include "mozilla/ipc/PBackgroundParent.h"
@@ -21,11 +20,7 @@
 #include "StreamBlobImpl.h"
 #include "prtime.h"
 
-namespace mozilla {
-
-using namespace ipc;
-
-namespace dom::IPCBlobUtils {
+namespace mozilla::dom::IPCBlobUtils {
 
 already_AddRefed<BlobImpl> Deserialize(const IPCBlob& aIPCBlob) {
   nsCOMPtr<nsIInputStream> inputStream;
@@ -34,11 +29,8 @@ already_AddRefed<BlobImpl> Deserialize(const IPCBlob& aIPCBlob) {
   switch (stream.type()) {
     // Parent to child: when an nsIInputStream is sent from parent to child, the
     // child receives a RemoteLazyInputStream actor.
-    case RemoteLazyStream::TPRemoteLazyInputStreamChild: {
-      RemoteLazyInputStreamChild* actor =
-          static_cast<RemoteLazyInputStreamChild*>(
-              stream.get_PRemoteLazyInputStreamChild());
-      inputStream = actor->CreateStream();
+    case RemoteLazyStream::TRemoteLazyInputStream: {
+      inputStream = stream.get_RemoteLazyInputStream();
       break;
     }
 
@@ -76,9 +68,7 @@ already_AddRefed<BlobImpl> Deserialize(const IPCBlob& aIPCBlob) {
   return blobImpl.forget();
 }
 
-template <typename M>
-nsresult SerializeInternal(BlobImpl* aBlobImpl, M* aManager,
-                           IPCBlob& aIPCBlob) {
+nsresult Serialize(BlobImpl* aBlobImpl, IPCBlob& aIPCBlob) {
   MOZ_ASSERT(aBlobImpl);
 
   nsAutoString value;
@@ -129,103 +119,61 @@ nsresult SerializeInternal(BlobImpl* aBlobImpl, M* aManager,
     return rv.StealNSResult();
   }
 
-  RemoteLazyStream stream;
-  rv = RemoteLazyInputStreamUtils::SerializeInputStream(
-      inputStream, aIPCBlob.size(), stream, aManager);
-  if (NS_WARN_IF(rv.Failed())) {
-    return rv.StealNSResult();
+  if (XRE_IsParentProcess()) {
+    RefPtr<RemoteLazyInputStream> stream =
+        RemoteLazyInputStream::WrapStream(inputStream);
+    if (NS_WARN_IF(!stream)) {
+      return NS_ERROR_FAILURE;
+    }
+
+    aIPCBlob.inputStream() = stream;
+    return NS_OK;
   }
 
+  mozilla::ipc::IPCStream stream;
+  if (!mozilla::ipc::SerializeIPCStream(inputStream.forget(), stream,
+                                        /* aAllowLazy */ true)) {
+    return NS_ERROR_FAILURE;
+  }
   aIPCBlob.inputStream() = stream;
   return NS_OK;
 }
 
-nsresult Serialize(BlobImpl* aBlobImpl, ContentChild* aManager,
-                   IPCBlob& aIPCBlob) {
-  return SerializeInternal(aBlobImpl, aManager, aIPCBlob);
-}
+}  // namespace mozilla::dom::IPCBlobUtils
 
-nsresult Serialize(BlobImpl* aBlobImpl, PBackgroundChild* aManager,
-                   IPCBlob& aIPCBlob) {
-  return SerializeInternal(aBlobImpl, aManager, aIPCBlob);
-}
+namespace IPC {
 
-nsresult Serialize(BlobImpl* aBlobImpl, ContentParent* aManager,
-                   IPCBlob& aIPCBlob) {
-  return SerializeInternal(aBlobImpl, aManager, aIPCBlob);
-}
-
-nsresult Serialize(BlobImpl* aBlobImpl, PBackgroundParent* aManager,
-                   IPCBlob& aIPCBlob) {
-  return SerializeInternal(aBlobImpl, aManager, aIPCBlob);
-}
-
-nsresult SerializeUntyped(BlobImpl* aBlobImpl, IProtocol* aActor,
-                          IPCBlob& aIPCBlob) {
-  // We always want to act on the toplevel protocol.
-  IProtocol* manager = aActor;
-  while (manager->Manager()) {
-    manager = manager->Manager();
-  }
-
-  // We always need the toplevel protocol
-  switch (manager->GetProtocolId()) {
-    case PBackgroundMsgStart:
-      if (manager->GetSide() == mozilla::ipc::ParentSide) {
-        return SerializeInternal(
-            aBlobImpl, static_cast<PBackgroundParent*>(manager), aIPCBlob);
-      } else {
-        return SerializeInternal(
-            aBlobImpl, static_cast<PBackgroundChild*>(manager), aIPCBlob);
-      }
-    case PContentMsgStart:
-      if (manager->GetSide() == mozilla::ipc::ParentSide) {
-        return SerializeInternal(
-            aBlobImpl, static_cast<ContentParent*>(manager), aIPCBlob);
-      } else {
-        return SerializeInternal(aBlobImpl, static_cast<ContentChild*>(manager),
-                                 aIPCBlob);
-      }
-    default:
-      MOZ_CRASH("Unsupported protocol passed to BlobImpl serialize");
-  }
-}
-
-}  // namespace dom::IPCBlobUtils
-
-namespace ipc {
-void IPDLParamTraits<mozilla::dom::BlobImpl*>::Write(
-    IPC::Message* aMsg, IProtocol* aActor, mozilla::dom::BlobImpl* aParam) {
+void ParamTraits<mozilla::dom::BlobImpl*>::Write(
+    IPC::MessageWriter* aWriter, mozilla::dom::BlobImpl* aParam) {
   nsresult rv;
   mozilla::dom::IPCBlob ipcblob;
   if (aParam) {
-    rv = mozilla::dom::IPCBlobUtils::SerializeUntyped(aParam, aActor, ipcblob);
+    rv = mozilla::dom::IPCBlobUtils::Serialize(aParam, ipcblob);
   }
   if (!aParam || NS_WARN_IF(NS_FAILED(rv))) {
-    WriteIPDLParam(aMsg, aActor, false);
+    WriteParam(aWriter, false);
   } else {
-    WriteIPDLParam(aMsg, aActor, true);
-    WriteIPDLParam(aMsg, aActor, ipcblob);
+    WriteParam(aWriter, true);
+    WriteParam(aWriter, ipcblob);
   }
 }
 
-bool IPDLParamTraits<mozilla::dom::BlobImpl*>::Read(
-    const IPC::Message* aMsg, PickleIterator* aIter, IProtocol* aActor,
-    RefPtr<mozilla::dom::BlobImpl>* aResult) {
+bool ParamTraits<mozilla::dom::BlobImpl*>::Read(
+    IPC::MessageReader* aReader, RefPtr<mozilla::dom::BlobImpl>* aResult) {
   *aResult = nullptr;
 
   bool notnull = false;
-  if (!ReadIPDLParam(aMsg, aIter, aActor, &notnull)) {
+  if (!ReadParam(aReader, &notnull)) {
     return false;
   }
   if (notnull) {
     mozilla::dom::IPCBlob ipcblob;
-    if (!ReadIPDLParam(aMsg, aIter, aActor, &ipcblob)) {
+    if (!ReadParam(aReader, &ipcblob)) {
       return false;
     }
     *aResult = mozilla::dom::IPCBlobUtils::Deserialize(ipcblob);
   }
   return true;
 }
-}  // namespace ipc
-}  // namespace mozilla
+
+}  // namespace IPC

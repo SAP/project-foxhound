@@ -204,7 +204,7 @@ static void read_intra_frame_mode_info(VP9_COMMON *const cm,
   mi->skip = read_skip(cm, xd, mi->segment_id, r);
   mi->tx_size = read_tx_size(cm, xd, 1, r);
   mi->ref_frame[0] = INTRA_FRAME;
-  mi->ref_frame[1] = NONE;
+  mi->ref_frame[1] = NO_REF_FRAME;
 
   switch (bsize) {
     case BLOCK_4X4:
@@ -299,7 +299,7 @@ static REFERENCE_MODE read_block_reference_mode(VP9_COMMON *cm,
   }
 }
 
-// Read the referncence frame
+// Read the reference frame
 static void read_ref_frames(VP9_COMMON *const cm, MACROBLOCKD *const xd,
                             vpx_reader *r, int segment_id,
                             MV_REFERENCE_FRAME ref_frame[2]) {
@@ -309,7 +309,7 @@ static void read_ref_frames(VP9_COMMON *const cm, MACROBLOCKD *const xd,
   if (segfeature_active(&cm->seg, segment_id, SEG_LVL_REF_FRAME)) {
     ref_frame[0] = (MV_REFERENCE_FRAME)get_segdata(&cm->seg, segment_id,
                                                    SEG_LVL_REF_FRAME);
-    ref_frame[1] = NONE;
+    ref_frame[1] = NO_REF_FRAME;
   } else {
     const REFERENCE_MODE mode = read_block_reference_mode(cm, xd, r);
     // FIXME(rbultje) I'm pretty sure this breaks segmentation ref frame coding
@@ -333,7 +333,7 @@ static void read_ref_frames(VP9_COMMON *const cm, MACROBLOCKD *const xd,
         ref_frame[0] = LAST_FRAME;
       }
 
-      ref_frame[1] = NONE;
+      ref_frame[1] = NO_REF_FRAME;
     } else {
       assert(0 && "Invalid prediction mode.");
     }
@@ -383,7 +383,7 @@ static void read_intra_block_mode_info(VP9_COMMON *const cm,
   mi->interp_filter = SWITCHABLE_FILTERS;
 
   mi->ref_frame[0] = INTRA_FRAME;
-  mi->ref_frame[1] = NONE;
+  mi->ref_frame[1] = NO_REF_FRAME;
 }
 
 static INLINE int is_mv_valid(const MV *mv) {
@@ -426,7 +426,9 @@ static INLINE int assign_mv(VP9_COMMON *cm, MACROBLOCKD *xd,
       zero_mv_pair(mv);
       break;
     }
-    default: { return 0; }
+    default: {
+      return 0;
+    }
   }
   return ret;
 }
@@ -706,7 +708,7 @@ static void read_inter_block_mode_info(VP9Decoder *const pbi,
     mi->mode = ZEROMV;
     if (bsize < BLOCK_8X8) {
       vpx_internal_error(xd->error_info, VPX_CODEC_UNSUP_BITSTREAM,
-                         "Invalid usage of segement feature on small blocks");
+                         "Invalid usage of segment feature on small blocks");
       return;
     }
   } else {
@@ -755,7 +757,7 @@ static void read_inter_block_mode_info(VP9Decoder *const pbi,
         if (!assign_mv(cm, xd, b_mode, mi->bmi[j].as_mv, best_ref_mvs,
                        best_sub8x8, is_compound, allow_hp, r)) {
           xd->corrupted |= 1;
-          break;
+          return;
         }
 
         if (num_4x4_h == 2) mi->bmi[j + 2] = mi->bmi[j];
@@ -820,13 +822,21 @@ void vp9_read_mode_info(TileWorkerData *twd, VP9Decoder *const pbi, int mi_row,
   if (frame_is_intra_only(cm)) {
     read_intra_frame_mode_info(cm, xd, mi_row, mi_col, r, x_mis, y_mis);
   } else {
+    // Cache mi->ref_frame and mi->mv so that the compiler can prove that they
+    // are constant for the duration of the loop and avoids reloading them.
+    MV_REFERENCE_FRAME mi_ref_frame[2];
+    int_mv mi_mv[2];
+
     read_inter_frame_mode_info(pbi, xd, mi_row, mi_col, r, x_mis, y_mis);
+
+    copy_ref_frame_pair(mi_ref_frame, mi->ref_frame);
+    copy_mv_pair(mi_mv, mi->mv);
 
     for (h = 0; h < y_mis; ++h) {
       for (w = 0; w < x_mis; ++w) {
         MV_REF *const mv = frame_mvs + w;
-        copy_ref_frame_pair(mv->ref_frame, mi->ref_frame);
-        copy_mv_pair(mv->mv, mi->mv);
+        copy_ref_frame_pair(mv->ref_frame, mi_ref_frame);
+        copy_mv_pair(mv->mv, mi_mv);
       }
       frame_mvs += cm->mi_cols;
     }

@@ -8,7 +8,6 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include <assert.h>
 #include <ApplicationServices/ApplicationServices.h>
 #include <Cocoa/Cocoa.h>
 #include <CoreFoundation/CoreFoundation.h>
@@ -24,7 +23,7 @@
 #include "modules/desktop_capture/mac/desktop_frame_cgimage.h"
 #include "modules/desktop_capture/mac/window_list_utils.h"
 #include "modules/desktop_capture/window_finder_mac.h"
-#include "rtc_base/constructor_magic.h"
+#include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/trace_event.h"
 
@@ -52,6 +51,9 @@ class WindowCapturerMac : public DesktopCapturer {
       rtc::scoped_refptr<DesktopConfigurationMonitor> configuration_monitor);
   ~WindowCapturerMac() override;
 
+  WindowCapturerMac(const WindowCapturerMac&) = delete;
+  WindowCapturerMac& operator=(const WindowCapturerMac&) = delete;
+
   // DesktopCapturer interface.
   void Start(Callback* callback) override;
   void CaptureFrame() override;
@@ -72,7 +74,8 @@ class WindowCapturerMac : public DesktopCapturer {
 
   WindowFinderMac window_finder_;
 
-  RTC_DISALLOW_COPY_AND_ASSIGN(WindowCapturerMac);
+  // Used to make sure that we only log the usage of fullscreen detection once.
+  bool fullscreen_usage_logged_ = false;
 };
 
 WindowCapturerMac::WindowCapturerMac(
@@ -142,8 +145,8 @@ bool WindowCapturerMac::IsOccluded(const DesktopVector& pos) {
 }
 
 void WindowCapturerMac::Start(Callback* callback) {
-  assert(!callback_);
-  assert(callback);
+  RTC_DCHECK(!callback_);
+  RTC_DCHECK(callback);
 
   callback_ = callback;
 }
@@ -179,7 +182,14 @@ void WindowCapturerMac::CaptureFrame() {
 
     CGWindowID full_screen_window = full_screen_window_detector_->FindFullScreenWindow(window_id_);
 
-    if (full_screen_window != kCGNullWindowID) on_screen_window = full_screen_window;
+    if (full_screen_window != kCGNullWindowID) {
+      // If this is the first time this happens, report to UMA that the feature is active.
+      if (!fullscreen_usage_logged_) {
+        LogDesktopCapturerFullscreenDetectorUsage();
+        fullscreen_usage_logged_ = true;
+      }
+      on_screen_window = full_screen_window;
+    }
   }
 
   std::unique_ptr<DesktopFrame> frame = DesktopFrameCGImage::CreateForWindow(on_screen_window);

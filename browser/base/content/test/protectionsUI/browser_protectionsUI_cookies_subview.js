@@ -6,13 +6,15 @@
 "use strict";
 
 const COOKIE_PAGE =
+  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
   "http://not-tracking.example.com/browser/browser/base/content/test/protectionsUI/cookiePage.html";
 const CONTAINER_PAGE =
+  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
   "http://not-tracking.example.com/browser/browser/base/content/test/protectionsUI/containerPage.html";
 
 const TPC_PREF = "network.cookie.cookieBehavior";
 
-add_task(async function setup() {
+add_setup(async function () {
   await UrlClassifierTestUtils.addTestTrackers();
 
   registerCleanupFunction(() => {
@@ -117,6 +119,7 @@ async function assertSitesListed(testCase) {
     let trackerTestItem;
     for (let item of listItems) {
       let label = item.querySelector(".protections-popup-list-host-label");
+      // eslint-disable-next-line @microsoft/sdl/no-insecure-url
       if (label.value == "http://trackertest.org") {
         trackerTestItem = item;
         break;
@@ -130,6 +133,7 @@ async function assertSitesListed(testCase) {
     let notTrackingExampleItem;
     for (let item of listItems) {
       let label = item.querySelector(".protections-popup-list-host-label");
+      // eslint-disable-next-line @microsoft/sdl/no-insecure-url
       if (label.value == "http://not-tracking.example.com") {
         notTrackingExampleItem = item;
         break;
@@ -152,7 +156,7 @@ async function assertSitesListed(testCase) {
   let change = waitForContentBlockingEvent();
   let timeoutPromise = new Promise(resolve => setTimeout(resolve, 1000));
 
-  await SpecialPowers.spawn(browser, [], function() {
+  await SpecialPowers.spawn(browser, [], function () {
     content.postMessage("third-party-cookie", "*");
   });
 
@@ -192,6 +196,7 @@ async function assertSitesListed(testCase) {
     let trackerTestItem;
     for (let item of listItems) {
       let label = item.querySelector(".protections-popup-list-host-label");
+      // eslint-disable-next-line @microsoft/sdl/no-insecure-url
       if (label.value == "http://trackertest.org") {
         trackerTestItem = item;
         break;
@@ -210,7 +215,7 @@ async function assertSitesListed(testCase) {
   change = waitForSecurityChange();
   timeoutPromise = new Promise(resolve => setTimeout(resolve, 1000));
 
-  await SpecialPowers.spawn(browser, [], function() {
+  await SpecialPowers.spawn(browser, [], function () {
     content.postMessage("first-party-cookie", "*");
   });
 
@@ -237,6 +242,7 @@ async function assertSitesListed(testCase) {
     let notTrackingExampleItem;
     for (let item of listItems) {
       let label = item.querySelector(".protections-popup-list-host-label");
+      // eslint-disable-next-line @microsoft/sdl/no-insecure-url
       if (label.value == "http://not-tracking.example.com") {
         notTrackingExampleItem = item;
         break;
@@ -281,9 +287,11 @@ add_task(async function testCookiesSubViewAllowed() {
     TPC_PREF,
     Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER
   );
-  let principal = Services.scriptSecurityManager.createContentPrincipalFromOrigin(
-    "http://trackertest.org/"
-  );
+  let principal =
+    Services.scriptSecurityManager.createContentPrincipalFromOrigin(
+      // eslint-disable-next-line @microsoft/sdl/no-insecure-url
+      "http://trackertest.org/"
+    );
   Services.perms.addFromPrincipal(
     principal,
     "cookie",
@@ -320,6 +328,7 @@ add_task(async function testCookiesSubViewAllowed() {
 
   let listItem = listItems[0];
   let label = listItem.querySelector(".protections-popup-list-host-label");
+  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
   is(label.value, "http://trackertest.org", "has an item for trackertest.org");
   ok(BrowserTestUtils.is_visible(listItem), "list item is visible");
   ok(
@@ -333,8 +342,8 @@ add_task(async function testCookiesSubViewAllowed() {
   ok(stateLabel, "List item has a state label");
   ok(BrowserTestUtils.is_visible(stateLabel), "State label is visible");
   is(
-    stateLabel.value,
-    gNavigatorBundle.getString("contentBlocking.cookiesView.allowed.label"),
+    stateLabel.getAttribute("data-l10n-id"),
+    "content-blocking-cookies-view-allowed-label",
     "State label has correct text"
   );
 
@@ -363,14 +372,18 @@ add_task(async function testCookiesSubViewAllowedHeuristic() {
     TPC_PREF,
     Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER
   );
-  let principal = Services.scriptSecurityManager.createContentPrincipalFromOrigin(
-    "http://not-tracking.example.com/"
-  );
+  let principal =
+    Services.scriptSecurityManager.createContentPrincipalFromOrigin(
+      // eslint-disable-next-line @microsoft/sdl/no-insecure-url
+      "http://not-tracking.example.com/"
+    );
 
   // Pretend that the tracker has already been interacted with
-  let trackerPrincipal = Services.scriptSecurityManager.createContentPrincipalFromOrigin(
-    "http://trackertest.org/"
-  );
+  let trackerPrincipal =
+    Services.scriptSecurityManager.createContentPrincipalFromOrigin(
+      // eslint-disable-next-line @microsoft/sdl/no-insecure-url
+      "http://trackertest.org/"
+    );
   Services.perms.addFromPrincipal(
     trackerPrincipal,
     "storageAccessAPI",
@@ -402,7 +415,7 @@ add_task(async function testCookiesSubViewAllowedHeuristic() {
     );
   });
 
-  await SpecialPowers.spawn(browser, [], function() {
+  await SpecialPowers.spawn(browser, [], function () {
     content.postMessage("window-open", "*");
   });
   await Promise.all([windowCreated, permChanged]);
@@ -434,6 +447,7 @@ add_task(async function testCookiesSubViewAllowedHeuristic() {
 
   let listItem = listItems[0];
   let label = listItem.querySelector(".protections-popup-list-host-label");
+  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
   is(label.value, "http://trackertest.org", "has an item for trackertest.org");
   ok(BrowserTestUtils.is_visible(listItem), "list item is visible");
   ok(
@@ -459,7 +473,7 @@ add_task(async function testCookiesSubViewAllowedHeuristic() {
   );
   ok(!listItem.classList.contains("allowed"), "Has removed the allowed class");
 
-  await SpecialPowers.spawn(browser, [], function() {
+  await SpecialPowers.spawn(browser, [], function () {
     content.postMessage("window-close", "*");
   });
 
@@ -469,6 +483,8 @@ add_task(async function testCookiesSubViewAllowedHeuristic() {
 });
 
 add_task(async function testCookiesSubViewBlockedDoublyNested() {
+  requestLongerTimeout(2);
+
   Services.prefs.setIntPref(
     TPC_PREF,
     Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER
@@ -504,6 +520,7 @@ add_task(async function testCookiesSubViewBlockedDoublyNested() {
 
   let listItem = listItems[0];
   let label = listItem.querySelector(".protections-popup-list-host-label");
+  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
   is(label.value, "http://trackertest.org", "has an item for trackertest.org");
   ok(BrowserTestUtils.is_visible(listItem), "list item is visible");
   ok(

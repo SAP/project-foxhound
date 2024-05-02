@@ -4,32 +4,17 @@
 
 "use strict";
 
-const { Cc, Ci } = require("chrome");
-const Services = require("Services");
-loader.lazyImporter(
-  this,
-  "AddonManager",
-  "resource://gre/modules/AddonManager.jsm"
-);
-loader.lazyRequireGetter(
-  this,
-  "FileUtils",
-  "resource://gre/modules/FileUtils.jsm",
-  true
-);
+const lazy = {};
 
-const { PREFERENCES } = require("devtools/client/aboutdebugging/src/constants");
+ChromeUtils.defineESModuleGetters(lazy, {
+  FileUtils: "resource://gre/modules/FileUtils.sys.mjs",
+});
 
-/**
- * Uninstall the addon with the provided id.
- * Resolves when the addon shutdown has completed.
- */
-exports.uninstallAddon = async function(addonID) {
-  const addon = await AddonManager.getAddonByID(addonID);
-  return addon && addon.uninstall();
-};
+const {
+  PREFERENCES,
+} = require("resource://devtools/client/aboutdebugging/src/constants.js");
 
-exports.parseFileUri = function(url) {
+exports.parseFileUri = function (url) {
   // Strip a leading slash from Windows drive letter URIs.
   // file:///home/foo ~> /home/foo
   // file:///C:/foo ~> C:/foo
@@ -40,7 +25,7 @@ exports.parseFileUri = function(url) {
   return url.slice("file://".length);
 };
 
-exports.getExtensionUuid = function(extension) {
+exports.getExtensionUuid = function (extension) {
   const { manifestURL } = extension;
   // Strip off the protocol and rest, leaving us with just the UUID.
   return manifestURL ? /moz-extension:\/\/([^/]*)/.exec(manifestURL)[1] : null;
@@ -63,7 +48,7 @@ exports.getExtensionUuid = function(extension) {
  * @return {Promise} returns a promise that resolves a File object corresponding to the
  *         file selected by the user.
  */
-exports.openTemporaryExtension = function(win, message) {
+exports.openTemporaryExtension = function (win, message) {
   return new Promise(resolve => {
     const fp = Cc["@mozilla.org/filepicker;1"].createInstance(Ci.nsIFilePicker);
     fp.init(win, message, Ci.nsIFilePicker.modeOpen);
@@ -74,7 +59,7 @@ exports.openTemporaryExtension = function(win, message) {
         PREFERENCES.TEMPORARY_EXTENSION_PATH,
         ""
       );
-      const lastDir = new FileUtils.File(lastDirPath);
+      const lastDir = new lazy.FileUtils.File(lastDirPath);
       fp.displayDirectory = lastDir;
     } catch (e) {
       // Empty or invalid value, nothing to handle.

@@ -6,8 +6,6 @@
 #ifndef LIB_JXL_ENC_MODULAR_H_
 #define LIB_JXL_ENC_MODULAR_H_
 
-#include "lib/jxl/aux_out.h"
-#include "lib/jxl/aux_out_fwd.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/dec_modular.h"
 #include "lib/jxl/enc_bit_writer.h"
@@ -20,6 +18,8 @@
 #include "lib/jxl/modular/modular_image.h"
 
 namespace jxl {
+
+struct AuxOut;
 
 class ModularFrameEncoder {
  public:
@@ -63,30 +63,28 @@ class ModularFrameEncoder {
   std::vector<uint8_t> extra_dc_precision;
 
  private:
-  Status PrepareEncoding(ThreadPool* pool, const FrameDimensions& frame_dim,
+  Status PrepareEncoding(const FrameHeader& frame_header, ThreadPool* pool,
                          EncoderHeuristics* heuristics,
                          AuxOut* aux_out = nullptr);
   Status PrepareStreamParams(const Rect& rect, const CompressParams& cparams,
                              int minShift, int maxShift,
                              const ModularStreamId& stream, bool do_color);
-  std::vector<Image> stream_images;
-  std::vector<ModularOptions> stream_options;
+  std::vector<Image> stream_images_;
+  std::vector<ModularOptions> stream_options_;
 
-  Tree tree;
-  std::vector<std::vector<Token>> tree_tokens;
-  std::vector<GroupHeader> stream_headers;
-  std::vector<std::vector<Token>> tokens;
-  EntropyEncodingData code;
-  std::vector<uint8_t> context_map;
-  FrameDimensions frame_dim;
-  CompressParams cparams;
-  float quality = cparams.quality_pair.first;
-  float cquality = cparams.quality_pair.second;
-  std::vector<size_t> tree_splits;
-  std::vector<ModularMultiplierInfo> multiplier_info;
-  std::vector<std::vector<uint32_t>> gi_channel;
-  std::vector<size_t> image_widths;
-  Predictor delta_pred = Predictor::Average4;
+  Tree tree_;
+  std::vector<std::vector<Token>> tree_tokens_;
+  std::vector<GroupHeader> stream_headers_;
+  std::vector<std::vector<Token>> tokens_;
+  EntropyEncodingData code_;
+  std::vector<uint8_t> context_map_;
+  FrameDimensions frame_dim_;
+  CompressParams cparams_;
+  std::vector<size_t> tree_splits_;
+  std::vector<ModularMultiplierInfo> multiplier_info_;
+  std::vector<std::vector<uint32_t>> gi_channel_;
+  std::vector<size_t> image_widths_;
+  Predictor delta_pred_ = Predictor::Average4;
 };
 
 }  // namespace jxl

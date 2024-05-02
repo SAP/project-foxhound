@@ -9,8 +9,8 @@ const TEST_URI =
   "http://example.com/browser/devtools/client/webconsole/" +
   "test/browser/test-console.html";
 
-add_task(async function() {
-  await pushPref("devtools.browserconsole.contentMessages", true);
+add_task(async function () {
+  await pushPref("devtools.browsertoolbox.scope", "everything");
   // Enable net messages in the console for this test.
   await pushPref("devtools.browserconsole.filter.net", true);
   // This is required for testing the text input in the browser console:
@@ -19,8 +19,16 @@ add_task(async function() {
   await addTab(TEST_URI);
   const hud = await BrowserConsoleManager.toggleBrowserConsole();
 
+  // Network monitoring is turned off by default in the browser console
+  info("Turn on network monitoring");
+  await toggleNetworkMonitoringConsoleSetting(hud, true);
+
   info("Reload the content window to produce a network log");
-  const onNetworkMessage = waitForMessage(hud, "test-console.html");
+  const onNetworkMessage = waitForMessageByType(
+    hud,
+    "test-console.html",
+    ".network"
+  );
   SpecialPowers.spawn(gBrowser.selectedBrowser, [], () => {
     content.wrappedJSObject.location.reload();
   });
@@ -36,9 +44,8 @@ add_task(async function() {
     "#console-menu-store (S) [disabled]",
     "#console-menu-copy (C)",
     "#console-menu-copy-object (o) [disabled]",
-    "#console-menu-select (A)",
-    "#console-menu-export-clipboard ()",
-    "#console-menu-export-file ()",
+    "#console-menu-export-clipboard (M)",
+    "#console-menu-export-file (F)",
   ]);
   is(
     getSimplifiedContextMenu(menuPopup).join("\n"),
@@ -47,7 +54,11 @@ add_task(async function() {
   );
 
   info("Logging a text message in the content window");
-  const onLogMessage = waitForMessage(hud, "simple text message");
+  const onLogMessage = waitForMessageByType(
+    hud,
+    "simple text message",
+    ".console-api"
+  );
   SpecialPowers.spawn(gBrowser.selectedBrowser, [], () => {
     content.wrappedJSObject.console.log("simple text message");
   });
@@ -60,9 +71,8 @@ add_task(async function() {
     "#console-menu-store (S) [disabled]",
     "#console-menu-copy (C)",
     "#console-menu-copy-object (o) [disabled]",
-    "#console-menu-select (A)",
-    "#console-menu-export-clipboard ()",
-    "#console-menu-export-file ()",
+    "#console-menu-export-clipboard (M)",
+    "#console-menu-export-file (F)",
   ]);
   is(
     getSimplifiedContextMenu(menuPopup).join("\n"),
@@ -113,6 +123,7 @@ add_task(async function() {
   );
 
   await hideContextMenu(hud);
+  await toggleNetworkMonitoringConsoleSetting(hud, false);
 });
 
 function addPrefBasedEntries(expectedEntries) {

@@ -3,11 +3,9 @@
 
 "use strict";
 
-const { Preferences } = ChromeUtils.import(
-  "resource://gre/modules/Preferences.jsm"
+const { ctypes } = ChromeUtils.importESModule(
+  "resource://gre/modules/ctypes.sys.mjs"
 );
-const { ctypes } = ChromeUtils.import("resource://gre/modules/ctypes.jsm");
-const { OS } = ChromeUtils.import("resource://gre/modules/osfile.jsm");
 
 const MAX_NAME_LENGTH = 64;
 
@@ -49,15 +47,15 @@ const libNoPDB = chooseDLL(
   "testNoPDB64.dll",
   "testNoPDBAArch64.dll"
 );
-const libxul = OS.Path.basename(OS.Constants.Path.libxul);
+const libxul = PathUtils.filename(PathUtils.xulLibraryPath);
 
 const libModulesFile = do_get_file(libModules).path;
-const libUnicodeFile = OS.Path.join(
-  OS.Path.dirname(libModulesFile),
+const libUnicodeFile = PathUtils.join(
+  PathUtils.parent(libModulesFile),
   libUnicode
 );
-const libLongNameFile = OS.Path.join(
-  OS.Path.dirname(libModulesFile),
+const libLongNameFile = PathUtils.join(
+  PathUtils.parent(libModulesFile),
   libLongName
 );
 const libUnicodePDBFile = do_get_file(libUnicodePDB).path;
@@ -144,8 +142,8 @@ if (AppConstants.platform === "win") {
 add_task(async function setup() {
   do_get_profile();
 
-  await OS.File.copy(libModulesFile, libUnicodeFile);
-  await OS.File.copy(libModulesFile, libLongName);
+  await IOUtils.copy(libModulesFile, libUnicodeFile);
+  await IOUtils.copy(libModulesFile, libLongNameFile);
 
   libModulesHandle = ctypes.open(libModulesFile);
   libUnicodeHandle = ctypes.open(libUnicodeFile);
@@ -155,22 +153,30 @@ add_task(async function setup() {
     libNoPDBHandle = ctypes.open(libNoPDBFile);
   }
 
+  // Pretend the untrustedmodules ping has already been sent now to get it out
+  // of the way and avoid confusing the test with our PingServer receiving two
+  // pings during our test.
+  Services.prefs.setIntPref(
+    "app.update.lastUpdateTime.telemetry_untrustedmodules_ping",
+    Math.round(Date.now() / 1000)
+  );
+
   // Force the timer to fire (using a small interval).
   Cc["@mozilla.org/updates/timer-manager;1"]
     .getService(Ci.nsIObserver)
     .observe(null, "utm-test-init", "");
-  Preferences.set("toolkit.telemetry.modulesPing.interval", 0);
-  Preferences.set("app.update.url", "http://localhost");
+  Services.prefs.setIntPref("toolkit.telemetry.modulesPing.interval", 0);
+  Services.prefs.setStringPref("app.update.url", "http://localhost");
 
   // Start the local ping server and setup Telemetry to use it during the tests.
   PingServer.start();
-  Preferences.set(
+  Services.prefs.setStringPref(
     TelemetryUtils.Preferences.Server,
     "http://localhost:" + PingServer.port
   );
 });
 
-registerCleanupFunction(function() {
+registerCleanupFunction(function () {
   if (libModulesHandle) {
     libModulesHandle.close();
   }
@@ -187,8 +193,8 @@ registerCleanupFunction(function() {
     libNoPDBHandle.close();
   }
 
-  return OS.File.remove(libUnicodeFile)
-    .then(() => OS.File.remove(libLongNameFile))
+  return IOUtils.remove(libUnicodeFile)
+    .then(() => IOUtils.remove(libLongNameFile))
     .then(() => PingServer.stop());
 });
 
@@ -212,7 +218,7 @@ add_task(
     let nameComparator;
     if (AppConstants.platform === "win") {
       // Do case-insensitive checking of file/module names on Windows
-      nameComparator = function(a, b) {
+      nameComparator = function (a, b) {
         if (typeof a === "string" && typeof b === "string") {
           return a.toLowerCase() === b.toLowerCase();
         }
@@ -220,7 +226,7 @@ add_task(
         return a === b;
       };
     } else {
-      nameComparator = function(a, b) {
+      nameComparator = function (a, b) {
         return a === b;
       };
     }

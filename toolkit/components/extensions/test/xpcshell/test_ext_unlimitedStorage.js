@@ -14,7 +14,6 @@ createAppInfo("xpcshell@tests.mozilla.org", "XPCShell", "42", "42");
 
 const STORAGE_SITE_PERMISSIONS = [
   "WebExtensions-unlimitedStorage",
-  "indexedDB",
   "persistent-storage",
 ];
 
@@ -39,7 +38,7 @@ add_task(async function test_unlimitedStorage_restored_on_app_startup() {
   let extension = ExtensionTestUtils.loadExtension({
     manifest: {
       permissions: ["unlimitedStorage"],
-      applications: {
+      browser_specific_settings: {
         gecko: { id },
       },
     },
@@ -66,7 +65,6 @@ add_task(async function test_unlimitedStorage_restored_on_app_startup() {
     principal,
     "WebExtensions-unlimitedStorage"
   );
-  Services.perms.removeFromPrincipal(principal, "indexedDB");
   Services.perms.removeFromPrincipal(principal, "persistent-storage");
 
   checkSitePermissions(principal, Services.perms.UNKNOWN_ACTION, "is not set");
@@ -118,7 +116,7 @@ add_task(async function test_unlimitedStorage_removed_on_update() {
     background,
     manifest: {
       permissions: ["unlimitedStorage", "storage"],
-      applications: { gecko: { id } },
+      browser_specific_settings: { gecko: { id } },
       version: "1",
     },
     useAddonManager: "permanent",
@@ -145,7 +143,7 @@ add_task(async function test_unlimitedStorage_removed_on_update() {
     background,
     manifest: {
       permissions: ["storage"],
-      applications: { gecko: { id } },
+      browser_specific_settings: { gecko: { id } },
       version: "2",
     },
     useAddonManager: "permanent",
@@ -183,7 +181,7 @@ add_task(async function test_unlimitedStorage_origin_attributes() {
   let extension = ExtensionTestUtils.loadExtension({
     manifest: {
       permissions: ["unlimitedStorage"],
-      applications: { gecko: { id } },
+      browser_specific_settings: { gecko: { id } },
     },
   });
 

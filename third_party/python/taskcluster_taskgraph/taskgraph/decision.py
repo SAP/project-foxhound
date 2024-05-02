@@ -3,29 +3,31 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 
-import os
 import json
 import logging
-
-
+import os
+import pathlib
+import shutil
 import time
-import yaml
+from pathlib import Path
 
-from .actions import render_actions_json
-from .create import create_tasks
-from .generator import TaskGraphGenerator
-from .parameters import Parameters
-from .taskgraph import TaskGraph
-from taskgraph.util.python_path import find_object
-from taskgraph.util.vcs import get_repository
-from .util.schema import validate_schema, Schema
-from taskgraph.util.yaml import load_yaml
+import yaml
 from voluptuous import Optional
 
+from taskgraph.actions import render_actions_json
+from taskgraph.create import create_tasks
+from taskgraph.generator import TaskGraphGenerator
+from taskgraph.parameters import Parameters, get_version
+from taskgraph.taskgraph import TaskGraph
+from taskgraph.util.python_path import find_object
+from taskgraph.util.schema import Schema, validate_schema
+from taskgraph.util.vcs import Repository, get_repository
+from taskgraph.util.yaml import load_yaml
 
 logger = logging.getLogger(__name__)
 
-ARTIFACTS_DIR = "artifacts"
+ARTIFACTS_DIR = Path("artifacts")
+
 
 # For each project, this gives a set of parameters specific to the project.
 # See `taskcluster/docs/parameters.rst` for information on parameters.
@@ -116,6 +118,11 @@ def taskgraph_decision(options, parameters=None):
     write_artifact("task-graph.json", tgg.morphed_task_graph.to_json())
     write_artifact("label-to-taskid.json", tgg.label_to_taskid)
 
+    # write out current run-task and fetch-content scripts
+    RUN_TASK_DIR = pathlib.Path(__file__).parent / "run-task"
+    shutil.copy2(RUN_TASK_DIR / "run-task", ARTIFACTS_DIR)
+    shutil.copy2(RUN_TASK_DIR / "fetch-content", ARTIFACTS_DIR)
+
     # actually create the graph
     create_tasks(
         tgg.graph_config,
@@ -136,6 +143,8 @@ def get_decision_parameters(graph_config, options):
         n: options[n]
         for n in [
             "base_repository",
+            "base_ref",
+            "base_rev",
             "head_repository",
             "head_rev",
             "head_ref",
@@ -152,17 +161,41 @@ def get_decision_parameters(graph_config, options):
         if n in options
     }
 
-    repo = get_repository(os.getcwd())
-    commit_message = repo.get_commit_message()
+    repo_path = os.getcwd()
+    repo = get_repository(repo_path)
+    try:
+        commit_message = repo.get_commit_message()
+    except UnicodeDecodeError:
+        commit_message = ""
+
+    parameters["base_ref"] = _determine_more_accurate_base_ref(
+        repo,
+        candidate_base_ref=options.get("base_ref"),
+        head_ref=options.get("head_ref"),
+        base_rev=options.get("base_rev"),
+    )
+
+    parameters["base_rev"] = _determine_more_accurate_base_rev(
+        repo,
+        base_ref=parameters["base_ref"],
+        candidate_base_rev=options.get("base_rev"),
+        head_rev=options.get("head_rev"),
+        env_prefix=_get_env_prefix(graph_config),
+    )
 
     # Define default filter list, as most configurations shouldn't need
     # custom filters.
     parameters["filters"] = [
         "target_tasks_method",
     ]
+    parameters["optimize_strategies"] = None
     parameters["optimize_target_tasks"] = True
     parameters["existing_tasks"] = {}
     parameters["do_not_optimize"] = []
+    parameters["enable_always_target"] = True
+    parameters["build_number"] = 1
+    parameters["version"] = get_version(repo_path)
+    parameters["next_version"] = None
 
     # owner must be an email, but sometimes (e.g., for ffxbld) it is not, in which
     # case, fake it
@@ -194,7 +227,9 @@ def get_decision_parameters(graph_config, options):
     # ..but can be overridden by the commit message: if it contains the special
     # string "DONTBUILD" and this is an on-push decision task, then use the
     # special 'nothing' target task method.
-    if "DONTBUILD" in commit_message and options["tasks_for"] == "hg-push":
+    if "DONTBUILD" in commit_message and (
+        options["tasks_for"] in ("hg-push", "github-push")
+    ):
         parameters["target_tasks_method"] = "nothing"
 
     if options.get("optimize_target_tasks") is not None:
@@ -222,6 +257,68 @@ def get_decision_parameters(graph_config, options):
     return result
 
 
+def _determine_more_accurate_base_ref(repo, candidate_base_ref, head_ref, base_rev):
+    base_ref = candidate_base_ref
+
+    if not candidate_base_ref:
+        base_ref = repo.default_branch
+    elif candidate_base_ref == head_ref and base_rev == Repository.NULL_REVISION:
+        logger.info(
+            "base_ref and head_ref are identical but base_rev equals the null revision. "
+            "This is a new branch but Github didn't identify its actual base."
+        )
+        base_ref = repo.default_branch
+
+    if base_ref != candidate_base_ref:
+        logger.info(
+            f'base_ref has been reset from "{candidate_base_ref}" to "{base_ref}".'
+        )
+
+    return base_ref
+
+
+def _determine_more_accurate_base_rev(
+    repo, base_ref, candidate_base_rev, head_rev, env_prefix
+):
+    if not candidate_base_rev:
+        logger.info("base_rev is not set.")
+        base_ref_or_rev = base_ref
+    elif candidate_base_rev == Repository.NULL_REVISION:
+        logger.info("base_rev equals the null revision. This branch is a new one.")
+        base_ref_or_rev = base_ref
+    elif not repo.does_revision_exist_locally(candidate_base_rev):
+        logger.warning(
+            "base_rev does not exist locally. It is likely because the branch was force-pushed. "
+            "taskgraph is not able to assess how many commits were changed and assumes it is only "
+            f"the last one. Please set the {env_prefix.upper()}_BASE_REV environment variable "
+            "in the decision task and provide `--base-rev` to taskgraph."
+        )
+        base_ref_or_rev = base_ref
+    else:
+        base_ref_or_rev = candidate_base_rev
+
+    if base_ref_or_rev == base_ref:
+        logger.info(
+            f'Using base_ref "{base_ref}" to determine latest common revision...'
+        )
+
+    base_rev = repo.find_latest_common_revision(base_ref_or_rev, head_rev)
+    if base_rev != candidate_base_rev:
+        if base_ref_or_rev == candidate_base_rev:
+            logger.info("base_rev is not an ancestor of head_rev.")
+
+        logger.info(
+            f'base_rev has been reset from "{candidate_base_rev}" to "{base_rev}".'
+        )
+
+    return base_rev
+
+
+def _get_env_prefix(graph_config):
+    repo_keys = list(graph_config["taskgraph"].get("repositories", {}).keys())
+    return repo_keys[0] if repo_keys else ""
+
+
 def set_try_config(parameters, task_config_file):
     if os.path.isfile(task_config_file):
         logger.info(f"using try tasks from {task_config_file}")
@@ -246,7 +343,7 @@ def write_artifact(filename, data):
     logger.info(f"writing artifact file `{filename}`")
     if not os.path.isdir(ARTIFACTS_DIR):
         os.mkdir(ARTIFACTS_DIR)
-    path = os.path.join(ARTIFACTS_DIR, filename)
+    path = ARTIFACTS_DIR / filename
     if filename.endswith(".yml"):
         with open(path, "w") as f:
             yaml.safe_dump(data, f, allow_unicode=True, default_flow_style=False)
@@ -263,7 +360,7 @@ def write_artifact(filename, data):
 
 
 def read_artifact(filename):
-    path = os.path.join(ARTIFACTS_DIR, filename)
+    path = ARTIFACTS_DIR / filename
     if filename.endswith(".yml"):
         return load_yaml(path, filename)
     elif filename.endswith(".json"):
@@ -279,4 +376,4 @@ def read_artifact(filename):
 
 
 def rename_artifact(src, dest):
-    os.rename(os.path.join(ARTIFACTS_DIR, src), os.path.join(ARTIFACTS_DIR, dest))
+    os.rename(ARTIFACTS_DIR / src, ARTIFACTS_DIR / dest)

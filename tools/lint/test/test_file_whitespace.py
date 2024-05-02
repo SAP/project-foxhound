@@ -1,7 +1,4 @@
-from __future__ import absolute_import, print_function
-
 import mozunit
-
 
 LINTER = "file-whitespace"
 fixed = 0
@@ -36,7 +33,6 @@ def test_lint_file_whitespace(lint, paths):
 
 
 def test_lint_file_whitespace_fix(lint, paths, create_temp_file):
-
     contents = """int main() {  \n
     return 0;  \n
 }

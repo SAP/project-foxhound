@@ -14,8 +14,7 @@ NS_IMPL_NS_NEW_SVG_ELEMENT(FEOffset)
 
 using namespace mozilla::gfx;
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 JSObject* SVGFEOffsetElement::WrapNode(JSContext* aCx,
                                        JS::Handle<JSObject*> aGivenProto) {
@@ -23,7 +22,7 @@ JSObject* SVGFEOffsetElement::WrapNode(JSContext* aCx,
 }
 
 SVGElement::NumberInfo SVGFEOffsetElement::sNumberInfo[2] = {
-    {nsGkAtoms::dx, 0, false}, {nsGkAtoms::dy, 0, false}};
+    {nsGkAtoms::dx, 0}, {nsGkAtoms::dy, 0}};
 
 SVGElement::StringInfo SVGFEOffsetElement::sStringInfo[2] = {
     {nsGkAtoms::result, kNameSpaceID_None, true},
@@ -80,7 +79,7 @@ nsresult SVGFEOffsetElement::BindToTree(BindContext& aCtx, nsINode& aParent) {
     aCtx.OwnerDoc().SetUseCounter(eUseCounter_custom_feOffset);
   }
 
-  return SVGFE::BindToTree(aCtx, aParent);
+  return SVGFEOffsetElementBase::BindToTree(aCtx, aParent);
 }
 
 //----------------------------------------------------------------------
@@ -96,5 +95,4 @@ SVGElement::StringAttributesInfo SVGFEOffsetElement::GetStringInfo() {
                               ArrayLength(sStringInfo));
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

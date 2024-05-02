@@ -14,10 +14,11 @@
 // High and Low Privilege
 const TEST_HIGH1 = "https://example.org/";
 const TEST_HIGH2 = "https://test1.example.org/";
+// eslint-disable-next-line @microsoft/sdl/no-insecure-url
 const TEST_LOW1 = "http://example.org/";
 const TEST_LOW2 = "https://example.com/";
 
-add_task(async function setup() {
+add_setup(async function () {
   await SpecialPowers.pushPrefEnv({
     set: [
       ["browser.tabs.remote.separatePrivilegedMozillaWebContentProcess", true],
@@ -37,7 +38,7 @@ add_task(async function setup() {
 add_task(async function webpages_in_privileged_content_process() {
   Services.ppmm.releaseCachedProcesses();
 
-  await BrowserTestUtils.withNewTab(TEST_HIGH1, async function(browser1) {
+  await BrowserTestUtils.withNewTab(TEST_HIGH1, async function (browser1) {
     checkBrowserRemoteType(browser1, E10SUtils.PRIVILEGEDMOZILLA_REMOTE_TYPE);
 
     // Note the processID for about:newtab for comparison later.
@@ -51,7 +52,7 @@ add_task(async function webpages_in_privileged_content_process() {
       `${TEST_HIGH2}#foo`,
       `${TEST_HIGH2}?q=foo`,
     ]) {
-      await BrowserTestUtils.withNewTab(url, async function(browser2) {
+      await BrowserTestUtils.withNewTab(url, async function (browser2) {
         is(
           browser2.frameLoader.remoteTab.osPid,
           privilegedPid,
@@ -71,7 +72,7 @@ add_task(async function webpages_in_privileged_content_process() {
 add_task(async function process_switching_through_loading_in_the_same_tab() {
   Services.ppmm.releaseCachedProcesses();
 
-  await BrowserTestUtils.withNewTab(TEST_LOW1, async function(browser) {
+  await BrowserTestUtils.withNewTab(TEST_LOW1, async function (browser) {
     checkBrowserRemoteType(browser, E10SUtils.WEB_REMOTE_TYPE);
 
     for (let [url, remoteType] of [
@@ -95,7 +96,7 @@ add_task(async function process_switching_through_loading_in_the_same_tab() {
       [`${TEST_HIGH1}?q=baz`, E10SUtils.PRIVILEGEDMOZILLA_REMOTE_TYPE],
       [TEST_LOW2, E10SUtils.WEB_REMOTE_TYPE],
     ]) {
-      BrowserTestUtils.loadURI(browser, url);
+      BrowserTestUtils.startLoadingURIString(browser, url);
       await BrowserTestUtils.browserLoaded(browser, false, url);
       checkBrowserRemoteType(browser, remoteType);
     }
@@ -112,7 +113,7 @@ add_task(async function process_switching_through_loading_in_the_same_tab() {
 add_task(async function process_switching_through_navigation_features() {
   Services.ppmm.releaseCachedProcesses();
 
-  await BrowserTestUtils.withNewTab(TEST_HIGH1, async function(browser) {
+  await BrowserTestUtils.withNewTab(TEST_HIGH1, async function (browser) {
     checkBrowserRemoteType(browser, E10SUtils.PRIVILEGEDMOZILLA_REMOTE_TYPE);
 
     // Note the processID for about:newtab for comparison later.
@@ -128,7 +129,7 @@ add_task(async function process_switching_through_navigation_features() {
       content.open(uri, "_blank");
     });
     let newTab = await promiseTabOpened;
-    registerCleanupFunction(async function() {
+    registerCleanupFunction(async function () {
       BrowserTestUtils.removeTab(newTab);
     });
     browser = newTab.linkedBrowser;
@@ -148,7 +149,7 @@ add_task(async function process_switching_through_navigation_features() {
     );
 
     // Load http webpage
-    BrowserTestUtils.loadURI(browser, TEST_LOW1);
+    BrowserTestUtils.startLoadingURIString(browser, TEST_LOW1);
     await BrowserTestUtils.browserLoaded(browser, false, TEST_LOW1);
     checkBrowserRemoteType(browser, E10SUtils.WEB_REMOTE_TYPE);
 
@@ -191,7 +192,7 @@ add_task(async function process_switching_through_navigation_features() {
       "Check that privileged page is in privileged mozilla content process after history gotoIndex."
     );
 
-    BrowserTestUtils.loadURI(browser, TEST_LOW2);
+    BrowserTestUtils.startLoadingURIString(browser, TEST_LOW2);
     await BrowserTestUtils.browserLoaded(browser, false, TEST_LOW2);
     checkBrowserRemoteType(browser, E10SUtils.WEB_REMOTE_TYPE);
 

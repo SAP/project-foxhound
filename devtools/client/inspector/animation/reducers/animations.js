@@ -12,12 +12,12 @@ const {
   UPDATE_PLAYBACK_RATES,
   UPDATE_SELECTED_ANIMATION,
   UPDATE_SIDEBAR_SIZE,
-} = require("devtools/client/inspector/animation/actions/index");
+} = require("resource://devtools/client/inspector/animation/actions/index.js");
 
 loader.lazyRequireGetter(
   this,
   "TimeScale",
-  "devtools/client/inspector/animation/utils/timescale"
+  "resource://devtools/client/inspector/animation/utils/timescale.js"
 );
 
 const INITIAL_STATE = {
@@ -111,7 +111,7 @@ function getPlaybackRates(basePlaybackRate, animations) {
   ];
 }
 
-module.exports = function(state = INITIAL_STATE, action) {
+module.exports = function (state = INITIAL_STATE, action) {
   const reducer = reducers[action.type];
   return reducer ? reducer(state, action) : state;
 };

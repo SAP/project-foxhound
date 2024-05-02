@@ -31,11 +31,9 @@ RUN apt-get update && \
       libmpfr-dev \
       nasm \
       opam \
-      pkg-config \
       patch \
       p7zip-full \
       procps \
-      python2.7 \
       python3-dev \
       rsync \
       screen \
@@ -49,7 +47,6 @@ RUN apt-get update && \
       x11-utils \
       xvfb \
       linux-libc-dev \
-      libdbus-glib-1-dev \
       libfontconfig1-dev \
       libfreetype6-dev \
       libgconf2-dev \

@@ -7,8 +7,8 @@
 
 "use strict";
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  UrlbarTestUtils: "resource://testing-common/UrlbarTestUtils.jsm",
+ChromeUtils.defineESModuleGetters(this, {
+  UrlbarTestUtils: "resource://testing-common/UrlbarTestUtils.sys.mjs",
 });
 
 add_task(async function test() {
@@ -31,6 +31,7 @@ add_task(async function test() {
     // Enter a URL.
     await UrlbarTestUtils.promiseAutocompleteResultPopup({
       window,
+      // eslint-disable-next-line @microsoft/sdl/no-insecure-url
       value: "http://example.com/",
       waitForFocus: SimpleTest.waitForFocus,
       fireInputEvent: true,
@@ -46,5 +47,10 @@ add_task(async function test() {
     await onToolboxHidden;
 
     Assert.ok(true, "Nav toolbox hidden");
+
+    info("Waiting for exiting from the fullscreen mode...");
+    onFullscreen = BrowserTestUtils.waitForEvent(window, "fullscreen");
+    document.getElementById("View:FullScreen").doCommand();
+    await onFullscreen;
   });
 });

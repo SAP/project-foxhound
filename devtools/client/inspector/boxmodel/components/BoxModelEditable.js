@@ -4,13 +4,16 @@
 
 "use strict";
 
-const Services = require("Services");
-const { PureComponent } = require("devtools/client/shared/vendor/react");
-const dom = require("devtools/client/shared/vendor/react-dom-factories");
-const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
-const { editableItem } = require("devtools/client/shared/inplace-editor");
+const {
+  PureComponent,
+} = require("resource://devtools/client/shared/vendor/react.js");
+const dom = require("resource://devtools/client/shared/vendor/react-dom-factories.js");
+const PropTypes = require("resource://devtools/client/shared/vendor/react-prop-types.js");
+const {
+  editableItem,
+} = require("resource://devtools/client/shared/inplace-editor.js");
 
-const { LocalizationHelper } = require("devtools/shared/l10n");
+const { LocalizationHelper } = require("resource://devtools/shared/l10n.js");
 const SHARED_STRINGS_URI = "devtools/client/locales/shared.properties";
 const SHARED_L10N = new LocalizationHelper(SHARED_STRINGS_URI);
 
@@ -61,14 +64,8 @@ class BoxModelEditable extends PureComponent {
   }
 
   render() {
-    const {
-      box,
-      direction,
-      focusable,
-      level,
-      property,
-      textContent,
-    } = this.props;
+    const { box, direction, focusable, level, property, textContent } =
+      this.props;
 
     const rotate =
       direction &&

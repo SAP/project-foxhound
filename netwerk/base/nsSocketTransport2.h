@@ -9,6 +9,8 @@
 #  define ENABLE_SOCKET_TRACING
 #endif
 
+#include <functional>
+
 #include "mozilla/Mutex.h"
 #include "nsSocketTransportService2.h"
 #include "nsString.h"
@@ -134,9 +136,10 @@ class nsSocketTransport final : public nsASocketHandler,
   nsresult InitWithConnectedSocket(PRFileDesc* socketFD, const NetAddr* addr);
 
   // this method instructs the socket transport to use an already connected
-  // socket with the given address, and additionally supplies security info.
+  // socket with the given address, and additionally supplies the security
+  // callbacks interface requestor.
   nsresult InitWithConnectedSocket(PRFileDesc* aFD, const NetAddr* aAddr,
-                                   nsISupports* aSecInfo);
+                                   nsIInterfaceRequestor* aCallbacks);
 
 #ifdef XP_UNIX
   // This method instructs the socket transport to open a socket
@@ -159,7 +162,8 @@ class nsSocketTransport final : public nsASocketHandler,
   void OnKeepaliveEnabledPrefChange(bool aEnabled) final;
 
   // called when a socket event is handled
-  void OnSocketEvent(uint32_t type, nsresult status, nsISupports* param);
+  void OnSocketEvent(uint32_t type, nsresult status, nsISupports* param,
+                     std::function<void()>&& task);
 
   uint64_t ByteCountReceived() override { return mInput.ByteCount(); }
   uint64_t ByteCountSent() override { return mOutput.ByteCount(); }
@@ -186,7 +190,8 @@ class nsSocketTransport final : public nsASocketHandler,
     MSG_OUTPUT_PENDING
   };
   nsresult PostEvent(uint32_t type, nsresult status = NS_OK,
-                     nsISupports* param = nullptr);
+                     nsISupports* param = nullptr,
+                     std::function<void()>&& task = nullptr);
 
   enum {
     STATE_CLOSED,
@@ -325,6 +330,11 @@ class nsSocketTransport final : public nsASocketHandler,
   nsCString mEchConfig;
   bool mEchConfigUsed = false;
   bool mResolvedByTRR{false};
+  nsIRequest::TRRMode mEffectiveTRRMode{nsIRequest::TRR_DEFAULT_MODE};
+  nsITRRSkipReason::value mTRRSkipReason{nsITRRSkipReason::TRR_UNSET};
+
+  nsCOMPtr<nsISupports> mInputCopyContext;
+  nsCOMPtr<nsISupports> mOutputCopyContext;
 
   // mNetAddr/mSelfAddr is valid from GetPeerAddr()/GetSelfAddr() once we have
   // reached STATE_TRANSFERRING. It must not change after that.
@@ -367,7 +377,7 @@ class nsSocketTransport final : public nsASocketHandler,
   // the exception of some specific methods (XXX).
 
   // protects members in this section.
-  Mutex mLock{"nsSocketTransport.mLock"};
+  Mutex mLock MOZ_UNANNOTATED{"nsSocketTransport.mLock"};
   LockedPRFileDesc mFD;
   nsrefcnt mFDref{0};        // mFD is closed when mFDref goes to zero.
   bool mFDconnected{false};  // mFD is available to consumer when TRUE.
@@ -379,7 +389,7 @@ class nsSocketTransport final : public nsASocketHandler,
 
   nsCOMPtr<nsIInterfaceRequestor> mCallbacks;
   nsCOMPtr<nsITransportEventSink> mEventSink;
-  nsCOMPtr<nsISupports> mSecInfo;
+  nsCOMPtr<nsITLSSocketControl> mTLSSocketControl;
 
   nsSocketInputStream mInput;
   nsSocketOutputStream mOutput;

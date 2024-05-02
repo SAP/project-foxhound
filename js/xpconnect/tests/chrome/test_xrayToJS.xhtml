@@ -32,23 +32,25 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=933681
     }
   }
 
-  var {AppConstants} = SpecialPowers.Cu.import("resource://gre/modules/AppConstants.jsm", {});
+  var { AppConstants } = SpecialPowers.ChromeUtils.importESModule(
+    "resource://gre/modules/AppConstants.sys.mjs"
+  );
   var isNightlyBuild = AppConstants.NIGHTLY_BUILD;
   var isReleaseOrBeta = AppConstants.RELEASE_OR_BETA;
 
-  typedArrayClasses = ['Uint8Array', 'Int8Array', 'Uint16Array', 'Int16Array',
-                       'Uint32Array', 'Int32Array', 'Float32Array', 'Float64Array',
-                       'Uint8ClampedArray'];
-  errorObjectClasses = ['Error', 'InternalError', 'EvalError', 'RangeError', 'ReferenceError',
-                        'SyntaxError', 'TypeError', 'URIError', 'AggregateError'];
+  let typedArrayClasses = ['Uint8Array', 'Int8Array', 'Uint16Array', 'Int16Array',
+                           'Uint32Array', 'Int32Array', 'Float32Array', 'Float64Array',
+                           'Uint8ClampedArray'];
+  let errorObjectClasses = ['Error', 'InternalError', 'EvalError', 'RangeError', 'ReferenceError',
+                            'SyntaxError', 'TypeError', 'URIError', 'AggregateError'];
 
   // A simpleConstructors entry can either be the name of a constructor as a
   // string, or an object containing the properties `name`, and `args`.
   // In the former case, the constructor is invoked without any args; in the
   // latter case, it is invoked with `args` as the arguments list.
-  simpleConstructors = ['Object', 'Function', 'Array', 'Boolean', 'Date', 'Number',
-                        'String', 'RegExp', 'ArrayBuffer', 'WeakMap', 'WeakSet', 'Map', 'Set',
-                        {name: 'Promise', args: [function(){}]}];
+  let simpleConstructors = ['Object', 'Function', 'Array', 'Boolean', 'Date', 'Number',
+                            'String', 'RegExp', 'ArrayBuffer', 'WeakMap', 'WeakSet', 'Map', 'Set',
+                            {name: 'Promise', args: [function(){}]}];
 
   // All TypedArray constructors can be called with zero arguments.
   simpleConstructors = simpleConstructors.concat(typedArrayClasses);
@@ -60,10 +62,11 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=933681
 
   function go() {
     window.iwin = document.getElementById('ifr').contentWindow;
+    /* global iwin */
 
     // Test constructors that can be instantiated with zero arguments, or with
     // a fixed set of arguments provided using `...rest`.
-    for (var c of simpleConstructors) {
+    for (let c of simpleConstructors) {
       var args = [];
       if (typeof c === 'object') {
         args = c.args;
@@ -75,7 +78,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=933681
       is(Cu.unwaiveXrays(Cu.waiveXrays(new iwin[c](...args)).constructor), iwin[c],
          "constructor property is set up right: " + c);
       let expectedProto = Cu.isOpaqueWrapper(new iwin[c](...args)) ?
-        iwin['Object'].prototype : iwin[c].prototype;
+        iwin.Object.prototype : iwin[c].prototype;
       is(Object.getPrototypeOf(new iwin[c](...args)), expectedProto,
          "prototype is correct: " + c);
       is(global(new iwin[c](...args)), iwin, "Got the right global: " + c);
@@ -98,7 +101,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=933681
     var doSetFoo = new iwin.Function('arg', 'arg.foo = 2;');
     is(global(doSetFoo), iwin, "function with args works");
     try {
-      doSetFoo(new Object());
+      doSetFoo({});
       ok(false, "should have thrown while setting property on object");
     } catch (e) {
       ok(!!/denied/.test(e), "Threw correctly: " + e);
@@ -127,6 +130,25 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=933681
     ok(!Object.getOwnPropertyNames(foopyFunction).includes('prototype'), "Should not list prototype");
     ok(Object.getOwnPropertyNames(iwin.Array).includes('prototype'), "Should list prototype for standard constructor");
 
+    // Test BoundFunction.
+    iwin.eval('var boundFoopyFunction = foopyFunction.bind(null, 1)');
+    var boundFoopyFunction = Cu.unwaiveXrays(Cu.waiveXrays(iwin).boundFoopyFunction);
+    is(boundFoopyFunction.name, "bound namedFoopyFunction", "bound .name works over Xrays");
+    is(boundFoopyFunction.length, 2, "bound .length works over Xrays");
+    is(JSON.stringify(Object.getOwnPropertyNames(boundFoopyFunction).sort()), '["length","name"]', "Should list length and name");
+    // Mutate .name, it's just a data property.
+    iwin.eval('Object.defineProperty(boundFoopyFunction, "name", {value: "foobar", configurable: true, writable: true});');
+    is(boundFoopyFunction.name, "foobar", "mutated .name works over Xrays");
+    iwin.eval('boundFoopyFunction.name = 123;');
+    is(boundFoopyFunction.name, undefined, "only support string for .name");
+    iwin.eval('delete boundFoopyFunction.name');
+    is(boundFoopyFunction.name, undefined, "deleted .name works over Xrays");
+    // Mutate .length.
+    iwin.eval('Object.defineProperty(boundFoopyFunction, "length", {value: 456, configurable: true, writable: true});');
+    is(boundFoopyFunction.length, 456, "mutated .length works over Xrays");
+    iwin.eval('boundFoopyFunction.length = "bar";');
+    is(boundFoopyFunction.length, undefined, "only support number for .length");
+
     // Test proxies.
     var targetObject = new iwin.Object();
     targetObject.foo = 9;
@@ -145,7 +167,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=933681
       is(Cu.unwaiveXrays(Cu.waiveXrays(new iwin.AggregateError(...args)).constructor), iwin.AggregateError,
          "AggregateError constructor property is set up right");
       let expectedProto =  Cu.isOpaqueWrapper(new iwin.AggregateError(...args)) ?
-        iwin['Object'].prototype : iwin.AggregateError.prototype;
+        iwin.Object.prototype : iwin.AggregateError.prototype;
       is(Object.getPrototypeOf(new iwin.AggregateError(...args)), expectedProto,
          "AggregateError prototype is correct");
       is(global(new iwin.AggregateError(...args)), iwin, "Got the right global for AggregateError");
@@ -201,7 +223,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=933681
     // Some props live on all constructors
     return arr.concat(["prototype", "length", "name"]);
   }
-  gPrototypeProperties['Date'] =
+  gPrototypeProperties.Date =
     ["getTime", "getTimezoneOffset", "getYear", "getFullYear", "getUTCFullYear",
     "getMonth", "getUTCMonth", "getDate", "getUTCDate", "getDay", "getUTCDay",
     "getHours", "getUTCHours", "getMinutes", "getUTCMinutes", "getSeconds",
@@ -213,109 +235,102 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=933681
     "toLocaleDateString", "toLocaleTimeString", "toDateString", "toTimeString",
     "toISOString", "toJSON", "toSource", "toString", "valueOf", "constructor",
     "toGMTString", Symbol.toPrimitive];
-  gConstructorProperties['Date'] = constructorProps(["UTC", "parse", "now"]);
-  gPrototypeProperties['Object'] =
+  gConstructorProperties.Date = constructorProps(["UTC", "parse", "now"]);
+  gPrototypeProperties.Object =
     ["constructor", "toSource", "toString", "toLocaleString", "valueOf",
      "hasOwnProperty", "isPrototypeOf", "propertyIsEnumerable",
      "__defineGetter__", "__defineSetter__", "__lookupGetter__", "__lookupSetter__",
      "__proto__"];
-  gConstructorProperties['Object'] =
+  gConstructorProperties.Object =
     constructorProps(["setPrototypeOf", "getOwnPropertyDescriptor", "getOwnPropertyDescriptors",
                       "keys", "is", "defineProperty", "defineProperties", "create",
                       "getOwnPropertyNames", "getOwnPropertySymbols",
                       "preventExtensions", "freeze", "fromEntries", "isFrozen", "seal",
                       "isSealed", "assign", "getPrototypeOf", "values",
-                      "entries", "isExtensible", "hasOwn"]);
-  gPrototypeProperties['Array'] =
+                      "entries", "isExtensible", "hasOwn", "groupBy"]);
+  gPrototypeProperties.Array =
     ["length", "toSource", "toString", "toLocaleString", "join", "reverse", "sort", "push",
       "pop", "shift", "unshift", "splice", "concat", "slice", "lastIndexOf", "indexOf",
       "includes", "forEach", "map", "reduce", "reduceRight", "filter", "some", "every", "find",
       "findIndex", "copyWithin", "fill", Symbol.iterator, Symbol.unscopables, "entries", "keys",
-      "values", "constructor", "flat", "flatMap", "at"];
-  if (isNightlyBuild) {
-    gPrototypeProperties['Array'].push("groupBy");
-    gPrototypeProperties['Array'].push("groupByToMap");
-  }
-  gConstructorProperties['Array'] =
-    constructorProps(["isArray", "from", "of", Symbol.species]);
-  for (var c of typedArrayClasses) {
+      "values", "constructor", "flat", "flatMap", "at", "findLast", "findLastIndex",
+      "toReversed", "toSorted", "toSpliced", "with"];
+  gConstructorProperties.Array =
+    constructorProps(["isArray", "from", "fromAsync", "of", Symbol.species]);
+  for (let c of typedArrayClasses) {
     gPrototypeProperties[c] = ["constructor", "BYTES_PER_ELEMENT"];
     gConstructorProperties[c] = constructorProps(["BYTES_PER_ELEMENT"]);
   }
-  gPrototypeProperties['TypedArray'] =
-    ["length", "buffer", "byteLength", "byteOffset", Symbol.iterator, "subarray",
-     "set", "copyWithin", "find", "findIndex", "forEach","indexOf", "lastIndexOf", "includes",
-     "reverse", "join", "every", "some", "reduce", "reduceRight", "entries", "keys", "values",
-     "slice", "map", "filter", "at"];
   // There is no TypedArray constructor, looks like.
   is(window.TypedArray, undefined, "If this ever changes, add to this test!");
-  for (var c of errorObjectClasses) {
+  for (let c of errorObjectClasses) {
       gPrototypeProperties[c] = ["constructor", "name", "message", "stack"];
       gConstructorProperties[c] = constructorProps([]);
   }
   // toString and toSource only live on the parent proto (Error.prototype).
-  gPrototypeProperties['Error'].push('toString');
-  gPrototypeProperties['Error'].push('toSource');
+  gPrototypeProperties.Error.push('toString');
+  gPrototypeProperties.Error.push('toSource');
 
-  gPrototypeProperties['Function'] =
+  gPrototypeProperties.Function =
     ["constructor", "toSource", "toString", "apply", "call", "bind",
      "length", "name", "arguments", "caller", Symbol.hasInstance];
-  gConstructorProperties['Function'] = constructorProps([])
+  gConstructorProperties.Function = constructorProps([])
 
-  gPrototypeProperties['RegExp'] =
+  gPrototypeProperties.RegExp =
     ["constructor", "toSource", "toString", "compile", "exec", "test",
      Symbol.match, Symbol.matchAll, Symbol.replace, Symbol.search, Symbol.split,
      "flags", "dotAll", "global", "hasIndices", "ignoreCase", "multiline", "source", "sticky",
-     "unicode"];
-  gConstructorProperties['RegExp'] =
+     "unicode", "unicodeSets"];
+  gConstructorProperties.RegExp =
     constructorProps(["input", "lastMatch", "lastParen",
                       "leftContext", "rightContext", "$1", "$2", "$3", "$4",
                       "$5", "$6", "$7", "$8", "$9", "$_", "$&", "$+",
                       "$`", "$'", Symbol.species])
 
-  gPrototypeProperties['Promise'] =
+  gPrototypeProperties.Promise =
     ["constructor", "catch", "then", "finally", Symbol.toStringTag];
-  gConstructorProperties['Promise'] =
-    constructorProps(["resolve", "reject", "all", "allSettled", "any", "race", Symbol.species]);
+  gConstructorProperties.Promise =
+    constructorProps(["resolve", "reject", "all", "allSettled", "any", "race",
+                      "withResolvers", Symbol.species]);
 
-  gPrototypeProperties['ArrayBuffer'] =
+  gPrototypeProperties.ArrayBuffer =
     ["constructor", "byteLength", "slice", Symbol.toStringTag];
-  gConstructorProperties['ArrayBuffer'] =
+  gConstructorProperties.ArrayBuffer =
     constructorProps(["isView", Symbol.species]);
 
-  gPrototypeProperties['SharedArrayBuffer'] = ["constructor", "slice", "byteLength", Symbol.toStringTag];
-  gConstructorProperties['SharedArrayBuffer'] = constructorProps([Symbol.species]);
+  gPrototypeProperties.SharedArrayBuffer = ["constructor", "slice", "byteLength", Symbol.toStringTag];
+  gConstructorProperties.SharedArrayBuffer = constructorProps([Symbol.species]);
 
-  gPrototypeProperties['Map'] =
+  gPrototypeProperties.Map =
     ["constructor", "size", Symbol.toStringTag, "get", "has", "set", "delete",
      "keys", "values", "clear", "forEach", "entries", Symbol.iterator];
-  gConstructorProperties['Map'] =
-    constructorProps([Symbol.species]);
+  gConstructorProperties.Map =
+    constructorProps(["groupBy", Symbol.species]);
 
-  gPrototypeProperties['Set'] =
+  gPrototypeProperties.Set =
     ["constructor", "size", Symbol.toStringTag, "has", "add", "delete",
      "keys", "values", "clear", "forEach", "entries", Symbol.iterator];
-  gConstructorProperties['Set'] =
+  gConstructorProperties.Set =
     constructorProps([Symbol.species]);
 
-  gPrototypeProperties['WeakMap'] =
+  gPrototypeProperties.WeakMap =
     ["constructor", Symbol.toStringTag, "get", "has", "set", "delete"];
-  gConstructorProperties['WeakMap'] =
+  gConstructorProperties.WeakMap =
     constructorProps([]);
 
-  gPrototypeProperties['WeakSet'] =
+  gPrototypeProperties.WeakSet =
     ["constructor", Symbol.toStringTag, "has", "add", "delete"];
-  gConstructorProperties['WeakSet'] =
+  gConstructorProperties.WeakSet =
     constructorProps([]);
 
-  gPrototypeProperties['DataView'] =
+  gPrototypeProperties.DataView =
     ["constructor", "buffer", "byteLength", "byteOffset", Symbol.toStringTag,
      "getInt8", "getUint8", "getInt16", "getUint16",
      "getInt32", "getUint32", "getFloat32", "getFloat64",
      "setInt8", "setUint8", "setInt16", "setUint16",
      "setInt32", "setUint32", "setFloat32", "setFloat64",
      "getBigInt64", "getBigUint64", "setBigInt64", "setBigUint64"]
-  gConstructorProperties['DataView'] = constructorProps([]);
+  gConstructorProperties.DataView = constructorProps([]);
 
   // Sort an array that may contain symbols as well as strings.
   function sortProperties(arr) {
@@ -327,9 +342,9 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=933681
 
   // Sort all the lists so we don't need to mutate them later (or copy them
   // again to sort them).
-  for (var c of Object.keys(gPrototypeProperties))
+  for (let c of Object.keys(gPrototypeProperties))
     sortProperties(gPrototypeProperties[c]);
-  for (var c of Object.keys(gConstructorProperties))
+  for (let c of Object.keys(gConstructorProperties))
     sortProperties(gConstructorProperties[c]);
 
   function filterOut(array, props) {
@@ -369,7 +384,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=933681
       is(lookupCallable(xray), method, "Proto props resolve on the instance");
       let local = lookupCallable(localProto);
       is(method.length, local.length, "Function.length identical");
-      if (method.length == 0) {
+      if (!method.length) {
         is(method.call(xray) + "", local.call(xray) + "",
            "Xray and local method results stringify identically");
 
@@ -424,7 +439,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=933681
       // they live in, as far as I can tell, so testing them over Xrays will be
       // wrong: on the Xray they will actaully get the lastMatch of _our_
       // global, not the Xrayed one.
-      if (method.length == 0 &&
+      if (!method.length &&
           !(localCtor.name == "Date" && name == "now") &&
           !(localCtor.name == "RegExp" && (name == "lastMatch" || name == "$&"))) {
         is(method.call(xrayCtor) + "", local.call(xrayCtor) + "",
@@ -455,7 +470,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=933681
     let protoCallables = protoProps.filter(name => propertyIsGetter(localProto, name, classname) ||
                                                    typeof localProto[name] == 'function' &&
                                                    name != 'constructor');
-    ok(protoCallables.length > 0, "Need something to test");
+    ok(!!protoCallables.length, "Need something to test");
     is(xrayProto, iwin[classname].prototype, "Xray proto is correct");
     is(xrayProto, xray.__proto__, "Proto accessors agree");
     var protoProto = classname == "Object" ? null : iwin.Object.prototype;
@@ -475,8 +490,8 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=933681
     is(xray2.expando, 42, "Xrayed instances see proto expandos");
 
     // Now test constructors
-    localCtor = window[classname];
-    xrayCtor = xrayProto.constructor;
+    let localCtor = window[classname];
+    let xrayCtor = xrayProto.constructor;
     // We already checked that this is the same as iwin[classname]
 
     let desiredCtorProps =
@@ -706,8 +721,10 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=933681
     for (let prop in trickyObject) {
       if (prop == 'primitiveProp')
         trickyObject[prop] = trickyObject[prop] - 10;
-      if (prop != 'expando')
+      if (prop != 'expando') {
+        // eslint-disable-next-line no-self-assign
         trickyObject[prop] = trickyObject[prop];
+      }
       ++propCount;
     }
     is(propCount, 3, "Should iterate the correct number of times");
@@ -775,7 +792,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=933681
     checkThrows(function() { trickyObject.hasOwnProperty = 33; }, /shadow/,
                 "Should reject shadowing of pre-existing inherited properties over Xrays");
 
-    checkThrows(function() { Object.defineProperty(trickyObject, 'rejectedProp', { get: function() {}}); },
+    checkThrows(function() { Object.defineProperty(trickyObject, 'rejectedProp', { get() {}}); },
                 /accessor property/, "Should reject accessor property definition");
   }
 
@@ -796,7 +813,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=933681
                                      typeof typedArrayProto[name] === "function") &&
                                     name !== "constructor");
 
-    for (var c of typedArrayClasses) {
+    for (let c of typedArrayClasses) {
       var t = new iwin[c](10);
       checkThrows(function() { t[2]; }, /performant/, "direct property-wise reading of typed arrays forbidden over Xrays");
       checkThrows(function() { t[2] = 3; }, /performant/, "direct property-wise writing of typed arrays forbidden over Xrays");

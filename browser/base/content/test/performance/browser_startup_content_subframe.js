@@ -21,11 +21,11 @@
 "use strict";
 
 const actorModuleURI =
-  getRootDirectory(gTestPath) + "StartupContentSubframe.jsm";
+  getRootDirectory(gTestPath) + "StartupContentSubframe.sys.mjs";
 const subframeURI =
   getRootDirectory(gTestPath).replace(
     "chrome://mochitests/content",
-    "http://example.com"
+    "https://example.com"
   ) + "file_empty.html";
 
 // Set this to true only for debugging purpose; it makes the output noisy.
@@ -37,24 +37,19 @@ const known_scripts = {
     actorModuleURI,
 
     // General utilities
-    "resource://gre/modules/AppConstants.jsm",
-    "resource://gre/modules/DeferredTask.jsm",
-    "resource://gre/modules/Services.jsm", // bug 1464542
-    "resource://gre/modules/XPCOMUtils.jsm",
+    "resource://gre/modules/AppConstants.sys.mjs",
+    "resource://gre/modules/XPCOMUtils.sys.mjs",
 
     // Logging related
-    "resource://gre/modules/Log.jsm",
-
-    // Browser front-end
-    "resource:///actors/PageStyleChild.jsm",
+    "resource://gre/modules/Log.sys.mjs",
 
     // Telemetry
-    "resource://gre/modules/TelemetryControllerBase.jsm", // bug 1470339
-    "resource://gre/modules/TelemetryControllerContent.jsm", // bug 1470339
+    "resource://gre/modules/TelemetryControllerBase.sys.mjs", // bug 1470339
+    "resource://gre/modules/TelemetryControllerContent.sys.mjs", // bug 1470339
 
     // Extensions
-    "resource://gre/modules/ExtensionProcessScript.jsm",
-    "resource://gre/modules/ExtensionUtils.jsm",
+    "resource://gre/modules/ExtensionProcessScript.sys.mjs",
+    "resource://gre/modules/ExtensionUtils.sys.mjs",
   ]),
   processScripts: new Set([
     "chrome://global/content/process-content.js",
@@ -66,16 +61,20 @@ const known_scripts = {
 // items in the main list, which we expect will always load.
 const intermittently_loaded_scripts = {
   modules: new Set([
-    "resource://gre/modules/nsAsyncShutdown.jsm",
+    "resource://gre/modules/nsAsyncShutdown.sys.mjs",
+
+    // Cookie banner handling.
+    "resource://gre/actors/CookieBannerChild.sys.mjs",
+    "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
 
     // Test related
-    "chrome://remote/content/marionette/actors/MarionetteEventsChild.jsm",
-    "chrome://remote/content/shared/Log.jsm",
-    "resource://testing-common/BrowserTestUtilsChild.jsm",
-    "resource://testing-common/ContentEventListenerChild.jsm",
-    "resource://specialpowers/SpecialPowersChild.jsm",
-    "resource://specialpowers/AppTestDelegateChild.jsm",
-    "resource://specialpowers/WrapPrivileged.jsm",
+    "chrome://remote/content/marionette/actors/MarionetteEventsChild.sys.mjs",
+    "chrome://remote/content/shared/Log.sys.mjs",
+    "resource://testing-common/BrowserTestUtilsChild.sys.mjs",
+    "resource://testing-common/ContentEventListenerChild.sys.mjs",
+    "resource://testing-common/SpecialPowersChild.sys.mjs",
+    "resource://specialpowers/AppTestDelegateChild.sys.mjs",
+    "resource://testing-common/WrapPrivileged.sys.mjs",
   ]),
   processScripts: new Set([]),
 };
@@ -88,7 +87,7 @@ const forbiddenScripts = {
   ]),
 };
 
-add_task(async function() {
+add_task(async function () {
   SimpleTest.requestCompleteLog();
 
   // Increase the maximum number of webIsolated content processes to make sure
@@ -105,10 +104,10 @@ add_task(async function() {
   // script loading information is available.
   ChromeUtils.registerWindowActor("StartupContentSubframe", {
     parent: {
-      moduleURI: actorModuleURI,
+      esModuleURI: actorModuleURI,
     },
     child: {
-      moduleURI: actorModuleURI,
+      esModuleURI: actorModuleURI,
       events: {
         load: { mozSystemGroup: true, capture: true },
       },
@@ -141,7 +140,7 @@ add_task(async function() {
     loadedInfo.processScripts[uri] = "";
   }
 
-  checkLoadedScripts({
+  await checkLoadedScripts({
     loadedInfo,
     known: known_scripts,
     intermittent: intermittently_loaded_scripts,

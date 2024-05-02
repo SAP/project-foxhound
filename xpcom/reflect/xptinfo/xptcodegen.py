@@ -6,9 +6,10 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 import json
-from perfecthash import PerfectHash
 from collections import OrderedDict
+
 import buildconfig
+from perfecthash import PerfectHash
 
 # Pick a nice power-of-two size for our intermediate PHF tables.
 PHFSIZE = 512
@@ -147,7 +148,7 @@ def iid_bytes(iid):  # Get the byte representation of the IID for hashing.
 
 # Split a 16-bit integer into its high and low 8 bits
 def splitint(i):
-    assert i < 2 ** 16
+    assert i < 2**16
     return (i >> 8, i & 0xFF)
 
 
@@ -331,14 +332,21 @@ def link_to_cpp(interfaces, fd, header_fd):
             )
         )
 
+    def is_type_reflectable(type):
+        # All native types end up getting tagged as void*, or as wrapper types around void*
+        if type["tag"] == "TD_VOID":
+            return False
+        if type["tag"] in ("TD_ARRAY", "TD_LEGACY_ARRAY"):
+            return is_type_reflectable(type["element"])
+        return True
+
     def is_method_reflectable(method):
         if "hidden" in method["flags"]:
             return False
 
         for param in method["params"]:
-            # Reflected methods can't use native types. All native types end up
-            # getting tagged as void*, so this check is easy.
-            if param["type"]["tag"] == "TD_VOID":
+            # Reflected methods can't use non-reflectable types.
+            if not is_type_reflectable(param["type"]):
                 return False
 
         return True
@@ -501,7 +509,7 @@ enum class nsXPTInterface : uint16_t {
 
 // These template methods are specialized to be used in the sDOMObjects table.
 template<mozilla::dom::prototypes::ID PrototypeID, typename T>
-static nsresult UnwrapDOMObject(JS::HandleValue aHandle, void** aObj, JSContext* aCx)
+static nsresult UnwrapDOMObject(JS::Handle<JS::Value> aHandle, void** aObj, JSContext* aCx)
 {
   RefPtr<T> p;
   nsresult rv = mozilla::dom::UnwrapObject<PrototypeID, T>(aHandle, p, aCx);
@@ -510,7 +518,7 @@ static nsresult UnwrapDOMObject(JS::HandleValue aHandle, void** aObj, JSContext*
 }
 
 template<typename T>
-static bool WrapDOMObject(JSContext* aCx, void* aObj, JS::MutableHandleValue aHandle)
+static bool WrapDOMObject(JSContext* aCx, void* aObj, JS::MutableHandle<JS::Value> aHandle)
 {
   return mozilla::dom::GetOrCreateDOMReflector(aCx, reinterpret_cast<T*>(aObj), aHandle);
 }
@@ -621,8 +629,8 @@ def link_and_write(files, outfile, outheader):
 
 
 def main():
-    from argparse import ArgumentParser
     import sys
+    from argparse import ArgumentParser
 
     parser = ArgumentParser()
     parser.add_argument("outfile", help="Output C++ file to generate")

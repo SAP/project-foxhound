@@ -6,15 +6,17 @@ include protocol PBackgroundIDBCursor;
 include protocol PBackgroundIDBDatabase;
 include protocol PBackgroundIDBDatabaseFile;
 include protocol PBackgroundIDBRequest;
-include protocol PBackgroundMutableFile;
 
 include PBackgroundIDBSharedTypes;
+
+include "mozilla/dom/indexedDB/ActorsChild.h";
 
 namespace mozilla {
 namespace dom {
 namespace indexedDB {
 
-[RefCounted] protocol PBackgroundIDBTransaction {
+[ChildImpl="indexedDB::BackgroundTransactionChild", ParentImpl=virtual]
+protocol PBackgroundIDBTransaction {
   manager PBackgroundIDBDatabase;
 
   manages PBackgroundIDBCursor;

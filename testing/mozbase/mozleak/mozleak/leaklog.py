@@ -2,8 +2,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this file,
 # You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import
-
 import os
 import re
 
@@ -57,6 +55,7 @@ def process_single_leak_file(
     leakedObjectAnalysis = []
     leakedObjectNames = []
     recordLeakedObjects = False
+    header = []
     log.info("leakcheck | Processing leak log file %s" % leakLogFileName)
 
     with open(leakLogFileName, "r") as leaks:
@@ -67,16 +66,28 @@ def process_single_leak_file(
             if not matches:
                 # eg: the leak table header row
                 strippedLine = line.rstrip()
-                log.info(stackFixer(strippedLine) if stackFixer else strippedLine)
+                logLine = stackFixer(strippedLine) if stackFixer else strippedLine
+                if recordLeakedObjects:
+                    log.info(logLine)
+                else:
+                    header.append(logLine)
                 continue
             name = matches.group("name").rstrip()
             size = int(matches.group("size"))
             bytesLeaked = int(matches.group("bytesLeaked"))
             numLeaked = int(matches.group("numLeaked"))
-            # Output the raw line from the leak log table if it is the TOTAL row,
-            # or is for an object row that has been leaked.
-            if numLeaked != 0 or name == "TOTAL":
+            # Output the raw line from the leak log table if it is for an object
+            # row that has been leaked.
+            if numLeaked != 0:
+                # If this is the TOTAL line, first output the header lines.
+                if name == "TOTAL":
+                    for logLine in header:
+                        log.info(logLine)
                 log.info(line.rstrip())
+            # If this is the TOTAL line, we're done with the header lines,
+            # whether or not it leaked.
+            if name == "TOTAL":
+                header = []
             # Analyse the leak log, but output later or it will interrupt the
             # leak table
             if name == "TOTAL":
@@ -114,6 +125,7 @@ def process_single_leak_file(
         if name in allowed:
             limit = leak_allowed[name]
             leak_allowed = limit is None or numLeaked <= limit
+
         log.mozleak_object(
             processType, numLeaked, name, scope=scope, allowed=leak_allowed
         )
@@ -167,13 +179,18 @@ def process_leak_log(
     ignore_missing_leaks should be a list of process types. If a process
     creates a leak log without a TOTAL, then we report an error if it isn't
     in the list ignore_missing_leaks.
+
+    Returns a list of files that were processed. The caller is responsible for
+    cleaning these up.
     """
     log = log or _get_default_logger()
+
+    processed_files = []
 
     leakLogFile = leak_log_file
     if not os.path.exists(leakLogFile):
         log.warning("leakcheck | refcount logging is off, so leaks can't be detected!")
-        return
+        return processed_files
 
     log.info(
         "leakcheck | Processing log file %s%s"
@@ -234,3 +251,5 @@ def process_leak_log(
                 scope=scope,
                 allowed=allowed,
             )
+            processed_files.append(thisFile)
+    return processed_files

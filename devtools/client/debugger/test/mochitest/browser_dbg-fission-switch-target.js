@@ -4,9 +4,11 @@
 
 // Test switching for the top-level target.
 
+"use strict";
+
 const PARENT_PROCESS_URI = "about:robots";
 
-add_task(async function() {
+add_task(async function () {
   // Start the debugger on a parent process URL
   const dbg = await initDebuggerWithAbsoluteURL(
     PARENT_PROCESS_URI,
@@ -20,11 +22,11 @@ add_task(async function() {
   is(dbg.selectors.getSourceCount(), 5, "5 sources are loaded.");
 
   // Check that you can still break after target switching.
-  await selectSource(dbg, "simple1");
+  await selectSource(dbg, "simple1.js");
   await addBreakpoint(dbg, "simple1.js", 4);
   invokeInTab("main");
   await waitForPaused(dbg);
-  await waitForLoadedSource(dbg, "simple1");
+  await waitForLoadedSource(dbg, "simple1.js");
 
   await dbg.toolbox.closeToolbox();
 });

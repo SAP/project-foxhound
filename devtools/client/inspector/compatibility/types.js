@@ -4,7 +4,7 @@
 
 "use strict";
 
-const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
+const PropTypes = require("resource://devtools/client/shared/vendor/react-prop-types.js");
 
 const browser = {
   // The id of the browser which is defined in MDN compatibility dataset.
@@ -30,7 +30,9 @@ const issue = {
   // The CSS property which caused this issue.
   property: PropTypes.string.isRequired,
   // The url of MDN documentation for the CSS property.
-  url: PropTypes.string.isRequired,
+  url: PropTypes.string,
+  // The url of the specification for the CSS property.
+  specUrl: PropTypes.string,
   // Whether the CSS property is deprecated or not.
   deprecated: PropTypes.bool.isRequired,
   // Whether the CSS property is experimental or not.

@@ -17,11 +17,10 @@
 #include "mozilla/mozalloc.h"  // for operator delete, etc
 #include "GeckoProfiler.h"
 #include "gfx2DGlue.h"
+#include "gfxUtils.h"
 #include "nsAppRunner.h"
 
-namespace mozilla {
-
-namespace layers {
+namespace mozilla::layers {
 
 class CompositorRecordedFrame final : public RecordedFrame {
  public:
@@ -55,14 +54,12 @@ class CompositorRecordedFrame final : public RecordedFrame {
 
 Compositor::Compositor(widget::CompositorWidget* aWidget)
     : mWidget(aWidget),
-      mIsDestroyed(false)
+      mIsDestroyed(false),
 #if defined(MOZ_WIDGET_ANDROID)
       // If the default color isn't white for Fennec, there is a black
       // flash before the first page of a tab is loaded.
-      ,
-      mClearColor(ToDeviceColor(sRGBColor::OpaqueWhite()))
+      mClearColor(gfx::ToDeviceColor(gfx::sRGBColor::OpaqueWhite()))
 #else
-      ,
       mClearColor(gfx::DeviceColor())
 #endif
 {
@@ -178,8 +175,8 @@ size_t DecomposeIntoNoRepeatRects(const gfx::Rect& aRect,
 
   // If we are dealing with wrapping br.x and br.y are greater than 1.0 so
   // wrap them here as well.
-  br = gfx::Point(xwrap ? WrapTexCoord(br.x) : br.x,
-                  ywrap ? WrapTexCoord(br.y) : br.y);
+  br = gfx::Point(xwrap ? WrapTexCoord(br.x.value) : br.x.value,
+                  ywrap ? WrapTexCoord(br.y.value) : br.y.value);
 
   // If we wrap around along the x axis, we will draw first from
   // tl.x .. 1.0 and then from 0.0 .. br.x (which we just wrapped above).
@@ -233,26 +230,8 @@ size_t DecomposeIntoNoRepeatRects(const gfx::Rect& aRect,
   return 4;
 }
 
-already_AddRefed<RecordedFrame> Compositor::RecordFrame(
-    const TimeStamp& aTimeStamp) {
-  RefPtr<CompositingRenderTarget> renderTarget = GetWindowRenderTarget();
-  if (!renderTarget) {
-    return nullptr;
-  }
-
-  RefPtr<AsyncReadbackBuffer> buffer =
-      CreateAsyncReadbackBuffer(renderTarget->GetSize());
-
-  if (!ReadbackRenderTarget(renderTarget, buffer)) {
-    return nullptr;
-  }
-
-  return MakeAndAddRef<CompositorRecordedFrame>(aTimeStamp, std::move(buffer));
-}
-
 bool Compositor::ShouldRecordFrames() const {
   return profiler_feature_active(ProfilerFeature::Screenshots) || mRecordFrames;
 }
 
-}  // namespace layers
-}  // namespace mozilla
+}  // namespace mozilla::layers

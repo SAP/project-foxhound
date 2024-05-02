@@ -6,6 +6,7 @@
 #define _MTRANSPORTCHILD_H__
 
 #include "mozilla/dom/PMediaTransportChild.h"
+#include "mozilla/Mutex.h"
 
 namespace mozilla {
 class MediaTransportHandlerIPC;
@@ -13,8 +14,10 @@ class MediaTransportHandlerIPC;
 class MediaTransportChild : public dom::PMediaTransportChild {
  public:
 #ifdef MOZ_WEBRTC
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(MediaTransportChild, override)
+
   explicit MediaTransportChild(MediaTransportHandlerIPC* aUser);
-  virtual ~MediaTransportChild();
+
   mozilla::ipc::IPCResult RecvOnCandidate(const string& transportId,
                                           const CandidateInfo& candidateInfo);
   mozilla::ipc::IPCResult RecvOnAlpnNegotiated(const string& alpn);
@@ -30,7 +33,12 @@ class MediaTransportChild : public dom::PMediaTransportChild {
                                                 const int& state);
 
  private:
-  RefPtr<MediaTransportHandlerIPC> mUser;
+  virtual ~MediaTransportChild();
+  friend class MediaTransportHandlerIPC;
+  void Shutdown();
+  // MediaTransportHandlerIPC owns us, and will inform us when it is going away
+  Mutex mMutex;
+  MediaTransportHandlerIPC* mUser;
 #endif  // MOZ_WEBRTC
 };
 

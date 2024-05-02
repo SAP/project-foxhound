@@ -1,11 +1,13 @@
 "use strict";
 
-const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
+const { HttpServer } = ChromeUtils.importESModule(
+  "resource://testing-common/httpd.sys.mjs"
+);
 
 var httpServer = null;
 var path = "/bug699001";
 
-XPCOMUtils.defineLazyGetter(this, "URI", function() {
+ChromeUtils.defineLazyGetter(this, "URI", function () {
   return "http://localhost:" + httpServer.identity.primaryPort + path;
 });
 
@@ -104,7 +106,7 @@ function nextTest() {
 
   // Give the old channel a chance to close the cache entry first.
   // XXX This is actually a race condition that might be considered a bug...
-  executeSoon(function() {
+  executeSoon(function () {
     chan.asyncOpen(new ChannelListener(checkAndShiftTest, null));
   });
 }
@@ -113,7 +115,7 @@ function checkAndShiftTest(request, response) {
   tests[0].test(response);
 
   tests.shift();
-  if (tests.length == 0) {
+  if (!tests.length) {
     httpServer.stop(tearDown);
     return;
   }

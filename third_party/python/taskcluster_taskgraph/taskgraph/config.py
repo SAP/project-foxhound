@@ -3,15 +3,17 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 
-import os
 import logging
+import os
 import sys
-import attr
-from .util import path
+from dataclasses import dataclass
+from typing import Dict
 
+from voluptuous import All, Any, Extra, Length, Optional, Required
+
+from .util import path
 from .util.python_path import find_object
-from .util.schema import validate_schema, Schema, optionally_keyed_by
-from voluptuous import Required, Extra, Any, Optional, Length, All
+from .util.schema import Schema, optionally_keyed_by, validate_schema
 from .util.yaml import load_yaml
 
 logger = logging.getLogger(__name__)
@@ -33,6 +35,11 @@ graph_config_schema = Schema(
                 "lowest",
             ),
         ),
+        Optional(
+            "task-deadline-after",
+            description="Default 'deadline' for tasks, in relative date format. "
+            "Eg: '1 week'",
+        ): optionally_keyed_by("project", str),
         Required("workers"): {
             Required("aliases"): {
                 str: {
@@ -54,6 +61,10 @@ graph_config_schema = Schema(
                 description="The taskcluster index prefix to use for caching tasks. "
                 "Defaults to `trust-domain`.",
             ): str,
+            Optional(
+                "index-path-regexes",
+                description="Regular expressions matching index paths to be summarized.",
+            ): [str],
             Required("repositories"): All(
                 {
                     str: {
@@ -70,12 +81,13 @@ graph_config_schema = Schema(
         Extra: object,
     }
 )
+"""Schema for GraphConfig"""
 
 
-@attr.s(frozen=True, cmp=False)
+@dataclass(frozen=True, eq=False)
 class GraphConfig:
-    _config = attr.ib()
-    root_dir = attr.ib()
+    _config: Dict
+    root_dir: str
 
     _PATH_MODIFIED = False
 
@@ -131,4 +143,4 @@ def load_graph_config(root_dir):
     config = load_yaml(config_yml)
 
     validate_graph_config(config)
-    return GraphConfig(config=config, root_dir=root_dir)
+    return GraphConfig(config, root_dir=root_dir)

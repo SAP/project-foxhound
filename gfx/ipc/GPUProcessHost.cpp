@@ -7,6 +7,7 @@
 #include "GPUProcessHost.h"
 #include "chrome/common/process_watcher.h"
 #include "gfxPlatform.h"
+#include "mozilla/dom/ContentParent.h"
 #include "mozilla/gfx/GPUChild.h"
 #include "mozilla/gfx/Logging.h"
 #include "mozilla/layers/SynchronousTask.h"
@@ -42,7 +43,8 @@ bool GPUProcessHost::Launch(StringVector aExtraOpts) {
   MOZ_ASSERT(!gfxPlatform::IsHeadless());
 
   mPrefSerializer = MakeUnique<ipc::SharedPreferenceSerializer>();
-  if (!mPrefSerializer->SerializeToSharedMemory()) {
+  if (!mPrefSerializer->SerializeToSharedMemory(GeckoProcessType_GPU,
+                                                /* remoteType */ ""_ns)) {
     return false;
   }
   mPrefSerializer->AddSharedPrefCmdLineArgs(*this, aExtraOpts);
@@ -86,7 +88,7 @@ bool GPUProcessHost::WaitForLaunch() {
   return result;
 }
 
-void GPUProcessHost::OnChannelConnected(int32_t peer_pid) {
+void GPUProcessHost::OnChannelConnected(base::ProcessId peer_pid) {
   MOZ_ASSERT(!NS_IsMainThread());
 
   GeckoChildProcessHost::OnChannelConnected(peer_pid);
@@ -98,22 +100,6 @@ void GPUProcessHost::OnChannelConnected(int32_t peer_pid) {
     MonitorAutoLock lock(mMonitor);
     runnable =
         mTaskFactory.NewRunnableMethod(&GPUProcessHost::OnChannelConnectedTask);
-  }
-  NS_DispatchToMainThread(runnable);
-}
-
-void GPUProcessHost::OnChannelError() {
-  MOZ_ASSERT(!NS_IsMainThread());
-
-  GeckoChildProcessHost::OnChannelError();
-
-  // Post a task to the main thread. Take the lock because mTaskFactory is not
-  // thread-safe.
-  RefPtr<Runnable> runnable;
-  {
-    MonitorAutoLock lock(mMonitor);
-    runnable =
-        mTaskFactory.NewRunnableMethod(&GPUProcessHost::OnChannelErrorTask);
   }
   NS_DispatchToMainThread(runnable);
 }
@@ -141,9 +127,8 @@ void GPUProcessHost::InitAfterConnect(bool aSucceeded) {
 
   if (aSucceeded) {
     mProcessToken = ++sProcessTokenCounter;
-    mGPUChild = MakeUnique<GPUChild>(this);
-    DebugOnly<bool> rv = mGPUChild->Open(
-        TakeInitialPort(), base::GetProcId(GetChildProcessHandle()));
+    mGPUChild = MakeRefPtr<GPUChild>(this);
+    DebugOnly<bool> rv = TakeInitialEndpoint().Bind(mGPUChild.get());
     MOZ_ASSERT(rv);
 
     mGPUChild->Init();

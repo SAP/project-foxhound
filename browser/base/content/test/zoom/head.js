@@ -1,17 +1,13 @@
 /* Any copyright is dedicated to the Public Domain.
  * https://creativecommons.org/publicdomain/zero/1.0/ */
 
-const { BrowserTestUtils } = ChromeUtils.import(
-  "resource://testing-common/BrowserTestUtils.jsm"
-);
-
 let gContentPrefs = Cc["@mozilla.org/content-pref/service;1"].getService(
   Ci.nsIContentPrefService2
 );
 
 let gLoadContext = Cu.createLoadContext();
 
-registerCleanupFunction(async function() {
+registerCleanupFunction(async function () {
   await new Promise(resolve => {
     gContentPrefs.removeByName(window.FullZoom.name, gLoadContext, {
       handleResult() {},
@@ -32,7 +28,6 @@ var FullZoomHelper = {
      */
 
     let parsedZoomValue = parseFloat((parseInt(newZoom) / 100).toFixed(2));
-
     await new Promise(resolve => {
       gContentPrefs.setGlobal(
         FullZoom.name,
@@ -44,6 +39,16 @@ var FullZoomHelper = {
           },
         }
       );
+    });
+    // The zoom level is used to update the commands associated with
+    // increasing, decreasing or resetting the Zoom levels. There are
+    // a series of async things we need to wait for (writing the content
+    // pref to the database, and then reading that content pref back out
+    // again and reacting to it), so waiting for the zoom level to reach
+    // the expected level is actually simplest to make sure we're okay to
+    // proceed.
+    await TestUtils.waitForCondition(() => {
+      return ZoomManager.zoom == parsedZoomValue;
     });
   },
 
@@ -71,18 +76,10 @@ var FullZoomHelper = {
           resolve(value);
         },
         handleError(error) {
-          Cu.reportError(error);
+          console.error(error);
         },
       });
     });
-  },
-
-  async refreshTab(tab = gBrowser.selectedTab) {
-    info("Refreshing tab.");
-    const finished = BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser);
-    gBrowser.reloadTab(tab);
-    await finished;
-    info("Tab finished refreshing.");
   },
 
   waitForLocationChange: function waitForLocationChange() {
@@ -134,7 +131,7 @@ var FullZoomHelper = {
         }
       }, true);
 
-      this.waitForLocationChange().then(function() {
+      this.waitForLocationChange().then(function () {
         didZoom = true;
         if (didLoad) {
           resolve();
@@ -171,7 +168,7 @@ var FullZoomHelper = {
         gBrowser.goForward();
       }
 
-      this.waitForLocationChange().then(function() {
+      this.waitForLocationChange().then(function () {
         didZoom = true;
         if (didPs) {
           resolve();
@@ -181,8 +178,8 @@ var FullZoomHelper = {
   },
 
   failAndContinue: function failAndContinue(func) {
-    return function(err) {
-      Cu.reportError(err);
+    return function (err) {
+      console.error(err);
       ok(false, err);
       func();
     };
@@ -219,7 +216,7 @@ async function promiseTabLoadEvent(tab, url) {
   let loaded = BrowserTestUtils.browserLoaded(tab.linkedBrowser, false, handle);
 
   if (url) {
-    BrowserTestUtils.loadURI(tab.linkedBrowser, url);
+    BrowserTestUtils.startLoadingURIString(tab.linkedBrowser, url);
   }
 
   return loaded;

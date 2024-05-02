@@ -15,7 +15,7 @@
 #endif
 
 #if defined(_WINDOWS)
-static char* quiet_fgets(char* buf, int length, FILE* input) {
+char* quiet_fgets(char* buf, int length, FILE* input) {
   int c;
   char* end = buf;
 
@@ -76,6 +76,11 @@ char* GetPasswordString(void* arg, char* prompt) {
 
   if (!QUIET_FGETS(phrase, sizeof(phrase), input)) {
     fprintf(stderr, "QUIET_FGETS failed\n");
+#ifndef _WINDOWS
+    if (isInputTerminal) {
+      fclose(input);
+    }
+#endif
     return NULL;
   }
 

@@ -4,9 +4,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-with Files('**'):
-    BUG_COMPONENT = ('Core', 'ImageLib')
-
 SOURCES += [
     'alpha_enc.c',
     'analysis_enc.c',
@@ -21,7 +18,7 @@ SOURCES += [
     'near_lossless_enc.c',
     'picture_csp_enc.c',
     'picture_enc.c',
-    'picture_psnr_enc.c',
+    # 'picture_psnr_enc.c', # Unused file.
     'picture_rescale_enc.c',
     'picture_tools_enc.c',
     'predictor_enc.c',

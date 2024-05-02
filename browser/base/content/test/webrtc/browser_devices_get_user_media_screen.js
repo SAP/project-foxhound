@@ -8,13 +8,10 @@
 //
 // NOTE: Allowing a whole class of rejections should be avoided. Normally you
 //       should use "expectUncaughtRejection" to flag individual failures.
-const { PromiseTestUtils } = ChromeUtils.import(
-  "resource://testing-common/PromiseTestUtils.jsm"
+const { PromiseTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/PromiseTestUtils.sys.mjs"
 );
 PromiseTestUtils.allowMatchingRejectionsGlobally(/aborted by the user agent/);
-const { BrowserWindowTracker } = ChromeUtils.import(
-  "resource:///modules/BrowserWindowTracker.jsm"
-);
 
 const permissionError =
   "error: NotAllowedError: The request is not allowed " +
@@ -22,10 +19,29 @@ const permissionError =
 
 const notFoundError = "error: NotFoundError: The object can not be found here.";
 
-let env = Cc["@mozilla.org/process/environment;1"].getService(
-  Ci.nsIEnvironment
-);
-const isHeadless = env.get("MOZ_HEADLESS");
+const isHeadless = Services.env.get("MOZ_HEADLESS");
+
+function verifyTabSharingPopup(expectedItems) {
+  let event = new MouseEvent("popupshowing");
+  let sharingMenu = document.getElementById("tabSharingMenuPopup");
+  sharingMenu.dispatchEvent(event);
+
+  is(
+    sharingMenu.children.length,
+    expectedItems.length,
+    "correct number of items on tab sharing menu"
+  );
+  for (let i = 0; i < expectedItems.length; i++) {
+    is(
+      JSON.parse(sharingMenu.children[i].getAttribute("data-l10n-args"))
+        .itemList,
+      expectedItems[i],
+      "label of item " + i + " + was correct"
+    );
+  }
+
+  sharingMenu.dispatchEvent(new MouseEvent("popuphiding"));
+}
 
 var gTests = [
   {
@@ -166,6 +182,7 @@ var gTests = [
 
       await indicator;
       await checkSharingUI({ screen: "Screen" });
+      verifyTabSharingPopup(["screen"]);
 
       // we always show prompt for screen sharing.
       promise = promisePopupNotificationShown("webRTC-shareDevices");
@@ -392,6 +409,8 @@ var gTests = [
         await checkSharingUI({ screen: "Window", browserwindow: true });
       }
 
+      verifyTabSharingPopup(["window"]);
+
       await closeStream();
     },
   },
@@ -466,6 +485,9 @@ var gTests = [
 
       await indicator;
       await checkSharingUI({ audio: true, screen: "Screen" });
+
+      verifyTabSharingPopup(["microphone and screen"]);
+
       await closeStream();
     },
   },
@@ -542,7 +564,7 @@ var gTests = [
         await observerPromise2;
       }
 
-      async function check(expected = {}) {
+      async function check(expected = {}, expectedSharingLabel) {
         let shared = Object.keys(expected).join(" and ");
         if (shared) {
           Assert.deepEqual(
@@ -551,8 +573,10 @@ var gTests = [
             "expected " + shared + " to be shared"
           );
           await checkSharingUI(expected);
+          verifyTabSharingPopup([expectedSharingLabel]);
         } else {
           await checkNotSharing();
+          verifyTabSharingPopup([""]);
         }
       }
 
@@ -560,15 +584,18 @@ var gTests = [
       let indicator = promiseIndicatorWindow();
       await share(["microphone", "screen"]);
       await indicator;
-      await check({ audio: true, screen: "Screen" });
+      await check({ audio: true, screen: "Screen" }, "microphone and screen");
 
       info("Share camera");
       await share(["camera"]);
-      await check({ video: true, audio: true, screen: "Screen" });
+      await check(
+        { video: true, audio: true, screen: "Screen" },
+        "microphone, screen, and camera"
+      );
 
       info("Stop the screen share, mic+cam should continue");
       await stopSharing("screen", true);
-      await check({ video: true, audio: true });
+      await check({ video: true, audio: true }, "microphone and camera");
 
       info("Stop the camera, everything should stop.");
       await stopSharing("camera");
@@ -577,11 +604,14 @@ var gTests = [
       indicator = promiseIndicatorWindow();
       await share(["screen"]);
       await indicator;
-      await check({ screen: "Screen" });
+      await check({ screen: "Screen" }, "screen");
 
       info("... and add camera and microphone in a second request.");
       await share(["microphone", "camera"]);
-      await check({ video: true, audio: true, screen: "Screen" });
+      await check(
+        { video: true, audio: true, screen: "Screen" },
+        "screen, microphone, and camera"
+      );
 
       info("Stop the camera, this should stop everything.");
       await stopSharing("camera");
@@ -618,6 +648,7 @@ var gTests = [
 
       await indicator;
       await checkSharingUI({ screen: "Screen" });
+      verifyTabSharingPopup(["screen"]);
 
       await reloadAndAssertClosedStreams();
     },
@@ -659,6 +690,7 @@ var gTests = [
       );
       await indicator;
       await checkSharingUI({ screen: "Screen" });
+      verifyTabSharingPopup(["screen"]);
 
       ok(permissionPopupHidden(), "control center should be hidden");
       if (IS_MAC) {
@@ -806,8 +838,7 @@ var gTests = [
   },
 
   {
-    desc:
-      "Switching between menu options maintains correct main action state while window sharing",
+    desc: "Switching between menu options maintains correct main action state while window sharing",
     skipObserverVerification: true,
     run: async function checkDoorhangerState() {
       await enableObserverVerification();

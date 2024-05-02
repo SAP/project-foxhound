@@ -2,11 +2,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-var { WebChannel } = ChromeUtils.import(
-  "resource://gre/modules/WebChannel.jsm"
+var { WebChannel } = ChromeUtils.importESModule(
+  "resource://gre/modules/WebChannel.sys.mjs"
 );
-const { PermissionTestUtils } = ChromeUtils.import(
-  "resource://testing-common/PermissionTestUtils.jsm"
+const { PermissionTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/PermissionTestUtils.sys.mjs"
 );
 
 const TEST_URL_TAIL =
@@ -35,7 +35,7 @@ function promiseNewChannelResponse(uri) {
     "test-remote-troubleshooting-backchannel",
     uri
   );
-  let tab = gBrowser.loadOneTab(uri.spec, {
+  let tab = gBrowser.addTab(uri.spec, {
     inBackground: false,
     triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
   });
@@ -47,7 +47,7 @@ function promiseNewChannelResponse(uri) {
     });
 }
 
-add_task(async function() {
+add_task(async function () {
   // We haven't set a permission yet - so even the "good" URI should fail.
   let got = await promiseNewChannelResponse(TEST_URI_GOOD);
   // Should return an error.
@@ -82,9 +82,8 @@ add_task(async function() {
 
   let updateChannel = null;
   try {
-    updateChannel = ChromeUtils.import(
-      "resource://gre/modules/UpdateUtils.jsm",
-      {}
+    updateChannel = ChromeUtils.importESModule(
+      "resource://gre/modules/UpdateUtils.sys.mjs"
     ).UpdateUtils.UpdateChannel;
   } catch (ex) {}
   if (!updateChannel) {

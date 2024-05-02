@@ -7,6 +7,7 @@
 #include "VRProcessParent.h"
 #include "VRGPUChild.h"
 #include "VRProcessManager.h"
+#include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/MemoryReportRequest.h"
 #include "mozilla/gfx/GPUProcessManager.h"
 #include "mozilla/gfx/GPUChild.h"
@@ -15,6 +16,7 @@
 #include "mozilla/ipc/ProcessUtils.h"
 #include "mozilla/ipc/ProtocolTypes.h"
 #include "mozilla/ipc/ProtocolUtils.h"  // for IToplevelProtocol
+#include "mozilla/Preferences.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/TimeStamp.h"  // for TimeStamp
 #include "mozilla/Unused.h"
@@ -22,7 +24,6 @@
 #include "VRThread.h"
 
 #include "nsAppRunner.h"  // for IToplevelProtocol
-#include "mozilla/ipc/ProtocolUtils.h"
 
 using std::string;
 using std::vector;
@@ -38,13 +39,9 @@ VRProcessParent::VRProcessParent(Listener* aListener)
       mListener(aListener),
       mLaunchPhase(LaunchPhase::Unlaunched),
       mChannelClosed(false),
-      mShutdownRequested(false) {
-  MOZ_COUNT_CTOR(VRProcessParent);
-}
+      mShutdownRequested(false) {}
 
-VRProcessParent::~VRProcessParent() {
-  MOZ_COUNT_DTOR(VRProcessParent);
-}
+VRProcessParent::~VRProcessParent() = default;
 
 bool VRProcessParent::Launch() {
   MOZ_ASSERT(mLaunchPhase == LaunchPhase::Unlaunched);
@@ -57,7 +54,8 @@ bool VRProcessParent::Launch() {
   ProcessChild::AddPlatformBuildID(extraArgs);
 
   mPrefSerializer = MakeUnique<ipc::SharedPreferenceSerializer>();
-  if (!mPrefSerializer->SerializeToSharedMemory()) {
+  if (!mPrefSerializer->SerializeToSharedMemory(GeckoProcessType_VR,
+                                                /* remoteType */ ""_ns)) {
     return false;
   }
   mPrefSerializer->AddSharedPrefCmdLineArgs(*this, extraArgs);
@@ -155,10 +153,15 @@ bool VRProcessParent::InitAfterConnect(bool aSucceeded) {
       return false;
     }
 
-    mVRChild = MakeUnique<VRChild>(this);
+    if (!StaticPrefs::dom_vr_enabled() &&
+        !StaticPrefs::dom_vr_webxr_enabled()) {
+      NS_WARNING("VR is not enabled when trying to create a VRChild");
+      return false;
+    }
 
-    DebugOnly<bool> rv = mVRChild->Open(
-        TakeInitialPort(), base::GetProcId(GetChildProcessHandle()));
+    mVRChild = MakeRefPtr<VRChild>(this);
+
+    DebugOnly<bool> rv = TakeInitialEndpoint().Bind(mVRChild.get());
     MOZ_ASSERT(rv);
 
     mVRChild->Init();
@@ -189,11 +192,7 @@ void VRProcessParent::KillHard(const char* aReason) {
   SetAlreadyDead();
 }
 
-void VRProcessParent::OnChannelError() {
-  MOZ_ASSERT(false, "VR process channel error.");
-}
-
-void VRProcessParent::OnChannelConnected(int32_t peer_pid) {
+void VRProcessParent::OnChannelConnected(base::ProcessId peer_pid) {
   MOZ_ASSERT(!NS_IsMainThread());
 
   GeckoChildProcessHost::OnChannelConnected(peer_pid);

@@ -4,9 +4,12 @@
 
 // Test that service worker sources are still displayed after reloading the page
 // and that we can hit breakpoints in them.
-add_task(async function() {
+
+"use strict";
+
+add_task(async function () {
   await pushPref("devtools.debugger.features.windowless-service-workers", true);
-  await pushPref("devtools.debugger.workers-visible", true);
+  await pushPref("devtools.debugger.threads-visible", true);
   await pushPref("dom.serviceWorkers.enabled", true);
   await pushPref("dom.serviceWorkers.testing.enabled", true);
   const dbg = await initDebugger("doc-service-workers.html");
@@ -23,7 +26,32 @@ add_task(async function() {
   await waitForPaused(dbg);
   assertPausedAtSourceAndLine(dbg, workerSource.id, 13);
 
+  await assertPreviews(dbg, [
+    {
+      line: 10,
+      column: 9,
+      result: EXAMPLE_URL + "whatever",
+      expression: "url",
+    },
+  ]);
+
   await resume(dbg);
+
+  // Reload a second time to ensure we can still debug the SW
+  await reload(dbg, "service-worker.sjs");
+
+  await waitForPaused(dbg);
+  assertPausedAtSourceAndLine(dbg, workerSource.id, 13);
+
+  await assertPreviews(dbg, [
+    {
+      line: 10,
+      column: 9,
+      result: EXAMPLE_URL + "whatever",
+      expression: "url",
+    },
+  ]);
+
   await waitForRequestsToSettle(dbg);
   await removeTab(gBrowser.selectedTab);
 });

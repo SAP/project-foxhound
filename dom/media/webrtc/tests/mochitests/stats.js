@@ -7,6 +7,7 @@
 const statsExpectedByType = {
   "inbound-rtp": {
     expected: [
+      "trackIdentifier",
       "id",
       "timestamp",
       "type",
@@ -19,13 +20,42 @@ const statsExpectedByType = {
       "packetsDiscarded",
       "bytesReceived",
       "jitter",
+      "lastPacketReceivedTimestamp",
+      "headerBytesReceived",
+      // Always missing from libwebrtc stats
+      // "estimatedPlayoutTimestamp",
+      "jitterBufferDelay",
+      "jitterBufferEmittedCount",
     ],
-    optional: ["remoteId", "nackCount"],
+    optional: ["remoteId", "nackCount", "qpSum"],
     localVideoOnly: [
       "firCount",
       "pliCount",
       "framesDecoded",
+      "framesDropped",
       "discardedPackets",
+      "framesPerSecond",
+      "frameWidth",
+      "frameHeight",
+      "framesReceived",
+      "totalDecodeTime",
+      "totalInterFrameDelay",
+      "totalProcessingDelay",
+      "totalSquaredInterFrameDelay",
+    ],
+    localAudioOnly: [
+      "totalSamplesReceived",
+      // libwebrtc doesn't seem to do FEC for video
+      "fecPacketsReceived",
+      "fecPacketsDiscarded",
+      "concealedSamples",
+      "silentConcealedSamples",
+      "concealmentEvents",
+      "insertedSamplesForDeceleration",
+      "removedSamplesForAcceleration",
+      "audioLevel",
+      "totalAudioEnergy",
+      "totalSamplesDuration",
     ],
     unimplemented: [
       "mediaTrackId",
@@ -39,8 +69,6 @@ const statsExpectedByType = {
       "burstDiscardCount",
       "gapDiscardRate",
       "gapLossRate",
-      // Not yet implemented for inbound media, see bug 1519590
-      "qpSum",
     ],
     deprecated: ["mozRtt", "isRemote"],
   },
@@ -56,9 +84,24 @@ const statsExpectedByType = {
       "packetsSent",
       "bytesSent",
       "remoteId",
+      "headerBytesSent",
+      "retransmittedPacketsSent",
+      "retransmittedBytesSent",
     ],
     optional: ["nackCount", "qpSum"],
-    localVideoOnly: ["framesEncoded", "firCount", "pliCount"],
+    localAudioOnly: [],
+    localVideoOnly: [
+      "framesEncoded",
+      "firCount",
+      "pliCount",
+      "frameWidth",
+      "frameHeight",
+      "framesPerSecond",
+      "framesSent",
+      "hugeFramesSent",
+      "totalEncodeTime",
+      "totalEncodedBytesTarget",
+    ],
     unimplemented: ["mediaTrackId", "transportId", "sliCount", "targetBitrate"],
     deprecated: ["isRemote"],
   },
@@ -74,6 +117,9 @@ const statsExpectedByType = {
       "packetsLost",
       "jitter",
       "localId",
+      "totalRoundTripTime",
+      "fractionLost",
+      "roundTripTimeMeasurements",
     ],
     optional: ["roundTripTime", "nackCount", "packetsReceived"],
     unimplemented: [
@@ -83,7 +129,6 @@ const statsExpectedByType = {
       "associateStatsId",
       "sliCount",
       "packetsRepaired",
-      "fractionLost",
       "burstPacketsLost",
       "burstLossCount",
       "burstDiscardCount",
@@ -109,6 +154,24 @@ const statsExpectedByType = {
     optional: ["nackCount"],
     unimplemented: ["mediaTrackId", "transportId", "sliCount", "targetBitrate"],
     deprecated: ["isRemote"],
+  },
+  "media-source": {
+    expected: ["id", "timestamp", "type", "trackIdentifier", "kind"],
+    unimplemented: [
+      "audioLevel",
+      "totalAudioEnergy",
+      "totalSamplesDuration",
+      "echoReturnLoss",
+      "echoReturnLossEnhancement",
+      "droppedSamplesDuration",
+      "droppedSamplesEvents",
+      "totalCaptureDelay",
+      "totalSamplesCaptured",
+    ],
+    localAudioOnly: [],
+    localVideoOnly: ["frames", "framesPerSecond", "width", "height"],
+    optional: [],
+    deprecated: [],
   },
   csrc: { skip: true },
   codec: {
@@ -211,9 +274,9 @@ const statsExpectedByType = {
   certificate: { skip: true },
 };
 
-["in", "out"].forEach(pre => {
-  let s = statsExpectedByType[pre + "bound-rtp"];
-  s.optional = [...s.optional, ...s.localVideoOnly];
+["inbound-rtp", "outbound-rtp", "media-source"].forEach(type => {
+  let s = statsExpectedByType[type];
+  s.optional = [...s.optional, ...s.localVideoOnly, ...s.localAudioOnly];
 });
 
 //
@@ -428,6 +491,21 @@ function pedanticChecks(report) {
           `${stat.type}.pliCount is a sane number for a short ` +
             `${stat.kind} test. value=${stat.pliCount}`
         );
+
+        // qpSum
+        if (stat.qpSum !== undefined) {
+          ok(
+            stat.qpSum >= 0,
+            `${stat.type}.qpSum is at least 0 ` +
+              `${stat.kind} test. value=${stat.qpSum}`
+          );
+        }
+      } else {
+        is(
+          stat.qpSum,
+          undefined,
+          `${stat.type}.qpSum does not exist when stat.kind != video`
+        );
       }
     }
 
@@ -435,6 +513,10 @@ function pedanticChecks(report) {
       //
       // Required fields
       //
+
+      // trackIdentifier
+      is(typeof stat.trackIdentifier, "string");
+      isnot(stat.trackIdentifier, "");
 
       // packetsReceived
       ok(
@@ -449,7 +531,6 @@ function pedanticChecks(report) {
         `${stat.type}.packetsDiscarded is sane number for a short test. ` +
           `value=${stat.packetsDiscarded}`
       );
-
       // bytesReceived
       ok(
         stat.bytesReceived >= 0 && stat.bytesReceived < 10 ** 9, // Not a magic number, just a guess
@@ -473,9 +554,146 @@ function pedanticChecks(report) {
           `local only test. value=${stat.jitter}`
       );
 
+      // lastPacketReceivedTimestamp
+      ok(
+        stat.lastPacketReceivedTimestamp !== undefined,
+        `${stat.type}.lastPacketReceivedTimestamp has a value`
+      );
+
+      // headerBytesReceived
+      ok(
+        stat.headerBytesReceived >= 0 && stat.headerBytesReceived < 50000,
+        `${stat.type}.headerBytesReceived is sane for a short test. ` +
+          `value=${stat.headerBytesReceived}`
+      );
+
+      // Always missing from libwebrtc stats
+      // estimatedPlayoutTimestamp
+      // ok(
+      //   stat.estimatedPlayoutTimestamp !== undefined,
+      //   `${stat.type}.estimatedPlayoutTimestamp has a value`
+      // );
+
+      // jitterBufferEmittedCount
+      let expectedJitterBufferEmmitedCount = stat.kind == "video" ? 7 : 1000;
+      ok(
+        stat.jitterBufferEmittedCount > expectedJitterBufferEmmitedCount,
+        `${stat.type}.jitterBufferEmittedCount is a sane number for a short ` +
+          `${stat.kind} test. value=${stat.jitterBufferEmittedCount}`
+      );
+
+      // jitterBufferDelay
+      let avgJitterBufferDelay =
+        stat.jitterBufferDelay / stat.jitterBufferEmittedCount;
+      ok(
+        avgJitterBufferDelay > 0 && avgJitterBufferDelay < 10,
+        `${stat.type}.jitterBufferDelay is a sane number for a short ` +
+          `${stat.kind} test. value=${stat.jitterBufferDelay}/${stat.jitterBufferEmittedCount}=${avgJitterBufferDelay}`
+      );
+
       //
       // Optional fields
       //
+
+      //
+      // Local audio only stats
+      //
+      if (stat.inner.kind != "audio") {
+        expectations.localAudioOnly.forEach(field => {
+          ok(
+            stat[field] === undefined,
+            `${stat.type} does not have field ${field}` +
+              ` when kind is not 'audio'`
+          );
+        });
+      } else {
+        expectations.localAudioOnly.forEach(field => {
+          ok(
+            stat.inner[field] !== undefined,
+            stat.type + " has field " + field + " when kind is video"
+          );
+        });
+        // totalSamplesReceived
+        ok(
+          stat.totalSamplesReceived > 1000,
+          `${stat.type}.totalSamplesReceived is a sane number for a short ` +
+            `${stat.kind} test. value=${stat.totalSamplesReceived}`
+        );
+
+        // fecPacketsReceived
+        ok(
+          stat.fecPacketsReceived >= 0 && stat.fecPacketsReceived < 10 ** 5,
+          `${stat.type}.fecPacketsReceived is a sane number for a short ` +
+            `${stat.kind} test. value=${stat.fecPacketsReceived}`
+        );
+
+        // fecPacketsDiscarded
+        ok(
+          stat.fecPacketsDiscarded >= 0 && stat.fecPacketsDiscarded < 100,
+          `${stat.type}.fecPacketsDiscarded is sane number for a short test. ` +
+            `value=${stat.fecPacketsDiscarded}`
+        );
+        // concealedSamples
+        ok(
+          stat.concealedSamples >= 0 &&
+            stat.concealedSamples <= stat.totalSamplesReceived,
+          `${stat.type}.concealedSamples is a sane number for a short ` +
+            `${stat.kind} test. value=${stat.concealedSamples}`
+        );
+
+        // silentConcealedSamples
+        ok(
+          stat.silentConcealedSamples >= 0 &&
+            stat.silentConcealedSamples <= stat.concealedSamples,
+          `${stat.type}.silentConcealedSamples is a sane number for a short ` +
+            `${stat.kind} test. value=${stat.silentConcealedSamples}`
+        );
+
+        // concealmentEvents
+        ok(
+          stat.concealmentEvents >= 0 &&
+            stat.concealmentEvents <= stat.packetsReceived,
+          `${stat.type}.concealmentEvents is a sane number for a short ` +
+            `${stat.kind} test. value=${stat.concealmentEvents}`
+        );
+
+        // insertedSamplesForDeceleration
+        ok(
+          stat.insertedSamplesForDeceleration >= 0 &&
+            stat.insertedSamplesForDeceleration <= stat.totalSamplesReceived,
+          `${stat.type}.insertedSamplesForDeceleration is a sane number for a short ` +
+            `${stat.kind} test. value=${stat.insertedSamplesForDeceleration}`
+        );
+
+        // removedSamplesForAcceleration
+        ok(
+          stat.removedSamplesForAcceleration >= 0 &&
+            stat.removedSamplesForAcceleration <= stat.totalSamplesReceived,
+          `${stat.type}.removedSamplesForAcceleration is a sane number for a short ` +
+            `${stat.kind} test. value=${stat.removedSamplesForAcceleration}`
+        );
+
+        // audioLevel
+        ok(
+          stat.audioLevel >= 0 && stat.audioLevel <= 128,
+          `${stat.type}.bytesReceived is a sane number for a short ` +
+            `${stat.kind} test. value=${stat.audioLevel}`
+        );
+
+        // totalAudioEnergy
+        ok(
+          stat.totalAudioEnergy >= 0 && stat.totalAudioEnergy <= 128,
+          `${stat.type}.totalAudioEnergy is a sane number for a short ` +
+            `${stat.kind} test. value=${stat.totalAudioEnergy}`
+        );
+
+        // totalSamplesDuration
+        ok(
+          stat.totalSamplesDuration >= 0 && stat.totalSamplesDuration <= 300,
+          `${stat.type}.totalSamplesDuration is a sane number for a short ` +
+            `${stat.kind} test. value=${stat.totalSamplesDuration}`
+        );
+      }
 
       //
       // Local video only stats
@@ -501,11 +719,75 @@ function pedanticChecks(report) {
           `${stat.type}.discardedPackets is a sane number for a short test. ` +
             `value=${stat.discardedPackets}`
         );
+        // framesPerSecond
+        ok(
+          stat.framesPerSecond > 0 && stat.framesPerSecond < 70,
+          `${stat.type}.framesPerSecond is a sane number for a short ` +
+            `${stat.kind} test. value=${stat.framesPerSecond}`
+        );
+
         // framesDecoded
         ok(
           stat.framesDecoded > 0 && stat.framesDecoded < 1000000,
           `${stat.type}.framesDecoded is a sane number for a short ` +
             `${stat.kind} test. value=${stat.framesDecoded}`
+        );
+
+        // framesDropped
+        ok(
+          stat.framesDropped >= 0 && stat.framesDropped < 100,
+          `${stat.type}.framesDropped is a sane number for a short ` +
+            `${stat.kind} test. value=${stat.framesDropped}`
+        );
+
+        // frameWidth
+        ok(
+          stat.frameWidth > 0 && stat.frameWidth < 100000,
+          `${stat.type}.frameWidth is a sane number for a short ` +
+            `${stat.kind} test. value=${stat.frameWidth}`
+        );
+
+        // frameHeight
+        ok(
+          stat.frameHeight > 0 && stat.frameHeight < 100000,
+          `${stat.type}.frameHeight is a sane number for a short ` +
+            `${stat.kind} test. value=${stat.frameHeight}`
+        );
+
+        // totalDecodeTime
+        ok(
+          stat.totalDecodeTime >= 0 && stat.totalDecodeTime < 300,
+          `${stat.type}.totalDecodeTime is sane for a short test. ` +
+            `value=${stat.totalDecodeTime}`
+        );
+
+        // totalProcessingDelay
+        ok(
+          stat.totalProcessingDelay < 100,
+          `${stat.type}.totalProcessingDelay is sane number for a short test ` +
+            `local only test. value=${stat.totalProcessingDelay}`
+        );
+
+        // totalInterFrameDelay
+        ok(
+          stat.totalInterFrameDelay >= 0 && stat.totalInterFrameDelay < 100,
+          `${stat.type}.totalInterFrameDelay is sane for a short test. ` +
+            `value=${stat.totalInterFrameDelay}`
+        );
+
+        // totalSquaredInterFrameDelay
+        ok(
+          stat.totalSquaredInterFrameDelay >= 0 &&
+            stat.totalSquaredInterFrameDelay < 100,
+          `${stat.type}.totalSquaredInterFrameDelay is sane for a short test. ` +
+            `value=${stat.totalSquaredInterFrameDelay}`
+        );
+
+        // framesReceived
+        ok(
+          stat.framesReceived >= 0 && stat.framesReceived < 100000,
+          `${stat.type}.framesReceived is a sane number for a short ` +
+            `${stat.kind} test. value=${stat.framesReceived}`
         );
       }
     } else if (stat.type == "remote-inbound-rtp") {
@@ -545,6 +827,28 @@ function pedanticChecks(report) {
             `${stat.kind} test. value=${stat.packetsReceived}`
         );
       }
+
+      // totalRoundTripTime
+      ok(
+        stat.totalRoundTripTime < 50000,
+        `${stat.type}.totalRoundTripTime is a sane number for a short ` +
+          `${stat.kind} test. value=${stat.totalRoundTripTime}`
+      );
+
+      // fractionLost
+      ok(
+        stat.fractionLost < 0.2,
+        `${stat.type}.fractionLost is a sane number for a short ` +
+          `${stat.kind} test. value=${stat.fractionLost}`
+      );
+
+      // roundTripTimeMeasurements
+      ok(
+        stat.roundTripTimeMeasurements >= 1 &&
+          stat.roundTripTimeMeasurements < 500,
+        `${stat.type}.roundTripTimeMeasurements is a sane number for a short ` +
+          `${stat.kind} test. value=${stat.roundTripTimeMeasurements}`
+      );
     } else if (stat.type == "outbound-rtp") {
       //
       // Required fields
@@ -567,6 +871,32 @@ function pedanticChecks(report) {
           `${stat.kind} test. value=${stat.bytesSent}`
       );
 
+      // headerBytesSent
+      ok(
+        stat.headerBytesSent > 0 &&
+          stat.headerBytesSent < (stat.kind == "video" ? video1Min : audio1Min),
+        `${stat.type}.headerBytesSent is a sane number for a short ` +
+          `${stat.kind} test. value=${stat.headerBytesSent}`
+      );
+
+      // retransmittedPacketsSent
+      ok(
+        stat.retransmittedPacketsSent >= 0 &&
+          stat.retransmittedPacketsSent <
+            (stat.kind == "video" ? video1Min : audio1Min),
+        `${stat.type}.retransmittedPacketsSent is a sane number for a short ` +
+          `${stat.kind} test. value=${stat.retransmittedPacketsSent}`
+      );
+
+      // retransmittedBytesSent
+      ok(
+        stat.retransmittedBytesSent >= 0 &&
+          stat.retransmittedBytesSent <
+            (stat.kind == "video" ? video1Min : audio1Min),
+        `${stat.type}.retransmittedBytesSent is a sane number for a short ` +
+          `${stat.kind} test. value=${stat.retransmittedBytesSent}`
+      );
+
       //
       // Optional fields
       //
@@ -574,12 +904,27 @@ function pedanticChecks(report) {
       // qpSum
       // This is supported for all of our vpx codecs (on the encode side, see
       // bug 1519590)
-      if (report.get(stat.codecId).mimeType.includes("VP")) {
+      const mimeType = report.get(stat.codecId).mimeType;
+      if (mimeType.includes("VP")) {
         ok(
           stat.qpSum >= 0,
           `${stat.type}.qpSum is a sane number (${stat.kind}) ` +
             `for ${report.get(stat.codecId).mimeType}. value=${stat.qpSum}`
         );
+      } else if (mimeType.includes("H264")) {
+        // OpenH264 encoder records QP so we check for either condition.
+        if (!stat.qpSum && !("qpSum" in stat)) {
+          ok(
+            !stat.qpSum && !("qpSum" in stat),
+            `${stat.type}.qpSum absent for ${report.get(stat.codecId).mimeType}`
+          );
+        } else {
+          ok(
+            stat.qpSum >= 0,
+            `${stat.type}.qpSum is a sane number (${stat.kind}) ` +
+              `for ${report.get(stat.codecId).mimeType}. value=${stat.qpSum}`
+          );
+        }
       } else {
         ok(
           !stat.qpSum && !("qpSum" in stat),
@@ -612,6 +957,55 @@ function pedanticChecks(report) {
           stat.framesEncoded >= 0 && stat.framesEncoded < 100000,
           `${stat.type}.framesEncoded is a sane number for a short ` +
             `${stat.kind} test. value=${stat.framesEncoded}`
+        );
+
+        // frameWidth
+        ok(
+          stat.frameWidth >= 0 && stat.frameWidth < 100000,
+          `${stat.type}.frameWidth is a sane number for a short ` +
+            `${stat.kind} test. value=${stat.frameWidth}`
+        );
+
+        // frameHeight
+        ok(
+          stat.frameHeight >= 0 && stat.frameHeight < 100000,
+          `${stat.type}.frameHeight is a sane number for a short ` +
+            `${stat.kind} test. value=${stat.frameHeight}`
+        );
+
+        // framesPerSecond
+        ok(
+          stat.framesPerSecond >= 0 && stat.framesPerSecond < 60,
+          `${stat.type}.framesPerSecond is a sane number for a short ` +
+            `${stat.kind} test. value=${stat.framesPerSecond}`
+        );
+
+        // framesSent
+        ok(
+          stat.framesSent >= 0 && stat.framesSent < 100000,
+          `${stat.type}.framesSent is a sane number for a short ` +
+            `${stat.kind} test. value=${stat.framesSent}`
+        );
+
+        // hugeFramesSent
+        ok(
+          stat.hugeFramesSent >= 0 && stat.hugeFramesSent < 100000,
+          `${stat.type}.hugeFramesSent is a sane number for a short ` +
+            `${stat.kind} test. value=${stat.hugeFramesSent}`
+        );
+
+        // totalEncodeTime
+        ok(
+          stat.totalEncodeTime >= 0,
+          `${stat.type}.totalEncodeTime is a sane number for a short ` +
+            `${stat.kind} test. value=${stat.totalEncodeTime}`
+        );
+
+        // totalEncodedBytesTarget
+        ok(
+          stat.totalEncodedBytesTarget > 1000,
+          `${stat.type}.totalEncodedBytesTarget is a sane number for a short ` +
+            `${stat.kind} test. value=${stat.totalEncodedBytesTarget}`
         );
       }
     } else if (stat.type == "remote-outbound-rtp") {
@@ -656,6 +1050,59 @@ function pedanticChecks(report) {
           `${stat.type}.timestamp, and no older than 30 seconds. ` +
           `difference=${ageSeconds}s`
       );
+    } else if (stat.type == "media-source") {
+      // trackIdentifier
+      is(typeof stat.trackIdentifier, "string");
+      isnot(stat.trackIdentifier, "");
+
+      // kind
+      is(typeof stat.kind, "string");
+      ok(stat.kind == "audio" || stat.kind == "video");
+      if (stat.inner.kind == "video") {
+        expectations.localVideoOnly.forEach(field => {
+          ok(
+            stat.inner[field] !== undefined,
+            `${stat.type} has field ` +
+              `${field} when kind is video and isRemote is false`
+          );
+        });
+
+        // frames
+        ok(
+          stat.frames >= 0 && stat.frames < 100000,
+          `${stat.type}.frames is a sane number for a short ` +
+            `${stat.kind} test. value=${stat.frames}`
+        );
+
+        // framesPerSecond
+        ok(
+          stat.framesPerSecond >= 0 && stat.framesPerSecond < 100,
+          `${stat.type}.framesPerSecond is a sane number for a short ` +
+            `${stat.kind} test. value=${stat.framesPerSecond}`
+        );
+
+        // width
+        ok(
+          stat.width >= 0 && stat.width < 1000000,
+          `${stat.type}.width is a sane number for a ` +
+            `${stat.kind} test. value=${stat.width}`
+        );
+
+        // height
+        ok(
+          stat.height >= 0 && stat.height < 1000000,
+          `${stat.type}.height is a sane number for a ` +
+            `${stat.kind} test. value=${stat.height}`
+        );
+      } else {
+        expectations.localVideoOnly.forEach(field => {
+          ok(
+            stat[field] === undefined,
+            `${stat.type} does not have field ` +
+              `${field} when kind is not 'video'`
+          );
+        });
+      }
     } else if (stat.type == "codec") {
       //
       // Required fields
@@ -898,16 +1345,16 @@ function pedanticChecks(report) {
 
         // bytesSent
         ok(
-          stat.bytesSent > 1000,
-          `${stat.type}.bytesSent is a sane number (>1,000) for a short ` +
-            `${stat.kind} test. value=${stat.bytesSent}`
+          stat.bytesSent > 100,
+          `${stat.type}.bytesSent is a sane number (>100) if media is flowing. ` +
+            `value=${stat.bytesSent}`
         );
 
         // bytesReceived
         ok(
-          stat.bytesReceived > 500,
-          `${stat.type}.bytesReceived is a sane number (>500) for a short ` +
-            `${stat.kind} test. value=${stat.bytesReceived}`
+          stat.bytesReceived > 100,
+          `${stat.type}.bytesReceived is a sane number (>100) if media is flowing. ` +
+            `value=${stat.bytesReceived}`
         );
 
         // lastPacketSentTimestamp

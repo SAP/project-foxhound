@@ -3,10 +3,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_ChangeStyleTransaction_h
-#define mozilla_ChangeStyleTransaction_h
+#ifndef ChangeStyleTransaction_h
+#define ChangeStyleTransaction_h
 
-#include "mozilla/EditTransactionBase.h"   // base class
+#include "EditTransactionBase.h"  // base class
+
 #include "nsCOMPtr.h"                      // nsCOMPtr members
 #include "nsCycleCollectionParticipant.h"  // various macros
 #include "nsString.h"                      // nsString members
@@ -78,31 +79,22 @@ class ChangeStyleTransaction final : public EditTransactionBase {
  private:
   virtual ~ChangeStyleTransaction() = default;
 
-  /*
-   * Adds the value aNewValue to list of white-space separated values aValues.
-   *
-   * @param aValues         [IN/OUT] a list of wite-space separated values
-   * @param aNewValue       [IN] a value this code adds to aValues if it is not
-   *                        already in
+  /**
+   * Build new text-decoration value to set/remove specific values to/from the
+   * rule which already has aCurrentValues.
    */
-  void AddValueToMultivalueProperty(nsACString& aValues,
-                                    const nsACString& aNewValue);
+  void BuildTextDecorationValueToSet(const nsACString& aCurrentValues,
+                                     const nsACString& aAddingValues,
+                                     nsACString& aOutValues);
+  void BuildTextDecorationValueToRemove(const nsACString& aCurrentValues,
+                                        const nsACString& aRemovingValues,
+                                        nsACString& aOutValues);
 
   /**
-   * Returns true if the property accepts more than one value.
-   *
-   * @param aCSSProperty    [IN] the CSS property
-   * @return                true if the property accepts more than one value
+   * Helper method for above methods.
    */
-  bool AcceptsMoreThanOneValue(nsAtom& aCSSProperty);
-
-  /**
-   * Remove a value from a list of white-space separated values.
-   * @param aValues         [IN] a list of white-space separated values
-   * @param aRemoveValue    [IN] the value to remove from the list
-   */
-  void RemoveValueFromListOfValues(nsACString& aValues,
-                                   const nsACString& aRemoveValue);
+  void BuildTextDecorationValue(bool aUnderline, bool aOverline,
+                                bool aLineThrough, nsACString& aOutValues);
 
   /**
    * If the boolean is true and if the value is not the empty string,
@@ -138,4 +130,4 @@ class ChangeStyleTransaction final : public EditTransactionBase {
 
 }  // namespace mozilla
 
-#endif  // #ifndef mozilla_ChangeStyleTransaction_h
+#endif  // #ifndef ChangeStyleTransaction_h

@@ -16,7 +16,6 @@
 #include "nsTextFragment.h"
 #include "nsCRT.h"
 #include "nsReadableUtils.h"
-#include "nsMemory.h"
 #include "nsBidiUtils.h"
 #include "nsUnicharUtils.h"
 #include "mozilla/CheckedInt.h"
@@ -168,10 +167,8 @@ static inline int32_t FirstNon8BitUnvectorized(const char16_t* str,
   return -1;
 }
 
-#ifdef MOZILLA_MAY_SUPPORT_SSE2
-namespace mozilla::SSE2 {
-int32_t FirstNon8Bit(const char16_t* str, const char16_t* end);
-}  // namespace mozilla::SSE2
+#if defined(MOZILLA_MAY_SUPPORT_SSE2)
+#  include "nsTextFragmentGenericFwd.h"
 #endif
 
 #ifdef __powerpc__
@@ -192,7 +189,7 @@ int32_t FirstNon8Bit(const char16_t* str, const char16_t* end);
 static inline int32_t FirstNon8Bit(const char16_t* str, const char16_t* end) {
 #ifdef MOZILLA_MAY_SUPPORT_SSE2
   if (mozilla::supports_sse2()) {
-    return mozilla::SSE2::FirstNon8Bit(str, end);
+    return mozilla::FirstNon8Bit<xsimd::sse2>(str, end);
   }
 #elif defined(__powerpc__)
   if (mozilla::supports_vmx()) {

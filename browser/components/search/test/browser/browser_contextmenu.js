@@ -4,8 +4,8 @@
  * Test searching for the selected text using the context menu
  */
 
-const { AddonTestUtils } = ChromeUtils.import(
-  "resource://testing-common/AddonTestUtils.jsm"
+const { AddonTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/AddonTestUtils.sys.mjs"
 );
 
 AddonTestUtils.initMochitest(this);
@@ -26,7 +26,7 @@ let extensions = [];
 let oldDefaultEngine;
 let oldDefaultPrivateEngine;
 
-add_task(async function setup() {
+add_setup(async function () {
   await SpecialPowers.pushPrefEnv({
     set: [
       ["browser.search.separatePrivateDefault", true],
@@ -62,12 +62,18 @@ add_task(async function setup() {
   engine = await Services.search.getEngineByName(ENGINE_NAME);
   Assert.ok(engine, "Got a search engine");
   oldDefaultEngine = await Services.search.getDefault();
-  await Services.search.setDefault(engine);
+  await Services.search.setDefault(
+    engine,
+    Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+  );
 
   privateEngine = await Services.search.getEngineByName(PRIVATE_ENGINE_NAME);
   Assert.ok(privateEngine, "Got a search engine");
   oldDefaultPrivateEngine = await Services.search.getDefaultPrivate();
-  await Services.search.setDefaultPrivate(privateEngine);
+  await Services.search.setDefaultPrivate(
+    privateEngine,
+    Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+  );
 });
 
 async function checkContextMenu(
@@ -84,11 +90,11 @@ async function checkContextMenu(
     "https://example.com/browser/browser/components/search/test/browser/test_search.html"
   );
 
-  await SpecialPowers.spawn(tab.linkedBrowser, [""], async function() {
+  await SpecialPowers.spawn(tab.linkedBrowser, [""], async function () {
     return new Promise(resolve => {
       content.document.addEventListener(
         "selectionchange",
-        function() {
+        function () {
           resolve();
         },
         { once: true }
@@ -129,10 +135,10 @@ async function checkContextMenu(
     expectedBaseUrl + "?test=test%2520search",
     true
   );
-  searchItem.click();
+  contextMenu.activateItem(searchItem);
   let searchTab = await loaded;
   let browser = win.gBrowser.selectedBrowser;
-  await SpecialPowers.spawn(browser, [], async function() {
+  await SpecialPowers.spawn(browser, [], async function () {
     Assert.ok(
       !/error/.test(content.document.body.innerHTML),
       "Ensure there were no errors loading the search page"
@@ -190,7 +196,10 @@ add_task(async function test_privateWindow() {
 add_task(async function test_normalWindow_sameDefaults() {
   // Set the private default engine to be the same as the current default engine
   // in 'normal' mode.
-  await Services.search.setDefaultPrivate(await Services.search.getDefault());
+  await Services.search.setDefaultPrivate(
+    await Services.search.getDefault(),
+    Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+  );
 
   await checkContextMenu(
     window,
@@ -223,8 +232,14 @@ add_task(async function test_privateWindow_no_separate_engine() {
 // We can't do the unload within registerCleanupFunction as that's too late for
 // the test to be happy. Do it into a cleanup "test" here instead.
 add_task(async function cleanup() {
-  await Services.search.setDefault(oldDefaultEngine);
-  await Services.search.setDefaultPrivate(oldDefaultPrivateEngine);
+  await Services.search.setDefault(
+    oldDefaultEngine,
+    Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+  );
+  await Services.search.setDefaultPrivate(
+    oldDefaultPrivateEngine,
+    Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+  );
   await Services.search.removeEngine(engine);
   await Services.search.removeEngine(privateEngine);
 

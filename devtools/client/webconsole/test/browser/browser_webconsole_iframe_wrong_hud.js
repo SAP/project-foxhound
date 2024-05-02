@@ -17,7 +17,7 @@ const TEST_DUMMY_URI =
   "http://example.com/browser/devtools/client/webconsole/" +
   "test/browser/test-console.html";
 
-add_task(async function() {
+add_task(async function () {
   await pushPref("devtools.webconsole.filter.net", true);
   const tab1 = await addTab(TEST_URI);
   const hud1 = await openConsole(tab1);
@@ -29,11 +29,11 @@ add_task(async function() {
   await reloadBrowser({ browser: tab1.linkedBrowser });
 
   info("Waiting for messages");
-  await waitFor(() => findMessage(hud1, TEST_IFRAME_URI, ".message.network"));
+  await waitFor(() => findMessageByType(hud1, TEST_IFRAME_URI, ".network"));
 
   const hud2 = await openConsole(tab2);
   is(
-    findMessage(hud2, TEST_IFRAME_URI),
+    findMessageByType(hud2, TEST_IFRAME_URI, ".network"),
     undefined,
     "iframe network request is not displayed in tab2"
   );

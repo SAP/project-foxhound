@@ -18,7 +18,7 @@ with Files("tests/**"):
     BUG_COMPONENT = ("Core", "WebRTC")
 
 component_signaling = ("Core", "WebRTC: Signaling")
-with Files("IdpSandbox.jsm"):
+with Files("IdpSandbox.sys.mjs"):
     BUG_COMPONENT = component_signaling
 with Files("PeerConnection*"):
     BUG_COMPONENT = component_signaling
@@ -30,6 +30,7 @@ with Files("GetUserMedia*"):
 DIRS += [
     "autoplay",
     "doctor",
+    "driftcontrol",
     "eme",
     "encoder",
     "fake-cdm",
@@ -44,12 +45,14 @@ DIRS += [
     "mediasource",
     "mediasession",
     "mp3",
+    "mp4",
     "ogg",
     "platforms",
     "systemservices",
     "utils",
     "wave",
     "webaudio",
+    "webcodecs",
     "webm",
     "webrtc",
     "webspeech",
@@ -58,9 +61,6 @@ DIRS += [
 
 if CONFIG["MOZ_ANDROID_HLS_SUPPORT"]:
     DIRS += ["hls"]
-
-if CONFIG["MOZ_FMP4"]:
-    DIRS += ["mp4"]
 
 if CONFIG["MOZ_WEBRTC"]:
     DIRS += ["bridge"]
@@ -80,20 +80,36 @@ if CONFIG["MOZ_WEBRTC_SIGNALING"]:
         TEST_DIRS += ["webrtc/tests/fuzztests"]
 
 MOCHITEST_MANIFESTS += [
-    "test/mochitest.ini",
-    "webrtc/tests/mochitests/identity/mochitest.ini",
+    "test/mochitest.toml",
+    "test/mochitest_background_video.toml",
+    "test/mochitest_bugs.toml",
+    "test/mochitest_compat.toml",
+    "test/mochitest_eme.toml",
+    "test/mochitest_media_engine.toml",
+    "test/mochitest_media_recorder.toml",
+    "test/mochitest_seek.toml",
+    "test/mochitest_stream.toml",
+    "webrtc/tests/mochitests/identity/mochitest.toml",
 ]
 
-MOCHITEST_CHROME_MANIFESTS += ["test/chrome/chrome.ini"]
+MOCHITEST_CHROME_MANIFESTS += ["test/chrome/chrome.toml"]
 
 BROWSER_CHROME_MANIFESTS += [
-    "mediacontrol/tests/browser/browser.ini",
-    "mediasession/test/browser.ini",
-    "test/browser/browser.ini",
+    "mediacontrol/tests/browser/browser.toml",
+    "mediasession/test/browser.toml",
+    "test/browser/browser.toml",
+    "test/browser/wmfme/browser.toml",
 ]
 
 if CONFIG["MOZ_WEBRTC"]:
-    MOCHITEST_MANIFESTS += ["webrtc/tests/mochitests/mochitest.ini"]
+    MOCHITEST_MANIFESTS += [
+        "webrtc/tests/mochitests/mochitest.toml",
+        "webrtc/tests/mochitests/mochitest_datachannel.toml",
+        "webrtc/tests/mochitests/mochitest_getusermedia.toml",
+        "webrtc/tests/mochitests/mochitest_peerconnection.toml",
+    ]
+
+    CRASHTEST_MANIFESTS += ["webrtc/tests/crashtests/crashtests.list"]
 
 XPIDL_SOURCES += [
     "nsIAudioDeviceInfo.idl",
@@ -115,14 +131,12 @@ EXPORTS += [
     "AudioConfig.h",
     "AudioConverter.h",
     "AudioDeviceInfo.h",
-    "AudioDriftCorrection.h",
     "AudioMixer.h",
     "AudioPacketizer.h",
     "AudioRingBuffer.h",
     "AudioSampleFormat.h",
     "AudioSegment.h",
     "AudioStream.h",
-    "AudioThreadRegistry.h",
     "BackgroundVideoDecodingPermissionObserver.h",
     "Benchmark.h",
     "BitReader.h",
@@ -130,13 +144,14 @@ EXPORTS += [
     "BufferMediaResource.h",
     "BufferReader.h",
     "ByteWriter.h",
+    "CallbackThreadRegistry.h",
     "ChannelMediaDecoder.h",
     "CrossGraphPort.h",
     "CubebUtils.h",
     "DecoderTraits.h",
     "DOMMediaStream.h",
     "DriftCompensation.h",
-    "DynamicResampler.h",
+    "ExternalEngineStateMachine.h",
     "FileBlockCache.h",
     "ForwardedInputTrack.h",
     "FrameStatistics.h",
@@ -149,6 +164,7 @@ EXPORTS += [
     "MediaDecoder.h",
     "MediaDecoderOwner.h",
     "MediaDecoderStateMachine.h",
+    "MediaDecoderStateMachineBase.h",
     "MediaEventSource.h",
     "MediaFormatReader.h",
     "MediaInfo.h",
@@ -177,6 +193,7 @@ EXPORTS += [
     "PrincipalChangeObserver.h",
     "PrincipalHandle.h",
     "QueueObject.h",
+    "ReaderProxy.h",
     "SeekJob.h",
     "SeekTarget.h",
     "SelfRef.h",
@@ -187,7 +204,6 @@ EXPORTS += [
     "VideoLimits.h",
     "VideoSegment.h",
     "VideoUtils.h",
-    "VorbisUtils.h",
     "WavDumper.h",
     "XiphExtradata.h",
 ]
@@ -235,6 +251,7 @@ UNIFIED_SOURCES += [
     "AudioConfig.cpp",
     "AudioConverter.cpp",
     "AudioDeviceInfo.cpp",
+    "AudioInputSource.cpp",
     "AudioRingBuffer.cpp",
     "AudioSegment.cpp",
     "AudioStream.cpp",
@@ -246,14 +263,16 @@ UNIFIED_SOURCES += [
     "Benchmark.cpp",
     "BitReader.cpp",
     "BitWriter.cpp",
+    "CallbackThreadRegistry.cpp",
     "CanvasCaptureMediaStream.cpp",
     "ChannelMediaDecoder.cpp",
     "ChannelMediaResource.cpp",
     "CloneableWithRangeMediaResource.cpp",
     "CrossGraphPort.cpp",
+    "CubebInputStream.cpp",
     "DeviceInputTrack.cpp",
     "DOMMediaStream.cpp",
-    "DynamicResampler.cpp",
+    "ExternalEngineStateMachine.cpp",
     "FileBlockCache.cpp",
     "FileMediaResource.cpp",
     "ForwardedInputTrack.cpp",
@@ -263,9 +282,9 @@ UNIFIED_SOURCES += [
     "ImageToI420.cpp",
     "MediaCache.cpp",
     "MediaContainerType.cpp",
-    "MediaData.cpp",
     "MediaDecoder.cpp",
     "MediaDecoderStateMachine.cpp",
+    "MediaDecoderStateMachineBase.cpp",
     "MediaDeviceInfo.cpp",
     "MediaDevices.cpp",
     "MediaFormatReader.cpp",
@@ -288,6 +307,7 @@ UNIFIED_SOURCES += [
     "QueueObject.cpp",
     "ReaderProxy.cpp",
     "SeekJob.cpp",
+    "TimeUnits.cpp",
     "Tracing.cpp",
     "VideoFrameContainer.cpp",
     "VideoPlaybackQuality.cpp",
@@ -307,9 +327,11 @@ else:
 # CubebUtils.cpp needs to be built separately due to what appears to be some kind
 # of compiler bug on Android 4.2 x86 opt. See bug 1408459.
 # DecoderTraits.cpp needs to be built separately because of Mac OS X headers.
+# MediaData.cpp : ambiguous compilation error caused by Mac OS X headers.
 SOURCES += [
     "CubebUtils.cpp",
     "DecoderTraits.cpp",
+    "MediaData.cpp",
 ]
 
 # Some codec-related code uses multi-character constants, which GCC and clang
@@ -322,15 +344,16 @@ if CONFIG["MOZ_WEBRTC"]:
     ]
 
     EXTRA_JS_MODULES.media += [
-        "PeerConnection.jsm",
+        "PeerConnection.sys.mjs",
     ]
 
 EXTRA_JS_MODULES.media += [
-    "IdpSandbox.jsm",
-    "PeerConnectionIdp.jsm",
+    "IdpSandbox.sys.mjs",
+    "PeerConnectionIdp.sys.mjs",
 ]
 
 LOCAL_INCLUDES += [
+    "!/media/libsoundtouch/src",
     "/caps",
     "/docshell/base",
     "/dom/base",
@@ -350,7 +373,6 @@ if CONFIG["MOZ_WEBRTC"]:
     ]
 
 DEFINES["MOZILLA_INTERNAL_API"] = True
-DEFINES["TRACING"] = True
 
 if CONFIG["MOZ_ANDROID_HLS_SUPPORT"]:
     DEFINES["MOZ_ANDROID_HLS_SUPPORT"] = True
@@ -359,8 +381,6 @@ if CONFIG["COMPILE_ENVIRONMENT"]:
     EXPORTS += [
         "!audioipc2_client_ffi_generated.h",
         "!audioipc2_server_ffi_generated.h",
-        "!audioipc_client_ffi_generated.h",
-        "!audioipc_server_ffi_generated.h",
     ]
 
     CbindgenHeader(
@@ -373,13 +393,10 @@ if CONFIG["COMPILE_ENVIRONMENT"]:
         inputs=["/third_party/rust/audioipc2-server"],
     )
 
-    CbindgenHeader(
-        "audioipc_client_ffi_generated.h", inputs=["/third_party/rust/audioipc-client"]
-    )
-
-    CbindgenHeader(
-        "audioipc_server_ffi_generated.h", inputs=["/third_party/rust/audioipc-server"]
-    )
+if CONFIG["ENABLE_TESTS"]:
+    DIRS += [
+        "test/rdd_process_xpcom",
+    ]
 
 include("/ipc/chromium/chromium-config.mozbuild")
 

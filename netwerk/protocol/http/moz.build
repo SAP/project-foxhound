@@ -9,6 +9,7 @@ with Files("**"):
 
 XPIDL_SOURCES += [
     "nsIBackgroundChannelRegistrar.idl",
+    "nsIBinaryHttp.idl",
     "nsIEarlyHintObserver.idl",
     "nsIHttpActivityObserver.idl",
     "nsIHttpAuthenticableChannel.idl",
@@ -20,6 +21,8 @@ XPIDL_SOURCES += [
     "nsIHttpChannelInternal.idl",
     "nsIHttpHeaderVisitor.idl",
     "nsIHttpProtocolHandler.idl",
+    "nsIObliviousHttp.idl",
+    "nsIObliviousHttpChannel.idl",
     "nsIRaceCacheWithNetwork.idl",
     "nsITlsHandshakeListener.idl",
     "nsIWellKnownOpportunisticUtils.idl",
@@ -46,9 +49,9 @@ EXPORTS.mozilla.net += [
     "BackgroundChannelRegistrar.h",
     "BackgroundDataBridgeChild.h",
     "BackgroundDataBridgeParent.h",
-    "ClassifierDummyChannel.h",
-    "ClassifierDummyChannelChild.h",
-    "ClassifierDummyChannelParent.h",
+    "ClassOfService.h",
+    "EarlyHintPreloader.h",
+    "EarlyHintRegistrar.h",
     "EarlyHintsService.h",
     "HttpAuthUtils.h",
     "HttpBackgroundChannelChild.h",
@@ -91,22 +94,27 @@ UNIFIED_SOURCES += [
     "BackgroundChannelRegistrar.cpp",
     "BackgroundDataBridgeChild.cpp",
     "BackgroundDataBridgeParent.cpp",
+    "BinaryHttpRequest.cpp",
     "CacheControlParser.cpp",
     "CachePushChecker.cpp",
-    "ClassifierDummyChannel.cpp",
-    "ClassifierDummyChannelChild.cpp",
-    "ClassifierDummyChannelParent.cpp",
     "ConnectionDiagnostics.cpp",
     "ConnectionEntry.cpp",
     "ConnectionHandle.cpp",
     "DnsAndConnectSocket.cpp",
+    "EarlyHintPreconnect.cpp",
+    "EarlyHintPreloader.cpp",
+    "EarlyHintRegistrar.cpp",
     "EarlyHintsService.cpp",
     "Http2Compression.cpp",
     "Http2Push.cpp",
     "Http2Session.cpp",
     "Http2Stream.cpp",
+    "Http2StreamBase.cpp",
+    "Http2StreamTunnel.cpp",
     "Http3Session.cpp",
     "Http3Stream.cpp",
+    "Http3WebTransportSession.cpp",
+    "Http3WebTransportStream.cpp",
     "HttpAuthUtils.cpp",
     "HttpBackgroundChannelChild.cpp",
     "HttpBackgroundChannelParent.cpp",
@@ -123,6 +131,7 @@ UNIFIED_SOURCES += [
     "HttpTransactionChild.cpp",
     "HttpTransactionParent.cpp",
     "InterceptedHttpChannel.cpp",
+    "MockHttpAuth.cpp",
     "NetworkMarker.cpp",
     "nsCORSListenerProxy.cpp",
     "nsHttp.cpp",
@@ -144,14 +153,17 @@ UNIFIED_SOURCES += [
     "nsServerTiming.cpp",
     "NullHttpChannel.cpp",
     "NullHttpTransaction.cpp",
+    "ObliviousHttpChannel.cpp",
+    "ObliviousHttpService.cpp",
     "OpaqueResponseUtils.cpp",
     "ParentChannelListener.cpp",
     "PendingTransactionInfo.cpp",
     "PendingTransactionQueue.cpp",
     "QuicSocketControl.cpp",
     "SpeculativeTransaction.cpp",
+    "TlsHandshaker.cpp",
+    "TLSTransportLayer.cpp",
     "TRRServiceChannel.cpp",
-    "TunnelUtils.cpp",
 ]
 
 if CONFIG["MOZ_WIDGET_TOOLKIT"] == "windows":
@@ -170,7 +182,6 @@ IPDL_SOURCES += [
     "PAltService.ipdl",
     "PAltSvcTransaction.ipdl",
     "PBackgroundDataBridge.ipdl",
-    "PClassifierDummyChannel.ipdl",
     "PHttpBackgroundChannel.ipdl",
     "PHttpChannel.ipdl",
     "PHttpConnectionMgr.ipdl",
@@ -197,20 +208,12 @@ if CONFIG["MOZ_AUTH_EXTENSION"]:
     ]
 
 EXTRA_JS_MODULES += [
-    "WellKnownOpportunisticUtils.jsm",
+    "HPKEConfigManager.sys.mjs",
+    "WellKnownOpportunisticUtils.sys.mjs",
 ]
 
 XPCOM_MANIFESTS += [
     "components.conf",
 ]
 
-if CONFIG["OS_TARGET"] == "Darwin":
-    if not CONFIG["HOST_MAJOR_VERSION"]:
-        DEFINES["HAS_CONNECTX"] = True
-    elif CONFIG["HOST_MAJOR_VERSION"] >= "15":
-        DEFINES["HAS_CONNECTX"] = True
-
 include("/tools/fuzzing/libfuzzer-config.mozbuild")
-
-if CONFIG["MOZ_BUILD_APP"] == "browser":
-    DEFINES["MOZ_BUILD_APP_IS_BROWSER"] = True

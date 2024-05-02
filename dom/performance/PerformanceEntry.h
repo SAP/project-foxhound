@@ -15,8 +15,7 @@
 
 class nsISupports;
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 class PerformanceResourceTiming;
 
 // http://www.w3.org/TR/performance-timeline/#performanceentry
@@ -29,7 +28,7 @@ class PerformanceEntry : public nsISupports, public nsWrapperCache {
                    const nsAString& aEntryType);
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(PerformanceEntry)
+  NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(PerformanceEntry)
 
   nsISupports* GetParentObject() const { return mParent; }
 
@@ -54,6 +53,13 @@ class PerformanceEntry : public nsISupports, public nsWrapperCache {
   }
 
   virtual DOMHighResTimeStamp StartTime() const { return 0; }
+
+  // This is used by the Gecko Profiler only for adding precise markers.
+  // It's not exposed to JS.
+  virtual DOMHighResTimeStamp UnclampedStartTime() const {
+    MOZ_ASSERT(false, "UnclampedStartTime should not be called on this class.");
+    return 0;
+  }
 
   virtual DOMHighResTimeStamp Duration() const { return 0; }
 
@@ -93,7 +99,6 @@ class MOZ_STACK_CLASS PerformanceEntryComparator final {
   }
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif /* mozilla_dom_PerformanceEntry_h___ */

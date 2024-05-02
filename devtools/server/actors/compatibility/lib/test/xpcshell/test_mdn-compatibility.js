@@ -4,9 +4,11 @@
 
 // Test for the MDN compatibility diagnosis module.
 
-const { COMPATIBILITY_ISSUE_TYPE } = require("devtools/shared/constants");
-const MDNCompatibility = require("devtools/server/actors/compatibility/lib/MDNCompatibility");
-const cssPropertiesCompatData = require("devtools/shared/compatibility/dataset/css-properties.json");
+const {
+  COMPATIBILITY_ISSUE_TYPE,
+} = require("resource://devtools/shared/constants.js");
+const MDNCompatibility = require("resource://devtools/server/actors/compatibility/lib/MDNCompatibility.js");
+const cssPropertiesCompatData = require("resource://devtools/shared/compatibility/dataset/css-properties.json");
 
 const mdnCompatibility = new MDNCompatibility(cssPropertiesCompatData);
 
@@ -57,6 +59,7 @@ const TEST_DATA = [
         type: COMPATIBILITY_ISSUE_TYPE.CSS_PROPERTY,
         property: "grid-column",
         url: "https://developer.mozilla.org/docs/Web/CSS/grid-column",
+        specUrl: "https://drafts.csswg.org/css-grid/#placement-shorthands",
         deprecated: false,
         experimental: false,
         unsupportedBrowsers: [FIREFOX_1],
@@ -78,6 +81,7 @@ const TEST_DATA = [
         type: COMPATIBILITY_ISSUE_TYPE.CSS_PROPERTY,
         property: "clip",
         url: "https://developer.mozilla.org/docs/Web/CSS/clip",
+        specUrl: "https://drafts.fxtf.org/css-masking/#clip-property",
         deprecated: true,
         experimental: false,
         unsupportedBrowsers: [],
@@ -86,16 +90,16 @@ const TEST_DATA = [
   },
   {
     description: "Test for a property having some issues",
-    declarations: [{ name: "font-variant-alternates" }],
+    declarations: [{ name: "ruby-align" }],
     browsers: [FIREFOX_1],
     expectedIssues: [
       {
         type: COMPATIBILITY_ISSUE_TYPE.CSS_PROPERTY,
-        property: "font-variant-alternates",
-        url:
-          "https://developer.mozilla.org/docs/Web/CSS/font-variant-alternates",
-        deprecated: true,
-        experimental: false,
+        property: "ruby-align",
+        url: "https://developer.mozilla.org/docs/Web/CSS/ruby-align",
+        specUrl: "https://drafts.csswg.org/css-ruby/#ruby-align-property",
+        deprecated: false,
+        experimental: true,
         unsupportedBrowsers: [FIREFOX_1],
       },
     ],
@@ -111,6 +115,7 @@ const TEST_DATA = [
         property: "user-select",
         aliases: ["-moz-user-select"],
         url: "https://developer.mozilla.org/docs/Web/CSS/user-select",
+        specUrl: "https://drafts.csswg.org/css-ui/#content-selection",
         deprecated: false,
         experimental: false,
         prefixNeeded: true,
@@ -132,6 +137,7 @@ const TEST_DATA = [
         property: "user-select",
         aliases: ["-moz-user-select", "-webkit-user-select"],
         url: "https://developer.mozilla.org/docs/Web/CSS/user-select",
+        specUrl: "https://drafts.csswg.org/css-ui/#content-selection",
         deprecated: false,
         experimental: false,
         prefixNeeded: false,
@@ -150,16 +156,17 @@ const TEST_DATA = [
   },
   {
     description: "Test for a property defined with prefix",
-    declarations: [{ name: "-moz-binding" }],
+    declarations: [{ name: "-moz-user-input" }],
     browsers: [FIREFOX_1, FIREFOX_60, FIREFOX_69],
     expectedIssues: [
       {
         type: COMPATIBILITY_ISSUE_TYPE.CSS_PROPERTY,
-        property: "-moz-binding",
-        url: "https://developer.mozilla.org/docs/Web/CSS/-moz-binding",
+        property: "-moz-user-input",
+        url: "https://developer.mozilla.org/docs/Web/CSS/-moz-user-input",
+        specUrl: undefined,
         deprecated: true,
         experimental: false,
-        unsupportedBrowsers: [FIREFOX_69],
+        unsupportedBrowsers: [],
       },
     ],
   },

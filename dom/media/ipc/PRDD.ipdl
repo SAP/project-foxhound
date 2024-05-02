@@ -17,8 +17,17 @@ include protocol PSandboxTesting;
 
 include "mozilla/ipc/ByteBufUtils.h";
 
+using mozilla::dom::ContentParentId from "mozilla/dom/ipc/IdType.h";
 using mozilla::dom::NativeThreadId from "mozilla/dom/NativeThreadId.h";
-using mozilla::PDMFactory::MediaCodecsSupported from "PDMFactory.h";
+using mozilla::media::MediaCodecsSupported from "MediaCodecsSupport.h";
+
+// Telemetry
+using mozilla::Telemetry::HistogramAccumulation from "mozilla/TelemetryComms.h";
+using mozilla::Telemetry::KeyedHistogramAccumulation from "mozilla/TelemetryComms.h";
+using mozilla::Telemetry::ScalarAction from "mozilla/TelemetryComms.h";
+using mozilla::Telemetry::KeyedScalarAction from "mozilla/TelemetryComms.h";
+using mozilla::Telemetry::ChildEventData from "mozilla/TelemetryComms.h";
+using mozilla::Telemetry::DiscardedData from "mozilla/TelemetryComms.h";
 
 #if defined(XP_WIN)
 [MoveOnly] using mozilla::UntrustedModulesData from "mozilla/UntrustedModulesData.h";
@@ -38,12 +47,13 @@ protocol PRDD
 parent:
 
   async Init(GfxVarUpdate[] vars, FileDescriptor? sandboxBroker,
-             bool canRecordReleaseTelemetry);
+             bool canRecordReleaseTelemetry,
+             bool aIsReadyForBackgroundProcessing);
 
   async InitProfiler(Endpoint<PProfilerChild> endpoint);
 
   async NewContentRemoteDecoderManager(
-            Endpoint<PRemoteDecoderManagerParent> endpoint);
+            Endpoint<PRemoteDecoderManagerParent> endpoint, ContentParentId childId);
 
   async RequestMemoryReport(uint32_t generation,
                             bool anonymize,
@@ -61,6 +71,13 @@ parent:
 
 #if defined(XP_WIN)
   async GetUntrustedModulesData() returns (UntrustedModulesData? data);
+
+  /**
+  * This method is used to notifty a child process to start
+  * processing module loading events in UntrustedModulesProcessor.
+  * This should be called when the parent process has gone idle.
+  */
+  async UnblockUntrustedModulesThread();
 #endif  // defined(XP_WIN)
 
 #if defined(MOZ_SANDBOX) && defined(MOZ_DEBUG) && defined(ENABLE_TESTS)
@@ -77,6 +94,8 @@ parent:
   // The unused returned value is to have a promise we can await.
   async TestTriggerMetrics() returns (bool unused);
 
+  async TestTelemetryProbes();
+
 child:
 
   async InitCrashReporter(NativeThreadId threadId);
@@ -91,6 +110,14 @@ child:
   // Update the cached list of codec supported following a check in the
   // RDD parent.
   async UpdateMediaCodecsSupported(MediaCodecsSupported aSupported);
+
+  // Messages for sending telemetry to parent process.
+  async AccumulateChildHistograms(HistogramAccumulation[] accumulations);
+  async AccumulateChildKeyedHistograms(KeyedHistogramAccumulation[] accumulations);
+  async UpdateChildScalars(ScalarAction[] actions);
+  async UpdateChildKeyedScalars(KeyedScalarAction[] actions);
+  async RecordChildEvents(ChildEventData[] events);
+  async RecordDiscardedData(DiscardedData data);
 
   // Sent from time-to-time to limit the amount of telemetry vulnerable to loss
   // Buffer contains bincoded Rust structs.

@@ -16,6 +16,8 @@ class CanonicalBrowsingContext;
 }
 namespace net {
 
+class EarlyHintConnectArgs;
+
 /**
  * An actor that forwards all changes across to DocumentChannelChild, the
  * nsIChannel implementation owned by a content process docshell.
@@ -32,15 +34,16 @@ class DocumentChannelParent final
             const DocumentChannelCreationArgs& aArgs);
 
   // PDocumentChannelParent
-  bool RecvCancel(const nsresult& aStatus) {
+  ipc::IPCResult RecvCancel(const nsresult& aStatus, const nsCString& aReason) {
     if (mDocumentLoadListener) {
-      mDocumentLoadListener->Cancel(aStatus);
+      mDocumentLoadListener->Cancel(aStatus, aReason);
     }
-    return true;
+    return IPC_OK();
   }
   void ActorDestroy(ActorDestroyReason aWhy) override {
     if (mDocumentLoadListener) {
-      mDocumentLoadListener->Cancel(NS_BINDING_ABORTED);
+      mDocumentLoadListener->Cancel(NS_BINDING_ABORTED,
+                                    "DocumentChannelParent::ActorDestroy"_ns);
     }
   }
 
@@ -51,7 +54,8 @@ class DocumentChannelParent final
   RedirectToRealChannel(
       nsTArray<ipc::Endpoint<extensions::PStreamFilterParent>>&&
           aStreamFilterEndpoints,
-      uint32_t aRedirectFlags, uint32_t aLoadFlags);
+      uint32_t aRedirectFlags, uint32_t aLoadFlags,
+      uint32_t aEarlyHintLinkType);
 
   virtual ~DocumentChannelParent();
 

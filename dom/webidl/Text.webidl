@@ -10,14 +10,13 @@
  * liability, trademark and document use rules apply.
  */
 
-[Exposed=Window]
+[Exposed=Window, ProbablyShortLivingWrapper]
 interface Text : CharacterData {
   [Throws]
   constructor(optional DOMString data = "");
 
   [Throws]
   Text splitText(unsigned long offset);
-  [Throws]
   readonly attribute DOMString wholeText;
 };
 

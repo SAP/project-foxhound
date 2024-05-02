@@ -2,13 +2,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "IndexedDB",
-  "resource://gre/modules/IndexedDB.jsm"
-);
+const lazy = {};
 
-this.ActivityStreamStorage = class ActivityStreamStorage {
+ChromeUtils.defineESModuleGetters(lazy, {
+  IndexedDB: "resource://gre/modules/IndexedDB.sys.mjs",
+});
+
+class ActivityStreamStorage {
   /**
    * @param storeNames Array of strings used to create all the required stores
    */
@@ -68,7 +68,7 @@ this.ActivityStreamStorage = class ActivityStreamStorage {
   }
 
   _openDatabase() {
-    return IndexedDB.open(this.dbName, { version: this.dbVersion }, db => {
+    return lazy.IndexedDB.open(this.dbName, { version: this.dbVersion }, db => {
       // If provided with array of objectStore names we need to create all the
       // individual stores
       this.storeNames.forEach(store => {
@@ -94,7 +94,7 @@ this.ActivityStreamStorage = class ActivityStreamStorage {
       if (this.telemetry) {
         this.telemetry.handleUndesiredEvent({ event: "INDEXEDDB_OPEN_FAILED" });
       }
-      await IndexedDB.deleteDatabase(this.dbName);
+      await lazy.IndexedDB.deleteDatabase(this.dbName);
       return this._openDatabase();
     }
   }
@@ -112,7 +112,7 @@ this.ActivityStreamStorage = class ActivityStreamStorage {
 
     return result;
   }
-};
+}
 
 function getDefaultOptions(options) {
   return { collapsed: !!options.collapsed };

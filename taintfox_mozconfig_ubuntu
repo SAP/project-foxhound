@@ -1,5 +1,5 @@
-# limit number of parallel jobs
-mk_add_options MOZ_PARALLEL_BUILD=4
+# limit number of parallel jobs - do not do this by default, but might be needed for build systems with limited resources
+# mk_add_options MOZ_PARALLEL_BUILD=4
 
 # Use ccache, make sure the path is correct
 #ac_add_options --with-ccache=/usr/bin/ccache
@@ -8,7 +8,7 @@ mk_add_options MOZ_PARALLEL_BUILD=4
 # We could work around this (typedef basic_string<char16_t> u16string), but this should be fine.
 #ac_add_options --enable-macos-target=10.10
 
-# diasble updater
+# disable updater
 ac_add_options --disable-updater
 
 # Add-on signing is not required for DevEdition
@@ -36,14 +36,15 @@ export MOZ_PACKAGE_JSSHELL=1
 ac_add_options --with-app-name=foxhound
 mk_add_options MOZ_APP_NAME=foxhound
 mk_add_options MOZ_OBJDIR=@TOPSRCDIR@/obj-tf-release
-ac_add_options --enable-bootstrap
 ac_add_options --disable-tests
 ac_add_options --disable-sandbox
+ac_add_options --without-wasm-sandboxed-libraries
+
 #
 # OPTIMIZED BUILD WITH DEBUG SYMBOLS
 #
 #mk_add_options MOZ_OBJDIR=@TOPSRCDIR@/obj-tf-release-with-symbols
 #ac_add_options --enable-debug-symbols
 #ac_add_options --enable-gczeal
-#ac_add_options --enable-optimization
+#ac_add_options --enable-optimize
 #ac_add_options --disable-tests

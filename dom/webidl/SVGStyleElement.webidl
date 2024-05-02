@@ -12,6 +12,8 @@
 
 [Exposed=Window]
 interface SVGStyleElement : SVGElement {
+  [Pure]
+  attribute boolean disabled;
   [SetterThrows]
   attribute DOMString type;
   [SetterThrows]
@@ -20,4 +22,3 @@ interface SVGStyleElement : SVGElement {
   attribute DOMString title;
 };
 SVGStyleElement includes LinkStyle;
-

@@ -1,9 +1,9 @@
 #![warn(rust_2018_idioms)]
-#![cfg(feature = "full")]
+#![cfg(all(feature = "full", not(tokio_wasi)))]
 
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::runtime::{self, Runtime};
+use tokio::runtime;
 use tokio::sync::oneshot;
 use tokio_test::{assert_err, assert_ok};
 
@@ -12,17 +12,26 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering::Relaxed;
-use std::sync::{mpsc, Arc};
-use std::task::{Context, Poll};
+use std::sync::{mpsc, Arc, Mutex};
+use std::task::{Context, Poll, Waker};
+
+macro_rules! cfg_metrics {
+    ($($t:tt)*) => {
+        #[cfg(tokio_unstable)]
+        {
+            $( $t )*
+        }
+    }
+}
 
 #[test]
 fn single_thread() {
     // No panic when starting a runtime w/ a single thread
-    let _ = runtime::Builder::new()
-        .threaded_scheduler()
+    let _ = runtime::Builder::new_multi_thread()
         .enable_all()
-        .core_threads(1)
-        .build();
+        .worker_threads(1)
+        .build()
+        .unwrap();
 }
 
 #[test]
@@ -55,24 +64,55 @@ fn many_oneshot_futures() {
         drop(rt);
     }
 }
+
+#[test]
+fn spawn_two() {
+    let rt = rt();
+
+    let out = rt.block_on(async {
+        let (tx, rx) = oneshot::channel();
+
+        tokio::spawn(async move {
+            tokio::spawn(async move {
+                tx.send("ZOMG").unwrap();
+            });
+        });
+
+        assert_ok!(rx.await)
+    });
+
+    assert_eq!(out, "ZOMG");
+
+    cfg_metrics! {
+        let metrics = rt.metrics();
+        drop(rt);
+        assert_eq!(1, metrics.remote_schedule_count());
+
+        let mut local = 0;
+        for i in 0..metrics.num_workers() {
+            local += metrics.worker_local_schedule_count(i);
+        }
+
+        assert_eq!(1, local);
+    }
+}
+
 #[test]
 fn many_multishot_futures() {
-    use tokio::sync::mpsc;
-
     const CHAIN: usize = 200;
     const CYCLES: usize = 5;
     const TRACKS: usize = 50;
 
     for _ in 0..50 {
-        let mut rt = rt();
+        let rt = rt();
         let mut start_txs = Vec::with_capacity(TRACKS);
         let mut final_rxs = Vec::with_capacity(TRACKS);
 
         for _ in 0..TRACKS {
-            let (start_tx, mut chain_rx) = mpsc::channel(10);
+            let (start_tx, mut chain_rx) = tokio::sync::mpsc::channel(10);
 
             for _ in 0..CHAIN {
-                let (mut next_tx, next_rx) = mpsc::channel(10);
+                let (next_tx, next_rx) = tokio::sync::mpsc::channel(10);
 
                 // Forward all the messages
                 rt.spawn(async move {
@@ -85,8 +125,8 @@ fn many_multishot_futures() {
             }
 
             // This final task cycles if needed
-            let (mut final_tx, final_rx) = mpsc::channel(10);
-            let mut cycle_tx = start_tx.clone();
+            let (final_tx, final_rx) = tokio::sync::mpsc::channel(10);
+            let cycle_tx = start_tx.clone();
             let mut rem = CYCLES;
 
             rt.spawn(async move {
@@ -109,7 +149,7 @@ fn many_multishot_futures() {
 
         {
             rt.block_on(async move {
-                for mut start_tx in start_txs {
+                for start_tx in start_txs {
                     start_tx.send("ping").await.unwrap();
                 }
 
@@ -122,8 +162,34 @@ fn many_multishot_futures() {
 }
 
 #[test]
+fn lifo_slot_budget() {
+    async fn my_fn() {
+        spawn_another();
+    }
+
+    fn spawn_another() {
+        tokio::spawn(my_fn());
+    }
+
+    let rt = runtime::Builder::new_multi_thread()
+        .enable_all()
+        .worker_threads(1)
+        .build()
+        .unwrap();
+
+    let (send, recv) = oneshot::channel();
+
+    rt.spawn(async move {
+        tokio::spawn(my_fn());
+        let _ = send.send(());
+    });
+
+    let _ = rt.block_on(recv);
+}
+
+#[test]
 fn spawn_shutdown() {
-    let mut rt = rt();
+    let rt = rt();
     let (tx, rx) = mpsc::channel();
 
     rt.block_on(async {
@@ -141,7 +207,7 @@ fn spawn_shutdown() {
 }
 
 async fn client_server(tx: mpsc::Sender<()>) {
-    let mut server = assert_ok!(TcpListener::bind("127.0.0.1:0").await);
+    let server = assert_ok!(TcpListener::bind("127.0.0.1:0").await);
 
     // Get the assigned address
     let addr = assert_ok!(server.local_addr());
@@ -190,8 +256,7 @@ fn drop_threadpool_drops_futures() {
         let a = num_inc.clone();
         let b = num_dec.clone();
 
-        let rt = runtime::Builder::new()
-            .threaded_scheduler()
+        let rt = runtime::Builder::new_multi_thread()
             .enable_all()
             .on_thread_start(move || {
                 a.fetch_add(1, Relaxed);
@@ -230,8 +295,7 @@ fn start_stop_callbacks_called() {
 
     let after_inner = after_start.clone();
     let before_inner = before_stop.clone();
-    let mut rt = tokio::runtime::Builder::new()
-        .threaded_scheduler()
+    let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .on_thread_start(move || {
             after_inner.clone().fetch_add(1, Ordering::Relaxed);
@@ -331,20 +395,17 @@ fn multi_threadpool() {
 // channel yields occasionally even if there are values ready to receive.
 #[test]
 fn coop_and_block_in_place() {
-    use tokio::sync::mpsc;
-
-    let mut rt = tokio::runtime::Builder::new()
-        .threaded_scheduler()
+    let rt = tokio::runtime::Builder::new_multi_thread()
         // Setting max threads to 1 prevents another thread from claiming the
         // runtime worker yielded as part of `block_in_place` and guarantees the
         // same thread will reclaim the worker at the end of the
         // `block_in_place` call.
-        .max_threads(1)
+        .max_blocking_threads(1)
         .build()
         .unwrap();
 
     rt.block_on(async move {
-        let (mut tx, mut rx) = mpsc::channel(1024);
+        let (tx, mut rx) = tokio::sync::mpsc::channel(1024);
 
         // Fill the channel
         for _ in 0..1024 {
@@ -381,16 +442,324 @@ fn coop_and_block_in_place() {
     });
 }
 
+#[test]
+fn yield_after_block_in_place() {
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(1)
+        .build()
+        .unwrap();
+
+    rt.block_on(async {
+        tokio::spawn(async move {
+            // Block in place then enter a new runtime
+            tokio::task::block_in_place(|| {
+                let rt = tokio::runtime::Builder::new_current_thread()
+                    .build()
+                    .unwrap();
+
+                rt.block_on(async {});
+            });
+
+            // Yield, then complete
+            tokio::task::yield_now().await;
+        })
+        .await
+        .unwrap()
+    });
+}
+
 // Testing this does not panic
 #[test]
-fn max_threads() {
-    let _rt = tokio::runtime::Builder::new()
-        .threaded_scheduler()
-        .max_threads(1)
+fn max_blocking_threads() {
+    let _rt = tokio::runtime::Builder::new_multi_thread()
+        .max_blocking_threads(1)
         .build()
         .unwrap();
 }
 
-fn rt() -> Runtime {
-    Runtime::new().unwrap()
+#[test]
+#[should_panic]
+fn max_blocking_threads_set_to_zero() {
+    let _rt = tokio::runtime::Builder::new_multi_thread()
+        .max_blocking_threads(0)
+        .build()
+        .unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn hang_on_shutdown() {
+    let (sync_tx, sync_rx) = std::sync::mpsc::channel::<()>();
+    tokio::spawn(async move {
+        tokio::task::block_in_place(|| sync_rx.recv().ok());
+    });
+
+    tokio::spawn(async {
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+        drop(sync_tx);
+    });
+    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+}
+
+/// Demonstrates tokio-rs/tokio#3869
+#[test]
+fn wake_during_shutdown() {
+    struct Shared {
+        waker: Option<Waker>,
+    }
+
+    struct MyFuture {
+        shared: Arc<Mutex<Shared>>,
+        put_waker: bool,
+    }
+
+    impl MyFuture {
+        fn new() -> (Self, Self) {
+            let shared = Arc::new(Mutex::new(Shared { waker: None }));
+            let f1 = MyFuture {
+                shared: shared.clone(),
+                put_waker: true,
+            };
+            let f2 = MyFuture {
+                shared,
+                put_waker: false,
+            };
+            (f1, f2)
+        }
+    }
+
+    impl Future for MyFuture {
+        type Output = ();
+
+        fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
+            let me = Pin::into_inner(self);
+            let mut lock = me.shared.lock().unwrap();
+            if me.put_waker {
+                lock.waker = Some(cx.waker().clone());
+            }
+            Poll::Pending
+        }
+    }
+
+    impl Drop for MyFuture {
+        fn drop(&mut self) {
+            let mut lock = self.shared.lock().unwrap();
+            if !self.put_waker {
+                lock.waker.take().unwrap().wake();
+            }
+            drop(lock);
+        }
+    }
+
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(1)
+        .enable_all()
+        .build()
+        .unwrap();
+
+    let (f1, f2) = MyFuture::new();
+
+    rt.spawn(f1);
+    rt.spawn(f2);
+
+    rt.block_on(async { tokio::time::sleep(tokio::time::Duration::from_millis(20)).await });
+}
+
+#[should_panic]
+#[tokio::test]
+async fn test_block_in_place1() {
+    tokio::task::block_in_place(|| {});
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_block_in_place2() {
+    tokio::task::block_in_place(|| {});
+}
+
+#[should_panic]
+#[tokio::main(flavor = "current_thread")]
+#[test]
+async fn test_block_in_place3() {
+    tokio::task::block_in_place(|| {});
+}
+
+#[tokio::main]
+#[test]
+async fn test_block_in_place4() {
+    tokio::task::block_in_place(|| {});
+}
+
+// Repro for tokio-rs/tokio#5239
+#[test]
+fn test_nested_block_in_place_with_block_on_between() {
+    let rt = runtime::Builder::new_multi_thread()
+        .worker_threads(1)
+        // Needs to be more than 0
+        .max_blocking_threads(1)
+        .build()
+        .unwrap();
+
+    // Triggered by a race condition, so run a few times to make sure it is OK.
+    for _ in 0..100 {
+        let h = rt.handle().clone();
+
+        rt.block_on(async move {
+            tokio::spawn(async move {
+                tokio::task::block_in_place(|| {
+                    h.block_on(async {
+                        tokio::task::block_in_place(|| {});
+                    });
+                })
+            })
+            .await
+            .unwrap()
+        });
+    }
+}
+
+// Testing the tuning logic is tricky as it is inherently timing based, and more
+// of a heuristic than an exact behavior. This test checks that the interval
+// changes over time based on load factors. There are no assertions, completion
+// is sufficient. If there is a regression, this test will hang. In theory, we
+// could add limits, but that would be likely to fail on CI.
+#[test]
+#[cfg(not(tokio_no_tuning_tests))]
+fn test_tuning() {
+    use std::sync::atomic::AtomicBool;
+    use std::time::Duration;
+
+    let rt = runtime::Builder::new_multi_thread()
+        .worker_threads(1)
+        .build()
+        .unwrap();
+
+    fn iter(flag: Arc<AtomicBool>, counter: Arc<AtomicUsize>, stall: bool) {
+        if flag.load(Relaxed) {
+            if stall {
+                std::thread::sleep(Duration::from_micros(5));
+            }
+
+            counter.fetch_add(1, Relaxed);
+            tokio::spawn(async move { iter(flag, counter, stall) });
+        }
+    }
+
+    let flag = Arc::new(AtomicBool::new(true));
+    let counter = Arc::new(AtomicUsize::new(61));
+    let interval = Arc::new(AtomicUsize::new(61));
+
+    {
+        let flag = flag.clone();
+        let counter = counter.clone();
+        rt.spawn(async move { iter(flag, counter, true) });
+    }
+
+    // Now, hammer the injection queue until the interval drops.
+    let mut n = 0;
+    loop {
+        let curr = interval.load(Relaxed);
+
+        if curr <= 8 {
+            n += 1;
+        } else {
+            n = 0;
+        }
+
+        // Make sure we get a few good rounds. Jitter in the tuning could result
+        // in one "good" value without being representative of reaching a good
+        // state.
+        if n == 3 {
+            break;
+        }
+
+        if Arc::strong_count(&interval) < 5_000 {
+            let counter = counter.clone();
+            let interval = interval.clone();
+
+            rt.spawn(async move {
+                let prev = counter.swap(0, Relaxed);
+                interval.store(prev, Relaxed);
+            });
+
+            std::thread::yield_now();
+        }
+    }
+
+    flag.store(false, Relaxed);
+
+    let w = Arc::downgrade(&interval);
+    drop(interval);
+
+    while w.strong_count() > 0 {
+        std::thread::sleep(Duration::from_micros(500));
+    }
+
+    // Now, run it again with a faster task
+    let flag = Arc::new(AtomicBool::new(true));
+    // Set it high, we know it shouldn't ever really be this high
+    let counter = Arc::new(AtomicUsize::new(10_000));
+    let interval = Arc::new(AtomicUsize::new(10_000));
+
+    {
+        let flag = flag.clone();
+        let counter = counter.clone();
+        rt.spawn(async move { iter(flag, counter, false) });
+    }
+
+    // Now, hammer the injection queue until the interval reaches the expected range.
+    let mut n = 0;
+    loop {
+        let curr = interval.load(Relaxed);
+
+        if curr <= 1_000 && curr > 32 {
+            n += 1;
+        } else {
+            n = 0;
+        }
+
+        if n == 3 {
+            break;
+        }
+
+        if Arc::strong_count(&interval) <= 5_000 {
+            let counter = counter.clone();
+            let interval = interval.clone();
+
+            rt.spawn(async move {
+                let prev = counter.swap(0, Relaxed);
+                interval.store(prev, Relaxed);
+            });
+        }
+
+        std::thread::yield_now();
+    }
+
+    flag.store(false, Relaxed);
+}
+
+fn rt() -> runtime::Runtime {
+    runtime::Runtime::new().unwrap()
+}
+
+#[cfg(tokio_unstable)]
+mod unstable {
+    use super::*;
+
+    #[test]
+    fn test_disable_lifo_slot() {
+        let rt = runtime::Builder::new_multi_thread()
+            .disable_lifo_slot()
+            .worker_threads(2)
+            .build()
+            .unwrap();
+
+        rt.block_on(async {
+            tokio::spawn(async {
+                // Spawn another task and block the thread until completion. If the LIFO slot
+                // is used then the test doesn't complete.
+                futures::executor::block_on(tokio::spawn(async {})).unwrap();
+            })
+            .await
+            .unwrap();
+        })
+    }
 }

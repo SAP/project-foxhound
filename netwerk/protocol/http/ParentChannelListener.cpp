@@ -15,10 +15,10 @@
 #include "mozilla/net/HttpChannelParent.h"
 #include "mozilla/net/RedirectChannelRegistrar.h"
 #include "mozilla/SchedulerGroup.h"
-#include "mozilla/Unused.h"
 #include "nsIHttpHeaderVisitor.h"
 #include "nsIPrompt.h"
 #include "nsISecureBrowserUI.h"
+#include "nsIThreadRetargetableStreamListener.h"
 #include "nsIWindowWatcher.h"
 #include "nsQueryObject.h"
 #include "nsIAuthPrompt.h"
@@ -30,7 +30,6 @@
 #include "mozilla/dom/LoadURIOptionsBinding.h"
 #include "nsIWebNavigation.h"
 
-using mozilla::Unused;
 using mozilla::dom::ServiceWorkerInterceptController;
 
 namespace mozilla {
@@ -38,7 +37,7 @@ namespace net {
 
 ParentChannelListener::ParentChannelListener(
     nsIStreamListener* aListener,
-    dom::CanonicalBrowsingContext* aBrowsingContext, bool aUsePrivateBrowsing)
+    dom::CanonicalBrowsingContext* aBrowsingContext)
     : mNextListener(aListener), mBrowsingContext(aBrowsingContext) {
   LOG(("ParentChannelListener::ParentChannelListener [this=%p, next=%p]", this,
        aListener));
@@ -116,6 +115,20 @@ ParentChannelListener::OnDataAvailable(nsIRequest* aRequest,
   LOG(("ParentChannelListener::OnDataAvailable [this=%p]\n", this));
   return mNextListener->OnDataAvailable(aRequest, aInputStream, aOffset,
                                         aCount);
+}
+
+NS_IMETHODIMP
+ParentChannelListener::OnDataFinished(nsresult aStatus) {
+  if (!mNextListener) {
+    return NS_ERROR_FAILURE;
+  }
+  nsCOMPtr<nsIThreadRetargetableStreamListener> listener =
+      do_QueryInterface(mNextListener);
+  if (listener) {
+    return listener->OnDataFinished(aStatus);
+  }
+
+  return NS_OK;
 }
 
 //-----------------------------------------------------------------------------

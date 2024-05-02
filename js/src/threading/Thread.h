@@ -9,7 +9,6 @@
 
 #include "mozilla/Atomics.h"
 #include "mozilla/TimeStamp.h"
-#include "mozilla/Tuple.h"
 
 #include <stdint.h>
 #include <type_traits>
@@ -64,7 +63,7 @@ class Thread {
             typename DerefO = std::remove_reference_t<NonConstO>,
             typename = std::enable_if_t<std::is_same_v<DerefO, Options>>>
   explicit Thread(O&& options = Options())
-      : id_(ThreadId()), options_(std::forward<O>(options)) {
+      : options_(std::forward<O>(options)) {
     MOZ_ASSERT(isInitialized());
   }
 
@@ -92,7 +91,7 @@ class Thread {
   // The thread must be joined or detached before destruction.
   ~Thread();
 
-  // Move the thread into the detached state without blocking. In the detatched
+  // Move the thread into the detached state without blocking. In the detached
   // state, the thread continues to run until it exits, but cannot be joined.
   // After this method returns, this Thread no longer represents a thread of
   // execution. When the thread exits, its resources will be cleaned up by the
@@ -185,10 +184,10 @@ class ThreadTrampoline {
   // thread. To avoid this dangerous and highly non-obvious footgun, the
   // standard requires a "decay" copy of the arguments at the cost of making it
   // impossible to pass references between threads.
-  mozilla::Tuple<std::decay_t<Args>...> args;
+  std::tuple<std::decay_t<Args>...> args;
 
   // Protect the thread id during creation.
-  Mutex createMutex;
+  Mutex createMutex MOZ_UNANNOTATED;
 
   // Thread can access createMutex.
   friend class js::Thread;
@@ -217,7 +216,7 @@ class ThreadTrampoline {
     // thread that spawned us is ready.
     createMutex.lock();
     createMutex.unlock();
-    f(std::move(mozilla::Get<Indices>(args))...);
+    f(std::move(std::get<Indices>(args))...);
   }
 };
 

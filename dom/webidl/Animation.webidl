@@ -21,15 +21,12 @@ interface Animation : EventTarget {
               optional AnimationTimeline? timeline);
 
   attribute DOMString id;
-  [Func="Document::IsWebAnimationsEnabled", Pure]
+  [Pure]
   attribute AnimationEffect? effect;
-  [Func="Document::AreWebAnimationsTimelinesEnabled"]
-#ifdef NIGHTLY_BUILD
-  // Animation.timeline setter is supported only on Nightly.
+  // Bug 1676794. Drop BinaryName once we support ScrollTimeline interface.
+  [Func="Document::AreWebAnimationsTimelinesEnabled",
+   BinaryName="timelineFromJS"]
   attribute AnimationTimeline? timeline;
-#else
-  readonly attribute AnimationTimeline? timeline;
-#endif
 
   [BinaryName="startTimeAsDouble"]
   attribute double? startTime;
@@ -41,30 +38,27 @@ interface Animation : EventTarget {
   readonly attribute AnimationPlayState playState;
   [BinaryName="pendingFromJS"]
   readonly attribute boolean            pending;
-  [Pref="dom.animations-api.autoremove.enabled"]
   readonly attribute AnimationReplaceState replaceState;
-  [Func="Document::IsWebAnimationsEnabled", Throws]
+  [Throws]
   readonly attribute Promise<Animation> ready;
-  [Func="Document::IsWebAnimationsEnabled", Throws]
+  [Throws]
   readonly attribute Promise<Animation> finished;
            attribute EventHandler       onfinish;
            attribute EventHandler       oncancel;
-  [Pref="dom.animations-api.autoremove.enabled"]
            attribute EventHandler       onremove;
-  void cancel();
+  undefined cancel();
   [Throws]
-  void finish();
+  undefined finish();
   [Throws, BinaryName="playFromJS"]
-  void play();
+  undefined play();
   [Throws, BinaryName="pauseFromJS"]
-  void pause();
-  void updatePlaybackRate (double playbackRate);
+  undefined pause();
+  undefined updatePlaybackRate (double playbackRate);
   [Throws]
-  void reverse();
-  [Pref="dom.animations-api.autoremove.enabled"]
-  void persist();
-  [Pref="dom.animations-api.autoremove.enabled", Throws]
-  void commitStyles();
+  undefined reverse();
+  undefined persist();
+  [CEReactions, Throws]
+  undefined commitStyles();
 };
 
 // Non-standard extensions

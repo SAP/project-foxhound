@@ -1,15 +1,15 @@
 /**
- * Test for LoginManagerChild._getPasswordFields using LoginFormFactory.
+ * Test for LoginFormState._getPasswordFields using LoginFormFactory.
  */
 
 /* globals todo_check_eq */
 "use strict";
 
-const { LoginFormFactory } = ChromeUtils.import(
-  "resource://gre/modules/LoginFormFactory.jsm"
+const { LoginFormFactory } = ChromeUtils.importESModule(
+  "resource://gre/modules/LoginFormFactory.sys.mjs"
 );
-const { LoginManagerChild } = ChromeUtils.import(
-  "resource://gre/modules/LoginManagerChild.jsm"
+const { LoginFormState } = ChromeUtils.importESModule(
+  "resource://gre/modules/LoginManagerChild.sys.mjs"
 );
 const TESTCASES = [
   {
@@ -167,9 +167,9 @@ const TESTCASES = [
 for (let tc of TESTCASES) {
   info("Sanity checking the testcase: " + tc.description);
 
-  (function() {
+  (function () {
     let testcase = tc;
-    add_task(async function() {
+    add_task(async function () {
       info("Starting testcase: " + testcase.description);
       let document = MockDocument.createTestDocument(
         "http://localhost:8080/test/",
@@ -207,13 +207,10 @@ for (let tc of TESTCASES) {
       let formLikeIndex = -1;
       for (let formLikeFromInput of mapRootElementToFormLike.values()) {
         formLikeIndex++;
-        let pwFields = new LoginManagerChild()._getPasswordFields(
-          formLikeFromInput,
-          {
-            fieldOverrideRecipe: testcase.fieldOverrideRecipe,
-            minPasswordLength: testcase.minPasswordLength,
-          }
-        );
+        let pwFields = LoginFormState._getPasswordFields(formLikeFromInput, {
+          fieldOverrideRecipe: testcase.fieldOverrideRecipe,
+          minPasswordLength: testcase.minPasswordLength,
+        });
 
         if (
           ChromeUtils.getClassName(formLikeFromInput.rootElement) ===
@@ -286,9 +283,9 @@ const EMOJI_TESTCASES = [
 for (let tc of EMOJI_TESTCASES) {
   info("Sanity checking the testcase: " + tc.description);
 
-  (function() {
+  (function () {
     let testcase = tc;
-    add_task(async function() {
+    add_task(async function () {
       info("Starting testcase: " + testcase.description);
       let document = MockDocument.createTestDocument(
         "http://localhost:8080/test/",
@@ -297,7 +294,7 @@ for (let tc of EMOJI_TESTCASES) {
       let input = document.querySelector("input[type='password']");
       Assert.ok(input, "Found the password field");
       let formLike = LoginFormFactory.createFromField(input);
-      let pwFields = new LoginManagerChild()._getPasswordFields(formLike, {
+      let pwFields = LoginFormState._getPasswordFields(formLike, {
         minPasswordLength: testcase.minPasswordLength,
       });
       info("Got password fields: " + pwFields.length);

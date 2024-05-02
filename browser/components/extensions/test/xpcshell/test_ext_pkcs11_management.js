@@ -1,8 +1,8 @@
 "use strict";
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  ctypes: "resource://gre/modules/ctypes.jsm",
-  MockRegistry: "resource://testing-common/MockRegistry.jsm",
+ChromeUtils.defineESModuleGetters(this, {
+  MockRegistry: "resource://testing-common/MockRegistry.sys.mjs",
+  ctypes: "resource://gre/modules/ctypes.sys.mjs",
 });
 
 do_get_profile();
@@ -290,7 +290,7 @@ add_task(async function test_pkcs11() {
   let extension = ExtensionTestUtils.loadExtension({
     manifest: {
       permissions: ["pkcs11"],
-      applications: { gecko: { id: "pkcs11@tests.mozilla.org" } },
+      browser_specific_settings: { gecko: { id: "pkcs11@tests.mozilla.org" } },
     },
     background: background,
   });

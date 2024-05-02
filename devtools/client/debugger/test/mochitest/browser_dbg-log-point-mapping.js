@@ -6,11 +6,13 @@
  * Tests that expressions in log points are source mapped.
  */
 
-add_task(async function() {
+"use strict";
+
+add_task(async function () {
   Services.prefs.setBoolPref("devtools.toolbox.splitconsoleEnabled", true);
+  await pushPref("devtools.debugger.map-scopes-enabled", true);
 
   const dbg = await initDebugger("doc-sourcemaps3.html", "test.js");
-  dbg.actions.toggleMapScopes();
 
   const source = findSource(dbg, "test.js");
   await selectSource(dbg, "test.js");
@@ -20,11 +22,10 @@ add_task(async function() {
   await addBreakpoint(dbg, "test.js", 6);
   await waitForBreakpoint(dbg, "test.js", 6);
 
-  await dbg.actions.addBreakpoint(
-    getContext(dbg),
-    { line: 5, sourceId: source.id },
-    { logValue: "`value: ${JSON.stringify(test)}`", requiresMapping: true },
-  );
+  await dbg.actions.addBreakpoint(createLocation({ line: 5, source }), {
+    logValue: "`value: ${JSON.stringify(test)}`",
+    requiresMapping: true,
+  });
   await waitForBreakpoint(dbg, "test.js", 5);
 
   invokeInTab("test");
@@ -33,6 +34,10 @@ add_task(async function() {
 
   await hasConsoleMessage(dbg, "value:");
   const { value } = await findConsoleMessage(dbg, "value:");
-  is(value, 'value: ["b (30)","a","b (5)","z"]', "Variables in logpoint expression should be mapped");
+  is(
+    value,
+    'value: ["b (30)","a","b (5)","z"]',
+    "Variables in logpoint expression should be mapped"
+  );
   await resume(dbg);
 });

@@ -9,6 +9,7 @@
 
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/glean/bindings/Ping.h"
+#include "nsGlobalWindowInner.h"
 #include "nsISupports.h"
 #include "nsWrapperCache.h"
 
@@ -17,7 +18,7 @@ namespace mozilla::glean {
 class GleanPings final : public nsISupports, public nsWrapperCache {
  public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(GleanPings)
+  NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(GleanPings)
 
   JSObject* WrapObject(JSContext* aCx,
                        JS::Handle<JSObject*> aGivenProto) override;

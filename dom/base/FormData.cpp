@@ -6,10 +6,13 @@
 
 #include "FormData.h"
 #include "nsIInputStream.h"
+#include "mozilla/dom/CustomElementTypes.h"
 #include "mozilla/dom/File.h"
 #include "mozilla/dom/Directory.h"
 #include "mozilla/dom/HTMLFormElement.h"
 #include "mozilla/Encoding.h"
+#include "nsGenericHTMLElement.h"
+#include "nsQueryObject.h"
 
 #include "MultipartBlobImpl.h"
 
@@ -69,7 +72,7 @@ already_AddRefed<File> GetBlobForFormDataStorage(
 // -------------------------------------------------------------------------
 // nsISupports
 
-NS_IMPL_CYCLE_COLLECTION_CLASS(FormData)
+NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(FormData)
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(FormData)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mOwner)
@@ -92,8 +95,6 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(FormData)
   }
 
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
-
-NS_IMPL_CYCLE_COLLECTION_TRACE_WRAPPERCACHE(FormData)
 
 NS_IMPL_CYCLE_COLLECTING_ADDREF(FormData)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(FormData)
@@ -300,12 +301,37 @@ JSObject* FormData::WrapObject(JSContext* aCx,
   return FormData_Binding::Wrap(aCx, this, aGivenProto);
 }
 
+// https://xhr.spec.whatwg.org/#dom-formdata
 /* static */
 already_AddRefed<FormData> FormData::Constructor(
     const GlobalObject& aGlobal,
-    const Optional<NonNull<HTMLFormElement> >& aFormElement, ErrorResult& aRv) {
-  RefPtr<FormData> formData = new FormData(aGlobal.GetAsSupports());
+    const Optional<NonNull<HTMLFormElement> >& aFormElement,
+    nsGenericHTMLElement* aSubmitter, ErrorResult& aRv) {
+  RefPtr<FormData> formData;
+  // 1. If form is given, then:
   if (aFormElement.WasPassed()) {
+    // 1.1. If submitter is non-null, then:
+    if (aSubmitter) {
+      nsCOMPtr<nsIFormControl> fc = do_QueryObject(aSubmitter);
+
+      // 1.1.1. If submitter is not a submit button, then throw a TypeError.
+      if (!fc || !fc->IsSubmitControl()) {
+        aRv.ThrowTypeError("The submitter is not a submit button.");
+        return nullptr;
+      }
+
+      // 1.1.2. If submitter's form owner is not this form element, then throw a
+      //      "NotFoundError" DOMException.
+      if (fc->GetForm() != &aFormElement.Value()) {
+        aRv.ThrowNotFoundError("The submitter is not owned by this form.");
+        return nullptr;
+      }
+    }
+
+    // 1.2. Let list be the result of constructing the entry list for form and
+    // submitter.
+    formData =
+        new FormData(aGlobal.GetAsSupports(), UTF_8_ENCODING, aSubmitter);
     aRv = aFormElement.Value().ConstructEntryList(formData);
     if (NS_WARN_IF(aRv.Failed())) {
       return nullptr;
@@ -314,6 +340,8 @@ already_AddRefed<FormData> FormData::Constructor(
     // Step 9. Return a shallow clone of entry list.
     // https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#constructing-form-data-set
     formData = formData->Clone();
+  } else {
+    formData = new FormData(aGlobal.GetAsSupports());
   }
 
   return formData.forget();
@@ -360,4 +388,22 @@ nsresult FormData::CopySubmissionDataTo(
   }
 
   return NS_OK;
+}
+
+CustomElementFormValue FormData::ConvertToCustomElementFormValue() {
+  nsTArray<mozilla::dom::FormDataTuple> formValue;
+  ForEach([&formValue](const nsString& aName,
+                       const OwningBlobOrDirectoryOrUSVString& aValue) -> bool {
+    if (aValue.IsBlob()) {
+      FormDataValue value(WrapNotNull(aValue.GetAsBlob()->Impl()));
+      formValue.AppendElement(mozilla::dom::FormDataTuple(aName, value));
+    } else if (aValue.IsUSVString()) {
+      formValue.AppendElement(
+          mozilla::dom::FormDataTuple(aName, aValue.GetAsUSVString()));
+    } else {
+      MOZ_ASSERT_UNREACHABLE("Can't save FormData entry Directory value!");
+    }
+    return true;
+  });
+  return formValue;
 }

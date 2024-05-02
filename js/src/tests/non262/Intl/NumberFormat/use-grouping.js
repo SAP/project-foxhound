@@ -1,4 +1,4 @@
-// |reftest| skip-if(!this.hasOwnProperty("Intl")||release_or_beta)
+// |reftest| skip-if(!this.hasOwnProperty("Intl"))
 
 const tests = {
   // minimumGroupingDigits is one for "en" (English).
@@ -68,6 +68,8 @@ for (let [useGrouping, expected] of [
 
   ["auto", "auto"],
   [undefined, "auto"],
+  ["true", "auto"],
+  ["false", "auto"],
 
   ["always", "always"],
   [true, "always"],
@@ -78,9 +80,21 @@ for (let [useGrouping, expected] of [
   assertEq(nf.resolvedOptions().useGrouping , expected);
 }
 
-// Invalid values.
-for (let useGrouping of ["true", "false", "none", "yes", "no"]){
+// Throws a RangeError for unsupported values.
+for (let useGrouping of [
+  "none",
+  "yes",
+  "no",
+  {},
+  123,
+  123n,
+]) {
   assertThrowsInstanceOf(() => new Intl.NumberFormat("en", {useGrouping}), RangeError);
+}
+
+// Throws a TypeError if ToString fails.
+for (let useGrouping of [Object.create(null), Symbol()]) {
+  assertThrowsInstanceOf(() => new Intl.NumberFormat("en", {useGrouping}), TypeError);
 }
 
 if (typeof reportCompare === "function")

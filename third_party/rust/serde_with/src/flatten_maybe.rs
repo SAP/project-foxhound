@@ -12,11 +12,6 @@
 /// # Examples
 ///
 /// ```rust
-/// # extern crate serde;
-/// # extern crate serde_json;
-/// # #[macro_use]
-/// # extern crate serde_with;
-/// #
 /// # use serde::Deserialize;
 /// #
 /// // Setup the types
@@ -33,8 +28,7 @@
 ///
 /// // The macro creates custom deserialization code.
 /// // You need to specify a function name and the field name of the flattened field.
-/// flattened_maybe!(deserialize_t, "t");
-///
+/// serde_with::flattened_maybe!(deserialize_t, "t");
 ///
 /// # fn main() {
 /// // Supports both flattened
@@ -56,26 +50,34 @@
 /// ```
 #[macro_export]
 macro_rules! flattened_maybe {
-    // TODO Change $field to literal, once the compiler version is bumped enough.
-    ($fn:ident, $field:expr) => {
-        fn $fn<'de, T, D>(deserializer: D) -> Result<T, D::Error>
+    ($fn:ident, $field:tt) => {
+        fn $fn<'de, T, D>(deserializer: D) -> $crate::__private__::Result<T, D::Error>
         where
-            T: serde::Deserialize<'de>,
-            D: serde::Deserializer<'de>,
+            T: $crate::serde::Deserialize<'de>,
+            D: $crate::serde::Deserializer<'de>,
         {
-            #[derive(serde::Deserialize)]
-            struct Both<T> {
+            use $crate::{
+                __private__::{
+                    Option::{self, None, Some},
+                    Result::{self, Err, Ok},
+                },
+                serde,
+            };
+
+            #[derive($crate::serde::Deserialize)]
+            #[serde(crate = "serde")]
+            pub struct Both<T> {
                 #[serde(flatten)]
                 flat: Option<T>,
                 #[serde(rename = $field)]
                 not_flat: Option<T>,
             }
 
-            let both: Both<T> = serde::Deserialize::deserialize(deserializer)?;
+            let both: Both<T> = $crate::serde::Deserialize::deserialize(deserializer)?;
             match (both.flat, both.not_flat) {
                 (Some(t), None) | (None, Some(t)) => Ok(t),
-                (None, None) => Err(serde::de::Error::missing_field($field)),
-                (Some(_), Some(_)) => Err(serde::de::Error::custom(concat!(
+                (None, None) => Err($crate::serde::de::Error::missing_field($field)),
+                (Some(_), Some(_)) => Err($crate::serde::de::Error::custom(concat!(
                     "`",
                     $field,
                     "` is both flattened and not"

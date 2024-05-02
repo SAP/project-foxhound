@@ -19,7 +19,6 @@
 #include "api/units/data_size.h"
 #include "api/units/time_delta.h"
 #include "api/units/timestamp.h"
-#include "rtc_base/deprecation.h"
 
 namespace webrtc {
 
@@ -159,6 +158,8 @@ struct PacketResult {
   PacketResult(const PacketResult&);
   ~PacketResult();
 
+  inline bool IsReceived() const { return !receive_time.IsPlusInfinity(); }
+
   SentPacket sent_packet;
   Timestamp receive_time = Timestamp::PlusInfinity();
 };
@@ -232,6 +233,12 @@ struct NetworkControlUpdate {
   NetworkControlUpdate();
   NetworkControlUpdate(const NetworkControlUpdate&);
   ~NetworkControlUpdate();
+
+  bool has_updates() const {
+    return congestion_window.has_value() || pacer_config.has_value() ||
+           !probe_cluster_configs.empty() || target_rate.has_value();
+  }
+
   absl::optional<DataSize> congestion_window;
   absl::optional<PacerConfig> pacer_config;
   std::vector<ProbeClusterConfig> probe_cluster_configs;
@@ -240,9 +247,6 @@ struct NetworkControlUpdate {
 
 // Process control
 struct ProcessInterval {
-  ProcessInterval();
-  ProcessInterval(const ProcessInterval&);
-  ~ProcessInterval();
   Timestamp at_time = Timestamp::PlusInfinity();
   absl::optional<DataSize> pacer_queue;
 };

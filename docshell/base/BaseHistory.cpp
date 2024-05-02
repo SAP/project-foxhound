@@ -108,10 +108,6 @@ void BaseHistory::RegisterVisitedCallback(nsIURI* aURI, Link* aLink) {
   // This will not catch a case where it is registered for two different URIs.
   MOZ_DIAGNOSTIC_ASSERT(!links->mLinks.Contains(aLink),
                         "Already tracking this Link object!");
-  // FIXME(emilio): We should consider changing this (see the entry.Remove()
-  // call in NotifyVisitedInThisProcess).
-  MOZ_DIAGNOSTIC_ASSERT(links->mStatus != VisitedStatus::Visited,
-                        "We don't keep tracking known-visited links");
 
   links->mLinks.AppendElement(aLink);
 
@@ -120,9 +116,6 @@ void BaseHistory::RegisterVisitedCallback(nsIURI* aURI, Link* aLink) {
     case VisitedStatus::Unknown:
       break;
     case VisitedStatus::Unvisited:
-      if (!StaticPrefs::layout_css_notify_of_unvisited()) {
-        break;
-      }
       [[fallthrough]];
     case VisitedStatus::Visited:
       aLink->VisitedQueryFinished(links->mStatus == VisitedStatus::Visited);
@@ -163,11 +156,6 @@ void BaseHistory::NotifyVisited(
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(aStatus != VisitedStatus::Unknown);
 
-  if (aStatus == VisitedStatus::Unvisited &&
-      !StaticPrefs::layout_css_notify_of_unvisited()) {
-    return;
-  }
-
   NotifyVisitedInThisProcess(aURI, aStatus);
   if (XRE_IsParentProcess()) {
     NotifyVisitedFromParent(aURI, aStatus, aListOfProcessesToNotify);
@@ -199,15 +187,6 @@ void BaseHistory::NotifyVisitedInThisProcess(nsIURI* aURI,
   for (Link* link : links.mLinks.BackwardRange()) {
     link->VisitedQueryFinished(visited);
   }
-
-  // We never go from visited -> unvisited.
-  //
-  // FIXME(emilio): It seems unfortunate to remove a link to a visited uri and
-  // then re-add it to the document to trigger a new visited query. It shouldn't
-  // if we keep track of mStatus.
-  if (visited) {
-    entry.Remove();
-  }
 }
 
 void BaseHistory::SendPendingVisitedResultsToChildProcesses() {
@@ -229,7 +208,9 @@ void BaseHistory::SendPendingVisitedResultsToChildProcesses() {
         resultsForProcess.AppendElement(result.mResult);
       }
     }
-    Unused << NS_WARN_IF(!cp->SendNotifyVisited(resultsForProcess));
+    if (!resultsForProcess.IsEmpty()) {
+      Unused << NS_WARN_IF(!cp->SendNotifyVisited(resultsForProcess));
+    }
   }
 }
 

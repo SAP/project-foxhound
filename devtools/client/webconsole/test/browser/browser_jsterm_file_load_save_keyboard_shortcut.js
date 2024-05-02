@@ -7,14 +7,12 @@
 
 const TEST_URI =
   "data:text/html;charset=utf-8,<!DOCTYPE html>Test load/save keyboard shortcut";
-const { FileUtils } = ChromeUtils.import(
-  "resource://gre/modules/FileUtils.jsm"
-);
+
 const LOCAL_FILE_NAME = "snippet.js";
 const LOCAL_FILE_ORIGINAL_CONTENT = `"Hello from local file"`;
 const LOCAL_FILE_NEW_CONTENT = `"Hello from console input"`;
 
-add_task(async function() {
+add_task(async function () {
   info("Open the console");
   const hud = await openNewTabAndConsole(TEST_URI);
   is(getInputValue(hud), "", "Input is empty after opening");
@@ -48,7 +46,9 @@ add_task(async function() {
   info("Change the input content");
   await setInputValue(hud, LOCAL_FILE_NEW_CONTENT);
 
-  const nsiFile = FileUtils.getFile("TmpD", [`console_input_${Date.now()}.js`]);
+  const nsiFile = new FileUtils.File(
+    PathUtils.join(PathUtils.tempDir, `console_input_${Date.now()}.js`)
+  );
   MockFilePicker.setFiles([nsiFile]);
 
   info("Save the input content");
@@ -56,8 +56,8 @@ add_task(async function() {
     [isMacOS ? "metaKey" : "ctrlKey"]: true,
   });
 
-  await waitFor(() => OS.File.exists(nsiFile.path));
-  const buffer = await OS.File.read(nsiFile.path);
+  await waitFor(() => IOUtils.exists(nsiFile.path));
+  const buffer = await IOUtils.read(nsiFile.path);
   const fileContent = new TextDecoder().decode(buffer);
   is(
     fileContent,
@@ -68,23 +68,16 @@ add_task(async function() {
 });
 
 async function createLocalFile() {
-  const file = FileUtils.getFile("TmpD", [LOCAL_FILE_NAME]);
+  const file = new FileUtils.File(
+    PathUtils.join(PathUtils.tempDir, LOCAL_FILE_NAME)
+  );
   file.createUnique(Ci.nsIFile.NORMAL_FILE_TYPE, parseInt("666", 8));
   await writeInFile(LOCAL_FILE_ORIGINAL_CONTENT, file);
   return file;
 }
 
-function getUnicodeConverter() {
-  const className = "@mozilla.org/intl/scriptableunicodeconverter";
-  const converter = Cc[className].createInstance(
-    Ci.nsIScriptableUnicodeConverter
-  );
-  converter.charset = "UTF-8";
-  return converter;
-}
-
 function writeInFile(string, file) {
-  const inputStream = getUnicodeConverter().convertToInputStream(string);
+  const inputStream = getInputStream(string);
   const outputStream = FileUtils.openSafeFileOutputStream(file);
 
   return new Promise((resolve, reject) => {

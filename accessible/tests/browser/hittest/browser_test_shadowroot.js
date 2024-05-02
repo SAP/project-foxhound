@@ -7,7 +7,7 @@
 async function runTests(browser, accDoc) {
   const dpr = await getContentDPR(browser);
   let componentAcc = findAccessibleChildByID(accDoc, "component1");
-  testChildAtPoint(
+  await testChildAtPoint(
     dpr,
     1,
     1,
@@ -17,7 +17,7 @@ async function runTests(browser, accDoc) {
   );
 
   componentAcc = findAccessibleChildByID(accDoc, "component2");
-  testChildAtPoint(
+  await testChildAtPoint(
     dpr,
     1,
     1,
@@ -50,7 +50,6 @@ addAccessibleTask(
       var shadow = component.attachShadow({mode: "open"});
       for (var child = component.firstChild; child; child = child.nextSibling) {
         if (child.nodeType === 8)
-          // eslint-disable-next-line no-unsanitized/property
           shadow.innerHTML = child.data;
       }
     }

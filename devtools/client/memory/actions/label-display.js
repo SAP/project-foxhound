@@ -3,16 +3,18 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-const { assert } = require("devtools/shared/DevToolsUtils");
-const { actions } = require("devtools/client/memory/constants");
-const { refresh } = require("devtools/client/memory/actions/refresh");
+const { assert } = require("resource://devtools/shared/DevToolsUtils.js");
+const { actions } = require("resource://devtools/client/memory/constants.js");
+const {
+  refresh,
+} = require("resource://devtools/client/memory/actions/refresh.js");
 
 /**
  * Change the display we use for labeling individual nodes and refresh the
  * current data.
  */
-exports.setLabelDisplayAndRefresh = function(heapWorker, display) {
-  return async function({ dispatch, getState }) {
+exports.setLabelDisplayAndRefresh = function (heapWorker, display) {
+  return async function ({ dispatch, getState }) {
     // Clears out all stored census data and sets the display.
     dispatch(setLabelDisplay(display));
     await dispatch(refresh(heapWorker));
@@ -24,7 +26,7 @@ exports.setLabelDisplayAndRefresh = function(heapWorker, display) {
  *
  * @param {labelDisplayModel} display
  */
-const setLabelDisplay = (exports.setLabelDisplay = function(display) {
+const setLabelDisplay = (exports.setLabelDisplay = function (display) {
   assert(
     typeof display === "object" &&
       display &&

@@ -1,6 +1,7 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+#include "mozilla/Try.h"
 #include "mozilla/intl/NumberFormat.h"
 #include "NumberFormatFields.h"
 #include "NumberFormatterSkeleton.h"
@@ -53,7 +54,7 @@ Result<std::u16string_view, ICUError> NumberFormat::formatToParts(
     return Err(ICUError::InternalError);
   }
 
-  bool isNegative = !IsNaN(number) && IsNegative(number);
+  bool isNegative = !std::isnan(number) && IsNegative(number);
 
   return FormatResultToParts(mFormattedNumber, Some(number), isNegative,
                              mFormatForUnit, parts);
@@ -110,7 +111,7 @@ bool NumberFormat::formatInternal(double number) const {
   // ICU incorrectly formats NaN values with the sign bit set, as if they
   // were negative.  Replace all NaNs with a single pattern with sign bit
   // unset ("positive", that is) until ICU is fixed.
-  if (MOZ_UNLIKELY(IsNaN(number))) {
+  if (MOZ_UNLIKELY(std::isnan(number))) {
     number = SpecificNaN<double>(0, 1);
   }
 

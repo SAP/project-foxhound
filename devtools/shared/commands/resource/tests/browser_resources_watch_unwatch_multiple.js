@@ -5,7 +5,7 @@
 
 // Check that watching/unwatching multiple times works as expected
 
-add_task(async function() {
+add_task(async function () {
   const TEST_URL = "data:text/html;charset=utf-8,<!DOCTYPE html>foo";
   const tab = await addTab(TEST_URL);
 
@@ -22,6 +22,11 @@ add_task(async function() {
   await resourceCommand.watchResources([resourceCommand.TYPES.ERROR_MESSAGE], {
     onAvailable,
   });
+
+  ok(
+    resourceCommand.isResourceWatched(resourceCommand.TYPES.ERROR_MESSAGE),
+    "The error message resource is currently been watched."
+  );
 
   is(
     resources.length,
@@ -50,6 +55,11 @@ add_task(async function() {
   resourceCommand.unwatchResources([resourceCommand.TYPES.ERROR_MESSAGE], {
     onAvailable,
   });
+
+  ok(
+    !resourceCommand.isResourceWatched(resourceCommand.TYPES.ERROR_MESSAGE),
+    "The error message resource is no longer been watched."
+  );
   // clearing resources
   resources = [];
 
@@ -57,6 +67,11 @@ add_task(async function() {
   await resourceCommand.watchResources([resourceCommand.TYPES.ERROR_MESSAGE], {
     onAvailable,
   });
+
+  ok(
+    resourceCommand.isResourceWatched(resourceCommand.TYPES.ERROR_MESSAGE),
+    "The error message resource is been watched again."
+  );
   is(
     resources.length,
     1,

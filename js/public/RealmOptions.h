@@ -14,10 +14,12 @@
 #define js_RealmOptions_h
 
 #include "mozilla/Assertions.h"  // MOZ_ASSERT
+#include "mozilla/Maybe.h"
 
 #include "jstypes.h"  // JS_PUBLIC_API
 
 #include "js/Class.h"  // JSTraceOp
+#include "js/RefCounted.h"
 
 struct JS_PUBLIC_API JSContext;
 class JS_PUBLIC_API JSObject;
@@ -58,6 +60,14 @@ enum class WeakRefSpecifier {
   Disabled,
   EnabledWithCleanupSome,
   EnabledWithoutCleanupSome
+};
+
+struct LocaleString : js::RefCounted<LocaleString> {
+  const char* chars_;
+
+  explicit LocaleString(const char* chars) : chars_(chars) {}
+
+  auto chars() const { return chars_; }
 };
 
 /**
@@ -172,40 +182,6 @@ class JS_PUBLIC_API RealmCreationOptions {
   bool getCoopAndCoepEnabled() const;
   RealmCreationOptions& setCoopAndCoepEnabled(bool flag);
 
-  bool getStreamsEnabled() const { return streams_; }
-  RealmCreationOptions& setStreamsEnabled(bool flag) {
-#ifndef MOZ_DOM_STREAMS
-    streams_ = flag;
-#else
-    MOZ_ASSERT(!streams_);
-#endif
-    return *this;
-  }
-
-  bool getReadableByteStreamsEnabled() const { return readableByteStreams_; }
-  RealmCreationOptions& setReadableByteStreamsEnabled(bool flag) {
-    readableByteStreams_ = flag;
-    return *this;
-  }
-
-  bool getBYOBStreamReadersEnabled() const { return byobStreamReaders_; }
-  RealmCreationOptions& setBYOBStreamReadersEnabled(bool enabled) {
-    byobStreamReaders_ = enabled;
-    return *this;
-  }
-
-  bool getWritableStreamsEnabled() const { return writableStreams_; }
-  RealmCreationOptions& setWritableStreamsEnabled(bool enabled) {
-    writableStreams_ = enabled;
-    return *this;
-  }
-
-  bool getReadableStreamPipeToEnabled() const { return readableStreamPipeTo_; }
-  RealmCreationOptions& setReadableStreamPipeToEnabled(bool enabled) {
-    readableStreamPipeTo_ = enabled;
-    return *this;
-  }
-
   WeakRefSpecifier getWeakRefsEnabled() const { return weakRefs_; }
   RealmCreationOptions& setWeakRefsEnabled(WeakRefSpecifier spec) {
     weakRefs_ = spec;
@@ -232,18 +208,42 @@ class JS_PUBLIC_API RealmCreationOptions {
     return *this;
   }
 
-#ifdef NIGHTLY_BUILD
+  bool getShadowRealmsEnabled() const { return shadowRealms_; }
+  RealmCreationOptions& setShadowRealmsEnabled(bool flag) {
+    shadowRealms_ = flag;
+    return *this;
+  }
+
+  bool getWellFormedUnicodeStringsEnabled() const {
+    return wellFormedUnicodeStrings_;
+  }
+  RealmCreationOptions& setWellFormedUnicodeStringsEnabled(bool flag) {
+    wellFormedUnicodeStrings_ = flag;
+    return *this;
+  }
+
   bool getArrayGroupingEnabled() const { return arrayGrouping_; }
   RealmCreationOptions& setArrayGroupingEnabled(bool flag) {
     arrayGrouping_ = flag;
     return *this;
   }
-#endif
 
-#ifdef ENABLE_NEW_SET_METHODS
+#ifdef NIGHTLY_BUILD
   bool getNewSetMethodsEnabled() const { return newSetMethods_; }
   RealmCreationOptions& setNewSetMethodsEnabled(bool flag) {
     newSetMethods_ = flag;
+    return *this;
+  }
+
+  bool getArrayBufferTransferEnabled() const { return arrayBufferTransfer_; }
+  RealmCreationOptions& setArrayBufferTransferEnabled(bool flag) {
+    arrayBufferTransfer_ = flag;
+    return *this;
+  }
+
+  bool getSymbolsAsWeakMapKeysEnabled() const { return symbolsAsWeakMapKeys_; }
+  RealmCreationOptions& setSymbolsAsWeakMapKeysEnabled(bool flag) {
+    symbolsAsWeakMapKeys_ = flag;
     return *this;
   }
 #endif
@@ -255,6 +255,35 @@ class JS_PUBLIC_API RealmCreationOptions {
   bool secureContext() const { return secureContext_; }
   RealmCreationOptions& setSecureContext(bool flag) {
     secureContext_ = flag;
+    return *this;
+  }
+
+  // Non-standard option to freeze certain builtin constructors and seal their
+  // prototypes. Also defines these constructors on the global as non-writable
+  // and non-configurable.
+  bool freezeBuiltins() const { return freezeBuiltins_; }
+  RealmCreationOptions& setFreezeBuiltins(bool flag) {
+    freezeBuiltins_ = flag;
+    return *this;
+  }
+
+  // Force all date/time methods in JavaScript to use the UTC timezone for
+  // fingerprinting protection.
+  bool forceUTC() const { return forceUTC_; }
+  RealmCreationOptions& setForceUTC(bool flag) {
+    forceUTC_ = flag;
+    return *this;
+  }
+
+  RefPtr<LocaleString> locale() const { return locale_; }
+  RealmCreationOptions& setLocaleCopyZ(const char* locale);
+
+  // Always use the fdlibm implementation of math functions instead of the
+  // platform native libc implementations. Useful for fingerprinting protection
+  // and cross-platform consistency.
+  bool alwaysUseFdlibm() const { return alwaysUseFdlibm_; }
+  RealmCreationOptions& setAlwaysUseFdlibm(bool flag) {
+    alwaysUseFdlibm_ = flag;
     return *this;
   }
 
@@ -272,27 +301,37 @@ class JS_PUBLIC_API RealmCreationOptions {
     Zone* zone_;
   };
   uint64_t profilerRealmID_ = 0;
+  RefPtr<LocaleString> locale_;
   WeakRefSpecifier weakRefs_ = WeakRefSpecifier::Disabled;
   bool invisibleToDebugger_ = false;
   bool preserveJitCode_ = false;
   bool sharedMemoryAndAtomics_ = false;
   bool defineSharedArrayBufferConstructor_ = true;
   bool coopAndCoep_ = false;
-  bool streams_ = false;
-  bool readableByteStreams_ = false;
-  bool byobStreamReaders_ = false;
-  bool writableStreams_ = false;
-  bool readableStreamPipeTo_ = false;
   bool toSource_ = false;
   bool propertyErrorMessageFix_ = false;
   bool iteratorHelpers_ = false;
-#ifdef NIGHTLY_BUILD
+  bool shadowRealms_ = false;
+  // Pref for String.prototype.{is,to}WellFormed() methods.
+  bool wellFormedUnicodeStrings_ = true;
   bool arrayGrouping_ = true;
-#endif
-#ifdef ENABLE_NEW_SET_METHODS
+#ifdef NIGHTLY_BUILD
+  // Pref for new Set.prototype methods.
   bool newSetMethods_ = false;
+  // Pref for ArrayBuffer.prototype.transfer{,ToFixedLength}() methods.
+  bool arrayBufferTransfer_ = false;
+  bool symbolsAsWeakMapKeys_ = false;
 #endif
   bool secureContext_ = false;
+  bool freezeBuiltins_ = false;
+  bool forceUTC_ = false;
+  bool alwaysUseFdlibm_ = false;
+};
+
+// This is a wrapper for mozilla::RTPCallerType, that can't easily
+// be exposed to the JS engine for layering reasons.
+struct RTPCallerTypeToken {
+  uint8_t value;
 };
 
 /**
@@ -302,6 +341,17 @@ class JS_PUBLIC_API RealmCreationOptions {
 class JS_PUBLIC_API RealmBehaviors {
  public:
   RealmBehaviors() = default;
+
+  // When a JS::ReduceMicrosecondTimePrecisionCallback callback is defined via
+  // JS::SetReduceMicrosecondTimePrecisionCallback, a JS::RTPCallerTypeToken (a
+  // wrapper for mozilla::RTPCallerType) needs to be set for every Realm.
+  mozilla::Maybe<RTPCallerTypeToken> reduceTimerPrecisionCallerType() const {
+    return rtpCallerType;
+  }
+  RealmBehaviors& setReduceTimerPrecisionCallerType(RTPCallerTypeToken type) {
+    rtpCallerType = mozilla::Some(type);
+    return *this;
+  }
 
   // For certain globals, we know enough about the code that will run in them
   // that we can discard script source entirely.
@@ -317,29 +367,6 @@ class JS_PUBLIC_API RealmBehaviors {
     return *this;
   }
 
-  class Override {
-   public:
-    Override() : mode_(Default) {}
-
-    bool get(bool defaultValue) const {
-      if (mode_ == Default) {
-        return defaultValue;
-      }
-      return mode_ == ForceTrue;
-    }
-
-    void set(bool overrideValue) {
-      mode_ = overrideValue ? ForceTrue : ForceFalse;
-    }
-
-    void reset() { mode_ = Default; }
-
-   private:
-    enum Mode { Default, ForceTrue, ForceFalse };
-
-    Mode mode_;
-  };
-
   // A Realm can stop being "live" in all the ways that matter before its global
   // is actually GCed.  Consumers that tear down parts of a Realm or its global
   // before that point should set isNonLive accordingly.
@@ -350,6 +377,7 @@ class JS_PUBLIC_API RealmBehaviors {
   }
 
  private:
+  mozilla::Maybe<RTPCallerTypeToken> rtpCallerType;
   bool discardSource_ = false;
   bool clampAndJitterTime_ = true;
   bool isNonLive_ = false;
@@ -397,6 +425,11 @@ extern JS_PUBLIC_API const RealmBehaviors& RealmBehaviorsRef(Realm* realm);
 extern JS_PUBLIC_API const RealmBehaviors& RealmBehaviorsRef(JSContext* cx);
 
 extern JS_PUBLIC_API void SetRealmNonLive(Realm* realm);
+
+// This behaves like RealmBehaviors::setReduceTimerPrecisionCallerType, but
+// can be used even after the Realm has already been created.
+extern JS_PUBLIC_API void SetRealmReduceTimerPrecisionCallerType(
+    Realm* realm, RTPCallerTypeToken type);
 
 }  // namespace JS
 

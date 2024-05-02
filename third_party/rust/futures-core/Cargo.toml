@@ -13,16 +13,26 @@
 edition = "2018"
 rust-version = "1.36"
 name = "futures-core"
-version = "0.3.19"
-description = "The core traits and types in for the `futures` library.\n"
+version = "0.3.28"
+description = """
+The core traits and types in for the `futures` library.
+"""
 homepage = "https://rust-lang.github.io/futures-rs"
+readme = "README.md"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/rust-lang/futures-rs"
+
 [package.metadata.docs.rs]
 all-features = true
-rustdoc-args = ["--cfg", "docsrs"]
+rustdoc-args = [
+    "--cfg",
+    "docsrs",
+]
 
-[dependencies]
+[dependencies.portable-atomic]
+version = "1"
+optional = true
+default-features = false
 
 [dev-dependencies]
 

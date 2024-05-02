@@ -1,0 +1,49 @@
+<!DOCTYPE HTML>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>Test Cookie Sinks</title>
+    <script src="/tests/SimpleTest/SimpleTest.js"></script>
+    <link rel="stylesheet" href="/tests/SimpleTest/test.css"/>
+    <script>
+
+      let string_content = "hello";
+      let sink_names = [
+          "a.href",
+          "area.href",
+      ];
+
+      let i = 0;
+      
+      SimpleTest.waitForExplicitFinish();
+      addEventListener("__taintreport", (report) => {
+          SimpleTest.is(report.detail.str, "tainted_url", "Check sink string content");
+
+          let flow = report.detail.str.taint[0].flow;
+          SimpleTest.is(flow[2].operation, sink_names[i]);
+
+          i += 1;
+          if (i >= sink_names.length) {
+              SimpleTest.finish();
+          }
+      }, false);
+
+      function startTest() {
+          let link = document.getElementById("link");
+          link.href = String.tainted("tainted_url");
+
+          let area = document.getElementById("area");
+          area.href = String.tainted("tainted_url");
+      }
+      
+    </script>
+  </head>
+
+  <body onload="startTest();">
+      <a id="link">
+      <map name="idk">
+          <area id="area">
+      </map>
+  </body>
+
+</html>

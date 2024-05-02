@@ -31,12 +31,14 @@
 static void codec_parameters_reset(AVCodecParameters *par)
 {
     av_freep(&par->extradata);
+    av_channel_layout_uninit(&par->ch_layout);
 
     memset(par, 0, sizeof(*par));
 
     par->codec_type          = AVMEDIA_TYPE_UNKNOWN;
     par->codec_id            = AV_CODEC_ID_NONE;
     par->format              = -1;
+    par->ch_layout.order     = AV_CHANNEL_ORDER_UNSPEC;
     par->field_order         = AV_FIELD_UNKNOWN;
     par->color_range         = AVCOL_RANGE_UNSPECIFIED;
     par->color_primaries     = AVCOL_PRI_UNSPECIFIED;
@@ -44,6 +46,7 @@ static void codec_parameters_reset(AVCodecParameters *par)
     par->color_space         = AVCOL_SPC_UNSPECIFIED;
     par->chroma_location     = AVCHROMA_LOC_UNSPECIFIED;
     par->sample_aspect_ratio = (AVRational){ 0, 1 };
+    par->framerate           = (AVRational){ 0, 1 };
     par->profile             = FF_PROFILE_UNKNOWN;
     par->level               = FF_LEVEL_UNKNOWN;
 }
@@ -71,9 +74,12 @@ void avcodec_parameters_free(AVCodecParameters **ppar)
 
 int avcodec_parameters_copy(AVCodecParameters *dst, const AVCodecParameters *src)
 {
+    int ret;
+
     codec_parameters_reset(dst);
     memcpy(dst, src, sizeof(*dst));
 
+    dst->ch_layout      = (AVChannelLayout){0};
     dst->extradata      = NULL;
     dst->extradata_size = 0;
     if (src->extradata) {
@@ -84,12 +90,18 @@ int avcodec_parameters_copy(AVCodecParameters *dst, const AVCodecParameters *src
         dst->extradata_size = src->extradata_size;
     }
 
+    ret = av_channel_layout_copy(&dst->ch_layout, &src->ch_layout);
+    if (ret < 0)
+        return ret;
+
     return 0;
 }
 
 int avcodec_parameters_from_context(AVCodecParameters *par,
                                     const AVCodecContext *codec)
 {
+    int ret;
+
     codec_parameters_reset(par);
 
     par->codec_type = codec->codec_type;
@@ -115,11 +127,36 @@ int avcodec_parameters_from_context(AVCodecParameters *par,
         par->chroma_location     = codec->chroma_sample_location;
         par->sample_aspect_ratio = codec->sample_aspect_ratio;
         par->video_delay         = codec->has_b_frames;
+        par->framerate           = codec->framerate;
         break;
     case AVMEDIA_TYPE_AUDIO:
         par->format           = codec->sample_fmt;
-        par->channel_layout   = codec->channel_layout;
-        par->channels         = codec->channels;
+#if FF_API_OLD_CHANNEL_LAYOUT
+FF_DISABLE_DEPRECATION_WARNINGS
+        // if the old/new fields are set inconsistently, prefer the old ones
+        if ((codec->channels && codec->channels != codec->ch_layout.nb_channels) ||
+            (codec->channel_layout && (codec->ch_layout.order != AV_CHANNEL_ORDER_NATIVE ||
+                                       codec->ch_layout.u.mask != codec->channel_layout))) {
+            if (codec->channel_layout)
+                av_channel_layout_from_mask(&par->ch_layout, codec->channel_layout);
+            else {
+                par->ch_layout.order       = AV_CHANNEL_ORDER_UNSPEC;
+                par->ch_layout.nb_channels = codec->channels;
+            }
+FF_ENABLE_DEPRECATION_WARNINGS
+        } else {
+#endif
+        ret = av_channel_layout_copy(&par->ch_layout, &codec->ch_layout);
+        if (ret < 0)
+            return ret;
+#if FF_API_OLD_CHANNEL_LAYOUT
+FF_DISABLE_DEPRECATION_WARNINGS
+        }
+        par->channel_layout  = par->ch_layout.order == AV_CHANNEL_ORDER_NATIVE ?
+                               par->ch_layout.u.mask : 0;
+        par->channels        = par->ch_layout.nb_channels;
+FF_ENABLE_DEPRECATION_WARNINGS
+#endif
         par->sample_rate      = codec->sample_rate;
         par->block_align      = codec->block_align;
         par->frame_size       = codec->frame_size;
@@ -147,6 +184,8 @@ int avcodec_parameters_from_context(AVCodecParameters *par,
 int avcodec_parameters_to_context(AVCodecContext *codec,
                                   const AVCodecParameters *par)
 {
+    int ret;
+
     codec->codec_type = par->codec_type;
     codec->codec_id   = par->codec_id;
     codec->codec_tag  = par->codec_tag;
@@ -170,11 +209,36 @@ int avcodec_parameters_to_context(AVCodecContext *codec,
         codec->chroma_sample_location = par->chroma_location;
         codec->sample_aspect_ratio    = par->sample_aspect_ratio;
         codec->has_b_frames           = par->video_delay;
+        codec->framerate              = par->framerate;
         break;
     case AVMEDIA_TYPE_AUDIO:
         codec->sample_fmt       = par->format;
-        codec->channel_layout   = par->channel_layout;
-        codec->channels         = par->channels;
+#if FF_API_OLD_CHANNEL_LAYOUT
+FF_DISABLE_DEPRECATION_WARNINGS
+        // if the old/new fields are set inconsistently, prefer the old ones
+        if ((par->channels && par->channels != par->ch_layout.nb_channels) ||
+            (par->channel_layout && (par->ch_layout.order != AV_CHANNEL_ORDER_NATIVE ||
+                                     par->ch_layout.u.mask != par->channel_layout))) {
+            if (par->channel_layout)
+                av_channel_layout_from_mask(&codec->ch_layout, par->channel_layout);
+            else {
+                codec->ch_layout.order       = AV_CHANNEL_ORDER_UNSPEC;
+                codec->ch_layout.nb_channels = par->channels;
+            }
+FF_ENABLE_DEPRECATION_WARNINGS
+        } else {
+#endif
+        ret = av_channel_layout_copy(&codec->ch_layout, &par->ch_layout);
+        if (ret < 0)
+            return ret;
+#if FF_API_OLD_CHANNEL_LAYOUT
+FF_DISABLE_DEPRECATION_WARNINGS
+        }
+        codec->channel_layout = codec->ch_layout.order == AV_CHANNEL_ORDER_NATIVE ?
+                                codec->ch_layout.u.mask : 0;
+        codec->channels       = codec->ch_layout.nb_channels;
+FF_ENABLE_DEPRECATION_WARNINGS
+#endif
         codec->sample_rate      = par->sample_rate;
         codec->block_align      = par->block_align;
         codec->frame_size       = par->frame_size;
@@ -189,8 +253,8 @@ int avcodec_parameters_to_context(AVCodecContext *codec,
         break;
     }
 
+    av_freep(&codec->extradata);
     if (par->extradata) {
-        av_freep(&codec->extradata);
         codec->extradata = av_mallocz(par->extradata_size + AV_INPUT_BUFFER_PADDING_SIZE);
         if (!codec->extradata)
             return AVERROR(ENOMEM);

@@ -1,5 +1,3 @@
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-
 do_get_profile();
 const dirSvc = Services.dirsvc;
 
@@ -59,7 +57,7 @@ conn.executeSimpleSQL(
 
 // Now start the cookie service, and then check the fields in the table.
 // Get sessionCookies to wait for the initialization in cookie thread
-const cookies = Services.cookies.sessionCookies;
+Services.cookies.sessionCookies;
 
 Assert.equal(conn.schemaVersion, 12);
 let stmt = conn.createStatement(

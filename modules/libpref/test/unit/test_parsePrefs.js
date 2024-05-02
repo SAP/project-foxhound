@@ -3,8 +3,6 @@
 
 "use strict";
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-
 // // This undoes some of the configuration from
 // Services.dirsvc
 //   .QueryInterface(Ci.nsIDirectoryService)
@@ -91,8 +89,8 @@ add_task(async function test_success() {
 });
 
 add_task(async function test_exceptions() {
-  const { AddonTestUtils } = ChromeUtils.import(
-    "resource://testing-common/AddonTestUtils.jsm"
+  const { AddonTestUtils } = ChromeUtils.importESModule(
+    "resource://testing-common/AddonTestUtils.sys.mjs"
   );
 
   let s = `user_pref("testPref.bool1", true);

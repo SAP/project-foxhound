@@ -8,16 +8,21 @@
 
 #include "mozilla/gmp/PGMPContentParent.h"
 #include "GMPSharedMemManager.h"
+#include "GMPNativeTypes.h"
 #include "nsISupportsImpl.h"
 
-namespace mozilla {
-namespace gmp {
+namespace mozilla::gmp {
 
+class GMPContentParentCloseBlocker;
 class GMPParent;
 class GMPVideoDecoderParent;
 class GMPVideoEncoderParent;
 class ChromiumCDMParent;
 
+/**
+ * This class allows the parent/content processes to create GMP decoder/encoder
+ * objects in the GMP process.
+ */
 class GMPContentParent final : public PGMPContentParent, public GMPSharedMem {
   friend class PGMPContentParent;
 
@@ -46,24 +51,15 @@ class GMPContentParent final : public PGMPContentParent, public GMPSharedMem {
   void SetDisplayName(const nsCString& aDisplayName) {
     mDisplayName = aDisplayName;
   }
-  const nsCString& GetDisplayName() { return mDisplayName; }
+  const nsCString& GetDisplayName() const { return mDisplayName; }
   void SetPluginId(const uint32_t aPluginId) { mPluginId = aPluginId; }
   uint32_t GetPluginId() const { return mPluginId; }
-
-  class CloseBlocker {
-   public:
-    NS_INLINE_DECL_THREADSAFE_REFCOUNTING(CloseBlocker)
-
-    explicit CloseBlocker(GMPContentParent* aParent) : mParent(aParent) {
-      mParent->AddCloseBlocker();
-    }
-    RefPtr<GMPContentParent> mParent;
-
-   private:
-    ~CloseBlocker() { mParent->RemoveCloseBlocker(); }
-  };
+  void SetPluginType(GMPPluginType aPluginType) { mPluginType = aPluginType; }
+  GMPPluginType GetPluginType() const { return mPluginType; }
 
  private:
+  friend class GMPContentParentCloseBlocker;
+
   void AddCloseBlocker();
   void RemoveCloseBlocker();
 
@@ -83,10 +79,30 @@ class GMPContentParent final : public PGMPContentParent, public GMPSharedMem {
   RefPtr<GMPParent> mParent;
   nsCString mDisplayName;
   uint32_t mPluginId;
+  GMPPluginType mPluginType = GMPPluginType::Unknown;
   uint32_t mCloseBlockerCount = 0;
 };
 
-}  // namespace gmp
-}  // namespace mozilla
+class GMPContentParentCloseBlocker final {
+ public:
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(GMPContentParentCloseBlocker)
+
+  explicit GMPContentParentCloseBlocker(GMPContentParent* aParent)
+      : mParent(aParent), mEventTarget(aParent->GMPEventTarget()) {
+    MOZ_ASSERT(mEventTarget);
+    mParent->AddCloseBlocker();
+  }
+
+  void Destroy();
+
+  RefPtr<GMPContentParent> mParent;
+
+ private:
+  nsCOMPtr<nsISerialEventTarget> mEventTarget;
+
+  ~GMPContentParentCloseBlocker() { Destroy(); }
+};
+
+}  // namespace mozilla::gmp
 
 #endif  // GMPParent_h_

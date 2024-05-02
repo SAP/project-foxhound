@@ -9,8 +9,7 @@
 
 NS_IMPL_NS_NEW_SVG_ELEMENT(TSpan)
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 JSObject* SVGTSpanElement::WrapNode(JSContext* aCx,
                                     JS::Handle<JSObject*> aGivenProto) {
@@ -38,18 +37,4 @@ SVGElement::LengthAttributesInfo SVGTSpanElement::GetLengthInfo() {
 
 NS_IMPL_ELEMENT_CLONE_WITH_INIT(SVGTSpanElement)
 
-//----------------------------------------------------------------------
-// nsIContent methods
-
-NS_IMETHODIMP_(bool)
-SVGTSpanElement::IsAttributeMapped(const nsAtom* name) const {
-  static const MappedAttributeEntry* const map[] = {
-      sColorMap, sFillStrokeMap, sFontSpecificationMap, sGraphicsMap,
-      sTextContentElementsMap};
-
-  return FindAttributeDependence(name, map) ||
-         SVGTSpanElementBase::IsAttributeMapped(name);
-}
-
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

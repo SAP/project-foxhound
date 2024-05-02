@@ -25,7 +25,6 @@ class AndroidVsyncSupport;
  */
 class AndroidVsync final : public SupportsThreadSafeWeakPtr<AndroidVsync> {
  public:
-  MOZ_DECLARE_THREADSAFEWEAKREFERENCE_TYPENAME(AndroidVsync)
   MOZ_DECLARE_REFCOUNTED_TYPENAME(AndroidVsync)
 
   static RefPtr<AndroidVsync> GetInstance();
@@ -36,6 +35,12 @@ class AndroidVsync final : public SupportsThreadSafeWeakPtr<AndroidVsync> {
    public:
     // Will be called on the Java UI thread.
     virtual void OnVsync(const TimeStamp& aTimeStamp) = 0;
+    // Will be called on the Java UI thread.
+    virtual void OnMaybeUpdateRefreshRate() {}
+    // Called when the observer is unregistered, in case it wants to
+    // manage its own lifetime.
+    virtual void Dispose() {}
+    virtual ~Observer() = default;
   };
 
   // INPUT observers are called before RENDER observers.
@@ -43,7 +48,7 @@ class AndroidVsync final : public SupportsThreadSafeWeakPtr<AndroidVsync> {
   void RegisterObserver(Observer* aObserver, ObserverType aType);
   void UnregisterObserver(Observer* aObserver, ObserverType aType);
 
-  TimeDuration GetVsyncRate();
+  void OnMaybeUpdateRefreshRate();
 
  private:
   friend class AndroidVsyncSupport;
@@ -56,7 +61,6 @@ class AndroidVsync final : public SupportsThreadSafeWeakPtr<AndroidVsync> {
   struct Impl {
     void UpdateObservingVsync();
 
-    TimeDuration mVsyncDuration;
     nsTArray<Observer*> mInputObservers;
     nsTArray<Observer*> mRenderObservers;
     RefPtr<AndroidVsyncSupport> mSupport;

@@ -17,15 +17,19 @@
 #include "nsIChannelEventSink.h"
 #include "nsIInputStream.h"
 #include "nsISupportsImpl.h"
+#include "mozilla/net/NeckoChannelParams.h"
 #ifdef DEBUG
 #  include "nsIURLParser.h"
 #  include "nsNetCID.h"
 #  include "nsServiceManagerUtils.h"
 #endif
 
+using mozilla::net::RedirectHistoryEntryInfo;
+
 namespace mozilla {
 
 namespace ipc {
+class PBackgroundChild;
 class PrincipalInfo;
 }  // namespace ipc
 
@@ -66,7 +70,7 @@ namespace dom {
  *                   | TYPE_STYLESHEET
  * "track"           | TYPE_INTERNAL_TRACK
  * "video"           | TYPE_INTERNAL_VIDEO
- * "worker"          | TYPE_INTERNAL_WORKER
+ * "worker"          | TYPE_INTERNAL_WORKER, TYPE_INTERNAL_WORKER_STATIC_MODULE
  * "xslt"            | TYPE_XSLT
  * ""                | Default for everything else.
  *
@@ -93,6 +97,9 @@ class InternalRequest final : public AtomicSafeRefCounted<InternalRequest> {
                   const nsAString& aIntegrity);
 
   explicit InternalRequest(const IPCInternalRequest& aIPCRequest);
+
+  void ToIPCInternalRequest(IPCInternalRequest* aIPCRequest,
+                            mozilla::ipc::PBackgroundChild* aManager);
 
   SafeRefPtr<InternalRequest> Clone();
 
@@ -209,6 +216,10 @@ class InternalRequest final : public AtomicSafeRefCounted<InternalRequest> {
 
   void SetSkipServiceWorker() { mSkipServiceWorker = true; }
 
+  bool SkipWasmCaching() const { return mSkipWasmCaching; }
+
+  void SetSkipWasmCaching() { mSkipWasmCaching = true; }
+
   bool IsSynchronous() const { return mSynchronous; }
 
   RequestMode Mode() const { return mMode; }
@@ -322,7 +333,6 @@ class InternalRequest final : public AtomicSafeRefCounted<InternalRequest> {
 
   // Takes ownership of the principal info.
   void SetPrincipalInfo(UniquePtr<mozilla::ipc::PrincipalInfo> aPrincipalInfo);
-
   const UniquePtr<mozilla::ipc::PrincipalInfo>& GetPrincipalInfo() const {
     return mPrincipalInfo;
   }
@@ -345,6 +355,36 @@ class InternalRequest final : public AtomicSafeRefCounted<InternalRequest> {
 
   nsILoadInfo::CrossOriginEmbedderPolicy GetEmbedderPolicy() const {
     return mEmbedderPolicy;
+  }
+
+  void SetInterceptionTriggeringPrincipalInfo(
+      UniquePtr<mozilla::ipc::PrincipalInfo> aPrincipalInfo);
+
+  const UniquePtr<mozilla::ipc::PrincipalInfo>&
+  GetInterceptionTriggeringPrincipalInfo() const {
+    return mInterceptionTriggeringPrincipalInfo;
+  }
+
+  nsContentPolicyType InterceptionContentPolicyType() const {
+    return mInterceptionContentPolicyType;
+  }
+  void SetInterceptionContentPolicyType(nsContentPolicyType aContentPolicyType);
+
+  const nsTArray<RedirectHistoryEntryInfo>& InterceptionRedirectChain() const {
+    return mInterceptionRedirectChain;
+  }
+
+  void SetInterceptionRedirectChain(
+      const nsTArray<RedirectHistoryEntryInfo>& aRedirectChain) {
+    mInterceptionRedirectChain = aRedirectChain;
+  }
+
+  const bool& InterceptionFromThirdParty() const {
+    return mInterceptionFromThirdParty;
+  }
+
+  void SetInterceptionFromThirdParty(bool aFromThirdParty) {
+    mInterceptionFromThirdParty = aFromThirdParty;
   }
 
  private:
@@ -409,6 +449,7 @@ class InternalRequest final : public AtomicSafeRefCounted<InternalRequest> {
   bool mMozErrors = false;
   nsCString mFragment;
   bool mSkipServiceWorker = false;
+  bool mSkipWasmCaching = false;
   bool mSynchronous = false;
   bool mUnsafeRequest = false;
   bool mUseURLCredentials = false;
@@ -420,6 +461,26 @@ class InternalRequest final : public AtomicSafeRefCounted<InternalRequest> {
       nsILoadInfo::EMBEDDER_POLICY_NULL;
 
   UniquePtr<mozilla::ipc::PrincipalInfo> mPrincipalInfo;
+
+  // Following members are specific for the FetchEvent.request or
+  // NavigationPreload request which is extracted from the
+  // InterceptedHttpChannel.
+  // Notice that these members would not be copied when calling
+  // InternalRequest::GetRequestConstructorCopy() since these information should
+  // not be propagated when copying the Request in ServiceWorker script.
+
+  // This is the trigging principalInfo of the InterceptedHttpChannel.
+  UniquePtr<mozilla::ipc::PrincipalInfo> mInterceptionTriggeringPrincipalInfo;
+
+  // This is the contentPolicyType of the InterceptedHttpChannel.
+  nsContentPolicyType mInterceptionContentPolicyType{
+      nsIContentPolicy::TYPE_INVALID};
+
+  // This is the redirect history of the InterceptedHttpChannel.
+  CopyableTArray<RedirectHistoryEntryInfo> mInterceptionRedirectChain;
+
+  // This indicates that the InterceptedHttpChannel is a third party channel.
+  bool mInterceptionFromThirdParty{false};
 };
 
 }  // namespace dom

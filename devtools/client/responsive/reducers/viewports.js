@@ -4,8 +4,6 @@
 
 "use strict";
 
-const Services = require("Services");
-
 const {
   ADD_VIEWPORT,
   CHANGE_DEVICE,
@@ -16,7 +14,7 @@ const {
   RESIZE_VIEWPORT,
   ROTATE_VIEWPORT,
   ZOOM_VIEWPORT,
-} = require("devtools/client/responsive/actions/index");
+} = require("resource://devtools/client/responsive/actions/index.js");
 
 const VIEWPORT_WIDTH_PREF = "devtools.responsive.viewport.width";
 const VIEWPORT_HEIGHT_PREF = "devtools.responsive.viewport.height";
@@ -205,7 +203,7 @@ const reducers = {
   },
 };
 
-module.exports = function(viewports = INITIAL_VIEWPORTS, action) {
+module.exports = function (viewports = INITIAL_VIEWPORTS, action) {
   const reducer = reducers[action.type];
   if (!reducer) {
     return viewports;

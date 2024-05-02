@@ -4,6 +4,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "ExtensionPort.h"
+#include "ExtensionBrowser.h"
 #include "ExtensionEventManager.h"
 
 #include "mozilla/dom/BindingUtils.h"  // SequenceRooter
@@ -17,7 +18,7 @@ namespace extensions {
 NS_IMPL_CYCLE_COLLECTING_ADDREF(ExtensionPort);
 NS_IMPL_CYCLE_COLLECTING_RELEASE(ExtensionPort)
 
-NS_IMPL_CYCLE_COLLECTION_CLASS(ExtensionPort)
+NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(ExtensionPort)
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(ExtensionPort)
   // Clean the entry for this instance from the ports lookup map
@@ -34,12 +35,13 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(ExtensionPort)
                                     mOnMessageEventMgr)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
-NS_IMPL_CYCLE_COLLECTION_TRACE_WRAPPERCACHE(ExtensionPort)
-
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(ExtensionPort)
   NS_WRAPPERCACHE_INTERFACE_MAP_ENTRY
   NS_INTERFACE_MAP_ENTRY(nsISupports)
 NS_INTERFACE_MAP_END
+
+NS_IMPL_WEBEXT_EVENTMGR(ExtensionPort, u"onMessage"_ns, OnMessage)
+NS_IMPL_WEBEXT_EVENTMGR(ExtensionPort, u"onDisconnect"_ns, OnDisconnect)
 
 // static
 already_AddRefed<ExtensionPort> ExtensionPort::Create(
@@ -98,22 +100,6 @@ JSObject* ExtensionPort::WrapObject(JSContext* aCx,
 }
 
 nsIGlobalObject* ExtensionPort::GetParentObject() const { return mGlobal; }
-
-ExtensionEventManager* ExtensionPort::OnMessage() {
-  if (!mOnMessageEventMgr) {
-    mOnMessageEventMgr = CreateEventManager(u"onMessage"_ns);
-  }
-
-  return mOnMessageEventMgr;
-}
-
-ExtensionEventManager* ExtensionPort::OnDisconnect() {
-  if (!mOnDisconnectEventMgr) {
-    mOnDisconnectEventMgr = CreateEventManager(u"onDisconnect"_ns);
-  }
-
-  return mOnDisconnectEventMgr;
-}
 
 void ExtensionPort::GetName(nsAString& aString) {
   aString.Assign(mPortDescriptor->mName);

@@ -16,9 +16,16 @@
 #include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/HTMLCanvasElement.h"
 #include "mozilla/dom/RemoteDragStartData.h"
+#include "mozilla/Logging.h"
 #include "nsTArray.h"
 #include "nsRegion.h"
 #include "Units.h"
+
+extern mozilla::LazyLogModule sWidgetDragServiceLog;
+#define MOZ_DRAGSERVICE_LOG(...) \
+  MOZ_LOG(sWidgetDragServiceLog, mozilla::LogLevel::Debug, (__VA_ARGS__))
+#define MOZ_DRAGSERVICE_LOG_ENABLED() \
+  MOZ_LOG_TEST(sWidgetDragServiceLog, mozilla::LogLevel::Debug)
 
 // translucency level for drag images
 #define DRAG_TRANSLUCENCY 0.65
@@ -122,12 +129,6 @@ class nsBaseDragService : public nsIDragService, public nsIDragSession {
                             RefPtr<SourceSurface>* aSurface);
 
   /**
-   * Convert aScreenPosition from CSS pixels into unscaled device pixels.
-   */
-  mozilla::LayoutDeviceIntPoint ConvertToUnscaledDevPixels(
-      nsPresContext* aPresContext, mozilla::CSSIntPoint aScreenPosition);
-
-  /**
    * If the drag image is a popup, open the popup when the drag begins.
    */
   void OpenDragPopup();
@@ -176,6 +177,7 @@ class nsBaseDragService : public nsIDragService, public nsIDragSession {
   RefPtr<mozilla::dom::Document> mSourceDocument;
 
   RefPtr<mozilla::dom::WindowContext> mSourceWindowContext;
+  RefPtr<mozilla::dom::WindowContext> mSourceTopWindowContext;
 
   // the contentpolicy type passed to the channel when initiating the drag
   // session
@@ -196,13 +198,13 @@ class nsBaseDragService : public nsIDragService, public nsIDragSession {
 
   // set if the image in mImage is a popup. If this case, the popup will be
   // opened and moved instead of using a drag image.
-  nsCOMPtr<nsIContent> mDragPopup;
+  nsCOMPtr<mozilla::dom::Element> mDragPopup;
 
   // the screen position where drag gesture occurred, used for positioning the
   // drag image.
   mozilla::CSSIntPoint mScreenPosition;
 
-  // the screen position where the drag ended
+  // The position relative to the top level widget where the drag ended.
   mozilla::LayoutDeviceIntPoint mEndDragPoint;
 
   uint32_t mSuppressLevel;

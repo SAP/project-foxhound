@@ -13,15 +13,15 @@ const TEST_DATA = [
     selector: "#badMarkup1",
     oldHTML: '<div id="badMarkup1">badMarkup1</div>',
     newHTML: '<div id="badMarkup1">badMarkup1</div> hanging</div>',
-    validate: async function({ pageNodeFront, selectedNodeFront }) {
+    async validate({ pageNodeFront, selectedNodeFront }) {
       is(pageNodeFront, selectedNodeFront, "Original element is selected");
 
       const [textNodeName, textNodeData] = await SpecialPowers.spawn(
         gBrowser.selectedBrowser,
         [],
         () => {
-          const node = content.document.querySelector("#badMarkup1")
-            .nextSibling;
+          const node =
+            content.document.querySelector("#badMarkup1").nextSibling;
           return [node.nodeName, node.data];
         }
       );
@@ -35,15 +35,15 @@ const TEST_DATA = [
     newHTML:
       '<div id="badMarkup2">badMarkup2</div> hanging<div></div>' +
       "</div></div></body>",
-    validate: async function({ pageNodeFront, selectedNodeFront }) {
+    async validate({ pageNodeFront, selectedNodeFront }) {
       is(pageNodeFront, selectedNodeFront, "Original element is selected");
 
       const [textNodeName, textNodeData] = await SpecialPowers.spawn(
         gBrowser.selectedBrowser,
         [],
         () => {
-          const node = content.document.querySelector("#badMarkup2")
-            .nextSibling;
+          const node =
+            content.document.querySelector("#badMarkup2").nextSibling;
           return [node.nodeName, node.data];
         }
       );
@@ -57,7 +57,7 @@ const TEST_DATA = [
     newHTML:
       '<div id="badMarkup3">badMarkup3 <em>Emphasized <strong> ' +
       "and strong</div>",
-    validate: async function({ pageNodeFront, selectedNodeFront }) {
+    async validate({ pageNodeFront, selectedNodeFront }) {
       is(pageNodeFront, selectedNodeFront, "Original element is selected");
 
       const emText = await getContentPageElementProperty(
@@ -76,7 +76,7 @@ const TEST_DATA = [
     selector: "#badMarkup4",
     oldHTML: '<div id="badMarkup4">badMarkup4</div>',
     newHTML: '<div id="badMarkup4">badMarkup4</p>',
-    validate: async function({ pageNodeFront, selectedNodeFront }) {
+    async validate({ pageNodeFront, selectedNodeFront }) {
       is(pageNodeFront, selectedNodeFront, "Original element is selected");
 
       const divText = await getContentPageElementProperty(
@@ -107,7 +107,7 @@ const TEST_DATA = [
     selector: "#badMarkup5",
     oldHTML: '<p id="badMarkup5">badMarkup5</p>',
     newHTML: '<p id="badMarkup5">badMarkup5 <div>with a nested div</div></p>',
-    validate: async function({ pageNodeFront, selectedNodeFront }) {
+    async validate({ pageNodeFront, selectedNodeFront }) {
       is(pageNodeFront, selectedNodeFront, "Original element is selected");
 
       const num = await getNumberOfMatchingElementsInContentPage(
@@ -150,7 +150,7 @@ const TEST_URL =
   "</body>" +
   "</html>";
 
-add_task(async function() {
+add_task(async function () {
   const { inspector } = await openInspectorForURL(TEST_URL);
   inspector.markup._frame.focus();
   await runEditOuterHTMLTests(TEST_DATA, inspector);

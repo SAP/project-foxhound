@@ -24,7 +24,6 @@
 #define TLS13_ECH_VERSION 0xfe0d
 #define TLS13_ECH_SIGNAL_LEN 8
 #define TLS13_ECH_AEAD_TAG_LEN 16
-#define TLS13_ECH_GREASE_SNI_LEN 100
 
 static const char kHpkeInfoEch[] = "tls ech";
 static const char hHkdfInfoEchConfigID[] = "tls ech config id";
@@ -58,7 +57,7 @@ struct sslEchCookieDataStr {
     HpkeKdfId kdfId;
     HpkeAeadId aeadId;
     HpkeContext *hpkeCtx;
-    sslBuffer signal;
+    PRUint8 signal[TLS13_ECH_SIGNAL_LEN];
 };
 
 struct sslEchConfigStr {
@@ -83,6 +82,8 @@ struct sslEchXtnStateStr {
     PRUint8 *payloadStart;    /* Server: Start of ECH Payload*/
 };
 
+SEC_BEGIN_PROTOS
+
 SECStatus SSLExp_EncodeEchConfigId(PRUint8 configId, const char *publicName, unsigned int maxNameLen,
                                    HpkeKemId kemId, const SECKEYPublicKey *pubKey,
                                    const HpkeSymmetricSuite *hpkeSuites, unsigned int hpkeSuiteCount,
@@ -94,6 +95,8 @@ SECStatus SSLExp_SetServerEchConfigs(PRFileDesc *fd,
                                      const SECKEYPublicKey *pubKey, const SECKEYPrivateKey *privKey,
                                      const PRUint8 *echConfigs, unsigned int numEchConfigs);
 SECStatus SSLExp_RemoveEchConfigs(PRFileDesc *fd);
+
+SEC_END_PROTOS
 
 SECStatus tls13_ClientSetupEch(sslSocket *ss, sslClientHelloType type);
 SECStatus tls13_ConstructClientHelloWithEch(sslSocket *ss, const sslSessionID *sid,

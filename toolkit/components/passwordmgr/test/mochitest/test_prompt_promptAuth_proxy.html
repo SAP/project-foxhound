@@ -35,9 +35,6 @@ let proxyAuthinfo = {
 modalType = authPromptModalType;
 
 let chromeScript = runInParent(() => {
-  const { Services } = ChromeUtils.import(
-    "resource://gre/modules/Services.jsm"
-  );
   const promptFac = Cc[
     "@mozilla.org/passwordmanager/authpromptfactory;1"
   ].getService(Ci.nsIPromptFactory);
@@ -66,8 +63,8 @@ let chromeScript = runInParent(() => {
     };
   });
 
-  addMessageListener("getTimeLastUsed", () => {
-    let logins = Services.logins.findLogins(mozproxyURL, null, "Proxy Realm");
+  addMessageListener("getTimeLastUsed", async () => {
+    let logins = await Services.logins.searchLoginsAsync({ origin: mozproxyURL, httpRealm: "Proxy Realm"});
     return logins[0].QueryInterface(Ci.nsILoginMetaInfo).timeLastUsed;
   });
 
@@ -95,7 +92,7 @@ let chromeScript = runInParent(() => {
     onStopRequest(request, status) {}
   }
 
-  function initLogins(pi) {
+  async function initLogins(pi) {
     mozproxyURL = `moz-proxy://${pi.host}:${pi.port}`;
 
     let proxyLogin = Cc["@mozilla.org/login-manager/loginInfo;1"].createInstance(
@@ -112,7 +109,7 @@ let chromeScript = runInParent(() => {
       ""
     );
 
-    Services.logins.addLogin(proxyLogin);
+    await Services.logins.addLoginAsync(proxyLogin);
   }
 
   let resolveCallback = {
@@ -129,8 +126,8 @@ let chromeScript = runInParent(() => {
       return this;
     },
 
-    onProxyAvailable(req, uri, pi, status) {
-      initLogins(pi);
+    async onProxyAvailable(req, uri, pi, status) {
+      await initLogins(pi);
 
       // I'm cheating a bit here... We should probably do some magic foo to get
       // something implementing nsIProxiedProtocolHandler and then call
@@ -157,7 +154,7 @@ let chromeScript = runInParent(() => {
 
 let prompter2 = new PrompterProxy(chromeScript);
 
-add_task(async function setup() {
+add_setup(async () => {
   let initComplete = new Promise((resolve) =>
     chromeScript.addMessageListener("initDone", resolve)
   );

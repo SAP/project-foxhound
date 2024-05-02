@@ -9,47 +9,16 @@
  * Test helpers shared by the devtools server xpcshell tests related to webextensions.
  */
 
-const { FileUtils } = require("resource://gre/modules/FileUtils.jsm");
-const { Ci } = require("chrome");
+const { FileUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/FileUtils.sys.mjs"
+);
+const { ExtensionTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/ExtensionXPCShellUtils.sys.mjs"
+);
+
 const {
-  ExtensionTestUtils,
-} = require("resource://testing-common/ExtensionXPCShellUtils.jsm");
-
-const Services = require("Services");
-const { DevToolsServer } = require("devtools/server/devtools-server");
-const { DevToolsClient } = require("devtools/client/devtools-client");
-
-/**
- * Starts up DevTools server and connects a new DevTools client.
- *
- * @return {Promise} Resolves with a client object when the debugger has started up.
- */
-async function startDebugger() {
-  DevToolsServer.init();
-  DevToolsServer.registerAllActors();
-  const transport = DevToolsServer.connectPipe();
-  const client = new DevToolsClient(transport);
-  await client.connect();
-  return client;
-}
-exports.startDebugger = startDebugger;
-
-/**
- * Set up the equivalent of an `about:debugging` toolbox for a given extension, minus
- * the toolbox.
- *
- * @param {String} id - The id for the extension to be targeted by the toolbox.
- * @return {Object} Resolves with the web extension actor front and target objects when
- * the debugger has been connected to the extension.
- */
-async function setupExtensionDebugging(id) {
-  const client = await startDebugger();
-  const front = await client.mainRoot.getAddon({ id });
-  // Starts a DevTools server in the extension child process.
-  const target = await front.getTarget();
-  return { front, target };
-}
-exports.setupExtensionDebugging = setupExtensionDebugging;
+  CommandsFactory,
+} = require("resource://devtools/shared/commands/commands-factory.js");
 
 /**
  * Loads and starts up a test extension given the provided extension configuration.
@@ -68,21 +37,32 @@ async function startupExtension(extConfig) {
 exports.startupExtension = startupExtension;
 
 /**
- * Initializes the extensionStorage actor for a target extension. This is effectively
+ * Initializes the extensionStorage actor for a given extension. This is effectively
  * what happens when the addon storage panel is opened in the browser.
  *
  * @param {String} - id, The addon id
- * @return {Object} - Resolves with the web extension actor target and extensionStorage
- * store objects when the panel has been opened.
+ * @return {Object} - Resolves with the DevTools "commands" objact and the extensionStorage
+ * resource/front.
  */
 async function openAddonStoragePanel(id) {
-  const { target } = await setupExtensionDebugging(id);
+  const commands = await CommandsFactory.forAddon(id);
+  await commands.targetCommand.startListening();
 
-  const storageFront = await target.getFront("storage");
-  const stores = await storageFront.listStores();
-  const extensionStorage = stores.extensionStorage || null;
+  // Fetch the EXTENSION_STORAGE resource.
+  // Unfortunately, we can't use resourceCommand.waitForNextResource as it would destroy
+  // the actor by immediately unwatching for the resource type.
+  const extensionStorage = await new Promise(resolve => {
+    commands.resourceCommand.watchResources(
+      [commands.resourceCommand.TYPES.EXTENSION_STORAGE],
+      {
+        onAvailable(resources) {
+          resolve(resources[0]);
+        },
+      }
+    );
+  });
 
-  return { target, extensionStorage, storageFront };
+  return { commands, extensionStorage };
 }
 exports.openAddonStoragePanel = openAddonStoragePanel;
 
@@ -176,6 +156,8 @@ async function extensionScriptWithMessageListener() {
 
     browser.test.sendMessage(`${msg}:done`, item);
   });
+  // window is available in background scripts
+  // eslint-disable-next-line no-undef
   browser.test.sendMessage("extension-origin", window.location.origin);
 }
 exports.extensionScriptWithMessageListener = extensionScriptWithMessageListener;
@@ -184,11 +166,11 @@ exports.extensionScriptWithMessageListener = extensionScriptWithMessageListener;
  * Shutdown procedure common to all tasks.
  *
  * @param {Object} extension - The test extension
- * @param {Object} target - The web extension actor targeted by the DevTools client
+ * @param {Object} commands - The web extension commands used by the DevTools to interact with the backend
  */
-async function shutdown(extension, target) {
-  if (target) {
-    await target.destroy();
+async function shutdown(extension, commands) {
+  if (commands) {
+    await commands.destroy();
   }
   await extension.unload();
 }
@@ -196,7 +178,7 @@ exports.shutdown = shutdown;
 
 /**
  * Mocks the missing 'storage/permanent' directory needed by the "indexedDB"
- * storage actor's 'preListStores' method (called when 'listStores' is called). This
+ * storage actor's 'populateStoresForHosts' method. This
  * directory exists in a full browser i.e. mochitest.
  */
 function createMissingIndexedDBDirs() {

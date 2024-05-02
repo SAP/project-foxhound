@@ -7,7 +7,7 @@
  * Bug 863102 - Automatically scroll down upon new network requests.
  * edited to account for changes made to fix Bug 1360457
  */
-add_task(async function() {
+add_task(async function () {
   requestLongerTimeout(4);
 
   const { tab, monitor } = await initNetMonitor(INFINITE_GET_URL, {
@@ -37,7 +37,7 @@ add_task(async function() {
   await waitSomeTime();
   ok(!scrolledToBottom(requestsContainer), "Not scrolled to bottom.");
   // save for comparison later
-  const { scrollTop } = requestsContainer;
+  let { scrollTop } = requestsContainer;
   // As we are scrolled top, new request appended won't be fetching their event timings,
   // so do not wait for them
   await waitForNetworkEvents(monitor, 8, { expectedEventTimings: 0 });
@@ -56,18 +56,13 @@ add_task(async function() {
   // and check that additional requests do not change the scroll position
   // from just below the headers.
   store.dispatch(Actions.selectRequestByIndex(0));
+  scrollTop = requestsContainer.scrollTop;
   await waitForNetworkEvents(monitor, 8);
   await waitSomeTime();
-  const requestsContainerHeaders = document.querySelector(
-    ".requests-list-headers"
-  );
-  const headersHeight = Math.floor(
-    requestsContainerHeaders.getBoundingClientRect().height
-  );
-  is(requestsContainer.scrollTop, headersHeight, "Did not scroll.");
+  is(requestsContainer.scrollTop, scrollTop, "Did not scroll.");
 
   // Stop doing requests.
-  await SpecialPowers.spawn(tab.linkedBrowser, [], function() {
+  await SpecialPowers.spawn(tab.linkedBrowser, [], function () {
     content.wrappedJSObject.stopRequests();
   });
 

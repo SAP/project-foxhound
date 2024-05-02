@@ -9,8 +9,8 @@
 Services.prefs.setBoolPref("security.osclientcerts.autoload", false);
 do_get_profile();
 
-const { TestUtils } = ChromeUtils.import(
-  "resource://testing-common/TestUtils.jsm"
+const { TestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/TestUtils.sys.mjs"
 );
 
 async function check_osclientcerts_module_loaded() {
@@ -27,10 +27,7 @@ async function check_osclientcerts_module_loaded() {
     slot => slot.name
   );
   testModuleSlotNames.sort();
-  const expectedSlotNames = [
-    "OS Client Cert Slot (Legacy)",
-    "OS Client Cert Slot (Modern)",
-  ];
+  const expectedSlotNames = ["OS Client Cert Slot"];
   deepEqual(
     testModuleSlotNames,
     expectedSlotNames,

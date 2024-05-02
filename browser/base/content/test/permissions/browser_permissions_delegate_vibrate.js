@@ -8,12 +8,11 @@ const TEST_PAGE =
 
 add_task(async function testNoPermissionPrompt() {
   info("Creating tab");
-  await BrowserTestUtils.withNewTab(TEST_PAGE, async function(browser) {
+  await BrowserTestUtils.withNewTab(TEST_PAGE, async function (browser) {
     await new Promise(r => {
       SpecialPowers.pushPrefEnv(
         {
           set: [
-            ["permissions.delegation.enabled", true],
             ["dom.vibrator.enabled", true],
             ["dom.security.featurePolicy.header.enabled", true],
             ["dom.security.featurePolicy.webidl.enabled", true],
@@ -23,7 +22,7 @@ add_task(async function testNoPermissionPrompt() {
       );
     });
 
-    await ContentTask.spawn(browser, null, async function() {
+    await ContentTask.spawn(browser, null, async function () {
       let frame = content.document.createElement("iframe");
       // Cross origin src
       frame.src =
@@ -35,7 +34,7 @@ add_task(async function testNoPermissionPrompt() {
         content.document.body.appendChild(frame);
       });
 
-      await content.SpecialPowers.spawn(frame, [], async function() {
+      await content.SpecialPowers.spawn(frame, [], async function () {
         // Request a permission.
         let result = this.content.navigator.vibrate([100, 100]);
         Assert.equal(result, false, "navigator.vibrate has been denied");

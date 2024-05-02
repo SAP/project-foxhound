@@ -7,21 +7,20 @@
 
 "use strict";
 
-const { Cu } = require("chrome");
-const Services = require("Services");
 const {
   isAfterPseudoElement,
   isBeforePseudoElement,
   isMarkerPseudoElement,
   isNativeAnonymous,
-} = require("devtools/shared/layout/utils");
+} = require("resource://devtools/shared/layout/utils.js");
 const Debugger = require("Debugger");
 const {
   EXCLUDED_LISTENER,
-} = require("devtools/server/actors/inspector/constants");
+} = require("resource://devtools/server/actors/inspector/constants.js");
 
 // eslint-disable-next-line
-const JQUERY_LIVE_REGEX = /return typeof \w+.*.event\.triggered[\s\S]*\.event\.(dispatch|handle).*arguments/;
+const JQUERY_LIVE_REGEX =
+  /return typeof \w+.*.event\.triggered[\s\S]*\.event\.(dispatch|handle).*arguments/;
 
 const REACT_EVENT_NAMES = [
   "onAbort",
@@ -388,7 +387,7 @@ class DOMEventCollector extends MainEventCollector {
         nsIEventListenerInfo: listener,
         capturing: listener.capturing,
         type: listener.type,
-        handler: handler,
+        handler,
         enabled: listener.enabled,
       };
 
@@ -481,8 +480,8 @@ class JQueryEventCollector extends MainEventCollector {
             }
 
             const eventInfo = {
-              type: type,
-              handler: handler,
+              type,
+              handler,
               tags: "jQuery",
               hide: {
                 capturing: true,
@@ -575,7 +574,7 @@ class JQueryLiveEventCollector extends MainEventCollector {
               }
               const eventInfo = {
                 type: event.origType || event.type.substr(selector.length + 1),
-                handler: handler,
+                handler,
                 tags: "jQuery,Live",
                 hide: {
                   capturing: true,
@@ -613,7 +612,7 @@ class JQueryLiveEventCollector extends MainEventCollector {
       // function gets name at compile time by SetFunctionName, its guessed
       // atom doesn't contain "proxy/".  In that case, check if the caller is
       // "proxy" function, as a fallback.
-      const calleeDS = funcDO.environment.calleeScript;
+      const calleeDS = funcDO.environment?.calleeScript;
       if (!calleeDS) {
         return false;
       }
@@ -624,9 +623,11 @@ class JQueryLiveEventCollector extends MainEventCollector {
     function getFirstFunctionVariable(funcDO) {
       // The handler function inside the |proxy| function should point the
       // unwrapped function via environment variable.
-      const names = funcDO.environment.names();
+      const names = funcDO.environment ? funcDO.environment.names() : [];
       for (const varName of names) {
-        const varDO = handlerDO.environment.getVariable(varName);
+        const varDO = handlerDO.environment
+          ? handlerDO.environment.getVariable(varName)
+          : null;
         if (!varDO) {
           continue;
         }
@@ -1005,7 +1006,7 @@ class EventCollector {
       // Arrow function text always contains the parameters. Function
       // parameters are often missing e.g. if Array.sort is used as a handler.
       // If they are missing we provide the parameters ourselves.
-      if (parameterNames && parameterNames.length > 0) {
+      if (parameterNames && parameterNames.length) {
         const prefix = "function " + name + "()";
         const paramString = parameterNames.join(", ");
 

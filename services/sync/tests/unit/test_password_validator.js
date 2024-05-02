@@ -1,8 +1,8 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
-const { PasswordValidator } = ChromeUtils.import(
-  "resource://services-sync/engines/passwords.js"
+const { PasswordValidator } = ChromeUtils.importESModule(
+  "resource://services-sync/engines/passwords.sys.mjs"
 );
 
 function getDummyServerAndClient() {
@@ -83,12 +83,8 @@ function getDummyServerAndClient() {
 add_task(async function test_valid() {
   let { server, client } = getDummyServerAndClient();
   let validator = new PasswordValidator();
-  let {
-    problemData,
-    clientRecords,
-    records,
-    deletedRecords,
-  } = await validator.compareClientWithServer(client, server);
+  let { problemData, clientRecords, records, deletedRecords } =
+    await validator.compareClientWithServer(client, server);
   equal(clientRecords.length, 3);
   equal(records.length, 3);
   equal(deletedRecords.length, 0);
@@ -102,12 +98,8 @@ add_task(async function test_missing() {
 
     client.pop();
 
-    let {
-      problemData,
-      clientRecords,
-      records,
-      deletedRecords,
-    } = await validator.compareClientWithServer(client, server);
+    let { problemData, clientRecords, records, deletedRecords } =
+      await validator.compareClientWithServer(client, server);
 
     equal(clientRecords.length, 2);
     equal(records.length, 3);
@@ -122,12 +114,8 @@ add_task(async function test_missing() {
 
     server.pop();
 
-    let {
-      problemData,
-      clientRecords,
-      records,
-      deletedRecords,
-    } = await validator.compareClientWithServer(client, server);
+    let { problemData, clientRecords, records, deletedRecords } =
+      await validator.compareClientWithServer(client, server);
 
     equal(clientRecords.length, 3);
     equal(records.length, 2);
@@ -146,12 +134,8 @@ add_task(async function test_deleted() {
   server.push(deletionRecord);
   let validator = new PasswordValidator();
 
-  let {
-    problemData,
-    clientRecords,
-    records,
-    deletedRecords,
-  } = await validator.compareClientWithServer(client, server);
+  let { problemData, clientRecords, records, deletedRecords } =
+    await validator.compareClientWithServer(client, server);
 
   equal(clientRecords.length, 3);
   equal(records.length, 4);

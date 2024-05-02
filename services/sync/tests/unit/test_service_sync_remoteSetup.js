@@ -1,7 +1,9 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
-const { Service } = ChromeUtils.import("resource://services-sync/service.js");
+const { Service } = ChromeUtils.importESModule(
+  "resource://services-sync/service.sys.mjs"
+);
 
 // This sucks, but this test fails if this engine is enabled, due to dumb
 // things that aren't related to this engine. In short:
@@ -38,7 +40,7 @@ add_task(async function run_test() {
 
   function wasCalledHandler(wbo) {
     let handler = wbo.handler();
-    return function() {
+    return function () {
       wbo.wasCalled = true;
       handler.apply(this, arguments);
     };
@@ -231,7 +233,9 @@ add_task(async function run_test() {
     Assert.equal(false, await Service.verifyAndFetchSymmetricKeys());
     Assert.equal(Service.status.login, LOGIN_FAILED_INVALID_PASSPHRASE);
   } finally {
-    Svc.Prefs.resetBranch("");
+    for (const pref of Svc.PrefBranch.getChildList("")) {
+      Svc.PrefBranch.clearUserPref(pref);
+    }
     server.stop(do_test_finished);
   }
 });

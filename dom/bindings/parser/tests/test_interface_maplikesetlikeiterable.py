@@ -1,5 +1,4 @@
 import WebIDL
-import traceback
 
 
 def WebIDLTest(parser, harness):
@@ -20,7 +19,10 @@ def WebIDLTest(parser, harness):
         expectedMembers = list(expectedMembers)
         for m in results[0].members:
             name = m.identifier.name
-            if (name, type(m)) in expectedMembers:
+            if m.isMethod() and m.isStatic():
+                # None of the expected members are static methods, so ignore those.
+                harness.ok(True, "%s - %s - Should be a %s" % (prefix, name, type(m)))
+            elif (name, type(m)) in expectedMembers:
                 harness.ok(True, "%s - %s - Should be a %s" % (prefix, name, type(m)))
                 expectedMembers.remove((name, type(m)))
             else:
@@ -45,7 +47,7 @@ def WebIDLTest(parser, harness):
             p.parse(iface)
             p.finish()
             harness.ok(False, prefix + " - Interface passed when should've failed")
-        except WebIDL.WebIDLError as e:
+        except WebIDL.WebIDLError:
             harness.ok(True, prefix + " - Interface failed as expected")
         except Exception as e:
             harness.ok(
@@ -66,12 +68,6 @@ def WebIDLTest(parser, harness):
     setRWMembers = [
         (x, WebIDL.IDLMethod) for x in ["add", "clear", "delete"]
     ] + setROMembers
-    setROChromeMembers = [
-        (x, WebIDL.IDLMethod) for x in ["__add", "__clear", "__delete"]
-    ] + setROMembers
-    setRWChromeMembers = [
-        (x, WebIDL.IDLMethod) for x in ["__add", "__clear", "__delete"]
-    ] + setRWMembers
     mapROMembers = (
         [(x, WebIDL.IDLMethod) for x in ["get", "has"]]
         + [("__maplike", WebIDL.IDLMaplikeOrSetlike)]
@@ -81,24 +77,40 @@ def WebIDLTest(parser, harness):
     mapRWMembers = [
         (x, WebIDL.IDLMethod) for x in ["set", "clear", "delete"]
     ] + mapROMembers
-    mapRWChromeMembers = [
-        (x, WebIDL.IDLMethod) for x in ["__set", "__clear", "__delete"]
-    ] + mapRWMembers
 
     # OK, now that we've used iterableMembers to set up the above, append
     # __iterable to it for the iterable<> case.
     iterableMembers.append(("__iterable", WebIDL.IDLIterable))
 
+    asyncIterableMembers = [
+        (x, WebIDL.IDLMethod) for x in ["entries", "keys", "values"]
+    ]
+    asyncIterableMembers.append(("__iterable", WebIDL.IDLAsyncIterable))
+
     valueIterableMembers = [("__iterable", WebIDL.IDLIterable)]
     valueIterableMembers.append(("__indexedgetter", WebIDL.IDLMethod))
     valueIterableMembers.append(("length", WebIDL.IDLAttribute))
 
-    disallowedIterableNames = ["keys", "entries", "values"]
-    disallowedMemberNames = ["forEach", "has", "size"] + disallowedIterableNames
-    mapDisallowedMemberNames = ["get"] + disallowedMemberNames
-    disallowedNonMethodNames = ["clear", "delete"]
-    mapDisallowedNonMethodNames = ["set"] + disallowedNonMethodNames
-    setDisallowedNonMethodNames = ["add"] + disallowedNonMethodNames
+    valueAsyncIterableMembers = [("__iterable", WebIDL.IDLAsyncIterable)]
+    valueAsyncIterableMembers.append(("values", WebIDL.IDLMethod))
+
+    disallowedIterableNames = [
+        ("keys", WebIDL.IDLMethod),
+        ("entries", WebIDL.IDLMethod),
+        ("values", WebIDL.IDLMethod),
+    ]
+    disallowedMemberNames = [
+        ("forEach", WebIDL.IDLMethod),
+        ("has", WebIDL.IDLMethod),
+        ("size", WebIDL.IDLAttribute),
+    ] + disallowedIterableNames
+    mapDisallowedMemberNames = [("get", WebIDL.IDLMethod)] + disallowedMemberNames
+    disallowedNonMethodNames = [
+        ("clear", WebIDL.IDLMethod),
+        ("delete", WebIDL.IDLMethod),
+    ]
+    mapDisallowedNonMethodNames = [("set", WebIDL.IDLMethod)] + disallowedNonMethodNames
+    setDisallowedNonMethodNames = [("add", WebIDL.IDLMethod)] + disallowedNonMethodNames
     unrelatedMembers = [
         ("unrelatedAttribute", WebIDL.IDLAttribute),
         ("unrelatedMethod", WebIDL.IDLMethod),
@@ -167,6 +179,94 @@ def WebIDLTest(parser, harness):
         iterableMembers,
         # numProductions == 3 because of the generated iterator iface,
         numProductions=3,
+    )
+
+    shouldPass(
+        "Async iterable (key only)",
+        """
+               interface Foo1 {
+               async iterable<long>;
+               attribute long unrelatedAttribute;
+               long unrelatedMethod();
+               };
+               """,
+        valueAsyncIterableMembers + unrelatedMembers,
+        # numProductions == 2 because of the generated iterator iface,
+        numProductions=2,
+    )
+
+    shouldPass(
+        "Async iterable (key only) inheriting from parent",
+        """
+               interface Foo1 : Foo2 {
+               async iterable<long>;
+               };
+               interface Foo2 {
+               attribute long unrelatedAttribute;
+               long unrelatedMethod();
+               };
+               """,
+        valueAsyncIterableMembers,
+        # numProductions == 3 because of the generated iterator iface,
+        numProductions=3,
+    )
+
+    shouldPass(
+        "Async iterable with argument (key only)",
+        """
+               interface Foo1 {
+               async iterable<long>(optional long foo);
+               attribute long unrelatedAttribute;
+               long unrelatedMethod();
+               };
+               """,
+        valueAsyncIterableMembers + unrelatedMembers,
+        # numProductions == 2 because of the generated iterator iface,
+        numProductions=2,
+    )
+
+    shouldPass(
+        "Async iterable (key and value)",
+        """
+               interface Foo1 {
+               async iterable<long, long>;
+               attribute long unrelatedAttribute;
+               long unrelatedMethod();
+               };
+               """,
+        asyncIterableMembers + unrelatedMembers,
+        # numProductions == 2 because of the generated iterator iface,
+        numProductions=2,
+    )
+
+    shouldPass(
+        "Async iterable (key and value) inheriting from parent",
+        """
+               interface Foo1 : Foo2 {
+               async iterable<long, long>;
+               };
+               interface Foo2 {
+               attribute long unrelatedAttribute;
+               long unrelatedMethod();
+               };
+               """,
+        asyncIterableMembers,
+        # numProductions == 3 because of the generated iterator iface,
+        numProductions=3,
+    )
+
+    shouldPass(
+        "Async iterable with argument (key and value)",
+        """
+               interface Foo1 {
+               async iterable<long, long>(optional long foo);
+               attribute long unrelatedAttribute;
+               long unrelatedMethod();
+               };
+               """,
+        asyncIterableMembers + unrelatedMembers,
+        # numProductions == 2 because of the generated iterator iface,
+        numProductions=2,
     )
 
     shouldPass(
@@ -374,6 +474,53 @@ def WebIDLTest(parser, harness):
     )
 
     shouldFail(
+        "Two iterables on same interface",
+        """
+               interface Foo1 {
+               iterable<long>;
+               async iterable<long>;
+               };
+               """,
+    )
+
+    shouldFail(
+        "Two iterables on same interface",
+        """
+               interface Foo1 {
+               async iterable<long>;
+               async iterable<long, long>;
+               };
+               """,
+    )
+
+    shouldFail(
+        "Async iterable with non-optional arguments",
+        """
+               interface Foo1 {
+               async iterable<long>(long foo);
+               };
+               """,
+    )
+
+    shouldFail(
+        "Async iterable with non-optional arguments",
+        """
+               interface Foo1 {
+               async iterable<long>(optional long foo, long bar);
+               };
+               """,
+    )
+
+    shouldFail(
+        "Async iterable with non-optional arguments",
+        """
+               interface Foo1 {
+               async iterable<long, long>(long foo);
+               };
+               """,
+    )
+
+    shouldFail(
         "Two maplike/setlikes in partials",
         """
                interface Foo1 {
@@ -427,7 +574,9 @@ def WebIDLTest(parser, harness):
     # Member name collision tests
     #
 
-    def testConflictingMembers(likeMember, conflictName, expectedMembers, methodPasses):
+    def testConflictingMembers(
+        likeMember, conflict, expectedMembers, methodPasses, numProductions=1
+    ):
         """
         Tests for maplike/setlike member generation against conflicting member
         names. If methodPasses is True, this means we expect the interface to
@@ -435,6 +584,7 @@ def WebIDLTest(parser, harness):
         list of interface members to check against on the passing interface.
 
         """
+        (conflictName, conflictType) = conflict
         if methodPasses:
             shouldPass(
                 "Conflicting method: %s and %s" % (likeMember, conflictName),
@@ -442,7 +592,7 @@ def WebIDLTest(parser, harness):
                        interface Foo1 {
                        %s;
                        [Throws]
-                       void %s(long test1, double test2, double test3);
+                       undefined %s(long test1, double test2, double test3);
                        };
                        """
                 % (likeMember, conflictName),
@@ -455,7 +605,7 @@ def WebIDLTest(parser, harness):
                        interface Foo1 {
                        %s;
                        [Throws]
-                       void %s(long test1, double test2, double test3);
+                       undefined %s(long test1, double test2, double test3);
                        };
                        """
                 % (likeMember, conflictName),
@@ -465,7 +615,7 @@ def WebIDLTest(parser, harness):
             "Conflicting inherited method: %s and %s" % (likeMember, conflictName),
             """
                    interface Foo1 {
-                   void %s(long test1, double test2, double test3);
+                   undefined %s(long test1, double test2, double test3);
                    };
                    interface Foo2 : Foo1 {
                    %s;
@@ -473,16 +623,30 @@ def WebIDLTest(parser, harness):
                    """
             % (conflictName, likeMember),
         )
-        shouldFail(
-            "Conflicting static method: %s and %s" % (likeMember, conflictName),
-            """
-                   interface Foo1 {
-                   %s;
-                   static void %s(long test1, double test2, double test3);
-                   };
-                   """
-            % (likeMember, conflictName),
-        )
+        if conflictType == WebIDL.IDLAttribute:
+            shouldFail(
+                "Conflicting static method: %s and %s" % (likeMember, conflictName),
+                """
+                       interface Foo1 {
+                       %s;
+                       static undefined %s(long test1, double test2, double test3);
+                       };
+                       """
+                % (likeMember, conflictName),
+            )
+        else:
+            shouldPass(
+                "Conflicting static method: %s and %s" % (likeMember, conflictName),
+                """
+                       interface Foo1 {
+                       %s;
+                       static undefined %s(long test1, double test2, double test3);
+                       };
+                       """
+                % (likeMember, conflictName),
+                expectedMembers,
+                numProductions=numProductions,
+            )
         shouldFail(
             "Conflicting attribute: %s and %s" % (likeMember, conflictName),
             """
@@ -515,7 +679,9 @@ def WebIDLTest(parser, harness):
         )
 
     for member in disallowedIterableNames:
-        testConflictingMembers("iterable<long, long>", member, iterableMembers, False)
+        testConflictingMembers(
+            "iterable<long, long>", member, iterableMembers, False, numProductions=2
+        )
     for member in mapDisallowedMemberNames:
         testConflictingMembers("maplike<long, long>", member, mapRWMembers, False)
     for member in disallowedMemberNames:
@@ -532,7 +698,7 @@ def WebIDLTest(parser, harness):
                maplike<long, long>;
                };
                interface Foo2 : Foo1 {
-               void entries();
+               undefined entries();
                };
                """,
         mapRWMembers,
@@ -548,7 +714,7 @@ def WebIDLTest(parser, harness):
                interface Foo2 : Foo1 {
                };
                interface Foo3 : Foo2 {
-               void entries();
+               undefined entries();
                };
                """,
         mapRWMembers,
@@ -562,7 +728,7 @@ def WebIDLTest(parser, harness):
                maplike<long, long>;
                };
                interface mixin Foo2 {
-               void entries();
+               undefined entries();
                };
                Foo1 includes Foo2;
                """,
@@ -575,7 +741,7 @@ def WebIDLTest(parser, harness):
                maplike<long, long>;
                };
                interface mixin Foo2 {
-               void entries();
+               undefined entries();
                };
                interface Foo3 : Foo1 {
                };
@@ -589,7 +755,7 @@ def WebIDLTest(parser, harness):
         "Inheritance of name collision with child maplike/setlike",
         """
                interface Foo1 {
-               void entries();
+               undefined entries();
                };
                interface Foo2 : Foo1 {
                maplike<long, long>;
@@ -601,7 +767,7 @@ def WebIDLTest(parser, harness):
         "Inheritance of multi-level name collision with child maplike/setlike",
         """
                interface Foo1 {
-               void entries();
+               undefined entries();
                };
                interface Foo2 : Foo1 {
                };
@@ -698,7 +864,7 @@ def WebIDLTest(parser, harness):
                maplike<long, long>;
                };
                interface Foo2 : Foo1 {
-               void clear();
+               undefined clear();
                };
                """,
         mapRWMembers,

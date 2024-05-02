@@ -2,6 +2,7 @@
 # Output from 'pip freeze'; we may be able to use other versions of the below packages.
 Cython==0.14.1
 Fabric==1.6.0
+PyYAML==6.0
 coverage==3.6
 distribute==0.6.35
 dulwich==0.19.6
@@ -17,6 +18,7 @@ pycrypto==2.6.1
 pyflakes==0.6.1
 pylint==0.27.0
 simplejson==2.1.1
+toml==0.10.2
 unittest2==0.5.1
 virtualenv==1.5.1
 wsgiref==0.1.2

@@ -1,20 +1,21 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
-/* eslint-env mozilla/chrome-worker */
+/* eslint-env worker */
 
 "use strict";
 
 importScripts("utils_worker.js"); // Test suite code
 info("Test suite configured");
 
+/* import-globals-from /toolkit/components/workerloader/require.js */
 importScripts("resource://gre/modules/workers/require.js");
 info("Loader imported");
 
 var PATH =
   "chrome://mochitests/content/chrome/toolkit/components/workerloader/tests/";
 var tests = [];
-var add_test = function(test) {
+var add_test = function (test) {
   tests.push(test);
 };
 
@@ -58,7 +59,7 @@ add_test(function test_circular() {
 
 // Testing error cases
 add_test(function test_exceptions() {
-  let should_throw = function(f) {
+  let should_throw = function (f) {
     try {
       f();
       return null;
@@ -135,7 +136,23 @@ add_test(function test_module_dot_exports() {
   );
 });
 
-self.onmessage = function(message) {
+// Test relative imports (moduleI-depends.js requires moduleJ-dependency.js)
+add_test(function test_load() {
+  let I = require(PATH + "moduleI-depends.js");
+  ok(true, "Opened module I");
+
+  is(I.I, true, "Module I exported value I");
+  ok(!("J" in I), "Module I did not export value J");
+  is(I.importedFoo, "foo", "Module I re-exported J.foo");
+
+  // re-evaluating moduleJ-dependency.js would cause an error, but re-requiring it shouldn't
+  let J = require(PATH + "moduleJ-dependency.js");
+  ok(true, "Managed to re-require module J");
+  is(J.J, true, "Module J exported value J");
+  is(J.foo, "foo", "Module J exported value foo");
+});
+
+self.onmessage = function (message) {
   for (let test of tests) {
     info("Entering " + test.name);
     try {

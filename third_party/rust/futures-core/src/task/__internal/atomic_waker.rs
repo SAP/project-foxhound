@@ -1,8 +1,15 @@
 use core::cell::UnsafeCell;
 use core::fmt;
-use core::sync::atomic::AtomicUsize;
-use core::sync::atomic::Ordering::{AcqRel, Acquire, Release};
 use core::task::Waker;
+
+use atomic::AtomicUsize;
+use atomic::Ordering::{AcqRel, Acquire, Release};
+
+#[cfg(feature = "portable-atomic")]
+use portable_atomic as atomic;
+
+#[cfg(not(feature = "portable-atomic"))]
+use core::sync::atomic;
 
 /// A synchronization primitive for task wakeup.
 ///
@@ -264,7 +271,12 @@ impl AtomicWaker {
             WAITING => {
                 unsafe {
                     // Locked acquired, update the waker cell
-                    *self.waker.get() = Some(waker.clone());
+
+                    // Avoid cloning the waker if the old waker will awaken the same task.
+                    match &*self.waker.get() {
+                        Some(old_waker) if old_waker.will_wake(waker) => (),
+                        _ => *self.waker.get() = Some(waker.clone()),
+                    }
 
                     // Release the lock. If the state transitioned to include
                     // the `WAKING` bit, this means that at least one wake has

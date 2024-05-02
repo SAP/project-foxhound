@@ -7,32 +7,32 @@ const {
   Component,
   createFactory,
   createRef,
-} = require("devtools/client/shared/vendor/react");
-const dom = require("devtools/client/shared/vendor/react-dom-factories");
-const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
+} = require("resource://devtools/client/shared/vendor/react.js");
+const dom = require("resource://devtools/client/shared/vendor/react-dom-factories.js");
+const PropTypes = require("resource://devtools/client/shared/vendor/react-prop-types.js");
 const {
   ToolboxTabsOrderManager,
-} = require("devtools/client/framework/toolbox-tabs-order-manager");
+} = require("resource://devtools/client/framework/toolbox-tabs-order-manager.js");
 
 const { div } = dom;
 
 const ToolboxTab = createFactory(
-  require("devtools/client/framework/components/ToolboxTab")
+  require("resource://devtools/client/framework/components/ToolboxTab.js")
 );
 
-loader.lazyGetter(this, "MenuButton", function() {
+loader.lazyGetter(this, "MenuButton", function () {
   return createFactory(
-    require("devtools/client/shared/components/menu/MenuButton")
+    require("resource://devtools/client/shared/components/menu/MenuButton.js")
   );
 });
-loader.lazyGetter(this, "MenuItem", function() {
+loader.lazyGetter(this, "MenuItem", function () {
   return createFactory(
-    require("devtools/client/shared/components/menu/MenuItem")
+    require("resource://devtools/client/shared/components/menu/MenuItem.js")
   );
 });
-loader.lazyGetter(this, "MenuList", function() {
+loader.lazyGetter(this, "MenuList", function () {
   return createFactory(
-    require("devtools/client/shared/components/menu/MenuList")
+    require("resource://devtools/client/shared/components/menu/MenuList.js")
   );
 });
 
@@ -88,7 +88,8 @@ class ToolboxTabs extends Component {
     this.updateOverflowedTabs();
   }
 
-  componentWillUpdate(nextProps, nextState) {
+  // FIXME: https://bugzilla.mozilla.org/show_bug.cgi?id=1774507
+  UNSAFE_componentWillUpdate(nextProps, nextState) {
     if (this.shouldUpdateToolboxTabs(this.props, nextProps)) {
       // Force recalculate and render in this cycle if panel definition has
       // changed or selected tool has changed.
@@ -202,12 +203,11 @@ class ToolboxTabs extends Component {
       const selectedToolWidth = this._cachedToolTabsWidthMap.get(currentToolId);
       while (
         sumWidth + selectedToolWidth > toolboxWidth &&
-        visibleTabs.length > 0
+        visibleTabs.length
       ) {
         const removingToolId = visibleTabs.pop();
-        const removingToolWidth = this._cachedToolTabsWidthMap.get(
-          removingToolId
-        );
+        const removingToolWidth =
+          this._cachedToolTabsWidthMap.get(removingToolId);
         sumWidth -= removingToolWidth;
       }
 
@@ -320,7 +320,7 @@ class ToolboxTabs extends Component {
           onMouseDown: e => this._tabsOrderManager.onMouseDown(e),
         },
         tabs,
-        this.state.overflowedTabIds.length > 0
+        this.state.overflowedTabIds.length
           ? this.renderToolsChevronButton()
           : null
       )

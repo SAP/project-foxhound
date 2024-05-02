@@ -15,7 +15,7 @@ let timer = null;
 
 function handleRequest(request, response) {
   const query = {};
-  request.queryString.split("&").forEach(function(val) {
+  request.queryString.split("&").forEach(function (val) {
     const [name, value] = val.split("=");
     query[name] = unescape(value);
   });
@@ -32,11 +32,11 @@ function handleRequest(request, response) {
   // If there is a delay, we create a timer which, when it fires, will write
   // image and leave.
   response.processAsync();
-  const nsITimer = Components.interfaces.nsITimer;
+  const nsITimer = Ci.nsITimer;
 
-  timer = Components.classes["@mozilla.org/timer;1"].createInstance(nsITimer);
+  timer = Cc["@mozilla.org/timer;1"].createInstance(nsITimer);
   timer.initWithCallback(
-    function() {
+    function () {
       response.write(IMAGE);
       response.finish();
     },

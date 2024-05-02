@@ -1,8 +1,3 @@
-ChromeUtils.defineModuleGetter(
-  this,
-  "NetUtil",
-  "resource://gre/modules/NetUtil.jsm"
-);
 // Global test server for serving safebrowsing updates.
 var gHttpServ = null;
 // Global nsIUrlClassifierDBService
@@ -12,17 +7,6 @@ var gDbService = Cc["@mozilla.org/url-classifier/dbservice;1"].getService(
 
 // A map of tables to arrays of update redirect urls.
 var gTables = {};
-
-// Construct an update from a file.
-function readFileToString(aFilename) {
-  let f = do_get_file(aFilename);
-  let stream = Cc["@mozilla.org/network/file-input-stream;1"].createInstance(
-    Ci.nsIFileInputStream
-  );
-  stream.init(f, -1, 0, 0);
-  let buf = NetUtil.readInputStreamToString(stream, stream.available());
-  return buf;
-}
 
 // Registers a table for which to serve update chunks. Returns a promise that
 // resolves when that chunk has been downloaded.
@@ -42,7 +26,7 @@ function registerTableUpdate(aTable, aFilename) {
     // process an update request.
     gTables[aTable].push(redirectUrl);
 
-    gHttpServ.registerPathHandler(redirectPath, function(request, response) {
+    gHttpServ.registerPathHandler(redirectPath, function (request, response) {
       info("Mock safebrowsing server handling request for " + redirectPath);
       let contents = readFileToString(aFilename);
       response.setHeader(
@@ -75,7 +59,7 @@ function run_test() {
   gHttpServ = new HttpServer();
   gHttpServ.registerDirectory("/", do_get_cwd());
 
-  gHttpServ.registerPathHandler("/downloads", function(request, response) {
+  gHttpServ.registerPathHandler("/downloads", function (request, response) {
     let blob = processUpdateRequest();
     response.setHeader(
       "Content-Type",

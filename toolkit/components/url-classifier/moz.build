@@ -15,6 +15,7 @@ XPIDL_SOURCES += [
     "nsIUrlClassifierHashCompleter.idl",
     "nsIUrlClassifierInfo.idl",
     "nsIUrlClassifierPrefixSet.idl",
+    "nsIUrlClassifierRemoteSettingsService.idl",
     "nsIUrlClassifierStreamUpdater.idl",
     "nsIUrlClassifierUtils.idl",
     "nsIUrlListManager.idl",
@@ -54,10 +55,11 @@ SOURCES += [
 ]
 
 EXTRA_JS_MODULES += [
-    "SafeBrowsing.jsm",
-    "UrlClassifierHashCompleter.jsm",
-    "UrlClassifierLib.jsm",
-    "UrlClassifierListManager.jsm",
+    "SafeBrowsing.sys.mjs",
+    "UrlClassifierHashCompleter.sys.mjs",
+    "UrlClassifierLib.sys.mjs",
+    "UrlClassifierListManager.sys.mjs",
+    "UrlClassifierRemoteSettingsService.sys.mjs",
 ]
 
 XPCOM_MANIFESTS += [
@@ -97,5 +99,3 @@ with Files("docs/**"):
     SCHEDULES.exclusive = ["docs"]
 
 include("/ipc/chromium/chromium-config.mozbuild")
-
-REQUIRES_UNIFIED_BUILD = True

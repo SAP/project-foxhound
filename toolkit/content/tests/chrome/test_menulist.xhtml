@@ -6,11 +6,11 @@
         onload="setTimeout(testtag_menulists, 0);"
         xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul">
 
-  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>      
-  <script src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"></script>      
-  <script type="application/javascript" src="xul_selectcontrol.js"></script>      
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"></script>
+  <script type="application/javascript" src="xul_selectcontrol.js"></script>
 
-<vbox id="scroller" style="overflow: auto" height="60">
+<vbox id="scroller" style="overflow: auto; height: 60px">
   <menulist id="menulist" onpopupshown="test_menulist_open(this, this.parentNode)"
             onpopuphidden="$('menulist-in-listbox').open = true;">
     <menupopup id="menulist-popup"/>
@@ -18,7 +18,7 @@
   <button label="Two"/>
   <button label="Three"/>
 </vbox>
-<richlistbox id="scroller-in-listbox" style="overflow: auto" height="60">
+<richlistbox id="scroller-in-listbox" style="overflow: auto; height: 60px">
   <richlistitem allowevents="true">
     <menulist id="menulist-in-listbox" onpopupshown="test_menulist_open(this, this.parentNode.parentNode)"
               onpopuphidden="SimpleTest.executeSoon(() => checkScrollAndFinish().catch(ex => ok(false, ex)));">
@@ -38,7 +38,7 @@
 <hbox>
   <menulist id="menulist-size">
     <menupopup>
-      <menuitem label="Menuitem Label" width="200"/>
+      <menuitem label="Menuitem Label" style="width: 200px"/>
     </menupopup>
   </menulist>
 </hbox>
@@ -59,7 +59,7 @@
 </menulist>
 
 <menulist id="menulist-clipped">
-  <menupopup height="65">
+  <menupopup style="height: 65px">
     <menuitem label="One" value="one"/>
     <menuitem label="Two" value="two"/>
     <menuitem label="Three" value="three"/>
@@ -109,10 +109,6 @@ function testtag_menulist_UI_finish(element)
   element.value = "";
 
   test_nsIDOMXULSelectControlElement(element, "menuitem", null);
-
-  // bug 566154, the menulist width should account for vertical scrollbar
-  ok(document.getElementById("menulist-size").getBoundingClientRect().width >= 210,
-     "menulist popup width includes scrollbar width");
 
   $("menulist").open = true;
 }

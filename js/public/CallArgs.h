@@ -94,7 +94,7 @@ extern JS_PUBLIC_API void CheckIsValidConstructible(const Value& v);
 #endif
 
 class MOZ_STACK_CLASS IncludeUsedRval {
-  mutable bool usedRval_;
+  mutable bool usedRval_ = false;
 
  public:
   bool usedRval() const { return usedRval_; }
@@ -118,8 +118,8 @@ class MOZ_STACK_CLASS CallArgsBase {
                 "WantUsedRval can only be IncludeUsedRval or NoUsedRval");
 
  protected:
-  Value* argv_;
-  unsigned argc_;
+  Value* argv_ = nullptr;
+  unsigned argc_ = 0;
   bool constructing_ : 1;
 
   // True if the caller does not use the return value.
@@ -137,6 +137,8 @@ class MOZ_STACK_CLASS CallArgsBase {
   void clearUsedRval() const {}
   void assertUnusedRval() const {}
 #endif
+
+  CallArgsBase() : constructing_(false), ignoresReturnValue_(false) {}
 
  public:
   // CALLEE ACCESS
@@ -343,7 +345,8 @@ JS_PUBLIC_API inline bool CallArgsBase<WantUsedRval>::requireAtLeast(
 }  // namespace detail
 
 MOZ_ALWAYS_INLINE CallArgs CallArgsFromVp(unsigned argc, Value* vp) {
-  return CallArgs::create(argc, vp + 2, vp[1].isMagic(JS_IS_CONSTRUCTING));
+  return CallArgs::create(argc, vp + 2,
+                          vp[1].isMagicNoReleaseCheck(JS_IS_CONSTRUCTING));
 }
 
 // This method is only intended for internal use in SpiderMonkey.  We may

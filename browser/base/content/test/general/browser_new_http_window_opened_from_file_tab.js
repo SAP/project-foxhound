@@ -2,23 +2,24 @@
 /* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 
 const TEST_FILE = "file_with_link_to_http.html";
+// eslint-disable-next-line @microsoft/sdl/no-insecure-url
 const TEST_HTTP = "http://example.org/";
 
 // Test for bug 1338375.
-add_task(async function() {
+add_task(async function () {
   // Open file:// page.
   let dir = getChromeDir(getResolvedURI(gTestPath));
   dir.append(TEST_FILE);
   const uriString = Services.io.newFileURI(dir).spec;
   let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, uriString);
-  registerCleanupFunction(async function() {
+  registerCleanupFunction(async function () {
     BrowserTestUtils.removeTab(tab);
   });
   let browser = tab.linkedBrowser;
 
   // Set pref to open in new window.
   Services.prefs.setIntPref("browser.link.open_newwindow", 2);
-  registerCleanupFunction(function() {
+  registerCleanupFunction(function () {
     Services.prefs.clearUserPref("browser.link.open_newwindow");
   });
 
@@ -29,7 +30,7 @@ add_task(async function() {
     content.open(uri, "_blank");
   });
   let win = await promiseNewWindow;
-  registerCleanupFunction(async function() {
+  registerCleanupFunction(async function () {
     await BrowserTestUtils.closeWindow(win);
   });
   ok(win, "Check that an http window loaded when using window.open.");
@@ -47,7 +48,7 @@ add_task(async function() {
   promiseNewWindow = BrowserTestUtils.waitForNewWindow({ url: TEST_HTTP });
   await BrowserTestUtils.synthesizeMouseAtCenter("#linkToExample", {}, browser);
   let win2 = await promiseNewWindow;
-  registerCleanupFunction(async function() {
+  registerCleanupFunction(async function () {
     await BrowserTestUtils.closeWindow(win2);
   });
   ok(win2, "Check that an http window loaded when using link.");

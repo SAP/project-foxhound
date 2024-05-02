@@ -11,13 +11,12 @@
 #include "base/basictypes.h"
 #include "base/file_path.h"
 #include "base/thread.h"
-#include "chrome/common/child_process_host.h"
 #include "mozilla/ipc/GeckoChildProcessHost.h"
+#include "nsIFile.h"
 
 class nsIRunnable;
 
-namespace mozilla {
-namespace gmp {
+namespace mozilla::gmp {
 
 class GMPProcessParent final : public mozilla::ipc::GeckoChildProcessHost {
  public:
@@ -31,6 +30,7 @@ class GMPProcessParent final : public mozilla::ipc::GeckoChildProcessHost {
 
   bool CanShutdown() override { return true; }
   const std::string& GetPluginFilePath() { return mGMPPath; }
+  bool UseXPCOM() const { return mUseXpcom; }
 
 #if defined(XP_MACOSX) && defined(MOZ_SANDBOX)
   // Init static members on the main thread
@@ -54,11 +54,6 @@ class GMPProcessParent final : public mozilla::ipc::GeckoChildProcessHost {
   static MacSandboxType GetMacSandboxType() { return MacSandboxType_GMP; };
 #endif
 
-#if defined(XP_MACOSX) && defined(__aarch64__)
-  void SetLaunchArchitecture(uint32_t aArch) { mChildLaunchArch = aArch; }
-#endif
-
-  using mozilla::ipc::GeckoChildProcessHost::GetChannel;
   using mozilla::ipc::GeckoChildProcessHost::GetChildProcessHandle;
 
  private:
@@ -68,6 +63,9 @@ class GMPProcessParent final : public mozilla::ipc::GeckoChildProcessHost {
 
   std::string mGMPPath;
   nsCOMPtr<nsIRunnable> mDeletedCallback;
+
+  // Whether or not XPCOM is enabled in the GMP process.
+  bool mUseXpcom;
 
 #if defined(XP_MACOSX) && defined(MOZ_SANDBOX)
   // Indicates whether we'll start the Mac GMP sandbox during
@@ -81,14 +79,6 @@ class GMPProcessParent final : public mozilla::ipc::GeckoChildProcessHost {
   // Override so we can set GMP-specific sandbox parameters
   bool FillMacSandboxInfo(MacSandboxInfo& aInfo) override;
 
-  // For normalizing paths to be compatible with sandboxing.
-  // We use normalized paths to generate the sandbox ruleset. Once
-  // the sandbox has been started, resolving symlinks that point to
-  // allowed directories could require reading paths not allowed by
-  // the sandbox, so we should only attempt to load plugin libraries
-  // using normalized paths.
-  static nsresult NormalizePath(const char* aPath, nsACString& aNormalizedPath);
-
   // Controls whether or not the sandbox will be configured with
   // window service access.
   bool mRequiresWindowServer;
@@ -99,14 +89,17 @@ class GMPProcessParent final : public mozilla::ipc::GeckoChildProcessHost {
 #  endif
 #endif
 
-#if defined(XP_MACOSX) && defined(__aarch64__)
-  uint32_t mChildLaunchArch;
-#endif
+  // For normalizing paths to be compatible with sandboxing.
+  // We use normalized paths to generate the sandbox ruleset. Once
+  // the sandbox has been started, resolving symlinks that point to
+  // allowed directories could require reading paths not allowed by
+  // the sandbox, so we should only attempt to load plugin libraries
+  // using normalized paths.
+  static nsresult NormalizePath(const char* aPath, PathString& aNormalizedPath);
 
   DISALLOW_COPY_AND_ASSIGN(GMPProcessParent);
 };
 
-}  // namespace gmp
-}  // namespace mozilla
+}  // namespace mozilla::gmp
 
 #endif  // ifndef GMPProcessParent_h

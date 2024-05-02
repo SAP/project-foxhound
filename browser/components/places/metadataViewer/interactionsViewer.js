@@ -4,16 +4,14 @@
 
 /* eslint-env module */
 
-const { Interactions } = ChromeUtils.import(
-  "resource:///modules/Interactions.jsm"
+const { Interactions } = ChromeUtils.importESModule(
+  "resource:///modules/Interactions.sys.mjs"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { Snapshots } = ChromeUtils.import("resource:///modules/Snapshots.jsm");
-const { PlacesUtils } = ChromeUtils.import(
-  "resource://gre/modules/PlacesUtils.jsm"
+const { PlacesUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/PlacesUtils.sys.mjs"
 );
-const { PlacesDBUtils } = ChromeUtils.import(
-  "resource://gre/modules/PlacesDBUtils.jsm"
+const { PlacesDBUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/PlacesDBUtils.sys.mjs"
 );
 
 /**
@@ -23,14 +21,15 @@ class TableViewer {
   /**
    * Maximum number of rows to display by default.
    *
-   * @typedef {number}
+   * @type {number}
    */
   maxRows = 100;
 
   /**
    * The number of rows that we last filled in on the table. This allows
    * tracking to know when to clear unused rows.
-   * @typedef {number}
+   *
+   * @type {number}
    */
   #lastFilledRows = 0;
 
@@ -44,13 +43,14 @@ class TableViewer {
    * - includeTitle determines if the title attribute should be set on that
    *   column, for tooltips, e.g. if an element is likely to overflow.
    *
-   * @typedef {Map<string, object>}
+   * @type {Map<string, object>}
    */
   columnMap;
 
   /**
    * A reference for the current interval timer, if any.
-   * @typedef {number}
+   *
+   * @type {number}
    */
   #timer;
 
@@ -103,11 +103,13 @@ class TableViewer {
    The numbers need to be adapted if the number of columns changes. */
 `;
     for (let i = numColumns + 1; i <= numColumns * 2 - 1; i++) {
-      styleText += `#tableViewer > div:nth-child(${numColumns}n+${i}):nth-child(${numColumns *
-        2}n+${i}),\n`;
+      styleText += `#tableViewer > div:nth-child(${numColumns}n+${i}):nth-child(${
+        numColumns * 2
+      }n+${i}),\n`;
     }
-    styleText += `#tableViewer > div:nth-child(${numColumns}n+${numColumns *
-      2}):nth-child(${numColumns * 2}n+${numColumns * 2})\n
+    styleText += `#tableViewer > div:nth-child(${numColumns}n+${
+      numColumns * 2
+    }):nth-child(${numColumns * 2}n+${numColumns * 2})\n
 {
   background: var(--in-content-box-background-odd);
 }`;
@@ -232,7 +234,7 @@ const metadataHandler = new (class extends TableViewer {
   /**
    * A reference to the database connection.
    *
-   * @typedef {mozIStorageConnection}
+   * @type {mozIStorageConnection}
    */
   #db = null;
 
@@ -319,71 +321,6 @@ const metadataHandler = new (class extends TableViewer {
 })();
 
 /**
- * Viewer definition for the Snapshots data.
- */
-const snapshotHandler = new (class extends TableViewer {
-  title = "Snapshots";
-  cssGridTemplateColumns = "fit-content(100%) repeat(6, max-content);";
-
-  /**
-   * @see TableViewer.columnMap
-   */
-  columnMap = new Map([
-    ["url", { header: "URL", includeTitle: true }],
-    [
-      "createdAt",
-      {
-        header: "Created",
-        modifier: c => c?.toLocaleString() ?? "",
-      },
-    ],
-    [
-      "removedAt",
-      {
-        header: "Removed",
-        modifier: r => r?.toLocaleString() ?? "",
-      },
-    ],
-    [
-      "firstInteractionAt",
-      {
-        header: "First Interaction",
-        modifier: f => f?.toLocaleString() ?? "",
-      },
-    ],
-    [
-      "lastInteractionAt",
-      {
-        header: "Latest Interaction",
-        modifier: l => l?.toLocaleString() ?? "",
-      },
-    ],
-    [
-      "documentType",
-      {
-        header: "Doc Type",
-        modifier: d =>
-          d == Interactions.DOCUMENT_TYPE.MEDIA ? "Media" : "Generic",
-      },
-    ],
-    [
-      "userPersisted",
-      {
-        header: "User Persisted",
-        modifier: u => (u ? u : ""),
-      },
-    ],
-  ]);
-
-  /**
-   * Loads the current metadata from the database and updates the display.
-   */
-  async updateDisplay() {
-    this.displayData(await Snapshots.query({ includeTombstones: true }));
-  }
-})();
-
-/**
  * Viewer definition for the Places database stats.
  */
 const placesStatsHandler = new (class extends TableViewer {
@@ -427,26 +364,7 @@ const placesStatsHandler = new (class extends TableViewer {
    * Loads the current metadata from the database and updates the display.
    */
   async updateDisplay() {
-    let stats = await PlacesDBUtils.getEntitiesStats();
-    let data = [];
-    let db = await PlacesUtils.promiseDBConnection();
-    for (let [entity, value] of stats) {
-      let count = "-";
-      try {
-        if (
-          entity.startsWith("moz_") &&
-          !entity.endsWith("index") &&
-          entity != "moz_places_visitcount" /* bug in index name */
-        ) {
-          count = (
-            await db.execute(`SELECT count(*) FROM ${entity}`)
-          )[0].getResultByIndex(0);
-        }
-      } catch (ex) {
-        console.error(ex);
-      }
-      data.push(Object.assign(value, { entity, count }));
-    }
+    let data = await PlacesDBUtils.getEntitiesStatsAndCounts();
     this.displayData(data);
   }
 })();
@@ -470,9 +388,6 @@ function show(selectedButton) {
   currentButton.classList.remove("selected");
   selectedButton.classList.add("selected");
   switch (selectedButton.getAttribute("value")) {
-    case "snapshots":
-      (gCurrentHandler = snapshotHandler).start();
-      break;
     case "metadata":
       (gCurrentHandler = metadataHandler).start();
       metadataHandler.start();
@@ -507,6 +422,6 @@ function setupListeners() {
 
 checkPrefs();
 // Set the initial handler here.
-let gCurrentHandler = snapshotHandler;
+let gCurrentHandler = metadataHandler;
 gCurrentHandler.start().catch(console.error);
 setupListeners();

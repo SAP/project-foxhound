@@ -3,11 +3,13 @@
 
 "use strict";
 
-const { PromptTestUtils } = ChromeUtils.import(
-  "resource://testing-common/PromptTestUtils.jsm"
+const { PromptTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/PromptTestUtils.sys.mjs"
 );
 
-let { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
+let { HttpServer } = ChromeUtils.importESModule(
+  "resource://testing-common/httpd.sys.mjs"
+);
 
 const TEST_ROOT = getRootDirectory(gTestPath).replace(
   "chrome://mochitests/content",
@@ -125,7 +127,7 @@ async function checkDialog(
   });
 }
 
-add_task(async function setup() {
+add_setup(async function () {
   await SpecialPowers.pushPrefEnv({
     set: [
       ["prompts.contentPromptSubDialog", true],
@@ -137,6 +139,7 @@ add_task(async function setup() {
 
 add_task(async function test_check_prompt_origin_display() {
   await checkAlert("https://example.com/", { value: "example.com" });
+  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
   await checkAlert("http://example.com/", { value: "example.com" });
   await checkAlert("data:text/html,<body>", {
     l10nId: "common-dialog-title-null",
@@ -183,18 +186,19 @@ add_task(async function test_check_auth() {
   server.start(-1);
 
   const HOST = `localhost:${server.identity.primaryPort}`;
+  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
   const AUTH_URI = `http://${HOST}/forbidden`;
 
   // Try a simple load:
   await checkDialog(
     "https://example.com/",
-    browser => BrowserTestUtils.loadURI(browser, AUTH_URI),
+    browser => BrowserTestUtils.startLoadingURIString(browser, AUTH_URI),
     HOST,
     "chrome://global/skin/icons/defaultFavicon.svg",
     Ci.nsIPrompt.MODAL_TYPE_TAB
   );
 
-  let subframeLoad = function(browser) {
+  let subframeLoad = function (browser) {
     return SpecialPowers.spawn(browser, [AUTH_URI], uri => {
       let f = content.document.createElement("iframe");
       f.src = uri;
@@ -204,6 +208,7 @@ add_task(async function test_check_auth() {
 
   // Try x-origin subframe:
   await checkDialog(
+    // eslint-disable-next-line @microsoft/sdl/no-insecure-url
     "http://example.org/1",
     subframeLoad,
     HOST,

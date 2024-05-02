@@ -9,18 +9,18 @@ const { shallow } = require("enzyme");
 const {
   REPS,
   getRep,
-} = require("devtools/client/shared/components/reps/reps/rep");
+} = require("resource://devtools/client/shared/components/reps/reps/rep.js");
 
 const {
   expectActorAttribute,
-} = require("devtools/client/shared/components/test/node/components/reps/test-helpers");
+} = require("resource://devtools/client/shared/components/test/node/components/reps/test-helpers.js");
 
 const { ErrorRep } = REPS;
 const {
   MODE,
-} = require("devtools/client/shared/components/reps/reps/constants");
-const stubs = require("devtools/client/shared/components/test/node/stubs/reps/error");
-const dom = require("devtools/client/shared/vendor/react-dom-factories");
+} = require("resource://devtools/client/shared/components/reps/reps/constants.js");
+const stubs = require("resource://devtools/client/shared/components/test/node/stubs/reps/error.js");
+const dom = require("resource://devtools/client/shared/vendor/react-dom-factories.js");
 
 describe("Error - Simple error", () => {
   // Test object = `new Error("Error message")`
@@ -49,6 +49,17 @@ describe("Error - Simple error", () => {
       ErrorRep.rep({
         object: stub,
         mode: MODE.TINY,
+      })
+    );
+
+    expect(renderedComponent.text()).toEqual("Error");
+  });
+
+  it("renders with expected text for simple error in HEADER mode", () => {
+    const renderedComponent = shallow(
+      ErrorRep.rep({
+        object: stub,
+        mode: MODE.HEADER,
       })
     );
 
@@ -129,6 +140,17 @@ describe("Error - Multi line stack error", () => {
 
     expect(renderedComponent.text()).toEqual("Error");
   });
+
+  it("renders expected text for simple multiline error in HEADER mode", () => {
+    const renderedComponent = shallow(
+      ErrorRep.rep({
+        object: stub,
+        mode: MODE.HEADER,
+      })
+    );
+
+    expect(renderedComponent.text()).toEqual("Error");
+  });
 });
 
 describe("Error - Error without stacktrace", () => {
@@ -190,6 +212,17 @@ describe("Error - Eval error", () => {
 
     expect(renderedComponent.text()).toEqual("EvalError");
   });
+
+  it("renders with expected text for an EvalError in HEADER mode", () => {
+    const renderedComponent = shallow(
+      ErrorRep.rep({
+        object: stub,
+        mode: MODE.HEADER,
+      })
+    );
+
+    expect(renderedComponent.text()).toEqual("EvalError");
+  });
 });
 
 describe("Error - Internal error", () => {
@@ -216,6 +249,17 @@ describe("Error - Internal error", () => {
       ErrorRep.rep({
         object: stub,
         mode: MODE.TINY,
+      })
+    );
+
+    expect(renderedComponent.text()).toEqual("InternalError");
+  });
+
+  it("renders with expected text for an InternalError in HEADER mode", () => {
+    const renderedComponent = shallow(
+      ErrorRep.rep({
+        object: stub,
+        mode: MODE.HEADER,
       })
     );
 
@@ -252,6 +296,17 @@ describe("Error - Range error", () => {
 
     expect(renderedComponent.text()).toEqual("RangeError");
   });
+
+  it("renders with expected text for RangeError in HEADER mode", () => {
+    const renderedComponent = shallow(
+      ErrorRep.rep({
+        object: stub,
+        mode: MODE.HEADER,
+      })
+    );
+
+    expect(renderedComponent.text()).toEqual("RangeError");
+  });
 });
 
 describe("Error - Reference error", () => {
@@ -278,6 +333,17 @@ describe("Error - Reference error", () => {
       ErrorRep.rep({
         object: stub,
         mode: MODE.TINY,
+      })
+    );
+
+    expect(renderedComponent.text()).toEqual("ReferenceError");
+  });
+
+  it("renders with expected text for ReferenceError in HEADER mode", () => {
+    const renderedComponent = shallow(
+      ErrorRep.rep({
+        object: stub,
+        mode: MODE.HEADER,
       })
     );
 
@@ -314,6 +380,17 @@ describe("Error - Syntax error", () => {
 
     expect(renderedComponent.text()).toEqual("SyntaxError");
   });
+
+  it("renders with expected text for SyntaxError in HEADER mode", () => {
+    const renderedComponent = shallow(
+      ErrorRep.rep({
+        object: stub,
+        mode: MODE.HEADER,
+      })
+    );
+
+    expect(renderedComponent.text()).toEqual("SyntaxError");
+  });
 });
 
 describe("Error - Type error", () => {
@@ -345,6 +422,17 @@ describe("Error - Type error", () => {
 
     expect(renderedComponent.text()).toEqual("TypeError");
   });
+
+  it("renders with expected text for TypeError in HEADER mode", () => {
+    const renderedComponent = shallow(
+      ErrorRep.rep({
+        object: stub,
+        mode: MODE.HEADER,
+      })
+    );
+
+    expect(renderedComponent.text()).toEqual("TypeError");
+  });
 });
 
 describe("Error - URI error", () => {
@@ -371,6 +459,17 @@ describe("Error - URI error", () => {
       ErrorRep.rep({
         object: stub,
         mode: MODE.TINY,
+      })
+    );
+
+    expect(renderedComponent.text()).toEqual("URIError");
+  });
+
+  it("renders with expected text for URIError in HEADER mode", () => {
+    const renderedComponent = shallow(
+      ErrorRep.rep({
+        object: stub,
+        mode: MODE.HEADER,
       })
     );
 
@@ -408,9 +507,20 @@ describe("Error - DOMException", () => {
 
     expect(renderedComponent.text()).toEqual("DOMException");
   });
+
+  it("renders with expected text for DOMException in HEADER mode", () => {
+    const renderedComponent = shallow(
+      ErrorRep.rep({
+        object: stub,
+        mode: MODE.HEADER,
+      })
+    );
+
+    expect(renderedComponent.text()).toEqual("DOMException");
+  });
 });
 
-describe("Error - base-loader.js", () => {
+describe("Error - base-loader.sys.mjs", () => {
   const stub = stubs.get("base-loader Error");
 
   it("renders as expected without mode", () => {
@@ -429,6 +539,17 @@ describe("Error - base-loader.js", () => {
       ErrorRep.rep({
         object: stub,
         mode: MODE.TINY,
+      })
+    );
+
+    expect(renderedComponent).toMatchSnapshot();
+  });
+
+  it("renders as expected in HEADER mode", () => {
+    const renderedComponent = shallow(
+      ErrorRep.rep({
+        object: stub,
+        mode: MODE.HEADER,
       })
     );
 

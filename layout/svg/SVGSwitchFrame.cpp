@@ -35,27 +35,26 @@ class SVGSwitchFrame final : public SVGGFrame {
   NS_DECL_FRAMEARENA_HELPERS(SVGSwitchFrame)
 
 #ifdef DEBUG
-  virtual void Init(nsIContent* aContent, nsContainerFrame* aParent,
-                    nsIFrame* aPrevInFlow) override;
+  void Init(nsIContent* aContent, nsContainerFrame* aParent,
+            nsIFrame* aPrevInFlow) override;
 #endif
 
 #ifdef DEBUG_FRAME_DUMP
-  virtual nsresult GetFrameName(nsAString& aResult) const override {
+  nsresult GetFrameName(nsAString& aResult) const override {
     return MakeFrameName(u"SVGSwitch"_ns, aResult);
   }
 #endif
 
-  virtual void BuildDisplayList(nsDisplayListBuilder* aBuilder,
-                                const nsDisplayListSet& aLists) override;
+  void BuildDisplayList(nsDisplayListBuilder* aBuilder,
+                        const nsDisplayListSet& aLists) override;
 
   // ISVGDisplayableFrame interface:
-  virtual void PaintSVG(gfxContext& aContext, const gfxMatrix& aTransform,
-                        imgDrawingParams& aImgParams,
-                        const nsIntRect* aDirtyRect = nullptr) override;
+  void PaintSVG(gfxContext& aContext, const gfxMatrix& aTransform,
+                imgDrawingParams& aImgParams) override;
   nsIFrame* GetFrameForPoint(const gfxPoint& aPoint) override;
-  virtual void ReflowSVG() override;
-  virtual SVGBBox GetBBoxContribution(const Matrix& aToBBoxUserspace,
-                                      uint32_t aFlags) override;
+  void ReflowSVG() override;
+  SVGBBox GetBBoxContribution(const Matrix& aToBBoxUserspace,
+                              uint32_t aFlags) override;
 
  private:
   nsIFrame* GetActiveChildFrame();
@@ -97,14 +96,11 @@ void SVGSwitchFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
 }
 
 void SVGSwitchFrame::PaintSVG(gfxContext& aContext, const gfxMatrix& aTransform,
-                              imgDrawingParams& aImgParams,
-                              const nsIntRect* aDirtyRect) {
-  NS_ASSERTION(
-      !NS_SVGDisplayListPaintingEnabled() || (mState & NS_FRAME_IS_NONDISPLAY),
-      "If display lists are enabled, only painting of non-display "
-      "SVG should take this code path");
+                              imgDrawingParams& aImgParams) {
+  NS_ASSERTION(HasAnyStateBits(NS_FRAME_IS_NONDISPLAY),
+               "Only painting of non-display SVG should take this code path");
 
-  if (StyleEffects()->mOpacity == 0.0) {
+  if (StyleEffects()->IsTransparent()) {
     return;
   }
 
@@ -114,35 +110,12 @@ void SVGSwitchFrame::PaintSVG(gfxContext& aContext, const gfxMatrix& aTransform,
     if (kid->GetContent()->IsSVGElement()) {
       tm = SVGUtils::GetTransformMatrixInUserSpace(kid) * tm;
     }
-    SVGUtils::PaintFrameWithEffects(kid, aContext, tm, aImgParams, aDirtyRect);
+    SVGUtils::PaintFrameWithEffects(kid, aContext, tm, aImgParams);
   }
 }
 
 nsIFrame* SVGSwitchFrame::GetFrameForPoint(const gfxPoint& aPoint) {
-  NS_ASSERTION(!NS_SVGDisplayListHitTestingEnabled() ||
-                   (mState & NS_FRAME_IS_NONDISPLAY),
-               "If display lists are enabled, only hit-testing of non-display "
-               "SVG should take this code path");
-
-  nsIFrame* kid = GetActiveChildFrame();
-  ISVGDisplayableFrame* svgFrame = do_QueryFrame(kid);
-  if (svgFrame) {
-    // Transform the point from our SVG user space to our child's.
-    gfxPoint point = aPoint;
-    gfxMatrix m =
-        static_cast<const SVGElement*>(GetContent())
-            ->PrependLocalTransformsTo(gfxMatrix(), eChildToUserSpace);
-    m = static_cast<const SVGElement*>(kid->GetContent())
-            ->PrependLocalTransformsTo(m, eUserSpaceToParent);
-    if (!m.IsIdentity()) {
-      if (!m.Invert()) {
-        return nullptr;
-      }
-      point = m.TransformPoint(point);
-    }
-    return svgFrame->GetFrameForPoint(point);
-  }
-
+  MOZ_ASSERT_UNREACHABLE("A clipPath cannot contain an SVGSwitch element");
   return nullptr;
 }
 
@@ -208,7 +181,7 @@ void SVGSwitchFrame::ReflowSVG() {
   // need to remove it _after_ recursing over our children so that they know
   // the initial reflow is currently underway.
 
-  bool isFirstReflow = (mState & NS_FRAME_FIRST_REFLOW);
+  bool isFirstReflow = HasAnyStateBits(NS_FRAME_FIRST_REFLOW);
 
   bool outerSVGHasHadFirstReflow =
       !GetParent()->HasAnyStateBits(NS_FRAME_FIRST_REFLOW);

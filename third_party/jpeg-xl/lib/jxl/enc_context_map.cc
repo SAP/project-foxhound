@@ -16,7 +16,9 @@
 #include "lib/jxl/base/bits.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/enc_ans.h"
+#include "lib/jxl/enc_aux_out.h"
 #include "lib/jxl/entropy_coder.h"
+#include "lib/jxl/pack_signed.h"
 
 namespace jxl {
 
@@ -56,7 +58,8 @@ std::vector<uint8_t> MoveToFrontTransform(const std::vector<uint8_t>& v) {
 }  // namespace
 
 void EncodeContextMap(const std::vector<uint8_t>& context_map,
-                      size_t num_histograms, BitWriter* writer) {
+                      size_t num_histograms, BitWriter* writer, size_t layer,
+                      AuxOut* aux_out) {
   if (num_histograms == 1) {
     // Simple code
     writer->Write(1, 1);
@@ -100,7 +103,7 @@ void EncodeContextMap(const std::vector<uint8_t>& context_map,
     writer->Write(1, 0);
     writer->Write(1, use_mtf);  // Use/don't use MTF.
     BuildAndEncodeHistograms(params, 1, tokens, &codes, &dummy_context_map,
-                             writer, 0, nullptr);
+                             writer, layer, aux_out);
     WriteTokens(tokens[0], codes, dummy_context_map, writer);
   }
 }
@@ -118,7 +121,7 @@ void EncodeBlockCtxMap(const BlockCtxMap& block_ctx_map, BitWriter* writer,
       ctx_map.size() == 21 &&
       std::equal(ctx_map.begin(), ctx_map.end(), BlockCtxMap::kDefaultCtxMap)) {
     writer->Write(1, 1);  // default
-    ReclaimAndCharge(writer, &allotment, kLayerAC, aux_out);
+    allotment.ReclaimAndCharge(writer, kLayerAC, aux_out);
     return;
   }
   writer->Write(1, 0);
@@ -132,8 +135,8 @@ void EncodeBlockCtxMap(const BlockCtxMap& block_ctx_map, BitWriter* writer,
   for (uint32_t i : qft) {
     JXL_CHECK(U32Coder::Write(kQFThresholdDist, i - 1, writer));
   }
-  EncodeContextMap(ctx_map, block_ctx_map.num_ctxs, writer);
-  ReclaimAndCharge(writer, &allotment, kLayerAC, aux_out);
+  EncodeContextMap(ctx_map, block_ctx_map.num_ctxs, writer, kLayerAC, aux_out);
+  allotment.ReclaimAndCharge(writer, kLayerAC, aux_out);
 }
 
 }  // namespace jxl

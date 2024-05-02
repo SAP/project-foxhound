@@ -44,8 +44,10 @@ void TextDecoder::InitWithEncoding(NotNull<const Encoding*> aEncoding,
   }
 }
 
-void TextDecoder::Decode(Span<const uint8_t> aInput, const bool aStream,
-                         nsAString& aOutDecodedString, ErrorResult& aRv) {
+void TextDecoderCommon::DecodeNative(Span<const uint8_t> aInput,
+                                     const bool aStream,
+                                     nsAString& aOutDecodedString,
+                                     ErrorResult& aRv) {
   aOutDecodedString.Truncate();
 
   CheckedInt<nsAString::size_type> needed =
@@ -99,26 +101,17 @@ void TextDecoder::Decode(const Optional<ArrayBufferViewOrArrayBuffer>& aBuffer,
                          const TextDecodeOptions& aOptions,
                          nsAString& aOutDecodedString, ErrorResult& aRv) {
   if (!aBuffer.WasPassed()) {
-    Decode(nullptr, aOptions.mStream, aOutDecodedString, aRv);
+    DecodeNative(nullptr, aOptions.mStream, aOutDecodedString, aRv);
     return;
   }
-  const ArrayBufferViewOrArrayBuffer& buf = aBuffer.Value();
-  uint8_t* data;
-  uint32_t length;
-  if (buf.IsArrayBufferView()) {
-    buf.GetAsArrayBufferView().ComputeState();
-    data = buf.GetAsArrayBufferView().Data();
-    length = buf.GetAsArrayBufferView().Length();
-  } else {
-    MOZ_ASSERT(buf.IsArrayBuffer());
-    buf.GetAsArrayBuffer().ComputeState();
-    data = buf.GetAsArrayBuffer().Data();
-    length = buf.GetAsArrayBuffer().Length();
-  }
-  Decode(Span(data, length), aOptions.mStream, aOutDecodedString, aRv);
+
+  ProcessTypedArrays(aBuffer.Value(), [&](const Span<uint8_t>& aData,
+                                          JS::AutoCheckCannotGC&&) {
+    DecodeNative(aData, aOptions.mStream, aOutDecodedString, aRv);
+  });
 }
 
-void TextDecoder::GetEncoding(nsAString& aEncoding) {
+void TextDecoderCommon::GetEncoding(nsAString& aEncoding) {
   CopyASCIItoUTF16(mEncoding, aEncoding);
   nsContentUtils::ASCIIToLower(aEncoding);
 }

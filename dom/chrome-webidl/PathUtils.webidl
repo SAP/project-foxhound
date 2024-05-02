@@ -38,7 +38,7 @@ namespace PathUtils {
    * Join the given components into a full path.
    *
    * @param components The path components. The first component must be an
-   *                   absolute path.
+   *                   absolute path. There must be at least one component.
    */
   [Throws]
   DOMString join(DOMString... components);
@@ -82,6 +82,14 @@ namespace PathUtils {
   sequence<DOMString> split(DOMString path);
 
   /**
+   * Split a relative path into its components.
+   *
+   * @param path A relative path.
+   */
+  [Throws]
+  sequence<DOMString> splitRelative(DOMString path, optional SplitRelativeOptions options = {});
+
+  /**
    * Transform a file path into a file: URI
    *
    * @param path An absolute path.
@@ -103,33 +111,65 @@ namespace PathUtils {
 
 [Exposed=Window]
 partial namespace PathUtils {
+  /**
+   * The profile directory.
+   */
   [Throws, BinaryName="ProfileDirSync"]
   readonly attribute DOMString profileDir;
 
+  /**
+   * The local-specific profile directory.
+   */
   [Throws, BinaryName="LocalProfileDirSync"]
   readonly attribute DOMString localProfileDir;
 
+  /**
+   * The OS temporary directory.
+   */
   [Throws, BinaryName="TempDirSync"]
   readonly attribute DOMString tempDir;
+
+  /**
+   * The libxul path.
+   */
+  [Throws, BinaryName="XulLibraryPathSync"]
+  readonly attribute DOMString xulLibraryPath;
 };
 
-[Exposed=(Window, Worker)]
+[Exposed=Worker]
 partial namespace PathUtils {
   /**
    * The profile directory.
    */
-  [Throws, BinaryName="GetProfileDirAsync"]
+  [NewObject, BinaryName="GetProfileDirAsync"]
   Promise<DOMString> getProfileDir();
 
   /**
    * The local-specific profile directory.
    */
-  [Throws, BinaryName="GetProfileDirAsync"]
+  [NewObject, BinaryName="GetLocalProfileDirAsync"]
   Promise<DOMString> getLocalProfileDir();
 
   /**
-   * The temporary directory for the process.
+   * The OS temporary directory.
    */
-  [Throws, BinaryName="GetTempDirAsync"]
+  [NewObject, BinaryName="GetTempDirAsync"]
   Promise<DOMString> getTempDir();
+
+  /**
+   * The libxul path.
+   */
+  [NewObject, BinaryName="GetXulLibraryPathAsync"]
+  Promise<DOMString> getXulLibraryPath();
+};
+
+dictionary SplitRelativeOptions {
+  /** Allow for a path that contains empty components. */
+  boolean allowEmpty = false;
+
+  /** Allow for a path that contains ".." components. */
+  boolean allowParentDir = false;
+
+  /** Allow for a path that contains "." components. */
+  boolean allowCurrentDir = false;
 };

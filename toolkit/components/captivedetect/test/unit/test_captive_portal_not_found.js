@@ -6,7 +6,6 @@
 
 const kInterfaceName = "wifi";
 
-var server;
 var step = 0;
 var attempt = 0;
 
@@ -40,7 +39,7 @@ function test_portal_not_found() {
       Assert.equal(++step, 2);
       Assert.ok(success);
       Assert.equal(attempt, 1);
-      gServer.stop(function() {
+      gServer.stop(function () {
         dump("server stop\n");
         do_test_finished();
       });

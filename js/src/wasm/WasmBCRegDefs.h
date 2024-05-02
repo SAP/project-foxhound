@@ -35,7 +35,7 @@ using namespace js::jit;
 //
 // Scratch register configuration.
 
-#if defined(JS_CODEGEN_NONE)
+#if defined(JS_CODEGEN_NONE) || defined(JS_CODEGEN_WASM32)
 #  define RABALDR_SCRATCH_I32
 #  define RABALDR_SCRATCH_F32
 #  define RABALDR_SCRATCH_F64
@@ -101,6 +101,21 @@ static constexpr Register RabaldrScratchI32 = CallTempReg2;
 #endif
 
 #ifdef JS_CODEGEN_MIPS64
+#  define RABALDR_SCRATCH_I32
+static constexpr Register RabaldrScratchI32 = CallTempReg2;
+#endif
+
+#ifdef JS_CODEGEN_LOONG64
+// We use our own scratch register, because the macro assembler uses
+// the regular scratch register(s) pretty liberally.  We could
+// work around that in several cases but the mess does not seem
+// worth it yet.  CallTempReg2 seems safe.
+
+#  define RABALDR_SCRATCH_I32
+static constexpr Register RabaldrScratchI32 = CallTempReg2;
+#endif
+
+#ifdef JS_CODEGEN_RISCV64
 #  define RABALDR_SCRATCH_I32
 static constexpr Register RabaldrScratchI32 = CallTempReg2;
 #endif
@@ -193,7 +208,7 @@ struct RegPtr : public Register {
 };
 
 struct RegF32 : public FloatRegister {
-  RegF32() : FloatRegister() {}
+  RegF32() {}
   explicit RegF32(FloatRegister reg) : FloatRegister(reg) {
     MOZ_ASSERT(isSingle());
   }
@@ -202,7 +217,7 @@ struct RegF32 : public FloatRegister {
 };
 
 struct RegF64 : public FloatRegister {
-  RegF64() : FloatRegister() {}
+  RegF64() {}
   explicit RegF64(FloatRegister reg) : FloatRegister(reg) {
     MOZ_ASSERT(isDouble());
   }
@@ -212,7 +227,7 @@ struct RegF64 : public FloatRegister {
 
 #ifdef ENABLE_WASM_SIMD
 struct RegV128 : public FloatRegister {
-  RegV128() : FloatRegister() {}
+  RegV128() {}
   explicit RegV128(FloatRegister reg) : FloatRegister(reg) {
     MOZ_ASSERT(isSimd128());
   }
@@ -373,12 +388,8 @@ struct SpecificRegs {
 
   SpecificRegs() : abiReturnRegI64(ReturnReg64) {}
 };
-#elif defined(JS_CODEGEN_ARM64)
-struct SpecificRegs {
-  // Required by gcc.
-  SpecificRegs() {}
-};
-#elif defined(JS_CODEGEN_MIPS64)
+#elif defined(JS_CODEGEN_ARM64) || defined(JS_CODEGEN_MIPS64) || \
+    defined(JS_CODEGEN_LOONG64) || defined(JS_CODEGEN_RISCV64)
 struct SpecificRegs {
   // Required by gcc.
   SpecificRegs() {}
@@ -557,6 +568,12 @@ class BaseRegAlloc {
 #endif
   {
     RegisterAllocator::takeWasmRegisters(availGPR);
+
+#ifdef RABALDR_PIN_INSTANCE
+    // If the InstanceReg is pinned then it is never available for
+    // allocation.
+    availGPR.take(InstanceReg);
+#endif
 
     // Allocate any private scratch registers.
 #if defined(RABALDR_SCRATCH_I32)

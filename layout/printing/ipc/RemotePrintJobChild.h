@@ -10,6 +10,7 @@
 #include "mozilla/layout/PRemotePrintJobChild.h"
 
 #include "mozilla/RefPtr.h"
+#include "mozilla/gfx/Point.h"
 #include "nsIWebProgressListener.h"
 
 class nsPagePrintTimer;
@@ -21,6 +22,8 @@ namespace layout {
 class RemotePrintJobChild final : public PRemotePrintJobChild,
                                   public nsIWebProgressListener {
  public:
+  using IntSize = mozilla::gfx::IntSize;
+
   NS_DECL_ISUPPORTS
   NS_DECL_NSIWEBPROGRESSLISTENER
 
@@ -29,13 +32,12 @@ class RemotePrintJobChild final : public PRemotePrintJobChild,
   void ActorDestroy(ActorDestroyReason aWhy) final;
 
   nsresult InitializePrint(const nsString& aDocumentTitle,
-                           const nsString& aPrintToFile,
                            const int32_t& aStartPage, const int32_t& aEndPage);
 
   mozilla::ipc::IPCResult RecvPrintInitializationResult(
       const nsresult& aRv, const FileDescriptor& aFd) final;
 
-  void ProcessPage(nsTArray<uint64_t>&& aDeps);
+  void ProcessPage(const IntSize& aSizeInPoints, nsTArray<uint64_t>&& aDeps);
 
   mozilla::ipc::IPCResult RecvPageProcessed(const FileDescriptor& aFd) final;
 

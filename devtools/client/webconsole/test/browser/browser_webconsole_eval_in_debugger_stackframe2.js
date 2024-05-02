@@ -11,7 +11,7 @@ const TEST_URI =
   "http://example.com/browser/devtools/client/webconsole/" +
   "test/browser/test-eval-in-stackframe.html";
 
-add_task(async function() {
+add_task(async function () {
   // TODO: Remove this pref change when middleware for terminating requests
   // when closing a panel is implemented
   await pushPref("devtools.debugger.features.inline-preview", false);
@@ -26,7 +26,11 @@ add_task(async function() {
   const dbg = createDebuggerContext(toolbox);
 
   // firstCall calls secondCall, which has a debugger statement, so we'll be paused.
-  const onFirstCallMessageReceived = waitForMessage(hud, "undefined");
+  const onFirstCallMessageReceived = waitForMessageByType(
+    hud,
+    "undefined",
+    ".result"
+  );
 
   const unresolvedSymbol = Symbol();
   let firstCallEvaluationResult = unresolvedSymbol;
@@ -42,15 +46,14 @@ add_task(async function() {
   await openConsole();
 
   info("Executing basic command while paused");
-  await executeAndWaitForMessage(hud, "1 + 2", "3", ".result");
+  await executeAndWaitForResultMessage(hud, "1 + 2", "3");
   ok(true, "`1 + 2` was evaluated whith debugger paused");
 
   info("Executing command using scoped variables while paused");
-  await executeAndWaitForMessage(
+  await executeAndWaitForResultMessage(
     hud,
     "foo + foo2",
-    `"globalFooBug783499foo2SecondCall"`,
-    ".result"
+    `"globalFooBug783499foo2SecondCall"`
   );
   ok(true, "`foo + foo2` was evaluated as expected with debugger paused");
 
@@ -63,7 +66,7 @@ add_task(async function() {
   );
 
   info("Resuming the thread");
-  dbg.actions.resume(dbg.selectors.getThreadContext());
+  dbg.actions.resume();
 
   await onFirstCallMessageReceived;
   ok(

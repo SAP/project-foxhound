@@ -1,5 +1,7 @@
-Svc.Prefs.set("registerEngines", "");
-const { Service } = ChromeUtils.import("resource://services-sync/service.js");
+Svc.PrefBranch.setStringPref("registerEngines", "");
+const { Service } = ChromeUtils.importESModule(
+  "resource://services-sync/service.sys.mjs"
+);
 
 // configure the identity we use for this test.
 const identityConfig = makeIdentityConfig({ username: "johndoe" });
@@ -10,7 +12,7 @@ function FakeCollection() {
 FakeCollection.prototype = {
   handler() {
     let self = this;
-    return function(request, response) {
+    return function (request, response) {
       let body = "";
       self.timestamp = new_timestamp();
       let timestamp = "" + self.timestamp;
@@ -64,7 +66,9 @@ add_task(async function test_wipeServer_list_success() {
     Assert.ok(diesel_coll.deleted);
   } finally {
     await promiseStopServer(server);
-    Svc.Prefs.resetBranch("");
+    for (const pref of Svc.PrefBranch.getChildList("")) {
+      Svc.PrefBranch.clearUserPref(pref);
+    }
   }
 });
 
@@ -108,7 +112,9 @@ add_task(async function test_wipeServer_list_503() {
     Assert.ok(!diesel_coll.deleted);
   } finally {
     await promiseStopServer(server);
-    Svc.Prefs.resetBranch("");
+    for (const pref of Svc.PrefBranch.getChildList("")) {
+      Svc.PrefBranch.clearUserPref(pref);
+    }
   }
 });
 
@@ -139,7 +145,9 @@ add_task(async function test_wipeServer_all_success() {
   Assert.equal(returnedTimestamp, serverTimestamp);
 
   await promiseStopServer(server);
-  Svc.Prefs.resetBranch("");
+  for (const pref of Svc.PrefBranch.getChildList("")) {
+    Svc.PrefBranch.clearUserPref(pref);
+  }
 });
 
 add_task(async function test_wipeServer_all_404() {
@@ -171,7 +179,9 @@ add_task(async function test_wipeServer_all_404() {
   Assert.equal(returnedTimestamp, serverTimestamp);
 
   await promiseStopServer(server);
-  Svc.Prefs.resetBranch("");
+  for (const pref of Svc.PrefBranch.getChildList("")) {
+    Svc.PrefBranch.clearUserPref(pref);
+  }
 });
 
 add_task(async function test_wipeServer_all_503() {
@@ -203,7 +213,9 @@ add_task(async function test_wipeServer_all_503() {
   Assert.equal(error.status, 503);
 
   await promiseStopServer(server);
-  Svc.Prefs.resetBranch("");
+  for (const pref of Svc.PrefBranch.getChildList("")) {
+    Svc.PrefBranch.clearUserPref(pref);
+  }
 });
 
 add_task(async function test_wipeServer_all_connectionRefused() {
@@ -221,6 +233,8 @@ add_task(async function test_wipeServer_all_connectionRefused() {
     Assert.equal(ex.result, Cr.NS_ERROR_CONNECTION_REFUSED);
   }
 
-  Svc.Prefs.resetBranch("");
+  for (const pref of Svc.PrefBranch.getChildList("")) {
+    Svc.PrefBranch.clearUserPref(pref);
+  }
   await promiseStopServer(server);
 });

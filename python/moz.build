@@ -27,7 +27,7 @@ with Files("mozbuild/**"):
     BUG_COMPONENT = ("Firefox Build System", "General")
 
 with Files("mozlint/**"):
-    BUG_COMPONENT = ("Firefox Build System", "Linting and Formatting")
+    BUG_COMPONENT = ("Developer Infrastructure", "Lint and Formatting")
 
 with Files("mozversioncontrol/**"):
     BUG_COMPONENT = ("Firefox Build System", "General")
@@ -43,6 +43,9 @@ with Files("mach_commands.py"):
 
 with Files("mozperftest/**"):
     BUG_COMPONENT = ("Testing", "mozperftest")
+
+with Files("sites/**"):
+    BUG_COMPONENT = ("Firefox Build System", "Mach Core")
 
 
 SPHINX_PYTHON_PACKAGE_DIRS += [

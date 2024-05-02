@@ -6,19 +6,19 @@
 
 requestLongerTimeout(2);
 
-const { FxAccounts } = ChromeUtils.import(
-  "resource://gre/modules/FxAccounts.jsm"
+const { FxAccounts } = ChromeUtils.importESModule(
+  "resource://gre/modules/FxAccounts.sys.mjs"
 );
-let { SyncedTabs } = ChromeUtils.import(
-  "resource://services-sync/SyncedTabs.jsm"
+let { SyncedTabs } = ChromeUtils.importESModule(
+  "resource://services-sync/SyncedTabs.sys.mjs"
 );
-let { UIState } = ChromeUtils.import("resource://services-sync/UIState.jsm");
+let { UIState } = ChromeUtils.importESModule(
+  "resource://services-sync/UIState.sys.mjs"
+);
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "UITour",
-  "resource:///modules/UITour.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  UITour: "resource:///modules/UITour.sys.mjs",
+});
 
 const DECKINDEX_TABS = 0;
 const DECKINDEX_FETCHING = 1;
@@ -55,7 +55,7 @@ let mockedInternal = {
   hasSyncedThisSession: false,
 };
 
-add_task(async function setup() {
+add_setup(async function () {
   const getSignedInUser = FxAccounts.config.getSignedInUser;
   FxAccounts.config.getSignedInUser = async () =>
     Promise.resolve({ uid: "uid", email: "foo@bar.com" });
@@ -166,14 +166,14 @@ async function asyncCleanup() {
 }
 
 // When Sync is not setup.
-add_task(async function() {
+add_task(async function () {
   gSync.updateAllUI({ status: UIState.STATUS_NOT_CONFIGURED });
   await openPrefsFromMenuPanel("PanelUI-remotetabs-setupsync", "synced-tabs");
 });
 add_task(asyncCleanup);
 
 // When an account is connected by Sync is not enabled.
-add_task(async function() {
+add_task(async function () {
   gSync.updateAllUI({ status: UIState.STATUS_SIGNED_IN, syncEnabled: false });
   await openPrefsFromMenuPanel(
     "PanelUI-remotetabs-syncdisabled",
@@ -183,7 +183,7 @@ add_task(async function() {
 add_task(asyncCleanup);
 
 // When Sync is configured in an unverified state.
-add_task(async function() {
+add_task(async function () {
   gSync.updateAllUI({
     status: UIState.STATUS_NOT_VERIFIED,
     email: "foo@bar.com",
@@ -193,7 +193,7 @@ add_task(async function() {
 add_task(asyncCleanup);
 
 // When Sync is configured in a "needs reauthentication" state.
-add_task(async function() {
+add_task(async function () {
   gSync.updateAllUI({
     status: UIState.STATUS_LOGIN_FAILED,
     email: "foo@bar.com",
@@ -202,7 +202,7 @@ add_task(async function() {
 });
 
 // Test the Connect Another Device button
-add_task(async function() {
+add_task(async function () {
   gSync.updateAllUI({
     status: UIState.STATUS_SIGNED_IN,
     syncEnabled: true,
@@ -229,7 +229,7 @@ add_task(async function() {
 });
 
 // Test the "Sync Now" button
-add_task(async function() {
+add_task(async function () {
   gSync.updateAllUI({
     status: UIState.STATUS_SIGNED_IN,
     syncEnabled: true,
@@ -254,11 +254,7 @@ add_task(async function() {
 
   // The widget is still fetching tabs, as we've neutered everything that
   // provides them
-  is(
-    deck.selectedIndex,
-    "" + DECKINDEX_FETCHING,
-    "first deck entry is visible"
-  );
+  is(deck.selectedIndex, DECKINDEX_FETCHING, "first deck entry is visible");
 
   // Tell the widget there are tabs available, but with zero clients.
   mockedInternal.getTabClients = () => {
@@ -269,7 +265,7 @@ add_task(async function() {
   // The UI should be showing the "no clients" pane.
   is(
     deck.selectedIndex,
-    "" + DECKINDEX_NOCLIENTS,
+    DECKINDEX_NOCLIENTS,
     "no-clients deck entry is visible"
   );
 
@@ -320,11 +316,7 @@ add_task(async function() {
   await updateTabsPanel();
 
   // The UI should be showing tabs!
-  is(
-    deck.selectedIndex,
-    "" + DECKINDEX_TABS,
-    "no-clients deck entry is visible"
-  );
+  is(deck.selectedIndex, DECKINDEX_TABS, "no-clients deck entry is visible");
   let tabList = document.getElementById("PanelUI-remotetabs-tabslist");
   let node = tabList.firstElementChild;
   // First entry should be the client with the most-recent tab.
@@ -350,9 +342,9 @@ add_task(async function() {
   node = node.nextElementSibling;
   is(node, null, "no more siblings");
 
-  // Next is a menuseparator between the clients.
+  // Next is a toolbarseparator between the clients.
   node = currentClient.nextElementSibling;
-  is(node.nodeName, "menuseparator");
+  is(node.nodeName, "toolbarseparator");
 
   // Next is the container for client 2.
   node = node.nextElementSibling;
@@ -370,9 +362,9 @@ add_task(async function() {
   node = node.nextElementSibling;
   is(node, null, "no more siblings");
 
-  // Next is a menuseparator between the clients.
+  // Next is a toolbarseparator between the clients.
   node = currentClient.nextElementSibling;
-  is(node.nodeName, "menuseparator");
+  is(node.nodeName, "toolbarseparator");
 
   // Next is the container for client 3.
   node = node.nextElementSibling;
@@ -409,7 +401,7 @@ add_task(async function() {
 
   let didSync = false;
   let oldDoSync = gSync.doSync;
-  gSync.doSync = function() {
+  gSync.doSync = function () {
     didSync = true;
     gSync.doSync = oldDoSync;
   };
@@ -423,7 +415,7 @@ add_task(async function() {
 });
 
 // Test the pagination capabilities (Show More/All tabs)
-add_task(async function() {
+add_task(async function () {
   mockedInternal.getTabClients = () => {
     return Promise.resolve([
       {
@@ -431,7 +423,7 @@ add_task(async function() {
         type: "client",
         name: "My Desktop",
         lastModified: 1492201200,
-        tabs: (function() {
+        tabs: (function () {
           let allTabsDesktop = [];
           // We choose 77 tabs, because TABS_PER_PAGE is 25, which means
           // on the second to last page we should have 22 items shown
@@ -467,7 +459,7 @@ add_task(async function() {
   let subpanel = document.getElementById("PanelUI-remotetabs-main");
   ok(!subpanel.hidden, "main pane is visible");
   let deck = document.getElementById("PanelUI-remotetabs-deck");
-  is(deck.selectedIndex, "" + DECKINDEX_TABS, "we should be showing tabs");
+  is(deck.selectedIndex, DECKINDEX_TABS, "we should be showing tabs");
 
   function checkTabsPage(tabsShownCount, showMoreLabel) {
     let tabList = document.getElementById("PanelUI-remotetabs-tabslist");

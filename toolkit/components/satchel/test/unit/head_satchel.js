@@ -12,15 +12,15 @@
 const CURRENT_SCHEMA = 5;
 const PR_HOURS = 60 * 60 * 1000000;
 
-var { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+var { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-XPCOMUtils.defineLazyModuleGetters(this, {
-  FormHistory: "resource://gre/modules/FormHistory.jsm",
-  FormHistoryTestUtils: "resource://testing-common/FormHistoryTestUtils.jsm",
-  OS: "resource://gre/modules/osfile.jsm",
-  Services: "resource://gre/modules/Services.jsm",
-  Sqlite: "resource://gre/modules/Sqlite.jsm",
+
+ChromeUtils.defineESModuleGetters(this, {
+  FormHistory: "resource://gre/modules/FormHistory.sys.mjs",
+  FormHistoryTestUtils:
+    "resource://testing-common/FormHistoryTestUtils.sys.mjs",
+  Sqlite: "resource://gre/modules/Sqlite.sys.mjs",
 });
 
 do_get_profile();
@@ -32,10 +32,10 @@ var formHistoryStartup = Cc[
 ].getService(Ci.nsIObserver);
 formHistoryStartup.observe(null, "profile-after-change", null);
 
-function getDBVersion(dbfile) {
-  let dbConnection = Services.storage.openDatabase(dbfile);
-  let version = dbConnection.schemaVersion;
-  dbConnection.close();
+async function getDBVersion(dbfile) {
+  let dbConnection = await Sqlite.openConnection({ path: dbfile.path });
+  let version = await dbConnection.getSchemaVersion();
+  await dbConnection.close();
 
   return version;
 }
@@ -61,18 +61,10 @@ const isGUID = /[A-Za-z0-9\+\/]{16}/;
 
 // Find form history entries.
 function searchEntries(terms, params, iter) {
-  let results = [];
-  FormHistory.search(terms, params, {
-    handleResult: result => results.push(result),
-    handleError(error) {
-      do_throw("Error occurred searching form history: " + error);
-    },
-    handleCompletion(reason) {
-      if (!reason) {
-        iter.next(results);
-      }
-    },
-  });
+  FormHistory.search(terms, params).then(
+    results => iter.next(results),
+    error => do_throw("Error occurred searching form history: " + error)
+  );
 }
 
 // Count the number of entries with the given name and value, and call then(number)
@@ -86,18 +78,14 @@ function countEntries(name, value, then) {
     obj.value = value;
   }
 
-  let count = 0;
-  FormHistory.count(obj, {
-    handleResult: result => (count = result),
-    handleError(error) {
+  FormHistory.count(obj).then(
+    count => {
+      then(count);
+    },
+    error => {
       do_throw("Error occurred searching form history: " + error);
-    },
-    handleCompletion(reason) {
-      if (!reason) {
-        then(count);
-      }
-    },
-  });
+    }
+  );
 }
 
 // Perform a single form history update and call then() when done.
@@ -130,7 +118,7 @@ function addEntry(name, value, then) {
 
 function promiseCountEntries(name, value, checkFn = () => {}) {
   return new Promise(resolve => {
-    countEntries(name, value, function(result) {
+    countEntries(name, value, function (result) {
       checkFn(result);
       resolve(result);
     });
@@ -151,33 +139,13 @@ function promiseAddEntry(name, value) {
 
 // Wrapper around FormHistory.update which handles errors. Calls then() when done.
 function updateFormHistory(changes, then) {
-  FormHistory.update(changes, {
-    handleError(error) {
-      do_throw("Error occurred updating form history: " + error);
-    },
-    handleCompletion(reason) {
-      if (!reason) {
-        then();
-      }
-    },
+  FormHistory.update(changes).then(then, error => {
+    do_throw("Error occurred updating form history: " + error);
   });
 }
 
 function promiseUpdate(change) {
-  return new Promise((resolve, reject) => {
-    FormHistory.update(change, {
-      handleError(error) {
-        this._error = error;
-      },
-      handleCompletion(reason) {
-        if (reason) {
-          reject(this._error);
-        } else {
-          resolve();
-        }
-      },
-    });
-  });
+  return FormHistory.update(change);
 }
 
 /**
@@ -197,7 +165,8 @@ function do_log_info(aMessage) {
  *        The name of the file to copy.
  * @param {string} aDestFilename
  *        The name of the file to copy.
- * @param {Object} [options.overwriteExisting]
+ * @param {object} [options]
+ * @param {object} [options.overwriteExisting]
  *        Whether to overwrite an existing file.
  * @returns {string} path to the copied file.
  */
@@ -206,21 +175,21 @@ async function copyToProfile(
   aDestFilename,
   { overwriteExisting = false } = {}
 ) {
-  let curDir = await OS.File.getCurrentDirectory();
-  let srcPath = OS.Path.join(curDir, aFilename);
-  Assert.ok(await OS.File.exists(srcPath), "Database file found");
+  let curDir = Services.dirsvc.get("CurWorkD", Ci.nsIFile).path;
+  let srcPath = PathUtils.join(curDir, aFilename);
+  Assert.ok(await IOUtils.exists(srcPath), "Database file found");
 
   // Ensure that our file doesn't exist already.
-  let destPath = OS.Path.join(OS.Constants.Path.profileDir, aDestFilename);
-  let exists = await OS.File.exists(destPath);
+  let destPath = PathUtils.join(PathUtils.profileDir, aDestFilename);
+  let exists = await IOUtils.exists(destPath);
   if (exists) {
     if (overwriteExisting) {
-      await OS.file.remove(destPath);
+      await IOUtils.remove(destPath);
     } else {
       throw new Error("The file should not exist");
     }
   }
-  await OS.File.copy(srcPath, destPath);
+  await IOUtils.copy(srcPath, destPath);
   info(`Copied ${aFilename} to ${destPath}`);
   return destPath;
 }

@@ -15,12 +15,15 @@
 #include "common_audio/resampler/include/push_resampler.h"
 #include "rtc_base/arraysize.h"
 #include "rtc_base/checks.h"
-#include "rtc_base/format_macros.h"
 #include "test/gtest.h"
 
 namespace webrtc {
 namespace voe {
 namespace {
+
+int GetFrameSize(int sample_rate_hz) {
+  return sample_rate_hz / 100;
+}
 
 class UtilityTest : public ::testing::Test {
  protected:
@@ -43,14 +46,14 @@ class UtilityTest : public ::testing::Test {
   AudioFrame golden_frame_;
 };
 
-// Sets the signal value to increase by |data| with every sample. Floats are
+// Sets the signal value to increase by `data` with every sample. Floats are
 // used so non-integer values result in rounding error, but not an accumulating
 // error.
 void SetMonoFrame(float data, int sample_rate_hz, AudioFrame* frame) {
   frame->Mute();
   frame->num_channels_ = 1;
   frame->sample_rate_hz_ = sample_rate_hz;
-  frame->samples_per_channel_ = rtc::CheckedDivExact(sample_rate_hz, 100);
+  frame->samples_per_channel_ = GetFrameSize(sample_rate_hz);
   int16_t* frame_data = frame->mutable_data();
   for (size_t i = 0; i < frame->samples_per_channel_; i++) {
     frame_data[i] = static_cast<int16_t>(data * i);
@@ -62,7 +65,7 @@ void SetMonoFrame(float data, AudioFrame* frame) {
   SetMonoFrame(data, frame->sample_rate_hz_, frame);
 }
 
-// Sets the signal value to increase by |left| and |right| with every sample in
+// Sets the signal value to increase by `left` and `right` with every sample in
 // each channel respectively.
 void SetStereoFrame(float left,
                     float right,
@@ -71,7 +74,7 @@ void SetStereoFrame(float left,
   frame->Mute();
   frame->num_channels_ = 2;
   frame->sample_rate_hz_ = sample_rate_hz;
-  frame->samples_per_channel_ = rtc::CheckedDivExact(sample_rate_hz, 100);
+  frame->samples_per_channel_ = GetFrameSize(sample_rate_hz);
   int16_t* frame_data = frame->mutable_data();
   for (size_t i = 0; i < frame->samples_per_channel_; i++) {
     frame_data[i * 2] = static_cast<int16_t>(left * i);
@@ -84,7 +87,7 @@ void SetStereoFrame(float left, float right, AudioFrame* frame) {
   SetStereoFrame(left, right, frame->sample_rate_hz_, frame);
 }
 
-// Sets the signal value to increase by |ch1|, |ch2|, |ch3|, |ch4| with every
+// Sets the signal value to increase by `ch1`, `ch2`, `ch3`, `ch4` with every
 // sample in each channel respectively.
 void SetQuadFrame(float ch1,
                   float ch2,
@@ -95,7 +98,7 @@ void SetQuadFrame(float ch1,
   frame->Mute();
   frame->num_channels_ = 4;
   frame->sample_rate_hz_ = sample_rate_hz;
-  frame->samples_per_channel_ = rtc::CheckedDivExact(sample_rate_hz, 100);
+  frame->samples_per_channel_ = GetFrameSize(sample_rate_hz);
   int16_t* frame_data = frame->mutable_data();
   for (size_t i = 0; i < frame->samples_per_channel_; i++) {
     frame_data[i * 4] = static_cast<int16_t>(ch1 * i);
@@ -111,8 +114,8 @@ void VerifyParams(const AudioFrame& ref_frame, const AudioFrame& test_frame) {
   EXPECT_EQ(ref_frame.sample_rate_hz_, test_frame.sample_rate_hz_);
 }
 
-// Computes the best SNR based on the error between |ref_frame| and
-// |test_frame|. It allows for up to a |max_delay| in samples between the
+// Computes the best SNR based on the error between `ref_frame` and
+// `test_frame`. It allows for up to a `max_delay` in samples between the
 // signals to compensate for the resampling delay.
 float ComputeSNR(const AudioFrame& ref_frame,
                  const AudioFrame& test_frame,
@@ -140,7 +143,7 @@ float ComputeSNR(const AudioFrame& ref_frame,
       best_delay = delay;
     }
   }
-  printf("SNR=%.1f dB at delay=%" RTC_PRIuS "\n", best_snr, best_delay);
+  printf("SNR=%.1f dB at delay=%zu\n", best_snr, best_delay);
   return best_snr;
 }
 
@@ -212,7 +215,7 @@ void UtilityTest::RunResampleTest(int src_channels,
          src_channels, src_sample_rate_hz, dst_channels, dst_sample_rate_hz);
   RemixAndResample(src_frame_, &resampler, &dst_frame_);
 
-  if (src_sample_rate_hz == 96000 && dst_sample_rate_hz == 8000) {
+  if (src_sample_rate_hz == 96000 && dst_sample_rate_hz <= 11025) {
     // The sinc resampler gives poor SNR at this extreme conversion, but we
     // expect to see this rarely in practice.
     EXPECT_GT(ComputeSNR(golden_frame_, dst_frame_, max_delay), 14.0f);
@@ -252,20 +255,16 @@ TEST_F(UtilityTest, RemixAndResampleMixingOnlySucceeds) {
 }
 
 TEST_F(UtilityTest, RemixAndResampleSucceeds) {
-  const int kSampleRates[] = {8000, 16000, 32000, 44100, 48000, 96000};
-  const int kSampleRatesSize = arraysize(kSampleRates);
+  const int kSampleRates[] = {8000,  11025, 16000, 22050,
+                              32000, 44100, 48000, 96000};
   const int kSrcChannels[] = {1, 2, 4};
-  const int kSrcChannelsSize = arraysize(kSrcChannels);
   const int kDstChannels[] = {1, 2};
-  const int kDstChannelsSize = arraysize(kDstChannels);
 
-  for (int src_rate = 0; src_rate < kSampleRatesSize; src_rate++) {
-    for (int dst_rate = 0; dst_rate < kSampleRatesSize; dst_rate++) {
-      for (int src_channel = 0; src_channel < kSrcChannelsSize; src_channel++) {
-        for (int dst_channel = 0; dst_channel < kDstChannelsSize;
-             dst_channel++) {
-          RunResampleTest(kSrcChannels[src_channel], kSampleRates[src_rate],
-                          kDstChannels[dst_channel], kSampleRates[dst_rate]);
+  for (int src_rate : kSampleRates) {
+    for (int dst_rate : kSampleRates) {
+      for (size_t src_channels : kSrcChannels) {
+        for (size_t dst_channels : kDstChannels) {
+          RunResampleTest(src_channels, src_rate, dst_channels, dst_rate);
         }
       }
     }

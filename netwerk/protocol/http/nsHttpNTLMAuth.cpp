@@ -11,7 +11,6 @@
 #include "nsCOMPtr.h"
 #include "nsServiceManagerUtils.h"
 #include "plbase64.h"
-#include "plstr.h"
 #include "prnetdb.h"
 
 //-----------------------------------------------------------------------------
@@ -38,6 +37,7 @@
 #include "mozilla/net/HttpAuthUtils.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/net/DNS.h"
+#include "mozilla/StaticPrefs_browser.h"
 
 namespace mozilla {
 namespace net {
@@ -102,10 +102,7 @@ static bool CanUseDefaultCredentials(nsIHttpAuthenticableChannel* channel,
       return true;
     }
 
-    bool dontRememberHistory;
-    if (NS_SUCCEEDED(prefs->GetBoolPref("browser.privatebrowsing.autostart",
-                                        &dontRememberHistory)) &&
-        !dontRememberHistory) {
+    if (!StaticPrefs::browser_privatebrowsing_autostart()) {
       return false;
     }
   }
@@ -325,15 +322,13 @@ nsHttpNTLMAuth::GenerateCredentials(
     nsCOMPtr<nsIChannel> channel = do_QueryInterface(authChannel, &rv);
     if (NS_FAILED(rv)) return rv;
 
-    nsCOMPtr<nsISupports> security;
-    rv = channel->GetSecurityInfo(getter_AddRefs(security));
+    nsCOMPtr<nsITransportSecurityInfo> securityInfo;
+    rv = channel->GetSecurityInfo(getter_AddRefs(securityInfo));
     if (NS_FAILED(rv)) return rv;
 
-    nsCOMPtr<nsITransportSecurityInfo> secInfo = do_QueryInterface(security);
-
-    if (mUseNative && secInfo) {
+    if (mUseNative && securityInfo) {
       nsCOMPtr<nsIX509Cert> cert;
-      rv = secInfo->GetServerCert(getter_AddRefs(cert));
+      rv = securityInfo->GetServerCert(getter_AddRefs(cert));
       if (NS_FAILED(rv)) return rv;
 
       if (cert) {

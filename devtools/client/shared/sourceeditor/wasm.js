@@ -4,8 +4,8 @@
 
 "use strict";
 
-const wasmparser = require("devtools/client/shared/vendor/WasmParser");
-const wasmdis = require("devtools/client/shared/vendor/WasmDis");
+const wasmparser = require("resource://devtools/client/shared/vendor/WasmParser.js");
+const wasmdis = require("resource://devtools/client/shared/vendor/WasmDis.js");
 
 const wasmStates = new WeakMap();
 
@@ -45,7 +45,7 @@ function getWasmLineNumberFormatter(subject) {
     codeOf0,
   ];
   let last0 = 7;
-  return function(number) {
+  return function (number) {
     const offset = lineToWasmOffset(subject, number - 1);
     if (offset === undefined) {
       return "";

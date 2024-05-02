@@ -6,6 +6,7 @@
 DIRS += [
     "ast",
     "breakpoints",
+    "context-menus",
     "pause",
     "sources",
     "utils",
@@ -22,9 +23,10 @@ CompiledModules(
     "project-text-search.js",
     "quick-open.js",
     "source-actors.js",
-    "source-tree.js",
+    "sources-tree.js",
     "tabs.js",
     "toolbox.js",
+    "tracing.js",
     "threads.js",
     "ui.js",
 )

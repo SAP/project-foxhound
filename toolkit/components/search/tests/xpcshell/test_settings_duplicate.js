@@ -8,8 +8,8 @@
 
 "use strict";
 
-const { getAppInfo } = ChromeUtils.import(
-  "resource://testing-common/AppInfo.jsm"
+const { getAppInfo } = ChromeUtils.importESModule(
+  "resource://testing-common/AppInfo.sys.mjs"
 );
 
 const enginesSettings = {
@@ -69,7 +69,7 @@ const enginesSettings = {
   ],
 };
 
-add_task(async function setup() {
+add_setup(async function () {
   await AddonTestUtils.promiseStartupManager();
 
   // Allow telemetry probes which may otherwise be disabled for some applications (e.g. Thunderbird)
@@ -90,15 +90,16 @@ add_task(async function setup() {
   enginesSettings.metaData.hash = SearchUtils.getVerificationHash(
     enginesSettings.metaData.current
   );
-  enginesSettings.metaData.visibleDefaultEnginesHash = SearchUtils.getVerificationHash(
-    enginesSettings.metaData.visibleDefaultEngines
-  );
+  enginesSettings.metaData.visibleDefaultEnginesHash =
+    SearchUtils.getVerificationHash(
+      enginesSettings.metaData.visibleDefaultEngines
+    );
   let appInfo = getAppInfo();
   enginesSettings.buildID = appInfo.platformBuildID;
   enginesSettings.appVersion = appInfo.version;
 
   await IOUtils.write(
-    OS.Path.join(OS.Constants.Path.profileDir, SETTINGS_FILENAME),
+    PathUtils.join(PathUtils.profileDir, SETTINGS_FILENAME),
     new TextEncoder().encode(JSON.stringify(enginesSettings)),
     { compress: true }
   );

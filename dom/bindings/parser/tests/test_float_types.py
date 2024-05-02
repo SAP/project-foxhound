@@ -16,23 +16,23 @@ def WebIDLTest(parser, harness):
           [LenientFloat]
           attribute double ld;
 
-          void m1(float arg1, double arg2, float? arg3, double? arg4,
-                  myFloat arg5, unrestricted float arg6,
-                  unrestricted double arg7, unrestricted float? arg8,
-                  unrestricted double? arg9, myUnrestrictedFloat arg10);
+          undefined m1(float arg1, double arg2, float? arg3, double? arg4,
+                       myFloat arg5, unrestricted float arg6,
+                       unrestricted double arg7, unrestricted float? arg8,
+                       unrestricted double? arg9, myUnrestrictedFloat arg10);
           [LenientFloat]
-          void m2(float arg1, double arg2, float? arg3, double? arg4,
-                  myFloat arg5, unrestricted float arg6,
-                  unrestricted double arg7, unrestricted float? arg8,
-                  unrestricted double? arg9, myUnrestrictedFloat arg10);
+          undefined m2(float arg1, double arg2, float? arg3, double? arg4,
+                       myFloat arg5, unrestricted float arg6,
+                       unrestricted double arg7, unrestricted float? arg8,
+                       unrestricted double? arg9, myUnrestrictedFloat arg10);
           [LenientFloat]
-          void m3(float arg);
+          undefined m3(float arg);
           [LenientFloat]
-          void m4(double arg);
+          undefined m4(double arg);
           [LenientFloat]
-          void m5((float or FloatTypes) arg);
+          undefined m5((float or FloatTypes) arg);
           [LenientFloat]
-          void m6(sequence<float> arg);
+          undefined m6(sequence<float> arg);
         };
     """
     )
@@ -55,7 +55,7 @@ def WebIDLTest(parser, harness):
     method = iface.members[6]
     harness.ok(isinstance(method, WebIDL.IDLMethod), "Should be an IDLMethod")
     argtypes = [a.type for a in method.signatures()[0][1]]
-    for (idx, type) in enumerate(argtypes):
+    for idx, type in enumerate(argtypes):
         harness.ok(type.isFloat(), "Type %d should be float" % idx)
         harness.check(
             type.isUnrestricted(),
@@ -74,9 +74,9 @@ def WebIDLTest(parser, harness):
             };
         """
         )
-    except Exception as x:
+    except Exception:
         threw = True
-    harness.ok(threw, "[LenientFloat] only allowed on void methods")
+    harness.ok(threw, "[LenientFloat] only allowed on methods returning undefined")
 
     parser = parser.reset()
     threw = False
@@ -85,11 +85,11 @@ def WebIDLTest(parser, harness):
             """
             interface FloatTypes {
               [LenientFloat]
-              void m(unrestricted float arg);
+              undefined m(unrestricted float arg);
             };
         """
         )
-    except Exception as x:
+    except Exception:
         threw = True
     harness.ok(
         threw, "[LenientFloat] only allowed on methods with unrestricted float args"
@@ -102,11 +102,11 @@ def WebIDLTest(parser, harness):
             """
             interface FloatTypes {
               [LenientFloat]
-              void m(sequence<unrestricted float> arg);
+              undefined m(sequence<unrestricted float> arg);
             };
         """
         )
-    except Exception as x:
+    except Exception:
         threw = True
     harness.ok(
         threw, "[LenientFloat] only allowed on methods with unrestricted float args (2)"
@@ -119,11 +119,11 @@ def WebIDLTest(parser, harness):
             """
             interface FloatTypes {
               [LenientFloat]
-              void m((unrestricted float or FloatTypes) arg);
+              undefined m((unrestricted float or FloatTypes) arg);
             };
         """
         )
-    except Exception as x:
+    except Exception:
         threw = True
     harness.ok(
         threw, "[LenientFloat] only allowed on methods with unrestricted float args (3)"
@@ -140,6 +140,6 @@ def WebIDLTest(parser, harness):
             };
         """
         )
-    except Exception as x:
+    except Exception:
         threw = True
     harness.ok(threw, "[LenientFloat] only allowed on writable attributes")

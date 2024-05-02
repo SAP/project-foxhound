@@ -5,20 +5,12 @@ es_US{
     %%Parent{"es_419"}
     units{
         compound{
-            10p-12{"picó{0}"}
             10p-2{"centí{0}"}
-            10p3{"kiló{0}"}
         }
         concentr{
             milligram-ofglucose-per-deciliter{
                 dnam{"miligramos por decilitro"}
             }
-        }
-        coordinate{
-            east{"{0} este"}
-            north{"{0} norte"}
-            south{"{0} sur"}
-            west{"{0} oeste"}
         }
         electric{
             ampere{
@@ -38,11 +30,6 @@ es_US{
             }
         }
         energy{
-            foodcalorie{
-                dnam{"Calorías"}
-                one{"{0} Caloría"}
-                other{"{0} Calorías"}
-            }
             joule{
                 dnam{"julios"}
                 one{"{0} julio"}
@@ -129,17 +116,15 @@ es_US{
                 one{"onza fluida imperial"}
                 other{"{0} onzas fluidas imperiales"}
             }
-            jigger{
-                dnam{"jigger"}
-                one{"{0} jigger"}
-                other{"{0} jiggers"}
-            }
         }
     }
     unitsNarrow{
-        area{
-            hectare{
-                dnam{"hectárea"}
+        digital{
+            bit{
+                dnam{"bit"}
+            }
+            byte{
+                dnam{"byte"}
             }
         }
         duration{
@@ -157,6 +142,11 @@ es_US{
                 dnam{"a"}
                 one{"{0}a"}
                 other{"{0}a"}
+            }
+        }
+        energy{
+            therm-us{
+                dnam{"th US"}
             }
         }
         graphics{
@@ -178,11 +168,36 @@ es_US{
                 one{"{0}mil"}
                 other{"{0}mil"}
             }
+            nautical-mile{
+                dnam{"mn"}
+            }
         }
         temperature{
             fahrenheit{
                 one{"{0}°"}
                 other{"{0}°"}
+            }
+        }
+        torque{
+            pound-force-foot{
+                dnam{"lbf⋅ft"}
+            }
+        }
+        volume{
+            bushel{
+                dnam{"bsh"}
+            }
+            cup{
+                dnam{"tza."}
+            }
+            dessert-spoon{
+                dnam{"cdapostre"}
+            }
+            dram{
+                dnam{"fl dracma"}
+            }
+            pint-metric{
+                dnam{"ptm"}
             }
         }
     }
@@ -210,9 +225,6 @@ es_US{
                 other{"{0} días"}
                 per{"{0}/d"}
             }
-            minute{
-                dnam{"mins"}
-            }
             month{
                 one{"{0} m"}
                 other{"{0} mm."}
@@ -224,11 +236,6 @@ es_US{
             }
         }
         energy{
-            foodcalorie{
-                dnam{"Cal"}
-                one{"{0} Cal"}
-                other{"{0} Cal"}
-            }
             therm-us{
                 dnam{"th US"}
                 one{"{0} th US"}
@@ -245,8 +252,6 @@ es_US{
         length{
             furlong{
                 dnam{"furlongs"}
-                one{"{0} fur"}
-                other{"{0} fur"}
             }
             light-year{
                 one{"{0} a. l."}
@@ -268,7 +273,6 @@ es_US{
         }
         speed{
             knot{
-                dnam{"nudo"}
                 one{"{0} nudo"}
                 other{"{0} nudos"}
             }
@@ -291,11 +295,6 @@ es_US{
                 one{"{0} tza."}
                 other{"{0} tzas."}
             }
-            cup-metric{
-                dnam{"Tm"}
-                one{"{0} Tm"}
-                other{"{0} Tm"}
-            }
             dessert-spoon{
                 dnam{"cdapostre"}
                 one{"{0} cdapostre"}
@@ -310,11 +309,6 @@ es_US{
                 dnam{"fl dracma"}
                 one{"{0} fl dracma"}
                 other{"{0} fl dracmas"}
-            }
-            jigger{
-                dnam{"jigger"}
-                one{"{0} jigger"}
-                other{"{0} jiggers"}
             }
             pint-metric{
                 dnam{"ptm"}

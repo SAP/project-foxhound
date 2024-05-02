@@ -2,14 +2,15 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import
 
-from threading import Lock
 import codecs
+import locale
+from threading import Lock
 
-from mozlog.structuredlog import log_levels
 import six
+
 from mozlog.handlers.messagehandler import MessageHandler
+from mozlog.structuredlog import log_levels
 
 
 class BaseHandler(object):
@@ -76,18 +77,42 @@ class StreamHandler(BaseHandler):
         with self._lock:
             if six.PY3:
                 import io
+
                 import mozfile
+
+                source_enc = "utf-8"
+                target_enc = "utf-8"
+                if isinstance(self.stream, io.BytesIO):
+                    target_enc = None
+                    if hasattr(self.stream, "encoding"):
+                        target_enc = self.stream.encoding
+                if target_enc is None:
+                    target_enc = locale.getpreferredencoding()
 
                 if isinstance(self.stream, io.StringIO) and isinstance(
                     formatted, bytes
                 ):
-                    formatted = formatted.decode()
+                    formatted = formatted.decode(source_enc, "replace")
                 elif (
                     isinstance(self.stream, io.BytesIO)
                     or isinstance(self.stream, mozfile.NamedTemporaryFile)
                 ) and isinstance(formatted, str):
-                    formatted = formatted.encode()
-                self.stream.write(formatted)
+                    formatted = formatted.encode(target_enc, "replace")
+                elif isinstance(formatted, str):
+                    # Suppress eventual surrogates, but keep as string.
+                    # TODO: It is yet unclear how we can end up with
+                    # surrogates here, see comment on patch on bug 1794401.
+                    formatted_bin = formatted.encode(target_enc, "replace")
+                    formatted = formatted_bin.decode(target_enc, "ignore")
+
+                # It seems that under Windows we can have cp1252 encoding
+                # for the output stream and that not all unicode chars map
+                # well. We just ignore those errors here (they have no
+                # consequences for the executed tests, anyways).
+                try:
+                    self.stream.write(formatted)
+                except UnicodeEncodeError:
+                    return
             else:
                 if isinstance(formatted, six.text_type):
                     self.stream.write(formatted.encode("utf-8", "replace"))

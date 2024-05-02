@@ -9,10 +9,9 @@ The intended audience for this document is developers who need to add new kinds
 of address bar results, either internally in the address bar codebase or through
 extensions.
 
-.. toctree::
-   :caption: Table of Contents
+.. contents::
+   :depth: 2
 
-   dynamic-result-types
 
 Motivation
 ----------
@@ -153,7 +152,7 @@ aren't relevant to dynamic result types, and you should choose values
 appropriate to your use case.
 
 If any elements created in the view for your results can be picked with the
-keyboard or mouse, then be sure to implement your provider's ``pickResult``
+keyboard or mouse, then be sure to implement your provider's ``onEngagement``
 method.
 
 For help on implementing providers in general, see the address bar's
@@ -217,9 +216,9 @@ for a description of this object.
 ~~~~~~~~~~~~~~~~~~~~
 
 If you are creating the provider in the internal address bar implementation in
-mozilla-central, then add styling `dynamicResults.inc.css`_.
+mozilla-central, then add styling `urlbar-dynamic-results.css`_.
 
-.. _dynamicResults.inc.css: https://searchfox.org/mozilla-central/source/browser/themes/shared/urlbar/dynamicResults.inc.css
+.. _urlbar-dynamic-results.css: https://searchfox.org/mozilla-central/source/browser/themes/shared/urlbar-dynamic-results.css
 
 If you are creating the provider in an extension, then bundle a CSS file in your
 extension and declare it in the top-level ``stylesheet`` property of your view
@@ -344,7 +343,7 @@ structure may include the following properties:
 
   For dynamic result types created internally in the address bar codebase, this
   value should not be specified and instead styling should be added to
-  `dynamicResults.inc.css`_.
+  `urlbar-dynamic-results.css`_.
 
 Example
 ~~~~~~~
@@ -369,7 +368,7 @@ like this:
           tag: "div",
           classList: ["day"],
           attributes: {
-            selectable: "true",
+            selectable: true,
           },
           children: [
             {
@@ -394,7 +393,7 @@ like this:
           tag: "div",
           classList: ["day"],
           attributes: {
-            selectable: "true",
+            selectable: true,
           },
           children: [
             {
@@ -617,7 +616,7 @@ URL Navigation
 
 If a result's payload includes a string ``url`` property and a boolean
 ``shouldNavigate: true`` property, then picking the result will navigate to the
-URL. The ``pickResult`` method of the result's provider will still be called
+URL. The ``onEngagement`` method of the result's provider will still be called
 before navigation.
 
 Text Highlighting
@@ -707,7 +706,7 @@ types.
 
 __ https://github.com/0c0w3/dynamic-result-type-extension
 __ https://github.com/mozilla-extensions/firefox-quick-suggest-weather/blob/master/src/background.js
-__ https://searchfox.org/mozilla-central/source/browser/components/urlbar/UrlbarProviderTabToSearch.jsm
+__ https://searchfox.org/mozilla-central/source/browser/components/urlbar/UrlbarProviderTabToSearch.sys.mjs
 
 Appendix B: Using the WebExtensions API Directly
 ------------------------------------------------

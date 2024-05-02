@@ -35,6 +35,8 @@ class gfxOTSExpandingMemoryStream : public ots::OTSStream {
 
   ~gfxOTSExpandingMemoryStream() { mAlloc.Free(mPtr); }
 
+  size_t size() override { return mLimit; }
+
   // Return the buffer, resized to fit its contents (as it may have been
   // over-allocated during growth), and give up ownership of it so the
   // caller becomes responsible to call free() when finished with it.
@@ -100,29 +102,44 @@ class MOZ_STACK_CLASS gfxOTSContext : public ots::OTSContext {
     // Whether to preserve color bitmap glyphs
     mKeepColorBitmaps =
         StaticPrefs::gfx_downloadable_fonts_keep_color_bitmaps();
+    // Whether to preserve SVG glyphs (which can be expensive in Core Text,
+    // so better to drop them if we're not going to render them anyhow).
+    mKeepSVG = StaticPrefs::gfx_font_rendering_opentype_svg_enabled();
   }
 
   virtual ots::TableAction GetTableAction(uint32_t aTag) override {
-    // Preserve Graphite, color glyph and SVG tables,
-    // and possibly OTL and Variation tables (depending on prefs)
+    // Pass through or validate OTL and Variation tables, depending on prefs.
     if ((!mCheckOTLTables && (aTag == TRUETYPE_TAG('G', 'D', 'E', 'F') ||
                               aTag == TRUETYPE_TAG('G', 'P', 'O', 'S') ||
-                              aTag == TRUETYPE_TAG('G', 'S', 'U', 'B'))) ||
-        (!mCheckVariationTables &&
-         (aTag == TRUETYPE_TAG('a', 'v', 'a', 'r') ||
-          aTag == TRUETYPE_TAG('c', 'v', 'a', 'r') ||
-          aTag == TRUETYPE_TAG('f', 'v', 'a', 'r') ||
-          aTag == TRUETYPE_TAG('g', 'v', 'a', 'r') ||
-          aTag == TRUETYPE_TAG('H', 'V', 'A', 'R') ||
-          aTag == TRUETYPE_TAG('M', 'V', 'A', 'R') ||
-          aTag == TRUETYPE_TAG('S', 'T', 'A', 'T') ||
-          aTag == TRUETYPE_TAG('V', 'V', 'A', 'R'))) ||
-        aTag == TRUETYPE_TAG('S', 'V', 'G', ' ') ||
-        aTag == TRUETYPE_TAG('C', 'O', 'L', 'R') ||
-        aTag == TRUETYPE_TAG('C', 'P', 'A', 'L') ||
-        (mKeepColorBitmaps && (aTag == TRUETYPE_TAG('C', 'B', 'D', 'T') ||
-                               aTag == TRUETYPE_TAG('C', 'B', 'L', 'C'))) ||
-        false) {
+                              aTag == TRUETYPE_TAG('G', 'S', 'U', 'B')))) {
+      return ots::TABLE_ACTION_PASSTHRU;
+    }
+    auto isVariationTable = [](uint32_t aTag) -> bool {
+      return aTag == TRUETYPE_TAG('a', 'v', 'a', 'r') ||
+             aTag == TRUETYPE_TAG('c', 'v', 'a', 'r') ||
+             aTag == TRUETYPE_TAG('f', 'v', 'a', 'r') ||
+             aTag == TRUETYPE_TAG('g', 'v', 'a', 'r') ||
+             aTag == TRUETYPE_TAG('H', 'V', 'A', 'R') ||
+             aTag == TRUETYPE_TAG('M', 'V', 'A', 'R') ||
+             aTag == TRUETYPE_TAG('S', 'T', 'A', 'T') ||
+             aTag == TRUETYPE_TAG('V', 'V', 'A', 'R');
+    };
+    if (!mCheckVariationTables && isVariationTable(aTag)) {
+      return ots::TABLE_ACTION_PASSTHRU;
+    }
+    if (!gfxPlatform::HasVariationFontSupport() && isVariationTable(aTag)) {
+      return ots::TABLE_ACTION_DROP;
+    }
+    // Preserve SVG table if OpenType-SVG rendering is enabled.
+    if (aTag == TRUETYPE_TAG('S', 'V', 'G', ' ')) {
+      return mKeepSVG ? ots::TABLE_ACTION_PASSTHRU : ots::TABLE_ACTION_DROP;
+    }
+    // Preserve BASE table; harfbuzz will sanitize it before using.
+    if (aTag == TRUETYPE_TAG('B', 'A', 'S', 'E')) {
+      return ots::TABLE_ACTION_PASSTHRU;
+    }
+    if (mKeepColorBitmaps && (aTag == TRUETYPE_TAG('C', 'B', 'D', 'T') ||
+                              aTag == TRUETYPE_TAG('C', 'B', 'L', 'C'))) {
       return ots::TABLE_ACTION_PASSTHRU;
     }
     return ots::TABLE_ACTION_DEFAULT;
@@ -159,6 +176,7 @@ class MOZ_STACK_CLASS gfxOTSContext : public ots::OTSContext {
   bool mCheckOTLTables;
   bool mCheckVariationTables;
   bool mKeepColorBitmaps;
+  bool mKeepSVG;
 };
 
 #endif /* GFX_OTS_UTILS_H */

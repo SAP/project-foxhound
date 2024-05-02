@@ -3,14 +3,13 @@
     "namespace": "manifest",
     "types": [
       {
-        "$extend": "PermissionNoPrompt",
-        "choices": [{
-          "type": "string",
-          "enum": [
-            "geckoViewAddons",
-            "nativeMessagingFromContent"
-          ]
-        }]
+        "$extend": "PermissionPrivileged",
+        "choices": [
+          {
+            "type": "string",
+            "enum": ["geckoViewAddons", "nativeMessagingFromContent"]
+          }
+        ]
       }
     ]
   }

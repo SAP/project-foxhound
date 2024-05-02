@@ -28,6 +28,7 @@
 
 #include "NSSCertDBTrustDomain.h"
 #include "pk11pub.h"
+#include "mozilla/Logging.h"
 #include "mozilla/StaticPrefs_privacy.h"
 #include "mozpkix/pkixnss.h"
 #include "ScopedNSSTypes.h"
@@ -173,6 +174,7 @@ bool OCSPCache::FindInternal(const CertID& aCertID,
                              const OriginAttributes& aOriginAttributes,
                              /*out*/ size_t& index,
                              const MutexAutoLock& /* aProofOfLock */) {
+  mMutex.AssertCurrentThreadOwns();
   if (mEntries.length() == 0) {
     return false;
   }
@@ -206,6 +208,7 @@ static inline void LogWithCertID(const char* aMessage, const CertID& aCertID,
 
 void OCSPCache::MakeMostRecentlyUsed(size_t aIndex,
                                      const MutexAutoLock& /* aProofOfLock */) {
+  mMutex.AssertCurrentThreadOwns();
   Entry* entry = mEntries[aIndex];
   // Since mEntries is sorted with the most-recently-used entry at the end,
   // aIndex is likely to be near the end, so this is likely to be fast.

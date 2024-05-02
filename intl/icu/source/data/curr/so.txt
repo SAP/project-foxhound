@@ -684,6 +684,7 @@ so{
         AFN{"؋"}
         AMD{"֏"}
         AZN{"₼"}
+        BYN{"BYN"}
         GHS{"GH₵"}
         VEF{"Bs"}
     }
@@ -1239,6 +1240,10 @@ so{
             one{"leonka Sira Leon"}
             other{"leonka Sira Leon"}
         }
+        SOS{
+            one{"Shilingka Soomaaliya"}
+            other{"Shilingka Soomaaliya"}
+        }
         SRD{
             one{"Doolarka Surinamees"}
             other{"Doolarada Surinamees"}
@@ -1367,5 +1372,9 @@ so{
             one{"Kawaja Sambiya"}
             other{"Kawajada Sambiya"}
         }
+    }
+    CurrencyUnitPatterns{
+        one{"{0} {1}"}
+        other{"{0} {1}"}
     }
 }

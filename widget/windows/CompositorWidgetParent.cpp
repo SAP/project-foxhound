@@ -34,8 +34,8 @@ CompositorWidgetParent::CompositorWidgetParent(
                           aOptions),
       mWnd(reinterpret_cast<HWND>(
           aInitData.get_WinCompositorWidgetInitData().hWnd())),
-      mTransparencyMode(
-          aInitData.get_WinCompositorWidgetInitData().transparencyMode()),
+      mTransparencyMode(uint32_t(
+          aInitData.get_WinCompositorWidgetInitData().transparencyMode())),
       mSizeMode(nsSizeMode_Normal),
       mIsFullyOccluded(false),
       mRemoteBackbufferClient() {
@@ -118,15 +118,6 @@ bool CompositorWidgetParent::InitCompositor(layers::Compositor* aCompositor) {
   return true;
 }
 
-bool CompositorWidgetParent::HasGlass() const {
-  MOZ_ASSERT(layers::CompositorThreadHolder::IsInCompositorThread() ||
-             wr::RenderThread::IsInRenderThread());
-
-  nsTransparencyMode transparencyMode = mTransparencyMode;
-  return transparencyMode == eTransparencyGlass ||
-         transparencyMode == eTransparencyBorderlessGlass;
-}
-
 bool CompositorWidgetParent::IsHidden() const { return ::IsIconic(mWnd); }
 
 mozilla::ipc::IPCResult CompositorWidgetParent::RecvInitialize(
@@ -146,9 +137,8 @@ mozilla::ipc::IPCResult CompositorWidgetParent::RecvLeavePresentLock() {
 }
 
 mozilla::ipc::IPCResult CompositorWidgetParent::RecvUpdateTransparency(
-    const nsTransparencyMode& aMode) {
-  mTransparencyMode = aMode;
-
+    const TransparencyMode& aMode) {
+  mTransparencyMode = uint32_t(aMode);
   return IPC_OK();
 }
 
@@ -219,7 +209,8 @@ void CompositorWidgetParent::UpdateCompositorWnd(const HWND aCompositorWnd,
       ->Then(
           layers::CompositorThread(), __func__,
           [self](const bool& aSuccess) {
-            if (aSuccess && self->mRootLayerTreeID.isSome()) {
+            if (aSuccess && self->mRootLayerTreeID.isSome() &&
+                layers::CompositorThreadHolder::IsActive()) {
               self->mSetParentCompleted = true;
               // Schedule composition after ::SetParent() call in parent
               // process.

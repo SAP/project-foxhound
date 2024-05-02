@@ -13,11 +13,14 @@ namespace mozilla {
 RemoteDecoderParent::RemoteDecoderParent(
     RemoteDecoderManagerParent* aParent,
     const CreateDecoderParams::OptionSet& aOptions,
-    nsISerialEventTarget* aManagerThread, TaskQueue* aDecodeTaskQueue)
+    nsISerialEventTarget* aManagerThread, TaskQueue* aDecodeTaskQueue,
+    const Maybe<uint64_t>& aMediaEngineId, Maybe<TrackingId> aTrackingId)
     : ShmemRecycleAllocator(this),
       mParent(aParent),
       mOptions(aOptions),
       mDecodeTaskQueue(aDecodeTaskQueue),
+      mTrackingId(aTrackingId),
+      mMediaEngineId(aMediaEngineId),
       mManagerThread(aManagerThread) {
   MOZ_COUNT_CTOR(RemoteDecoderParent);
   MOZ_ASSERT(OnManagerThread());
@@ -61,8 +64,10 @@ mozilla::ipc::IPCResult RemoteDecoderParent::RecvInit(
           bool hardwareAccelerated =
               self->mDecoder->IsHardwareAccelerated(hardwareReason);
           resolver(InitCompletionIPDL{
-              track, self->mDecoder->GetDescriptionName(), hardwareAccelerated,
-              hardwareReason, self->mDecoder->NeedsConversion()});
+              track, self->mDecoder->GetDescriptionName(),
+              self->mDecoder->GetProcessName(), self->mDecoder->GetCodecName(),
+              hardwareAccelerated, hardwareReason,
+              self->mDecoder->NeedsConversion()});
         }
       });
   return IPC_OK();

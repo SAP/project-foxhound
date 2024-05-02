@@ -16,15 +16,18 @@ ${helpers.predefined_type(
     boxed=True,
     spec="https://drafts.csswg.org/css-ui/#propdef-text-overflow",
     servo_restyle_damage="rebuild_and_reflow",
+    affects="paint",
 )}
 
 ${helpers.single_keyword(
     "unicode-bidi",
     "normal embed isolate bidi-override isolate-override plaintext",
     engines="gecko servo-2013",
+    gecko_enum_prefix="StyleUnicodeBidi",
     animation_value_type="none",
     spec="https://drafts.csswg.org/css-writing-modes/#propdef-unicode-bidi",
     servo_restyle_damage="rebuild_and_reflow",
+    affects="layout",
 )}
 
 ${helpers.predefined_type(
@@ -36,14 +39,17 @@ ${helpers.predefined_type(
     animation_value_type="discrete",
     spec="https://drafts.csswg.org/css-text-decor/#propdef-text-decoration-line",
     servo_restyle_damage="rebuild_and_reflow",
+    affects="overflow",
 )}
 
 ${helpers.single_keyword(
     "text-decoration-style",
     "solid double dotted dashed wavy -moz-none",
     engines="gecko servo-2020",
+    gecko_enum_prefix="StyleTextDecorationStyle",
     animation_value_type="discrete",
     spec="https://drafts.csswg.org/css-text-decor/#propdef-text-decoration-style",
+    affects="overflow",
 )}
 
 ${helpers.predefined_type(
@@ -55,6 +61,7 @@ ${helpers.predefined_type(
     animation_value_type="AnimatedColor",
     ignored_when_colors_disabled=True,
     spec="https://drafts.csswg.org/css-text-decor/#propdef-text-decoration-color",
+    affects="paint",
 )}
 
 ${helpers.predefined_type(
@@ -66,14 +73,16 @@ ${helpers.predefined_type(
     animation_value_type="discrete",
     gecko_pref="layout.css.initial-letter.enabled",
     spec="https://drafts.csswg.org/css-inline/#sizing-drop-initials",
+    affects="layout",
 )}
 
 ${helpers.predefined_type(
-   "text-decoration-thickness",
-   "TextDecorationLength",
-   "generics::text::GenericTextDecorationLength::Auto",
-   engines="gecko",
-   initial_specified_value="generics::text::GenericTextDecorationLength::Auto",
-   animation_value_type="ComputedValue",
-   spec="https://drafts.csswg.org/css-text-decor-4/#text-decoration-width-property"
+    "text-decoration-thickness",
+    "TextDecorationLength",
+    "generics::text::GenericTextDecorationLength::Auto",
+    engines="gecko",
+    initial_specified_value="generics::text::GenericTextDecorationLength::Auto",
+    animation_value_type="ComputedValue",
+    spec="https://drafts.csswg.org/css-text-decor-4/#text-decoration-width-property",
+    affects="overflow",
 )}

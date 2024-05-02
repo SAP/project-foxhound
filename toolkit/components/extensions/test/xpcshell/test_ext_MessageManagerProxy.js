@@ -2,11 +2,11 @@
 /* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
-const { MessageManagerProxy } = ChromeUtils.import(
-  "resource://gre/modules/MessageManagerProxy.jsm"
+const { MessageManagerProxy } = ChromeUtils.importESModule(
+  "resource://gre/modules/MessageManagerProxy.sys.mjs"
 );
-const { PromiseUtils } = ChromeUtils.import(
-  "resource://gre/modules/PromiseUtils.jsm"
+const { PromiseUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/PromiseUtils.sys.mjs"
 );
 
 class TestMessageManagerProxy extends MessageManagerProxy {

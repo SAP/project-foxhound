@@ -7,6 +7,8 @@
 #include <cstring>
 #include <cstdlib>
 #include <cstdio>
+#include <memory>
+
 #include "elfxx.h"
 #include "mozilla/CheckedInt.h"
 
@@ -57,6 +59,9 @@ class ElfRelHack_Section : public ElfSection {
 
   void serialize(std::ofstream& file, unsigned char ei_class,
                  unsigned char ei_data) {
+    if (bitmap) {
+      relr.push_back((bitmap << 1) | 1);
+    }
     for (std::vector<Elf64_Addr>::iterator i = relr.begin(); i != relr.end();
          ++i) {
       Elf_Addr out;
@@ -99,7 +104,7 @@ class ElfRelHack_Section : public ElfSection {
       bitmap |= 1ULL << ((offset - block_start) / shdr.sh_entsize);
       break;
     }
-    shdr.sh_size = relr.size() * shdr.sh_entsize;
+    shdr.sh_size = (relr.size() + (bitmap ? 1 : 0)) * shdr.sh_entsize;
   }
 
  private:
@@ -179,10 +184,12 @@ class ElfRelHackCode_Section : public ElfSection {
 
     // If the original init function is located too far away, we're going to
     // need to use a trampoline. See comment in inject.c.
-    // Theoretically, we should check for (init - instr) > 0xffffff, where instr
-    // is the virtual address of the instruction that calls the original init,
-    // but we don't have it at this point, so punt to just init.
-    if (init > 0xffffff && parent.getMachine() == EM_ARM) {
+    // Theoretically, we should check for (init - instr) > boundary, where
+    // boundary is the platform-dependent limit, and instr is the virtual
+    // address of the instruction that calls the original init, but we don't
+    // have it at this point, so punt to just init.
+    if ((init > 0xffffff && parent.getMachine() == EM_ARM) ||
+        (init > 0x07ffffff && parent.getMachine() == EM_AARCH64)) {
       Elf_SymValue* trampoline = symtab->lookup("init_trampoline");
       if (!trampoline) {
         throw std::runtime_error(
@@ -465,8 +472,10 @@ class ElfRelHackCode_Section : public ElfSection {
       if (symtab->syms[ELF64_R_SYM(r->r_info)].value.getSection() == nullptr) {
         if (strcmp(name, "relhack") == 0) {
           addr = relhack_section.getAddr();
-        } else if (strcmp(name, "elf_header") == 0) {
-          // TODO: change this ungly hack to something better
+        } else if (strcmp(name, "relhack_end") == 0) {
+          addr = relhack_section.getAddr() + relhack_section.getSize();
+        } else if (strcmp(name, "__ehdr_start") == 0) {
+          // TODO: change this ugly hack to something better
           ElfSection* ehdr = parent.getSection(1)->getPrevious()->getPrevious();
           addr = ehdr->getAddr();
         } else if (strcmp(name, "original_init") == 0) {
@@ -512,6 +521,9 @@ class ElfRelHackCode_Section : public ElfSection {
         case REL(ARM, GOTPC):
         case REL(ARM, REL32):
         case REL(AARCH64, PREL32):
+        case REL(AARCH64,
+                 PREL64):  // In theory PREL64 should have its own relocation
+                           // function, but in practice it doesn't matter.
           apply_relocation<pc32_relocation>(the_code, buf, &*r, addr);
           break;
         case REL(ARM, CALL):
@@ -931,7 +943,8 @@ int do_relocation_section(Elf* elf, unsigned int rel_type,
 
   Elf_Shdr relhack_section(relhack64_section);
   Elf_Shdr relhackcode_section(relhackcode64_section);
-  ElfRelHack_Section* relhack = new ElfRelHack_Section(relhack_section);
+  auto relhack_ptr = std::make_unique<ElfRelHack_Section>(relhack_section);
+  auto relhack = relhack_ptr.get();
 
   ElfSymtab_Section* symtab = (ElfSymtab_Section*)section->getLink();
   Elf_SymValue* sym = symtab->lookup("__cxa_pure_virtual");
@@ -1010,8 +1023,6 @@ int do_relocation_section(Elf* elf, unsigned int rel_type,
       relhack->push_back(i->r_offset);
     }
   }
-  // Last entry must be a nullptr
-  relhack->push_back(0);
 
   if (init_array) {
     // Some linkers create a DT_INIT_ARRAY section that, for all purposes,
@@ -1175,9 +1186,10 @@ int do_relocation_section(Elf* elf, unsigned int rel_type,
   section->rels.assign(new_rels.begin(), new_rels.end());
   section->shrink(new_rels.size() * section->getEntSize());
 
-  ElfRelHackCode_Section* relhackcode =
-      new ElfRelHackCode_Section(relhackcode_section, *elf, *relhack,
-                                 original_init, mprotect_cb, sysconf_cb);
+  auto relhackcode_ptr = std::make_unique<ElfRelHackCode_Section>(
+      relhackcode_section, *elf, *relhack, original_init, mprotect_cb,
+      sysconf_cb);
+  auto relhackcode = relhackcode_ptr.get();
   // Find the first executable section, and insert the relhack code before
   // that. The relhack data is inserted between .rel.dyn and .rel.plt.
   ElfSection* first_executable = nullptr;
@@ -1193,8 +1205,19 @@ int do_relocation_section(Elf* elf, unsigned int rel_type,
     return -1;
   }
 
+  // Once the pointers for relhack, relhackcode, and init are inserted,
+  // their ownership is transferred to the Elf object, which will free
+  // them when itself is freed. Hence the .release() calls here (and
+  // the init.release() call later on). Please note that the raw
+  // pointers will continue to be used after .release(), which is why
+  // we are caching them (since .release() will end up setting the
+  // smart pointer's internal raw pointer to nullptr).
+
   relhack->insertBefore(section);
+  relhack_ptr.release();
+
   relhackcode->insertBefore(first_executable);
+  relhackcode_ptr.release();
 
   // Don't try further if we can't gain from the relocation section size change.
   // We account for the fact we're going to split the PT_LOAD before the
@@ -1237,8 +1260,8 @@ int do_relocation_section(Elf* elf, unsigned int rel_type,
     // eh_frame_hdr contains relative offsets to eh_frame. Well, they could be
     // relocated too, but it's not worth the effort for the few number of bytes
     // this would save.
-    unsigned int distance = second->getAddr() - first->getAddr();
-    unsigned int origAddr = eh_frame->getAddr();
+    Elf64_Off distance = second->getAddr() - first->getAddr();
+    Elf64_Addr origAddr = eh_frame->getAddr();
     ElfSection* previous = first->getPrevious();
     first->getShdr().sh_addr = (previous->getAddr() + previous->getSize() +
                                 first->getAddrAlign() - 1) &
@@ -1266,8 +1289,8 @@ int do_relocation_section(Elf* elf, unsigned int rel_type,
 
   // Ensure Elf sections will be at their final location.
   elf->normalize();
-  ElfLocation* init =
-      new ElfLocation(relhackcode, relhackcode->getEntryPoint());
+  auto init =
+      std::make_unique<ElfLocation>(relhackcode, relhackcode->getEntryPoint());
   if (init_array) {
     // Adjust the first DT_INIT_ARRAY entry to point at the injected code
     // by transforming its relocation into a relative one pointing to the
@@ -1275,10 +1298,15 @@ int do_relocation_section(Elf* elf, unsigned int rel_type,
     Rel_Type* rel = &section->rels[init_array_insert];
     rel->r_info = ELF64_R_INFO(0, rel_type);  // Set as a relative relocation
     set_relative_reloc(rel, elf, init->getValue());
-  } else if (!dyn->setValueForType(DT_INIT, init)) {
-    fprintf(stderr, "Can't grow .dynamic section to set DT_INIT. Skipping\n");
-    return -1;
+  } else {
+    if (dyn->setValueForType(DT_INIT, init.get())) {
+      init.release();
+    } else {
+      fprintf(stderr, "Can't grow .dynamic section to set DT_INIT. Skipping\n");
+      return -1;
+    }
   }
+
   // TODO: adjust the value according to the remaining number of relative
   // relocations
   if (dyn->getValueForType(Rel_Type::d_tag_count))

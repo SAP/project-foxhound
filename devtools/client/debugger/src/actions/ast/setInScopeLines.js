@@ -4,7 +4,7 @@
 
 import {
   hasInScopeLines,
-  getSourceWithContent,
+  getSourceTextContent,
   getVisibleSelectedFrame,
 } from "../../selectors";
 
@@ -27,19 +27,21 @@ function getOutOfScopeLines(outOfScopeLocations) {
   return uniqueLines;
 }
 
-async function getInScopeLines(cx, location, { dispatch, getState, parser }) {
-  const source = getSourceWithContent(getState(), location.sourceId);
-
+async function getInScopeLines(
+  location,
+  sourceTextContent,
+  { dispatch, getState, parserWorker }
+) {
   let locations = null;
-  if (location.line && source && !source.isWasm) {
-    locations = await parser.findOutOfScopeLocations(source.id, location);
+  if (location.line && parserWorker.isLocationSupported(location)) {
+    locations = await parserWorker.findOutOfScopeLocations(location);
   }
 
   const linesOutOfScope = getOutOfScopeLines(locations);
   const sourceNumLines =
-    !source.content || !isFulfilled(source.content)
+    !sourceTextContent || !isFulfilled(sourceTextContent)
       ? 0
-      : getSourceLineCount(source.content.value);
+      : getSourceLineCount(sourceTextContent.value);
 
   const noLinesOutOfScope =
     linesOutOfScope == null || linesOutOfScope.size == 0;
@@ -62,7 +64,7 @@ async function getInScopeLines(cx, location, { dispatch, getState, parser }) {
   return sourceLines.filter(i => i != undefined);
 }
 
-export function setInScopeLines(cx) {
+export function setInScopeLines() {
   return async thunkArgs => {
     const { getState, dispatch } = thunkArgs;
     const visibleFrame = getVisibleSelectedFrame(getState());
@@ -72,17 +74,16 @@ export function setInScopeLines(cx) {
     }
 
     const { location } = visibleFrame;
-    const { content } = getSourceWithContent(getState(), location.sourceId);
+    const sourceTextContent = getSourceTextContent(getState(), location);
 
-    if (hasInScopeLines(getState(), location) || !content) {
+    if (hasInScopeLines(getState(), location) || !sourceTextContent) {
       return;
     }
 
-    const lines = await getInScopeLines(cx, location, thunkArgs);
+    const lines = await getInScopeLines(location, sourceTextContent, thunkArgs);
 
     dispatch({
       type: "IN_SCOPE_LINES",
-      cx,
       location,
       lines,
     });

@@ -27,7 +27,6 @@ import errno
 import io
 import json
 import os
-import platform
 import random
 import re
 import shutil
@@ -45,7 +44,7 @@ FINGERPRINT_URL = 'http://taskcluster/secrets/v1/secret/project/taskcluster/geck
 FALLBACK_FINGERPRINT = {
     'fingerprints':
         "sha256:4D:EB:21:6E:35:2F:99:C6:8F:C3:47:9B:57:B8:6C:17:15:8F:86:09:D4:6C:17:1D:87:B0:DE:F9:0E:51:70:FC,"
-        "sha256:FF:E7:8D:93:E9:56:3C:C0:19:FC:00:4C:18:B9:86:E5:08:E5:10:F5:E2:EA:48:E8:22:D3:A3:3A:CA:99:C3:4C"
+        "sha256:90:85:39:A8:4F:47:20:58:98:0D:48:4D:8A:AC:71:DB:5C:AF:76:44:F1:B1:3E:56:92:FF:21:8C:C9:A9:F7:11"
 }
 
 HGMOINTERNAL_CONFIG_URL = 'http://taskcluster/secrets/v1/secret/project/taskcluster/gecko/hgmointernal'
@@ -471,6 +470,10 @@ def vcs_checkout(source_repo, dest, store_path,
     res = run_and_prefix_output(b'vcs', args,
                                 extra_env={'PYTHONUNBUFFERED': '1'})
     if res:
+        # Mitigation for bug 1539681: if for some reason the clone failed,
+        # we just remove it, so that its possible incomplete state doesn't
+        # interfere with cloning in subsequent tasks.
+        shutil.rmtree(dest, ignore_errors=True)
         sys.exit(res)
 
     # Update the current revision hash and ensure that it is well formed.
@@ -936,7 +939,7 @@ def main(args):
     resource_process = None
 
     try:
-        for k in ('GECKO_PATH', 'MOZ_FETCHES_DIR', 'UPLOAD_DIR'):
+        for k in ('GECKO_PATH', 'MOZ_FETCHES_DIR', 'UPLOAD_DIR', 'MOZ_PYTHON_HOME'):
             if k in os.environ:
                 # Normalize paths to use forward slashes. Some shell scripts
                 # tolerate that better on Windows.
@@ -947,6 +950,43 @@ def main(args):
 
         if 'MOZ_FETCHES' in os.environ:
             fetch_artifacts()
+
+            # If Python is a fetch dependency, add it to the PATH and setting
+            # the mozilla-specific MOZ_PYTHON_HOME to relocate binaries.
+            if 'MOZ_PYTHON_HOME' in os.environ:
+
+                print_line(b'setup',
+                           b'Setting up local python environment\n')
+                prev = [os.environ['PATH']] if 'PATH' in os.environ else []
+
+                moz_python_home = os.environ['MOZ_PYTHON_HOME']
+                if IS_WINDOWS:
+                    ext = '.exe'
+                    moz_python_bindir = moz_python_home
+                else:
+                    ext = ''
+                    moz_python_bindir = moz_python_home + '/bin'
+
+
+                # just a sanity check
+                candidate = os.path.join(moz_python_bindir, f'python3{ext}')
+                if not os.path.exists(candidate):
+                    raise RuntimeError("Inconsistent Python installation: "
+                                       "archive found, but no python3 binary "
+                                       "detected")
+
+                new = os.environ['PATH'] = os.pathsep.join([moz_python_bindir]
+                                                           + prev)
+
+                # Relocate the python binary. Standard way uses PYTHONHOME, but
+                # this conflicts with system python (e.g. used by hg) so we
+                # maintain a small patch to use MOZPYTHONHOME instead.
+                os.environ['MOZPYTHONHOME'] = moz_python_home
+
+                print_line(b'setup',
+                           b'updated PATH with python artifact: '
+                           + new.encode() + b'\n')
+
 
         resource_process = maybe_run_resource_monitoring()
 

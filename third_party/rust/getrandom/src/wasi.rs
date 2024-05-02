@@ -8,12 +8,18 @@
 
 //! Implementation for WASI
 use crate::Error;
-use core::num::NonZeroU32;
+use core::{
+    mem::MaybeUninit,
+    num::{NonZeroU16, NonZeroU32},
+};
 use wasi::random_get;
 
-pub fn getrandom_inner(dest: &mut [u8]) -> Result<(), Error> {
-    unsafe { random_get(dest.as_mut_ptr(), dest.len()) }.map_err(|e: wasi::Error| {
-        // convert wasi's Error into getrandom's NonZeroU32 error
-        NonZeroU32::new(e.raw_error() as u32).unwrap().into()
+pub fn getrandom_inner(dest: &mut [MaybeUninit<u8>]) -> Result<(), Error> {
+    unsafe { random_get(dest.as_mut_ptr() as *mut u8, dest.len()) }.map_err(|e| {
+        // The WASI errno will always be non-zero, but we check just in case.
+        match NonZeroU16::new(e.raw()) {
+            Some(r) => Error::from(NonZeroU32::from(r)),
+            None => Error::ERRNO_NOT_POSITIVE,
+        }
     })
 }

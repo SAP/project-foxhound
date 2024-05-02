@@ -10,23 +10,30 @@ const {
   createFactory,
   createRef,
   PureComponent,
-} = require("devtools/client/shared/vendor/react");
-const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
-const dom = require("devtools/client/shared/vendor/react-dom-factories");
+} = require("resource://devtools/client/shared/vendor/react.js");
+const PropTypes = require("resource://devtools/client/shared/vendor/react-prop-types.js");
+const dom = require("resource://devtools/client/shared/vendor/react-dom-factories.js");
 
-loader.lazyGetter(this, "SearchBoxAutocompletePopup", function() {
+const { LocalizationHelper } = require("resource://devtools/shared/l10n.js");
+const l10n = new LocalizationHelper(
+  "devtools/client/locales/components.properties"
+);
+
+loader.lazyGetter(this, "SearchBoxAutocompletePopup", function () {
   return createFactory(
-    require("devtools/client/shared/components/SearchBoxAutocompletePopup")
+    require("resource://devtools/client/shared/components/SearchBoxAutocompletePopup.js")
   );
 });
-loader.lazyGetter(this, "MDNLink", function() {
-  return createFactory(require("devtools/client/shared/components/MdnLink"));
+loader.lazyGetter(this, "MDNLink", function () {
+  return createFactory(
+    require("resource://devtools/client/shared/components/MdnLink.js")
+  );
 });
 
 loader.lazyRequireGetter(
   this,
   "KeyShortcuts",
-  "devtools/client/shared/key-shortcuts"
+  "resource://devtools/client/shared/key-shortcuts.js"
 );
 
 class SearchBox extends PureComponent {
@@ -41,6 +48,10 @@ class SearchBox extends PureComponent {
       onChange: PropTypes.func.isRequired,
       onClearButtonClick: PropTypes.func,
       onFocus: PropTypes.func,
+      // Optional function that will be called on the focus keyboard shortcut, before
+      // setting the focus to the input. If the function returns false, the input won't
+      // get focused.
+      onFocusKeyboardShortcut: PropTypes.func,
       onKeyDown: PropTypes.func,
       placeholder: PropTypes.string.isRequired,
       summary: PropTypes.string,
@@ -77,6 +88,10 @@ class SearchBox extends PureComponent {
       window,
     });
     this.shortcuts.on(this.props.keyShortcut, event => {
+      if (this.props.onFocusKeyboardShortcut?.(event)) {
+        return;
+      }
+
       event.preventDefault();
       this.focus();
     });
@@ -244,6 +259,7 @@ class SearchBox extends PureComponent {
         className: "devtools-searchinput-clear",
         hidden: value === "",
         onClick: this.onClearButtonClick,
+        title: l10n.getStr("searchBox.clearButtonTitle"),
       }),
       showAutocomplete &&
         SearchBoxAutocompletePopup({

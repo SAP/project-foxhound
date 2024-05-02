@@ -9,7 +9,7 @@
  * potentially be a little flaky due to the precision of different color representations.
  */
 
-const { colorUtils } = require("devtools/shared/css/color");
+const { colorUtils } = require("resource://devtools/shared/css/color.js");
 const getFixtureColorData = require("resource://test/helper_color_data.js");
 
 function run_test() {
@@ -41,12 +41,10 @@ function run_test() {
  */
 function runCycle(value, times) {
   let color = new colorUtils.CssColor(value);
-  //console.log("color", value, color.toString(), color);
+  const colorUnit = colorUtils.classifyColor(value);
   for (let i = 0; i < times; i++) {
-    color.nextColorUnit();
-    //console.log("color.nextColorUnit", color.toString(), color);
-    color = new colorUtils.CssColor(color.toString());
-    //console.log("new color", color.toString(), color);
+    const newColor = color.nextColorUnit();
+    color = new colorUtils.CssColor(newColor);
   }
-  return color.toString() === value;
+  return color.toString(colorUnit) === value;
 }

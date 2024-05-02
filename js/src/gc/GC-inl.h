@@ -13,13 +13,13 @@
 #include "mozilla/Maybe.h"
 
 #include "gc/IteratorUtils.h"
+#include "gc/Marking.h"
 #include "gc/Zone.h"
 #include "vm/Runtime.h"
 
 #include "gc/ArenaList-inl.h"
 
-namespace js {
-namespace gc {
+namespace js::gc {
 
 class AutoAssertEmptyNursery;
 
@@ -337,7 +337,6 @@ class ZoneCellIter : protected ZoneAllCellIter<T> {
   }
 };
 
-} /* namespace gc */
-} /* namespace js */
+}  // namespace js::gc
 
 #endif /* gc_GC_inl_h */

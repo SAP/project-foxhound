@@ -10,12 +10,12 @@ const TEST_URI =
   "data:text/html;charset=utf8,<!DOCTYPE html><p>hello world" +
   "<button onclick='foobar.explode()'>click!</button>";
 
-add_task(async function() {
+add_task(async function () {
   // Disable the preloaded process as it creates processes intermittently
   // which forces the emission of RDP requests we aren't correctly waiting for.
   await pushPref("dom.ipc.processPrelaunch.enabled", false);
 
-  await pushPref("devtools.browserconsole.contentMessages", true);
+  await pushPref("devtools.browsertoolbox.scope", "everything");
   await addTab(TEST_URI);
 
   const hud = await BrowserConsoleManager.toggleBrowserConsole();
@@ -36,7 +36,7 @@ add_task(async function() {
   const messageText = "ReferenceError: foobar is not defined";
 
   const msg = await waitFor(
-    () => findMessage(hud, messageText),
+    () => findErrorMessage(hud, messageText),
     `Message "${messageText}" wasn't found`
   );
   ok(msg, `Message found: "${messageText}"`);

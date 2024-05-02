@@ -477,6 +477,37 @@ void MacroAssembler::branch8(Condition cond, const Address& lhs, Imm32 rhs,
   }
 }
 
+void MacroAssembler::branch8(Condition cond, const BaseIndex& lhs, Register rhs,
+                             Label* label) {
+  SecondScratchRegisterScope scratch2(*this);
+  MOZ_ASSERT(scratch2 != lhs.base);
+
+  computeScaledAddress(lhs, scratch2);
+
+  switch (cond) {
+    case Assembler::Equal:
+    case Assembler::NotEqual:
+    case Assembler::Above:
+    case Assembler::AboveOrEqual:
+    case Assembler::Below:
+    case Assembler::BelowOrEqual:
+      load8ZeroExtend(Address(scratch2, lhs.offset), scratch2);
+      branch32(cond, scratch2, rhs, label);
+      break;
+
+    case Assembler::GreaterThan:
+    case Assembler::GreaterThanOrEqual:
+    case Assembler::LessThan:
+    case Assembler::LessThanOrEqual:
+      load8SignExtend(Address(scratch2, lhs.offset), scratch2);
+      branch32(cond, scratch2, rhs, label);
+      break;
+
+    default:
+      MOZ_CRASH("unexpected condition");
+  }
+}
+
 void MacroAssembler::branch16(Condition cond, const Address& lhs, Imm32 rhs,
                               Label* label) {
   SecondScratchRegisterScope scratch2(*this);
@@ -649,11 +680,6 @@ void MacroAssembler::branchTruncateFloat32ToInt32(FloatRegister src,
 void MacroAssembler::branchDouble(DoubleCondition cond, FloatRegister lhs,
                                   FloatRegister rhs, Label* label) {
   ma_bc1d(lhs, rhs, label, cond);
-}
-
-void MacroAssembler::branchTruncateDoubleToInt32(FloatRegister src,
-                                                 Register dest, Label* fail) {
-  convertDoubleToInt32(src, dest, fail, false);
 }
 
 template <typename T>
@@ -1225,21 +1251,26 @@ void MacroAssembler::spectreZeroRegister(Condition cond, Register scratch,
 // ========================================================================
 // Memory access primitives.
 
-void MacroAssembler::storeUncanonicalizedDouble(FloatRegister src,
-                                                const Address& addr) {
+FaultingCodeOffset MacroAssembler::storeUncanonicalizedDouble(
+    FloatRegister src, const Address& addr) {
+  // FIXME -- see https://bugzilla.mozilla.org/show_bug.cgi?id=1855960
+  return FaultingCodeOffset();
   ma_sd(src, addr);
 }
-void MacroAssembler::storeUncanonicalizedDouble(FloatRegister src,
-                                                const BaseIndex& addr) {
+FaultingCodeOffset MacroAssembler::storeUncanonicalizedDouble(
+    FloatRegister src, const BaseIndex& addr) {
+  return FaultingCodeOffset();  // FIXME
   ma_sd(src, addr);
 }
 
-void MacroAssembler::storeUncanonicalizedFloat32(FloatRegister src,
-                                                 const Address& addr) {
+FaultingCodeOffset MacroAssembler::storeUncanonicalizedFloat32(
+    FloatRegister src, const Address& addr) {
+  return FaultingCodeOffset();  // FIXME
   ma_ss(src, addr);
 }
-void MacroAssembler::storeUncanonicalizedFloat32(FloatRegister src,
-                                                 const BaseIndex& addr) {
+FaultingCodeOffset MacroAssembler::storeUncanonicalizedFloat32(
+    FloatRegister src, const BaseIndex& addr) {
+  return FaultingCodeOffset();  // FIXME
   ma_ss(src, addr);
 }
 

@@ -1,9 +1,5 @@
-commit 45a913c057892bdd26f7bc06a59a0c7420f2d3ec
-Author: Philip Chimento <pchimento@igalia.com>
-Date:   Wed Aug 11 12:31:23 2021 -0700
+commit 873f2604789e40f18e3e4dffd5a7bd6c4bed245f
+Author: André Bargull <andre.bargull@gmail.com>
+Date:   Mon Oct 16 13:28:25 2023 +0200
 
-    Add branding tests from Temporal (#3138)
-    
-    Closes: #3137
-    
-    Co-authored-by: Ms2ger <Ms2ger@igalia.com>
+    Update likely subtags tests for CLDR 44

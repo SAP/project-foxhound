@@ -7,8 +7,11 @@
 #include "nsStyleUtil.h"
 #include "nsStyleConsts.h"
 
+#include "mozilla/dom/Document.h"
 #include "mozilla/ExpandedPrincipal.h"
-#include "mozilla/FontPropertyTypes.h"
+#include "mozilla/intl/MozLocaleBindings.h"
+#include "mozilla/intl/oxilangtag_ffi_generated.h"
+#include "mozilla/TextUtils.h"
 #include "nsIContent.h"
 #include "nsCSSProps.h"
 #include "nsContentUtils.h"
@@ -49,6 +52,59 @@ bool nsStyleUtil::DashMatchCompare(const nsAString& aAttributeValue,
     }
   }
   return result;
+}
+
+bool nsStyleUtil::LangTagCompare(const nsACString& aAttributeValue,
+                                 const nsACString& aSelectorValue) {
+  if (aAttributeValue.IsEmpty() || aSelectorValue.IsEmpty()) {
+    return false;
+  }
+
+  class MOZ_RAII AutoLangTag final {
+   public:
+    AutoLangTag() = delete;
+    AutoLangTag(const AutoLangTag& aOther) = delete;
+    explicit AutoLangTag(const nsACString& aLangTag) {
+      mLangTag = intl::ffi::lang_tag_new(&aLangTag);
+    }
+
+    ~AutoLangTag() {
+      if (mLangTag) {
+        intl::ffi::lang_tag_destroy(mLangTag);
+      }
+    }
+
+    bool IsValid() const { return mLangTag; }
+    operator intl::ffi::LangTag*() const { return mLangTag; }
+
+    void Reset(const nsACString& aLangTag) {
+      if (mLangTag) {
+        intl::ffi::lang_tag_destroy(mLangTag);
+      }
+      mLangTag = intl::ffi::lang_tag_new(&aLangTag);
+    }
+
+   private:
+    intl::ffi::LangTag* mLangTag = nullptr;
+  };
+
+  AutoLangTag langAttr(aAttributeValue);
+
+  // Non-BCP47 extension: recognize '_' as an alternative subtag delimiter.
+  nsAutoCString attrTemp;
+  if (!langAttr.IsValid()) {
+    if (aAttributeValue.Contains('_')) {
+      attrTemp = aAttributeValue;
+      attrTemp.ReplaceChar('_', '-');
+      langAttr.Reset(attrTemp);
+    }
+  }
+
+  if (!langAttr.IsValid()) {
+    return false;
+  }
+
+  return intl::ffi::lang_tag_matches(langAttr, &aSelectorValue);
 }
 
 bool nsStyleUtil::ValueIncludes(const nsAString& aValueList,
@@ -306,9 +362,11 @@ bool nsStyleUtil::CSPAllowsInlineStyle(
     return true;
   }
 
+  bool isStyleElement = false;
   // query the nonce
   nsAutoString nonce;
   if (aElement && aElement->NodeInfo()->NameAtom() == nsGkAtoms::style) {
+    isStyleElement = true;
     nsString* cspNonce =
         static_cast<nsString*>(aElement->GetProperty(nsGkAtoms::nonce));
     if (cspNonce) {
@@ -318,28 +376,13 @@ bool nsStyleUtil::CSPAllowsInlineStyle(
 
   bool allowInlineStyle = true;
   rv = csp->GetAllowsInline(
-      nsIContentSecurityPolicy::STYLE_SRC_DIRECTIVE, nonce,
+      isStyleElement ? nsIContentSecurityPolicy::STYLE_SRC_ELEM_DIRECTIVE
+                     : nsIContentSecurityPolicy::STYLE_SRC_ATTR_DIRECTIVE,
+      !isStyleElement /* aHasUnsafeHash */, nonce,
       false,              // aParserCreated only applies to scripts
       aElement, nullptr,  // nsICSPEventListener
       aStyleText, aLineNumber, aColumnNumber, &allowInlineStyle);
   NS_ENSURE_SUCCESS(rv, false);
 
   return allowInlineStyle;
-}
-
-void nsStyleUtil::AppendFontSlantStyle(const FontSlantStyle& aStyle,
-                                       nsAString& aOut) {
-  if (aStyle.IsNormal()) {
-    aOut.AppendLiteral("normal");
-  } else if (aStyle.IsItalic()) {
-    aOut.AppendLiteral("italic");
-  } else {
-    aOut.AppendLiteral("oblique");
-    auto angle = aStyle.ObliqueAngle();
-    if (angle != FontSlantStyle::kDefaultAngle) {
-      aOut.AppendLiteral(" ");
-      AppendCSSNumber(angle, aOut);
-      aOut.AppendLiteral("deg");
-    }
-  }
 }

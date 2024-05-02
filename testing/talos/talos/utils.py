@@ -3,15 +3,13 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 """Utility functions for Talos"""
-from __future__ import absolute_import
-
 import os
 import platform
 import re
-from sys import stdout
-import urllib.parse
 import string
 import time
+import urllib.parse
+from sys import stdout
 
 try:
     from mozlog import get_proxy_logger
@@ -161,7 +159,6 @@ def GenerateBrowserCommandLine(
                 url += "&" + urllib.parse.urlencode(profiling_info)
             else:
                 url += "?" + urllib.parse.urlencode(profiling_info)
-            command_args.extend(url.split(" "))
 
     # if there's a url i.e. startup test / non-manifest test, add it to the cmd line args
     if url is not None:

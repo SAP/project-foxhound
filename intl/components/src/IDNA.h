@@ -4,6 +4,7 @@
 #ifndef intl_components_IDNA_h_
 #define intl_components_IDNA_h_
 
+#include "mozilla/Try.h"
 #include "mozilla/intl/ICU4CGlue.h"
 
 #include "unicode/uidna.h"
@@ -65,6 +66,15 @@ class IDNA final {
       return (mErrorCode & UIDNA_ERROR_PUNYCODE) != 0;
     }
 
+    /* The label was successfully ACE (Punycode) decoded but the resulting
+     * string had severe validation errors. For example,
+     * it might contain characters that are not allowed in ACE labels,
+     * or it might not be normalized.
+     */
+    bool HasInvalidAceLabel() const {
+      return (mErrorCode & UIDNA_ERROR_INVALID_ACE_LABEL) != 0;
+    }
+
     /**
      * Checks if the domain name label has any invalid hyphen characters.
      *
@@ -81,6 +91,13 @@ class IDNA final {
                               UIDNA_ERROR_TRAILING_HYPHEN |
                               UIDNA_ERROR_HYPHEN_3_4;
       return (mErrorCode & hyphenErrors) != 0;
+    }
+
+    bool HasErrorsIgnoringInvalidHyphen() const {
+      uint32_t hyphenErrors = UIDNA_ERROR_LEADING_HYPHEN |
+                              UIDNA_ERROR_TRAILING_HYPHEN |
+                              UIDNA_ERROR_HYPHEN_3_4;
+      return (mErrorCode & ~hyphenErrors) != 0;
     }
 
    private:

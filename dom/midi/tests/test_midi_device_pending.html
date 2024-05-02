@@ -15,22 +15,18 @@
        await MIDITestUtils.permissionSetup(true);
 
 
-       var checkCount = 0;
-       var state = "connecting";
        var output;
        var test_ports = [];
        let access;
 
        let accessRes;
-       let accessRej;
        let accessPromise;
        let portRes;
-       let portRej;
        let portPromise;
 
        function resetPromises() {
-         accessPromise = new Promise((res, rej) => { accessRes = res; accessRej = rej; });
-         portPromise = new Promise((res, rej) => { portRes = res; portRej = rej; });
+         accessPromise = new Promise((res, rej) => { accessRes = res; });
+         portPromise = new Promise((res, rej) => { portRes = res; });
        }
 
        function accessStateChangeHandler(event) {
@@ -58,7 +54,7 @@
        access.addEventListener("statechange", accessStateChangeHandler);
 
        // Part 2: open test device, make sure it connects, attach event handler to device object
-       output = access.outputs.get(MIDITestUtils.outputInfo.id);
+       output = access.outputs.get(await MIDITestUtils.outputInfo.id);
        resetPromises();
        output.send([0x90, 0x01, 0x00]);
        let accessEvent = await accessPromise;

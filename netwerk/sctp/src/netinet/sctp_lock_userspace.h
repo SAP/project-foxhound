@@ -33,11 +33,6 @@
  * THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#if defined(__FreeBSD__) && !defined(__Userspace__)
-#include <sys/cdefs.h>
-__FBSDID("$FreeBSD$");
-#endif
-
 #ifndef _NETINET_SCTP_LOCK_EMPTY_H_
 #define _NETINET_SCTP_LOCK_EMPTY_H_
 
@@ -63,6 +58,9 @@ __FBSDID("$FreeBSD$");
 #define SCTP_INP_INFO_TRYLOCK() 1
 #define SCTP_INP_INFO_RUNLOCK()
 #define SCTP_INP_INFO_WUNLOCK()
+#define SCTP_INP_INFO_LOCK_ASSERT()
+#define SCTP_INP_INFO_RLOCK_ASSERT()
+#define SCTP_INP_INFO_WLOCK_ASSERT()
 
 #define SCTP_WQ_ADDR_INIT()
 #define SCTP_WQ_ADDR_DESTROY()
@@ -76,6 +74,8 @@ __FBSDID("$FreeBSD$");
 #define SCTP_IPI_ADDR_WLOCK()
 #define SCTP_IPI_ADDR_RUNLOCK()
 #define SCTP_IPI_ADDR_WUNLOCK()
+#define SCTP_IPI_ADDR_LOCK_ASSERT()
+#define SCTP_IPI_ADDR_WLOCK_ASSERT()
 
 #define SCTP_IPI_ITERATOR_WQ_INIT()
 #define SCTP_IPI_ITERATOR_WQ_DESTROY()
@@ -87,10 +87,11 @@ __FBSDID("$FreeBSD$");
 #define SCTP_IP_PKTLOG_UNLOCK()
 #define SCTP_IP_PKTLOG_DESTROY()
 
-#define SCTP_INP_READ_INIT(_inp)
-#define SCTP_INP_READ_DESTROY(_inp)
+#define SCTP_INP_READ_LOCK_INIT(_inp)
+#define SCTP_INP_READ_LOCK_DESTROY(_inp)
 #define SCTP_INP_READ_LOCK(_inp)
 #define SCTP_INP_READ_UNLOCK(_inp)
+#define SCTP_INP_READ_LOCK_ASSERT(_inp)
 
 #define SCTP_INP_LOCK_INIT(_inp)
 #define SCTP_ASOC_CREATE_LOCK_INIT(_inp)
@@ -108,11 +109,6 @@ __FBSDID("$FreeBSD$");
 
 #define SCTP_ASOC_CREATE_LOCK_CONTENDED(_inp) (0) /* Don't know if this is possible */
 
-
-#define SCTP_TCB_SEND_LOCK_INIT(_tcb)
-#define SCTP_TCB_SEND_LOCK_DESTROY(_tcb)
-#define SCTP_TCB_SEND_LOCK(_tcb)
-#define SCTP_TCB_SEND_UNLOCK(_tcb)
 
 #define SCTP_INP_INCR_REF(_inp)
 #define SCTP_INP_DECR_REF(_inp)

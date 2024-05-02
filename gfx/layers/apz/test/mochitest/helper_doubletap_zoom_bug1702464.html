@@ -12,8 +12,7 @@
 async function test() {
   let useTouchpad = (location.search == "?touchpad");
 
-  const utils = SpecialPowers.getDOMWindowUtils(window);
-  const deviceScale = utils.screenPixelsPerCSSPixel;
+  const deviceScale = window.devicePixelRatio;
   let target2 = document.getElementById("target2")
 
   info("deviceScale " + deviceScale);
@@ -41,17 +40,6 @@ async function test() {
   // And then make the element skinnier than the window size so it triggers
   // the bug. (half the aspect ratio minus 5 just to be sure)
   let elementWidth = Math.max(12, Math.floor(elementHeight * window.innerWidth / (2 * window.innerHeight)) - 5);
-
-  // These numbers carefully crafted to test the bug (ie fail without the fix).
-  if (getPlatform() == "mac") {
-    if (deviceScale >= 2) {
-      elementWidth = 50;
-      elementHeight = 135;
-    } else {
-      elementWidth = 25;
-      elementHeight = 56;
-    }
-  }
 
   info("element size " + elementWidth + " " + elementHeight);
 

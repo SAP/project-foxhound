@@ -8,13 +8,12 @@
 #include "DocAccessible-inl.h"
 #include "LocalAccessible-inl.h"
 #include "nsAccUtils.h"
-#include "Role.h"
+#include "mozilla/a11y/Role.h"
 #include "AccAttributes.h"
 #include "AccIterator.h"
 #include "CacheConstants.h"
 #include "States.h"
 
-#include "imgIContainer.h"
 #include "imgIRequest.h"
 #include "nsGenericHTMLElement.h"
 #include "mozilla/dom/BrowsingContext.h"
@@ -77,9 +76,8 @@ uint64_t ImageAccessible::NativeState() const {
   if (!(mImageRequestStatus & imgIRequest::STATUS_SIZE_AVAILABLE)) {
     nsIFrame* frame = GetFrame();
     MOZ_ASSERT(!frame || frame->AccessibleType() == eImageType ||
-               frame->AccessibleType() == a11y::eHTMLImageMapType ||
-               frame->IsImageBoxFrame());
-    if (frame && !(frame->GetStateBits() & IMAGE_SIZECONSTRAINED)) {
+               frame->AccessibleType() == a11y::eHTMLImageMapType);
+    if (frame && !frame->HasAnyStateBits(IMAGE_SIZECONSTRAINED)) {
       // The size of this image hasn't been constrained and we haven't loaded
       // enough of the image to know its size yet. This means it currently
       // has 0 width and height.
@@ -91,18 +89,13 @@ uint64_t ImageAccessible::NativeState() const {
 }
 
 ENameValueFlag ImageAccessible::NativeName(nsString& aName) const {
-  bool hasAltAttrib =
-      mContent->AsElement()->GetAttr(kNameSpaceID_None, nsGkAtoms::alt, aName);
+  mContent->AsElement()->GetAttr(nsGkAtoms::alt, aName);
   if (!aName.IsEmpty()) return eNameOK;
 
   ENameValueFlag nameFlag = LocalAccessible::NativeName(aName);
   if (!aName.IsEmpty()) return nameFlag;
 
-  // No accessible name but empty 'alt' attribute is present. If further name
-  // computation algorithm doesn't provide non empty name then it means
-  // an empty 'alt' attribute was used to indicate a decorative image (see
-  // LocalAccessible::Name() method for details).
-  return hasAltAttrib ? eNoNameOnPurpose : eNameOK;
+  return eNameOK;
 }
 
 role ImageAccessible::NativeRole() const { return roles::GRAPHIC; }
@@ -117,7 +110,7 @@ void ImageAccessible::DOMAttributeChanged(int32_t aNameSpaceID,
   if (aAttribute == nsGkAtoms::longdesc &&
       (aModType == dom::MutationEvent_Binding::ADDITION ||
        aModType == dom::MutationEvent_Binding::REMOVAL)) {
-    SendCache(CacheDomain::Actions, CacheUpdateType::Update);
+    mDoc->QueueCacheUpdate(this, CacheDomain::Actions);
   }
 }
 
@@ -165,7 +158,8 @@ bool ImageAccessible::DoAction(uint8_t aIndex) const {
 
 LayoutDeviceIntPoint ImageAccessible::Position(uint32_t aCoordType) {
   LayoutDeviceIntPoint point = Bounds().TopLeft();
-  nsAccUtils::ConvertScreenCoordsTo(&point.x, &point.y, aCoordType, this);
+  nsAccUtils::ConvertScreenCoordsTo(&point.x.value, &point.y.value, aCoordType,
+                                    this);
   return point;
 }
 
@@ -176,7 +170,7 @@ already_AddRefed<AccAttributes> ImageAccessible::NativeAttributes() {
   RefPtr<AccAttributes> attributes = LinkableAccessible::NativeAttributes();
 
   nsString src;
-  mContent->AsElement()->GetAttr(kNameSpaceID_None, nsGkAtoms::src, src);
+  mContent->AsElement()->GetAttr(nsGkAtoms::src, src);
   if (!src.IsEmpty()) attributes->SetAttribute(nsGkAtoms::src, std::move(src));
 
   return attributes.forget();
@@ -186,11 +180,10 @@ already_AddRefed<AccAttributes> ImageAccessible::NativeAttributes() {
 // Private methods
 
 already_AddRefed<nsIURI> ImageAccessible::GetLongDescURI() const {
-  if (mContent->AsElement()->HasAttr(kNameSpaceID_None, nsGkAtoms::longdesc)) {
+  if (mContent->AsElement()->HasAttr(nsGkAtoms::longdesc)) {
     // To check if longdesc contains an invalid url.
     nsAutoString longdesc;
-    mContent->AsElement()->GetAttr(kNameSpaceID_None, nsGkAtoms::longdesc,
-                                   longdesc);
+    mContent->AsElement()->GetAttr(nsGkAtoms::longdesc, longdesc);
     if (longdesc.FindChar(' ') != -1 || longdesc.FindChar('\t') != -1 ||
         longdesc.FindChar('\r') != -1 || longdesc.FindChar('\n') != -1) {
       return nullptr;
@@ -208,7 +201,7 @@ already_AddRefed<nsIURI> ImageAccessible::GetLongDescURI() const {
     while (nsIContent* target = iter.NextElem()) {
       if ((target->IsHTMLElement(nsGkAtoms::a) ||
            target->IsHTMLElement(nsGkAtoms::area)) &&
-          target->AsElement()->HasAttr(kNameSpaceID_None, nsGkAtoms::href)) {
+          target->AsElement()->HasAttr(nsGkAtoms::href)) {
         nsGenericHTMLElement* element = nsGenericHTMLElement::FromNode(target);
 
         nsCOMPtr<nsIURI> uri;
@@ -247,7 +240,7 @@ void ImageAccessible::Notify(imgIRequest* aRequest, int32_t aType,
 
   if ((status ^ mImageRequestStatus) & imgIRequest::STATUS_SIZE_AVAILABLE) {
     nsIFrame* frame = GetFrame();
-    if (frame && !(frame->GetStateBits() & IMAGE_SIZECONSTRAINED)) {
+    if (frame && !frame->HasAnyStateBits(IMAGE_SIZECONSTRAINED)) {
       RefPtr<AccEvent> event = new AccStateChangeEvent(
           this, states::INVISIBLE,
           !(status & imgIRequest::STATUS_SIZE_AVAILABLE));

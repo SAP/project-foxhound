@@ -1,15 +1,19 @@
+ChromeUtils.defineESModuleGetters(this, {
+  UrlbarTestUtils: "resource://testing-common/UrlbarTestUtils.sys.mjs",
+});
+
 let testURL =
   "https://example.com/browser/" +
   "uriloader/exthandler/tests/mochitest/protocolHandler.html";
 
-add_task(async function() {
+add_task(async function () {
   await SpecialPowers.pushPrefEnv({
     set: [["security.external_protocol_requires_permission", false]],
   });
 
   // Load a page registering a protocol handler.
   let browser = gBrowser.selectedBrowser;
-  BrowserTestUtils.loadURI(browser, testURL);
+  BrowserTestUtils.startLoadingURIString(browser, testURL);
   await BrowserTestUtils.browserLoaded(browser, false, testURL);
 
   // Register the protocol handler by clicking the notificationbar button.
@@ -53,7 +57,7 @@ add_task(async function() {
     "https://example.com/foobar?uri=web%2Btestprotocol%3Atest";
 
   // Create a framed link:
-  await SpecialPowers.spawn(browser, [], async function() {
+  await SpecialPowers.spawn(browser, [], async function () {
     let iframe = content.document.createElement("iframe");
     iframe.src = `data:text/html,<a href="web+testprotocol:test">Click me</a>`;
     content.document.body.append(iframe);
@@ -81,7 +85,7 @@ add_task(async function() {
   gBrowser.selectedTab = tab;
   is(
     gURLBar.value,
-    expectedURL,
+    UrlbarTestUtils.trimURL(expectedURL),
     "the expected URL is displayed in the location bar"
   );
   BrowserTestUtils.removeTab(tab);
@@ -101,7 +105,7 @@ add_task(async function() {
   );
   is(
     win.gURLBar.value,
-    expectedURL,
+    UrlbarTestUtils.trimURL(expectedURL),
     "the expected URL is displayed in the location bar"
   );
   await BrowserTestUtils.closeWindow(win);
@@ -110,10 +114,12 @@ add_task(async function() {
   let loadPromise = BrowserTestUtils.browserLoaded(browser);
   await BrowserTestUtils.synthesizeMouseAtCenter(link, {}, browser);
   await loadPromise;
-  await BrowserTestUtils.waitForCondition(() => gURLBar.value != testURL);
+  await BrowserTestUtils.waitForCondition(
+    () => gURLBar.value != UrlbarTestUtils.trimURL(testURL)
+  );
   is(
     gURLBar.value,
-    expectedURL,
+    UrlbarTestUtils.trimURL(expectedURL),
     "the expected URL is displayed in the location bar"
   );
 

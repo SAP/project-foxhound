@@ -30,7 +30,7 @@ function importDependencies(templateFrame, destinationEl) {
       let clone = element.cloneNode(true);
       promises.push(
         new Promise(resolve => {
-          clone.onload = function() {
+          clone.onload = function () {
             resolve();
             clone.remove();
           };
@@ -47,6 +47,7 @@ Object.defineProperty(document, "l10n", {
   writable: true,
   value: {
     connectRoot() {},
+    disconnectRoot() {},
     translateElements() {
       return Promise.resolve();
     },
@@ -79,7 +80,7 @@ Object.defineProperty(window, "AboutLoginsUtils", {
     setFocus(element) {
       return element.focus();
     },
-    async promptForMasterPassword(resolve, messageId) {
+    async promptForPrimaryPassword(resolve, messageId) {
       resolve(true);
     },
     doLoginsMatch(login1, login2) {
@@ -92,6 +93,6 @@ Object.defineProperty(window, "AboutLoginsUtils", {
     fileImportEnabled: SpecialPowers.getBoolPref(
       "signon.management.page.fileImport.enabled"
     ),
-    masterPasswordEnabled: false,
+    primaryPasswordEnabled: false,
   },
 });

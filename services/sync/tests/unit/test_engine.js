@@ -1,33 +1,31 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
-const { OS } = ChromeUtils.import("resource://gre/modules/osfile.jsm");
-const { PromiseUtils } = ChromeUtils.import(
-  "resource://gre/modules/PromiseUtils.jsm"
+const { PromiseUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/PromiseUtils.sys.mjs"
 );
-const { Observers } = ChromeUtils.import(
-  "resource://services-common/observers.js"
+const { Observers } = ChromeUtils.importESModule(
+  "resource://services-common/observers.sys.mjs"
 );
-const { Service } = ChromeUtils.import("resource://services-sync/service.js");
+const { Service } = ChromeUtils.importESModule(
+  "resource://services-sync/service.sys.mjs"
+);
 
 function SteamStore(engine) {
   Store.call(this, "Steam", engine);
   this.wasWiped = false;
 }
 SteamStore.prototype = {
-  __proto__: Store.prototype,
-
   async wipe() {
     this.wasWiped = true;
   },
 };
+Object.setPrototypeOf(SteamStore.prototype, Store.prototype);
 
 function SteamTracker(name, engine) {
   LegacyTracker.call(this, name || "Steam", engine);
 }
-SteamTracker.prototype = {
-  __proto__: LegacyTracker.prototype,
-};
+Object.setPrototypeOf(SteamTracker.prototype, LegacyTracker.prototype);
 
 function SteamEngine(name, service) {
   SyncEngine.call(this, name, service);
@@ -35,7 +33,6 @@ function SteamEngine(name, service) {
   this.wasSynced = false;
 }
 SteamEngine.prototype = {
-  __proto__: SyncEngine.prototype,
   _storeObj: SteamStore,
   _trackerObj: SteamTracker,
 
@@ -47,6 +44,7 @@ SteamEngine.prototype = {
     this.wasSynced = true;
   },
 };
+Object.setPrototypeOf(SteamEngine.prototype, SyncEngine.prototype);
 
 var engineObserver = {
   topics: [],
@@ -68,7 +66,9 @@ Observers.add("weave:engine:sync:start", engineObserver);
 Observers.add("weave:engine:sync:finish", engineObserver);
 
 async function cleanup(engine) {
-  Svc.Prefs.resetBranch("");
+  for (const pref of Svc.PrefBranch.getChildList("")) {
+    Svc.PrefBranch.clearUserPref(pref);
+  }
   engine.wasReset = false;
   engine.wasSynced = false;
   engineObserver.reset();
@@ -125,11 +125,9 @@ add_task(async function test_invalidChangedIDs() {
   let tracker = engine._tracker;
 
   await tracker._beforeSave();
-  await OS.File.writeAtomic(
-    tracker._storage.path,
-    new TextEncoder().encode("5"),
-    { tmpPath: tracker._storage.path + ".tmp" }
-  );
+  await IOUtils.writeUTF8(tracker._storage.path, "5", {
+    tmpPath: tracker._storage.path + ".tmp",
+  });
 
   ok(!tracker._storage.dataReady);
   const changes = await tracker.getChangedIDs();
@@ -174,11 +172,11 @@ add_task(async function test_enabled() {
   await engine.initialize();
   try {
     Assert.ok(!engine.enabled);
-    Svc.Prefs.set("engine.steam", true);
+    Svc.PrefBranch.setBoolPref("engine.steam", true);
     Assert.ok(engine.enabled);
 
     engine.enabled = false;
-    Assert.ok(!Svc.Prefs.get("engine.steam"));
+    Assert.ok(!Svc.PrefBranch.getBoolPref("engine.steam"));
   } finally {
     await cleanup(engine);
   }
@@ -241,7 +239,7 @@ add_task(async function test_disabled_no_track() {
   changes = await tracker.getChangedIDs();
   Assert.ok(0 < changes.abcdefghijkl);
   promisePrefChangeHandled = PromiseUtils.defer();
-  Svc.Prefs.set("engine." + engine.prefName, false);
+  Svc.PrefBranch.setBoolPref("engine." + engine.prefName, false);
   await promisePrefChangeHandled.promise;
   Assert.ok(!tracker._isTracking);
   changes = await tracker.getChangedIDs();

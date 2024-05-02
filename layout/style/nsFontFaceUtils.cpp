@@ -10,7 +10,6 @@
 #include "gfxUserFontSet.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/RestyleManager.h"
-#include "mozilla/SVGUtils.h"
 #include "nsFontMetrics.h"
 #include "nsIFrame.h"
 #include "nsLayoutUtils.h"
@@ -125,7 +124,7 @@ static FontUsageKind FrameFontUsage(nsIFrame* aFrame,
 // TODO(emilio): Can we use the restyle-hint machinery instead of this?
 static void ScheduleReflow(PresShell* aPresShell, nsIFrame* aFrame) {
   nsIFrame* f = aFrame;
-  if (f->IsFrameOfType(nsIFrame::eSVG) || SVGUtils::IsInSVGTextSubtree(f)) {
+  if (f->IsFrameOfType(nsIFrame::eSVG) || f->IsInSVGTextSubtree()) {
     // SVG frames (and the non-SVG descendants of an SVGTextFrame) need special
     // reflow handling.  We need to search upwards for the first displayed
     // SVGOuterSVGFrame or non-SVG frame, which is the frame we can call
@@ -141,8 +140,8 @@ static void ScheduleReflow(PresShell* aPresShell, nsIFrame* aFrame) {
             // FrameNeedsReflow again, then.
             return;
           }
-          if (f->IsSVGOuterSVGFrame() || !(f->IsFrameOfType(nsIFrame::eSVG) ||
-                                           SVGUtils::IsInSVGTextSubtree(f))) {
+          if (!f->HasAnyStateBits(NS_FRAME_SVG_LAYOUT) ||
+              !f->IsInSVGTextSubtree()) {
             break;
           }
           f->AddStateBits(NS_FRAME_HAS_DIRTY_CHILDREN);
@@ -153,7 +152,7 @@ static void ScheduleReflow(PresShell* aPresShell, nsIFrame* aFrame) {
     }
   }
 
-  aPresShell->FrameNeedsReflow(f, IntrinsicDirty::StyleChange,
+  aPresShell->FrameNeedsReflow(f, IntrinsicDirty::FrameAncestorsAndDescendants,
                                NS_FRAME_IS_DIRTY);
 }
 
@@ -171,6 +170,8 @@ void nsFontFaceUtils::MarkDirtyForFontChange(nsIFrame* aSubtreeRoot,
 
   nsPresContext* pc = aSubtreeRoot->PresContext();
   PresShell* presShell = pc->PresShell();
+
+  const bool usesMetricsFromStyle = pc->StyleSet()->UsesFontMetrics();
 
   // StyleSingleFontFamily::IsNamedFamily expects a UTF-16 string. Convert it
   // once here rather than on each call.
@@ -210,7 +211,7 @@ void nsFontFaceUtils::MarkDirtyForFontChange(nsIFrame* aSubtreeRoot,
       }
 
       if (alreadyScheduled == ReflowAlreadyScheduled::No ||
-          pc->UsesFontMetricDependentFontUnits()) {
+          usesMetricsFromStyle) {
         if (f->IsPlaceholderFrame()) {
           nsIFrame* oof = nsPlaceholderFrame::GetRealFrameForPlaceholder(f);
           if (!nsLayoutUtils::IsProperAncestorFrame(subtreeRoot, oof)) {

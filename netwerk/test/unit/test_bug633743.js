@@ -1,6 +1,8 @@
 "use strict";
 
-const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
+const { HttpServer } = ChromeUtils.importESModule(
+  "resource://testing-common/httpd.sys.mjs"
+);
 
 const VALUE_HDR_NAME = "X-HTTP-VALUE-HEADER";
 const VARY_HDR_NAME = "X-HTTP-VARY-HEADER";
@@ -147,7 +149,7 @@ var gTests = [
 ];
 
 function run_next_test() {
-  if (gTests.length == 0) {
+  if (!gTests.length) {
     httpserver.stop(do_test_finished);
     return;
   }

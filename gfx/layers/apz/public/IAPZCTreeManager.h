@@ -28,7 +28,7 @@ enum AllowedTouchBehavior {
   VERTICAL_PAN = 1 << 0,
   HORIZONTAL_PAN = 1 << 1,
   PINCH_ZOOM = 1 << 2,
-  DOUBLE_TAP_ZOOM = 1 << 3,
+  ANIMATING_ZOOM = 1 << 3,
   UNKNOWN = 1 << 4
 };
 
@@ -37,7 +37,10 @@ enum ZoomToRectBehavior : uint32_t {
   DISABLE_ZOOM_OUT = 1 << 0,
   PAN_INTO_VIEW_ONLY = 1 << 1,
   ONLY_ZOOM_TO_DEFAULT_SCALE = 1 << 2,
+  ZOOM_TO_FOCUSED_INPUT = 1 << 3,
 };
+
+enum class BrowserGestureResponse : bool;
 
 class AsyncDragMetrics;
 struct APZHandledResult;
@@ -108,6 +111,9 @@ class IAPZCTreeManager {
   virtual void SetAllowedTouchBehavior(
       uint64_t aInputBlockId, const nsTArray<TouchBehaviorFlags>& aValues) = 0;
 
+  virtual void SetBrowserGestureResponse(uint64_t aInputBlockId,
+                                         BrowserGestureResponse aResponse) = 0;
+
   virtual void StartScrollbarDrag(const ScrollableLayerGuid& aGuid,
                                   const AsyncDragMetrics& aDragMetrics) = 0;
 
@@ -132,27 +138,6 @@ class IAPZCTreeManager {
    * It is only valid to call this function in the UI process.
    */
   virtual APZInputBridge* InputBridge() = 0;
-
-  /**
-   * Add a callback to be invoked when |aInputBlockId| is ready for handling,
-   * with a boolean indicating whether the APZC handling the input block is
-   * the root content APZC.
-   *
-   * Should only be used for input blocks that are not yet ready for handling
-   * at the time this is called. If the input block was already handled,
-   * the callback will never be called.
-   *
-   * Only one callback can be registered for an input block at a time.
-   * Subsequent attempts to register a callback for an input block will be
-   * ignored until the existing callback is triggered.
-   *
-   * This is only implemented when the caller is in the same process as
-   * the APZCTreeManager.
-   */
-  using InputBlockCallback = std::function<void(
-      uint64_t aInputBlockId, const APZHandledResult& aHandledResult)>;
-  virtual void AddInputBlockCallback(uint64_t aInputBlockId,
-                                     InputBlockCallback&& aCallback) = 0;
 
  protected:
   // Discourage destruction outside of decref

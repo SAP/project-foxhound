@@ -3,20 +3,15 @@
 
 "use strict";
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "DownloadsViewUI",
-  "resource:///modules/DownloadsViewUI.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  DownloadsViewUI: "resource:///modules/DownloadsViewUI.sys.mjs",
+});
 
-const { TelemetryTestUtils } = ChromeUtils.import(
-  "resource://testing-common/TelemetryTestUtils.jsm"
+const { TelemetryTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/TelemetryTestUtils.sys.mjs"
 );
 
 add_task(async function test_download_clickable() {
-  await SpecialPowers.pushPrefEnv({
-    set: [["browser.download.improvements_to_download_panel", true]],
-  });
   Services.telemetry.clearScalars();
 
   startServer();
@@ -25,7 +20,7 @@ add_task(async function test_download_clickable() {
   let publicList = await Downloads.getList(Downloads.PUBLIC);
   await publicList.add(download);
 
-  registerCleanupFunction(async function() {
+  registerCleanupFunction(async function () {
     await task_resetState();
     Services.telemetry.clearScalars();
   });

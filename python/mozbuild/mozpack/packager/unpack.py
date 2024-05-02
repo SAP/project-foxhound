@@ -2,30 +2,22 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, print_function, unicode_literals
-
 import codecs
+
+from six.moves.urllib.parse import urlparse
+
 import mozpack.path as mozpath
-from mozpack.files import (
-    BaseFinder,
-    FileFinder,
-    DeflatedFile,
-    ManifestFile,
-)
 from mozpack.chrome.manifest import (
-    parse_manifest,
     ManifestEntryWithRelPath,
     ManifestResource,
     is_manifest,
+    parse_manifest,
 )
+from mozpack.copier import FileCopier, FileRegistry
+from mozpack.files import BaseFinder, DeflatedFile, FileFinder, ManifestFile
 from mozpack.mozjar import JarReader
-from mozpack.copier import (
-    FileRegistry,
-    FileCopier,
-)
 from mozpack.packager import SimplePackager
 from mozpack.packager.formats import FlatFormatter
-from six.moves.urllib.parse import urlparse
 
 
 class UnpackFinder(BaseFinder):
@@ -42,11 +34,12 @@ class UnpackFinder(BaseFinder):
     or with files from a FileFinder using the given path as its root.
     """
 
-    def __init__(self, source, omnijar_name=None, unpack_xpi=True):
+    def __init__(self, source, omnijar_name=None, unpack_xpi=True, **kwargs):
         if isinstance(source, BaseFinder):
+            assert not kwargs
             self._finder = source
         else:
-            self._finder = FileFinder(source)
+            self._finder = FileFinder(source, **kwargs)
         self.base = self._finder.base
         self.files = FileRegistry()
         self.kind = "flat"

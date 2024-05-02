@@ -7,11 +7,14 @@
 #ifndef mozilla_ipc_ProcessUtils_h
 #define mozilla_ipc_ProcessUtils_h
 
+#include <functional>
 #include <vector>
 
 #include "mozilla/ipc/FileDescriptor.h"
 #include "base/shared_memory.h"
 #include "mozilla/Maybe.h"
+#include "mozilla/Preferences.h"
+#include "nsXULAppAPI.h"
 
 namespace mozilla {
 namespace ipc {
@@ -24,11 +27,12 @@ void SetThisProcessName(const char* aName);
 
 class SharedPreferenceSerializer final {
  public:
-  SharedPreferenceSerializer();
+  explicit SharedPreferenceSerializer();
   SharedPreferenceSerializer(SharedPreferenceSerializer&& aOther);
   ~SharedPreferenceSerializer();
 
-  bool SerializeToSharedMemory();
+  bool SerializeToSharedMemory(const GeckoProcessType aDestinationProcessType,
+                               const nsACString& aDestinationRemoteType);
 
   size_t GetPrefMapSize() const { return mPrefMapSize; }
   size_t GetPrefsLength() const { return mPrefsLength; }

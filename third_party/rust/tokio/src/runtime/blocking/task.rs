@@ -2,13 +2,13 @@ use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-/// Converts a function to a future that completes on poll
+/// Converts a function to a future that completes on poll.
 pub(crate) struct BlockingTask<T> {
     func: Option<T>,
 }
 
 impl<T> BlockingTask<T> {
-    /// Initializes a new blocking task from the given function
+    /// Initializes a new blocking task from the given function.
     pub(crate) fn new(func: T) -> BlockingTask<T> {
         BlockingTask { func: Some(func) }
     }
@@ -19,7 +19,8 @@ impl<T> Unpin for BlockingTask<T> {}
 
 impl<T, R> Future for BlockingTask<T>
 where
-    T: FnOnce() -> R,
+    T: FnOnce() -> R + Send + 'static,
+    R: Send + 'static,
 {
     type Output = R;
 
@@ -36,7 +37,7 @@ where
         // currently goes through Task::poll(), and so is subject to budgeting. That isn't really
         // what we want; a blocking task may itself want to run tasks (it might be a Worker!), so
         // we want it to start without any budgeting.
-        crate::coop::stop();
+        crate::runtime::coop::stop();
 
         Poll::Ready(func())
     }

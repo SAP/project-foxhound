@@ -3,26 +3,23 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 """
-module to handle Gecko profiling.
+Module to handle Gecko profiling.
 """
-from __future__ import absolute_import
-
-import gzip
 import json
 import os
 import tempfile
 import zipfile
 
 import mozfile
-
 from logger.logger import RaptorLogger
 from mozgeckoprofiler import ProfileSymbolicator
 
 here = os.path.dirname(os.path.realpath(__file__))
 LOG = RaptorLogger(component="raptor-gecko-profile")
+from raptor_profiling import RaptorProfiling
 
 
-class GeckoProfile(object):
+class GeckoProfile(RaptorProfiling):
     """
     Handle Gecko profiling.
 
@@ -30,15 +27,11 @@ class GeckoProfile(object):
     """
 
     def __init__(self, upload_dir, raptor_config, test_config):
-        self.upload_dir = upload_dir
-        self.raptor_config = raptor_config
-        self.test_config = test_config
+        super().__init__(upload_dir, raptor_config, test_config)
         self.cleanup = True
 
-        # Create a temporary directory into which the tests can put
-        # their profiles. These files will be assembled into one big
-        # zip file later on, which is put into the MOZ_UPLOAD_DIR.
-        self.gecko_profile_dir = tempfile.mkdtemp()
+        # define the key in the results json for gecko profiles
+        self.profile_entry_string = "geckoProfiles"
 
         # Each test INI can specify gecko_profile_interval and entries but they
         # can be overrided by user input.
@@ -70,7 +63,7 @@ class GeckoProfile(object):
         # Make sure no archive already exists in the location where
         # we plan to output our profiler archive
         self.profile_arcname = os.path.join(
-            self.upload_dir, "profile_{0}.zip".format(test_config["name"])
+            self.upload_dir, "profile_{0}.zip".format(self.test_config["name"])
         )
         LOG.info("Clearing archive {0}".format(self.profile_arcname))
         mozfile.remove(self.profile_arcname)
@@ -83,19 +76,13 @@ class GeckoProfile(object):
         LOG.info(
             "Activating gecko profiling, temp profile dir:"
             " {0}, interval: {1}, entries: {2}".format(
-                self.gecko_profile_dir, gecko_profile_interval, gecko_profile_entries
+                self.temp_profile_dir, gecko_profile_interval, gecko_profile_entries
             )
         )
 
-    def _open_gecko_profile(self, profile_path):
-        """Open a gecko profile and return the contents."""
-        if profile_path.endswith(".gz"):
-            with gzip.open(profile_path, "r") as profile_file:
-                profile = json.load(profile_file)
-        else:
-            with open(profile_path, "r") as profile_file:
-                profile = json.load(profile_file)
-        return profile
+    @property
+    def _is_extra_profiler_run(self):
+        return self.raptor_config.get("extra_profiler_run", False)
 
     def _symbolicate_profile(self, profile, missing_symbols_zip, symbolicator):
         try:
@@ -109,93 +96,9 @@ class GeckoProfile(object):
             raise
         except Exception:
             LOG.critical("Encountered an exception during profile symbolication")
-            raise
-
-    def collect_profiles(self):
-        """Returns all profiles files."""
-
-        def __get_test_type():
-            """Returns the type of test that was run.
-
-            For benchmark/scenario tests, we return those specific types,
-            but for pageloads we return cold or warm depending on the --cold
-            flag.
-            """
-            if self.test_config.get("type", "pageload") not in (
-                "benchmark",
-                "scenario",
-            ):
-                return "cold" if self.raptor_config.get("cold", False) else "warm"
-            else:
-                return self.test_config.get("type", "benchmark")
-
-        res = []
-        if self.raptor_config.get("browsertime"):
-            topdir = self.raptor_config.get("browsertime_result_dir")
-
-            # Get the browsertime.json file along with the cold/warm splits
-            # if they exist from a chimera test
-            results = {"main": None, "cold": None, "warm": None}
-            for filename in os.listdir(topdir):
-                if filename == "browsertime.json":
-                    results["main"] = os.path.join(topdir, filename)
-                elif filename == "cold-browsertime.json":
-                    results["cold"] = os.path.join(topdir, filename)
-                elif filename == "warm-browsertime.json":
-                    results["warm"] = os.path.join(topdir, filename)
-                if all(results.values()):
-                    break
-
-            if not any(results.values()):
-                raise Exception(
-                    "Could not find any browsertime result JSONs in the artifacts"
-                )
-
-            profile_locations = []
-            if self.raptor_config.get("chimera", False):
-                if results["warm"] is None or results["cold"] is None:
-                    raise Exception(
-                        "The test ran in chimera mode but we found no cold "
-                        "and warm browsertime JSONs. Cannot symbolicate profiles."
-                    )
-                profile_locations.extend(
-                    [("cold", results["cold"]), ("warm", results["warm"])]
-                )
-            else:
-                # When we don't run in chimera mode, it means that we
-                # either ran a benchmark, scenario test, or separate
-                # warm/cold pageload tests
-                profile_locations.append(
-                    (
-                        __get_test_type(),
-                        results["main"],
-                    )
-                )
-
-            for testtype, results_json in profile_locations:
-                with open(results_json) as f:
-                    data = json.load(f)
-                for entry in data:
-                    for rel_profile_path in entry["files"]["geckoProfiles"]:
-                        res.append(
-                            {
-                                "path": os.path.join(topdir, rel_profile_path),
-                                "type": testtype,
-                            }
-                        )
-        else:
-            # Raptor-webext stores its profiles in the self.gecko_profile_dir
-            # directory
-            for profile in os.listdir(self.gecko_profile_dir):
-                res.append(
-                    {
-                        "path": os.path.join(self.gecko_profile_dir, profile),
-                        "type": __get_test_type(),
-                    }
-                )
-
-        LOG.info("Found %s profiles: %s" % (len(res), str(res)))
-        return res
+            # Do not raise an exception and return the profile so we won't block
+            # the profile capturing pipeline if symbolication fails.
+            return profile
 
     def symbolicate(self):
         """
@@ -204,7 +107,10 @@ class GeckoProfile(object):
         """
         profiles = self.collect_profiles()
         if len(profiles) == 0:
-            LOG.error("No profiles collected")
+            if self._is_extra_profiler_run:
+                LOG.info("No profiles collected in the extra profiler run")
+            else:
+                LOG.error("No profiles collected")
             return
 
         symbolicator = ProfileSymbolicator(
@@ -212,7 +118,7 @@ class GeckoProfile(object):
                 # Trace-level logging (verbose)
                 "enableTracing": 0,
                 # Fallback server if symbol is not found locally
-                "remoteSymbolServer": "https://symbols.mozilla.org/symbolicate/v4",
+                "remoteSymbolServer": "https://symbolication.services.mozilla.com/symbolicate/v4",
                 # Maximum number of symbol files to keep in memory
                 "maxCacheEntries": 2000000,
                 # Frequency of checking for recent symbols to
@@ -249,6 +155,7 @@ class GeckoProfile(object):
                 self.cleanup = False
 
         missing_symbols_zip = os.path.join(self.upload_dir, "missingsymbols.zip")
+        test_type = self.test_config.get("type", "pageload")
 
         try:
             mode = zipfile.ZIP_DEFLATED
@@ -260,7 +167,14 @@ class GeckoProfile(object):
                 profile_path = profile_info["path"]
 
                 LOG.info("Opening profile at %s" % profile_path)
-                profile = self._open_gecko_profile(profile_path)
+                try:
+                    profile = self._open_profile_file(profile_path)
+                except FileNotFoundError:
+                    if self._is_extra_profiler_run:
+                        LOG.info("Profile not found on extra profiler run.")
+                    else:
+                        LOG.error("Profile not found.")
+                    continue
 
                 LOG.info("Symbolicating profile from %s" % profile_path)
                 symbolicated_profile = self._symbolicate_profile(
@@ -269,21 +183,27 @@ class GeckoProfile(object):
 
                 try:
                     # Write the profiles into a set of folders formatted as:
-                    # <TEST-NAME>-<TEST_TYPE>. The file names have a count prefixed
-                    # to them to prevent any naming conflicts. The count is the
-                    # number of files already in the folder.
-                    folder_name = "%s-%s" % (
-                        self.test_config["name"],
-                        profile_info["type"],
+                    # <TEST-NAME>-<TEST-RUN-TYPE>.
+                    # <TEST-RUN-TYPE> can be pageload-{warm,cold} or {test-type}
+                    # only for the tests that are not a pageload test.
+                    # For example, "cnn-pageload-warm".
+                    # The file names are formatted as <ITERATION-TYPE>-<ITERATION>
+                    # to clearly indicate without redundant information.
+                    # For example, "browser-cycle-1".
+                    test_run_type = (
+                        "{0}-{1}".format(test_type, profile_info["type"])
+                        if test_type == "pageload"
+                        else test_type
                     )
-                    profile_name = "-".join(
-                        [
-                            str(
-                                len([f for f in arc.namelist() if folder_name in f]) + 1
-                            ),
-                            os.path.split(profile_path)[-1],
-                        ]
-                    )
+                    folder_name = "%s-%s" % (self.test_config["name"], test_run_type)
+                    iteration = str(os.path.split(profile_path)[-1].split("-")[-1])
+                    if test_type == "pageload" and profile_info["type"] == "cold":
+                        iteration_type = "browser-cycle"
+                    elif profile_info["type"] == "warm":
+                        iteration_type = "page-cycle"
+                    else:
+                        iteration_type = "iteration"
+                    profile_name = "-".join([iteration_type, iteration])
                     path_in_zip = os.path.join(folder_name, profile_name)
 
                     LOG.info(
@@ -311,7 +231,7 @@ class GeckoProfile(object):
         """
         Clean up temp folders created with the instance creation.
         """
-        mozfile.remove(self.gecko_profile_dir)
+        mozfile.remove(self.temp_profile_dir)
         if self.cleanup:
             for symbol_path in self.symbol_paths.values():
                 mozfile.remove(symbol_path)

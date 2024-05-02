@@ -4,7 +4,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const { NetUtil } = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+const { NetUtil } = ChromeUtils.importESModule(
+  "resource://gre/modules/NetUtil.sys.mjs"
+);
 
 const gAppRep = Cc[
   "@mozilla.org/reputationservice/application-reputation-service;1"
@@ -70,7 +72,7 @@ function registerTableUpdate(aTable, aFilename) {
   // process an update request.
   gTables[aTable].push(redirectUrl);
 
-  gHttpServ.registerPathHandler(redirectPath, function(request, response) {
+  gHttpServ.registerPathHandler(redirectPath, function (request, response) {
     info("Mock safebrowsing server handling request for " + redirectPath);
     let contents = readFileToString(aFilename);
     info("Length of " + aFilename + ": " + contents.length);
@@ -91,7 +93,7 @@ add_task(async function test_setup() {
   // doesn't have it enabled.
   Services.prefs.setBoolPref("browser.safebrowsing.malware.enabled", true);
   Services.prefs.setBoolPref("browser.safebrowsing.downloads.enabled", true);
-  registerCleanupFunction(function() {
+  registerCleanupFunction(function () {
     Services.prefs.clearUserPref("browser.safebrowsing.malware.enabled");
     Services.prefs.clearUserPref("browser.safebrowsing.downloads.enabled");
   });
@@ -106,14 +108,14 @@ add_task(async function test_setup() {
     "urlclassifier.downloadAllowTable",
     "goog-downloadwhite-digest256"
   );
-  registerCleanupFunction(function() {
+  registerCleanupFunction(function () {
     Services.prefs.clearUserPref("urlclassifier.downloadBlockTable");
     Services.prefs.clearUserPref("urlclassifier.downloadAllowTable");
   });
 
   gHttpServ = new HttpServer();
   gHttpServ.registerDirectory("/", do_get_cwd());
-  gHttpServ.registerPathHandler("/download", function(request, response) {
+  gHttpServ.registerPathHandler("/download", function (request, response) {
     if (gExpectedRemote) {
       let body = NetUtil.readInputStreamToString(
         request.bodyInputStream,
@@ -126,8 +128,8 @@ add_task(async function test_setup() {
   });
   gHttpServ.start(4444);
 
-  registerCleanupFunction(function() {
-    return (async function() {
+  registerCleanupFunction(function () {
+    return (async function () {
       await new Promise(resolve => {
         gHttpServ.stop(resolve);
       });
@@ -189,7 +191,7 @@ add_test(function test_local_list() {
     info("Returning update response: " + response);
     return response;
   }
-  gHttpServ.registerPathHandler("/downloads", function(request, response) {
+  gHttpServ.registerPathHandler("/downloads", function (request, response) {
     let blob = processUpdateRequest();
     response.setHeader(
       "Content-Type",

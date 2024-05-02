@@ -2,61 +2,76 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
-import { connect } from "../../utils/connect";
 import PropTypes from "prop-types";
 import { Component } from "react";
 import { toEditorLine, fromEditorLine } from "../../utils/editor";
-import { getBlackBoxRanges, getSelectedSource } from "../../selectors";
+import { isLineBlackboxed } from "../../utils/source";
+import { isWasm } from "../../utils/wasm";
 
 // This renders blackbox line highlighting in the editor
 class BlackboxLines extends Component {
   static get propTypes() {
     return {
-      editor: PropTypes.object,
-      selectedSource: PropTypes.object,
-      blackboxedRanges: PropTypes.object,
+      editor: PropTypes.object.isRequired,
+      selectedSource: PropTypes.object.isRequired,
+      blackboxedRangesForSelectedSource: PropTypes.array,
+      isSourceOnIgnoreList: PropTypes.bool,
     };
   }
 
   componentDidMount() {
-    const { selectedSource, blackboxedRanges, editor } = this.props;
-    const ranges = blackboxedRanges[selectedSource.url];
-    if (!selectedSource.isBlackBoxed && !ranges) {
+    const { selectedSource, blackboxedRangesForSelectedSource, editor } =
+      this.props;
+
+    if (this.props.isSourceOnIgnoreList) {
+      this.setAllBlackboxLines(editor);
       return;
     }
-    if (ranges) {
-      if (!ranges.length) {
-        // The whole source was blackboxed
-        this.setAllBlackboxLines(editor);
-      } else {
-        editor.codeMirror.operation(() => {
-          ranges.forEach(range => {
-            const start = toEditorLine(selectedSource.id, range.start.line);
-            const end = toEditorLine(selectedSource.id, range.end.line);
-            editor.codeMirror.eachLine(start, end, lineHandle => {
-              this.setBlackboxLine(editor, lineHandle);
-            });
+
+    // When `blackboxedRangesForSelectedSource` is defined and the array is empty,
+    // the whole source was blackboxed.
+    if (!blackboxedRangesForSelectedSource.length) {
+      this.setAllBlackboxLines(editor);
+    } else {
+      editor.codeMirror.operation(() => {
+        blackboxedRangesForSelectedSource.forEach(range => {
+          const start = toEditorLine(selectedSource.id, range.start.line);
+          // CodeMirror.eachLine doesn't include `end` line offset, so bump by one
+          const end = toEditorLine(selectedSource.id, range.end.line) + 1;
+          editor.codeMirror.eachLine(start, end, lineHandle => {
+            this.setBlackboxLine(editor, lineHandle);
           });
         });
-      }
+      });
     }
   }
 
   componentDidUpdate() {
-    const { selectedSource, blackboxedRanges, editor } = this.props;
-    const ranges = blackboxedRanges[selectedSource.url];
+    const {
+      selectedSource,
+      blackboxedRangesForSelectedSource,
+      editor,
+      isSourceOnIgnoreList,
+    } = this.props;
+
+    if (this.props.isSourceOnIgnoreList) {
+      this.setAllBlackboxLines(editor);
+      return;
+    }
 
     // when unblackboxed
-    if (!ranges) {
+    if (!blackboxedRangesForSelectedSource) {
       this.clearAllBlackboxLines(editor);
       return;
     }
 
     // When the whole source is blackboxed
-    if (!ranges.length) {
+    if (!blackboxedRangesForSelectedSource.length) {
       this.setAllBlackboxLines(editor);
       return;
     }
+
+    const sourceIsWasm = isWasm(selectedSource.id);
 
     // TODO: Possible perf improvement. Instead of going
     // over all the lines each time get diffs of what has
@@ -65,10 +80,17 @@ class BlackboxLines extends Component {
       editor.codeMirror.eachLine(lineHandle => {
         const line = fromEditorLine(
           selectedSource.id,
-          editor.codeMirror.getLineNumber(lineHandle)
+          editor.codeMirror.getLineNumber(lineHandle),
+          sourceIsWasm
         );
 
-        if (this.isLineBlackboxed(ranges, line)) {
+        if (
+          isLineBlackboxed(
+            blackboxedRangesForSelectedSource,
+            line,
+            isSourceOnIgnoreList
+          )
+        ) {
           this.setBlackboxLine(editor, lineHandle);
         } else {
           this.clearBlackboxLine(editor, lineHandle);
@@ -81,12 +103,6 @@ class BlackboxLines extends Component {
     // Lets make sure we remove everything  relating to
     // blackboxing lines when this component is unmounted.
     this.clearAllBlackboxLines(this.props.editor);
-  }
-
-  isLineBlackboxed(ranges, line) {
-    return !!ranges.find(
-      range => line >= range.start.line && line <= range.end.line
-    );
   }
 
   clearAllBlackboxLines(editor) {
@@ -108,15 +124,11 @@ class BlackboxLines extends Component {
   }
 
   clearBlackboxLine(editor, lineHandle) {
-    editor.codeMirror.removeLineClass(
-      lineHandle,
-      "wrapClass",
-      "blackboxed-line"
-    );
+    editor.codeMirror.removeLineClass(lineHandle, "wrap", "blackboxed-line");
   }
 
   setBlackboxLine(editor, lineHandle) {
-    editor.codeMirror.addLineClass(lineHandle, "wrapClass", "blackboxed-line");
+    editor.codeMirror.addLineClass(lineHandle, "wrap", "blackboxed-line");
   }
 
   render() {
@@ -124,11 +136,4 @@ class BlackboxLines extends Component {
   }
 }
 
-const mapStateToProps = state => {
-  return {
-    blackboxedRanges: getBlackBoxRanges(state),
-    selectedSource: getSelectedSource(state),
-  };
-};
-
-export default connect(mapStateToProps)(BlackboxLines);
+export default BlackboxLines;

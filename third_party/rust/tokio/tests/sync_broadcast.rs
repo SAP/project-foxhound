@@ -1,6 +1,9 @@
-#![allow(clippy::cognitive_complexity, clippy::match_like_matches_macro)]
+#![allow(clippy::cognitive_complexity)]
 #![warn(rust_2018_idioms)]
 #![cfg(feature = "sync")]
+
+#[cfg(tokio_wasm_not_wasi)]
+use wasm_bindgen_test::wasm_bindgen_test as test;
 
 use tokio::sync::broadcast;
 use tokio_test::task;
@@ -23,7 +26,7 @@ macro_rules! assert_empty {
     ($e:expr) => {
         match $e.try_recv() {
             Ok(value) => panic!("expected empty; got = {:?}", value),
-            Err(broadcast::TryRecvError::Empty) => {}
+            Err(broadcast::error::TryRecvError::Empty) => {}
             Err(e) => panic!("expected empty; got = {:?}", e),
         }
     };
@@ -32,7 +35,7 @@ macro_rules! assert_empty {
 macro_rules! assert_lagged {
     ($e:expr, $n:expr) => {
         match assert_err!($e) {
-            broadcast::TryRecvError::Lagged(n) => {
+            broadcast::error::TryRecvError::Lagged(n) => {
                 assert_eq!(n, $n);
             }
             _ => panic!("did not lag"),
@@ -43,8 +46,8 @@ macro_rules! assert_lagged {
 macro_rules! assert_closed {
     ($e:expr) => {
         match assert_err!($e) {
-            broadcast::TryRecvError::Closed => {}
-            _ => panic!("did not lag"),
+            broadcast::error::TryRecvError::Closed => {}
+            _ => panic!("is not closed"),
         }
     };
 }
@@ -87,46 +90,6 @@ fn send_two_recv() {
 
     assert_empty!(rx1);
     assert_empty!(rx2);
-}
-
-#[tokio::test]
-async fn send_recv_into_stream_ready() {
-    use tokio::stream::StreamExt;
-
-    let (tx, rx) = broadcast::channel::<i32>(8);
-    tokio::pin! {
-        let rx = rx.into_stream();
-    }
-
-    assert_ok!(tx.send(1));
-    assert_ok!(tx.send(2));
-
-    assert_eq!(Some(Ok(1)), rx.next().await);
-    assert_eq!(Some(Ok(2)), rx.next().await);
-
-    drop(tx);
-
-    assert_eq!(None, rx.next().await);
-}
-
-#[tokio::test]
-async fn send_recv_into_stream_pending() {
-    use tokio::stream::StreamExt;
-
-    let (tx, rx) = broadcast::channel::<i32>(8);
-
-    tokio::pin! {
-        let rx = rx.into_stream();
-    }
-
-    let mut recv = task::spawn(rx.next());
-    assert_pending!(recv.poll());
-
-    assert_ok!(tx.send(1));
-
-    assert!(recv.is_woken());
-    let val = assert_ready!(recv.poll());
-    assert_eq!(val, Some(Ok(1)));
 }
 
 #[test]
@@ -313,12 +276,14 @@ fn send_no_rx() {
 
 #[test]
 #[should_panic]
+#[cfg(not(tokio_wasm))] // wasm currently doesn't support unwinding
 fn zero_capacity() {
     broadcast::channel::<()>(0);
 }
 
 #[test]
 #[should_panic]
+#[cfg(not(tokio_wasm))] // wasm currently doesn't support unwinding
 fn capacity_too_big() {
     use std::usize;
 
@@ -326,6 +291,8 @@ fn capacity_too_big() {
 }
 
 #[test]
+#[cfg(panic = "unwind")]
+#[cfg(not(tokio_wasm))] // wasm currently doesn't support unwinding
 fn panic_in_clone() {
     use std::panic::{self, AssertUnwindSafe};
 
@@ -491,42 +458,186 @@ fn lagging_receiver_recovers_after_wrap_open() {
     assert_empty!(rx);
 }
 
-#[tokio::test]
-async fn send_recv_stream_ready_deprecated() {
-    use tokio::stream::StreamExt;
+#[test]
+fn receiver_len_with_lagged() {
+    let (tx, mut rx) = broadcast::channel(3);
 
-    let (tx, mut rx) = broadcast::channel::<i32>(8);
+    tx.send(10).unwrap();
+    tx.send(20).unwrap();
+    tx.send(30).unwrap();
+    tx.send(40).unwrap();
 
-    assert_ok!(tx.send(1));
-    assert_ok!(tx.send(2));
+    assert_eq!(rx.len(), 4);
+    assert_eq!(assert_recv!(rx), 10);
 
-    assert_eq!(Some(Ok(1)), rx.next().await);
-    assert_eq!(Some(Ok(2)), rx.next().await);
+    tx.send(50).unwrap();
+    tx.send(60).unwrap();
 
+    assert_eq!(rx.len(), 5);
+    assert_lagged!(rx.try_recv(), 1);
+}
+
+fn is_closed(err: broadcast::error::RecvError) -> bool {
+    matches!(err, broadcast::error::RecvError::Closed)
+}
+
+#[test]
+fn resubscribe_points_to_tail() {
+    let (tx, mut rx) = broadcast::channel(3);
+    tx.send(1).unwrap();
+
+    let mut rx_resub = rx.resubscribe();
+
+    // verify we're one behind at the start
+    assert_empty!(rx_resub);
+    assert_eq!(assert_recv!(rx), 1);
+
+    // verify we do not affect rx
+    tx.send(2).unwrap();
+    assert_eq!(assert_recv!(rx_resub), 2);
+    tx.send(3).unwrap();
+    assert_eq!(assert_recv!(rx), 2);
+    assert_eq!(assert_recv!(rx), 3);
+    assert_empty!(rx);
+
+    assert_eq!(assert_recv!(rx_resub), 3);
+    assert_empty!(rx_resub);
+}
+
+#[test]
+fn resubscribe_lagged() {
+    let (tx, mut rx) = broadcast::channel(1);
+    tx.send(1).unwrap();
+    tx.send(2).unwrap();
+
+    let mut rx_resub = rx.resubscribe();
+    assert_lagged!(rx.try_recv(), 1);
+    assert_empty!(rx_resub);
+
+    assert_eq!(assert_recv!(rx), 2);
+    assert_empty!(rx);
+    assert_empty!(rx_resub);
+}
+
+#[test]
+fn resubscribe_to_closed_channel() {
+    let (tx, rx) = tokio::sync::broadcast::channel::<u32>(2);
     drop(tx);
 
-    assert_eq!(None, rx.next().await);
+    let mut rx_resub = rx.resubscribe();
+    assert_closed!(rx_resub.try_recv());
 }
 
-#[tokio::test]
-async fn send_recv_stream_pending_deprecated() {
-    use tokio::stream::StreamExt;
+#[test]
+fn sender_len() {
+    let (tx, mut rx1) = broadcast::channel(4);
+    let mut rx2 = tx.subscribe();
 
-    let (tx, mut rx) = broadcast::channel::<i32>(8);
+    assert_eq!(tx.len(), 0);
+    assert!(tx.is_empty());
 
-    let mut recv = task::spawn(rx.next());
-    assert_pending!(recv.poll());
+    tx.send(1).unwrap();
+    tx.send(2).unwrap();
+    tx.send(3).unwrap();
 
-    assert_ok!(tx.send(1));
+    assert_eq!(tx.len(), 3);
+    assert!(!tx.is_empty());
 
-    assert!(recv.is_woken());
-    let val = assert_ready!(recv.poll());
-    assert_eq!(val, Some(Ok(1)));
+    assert_recv!(rx1);
+    assert_recv!(rx1);
+
+    assert_eq!(tx.len(), 3);
+    assert!(!tx.is_empty());
+
+    assert_recv!(rx2);
+
+    assert_eq!(tx.len(), 2);
+    assert!(!tx.is_empty());
+
+    tx.send(4).unwrap();
+    tx.send(5).unwrap();
+    tx.send(6).unwrap();
+
+    assert_eq!(tx.len(), 4);
+    assert!(!tx.is_empty());
 }
 
-fn is_closed(err: broadcast::RecvError) -> bool {
-    match err {
-        broadcast::RecvError::Closed => true,
-        _ => false,
+#[test]
+#[cfg(not(tokio_wasm_not_wasi))]
+fn sender_len_random() {
+    use rand::Rng;
+
+    let (tx, mut rx1) = broadcast::channel(16);
+    let mut rx2 = tx.subscribe();
+
+    for _ in 0..1000 {
+        match rand::thread_rng().gen_range(0..4) {
+            0 => {
+                let _ = rx1.try_recv();
+            }
+            1 => {
+                let _ = rx2.try_recv();
+            }
+            _ => {
+                tx.send(0).unwrap();
+            }
+        }
+
+        let expected_len = usize::min(usize::max(rx1.len(), rx2.len()), 16);
+        assert_eq!(tx.len(), expected_len);
     }
+}
+
+#[test]
+fn send_in_waker_drop() {
+    use futures::task::ArcWake;
+    use std::future::Future;
+    use std::task::Context;
+
+    struct SendOnDrop(broadcast::Sender<()>);
+
+    impl Drop for SendOnDrop {
+        fn drop(&mut self) {
+            let _ = self.0.send(());
+        }
+    }
+
+    impl ArcWake for SendOnDrop {
+        fn wake_by_ref(_arc_self: &Arc<Self>) {}
+    }
+
+    // Test if there is no deadlock when replacing the old waker.
+
+    let (tx, mut rx) = broadcast::channel(16);
+
+    let mut fut = Box::pin(async {
+        let _ = rx.recv().await;
+    });
+
+    // Store our special waker in the receiving future.
+    let waker = futures::task::waker(Arc::new(SendOnDrop(tx)));
+    let mut cx = Context::from_waker(&waker);
+    assert!(fut.as_mut().poll(&mut cx).is_pending());
+    drop(waker);
+
+    // Second poll shouldn't deadlock.
+    let mut cx = Context::from_waker(futures::task::noop_waker_ref());
+    let _ = fut.as_mut().poll(&mut cx);
+
+    // Test if there is no deadlock when calling waker.wake().
+
+    let (tx, mut rx) = broadcast::channel(16);
+
+    let mut fut = Box::pin(async {
+        let _ = rx.recv().await;
+    });
+
+    // Store our special waker in the receiving future.
+    let waker = futures::task::waker(Arc::new(SendOnDrop(tx.clone())));
+    let mut cx = Context::from_waker(&waker);
+    assert!(fut.as_mut().poll(&mut cx).is_pending());
+    drop(waker);
+
+    // Shouldn't deadlock.
+    let _ = tx.send(());
 }

@@ -9,6 +9,7 @@
 
 #include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
+#include "mozilla/Variant.h"
 
 #include <new>
 #include <stddef.h>
@@ -85,7 +86,7 @@ struct AnyRegister {
     MOZ_ASSERT_IF(aliasIdx == 0, ret == *this);
     return ret;
   }
-  uint8_t numAliased() const {
+  uint32_t numAliased() const {
     if (isFloat()) {
       return fpu().numAliased();
     }
@@ -372,6 +373,11 @@ class TypedRegisterSet {
     return T::ReduceSetForPush(*this);
   }
   uint32_t getPushSizeInBytes() const { return T::GetPushSizeInBytes(*this); }
+
+  size_t offsetOfPushedRegister(RegType reg) const {
+    MOZ_ASSERT(hasRegisterIndex(reg));
+    return T::OffsetOfPushedRegister(bits(), reg);
+  }
 };
 
 using GeneralRegisterSet = TypedRegisterSet<Register>;
@@ -558,7 +564,7 @@ class AllocatableSetAccessors<RegisterSet> {
   }
 
  public:
-  AllocatableSetAccessors() : set_() {}
+  AllocatableSetAccessors() = default;
   explicit constexpr AllocatableSetAccessors(SetType) = delete;
   explicit constexpr AllocatableSetAccessors(RegisterSet set) : set_(set) {}
 
@@ -635,7 +641,7 @@ class LiveSetAccessors<RegisterSet> {
   }
 
  public:
-  LiveSetAccessors() : set_() {}
+  LiveSetAccessors() = default;
   explicit constexpr LiveSetAccessors(SetType) = delete;
   explicit constexpr LiveSetAccessors(RegisterSet set) : set_(set) {}
 
@@ -1312,7 +1318,8 @@ inline LiveGeneralRegisterSet SavedNonVolatileRegisters(
   result.add(Register::FromCode(Registers::lr));
 #elif defined(JS_CODEGEN_ARM64)
   result.add(Register::FromCode(Registers::lr));
-#elif defined(JS_CODEGEN_MIPS32) || defined(JS_CODEGEN_MIPS64)
+#elif defined(JS_CODEGEN_MIPS32) || defined(JS_CODEGEN_MIPS64) || \
+    defined(JS_CODEGEN_LOONG64) || defined(JS_CODEGEN_RISCV64)
   result.add(Register::FromCode(Registers::ra));
 #endif
 

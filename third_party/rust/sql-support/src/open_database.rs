@@ -22,13 +22,17 @@
 ///        it and call prepare(), upgrade_from() for each upgrade that needs to be applied, then
 ///        finish(). As above, a read-only connection will panic if upgrades are necessary, so
 ///        you should ensure the first connection opened is writable.
+///      - If the database file is corrupt, or upgrade_from() returns [`Error::Corrupt`], the
+///        database file will be removed and replaced with a new DB.
 ///      - If the connection is not writable, `finish()` will be called (ie, `finish()`, like
 ///        `prepare()`, is called for all connections)
 ///
 ///  See the autofill DB code for an example.
 ///
 use crate::ConnExt;
-use rusqlite::{Connection, OpenFlags, Transaction, NO_PARAMS};
+use rusqlite::{
+    Connection, Error as RusqliteError, ErrorCode, OpenFlags, Transaction, TransactionBehavior,
+};
 use std::path::Path;
 use thiserror::Error;
 
@@ -36,8 +40,25 @@ use thiserror::Error;
 pub enum Error {
     #[error("Incompatible database version: {0}")]
     IncompatibleVersion(u32),
+    #[error("Database is corrupt")]
+    Corrupt,
     #[error("Error executing SQL: {0}")]
-    SqlError(#[from] rusqlite::Error),
+    SqlError(rusqlite::Error),
+    #[error("Failed to recover a corrupt database due to an error deleting the file: {0}")]
+    RecoveryError(std::io::Error),
+}
+
+impl From<rusqlite::Error> for Error {
+    fn from(value: rusqlite::Error) -> Self {
+        match value {
+            RusqliteError::SqliteFailure(e, _)
+                if matches!(e.code, ErrorCode::DatabaseCorrupt | ErrorCode::NotADatabase) =>
+            {
+                Self::Corrupt
+            }
+            _ => Self::SqlError(value),
+        }
+    }
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -58,7 +79,7 @@ pub trait ConnectionInitializer {
 
     // Runs immediately after creation for all types of connections. If writable,
     // will *not* be in the transaction created for the "only writable" functions above.
-    fn prepare(&self, _conn: &Connection) -> Result<()> {
+    fn prepare(&self, _conn: &Connection, _db_empty: bool) -> Result<()> {
         Ok(())
     }
 
@@ -88,17 +109,30 @@ pub fn open_database_with_flags<CI: ConnectionInitializer, P: AsRef<Path>>(
     open_flags: OpenFlags,
     connection_initializer: &CI,
 ) -> Result<Connection> {
+    do_open_database_with_flags(&path, open_flags, connection_initializer).or_else(|e| {
+        // See if we can recover from the error and try a second time
+        try_handle_db_failure(&path, open_flags, connection_initializer, e)?;
+        do_open_database_with_flags(&path, open_flags, connection_initializer)
+    })
+}
+
+fn do_open_database_with_flags<CI: ConnectionInitializer, P: AsRef<Path>>(
+    path: P,
+    open_flags: OpenFlags,
+    connection_initializer: &CI,
+) -> Result<Connection> {
     // Try running the migration logic with an existing file
     log::debug!("{}: opening database", CI::NAME);
     let mut conn = Connection::open_with_flags(path, open_flags)?;
-    let run_init = should_init(&conn)?;
+    log::debug!("{}: checking if initialization is necessary", CI::NAME);
+    let db_empty = is_db_empty(&conn)?;
 
     log::debug!("{}: preparing", CI::NAME);
-    connection_initializer.prepare(&conn)?;
+    connection_initializer.prepare(&conn, db_empty)?;
 
     if open_flags.contains(OpenFlags::SQLITE_OPEN_READ_WRITE) {
-        let tx = conn.transaction()?;
-        if run_init {
+        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        if db_empty {
             log::debug!("{}: initializing new database", CI::NAME);
             connection_initializer.init(&tx)?;
         } else {
@@ -123,7 +157,7 @@ pub fn open_database_with_flags<CI: ConnectionInitializer, P: AsRef<Path>>(
     } else {
         // There's an implied requirement that the first connection to a DB is
         // writable, so read-only connections do much less, but panic if stuff is wrong
-        assert!(!run_init, "existing writer must have initialized");
+        assert!(!db_empty, "existing writer must have initialized");
         assert!(
             get_schema_version(&conn)? == CI::END_VERSION,
             "existing writer must have migrated"
@@ -142,12 +176,59 @@ pub fn open_memory_database_with_flags<CI: ConnectionInitializer>(
     open_database_with_flags(":memory:", flags, conn_initializer)
 }
 
-fn should_init(conn: &Connection) -> Result<bool> {
+// Attempt to handle failure when opening the database.
+//
+// Returns:
+//   - Ok(()) the failure is potentially handled and we should make a second open attempt
+//   - Err(e) the failure couldn't be handled and we should return this error
+fn try_handle_db_failure<CI: ConnectionInitializer, P: AsRef<Path>>(
+    path: P,
+    open_flags: OpenFlags,
+    _connection_initializer: &CI,
+    err: Error,
+) -> Result<()> {
+    if !open_flags.contains(OpenFlags::SQLITE_OPEN_CREATE)
+        && matches!(err, Error::SqlError(rusqlite::Error::SqliteFailure(code, _)) if code.code == rusqlite::ErrorCode::CannotOpen)
+    {
+        log::info!(
+            "{}: database doesn't exist, but we weren't requested to create it",
+            CI::NAME
+        );
+        return Err(err);
+    }
+    log::warn!("{}: database operation failed: {}", CI::NAME, err);
+    if !open_flags.contains(OpenFlags::SQLITE_OPEN_READ_WRITE) {
+        log::warn!(
+            "{}: not attempting recovery as this is a read-only connection request",
+            CI::NAME
+        );
+        return Err(err);
+    }
+
+    let delete = matches!(err, Error::Corrupt);
+    if delete {
+        log::info!(
+            "{}: the database is fatally damaged; deleting and starting fresh",
+            CI::NAME
+        );
+        // Note we explicitly decline to move the path to, say ".corrupt", as it's difficult to
+        // identify any value there - actually getting our hands on the file from a mobile device
+        // is tricky and it would just take up disk space forever.
+        if let Err(io_err) = std::fs::remove_file(path) {
+            return Err(Error::RecoveryError(io_err));
+        }
+        Ok(())
+    } else {
+        Err(err)
+    }
+}
+
+fn is_db_empty(conn: &Connection) -> Result<bool> {
     Ok(conn.query_one::<u32>("SELECT COUNT(*) FROM sqlite_master")? == 0)
 }
 
 fn get_schema_version(conn: &Connection) -> Result<u32> {
-    let version = conn.query_row_and_then("PRAGMA user_version", NO_PARAMS, |row| row.get(0))?;
+    let version = conn.query_row_and_then("PRAGMA user_version", [], |row| row.get(0))?;
     Ok(version)
 }
 
@@ -230,6 +311,7 @@ mod test {
     use super::test_utils::MigratedDatabaseFile;
     use super::*;
     use std::cell::RefCell;
+    use std::io::Write;
 
     struct TestConnectionInitializer {
         pub calls: RefCell<Vec<&'static str>>,
@@ -269,7 +351,7 @@ mod test {
         const NAME: &'static str = "test db";
         const END_VERSION: u32 = 4;
 
-        fn prepare(&self, conn: &Connection) -> Result<()> {
+        fn prepare(&self, conn: &Connection, _: bool) -> Result<()> {
             self.push_call("prep");
             conn.execute_batch(
                 "
@@ -293,6 +375,12 @@ mod test {
 
         fn upgrade_from(&self, conn: &Transaction<'_>, version: u32) -> Result<()> {
             match version {
+                // This upgrade forces the database to be replaced by returning
+                // `Error::Corrupt`.
+                1 => {
+                    self.push_call("upgrade_from_v1");
+                    Err(Error::Corrupt)
+                }
                 2 => {
                     self.push_call("upgrade_from_v2");
                     conn.execute_batch(
@@ -333,6 +421,13 @@ mod test {
         }
     }
 
+    // A special schema used to test the upgrade that forces the database to be
+    // replaced.
+    static INIT_V1: &str = "
+        CREATE TABLE prep_table(col);
+        PRAGMA user_version=1;
+    ";
+
     // Initialize the database to v2 to test upgrading from there
     static INIT_V2: &str = "
         CREATE TABLE prep_table(col);
@@ -343,10 +438,10 @@ mod test {
 
     fn check_final_data(conn: &Connection) {
         let value: String = conn
-            .query_row("SELECT col FROM my_table", NO_PARAMS, |r| r.get(0))
+            .query_row("SELECT col FROM my_table", [], |r| r.get(0))
             .unwrap();
         assert_eq!(value, "correct-value");
-        assert_eq!(get_schema_version(&conn).unwrap(), 4);
+        assert_eq!(get_schema_version(conn).unwrap(), 4);
     }
 
     #[test]
@@ -400,7 +495,7 @@ mod test {
             .open()
             .execute(
                 "INSERT INTO my_old_table_name(old_col) VALUES ('I should not be deleted')",
-                NO_PARAMS,
+                [],
             )
             .unwrap();
 
@@ -425,7 +520,7 @@ mod test {
             .open()
             .execute(
                 "INSERT INTO my_old_table_name(old_col) VALUES ('I should not be deleted')",
-                NO_PARAMS,
+                [],
             )
             .unwrap();
 
@@ -442,5 +537,38 @@ mod test {
                 .unwrap(),
             1
         );
+    }
+
+    #[test]
+    fn test_corrupt_db() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let path = tempdir.path().join(Path::new("corrupt-db.sql"));
+        let mut file = std::fs::File::create(path.clone()).unwrap();
+        // interestingly, sqlite seems to treat a 0-byte file as a missing one.
+        // Note that this will exercise the `ErrorCode::NotADatabase` error code. It's not clear
+        // how we could hit `ErrorCode::DatabaseCorrupt`, but even if we could, there's not much
+        // value as this test can't really observe which one it was.
+        file.write_all(b"not sql").unwrap();
+        let metadata = std::fs::metadata(path.clone()).unwrap();
+        assert_eq!(metadata.len(), 7);
+        drop(file);
+        open_database(path.clone(), &TestConnectionInitializer::new()).unwrap();
+        let metadata = std::fs::metadata(path).unwrap();
+        // just check the file is no longer what it was before.
+        assert_ne!(metadata.len(), 7);
+    }
+
+    #[test]
+    fn test_force_replace() {
+        let db_file = MigratedDatabaseFile::new(TestConnectionInitializer::new(), INIT_V1);
+        let conn = open_database(db_file.path.clone(), &db_file.connection_initializer).unwrap();
+        check_final_data(&conn);
+        db_file.connection_initializer.check_calls(vec![
+            "prep",
+            "upgrade_from_v1",
+            "prep",
+            "init",
+            "finish",
+        ]);
     }
 }

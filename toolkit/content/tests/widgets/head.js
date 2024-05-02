@@ -6,7 +6,7 @@ var tests = [];
 
 function waitForCondition(condition, nextTest, errorMsg) {
   var tries = 0;
-  var interval = setInterval(function() {
+  var interval = setInterval(function () {
     if (tries >= 30) {
       ok(false, errorMsg);
       moveOn();
@@ -23,7 +23,7 @@ function waitForCondition(condition, nextTest, errorMsg) {
     }
     tries++;
   }, 100);
-  var moveOn = function() {
+  var moveOn = function () {
     clearInterval(interval);
     nextTest();
   };
@@ -34,6 +34,16 @@ function getElementWithinVideo(video, aValue) {
   return shadowRoot.getElementById(aValue);
 }
 
+/**
+ * Runs querySelectorAll on an element's shadow root.
+ * @param {Element} element
+ * @param {string} selector
+ */
+function shadowRootQuerySelectorAll(element, selector) {
+  const shadowRoot = SpecialPowers.wrap(element).openOrClosedShadowRoot;
+  return shadowRoot?.querySelectorAll(selector);
+}
+
 function executeTests() {
   return tests
     .map(fn => () => new Promise(fn))
@@ -41,10 +51,10 @@ function executeTests() {
 }
 
 function once(target, name, cb) {
-  let p = new Promise(function(resolve, reject) {
+  let p = new Promise(function (resolve, reject) {
     target.addEventListener(
       name,
-      function() {
+      function () {
         resolve();
       },
       { once: true }

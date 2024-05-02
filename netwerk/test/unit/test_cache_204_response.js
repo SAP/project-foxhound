@@ -13,7 +13,9 @@ Test if 204 response is cached.
 
 "use strict";
 
-const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
+const { HttpServer } = ChromeUtils.importESModule(
+  "resource://testing-common/httpd.sys.mjs"
+);
 
 function test_handler(metadata, response) {
   response.setHeader("Content-Type", "text/html", false);
@@ -46,7 +48,7 @@ async function stop_server(httpserver) {
   });
 }
 
-add_task(async function() {
+add_task(async function () {
   let httpserver = new HttpServer();
   httpserver.registerPathHandler("/testdir", test_handler);
   httpserver.start(-1);

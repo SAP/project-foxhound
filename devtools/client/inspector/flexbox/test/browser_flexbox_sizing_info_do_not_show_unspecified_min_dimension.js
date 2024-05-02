@@ -10,7 +10,7 @@ const TEST_URI = URL_ROOT + "doc_flexbox_unauthored_min_dimension.html";
 
 async function checkFlexItemCSSProperty(inspector, store, doc, selector) {
   info("Select the container's flex item sizing info.");
-  const onUpdate = waitUntilAction(store, "UPDATE_FLEXBOX");
+  const onUpdate = waitForDispatch(store, "UPDATE_FLEXBOX");
   await selectNode(selector, inspector);
   await onUpdate;
 
@@ -25,7 +25,7 @@ async function checkFlexItemCSSProperty(inspector, store, doc, selector) {
   ok(!minDimension, "Minimum dimension property should not be displayed.");
 }
 
-add_task(async function() {
+add_task(async function () {
   await addTab(TEST_URI);
   const { inspector, flexboxInspector } = await openLayoutView();
   const { document: doc, store } = flexboxInspector;

@@ -8,24 +8,18 @@
 
 requestLongerTimeout(2);
 
-const kWhitelist = new Set([
+const kAllowlist = new Set([
   /browser\/content\/browser\/places\/controller.js$/,
 ]);
 
 const kESModuleList = new Set([
-  /browser\/res\/payments\/(components|containers|mixins)\/.*\.js$/,
-  /browser\/res\/payments\/paymentRequest\.js$/,
-  /browser\/res\/payments\/PaymentsStore\.js$/,
-  /browser\/aboutlogins\/components\/.*\.js$/,
-  /browser\/aboutlogins\/.*\.js$/,
-  /browser\/protections.js$/,
   /browser\/lockwise-card.js$/,
   /browser\/monitor-card.js$/,
   /browser\/proxy-card.js$/,
   /browser\/vpn-card.js$/,
-  /browser\/content\/browser\/certerror\/aboutNetError\.js$/,
   /toolkit\/content\/global\/certviewer\/components\/.*\.js$/,
   /toolkit\/content\/global\/certviewer\/.*\.js$/,
+  /chrome\/pdfjs\/content\/web\/.*\.js$/,
 ]);
 
 // Normally we would use reflect.jsm to get Reflect.parse. However, if
@@ -40,15 +34,15 @@ const init = Cc["@mozilla.org/jsreflect;1"].createInstance();
 init();
 
 /**
- * Check if an error should be ignored due to matching one of the whitelist
- * objects defined in kWhitelist
+ * Check if an error should be ignored due to matching one of the allowlist
+ * objects.
  *
- * @param uri the uri to check against the whitelist
+ * @param uri the uri to check against the allowlist
  * @return true if the uri should be skipped, false otherwise.
  */
-function uriIsWhiteListed(uri) {
-  for (let whitelistItem of kWhitelist) {
-    if (whitelistItem.test(uri.spec)) {
+function uriIsAllowed(uri) {
+  for (let allowlistItem of kAllowlist) {
+    if (allowlistItem.test(uri.spec)) {
       return true;
     }
   }
@@ -62,8 +56,12 @@ function uriIsWhiteListed(uri) {
  * @return true if the uri should be parsed as a module, otherwise parse it as a script.
  */
 function uriIsESModule(uri) {
-  for (let whitelistItem of kESModuleList) {
-    if (whitelistItem.test(uri.spec)) {
+  if (uri.filePath.endsWith(".mjs")) {
+    return true;
+  }
+
+  for (let allowlistItem of kESModuleList) {
+    if (allowlistItem.test(uri.spec)) {
       return true;
     }
   }
@@ -74,7 +72,7 @@ function parsePromise(uri, parseTarget) {
   let promise = new Promise((resolve, reject) => {
     let xhr = new XMLHttpRequest();
     xhr.open("GET", uri, true);
-    xhr.onreadystatechange = function() {
+    xhr.onreadystatechange = function () {
       if (this.readyState == this.DONE) {
         let scriptText = this.responseText;
         try {
@@ -137,7 +135,7 @@ add_task(async function checkAllTheJS() {
     // our zipreader APIs are all sync)
     let startTimeMs = Date.now();
     info("Collecting URIs");
-    uris = await generateURIsFromDirTree(appDir, [".js", ".jsm"]);
+    uris = await generateURIsFromDirTree(appDir, [".js", ".jsm", ".mjs"]);
     info("Collected URIs in " + (Date.now() - startTimeMs) + "ms");
 
     // Apply the filter specified on the command line, if any.
@@ -154,9 +152,9 @@ add_task(async function checkAllTheJS() {
 
   // We create an array of promises so we can parallelize all our parsing
   // and file loading activity:
-  await throttledMapPromises(uris, uri => {
-    if (uriIsWhiteListed(uri)) {
-      info("Not checking whitelisted " + uri.spec);
+  await PerfTestHelpers.throttledMapPromises(uris, uri => {
+    if (uriIsAllowed(uri)) {
+      info("Not checking allowlisted " + uri.spec);
       return undefined;
     }
     let target = "script";

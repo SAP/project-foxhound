@@ -48,7 +48,8 @@ RefPtr<RedirectToRealChannelPromise>
 ParentProcessDocumentChannel::RedirectToRealChannel(
     nsTArray<ipc::Endpoint<extensions::PStreamFilterParent>>&&
         aStreamFilterEndpoints,
-    uint32_t aRedirectFlags, uint32_t aLoadFlags) {
+    uint32_t aRedirectFlags, uint32_t aLoadFlags,
+    const nsTArray<EarlyHintConnectArgs>& aEarlyHints) {
   LOG(("ParentProcessDocumentChannel RedirectToRealChannel [this=%p]", this));
   nsCOMPtr<nsIChannel> channel = mDocumentLoadListener->GetChannel();
   channel->SetLoadFlags(aLoadFlags);
@@ -202,12 +203,16 @@ NS_IMETHODIMP ParentProcessDocumentChannel::AsyncOpen(
   promise->Then(
       GetCurrentSerialEventTarget(), __func__,
       [self](DocumentLoadListener::OpenPromiseSucceededType&& aResolveValue) {
+        self->mDocumentLoadListener->CancelEarlyHintPreloads();
+        nsTArray<EarlyHintConnectArgs> earlyHints;
+
         // The DLL is waiting for us to resolve the
         // RedirectToRealChannelPromise given as parameter.
         RefPtr<RedirectToRealChannelPromise> p =
             self->RedirectToRealChannel(
                     std::move(aResolveValue.mStreamFilterEndpoints),
-                    aResolveValue.mRedirectFlags, aResolveValue.mLoadFlags)
+                    aResolveValue.mRedirectFlags, aResolveValue.mLoadFlags,
+                    earlyHints)
                 ->Then(
                     GetCurrentSerialEventTarget(), __func__,
                     [self](RedirectToRealChannelPromise::ResolveOrRejectValue&&
@@ -238,7 +243,7 @@ NS_IMETHODIMP ParentProcessDocumentChannel::AsyncOpen(
         // and notify them of the failure. If this is a process switch, then we
         // can just ignore it silently, and trust that the switch will shut down
         // our docshell and cancel us when it's ready.
-        if (!aRejectValue.mSwitchedProcess) {
+        if (!aRejectValue.mContinueNavigating) {
           self->DisconnectChildListeners(aRejectValue.mStatus,
                                          aRejectValue.mLoadGroupStatus);
         }
@@ -248,7 +253,12 @@ NS_IMETHODIMP ParentProcessDocumentChannel::AsyncOpen(
 }
 
 NS_IMETHODIMP ParentProcessDocumentChannel::Cancel(nsresult aStatus) {
-  LOG(("ParentProcessDocumentChannel Cancel [this=%p]", this));
+  return CancelWithReason(aStatus, "ParentProcessDocumentChannel::Cancel"_ns);
+}
+
+NS_IMETHODIMP ParentProcessDocumentChannel::CancelWithReason(
+    nsresult aStatusCode, const nsACString& aReason) {
+  LOG(("ParentProcessDocumentChannel CancelWithReason [this=%p]", this));
   if (mCanceled) {
     return NS_OK;
   }
@@ -256,7 +266,7 @@ NS_IMETHODIMP ParentProcessDocumentChannel::Cancel(nsresult aStatus) {
   mCanceled = true;
   // This will force the DocumentListener to abort the promise if there's one
   // pending.
-  mDocumentLoadListener->Cancel(aStatus);
+  mDocumentLoadListener->Cancel(aStatusCode, aReason);
 
   return NS_OK;
 }

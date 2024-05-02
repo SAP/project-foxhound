@@ -8,7 +8,9 @@
 const TEST_URI = CHROME_URL_ROOT + "doc_tableWidget_mouse_interaction.xhtml";
 const TEST_OPT = "chrome,titlebar,toolbar,centerscreen,resizable,dialog=no";
 
-const { TableWidget } = require("devtools/client/shared/widgets/TableWidget");
+const {
+  TableWidget,
+} = require("resource://devtools/client/shared/widgets/TableWidget.js");
 
 var doc, table;
 
@@ -18,8 +20,8 @@ function test() {
 
   win.addEventListener(
     "load",
-    function() {
-      waitForFocus(function() {
+    function () {
+      waitForFocus(function () {
         doc = win.document;
         table = new TableWidget(doc.querySelector("box"), {
           initialColumns: {
@@ -34,7 +36,7 @@ function test() {
           removableColumns: true,
           wrapTextInElements: true,
           l10n: {
-            setAttributes: function() {},
+            setAttributes() {},
           },
         });
         startTests();
@@ -51,7 +53,7 @@ function endTests() {
   finish();
 }
 
-var startTests = async function() {
+var startTests = async function () {
   populateTable();
   await testMouseInteraction();
   endTests();
@@ -128,7 +130,7 @@ function click(node, button = 0) {
       EventUtils.synthesizeMouseAtCenter(
         node,
         {
-          button: button,
+          button,
           type: "contextmenu",
         },
         doc.defaultView
@@ -141,15 +143,10 @@ async function showCol(id) {
   const onPopupHidden = once(table.menupopup, "popuphidden");
   const event = table.once(TableWidget.EVENTS.HEADER_CONTEXT_MENU);
   const menuItem = table.menupopup.querySelector(`[data-id='${id}']`);
-  const columnWrapper = table.tbody
-    .querySelector(`#${id}`)
-    .closest(".table-widget-wrapper");
+  const column = table.tbody.querySelector(`#${id}`);
 
   info(`Showing ${id}`);
-  ok(
-    BrowserTestUtils.is_hidden(columnWrapper),
-    "Column is hidden before showing it"
-  );
+  ok(BrowserTestUtils.is_hidden(column), "Column is hidden before showing it");
 
   table.menupopup.activateItem(menuItem);
   const toShow = await event;
@@ -157,7 +154,7 @@ async function showCol(id) {
 
   is(toShow, id, `#${id} was selected to be shown`);
   ok(
-    BrowserTestUtils.is_visible(columnWrapper),
+    BrowserTestUtils.is_visible(column),
     "Column is not hidden after showing it"
   );
 }
@@ -166,13 +163,11 @@ async function hideCol(id) {
   const onPopupHidden = once(table.menupopup, "popuphidden");
   const event = table.once(TableWidget.EVENTS.HEADER_CONTEXT_MENU);
   const menuItem = table.menupopup.querySelector(`[data-id='${id}']`);
-  const columnWrapper = table.tbody
-    .querySelector(`#${id}`)
-    .closest(".table-widget-wrapper");
+  const column = table.tbody.querySelector(`#${id}`);
 
   info(`selecting to hide #${id}`);
   ok(
-    BrowserTestUtils.is_visible(columnWrapper),
+    BrowserTestUtils.is_visible(column),
     `Column #${id} is not hidden before hiding it`
   );
   table.menupopup.activateItem(menuItem);
@@ -180,7 +175,7 @@ async function hideCol(id) {
   await onPopupHidden;
   is(toHide, id, `#${id} was selected to be hidden`);
   ok(
-    BrowserTestUtils.is_hidden(columnWrapper),
+    BrowserTestUtils.is_hidden(column),
     `Column #${id} is hidden after hiding it`
   );
 }
@@ -188,7 +183,7 @@ async function hideCol(id) {
 /**
  * Tests if clicking the table items does the expected behavior
  */
-var testMouseInteraction = async function() {
+var testMouseInteraction = async function () {
   info("Testing mouse interaction with the table");
   ok(!table.selectedRow, "Nothing should be selected beforehand");
 
@@ -209,8 +204,7 @@ var testMouseInteraction = async function() {
 
   info("clicking on second row to select it");
   event = table.once(TableWidget.EVENTS.ROW_SELECTED);
-  const firstColumnSecondRowCell =
-    table.tbody.firstChild.firstChild.children[2];
+  const firstColumnSecondRowCell = table.tbody.firstChild.children[2];
   // node should not have selected class
   ok(
     !firstColumnSecondRowCell.classList.contains("theme-selected"),
@@ -235,10 +229,9 @@ var testMouseInteraction = async function() {
 
   info("clicking on the third row cell content to select third row");
   event = table.once(TableWidget.EVENTS.ROW_SELECTED);
-  const firstColumnThirdRowCell = table.tbody.firstChild.firstChild.children[3];
-  const firstColumnThirdRowCellInnerNode = firstColumnThirdRowCell.querySelector(
-    "span"
-  );
+  const firstColumnThirdRowCell = table.tbody.firstChild.children[3];
+  const firstColumnThirdRowCellInnerNode =
+    firstColumnThirdRowCell.querySelector("span");
   // node should not have selected class
   ok(
     !firstColumnThirdRowCell.classList.contains("theme-selected"),
@@ -254,7 +247,7 @@ var testMouseInteraction = async function() {
 
   // clicking on table header to sort by it
   event = table.once(TableWidget.EVENTS.COLUMN_SORTED);
-  let node = table.tbody.children[6].firstChild.children[0];
+  let node = table.tbody.children[6].children[0];
   info("clicking on the 4th coulmn header to sort the table by it");
   ok(
     !node.hasAttribute("sorted"),
@@ -283,7 +276,7 @@ var testMouseInteraction = async function() {
   // hiding second column
   // event listener for popupshown
   info("right click on the first column header");
-  node = table.tbody.firstChild.firstChild.firstChild;
+  node = table.tbody.firstChild.firstChild;
   let onPopupShown = once(table.menupopup, "popupshown");
   click(node, 2);
   await onPopupShown;
@@ -306,7 +299,7 @@ var testMouseInteraction = async function() {
   // hiding third column
   // event listener for popupshown
   info("right clicking on the first column header");
-  node = table.tbody.firstChild.firstChild.firstChild;
+  node = table.tbody.firstChild.firstChild;
   onPopupShown = once(table.menupopup, "popupshown");
   click(node, 2);
   await onPopupShown;
@@ -322,7 +315,7 @@ var testMouseInteraction = async function() {
   // opening again to see if 2 items are disabled now
   // event listener for popupshown
   info("right clicking on the first column header");
-  node = table.tbody.firstChild.firstChild.firstChild;
+  node = table.tbody.firstChild.firstChild;
   onPopupShown = once(table.menupopup, "popupshown");
   click(node, 2);
   await onPopupShown;
@@ -351,7 +344,7 @@ var testMouseInteraction = async function() {
   // showing back 3rd column
   // event listener for popupshown
   info("right clicking on the first column header");
-  node = table.tbody.firstChild.firstChild.firstChild;
+  node = table.tbody.firstChild.firstChild;
   onPopupShown = once(table.menupopup, "popupshown");
   click(node, 2);
   await onPopupShown;

@@ -2,11 +2,9 @@
 
 /* globals AppConstants, Services */
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "TalosParentProfiler",
-  "resource://talos-powers/TalosParentProfiler.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  TalosParentProfiler: "resource://talos-powers/TalosParentProfiler.sys.mjs",
+});
 
 var OPENER_DELAY = 1000; // ms delay between tests
 
@@ -43,7 +41,7 @@ function waitForBrowserPaint() {
 }
 
 async function startTest(context) {
-  await TalosParentProfiler.resume("twinopen", true);
+  TalosParentProfiler.subtestStart("twinopen");
   Cu.forceGC();
   Cu.forceCC();
   Cu.forceShrinkingGC();
@@ -56,6 +54,7 @@ async function startTest(context) {
   let start = win.performance.timing.fetchStart + win.performance.now();
   let newWin = win.OpenBrowserWindow();
   let end = await mozAfterPaint;
+  TalosParentProfiler.subtestEnd("twinopen");
   newWin.close();
   return end - start;
 }

@@ -4,49 +4,46 @@
 
 "use strict";
 
-const { Preferences } = ChromeUtils.import(
-  "resource://gre/modules/Preferences.jsm"
+const { Preferences } = ChromeUtils.importESModule(
+  "resource://gre/modules/Preferences.sys.mjs"
 );
 
-const { AppInfo } = ChromeUtils.import(
-  "chrome://remote/content/marionette/appinfo.js"
+const { AppInfo } = ChromeUtils.importESModule(
+  "chrome://remote/content/shared/AppInfo.sys.mjs"
 );
-const { error } = ChromeUtils.import(
-  "chrome://remote/content/shared/webdriver/Errors.jsm"
+const { error } = ChromeUtils.importESModule(
+  "chrome://remote/content/shared/webdriver/Errors.sys.mjs"
 );
 const {
   Capabilities,
+  mergeCapabilities,
   PageLoadStrategy,
+  processCapabilities,
   Proxy,
   Timeouts,
   UnhandledPromptBehavior,
-} = ChromeUtils.import(
-  "chrome://remote/content/shared/webdriver/Capabilities.jsm"
+  validateCapabilities,
+} = ChromeUtils.importESModule(
+  "chrome://remote/content/shared/webdriver/Capabilities.sys.mjs"
 );
 
-add_test(function test_Timeouts_ctor() {
+add_task(function test_Timeouts_ctor() {
   let ts = new Timeouts();
   equal(ts.implicit, 0);
   equal(ts.pageLoad, 300000);
   equal(ts.script, 30000);
-
-  run_next_test();
 });
 
-add_test(function test_Timeouts_toString() {
+add_task(function test_Timeouts_toString() {
   equal(new Timeouts().toString(), "[object Timeouts]");
-
-  run_next_test();
 });
 
-add_test(function test_Timeouts_toJSON() {
+add_task(function test_Timeouts_toJSON() {
   let ts = new Timeouts();
   deepEqual(ts.toJSON(), { implicit: 0, pageLoad: 300000, script: 30000 });
-
-  run_next_test();
 });
 
-add_test(function test_Timeouts_fromJSON() {
+add_task(function test_Timeouts_fromJSON() {
   let json = {
     implicit: 0,
     pageLoad: 2.0,
@@ -56,11 +53,9 @@ add_test(function test_Timeouts_fromJSON() {
   equal(ts.implicit, json.implicit);
   equal(ts.pageLoad, json.pageLoad);
   equal(ts.script, json.script);
-
-  run_next_test();
 });
 
-add_test(function test_Timeouts_fromJSON_unrecognised_field() {
+add_task(function test_Timeouts_fromJSON_unrecognised_field() {
   let json = {
     sessionId: "foobar",
   };
@@ -70,41 +65,33 @@ add_test(function test_Timeouts_fromJSON_unrecognised_field() {
     equal(e.name, error.InvalidArgumentError.name);
     equal(e.message, "Unrecognised timeout: sessionId");
   }
-
-  run_next_test();
 });
 
-add_test(function test_Timeouts_fromJSON_invalid_types() {
+add_task(function test_Timeouts_fromJSON_invalid_types() {
   for (let value of [null, [], {}, false, "10", 2.5]) {
     Assert.throws(
       () => Timeouts.fromJSON({ implicit: value }),
       /InvalidArgumentError/
     );
   }
-
-  run_next_test();
 });
 
-add_test(function test_Timeouts_fromJSON_bounds() {
+add_task(function test_Timeouts_fromJSON_bounds() {
   for (let value of [-1, Number.MAX_SAFE_INTEGER + 1]) {
     Assert.throws(
       () => Timeouts.fromJSON({ script: value }),
       /InvalidArgumentError/
     );
   }
-
-  run_next_test();
 });
 
-add_test(function test_PageLoadStrategy() {
+add_task(function test_PageLoadStrategy() {
   equal(PageLoadStrategy.None, "none");
   equal(PageLoadStrategy.Eager, "eager");
   equal(PageLoadStrategy.Normal, "normal");
-
-  run_next_test();
 });
 
-add_test(function test_Proxy_ctor() {
+add_task(function test_Proxy_ctor() {
   let p = new Proxy();
   let props = [
     "proxyType",
@@ -118,11 +105,9 @@ add_test(function test_Proxy_ctor() {
     ok(prop in p, `${prop} in ${JSON.stringify(props)}`);
     equal(p[prop], null);
   }
-
-  run_next_test();
 });
 
-add_test(function test_Proxy_init() {
+add_task(function test_Proxy_init() {
   let p = new Proxy();
 
   // no changed made, and 5 (system) is default
@@ -185,17 +170,13 @@ add_test(function test_Proxy_init() {
   p.noProxy = [];
   ok(p.init());
   equal(Preferences.get("network.proxy.no_proxies_on"), "");
-
-  run_next_test();
 });
 
-add_test(function test_Proxy_toString() {
+add_task(function test_Proxy_toString() {
   equal(new Proxy().toString(), "[object Proxy]");
-
-  run_next_test();
 });
 
-add_test(function test_Proxy_toJSON() {
+add_task(function test_Proxy_toJSON() {
   let p = new Proxy();
   deepEqual(p.toJSON(), {});
 
@@ -250,11 +231,9 @@ add_test(function test_Proxy_toJSON() {
   p.noProxy = ["2001:db8::1"];
   let expected = { proxyType: "manual", noProxy: "[2001:db8::1]" };
   deepEqual(p.toJSON(), expected);
-
-  run_next_test();
 });
 
-add_test(function test_Proxy_fromJSON() {
+add_task(function test_Proxy_fromJSON() {
   let p = new Proxy();
   deepEqual(p, Proxy.fromJSON(undefined));
   deepEqual(p, Proxy.fromJSON(null));
@@ -390,27 +369,22 @@ add_test(function test_Proxy_fromJSON() {
   p.noProxy = ["2001:db8::1"];
   let manual = { proxyType: "manual", noProxy: ["[2001:db8::1]"] };
   deepEqual(p, Proxy.fromJSON(manual));
-
-  run_next_test();
 });
 
-add_test(function test_UnhandledPromptBehavior() {
+add_task(function test_UnhandledPromptBehavior() {
   equal(UnhandledPromptBehavior.Accept, "accept");
   equal(UnhandledPromptBehavior.AcceptAndNotify, "accept and notify");
   equal(UnhandledPromptBehavior.Dismiss, "dismiss");
   equal(UnhandledPromptBehavior.DismissAndNotify, "dismiss and notify");
   equal(UnhandledPromptBehavior.Ignore, "ignore");
-
-  run_next_test();
 });
 
-add_test(function test_Capabilities_ctor() {
+add_task(function test_Capabilities_ctor() {
   let caps = new Capabilities();
   ok(caps.has("browserName"));
   ok(caps.has("browserVersion"));
   ok(caps.has("platformName"));
   ok(["linux", "mac", "windows", "android"].includes(caps.get("platformName")));
-  ok(caps.has("platformVersion"));
   equal(PageLoadStrategy.Normal, caps.get("pageLoadStrategy"));
   equal(false, caps.get("acceptInsecureCerts"));
   ok(caps.get("timeouts") instanceof Timeouts);
@@ -422,28 +396,26 @@ add_test(function test_Capabilities_ctor() {
   equal(false, caps.get("moz:accessibilityChecks"));
   ok(caps.has("moz:buildID"));
   ok(caps.has("moz:debuggerAddress"));
+  ok(caps.has("moz:platformVersion"));
   ok(caps.has("moz:processID"));
   ok(caps.has("moz:profile"));
-  equal(false, caps.get("moz:useNonSpecCompliantPointerOrigin"));
   equal(true, caps.get("moz:webdriverClick"));
 
-  run_next_test();
+  // No longer supported capabilities
+  ok(!caps.has("moz:useNonSpecCompliantPointerOrigin"));
 });
 
-add_test(function test_Capabilities_toString() {
+add_task(function test_Capabilities_toString() {
   equal("[object Capabilities]", new Capabilities().toString());
-
-  run_next_test();
 });
 
-add_test(function test_Capabilities_toJSON() {
+add_task(function test_Capabilities_toJSON() {
   let caps = new Capabilities();
   let json = caps.toJSON();
 
   equal(caps.get("browserName"), json.browserName);
   equal(caps.get("browserVersion"), json.browserVersion);
   equal(caps.get("platformName"), json.platformName);
-  equal(caps.get("platformVersion"), json.platformVersion);
   equal(caps.get("pageLoadStrategy"), json.pageLoadStrategy);
   equal(caps.get("acceptInsecureCerts"), json.acceptInsecureCerts);
   deepEqual(caps.get("proxy").toJSON(), json.proxy);
@@ -455,26 +427,18 @@ add_test(function test_Capabilities_toJSON() {
   equal(caps.get("moz:accessibilityChecks"), json["moz:accessibilityChecks"]);
   equal(caps.get("moz:buildID"), json["moz:buildID"]);
   equal(caps.get("moz:debuggerAddress"), json["moz:debuggerAddress"]);
+  equal(caps.get("moz:platformVersion"), json["moz:platformVersion"]);
   equal(caps.get("moz:processID"), json["moz:processID"]);
   equal(caps.get("moz:profile"), json["moz:profile"]);
-  equal(
-    caps.get("moz:useNonSpecCompliantPointerOrigin"),
-    json["moz:useNonSpecCompliantPointerOrigin"]
-  );
   equal(caps.get("moz:webdriverClick"), json["moz:webdriverClick"]);
-
-  run_next_test();
 });
 
-add_test(function test_Capabilities_fromJSON() {
+add_task(function test_Capabilities_fromJSON() {
   const { fromJSON } = Capabilities;
 
   // plain
   for (let typ of [{}, null, undefined]) {
     ok(fromJSON(typ).has("browserName"));
-  }
-  for (let typ of [true, 42, "foo", []]) {
-    Assert.throws(() => fromJSON(typ), /InvalidArgumentError/);
   }
 
   // matching
@@ -484,23 +448,11 @@ add_test(function test_Capabilities_fromJSON() {
   equal(true, caps.get("acceptInsecureCerts"));
   caps = fromJSON({ acceptInsecureCerts: false });
   equal(false, caps.get("acceptInsecureCerts"));
-  Assert.throws(
-    () => fromJSON({ acceptInsecureCerts: "foo" }),
-    /InvalidArgumentError/
-  );
 
   for (let strategy of Object.values(PageLoadStrategy)) {
     caps = fromJSON({ pageLoadStrategy: strategy });
     equal(strategy, caps.get("pageLoadStrategy"));
   }
-  Assert.throws(
-    () => fromJSON({ pageLoadStrategy: "foo" }),
-    /InvalidArgumentError/
-  );
-  Assert.throws(
-    () => fromJSON({ pageLoadStrategy: null }),
-    /InvalidArgumentError/
-  );
 
   let proxyConfig = { proxyType: "manual" };
   caps = fromJSON({ proxy: proxyConfig });
@@ -510,20 +462,6 @@ add_test(function test_Capabilities_fromJSON() {
   caps = fromJSON({ timeouts: timeoutsConfig });
   equal(123, caps.get("timeouts").implicit);
 
-  if (!AppInfo.isAndroid) {
-    caps = fromJSON({ setWindowRect: true });
-    equal(true, caps.get("setWindowRect"));
-    Assert.throws(
-      () => fromJSON({ setWindowRect: false }),
-      /InvalidArgumentError/
-    );
-  } else {
-    Assert.throws(
-      () => fromJSON({ setWindowRect: true }),
-      /InvalidArgumentError/
-    );
-  }
-
   caps = fromJSON({ strictFileInteractability: false });
   equal(false, caps.get("strictFileInteractability"));
   caps = fromJSON({ strictFileInteractability: true });
@@ -531,12 +469,49 @@ add_test(function test_Capabilities_fromJSON() {
 
   caps = fromJSON({ webSocketUrl: true });
   equal(true, caps.get("webSocketUrl"));
+
+  caps = fromJSON({ "webauthn:virtualAuthenticators": true });
+  equal(true, caps.get("webauthn:virtualAuthenticators"));
+  caps = fromJSON({ "webauthn:virtualAuthenticators": false });
+  equal(false, caps.get("webauthn:virtualAuthenticators"));
   Assert.throws(
-    () => fromJSON({ webSocketUrl: false }),
+    () => fromJSON({ "webauthn:virtualAuthenticators": "foo" }),
     /InvalidArgumentError/
   );
+
+  caps = fromJSON({ "webauthn:extension:uvm": true });
+  equal(true, caps.get("webauthn:extension:uvm"));
+  caps = fromJSON({ "webauthn:extension:uvm": false });
+  equal(false, caps.get("webauthn:extension:uvm"));
   Assert.throws(
-    () => fromJSON({ webSocketUrl: "foo" }),
+    () => fromJSON({ "webauthn:extension:uvm": "foo" }),
+    /InvalidArgumentError/
+  );
+
+  caps = fromJSON({ "webauthn:extension:prf": true });
+  equal(true, caps.get("webauthn:extension:prf"));
+  caps = fromJSON({ "webauthn:extension:prf": false });
+  equal(false, caps.get("webauthn:extension:prf"));
+  Assert.throws(
+    () => fromJSON({ "webauthn:extension:prf": "foo" }),
+    /InvalidArgumentError/
+  );
+
+  caps = fromJSON({ "webauthn:extension:largeBlob": true });
+  equal(true, caps.get("webauthn:extension:largeBlob"));
+  caps = fromJSON({ "webauthn:extension:largeBlob": false });
+  equal(false, caps.get("webauthn:extension:largeBlob"));
+  Assert.throws(
+    () => fromJSON({ "webauthn:extension:largeBlob": "foo" }),
+    /InvalidArgumentError/
+  );
+
+  caps = fromJSON({ "webauthn:extension:credBlob": true });
+  equal(true, caps.get("webauthn:extension:credBlob"));
+  caps = fromJSON({ "webauthn:extension:credBlob": false });
+  equal(false, caps.get("webauthn:extension:credBlob"));
+  Assert.throws(
+    () => fromJSON({ "webauthn:extension:credBlob": "foo" }),
     /InvalidArgumentError/
   );
 
@@ -544,14 +519,6 @@ add_test(function test_Capabilities_fromJSON() {
   equal(true, caps.get("moz:accessibilityChecks"));
   caps = fromJSON({ "moz:accessibilityChecks": false });
   equal(false, caps.get("moz:accessibilityChecks"));
-  Assert.throws(
-    () => fromJSON({ "moz:accessibilityChecks": "foo" }),
-    /InvalidArgumentError/
-  );
-  Assert.throws(
-    () => fromJSON({ "moz:accessibilityChecks": 1 }),
-    /InvalidArgumentError/
-  );
 
   // capability is always populated with null if remote agent is not listening
   caps = fromJSON({});
@@ -561,37 +528,150 @@ add_test(function test_Capabilities_fromJSON() {
   caps = fromJSON({ "moz:debuggerAddress": true });
   equal(null, caps.get("moz:debuggerAddress"));
 
-  caps = fromJSON({ "moz:useNonSpecCompliantPointerOrigin": false });
-  equal(false, caps.get("moz:useNonSpecCompliantPointerOrigin"));
-  caps = fromJSON({ "moz:useNonSpecCompliantPointerOrigin": true });
-  equal(true, caps.get("moz:useNonSpecCompliantPointerOrigin"));
-  Assert.throws(
-    () => fromJSON({ "moz:useNonSpecCompliantPointerOrigin": "foo" }),
-    /InvalidArgumentError/
-  );
-  Assert.throws(
-    () => fromJSON({ "moz:useNonSpecCompliantPointerOrigin": 1 }),
-    /InvalidArgumentError/
-  );
-
   caps = fromJSON({ "moz:webdriverClick": true });
   equal(true, caps.get("moz:webdriverClick"));
   caps = fromJSON({ "moz:webdriverClick": false });
   equal(false, caps.get("moz:webdriverClick"));
+
+  // No longer supported capabilities
   Assert.throws(
-    () => fromJSON({ "moz:webdriverClick": "foo" }),
+    () => fromJSON({ "moz:useNonSpecCompliantPointerOrigin": false }),
     /InvalidArgumentError/
   );
   Assert.throws(
-    () => fromJSON({ "moz:webdriverClick": 1 }),
+    () => fromJSON({ "moz:useNonSpecCompliantPointerOrigin": true }),
+    /InvalidArgumentError/
+  );
+});
+
+add_task(function test_mergeCapabilities() {
+  // Shadowed values.
+  Assert.throws(
+    () =>
+      mergeCapabilities(
+        { acceptInsecureCerts: true },
+        { acceptInsecureCerts: false }
+      ),
     /InvalidArgumentError/
   );
 
-  run_next_test();
+  deepEqual(
+    { acceptInsecureCerts: true },
+    mergeCapabilities({ acceptInsecureCerts: true }, undefined)
+  );
+  deepEqual(
+    { acceptInsecureCerts: true, browserName: "Firefox" },
+    mergeCapabilities({ acceptInsecureCerts: true }, { browserName: "Firefox" })
+  );
+});
+
+add_task(function test_validateCapabilities_invalid() {
+  const invalidCapabilities = [
+    true,
+    42,
+    "foo",
+    [],
+    { acceptInsecureCerts: "foo" },
+    { browserName: true },
+    { browserVersion: true },
+    { platformName: true },
+    { pageLoadStrategy: "foo" },
+    { proxy: false },
+    { strictFileInteractability: "foo" },
+    { timeouts: false },
+    { unhandledPromptBehavior: false },
+    { webSocketUrl: false },
+    { webSocketUrl: "foo" },
+    { "moz:firefoxOptions": "foo" },
+    { "moz:accessibilityChecks": "foo" },
+    { "moz:webdriverClick": "foo" },
+    { "moz:webdriverClick": 1 },
+    { "moz:useNonSpecCompliantPointerOrigin": false },
+    { "moz:debuggerAddress": "foo" },
+    { "moz:someRandomString": {} },
+  ];
+  for (const capabilities of invalidCapabilities) {
+    Assert.throws(
+      () => validateCapabilities(capabilities),
+      /InvalidArgumentError/
+    );
+  }
+});
+
+add_task(function test_validateCapabilities_valid() {
+  // Ignore null value.
+  deepEqual({}, validateCapabilities({ test: null }));
+
+  const validCapabilities = [
+    { acceptInsecureCerts: true },
+    { browserName: "firefox" },
+    { browserVersion: "12" },
+    { platformName: "linux" },
+    { pageLoadStrategy: "eager" },
+    { proxy: { proxyType: "manual", httpProxy: "test.com" } },
+    { strictFileInteractability: true },
+    { timeouts: { pageLoad: 500 } },
+    { unhandledPromptBehavior: "accept" },
+    { webSocketUrl: true },
+    { "moz:firefoxOptions": {} },
+    { "moz:accessibilityChecks": true },
+    { "moz:webdriverClick": true },
+    { "moz:debuggerAddress": true },
+    { "test:extension": "foo" },
+  ];
+  for (const validCapability of validCapabilities) {
+    deepEqual(validCapability, validateCapabilities(validCapability));
+  }
+});
+
+add_task(function test_processCapabilities() {
+  for (const invalidValue of [
+    { capabilities: null },
+    { capabilities: undefined },
+    { capabilities: "foo" },
+    { capabilities: true },
+    { capabilities: [] },
+    { capabilities: { alwaysMatch: null } },
+    { capabilities: { alwaysMatch: "foo" } },
+    { capabilities: { alwaysMatch: true } },
+    { capabilities: { alwaysMatch: [] } },
+    { capabilities: { firstMatch: null } },
+    { capabilities: { firstMatch: "foo" } },
+    { capabilities: { firstMatch: true } },
+    { capabilities: { firstMatch: {} } },
+    { capabilities: { firstMatch: [] } },
+  ]) {
+    Assert.throws(
+      () => processCapabilities(invalidValue),
+      /InvalidArgumentError/
+    );
+  }
+
+  deepEqual(
+    { acceptInsecureCerts: true },
+    processCapabilities({
+      capabilities: { alwaysMatch: { acceptInsecureCerts: true } },
+    })
+  );
+  deepEqual(
+    { browserName: "Firefox" },
+    processCapabilities({
+      capabilities: { firstMatch: [{ browserName: "Firefox" }] },
+    })
+  );
+  deepEqual(
+    { acceptInsecureCerts: true, browserName: "Firefox" },
+    processCapabilities({
+      capabilities: {
+        alwaysMatch: { acceptInsecureCerts: true },
+        firstMatch: [{ browserName: "Firefox" }],
+      },
+    })
+  );
 });
 
 // use Proxy.toJSON to test marshal
-add_test(function test_marshal() {
+add_task(function test_marshal() {
   let proxy = new Proxy();
 
   // drop empty fields
@@ -618,6 +698,4 @@ add_test(function test_marshal() {
   deepEqual({}, proxy.toJSON());
   proxy.proxyType = { foo: new Proxy() };
   deepEqual({}, proxy.toJSON());
-
-  run_next_test();
 });

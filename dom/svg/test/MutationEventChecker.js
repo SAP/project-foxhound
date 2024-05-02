@@ -36,7 +36,7 @@
 function MutationEventChecker() {
   this.expectedEvents = [];
 
-  this.watchAttr = function(element, attr) {
+  this.watchAttr = function (element, attr) {
     if (this.attr) {
       this.finish();
     }
@@ -51,30 +51,27 @@ function MutationEventChecker() {
     this.element.addEventListener("DOMAttrModified", this._listener);
   };
 
-  this.expect = function() {
+  this.expect = function () {
     if (this.giveUp) {
       return;
     }
 
     ok(
-      this.expectedEvents.length == 0,
+      !this.expectedEvents.length,
       "Expecting new events for " +
         this.attr +
         " but the following previously expected events have still not been " +
         "received: " +
         this._stillExpecting()
     );
-    if (this.expectedEvents.length != 0) {
+    if (this.expectedEvents.length) {
       this.giveUp = true;
       return;
     }
 
     this.ignore = false;
 
-    if (
-      arguments.length == 0 ||
-      (arguments.length == 1 && arguments[0] == "")
-    ) {
+    if (!arguments.length || (arguments.length == 1 && arguments[0] == "")) {
       return;
     }
 
@@ -93,10 +90,10 @@ function MutationEventChecker() {
   };
 
   // Temporarily disable event checking
-  this.ignoreEvents = function() {
+  this.ignoreEvents = function () {
     // Check all events have been received
     ok(
-      this.giveUp || this.expectedEvents.length == 0,
+      this.giveUp || !this.expectedEvents.length,
       "Going to ignore subsequent events on " +
         this.attr +
         " attribute, but we're still expecting the following events: " +
@@ -106,10 +103,10 @@ function MutationEventChecker() {
     this.ignore = true;
   };
 
-  this.finish = function() {
+  this.finish = function () {
     // Check all events have been received
     ok(
-      this.giveUp || this.expectedEvents.length == 0,
+      this.giveUp || !this.expectedEvents.length,
       "Finishing listening to " +
         this.attr +
         " attribute, but we're still expecting the following events: " +
@@ -120,14 +117,14 @@ function MutationEventChecker() {
     this.attr = "";
   };
 
-  this._receiveEvent = function(e) {
+  this._receiveEvent = function (e) {
     if (this.giveUp || this.ignore) {
       this.oldValue = e.newValue;
       return;
     }
 
     // Make sure we're expecting something at all
-    if (this.expectedEvents.length == 0) {
+    if (!this.expectedEvents.length) {
       ok(
         false,
         "Unexpected " +
@@ -226,8 +223,8 @@ function MutationEventChecker() {
   };
   this._listener = this._receiveEvent.bind(this);
 
-  this._stillExpecting = function() {
-    if (this.expectedEvents.length == 0) {
+  this._stillExpecting = function () {
+    if (!this.expectedEvents.length) {
       return "(nothing)";
     }
     var eventNames = [];
@@ -237,7 +234,7 @@ function MutationEventChecker() {
     return eventNames.join(", ");
   };
 
-  this._eventToName = function(evtId) {
+  this._eventToName = function (evtId) {
     switch (evtId) {
       case MutationEvent.MODIFICATION:
         return "modification";
@@ -249,7 +246,7 @@ function MutationEventChecker() {
     return "Unknown MutationEvent Type";
   };
 
-  this._argToEventId = function(arg) {
+  this._argToEventId = function (arg) {
     if (typeof arg === "number") {
       return arg;
     }

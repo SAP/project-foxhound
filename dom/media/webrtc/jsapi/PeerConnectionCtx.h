@@ -8,6 +8,8 @@
 #include <map>
 #include <string>
 
+#include "WebrtcGlobalChild.h"
+#include "api/field_trials_view.h"
 #include "api/scoped_refptr.h"
 #include "call/audio_state.h"
 #include "MediaTransportHandler.h"  // Mostly for IceLogPromise
@@ -19,8 +21,29 @@
 
 namespace webrtc {
 class AudioDecoderFactory;
-class SharedModuleThread;
-class WebRtcKeyValueConfig;
+
+// Used for testing in mediapipeline_unittest.cpp, MockCall.h
+class NoTrialsConfig : public FieldTrialsView {
+ public:
+  NoTrialsConfig() = default;
+  std::string Lookup(absl::string_view key) const override {
+    // Upstream added a new default field trial string for
+    // CongestionWindow, that we don't want.  In
+    // third_party/libwebrtc/rtc_base/experiments/rate_control_settings.cc
+    // they set kCongestionWindowDefaultFieldTrialString to
+    // "QueueSize:350,MinBitrate:30000,DropFrame:true". With QueueSize
+    // set, GoogCcNetworkController::UpdateCongestionWindowSize is
+    // called.  Because negative values are calculated in
+    // feedback_rtt, an assert fires when calculating data_window in
+    // GoogCcNetworkController::UpdateCongestionWindowSize.  We probably
+    // need to figure out why we're calculating negative feedback_rtt.
+    // See Bug 1780620.
+    if ("WebRTC-CongestionWindow" == key) {
+      return std::string("MinBitrate:30000,DropFrame:true");
+    }
+    return std::string();
+  }
+};
 }  // namespace webrtc
 
 namespace mozilla {
@@ -42,9 +65,7 @@ class SharedWebrtcState {
   SharedWebrtcState(RefPtr<AbstractThread> aCallWorkerThread,
                     webrtc::AudioState::Config&& aAudioStateConfig,
                     RefPtr<webrtc::AudioDecoderFactory> aAudioDecoderFactory,
-                    UniquePtr<webrtc::WebRtcKeyValueConfig> aTrials);
-
-  webrtc::SharedModuleThread* GetModuleThread();
+                    UniquePtr<webrtc::FieldTrialsView> aTrials);
 
   // A global Call worker thread shared between all Call instances. Implements
   // AbstractThread for running tasks that call into a Call instance through its
@@ -62,15 +83,10 @@ class SharedWebrtcState {
 
   // Trials instance shared between calls, to limit the number of instances in
   // large calls.
-  const UniquePtr<webrtc::WebRtcKeyValueConfig> mTrials;
+  const UniquePtr<webrtc::FieldTrialsView> mTrials;
 
  private:
   virtual ~SharedWebrtcState();
-
-  // SharedModuleThread used for processing in all Call instances.
-  // Only accessed on the global Call worker task queue. Set on first
-  // GetModuleThread(), Unset on the last external Release.
-  rtc::scoped_refptr<webrtc::SharedModuleThread> mModuleThread;
 };
 
 // A class to hold some of the singleton objects we need:
@@ -80,7 +96,7 @@ class SharedWebrtcState {
 // * Upstream webrtc state shared across all Calls (processing thread)
 class PeerConnectionCtx {
  public:
-  static nsresult InitializeGlobal(nsIThread* mainThread);
+  static nsresult InitializeGlobal();
   static PeerConnectionCtx* GetInstance();
   static bool isActive();
   static void Destroy();
@@ -106,17 +122,19 @@ class PeerConnectionCtx {
 
   SharedWebrtcState* GetSharedWebrtcState() const;
 
-  // WebrtcGlobalInformation uses this; we put it here so we don't need to
-  // create another shutdown observer class.
-  mozilla::dom::Sequence<mozilla::dom::RTCStatsReportInternal>
-      mStatsForClosedPeerConnections;
-
   void RemovePeerConnection(const std::string& aKey);
   void AddPeerConnection(const std::string& aKey,
                          PeerConnectionImpl* aPeerConnection);
   PeerConnectionImpl* GetPeerConnection(const std::string& aKey) const;
   template <typename Function>
-  void ForEachPeerConnection(Function&& aFunction) const;
+  void ForEachPeerConnection(Function&& aFunction) const {
+    MOZ_ASSERT(NS_IsMainThread());
+    for (const auto& pair : mPeerConnections) {
+      aFunction(pair.second);
+    }
+  }
+
+  void ClearClosedStats();
 
  private:
   std::map<const std::string, PeerConnectionImpl*> mPeerConnections;
@@ -129,9 +147,11 @@ class PeerConnectionCtx {
   // This is a singleton, so don't copy construct it, etc.
   PeerConnectionCtx(const PeerConnectionCtx& other) = delete;
   void operator=(const PeerConnectionCtx& other) = delete;
-  virtual ~PeerConnectionCtx();
+  virtual ~PeerConnectionCtx() = default;
 
   nsresult Initialize();
+  nsresult StartTelemetryTimer();
+  void StopTelemetryTimer();
   nsresult Cleanup();
 
   void initGMP();
@@ -165,7 +185,6 @@ class PeerConnectionCtx {
   static PeerConnectionCtx* gInstance;
 
  public:
-  static nsIThread* gMainThread;
   static mozilla::StaticRefPtr<mozilla::PeerConnectionCtxObserver>
       gPeerConnectionCtxObserver;
 };

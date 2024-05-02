@@ -121,20 +121,22 @@ function mutateTable() {
 
   ensureAccessibleTreeForId("start");
 
-  TalosContentProfiler.resume("tablemutation start", true).then(() => {
+  TalosContentProfiler.subtestStart("tablemutation start", true).then(() => {
+    let start = window.performance.now();
+
     // Cause all kinds of crazy events
     Range.deleteContents();
     Range.insertNode(Fragment);
 
     document.documentElement.offsetLeft; // flush layout
 
-    setTimeout(postProcessingRecord, 0);
+    setTimeout(postProcessingRecord, 0, start);
   });
 }
 
 function postProcessingRecord(startTime) {
   let delta = window.performance.now() - startTime;
-  TalosContentProfiler.pause("a11y test: tablemutation", true).then(() => {
+  TalosContentProfiler.subtestEnd("a11y test: tablemutation", true).then(() => {
     tpRecordTime(delta, window.performance.timing.navigationStart + startTime);
   });
 }

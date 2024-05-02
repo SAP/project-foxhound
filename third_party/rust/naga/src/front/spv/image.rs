@@ -1,4 +1,7 @@
-use crate::arena::{Arena, Handle, UniqueArena};
+use crate::{
+    arena::{Handle, UniqueArena},
+    Scalar,
+};
 
 use super::{Error, LookupExpression, LookupHelper as _};
 
@@ -10,6 +13,7 @@ pub(super) struct LookupSampledImage {
 
 bitflags::bitflags! {
     /// Flags describing sampling method.
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
     pub struct SamplingFlags: u32 {
         /// Regular sampling.
         const REGULAR = 0x1;
@@ -60,8 +64,11 @@ fn extract_image_coordinates(
     ctx: &mut super::BlockContext,
 ) -> (Handle<crate::Expression>, Option<Handle<crate::Expression>>) {
     let (given_size, kind) = match ctx.type_arena[coordinate_ty].inner {
-        crate::TypeInner::Scalar { kind, .. } => (None, kind),
-        crate::TypeInner::Vector { size, kind, .. } => (Some(size), kind),
+        crate::TypeInner::Scalar(Scalar { kind, .. }) => (None, kind),
+        crate::TypeInner::Vector {
+            size,
+            scalar: Scalar { kind, .. },
+        } => (Some(size), kind),
         ref other => unreachable!("Unexpected texture coordinate {:?}", other),
     };
 
@@ -72,8 +79,7 @@ fn extract_image_coordinates(
                 name: None,
                 inner: crate::TypeInner::Vector {
                     size,
-                    kind,
-                    width: 4,
+                    scalar: Scalar { kind, width: 4 },
                 },
             })
             .expect("Required coordinate type should have been set up by `parse_type_image`!")
@@ -218,7 +224,7 @@ pub(super) fn patch_comparison_type(
     true
 }
 
-impl<I: Iterator<Item = u32>> super::Parser<I> {
+impl<I: Iterator<Item = u32>> super::Frontend<I> {
     pub(super) fn parse_image_couple(&mut self) -> Result<(), Error> {
         let _result_type_id = self.next()?;
         let result_id = self.next()?;
@@ -255,7 +261,7 @@ impl<I: Iterator<Item = u32>> super::Parser<I> {
         &mut self,
         words_left: u16,
         ctx: &mut super::BlockContext,
-        emitter: &mut crate::front::Emitter,
+        emitter: &mut crate::proc::Emitter,
         block: &mut crate::Block,
         body_idx: usize,
     ) -> Result<crate::Statement, Error> {
@@ -314,7 +320,7 @@ impl<I: Iterator<Item = u32>> super::Parser<I> {
         &mut self,
         mut words_left: u16,
         ctx: &mut super::BlockContext,
-        emitter: &mut crate::front::Emitter,
+        emitter: &mut crate::proc::Emitter,
         block: &mut crate::Block,
         block_id: spirv::Word,
         body_idx: usize,
@@ -332,7 +338,8 @@ impl<I: Iterator<Item = u32>> super::Parser<I> {
             0
         };
 
-        let mut index = None;
+        let mut sample = None;
+        let mut level = None;
         while image_ops != 0 {
             let bit = 1 << image_ops.trailing_zeros();
             match spirv::ImageOperands::from_bits_truncate(bit) {
@@ -341,13 +348,13 @@ impl<I: Iterator<Item = u32>> super::Parser<I> {
                     let lod_lexp = self.lookup_expression.lookup(lod_expr)?;
                     let lod_handle =
                         self.get_expr_handle(lod_expr, lod_lexp, ctx, emitter, block, body_idx);
-                    index = Some(lod_handle);
+                    level = Some(lod_handle);
                     words_left -= 1;
                 }
                 spirv::ImageOperands::SAMPLE => {
                     let sample_expr = self.next()?;
                     let sample_handle = self.lookup_expression.lookup(sample_expr)?.handle;
-                    index = Some(sample_handle);
+                    sample = Some(sample_handle);
                     words_left -= 1;
                 }
                 other => {
@@ -393,7 +400,8 @@ impl<I: Iterator<Item = u32>> super::Parser<I> {
             image: image_lexp.handle,
             coordinate,
             array_index,
-            index,
+            sample,
+            level,
         };
         self.lookup_expression.insert(
             result_id,
@@ -412,7 +420,7 @@ impl<I: Iterator<Item = u32>> super::Parser<I> {
         mut words_left: u16,
         options: SamplingOptions,
         ctx: &mut super::BlockContext,
-        emitter: &mut crate::front::Emitter,
+        emitter: &mut crate::proc::Emitter,
         block: &mut crate::Block,
         block_id: spirv::Word,
         body_idx: usize,
@@ -500,6 +508,10 @@ impl<I: Iterator<Item = u32>> super::Parser<I> {
                 spirv::ImageOperands::CONST_OFFSET => {
                     let offset_constant = self.next()?;
                     let offset_handle = self.lookup_constant.lookup(offset_constant)?.handle;
+                    let offset_handle = ctx.const_expressions.append(
+                        crate::Expression::Constant(offset_handle),
+                        Default::default(),
+                    );
                     offset = Some(offset_handle);
                     words_left -= 1;
                 }
@@ -534,19 +546,47 @@ impl<I: Iterator<Item = u32>> super::Parser<I> {
 
                 ctx.global_arena[handle].ty
             }
+
             crate::Expression::FunctionArgument(i) => {
                 ctx.parameter_sampling[i as usize] |= sampling_bit;
                 ctx.arguments[i as usize].ty
             }
+
+            crate::Expression::Access { base, .. } => match ctx.expressions[base] {
+                crate::Expression::GlobalVariable(handle) => {
+                    if let Some(flags) = self.handle_sampling.get_mut(&handle) {
+                        *flags |= sampling_bit;
+                    }
+
+                    match ctx.type_arena[ctx.global_arena[handle].ty].inner {
+                        crate::TypeInner::BindingArray { base, .. } => base,
+                        _ => return Err(Error::InvalidGlobalVar(ctx.expressions[base].clone())),
+                    }
+                }
+
+                ref other => return Err(Error::InvalidGlobalVar(other.clone())),
+            },
+
             ref other => return Err(Error::InvalidGlobalVar(other.clone())),
         };
+
         match ctx.expressions[si_lexp.sampler] {
             crate::Expression::GlobalVariable(handle) => {
-                *self.handle_sampling.get_mut(&handle).unwrap() |= sampling_bit
+                *self.handle_sampling.get_mut(&handle).unwrap() |= sampling_bit;
             }
+
             crate::Expression::FunctionArgument(i) => {
                 ctx.parameter_sampling[i as usize] |= sampling_bit;
             }
+
+            crate::Expression::Access { base, .. } => match ctx.expressions[base] {
+                crate::Expression::GlobalVariable(handle) => {
+                    *self.handle_sampling.get_mut(&handle).unwrap() |= sampling_bit;
+                }
+
+                ref other => return Err(Error::InvalidGlobalVar(other.clone())),
+            },
+
             ref other => return Err(Error::InvalidGlobalVar(other.clone())),
         }
 
@@ -628,7 +668,7 @@ impl<I: Iterator<Item = u32>> super::Parser<I> {
         &mut self,
         at_level: bool,
         ctx: &mut super::BlockContext,
-        emitter: &mut crate::front::Emitter,
+        emitter: &mut crate::proc::Emitter,
         block: &mut crate::Block,
         block_id: spirv::Word,
         body_idx: usize,
@@ -654,6 +694,20 @@ impl<I: Iterator<Item = u32>> super::Parser<I> {
             image: image_lexp.handle,
             query: crate::ImageQuery::Size { level },
         };
+
+        let result_type_handle = self.lookup_type.lookup(result_type_id)?.handle;
+        let maybe_scalar_kind = ctx.type_arena[result_type_handle].inner.scalar_kind();
+
+        let expr = if maybe_scalar_kind == Some(crate::ScalarKind::Sint) {
+            crate::Expression::As {
+                expr: ctx.expressions.append(expr, self.span_from_with_op(start)),
+                kind: crate::ScalarKind::Sint,
+                convert: Some(4),
+            }
+        } else {
+            expr
+        };
+
         self.lookup_expression.insert(
             result_id,
             LookupExpression {
@@ -662,13 +716,14 @@ impl<I: Iterator<Item = u32>> super::Parser<I> {
                 block_id,
             },
         );
+
         Ok(())
     }
 
     pub(super) fn parse_image_query_other(
         &mut self,
         query: crate::ImageQuery,
-        expressions: &mut Arena<crate::Expression>,
+        ctx: &mut super::BlockContext,
         block_id: spirv::Word,
     ) -> Result<(), Error> {
         let start = self.data_offset;
@@ -684,14 +739,29 @@ impl<I: Iterator<Item = u32>> super::Parser<I> {
             image: image_lexp.handle,
             query,
         };
+
+        let result_type_handle = self.lookup_type.lookup(result_type_id)?.handle;
+        let maybe_scalar_kind = ctx.type_arena[result_type_handle].inner.scalar_kind();
+
+        let expr = if maybe_scalar_kind == Some(crate::ScalarKind::Sint) {
+            crate::Expression::As {
+                expr: ctx.expressions.append(expr, self.span_from_with_op(start)),
+                kind: crate::ScalarKind::Sint,
+                convert: Some(4),
+            }
+        } else {
+            expr
+        };
+
         self.lookup_expression.insert(
             result_id,
             LookupExpression {
-                handle: expressions.append(expr, self.span_from_with_op(start)),
+                handle: ctx.expressions.append(expr, self.span_from_with_op(start)),
                 type_id: result_type_id,
                 block_id,
             },
         );
+
         Ok(())
     }
 }

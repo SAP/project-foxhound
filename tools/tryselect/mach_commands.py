@@ -8,15 +8,10 @@ import importlib
 import os
 import sys
 
-from mach.decorators import (
-    Command,
-    SettingsProvider,
-    SubCommand,
-)
+from mach.decorators import Command, SettingsProvider, SubCommand
 from mach.util import get_state_dir
 from mozbuild.base import BuildEnvironmentNotFoundException
 from mozbuild.util import memoize
-
 
 CONFIG_ENVIRONMENT_NOT_FOUND = """
 No config environment detected. This means we are unable to properly
@@ -206,6 +201,7 @@ def run(command_context, **kwargs):
     category="ci",
     description="Push selected tasks to the try server",
     parser=generic_parser,
+    virtualenv_name="try",
 )
 def try_default(command_context, argv=None, **kwargs):
     """Push selected tests to the try server.
@@ -243,6 +239,7 @@ def try_default(command_context, argv=None, **kwargs):
     "fuzzy",
     description="Select tasks on try using a fuzzy finder",
     parser=get_parser("fuzzy"),
+    virtualenv_name="try",
 )
 def try_fuzzy(command_context, **kwargs):
     """Select which tasks to run with a fuzzy finding interface (fzf).
@@ -331,7 +328,7 @@ def try_fuzzy(command_context, **kwargs):
         # If saving preset without -q/--query, allow user to use the
         # interface to build the query.
         kwargs_copy = kwargs.copy()
-        kwargs_copy["push"] = False
+        kwargs_copy["dry_run"] = True
         kwargs_copy["save"] = None
         kwargs["query"] = run(command_context, save_query=True, **kwargs_copy)
         if not kwargs["query"]:
@@ -348,6 +345,7 @@ def try_fuzzy(command_context, **kwargs):
     "chooser",
     description="Schedule tasks by selecting them from a web interface.",
     parser=get_parser("chooser"),
+    virtualenv_name="try",
 )
 def try_chooser(command_context, **kwargs):
     """Push tasks selected from a web interface to try.
@@ -359,10 +357,6 @@ def try_chooser(command_context, **kwargs):
     """
     init(command_context)
     command_context.activate_virtualenv()
-    path = os.path.join(
-        "tools", "tryselect", "selectors", "chooser", "requirements.txt"
-    )
-    command_context.virtualenv_manager.install_pip_requirements(path, quiet=True)
 
     return run(command_context, **kwargs)
 
@@ -374,6 +368,7 @@ def try_chooser(command_context, **kwargs):
     "set of tasks that would be run on autoland. This "
     "selector is EXPERIMENTAL.",
     parser=get_parser("auto"),
+    virtualenv_name="try",
 )
 def try_auto(command_context, **kwargs):
     init(command_context)
@@ -385,6 +380,7 @@ def try_auto(command_context, **kwargs):
     "again",
     description="Schedule a previously generated (non try syntax) push again.",
     parser=get_parser("again"),
+    virtualenv_name="try",
 )
 def try_again(command_context, **kwargs):
     init(command_context)
@@ -396,6 +392,7 @@ def try_again(command_context, **kwargs):
     "empty",
     description="Push to try without scheduling any tasks.",
     parser=get_parser("empty"),
+    virtualenv_name="try",
 )
 def try_empty(command_context, **kwargs):
     """Push to try, running no builds or tests
@@ -415,6 +412,7 @@ def try_empty(command_context, **kwargs):
     "syntax",
     description="Select tasks on try using try syntax",
     parser=get_parser("syntax"),
+    virtualenv_name="try",
 )
 def try_syntax(command_context, **kwargs):
     """Push the current tree to try, with the specified syntax.
@@ -477,6 +475,7 @@ def try_syntax(command_context, **kwargs):
     "coverage",
     description="Select tasks on try using coverage data",
     parser=get_parser("coverage"),
+    virtualenv_name="try",
 )
 def try_coverage(command_context, **kwargs):
     """Select which tasks to use using coverage data."""
@@ -489,6 +488,7 @@ def try_coverage(command_context, **kwargs):
     "release",
     description="Push the current tree to try, configured for a staging release.",
     parser=get_parser("release"),
+    virtualenv_name="try",
 )
 def try_release(command_context, **kwargs):
     """Push the current tree to try, configured for a staging release."""
@@ -501,11 +501,36 @@ def try_release(command_context, **kwargs):
     "scriptworker",
     description="Run scriptworker tasks against a recent release.",
     parser=get_parser("scriptworker"),
+    virtualenv_name="try",
 )
 def try_scriptworker(command_context, **kwargs):
     """Run scriptworker tasks against a recent release.
 
     Requires VPN and shipit access.
     """
+    init(command_context)
+    return run(command_context, **kwargs)
+
+
+@SubCommand(
+    "try",
+    "compare",
+    description="Push two try jobs, one on your current commit and another on the one you specify",
+    parser=get_parser("compare"),
+    virtualenv_name="try",
+)
+def try_compare(command_context, **kwargs):
+    init(command_context)
+    return run(command_context, **kwargs)
+
+
+@SubCommand(
+    "try",
+    "perf",
+    description="Try selector for running performance tests.",
+    parser=get_parser("perf"),
+    virtualenv_name="try",
+)
+def try_perf(command_context, **kwargs):
     init(command_context)
     return run(command_context, **kwargs)

@@ -21,6 +21,10 @@
 #include "mozilla/dom/BrowserParent.h"
 #include "mozilla/dom/Text.h"
 
+class nsRange;
+
+struct CharacterDataChangeInfo;
+
 namespace mozilla {
 
 class EditorBase;
@@ -47,6 +51,8 @@ class TextComposition final {
   TextComposition(nsPresContext* aPresContext, nsINode* aNode,
                   BrowserParent* aBrowserParent,
                   WidgetCompositionEvent* aCompositionEvent);
+  TextComposition() = delete;
+  TextComposition(const TextComposition& aOther) = delete;
 
   bool Destroyed() const { return !mPresContext; }
   nsPresContext* GetPresContext() const { return mPresContext; }
@@ -77,13 +83,20 @@ class TextComposition final {
   TextRangeArray* GetRanges() const { return mRanges; }
   // Returns the widget which is proper to call NotifyIME().
   already_AddRefed<nsIWidget> GetWidget() const {
-    return mPresContext ? mPresContext->GetRootWidget() : nullptr;
+    if (!mPresContext) {
+      return nullptr;
+    }
+    return do_AddRef(mPresContext->GetRootWidget());
   }
   // Returns the tab parent which has this composition in its remote process.
   BrowserParent* GetBrowserParent() const { return mBrowserParent; }
   // Returns true if the composition is started with synthesized event which
   // came from nsDOMWindowUtils.
   bool IsSynthesizedForTests() const { return mIsSynthesizedForTests; }
+
+  // Returns the composition ID.  It must be 0 if the composition is synthesized
+  // in a content process.  Otherwise, returns 1 or larger value.
+  uint32_t Id() const { return mCompositionId; }
 
   const widget::NativeIMEContext& GetNativeIMEContext() const {
     return mNativeContext;
@@ -135,8 +148,8 @@ class TextComposition final {
    * app.  If there is no composition string the DOM tree, these return
    * unset range boundaries.
    */
-  RawRangeBoundary GetStartRef() const;
-  RawRangeBoundary GetEndRef() const;
+  RawRangeBoundary FirstIMESelectionStartRef() const;
+  RawRangeBoundary LastIMESelectionEndRef() const;
 
   /**
    * The offset of composition string in the text node.  If composition string
@@ -231,9 +244,8 @@ class TextComposition final {
   };
 
   /**
-   * OnCreateCompositionTransaction() is called by
-   * CompositionTransaction::Create() immediately after creating
-   * new CompositionTransaction instance.
+   * OnUpdateCompositionInEditor() is called when editor updates composition
+   * string in the DOM tree.
    *
    * @param aStringToInsert     The string to insert the text node actually.
    *                            This may be different from the data of
@@ -243,20 +255,12 @@ class TextComposition final {
    * @param aTextNode           The text node which includes composition string.
    * @param aOffset             The offset of composition string in aTextNode.
    */
-  void OnCreateCompositionTransaction(const nsAString& aStringToInsert,
-                                      Text* aTextNode, uint32_t aOffset) {
-    if (!mContainerTextNode) {
-      mContainerTextNode = aTextNode;
-      mCompositionStartOffsetInTextNode = aOffset;
-      NS_WARNING_ASSERTION(mCompositionStartOffsetInTextNode != UINT32_MAX,
-                           "The text node is really too long.");
-    }
-#ifdef DEBUG
-    else {
-      MOZ_ASSERT(aTextNode == mContainerTextNode);
-      MOZ_ASSERT(aOffset == mCompositionStartOffsetInTextNode);
-    }
-#endif  // #ifdef DEBUG
+  void OnUpdateCompositionInEditor(const nsAString& aStringToInsert,
+                                   Text& aTextNode, uint32_t aOffset) {
+    mContainerTextNode = &aTextNode;
+    mCompositionStartOffsetInTextNode = aOffset;
+    NS_WARNING_ASSERTION(mCompositionStartOffsetInTextNode != UINT32_MAX,
+                         "The text node is really too long.");
     mCompositionLengthInTextNode = aStringToInsert.Length();
     NS_WARNING_ASSERTION(mCompositionLengthInTextNode != UINT32_MAX,
                          "The string to insert is really too long.");
@@ -273,6 +277,13 @@ class TextComposition final {
     // mCompositionLengthInTextNode because editor needs them to restore
     // composition in new text node.
   }
+
+  /**
+   * OnCharacterDataChanged() is called when IMEContentObserver receives
+   * character data change notifications.
+   */
+  void OnCharacterDataChanged(Text& aText,
+                              const CharacterDataChangeInfo& aInfo);
 
  private:
   // Private destructor, to discourage deletion outside of Release():
@@ -317,6 +328,11 @@ class TextComposition final {
   // mString stores the composition text which has been handled by the focused
   // editor.
   nsString mString;
+
+  // Composition ID of this composition.  If this is in a parent process,
+  // this is 1 or larger.  If the composition is created for managing a
+  // composition synthesized in a content process, this is 0.
+  const uint32_t mCompositionId = 0;
 
   // Offset of the composition string from start of the editor
   uint32_t mCompositionStartOffset;
@@ -381,26 +397,6 @@ class TextComposition final {
   // mWasCompositionStringEmpty is true if the composition string was empty
   // when DispatchCompositionEvent() is called.
   bool mWasCompositionStringEmpty;
-
-  // Hide the default constructor and copy constructor.
-  TextComposition()
-      : mPresContext(nullptr),
-        mNativeContext(nullptr),
-        mCompositionStartOffset(0),
-        mTargetClauseOffsetInComposition(0),
-        mCompositionStartOffsetInTextNode(UINT32_MAX),
-        mCompositionLengthInTextNode(UINT32_MAX),
-        mIsSynthesizedForTests(false),
-        mIsComposing(false),
-        mIsEditorHandlingEvent(false),
-        mIsRequestingCommit(false),
-        mIsRequestingCancel(false),
-        mRequestedToCommitOrCancel(false),
-        mHasReceivedCommitEvent(false),
-        mWasNativeCompositionEndEventDiscarded(false),
-        mAllowControlCharacters(false),
-        mWasCompositionStringEmpty(true) {}
-  TextComposition(const TextComposition& aOther);
 
   /**
    * If we're requesting IME to commit or cancel composition, or we've already

@@ -26,8 +26,8 @@ class nsFirstLetterFrame final : public nsContainerFrame {
 
   virtual void Init(nsIContent* aContent, nsContainerFrame* aParent,
                     nsIFrame* aPrevInFlow) override;
-  virtual void SetInitialChildList(ChildListID aListID,
-                                   nsFrameList& aChildList) override;
+  void SetInitialChildList(ChildListID aListID,
+                           nsFrameList&& aChildList) override;
 #ifdef DEBUG_FRAME_DUMP
   virtual nsresult GetFrameName(nsAString& aResult) const override;
 #endif
@@ -60,8 +60,9 @@ class nsFirstLetterFrame final : public nsContainerFrame {
                       nsReflowStatus& aStatus) override;
 
   virtual bool CanContinueTextRun() const override;
-  virtual nscoord GetLogicalBaseline(
-      mozilla::WritingMode aWritingMode) const override;
+  Maybe<nscoord> GetNaturalBaselineBOffset(
+      mozilla::WritingMode aWM, BaselineSharingGroup aBaselineGroup,
+      BaselineExportContext) const override;
   virtual LogicalSides GetLogicalSkipSides() const override;
 
   // override of nsFrame method
@@ -78,6 +79,10 @@ class nsFirstLetterFrame final : public nsContainerFrame {
   void CreateContinuationForFloatingParent(nsIFrame* aChild,
                                            nsIFrame** aContinuation,
                                            bool aIsFluid);
+
+  // Whether to use tight glyph bounds for a floating first-letter frame,
+  // or "loose" bounds based on font metrics rather than individual glyphs.
+  bool UseTightBounds() const;
 
  protected:
   nscoord mBaseline;

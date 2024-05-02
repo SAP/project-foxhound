@@ -10,7 +10,7 @@
 
 mod common;
 
-use glean::Configuration;
+use glean::ConfigurationBuilder;
 
 /// Some user metrics.
 mod metrics {
@@ -62,34 +62,27 @@ fn overflowing_the_task_queue_records_telemetry() {
     let dir = tempfile::tempdir().unwrap();
     let tmpname = dir.path().to_path_buf();
 
-    let cfg = Configuration {
-        data_path: tmpname,
-        application_id: "firefox-desktop".into(),
-        upload_enabled: true,
-        max_events: None,
-        delay_ping_lifetime_io: false,
-        channel: Some("testing".into()),
-        server_endpoint: Some("invalid-test-host".into()),
-        uploader: None,
-        use_core_mps: false,
-    };
+    let cfg = ConfigurationBuilder::new(true, tmpname, "firefox-desktop")
+        .with_server_endpoint("invalid-test-host")
+        .build();
 
     // Insert a bunch of tasks to overflow the queue.
-    for _ in 0..110 {
+    for _ in 0..1010 {
         metrics::rapid_counting.add(1);
     }
 
     // Now initialize Glean
     common::initialize(cfg);
 
-    assert_eq!(Some(100), metrics::rapid_counting.test_get_value(None));
+    assert_eq!(Some(1000), metrics::rapid_counting.test_get_value(None));
 
     // The metrics counts the total number of overflowing tasks,
+    // (and the count of tasks in the queue when we overflowed: bug 1764573)
     // this might include Glean-internal tasks.
     let val = metrics::preinit_tasks_overflow
         .test_get_value(None)
         .unwrap();
-    assert!(val >= 110);
+    assert!(val >= 10);
 
     glean::shutdown();
 }

@@ -10,8 +10,6 @@
 use crate::values::computed::percentage::Percentage;
 use crate::values::computed::position::Position;
 use crate::values::computed::url::ComputedImageUrl;
-#[cfg(feature = "gecko")]
-use crate::values::computed::NumberOrPercentage;
 use crate::values::computed::{Angle, Color, Context};
 use crate::values::computed::{
     AngleOrPercentage, LengthPercentage, NonNegativeLength, NonNegativeLengthPercentage,
@@ -29,7 +27,10 @@ pub use specified::ImageRendering;
 /// Computed values for an image according to CSS-IMAGES.
 /// <https://drafts.csswg.org/css-images/#image-values>
 pub type Image =
-    generic::GenericImage<Gradient, MozImageRect, ComputedImageUrl, Color, Percentage, Resolution>;
+    generic::GenericImage<Gradient, ComputedImageUrl, Color, Percentage, Resolution>;
+
+// Images should remain small, see https://github.com/servo/servo/pull/18430
+size_of_test!(Image, 16);
 
 /// Computed values for a CSS gradient.
 /// <https://drafts.csswg.org/css-images/#gradients>
@@ -47,8 +48,6 @@ pub type Gradient = generic::GenericGradient<
 /// Computed values for CSS cross-fade
 /// <https://drafts.csswg.org/css-images-4/#cross-fade-function>
 pub type CrossFade = generic::CrossFade<Image, Color, Percentage>;
-/// A computed percentage or nothing.
-pub type PercentOrNone = generic::PercentOrNone<Percentage>;
 
 /// A computed radial gradient ending shape.
 pub type EndingShape = generic::GenericEndingShape<NonNegativeLength, NonNegativeLengthPercentage>;
@@ -77,28 +76,30 @@ impl ToComputedValue for specified::ImageSet {
         let items = self.items.to_computed_value(context);
         let dpr = context.device().device_pixel_ratio().get();
 
-        // If no item have a supported MIME type, the behavior is undefined by the standard
-        // By default, we select the first item
         let mut supported_image = false;
-        let mut selected_index = 0;
-        let mut selected_resolution = items[0].resolution.dppx();
+        let mut selected_index = std::usize::MAX;
+        let mut selected_resolution = 0.0;
 
         for (i, item) in items.iter().enumerate() {
-            // If the MIME type is not supported, we discard the ImageSetItem
             if item.has_mime_type && !context.device().is_supported_mime_type(&item.mime_type) {
+                // If the MIME type is not supported, we discard the ImageSetItem.
                 continue;
             }
 
             let candidate_resolution = item.resolution.dppx();
+            debug_assert!(candidate_resolution >= 0.0, "Resolutions should be non-negative");
+            if candidate_resolution == 0.0 {
+                // If the resolution is 0, we also treat it as an invalid image.
+                continue;
+            }
 
             // https://drafts.csswg.org/css-images-4/#image-set-notation:
             //
-            //     Make a UA-specific choice of which to load, based on whatever
-            //     criteria deemed relevant (such as the resolution of the
-            //     display, connection speed, etc).
+            //     Make a UA-specific choice of which to load, based on whatever criteria deemed
+            //     relevant (such as the resolution of the display, connection speed, etc).
             //
-            // For now, select the lowest resolution greater than display
-            // density, otherwise the greatest resolution available
+            // For now, select the lowest resolution greater than display density, otherwise the
+            // greatest resolution available.
             let better_candidate = || {
                 if selected_resolution < dpr && candidate_resolution > selected_resolution {
                     return true;
@@ -125,19 +126,11 @@ impl ToComputedValue for specified::ImageSet {
 
     fn from_computed_value(computed: &Self::ComputedValue) -> Self {
         Self {
-            selected_index: 0,
+            selected_index: std::usize::MAX,
             items: ToComputedValue::from_computed_value(&computed.items),
         }
     }
 }
-
-/// Computed values for `-moz-image-rect(...)`.
-#[cfg(feature = "gecko")]
-pub type MozImageRect = generic::GenericMozImageRect<NumberOrPercentage, ComputedImageUrl>;
-
-/// Empty enum on non-gecko
-#[cfg(not(feature = "gecko"))]
-pub type MozImageRect = specified::MozImageRect;
 
 impl generic::LineDirection for LineDirection {
     fn points_downwards(&self, compat_mode: GradientCompatMode) -> bool {
@@ -176,7 +169,7 @@ impl generic::LineDirection for LineDirection {
                     dest.write_str("to ")?;
                 }
                 x.to_css(dest)?;
-                dest.write_str(" ")?;
+                dest.write_char(' ')?;
                 y.to_css(dest)
             },
         }

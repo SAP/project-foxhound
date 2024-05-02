@@ -11,7 +11,7 @@ const TEST_URI = `data:text/html;charset=utf-8,
                   <p id="one">one</p><p id="two">two</p><p id="three">three</p>`;
 const IS_OSX = Services.appinfo.OS === "Darwin";
 
-add_task(async function() {
+add_task(async function () {
   const { inspector, toolbox } = await openInspectorForURL(TEST_URI);
 
   const body = await getNodeFront("body", inspector);
@@ -62,6 +62,11 @@ function checkPickerMode(toolbox, isOn) {
   is(
     pickerButton.classList.contains("checked"),
     isOn,
+    "The picker mode is correct"
+  );
+  is(
+    pickerButton.getAttribute("aria-pressed"),
+    isOn ? "true" : "false",
     "The picker mode is correct"
   );
 }

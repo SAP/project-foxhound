@@ -11,7 +11,7 @@ The JavaScript Debugger enables you to step through JavaScript code and examine 
   <br/>
 
 
-You can use it to debug code running locally in Firefox or running remotely, for example on an Android device running Firefox for Android. See :doc:`remote debugging <../remote_debugging/index>` to learn how to connect the debugger to a remote target.
+You can use it to debug code running locally in Firefox or running remotely, for example on an Android device running Firefox for Android. See :doc:`about debugging <../about_colon_debugging/index>` to learn how to connect the debugger to a remote target.
 
 To find your way around the debugger, here's a :doc:`quick tour of the UI<ui_tour/index>`.
 
@@ -37,7 +37,7 @@ You probably want to pause the execution of your code, in order to see what is g
 - :doc:`Set a breakpoint <how_to/set_a_breakpoint/index>`
 - :doc:`Set a conditional breakpoint <how_to/set_a_conditional_breakpoint/index>`
 - :doc:`Set an XHR breakpoint <set_an_xhr_breakpoint/index>`
-- :doc:`Set even listener <set_event_listener_breakpoints/index>`
+- :doc:`Set event listener <set_event_listener_breakpoints/index>`
 - :doc:`Break on exceptions <how_to/breaking_on_exceptions/index>`
 - :doc:`Use watchpoints for property reads and writes <how_to/use_watchpoints/index>`
 - :doc:`Break on DOM Mutation <break_on_dom_mutation/index>`
@@ -50,7 +50,7 @@ Control execution
 What can you do after execution pauses?
 
 - :doc:`Step through code <how_to/step_through_code/index>`
-- :doc:`Black box a source <how_to/ignore_a_source/index>`
+- :doc:`Ignoring sources <how_to/ignoring_sources/index>`
 - `Debug worker threads <https://developer.mozilla.org/en-US/docs/Web/API/Web_Workers_API/Using_web_workers#debugging_worker_threads>`_
 - :doc:`Debug eval sources <how_to/debug_eval_sources/index>`
 

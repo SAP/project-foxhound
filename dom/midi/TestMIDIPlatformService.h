@@ -26,6 +26,7 @@ class TestMIDIPlatformService : public MIDIPlatformService {
  public:
   TestMIDIPlatformService();
   virtual void Init() override;
+  virtual void Refresh() override;
   virtual void Open(MIDIPortParent* aPort) override;
   virtual void Stop() override;
   virtual void ScheduleSend(const nsAString& aPort) override;
@@ -37,10 +38,6 @@ class TestMIDIPlatformService : public MIDIPlatformService {
 
  private:
   virtual ~TestMIDIPlatformService();
-  // Convenience object for sending runnables to the background thread. All
-  // runnables are pushed to the background thread, and check for existence of a
-  // manager object on the thread before running.
-  nsCOMPtr<nsIThread> mBackgroundThread;
   // Port that takes test control messages
   MIDIPortInfo mControlInputPort;
   // Port that returns test status messages
@@ -53,6 +50,8 @@ class TestMIDIPlatformService : public MIDIPlatformService {
   MIDIPortInfo mAlwaysClosedTestOutputPort;
   // IO Simulation thread. Runs all instances of ProcessMessages().
   nsCOMPtr<nsIThread> mClientThread;
+  // When true calling Refresh() will add new ports.
+  bool mDoRefresh;
   // True if server has been brought up already.
   bool mIsInitialized;
 };

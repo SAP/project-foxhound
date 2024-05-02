@@ -13,7 +13,7 @@
 #include "mozilla/dom/TextTrackRegion.h"
 #include "mozilla/dom/HTMLMediaElement.h"
 #include "mozilla/dom/HTMLTrackElement.h"
-#include "nsGlobalWindow.h"
+#include "nsGlobalWindowInner.h"
 
 extern mozilla::LazyLogModule gTextTrackLog;
 
@@ -283,11 +283,9 @@ void TextTrack::DispatchAsyncTrustedEvent(const nsString& aEventName) {
     return;
   }
   RefPtr<TextTrack> self = this;
-  nsGlobalWindowInner::Cast(win)->Dispatch(
-      TaskCategory::Other,
-      NS_NewRunnableFunction(
-          "dom::TextTrack::DispatchAsyncTrustedEvent",
-          [self, aEventName]() { self->DispatchTrustedEvent(aEventName); }));
+  nsGlobalWindowInner::Cast(win)->Dispatch(NS_NewRunnableFunction(
+      "dom::TextTrack::DispatchAsyncTrustedEvent",
+      [self, aEventName]() { self->DispatchTrustedEvent(aEventName); }));
 }
 
 bool TextTrack::IsLoaded() {
@@ -298,7 +296,7 @@ bool TextTrack::IsLoaded() {
   // MediaElement.
   if (mTrackElement) {
     nsAutoString src;
-    if (!(mTrackElement->GetAttr(kNameSpaceID_None, nsGkAtoms::src, src))) {
+    if (!(mTrackElement->GetAttr(nsGkAtoms::src, src))) {
       return true;
     }
   }

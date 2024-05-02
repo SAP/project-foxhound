@@ -29,7 +29,7 @@ if CONFIG['MOZ_RUST_SIMD']:
 
 # This feature is not yet supported on all platforms, and this check needs to
 # match MOZ_CUBEB_REMOTING in CubebUtils.cpp.
-if (CONFIG['OS_ARCH'] == 'Linux' and CONFIG['OS_TARGET'] != 'Android') or CONFIG['OS_ARCH'] == 'Darwin' or (CONFIG['OS_ARCH'] == 'WINNT' and CONFIG['CPU_ARCH'] != 'aarch64'):
+if CONFIG['OS_ARCH'] == 'Linux' or CONFIG['OS_ARCH'] == 'Darwin' or CONFIG['OS_ARCH'] == 'WINNT':
     gkrust_features += ['cubeb-remoting']
 
 if CONFIG['MOZ_MEMORY']:
@@ -37,17 +37,6 @@ if CONFIG['MOZ_MEMORY']:
 
 if CONFIG['MOZ_PLACES']:
     gkrust_features += ['moz_places']
-
-if CONFIG['ENABLE_WASM_CRANELIFT']:
-    gkrust_features += ['spidermonkey_rust']
-    if CONFIG['JS_CODEGEN_X86'] or CONFIG['JS_CODEGEN_X64']:
-        gkrust_features += ['cranelift_x86']
-    elif CONFIG['JS_CODEGEN_ARM']:
-        gkrust_features += ['cranelift_arm32']
-    elif CONFIG['JS_CODEGEN_ARM64']:
-        gkrust_features += ['cranelift_arm64']
-    else:
-        gkrust_features += ['cranelift_none']
 
 if CONFIG['JS_ENABLE_SMOOSH']:
     gkrust_features += ['smoosh']
@@ -61,9 +50,6 @@ if CONFIG['MOZ_GECKO_PROFILER_PARSE_ELF']:
 if CONFIG['MOZ_BITS_DOWNLOAD']:
     gkrust_features += ['bitsdownload']
 
-if CONFIG['MOZ_NEW_XULSTORE']:
-    gkrust_features += ['new_xulstore']
-
 if CONFIG['LIBFUZZER']:
     gkrust_features += ['libfuzzer']
 
@@ -76,11 +62,25 @@ gkrust_features += ['glean_with_gecko']
 if not CONFIG['MOZILLA_OFFICIAL']:
     gkrust_features += ['glean_disable_upload']
 
+if CONFIG['OS_TARGET'] != 'Android':
+    gkrust_features += ['glean_million_queue']
+
 if CONFIG['MOZ_ENABLE_DBUS']:
     gkrust_features += ['with_dbus']
 
-if CONFIG["MOZ_CRASHREPORTER"] and CONFIG['MOZ_OXIDIZED_BREAKPAD']:
-    gkrust_features += ['oxidized_breakpad']
+if CONFIG["MOZ_CRASHREPORTER"]:
+    gkrust_features += ['crashreporter']
+    if CONFIG['MOZ_OXIDIZED_BREAKPAD']:
+        gkrust_features += ['oxidized_breakpad']
 
 if CONFIG["MOZ_WEBMIDI_MIDIR_IMPL"]:
     gkrust_features += ['webmidi_midir_impl']
+
+if CONFIG["MOZ_UNIFFI_FIXTURES"]:
+    gkrust_features += ['uniffi_fixtures']
+
+if CONFIG["MOZ_ICU4X"]:
+    gkrust_features += ['icu4x']
+
+# This must remain last.
+gkrust_features = ["gkrust-shared/%s" % f for f in gkrust_features]

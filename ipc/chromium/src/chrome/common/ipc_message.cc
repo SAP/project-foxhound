@@ -7,7 +7,6 @@
 #include "chrome/common/ipc_message.h"
 
 #include "base/logging.h"
-#include "build/build_config.h"
 #include "mojo/core/ports/event.h"
 
 #include <utility>
@@ -22,13 +21,6 @@ const mojo::core::ports::UserMessage::TypeInfo Message::kUserMessageTypeInfo{};
 
 Message::~Message() { MOZ_COUNT_DTOR(IPC::Message); }
 
-Message::Message()
-    : UserMessage(&kUserMessageTypeInfo), Pickle(sizeof(Header)) {
-  MOZ_COUNT_CTOR(IPC::Message);
-  header()->routing = header()->type = 0;
-  header()->num_handles = 0;
-}
-
 Message::Message(int32_t routing_id, msgid_t type, uint32_t segment_capacity,
                  HeaderFlags flags)
     : UserMessage(&kUserMessageTypeInfo),
@@ -40,7 +32,7 @@ Message::Message(int32_t routing_id, msgid_t type, uint32_t segment_capacity,
   header()->num_handles = 0;
   header()->txid = -1;
   header()->seqno = 0;
-#if defined(OS_MACOSX)
+#if defined(XP_DARWIN)
   header()->cookie = 0;
   header()->num_send_rights = 0;
 #endif
@@ -53,41 +45,21 @@ Message::Message(const char* data, int data_len)
   MOZ_COUNT_CTOR(IPC::Message);
 }
 
-Message::Message(Message&& other)
-    : UserMessage(&kUserMessageTypeInfo),
-      Pickle(std::move(other)),
-      attached_handles_(std::move(other.attached_handles_)),
-      attached_ports_(std::move(other.attached_ports_))
-#if defined(OS_MACOSX)
-      ,
-      attached_send_rights_(std::move(other.attached_send_rights_))
-#endif
-{
-  MOZ_COUNT_CTOR(IPC::Message);
+/*static*/ mozilla::UniquePtr<Message> Message::IPDLMessage(
+    int32_t routing_id, msgid_t type, uint32_t segment_capacity,
+    HeaderFlags flags) {
+  return mozilla::MakeUnique<Message>(routing_id, type, segment_capacity,
+                                      flags);
 }
 
-/*static*/ Message* Message::IPDLMessage(int32_t routing_id, msgid_t type,
-                                         HeaderFlags flags) {
-  return new Message(routing_id, type, 0, flags);
-}
-
-/*static*/ Message* Message::ForSyncDispatchError(NestedLevel level) {
-  auto* m = new Message(0, 0, 0, HeaderFlags(level));
+/*static*/ mozilla::UniquePtr<Message> Message::ForSyncDispatchError(
+    NestedLevel level) {
+  auto m = mozilla::MakeUnique<Message>(0, 0, 0, HeaderFlags(level));
   auto& flags = m->header()->flags;
   flags.SetSync();
   flags.SetReply();
   flags.SetReplyError();
   return m;
-}
-
-Message& Message::operator=(Message&& other) {
-  *static_cast<Pickle*>(this) = std::move(other);
-  attached_handles_ = std::move(other.attached_handles_);
-  attached_ports_ = std::move(other.attached_ports_);
-#if defined(OS_MACOSX)
-  attached_send_rights_ = std::move(other.attached_send_rights_);
-#endif
-  return *this;
 }
 
 void Message::WriteFooter(const void* data, uint32_t data_len) {
@@ -185,7 +157,7 @@ void Message::SetAttachedPorts(nsTArray<mozilla::ipc::ScopedPort> ports) {
   attached_ports_ = std::move(ports);
 }
 
-#if defined(OS_MACOSX)
+#if defined(XP_DARWIN)
 bool Message::WriteMachSendRight(mozilla::UniqueMachSendRight port) {
   uint32_t index = attached_send_rights_.Length();
   WriteUInt32(index);

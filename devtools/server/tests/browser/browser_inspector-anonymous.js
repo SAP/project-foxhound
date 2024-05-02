@@ -5,7 +5,11 @@
 
 // Test for Bug 777674
 
-add_task(async function() {
+add_task(async function () {
+  await SpecialPowers.pushPermissions([
+    { type: "allowXULXBL", allow: true, context: MAIN_DOMAIN },
+  ]);
+
   const { walker } = await initInspectorFront(
     MAIN_DOMAIN + "inspector-traversal-data.html"
   );
@@ -21,7 +25,7 @@ add_task(async function() {
 
 async function testXBLAnonymousInHTMLDocument(walker) {
   info("Testing XBL anonymous in an HTML document.");
-  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], function() {
+  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], function () {
     const XUL_NS =
       "http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul";
     const rawToolbarbutton = content.document.createElementNS(
@@ -57,22 +61,23 @@ async function testNativeAnonymousStartingNode(walker) {
   await SpecialPowers.spawn(
     gBrowser.selectedBrowser,
     [[walker.actorID]],
-    async function(actorID) {
-      const { require } = ChromeUtils.import(
-        "resource://devtools/shared/loader/Loader.jsm"
+    async function (actorID) {
+      const { require } = ChromeUtils.importESModule(
+        "resource://devtools/shared/loader/Loader.sys.mjs"
       );
-      const { DevToolsServer } = require("devtools/server/devtools-server");
+      const {
+        DevToolsServer,
+      } = require("resource://devtools/server/devtools-server.js");
 
       const {
         DocumentWalker,
-      } = require("devtools/server/actors/inspector/document-walker");
-      const nodeFilterConstants = require("devtools/shared/dom-node-filter-constants");
+      } = require("resource://devtools/server/actors/inspector/document-walker.js");
+      const nodeFilterConstants = require("resource://devtools/shared/dom-node-filter-constants.js");
 
       const docwalker = new DocumentWalker(
         content.document.querySelector("select"),
         content,
         {
-          whatToShow: nodeFilterConstants.SHOW_ALL,
           filter: () => {
             return nodeFilterConstants.FILTER_ACCEPT;
           },

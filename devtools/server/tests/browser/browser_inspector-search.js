@@ -13,7 +13,7 @@ Services.scriptloader.loadSubScript(
 // coming back as expected.
 // See also test_inspector-search-front.html.
 
-add_task(async function() {
+add_task(async function () {
   const { walker } = await initInspectorFront(
     MAIN_DOMAIN + "inspector-search-data.html"
   );
@@ -21,14 +21,16 @@ add_task(async function() {
   await SpecialPowers.spawn(
     gBrowser.selectedBrowser,
     [[walker.actorID]],
-    async function(actorID) {
-      const { require } = ChromeUtils.import(
-        "resource://devtools/shared/loader/Loader.jsm"
+    async function (actorID) {
+      const { require } = ChromeUtils.importESModule(
+        "resource://devtools/shared/loader/Loader.sys.mjs"
       );
-      const { DevToolsServer } = require("devtools/server/devtools-server");
+      const {
+        DevToolsServer,
+      } = require("resource://devtools/server/devtools-server.js");
       const {
         DocumentWalker: _documentWalker,
-      } = require("devtools/server/actors/inspector/document-walker");
+      } = require("resource://devtools/server/actors/inspector/document-walker.js");
 
       // Convert actorID to current compartment string otherwise
       // searchAllConnectionsForActor is confused and won't find the actor.
@@ -38,7 +40,7 @@ add_task(async function() {
       const {
         WalkerSearch,
         WalkerIndex,
-      } = require("devtools/server/actors/utils/walker-search");
+      } = require("resource://devtools/server/actors/utils/walker-search.js");
 
       info("Testing basic index APIs exist.");
       const index = new WalkerIndex(walkerActor);
@@ -130,8 +132,7 @@ add_task(async function() {
           ],
         },
         {
-          desc:
-            "Search with multiple matches in a single tag expecting a single result",
+          desc: "Search with multiple matches in a single tag expecting a single result",
           search: "💩",
           expected: [
             { node: inspectee.getElementById("💩"), type: "attributeValue" },

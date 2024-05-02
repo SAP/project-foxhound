@@ -3,6 +3,7 @@
  * http://creativecommons.org/publicdomain/zero/1.0/
  */
 
+/* exported testGenerator */
 var testGenerator = testSteps();
 
 function* testSteps() {
@@ -24,22 +25,22 @@ function* testSteps() {
 
   request = objectStore.put(testString.value);
   request.onerror = errorHandler;
-  request.onsuccess = function(event) {
+  request.onsuccess = function (event) {
     testString.key = event.target.result;
     request = objectStore.get(testString.key);
     request.onerror = errorHandler;
-    request.onsuccess = function(event) {
+    request.onsuccess = function (event) {
       is(event.target.result, testString.value, "Got the right value");
     };
   };
 
   request = objectStore.put(testInt.value);
   request.onerror = errorHandler;
-  request.onsuccess = function(event) {
+  request.onsuccess = function (event) {
     testInt.key = event.target.result;
     request = objectStore.get(testInt.key);
     request.onerror = errorHandler;
-    request.onsuccess = function(event) {
+    request.onsuccess = function (event) {
       is(event.target.result, testInt.value, "Got the right value");
     };
   };

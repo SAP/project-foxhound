@@ -3,12 +3,11 @@
 // Tests that unhandled promise rejections generate the appropriate
 // console messages.
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { AddonTestUtils } = ChromeUtils.import(
-  "resource://testing-common/AddonTestUtils.jsm"
+const { AddonTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/AddonTestUtils.sys.mjs"
 );
-const { PromiseTestUtils } = ChromeUtils.import(
-  "resource://testing-common/PromiseTestUtils.jsm"
+const { PromiseTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/PromiseTestUtils.sys.mjs"
 );
 
 PromiseTestUtils.expectUncaughtRejection(/could not be cloned/);
@@ -43,7 +42,7 @@ add_task(async function test_unhandled_dom_exception() {
   let messages = await getSandboxMessages(
     sandbox,
     `new Promise(() => {
-      new StructuredCloneHolder(() => {});
+      new StructuredCloneHolder("", "", () => {});
     });`
   );
 
@@ -55,7 +54,7 @@ add_task(async function test_unhandled_dom_exception() {
   equal(msg.lineNumber, 2, "Got expected line number");
   equal(
     msg.errorMessage,
-    "DataCloneError: The object could not be cloned.",
+    "DataCloneError: Function object could not be cloned.",
     "Got expected error message"
   );
 });

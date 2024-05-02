@@ -1,28 +1,23 @@
-// assert is available to chrome scripts loaded via SpecialPowers.loadChromeScript.
-/* global assert */
-/* eslint-env mozilla/frame-script */
+/* eslint-env mozilla/chrome-script */
 
 "use strict";
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { FormAutofill } = ChromeUtils.import(
-  "resource://autofill/FormAutofill.jsm"
+const { FormAutofill } = ChromeUtils.importESModule(
+  "resource://autofill/FormAutofill.sys.mjs"
 );
-const { FormAutofillUtils } = ChromeUtils.import(
-  "resource://autofill/FormAutofillUtils.jsm"
+const { FormAutofillUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/shared/FormAutofillUtils.sys.mjs"
 );
-const { OSKeyStoreTestUtils } = ChromeUtils.import(
-  "resource://testing-common/OSKeyStoreTestUtils.jsm"
-);
-
-let { formAutofillStorage } = ChromeUtils.import(
-  "resource://autofill/FormAutofillStorage.jsm"
+const { OSKeyStoreTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/OSKeyStoreTestUtils.sys.mjs"
 );
 
-const {
-  ADDRESSES_COLLECTION_NAME,
-  CREDITCARDS_COLLECTION_NAME,
-} = FormAutofillUtils;
+let { formAutofillStorage } = ChromeUtils.importESModule(
+  "resource://autofill/FormAutofillStorage.sys.mjs"
+);
+
+const { ADDRESSES_COLLECTION_NAME, CREDITCARDS_COLLECTION_NAME } =
+  FormAutofillUtils;
 
 let destroyed = false;
 
@@ -36,13 +31,15 @@ var ParentUtils = {
   },
 
   _getRecords(collectionName) {
-    return this.getFormAutofillActor().receiveMessage({
-      name: "FormAutofill:GetRecords",
-      data: {
-        searchString: "",
-        collectionName,
-      },
-    });
+    return this.getFormAutofillActor()
+      .receiveMessage({
+        name: "FormAutofill:GetRecords",
+        data: {
+          searchString: "",
+          collectionName,
+        },
+      })
+      .then(result => result.records);
   },
 
   async _storageChangeObserved({

@@ -15,17 +15,17 @@
 #include <vector>
 
 #include "absl/memory/memory.h"
-#include "rtc_base/async_socket.h"
 #include "rtc_base/gunit.h"
+#include "rtc_base/socket.h"
 #include "test/gmock.h"
 
 namespace rtc {
 namespace {
 
-class MockAsyncSocket : public AsyncSocket {
+class MockAsyncSocket : public Socket {
  public:
   virtual ~MockAsyncSocket() = default;
-  MOCK_METHOD(AsyncSocket*, Accept, (SocketAddress*), (override));
+  MOCK_METHOD(Socket*, Accept, (SocketAddress*), (override));
   MOCK_METHOD(SocketAddress, GetLocalAddress, (), (const, override));
   MOCK_METHOD(SocketAddress, GetRemoteAddress, (), (const, override));
   MOCK_METHOD(int, Bind, (const SocketAddress&), (override));
@@ -84,15 +84,17 @@ TEST(OpenSSLAdapterTest, TestTransformAlpnProtocols) {
 // Verifies that SSLStart works when OpenSSLAdapter is started in standalone
 // mode.
 TEST(OpenSSLAdapterTest, TestBeginSSLBeforeConnection) {
-  AsyncSocket* async_socket = new MockAsyncSocket();
+  rtc::AutoThread main_thread;
+  Socket* async_socket = new MockAsyncSocket();
   OpenSSLAdapter adapter(async_socket);
   EXPECT_EQ(adapter.StartSSL("webrtc.org"), 0);
 }
 
 // Verifies that the adapter factory can create new adapters.
 TEST(OpenSSLAdapterFactoryTest, CreateSingleOpenSSLAdapter) {
+  rtc::AutoThread main_thread;
   OpenSSLAdapterFactory adapter_factory;
-  AsyncSocket* async_socket = new MockAsyncSocket();
+  Socket* async_socket = new MockAsyncSocket();
   auto simple_adapter = std::unique_ptr<OpenSSLAdapter>(
       adapter_factory.CreateAdapter(async_socket));
   EXPECT_NE(simple_adapter, nullptr);
@@ -101,16 +103,32 @@ TEST(OpenSSLAdapterFactoryTest, CreateSingleOpenSSLAdapter) {
 // Verifies that setting a custom verifier still allows for adapters to be
 // created.
 TEST(OpenSSLAdapterFactoryTest, CreateWorksWithCustomVerifier) {
+  rtc::AutoThread main_thread;
   MockCertVerifier* mock_verifier = new MockCertVerifier();
   EXPECT_CALL(*mock_verifier, Verify(_)).WillRepeatedly(Return(true));
   auto cert_verifier = std::unique_ptr<SSLCertificateVerifier>(mock_verifier);
 
   OpenSSLAdapterFactory adapter_factory;
   adapter_factory.SetCertVerifier(cert_verifier.get());
-  AsyncSocket* async_socket = new MockAsyncSocket();
+  Socket* async_socket = new MockAsyncSocket();
   auto simple_adapter = std::unique_ptr<OpenSSLAdapter>(
       adapter_factory.CreateAdapter(async_socket));
   EXPECT_NE(simple_adapter, nullptr);
+}
+
+TEST(StrJoinTest, SingleElement) {
+  EXPECT_EQ(webrtc_openssl_adapter_internal::StrJoin({"a"}, ','), "a");
+}
+
+TEST(StrJoinTest, TwoElements) {
+  EXPECT_EQ(webrtc_openssl_adapter_internal::StrJoin({"first", "second"}, ':'),
+            "first:second");
+}
+
+TEST(StrJoinTest, WithEmptyElement) {
+  EXPECT_EQ(
+      webrtc_openssl_adapter_internal::StrJoin({"first", "", "second"}, ':'),
+      "first::second");
 }
 
 }  // namespace rtc

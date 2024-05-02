@@ -5,10 +5,12 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 EXTRA_JS_MODULES.addons += [
-    "AddonRepository.jsm",
-    "AddonSettings.jsm",
-    "AddonUpdateChecker.jsm",
-    "ProductAddonChecker.jsm",
+    "AddonRepository.sys.mjs",
+    "AddonSettings.sys.mjs",
+    "AddonUpdateChecker.sys.mjs",
+    "crypto-utils.sys.mjs",
+    "ProductAddonChecker.sys.mjs",
+    "siteperms-addon-utils.sys.mjs",
     "XPIDatabase.jsm",
     "XPIInstall.jsm",
     "XPIProvider.jsm",
@@ -16,9 +18,11 @@ EXTRA_JS_MODULES.addons += [
 
 if CONFIG["MOZ_WIDGET_TOOLKIT"] != "android":
     EXTRA_JS_MODULES.addons += [
-        "GMPProvider.jsm",
+        "GMPProvider.sys.mjs",
+        ## TODO consider extending it to mobile builds too (See Bug 1790084).
+        "SitePermsAddonProvider.sys.mjs",
     ]
 
 TESTING_JS_MODULES += [
-    "AddonTestUtils.jsm",
+    "AddonTestUtils.sys.mjs",
 ]

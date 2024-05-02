@@ -2,25 +2,22 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
-);
-XPCOMUtils.defineLazyGlobalGetters(this, ["URL"]);
-
-const { actionTypes: at } = ChromeUtils.import(
-  "resource://activity-stream/common/Actions.jsm"
+const { actionTypes: at } = ChromeUtils.importESModule(
+  "resource://activity-stream/common/Actions.sys.mjs"
 );
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  DownloadsCommon: "resource:///modules/DownloadsCommon.jsm",
-  DownloadsViewUI: "resource:///modules/DownloadsViewUI.jsm",
-  FileUtils: "resource://gre/modules/FileUtils.jsm",
-  NewTabUtils: "resource://gre/modules/NewTabUtils.jsm",
+const lazy = {};
+
+ChromeUtils.defineESModuleGetters(lazy, {
+  DownloadsCommon: "resource:///modules/DownloadsCommon.sys.mjs",
+  DownloadsViewUI: "resource:///modules/DownloadsViewUI.sys.mjs",
+  FileUtils: "resource://gre/modules/FileUtils.sys.mjs",
+  NewTabUtils: "resource://gre/modules/NewTabUtils.sys.mjs",
 });
 
 const DOWNLOAD_CHANGED_DELAY_TIME = 1000; // time in ms to delay timer for downloads changed events
 
-this.DownloadsManager = class DownloadsManager {
+class DownloadsManager {
   constructor(store) {
     this._downloadData = null;
     this._store = null;
@@ -40,10 +37,10 @@ this.DownloadsManager = class DownloadsManager {
       hostname: new URL(download.source.url).hostname,
       url: download.source.url,
       path: download.target.path,
-      title: DownloadsViewUI.getDisplayName(download),
+      title: lazy.DownloadsViewUI.getDisplayName(download),
       description:
-        DownloadsViewUI.getSizeWithUnits(download) ||
-        DownloadsCommon.strings.sizeUnknown,
+        lazy.DownloadsViewUI.getSizeWithUnits(download) ||
+        lazy.DownloadsCommon.strings.sizeUnknown,
       referrer,
       date_added: download.endTime,
     };
@@ -51,7 +48,7 @@ this.DownloadsManager = class DownloadsManager {
 
   init(store) {
     this._store = store;
-    this._downloadData = DownloadsCommon.getData(
+    this._downloadData = lazy.DownloadsCommon.getData(
       null /* null for non-private downloads */,
       true,
       false,
@@ -106,7 +103,7 @@ this.DownloadsManager = class DownloadsManager {
       // Ignore blocked links, but allow long (data:) uris to avoid high CPU
       if (
         download.source.url.length < 10000 &&
-        NewTabUtils.blockedLinks.isBlocked(download.source)
+        lazy.NewTabUtils.blockedLinks.isBlocked(download.source)
       ) {
         continue;
       }
@@ -156,18 +153,18 @@ this.DownloadsManager = class DownloadsManager {
     switch (action.type) {
       case at.COPY_DOWNLOAD_LINK:
         doDownloadAction(download => {
-          DownloadsCommon.copyDownloadLink(download);
+          lazy.DownloadsCommon.copyDownloadLink(download);
         });
         break;
       case at.REMOVE_DOWNLOAD_FILE:
         doDownloadAction(download => {
-          DownloadsCommon.deleteDownload(download).catch(Cu.reportError);
+          lazy.DownloadsCommon.deleteDownload(download).catch(console.error);
         });
         break;
       case at.SHOW_DOWNLOAD_FILE:
         doDownloadAction(download => {
-          DownloadsCommon.showDownloadedFile(
-            new FileUtils.File(download.target.path)
+          lazy.DownloadsCommon.showDownloadedFile(
+            new lazy.FileUtils.File(download.target.path)
           );
         });
         break;
@@ -176,7 +173,7 @@ this.DownloadsManager = class DownloadsManager {
         const openWhere =
           action.data.event && win.whereToOpenLink(action.data.event);
         doDownloadAction(download => {
-          DownloadsCommon.openDownload(download, {
+          lazy.DownloadsCommon.openDownload(download, {
             // Replace "current" or unknown value with "tab" as the default behavior
             // for opening downloads when handled internally
             openWhere: ["window", "tab", "tabshifted"].includes(openWhere)
@@ -190,5 +187,5 @@ this.DownloadsManager = class DownloadsManager {
         break;
     }
   }
-};
-this.EXPORTED_SYMBOLS = ["DownloadsManager"];
+}
+const EXPORTED_SYMBOLS = ["DownloadsManager"];

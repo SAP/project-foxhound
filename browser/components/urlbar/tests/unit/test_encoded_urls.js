@@ -83,6 +83,8 @@ add_task(async function test_encoded_path() {
   });
   await check_results({
     context,
+    autofilled: url,
+    completed: url,
     matches: [
       makeVisitResult(context, {
         uri: url,
@@ -90,8 +92,6 @@ add_task(async function test_encoded_path() {
         heuristic: true,
       }),
     ],
-    autofilled: url,
-    completed: url,
   });
   await cleanupPlaces();
 });

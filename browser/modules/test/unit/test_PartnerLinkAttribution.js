@@ -4,12 +4,14 @@
 
 "use strict";
 
-const {
-  PartnerLinkAttribution,
-  CONTEXTUAL_SERVICES_PING_TYPES,
-} = ChromeUtils.import("resource:///modules/PartnerLinkAttribution.jsm");
+const { PartnerLinkAttribution, CONTEXTUAL_SERVICES_PING_TYPES } =
+  ChromeUtils.importESModule(
+    "resource:///modules/PartnerLinkAttribution.sys.mjs"
+  );
 
-const { sinon } = ChromeUtils.import("resource://testing-common/Sinon.jsm");
+const { sinon } = ChromeUtils.importESModule(
+  "resource://testing-common/Sinon.sys.mjs"
+);
 
 const FAKE_PING = { tile_id: 1, position: 1 };
 

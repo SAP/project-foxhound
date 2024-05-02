@@ -9,10 +9,13 @@
 import("../../../webrtc.gni")
 
 rtc_library("base64") {
-  visibility = [ "*" ]
   sources = [
     "base64.cc",
     "base64.h",
   ]
-  deps = [ "../../system:rtc_export" ]
+  deps = [
+    "../..:checks",
+    "../../system:rtc_export",
+  ]
+  absl_deps = [ "//third_party/abseil-cpp/absl/strings" ]
 }

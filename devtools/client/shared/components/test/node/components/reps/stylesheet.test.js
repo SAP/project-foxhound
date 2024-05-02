@@ -8,15 +8,15 @@ const { shallow } = require("enzyme");
 const {
   REPS,
   getRep,
-} = require("devtools/client/shared/components/reps/reps/rep");
+} = require("resource://devtools/client/shared/components/reps/reps/rep.js");
 const { StyleSheet, Rep } = REPS;
-const stubs = require("devtools/client/shared/components/test/node/stubs/reps/stylesheet");
+const stubs = require("resource://devtools/client/shared/components/test/node/stubs/reps/stylesheet.js");
 const {
   expectActorAttribute,
-} = require("devtools/client/shared/components/test/node/components/reps/test-helpers");
+} = require("resource://devtools/client/shared/components/test/node/components/reps/test-helpers.js");
 
 describe("Test StyleSheet", () => {
-  const stub = stubs.get("StyleSheet");
+  const stub = stubs.get("StyleSheet")._grip;
 
   it("selects the StyleSheet Rep", () => {
     expect(getRep(stub)).toEqual(StyleSheet.rep);

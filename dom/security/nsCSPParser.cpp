@@ -5,6 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/ArrayUtils.h"
+#include "mozilla/TextUtils.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/StaticPrefs_security.h"
@@ -39,22 +40,26 @@ static const uint32_t kHashSourceValidFnsLen = 3;
 /* ===== nsCSPParser ==================== */
 
 nsCSPParser::nsCSPParser(policyTokens& aTokens, nsIURI* aSelfURI,
-                         nsCSPContext* aCSPContext, bool aDeliveredViaMetaTag)
+                         nsCSPContext* aCSPContext, bool aDeliveredViaMetaTag,
+                         bool aSuppressLogMessages)
     : mCurChar(nullptr),
       mEndChar(nullptr),
       mHasHashOrNonce(false),
+      mHasAnyUnsafeEval(false),
       mStrictDynamic(false),
       mUnsafeInlineKeywordSrc(nullptr),
       mChildSrc(nullptr),
       mFrameSrc(nullptr),
       mWorkerSrc(nullptr),
       mScriptSrc(nullptr),
+      mStyleSrc(nullptr),
       mParsingFrameAncestorsDir(false),
       mTokens(aTokens.Clone()),
       mSelfURI(aSelfURI),
       mPolicy(nullptr),
       mCSPContext(aCSPContext),
-      mDeliveredViaMetaTag(aDeliveredViaMetaTag) {
+      mDeliveredViaMetaTag(aDeliveredViaMetaTag),
+      mSuppressLogMessages(aSuppressLogMessages) {
   CSPPARSERLOG(("nsCSPParser::nsCSPParser"));
 }
 
@@ -158,6 +163,11 @@ void nsCSPParser::logWarningErrorToConsole(uint32_t aSeverityFlag,
                                            const char* aProperty,
                                            const nsTArray<nsString>& aParams) {
   CSPPARSERLOG(("nsCSPParser::logWarningErrorToConsole: %s", aProperty));
+
+  if (mSuppressLogMessages) {
+    return;
+  }
+
   // send console messages off to the context and let the context
   // deal with it (potentially messages need to be queued up)
   mCSPContext->logToConsole(aProperty, aParams,
@@ -381,7 +391,8 @@ nsCSPHostSrc* nsCSPParser::host() {
   return new nsCSPHostSrc(mCurValue);
 }
 
-// keyword-source = "'self'" / "'unsafe-inline'" / "'unsafe-eval'"
+// keyword-source = "'self'" / "'unsafe-inline'" / "'unsafe-eval'" /
+// "'wasm-unsafe-eval'"
 nsCSPBaseSrc* nsCSPParser::keywordSource() {
   CSPPARSERLOG(("nsCSPParser::keywordSource, mCurToken: %s, mCurValue: %s",
                 NS_ConvertUTF16toUTF8(mCurToken).get(),
@@ -399,23 +410,23 @@ nsCSPBaseSrc* nsCSPParser::keywordSource() {
 
   if (CSP_IsKeyword(mCurToken, CSP_STRICT_DYNAMIC)) {
     if (!CSP_IsDirective(mCurDir[0],
-                         nsIContentSecurityPolicy::SCRIPT_SRC_DIRECTIVE)) {
-      // Todo: Enforce 'strict-dynamic' within default-src; see Bug 1313937
+                         nsIContentSecurityPolicy::SCRIPT_SRC_DIRECTIVE) &&
+        !CSP_IsDirective(mCurDir[0],
+                         nsIContentSecurityPolicy::SCRIPT_SRC_ELEM_DIRECTIVE) &&
+        !CSP_IsDirective(mCurDir[0],
+                         nsIContentSecurityPolicy::SCRIPT_SRC_ATTR_DIRECTIVE) &&
+        !CSP_IsDirective(mCurDir[0],
+                         nsIContentSecurityPolicy::DEFAULT_SRC_DIRECTIVE)) {
       AutoTArray<nsString, 1> params = {u"strict-dynamic"_ns};
       logWarningErrorToConsole(nsIScriptError::warningFlag,
                                "ignoringStrictDynamic", params);
-      return nullptr;
     }
+
     mStrictDynamic = true;
     return new nsCSPKeywordSrc(CSP_UTF16KeywordToEnum(mCurToken));
   }
 
   if (CSP_IsKeyword(mCurToken, CSP_UNSAFE_INLINE)) {
-    nsWeakPtr ctx = mCSPContext->GetLoadingContext();
-    nsCOMPtr<Document> doc = do_QueryReferent(ctx);
-    if (doc) {
-      doc->SetHasUnsafeInlineCSP(true);
-    }
     // make sure script-src only contains 'unsafe-inline' once;
     // ignore duplicates and log warning
     if (mUnsafeInlineKeywordSrc) {
@@ -432,11 +443,18 @@ nsCSPBaseSrc* nsCSPParser::keywordSource() {
   }
 
   if (CSP_IsKeyword(mCurToken, CSP_UNSAFE_EVAL)) {
-    nsWeakPtr ctx = mCSPContext->GetLoadingContext();
-    nsCOMPtr<Document> doc = do_QueryReferent(ctx);
-    if (doc) {
-      doc->SetHasUnsafeEvalCSP(true);
-    }
+    mHasAnyUnsafeEval = true;
+    return new nsCSPKeywordSrc(CSP_UTF16KeywordToEnum(mCurToken));
+  }
+
+  if (StaticPrefs::security_csp_wasm_unsafe_eval_enabled() &&
+      CSP_IsKeyword(mCurToken, CSP_WASM_UNSAFE_EVAL)) {
+    mHasAnyUnsafeEval = true;
+    return new nsCSPKeywordSrc(CSP_UTF16KeywordToEnum(mCurToken));
+  }
+
+  if (StaticPrefs::security_csp_unsafe_hashes_enabled() &&
+      CSP_IsKeyword(mCurToken, CSP_UNSAFE_HASHES)) {
     return new nsCSPKeywordSrc(CSP_UTF16KeywordToEnum(mCurToken));
   }
 
@@ -845,6 +863,20 @@ nsCSPDirective* nsCSPParser::directiveName() {
     return nullptr;
   }
 
+  // script-src-attr and script-scr-elem might have been disabled.
+  // Similarly style-src-{attr, elem}.
+  if (((directive == nsIContentSecurityPolicy::SCRIPT_SRC_ATTR_DIRECTIVE ||
+        directive == nsIContentSecurityPolicy::SCRIPT_SRC_ELEM_DIRECTIVE) &&
+       !StaticPrefs::security_csp_script_src_attr_elem_enabled()) ||
+      ((directive == nsIContentSecurityPolicy::STYLE_SRC_ATTR_DIRECTIVE ||
+        directive == nsIContentSecurityPolicy::STYLE_SRC_ELEM_DIRECTIVE) &&
+       !StaticPrefs::security_csp_style_src_attr_elem_enabled())) {
+    AutoTArray<nsString, 1> params = {mCurToken};
+    logWarningErrorToConsole(nsIScriptError::warningFlag,
+                             "notSupportingDirective", params);
+    return nullptr;
+  }
+
   // Bug 1529068: Implement navigate-to directive.
   // Once all corner cases are resolved we can remove that special
   // if-handling here and let the parser just fall through to
@@ -882,6 +914,22 @@ nsCSPDirective* nsCSPParser::directiveName() {
 
   // special case handling for block-all-mixed-content
   if (directive == nsIContentSecurityPolicy::BLOCK_ALL_MIXED_CONTENT) {
+    // If mixed content upgrade is enabled for all types block-all-mixed-content
+    // is obsolete
+    if (mozilla::StaticPrefs::
+            security_mixed_content_upgrade_display_content() &&
+        mozilla::StaticPrefs::
+            security_mixed_content_upgrade_display_content_image() &&
+        mozilla::StaticPrefs::
+            security_mixed_content_upgrade_display_content_audio() &&
+        mozilla::StaticPrefs::
+            security_mixed_content_upgrade_display_content_video()) {
+      // log to the console that if mixed content display upgrading is enabled
+      // block-all-mixed-content is obsolete.
+      AutoTArray<nsString, 1> params = {mCurToken};
+      logWarningErrorToConsole(nsIScriptError::warningFlag,
+                               "obsoleteBlockAllMixedContent", params);
+    }
     return new nsBlockAllMixedContentDirective(directive);
   }
 
@@ -911,10 +959,18 @@ nsCSPDirective* nsCSPParser::directiveName() {
   }
 
   // if we have a script-src, cache it as a fallback for worker-src
-  // in case child-src is not present
+  // in case child-src is not present. It is also used as a fallback for
+  // script-src-elem and script-src-attr.
   if (directive == nsIContentSecurityPolicy::SCRIPT_SRC_DIRECTIVE) {
     mScriptSrc = new nsCSPScriptSrcDirective(directive);
     return mScriptSrc;
+  }
+
+  // If we have a style-src, cache it as a fallback for style-src-elem and
+  // style-src-attr.
+  if (directive == nsIContentSecurityPolicy::STYLE_SRC_DIRECTIVE) {
+    mStyleSrc = new nsCSPStyleSrcDirective(directive);
+    return mStyleSrc;
   }
 
   return new nsCSPDirective(directive);
@@ -931,8 +987,8 @@ void nsCSPParser::directive() {
                 NS_ConvertUTF16toUTF8(mCurValue).get()));
 
   // Make sure that the directive-srcs-array contains at least
-  // one directive and one src.
-  if (mCurDir.Length() < 1) {
+  // one directive.
+  if (mCurDir.Length() == 0) {
     AutoTArray<nsString, 1> params = {u"directive missing"_ns};
     logWarningErrorToConsole(nsIScriptError::warningFlag,
                              "failedToParseUnrecognizedSource", params);
@@ -997,6 +1053,7 @@ void nsCSPParser::directive() {
   // make sure to reset cache variables when trying to invalidate unsafe-inline;
   // unsafe-inline might not only appear in script-src, but also in default-src
   mHasHashOrNonce = false;
+  mHasAnyUnsafeEval = false;
   mStrictDynamic = false;
   mUnsafeInlineKeywordSrc = nullptr;
 
@@ -1014,33 +1071,26 @@ void nsCSPParser::directive() {
     srcs.InsertElementAt(0, keyword);
   }
 
-  // If policy contains 'strict-dynamic' invalidate all srcs within script-src.
-  if (mStrictDynamic) {
-    MOZ_ASSERT(cspDir->equals(nsIContentSecurityPolicy::SCRIPT_SRC_DIRECTIVE),
-               "strict-dynamic only allowed within script-src");
+  // If policy contains 'strict-dynamic' warn about ignored sources.
+  if (mStrictDynamic &&
+      !CSP_IsDirective(mCurDir[0],
+                       nsIContentSecurityPolicy::DEFAULT_SRC_DIRECTIVE)) {
     for (uint32_t i = 0; i < srcs.Length(); i++) {
-      // Please note that nsCSPNonceSrc as well as nsCSPHashSrc overwrite
-      // invalidate(), so it's fine to just call invalidate() on all srcs.
-      // Please also note that nsCSPKeywordSrc() can not be invalidated and
-      // always returns false unless the keyword is 'strict-dynamic' in which
-      // case we allow the load if the script is not parser created!
-      srcs[i]->invalidate();
-      // Log a message to the console that src will be ignored.
       nsAutoString srcStr;
       srcs[i]->toString(srcStr);
-      // Even though we invalidate all of the srcs internally, we don't want to
-      // log messages for the srcs: (1) strict-dynamic, (2) unsafe-inline, (3)
-      // nonces, and (4) hashes
-      if (!srcStr.EqualsASCII(CSP_EnumToUTF8Keyword(CSP_STRICT_DYNAMIC)) &&
-          !srcStr.EqualsASCII(CSP_EnumToUTF8Keyword(CSP_UNSAFE_EVAL)) &&
-          !StringBeginsWith(
-              srcStr, nsDependentString(CSP_EnumToUTF16Keyword(CSP_NONCE))) &&
-          !StringBeginsWith(srcStr, u"'sha"_ns)) {
-        AutoTArray<nsString, 1> params = {srcStr};
+      // Hashes and nonces continue to apply with 'strict-dynamic', as well as
+      // 'unsafe-eval', 'wasm-unsafe-eval' and 'unsafe-hashes'.
+      if (!srcs[i]->isKeyword(CSP_STRICT_DYNAMIC) &&
+          !srcs[i]->isKeyword(CSP_UNSAFE_EVAL) &&
+          !srcs[i]->isKeyword(CSP_WASM_UNSAFE_EVAL) &&
+          !srcs[i]->isKeyword(CSP_UNSAFE_HASHES) && !srcs[i]->isNonce() &&
+          !srcs[i]->isHash()) {
+        AutoTArray<nsString, 2> params = {srcStr, mCurDir[0]};
         logWarningErrorToConsole(nsIScriptError::warningFlag,
-                                 "ignoringSrcForStrictDynamic", params);
+                                 "ignoringScriptSrcForStrictDynamic", params);
       }
     }
+
     // Log a warning that all scripts might be blocked because the policy
     // contains 'strict-dynamic' but no valid nonce or hash.
     if (!mHasHashOrNonce) {
@@ -1048,14 +1098,32 @@ void nsCSPParser::directive() {
       logWarningErrorToConsole(nsIScriptError::warningFlag,
                                "strictDynamicButNoHashOrNonce", params);
     }
-  } else if (mHasHashOrNonce && mUnsafeInlineKeywordSrc &&
-             (cspDir->equals(nsIContentSecurityPolicy::SCRIPT_SRC_DIRECTIVE) ||
-              cspDir->equals(nsIContentSecurityPolicy::STYLE_SRC_DIRECTIVE))) {
-    mUnsafeInlineKeywordSrc->invalidate();
-    // log to the console that unsafe-inline will be ignored
-    AutoTArray<nsString, 1> params = {u"'unsafe-inline'"_ns};
+  }
+
+  // From https://w3c.github.io/webappsec-csp/#allow-all-inline
+  // follows that when either a hash or nonce is specified, 'unsafe-inline'
+  // should not apply.
+  if (mHasHashOrNonce && mUnsafeInlineKeywordSrc &&
+      (cspDir->isDefaultDirective() ||
+       cspDir->equals(nsIContentSecurityPolicy::SCRIPT_SRC_DIRECTIVE) ||
+       cspDir->equals(nsIContentSecurityPolicy::SCRIPT_SRC_ELEM_DIRECTIVE) ||
+       cspDir->equals(nsIContentSecurityPolicy::SCRIPT_SRC_ATTR_DIRECTIVE) ||
+       cspDir->equals(nsIContentSecurityPolicy::STYLE_SRC_DIRECTIVE) ||
+       cspDir->equals(nsIContentSecurityPolicy::STYLE_SRC_ELEM_DIRECTIVE) ||
+       cspDir->equals(nsIContentSecurityPolicy::STYLE_SRC_ATTR_DIRECTIVE))) {
+    // Log to the console that unsafe-inline will be ignored.
+    AutoTArray<nsString, 2> params = {u"'unsafe-inline'"_ns, mCurDir[0]};
     logWarningErrorToConsole(nsIScriptError::warningFlag,
-                             "ignoringSrcWithinScriptStyleSrc", params);
+                             "ignoringSrcWithinNonceOrHashDirective", params);
+  }
+
+  if (mHasAnyUnsafeEval &&
+      (cspDir->equals(nsIContentSecurityPolicy::SCRIPT_SRC_ELEM_DIRECTIVE) ||
+       cspDir->equals(nsIContentSecurityPolicy::SCRIPT_SRC_ATTR_DIRECTIVE))) {
+    // Log to the console that (wasm-)unsafe-eval will be ignored.
+    AutoTArray<nsString, 1> params = {mCurDir[0]};
+    logWarningErrorToConsole(nsIScriptError::warningFlag, "ignoringUnsafeEval",
+                             params);
   }
 
   // Add the newly created srcs to the directive and add the directive to the
@@ -1070,6 +1138,24 @@ nsCSPPolicy* nsCSPParser::policy() {
 
   mPolicy = new nsCSPPolicy();
   for (uint32_t i = 0; i < mTokens.Length(); i++) {
+    // https://w3c.github.io/webappsec-csp/#parse-serialized-policy
+    // Step 2.2. ..., or if token is not an ASCII string, continue.
+    //
+    // Note: In the spec the token isn't split by whitespace yet.
+    bool isAscii = true;
+    for (const auto& token : mTokens[i]) {
+      if (!IsAscii(token)) {
+        AutoTArray<nsString, 1> params = {mTokens[i][0], token};
+        logWarningErrorToConsole(nsIScriptError::warningFlag,
+                                 "ignoringNonAsciiToken", params);
+        isAscii = false;
+        break;
+      }
+    }
+    if (!isAscii) {
+      continue;
+    }
+
     // All input is already tokenized; set one tokenized array in the form of
     // [ name, src, src, ... ]
     // to mCurDir and call directive which processes the current directive.
@@ -1091,10 +1177,39 @@ nsCSPPolicy* nsCSPParser::policy() {
       mChildSrc->setRestrictWorkers();
     }
   }
+
   // if script-src is specified, but not worker-src and also no child-src, then
   // script-src has to govern workers.
   if (mScriptSrc && !mWorkerSrc && !mChildSrc) {
     mScriptSrc->setRestrictWorkers();
+  }
+
+  // If script-src is specified and script-src-elem is not specified, then
+  // script-src has to govern script requests and script blocks.
+  if (mScriptSrc && !mPolicy->hasDirective(
+                        nsIContentSecurityPolicy::SCRIPT_SRC_ELEM_DIRECTIVE)) {
+    mScriptSrc->setRestrictScriptElem();
+  }
+
+  // If script-src is specified and script-src-attr is not specified, then
+  // script-src has to govern script attr (event handlers).
+  if (mScriptSrc && !mPolicy->hasDirective(
+                        nsIContentSecurityPolicy::SCRIPT_SRC_ATTR_DIRECTIVE)) {
+    mScriptSrc->setRestrictScriptAttr();
+  }
+
+  // If style-src is specified and style-src-elem is not specified, then
+  // style-src serves as a fallback.
+  if (mStyleSrc && !mPolicy->hasDirective(
+                       nsIContentSecurityPolicy::STYLE_SRC_ELEM_DIRECTIVE)) {
+    mStyleSrc->setRestrictStyleElem();
+  }
+
+  // If style-src is specified and style-attr-elem is not specified, then
+  // style-src serves as a fallback.
+  if (mStyleSrc && !mPolicy->hasDirective(
+                       nsIContentSecurityPolicy::STYLE_SRC_ATTR_DIRECTIVE)) {
+    mStyleSrc->setRestrictStyleAttr();
   }
 
   return mPolicy;
@@ -1102,7 +1217,8 @@ nsCSPPolicy* nsCSPParser::policy() {
 
 nsCSPPolicy* nsCSPParser::parseContentSecurityPolicy(
     const nsAString& aPolicyString, nsIURI* aSelfURI, bool aReportOnly,
-    nsCSPContext* aCSPContext, bool aDeliveredViaMetaTag) {
+    nsCSPContext* aCSPContext, bool aDeliveredViaMetaTag,
+    bool aSuppressLogMessages) {
   if (CSPPARSERLOGENABLED()) {
     CSPPARSERLOG(("nsCSPParser::parseContentSecurityPolicy, policy: %s",
                   NS_ConvertUTF16toUTF8(aPolicyString).get()));
@@ -1125,7 +1241,8 @@ nsCSPPolicy* nsCSPParser::parseContentSecurityPolicy(
   nsTArray<CopyableTArray<nsString> > tokens;
   PolicyTokenizer::tokenizePolicy(aPolicyString, tokens);
 
-  nsCSPParser parser(tokens, aSelfURI, aCSPContext, aDeliveredViaMetaTag);
+  nsCSPParser parser(tokens, aSelfURI, aCSPContext, aDeliveredViaMetaTag,
+                     aSuppressLogMessages);
 
   // Start the parser to generate a new CSPPolicy using the generated tokens.
   nsCSPPolicy* policy = parser.policy();

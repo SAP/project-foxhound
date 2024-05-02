@@ -41,7 +41,7 @@ add_task(function setup() {
 
 add_task(async function test_private_download() {
   let pb_extension = ExtensionTestUtils.loadExtension({
-    background: async function() {
+    background: async function () {
       function promiseEvent(eventTarget, accept) {
         return new Promise(resolve => {
           eventTarget.addListener(function listener(data) {
@@ -118,7 +118,7 @@ add_task(async function test_private_download() {
       browser.test.notifyPass("private download test done");
     },
     manifest: {
-      applications: { gecko: { id: "@spanning" } },
+      browser_specific_settings: { gecko: { id: "@spanning" } },
       permissions: ["downloads"],
     },
     incognitoOverride: "spanning",
@@ -126,10 +126,10 @@ add_task(async function test_private_download() {
 
   let extension = ExtensionTestUtils.loadExtension({
     manifest: {
-      applications: { gecko: { id: "@not_allowed" } },
+      browser_specific_settings: { gecko: { id: "@not_allowed" } },
       permissions: ["downloads", "downloads.open"],
     },
-    background: async function() {
+    background: async function () {
       browser.downloads.onCreated.addListener(() => {
         browser.test.fail("download-onCreated");
       });
@@ -275,7 +275,7 @@ add_task(async function download_blob_in_perma_private_browsing() {
   }
   let pb_extension = ExtensionTestUtils.loadExtension({
     manifest: {
-      applications: { gecko: { id: "@private-download-ext" } },
+      browser_specific_settings: { gecko: { id: "@private-download-ext" } },
       permissions: ["downloads"],
     },
     background: testScript,

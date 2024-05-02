@@ -40,9 +40,10 @@ using mozilla::dom::NodeInfo;
 static LazyLogModule gNodeInfoManagerLeakPRLog("NodeInfoManagerLeak");
 static const uint32_t kInitialNodeInfoHashSize = 32;
 
-nsNodeInfoManager::nsNodeInfoManager()
+nsNodeInfoManager::nsNodeInfoManager(mozilla::dom::Document* aDocument,
+                                     nsIPrincipal* aPrincipal)
     : mNodeInfoHash(kInitialNodeInfoHashSize),
-      mDocument(nullptr),
+      mDocument(aDocument),
       mNonDocumentNodeInfos(0),
       mTextNodeInfo(nullptr),
       mCommentNodeInfo(nullptr),
@@ -51,9 +52,17 @@ nsNodeInfoManager::nsNodeInfoManager()
       mArena(nullptr) {
   nsLayoutStatics::AddRef();
 
-  if (gNodeInfoManagerLeakPRLog)
+  if (aPrincipal) {
+    mPrincipal = aPrincipal;
+  } else {
+    mPrincipal = NullPrincipal::CreateWithoutOriginAttributes();
+  }
+  mDefaultPrincipal = mPrincipal;
+
+  if (gNodeInfoManagerLeakPRLog) {
     MOZ_LOG(gNodeInfoManagerLeakPRLog, LogLevel::Debug,
-            ("NODEINFOMANAGER %p created", this));
+            ("NODEINFOMANAGER %p created,  document=%p", this, aDocument));
+  }
 }
 
 nsNodeInfoManager::~nsNodeInfoManager() {
@@ -78,9 +87,6 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(nsNodeInfoManager)
   }
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
-NS_IMPL_CYCLE_COLLECTION_ROOT_NATIVE(nsNodeInfoManager, AddRef)
-NS_IMPL_CYCLE_COLLECTION_UNROOT_NATIVE(nsNodeInfoManager, Release)
-
 NS_IMPL_CYCLE_COLLECTION_CAN_SKIP_BEGIN(nsNodeInfoManager)
   if (tmp->mDocument) {
     return NS_CYCLE_COLLECTION_PARTICIPANT(mozilla::dom::Document)
@@ -101,22 +107,6 @@ NS_IMPL_CYCLE_COLLECTION_CAN_SKIP_THIS_BEGIN(nsNodeInfoManager)
         ->CanSkipThis(tmp->mDocument);
   }
 NS_IMPL_CYCLE_COLLECTION_CAN_SKIP_THIS_END
-
-nsresult nsNodeInfoManager::Init(mozilla::dom::Document* aDocument) {
-  MOZ_ASSERT(!mPrincipal, "Being inited when we already have a principal?");
-
-  mPrincipal = NullPrincipal::CreateWithoutOriginAttributes();
-
-  mDefaultPrincipal = mPrincipal;
-
-  mDocument = aDocument;
-
-  if (gNodeInfoManagerLeakPRLog)
-    MOZ_LOG(gNodeInfoManagerLeakPRLog, LogLevel::Debug,
-            ("NODEINFOMANAGER %p Init document=%p", this, aDocument));
-
-  return NS_OK;
-}
 
 void nsNodeInfoManager::DropDocumentReference() {
   // This is probably not needed anymore.

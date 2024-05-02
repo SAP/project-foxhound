@@ -3,7 +3,7 @@
 
 "use strict";
 
-add_task(async function() {
+add_task(async function () {
   const tab = await BrowserTestUtils.openNewForegroundTab(
     gBrowser,
     "about:blank"
@@ -24,35 +24,31 @@ add_task(async function() {
   const onLocationChanged = waitForNextLocationChange(webProgress);
   const newLocation = "data:text/html;charset=utf-8,first-page";
   let loaded = BrowserTestUtils.browserLoaded(browser);
-  BrowserTestUtils.loadURI(browser, newLocation);
+  BrowserTestUtils.startLoadingURIString(browser, newLocation);
   await loaded;
 
   const firstPageBrowsingContext = browser.browsingContext;
-  const isFissionAndBfcacheInParentEnabled =
-    SpecialPowers.useRemoteSubframes &&
+  const isBfcacheInParentEnabled =
+    SpecialPowers.Services.appinfo.sessionHistoryInParent &&
     SpecialPowers.Services.prefs.getBoolPref("fission.bfcacheInParent");
-  if (isFissionAndBfcacheInParentEnabled) {
+  if (isBfcacheInParentEnabled) {
     isnot(
       aboutBlankBrowsingContext,
       firstPageBrowsingContext,
-      "With fission and bfcache in parent, navigations spawn a new BrowsingContext"
+      "With bfcache in parent, navigations spawn a new BrowsingContext"
     );
   } else {
     is(
       aboutBlankBrowsingContext,
       firstPageBrowsingContext,
-      "Without fission or bfcache in parent, navigations reuse the same BrowsingContext"
+      "Without bfcache in parent, navigations reuse the same BrowsingContext"
     );
   }
 
   info("Wait for onLocationChange to be fired");
   {
-    const {
-      browsingContext,
-      location,
-      request,
-      flags,
-    } = await onLocationChanged;
+    const { browsingContext, location, request, flags } =
+      await onLocationChanged;
     is(
       browsingContext,
       firstPageBrowsingContext,
@@ -86,12 +82,8 @@ add_task(async function() {
     "The iframe BrowsingContext also exposes a WebProgress"
   );
   {
-    const {
-      browsingContext,
-      location,
-      request,
-      flags,
-    } = await onIframeLocationChanged;
+    const { browsingContext, location, request, flags } =
+      await onIframeLocationChanged;
     is(
       browsingContext,
       iframeBC,
@@ -106,32 +98,29 @@ add_task(async function() {
 
   const onSecondLocationChanged = waitForNextLocationChange(webProgress);
   const onSecondPageDocumentStart = waitForNextDocumentStart(webProgress);
+  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
   const secondLocation = "http://example.com/document-builder.sjs?html=com";
   loaded = BrowserTestUtils.browserLoaded(browser);
-  BrowserTestUtils.loadURI(browser, secondLocation);
+  BrowserTestUtils.startLoadingURIString(browser, secondLocation);
   await loaded;
 
   const secondPageBrowsingContext = browser.browsingContext;
-  if (isFissionAndBfcacheInParentEnabled) {
+  if (isBfcacheInParentEnabled) {
     isnot(
       firstPageBrowsingContext,
       secondPageBrowsingContext,
-      "With fission and bfcache in parent, navigations spawn a new BrowsingContext"
+      "With bfcache in parent, navigations spawn a new BrowsingContext"
     );
   } else {
     is(
       firstPageBrowsingContext,
       secondPageBrowsingContext,
-      "Without fission or bfcache in parent, navigations reuse the same BrowsingContext"
+      "Without bfcache in parent, navigations reuse the same BrowsingContext"
     );
   }
   {
-    const {
-      browsingContext,
-      location,
-      request,
-      flags,
-    } = await onSecondLocationChanged;
+    const { browsingContext, location, request, flags } =
+      await onSecondLocationChanged;
     is(
       browsingContext,
       secondPageBrowsingContext,
@@ -159,12 +148,8 @@ add_task(async function() {
   browser.goBack();
 
   {
-    const {
-      browsingContext,
-      location,
-      request,
-      flags,
-    } = await onBackLocationChanged;
+    const { browsingContext, location, request, flags } =
+      await onBackLocationChanged;
     is(
       browsingContext,
       firstPageBrowsingContext,
@@ -211,6 +196,8 @@ function waitForNextLocationChange(webProgress, onlyTopLevel = false) {
         });
       },
     };
+    // Add a strong reference to the progress listener.
+    resolve.wpl = wpl;
     webProgress.addProgressListener(wpl, Ci.nsIWebProgress.NOTIFY_ALL);
   });
 }
@@ -232,6 +219,8 @@ function waitForNextDocumentStart(webProgress) {
         }
       },
     };
+    // Add a strong reference to the progress listener.
+    resolve.wpl = wpl;
     webProgress.addProgressListener(wpl, Ci.nsIWebProgress.NOTIFY_ALL);
   });
 }

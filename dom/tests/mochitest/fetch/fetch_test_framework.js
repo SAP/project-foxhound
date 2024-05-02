@@ -1,6 +1,7 @@
 function testScript(script) {
+  var mode = location.href.includes("http2") ? "?mode=http2&" : "?";
   function makeWrapperUrl(wrapper) {
-    return wrapper + "?script=" + script;
+    return wrapper + mode + "script=" + script;
   }
   let workerWrapperUrl = makeWrapperUrl("worker_wrapper.js");
 
@@ -16,7 +17,7 @@ function testScript(script) {
   }
 
   function setupPrefs() {
-    return new Promise(function(resolve, reject) {
+    return new Promise(function (resolve, reject) {
       SpecialPowers.pushPrefEnv(
         {
           set: [
@@ -32,9 +33,9 @@ function testScript(script) {
   }
 
   function workerTest() {
-    return new Promise(function(resolve, reject) {
+    return new Promise(function (resolve, reject) {
       var worker = new Worker(workerWrapperUrl);
-      worker.onmessage = function(event) {
+      worker.onmessage = function (event) {
         if (event.data.context != "Worker") {
           return;
         }
@@ -44,7 +45,7 @@ function testScript(script) {
           ok(event.data.status, event.data.context + ": " + event.data.msg);
         }
       };
-      worker.onerror = function(event) {
+      worker.onerror = function (event) {
         reject("Worker error: " + event.message);
       };
 
@@ -53,9 +54,9 @@ function testScript(script) {
   }
 
   function nestedWorkerTest() {
-    return new Promise(function(resolve, reject) {
+    return new Promise(function (resolve, reject) {
       var worker = new Worker(makeWrapperUrl("nested_worker_wrapper.js"));
-      worker.onmessage = function(event) {
+      worker.onmessage = function (event) {
         if (event.data.context != "NestedWorker") {
           return;
         }
@@ -65,7 +66,7 @@ function testScript(script) {
           ok(event.data.status, event.data.context + ": " + event.data.msg);
         }
       };
-      worker.onerror = function(event) {
+      worker.onerror = function (event) {
         reject("Nested Worker error: " + event.message);
       };
 
@@ -82,7 +83,7 @@ function testScript(script) {
       dump("Skipping running the test in SW until bug 1137683 gets fixed.\n");
       return Promise.resolve();
     }
-    return new Promise(function(resolve, reject) {
+    return new Promise(function (resolve, reject) {
       function setupSW(registration) {
         var worker =
           registration.installing ||
@@ -97,10 +98,7 @@ function testScript(script) {
           if (event.data.type == "finish") {
             window.removeEventListener("message", onMessage);
             iframe.remove();
-            registration
-              .unregister()
-              .then(resolve)
-              .catch(reject);
+            registration.unregister().then(resolve).catch(reject);
           } else if (event.data.type == "status") {
             ok(event.data.status, event.data.context + ": " + event.data.msg);
           }
@@ -110,7 +108,7 @@ function testScript(script) {
 
         iframe = document.createElement("iframe");
         iframe.src = "message_receiver.html";
-        iframe.onload = function() {
+        iframe.onload = function () {
           worker.postMessage({ script });
         };
         document.body.appendChild(iframe);
@@ -123,10 +121,10 @@ function testScript(script) {
   }
 
   function windowTest() {
-    return new Promise(function(resolve, reject) {
+    return new Promise(function (resolve, reject) {
       var scriptEl = document.createElement("script");
       scriptEl.setAttribute("src", script);
-      scriptEl.onload = function() {
+      scriptEl.onload = function () {
         runTest().then(resolve, reject);
       };
       document.body.appendChild(scriptEl);
@@ -138,25 +136,25 @@ function testScript(script) {
   // since some tests set and compare cookies and running in parallel can lead
   // to conflicting values.
   setupPrefs()
-    .then(function() {
+    .then(function () {
       return windowTest();
     })
-    .then(function() {
+    .then(function () {
       return workerTest();
     })
-    .then(function() {
+    .then(function () {
       return nestedWorkerTest();
     })
-    .then(function() {
+    .then(function () {
       return serviceWorkerTest();
     })
-    .catch(function(e) {
+    .catch(function (e) {
       ok(false, "Some test failed in " + script);
       info(e);
       info(e.message);
       return Promise.resolve();
     })
-    .then(function() {
+    .then(function () {
       try {
         if (parent && parent.finishTest) {
           parent.finishTest();

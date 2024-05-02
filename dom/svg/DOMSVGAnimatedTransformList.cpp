@@ -11,8 +11,7 @@
 #include "SVGAttrTearoffTable.h"
 #include "mozilla/dom/SVGAnimatedTransformListBinding.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 static SVGAttrTearoffTable<SVGAnimatedTransformList,
                            DOMSVGAnimatedTransformList>
@@ -20,9 +19,6 @@ static SVGAttrTearoffTable<SVGAnimatedTransformList,
 
 NS_SVG_VAL_IMPL_CYCLE_COLLECTION_WRAPPERCACHED(DOMSVGAnimatedTransformList,
                                                mElement)
-
-NS_IMPL_CYCLE_COLLECTION_ROOT_NATIVE(DOMSVGAnimatedTransformList, AddRef)
-NS_IMPL_CYCLE_COLLECTION_UNROOT_NATIVE(DOMSVGAnimatedTransformList, Release)
 
 JSObject* DOMSVGAnimatedTransformList::WrapObject(
     JSContext* aCx, JS::Handle<JSObject*> aGivenProto) {
@@ -120,5 +116,4 @@ const SVGAnimatedTransformList& DOMSVGAnimatedTransformList::InternalAList()
   return *mElement->GetAnimatedTransformList();
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

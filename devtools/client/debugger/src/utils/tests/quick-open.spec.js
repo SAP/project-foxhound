@@ -24,12 +24,12 @@ cases(
   "parseLineColumn utility",
   ({ query, location }) => expect(parseLineColumn(query)).toEqual(location),
   [
-    { name: "empty query", query: "", location: undefined },
+    { name: "empty query", query: "", location: null },
     { name: "just line", query: ":30", location: { line: 30 } },
     {
       name: "line and column",
       query: ":30:90",
-      location: { column: 90, line: 30 },
+      location: { column: 89, line: 30 },
     },
   ]
 );

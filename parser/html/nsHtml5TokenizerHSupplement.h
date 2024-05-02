@@ -2,6 +2,25 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+friend struct nsHtml5ViewSourcePolicy;
+friend struct nsHtml5LineColPolicy;
+friend struct nsHtml5FastestPolicy;
+
+private:
+int32_t col;
+bool nextCharOnNewLine;
+
+public:
+inline int32_t getColumnNumber() { return col; }
+
+inline void setColumnNumberAndResetNextLine(int32_t aCol) {
+  col = aCol;
+  // The restored position only ever points to the position of
+  // script tag's > character, so we can unconditionally use
+  // `false` below.
+  nextCharOnNewLine = false;
+}
+
 inline nsHtml5HtmlAttributes* GetAttributes() { return attributes; }
 
 /**
@@ -34,13 +53,15 @@ void StartPlainText();
 
 void EnableViewSource(nsHtml5Highlighter* aHighlighter);
 
-bool FlushViewSource();
+bool ShouldFlushViewSource();
+
+mozilla::Result<bool, nsresult> FlushViewSource();
 
 void StartViewSource(const nsAutoString& aTitle);
 
 void StartViewSourceCharacters();
 
-void EndViewSource();
+[[nodiscard]] bool EndViewSource();
 
 void RewindViewSource();
 

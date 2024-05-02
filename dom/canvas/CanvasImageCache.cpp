@@ -12,7 +12,6 @@
 #include "mozilla/dom/HTMLCanvasElement.h"
 #include "nsContentUtils.h"
 #include "mozilla/Preferences.h"
-#include "mozilla/StaticPrefs_canvas.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/gfx/2D.h"
 #include "gfx2DGlue.h"
@@ -27,10 +26,12 @@ using namespace gfx;
  * due to CORS security.
  */
 struct ImageCacheKey {
-  ImageCacheKey(imgIContainer* aImage, HTMLCanvasElement* aCanvas)
-      : mImage(aImage), mCanvas(aCanvas) {}
+  ImageCacheKey(imgIContainer* aImage, HTMLCanvasElement* aCanvas,
+                BackendType aBackendType)
+      : mImage(aImage), mCanvas(aCanvas), mBackendType(aBackendType) {}
   nsCOMPtr<imgIContainer> mImage;
   HTMLCanvasElement* mCanvas;
+  BackendType mBackendType;
 };
 
 /**
@@ -41,11 +42,15 @@ struct ImageCacheEntryData {
   ImageCacheEntryData(const ImageCacheEntryData& aOther)
       : mImage(aOther.mImage),
         mCanvas(aOther.mCanvas),
+        mBackendType(aOther.mBackendType),
         mSourceSurface(aOther.mSourceSurface),
         mSize(aOther.mSize),
-        mIntrinsicSize(aOther.mIntrinsicSize) {}
+        mIntrinsicSize(aOther.mIntrinsicSize),
+        mCropRect(aOther.mCropRect) {}
   explicit ImageCacheEntryData(const ImageCacheKey& aKey)
-      : mImage(aKey.mImage), mCanvas(aKey.mCanvas) {}
+      : mImage(aKey.mImage),
+        mCanvas(aKey.mCanvas),
+        mBackendType(aKey.mBackendType) {}
 
   nsExpirationState* GetExpirationState() { return &mState; }
   size_t SizeInBytes() { return mSize.width * mSize.height * 4; }
@@ -53,10 +58,12 @@ struct ImageCacheEntryData {
   // Key
   nsCOMPtr<imgIContainer> mImage;
   HTMLCanvasElement* mCanvas;
+  BackendType mBackendType;
   // Value
   RefPtr<SourceSurface> mSourceSurface;
   IntSize mSize;
   IntSize mIntrinsicSize;
+  Maybe<IntRect> mCropRect;
   nsExpirationState mState;
 };
 
@@ -72,12 +79,13 @@ class ImageCacheEntry : public PLDHashEntryHdr {
   ~ImageCacheEntry() = default;
 
   bool KeyEquals(KeyTypePointer key) const {
-    return mData->mImage == key->mImage && mData->mCanvas == key->mCanvas;
+    return mData->mImage == key->mImage && mData->mCanvas == key->mCanvas &&
+           mData->mBackendType == key->mBackendType;
   }
 
   static KeyTypePointer KeyToPointer(KeyType& key) { return &key; }
   static PLDHashNumber HashKey(KeyTypePointer key) {
-    return HashGeneric(key->mImage.get(), key->mCanvas);
+    return HashGeneric(key->mImage.get(), key->mCanvas, key->mBackendType);
   }
   enum { ALLOW_MEMMOVE = true };
 
@@ -88,9 +96,12 @@ class ImageCacheEntry : public PLDHashEntryHdr {
  * Used for all images across all canvases.
  */
 struct AllCanvasImageCacheKey {
-  explicit AllCanvasImageCacheKey(imgIContainer* aImage) : mImage(aImage) {}
+  explicit AllCanvasImageCacheKey(imgIContainer* aImage,
+                                  BackendType aBackendType)
+      : mImage(aImage), mBackendType(aBackendType) {}
 
   nsCOMPtr<imgIContainer> mImage;
+  BackendType mBackendType;
 };
 
 class AllCanvasImageCacheEntry : public PLDHashEntryHdr {
@@ -99,23 +110,28 @@ class AllCanvasImageCacheEntry : public PLDHashEntryHdr {
   using KeyTypePointer = const AllCanvasImageCacheKey*;
 
   explicit AllCanvasImageCacheEntry(const KeyType* aKey)
-      : mImage(aKey->mImage) {}
+      : mImage(aKey->mImage), mBackendType(aKey->mBackendType) {}
 
   AllCanvasImageCacheEntry(const AllCanvasImageCacheEntry& toCopy)
-      : mImage(toCopy.mImage), mSourceSurface(toCopy.mSourceSurface) {}
+      : mImage(toCopy.mImage),
+        mSourceSurface(toCopy.mSourceSurface),
+        mBackendType(toCopy.mBackendType) {}
 
   ~AllCanvasImageCacheEntry() = default;
 
-  bool KeyEquals(KeyTypePointer key) const { return mImage == key->mImage; }
+  bool KeyEquals(KeyTypePointer key) const {
+    return mImage == key->mImage && mBackendType == key->mBackendType;
+  }
 
   static KeyTypePointer KeyToPointer(KeyType& key) { return &key; }
   static PLDHashNumber HashKey(KeyTypePointer key) {
-    return HashGeneric(key->mImage.get());
+    return HashGeneric(key->mImage.get(), key->mBackendType);
   }
   enum { ALLOW_MEMMOVE = true };
 
   nsCOMPtr<imgIContainer> mImage;
   RefPtr<SourceSurface> mSourceSurface;
+  BackendType mBackendType;
 };
 
 class ImageCacheObserver;
@@ -128,20 +144,20 @@ class ImageCache final : public nsExpirationTracker<ImageCacheEntryData, 4> {
   ~ImageCache();
 
   virtual void NotifyExpired(ImageCacheEntryData* aObject) override {
-    mTotal -= aObject->SizeInBytes();
     RemoveObject(aObject);
 
     // Remove from the all canvas cache entry first since nsExpirationTracker
     // will delete aObject.
-    mAllCanvasCache.RemoveEntry(AllCanvasImageCacheKey(aObject->mImage));
+    mAllCanvasCache.RemoveEntry(
+        AllCanvasImageCacheKey(aObject->mImage, aObject->mBackendType));
 
     // Deleting the entry will delete aObject since the entry owns aObject.
-    mCache.RemoveEntry(ImageCacheKey(aObject->mImage, aObject->mCanvas));
+    mCache.RemoveEntry(ImageCacheKey(aObject->mImage, aObject->mCanvas,
+                                     aObject->mBackendType));
   }
 
   nsTHashtable<ImageCacheEntry> mCache;
   nsTHashtable<AllCanvasImageCacheEntry> mAllCanvasCache;
-  size_t mTotal;
   RefPtr<ImageCacheObserver> mImageCacheObserver;
 };
 
@@ -215,8 +231,7 @@ class CanvasImageCacheShutdownObserver final : public nsIObserver {
 };
 
 ImageCache::ImageCache()
-    : nsExpirationTracker<ImageCacheEntryData, 4>(GENERATION_MS, "ImageCache"),
-      mTotal(0) {
+    : nsExpirationTracker<ImageCacheEntryData, 4>(GENERATION_MS, "ImageCache") {
   mImageCacheObserver = new ImageCacheObserver(this);
   MOZ_RELEASE_ASSERT(mImageCacheObserver,
                      "GFX: Can't alloc ImageCacheObserver");
@@ -249,11 +264,14 @@ static already_AddRefed<imgIContainer> GetImageContainer(dom::Element* aImage) {
   return imgContainer.forget();
 }
 
-void CanvasImageCache::NotifyDrawImage(Element* aImage,
-                                       HTMLCanvasElement* aCanvas,
-                                       SourceSurface* aSource,
-                                       const IntSize& aSize,
-                                       const IntSize& aIntrinsicSize) {
+void CanvasImageCache::NotifyDrawImage(
+    Element* aImage, HTMLCanvasElement* aCanvas, DrawTarget* aTarget,
+    SourceSurface* aSource, const IntSize& aSize, const IntSize& aIntrinsicSize,
+    const Maybe<IntRect>& aCropRect) {
+  if (!aTarget) {
+    return;
+  }
+
   if (!gImageCache) {
     gImageCache = new ImageCache();
     nsContentUtils::RegisterShutdownObserver(
@@ -265,14 +283,14 @@ void CanvasImageCache::NotifyDrawImage(Element* aImage,
     return;
   }
 
-  AllCanvasImageCacheKey allCanvasCacheKey(imgContainer);
-  ImageCacheKey canvasCacheKey(imgContainer, aCanvas);
+  BackendType backendType = aTarget->GetBackendType();
+  AllCanvasImageCacheKey allCanvasCacheKey(imgContainer, backendType);
+  ImageCacheKey canvasCacheKey(imgContainer, aCanvas, backendType);
   ImageCacheEntry* entry = gImageCache->mCache.PutEntry(canvasCacheKey);
 
   if (entry) {
     if (entry->mData->mSourceSurface) {
       // We are overwriting an existing entry.
-      gImageCache->mTotal -= entry->mData->SizeInBytes();
       gImageCache->RemoveObject(entry->mData.get());
       gImageCache->mAllCanvasCache.RemoveEntry(allCanvasCacheKey);
     }
@@ -281,7 +299,7 @@ void CanvasImageCache::NotifyDrawImage(Element* aImage,
     entry->mData->mSourceSurface = aSource;
     entry->mData->mSize = aSize;
     entry->mData->mIntrinsicSize = aIntrinsicSize;
-    gImageCache->mTotal += entry->mData->SizeInBytes();
+    entry->mData->mCropRect = aCropRect;
 
     AllCanvasImageCacheEntry* allEntry =
         gImageCache->mAllCanvasCache.PutEntry(allCanvasCacheKey);
@@ -289,20 +307,11 @@ void CanvasImageCache::NotifyDrawImage(Element* aImage,
       allEntry->mSourceSurface = aSource;
     }
   }
-
-  if (!StaticPrefs::canvas_image_cache_limit()) {
-    return;
-  }
-
-  // Expire the image cache early if its larger than we want it to be.
-  while (gImageCache->mTotal >
-         size_t(StaticPrefs::canvas_image_cache_limit())) {
-    gImageCache->AgeOneGeneration();
-  }
 }
 
-SourceSurface* CanvasImageCache::LookupAllCanvas(Element* aImage) {
-  if (!gImageCache) {
+SourceSurface* CanvasImageCache::LookupAllCanvas(Element* aImage,
+                                                 DrawTarget* aTarget) {
+  if (!gImageCache || !aTarget) {
     return nullptr;
   }
 
@@ -312,7 +321,7 @@ SourceSurface* CanvasImageCache::LookupAllCanvas(Element* aImage) {
   }
 
   AllCanvasImageCacheEntry* entry = gImageCache->mAllCanvasCache.GetEntry(
-      AllCanvasImageCacheKey(imgContainer));
+      AllCanvasImageCacheKey(imgContainer, aTarget->GetBackendType()));
   if (!entry) {
     return nullptr;
   }
@@ -322,9 +331,11 @@ SourceSurface* CanvasImageCache::LookupAllCanvas(Element* aImage) {
 
 SourceSurface* CanvasImageCache::LookupCanvas(Element* aImage,
                                               HTMLCanvasElement* aCanvas,
+                                              DrawTarget* aTarget,
                                               IntSize* aSizeOut,
-                                              IntSize* aIntrinsicSizeOut) {
-  if (!gImageCache) {
+                                              IntSize* aIntrinsicSizeOut,
+                                              Maybe<IntRect>* aCropRectOut) {
+  if (!gImageCache || !aTarget) {
     return nullptr;
   }
 
@@ -333,8 +344,14 @@ SourceSurface* CanvasImageCache::LookupCanvas(Element* aImage,
     return nullptr;
   }
 
-  ImageCacheEntry* entry =
-      gImageCache->mCache.GetEntry(ImageCacheKey(imgContainer, aCanvas));
+  // We filter based on the backend type because we don't want a surface that
+  // was optimized for one backend to be preferred for another backend, as this
+  // could have performance implications. For example, a Skia optimized surface
+  // given to a D2D backend would cause an upload each time, and similarly a D2D
+  // optimized surface given to a Skia backend would cause a readback. For
+  // details, see bug 1794442.
+  ImageCacheEntry* entry = gImageCache->mCache.GetEntry(
+      ImageCacheKey(imgContainer, aCanvas, aTarget->GetBackendType()));
   if (!entry) {
     return nullptr;
   }
@@ -344,6 +361,7 @@ SourceSurface* CanvasImageCache::LookupCanvas(Element* aImage,
   gImageCache->MarkUsed(entry->mData.get());
   *aSizeOut = entry->mData->mSize;
   *aIntrinsicSizeOut = entry->mData->mIntrinsicSize;
+  *aCropRectOut = entry->mData->mCropRect;
   return entry->mData->mSourceSurface;
 }
 

@@ -17,7 +17,7 @@
 using namespace js;
 using namespace js::frontend;
 
-bool AsyncEmitter::prepareForParamsWithExpression() {
+bool AsyncEmitter::prepareForParamsWithExpressionOrDestructuring() {
   MOZ_ASSERT(state_ == State::Start);
 #ifdef DEBUG
   state_ = State::Parameters;
@@ -28,7 +28,7 @@ bool AsyncEmitter::prepareForParamsWithExpression() {
   return rejectTryCatch_->emitTry();
 }
 
-bool AsyncEmitter::prepareForParamsWithoutExpression() {
+bool AsyncEmitter::prepareForParamsWithoutExpressionOrDestructuring() {
   MOZ_ASSERT(state_ == State::Start);
 #ifdef DEBUG
   state_ = State::Parameters;
@@ -64,10 +64,11 @@ bool AsyncEmitter::prepareForModule() {
   // modules, we need to emit a
   // |.generator| which we can use to pause and resume execution.
   MOZ_ASSERT(state_ == State::Start);
-  MOZ_ASSERT(bce_->lookupName(TaggedParserAtomIndex::WellKnown::dotGenerator())
-                 .hasKnownSlot());
+  MOZ_ASSERT(
+      bce_->lookupName(TaggedParserAtomIndex::WellKnown::dot_generator_())
+          .hasKnownSlot());
 
-  NameOpEmitter noe(bce_, TaggedParserAtomIndex::WellKnown::dotGenerator(),
+  NameOpEmitter noe(bce_, TaggedParserAtomIndex::WellKnown::dot_generator_(),
                     NameOpEmitter::Kind::Initialize);
   if (!noe.prepareForRhs()) {
     //              [stack]
@@ -104,7 +105,25 @@ bool AsyncEmitter::prepareForBody() {
   return rejectTryCatch_->emitTry();
 }
 
-bool AsyncEmitter::emitEnd() {
+bool AsyncEmitter::emitEndFunction() {
+#ifdef DEBUG
+  MOZ_ASSERT(state_ == State::Body);
+#endif
+
+  // The final yield has already been emitted
+  // by FunctionScriptEmitter::emitEndBody().
+
+  if (!emitRejectCatch()) {
+    return false;
+  }
+
+#ifdef DEBUG
+  state_ = State::End;
+#endif
+  return true;
+}
+
+bool AsyncEmitter::emitEndModule() {
 #ifdef DEBUG
   MOZ_ASSERT(state_ == State::Body);
 #endif

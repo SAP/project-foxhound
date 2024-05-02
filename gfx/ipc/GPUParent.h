@@ -8,7 +8,10 @@
 
 #include "mozilla/RefPtr.h"
 #include "mozilla/gfx/PGPUParent.h"
-#include "mozilla/media/MediaUtils.h"
+#include "mozilla/ipc/AsyncBlockers.h"
+#if defined(MOZ_SANDBOX) && defined(MOZ_DEBUG) && defined(ENABLE_TESTS)
+#  include "mozilla/PSandboxTestingChild.h"
+#endif
 
 namespace mozilla {
 
@@ -21,12 +24,13 @@ class VsyncBridgeParent;
 
 class GPUParent final : public PGPUParent {
  public:
+  NS_INLINE_DECL_REFCOUNTING(GPUParent, final)
+
   GPUParent();
-  ~GPUParent();
 
   static GPUParent* GetSingleton();
 
-  AsyncBlockers& AsyncShutdownService() { return mShutdownBlockers; }
+  ipc::AsyncBlockers& AsyncShutdownService() { return mShutdownBlockers; }
 
   // Gets the name of the GPU process, in the format expected by about:memory.
   // There must be a GPU process active, and the caller must be either in that
@@ -36,14 +40,18 @@ class GPUParent final : public PGPUParent {
   // Check for memory pressure and notify the parent process if necessary.
   static bool MaybeFlushMemory();
 
-  bool Init(base::ProcessId aParentPid, const char* aParentBuildID,
-            mozilla::ipc::ScopedPort aPort);
+  bool Init(mozilla::ipc::UntypedEndpoint&& aEndpoint,
+            const char* aParentBuildID);
   void NotifyDeviceReset();
+  void NotifyOverlayInfo(layers::OverlayInfo aInfo);
+  void NotifySwapChainInfo(layers::SwapChainInfo aInfo);
+  void NotifyDisableRemoteCanvas();
 
   mozilla::ipc::IPCResult RecvInit(nsTArray<GfxVarUpdate>&& vars,
                                    const DevicePrefs& devicePrefs,
                                    nsTArray<LayerTreeIdMapping>&& mappings,
-                                   nsTArray<GfxInfoFeatureStatus>&& features);
+                                   nsTArray<GfxInfoFeatureStatus>&& features,
+                                   uint32_t wrNamespace);
   mozilla::ipc::IPCResult RecvInitCompositorManager(
       Endpoint<PCompositorManagerParent>&& aEndpoint);
   mozilla::ipc::IPCResult RecvInitVsyncBridge(
@@ -51,7 +59,8 @@ class GPUParent final : public PGPUParent {
   mozilla::ipc::IPCResult RecvInitImageBridge(
       Endpoint<PImageBridgeParent>&& aEndpoint);
   mozilla::ipc::IPCResult RecvInitVideoBridge(
-      Endpoint<PVideoBridgeParent>&& aEndpoint);
+      Endpoint<PVideoBridgeParent>&& aEndpoint,
+      const layers::VideoBridgeSource& aSource);
   mozilla::ipc::IPCResult RecvInitVRManager(
       Endpoint<PVRManagerParent>&& aEndpoint);
   mozilla::ipc::IPCResult RecvInitVR(Endpoint<PVRGPUChild>&& aVRGPUChild);
@@ -66,15 +75,18 @@ class GPUParent final : public PGPUParent {
   mozilla::ipc::IPCResult RecvUpdateVar(const GfxVarUpdate& pref);
   mozilla::ipc::IPCResult RecvPreferenceUpdate(const Pref& pref);
   mozilla::ipc::IPCResult RecvNewContentCompositorManager(
-      Endpoint<PCompositorManagerParent>&& aEndpoint);
+      Endpoint<PCompositorManagerParent>&& aEndpoint,
+      const ContentParentId& aChildId);
   mozilla::ipc::IPCResult RecvNewContentImageBridge(
-      Endpoint<PImageBridgeParent>&& aEndpoint);
+      Endpoint<PImageBridgeParent>&& aEndpoint,
+      const ContentParentId& aChildId);
   mozilla::ipc::IPCResult RecvNewContentVRManager(
-      Endpoint<PVRManagerParent>&& aEndpoint);
+      Endpoint<PVRManagerParent>&& aEndpoint, const ContentParentId& aChildId);
   mozilla::ipc::IPCResult RecvNewContentRemoteDecoderManager(
-      Endpoint<PRemoteDecoderManagerParent>&& aEndpoint);
+      Endpoint<PRemoteDecoderManagerParent>&& aEndpoint,
+      const ContentParentId& aChildId);
   mozilla::ipc::IPCResult RecvGetDeviceStatus(GPUDeviceData* aOutStatus);
-  mozilla::ipc::IPCResult RecvSimulateDeviceReset(GPUDeviceData* aOutStatus);
+  mozilla::ipc::IPCResult RecvSimulateDeviceReset();
   mozilla::ipc::IPCResult RecvAddLayerTreeIdMapping(
       const LayerTreeIdMapping& aMapping);
   mozilla::ipc::IPCResult RecvRemoveLayerTreeIdMapping(
@@ -107,10 +119,12 @@ class GPUParent final : public PGPUParent {
   void ActorDestroy(ActorDestroyReason aWhy) override;
 
  private:
+  ~GPUParent();
+
   const TimeStamp mLaunchTime;
   RefPtr<VsyncBridgeParent> mVsyncBridge;
   RefPtr<ChildProfilerController> mProfilerController;
-  AsyncBlockers mShutdownBlockers;
+  ipc::AsyncBlockers mShutdownBlockers;
 };
 
 }  // namespace gfx

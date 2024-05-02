@@ -12,7 +12,6 @@
 #include "mozilla/dom/TimeoutManager.h"
 #include "mozilla/dom/WindowBinding.h"
 #include "nsComponentManagerUtils.h"
-#include "nsGlobalWindow.h"
 #include "nsPIDOMWindow.h"
 
 namespace mozilla::dom {
@@ -36,9 +35,6 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(IdleRequest)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mCallback)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
-
-NS_IMPL_CYCLE_COLLECTION_ROOT_NATIVE(IdleRequest, AddRef)
-NS_IMPL_CYCLE_COLLECTION_UNROOT_NATIVE(IdleRequest, Release)
 
 void IdleRequest::SetTimeoutHandle(int32_t aHandle) {
   mTimeoutHandle = Some(aHandle);

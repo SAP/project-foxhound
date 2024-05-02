@@ -2,14 +2,14 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
-"use strict";
-
 /*
  * Test loading inline scripts from cache:
  *   - Load document with inline script
  *   - Reload inside debugger with toolbox caching disabled
  *   - Reload inside debugger with toolbox caching enabled
  */
+
+"use strict";
 
 // Breakpoint position calculations can throw when interrupted by a navigation.
 PromiseTestUtils.allowMatchingRejectionsGlobally(/Resource .*? does not exist/);
@@ -35,7 +35,7 @@ server.registerPathHandler("/inline-cache.html", (request, response) => {
 
 const SOURCE_URL = `http://localhost:${server.identity.primaryPort}/inline-cache.html`;
 
-add_task(async function() {
+add_task(async function () {
   info("Load document with inline script");
   const tab = await addTab(SOURCE_URL);
   info("Open debugger");
@@ -140,7 +140,7 @@ function makeChanges() {
 }
 
 function getPageValue(tab) {
-  return SpecialPowers.spawn(tab.linkedBrowser, [], function() {
+  return SpecialPowers.spawn(tab.linkedBrowser, [], function () {
     return content.document.querySelector("script").textContent.trim();
   });
 }

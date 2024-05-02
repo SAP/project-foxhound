@@ -5,19 +5,17 @@
 
 // Unit tests for Windows scheduled task generation.
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-
-const { updateAppInfo } = ChromeUtils.import(
-  "resource://testing-common/AppInfo.jsm"
+const { updateAppInfo } = ChromeUtils.importESModule(
+  "resource://testing-common/AppInfo.sys.mjs"
 );
 updateAppInfo();
 
-const { TaskScheduler } = ChromeUtils.import(
-  "resource://gre/modules/TaskScheduler.jsm"
+const { TaskScheduler } = ChromeUtils.importESModule(
+  "resource://gre/modules/TaskScheduler.sys.mjs"
 );
 
-const { _TaskSchedulerWinImpl: WinImpl } = ChromeUtils.import(
-  "resource://gre/modules/TaskSchedulerWinImpl.jsm"
+const { WinImpl } = ChromeUtils.importESModule(
+  "resource://gre/modules/TaskSchedulerWinImpl.sys.mjs"
 );
 
 const WinSvc = Cc["@mozilla.org/win-task-scheduler-service;1"].getService(
@@ -28,21 +26,17 @@ const uuidGenerator = Services.uuid;
 
 function randomName() {
   return (
-    "moz-taskschd-test-" +
-    uuidGenerator
-      .generateUUID()
-      .toString()
-      .slice(1, -1)
+    "moz-taskschd-test-" + uuidGenerator.generateUUID().toString().slice(1, -1)
   );
 }
 
 const gFolderName = randomName();
 
 // Override task folder name, to prevent colliding with other tests.
-WinImpl._taskFolderName = function() {
+WinImpl._taskFolderName = function () {
   return gFolderName;
 };
-WinImpl._taskFolderNameParts = function() {
+WinImpl._taskFolderNameParts = function () {
   return {
     parentName: "\\",
     subName: gFolderName,

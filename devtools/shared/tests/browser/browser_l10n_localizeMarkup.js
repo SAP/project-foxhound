@@ -3,12 +3,14 @@
 
 "use strict";
 
+/* import-globals-from ../../../server/tests/browser/head.js */
+
 // Tests that the markup localization works properly.
 
-const { localizeMarkup, LocalizationHelper } = require("devtools/shared/l10n");
+const { localizeMarkup } = require("resource://devtools/shared/l10n.js");
 const HTML_NS = "http://www.w3.org/1999/xhtml";
 
-add_task(async function() {
+add_task(async function () {
   info("Check that the strings used for this test are still valid");
   const STARTUP_L10N = new LocalizationHelper(
     "devtools/client/locales/startup.properties"

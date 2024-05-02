@@ -3,6 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#define UNICODE
+
 #include "nsWindowsShellService.h"
 
 #include "BinaryPath.h"
@@ -23,16 +25,19 @@
 #include "nsDirectoryServiceDefs.h"
 #include "nsIWindowsRegKey.h"
 #include "nsUnicharUtils.h"
-#include "nsIURLFormatter.h"
 #include "nsXULAppAPI.h"
 #include "mozilla/WindowsVersion.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/ErrorResult.h"
 #include "mozilla/gfx/2D.h"
+#include "mozilla/intl/Localization.h"
 #include "WindowsDefaultBrowser.h"
 #include "WindowsUserChoice.h"
 #include "nsLocalFile.h"
+#include "nsIXULAppInfo.h"
+#include "nsINIParser.h"
+#include "nsNativeAppSupportWin.h"
 
 #include <windows.h>
 #include <shellapi.h>
@@ -43,15 +48,20 @@
 // MinGW-w64 headers are missing PropVariantToString.
 #  include <propsys.h>
 PSSTDAPI PropVariantToString(REFPROPVARIANT propvar, PWSTR psz, UINT cch);
+#  define UNLEN 256
+#else
+#  include <Lmcons.h>  // For UNLEN
 #endif
 
+#include <comutil.h>
 #include <objbase.h>
-#include <shlobj.h>
 #include <knownfolders.h>
 #include "WinUtils.h"
 #include "mozilla/widget/WinTaskbar.h"
 
 #include <mbstring.h>
+
+#define PRIVATE_BROWSING_BINARY L"private_browsing.exe"
 
 #undef ACCESS_READ
 
@@ -81,8 +91,13 @@ PSSTDAPI PropVariantToString(REFPROPVARIANT propvar, PWSTR psz, UINT cch);
     if (MOZ_UNLIKELY(FAILED(hres))) return ret
 #endif
 
-using mozilla::IsWin8OrLater;
 using namespace mozilla;
+using mozilla::intl::Localization;
+
+struct SysFreeStringDeleter {
+  void operator()(BSTR aPtr) { ::SysFreeString(aPtr); }
+};
+using BStrPtr = mozilla::UniquePtr<OLECHAR, SysFreeStringDeleter>;
 
 NS_IMPL_ISUPPORTS(nsWindowsShellService, nsIToolkitShellService,
                   nsIShellService, nsIWindowsShellService)
@@ -233,6 +248,37 @@ nsWindowsShellService::IsDefaultHandlerFor(
   return NS_OK;
 }
 
+NS_IMETHODIMP
+nsWindowsShellService::QueryCurrentDefaultHandlerFor(
+    const nsAString& aFileExtensionOrProtocol, nsAString& aResult) {
+  aResult.Truncate();
+
+  RefPtr<IApplicationAssociationRegistration> pAAR;
+  HRESULT hr = CoCreateInstance(
+      CLSID_ApplicationAssociationRegistration, nullptr, CLSCTX_INPROC,
+      IID_IApplicationAssociationRegistration, getter_AddRefs(pAAR));
+  if (FAILED(hr)) {
+    return NS_OK;
+  }
+
+  const nsString& flatClass = PromiseFlatString(aFileExtensionOrProtocol);
+
+  LPWSTR registeredApp;
+  bool isProtocol = flatClass.First() != L'.';
+  ASSOCIATIONTYPE queryType = isProtocol ? AT_URLPROTOCOL : AT_FILEEXTENSION;
+  hr = pAAR->QueryCurrentDefault(flatClass.get(), queryType, AL_EFFECTIVE,
+                                 &registeredApp);
+  if (hr == HRESULT_FROM_WIN32(ERROR_NO_ASSOCIATION)) {
+    return NS_OK;
+  }
+  NS_ENSURE_HRESULT(hr, NS_ERROR_FAILURE);
+
+  aResult = registeredApp;
+  CoTaskMemFree(registeredApp);
+
+  return NS_OK;
+}
+
 nsresult nsWindowsShellService::LaunchControlPanelDefaultsSelectionUI() {
   IApplicationAssociationRegistrationUI* pAARUI;
   HRESULT hr = CoCreateInstance(
@@ -247,10 +293,6 @@ nsresult nsWindowsShellService::LaunchControlPanelDefaultsSelectionUI() {
   return SUCCEEDED(hr) ? NS_OK : NS_ERROR_FAILURE;
 }
 
-nsresult nsWindowsShellService::LaunchControlPanelDefaultPrograms() {
-  return ::LaunchControlPanelDefaultPrograms() ? NS_OK : NS_ERROR_FAILURE;
-}
-
 NS_IMETHODIMP
 nsWindowsShellService::CheckAllProgIDsExist(bool* aResult) {
   *aResult = false;
@@ -258,9 +300,41 @@ nsWindowsShellService::CheckAllProgIDsExist(bool* aResult) {
   if (!mozilla::widget::WinTaskbar::GetAppUserModelID(aumid)) {
     return NS_OK;
   }
-  *aResult =
-      CheckProgIDExists(FormatProgID(L"FirefoxURL", aumid.get()).get()) &&
-      CheckProgIDExists(FormatProgID(L"FirefoxHTML", aumid.get()).get());
+
+  if (widget::WinUtils::HasPackageIdentity()) {
+    UniquePtr<wchar_t[]> extraProgID;
+    nsresult rv;
+    bool result = true;
+
+    // "FirefoxURL".
+    rv = GetMsixProgId(L"https", extraProgID);
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      return rv;
+    }
+    result = result && CheckProgIDExists(extraProgID.get());
+
+    // "FirefoxHTML".
+    rv = GetMsixProgId(L".htm", extraProgID);
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      return rv;
+    }
+    result = result && CheckProgIDExists(extraProgID.get());
+
+    // "FirefoxPDF".
+    rv = GetMsixProgId(L".pdf", extraProgID);
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      return rv;
+    }
+    result = result && CheckProgIDExists(extraProgID.get());
+
+    *aResult = result;
+  } else {
+    *aResult =
+        CheckProgIDExists(FormatProgID(L"FirefoxURL", aumid.get()).get()) &&
+        CheckProgIDExists(FormatProgID(L"FirefoxHTML", aumid.get()).get()) &&
+        CheckProgIDExists(FormatProgID(L"FirefoxPDF", aumid.get()).get());
+  }
+
   return NS_OK;
 }
 
@@ -288,50 +362,8 @@ nsresult nsWindowsShellService::LaunchModernSettingsDialogDefaultApps() {
   return ::LaunchModernSettingsDialogDefaultApps() ? NS_OK : NS_ERROR_FAILURE;
 }
 
-nsresult nsWindowsShellService::InvokeHTTPOpenAsVerb() {
-  nsCOMPtr<nsIURLFormatter> formatter(
-      do_GetService("@mozilla.org/toolkit/URLFormatterService;1"));
-  if (!formatter) {
-    return NS_ERROR_UNEXPECTED;
-  }
-
-  nsString urlStr;
-  nsresult rv = formatter->FormatURLPref(u"app.support.baseURL"_ns, urlStr);
-  if (NS_FAILED(rv)) {
-    return rv;
-  }
-  if (!StringBeginsWith(urlStr, u"https://"_ns)) {
-    return NS_ERROR_FAILURE;
-  }
-  urlStr.AppendLiteral("win10-default-browser");
-
-  SHELLEXECUTEINFOW seinfo = {sizeof(SHELLEXECUTEINFOW)};
-  seinfo.lpVerb = L"openas";
-  seinfo.lpFile = urlStr.get();
-  seinfo.nShow = SW_SHOWNORMAL;
-  if (!ShellExecuteExW(&seinfo)) {
-    return NS_ERROR_FAILURE;
-  }
-  return NS_OK;
-}
-
-nsresult nsWindowsShellService::LaunchHTTPHandlerPane() {
-  OPENASINFO info;
-  info.pcszFile = L"http";
-  info.pcszClass = nullptr;
-  info.oaifInFlags =
-      OAIF_FORCE_REGISTRATION | OAIF_URL_PROTOCOL | OAIF_REGISTER_EXT;
-
-  HRESULT hr = SHOpenWithDialog(nullptr, &info);
-  if (SUCCEEDED(hr) || (hr == HRESULT_FROM_WIN32(ERROR_CANCELLED))) {
-    return NS_OK;
-  }
-  return NS_ERROR_FAILURE;
-}
-
 NS_IMETHODIMP
-nsWindowsShellService::SetDefaultBrowser(bool aClaimAllTypes,
-                                         bool aForAllUsers) {
+nsWindowsShellService::SetDefaultBrowser(bool aForAllUsers) {
   // If running from within a package, don't attempt to set default with
   // the helper, as it will not work and will only confuse our package's
   // virtualized registry.
@@ -349,36 +381,12 @@ nsWindowsShellService::SetDefaultBrowser(bool aClaimAllTypes,
     rv = LaunchHelper(appHelperPath);
   }
 
-  if (NS_SUCCEEDED(rv) && IsWin8OrLater()) {
-    if (aClaimAllTypes) {
-      if (IsWin10OrLater()) {
-        rv = LaunchModernSettingsDialogDefaultApps();
-      } else {
-        rv = LaunchControlPanelDefaultsSelectionUI();
-      }
-      // The above call should never really fail, but just in case
-      // fall back to showing the HTTP association screen only.
-      if (NS_FAILED(rv)) {
-        if (IsWin10OrLater()) {
-          rv = InvokeHTTPOpenAsVerb();
-        } else {
-          rv = LaunchHTTPHandlerPane();
-        }
-      }
-    } else {
-      // Windows 10 blocks attempts to load the
-      // HTTP Handler association dialog.
-      if (IsWin10OrLater()) {
-        rv = LaunchModernSettingsDialogDefaultApps();
-      } else {
-        rv = LaunchHTTPHandlerPane();
-      }
-
-      // The above call should never really fail, but just in case
-      // fall back to showing control panel for all defaults
-      if (NS_FAILED(rv)) {
-        rv = LaunchControlPanelDefaultsSelectionUI();
-      }
+  if (NS_SUCCEEDED(rv)) {
+    rv = LaunchModernSettingsDialogDefaultApps();
+    // The above call should never really fail, but just in case
+    // fall back to showing control panel for all defaults
+    if (NS_FAILED(rv)) {
+      rv = LaunchControlPanelDefaultsSelectionUI();
     }
   }
 
@@ -627,15 +635,126 @@ nsWindowsShellService::SetDesktopBackgroundColor(uint32_t aColor) {
   return regKey->Close();
 }
 
-NS_IMETHODIMP
-nsWindowsShellService::CreateShortcut(nsIFile* aBinary,
-                                      const nsTArray<nsString>& aArguments,
-                                      const nsAString& aDescription,
-                                      nsIFile* aIconFile,
-                                      const nsAString& aAppUserModelId,
-                                      nsIFile* aTarget) {
+/*
+ * Writes information about a shortcut to a shortcuts log in
+ * %PROGRAMDATA%\Mozilla-1de4eec8-1241-4177-a864-e594e8d1fb38.
+ * (This is the same directory used for update staging.)
+ * For more on the shortcuts log format and purpose, consult
+ * /toolkit/mozapps/installer/windows/nsis/common.nsh.
+ *
+ * The shortcuts log created or appended here is named after
+ * the currently running application and current user SID.
+ * For example: Firefox_$SID_shortcuts.ini.
+ *
+ * If it does not exist, it will be created. If it exists
+ * and a matching shortcut named already exists in the file,
+ * a new one will not be appended.
+ *
+ * In an ideal world this function would not need aShortcutsLogDir
+ * passed to it, but it is called by at least one function that runs
+ * asynchronously, and is therefore unable to use nsDirectoryService
+ * to look it up itself.
+ */
+static nsresult WriteShortcutToLog(nsIFile* aShortcutsLogDir,
+                                   KNOWNFOLDERID aFolderId,
+                                   const nsAString& aShortcutName) {
+  // the section inside the shortcuts log
+  nsAutoCString section;
+  // the shortcuts log wants "Programs" shortcuts in its "STARTMENU" section
+  if (aFolderId == FOLDERID_CommonPrograms || aFolderId == FOLDERID_Programs) {
+    section.Assign("STARTMENU");
+  } else if (aFolderId == FOLDERID_PublicDesktop ||
+             aFolderId == FOLDERID_Desktop) {
+    section.Assign("DESKTOP");
+  } else {
+    return NS_ERROR_INVALID_ARG;
+  }
+
+  nsCOMPtr<nsIFile> shortcutsLog;
+  nsresult rv = aShortcutsLogDir->GetParent(getter_AddRefs(shortcutsLog));
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  nsAutoCString appName;
+  nsCOMPtr<nsIXULAppInfo> appInfo =
+      do_GetService("@mozilla.org/xre/app-info;1");
+  rv = appInfo->GetName(appName);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  auto userSid = GetCurrentUserStringSid();
+  if (!userSid) {
+    return NS_ERROR_FILE_NOT_FOUND;
+  }
+
+  nsAutoString filename;
+  filename.AppendPrintf("%s_%ls_shortcuts.ini", appName.get(), userSid.get());
+  rv = shortcutsLog->Append(filename);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  nsINIParser parser;
+  bool fileExists = false;
+  bool shortcutsLogEntryExists = false;
+  nsAutoCString keyName, shortcutName;
+  shortcutName = NS_ConvertUTF16toUTF8(aShortcutName);
+
+  shortcutsLog->IsFile(&fileExists);
+  // if the shortcuts log exists, find either an existing matching
+  // entry, or the next available shortcut index
+  if (fileExists) {
+    rv = parser.Init(shortcutsLog);
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    nsCString iniShortcut;
+    // surely we'll never need more than 10 shortcuts in one section...
+    for (int i = 0; i < 10; i++) {
+      keyName.AssignLiteral("Shortcut");
+      keyName.AppendInt(i);
+      rv = parser.GetString(section.get(), keyName.get(), iniShortcut);
+      if (NS_FAILED(rv)) {
+        // we found an unused index
+        break;
+      } else if (iniShortcut.Equals(shortcutName)) {
+        shortcutsLogEntryExists = true;
+      }
+    }
+    // otherwise, this is safe to use
+  } else {
+    keyName.AssignLiteral("Shortcut0");
+  }
+
+  if (!shortcutsLogEntryExists) {
+    parser.SetString(section.get(), keyName.get(), shortcutName.get());
+    // We write this ourselves instead of using parser->WriteToFile because
+    // the INI parser in our uninstaller needs to read this, and only supports
+    // UTF-16LE encoding. nsINIParser does not support UTF-16.
+    nsAutoCString formatted;
+    parser.WriteToString(formatted);
+    FILE* writeFile;
+    rv = shortcutsLog->OpenANSIFileDesc("w,ccs=UTF-16LE", &writeFile);
+    NS_ENSURE_SUCCESS(rv, rv);
+    NS_ConvertUTF8toUTF16 formattedUTF16(formatted);
+    if (fwrite(formattedUTF16.get(), sizeof(wchar_t), formattedUTF16.Length(),
+               writeFile) != formattedUTF16.Length()) {
+      fclose(writeFile);
+      return NS_ERROR_FAILURE;
+    }
+    fclose(writeFile);
+  }
+
+  return NS_OK;
+}
+
+static nsresult CreateShortcutImpl(
+    nsIFile* aBinary, const CopyableTArray<nsString>& aArguments,
+    const nsAString& aDescription, nsIFile* aIconFile, uint16_t aIconIndex,
+    const nsAString& aAppUserModelId, KNOWNFOLDERID aShortcutFolder,
+    const nsAString& aShortcutName, const nsString& aShortcutFile,
+    nsIFile* aShortcutsLogDir) {
   NS_ENSURE_ARG(aBinary);
-  NS_ENSURE_ARG(aTarget);
+  NS_ENSURE_ARG(aIconFile);
+
+  nsresult rv =
+      WriteShortcutToLog(aShortcutsLogDir, aShortcutFolder, aShortcutName);
+  NS_ENSURE_SUCCESS(rv, rv);
 
   RefPtr<IShellLinkW> link;
   HRESULT hr = CoCreateInstance(CLSID_ShellLink, nullptr, CLSCTX_INPROC_SERVER,
@@ -645,6 +764,11 @@ nsWindowsShellService::CreateShortcut(nsIFile* aBinary,
   nsString path(aBinary->NativePath());
   link->SetPath(path.get());
 
+  wchar_t workingDir[MAX_PATH + 1];
+  wcscpy_s(workingDir, MAX_PATH + 1, aBinary->NativePath().get());
+  PathRemoveFileSpecW(workingDir);
+  link->SetWorkingDirectory(workingDir);
+
   if (!aDescription.IsEmpty()) {
     link->SetDescription(PromiseFlatString(aDescription).get());
   }
@@ -652,14 +776,14 @@ nsWindowsShellService::CreateShortcut(nsIFile* aBinary,
   // TODO: Properly escape quotes in the string, see bug 1604287.
   nsString arguments;
   for (auto& arg : aArguments) {
-    arguments.AppendPrintf("\"%S\" ", arg.get());
+    arguments.AppendPrintf("\"%S\" ", static_cast<const wchar_t*>(arg.get()));
   }
 
   link->SetArguments(arguments.get());
 
   if (aIconFile) {
     nsString icon(aIconFile->NativePath());
-    link->SetIconLocation(icon.get(), 0);
+    link->SetIconLocation(icon.get(), aIconIndex);
   }
 
   if (!aAppUserModelId.IsEmpty()) {
@@ -685,44 +809,110 @@ nsWindowsShellService::CreateShortcut(nsIFile* aBinary,
   hr = link->QueryInterface(IID_IPersistFile, getter_AddRefs(persist));
   NS_ENSURE_HRESULT(hr, NS_ERROR_FAILURE);
 
-  nsString target(aTarget->NativePath());
-  hr = persist->Save(target.get(), TRUE);
+  hr = persist->Save(aShortcutFile.get(), TRUE);
   NS_ENSURE_HRESULT(hr, NS_ERROR_FAILURE);
 
   return NS_OK;
 }
 
-// Constructs a path to an installer-created shortcut, under a directory
-// specified by a CSIDL.
-static nsresult GetShortcutPath(int aCSIDL, /* out */ nsAutoString& aPath) {
-  wchar_t folderPath[MAX_PATH] = {};
-  HRESULT hr = SHGetFolderPathW(nullptr, aCSIDL, nullptr, SHGFP_TYPE_CURRENT,
-                                folderPath);
-  if (NS_WARN_IF(FAILED(hr))) {
-    return NS_ERROR_FAILURE;
+NS_IMETHODIMP
+nsWindowsShellService::CreateShortcut(
+    nsIFile* aBinary, const nsTArray<nsString>& aArguments,
+    const nsAString& aDescription, nsIFile* aIconFile, uint16_t aIconIndex,
+    const nsAString& aAppUserModelId, const nsAString& aShortcutFolder,
+    const nsAString& aShortcutName, JSContext* aCx, dom::Promise** aPromise) {
+  if (!NS_IsMainThread()) {
+    return NS_ERROR_NOT_SAME_THREAD;
   }
 
-  aPath.Assign(folderPath);
-  if (NS_WARN_IF(aPath.IsEmpty())) {
-    return NS_ERROR_FAILURE;
-  }
-  if (aPath[aPath.Length() - 1] != '\\') {
-    aPath.AppendLiteral("\\");
-  }
-  // NOTE: In the installer, shortcuts are named "${BrandShortName}.lnk".
-  // This is set from MOZ_APP_DISPLAYNAME in defines.nsi.in. (Except in dev
-  // edition where it's explicitly set to "Firefox Developer Edition" in
-  // branding.nsi, which matches MOZ_APP_DISPLAYNAME in aurora/configure.sh.)
-  //
-  // If this changes, we could expand this to check shortcuts_log.ini,
-  // which records the name of the shortcuts as created by the installer.
-  aPath.AppendLiteral(MOZ_APP_DISPLAYNAME ".lnk");
+  ErrorResult rv;
+  RefPtr<dom::Promise> promise =
+      dom::Promise::Create(xpc::CurrentNativeGlobal(aCx), rv);
 
+  if (MOZ_UNLIKELY(rv.Failed())) {
+    return rv.StealNSResult();
+  }
+  // In an ideal world we'd probably send along nsIFile pointers
+  // here, but it's easier to determine the needed shortcuts log
+  // entry with a KNOWNFOLDERID - so we pass this along instead
+  // and let CreateShortcutImpl take care of converting it to
+  // an nsIFile.
+  KNOWNFOLDERID folderId;
+  if (aShortcutFolder.Equals(L"Programs")) {
+    folderId = FOLDERID_Programs;
+  } else if (aShortcutFolder.Equals(L"Desktop")) {
+    folderId = FOLDERID_Desktop;
+  } else {
+    return NS_ERROR_INVALID_ARG;
+  }
+
+  nsCOMPtr<nsIFile> updRoot, shortcutsLogDir;
+  nsresult nsrv =
+      NS_GetSpecialDirectory(XRE_UPDATE_ROOT_DIR, getter_AddRefs(updRoot));
+  NS_ENSURE_SUCCESS(nsrv, nsrv);
+  nsrv = updRoot->GetParent(getter_AddRefs(shortcutsLogDir));
+  NS_ENSURE_SUCCESS(nsrv, nsrv);
+
+  nsCOMPtr<nsIFile> shortcutFile;
+  if (folderId == FOLDERID_Programs) {
+    nsrv = NS_GetSpecialDirectory(NS_WIN_PROGRAMS_DIR,
+                                  getter_AddRefs(shortcutFile));
+  } else if (folderId == FOLDERID_Desktop) {
+    nsrv =
+        NS_GetSpecialDirectory(NS_OS_DESKTOP_DIR, getter_AddRefs(shortcutFile));
+  } else {
+    return NS_ERROR_FILE_NOT_FOUND;
+  }
+  if (NS_FAILED(nsrv)) {
+    return NS_ERROR_FILE_NOT_FOUND;
+  }
+  shortcutFile->Append(aShortcutName);
+
+  auto promiseHolder = MakeRefPtr<nsMainThreadPtrHolder<dom::Promise>>(
+      "CreateShortcut promise", promise);
+
+  nsCOMPtr<nsIFile> binary(aBinary);
+  nsCOMPtr<nsIFile> iconFile(aIconFile);
+  NS_DispatchBackgroundTask(
+      NS_NewRunnableFunction(
+          "CreateShortcut",
+          [binary, aArguments = CopyableTArray<nsString>(aArguments),
+           aDescription = nsString{aDescription}, iconFile, aIconIndex,
+           aAppUserModelId = nsString{aAppUserModelId}, folderId,
+           aShortcutFolder = nsString{aShortcutFolder},
+           aShortcutName = nsString{aShortcutName}, shortcutsLogDir,
+           shortcutFile, promiseHolder = std::move(promiseHolder)] {
+            nsresult rv = NS_ERROR_FAILURE;
+            HRESULT hr = CoInitialize(nullptr);
+
+            if (SUCCEEDED(hr)) {
+              rv = CreateShortcutImpl(
+                  binary.get(), aArguments, aDescription, iconFile.get(),
+                  aIconIndex, aAppUserModelId, folderId, aShortcutName,
+                  shortcutFile->NativePath(), shortcutsLogDir.get());
+              CoUninitialize();
+            }
+
+            NS_DispatchToMainThread(NS_NewRunnableFunction(
+                "CreateShortcut callback",
+                [rv, shortcutFile, promiseHolder = std::move(promiseHolder)] {
+                  dom::Promise* promise = promiseHolder.get()->get();
+
+                  if (NS_SUCCEEDED(rv)) {
+                    promise->MaybeResolve(shortcutFile->NativePath());
+                  } else {
+                    promise->MaybeReject(rv);
+                  }
+                }));
+          }),
+      NS_DISPATCH_EVENT_MAY_BLOCK);
+
+  promise.forget(aPromise);
   return NS_OK;
 }
 
-// Check if the instaler-created shortcut in the given location matches,
-// if so output its path
+// Look for any installer-created shortcuts in the given location that match
+// the given AUMID and EXE Path. If one is found, output its path.
 //
 // NOTE: DO NOT USE if a false negative (mismatch) is unacceptable.
 // aExePath is compared directly to the path retrieved from the shortcut.
@@ -733,221 +923,255 @@ static nsresult GetShortcutPath(int aCSIDL, /* out */ nsAutoString& aPath) {
 // written by the installer (shortcut, association, launch from installer),
 // which also wrote the shortcuts. But it is possible.
 //
-// aCSIDL   the CSIDL of the directory containing the shortcut to check.
+// aCSIDL   the CSIDL of the directory to look for matching shortcuts in
 // aAUMID   the AUMID to check for
 // aExePath the target exe path to check for, should be a long path where
 //          possible
+// aShortcutSubstring a substring to limit which shortcuts in aCSIDL are
+//                    inspected for a match. Only shortcuts whose filename
+//                    contains this substring will be considered
 // aShortcutPath outparam, set to matching shortcut path if NS_OK is returned.
 //
 // Returns
-//   NS_ERROR_FAILURE on errors before the shortcut was loaded
-//   NS_ERROR_FILE_NOT_FOUND if the shortcut doesn't exist
-//   NS_ERROR_FILE_ALREADY_EXISTS if the shortcut exists but doesn't match the
-//                                current app
-//   NS_OK if the shortcut matches
-static nsresult GetMatchingShortcut(int aCSIDL, const nsAutoString& aAUMID,
+//   NS_ERROR_FAILURE on errors before any shortcuts were loaded
+//   NS_ERROR_FILE_NOT_FOUND if no shortcuts matching aShortcutSubstring exist
+//   NS_ERROR_FILE_ALREADY_EXISTS if shortcuts were found but did not match
+//                                aAUMID or aExePath
+//   NS_OK if a matching shortcut is found
+static nsresult GetMatchingShortcut(int aCSIDL, const nsAString& aAUMID,
                                     const wchar_t aExePath[MAXPATHLEN],
+                                    const nsAString& aShortcutSubstring,
                                     /* out */ nsAutoString& aShortcutPath) {
   nsresult result = NS_ERROR_FAILURE;
 
-  nsAutoString path;
-  nsresult rv = GetShortcutPath(aCSIDL, path);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return result;
-  }
-
-  // Create a shell link object for loading the shortcut
-  RefPtr<IShellLinkW> link;
-  HRESULT hr = CoCreateInstance(CLSID_ShellLink, nullptr, CLSCTX_INPROC_SERVER,
-                                IID_IShellLinkW, getter_AddRefs(link));
+  wchar_t folderPath[MAX_PATH] = {};
+  HRESULT hr = SHGetFolderPathW(nullptr, aCSIDL, nullptr, SHGFP_TYPE_CURRENT,
+                                folderPath);
   if (NS_WARN_IF(FAILED(hr))) {
-    return result;
+    return NS_ERROR_FAILURE;
+  }
+  if (wcscat_s(folderPath, MAX_PATH, L"\\") != 0) {
+    return NS_ERROR_FAILURE;
   }
 
-  // Load
-  RefPtr<IPersistFile> persist;
-  hr = link->QueryInterface(IID_IPersistFile, getter_AddRefs(persist));
-  if (NS_WARN_IF(FAILED(hr))) {
-    return result;
-  }
+  // Get list of shortcuts in aCSIDL
+  nsAutoString pattern(folderPath);
+  pattern.AppendLiteral("*.lnk");
 
-  hr = persist->Load(path.get(), STGM_READ);
-  if (FAILED(hr)) {
-    if (NS_WARN_IF(hr != HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND))) {
-      // empty branch, result unchanged but warning issued
-    } else {
-      result = NS_ERROR_FILE_NOT_FOUND;
+  WIN32_FIND_DATAW findData = {};
+  HANDLE hFindFile = FindFirstFileW(pattern.get(), &findData);
+  if (hFindFile == INVALID_HANDLE_VALUE) {
+    Unused << NS_WARN_IF(GetLastError() != ERROR_FILE_NOT_FOUND);
+    return NS_ERROR_FILE_NOT_FOUND;
+  }
+  // Past this point we don't return until the end of the function,
+  // when FindClose() is called.
+
+  // todo: improve return values here
+  do {
+    // Skip any that don't contain aShortcutSubstring
+    // This is a case sensitive comparison, but that's probably fine for
+    // the vast majority of cases -- and certainly for all the ones where
+    // a shortcut was created by the installer.
+    if (StrStrIW(findData.cFileName, aShortcutSubstring.Data()) == NULL) {
+      continue;
     }
-    return result;
-  }
-  result = NS_ERROR_FILE_ALREADY_EXISTS;
 
-  // Check the AUMID
-  RefPtr<IPropertyStore> propStore;
-  hr = link->QueryInterface(IID_IPropertyStore, getter_AddRefs(propStore));
-  if (NS_WARN_IF(FAILED(hr))) {
-    return result;
-  }
+    nsAutoString path(folderPath);
+    path.Append(findData.cFileName);
 
-  PROPVARIANT pv;
-  hr = propStore->GetValue(PKEY_AppUserModel_ID, &pv);
-  if (NS_WARN_IF(FAILED(hr))) {
-    return result;
-  }
+    // Create a shell link object for loading the shortcut
+    RefPtr<IShellLinkW> link;
+    HRESULT hr =
+        CoCreateInstance(CLSID_ShellLink, nullptr, CLSCTX_INPROC_SERVER,
+                         IID_IShellLinkW, getter_AddRefs(link));
+    if (NS_WARN_IF(FAILED(hr))) {
+      continue;
+    }
 
-  wchar_t storedAUMID[MAX_PATH];
-  hr = PropVariantToString(pv, storedAUMID, MAX_PATH);
-  PropVariantClear(&pv);
-  if (NS_WARN_IF(FAILED(hr))) {
-    return result;
-  }
+    // Load
+    RefPtr<IPersistFile> persist;
+    hr = link->QueryInterface(IID_IPersistFile, getter_AddRefs(persist));
+    if (NS_WARN_IF(FAILED(hr))) {
+      continue;
+    }
 
-  if (!aAUMID.Equals(storedAUMID)) {
-    return result;
-  }
+    hr = persist->Load(path.get(), STGM_READ);
+    if (FAILED(hr)) {
+      if (NS_WARN_IF(hr != HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND))) {
+        // empty branch, result unchanged but warning issued
+      } else {
+        // If we've ever gotten past this block, result will already be
+        // NS_ERROR_FILE_ALREADY_EXISTS, which is a more accurate error
+        // than NS_ERROR_FILE_NOT_FOUND.
+        if (result != NS_ERROR_FILE_ALREADY_EXISTS) {
+          result = NS_ERROR_FILE_NOT_FOUND;
+        }
+      }
+      continue;
+    }
+    result = NS_ERROR_FILE_ALREADY_EXISTS;
 
-  // Check the exe path
-  static_assert(MAXPATHLEN == MAX_PATH);
-  wchar_t storedExePath[MAX_PATH] = {};
-  // With no flags GetPath gets a long path
-  hr = link->GetPath(storedExePath, ArrayLength(storedExePath), nullptr, 0);
-  if (FAILED(hr) || hr == S_FALSE) {
-    return result;
-  }
-  // Case insensitive path comparison
-  if (wcsnicmp(storedExePath, aExePath, MAXPATHLEN) != 0) {
-    return result;
-  }
+    // Check the AUMID
+    RefPtr<IPropertyStore> propStore;
+    hr = link->QueryInterface(IID_IPropertyStore, getter_AddRefs(propStore));
+    if (NS_WARN_IF(FAILED(hr))) {
+      continue;
+    }
 
-  // Success, report the shortcut path
-  aShortcutPath.Assign(path);
-  result = NS_OK;
+    PROPVARIANT pv;
+    hr = propStore->GetValue(PKEY_AppUserModel_ID, &pv);
+    if (NS_WARN_IF(FAILED(hr))) {
+      continue;
+    }
+
+    wchar_t storedAUMID[MAX_PATH];
+    hr = PropVariantToString(pv, storedAUMID, MAX_PATH);
+    PropVariantClear(&pv);
+    if (NS_WARN_IF(FAILED(hr))) {
+      continue;
+    }
+
+    if (!aAUMID.Equals(storedAUMID)) {
+      continue;
+    }
+
+    // Check the exe path
+    static_assert(MAXPATHLEN == MAX_PATH);
+    wchar_t storedExePath[MAX_PATH] = {};
+    // With no flags GetPath gets a long path
+    hr = link->GetPath(storedExePath, ArrayLength(storedExePath), nullptr, 0);
+    if (FAILED(hr) || hr == S_FALSE) {
+      continue;
+    }
+    // Case insensitive path comparison
+    if (wcsnicmp(storedExePath, aExePath, MAXPATHLEN) == 0) {
+      aShortcutPath.Assign(path);
+      result = NS_OK;
+      break;
+    }
+  } while (FindNextFileW(hFindFile, &findData));
+
+  FindClose(hFindFile);
 
   return result;
 }
 
-static nsresult PinCurrentAppToTaskbarImpl(bool aCheckOnly) {
-  // This enum is likely only used for Windows telemetry, INT_MAX is chosen to
-  // avoid confusion with existing uses.
-  enum PINNEDLISTMODIFYCALLER { PLMC_INT_MAX = INT_MAX };
-
-  // The types below, and the idea of using IPinnedList3::Modify,
-  // are thanks to Gee Law <https://geelaw.blog/entries/msedge-pins/>
-  static constexpr GUID CLSID_TaskbandPin = {
-      0x90aa3a4e,
-      0x1cba,
-      0x4233,
-      {0xb8, 0xbb, 0x53, 0x57, 0x73, 0xd4, 0x84, 0x49}};
-
-  static constexpr GUID IID_IPinnedList3 = {
-      0x0dd79ae2,
-      0xd156,
-      0x45d4,
-      {0x9e, 0xeb, 0x3b, 0x54, 0x97, 0x69, 0xe9, 0x40}};
-
-  struct IPinnedList3Vtbl;
-  struct IPinnedList3 {
-    IPinnedList3Vtbl* vtbl;
-  };
-
-  typedef ULONG STDMETHODCALLTYPE ReleaseFunc(IPinnedList3 * that);
-  typedef HRESULT STDMETHODCALLTYPE ModifyFunc(
-      IPinnedList3 * that, PCIDLIST_ABSOLUTE unpin, PCIDLIST_ABSOLUTE pin,
-      PINNEDLISTMODIFYCALLER caller);
-
-  struct IPinnedList3Vtbl {
-    void* QueryInterface;  // 0
-    void* AddRef;          // 1
-    ReleaseFunc* Release;  // 2
-    void* Other[13];       // 3-15
-    ModifyFunc* Modify;    // 16
-  };
-
-  struct ILFreeDeleter {
-    void operator()(LPITEMIDLIST aPtr) {
-      if (aPtr) {
-        ILFree(aPtr);
-      }
-    }
-  };
-
-  // First available on 1809
-  if (!IsWin10Sep2018UpdateOrLater()) {
-    return NS_ERROR_NOT_AVAILABLE;
-  }
-
-  nsAutoString aumid;
-  if (NS_WARN_IF(!mozilla::widget::WinTaskbar::GetAppUserModelID(aumid))) {
-    return NS_ERROR_FAILURE;
-  }
-
+static nsresult FindMatchingShortcut(const nsAString& aAppUserModelId,
+                                     const nsAString& aShortcutSubstring,
+                                     const bool aPrivateBrowsing,
+                                     nsAutoString& aShortcutPath) {
   wchar_t exePath[MAXPATHLEN] = {};
   if (NS_WARN_IF(NS_FAILED(BinaryPath::GetLong(exePath)))) {
     return NS_ERROR_FAILURE;
   }
 
-  // Try to find a shortcut matching the running app
-  nsAutoString shortcutPath;
+  if (aPrivateBrowsing) {
+    if (!PathRemoveFileSpecW(exePath)) {
+      return NS_ERROR_FAILURE;
+    }
+    if (!PathAppendW(exePath, L"private_browsing.exe")) {
+      return NS_ERROR_FAILURE;
+    }
+  }
+
   int shortcutCSIDLs[] = {CSIDL_COMMON_PROGRAMS, CSIDL_PROGRAMS,
                           CSIDL_COMMON_DESKTOPDIRECTORY,
                           CSIDL_DESKTOPDIRECTORY};
-  for (int i = 0; i < ArrayLength(shortcutCSIDLs); ++i) {
+  for (int shortcutCSIDL : shortcutCSIDLs) {
     // GetMatchingShortcut may fail when the exe path doesn't match, even
     // if it refers to the same file. This should be rare, and the worst
     // outcome would be failure to pin, so the risk is acceptable.
-    nsresult rv =
-        GetMatchingShortcut(shortcutCSIDLs[i], aumid, exePath, shortcutPath);
+    nsresult rv = GetMatchingShortcut(shortcutCSIDL, aAppUserModelId, exePath,
+                                      aShortcutSubstring, aShortcutPath);
     if (NS_SUCCEEDED(rv)) {
-      break;
-    } else {
-      shortcutPath.Truncate();
+      return NS_OK;
     }
   }
-  if (shortcutPath.IsEmpty()) {
-    return NS_ERROR_FILE_NOT_FOUND;
-  }
 
-  mozilla::UniquePtr<__unaligned ITEMIDLIST, ILFreeDeleter> path(
-      ILCreateFromPathW(shortcutPath.get()));
-  if (NS_WARN_IF(!path)) {
-    return NS_ERROR_FAILURE;
-  }
-
-  IPinnedList3* pinnedList = nullptr;
-  HRESULT hr =
-      CoCreateInstance(CLSID_TaskbandPin, nullptr, CLSCTX_INPROC_SERVER,
-                       IID_IPinnedList3, (void**)&pinnedList);
-  if (FAILED(hr) || !pinnedList) {
-    return NS_ERROR_NOT_AVAILABLE;
-  }
-
-  if (!aCheckOnly) {
-    hr =
-        pinnedList->vtbl->Modify(pinnedList, nullptr, path.get(), PLMC_INT_MAX);
-  }
-
-  pinnedList->vtbl->Release(pinnedList);
-
-  if (FAILED(hr)) {
-    return NS_ERROR_FAILURE;
-  } else {
-    return NS_OK;
-  }
+  return NS_ERROR_FILE_NOT_FOUND;
 }
 
-NS_IMETHODIMP
-nsWindowsShellService::PinCurrentAppToTaskbar() {
-  return PinCurrentAppToTaskbarImpl(/* aCheckOnly */ false);
+static bool HasMatchingShortcutImpl(const nsAString& aAppUserModelId,
+                                    const bool aPrivateBrowsing,
+                                    const nsAutoString& aShortcutSubstring) {
+  // unused by us, but required
+  nsAutoString shortcutPath;
+  nsresult rv = FindMatchingShortcut(aAppUserModelId, aShortcutSubstring,
+                                     aPrivateBrowsing, shortcutPath);
+  if (SUCCEEDED(rv)) {
+    return true;
+  }
+
+  return false;
 }
 
-NS_IMETHODIMP
-nsWindowsShellService::CheckPinCurrentAppToTaskbar() {
-  return PinCurrentAppToTaskbarImpl(/* aCheckOnly */ true);
+NS_IMETHODIMP nsWindowsShellService::HasMatchingShortcut(
+    const nsAString& aAppUserModelId, const bool aPrivateBrowsing,
+    JSContext* aCx, dom::Promise** aPromise) {
+  if (!NS_IsMainThread()) {
+    return NS_ERROR_NOT_SAME_THREAD;
+  }
+
+  ErrorResult rv;
+  RefPtr<dom::Promise> promise =
+      dom::Promise::Create(xpc::CurrentNativeGlobal(aCx), rv);
+
+  if (MOZ_UNLIKELY(rv.Failed())) {
+    return rv.StealNSResult();
+  }
+
+  auto promiseHolder = MakeRefPtr<nsMainThreadPtrHolder<dom::Promise>>(
+      "HasMatchingShortcut promise", promise);
+
+  NS_DispatchBackgroundTask(
+      NS_NewRunnableFunction(
+          "HasMatchingShortcut",
+          [aAppUserModelId = nsString{aAppUserModelId}, aPrivateBrowsing,
+           promiseHolder = std::move(promiseHolder)] {
+            bool rv = false;
+            HRESULT hr = CoInitialize(nullptr);
+
+            if (SUCCEEDED(hr)) {
+              nsAutoString shortcutSubstring;
+              shortcutSubstring.AssignLiteral(MOZ_APP_DISPLAYNAME);
+              rv = HasMatchingShortcutImpl(aAppUserModelId, aPrivateBrowsing,
+                                           shortcutSubstring);
+              CoUninitialize();
+            }
+
+            NS_DispatchToMainThread(NS_NewRunnableFunction(
+                "HasMatchingShortcut callback",
+                [rv, promiseHolder = std::move(promiseHolder)] {
+                  dom::Promise* promise = promiseHolder.get()->get();
+
+                  promise->MaybeResolve(rv);
+                }));
+          }),
+      NS_DISPATCH_EVENT_MAY_BLOCK);
+
+  promise.forget(aPromise);
+  return NS_OK;
 }
 
-static bool IsCurrentAppPinnedToTaskbarSync() {
+static bool IsCurrentAppPinnedToTaskbarSync(const nsAString& aumid) {
+  // There are two shortcut targets that we created. One always matches the
+  // binary we're running as (eg: firefox.exe). The other is the wrapper
+  // for launching in Private Browsing mode. We need to inspect shortcuts
+  // that point at either of these to accurately judge whether or not
+  // the app is pinned with the given AUMID.
   wchar_t exePath[MAXPATHLEN] = {};
+  wchar_t pbExePath[MAXPATHLEN] = {};
+
   if (NS_WARN_IF(NS_FAILED(BinaryPath::GetLong(exePath)))) {
+    return false;
+  }
+
+  wcscpy_s(pbExePath, MAXPATHLEN, exePath);
+  if (!PathRemoveFileSpecW(pbExePath)) {
+    return false;
+  }
+  if (!PathAppendW(pbExePath, L"private_browsing.exe")) {
     return false;
   }
 
@@ -1010,9 +1234,6 @@ static bool IsCurrentAppPinnedToTaskbarSync() {
       continue;
     }
 
-    // Note: AUMID is not checked, so a pin that does not group properly
-    // will still count as long as the exe matches.
-
     // Check the exe path
     static_assert(MAXPATHLEN == MAX_PATH);
     wchar_t storedExePath[MAX_PATH] = {};
@@ -1024,9 +1245,31 @@ static bool IsCurrentAppPinnedToTaskbarSync() {
     // Case insensitive path comparison
     // NOTE: Because this compares the path directly, it is possible to
     // have a false negative mismatch.
-    if (wcsnicmp(storedExePath, exePath, MAXPATHLEN) == 0) {
-      isPinned = true;
-      break;
+    if (wcsnicmp(storedExePath, exePath, MAXPATHLEN) == 0 ||
+        wcsnicmp(storedExePath, pbExePath, MAXPATHLEN) == 0) {
+      RefPtr<IPropertyStore> propStore;
+      hr = link->QueryInterface(IID_IPropertyStore, getter_AddRefs(propStore));
+      if (NS_WARN_IF(FAILED(hr))) {
+        continue;
+      }
+
+      PROPVARIANT pv;
+      hr = propStore->GetValue(PKEY_AppUserModel_ID, &pv);
+      if (NS_WARN_IF(FAILED(hr))) {
+        continue;
+      }
+
+      wchar_t storedAUMID[MAX_PATH];
+      hr = PropVariantToString(pv, storedAUMID, MAX_PATH);
+      PropVariantClear(&pv);
+      if (NS_WARN_IF(FAILED(hr))) {
+        continue;
+      }
+
+      if (aumid.Equals(storedAUMID)) {
+        isPinned = true;
+        break;
+      }
     }
   } while (FindNextFileW(hFindFile, &findData));
 
@@ -1035,9 +1278,289 @@ static bool IsCurrentAppPinnedToTaskbarSync() {
   return isPinned;
 }
 
+static nsresult PinCurrentAppToTaskbarWin10(bool aCheckOnly,
+                                            const nsAString& aAppUserModelId,
+                                            nsAutoString aShortcutPath) {
+  // This enum is likely only used for Windows telemetry, INT_MAX is chosen to
+  // avoid confusion with existing uses.
+  enum PINNEDLISTMODIFYCALLER { PLMC_INT_MAX = INT_MAX };
+
+  // The types below, and the idea of using IPinnedList3::Modify,
+  // are thanks to Gee Law <https://geelaw.blog/entries/msedge-pins/>
+  static constexpr GUID CLSID_TaskbandPin = {
+      0x90aa3a4e,
+      0x1cba,
+      0x4233,
+      {0xb8, 0xbb, 0x53, 0x57, 0x73, 0xd4, 0x84, 0x49}};
+
+  static constexpr GUID IID_IPinnedList3 = {
+      0x0dd79ae2,
+      0xd156,
+      0x45d4,
+      {0x9e, 0xeb, 0x3b, 0x54, 0x97, 0x69, 0xe9, 0x40}};
+
+  struct IPinnedList3Vtbl;
+  struct IPinnedList3 {
+    IPinnedList3Vtbl* vtbl;
+  };
+
+  typedef ULONG STDMETHODCALLTYPE ReleaseFunc(IPinnedList3 * that);
+  typedef HRESULT STDMETHODCALLTYPE ModifyFunc(
+      IPinnedList3 * that, PCIDLIST_ABSOLUTE unpin, PCIDLIST_ABSOLUTE pin,
+      PINNEDLISTMODIFYCALLER caller);
+
+  struct IPinnedList3Vtbl {
+    void* QueryInterface;  // 0
+    void* AddRef;          // 1
+    ReleaseFunc* Release;  // 2
+    void* Other[13];       // 3-15
+    ModifyFunc* Modify;    // 16
+  };
+
+  struct ILFreeDeleter {
+    void operator()(LPITEMIDLIST aPtr) {
+      if (aPtr) {
+        ILFree(aPtr);
+      }
+    }
+  };
+
+  mozilla::UniquePtr<__unaligned ITEMIDLIST, ILFreeDeleter> path(
+      ILCreateFromPathW(aShortcutPath.get()));
+  if (NS_WARN_IF(!path)) {
+    return NS_ERROR_FAILURE;
+  }
+
+  IPinnedList3* pinnedList = nullptr;
+  HRESULT hr =
+      CoCreateInstance(CLSID_TaskbandPin, nullptr, CLSCTX_INPROC_SERVER,
+                       IID_IPinnedList3, (void**)&pinnedList);
+  if (FAILED(hr) || !pinnedList) {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+
+  if (!aCheckOnly) {
+    bool isPinned = false;
+    isPinned = IsCurrentAppPinnedToTaskbarSync(aAppUserModelId);
+    if (!isPinned) {
+      hr = pinnedList->vtbl->Modify(pinnedList, nullptr, path.get(),
+                                    PLMC_INT_MAX);
+    }
+  }
+
+  pinnedList->vtbl->Release(pinnedList);
+
+  if (FAILED(hr)) {
+    return NS_ERROR_FAILURE;
+  } else {
+    return NS_OK;
+  }
+}
+
+static nsresult PinCurrentAppToTaskbarImpl(
+    bool aCheckOnly, bool aPrivateBrowsing, const nsAString& aAppUserModelId,
+    const nsAString& aShortcutName, const nsAString& aShortcutSubstring,
+    nsIFile* aShortcutsLogDir, nsIFile* aGreDir, nsIFile* aProgramsDir) {
+  MOZ_DIAGNOSTIC_ASSERT(
+      !NS_IsMainThread(),
+      "PinCurrentAppToTaskbarImpl should be called off main thread only");
+
+  nsAutoString shortcutPath;
+  nsresult rv = FindMatchingShortcut(aAppUserModelId, aShortcutSubstring,
+                                     aPrivateBrowsing, shortcutPath);
+  if (NS_FAILED(rv)) {
+    shortcutPath.Truncate();
+  }
+  if (shortcutPath.IsEmpty()) {
+    if (aCheckOnly) {
+      // Later checks rely on a shortcut already existing.
+      // We don't want to create a shortcut in check only mode
+      // so the best we can do is assume those parts will work.
+      return NS_OK;
+    }
+
+    nsAutoString linkName(aShortcutName);
+
+    nsCOMPtr<nsIFile> exeFile(aGreDir);
+    if (aPrivateBrowsing) {
+      nsAutoString pbExeStr(PRIVATE_BROWSING_BINARY);
+      nsresult rv = exeFile->Append(pbExeStr);
+      if (!NS_SUCCEEDED(rv)) {
+        return NS_ERROR_FAILURE;
+      }
+    } else {
+      wchar_t exePath[MAXPATHLEN] = {};
+      if (NS_WARN_IF(NS_FAILED(BinaryPath::GetLong(exePath)))) {
+        return NS_ERROR_FAILURE;
+      }
+      nsAutoString exeStr(exePath);
+      nsresult rv = NS_NewLocalFile(exeStr, true, getter_AddRefs(exeFile));
+      if (!NS_SUCCEEDED(rv)) {
+        return NS_ERROR_FILE_NOT_FOUND;
+      }
+    }
+
+    nsCOMPtr<nsIFile> shortcutFile(aProgramsDir);
+    shortcutFile->Append(aShortcutName);
+    shortcutPath.Assign(shortcutFile->NativePath());
+
+    nsTArray<nsString> arguments;
+    rv = CreateShortcutImpl(exeFile, arguments, aShortcutName, exeFile,
+                            // Icon indexes are defined as Resource IDs, but
+                            // CreateShortcutImpl needs an index.
+                            IDI_APPICON - 1, aAppUserModelId, FOLDERID_Programs,
+                            linkName, shortcutFile->NativePath(),
+                            aShortcutsLogDir);
+    if (!NS_SUCCEEDED(rv)) {
+      return NS_ERROR_FILE_NOT_FOUND;
+    }
+  }
+
+  return PinCurrentAppToTaskbarWin10(aCheckOnly, aAppUserModelId, shortcutPath);
+}
+
+static nsresult PinCurrentAppToTaskbarAsyncImpl(bool aCheckOnly,
+                                                bool aPrivateBrowsing,
+                                                JSContext* aCx,
+                                                dom::Promise** aPromise) {
+  if (!NS_IsMainThread()) {
+    return NS_ERROR_NOT_SAME_THREAD;
+  }
+
+  // First available on 1809
+  if (!IsWin10Sep2018UpdateOrLater()) {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+
+  ErrorResult rv;
+  RefPtr<dom::Promise> promise =
+      dom::Promise::Create(xpc::CurrentNativeGlobal(aCx), rv);
+
+  if (MOZ_UNLIKELY(rv.Failed())) {
+    return rv.StealNSResult();
+  }
+
+  nsAutoString aumid;
+  if (NS_WARN_IF(!mozilla::widget::WinTaskbar::GenerateAppUserModelID(
+          aumid, aPrivateBrowsing))) {
+    return NS_ERROR_FAILURE;
+  }
+
+  // NOTE: In the installer, non-private shortcuts are named
+  // "${BrandShortName}.lnk". This is set from MOZ_APP_DISPLAYNAME in
+  // defines.nsi.in. (Except in dev edition where it's explicitly set to
+  // "Firefox Developer Edition" in branding.nsi, which matches
+  // MOZ_APP_DISPLAYNAME in aurora/configure.sh.)
+  //
+  // If this changes, we could expand this to check shortcuts_log.ini,
+  // which records the name of the shortcuts as created by the installer.
+  //
+  // Private shortcuts are not created by the installer (they're created
+  // upon user request, ultimately by CreateShortcutImpl, and recorded in
+  // a separate shortcuts log. As with non-private shortcuts they have a known
+  // name - so there's no need to look through logs to find them.
+  nsAutoString shortcutName;
+  if (aPrivateBrowsing) {
+    nsTArray<nsCString> resIds = {
+        "branding/brand.ftl"_ns,
+        "browser/browser.ftl"_ns,
+    };
+    RefPtr<Localization> l10n = Localization::Create(resIds, true);
+    nsAutoCString pbStr;
+    IgnoredErrorResult rv;
+    l10n->FormatValueSync("private-browsing-shortcut-text-2"_ns, {}, pbStr, rv);
+    shortcutName.Append(NS_ConvertUTF8toUTF16(pbStr));
+    shortcutName.AppendLiteral(".lnk");
+  } else {
+    shortcutName.AppendLiteral(MOZ_APP_DISPLAYNAME ".lnk");
+  }
+
+  nsCOMPtr<nsIFile> greDir, updRoot, programsDir, shortcutsLogDir;
+  nsresult nsrv = NS_GetSpecialDirectory(NS_GRE_DIR, getter_AddRefs(greDir));
+  NS_ENSURE_SUCCESS(nsrv, nsrv);
+  nsrv = NS_GetSpecialDirectory(XRE_UPDATE_ROOT_DIR, getter_AddRefs(updRoot));
+  NS_ENSURE_SUCCESS(nsrv, nsrv);
+  rv = NS_GetSpecialDirectory(NS_WIN_PROGRAMS_DIR, getter_AddRefs(programsDir));
+  NS_ENSURE_SUCCESS(nsrv, nsrv);
+  nsrv = updRoot->GetParent(getter_AddRefs(shortcutsLogDir));
+  NS_ENSURE_SUCCESS(nsrv, nsrv);
+
+  auto promiseHolder = MakeRefPtr<nsMainThreadPtrHolder<dom::Promise>>(
+      "CheckPinCurrentAppToTaskbarAsync promise", promise);
+
+  NS_DispatchBackgroundTask(
+      NS_NewRunnableFunction(
+          "CheckPinCurrentAppToTaskbarAsync",
+          [aCheckOnly, aPrivateBrowsing, shortcutName, aumid = nsString{aumid},
+           shortcutsLogDir, greDir, programsDir,
+           promiseHolder = std::move(promiseHolder)] {
+            nsresult rv = NS_ERROR_FAILURE;
+            HRESULT hr = CoInitialize(nullptr);
+
+            if (SUCCEEDED(hr)) {
+              nsAutoString shortcutSubstring;
+              shortcutSubstring.AssignLiteral(MOZ_APP_DISPLAYNAME);
+              rv = PinCurrentAppToTaskbarImpl(
+                  aCheckOnly, aPrivateBrowsing, aumid, shortcutName,
+                  shortcutSubstring, shortcutsLogDir.get(), greDir.get(),
+                  programsDir.get());
+              CoUninitialize();
+            }
+
+            NS_DispatchToMainThread(NS_NewRunnableFunction(
+                "CheckPinCurrentAppToTaskbarAsync callback",
+                [rv, promiseHolder = std::move(promiseHolder)] {
+                  dom::Promise* promise = promiseHolder.get()->get();
+
+                  if (NS_SUCCEEDED(rv)) {
+                    promise->MaybeResolveWithUndefined();
+                  } else {
+                    promise->MaybeReject(rv);
+                  }
+                }));
+          }),
+      NS_DISPATCH_EVENT_MAY_BLOCK);
+
+  promise.forget(aPromise);
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsWindowsShellService::PinCurrentAppToTaskbarAsync(bool aPrivateBrowsing,
+                                                   JSContext* aCx,
+                                                   dom::Promise** aPromise) {
+  // https://bugzilla.mozilla.org/show_bug.cgi?id=1712628 tracks implementing
+  // this for MSIX packages.
+  if (widget::WinUtils::HasPackageIdentity()) {
+    return NS_ERROR_NOT_IMPLEMENTED;
+  }
+
+  return PinCurrentAppToTaskbarAsyncImpl(
+      /* aCheckOnly */ false, aPrivateBrowsing, aCx, aPromise);
+}
+
+NS_IMETHODIMP
+nsWindowsShellService::CheckPinCurrentAppToTaskbarAsync(
+    bool aPrivateBrowsing, JSContext* aCx, dom::Promise** aPromise) {
+  // https://bugzilla.mozilla.org/show_bug.cgi?id=1712628 tracks implementing
+  // this for MSIX packages.
+  if (widget::WinUtils::HasPackageIdentity()) {
+    return NS_ERROR_NOT_IMPLEMENTED;
+  }
+
+  return PinCurrentAppToTaskbarAsyncImpl(
+      /* aCheckOnly = */ true, aPrivateBrowsing, aCx, aPromise);
+}
+
 NS_IMETHODIMP
 nsWindowsShellService::IsCurrentAppPinnedToTaskbarAsync(
-    JSContext* aCx, /* out */ dom::Promise** aPromise) {
+    const nsAString& aumid, JSContext* aCx, /* out */ dom::Promise** aPromise) {
+  // https://bugzilla.mozilla.org/show_bug.cgi?id=1712628 tracks implementing
+  // this for MSIX packages.
+  if (widget::WinUtils::HasPackageIdentity()) {
+    return NS_ERROR_NOT_IMPLEMENTED;
+  }
+
   if (!NS_IsMainThread()) {
     return NS_ERROR_NOT_SAME_THREAD;
   }
@@ -1054,15 +1577,18 @@ nsWindowsShellService::IsCurrentAppPinnedToTaskbarAsync(
   auto promiseHolder = MakeRefPtr<nsMainThreadPtrHolder<dom::Promise>>(
       "IsCurrentAppPinnedToTaskbarAsync promise", promise);
 
+  // nsAString can't be captured by a lambda because it does not have a
+  // public copy constructor
+  nsAutoString capturedAumid(aumid);
   NS_DispatchBackgroundTask(
       NS_NewRunnableFunction(
           "IsCurrentAppPinnedToTaskbarAsync",
-          [promiseHolder = std::move(promiseHolder)] {
+          [capturedAumid, promiseHolder = std::move(promiseHolder)] {
             bool isPinned = false;
 
             HRESULT hr = CoInitialize(nullptr);
             if (SUCCEEDED(hr)) {
-              isPinned = IsCurrentAppPinnedToTaskbarSync();
+              isPinned = IsCurrentAppPinnedToTaskbarSync(capturedAumid);
               CoUninitialize();
             }
 
@@ -1102,7 +1628,7 @@ nsWindowsShellService::ClassifyShortcut(const nsAString& aPath,
                  {FOLDERID_UserPinned, u"\\TaskBar\\", u"Taskbar"},
                  {FOLDERID_UserPinned, u"\\StartMenu\\", u"StartMenu"}};
 
-  for (int i = 0; i < ArrayLength(folders); ++i) {
+  for (size_t i = 0; i < ArrayLength(folders); ++i) {
     nsAutoString knownPath;
 
     // These flags are chosen to avoid I/O, see bug 1363398.
@@ -1123,6 +1649,19 @@ nsWindowsShellService::ClassifyShortcut(const nsAString& aPath,
     if (wcsnicmp(shortcutPath.get(), knownPath.get(), knownPath.Length()) ==
         0) {
       aResult.Assign(folders[i].classification);
+      nsTArray<nsCString> resIds = {
+          "branding/brand.ftl"_ns,
+          "browser/browser.ftl"_ns,
+      };
+      RefPtr<Localization> l10n = Localization::Create(resIds, true);
+      nsAutoCString pbStr;
+      IgnoredErrorResult rv;
+      l10n->FormatValueSync("private-browsing-shortcut-text-2"_ns, {}, pbStr,
+                            rv);
+      NS_ConvertUTF8toUTF16 widePbStr(pbStr);
+      if (wcsstr(shortcutPath.get(), widePbStr.get())) {
+        aResult.AppendLiteral("Private");
+      }
       return NS_OK;
     }
   }

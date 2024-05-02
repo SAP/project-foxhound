@@ -17,7 +17,7 @@
 </div>
 <pre id="test">
 </pre>
-  <script type="application/javascript">
+  <script>
 
   /** Test for Bug 887364 **/
   ok("URL" in window, "window.URL exists");
@@ -193,6 +193,7 @@
       base: undefined,
       error: false,
       protocol: "gopher:",
+      expectedChangedProtocol: "https:",
     },
     { url: "ws://ws.something.net",
       base: undefined,
@@ -208,6 +209,7 @@
       base: undefined,
       error: false,
       protocol: "foo:",
+      expectedChangedProtocol: "https:",
     },
 
     { url: "about:blank",
@@ -292,6 +294,12 @@
     if ("search" in test) is(url.search, test.search, "search");
     if ("hash" in test) is(url.hash, test.hash, "hash");
 
+    {
+      let uri = SpecialPowers.wrap(url).URI;
+      is(url.href, uri.spec, "Conversion to nsIURI");
+      is(SpecialPowers.wrap(URL).fromURI(uri).href, uri.spec, "Conversion from nsIURI");
+    }
+
     if ("skip_setters" in test && test.skip_setters === false) {
       info("Skip setter methods for URL: " + test);
       continue;
@@ -313,7 +321,8 @@
 
     if ("href" in test) is(url.href, test.href, "href");
     if ("origin" in test) is(url.origin, test.origin, "origin");
-    if ("protocol" in test) is(url.protocol, test.protocol, "protocol");
+    if ("expectedChangedProtocol" in test) is(url.protocol, test.expectedChangedProtocol, "protocol");
+    else if ("protocol" in test) is(url.protocol, test.protocol, "protocol");
     if ("username" in test) is(url.username, test.username, "username");
     if ("password" in test) is(url.password, test.password, "password");
     if ("host" in test) is(url.host, test.host, "host");

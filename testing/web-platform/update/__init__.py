@@ -4,19 +4,19 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-import imp
 import os
 import sys
 
+from mozfile import load_source
 from mozlog import structuredlog
 
 here = os.path.split(__file__)[0]
 
-imp.load_source(
+load_source(
     "localpaths", os.path.join(here, os.pardir, "tests", "tools", "localpaths.py")
 )
 
-from wptrunner.update import setup_logging, WPTUpdate
+from wptrunner.update import WPTUpdate, setup_logging
 from wptrunner.update.base import exit_unclean
 
 from . import updatecommandline

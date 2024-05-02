@@ -1,8 +1,8 @@
-const { BlocklistPrivate } = ChromeUtils.import(
-  "resource://gre/modules/Blocklist.jsm"
+const { BlocklistPrivate } = ChromeUtils.importESModule(
+  "resource://gre/modules/Blocklist.sys.mjs"
 );
-const { RemoteSettings } = ChromeUtils.import(
-  "resource://services-settings/remote-settings.js"
+const { RemoteSettings } = ChromeUtils.importESModule(
+  "resource://services-settings/remote-settings.sys.mjs"
 );
 
 const APP_ID = "xpcshell@tests.mozilla.org";
@@ -20,7 +20,8 @@ async function createRecords(records) {
     id: `record-${i}`,
     ...record,
   }));
-  return client.db.importChanges({}, 42, withId);
+  // Prevent packaged dump to be loaded with high collection timestamp
+  return client.db.importChanges({}, Date.now(), withId);
 }
 
 function run_test() {
@@ -75,8 +76,7 @@ add_task(async function test_returns_all_without_target() {
       ],
     },
     {
-      name:
-        "Java(\\(TM\\))? Plug-in 11\\.(7[6-9]|[8-9]\\d|1([0-6]\\d|70))(\\.\\d+)?([^\\d\\._]|$)",
+      name: "Java(\\(TM\\))? Plug-in 11\\.(7[6-9]|[8-9]\\d|1([0-6]\\d|70))(\\.\\d+)?([^\\d\\._]|$)",
       versionRange: [
         {
           severity: 0,

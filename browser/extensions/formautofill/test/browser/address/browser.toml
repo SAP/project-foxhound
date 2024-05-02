@@ -1,0 +1,34 @@
+[DEFAULT]
+prefs = [
+  "extensions.formautofill.addresses.enabled=true",
+  "toolkit.telemetry.ipcBatchTimeout=0", # lower the interval for event telemetry in the content process to update the parent process
+]
+support-files = [
+  "../head.js",
+  "../../fixtures/autocomplete_address_basic.html",
+  "../../fixtures/without_autocomplete_address_basic.html",
+  "head_address.js",
+]
+
+["browser_address_doorhanger_display.js"]
+
+["browser_address_doorhanger_not_shown.js"]
+
+["browser_address_doorhanger_state.js"]
+
+["browser_address_doorhanger_tel.js"]
+
+["browser_address_doorhanger_ui.js"]
+skip-if = ["a11y_checks"] # Bug 1859968 - Add accessibility support for address doorhanger
+
+["browser_address_telemetry.js"]
+skip-if = ["a11y_checks"] # Bug 1859968 - Add accessibility support for address doorhanger
+
+["browser_edit_address_doorhanger_display.js"]
+skip-if = ["a11y_checks"] # Bug 1859968 - Add accessibility support for address doorhanger
+
+["browser_edit_address_doorhanger_display_state.js"]
+skip-if = ["a11y_checks"] # Bug 1859968 - Add accessibility support for address doorhanger
+
+["browser_edit_address_doorhanger_save_edited_fields.js"]
+skip-if = ["a11y_checks"] # Bug 1859968 - Add accessibility support for address doorhanger

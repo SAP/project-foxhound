@@ -6,83 +6,85 @@
 // Check evaluating and expanding getters in the console.
 const TEST_URI =
   "data:text/html;charset=utf8,<!DOCTYPE html><h1>Object Inspector on Getters</h1>";
-const { ELLIPSIS } = require("devtools/shared/l10n");
+const { ELLIPSIS } = require("resource://devtools/shared/l10n.js");
 
-add_task(async function() {
+add_task(async function () {
   const hud = await openNewTabAndConsole(TEST_URI);
 
   const LONGSTRING = "ab ".repeat(1e5);
 
-  await SpecialPowers.spawn(gBrowser.selectedBrowser, [LONGSTRING], function(
-    longString
-  ) {
-    content.wrappedJSObject.console.log(
-      "oi-test",
-      Object.create(
-        null,
-        Object.getOwnPropertyDescriptors({
-          get myStringGetter() {
-            return "hello";
-          },
-          get myNumberGetter() {
-            return 123;
-          },
-          get myUndefinedGetter() {
-            return undefined;
-          },
-          get myNullGetter() {
-            return null;
-          },
-          get myZeroGetter() {
-            return 0;
-          },
-          get myEmptyStringGetter() {
-            return "";
-          },
-          get myFalseGetter() {
-            return false;
-          },
-          get myTrueGetter() {
-            return true;
-          },
-          get myObjectGetter() {
-            return { foo: "bar" };
-          },
-          get myArrayGetter() {
-            return Array.from({ length: 1000 }, (_, i) => i);
-          },
-          get myMapGetter() {
-            return new Map([["foo", { bar: "baz" }]]);
-          },
-          get myProxyGetter() {
-            const handler = {
-              get: function(target, name) {
-                return name in target ? target[name] : 37;
-              },
-            };
-            return new Proxy({ a: 1 }, handler);
-          },
-          get myThrowingGetter() {
-            throw new Error("myError");
-          },
-          get myLongStringGetter() {
-            return longString;
-          },
-          get ["hyphen-getter"]() {
-            return "---";
-          },
-          get [`"quoted-getter"`]() {
-            return "quoted";
-          },
-          get [`"'\``]() {
-            return "quoted2";
-          },
-        })
-      )
-    );
-  });
+  await SpecialPowers.spawn(
+    gBrowser.selectedBrowser,
+    [LONGSTRING],
+    function (longString) {
+      content.wrappedJSObject.console.log(
+        "oi-test",
+        Object.create(
+          null,
+          Object.getOwnPropertyDescriptors({
+            get myStringGetter() {
+              return "hello";
+            },
+            get myNumberGetter() {
+              return 123;
+            },
+            get myUndefinedGetter() {
+              return undefined;
+            },
+            get myNullGetter() {
+              return null;
+            },
+            get myZeroGetter() {
+              return 0;
+            },
+            get myEmptyStringGetter() {
+              return "";
+            },
+            get myFalseGetter() {
+              return false;
+            },
+            get myTrueGetter() {
+              return true;
+            },
+            get myObjectGetter() {
+              return { foo: "bar" };
+            },
+            get myArrayGetter() {
+              return Array.from({ length: 1000 }, (_, i) => i);
+            },
+            get myMapGetter() {
+              return new Map([["foo", { bar: "baz" }]]);
+            },
+            get myProxyGetter() {
+              const handler = {
+                get(target, name) {
+                  return name in target ? target[name] : 37;
+                },
+              };
+              return new Proxy({ a: 1 }, handler);
+            },
+            get myThrowingGetter() {
+              throw new Error("myError");
+            },
+            get myLongStringGetter() {
+              return longString;
+            },
+            get ["hyphen-getter"]() {
+              return "---";
+            },
+            get [`"quoted-getter"`]() {
+              return "quoted";
+            },
+            get [`"'\``]() {
+              return "quoted2";
+            },
+          })
+        )
+      );
+    }
+  );
 
-  const node = await waitFor(() => findMessage(hud, "oi-test"));
+  const node = await waitFor(() => findConsoleAPIMessage(hud, "oi-test"));
   const oi = node.querySelector(".tree");
 
   expandObjectInspectorNode(oi);
@@ -372,7 +374,7 @@ async function testObjectGetter(oi) {
   is(isObjectInspectorNodeExpandable(node), true, "The node can be expanded");
 
   expandObjectInspectorNode(node);
-  await waitFor(() => getObjectInspectorChildrenNodes(node).length > 0);
+  await waitFor(() => !!getObjectInspectorChildrenNodes(node).length);
   checkChildren(node, [`foo: "bar"`, `<prototype>`]);
 }
 
@@ -404,7 +406,7 @@ async function testArrayGetter(oi) {
   is(isObjectInspectorNodeExpandable(node), true, "The node can be expanded");
 
   expandObjectInspectorNode(node);
-  await waitFor(() => getObjectInspectorChildrenNodes(node).length > 0);
+  await waitFor(() => !!getObjectInspectorChildrenNodes(node).length);
   const children = getObjectInspectorChildrenNodes(node);
 
   const firstBucket = children[0];
@@ -416,7 +418,7 @@ async function testArrayGetter(oi) {
     "The bucket can be expanded"
   );
   expandObjectInspectorNode(firstBucket);
-  await waitFor(() => getObjectInspectorChildrenNodes(firstBucket).length > 0);
+  await waitFor(() => !!getObjectInspectorChildrenNodes(firstBucket).length);
   checkChildren(
     firstBucket,
     Array.from({ length: 100 }, (_, i) => `${i}: ${i}`)
@@ -449,17 +451,17 @@ async function testMapGetter(oi) {
   is(isObjectInspectorNodeExpandable(node), true, "The node can be expanded");
 
   expandObjectInspectorNode(node);
-  await waitFor(() => getObjectInspectorChildrenNodes(node).length > 0);
+  await waitFor(() => !!getObjectInspectorChildrenNodes(node).length);
   checkChildren(node, [`size`, `<entries>`, `<prototype>`]);
 
   const entriesNode = findObjectInspectorNode(oi, "<entries>");
   expandObjectInspectorNode(entriesNode);
-  await waitFor(() => getObjectInspectorChildrenNodes(entriesNode).length > 0);
+  await waitFor(() => !!getObjectInspectorChildrenNodes(entriesNode).length);
   checkChildren(entriesNode, [`foo → Object { bar: "baz" }`]);
 
   const entryNode = getObjectInspectorChildrenNodes(entriesNode)[0];
   expandObjectInspectorNode(entryNode);
-  await waitFor(() => getObjectInspectorChildrenNodes(entryNode).length > 0);
+  await waitFor(() => !!getObjectInspectorChildrenNodes(entryNode).length);
   checkChildren(entryNode, [`<key>: "foo"`, `<value>: Object { bar: "baz" }`]);
 }
 
@@ -489,17 +491,17 @@ async function testProxyGetter(oi) {
   is(isObjectInspectorNodeExpandable(node), true, "The node can be expanded");
 
   expandObjectInspectorNode(node);
-  await waitFor(() => getObjectInspectorChildrenNodes(node).length > 0);
+  await waitFor(() => !!getObjectInspectorChildrenNodes(node).length);
   checkChildren(node, [`<target>`, `<handler>`]);
 
   const targetNode = findObjectInspectorNode(oi, "<target>");
   expandObjectInspectorNode(targetNode);
-  await waitFor(() => getObjectInspectorChildrenNodes(targetNode).length > 0);
+  await waitFor(() => !!getObjectInspectorChildrenNodes(targetNode).length);
   checkChildren(targetNode, [`a: 1`, `<prototype>`]);
 
   const handlerNode = findObjectInspectorNode(oi, "<handler>");
   expandObjectInspectorNode(handlerNode);
-  await waitFor(() => getObjectInspectorChildrenNodes(handlerNode).length > 0);
+  await waitFor(() => !!getObjectInspectorChildrenNodes(handlerNode).length);
   checkChildren(handlerNode, [`get:`, `<prototype>`]);
 }
 
@@ -529,7 +531,7 @@ async function testThrowingGetter(oi) {
   is(isObjectInspectorNodeExpandable(node), true, "The node can be expanded");
 
   expandObjectInspectorNode(node);
-  await waitFor(() => getObjectInspectorChildrenNodes(node).length > 0);
+  await waitFor(() => !!getObjectInspectorChildrenNodes(node).length);
   checkChildren(node, [
     `columnNumber`,
     `fileName`,
@@ -605,7 +607,7 @@ async function testHypgenGetter(oi) {
 async function testQuotedGetters(oi) {
   const nodes = [
     {
-      name: `"\\"quoted-getter\\""`,
+      name: `'"quoted-getter"'`,
       expected: `"quoted"`,
       expandable: false,
     },

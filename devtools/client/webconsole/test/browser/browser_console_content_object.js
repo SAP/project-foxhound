@@ -10,11 +10,9 @@ const TEST_URI = `data:text/html,<!DOCTYPE html><meta charset=utf8>console API c
   console.log({ contentObject: "YAY!", deep: ["yes!"] });
 </script>`;
 
-add_task(async function() {
+add_task(async function () {
   // Show the content messages
-  await pushPref("devtools.browserconsole.contentMessages", true);
-  // Enable Fission browser console to see the logged content object
-  await pushPref("devtools.browsertoolbox.fission", true);
+  await pushPref("devtools.browsertoolbox.scope", "everything");
 
   await addTab(TEST_URI);
 
@@ -23,7 +21,10 @@ add_task(async function() {
 
   info("Wait until the content object is displayed");
   let objectMessage = await waitFor(() =>
-    findMessage(hud, `Object { contentObject: "YAY!", deep: (1) […] }`)
+    findConsoleAPIMessage(
+      hud,
+      `Object { contentObject: "YAY!", deep: (1) […] }`
+    )
   );
   ok(true, "Content object is displayed in the Browser Console");
 
@@ -35,7 +36,10 @@ add_task(async function() {
 
   info("Wait until the content object is displayed");
   objectMessage = await waitFor(() =>
-    findMessage(hud, `Object { contentObject: "YAY!", deep: (1) […] }`)
+    findConsoleAPIMessage(
+      hud,
+      `Object { contentObject: "YAY!", deep: (1) […] }`
+    )
   );
   ok(true, "Content object is displayed in the Browser Console after restart");
 

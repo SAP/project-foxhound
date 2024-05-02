@@ -1,5 +1,3 @@
-/* eslint-env mozilla/frame-script */
-
 requestLongerTimeout(2);
 
 const DUMMY_PATH = "browser/browser/base/content/test/general/dummy_page.html";
@@ -51,7 +49,7 @@ async function get_remote_history(browser) {
   });
 }
 
-var check_history = async function() {
+var check_history = async function () {
   let sessionHistory = await get_remote_history(gBrowser.selectedBrowser);
 
   let count = sessionHistory.entries.length;
@@ -84,15 +82,18 @@ function clear_history() {
 }
 
 // Waits for a load and updates the known history
-var waitForLoad = async function(uri) {
-  info("Loading " + uri);
+var waitForLoad = async function (uriString) {
+  info("Loading " + uriString);
   // Longwinded but this ensures we don't just shortcut to LoadInNewProcess
   let loadURIOptions = {
     triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
   };
-  gBrowser.selectedBrowser.webNavigation.loadURI(uri, loadURIOptions);
+  gBrowser.selectedBrowser.webNavigation.loadURI(
+    Services.io.newURI(uriString),
+    loadURIOptions
+  );
 
-  await BrowserTestUtils.browserStopped(gBrowser, uri);
+  await BrowserTestUtils.browserStopped(gBrowser, uriString);
 
   // Some of the documents we're using in this test use Fluent,
   // and they may finish localization later.
@@ -112,17 +113,17 @@ var waitForLoad = async function(uri) {
 };
 
 // Waits for a load and updates the known history
-var waitForLoadWithFlags = async function(
-  uri,
+var waitForLoadWithFlags = async function (
+  uriString,
   flags = Ci.nsIWebNavigation.LOAD_FLAGS_NONE
 ) {
-  info("Loading " + uri + " flags = " + flags);
-  gBrowser.selectedBrowser.loadURI(uri, {
+  info("Loading " + uriString + " flags = " + flags);
+  gBrowser.selectedBrowser.loadURI(Services.io.newURI(uriString), {
     flags,
     triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
   });
 
-  await BrowserTestUtils.browserStopped(gBrowser, uri);
+  await BrowserTestUtils.browserStopped(gBrowser, uriString);
   if (!(flags & Ci.nsIWebNavigation.LOAD_FLAGS_BYPASS_HISTORY)) {
     if (flags & Ci.nsIWebNavigation.LOAD_FLAGS_REPLACE_HISTORY) {
       gExpectedHistory.entries.pop();
@@ -137,14 +138,14 @@ var waitForLoadWithFlags = async function(
   }
 };
 
-var back = async function() {
+var back = async function () {
   info("Going back");
   gBrowser.goBack();
   await BrowserTestUtils.browserStopped(gBrowser);
   gExpectedHistory.index--;
 };
 
-var forward = async function() {
+var forward = async function () {
   info("Going forward");
   gBrowser.goForward();
   await BrowserTestUtils.browserStopped(gBrowser);
@@ -166,6 +167,7 @@ add_task(async function test_navigation() {
     skipAnimation: true,
   });
   let { permanentKey } = gBrowser.selectedBrowser;
+  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
   await waitForLoad("http://example.org/" + DUMMY_PATH);
   is(
     gBrowser.selectedBrowser.isRemoteBrowser,
@@ -180,6 +182,7 @@ add_task(async function test_navigation() {
 
   info("2");
   // Load another page
+  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
   await waitForLoad("http://example.com/" + DUMMY_PATH);
   is(
     gBrowser.selectedBrowser.isRemoteBrowser,
@@ -214,6 +217,7 @@ add_task(async function test_navigation() {
 
   info("4");
   // Load a remote page
+  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
   await waitForLoad("http://example.org/" + DUMMY_PATH);
   is(
     gBrowser.selectedBrowser.isRemoteBrowser,
@@ -312,6 +316,7 @@ add_task(async function test_navigation() {
   info("10");
   // Load a new remote page, this should replace the last history entry
   gExpectedHistory.entries.splice(gExpectedHistory.entries.length - 1, 1);
+  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
   await waitForLoad("http://example.com/" + DUMMY_PATH);
   is(
     gBrowser.selectedBrowser.isRemoteBrowser,
@@ -341,6 +346,7 @@ add_task(async function test_synchronous() {
     skipAnimation: true,
   });
   let { permanentKey } = gBrowser.selectedBrowser;
+  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
   await waitForLoad("http://example.org/" + DUMMY_PATH);
   is(
     gBrowser.selectedBrowser.isRemoteBrowser,
@@ -356,7 +362,10 @@ add_task(async function test_synchronous() {
   info("2");
   // Load another page
   info("Loading about:robots");
-  BrowserTestUtils.loadURI(gBrowser.selectedBrowser, "about:robots");
+  BrowserTestUtils.startLoadingURIString(
+    gBrowser.selectedBrowser,
+    "about:robots"
+  );
   await BrowserTestUtils.browserStopped(gBrowser);
   is(
     gBrowser.selectedBrowser.isRemoteBrowser,
@@ -372,8 +381,9 @@ add_task(async function test_synchronous() {
   info("3");
   // Load the remote page again
   info("Loading http://example.org/" + DUMMY_PATH);
-  BrowserTestUtils.loadURI(
+  BrowserTestUtils.startLoadingURIString(
     gBrowser.selectedBrowser,
+    // eslint-disable-next-line @microsoft/sdl/no-insecure-url
     "http://example.org/" + DUMMY_PATH
   );
   await BrowserTestUtils.browserStopped(gBrowser);
@@ -418,6 +428,7 @@ add_task(async function test_loadflags() {
   info("2");
   // Load a page in the remote process with some custom flags
   await waitForLoadWithFlags(
+    // eslint-disable-next-line @microsoft/sdl/no-insecure-url
     "http://example.com/" + DUMMY_PATH,
     Ci.nsIWebNavigation.LOAD_FLAGS_BYPASS_HISTORY
   );
@@ -445,6 +456,7 @@ add_task(async function test_loadflags() {
   info("4");
   // Load another remote page
   await waitForLoadWithFlags(
+    // eslint-disable-next-line @microsoft/sdl/no-insecure-url
     "http://example.org/" + DUMMY_PATH,
     Ci.nsIWebNavigation.LOAD_FLAGS_REPLACE_HISTORY
   );
@@ -458,6 +470,7 @@ add_task(async function test_loadflags() {
   info("5");
   // Load another remote page from a different origin
   await waitForLoadWithFlags(
+    // eslint-disable-next-line @microsoft/sdl/no-insecure-url
     "http://example.com/" + DUMMY_PATH,
     Ci.nsIWebNavigation.LOAD_FLAGS_REPLACE_HISTORY
   );

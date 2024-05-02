@@ -7,14 +7,14 @@
 
 const TEST_URL = "http://example.com/";
 
-const checkToolbox = async function(tab, location) {
-  const toolbox = await gDevTools.getToolboxForTab(tab);
+const checkToolbox = async function (tab, location) {
+  const toolbox = gDevTools.getToolboxForTab(tab);
   ok(!!toolbox, `Toolbox exists ${location}`);
 };
 
 addRDMTask(
   "",
-  async function() {
+  async function () {
     const tab = await addTab(TEST_URL);
 
     info("Open toolbox outside RDM");
@@ -23,11 +23,11 @@ addRDMTask(
       inspector.walker.once("new-root", () => {
         ok(false, "Inspector saw new root, would reboot!");
       });
-      await checkToolbox(tab, "outside RDM");
+      checkToolbox(tab, "outside RDM");
       await openRDM(tab);
-      await checkToolbox(tab, "after opening RDM");
+      checkToolbox(tab, "after opening RDM");
       await closeRDM(tab);
-      await checkToolbox(tab, tab.linkedBrowser, "after closing RDM");
+      checkToolbox(tab, tab.linkedBrowser, "after closing RDM");
       await toolbox.destroy();
     }
 
@@ -38,9 +38,9 @@ addRDMTask(
       inspector.walker.once("new-root", () => {
         ok(false, "Inspector saw new root, would reboot!");
       });
-      await checkToolbox(tab, ui.getViewportBrowser(), "inside RDM");
+      checkToolbox(tab, ui.getViewportBrowser(), "inside RDM");
       await closeRDM(tab);
-      await checkToolbox(tab, tab.linkedBrowser, "after closing RDM");
+      checkToolbox(tab, tab.linkedBrowser, "after closing RDM");
       await toolbox.destroy();
     }
 

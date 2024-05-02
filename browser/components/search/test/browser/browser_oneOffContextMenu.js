@@ -6,16 +6,16 @@ const TEST_ENGINE_BASENAME = "testEngine.xml";
 let searchbar;
 let searchIcon;
 
-add_task(async function init() {
+add_setup(async function () {
   searchbar = await gCUITestUtils.addSearchBar();
   registerCleanupFunction(() => {
     gCUITestUtils.removeSearchBar();
   });
   searchIcon = searchbar.querySelector(".searchbar-search-button");
 
-  await SearchTestUtils.promiseNewSearchEngine(
-    getRootDirectory(gTestPath) + TEST_ENGINE_BASENAME
-  );
+  await SearchTestUtils.promiseNewSearchEngine({
+    url: getRootDirectory(gTestPath) + TEST_ENGINE_BASENAME,
+  });
 });
 
 add_task(async function telemetry() {

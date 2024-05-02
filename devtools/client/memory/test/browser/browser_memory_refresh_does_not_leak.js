@@ -13,7 +13,7 @@
 
 const {
   getLabelAndShallowSize,
-} = require("devtools/shared/heapsnapshot/DominatorTreeNode");
+} = require("resource://devtools/shared/heapsnapshot/DominatorTreeNode.js");
 
 const TEST_URL =
   "http://example.com/browser/devtools/client/memory/test/browser/doc_empty.html";
@@ -53,7 +53,7 @@ const DESCRIPTION = {
   },
 };
 
-this.test = makeMemoryTest(TEST_URL, async function({ tab, panel }) {
+this.test = makeMemoryTest(TEST_URL, async function ({ tab, panel }) {
   let front = panel.panelWin.gStore.getState().front;
 
   const startWindows = await getWindowsInSnapshot(front);

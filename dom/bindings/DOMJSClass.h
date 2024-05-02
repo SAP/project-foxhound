@@ -13,6 +13,7 @@
 #include "js/Wrapper.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
+#include "mozilla/OriginTrials.h"
 #include "mozilla/Likely.h"
 
 #include "mozilla/dom/PrototypeList.h"  // auto-generated
@@ -36,8 +37,7 @@ class nsIGlobalObject;
 #define JSCLASS_DOM_GLOBAL JSCLASS_USERBIT1
 #define JSCLASS_IS_DOMIFACEANDPROTOJSCLASS JSCLASS_USERBIT2
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 /**
  * Returns true if code running in the given JSContext is allowed to access
@@ -89,9 +89,9 @@ typedef bool (*DeleteNamedProperty)(JSContext* cx,
                                     JS::ObjectOpResult& opresult);
 
 // Returns true if the given global is of a type whose bit is set in
-// aNonExposedGlobals.
-bool IsNonExposedGlobal(JSContext* aCx, JSObject* aGlobal,
-                        uint32_t aNonExposedGlobals);
+// aGlobalSet.
+bool IsGlobalInExposureSet(JSContext* aCx, JSObject* aGlobal,
+                           uint32_t aGlobalSet);
 
 struct ConstantSpec {
   const char* name;
@@ -105,21 +105,22 @@ namespace GlobalNames {
 // interfaces, not of the global names used to refer to them in IDL [Exposed]
 // annotations.
 static const uint32_t Window = 1u << 0;
-static const uint32_t BackstagePass = 1u << 1;
-static const uint32_t DedicatedWorkerGlobalScope = 1u << 2;
-static const uint32_t SharedWorkerGlobalScope = 1u << 3;
-static const uint32_t ServiceWorkerGlobalScope = 1u << 4;
-static const uint32_t WorkerDebuggerGlobalScope = 1u << 5;
-static const uint32_t WorkletGlobalScope = 1u << 6;
-static const uint32_t AudioWorkletGlobalScope = 1u << 7;
-static const uint32_t PaintWorkletGlobalScope = 1u << 8;
+static const uint32_t DedicatedWorkerGlobalScope = 1u << 1;
+static const uint32_t SharedWorkerGlobalScope = 1u << 2;
+static const uint32_t ServiceWorkerGlobalScope = 1u << 3;
+static const uint32_t WorkerDebuggerGlobalScope = 1u << 4;
+static const uint32_t AudioWorkletGlobalScope = 1u << 5;
+static const uint32_t PaintWorkletGlobalScope = 1u << 6;
+static const uint32_t ShadowRealmGlobalScope = 1u << 7;
+
+static constexpr uint32_t kCount = 8;
 }  // namespace GlobalNames
 
 struct PrefableDisablers {
   inline bool isEnabled(JSContext* cx, JS::Handle<JSObject*> obj) const {
     if (nonExposedGlobals &&
-        IsNonExposedGlobal(cx, JS::GetNonCCWObjectGlobal(obj),
-                           nonExposedGlobals)) {
+        IsGlobalInExposureSet(cx, JS::GetNonCCWObjectGlobal(obj),
+                              nonExposedGlobals)) {
       return false;
     }
     if (prefIndex != WebIDLPrefIndex::NoPref &&
@@ -127,6 +128,15 @@ struct PrefableDisablers {
       return false;
     }
     if (secureContext && !IsSecureContextOrObjectIsFromSecureContext(cx, obj)) {
+      return false;
+    }
+    if (trial != OriginTrial(0) &&
+        !OriginTrials::IsEnabled(cx, JS::GetNonCCWObjectGlobal(obj), trial)) {
+      // TODO(emilio): Perhaps reconsider the interaction between [Trial=""] and
+      // [Pref=""].
+      //
+      // In particular, it might be desirable to only check the trial if there
+      // is no pref or the pref is disabled.
       return false;
     }
     if (enabledFunc && !enabledFunc(cx, JS::GetNonCCWObjectGlobal(obj))) {
@@ -138,11 +148,15 @@ struct PrefableDisablers {
   // Index into the array of StaticPrefs
   const WebIDLPrefIndex prefIndex;
 
-  // A boolean indicating whether a Secure Context is required.
-  const bool secureContext;
-
   // Bitmask of global names that we should not be exposed in.
-  const uint16_t nonExposedGlobals;
+  const uint16_t nonExposedGlobals : GlobalNames::kCount;
+
+  // A boolean indicating whether a Secure Context is required.
+  const uint16_t secureContext : 1;
+
+  // An origin trial controlling the feature. This can be made a bitfield too if
+  // needed.
+  const OriginTrial trial;
 
   // A function pointer to a function that can say the property is disabled
   // even if "enabled" is set to true.  If the pointer is null the value of
@@ -203,9 +217,28 @@ struct PropertyInfo {
   void SetId(jsid aId) {
     static_assert(sizeof(jsid) == sizeof(mIdBits),
                   "jsid should fit in mIdBits");
-    mIdBits = JSID_BITS(aId);
+    mIdBits = aId.asRawBits();
   }
   MOZ_ALWAYS_INLINE jsid Id() const { return jsid::fromRawBits(mIdBits); }
+
+  bool IsStaticMethod() const { return type == eStaticMethod; }
+
+  static int Compare(const PropertyInfo& aInfo1, const PropertyInfo& aInfo2) {
+    // IdToIndexComparator needs to be updated if the order here is changed!
+    if (MOZ_UNLIKELY(aInfo1.mIdBits == aInfo2.mIdBits)) {
+      MOZ_ASSERT((aInfo1.type == eMethod || aInfo1.type == eStaticMethod) &&
+                 (aInfo2.type == eMethod || aInfo2.type == eStaticMethod));
+
+      bool isStatic1 = aInfo1.IsStaticMethod();
+
+      MOZ_ASSERT(isStatic1 != aInfo2.IsStaticMethod(),
+                 "We shouldn't have 2 static methods with the same name!");
+
+      return isStatic1 ? -1 : 1;
+    }
+
+    return aInfo1.mIdBits < aInfo2.mIdBits ? -1 : 1;
+  }
 };
 
 static_assert(
@@ -392,15 +425,10 @@ struct NativePropertiesHolder {
   bool* inited;
 };
 
-// Helper structure for Xrays for DOM binding objects. The same instance is used
-// for instances, interface objects and interface prototype objects of a
-// specific interface.
-struct NativePropertyHooks {
-  // The hook to call for resolving indexed or named properties. May be null if
-  // there can't be any.
+struct NativeNamedOrIndexedPropertyHooks {
+  // The hook to call for resolving indexed or named properties.
   ResolveOwnProperty mResolveOwnProperty;
-  // The hook to call for enumerating indexed or named properties. May be null
-  // if there can't be any.
+  // The hook to call for enumerating indexed or named properties.
   EnumerateOwnProperties mEnumerateOwnProperties;
   // The hook to call to delete a named property.  May be null if there are no
   // named properties or no named property deleter.  On success (true return)
@@ -411,6 +439,13 @@ struct NativePropertyHooks {
   // to true, it will indicate via opresult whether the delete actually
   // succeeded.
   DeleteNamedProperty mDeleteNamedProperty;
+};
+
+// Helper structure for Xrays for DOM binding objects. The same instance is used
+// for instances, interface objects and interface prototype objects of a
+// specific interface.
+struct NativePropertyHooks {
+  const NativeNamedOrIndexedPropertyHooks* mIndexedOrNamedNativeProperties;
 
   // The property arrays for this interface.
   NativePropertiesHolder mNativeProperties;
@@ -425,10 +460,6 @@ struct NativePropertyHooks {
   // constructors::id::_ID_Count.
   constructors::ID mConstructorID;
 
-  // The NativePropertyHooks instance for the parent interface (for
-  // ShimInterfaceInfo).
-  const NativePropertyHooks* mProtoHooks;
-
   // The JSClass to use for expandos on our Xrays.  Can be null, in which case
   // Xrays will use a default class of their choice.
   const JSClass* mXrayExpandoClass;
@@ -440,6 +471,7 @@ enum DOMObjectType : uint8_t {
   eInterface,
   eInterfacePrototype,
   eGlobalInterfacePrototype,
+  eNamespace,
   eNamedPropertiesObject
 };
 
@@ -538,23 +570,14 @@ struct DOMIfaceAndProtoJSClass {
   // initialization for aggregate/POD types.
   const JSClass mBase;
 
-  // Either eInterface, eInterfacePrototype, eGlobalInterfacePrototype or
-  // eNamedPropertiesObject.
+  // Either eInterface, eNamespace, eInterfacePrototype,
+  // eGlobalInterfacePrototype or eNamedPropertiesObject.
   DOMObjectType mType;  // uint8_t
-
-  // Boolean indicating whether this object wants a @@hasInstance property
-  // pointing to InterfaceHasInstance defined on it.  Only ever true for the
-  // eInterface case.
-  bool wantsInterfaceHasInstance;
 
   const prototypes::ID mPrototypeID;  // uint16_t
   const uint32_t mDepth;
 
   const NativePropertyHooks* mNativeHooks;
-
-  // The value to return for Function.prototype.toString on this interface
-  // object.
-  const char* mFunToString;
 
   ProtoGetter mGetParentProto;
 
@@ -566,10 +589,29 @@ struct DOMIfaceAndProtoJSClass {
   const JSClass* ToJSClass() const { return &mBase; }
 };
 
+// Special JSClass for DOM interface objects.
+struct DOMIfaceJSClass : public DOMIfaceAndProtoJSClass {
+  // Boolean indicating whether this object wants a @@hasInstance property
+  // pointing to InterfaceHasInstance defined on it.  Only ever true for the
+  // eInterface case.
+  bool wantsInterfaceHasInstance;
+
+  // The value to return for Function.prototype.toString on this interface
+  // object.
+  const char* mFunToString;
+
+  static const DOMIfaceJSClass* FromJSClass(const JSClass* base) {
+    const DOMIfaceAndProtoJSClass* clazz =
+        DOMIfaceAndProtoJSClass::FromJSClass(base);
+    MOZ_ASSERT(clazz->mType == eInterface || clazz->mType == eNamespace);
+    return static_cast<const DOMIfaceJSClass*>(clazz);
+  }
+};
+
 class ProtoAndIfaceCache;
 
 inline bool DOMGlobalHasProtoAndIFaceCache(JSObject* global) {
-  MOZ_ASSERT(JS::GetClass(global)->flags & JSCLASS_DOM_GLOBAL);
+  MOZ_DIAGNOSTIC_ASSERT(JS::GetClass(global)->flags & JSCLASS_DOM_GLOBAL);
   // This can be undefined if we GC while creating the global
   return !JS::GetReservedSlot(global, DOM_PROTOTYPE_SLOT).isUndefined();
 }
@@ -582,12 +624,11 @@ inline bool HasProtoAndIfaceCache(JSObject* global) {
 }
 
 inline ProtoAndIfaceCache* GetProtoAndIfaceCache(JSObject* global) {
-  MOZ_ASSERT(JS::GetClass(global)->flags & JSCLASS_DOM_GLOBAL);
+  MOZ_DIAGNOSTIC_ASSERT(JS::GetClass(global)->flags & JSCLASS_DOM_GLOBAL);
   return static_cast<ProtoAndIfaceCache*>(
       JS::GetReservedSlot(global, DOM_PROTOTYPE_SLOT).toPrivate());
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif /* mozilla_dom_DOMJSClass_h */

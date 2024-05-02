@@ -6,21 +6,39 @@
 
 #include "mozilla/dom/ElementInternals.h"
 
+#include "mozAutoDocUpdate.h"
 #include "mozilla/dom/CustomElementRegistry.h"
 #include "mozilla/dom/CustomEvent.h"
+#include "mozilla/dom/CustomStateSet.h"
 #include "mozilla/dom/ElementInternalsBinding.h"
 #include "mozilla/dom/FormData.h"
 #include "mozilla/dom/HTMLElement.h"
 #include "mozilla/dom/HTMLFieldSetElement.h"
+#include "mozilla/dom/MutationEventBinding.h"
+#include "mozilla/dom/MutationObservers.h"
 #include "mozilla/dom/ShadowRoot.h"
 #include "mozilla/dom/ValidityState.h"
 #include "nsContentUtils.h"
+#include "nsDebug.h"
 #include "nsGenericHTMLElement.h"
 
 namespace mozilla::dom {
 
-NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(ElementInternals, mSubmissionValue,
-                                      mState, mValidity, mValidationAnchor)
+NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(ElementInternals)
+
+NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(ElementInternals)
+  tmp->Unlink();
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mTarget, mSubmissionValue, mState, mValidity,
+                                  mValidationAnchor, mCustomStateSet);
+  NS_IMPL_CYCLE_COLLECTION_UNLINK_PRESERVED_WRAPPER
+NS_IMPL_CYCLE_COLLECTION_UNLINK_END
+
+NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(ElementInternals)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mTarget, mSubmissionValue, mState,
+                                    mValidity, mValidationAnchor,
+                                    mCustomStateSet);
+NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
+
 NS_IMPL_CYCLE_COLLECTING_ADDREF(ElementInternals)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(ElementInternals)
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(ElementInternals)
@@ -33,7 +51,8 @@ ElementInternals::ElementInternals(HTMLElement* aTarget)
     : nsIFormControl(FormControlType::FormAssociatedCustomElement),
       mTarget(aTarget),
       mForm(nullptr),
-      mFieldSet(nullptr) {}
+      mFieldSet(nullptr),
+      mControlNumber(-1) {}
 
 nsISupports* ElementInternals::GetParentObject() { return ToSupports(mTarget); }
 
@@ -59,12 +78,14 @@ void ElementInternals::SetFormValue(
     const Nullable<FileOrUSVStringOrFormData>& aValue,
     const Optional<Nullable<FileOrUSVStringOrFormData>>& aState,
     ErrorResult& aRv) {
+  MOZ_ASSERT(mTarget);
+
   /**
    * 1. Let element be this's target element.
    * 2. If element is not a form-associated custom element, then throw a
    *    "NotSupportedError" DOMException.
    */
-  if (!mTarget || !mTarget->IsFormAssociatedElement()) {
+  if (!mTarget->IsFormAssociatedElement()) {
     aRv.ThrowNotSupportedError(
         "Target element is not a form-associated custom element");
     return;
@@ -118,7 +139,9 @@ void ElementInternals::SetFormValue(
 
 // https://html.spec.whatwg.org/#dom-elementinternals-form
 HTMLFormElement* ElementInternals::GetForm(ErrorResult& aRv) const {
-  if (!mTarget || !mTarget->IsFormAssociatedElement()) {
+  MOZ_ASSERT(mTarget);
+
+  if (!mTarget->IsFormAssociatedElement()) {
     aRv.ThrowNotSupportedError(
         "Target element is not a form-associated custom element");
     return nullptr;
@@ -130,12 +153,14 @@ HTMLFormElement* ElementInternals::GetForm(ErrorResult& aRv) const {
 void ElementInternals::SetValidity(
     const ValidityStateFlags& aFlags, const Optional<nsAString>& aMessage,
     const Optional<NonNull<nsGenericHTMLElement>>& aAnchor, ErrorResult& aRv) {
+  MOZ_ASSERT(mTarget);
+
   /**
    * 1. Let element be this's target element.
    * 2. If element is not a form-associated custom element, then throw a
    *    "NotSupportedError" DOMException.
    */
-  if (!mTarget || !mTarget->IsFormAssociatedElement()) {
+  if (!mTarget->IsFormAssociatedElement()) {
     aRv.ThrowNotSupportedError(
         "Target element is not a form-associated custom element");
     return;
@@ -168,7 +193,7 @@ void ElementInternals::SetValidity(
   SetValidityState(VALIDITY_STATE_STEP_MISMATCH, aFlags.mStepMismatch);
   SetValidityState(VALIDITY_STATE_BAD_INPUT, aFlags.mBadInput);
   SetValidityState(VALIDITY_STATE_CUSTOM_ERROR, aFlags.mCustomError);
-  mTarget->UpdateState(true);
+  mTarget->UpdateValidityElementStates(true);
 
   /**
    * 5. Set element's validation message to the empty string if message is not
@@ -204,7 +229,9 @@ void ElementInternals::SetValidity(
 
 // https://html.spec.whatwg.org/#dom-elementinternals-willvalidate
 bool ElementInternals::GetWillValidate(ErrorResult& aRv) const {
-  if (!mTarget || !mTarget->IsFormAssociatedElement()) {
+  MOZ_ASSERT(mTarget);
+
+  if (!mTarget->IsFormAssociatedElement()) {
     aRv.ThrowNotSupportedError(
         "Target element is not a form-associated custom element");
     return false;
@@ -214,7 +241,9 @@ bool ElementInternals::GetWillValidate(ErrorResult& aRv) const {
 
 // https://html.spec.whatwg.org/#dom-elementinternals-validity
 ValidityState* ElementInternals::GetValidity(ErrorResult& aRv) {
-  if (!mTarget || !mTarget->IsFormAssociatedElement()) {
+  MOZ_ASSERT(mTarget);
+
+  if (!mTarget->IsFormAssociatedElement()) {
     aRv.ThrowNotSupportedError(
         "Target element is not a form-associated custom element");
     return nullptr;
@@ -225,7 +254,9 @@ ValidityState* ElementInternals::GetValidity(ErrorResult& aRv) {
 // https://html.spec.whatwg.org/#dom-elementinternals-validationmessage
 void ElementInternals::GetValidationMessage(nsAString& aValidationMessage,
                                             ErrorResult& aRv) const {
-  if (!mTarget || !mTarget->IsFormAssociatedElement()) {
+  MOZ_ASSERT(mTarget);
+
+  if (!mTarget->IsFormAssociatedElement()) {
     aRv.ThrowNotSupportedError(
         "Target element is not a form-associated custom element");
     return;
@@ -235,7 +266,9 @@ void ElementInternals::GetValidationMessage(nsAString& aValidationMessage,
 
 // https://html.spec.whatwg.org/#dom-elementinternals-checkvalidity
 bool ElementInternals::CheckValidity(ErrorResult& aRv) {
-  if (!mTarget || !mTarget->IsFormAssociatedElement()) {
+  MOZ_ASSERT(mTarget);
+
+  if (!mTarget->IsFormAssociatedElement()) {
     aRv.ThrowNotSupportedError(
         "Target element is not a form-associated custom element");
     return false;
@@ -245,7 +278,9 @@ bool ElementInternals::CheckValidity(ErrorResult& aRv) {
 
 // https://html.spec.whatwg.org/#dom-elementinternals-reportvalidity
 bool ElementInternals::ReportValidity(ErrorResult& aRv) {
-  if (!mTarget || !mTarget->IsFormAssociatedElement()) {
+  MOZ_ASSERT(mTarget);
+
+  if (!mTarget->IsFormAssociatedElement()) {
     aRv.ThrowNotSupportedError(
         "Target element is not a form-associated custom element");
     return false;
@@ -272,8 +307,6 @@ bool ElementInternals::ReportValidity(ErrorResult& aRv) {
     return false;
   }
 
-  mTarget->UpdateState(true);
-
   RefPtr<CustomEvent> event =
       NS_NewDOMCustomEvent(mTarget->OwnerDoc(), nullptr, nullptr);
   event->InitCustomEvent(jsapi.cx(), u"MozInvalidForm"_ns,
@@ -289,7 +322,9 @@ bool ElementInternals::ReportValidity(ErrorResult& aRv) {
 // https://html.spec.whatwg.org/#dom-elementinternals-labels
 already_AddRefed<nsINodeList> ElementInternals::GetLabels(
     ErrorResult& aRv) const {
-  if (!mTarget || !mTarget->IsFormAssociatedElement()) {
+  MOZ_ASSERT(mTarget);
+
+  if (!mTarget->IsFormAssociatedElement()) {
     aRv.ThrowNotSupportedError(
         "Target element is not a form-associated custom element");
     return nullptr;
@@ -299,12 +334,21 @@ already_AddRefed<nsINodeList> ElementInternals::GetLabels(
 
 nsGenericHTMLElement* ElementInternals::GetValidationAnchor(
     ErrorResult& aRv) const {
-  if (!mTarget || !mTarget->IsFormAssociatedElement()) {
+  MOZ_ASSERT(mTarget);
+
+  if (!mTarget->IsFormAssociatedElement()) {
     aRv.ThrowNotSupportedError(
         "Target element is not a form-associated custom element");
     return nullptr;
   }
   return mValidationAnchor;
+}
+
+CustomStateSet* ElementInternals::States() {
+  if (!mCustomStateSet) {
+    mCustomStateSet = new CustomStateSet(mTarget);
+  }
+  return mCustomStateSet;
 }
 
 void ElementInternals::SetForm(HTMLFormElement* aForm) { mForm = aForm; }
@@ -365,9 +409,8 @@ void ElementInternals::UpdateBarredFromConstraintValidation() {
   if (mTarget) {
     MOZ_ASSERT(mTarget->IsFormAssociatedElement());
     SetBarredFromConstraintValidation(
-        mTarget->HasAttr(nsGkAtoms::readonly) ||
-        mTarget->HasFlag(ELEMENT_IS_DATALIST_OR_HAS_DATALIST_ANCESTOR) ||
-        mTarget->IsDisabled());
+        mTarget->IsDisabled() || mTarget->HasAttr(nsGkAtoms::readonly) ||
+        mTarget->HasFlag(ELEMENT_IS_DATALIST_OR_HAS_DATALIST_ANCESTOR));
   }
 }
 
@@ -375,11 +418,68 @@ void ElementInternals::Unlink() {
   if (mForm) {
     // Don't notify, since we're being destroyed in any case.
     ClearForm(true, true);
+    MOZ_DIAGNOSTIC_ASSERT(!mForm);
   }
   if (mFieldSet) {
     mFieldSet->RemoveElement(mTarget);
+    mFieldSet = nullptr;
   }
-  mTarget = nullptr;
+}
+
+void ElementInternals::GetAttr(const nsAtom* aName, nsAString& aResult) const {
+  MOZ_ASSERT(aResult.IsEmpty(), "Should have empty string coming in");
+
+  const nsAttrValue* val = mAttrs.GetAttr(aName);
+  if (val) {
+    val->ToString(aResult);
+    return;
+  }
+  SetDOMStringToNull(aResult);
+}
+
+nsresult ElementInternals::SetAttr(nsAtom* aName, const nsAString& aValue) {
+  Document* document = mTarget->GetComposedDoc();
+  mozAutoDocUpdate updateBatch(document, true);
+
+  uint8_t modType = mAttrs.HasAttr(aName) ? MutationEvent_Binding::MODIFICATION
+                                          : MutationEvent_Binding::ADDITION;
+
+  MutationObservers::NotifyARIAAttributeDefaultWillChange(mTarget, aName,
+                                                          modType);
+
+  bool attrHadValue;
+  nsAttrValue attrValue(aValue);
+  nsresult rs = mAttrs.SetAndSwapAttr(aName, attrValue, &attrHadValue);
+  nsMutationGuard::DidMutate();
+
+  MutationObservers::NotifyARIAAttributeDefaultChanged(mTarget, aName, modType);
+
+  return rs;
+}
+
+DocGroup* ElementInternals::GetDocGroup() {
+  return mTarget->OwnerDoc()->GetDocGroup();
+}
+
+void ElementInternals::RestoreFormValue(
+    Nullable<OwningFileOrUSVStringOrFormData>&& aValue,
+    Nullable<OwningFileOrUSVStringOrFormData>&& aState) {
+  mSubmissionValue = aValue;
+  mState = aState;
+
+  if (!mState.IsNull()) {
+    LifecycleCallbackArgs args;
+    args.mState = mState;
+    args.mReason = RestoreReason::Restore;
+    nsContentUtils::EnqueueLifecycleCallback(
+        ElementCallbackType::eFormStateRestore, mTarget, args);
+  }
+}
+
+void ElementInternals::InitializeControlNumber() {
+  MOZ_ASSERT(mControlNumber == -1,
+             "FACE control number should only be initialized once!");
+  mControlNumber = mTarget->OwnerDoc()->GetNextControlNumber();
 }
 
 }  // namespace mozilla::dom

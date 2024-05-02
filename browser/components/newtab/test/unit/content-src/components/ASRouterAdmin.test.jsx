@@ -1,4 +1,7 @@
-import { actionCreators as ac, actionTypes as at } from "common/Actions.jsm";
+import {
+  actionCreators as ac,
+  actionTypes as at,
+} from "common/Actions.sys.mjs";
 import {
   ASRouterAdminInner,
   CollapseToggle,
@@ -72,25 +75,13 @@ describe("ASRouterAdmin", () => {
   });
   describe("#getSection", () => {
     it("should render a message provider section by default", () => {
-      assert.equal(
-        wrapper
-          .find("h2")
-          .at(1)
-          .text(),
-        "Messages"
-      );
+      assert.equal(wrapper.find("h2").at(1).text(), "Messages");
     });
     it("should render a targeting section for targeting route", () => {
       wrapper = shallow(
         <ASRouterAdminInner location={{ routes: ["targeting"] }} />
       );
-      assert.equal(
-        wrapper
-          .find("h2")
-          .at(0)
-          .text(),
-        "Targeting Utilities"
-      );
+      assert.equal(wrapper.find("h2").at(0).text(), "Targeting Utilities");
     });
     it("should render a DS section for DS route", () => {
       wrapper = shallow(
@@ -100,13 +91,7 @@ describe("ASRouterAdmin", () => {
           Prefs={{}}
         />
       );
-      assert.equal(
-        wrapper
-          .find("h2")
-          .at(0)
-          .text(),
-        "Discovery Stream"
-      );
+      assert.equal(wrapper.find("h2").at(0).text(), "Discovery Stream");
     });
     it("should render two error messages", () => {
       wrapper = shallow(
@@ -125,22 +110,12 @@ describe("ASRouterAdmin", () => {
       });
 
       assert.equal(
-        wrapper
-          .find("tbody tr")
-          .at(0)
-          .find("td")
-          .at(0)
-          .text(),
+        wrapper.find("tbody tr").at(0).find("td").at(0).text(),
         "foo"
       );
       assert.lengthOf(wrapper.find("tbody tr"), 2);
       assert.equal(
-        wrapper
-          .find("tbody tr")
-          .at(0)
-          .find("td")
-          .at(1)
-          .text(),
+        wrapper.find("tbody tr").at(0).find("td").at(1).text(),
         secondError.error.message
       );
     });
@@ -320,7 +295,6 @@ describe("ASRouterAdmin", () => {
       state = {
         config: {
           enabled: true,
-          layout_endpoint: "",
         },
         layout: [],
         spocs: {
@@ -341,13 +315,7 @@ describe("ASRouterAdmin", () => {
       );
     });
     it("should render a DiscoveryStreamAdmin component", () => {
-      assert.equal(
-        wrapper
-          .find("h3")
-          .at(0)
-          .text(),
-        "Endpoint variant"
-      );
+      assert.equal(wrapper.find("h3").at(0).text(), "Layout");
     });
     it("should render a spoc in DiscoveryStreamAdmin component", () => {
       state.spocs = {
@@ -375,10 +343,7 @@ describe("ASRouterAdmin", () => {
       assert.equal(spocText, '{\n  "id": 12345\n}');
     });
     it("should fire restorePrefDefaults with DISCOVERY_STREAM_CONFIG_RESET_DEFAULTS", () => {
-      wrapper
-        .find("button")
-        .at(0)
-        .simulate("click");
+      wrapper.find("button").at(0).simulate("click");
       assert.calledWith(
         dispatch,
         ac.OnlyToMain({
@@ -387,23 +352,17 @@ describe("ASRouterAdmin", () => {
       );
     });
     it("should fire config change with DISCOVERY_STREAM_CONFIG_CHANGE", () => {
-      wrapper
-        .find("button")
-        .at(1)
-        .simulate("click");
+      wrapper.find("button").at(1).simulate("click");
       assert.calledWith(
         dispatch,
         ac.OnlyToMain({
           type: at.DISCOVERY_STREAM_CONFIG_CHANGE,
-          data: { enabled: true, layout_endpoint: "" },
+          data: { enabled: true },
         })
       );
     });
     it("should fire expireCache with DISCOVERY_STREAM_DEV_EXPIRE_CACHE", () => {
-      wrapper
-        .find("button")
-        .at(2)
-        .simulate("click");
+      wrapper.find("button").at(2).simulate("click");
       assert.calledWith(
         dispatch,
         ac.OnlyToMain({
@@ -412,10 +371,7 @@ describe("ASRouterAdmin", () => {
       );
     });
     it("should fire systemTick with DISCOVERY_STREAM_DEV_SYSTEM_TICK", () => {
-      wrapper
-        .find("button")
-        .at(3)
-        .simulate("click");
+      wrapper.find("button").at(3).simulate("click");
       assert.calledWith(
         dispatch,
         ac.OnlyToMain({
@@ -424,10 +380,7 @@ describe("ASRouterAdmin", () => {
       );
     });
     it("should fire idleDaily with DISCOVERY_STREAM_DEV_IDLE_DAILY", () => {
-      wrapper
-        .find("button")
-        .at(4)
-        .simulate("click");
+      wrapper.find("button").at(4).simulate("click");
       assert.calledWith(
         dispatch,
         ac.OnlyToMain({
@@ -436,10 +389,7 @@ describe("ASRouterAdmin", () => {
       );
     });
     it("should fire syncRemoteSettings with DISCOVERY_STREAM_DEV_SYNC_RS", () => {
-      wrapper
-        .find("button")
-        .at(5)
-        .simulate("click");
+      wrapper.find("button").at(5).simulate("click");
       assert.calledWith(
         dispatch,
         ac.OnlyToMain({
@@ -480,33 +430,18 @@ describe("ASRouterAdmin", () => {
     it("should render with pref checkbox, lastUpdated, and initialized", () => {
       assert.lengthOf(wrapper.find("TogglePrefCheckbox"), 1);
       assert.equal(
-        wrapper
-          .find("td")
-          .at(1)
-          .text(),
+        wrapper.find("td").at(1).text(),
         "Personalization Last Updated"
       );
       assert.equal(
-        wrapper
-          .find("td")
-          .at(2)
-          .text(),
+        wrapper.find("td").at(2).text(),
         new Date(1000).toLocaleString()
       );
       assert.equal(
-        wrapper
-          .find("td")
-          .at(3)
-          .text(),
+        wrapper.find("td").at(3).text(),
         "Personalization Initialized"
       );
-      assert.equal(
-        wrapper
-          .find("td")
-          .at(4)
-          .text(),
-        "true"
-      );
+      assert.equal(wrapper.find("td").at(4).text(), "true");
     });
     it("should render with no data with no last updated", () => {
       wrapper = shallow(
@@ -521,13 +456,7 @@ describe("ASRouterAdmin", () => {
           }}
         />
       );
-      assert.equal(
-        wrapper
-          .find("td")
-          .at(2)
-          .text(),
-        "(no data)"
-      );
+      assert.equal(wrapper.find("td").at(2).text(), "(no data)");
     });
     it("should dispatch DISCOVERY_STREAM_PERSONALIZATION_TOGGLE", () => {
       wrapper.instance().togglePersonalization();

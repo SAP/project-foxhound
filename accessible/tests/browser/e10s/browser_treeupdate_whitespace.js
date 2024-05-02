@@ -9,7 +9,7 @@ loadScripts({ name: "role.js", dir: MOCHITESTS_DIR });
 
 addAccessibleTask(
   "e10s/doc_treeupdate_whitespace.html",
-  async function(browser, accDoc) {
+  async function (browser, accDoc) {
     let container1 = findAccessibleChildByID(accDoc, "container1");
     let container2Parent = findAccessibleChildByID(accDoc, "container2-parent");
 
@@ -49,6 +49,7 @@ addAccessibleTask(
       let img = doc.createElement("img");
       img.setAttribute(
         "src",
+        // eslint-disable-next-line @microsoft/sdl/no-insecure-url
         "http://example.com/a11y/accessible/tests/mochitest/moz.png"
       );
       doc.getElementById("container2").appendChild(img);

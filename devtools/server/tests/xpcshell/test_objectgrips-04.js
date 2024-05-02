@@ -20,10 +20,8 @@ add_task(
     Assert.equal(args[0].class, "Object");
 
     const objectFront = threadFront.pauseGrip(args[0]);
-    const {
-      ownProperties,
-      prototype,
-    } = await objectFront.getPrototypeAndProperties();
+    const { ownProperties, prototype } =
+      await objectFront.getPrototypeAndProperties();
     Assert.equal(ownProperties.x.configurable, true);
     Assert.equal(ownProperties.x.enumerable, true);
     Assert.equal(ownProperties.x.writable, true);
@@ -41,9 +39,6 @@ add_task(
     Assert.equal(ownProperties.a.set.type, "undefined");
 
     Assert.ok(prototype != undefined);
-
-    const { ownPropertyNames } = await prototype.getOwnPropertyNames();
-    Assert.ok(ownPropertyNames.toString != undefined);
 
     await threadFront.resume();
   })

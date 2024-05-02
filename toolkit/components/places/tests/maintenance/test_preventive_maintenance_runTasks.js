@@ -6,9 +6,9 @@
  * Test preventive maintenance runTasks.
  */
 
-add_task(async function() {
+add_task(async function () {
   let tasksStatusMap = await PlacesDBUtils.runTasks([
-    PlacesDBUtils.invalidateCaches,
+    PlacesDBUtils.removeOldCorruptDBs,
   ]);
   let numberOfTasksRun = tasksStatusMap.size;
   let successfulTasks = [];

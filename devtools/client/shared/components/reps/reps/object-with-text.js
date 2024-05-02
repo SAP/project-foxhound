@@ -5,19 +5,18 @@
 "use strict";
 
 // Make this available to both AMD and CJS environments
-define(function(require, exports, module) {
+define(function (require, exports, module) {
   // ReactJS
   const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
   const { span } = require("devtools/client/shared/vendor/react-dom-factories");
 
   // Reps
   const {
-    isGrip,
     wrapRender,
   } = require("devtools/client/shared/components/reps/reps/rep-utils");
 
-  const String = require("devtools/client/shared/components/reps/reps/string")
-    .rep;
+  const String =
+    require("devtools/client/shared/components/reps/reps/string").rep;
 
   /**
    * Renders a grip object with textual data.
@@ -59,12 +58,8 @@ define(function(require, exports, module) {
   }
 
   // Registration
-  function supportsObject(grip, noGrip = false) {
-    if (noGrip === true || !isGrip(grip)) {
-      return false;
-    }
-
-    return grip.preview && grip.preview.kind == "ObjectWithText";
+  function supportsObject(grip) {
+    return grip?.preview?.kind == "ObjectWithText";
   }
 
   // Exports from this module

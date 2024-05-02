@@ -4,25 +4,27 @@
 
 "use strict";
 
-var Services = require("Services");
 var DevToolsUtils = require("devtools/shared/DevToolsUtils");
 var { dumpn } = DevToolsUtils;
-const { Pool } = require("devtools/shared/protocol/Pool");
 
 loader.lazyRequireGetter(
   this,
   "DevToolsServer",
-  "devtools/server/devtools-server",
+  "resource://devtools/server/devtools-server.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "ChildDebuggerTransport",
-  "devtools/shared/transport/child-transport",
+  "resource://devtools/shared/transport/child-transport.js",
   true
 );
 
-loader.lazyRequireGetter(this, "EventEmitter", "devtools/shared/event-emitter");
+loader.lazyRequireGetter(
+  this,
+  "EventEmitter",
+  "resource://devtools/shared/event-emitter.js"
+);
 
 /**
  * Start a DevTools server in a remote frame's process and add it as a child server for
@@ -50,29 +52,13 @@ function connectToFrame(
     const mm = frame.messageManager || frame.frameLoader.messageManager;
     mm.loadFrameScript("resource://devtools/server/startup/frame.js", false);
 
-    const spawnInParentActorPool = new Pool(
-      connection,
-      "connectToFrame-spawnInParent"
-    );
-    connection.addActor(spawnInParentActorPool);
-
     const trackMessageManager = () => {
-      mm.addMessageListener("debug:setup-in-parent", onSetupInParent);
-      mm.addMessageListener(
-        "debug:spawn-actor-in-parent",
-        onSpawnActorInParent
-      );
       if (!actor) {
         mm.addMessageListener("debug:actor", onActorCreated);
       }
     };
 
     const untrackMessageManager = () => {
-      mm.removeMessageListener("debug:setup-in-parent", onSetupInParent);
-      mm.removeMessageListener(
-        "debug:spawn-actor-in-parent",
-        onSpawnActorInParent
-      );
       if (!actor) {
         mm.removeMessageListener("debug:actor", onActorCreated);
       }
@@ -83,98 +69,7 @@ function connectToFrame(
     // Compute the same prefix that's used by DevToolsServerConnection
     const connPrefix = prefix + "/";
 
-    // provides hook to actor modules that need to exchange messages
-    // between e10s parent and child processes
-    const parentModules = [];
-    const onSetupInParent = function(msg) {
-      // We may have multiple connectToFrame instance running for the same frame and
-      // need to filter the messages.
-      if (msg.json.prefix != connPrefix) {
-        return false;
-      }
-
-      const { module, setupParent } = msg.json;
-      let m;
-
-      try {
-        m = require(module);
-
-        if (!(setupParent in m)) {
-          dumpn(`ERROR: module '${module}' does not export '${setupParent}'`);
-          return false;
-        }
-
-        parentModules.push(m[setupParent]({ mm, prefix: connPrefix }));
-
-        return true;
-      } catch (e) {
-        const errorMessage =
-          "Exception during actor module setup running in the parent process: ";
-        DevToolsUtils.reportException(errorMessage + e);
-        dumpn(
-          `ERROR: ${errorMessage}\n\t module: '${module}'\n\t ` +
-            `setupParent: '${setupParent}'\n${DevToolsUtils.safeErrorString(e)}`
-        );
-        return false;
-      }
-    };
-
-    const parentActors = [];
-    const onSpawnActorInParent = function(msg) {
-      // We may have multiple connectToFrame instance running for the same tab
-      // and need to filter the messages.
-      if (msg.json.prefix != connPrefix) {
-        return;
-      }
-
-      const { module, constructor, args, spawnedByActorID } = msg.json;
-      let m;
-
-      try {
-        m = require(module);
-
-        if (!(constructor in m)) {
-          dump(`ERROR: module '${module}' does not export '${constructor}'`);
-          return;
-        }
-
-        const Constructor = m[constructor];
-        // Bind the actor to parent process connection so that these actors
-        // directly communicates with the client as regular actors instanciated from
-        // parent process
-        const instance = new Constructor(connection, ...args, mm);
-        instance.conn = connection;
-        instance.parentID = spawnedByActorID;
-
-        // Manually set the actor ID in order to insert parent actorID as prefix
-        // in order to help identifying actor hierarchy via actor IDs.
-        // Remove `/` as it may confuse message forwarding between processes.
-        const contentPrefix = spawnedByActorID
-          .replace(connection.prefix, "")
-          .replace("/", "-");
-        instance.actorID = connection.allocID(
-          contentPrefix + "/" + instance.typeName
-        );
-        spawnInParentActorPool.manage(instance);
-
-        mm.sendAsyncMessage("debug:spawn-actor-in-parent:actor", {
-          prefix: connPrefix,
-          actorID: instance.actorID,
-        });
-
-        parentActors.push(instance);
-      } catch (e) {
-        const errorMessage =
-          "Exception during actor module setup running in the parent process: ";
-        DevToolsUtils.reportException(errorMessage + e + "\n" + e.stack);
-        dumpn(
-          `ERROR: ${errorMessage}\n\t module: '${module}'\n\t ` +
-            `constructor: '${constructor}'\n${DevToolsUtils.safeErrorString(e)}`
-        );
-      }
-    };
-
-    const onActorCreated = DevToolsUtils.makeInfallible(function(msg) {
+    const onActorCreated = DevToolsUtils.makeInfallible(function (msg) {
       if (msg.json.prefix != prefix) {
         return;
       }
@@ -197,29 +92,18 @@ function connectToFrame(
       resolve(actor);
     });
 
-    const destroy = DevToolsUtils.makeInfallible(function() {
+    const destroy = DevToolsUtils.makeInfallible(function () {
       EventEmitter.off(connection, "closed", destroy);
       Services.obs.removeObserver(
         onMessageManagerClose,
         "message-manager-close"
       );
 
-      // provides hook to actor modules that need to exchange messages
-      // between e10s parent and child processes
-      parentModules.forEach(mod => {
-        if (mod.onDisconnected) {
-          mod.onDisconnected();
-        }
-      });
       // TODO: Remove this deprecated path once it's no longer needed by add-ons.
       DevToolsServer.emit("disconnected-from-child:" + connPrefix, {
         mm,
         prefix: connPrefix,
       });
-
-      // Destroy all actors created via spawnActorInParentProcess
-      // in case content wasn't able to destroy them via a message
-      spawnInParentActorPool.destroy();
 
       if (actor) {
         actor = null;
@@ -265,7 +149,7 @@ function connectToFrame(
     trackMessageManager();
 
     // Listen for app process exit
-    const onMessageManagerClose = function(subject, topic, data) {
+    const onMessageManagerClose = function (subject, topic, data) {
       if (subject == mm) {
         destroy();
       }

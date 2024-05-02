@@ -13,18 +13,18 @@
  * and configuration of Firefox.
  */
 
-add_task(async function setup() {
+add_setup(async function () {
   useHttpServer();
   await AddonTestUtils.promiseStartupManager();
 });
 
 add_task(async function test_save_sorted_engines() {
-  let engine1 = await SearchTestUtils.promiseNewSearchEngine(
-    `${gDataUrl}engine.xml`
-  );
-  let engine2 = await SearchTestUtils.promiseNewSearchEngine(
-    `${gDataUrl}engine2.xml`
-  );
+  let engine1 = await SearchTestUtils.promiseNewSearchEngine({
+    url: `${gDataUrl}engine.xml`,
+  });
+  let engine2 = await SearchTestUtils.promiseNewSearchEngine({
+    url: `${gDataUrl}engine2.xml`,
+  });
   await promiseAfterSettings();
 
   let search = Services.search;

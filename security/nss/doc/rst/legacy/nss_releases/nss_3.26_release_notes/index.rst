@@ -10,7 +10,7 @@ NSS 3.26 release notes
 
    The Network Security Services (NSS) team has released NSS 3.26, which is a minor release.
 
-.. _distribution_information:
+
 
 `Distribution information <#distribution_information>`__
 --------------------------------------------------------
@@ -28,8 +28,6 @@ NSS 3.26 release notes
 
 `New in NSS 3.26 <#new_in_nss_3.26>`__
 --------------------------------------
-
-.. container::
 
 .. _new_functionality:
 

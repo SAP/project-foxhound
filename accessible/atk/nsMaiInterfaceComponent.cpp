@@ -9,13 +9,16 @@
 #include "LocalAccessible-inl.h"
 #include "AccessibleWrap.h"
 #include "nsAccUtils.h"
-#include "nsCoreUtils.h"
 #include "nsMai.h"
+#include "nsWindow.h"
 #include "mozilla/Likely.h"
 #include "mozilla/a11y/DocAccessibleParent.h"
 #include "mozilla/a11y/RemoteAccessible.h"
 #include "mozilla/dom/BrowserParent.h"
+#include "mozilla/dom/Document.h"
+#include "nsAccessibilityService.h"
 
+using namespace mozilla;
 using namespace mozilla::a11y;
 
 extern "C" {
@@ -45,14 +48,8 @@ static gboolean grabFocusCB(AtkComponent* aComponent) {
 MOZ_CAN_RUN_SCRIPT_BOUNDARY
 static gboolean scrollToCB(AtkComponent* aComponent, AtkScrollType type) {
   AtkObject* atkObject = ATK_OBJECT(aComponent);
-  if (RefPtr<AccessibleWrap> accWrap = GetAccessibleWrap(atkObject)) {
-    accWrap->ScrollTo(type);
-    return TRUE;
-  }
-
-  RemoteAccessible* proxy = GetProxy(atkObject);
-  if (proxy) {
-    proxy->ScrollTo(type);
+  if (Accessible* acc = GetInternalObj(atkObject)) {
+    acc->ScrollTo(type);
     return TRUE;
   }
 
@@ -83,30 +80,13 @@ AtkObject* refAccessibleAtPointHelper(AtkObject* aAtkObj, gint aX, gint aY,
                                       AtkCoordType aCoordType) {
   Accessible* acc = GetInternalObj(aAtkObj);
   if (!acc) {
-    // This might be an ATK Socket.
-    acc = GetAccessibleWrap(aAtkObj);
-    if (!acc) {
-      return nullptr;
-    }
-  }
-  if (acc->IsLocal() && acc->AsLocal()->IsDefunct()) {
     return nullptr;
   }
 
   // Accessible::ChildAtPoint(x,y) is in screen pixels.
   if (aCoordType == ATK_XY_WINDOW) {
-    nsINode* node = nullptr;
-    if (acc->IsLocal()) {
-      node = acc->AsLocal()->GetNode();
-    } else {
-      // Use the XUL browser embedding this remote document.
-      auto browser = static_cast<mozilla::dom::BrowserParent*>(
-          acc->AsRemote()->Document()->Manager());
-      node = browser->GetOwnerElement();
-    }
-    MOZ_ASSERT(node);
     mozilla::LayoutDeviceIntPoint winCoords =
-        nsCoreUtils::GetScreenCoordsForWindow(node);
+        nsAccUtils::GetScreenCoordsForWindow(acc);
     aX += winCoords.x;
     aY += winCoords.y;
   }
@@ -129,36 +109,63 @@ AtkObject* refAccessibleAtPointHelper(AtkObject* aAtkObj, gint aX, gint aY,
   return atkObj;
 }
 
+static double getScaleFactor(Accessible* aAccessible) {
+  DocAccessible* docAcc = nullptr;
+  if (LocalAccessible* localAcc = aAccessible->AsLocal()) {
+    docAcc = localAcc->Document();
+  } else {
+    RemoteAccessible* remote = aAccessible->AsRemote();
+    LocalAccessible* outerDoc = remote->OuterDocOfRemoteBrowser();
+    if (outerDoc) {
+      docAcc = outerDoc->Document();
+    }
+  }
+
+  if (!docAcc || !docAcc->DocumentNode()) {
+    return 1.0;
+  }
+
+  nsCOMPtr<nsIWidget> rootWidget =
+      nsContentUtils::WidgetForDocument(docAcc->DocumentNode());
+  if (!rootWidget) {
+    return 1.0;
+  }
+
+  if (RefPtr<nsWindow> window =
+          static_cast<nsWindow*>(rootWidget->GetTopLevelWidget())) {
+    return window->FractionalScaleFactor();
+  }
+
+  return 1.0;
+}
+
 void getExtentsHelper(AtkObject* aAtkObj, gint* aX, gint* aY, gint* aWidth,
                       gint* aHeight, AtkCoordType aCoordType) {
-  AccessibleWrap* accWrap = GetAccessibleWrap(aAtkObj);
   *aX = *aY = *aWidth = *aHeight = -1;
 
-  if (accWrap) {
-    if (accWrap->IsDefunct()) {
-      return;
-    }
-
-    mozilla::LayoutDeviceIntRect screenRect = accWrap->Bounds();
-    if (screenRect.IsEmpty()) return;
-
-    if (aCoordType == ATK_XY_WINDOW) {
-      mozilla::LayoutDeviceIntPoint winCoords =
-          nsCoreUtils::GetScreenCoordsForWindow(accWrap->GetNode());
-      screenRect.x -= winCoords.x;
-      screenRect.y -= winCoords.y;
-    }
-
-    *aX = screenRect.x;
-    *aY = screenRect.y;
-    *aWidth = screenRect.width;
-    *aHeight = screenRect.height;
+  Accessible* acc = GetInternalObj(aAtkObj);
+  if (!acc) {
     return;
   }
 
-  if (RemoteAccessible* proxy = GetProxy(aAtkObj)) {
-    proxy->Extents(aCoordType == ATK_XY_WINDOW, aX, aY, aWidth, aHeight);
+  mozilla::LayoutDeviceIntRect screenRect = acc->Bounds();
+  if (screenRect.IsEmpty()) {
+    return;
   }
+
+  if (aCoordType == ATK_XY_WINDOW) {
+    mozilla::LayoutDeviceIntPoint winCoords =
+        nsAccUtils::GetScreenCoordsForWindow(acc);
+    screenRect.x -= winCoords.x;
+    screenRect.y -= winCoords.y;
+  }
+
+  double scaleFactor = getScaleFactor(acc);
+
+  *aX = screenRect.x / scaleFactor;
+  *aY = screenRect.y / scaleFactor;
+  *aWidth = screenRect.width / scaleFactor;
+  *aHeight = screenRect.height / scaleFactor;
 }
 
 void componentInterfaceInitCB(AtkComponentIface* aIface) {

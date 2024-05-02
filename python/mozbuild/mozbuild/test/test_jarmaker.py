@@ -2,22 +2,20 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, print_function
-import unittest
-
 import os
-import sys
 import os.path
+import sys
+import unittest
 from filecmp import dircmp
+from shutil import copy2, rmtree
 from tempfile import mkdtemp
-from shutil import rmtree, copy2
+from zipfile import ZipFile
+
+import mozunit
 import six
 from six import StringIO
-from zipfile import ZipFile
-import mozunit
 
 from mozbuild.jar import JarMaker
-
 
 if sys.platform == "win32":
     import ctypes
@@ -362,7 +360,7 @@ class Test_relativesrcdir(unittest.TestCase):
     def test_en_US(self):
         jm = self.jm
         jm.makeJar(self.fake_empty_file, "/NO_OUTPUT_REQUIRED")
-        self.assertEquals(
+        self.assertEqual(
             jm.localedirs,
             [
                 os.path.join(
@@ -375,13 +373,13 @@ class Test_relativesrcdir(unittest.TestCase):
         jm = self.jm
         jm.l10nbase = "/L10N_BASE"
         jm.makeJar(self.fake_empty_file, "/NO_OUTPUT_REQUIRED")
-        self.assertEquals(jm.localedirs, [os.path.join("/L10N_BASE", "browser")])
+        self.assertEqual(jm.localedirs, [os.path.join("/L10N_BASE", "browser")])
 
     def test_l10n_merge(self):
         jm = self.jm
         jm.l10nbase = "/L10N_MERGE"
         jm.makeJar(self.fake_empty_file, "/NO_OUTPUT_REQUIRED")
-        self.assertEquals(
+        self.assertEqual(
             jm.localedirs,
             [
                 os.path.join("/L10N_MERGE", "browser"),
@@ -398,7 +396,7 @@ relativesrcdir dom/locales:
         )
         jarcontents.name = "override.mn"
         jm.makeJar(jarcontents, "/NO_OUTPUT_REQUIRED")
-        self.assertEquals(
+        self.assertEqual(
             jm.localedirs,
             [os.path.join(os.path.abspath("/TOPSOURCEDIR"), "dom/locales", "en-US")],
         )
@@ -414,7 +412,7 @@ relativesrcdir dom/locales:
         )
         jarcontents.name = "override.mn"
         jm.makeJar(jarcontents, "/NO_OUTPUT_REQUIRED")
-        self.assertEquals(jm.localedirs, [os.path.join("/L10N_BASE", "dom")])
+        self.assertEqual(jm.localedirs, [os.path.join("/L10N_BASE", "dom")])
 
 
 class Test_fluent(unittest.TestCase):

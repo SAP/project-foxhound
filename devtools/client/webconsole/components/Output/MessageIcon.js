@@ -4,9 +4,14 @@
 
 "use strict";
 
-const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
-const dom = require("devtools/client/shared/vendor/react-dom-factories");
-const { l10n } = require("devtools/client/webconsole/utils/messages");
+const PropTypes = require("resource://devtools/client/shared/vendor/react-prop-types.js");
+const dom = require("resource://devtools/client/shared/vendor/react-dom-factories.js");
+const {
+  l10n,
+} = require("resource://devtools/client/webconsole/utils/messages.js");
+const {
+  MESSAGE_TYPE,
+} = require("resource://devtools/client/webconsole/constants.js");
 
 const l10nLevels = {
   error: "level.error",
@@ -26,39 +31,43 @@ const CONSTANT_ICONS = Object.entries(l10nLevels).reduce(
   {}
 );
 
-function getIconElement(level, type) {
-  let title = l10n.getStr(l10nLevels[level] || level);
+function getIconElement(level, type, title) {
+  title = title || l10n.getStr(l10nLevels[level] || level);
   const classnames = ["icon"];
 
-  if (type && type === "logPoint") {
+  if (type === "logPoint") {
     title = l10n.getStr("logpoint.title");
     classnames.push("logpoint");
-  }
-
-  if (type && type === "blockedReason") {
+  } else if (type === "logTrace") {
+    title = l10n.getStr("logtrace.title");
+    classnames.push("logtrace");
+  } else if (type === "blockedReason") {
     title = l10n.getStr("blockedrequest.label");
+  } else if (type === MESSAGE_TYPE.COMMAND) {
+    title = l10n.getStr("command.title");
+  } else if (type === MESSAGE_TYPE.RESULT) {
+    title = l10n.getStr("result.title");
   }
 
-  {
-    return dom.span({
-      className: classnames.join(" "),
-      title,
-      "aria-live": "off",
-    });
-  }
+  return dom.span({
+    className: classnames.join(" "),
+    title,
+    "aria-live": "off",
+  });
 }
 
 MessageIcon.displayName = "MessageIcon";
 MessageIcon.propTypes = {
   level: PropTypes.string.isRequired,
   type: PropTypes.string,
+  title: PropTypes.string,
 };
 
 function MessageIcon(props) {
-  const { level, type } = props;
+  const { level, type, title } = props;
 
   if (type) {
-    return getIconElement(level, type);
+    return getIconElement(level, type, title);
   }
 
   return CONSTANT_ICONS[level] || getIconElement(level);

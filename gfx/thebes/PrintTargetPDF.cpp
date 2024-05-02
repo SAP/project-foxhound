@@ -8,12 +8,15 @@
 #include "cairo.h"
 #include "cairo-pdf.h"
 #include "mozilla/AppShutdown.h"
+#include "mozilla/StaticPrefs_layout.h"
+#include "nsContentUtils.h"
+#include "nsString.h"
 
 namespace mozilla::gfx {
 
 static cairo_status_t write_func(void* closure, const unsigned char* data,
                                  unsigned int length) {
-  if (AppShutdown::IsShuttingDown()) {
+  if (AppShutdown::IsInOrBeyond(ShutdownPhase::AppShutdownConfirmed)) {
     return CAIRO_STATUS_SUCCESS;
   }
   nsCOMPtr<nsIOutputStream> out = reinterpret_cast<nsIOutputStream*>(closure);
@@ -47,10 +50,23 @@ PrintTargetPDF::~PrintTargetPDF() {
 /* static */
 already_AddRefed<PrintTargetPDF> PrintTargetPDF::CreateOrNull(
     nsIOutputStream* aStream, const IntSize& aSizeInPoints) {
+  if (NS_WARN_IF(!aStream)) {
+    return nullptr;
+  }
+
   cairo_surface_t* surface = cairo_pdf_surface_create_for_stream(
       write_func, (void*)aStream, aSizeInPoints.width, aSizeInPoints.height);
   if (cairo_surface_status(surface)) {
     return nullptr;
+  }
+
+  nsAutoString creatorName;
+  if (NS_SUCCEEDED(nsContentUtils::GetLocalizedString(
+          nsContentUtils::eBRAND_PROPERTIES, "brandFullName", creatorName)) &&
+      !creatorName.IsEmpty()) {
+    creatorName.Append(u" " MOZILLA_VERSION);
+    cairo_pdf_surface_set_metadata(surface, CAIRO_PDF_METADATA_CREATOR,
+                                   NS_ConvertUTF16toUTF8(creatorName).get());
   }
 
   // The new object takes ownership of our surface reference.
@@ -59,13 +75,25 @@ already_AddRefed<PrintTargetPDF> PrintTargetPDF::CreateOrNull(
   return target.forget();
 }
 
+nsresult PrintTargetPDF::BeginPage(const IntSize& aSizeInPoints) {
+  if (StaticPrefs::layout_css_page_orientation_enabled()) {
+    cairo_pdf_surface_set_size(mCairoSurface, aSizeInPoints.width,
+                               aSizeInPoints.height);
+    if (cairo_surface_status(mCairoSurface)) {
+      return NS_ERROR_FAILURE;
+    }
+  }
+  return PrintTarget::BeginPage(aSizeInPoints);
+}
+
 nsresult PrintTargetPDF::EndPage() {
   cairo_surface_show_page(mCairoSurface);
   return PrintTarget::EndPage();
 }
 
 void PrintTargetPDF::Finish() {
-  if (mIsFinished || AppShutdown::IsShuttingDown()) {
+  if (mIsFinished ||
+      AppShutdown::IsInOrBeyond(ShutdownPhase::AppShutdownConfirmed)) {
     // We don't want to call Close() on mStream more than once, and we don't
     // want to block shutdown if for some reason the user shuts down the
     // browser mid print.

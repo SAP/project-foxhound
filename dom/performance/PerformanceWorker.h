@@ -8,14 +8,14 @@
 #define mozilla_dom_PerformanceWorker_h
 
 #include "Performance.h"
-#include "mozilla/dom/WorkerPrivate.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
+
+class WorkerGlobalScope;
 
 class PerformanceWorker final : public Performance {
  public:
-  explicit PerformanceWorker(WorkerPrivate* aWorkerPrivate);
+  explicit PerformanceWorker(WorkerGlobalScope* aGlobalScope);
 
   PerformanceStorage* AsPerformanceStorage() override {
     MOZ_CRASH("This should not be called on workers.");
@@ -81,8 +81,6 @@ class PerformanceWorker final : public Performance {
     MOZ_CRASH("This should not be called on workers");
   }
 
-  bool CrossOriginIsolated() const override;
-
  protected:
   ~PerformanceWorker();
 
@@ -91,12 +89,8 @@ class PerformanceWorker final : public Performance {
   void DispatchBufferFullEvent() override {
     // Nothing to do here. See bug 1432758.
   }
-
- private:
-  CheckedUnsafePtr<WorkerPrivate> mWorkerPrivate;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_PerformanceWorker_h

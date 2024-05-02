@@ -14,6 +14,9 @@
 
 #include "absl/random/internal/iostream_state_saver.h"
 
+#include <errno.h>
+#include <stdio.h>
+
 #include <sstream>
 #include <string>
 
@@ -272,7 +275,6 @@ TEST(IOStreamStateSaver, RoundTripDoubles) {
   }
 }
 
-#if !defined(__EMSCRIPTEN__)
 TEST(IOStreamStateSaver, RoundTripLongDoubles) {
   // Technically, C++ only guarantees that long double is at least as large as a
   // double.  Practically it varies from 64-bits to 128-bits.
@@ -343,14 +345,14 @@ TEST(IOStreamStateSaver, RoundTripLongDoubles) {
     }
 
     // Avoid undefined behavior (overflow/underflow).
-    if (dd <= std::numeric_limits<int64_t>::max() &&
-        dd >= std::numeric_limits<int64_t>::lowest()) {
+    if (dd <= static_cast<long double>(std::numeric_limits<int64_t>::max()) &&
+        dd >=
+            static_cast<long double>(std::numeric_limits<int64_t>::lowest())) {
       int64_t x = static_cast<int64_t>(dd);
       EXPECT_EQ(x, StreamRoundTrip<int64_t>(x));
     }
   }
 }
-#endif  // !defined(__EMSCRIPTEN__)
 
 TEST(StrToDTest, DoubleMin) {
   const char kV[] = "2.22507385850720138e-308";

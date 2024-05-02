@@ -197,39 +197,52 @@ load 1156581-1.svg
 load 1182496-1.html
 load 1209525-1.svg
 load 1223281-1.svg
+load 1234726-1.svg
 load 1322537-1.html
 load 1322537-2.html
 load 1322852.html
 load 1348564.svg
+load 1402013.html
 load 1402109.html
 load 1402124.html
 load 1402486.html
+load 1403656-1.html
+load 1403656-2.html
+load 1403656-3.html
+load 1403656-4.html
+load 1403656-5.html
+load 1404086.html
 load 1421807-1.html
 load 1421807-2.html
 load 1422226.html
+load 1425434-1.html
 load 1443092.html
+load 1454201-1.html
 load 1467552-1.html
 load 1474982.html
 load conditional-outer-svg-nondirty-reflow-assert.xhtml
 load extref-test-1.xhtml
-load blob-merging-and-retained-display-list.html
-load empty-blob-merging.html
+skip-if(wayland) pref(widget.windows.window_occlusion_tracking.enabled,false) load blob-merging-and-retained-display-list.html  # Bug 1819154, wayland: Bug 1857256
+skip-if(wayland) load empty-blob-merging.html  # wayland: Bug 1857256
 load grouping-empty-bounds.html
 load 1480275.html
 load 1480224.html
 load 1502936.html
 load 1504918.svg
+load 1508858.html
 load perspective-invalidation.html
 load invalid_url.html
 load 1535517-1.svg
 load 1504072.html
 load 1072758.html
+load 1424031.html
+load 1426575.html
 load 1536892.html
 load 1539318-1.svg
 load 1548985-1.html
 load 1548985-2.svg
 load 1555851.html
-load invalidation-of-opacity-0.html
+skip-if(wayland) pref(widget.windows.window_occlusion_tracking.enabled,false) load invalidation-of-opacity-0.html  # Bug 1819154, wayland: Bug 1857256
 load 1563779.html
 load 1600855.html
 load 1601824.html
@@ -238,3 +251,15 @@ load 1609663.html
 skip-if(Android) load 1671950.html # No print-preview support on android
 load 1678947.html
 load 1693032.html
+load 1696505.html
+load 1758029-1.html
+HTTP load 1755770-1.html
+HTTP load 1755770-2.html
+load 1764936-1.html
+load 1771538.html
+load 1804958.html
+load 1810260.html
+load 1826444-1.html
+load 1831419.html
+load 1840195-1.html
+load 1848851.html

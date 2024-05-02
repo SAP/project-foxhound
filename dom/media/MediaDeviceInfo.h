@@ -14,8 +14,7 @@
 #include "nsStringFwd.h"
 #include "nsWrapperCache.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 #define MOZILLA_DOM_MEDIADEVICEINFO_IMPLEMENTATION_IID \
   {                                                    \
@@ -30,7 +29,7 @@ class MediaDeviceInfo final : public nsISupports, public nsWrapperCache {
                            const nsAString& aLabel, const nsAString& aGroupId);
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(MediaDeviceInfo)
+  NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(MediaDeviceInfo)
   NS_DECLARE_STATIC_IID_ACCESSOR(MOZILLA_DOM_MEDIADEVICEINFO_IMPLEMENTATION_IID)
 
   JSObject* WrapObject(JSContext* cx,
@@ -55,7 +54,6 @@ class MediaDeviceInfo final : public nsISupports, public nsWrapperCache {
 NS_DEFINE_STATIC_IID_ACCESSOR(MediaDeviceInfo,
                               MOZILLA_DOM_MEDIADEVICEINFO_IMPLEMENTATION_IID)
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_MediaDeviceInfo_h

@@ -1,10 +1,12 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
-const { Collection, WBORecord } = ChromeUtils.import(
-  "resource://services-sync/record.js"
+const { Collection, WBORecord } = ChromeUtils.importESModule(
+  "resource://services-sync/record.sys.mjs"
 );
-const { Service } = ChromeUtils.import("resource://services-sync/service.js");
+const { Service } = ChromeUtils.importESModule(
+  "resource://services-sync/service.sys.mjs"
+);
 
 function recordRange(lim, offset, total) {
   let res = [];
@@ -25,7 +27,7 @@ function get_test_collection_info({
   coll.full = true;
   let requests = [];
   let responses = [];
-  coll.get = async function() {
+  coll.get = async function () {
     let limit = +this.limit;
     let offset = 0;
     if (this.offset) {
@@ -177,7 +179,7 @@ add_task(async function test_get_throws() {
 });
 
 function checkRecordsOrder(records) {
-  ok(records.length > 0);
+  ok(!!records.length);
   for (let i = 0; i < records.length; i++) {
     equal(records[i].id, String(i));
     equal(records[i].payload, "test:" + i);

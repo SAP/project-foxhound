@@ -63,12 +63,9 @@ function AutoCompleteResult(aValues, aComments, aStyles) {
   this._values = aValues;
   this._comments = aComments;
   this._styles = aStyles;
-
-  if (this._values.length) {
-    this.searchResult = Ci.nsIAutoCompleteResult.RESULT_SUCCESS;
-  } else {
-    this.searchResult = Ci.nsIAutoCompleteResult.RESULT_NOMATCH;
-  }
+  this.searchResult = this._values.length
+    ? Ci.nsIAutoCompleteResult.RESULT_SUCCESS
+    : Ci.nsIAutoCompleteResult.RESULT_NOMATCH;
 }
 AutoCompleteResult.prototype = {
   constructor: AutoCompleteResult,
@@ -154,7 +151,7 @@ AutoCompleteSearch.prototype = {
   ]),
 
   // nsIFactory implementation
-  createInstance(outer, iid) {
+  createInstance(iid) {
     return this.QueryInterface(iid);
   },
 };
@@ -220,12 +217,12 @@ function run_test() {
   var input = new AutoCompleteInput([emptySearch.name, regularSearch.name]);
   var numSearchesStarted = 0;
 
-  input.onSearchBegin = function() {
+  input.onSearchBegin = function () {
     numSearchesStarted++;
     Assert.equal(numSearchesStarted, 1);
   };
 
-  input.onSearchComplete = function() {
+  input.onSearchComplete = function () {
     Assert.equal(numSearchesStarted, 1);
 
     Assert.equal(

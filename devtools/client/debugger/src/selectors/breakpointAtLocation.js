@@ -2,23 +2,19 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
-import {
-  getSelectedSource,
-  getBreakpointPositionsForLine,
-} from "../selectors/sources";
-import { getBreakpointsList } from "../selectors/breakpoints";
-import { isGenerated } from "../utils/source";
+import { getSelectedSource, getBreakpointPositionsForLine } from "./sources";
+import { getBreakpointsList } from "./breakpoints";
 
 function getColumn(column, selectedSource) {
   if (column) {
     return column;
   }
 
-  return isGenerated(selectedSource) ? undefined : 0;
+  return !selectedSource.isOriginal ? undefined : 0;
 }
 
 function getLocation(bp, selectedSource) {
-  return isGenerated(selectedSource)
+  return !selectedSource.isOriginal
     ? bp.generatedLocation || bp.location
     : bp.location;
 }
@@ -28,7 +24,7 @@ function getBreakpointsForSource(state, selectedSource) {
 
   return breakpoints.filter(bp => {
     const location = getLocation(bp, selectedSource);
-    return location.sourceId === selectedSource.id;
+    return location.source.id === selectedSource.id;
   });
 }
 
@@ -54,7 +50,7 @@ function findBreakpointAtLocation(
 
 // returns the closest active column breakpoint
 function findClosestBreakpoint(breakpoints, column) {
-  if (!breakpoints || breakpoints.length == 0) {
+  if (!breakpoints || !breakpoints.length) {
     return null;
   }
 

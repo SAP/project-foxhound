@@ -1,7 +1,7 @@
 /* ***** BEGIN LICENSE BLOCK *****
  * Version: MPL 1.1/GPL 2.0/LGPL 2.1
  *
- * Copyright (C) 2002-2017 Németh László
+ * Copyright (C) 2002-2022 Németh László
  *
  * The contents of this file are subject to the Mozilla Public License Version
  * 1.1 (the "License"); you may not use this file except in compliance with
@@ -108,6 +108,7 @@ static struct unicode_info2* utf_tbl = NULL;
 static int utf_tbl_count =
     0;  // utf_tbl can be used by multiple Hunspell instances
 
+#ifndef MOZILLA_CLIENT
 void myopen(std::ifstream& stream, const char* path, std::ios_base::openmode mode)
 {
 #if defined(_WIN32) && defined(_MSC_VER)
@@ -127,6 +128,7 @@ void myopen(std::ifstream& stream, const char* path, std::ios_base::openmode mod
 #endif
   stream.open(path, mode);
 }
+#endif
 
 std::string& u16_u8(std::string& dest, const std::vector<w_char>& src) {
   dest.clear();

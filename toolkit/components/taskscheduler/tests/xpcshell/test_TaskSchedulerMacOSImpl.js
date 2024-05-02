@@ -5,24 +5,20 @@
 
 // Unit tests for macOS scheduled task generation.
 
-const { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
-);
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { TestUtils } = ChromeUtils.import(
-  "resource://testing-common/TestUtils.jsm"
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
 
-const { updateAppInfo } = ChromeUtils.import(
-  "resource://testing-common/AppInfo.jsm"
+const { updateAppInfo } = ChromeUtils.importESModule(
+  "resource://testing-common/AppInfo.sys.mjs"
 );
 updateAppInfo();
 
-const { TaskScheduler } = ChromeUtils.import(
-  "resource://gre/modules/TaskScheduler.jsm"
+const { TaskScheduler } = ChromeUtils.importESModule(
+  "resource://gre/modules/TaskScheduler.sys.mjs"
 );
-const { _TaskSchedulerMacOSImpl: MacOSImpl } = ChromeUtils.import(
-  "resource://gre/modules/TaskSchedulerMacOSImpl.jsm"
+const { MacOSImpl } = ChromeUtils.importESModule(
+  "resource://gre/modules/TaskSchedulerMacOSImpl.sys.mjs"
 );
 
 function getFirefoxExecutableFilename() {
@@ -45,11 +41,7 @@ const uuidGenerator = Services.uuid;
 
 function randomName() {
   return (
-    "moz-taskschd-test-" +
-    uuidGenerator
-      .generateUUID()
-      .toString()
-      .slice(1, -1)
+    "moz-taskschd-test-" + uuidGenerator.generateUUID().toString().slice(1, -1)
   );
 }
 

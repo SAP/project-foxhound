@@ -7,10 +7,8 @@
 /**
  * Tests that multiple tags can be added to a bookmark using the star-shaped button, the library and the sidebar.
  */
-
-StarUI._createPanelIfNeeded();
-const bookmarkPanel = document.getElementById("editBookmarkPanel");
-const bookmarkStar = BookmarkingUI.star;
+let bookmarkPanel;
+let bookmarkStar;
 
 async function clickBookmarkStar() {
   let shownPromise = promisePopupShown(bookmarkPanel);
@@ -24,43 +22,56 @@ async function hideBookmarksPanel(callback) {
   await hiddenPromise;
 }
 
-add_task(function setup() {
-  let oldTimeout = StarUI._autoCloseTimeout;
-
-  bookmarkPanel.setAttribute("animate", false);
-
-  StarUI._autoCloseTimeout = 1000;
-
-  registerCleanupFunction(async () => {
-    StarUI._autoCloseTimeout = oldTimeout;
-    bookmarkPanel.removeAttribute("animate");
-    await PlacesUtils.bookmarks.eraseEverything();
-  });
+registerCleanupFunction(async () => {
+  await PlacesUtils.bookmarks.eraseEverything();
 });
 
 add_task(async function test_add_bookmark_tags_from_bookmarkProperties() {
   const TEST_URL = "about:robots";
 
+  await PlacesUtils.bookmarks.insert({
+    parentGuid: PlacesUtils.bookmarks.unfiledGuid,
+    url: "about:buildconfig",
+    title: "Bookmark Title",
+  });
+
+  PlacesUtils.tagging.tagURI(makeURI("about:buildconfig"), ["tag0"]);
+
+  let win = await BrowserTestUtils.openNewBrowserWindow();
   let tab = await BrowserTestUtils.openNewForegroundTab({
-    gBrowser,
+    gBrowser: win.gBrowser,
     opening: TEST_URL,
     waitForStateStop: true,
   });
 
+  win.StarUI._createPanelIfNeeded();
+  win.StarUI._autoCloseTimeout = 1000;
+  bookmarkPanel = win.document.getElementById("editBookmarkPanel");
+  bookmarkPanel.setAttribute("animate", false);
+  bookmarkStar = win.BookmarkingUI.star;
+
   // Cleanup.
-  registerCleanupFunction(async function() {
+  registerCleanupFunction(async function () {
     BrowserTestUtils.removeTab(tab);
+    BrowserTestUtils.closeWindow(win);
   });
 
-  let bookmarkPanelTitle = document.getElementById("editBookmarkPanelTitle");
+  let bookmarkPanelTitle = win.document.getElementById(
+    "editBookmarkPanelTitle"
+  );
 
   // The bookmarks panel is expected to auto-close after this step.
+  let promiseNotification = PlacesTestUtils.waitForNotification(
+    "bookmark-added",
+    events => events.some(({ url }) => !url || url == TEST_URL)
+  );
   await hideBookmarksPanel(async () => {
     // Click the bookmark star to bookmark the page.
     await clickBookmarkStar();
-    Assert.equal(
-      bookmarkPanelTitle.dataset.l10nId,
-      "bookmarks-add-bookmark",
+    await TestUtils.waitForCondition(
+      () =>
+        win.document.l10n.getAttributes(bookmarkPanelTitle).id ===
+        "bookmarks-add-bookmark",
       "Bookmark title is correct"
     );
     Assert.equal(
@@ -69,25 +80,23 @@ add_task(async function test_add_bookmark_tags_from_bookmarkProperties() {
       "Page is starred"
     );
   });
+  await promiseNotification;
 
   // Click the bookmark star again to add tags.
   await clickBookmarkStar();
-  Assert.equal(
-    bookmarkPanelTitle.dataset.l10nId,
-    "bookmarks-edit-bookmark",
+  promiseNotification = PlacesTestUtils.waitForNotification(
+    "bookmark-tags-changed"
+  );
+  await TestUtils.waitForCondition(
+    () =>
+      win.document.l10n.getAttributes(bookmarkPanelTitle).id ===
+      "bookmarks-edit-bookmark",
     "Bookmark title is correct"
   );
-  let promiseNotification = PlacesTestUtils.waitForNotification(
-    "bookmark-added",
-    events => events.some(({ url }) => !url || url == TEST_URL),
-    "places"
-  );
-  await fillBookmarkTextField("editBMPanel_tagsField", "tag1", window);
+  await fillBookmarkTextField("editBMPanel_tagsField", "tag1", win);
+  const doneButton = win.document.getElementById("editBookmarkPanelDoneButton");
+  await hideBookmarksPanel(() => doneButton.click());
   await promiseNotification;
-  let bookmarks = [];
-  await PlacesUtils.bookmarks.fetch({ url: TEST_URL }, bm =>
-    bookmarks.push(bm)
-  );
   Assert.equal(
     PlacesUtils.tagging.getTagsForURI(Services.io.newURI(TEST_URL)).length,
     1,
@@ -97,25 +106,17 @@ add_task(async function test_add_bookmark_tags_from_bookmarkProperties() {
     PlacesUtils.tagging.getTagsForURI(Services.io.newURI(TEST_URL)),
     ["tag1"]
   );
-  let doneButton = document.getElementById("editBookmarkPanelDoneButton");
-  await hideBookmarksPanel(() => doneButton.click());
 
   // Click the bookmark star again, add more tags.
   await clickBookmarkStar();
   promiseNotification = PlacesTestUtils.waitForNotification(
-    "bookmark-tags-changed",
-    () => true,
-    "places"
+    "bookmark-tags-changed"
   );
-  await fillBookmarkTextField(
-    "editBMPanel_tagsField",
-    "tag1, tag2, tag3",
-    window
-  );
-  await promiseNotification;
+  await fillBookmarkTextField("editBMPanel_tagsField", "tag1, tag2, tag3", win);
   await hideBookmarksPanel(() => doneButton.click());
+  await promiseNotification;
 
-  bookmarks = [];
+  const bookmarks = [];
   await PlacesUtils.bookmarks.fetch({ url: TEST_URL }, bm =>
     bookmarks.push(bm)
   );
@@ -147,7 +148,7 @@ add_task(async function test_add_bookmark_tags_from_library() {
   let library = await promiseLibrary("UnfiledBookmarks");
 
   // Cleanup.
-  registerCleanupFunction(async function() {
+  registerCleanupFunction(async function () {
     await promiseLibraryClosed(library);
   });
 
@@ -193,7 +194,7 @@ add_task(async function test_add_bookmark_tags_from_sidebar() {
     title: "Bookmark Title",
   });
 
-  await withSidebarTree("bookmarks", async function(tree) {
+  await withSidebarTree("bookmarks", async function (tree) {
     tree.selectItems([bookmarks.guid]);
     // Add one tag.
     await addTags(["tag1"], tree, ["tag1"]);

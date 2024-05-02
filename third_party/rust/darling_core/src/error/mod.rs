@@ -1,4 +1,4 @@
-//! The `darling::Error` type and its internals.
+//! The `darling::Error` type, the multiple error `Accumulator`, and their internals.
 //!
 //! Error handling is one of the core values of `darling`; creating great errors is hard and
 //! never the reason that a proc-macro author started writing their crate. As a result, the
@@ -13,9 +13,13 @@ use std::iter::{self, Iterator};
 use std::string::ToString;
 use std::vec;
 use syn::spanned::Spanned;
-use syn::{Lit, LitStr, Path};
+use syn::{Expr, Lit, LitStr, Path};
 
+#[cfg(feature = "diagnostics")]
+mod child;
 mod kind;
+
+use crate::util::path_to_string;
 
 use self::kind::{ErrorKind, ErrorUnknownField};
 
@@ -45,31 +49,24 @@ pub type Result<T> = ::std::result::Result<T, Error>;
 ///    This preserves all span information, suggestions, etc. Wrapping a `darling::Error` in
 ///    a custom error enum works as-expected and does not force any loss of fidelity.
 /// 2. Do not use early return (e.g. the `?` operator) for custom validations. Instead,
-///    create a local `Vec` to collect errors as they are encountered and then use
-///    `darling::Error::multiple` to create an error containing all those issues if the list
-///    is non-empty after validation. This can create very complex custom validation functions;
+///    create an [`error::Accumulator`](Accumulator) to collect errors as they are encountered.  Then use
+///    [`Accumulator::finish`] to return your validated result; it will give `Ok` if and only if
+///    no errors were encountered.  This can create very complex custom validation functions;
 ///    in those cases, split independent "validation chains" out into their own functions to
 ///    keep the main validator manageable.
 /// 3. Use `darling::Error::custom` to create additional errors as-needed, then call `with_span`
 ///    to ensure those errors appear in the right place. Use `darling::util::SpannedValue` to keep
 ///    span information around on parsed fields so that custom diagnostics can point to the correct
 ///    parts of the input AST.
-#[derive(Debug)]
-#[cfg_attr(test, derive(Clone))]
+#[derive(Debug, Clone)]
 pub struct Error {
     kind: ErrorKind,
     locations: Vec<String>,
     /// The span to highlight in the emitted diagnostic.
     span: Option<Span>,
-}
-
-/// Transform a syn::Path to a readable String
-fn path_to_string(path: &syn::Path) -> String {
-    path.segments
-        .iter()
-        .map(|s| s.ident.to_string())
-        .collect::<Vec<String>>()
-        .join("::")
+    /// Additional diagnostic messages to show with the error.
+    #[cfg(feature = "diagnostics")]
+    children: Vec<child::ChildDiagnostic>,
 }
 
 /// Error creation functions
@@ -79,6 +76,8 @@ impl Error {
             kind,
             locations: Vec::new(),
             span: None,
+            #[cfg(feature = "diagnostics")]
+            children: vec![],
         }
     }
 
@@ -128,7 +127,17 @@ impl Error {
 
     /// Creates a new error for a struct or variant that does not adhere to the supported shape.
     pub fn unsupported_shape(shape: &str) -> Self {
-        Error::new(ErrorKind::UnsupportedShape(shape.into()))
+        Error::new(ErrorKind::UnsupportedShape {
+            observed: shape.into(),
+            expected: None,
+        })
+    }
+
+    pub fn unsupported_shape_with_expected<T: fmt::Display>(shape: &str, expected: &T) -> Self {
+        Error::new(ErrorKind::UnsupportedShape {
+            observed: shape.into(),
+            expected: Some(expected.to_string()),
+        })
     }
 
     pub fn unsupported_format(format: &str) -> Self {
@@ -138,6 +147,53 @@ impl Error {
     /// Creates a new error for a field which has an unexpected literal type.
     pub fn unexpected_type(ty: &str) -> Self {
         Error::new(ErrorKind::UnexpectedType(ty.into()))
+    }
+
+    pub fn unexpected_expr_type(expr: &Expr) -> Self {
+        Error::unexpected_type(match *expr {
+            Expr::Array(_) => "array",
+            Expr::Assign(_) => "assign",
+            Expr::Async(_) => "async",
+            Expr::Await(_) => "await",
+            Expr::Binary(_) => "binary",
+            Expr::Block(_) => "block",
+            Expr::Break(_) => "break",
+            Expr::Call(_) => "call",
+            Expr::Cast(_) => "cast",
+            Expr::Closure(_) => "closure",
+            Expr::Const(_) => "const",
+            Expr::Continue(_) => "continue",
+            Expr::Field(_) => "field",
+            Expr::ForLoop(_) => "for_loop",
+            Expr::Group(_) => "group",
+            Expr::If(_) => "if",
+            Expr::Index(_) => "index",
+            Expr::Infer(_) => "infer",
+            Expr::Let(_) => "let",
+            Expr::Lit(_) => "lit",
+            Expr::Loop(_) => "loop",
+            Expr::Macro(_) => "macro",
+            Expr::Match(_) => "match",
+            Expr::MethodCall(_) => "method_call",
+            Expr::Paren(_) => "paren",
+            Expr::Path(_) => "path",
+            Expr::Range(_) => "range",
+            Expr::Reference(_) => "reference",
+            Expr::Repeat(_) => "repeat",
+            Expr::Return(_) => "return",
+            Expr::Struct(_) => "struct",
+            Expr::Try(_) => "try",
+            Expr::TryBlock(_) => "try_block",
+            Expr::Tuple(_) => "tuple",
+            Expr::Unary(_) => "unary",
+            Expr::Unsafe(_) => "unsafe",
+            Expr::Verbatim(_) => "verbatim",
+            Expr::While(_) => "while",
+            Expr::Yield(_) => "yield",
+            // non-exhaustive enum
+            _ => "unknown",
+        })
+        .with_span(expr)
     }
 
     /// Creates a new error for a field which has an unexpected literal type. This will automatically
@@ -179,6 +235,8 @@ impl Error {
             Lit::Float(_) => "float",
             Lit::Bool(_) => "bool",
             Lit::Verbatim(_) => "verbatim",
+            // non-exhaustive enum
+            _ => "unknown",
         })
         .with_span(lit)
     }
@@ -201,6 +259,8 @@ impl Error {
 
     /// Bundle a set of multiple errors into a single `Error` instance.
     ///
+    /// Usually it will be more convenient to use an [`error::Accumulator`](Accumulator).
+    ///
     /// # Panics
     /// This function will panic if `errors.is_empty() == true`.
     pub fn multiple(mut errors: Vec<Error>) -> Self {
@@ -211,6 +271,13 @@ impl Error {
             0 => panic!("Can't deal with 0 errors"),
             _ => Error::new(ErrorKind::Multiple(errors)),
         }
+    }
+
+    /// Creates an error collector, for aggregating multiple errors
+    ///
+    /// See [`Accumulator`] for details.
+    pub fn accumulator() -> Accumulator {
+        Default::default()
     }
 }
 
@@ -250,19 +317,51 @@ impl Error {
         self
     }
 
+    /// Get a span for the error.
+    ///
+    /// # Return Value
+    /// This function will return [`Span::call_site()`](proc_macro2::Span) if [`Self::has_span`] is `false`.
+    /// To get the span only if one has been explicitly set for `self`, instead use [`Error::explicit_span`].
+    pub fn span(&self) -> Span {
+        self.span.unwrap_or_else(Span::call_site)
+    }
+
+    /// Get the span for `self`, if one has been set.
+    pub fn explicit_span(&self) -> Option<Span> {
+        self.span
+    }
+
     /// Recursively converts a tree of errors to a flattened list.
+    ///
+    /// # Child Diagnostics
+    /// If the `diagnostics` feature is enabled, any child diagnostics on `self`
+    /// will be cloned down to all the errors within `self`.
     pub fn flatten(self) -> Self {
         Error::multiple(self.into_vec())
     }
 
     fn into_vec(self) -> Vec<Self> {
         if let ErrorKind::Multiple(errors) = self.kind {
-            let mut flat = Vec::new();
-            for error in errors {
-                flat.extend(error.prepend_at(self.locations.clone()).into_vec());
-            }
+            let locations = self.locations;
 
-            flat
+            #[cfg(feature = "diagnostics")]
+            let children = self.children;
+
+            errors
+                .into_iter()
+                .flat_map(|error| {
+                    // This is mutated if the diagnostics feature is enabled
+                    #[allow(unused_mut)]
+                    let mut error = error.prepend_at(locations.clone());
+
+                    // Any child diagnostics in `self` are cloned down to all the distinct
+                    // errors contained in `self`.
+                    #[cfg(feature = "diagnostics")]
+                    error.children.extend(children.iter().cloned());
+
+                    error.into_vec()
+                })
+                .collect()
         } else {
             vec![self]
         }
@@ -329,23 +428,12 @@ impl Error {
         #[cfg(feature = "diagnostics")]
         {
             self.emit();
-            quote!()
+            TokenStream::default()
         }
 
         #[cfg(not(feature = "diagnostics"))]
         {
-            self.flatten()
-                .into_iter()
-                .map(|e| e.single_to_syn_error().to_compile_error())
-                .collect()
-        }
-    }
-
-    #[cfg(not(feature = "diagnostics"))]
-    fn single_to_syn_error(self) -> ::syn::Error {
-        match self.span {
-            Some(span) => ::syn::Error::new(span, self.kind),
-            None => ::syn::Error::new(Span::call_site(), self),
+            syn::Error::from(self).into_compile_error()
         }
     }
 
@@ -357,13 +445,17 @@ impl Error {
         //
         // If span information is available, don't include the error property path
         // since it's redundant and not consistent with native compiler diagnostics.
-        match self.kind {
+        let diagnostic = match self.kind {
             ErrorKind::UnknownField(euf) => euf.into_diagnostic(self.span),
             _ => match self.span {
                 Some(span) => span.unwrap().error(self.kind.to_string()),
                 None => Diagnostic::new(Level::Error, self.to_string()),
             },
-        }
+        };
+
+        self.children
+            .into_iter()
+            .fold(diagnostic, |out, child| child.append_to(out))
     }
 
     /// Transform this error and its children into a list of compiler diagnostics
@@ -405,6 +497,76 @@ impl Error {
     }
 }
 
+#[cfg(feature = "diagnostics")]
+macro_rules! add_child {
+    ($unspanned:ident, $spanned:ident, $level:ident) => {
+        #[doc = concat!("Add a child ", stringify!($unspanned), " message to this error.")]
+        #[doc = "# Example"]
+        #[doc = "```rust"]
+        #[doc = "# use darling_core::Error;"]
+        #[doc = concat!(r#"Error::custom("Example")."#, stringify!($unspanned), r#"("message content");"#)]
+        #[doc = "```"]
+        pub fn $unspanned<T: fmt::Display>(mut self, message: T) -> Self {
+            self.children.push(child::ChildDiagnostic::new(
+                child::Level::$level,
+                None,
+                message.to_string(),
+            ));
+            self
+        }
+
+        #[doc = concat!("Add a child ", stringify!($unspanned), " message to this error with its own span.")]
+        #[doc = "# Example"]
+        #[doc = "```rust"]
+        #[doc = "# use darling_core::Error;"]
+        #[doc = "# let item_to_span = proc_macro2::Span::call_site();"]
+        #[doc = concat!(r#"Error::custom("Example")."#, stringify!($spanned), r#"(&item_to_span, "message content");"#)]
+        #[doc = "```"]
+        pub fn $spanned<S: Spanned, T: fmt::Display>(mut self, span: &S, message: T) -> Self {
+            self.children.push(child::ChildDiagnostic::new(
+                child::Level::$level,
+                Some(span.span()),
+                message.to_string(),
+            ));
+            self
+        }
+    };
+}
+
+/// Add child diagnostics to the error.
+///
+/// # Example
+///
+/// ## Code
+///
+/// ```rust
+/// # use darling_core::Error;
+/// # let struct_ident = proc_macro2::Span::call_site();
+/// Error::custom("this is a demo")
+///     .with_span(&struct_ident)
+///     .note("we wrote this")
+///     .help("try doing this instead");
+/// ```
+/// ## Output
+///
+/// ```text
+/// error: this is a demo
+///   --> my_project/my_file.rs:3:5
+///    |
+/// 13 |     FooBar { value: String },
+///    |     ^^^^^^
+///    |
+///    = note: we wrote this
+///    = help: try doing this instead
+/// ```
+#[cfg(feature = "diagnostics")]
+impl Error {
+    add_child!(error, span_error, Error);
+    add_child!(warning, span_warning, Warning);
+    add_child!(note, span_note, Note);
+    add_child!(help, span_help, Help);
+}
+
 impl StdError for Error {
     fn description(&self) -> &str {
         self.kind.description()
@@ -435,6 +597,34 @@ impl From<syn::Error> for Error {
         Self {
             span: Some(e.span()),
             ..Self::custom(e)
+        }
+    }
+}
+
+impl From<Error> for syn::Error {
+    fn from(e: Error) -> Self {
+        if e.len() == 1 {
+            if let Some(span) = e.explicit_span() {
+                // Don't include the location path if the error has an explicit span,
+                // since it will be redundant and isn't consistent with how rustc
+                // exposes errors.
+                syn::Error::new(span, e.kind)
+            } else {
+                // If the error's span is going to be the macro call site, include
+                // the location information to try and help the user pinpoint the issue.
+                syn::Error::new(e.span(), e)
+            }
+        } else {
+            let mut syn_errors = e.flatten().into_iter().map(syn::Error::from);
+            let mut error = syn_errors
+                .next()
+                .expect("darling::Error can never be empty");
+
+            for next_error in syn_errors {
+                error.combine(next_error);
+            }
+
+            error
         }
     }
 }
@@ -495,6 +685,181 @@ impl Iterator for IntoIter {
 
     fn next(&mut self) -> Option<Error> {
         self.inner.next()
+    }
+}
+
+/// Accumulator for errors, for helping call [`Error::multiple`].
+///
+/// See the docs for [`darling::Error`](Error) for more discussion of error handling with darling.
+///
+/// # Panics
+///
+/// `Accumulator` panics on drop unless [`finish`](Self::finish), [`finish_with`](Self::finish_with),
+/// or [`into_inner`](Self::into_inner) has been called, **even if it contains no errors**.
+/// If you want to discard an `Accumulator` that you know to be empty, use `accumulator.finish().unwrap()`.
+///
+/// # Example
+///
+/// ```
+/// # extern crate darling_core as darling;
+/// # struct Thing;
+/// # struct Output;
+/// # impl Thing { fn validate(self) -> darling::Result<Output> { Ok(Output) } }
+/// fn validate_things(inputs: Vec<Thing>) -> darling::Result<Vec<Output>> {
+///     let mut errors = darling::Error::accumulator();
+///
+///     let outputs = inputs
+///         .into_iter()
+///         .filter_map(|thing| errors.handle_in(|| thing.validate()))
+///         .collect::<Vec<_>>();
+///
+///     errors.finish()?;
+///     Ok(outputs)
+/// }
+/// ```
+#[derive(Debug)]
+#[must_use = "Accumulator will panic on drop if not defused."]
+pub struct Accumulator(Option<Vec<Error>>);
+
+impl Accumulator {
+    /// Runs a closure, returning the successful value as `Some`, or collecting the error
+    ///
+    /// The closure's return type is `darling::Result`, so inside it one can use `?`.
+    pub fn handle_in<T, F: FnOnce() -> Result<T>>(&mut self, f: F) -> Option<T> {
+        self.handle(f())
+    }
+
+    /// Handles a possible error.
+    ///
+    /// Returns a successful value as `Some`, or collects the error and returns `None`.
+    pub fn handle<T>(&mut self, result: Result<T>) -> Option<T> {
+        match result {
+            Ok(y) => Some(y),
+            Err(e) => {
+                self.push(e);
+                None
+            }
+        }
+    }
+
+    /// Stop accumulating errors, producing `Ok` if there are no errors or producing
+    /// an error with all those encountered by the accumulator.
+    pub fn finish(self) -> Result<()> {
+        self.finish_with(())
+    }
+
+    /// Bundles the collected errors if there were any, or returns the success value
+    ///
+    /// Call this at the end of your input processing.
+    ///
+    /// If there were no errors recorded, returns `Ok(success)`.
+    /// Otherwise calls [`Error::multiple`] and returns the result as an `Err`.
+    pub fn finish_with<T>(self, success: T) -> Result<T> {
+        let errors = self.into_inner();
+        if errors.is_empty() {
+            Ok(success)
+        } else {
+            Err(Error::multiple(errors))
+        }
+    }
+
+    fn errors(&mut self) -> &mut Vec<Error> {
+        match &mut self.0 {
+            Some(errors) => errors,
+            None => panic!("darling internal error: Accumulator accessed after defuse"),
+        }
+    }
+
+    /// Returns the accumulated errors as a `Vec`.
+    ///
+    /// This function defuses the drop bomb.
+    #[must_use = "Accumulated errors should be handled or propagated to the caller"]
+    pub fn into_inner(mut self) -> Vec<Error> {
+        match std::mem::replace(&mut self.0, None) {
+            Some(errors) => errors,
+            None => panic!("darling internal error: Accumulator accessed after defuse"),
+        }
+    }
+
+    /// Add one error to the collection.
+    pub fn push(&mut self, error: Error) {
+        self.errors().push(error)
+    }
+
+    /// Finish the current accumulation, and if there are no errors create a new `Self` so processing may continue.
+    ///
+    /// This is shorthand for:
+    ///
+    /// ```rust,ignore
+    /// errors.finish()?;
+    /// errors = Error::accumulator();
+    /// ```
+    ///
+    /// # Drop Behavior
+    /// This function returns a new [`Accumulator`] in the success case.
+    /// This new accumulator is "armed" and will detonate if dropped without being finished.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # extern crate darling_core as darling;
+    /// # struct Thing;
+    /// # struct Output;
+    /// # impl Thing { fn validate(&self) -> darling::Result<Output> { Ok(Output) } }
+    /// fn validate(lorem_inputs: &[Thing], ipsum_inputs: &[Thing])
+    ///             -> darling::Result<(Vec<Output>, Vec<Output>)> {
+    ///     let mut errors = darling::Error::accumulator();
+    ///
+    ///     let lorems = lorem_inputs.iter().filter_map(|l| {
+    ///         errors.handle(l.validate())
+    ///     }).collect();
+    ///
+    ///     errors = errors.checkpoint()?;
+    ///
+    ///     let ipsums = ipsum_inputs.iter().filter_map(|l| {
+    ///         errors.handle(l.validate())
+    ///     }).collect();
+    ///
+    ///     errors.finish_with((lorems, ipsums))
+    /// }
+    /// # validate(&[], &[]).unwrap();
+    /// ```
+    pub fn checkpoint(self) -> Result<Accumulator> {
+        // The doc comment says on success we "return the Accumulator for future use".
+        // Actually, we have consumed it by feeding it to finish so we make a fresh one.
+        // This is OK since by definition of the success path, it was empty on entry.
+        self.finish()?;
+        Ok(Self::default())
+    }
+}
+
+impl Default for Accumulator {
+    fn default() -> Self {
+        Accumulator(Some(vec![]))
+    }
+}
+
+impl Extend<Error> for Accumulator {
+    fn extend<I>(&mut self, iter: I)
+    where
+        I: IntoIterator<Item = Error>,
+    {
+        self.errors().extend(iter)
+    }
+}
+
+impl Drop for Accumulator {
+    fn drop(&mut self) {
+        // don't try to panic if we are currently unwinding a panic
+        // otherwise we end up with an unhelful "thread panicked while panicking. aborting." message
+        if !std::thread::panicking() {
+            if let Some(errors) = &mut self.0 {
+                match errors.len() {
+                    0 => panic!("darling::error::Accumulator dropped without being finished"),
+                    error_count => panic!("darling::error::Accumulator dropped without being finished. {} errors were lost.", error_count)
+                }
+            }
+        }
     }
 }
 
@@ -560,5 +925,55 @@ mod tests {
         ]);
 
         assert_eq!(4, err.len());
+    }
+
+    #[test]
+    fn accum_ok() {
+        let errs = Error::accumulator();
+        assert_eq!("test", errs.finish_with("test").unwrap());
+    }
+
+    #[test]
+    fn accum_errr() {
+        let mut errs = Error::accumulator();
+        errs.push(Error::custom("foo!"));
+        errs.finish().unwrap_err();
+    }
+
+    #[test]
+    fn accum_into_inner() {
+        let mut errs = Error::accumulator();
+        errs.push(Error::custom("foo!"));
+        let errs: Vec<_> = errs.into_inner();
+        assert_eq!(errs.len(), 1);
+    }
+
+    #[test]
+    #[should_panic(expected = "Accumulator dropped")]
+    fn accum_drop_panic() {
+        let _errs = Error::accumulator();
+    }
+
+    #[test]
+    #[should_panic(expected = "2 errors")]
+    fn accum_drop_panic_with_error_count() {
+        let mut errors = Error::accumulator();
+        errors.push(Error::custom("first"));
+        errors.push(Error::custom("second"));
+    }
+
+    #[test]
+    fn accum_checkpoint_error() {
+        let mut errs = Error::accumulator();
+        errs.push(Error::custom("foo!"));
+        errs.checkpoint().unwrap_err();
+    }
+
+    #[test]
+    #[should_panic(expected = "Accumulator dropped")]
+    fn accum_checkpoint_drop_panic() {
+        let mut errs = Error::accumulator();
+        errs = errs.checkpoint().unwrap();
+        let _ = errs;
     }
 }

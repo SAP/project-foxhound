@@ -48,7 +48,7 @@ void SharedStyleSheetCache::LoadCompleted(SharedStyleSheetCache* aCache,
     cancelledStatus = NS_BINDING_ABORTED;
     css::SheetLoadData* data = &aData;
     do {
-      if (data->mIsCancelled) {
+      if (data->IsCancelled()) {
         // We only need to mark loads for this loader as cancelled, so as to not
         // fire error events in unrelated documents.
         css::Loader::MarkLoadTreeFailed(*data, data->mLoader);
@@ -64,13 +64,13 @@ void SharedStyleSheetCache::LoadCompleted(SharedStyleSheetCache* aCache,
 
   // Now it's safe to go ahead and notify observers
   for (RefPtr<css::SheetLoadData>& data : datasToNotify) {
-    auto status = data->mIsCancelled ? cancelledStatus : aStatus;
+    auto status = data->IsCancelled() ? cancelledStatus : aStatus;
     data->mLoader->NotifyObservers(*data, status);
   }
 }
 
 void SharedStyleSheetCache::InsertIfNeeded(css::SheetLoadData& aData) {
-  MOZ_ASSERT(aData.mLoader->GetDocument(),
+  MOZ_ASSERT(aData.mLoader->IsDocumentAssociated(),
              "We only cache document-associated sheets");
   LOG("SharedStyleSheetCache::InsertIfNeeded");
   // If we ever start doing this for failed loads, we'll need to adjust the
@@ -90,7 +90,8 @@ void SharedStyleSheetCache::InsertIfNeeded(css::SheetLoadData& aData) {
 
   if (!aData.mURI) {
     LOG("  Inline or constructable style sheet, bailing");
-    // Inline sheet caching happens in Loader::mInlineSheets.
+    // Inline sheet caching happens in Loader::mInlineSheets, where we still
+    // have the input text available.
     // Constructable sheets are not worth caching, they're always unique.
     return;
   }
@@ -110,10 +111,8 @@ void SharedStyleSheetCache::LoadCompletedInternal(
   // Go through and deal with the whole linked list.
   auto* data = &aData;
   do {
-    MOZ_DIAGNOSTIC_ASSERT(!data->mSheetCompleteCalled);
-#ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
+    MOZ_RELEASE_ASSERT(!data->mSheetCompleteCalled);
     data->mSheetCompleteCalled = true;
-#endif
 
     if (!data->mSheetAlreadyComplete) {
       // If mSheetAlreadyComplete, then the sheet could well be modified between
@@ -146,7 +145,7 @@ void SharedStyleSheetCache::LoadCompletedInternal(
           // insert them into the tree.
           return false;
         }
-        if (data->mOwningNodeBeforeLoadEvent != data->mSheet->GetOwnerNode()) {
+        if (data->mHadOwnerNode != !!data->mSheet->GetOwnerNode()) {
           // The sheet was already removed from the tree and is no longer the
           // current sheet of the owning node, we can bail.
           return false;
@@ -158,7 +157,6 @@ void SharedStyleSheetCache::LoadCompletedInternal(
         data->mLoader->InsertSheetInTree(*data->mSheet);
       }
       data->mSheet->SetComplete();
-      data->ScheduleLoadEventIfNeeded();
     } else if (data->mSheet->IsApplicable()) {
       if (dom::Document* doc = data->mLoader->GetDocument()) {
         // We post these events for devtools, even though the applicable state
@@ -166,7 +164,6 @@ void SharedStyleSheetCache::LoadCompletedInternal(
         doc->PostStyleSheetApplicableStateChangeEvent(*data->mSheet);
       }
     }
-
     aDatasToNotify.AppendElement(data);
 
     NS_ASSERTION(!data->mParentData || data->mParentData->mPendingChildren != 0,

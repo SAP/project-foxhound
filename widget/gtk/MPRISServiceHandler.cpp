@@ -12,13 +12,20 @@
 
 #include "MPRISInterfaceDescription.h"
 #include "mozilla/dom/MediaControlUtils.h"
+#include "mozilla/GRefPtr.h"
+#include "mozilla/GUniquePtr.h"
+#include "mozilla/UniquePtrExtensions.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/Sprintf.h"
+#include "nsXULAppAPI.h"
 #include "nsIXULAppInfo.h"
 #include "nsIOutputStream.h"
 #include "nsNetUtil.h"
 #include "nsServiceManagerUtils.h"
+#include "WidgetUtilsGtk.h"
+#include "AsyncDBus.h"
+#include "prio.h"
 
 #define LOGMPRIS(msg, ...)                   \
   MOZ_LOG(gMediaControlLog, LogLevel::Debug, \
@@ -31,19 +38,19 @@ namespace widget {
 // used to form a unique image file name.
 static uint32_t gImageNumber = 0;
 
-static inline Maybe<mozilla::dom::MediaControlKey> GetMediaControlKey(
+static inline Maybe<dom::MediaControlKey> GetMediaControlKey(
     const gchar* aMethodName) {
-  const std::unordered_map<std::string, mozilla::dom::MediaControlKey> map = {
-      {"Raise", mozilla::dom::MediaControlKey::Focus},
-      {"Next", mozilla::dom::MediaControlKey::Nexttrack},
-      {"Previous", mozilla::dom::MediaControlKey::Previoustrack},
-      {"Pause", mozilla::dom::MediaControlKey::Pause},
-      {"PlayPause", mozilla::dom::MediaControlKey::Playpause},
-      {"Stop", mozilla::dom::MediaControlKey::Stop},
-      {"Play", mozilla::dom::MediaControlKey::Play}};
+  const std::unordered_map<std::string, dom::MediaControlKey> map = {
+      {"Raise", dom::MediaControlKey::Focus},
+      {"Next", dom::MediaControlKey::Nexttrack},
+      {"Previous", dom::MediaControlKey::Previoustrack},
+      {"Pause", dom::MediaControlKey::Pause},
+      {"PlayPause", dom::MediaControlKey::Playpause},
+      {"Stop", dom::MediaControlKey::Stop},
+      {"Play", dom::MediaControlKey::Play}};
 
   auto it = map.find(aMethodName);
-  return (it == map.end() ? Nothing() : Some(it->second));
+  return it == map.end() ? Nothing() : Some(it->second);
 }
 
 static void HandleMethodCall(GDBusConnection* aConnection, const gchar* aSender,
@@ -55,7 +62,7 @@ static void HandleMethodCall(GDBusConnection* aConnection, const gchar* aSender,
   MOZ_ASSERT(aUserData);
   MOZ_ASSERT(NS_IsMainThread());
 
-  Maybe<mozilla::dom::MediaControlKey> key = GetMediaControlKey(aMethodName);
+  Maybe<dom::MediaControlKey> key = GetMediaControlKey(aMethodName);
   if (key.isNothing()) {
     g_dbus_method_invocation_return_error(
         aInvocation, G_DBUS_ERROR, G_DBUS_ERROR_NOT_SUPPORTED,
@@ -93,19 +100,18 @@ enum class Property : uint8_t {
   eGetMetadata,
 };
 
-static inline Maybe<mozilla::dom::MediaControlKey> GetPairedKey(
-    Property aProperty) {
+static inline Maybe<dom::MediaControlKey> GetPairedKey(Property aProperty) {
   switch (aProperty) {
     case Property::eCanRaise:
-      return Some(mozilla::dom::MediaControlKey::Focus);
+      return Some(dom::MediaControlKey::Focus);
     case Property::eCanGoNext:
-      return Some(mozilla::dom::MediaControlKey::Nexttrack);
+      return Some(dom::MediaControlKey::Nexttrack);
     case Property::eCanGoPrevious:
-      return Some(mozilla::dom::MediaControlKey::Previoustrack);
+      return Some(dom::MediaControlKey::Previoustrack);
     case Property::eCanPlay:
-      return Some(mozilla::dom::MediaControlKey::Play);
+      return Some(dom::MediaControlKey::Play);
     case Property::eCanPause:
-      return Some(mozilla::dom::MediaControlKey::Pause);
+      return Some(dom::MediaControlKey::Pause);
     default:
       return Nothing();
   }
@@ -178,7 +184,7 @@ static GVariant* HandleGetProperty(GDBusConnection* aConnection,
     case Property::eCanGoPrevious:
     case Property::eCanPlay:
     case Property::eCanPause:
-      Maybe<mozilla::dom::MediaControlKey> key = GetPairedKey(property.value());
+      Maybe<dom::MediaControlKey> key = GetPairedKey(property.value());
       MOZ_ASSERT(key.isSome());
       return g_variant_new_boolean(handler->IsMediaKeySupported(key.value()));
   }
@@ -240,6 +246,10 @@ void MPRISServiceHandler::OnNameLost(GDBusConnection* aConnection,
     return;
   }
 
+  if (!aConnection) {
+    return;
+  }
+
   if (g_dbus_connection_unregister_object(aConnection, mRootRegistrationId)) {
     mRootRegistrationId = 0;
   } else {
@@ -265,90 +275,130 @@ void MPRISServiceHandler::OnNameLost(GDBusConnection* aConnection,
 
 void MPRISServiceHandler::OnBusAcquired(GDBusConnection* aConnection,
                                         const gchar* aName) {
-  GError* error = nullptr;
+  GUniquePtr<GError> error;
   LOGMPRIS("OnBusAcquired: %s", aName);
 
   mRootRegistrationId = g_dbus_connection_register_object(
       aConnection, DBUS_MPRIS_OBJECT_PATH, mIntrospectionData->interfaces[0],
-      &gInterfaceVTable, this, /* user_data */
-      nullptr,                 /* user_data_free_func */
-      &error);                 /* GError** */
+      &gInterfaceVTable, this,  /* user_data */
+      nullptr,                  /* user_data_free_func */
+      getter_Transfers(error)); /* GError** */
 
   if (mRootRegistrationId == 0) {
     LOGMPRIS("Failed at root registration: %s",
              error ? error->message : "Unknown Error");
-    if (error) {
-      g_error_free(error);
-    }
     return;
   }
 
   mPlayerRegistrationId = g_dbus_connection_register_object(
       aConnection, DBUS_MPRIS_OBJECT_PATH, mIntrospectionData->interfaces[1],
-      &gInterfaceVTable, this, /* user_data */
-      nullptr,                 /* user_data_free_func */
-      &error);                 /* GError** */
+      &gInterfaceVTable, this,  /* user_data */
+      nullptr,                  /* user_data_free_func */
+      getter_Transfers(error)); /* GError** */
 
   if (mPlayerRegistrationId == 0) {
     LOGMPRIS("Failed at object registration: %s",
              error ? error->message : "Unknown Error");
-    if (error) {
-      g_error_free(error);
-    }
   }
+}
+
+void MPRISServiceHandler::SetServiceName(const char* aName) {
+  nsCString dbusName(aName);
+  dbusName.ReplaceChar(':', '_');
+  dbusName.ReplaceChar('.', '_');
+  mServiceName =
+      nsCString(DBUS_MPRIS_SERVICE_NAME) + nsCString(".instance") + dbusName;
+}
+
+const char* MPRISServiceHandler::GetServiceName() { return mServiceName.get(); }
+
+/* static */
+void g_bus_get_callback(GObject* aSourceObject, GAsyncResult* aRes,
+                        gpointer aUserData) {
+  GUniquePtr<GError> error;
+
+  GDBusConnection* conn = g_bus_get_finish(aRes, getter_Transfers(error));
+  if (!conn) {
+    if (!IsCancelledGError(error.get())) {
+      NS_WARNING(nsPrintfCString("Failure at g_bus_get_finish: %s",
+                                 error ? error->message : "Unknown Error")
+                     .get());
+    }
+    return;
+  }
+
+  MPRISServiceHandler* handler = static_cast<MPRISServiceHandler*>(aUserData);
+  if (!handler) {
+    NS_WARNING(
+        nsPrintfCString("Failure to get a MPRISServiceHandler*: %p", handler)
+            .get());
+    return;
+  }
+
+  handler->OwnName(conn);
+}
+
+void MPRISServiceHandler::OwnName(GDBusConnection* aConnection) {
+  MOZ_ASSERT(NS_IsMainThread());
+
+  SetServiceName(g_dbus_connection_get_unique_name(aConnection));
+
+  GUniquePtr<GError> error;
+
+  InitIdentity();
+  mOwnerId = g_bus_own_name_on_connection(
+      aConnection, GetServiceName(),
+      // Enter a waiting queue until this service name is free
+      // (likely another FF instance is running/has been crashed)
+      G_BUS_NAME_OWNER_FLAGS_NONE, OnNameAcquiredStatic, OnNameLostStatic, this,
+      nullptr);
+
+  /* parse introspection data */
+  mIntrospectionData = dont_AddRef(
+      g_dbus_node_info_new_for_xml(introspection_xml, getter_Transfers(error)));
+
+  if (!mIntrospectionData) {
+    LOGMPRIS("Failed at parsing XML Interface definition: %s",
+             error ? error->message : "Unknown Error");
+    return;
+  }
+
+  OnBusAcquired(aConnection, GetServiceName());
 }
 
 bool MPRISServiceHandler::Open() {
   MOZ_ASSERT(!mInitialized);
   MOZ_ASSERT(NS_IsMainThread());
-  GError* error = nullptr;
-  gchar serviceName[256];
 
-  InitIdentity();
-  SprintfLiteral(serviceName, DBUS_MPRIS_SERVICE_NAME ".instance%d", getpid());
-  mOwnerId =
-      g_bus_own_name(G_BUS_TYPE_SESSION, serviceName,
-                     // Enter a waiting queue until this service name is free
-                     // (likely another FF instance is running/has been crashed)
-                     G_BUS_NAME_OWNER_FLAGS_NONE, OnBusAcquiredStatic,
-                     OnNameAcquiredStatic, OnNameLostStatic, this, nullptr);
-
-  /* parse introspection data */
-  mIntrospectionData = g_dbus_node_info_new_for_xml(introspection_xml, &error);
-
-  if (!mIntrospectionData) {
-    LOGMPRIS("Failed at parsing XML Interface definition: %s",
-             error ? error->message : "Unknown Error");
-    if (error) {
-      g_error_free(error);
-    }
-    return false;
-  }
+  mDBusGetCancellable = dont_AddRef(g_cancellable_new());
+  g_bus_get(G_BUS_TYPE_SESSION, mDBusGetCancellable, g_bus_get_callback, this);
 
   mInitialized = true;
   return true;
 }
 
+MPRISServiceHandler::MPRISServiceHandler() = default;
 MPRISServiceHandler::~MPRISServiceHandler() {
-  MOZ_ASSERT(!mInitialized);  // Close hasn't been called!
+  MOZ_ASSERT(!mInitialized, "Close hasn't been called!");
 }
 
 void MPRISServiceHandler::Close() {
-  gchar serviceName[256];
-  SprintfLiteral(serviceName, DBUS_MPRIS_SERVICE_NAME ".instance%d", getpid());
-
   // Reset playback state and metadata before disconnect from dbus.
   SetPlaybackState(dom::MediaSessionPlaybackState::None);
   ClearMetadata();
 
-  OnNameLost(mConnection, serviceName);
+  OnNameLost(mConnection, GetServiceName());
+
+  if (mDBusGetCancellable) {
+    g_cancellable_cancel(mDBusGetCancellable);
+    mDBusGetCancellable = nullptr;
+  }
 
   if (mOwnerId != 0) {
     g_bus_unown_name(mOwnerId);
   }
-  if (mIntrospectionData) {
-    g_dbus_node_info_unref(mIntrospectionData);
-  }
+
+  mIntrospectionData = nullptr;
 
   mInitialized = false;
   MediaControlKeySource::Close();
@@ -375,16 +425,18 @@ void MPRISServiceHandler::InitIdentity() {
 }
 
 const char* MPRISServiceHandler::Identity() const {
-  MOZ_ASSERT(mInitialized);
+  NS_WARNING_ASSERTION(mInitialized,
+                       "MPRISServiceHandler should have been initialized.");
   return mIdentity.get();
 }
 
 const char* MPRISServiceHandler::DesktopEntry() const {
-  MOZ_ASSERT(mInitialized);
+  NS_WARNING_ASSERTION(mInitialized,
+                       "MPRISServiceHandler should have been initialized.");
   return mDesktopEntry.get();
 }
 
-bool MPRISServiceHandler::PressKey(mozilla::dom::MediaControlKey aKey) const {
+bool MPRISServiceHandler::PressKey(dom::MediaControlKey aKey) const {
   MOZ_ASSERT(mInitialized);
   if (!IsMediaKeySupported(aKey)) {
     LOGMPRIS("%s is not supported", ToMediaControlKeyStr(aKey));
@@ -443,7 +495,7 @@ void MPRISServiceHandler::SetMediaMetadata(
   // 1) MPRIS image is being fetched, and the one in fetching is in the artwork
   // 2) MPRIS image is not being fetched, and the one in use is in the artwork
   if (!mFetchingUrl.IsEmpty()) {
-    if (mozilla::dom::IsImageIn(aMetadata.mArtwork, mFetchingUrl)) {
+    if (dom::IsImageIn(aMetadata.mArtwork, mFetchingUrl)) {
       LOGMPRIS(
           "No need to load MPRIS image. The one being processed is in the "
           "artwork");
@@ -453,7 +505,7 @@ void MPRISServiceHandler::SetMediaMetadata(
       return;
     }
   } else if (!mCurrentImageUrl.IsEmpty()) {
-    if (mozilla::dom::IsImageIn(aMetadata.mArtwork, mCurrentImageUrl)) {
+    if (dom::IsImageIn(aMetadata.mArtwork, mCurrentImageUrl)) {
       LOGMPRIS("No need to load MPRIS image. The one in use is in the artwork");
       SetMediaMetadataInternal(aMetadata, false);
       return;
@@ -507,9 +559,9 @@ void MPRISServiceHandler::LoadImageAtIndex(const size_t aIndex) {
     return;
   }
 
-  const mozilla::dom::MediaImage& image = mMPRISMetadata.mArtwork[aIndex];
+  const dom::MediaImage& image = mMPRISMetadata.mArtwork[aIndex];
 
-  if (!mozilla::dom::IsValidImageUrl(image.mSrc)) {
+  if (!dom::IsValidImageUrl(image.mSrc)) {
     LOGMPRIS("Skip the image with invalid URL. Try next image");
     LoadImageAtIndex(mNextImageIndex++);
     return;
@@ -518,7 +570,7 @@ void MPRISServiceHandler::LoadImageAtIndex(const size_t aIndex) {
   mImageFetchRequest.DisconnectIfExists();
   mFetchingUrl = image.mSrc;
 
-  mImageFetcher = mozilla::MakeUnique<mozilla::dom::FetchImageHelper>(image);
+  mImageFetcher = MakeUnique<dom::FetchImageHelper>(image);
   RefPtr<MPRISServiceHandler> self = this;
   mImageFetcher->FetchImage()
       ->Then(
@@ -531,7 +583,7 @@ void MPRISServiceHandler::LoadImageAtIndex(const size_t aIndex) {
             char* data = nullptr;
             // Only used to hold the image data
             nsCOMPtr<nsIInputStream> inputStream;
-            nsresult rv = mozilla::dom::GetEncodedImageBuffer(
+            nsresult rv = dom::GetEncodedImageBuffer(
                 aImage, mMimeType, getter_AddRefs(inputStream), &size, &data);
             if (NS_FAILED(rv) || !inputStream || size == 0 || !data) {
               LOGMPRIS("Failed to get the image buffer info. Try next image");
@@ -654,17 +706,25 @@ bool MPRISServiceHandler::InitLocalImageFolder() {
     return true;
   }
 
-  nsresult rv = NS_GetSpecialDirectory(XRE_USER_APP_DATA_DIR,
-                                       getter_AddRefs(mLocalImageFolder));
+  nsresult rv = NS_ERROR_FAILURE;
+  if (IsRunningUnderFlatpak()) {
+    // The XDG_DATA_HOME points to the same location in the host and guest
+    // filesystem.
+    if (const auto* xdgDataHome = g_getenv("XDG_DATA_HOME")) {
+      rv = NS_NewNativeLocalFile(nsDependentCString(xdgDataHome), true,
+                                 getter_AddRefs(mLocalImageFolder));
+    }
+  } else {
+    rv = NS_GetSpecialDirectory(XRE_USER_APP_DATA_DIR,
+                                getter_AddRefs(mLocalImageFolder));
+  }
+
   if (NS_FAILED(rv) || !mLocalImageFolder) {
     LOGMPRIS("Failed to get the image folder");
     return false;
   }
 
-  auto cleanup =
-      MakeScopeExit([this, self = RefPtr<MPRISServiceHandler>(this)] {
-        mLocalImageFolder = nullptr;
-      });
+  auto cleanup = MakeScopeExit([&] { mLocalImageFolder = nullptr; });
 
   rv = mLocalImageFolder->Append(u"firefox-mpris"_ns);
   if (NS_FAILED(rv)) {
@@ -745,9 +805,9 @@ GVariant* MPRISServiceHandler::GetMetadataAsGVariant() const {
   return g_variant_builder_end(&builder);
 }
 
-void MPRISServiceHandler::EmitEvent(mozilla::dom::MediaControlKey aKey) const {
+void MPRISServiceHandler::EmitEvent(dom::MediaControlKey aKey) const {
   for (const auto& listener : mListeners) {
-    listener->OnActionPerformed(mozilla::dom::MediaControlAction(aKey));
+    listener->OnActionPerformed(dom::MediaControlAction(aKey));
   }
 }
 
@@ -755,23 +815,21 @@ struct InterfaceProperty {
   const char* interface;
   const char* property;
 };
-static const std::unordered_map<mozilla::dom::MediaControlKey,
-                                InterfaceProperty>
-    gKeyProperty = {{mozilla::dom::MediaControlKey::Focus,
-                     {DBUS_MPRIS_INTERFACE, "CanRaise"}},
-                    {mozilla::dom::MediaControlKey::Nexttrack,
-                     {DBUS_MPRIS_PLAYER_INTERFACE, "CanGoNext"}},
-                    {mozilla::dom::MediaControlKey::Previoustrack,
-                     {DBUS_MPRIS_PLAYER_INTERFACE, "CanGoPrevious"}},
-                    {mozilla::dom::MediaControlKey::Play,
-                     {DBUS_MPRIS_PLAYER_INTERFACE, "CanPlay"}},
-                    {mozilla::dom::MediaControlKey::Pause,
-                     {DBUS_MPRIS_PLAYER_INTERFACE, "CanPause"}}};
+static const std::unordered_map<dom::MediaControlKey, InterfaceProperty>
+    gKeyProperty = {
+        {dom::MediaControlKey::Focus, {DBUS_MPRIS_INTERFACE, "CanRaise"}},
+        {dom::MediaControlKey::Nexttrack,
+         {DBUS_MPRIS_PLAYER_INTERFACE, "CanGoNext"}},
+        {dom::MediaControlKey::Previoustrack,
+         {DBUS_MPRIS_PLAYER_INTERFACE, "CanGoPrevious"}},
+        {dom::MediaControlKey::Play, {DBUS_MPRIS_PLAYER_INTERFACE, "CanPlay"}},
+        {dom::MediaControlKey::Pause,
+         {DBUS_MPRIS_PLAYER_INTERFACE, "CanPause"}}};
 
 void MPRISServiceHandler::SetSupportedMediaKeys(
     const MediaKeysArray& aSupportedKeys) {
   uint32_t supportedKeys = 0;
-  for (const mozilla::dom::MediaControlKey& key : aSupportedKeys) {
+  for (const dom::MediaControlKey& key : aSupportedKeys) {
     supportedKeys |= GetMediaKeyMask(key);
   }
 
@@ -795,13 +853,12 @@ void MPRISServiceHandler::SetSupportedMediaKeys(
   }
 }
 
-bool MPRISServiceHandler::IsMediaKeySupported(
-    mozilla::dom::MediaControlKey aKey) const {
+bool MPRISServiceHandler::IsMediaKeySupported(dom::MediaControlKey aKey) const {
   return mSupportedKeys & GetMediaKeyMask(aKey);
 }
 
-bool MPRISServiceHandler::EmitSupportedKeyChanged(
-    mozilla::dom::MediaControlKey aKey, bool aSupported) const {
+bool MPRISServiceHandler::EmitSupportedKeyChanged(dom::MediaControlKey aKey,
+                                                  bool aSupported) const {
   auto it = gKeyProperty.find(aKey);
   if (it == gKeyProperty.end()) {
     LOGMPRIS("No property for %s", ToMediaControlKeyStr(aKey));

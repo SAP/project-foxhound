@@ -22,8 +22,8 @@ RenderDMABUFTextureHost::~RenderDMABUFTextureHost() {
   DeleteTextureHandle();
 }
 
-wr::WrExternalImage RenderDMABUFTextureHost::Lock(
-    uint8_t aChannelIndex, gl::GLContext* aGL, wr::ImageRendering aRendering) {
+wr::WrExternalImage RenderDMABUFTextureHost::Lock(uint8_t aChannelIndex,
+                                                  gl::GLContext* aGL) {
   if (mGL.get() != aGL) {
     if (mGL) {
       // This should not happen. EGLImage is created only in
@@ -38,26 +38,19 @@ wr::WrExternalImage RenderDMABUFTextureHost::Lock(
     return InvalidToWrExternalImage();
   }
 
-  bool bindTexture = IsFilterUpdateNecessary(aRendering);
-
   if (!mSurface->GetTexture(aChannelIndex)) {
     if (!mSurface->CreateTexture(mGL, aChannelIndex)) {
       return InvalidToWrExternalImage();
     }
-    bindTexture = true;
-  }
-
-  if (bindTexture) {
-    // Cache new rendering filter.
-    mCachedRendering = aRendering;
     ActivateBindAndTexParameteri(mGL, LOCAL_GL_TEXTURE0, LOCAL_GL_TEXTURE_2D,
-                                 mSurface->GetTexture(aChannelIndex),
-                                 aRendering);
+                                 mSurface->GetTexture(aChannelIndex));
   }
 
-  return NativeTextureToWrExternalImage(mSurface->GetTexture(aChannelIndex), 0,
-                                        0, mSurface->GetWidth(aChannelIndex),
-                                        mSurface->GetHeight(aChannelIndex));
+  const auto uvs = GetUvCoords(gfx::IntSize(
+      mSurface->GetWidth(aChannelIndex), mSurface->GetHeight(aChannelIndex)));
+  return NativeTextureToWrExternalImage(mSurface->GetTexture(aChannelIndex),
+                                        uvs.first.x, uvs.first.y, uvs.second.x,
+                                        uvs.second.y);
 }
 
 void RenderDMABUFTextureHost::Unlock() {}

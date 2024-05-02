@@ -14,6 +14,7 @@
 #include "mozilla/Maybe.h"
 #include "mozilla/NullPrincipal.h"
 #include "mozilla/dom/ScriptSettings.h"
+#include "mozilla/dom/ChromeUtilsBinding.h"
 #include "nsContentUtils.h"
 #include "nsJSPrincipals.h"
 #include "nsIScriptError.h"
@@ -75,6 +76,11 @@ nsresult CentralizedAdminPrefManagerInit(bool aSandboxEnabled) {
     return NS_ERROR_FAILURE;
   }
 
+  // Define ChromeUtils for ChromeUtils.import.
+  if (!mozilla::dom::ChromeUtils_Binding::GetConstructorObject(cx)) {
+    return NS_ERROR_FAILURE;
+  }
+
   return NS_OK;
 }
 
@@ -100,7 +106,7 @@ nsresult EvaluateAdminConfigScript(const char* js_buffer, size_t length,
       filename, globalContext, callbacks, skipFirstLine);
 }
 
-nsresult EvaluateAdminConfigScript(JS::HandleObject sandbox,
+nsresult EvaluateAdminConfigScript(JS::Handle<JSObject*> sandbox,
                                    const char* js_buffer, size_t length,
                                    const char* filename, bool globalContext,
                                    bool callbacks, bool skipFirstLine) {
@@ -134,7 +140,7 @@ nsresult EvaluateAdminConfigScript(JS::HandleObject sandbox,
   JSContext* cx = jsapi.cx();
 
   nsAutoCString script(js_buffer, length);
-  JS::RootedValue v(cx);
+  JS::Rooted<JS::Value> v(cx);
 
   nsString convertedScript;
   bool isUTF8 = IsUtf8(script);

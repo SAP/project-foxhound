@@ -11,15 +11,12 @@
 #include "nsDependentString.h"
 #include "nsIConsoleService.h"
 #include "nsIScriptError.h"
-#include "nsIXPConnect.h"
-#include "mozilla/dom/Element.h"
-#include "mozilla/dom/ScriptSettings.h"
 
-#include "XPCWrapper.h"
 #include "xpcprivate.h"
 
 #include "jsapi.h"
 #include "js/CallAndConstruct.h"  // JS::Call, JS::Construct, JS::IsCallable
+#include "js/ColumnNumber.h"      // JS::ColumnNumberOneOrigin
 #include "js/experimental/TypedData.h"  // JS_GetTypedArrayLength
 #include "js/friend/WindowProxy.h"      // js::IsWindowProxy
 #include "js/friend/XrayJitInfo.h"      // JS::XrayJitInfo
@@ -27,16 +24,15 @@
 #include "js/PropertyAndElement.h"  // JS_AlreadyHasOwnPropertyById, JS_DefineProperty, JS_DefinePropertyById, JS_DeleteProperty, JS_DeletePropertyById, JS_HasProperty, JS_HasPropertyById
 #include "js/PropertyDescriptor.h"  // JS::PropertyDescriptor, JS_GetOwnPropertyDescriptorById, JS_GetPropertyDescriptorById
 #include "js/PropertySpec.h"
+#include "nsGlobalWindowInner.h"
 #include "nsJSUtils.h"
 #include "nsPrintfCString.h"
 
 #include "mozilla/FloatingPoint.h"
 #include "mozilla/dom/BindingUtils.h"
-#include "mozilla/dom/BrowsingContext.h"
-#include "mozilla/dom/WindowBinding.h"
+#include "mozilla/dom/ProxyHandlerUtils.h"
 #include "mozilla/dom/WindowProxyHolder.h"
 #include "mozilla/dom/XrayExpandoClass.h"
-#include "nsGlobalWindow.h"
 
 using namespace mozilla::dom;
 using namespace JS;
@@ -97,6 +93,7 @@ static bool IsJSXraySupported(JSProtoKey key) {
     case JSProto_Object:
     case JSProto_Array:
     case JSProto_Function:
+    case JSProto_BoundFunction:
     case JSProto_TypedArray:
     case JSProto_SavedFrame:
     case JSProto_RegExp:
@@ -221,14 +218,15 @@ bool ReportWrapperDenial(JSContext* cx, HandleId id, WrapperDenialType type,
     return false;
   }
   AutoFilename filename;
-  unsigned line = 0, column = 0;
+  uint32_t line = 0;
+  JS::ColumnNumberOneOrigin column;
   DescribeScriptedCaller(cx, &filename, &line, &column);
 
   // Warn to the terminal for the logs.
   NS_WARNING(
       nsPrintfCString("Silently denied access to property %s: %s (@%s:%u:%u)",
                       NS_LossyConvertUTF16toASCII(propertyName).get(), reason,
-                      filename.get(), line, column)
+                      filename.get(), line, column.zeroOriginValue())
           .get());
 
   // If this isn't the first warning on this topic for this global, we've
@@ -268,17 +266,15 @@ bool ReportWrapperDenial(JSContext* cx, HandleId id, WrapperDenialType type,
     MOZ_ASSERT(type == WrapperDenialForCOW);
     errorMessage.emplace(
         "Security wrapper denied access to property %s on privileged "
-        "Javascript object. Support for exposing privileged objects "
-        "to untrusted content via __exposedProps__ has been "
-        "removed - use WebIDL bindings or Components.utils.cloneInto "
-        "instead. Note that only the first denied property access from a "
-        "given global object will be reported.",
+        "Javascript object. Note that only the first denied property "
+        "access from a given global object will be reported.",
         NS_LossyConvertUTF16toASCII(propertyName).get());
   }
   nsString filenameStr(NS_ConvertASCIItoUTF16(filename.get()));
   nsresult rv = errorObject->InitWithWindowID(
       NS_ConvertASCIItoUTF16(errorMessage.ref()), filenameStr, u""_ns, line,
-      column, nsIScriptError::warningFlag, "XPConnect", windowId);
+      column.zeroOriginValue(), nsIScriptError::warningFlag, "XPConnect",
+      windowId);
   NS_ENSURE_SUCCESS(rv, true);
   rv = consoleService->LogMessage(errorObject);
   NS_ENSURE_SUCCESS(rv, true);
@@ -584,7 +580,11 @@ bool JSXrayTraits::resolveOwnProperty(
         return true;
       }
       if (id == GetJSIDByIndex(cx, XPCJSContext::IDX_NAME)) {
-        RootedString fname(cx, JS_GetFunctionId(JS_GetObjectFunction(target)));
+        JS::Rooted<JSFunction*> fun(cx, JS_GetObjectFunction(target));
+        JS::Rooted<JSString*> fname(cx);
+        if (!JS_GetFunctionId(cx, fun, &fname)) {
+          return false;
+        }
         if (fname) {
           JS_MarkCrossZoneIdValue(cx, StringValue(fname));
         }
@@ -681,6 +681,30 @@ bool JSXrayTraits::resolveOwnProperty(
     } else if (key == JSProto_RegExp) {
       if (id == GetJSIDByIndex(cx, XPCJSContext::IDX_LASTINDEX)) {
         return getOwnPropertyFromWrapperIfSafe(cx, wrapper, id, desc);
+      }
+    } else if (key == JSProto_BoundFunction) {
+      // Bound functions have configurable .name and .length own data
+      // properties. Only support string values for .name and number values for
+      // .length.
+      if (id == GetJSIDByIndex(cx, XPCJSContext::IDX_NAME)) {
+        if (!getOwnPropertyFromWrapperIfSafe(cx, wrapper, id, desc)) {
+          return false;
+        }
+        if (desc.isSome() &&
+            (!desc->isDataDescriptor() || !desc->value().isString())) {
+          desc.reset();
+        }
+        return true;
+      }
+      if (id == GetJSIDByIndex(cx, XPCJSContext::IDX_LENGTH)) {
+        if (!getOwnPropertyFromWrapperIfSafe(cx, wrapper, id, desc)) {
+          return false;
+        }
+        if (desc.isSome() &&
+            (!desc->isDataDescriptor() || !desc->value().isNumber())) {
+          desc.reset();
+        }
+        return true;
       }
     }
 
@@ -935,8 +959,8 @@ bool JSXrayTraits::enumerateNames(JSContext* cx, HandleObject wrapper,
 
       // Fail early if the typed array is enormous, because this will be very
       // slow and will likely report OOM. This also means we don't need to
-      // handle indices greater than JSID_INT_MAX in the loop below.
-      static_assert(JSID_INT_MAX >= INT32_MAX);
+      // handle indices greater than PropertyKey::IntMax in the loop below.
+      static_assert(PropertyKey::IntMax >= INT32_MAX);
       if (length > INT32_MAX) {
         JS_ReportOutOfMemory(cx);
         return false;
@@ -946,7 +970,7 @@ bool JSXrayTraits::enumerateNames(JSContext* cx, HandleObject wrapper,
         return false;
       }
       for (int32_t i = 0; i < int32_t(length); ++i) {
-        props.infallibleAppend(INT_TO_JSID(i));
+        props.infallibleAppend(PropertyKey::Int(i));
       }
     } else if (key == JSProto_Function) {
       if (!props.append(GetJSIDByIndex(cx, XPCJSContext::IDX_LENGTH))) {
@@ -988,6 +1012,11 @@ bool JSXrayTraits::enumerateNames(JSContext* cx, HandleObject wrapper,
       if (!props.append(GetJSIDByIndex(cx, XPCJSContext::IDX_LASTINDEX))) {
         return false;
       }
+    } else if (key == JSProto_BoundFunction) {
+      if (!props.append(GetJSIDByIndex(cx, XPCJSContext::IDX_LENGTH)) ||
+          !props.append(GetJSIDByIndex(cx, XPCJSContext::IDX_NAME))) {
+        return false;
+      }
     }
 
     // The rest of this function applies only to prototypes.
@@ -1017,7 +1046,8 @@ bool JSXrayTraits::construct(JSContext* cx, HandleObject wrapper,
     return false;
   }
 
-  if (xpc::JSXrayTraits::getProtoKey(holder) == JSProto_Function) {
+  const JSProtoKey key = xpc::JSXrayTraits::getProtoKey(holder);
+  if (key == JSProto_Function) {
     JSProtoKey standardConstructor = constructorFor(holder);
     if (standardConstructor == JSProto_Null) {
       return baseInstance.construct(cx, wrapper, args);
@@ -1050,6 +1080,9 @@ bool JSXrayTraits::construct(JSContext* cx, HandleObject wrapper,
     AssertSameCompartment(cx, result);
     args.rval().setObject(*result);
     return true;
+  }
+  if (key == JSProto_BoundFunction) {
+    return baseInstance.construct(cx, wrapper, args);
   }
 
   JS::RootedValue v(cx, JS::ObjectValue(*wrapper));
@@ -1176,7 +1209,7 @@ static nsIPrincipal* GetExpandoObjectPrincipal(JSObject* expandoObject) {
   return static_cast<nsIPrincipal*>(v.toPrivate());
 }
 
-static void ExpandoObjectFinalize(JSFreeOp* fop, JSObject* obj) {
+static void ExpandoObjectFinalize(JS::GCContext* gcx, JSObject* obj) {
   // Release the principal.
   nsIPrincipal* principal = GetExpandoObjectPrincipal(obj);
   NS_RELEASE(principal);
@@ -1191,7 +1224,6 @@ const JSClassOps XrayExpandoObjectClassOps = {
     nullptr,                // mayResolve
     ExpandoObjectFinalize,  // finalize
     nullptr,                // call
-    nullptr,                // hasInstance
     nullptr,                // construct
     nullptr,                // trace
 };
@@ -2004,7 +2036,8 @@ bool XrayWrapper<Base, Traits>::defineProperty(JSContext* cx,
 template <typename Base, typename Traits>
 bool XrayWrapper<Base, Traits>::ownPropertyKeys(
     JSContext* cx, HandleObject wrapper, MutableHandleIdVector props) const {
-  assertEnteredPolicy(cx, wrapper, JSID_VOID, BaseProxyHandler::ENUMERATE);
+  assertEnteredPolicy(cx, wrapper, JS::PropertyKey::Void(),
+                      BaseProxyHandler::ENUMERATE);
   return getPropertyKeys(
       cx, wrapper, JSITER_OWNONLY | JSITER_HIDDEN | JSITER_SYMBOLS, props);
 }
@@ -2112,7 +2145,8 @@ bool XrayWrapper<Base, Traits>::enumerate(
 template <typename Base, typename Traits>
 bool XrayWrapper<Base, Traits>::call(JSContext* cx, HandleObject wrapper,
                                      const JS::CallArgs& args) const {
-  assertEnteredPolicy(cx, wrapper, JSID_VOID, BaseProxyHandler::CALL);
+  assertEnteredPolicy(cx, wrapper, JS::PropertyKey::Void(),
+                      BaseProxyHandler::CALL);
   // Hard cast the singleton since SecurityWrapper doesn't have one.
   return Traits::call(cx, wrapper, args, Base::singleton);
 }
@@ -2120,7 +2154,8 @@ bool XrayWrapper<Base, Traits>::call(JSContext* cx, HandleObject wrapper,
 template <typename Base, typename Traits>
 bool XrayWrapper<Base, Traits>::construct(JSContext* cx, HandleObject wrapper,
                                           const JS::CallArgs& args) const {
-  assertEnteredPolicy(cx, wrapper, JSID_VOID, BaseProxyHandler::CALL);
+  assertEnteredPolicy(cx, wrapper, JS::PropertyKey::Void(),
+                      BaseProxyHandler::CALL);
   // Hard cast the singleton since SecurityWrapper doesn't have one.
   return Traits::construct(cx, wrapper, args, Base::singleton);
 }
@@ -2130,19 +2165,6 @@ bool XrayWrapper<Base, Traits>::getBuiltinClass(JSContext* cx,
                                                 JS::HandleObject wrapper,
                                                 js::ESClass* cls) const {
   return Traits::getBuiltinClass(cx, wrapper, Base::singleton, cls);
-}
-
-template <typename Base, typename Traits>
-bool XrayWrapper<Base, Traits>::hasInstance(JSContext* cx,
-                                            JS::HandleObject wrapper,
-                                            JS::MutableHandleValue v,
-                                            bool* bp) const {
-  assertEnteredPolicy(cx, wrapper, JSID_VOID, BaseProxyHandler::GET);
-
-  // CrossCompartmentWrapper::hasInstance unwraps |wrapper|'s Xrays and enters
-  // its compartment. Any present XrayWrappers should be preserved, so the
-  // standard "instanceof" implementation is called without unwrapping first.
-  return JS::InstanceofOperator(cx, wrapper, v, bp);
 }
 
 template <typename Base, typename Traits>
@@ -2265,7 +2287,8 @@ template <typename Base, typename Traits>
 bool XrayWrapper<Base, Traits>::getPropertyKeys(
     JSContext* cx, HandleObject wrapper, unsigned flags,
     MutableHandleIdVector props) const {
-  assertEnteredPolicy(cx, wrapper, JSID_VOID, BaseProxyHandler::ENUMERATE);
+  assertEnteredPolicy(cx, wrapper, JS::PropertyKey::Void(),
+                      BaseProxyHandler::ENUMERATE);
 
   // Enumerate expando properties first. Note that the expando object lives
   // in the target compartment.

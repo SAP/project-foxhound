@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const { FileUtils } = ChromeUtils.import(
-  "resource://gre/modules/FileUtils.jsm"
+const { FileUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/FileUtils.sys.mjs"
 );
 
 /**
@@ -37,6 +37,12 @@ add_task(async () => {
           key: "filename",
           label: "Filename",
           format: "file-path",
+          searchable: true,
+        },
+        {
+          key: "threadId",
+          label: "Thread ID",
+          format: "string",
           searchable: true,
         },
       ],
@@ -76,10 +82,10 @@ async function runProfilerWithFileIO(features, filename) {
   const entries = 10000;
   const interval = 10;
   const threads = [];
-  Services.profiler.StartProfiler(entries, interval, features, threads);
+  await Services.profiler.StartProfiler(entries, interval, features, threads);
 
   info("Get the file");
-  const file = FileUtils.getFile("TmpD", [filename]);
+  const file = await IOUtils.getFile(PathUtils.tempDir, filename);
   if (file.exists()) {
     console.warn(
       "This test is triggering FileIO by writing to a file. However, the test found an " +
@@ -105,12 +111,7 @@ async function runProfilerWithFileIO(features, filename) {
   info("Remove the file");
   file.remove(false);
 
-  // Pause the profiler as we don't need to collect more samples as we retrieve
-  // and serialize the profile.
-  Services.profiler.Pause();
-
-  const profile = await Services.profiler.getProfileDataAsync();
-  Services.profiler.StopProfiler();
+  const profile = await stopNowAndGetProfile();
   const mainThread = profile.threads.find(({ name }) => name === "GeckoMain");
 
   const schema = getSchema(profile, "FileIO");

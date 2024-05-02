@@ -7,25 +7,26 @@ document.prerendering false.
 <meta name="timeout" content="long">
 <script src="/resources/testharness.js"></script>
 <script src="/resources/testharnessreport.js"></script>
+<script src="/common/utils.js"></script>
+<script src="../resources/utils.js"></script>
 <script src="resources/utils.js"></script>
+
 <body>
 <script>
-
 setup(() => assertSpeculationRulesIsSupported());
 
 promise_test(async t => {
-  const channel = new BroadcastChannel('test-channel');
+  const uid = token();
+  const channel = new PrerenderChannel('test-channel', uid);
   const messageQueue = new BroadcastMessageQueue(channel);
   t.add_cleanup(_ => channel.close());
 
   // Make the window to start the prerender.
-  const url = `resources/iframe-added-post-activation.html`;
+  const url = `resources/iframe-added-post-activation.html?uid=${uid}`;
   window.open(url, '_blank', 'noopener');
 
   // Wait for done.
   const msg = await messageQueue.nextMessage();
   assert_equals(msg, 'PASS');
 }, 'iframe added after activation has false document.prerendering');
-
 </script>
-</body>

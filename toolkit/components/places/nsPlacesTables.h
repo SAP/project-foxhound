@@ -7,36 +7,63 @@
 #ifndef __nsPlacesTables_h__
 #define __nsPlacesTables_h__
 
-#define CREATE_MOZ_PLACES                              \
-  nsLiteralCString(                                    \
-      "CREATE TABLE moz_places ( "                     \
-      "  id INTEGER PRIMARY KEY"                       \
-      ", url LONGVARCHAR"                              \
-      ", title LONGVARCHAR"                            \
-      ", rev_host LONGVARCHAR"                         \
-      ", visit_count INTEGER DEFAULT 0"                \
-      ", hidden INTEGER DEFAULT 0 NOT NULL"            \
-      ", typed INTEGER DEFAULT 0 NOT NULL"             \
-      ", frecency INTEGER DEFAULT -1 NOT NULL"         \
-      ", last_visit_date INTEGER "                     \
-      ", guid TEXT"                                    \
-      ", foreign_count INTEGER DEFAULT 0 NOT NULL"     \
-      ", url_hash INTEGER DEFAULT 0 NOT NULL "         \
-      ", description TEXT"                             \
-      ", preview_image_url TEXT"                       \
-      ", site_name TEXT"                               \
-      ", origin_id INTEGER REFERENCES moz_origins(id)" \
+#define CREATE_MOZ_PLACES                                \
+  nsLiteralCString(                                      \
+      "CREATE TABLE moz_places ( "                       \
+      "  id INTEGER PRIMARY KEY"                         \
+      ", url LONGVARCHAR"                                \
+      ", title LONGVARCHAR"                              \
+      ", rev_host LONGVARCHAR"                           \
+      ", visit_count INTEGER DEFAULT 0"                  \
+      ", hidden INTEGER DEFAULT 0 NOT NULL"              \
+      ", typed INTEGER DEFAULT 0 NOT NULL"               \
+      ", frecency INTEGER DEFAULT -1 NOT NULL"           \
+      ", last_visit_date INTEGER "                       \
+      ", guid TEXT"                                      \
+      ", foreign_count INTEGER DEFAULT 0 NOT NULL"       \
+      ", url_hash INTEGER DEFAULT 0 NOT NULL "           \
+      ", description TEXT"                               \
+      ", preview_image_url TEXT"                         \
+      ", site_name TEXT"                                 \
+      ", origin_id INTEGER REFERENCES moz_origins(id)"   \
+      ", recalc_frecency INTEGER NOT NULL DEFAULT 0"     \
+      ", alt_frecency INTEGER"                           \
+      ", recalc_alt_frecency INTEGER NOT NULL DEFAULT 0" \
       ")")
 
-#define CREATE_MOZ_HISTORYVISITS         \
-  nsLiteralCString(                      \
-      "CREATE TABLE moz_historyvisits (" \
-      "  id INTEGER PRIMARY KEY"         \
-      ", from_visit INTEGER"             \
-      ", place_id INTEGER"               \
-      ", visit_date INTEGER"             \
-      ", visit_type INTEGER"             \
-      ", session INTEGER"                \
+#define CREATE_MOZ_HISTORYVISITS            \
+  nsLiteralCString(                         \
+      "CREATE TABLE moz_historyvisits ("    \
+      "  id INTEGER PRIMARY KEY"            \
+      ", from_visit INTEGER"                \
+      ", place_id INTEGER"                  \
+      ", visit_date INTEGER"                \
+      ", visit_type INTEGER"                \
+      ", session INTEGER"                   \
+      ", source INTEGER DEFAULT 0 NOT NULL" \
+      ", triggeringPlaceId INTEGER"         \
+      ")")
+
+// These two tables were designed to store data with json in mind
+// ideally one column per "consumer" (sync, annotations, etc) to keep
+// concerns separate. Using an UPSERT is the suggested way to update
+// this table vs INSERT OR REPLACE to avoid clearing out any existing properties
+// see PlacesSyncUtils.sys.mjs for an example of how sync does this
+#define CREATE_MOZ_PLACES_EXTRA                                               \
+  nsLiteralCString(                                                           \
+      "CREATE TABLE moz_places_extra ("                                       \
+      "  place_id INTEGER PRIMARY KEY NOT NULL"                               \
+      ", sync_json TEXT"                                                      \
+      ", FOREIGN KEY (place_id) REFERENCES moz_places(id) ON DELETE CASCADE " \
+      ")")
+
+#define CREATE_MOZ_HISTORYVISITS_EXTRA                                \
+  nsLiteralCString(                                                   \
+      "CREATE TABLE moz_historyvisits_extra ("                        \
+      "  visit_id INTEGER PRIMARY KEY NOT NULL"                       \
+      ", sync_json TEXT"                                              \
+      ", FOREIGN KEY (visit_id) REFERENCES moz_historyvisits(id) ON " \
+      "  DELETE CASCADE"                                              \
       ")")
 
 #define CREATE_MOZ_INPUTHISTORY         \
@@ -148,14 +175,17 @@
       ", post_data TEXT"                       \
       ")")
 
-#define CREATE_MOZ_ORIGINS          \
-  nsLiteralCString(                 \
-      "CREATE TABLE moz_origins ( " \
-      "id INTEGER PRIMARY KEY, "    \
-      "prefix TEXT NOT NULL, "      \
-      "host TEXT NOT NULL, "        \
-      "frecency INTEGER NOT NULL, " \
-      "UNIQUE (prefix, host) "      \
+#define CREATE_MOZ_ORIGINS                               \
+  nsLiteralCString(                                      \
+      "CREATE TABLE moz_origins ( "                      \
+      "id INTEGER PRIMARY KEY, "                         \
+      "prefix TEXT NOT NULL, "                           \
+      "host TEXT NOT NULL, "                             \
+      "frecency INTEGER NOT NULL, "                      \
+      "recalc_frecency INTEGER NOT NULL DEFAULT 0, "     \
+      "alt_frecency INTEGER, "                           \
+      "recalc_alt_frecency INTEGER NOT NULL DEFAULT 0, " \
+      "UNIQUE (prefix, host) "                           \
       ")")
 
 // Note: this should be kept up-to-date with the definition in
@@ -169,48 +199,20 @@
       ", PRIMARY KEY (url, userContextId)"     \
       ")")
 
-// This table is used, along with moz_places_afterinsert_trigger, to update
-// origins after places removals. During an INSERT into moz_places, origins are
-// accumulated in this table, then a DELETE FROM moz_updateoriginsinsert_temp
-// will take care of updating the moz_origins table for every new origin. See
-// CREATE_PLACES_AFTERINSERT_TRIGGER in nsPlacestriggers.h for details.
-#define CREATE_UPDATEORIGINSINSERT_TEMP                   \
-  nsLiteralCString(                                       \
-      "CREATE TEMP TABLE moz_updateoriginsinsert_temp ( " \
-      "place_id INTEGER PRIMARY KEY, "                    \
-      "prefix TEXT NOT NULL, "                            \
-      "host TEXT NOT NULL, "                              \
-      "frecency INTEGER NOT NULL "                        \
-      ") ")
-
-// This table is used in a similar way to moz_updateoriginsinsert_temp, but for
-// deletes, and triggered via moz_places_afterdelete_trigger.
-//
-// When rows are added to this table, moz_places.origin_id may be null.  That's
-// why this table uses prefix + host as its primary key, not origin_id.
+// This table is used to remove orphan origins after pages are removed from
+// moz_places. Insertions are made by moz_places_afterdelete_trigger.
+// This allows for more performant handling of batch removals, since we'll look
+// for orphan origins only once, instead of doing it for each page removal.
+// The downside of this approach is that after the removal is complete the
+// consumer must remember to also delete from this table, and a trigger will
+// take care of orphans.
 #define CREATE_UPDATEORIGINSDELETE_TEMP                   \
   nsLiteralCString(                                       \
       "CREATE TEMP TABLE moz_updateoriginsdelete_temp ( " \
-      "prefix TEXT NOT NULL, "                            \
-      "host TEXT NOT NULL, "                              \
-      "frecency_delta INTEGER NOT NULL, "                 \
-      "PRIMARY KEY (prefix, host) "                       \
-      ") WITHOUT ROWID ")
-
-// This table is used in a similar way to moz_updateoriginsinsert_temp, but for
-// updates to places' frecencies, and triggered via
-// moz_places_afterupdate_frecency_trigger.
-//
-// When rows are added to this table, moz_places.origin_id may be null.  That's
-// why this table uses prefix + host as its primary key, not origin_id.
-#define CREATE_UPDATEORIGINSUPDATE_TEMP                   \
-  nsLiteralCString(                                       \
-      "CREATE TEMP TABLE moz_updateoriginsupdate_temp ( " \
-      "prefix TEXT NOT NULL, "                            \
-      "host TEXT NOT NULL, "                              \
-      "frecency_delta INTEGER NOT NULL, "                 \
-      "PRIMARY KEY (prefix, host) "                       \
-      ") WITHOUT ROWID ")
+      "  prefix TEXT NOT NULL, "                          \
+      "  host TEXT NOT NULL, "                            \
+      "  PRIMARY KEY (prefix, host) "                     \
+      ") WITHOUT ROWID")
 
 // This table would not be strictly needed for functionality since it's just
 // mimicking moz_places, though it's great for database portability.
@@ -268,12 +270,6 @@
       "value NOT NULL"          \
       ") WITHOUT ROWID ")
 
-// Keys in the moz_meta table.
-#define MOZ_META_KEY_ORIGIN_FRECENCY_COUNT "origin_frecency_count"
-#define MOZ_META_KEY_ORIGIN_FRECENCY_SUM "origin_frecency_sum"
-#define MOZ_META_KEY_ORIGIN_FRECENCY_SUM_OF_SQUARES \
-  "origin_frecency_sum_of_squares"
-
 // This table holds history interactions that will be used to achieve improved
 // history recalls.
 #define CREATE_MOZ_PLACES_METADATA                                           \
@@ -305,74 +301,6 @@
       "id INTEGER PRIMARY KEY, "                                         \
       "terms TEXT NOT NULL UNIQUE "                                      \
       ")")
-
-#define CREATE_MOZ_PLACES_METADATA_SNAPSHOTS                                  \
-  nsLiteralCString(                                                           \
-      "CREATE TABLE IF NOT EXISTS moz_places_metadata_snapshots ( "           \
-      "  place_id INTEGER PRIMARY KEY, "                                      \
-      "  created_at INTEGER NOT NULL, "                                       \
-      "  removed_at INTEGER, "                                                \
-      "  first_interaction_at INTEGER NOT NULL, "                             \
-      "  last_interaction_at INTEGER NOT NULL, "                              \
-      "  document_type INTEGER NOT NULL DEFAULT 0, "                          \
-      "  user_persisted INTEGER NOT NULL DEFAULT 0, "                         \
-      "  title TEXT, "                                                        \
-      "  FOREIGN KEY (place_id) REFERENCES moz_places(id) ON DELETE CASCADE " \
-      ")")
-
-#define CREATE_MOZ_PLACES_METADATA_SNAPSHOTS_EXTRA                        \
-  nsLiteralCString(                                                       \
-      "CREATE TABLE IF NOT EXISTS moz_places_metadata_snapshots_extra ( " \
-      "  place_id INTEGER NOT NULL, "                                     \
-      "  type INTEGER NOT NULL DEFAULT 0, "                               \
-      "  data TEXT NOT NULL, "                                            \
-      "  PRIMARY KEY (place_id, type), "                                  \
-      "  FOREIGN KEY (place_id) REFERENCES "                              \
-      "moz_places_metadata_snapshots(place_id) ON DELETE CASCADE "        \
-      ") WITHOUT ROWID ")
-
-#define CREATE_MOZ_PLACES_METADATA_SNAPSHOTS_GROUPS                        \
-  nsLiteralCString(                                                        \
-      "CREATE TABLE IF NOT EXISTS moz_places_metadata_snapshots_groups ( " \
-      "  id INTEGER PRIMARY KEY, "                                         \
-      "  title TEXT NOT NULL, "                                            \
-      "  builder TEXT NOT NULL, "                                          \
-      "  builder_data TEXT "                                               \
-      ")")
-
-#define CREATE_MOZ_PLACES_METADATA_GROUPS_TO_SNAPSHOTS                        \
-  nsLiteralCString(                                                           \
-      "CREATE TABLE IF NOT EXISTS moz_places_metadata_groups_to_snapshots ( " \
-      "  group_id INTEGER NOT NULL, "                                         \
-      "  place_id INTEGER NOT NULL, "                                         \
-      "  PRIMARY KEY (group_id, place_id), "                                  \
-      "  FOREIGN KEY (group_id) REFERENCES "                                  \
-      "    moz_places_metadata_snapshots_groups(id) ON DELETE CASCADE, "      \
-      "  FOREIGN KEY (place_id) REFERENCES "                                  \
-      "    moz_places_metadata_snapshots(place_id) ON DELETE CASCADE "        \
-      ") WITHOUT ROWID")
-
-#define CREATE_MOZ_SESSION_METADATA                        \
-  nsLiteralCString(                                        \
-      "CREATE TABLE IF NOT EXISTS moz_session_metadata ( " \
-      "  id INTEGER PRIMARY KEY, "                         \
-      "  guid TEXT NOT NULL UNIQUE, "                      \
-      "  last_saved_at INTEGER NOT NULL DEFAULT 0, "       \
-      "  data TEXT "                                       \
-      ")")
-
-#define CREATE_MOZ_SESSION_TO_PLACES                                       \
-  nsLiteralCString(                                                        \
-      "CREATE TABLE IF NOT EXISTS moz_session_to_places ( "                \
-      "  session_id INTEGER NOT NULL, "                                    \
-      "  place_id INTEGER NOT NULL , "                                     \
-      "  position INTEGER, "                                               \
-      "  PRIMARY KEY (session_id, place_id), "                             \
-      "  FOREIGN KEY (place_id) REFERENCES moz_places(id) ON DELETE "      \
-      "CASCADE "                                                           \
-      "  FOREIGN KEY (session_id) REFERENCES moz_session_metadata(id) ON " \
-      "DELETE CASCADE "                                                    \
-      ") WITHOUT ROWID")
 
 #define CREATE_MOZ_PREVIEWS_TOMBSTONES                        \
   nsLiteralCString(                                           \

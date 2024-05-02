@@ -8,6 +8,7 @@
 #include "nsGkAtoms.h"
 #include "nsStyleConsts.h"
 #include "mozilla/dom/Document.h"
+#include "mozilla/dom/ReferrerInfo.h"
 #include "nsUnicharUtils.h"
 #include "nsThreadUtils.h"
 #include "nsContentUtils.h"
@@ -82,12 +83,7 @@ void HTMLStyleElement::ContentChanged(nsIContent* aContent) {
 nsresult HTMLStyleElement::BindToTree(BindContext& aContext, nsINode& aParent) {
   nsresult rv = nsGenericHTMLElement::BindToTree(aContext, aParent);
   NS_ENSURE_SUCCESS(rv, rv);
-
-  void (HTMLStyleElement::*update)() =
-      &HTMLStyleElement::UpdateStyleSheetInternal;
-  nsContentUtils::AddScriptRunner(
-      NewRunnableMethod("dom::HTMLStyleElement::BindToTree", this, update));
-
+  LinkStyle::BindToTree();
   return rv;
 }
 
@@ -100,11 +96,11 @@ void HTMLStyleElement::UnbindFromTree(bool aNullParent) {
   Unused << UpdateStyleSheetInternal(oldDoc, oldShadow);
 }
 
-nsresult HTMLStyleElement::AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
-                                        const nsAttrValue* aValue,
-                                        const nsAttrValue* aOldValue,
-                                        nsIPrincipal* aSubjectPrincipal,
-                                        bool aNotify) {
+void HTMLStyleElement::AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
+                                    const nsAttrValue* aValue,
+                                    const nsAttrValue* aOldValue,
+                                    nsIPrincipal* aSubjectPrincipal,
+                                    bool aNotify) {
   if (aNameSpaceID == kNameSpaceID_None) {
     if (aName == nsGkAtoms::title || aName == nsGkAtoms::media ||
         aName == nsGkAtoms::type) {
@@ -143,15 +139,14 @@ void HTMLStyleElement::SetTextContentInternal(const nsAString& aTextContent,
     }
   }
 
-  SetEnableUpdates(false);
+  const bool updatesWereEnabled = mUpdatesEnabled;
+  DisableUpdates();
 
   aError = nsContentUtils::SetNodeTextContent(this, aTextContent, true);
-
-  SetEnableUpdates(true);
-
-  mTriggeringPrincipal = aScriptedPrincipal;
-
-  Unused << UpdateStyleSheetInternal(nullptr, nullptr);
+  if (updatesWereEnabled) {
+    mTriggeringPrincipal = aScriptedPrincipal;
+    Unused << EnableUpdatesAndUpdateStyleSheet(nullptr);
+  }
 }
 
 void HTMLStyleElement::SetDevtoolsAsTriggeringPrincipal() {

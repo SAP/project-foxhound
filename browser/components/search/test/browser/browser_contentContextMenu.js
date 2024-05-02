@@ -2,7 +2,7 @@
  * engine.
  */
 
-add_task(async function() {
+add_task(async function () {
   await SpecialPowers.pushPrefEnv({
     set: [
       ["browser.search.separatePrivateDefault", true],
@@ -138,13 +138,16 @@ add_task(async function() {
 
   for (let test of tests) {
     if (test.changePrivateDefaultEngine) {
-      await Services.search.setDefaultPrivate(otherPrivateDefault);
+      await Services.search.setDefaultPrivate(
+        otherPrivateDefault,
+        Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+      );
     }
 
     await SpecialPowers.spawn(
       gBrowser.selectedBrowser,
       [{ selectElement: test.isSelected ? test.id : null }],
-      async function(arg) {
+      async function (arg) {
         let selection = content.getSelection();
         selection.removeAllRanges();
 
@@ -215,7 +218,10 @@ add_task(async function() {
     await popupHiddenPromise;
 
     if (test.changePrivateDefaultEngine) {
-      await Services.search.setDefaultPrivate(originalPrivateDefault);
+      await Services.search.setDefaultPrivate(
+        originalPrivateDefault,
+        Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+      );
     }
   }
 

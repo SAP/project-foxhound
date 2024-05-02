@@ -11,17 +11,19 @@ const TEST_URL =
   "<div style='position:absolute;left: 0; top: 0; " +
   "width: 20px; height: 50px'></div>";
 
-const ID = "rulers-highlighter-";
+const ID = "viewport-size-highlighter-";
 
-var { Toolbox } = require("devtools/client/framework/toolbox");
+var { Toolbox } = require("resource://devtools/client/framework/toolbox.js");
 
-add_task(async function() {
+add_task(async function () {
   const { inspector, highlighterTestFront } = await openInspectorForURL(
     TEST_URL
   );
   const front = inspector.inspectorFront;
 
-  const highlighter = await front.getHighlighterByType("RulersHighlighter");
+  const highlighter = await front.getHighlighterByType(
+    "ViewportSizeHighlighter"
+  );
 
   await isVisibleAfterShow(highlighter, inspector, highlighterTestFront);
   await hasRightLabelsContent(highlighter, highlighterTestFront);
@@ -70,10 +72,12 @@ async function hasRightLabelsContent(highlighterFront, highlighterTestFront) {
     gBrowser.selectedBrowser,
     [],
     () => {
-      const { require } = ChromeUtils.import(
-        "resource://devtools/shared/loader/Loader.jsm"
+      const { require } = ChromeUtils.importESModule(
+        "resource://devtools/shared/loader/Loader.sys.mjs"
       );
-      const { getWindowDimensions } = require("devtools/shared/layout/utils");
+      const {
+        getWindowDimensions,
+      } = require("resource://devtools/shared/layout/utils.js");
       return getWindowDimensions(content);
     }
   );
@@ -83,10 +87,11 @@ async function hasRightLabelsContent(highlighterFront, highlighterTestFront) {
 
   info("Wait until the rulers dimension tooltip have the proper text");
   await asyncWaitUntil(async () => {
-    const dimensionText = await highlighterTestFront.getHighlighterNodeTextContent(
-      `${ID}viewport-infobar-container`,
-      highlighterFront
-    );
+    const dimensionText =
+      await highlighterTestFront.getHighlighterNodeTextContent(
+        `${ID}viewport-infobar-container`,
+        highlighterFront
+      );
     return dimensionText == windowText;
   }, 100);
 }

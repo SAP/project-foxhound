@@ -79,7 +79,7 @@ static sslOptions ssl_defaults = {
     .enableOCSPStapling = PR_FALSE,
     .enableDelegatedCredentials = PR_FALSE,
     .enableALPN = PR_TRUE,
-    .reuseServerECDHEKey = PR_TRUE,
+    .reuseServerECDHEKey = PR_FALSE,
     .enableFallbackSCSV = PR_FALSE,
     .enableServerDhe = PR_TRUE,
     .enableExtendedMS = PR_TRUE,
@@ -96,6 +96,8 @@ static sslOptions ssl_defaults = {
     .enableTls13GreaseEch = PR_FALSE,
     .enableTls13BackendEch = PR_FALSE,
     .callExtensionWriterOnEchInner = PR_FALSE,
+    .enableGrease = PR_FALSE,
+    .enableChXtnPermutation = PR_FALSE
 };
 
 /*
@@ -889,6 +891,14 @@ SSL_OptionSet(PRFileDesc *fd, PRInt32 which, PRIntn val)
 
         case SSL_SUPPRESS_END_OF_EARLY_DATA:
             ss->opt.suppressEndOfEarlyData = val;
+            break;
+
+        case SSL_ENABLE_GREASE:
+            ss->opt.enableGrease = val;
+            break;
+
+        case SSL_ENABLE_CH_EXTENSION_PERMUTATION:
+            ss->opt.enableChXtnPermutation = val;
             break;
 
         default:
@@ -2564,6 +2574,7 @@ SSL_ReconfigFD(PRFileDesc *model, PRFileDesc *fd)
         ss->handshakeCallbackData = sm->handshakeCallbackData;
     if (sm->pkcs11PinArg)
         ss->pkcs11PinArg = sm->pkcs11PinArg;
+
     return fd;
 }
 
@@ -3889,7 +3900,7 @@ loser:
     return SECFailure;
 }
 
-#if defined(XP_UNIX) || defined(XP_WIN32) || defined(XP_BEOS)
+#if defined(XP_UNIX) || defined(XP_WIN32)
 #define NSS_HAVE_GETENV 1
 #endif
 
@@ -4318,6 +4329,7 @@ struct {
     EXP(DestroyResumptionTokenInfo),
     EXP(EnableTls13BackendEch),
     EXP(EnableTls13GreaseEch),
+    EXP(SetTls13GreaseEchSize),
     EXP(EncodeEchConfigId),
     EXP(GetCurrentEpoch),
     EXP(GetEchRetryConfigs),
@@ -4392,6 +4404,24 @@ SSLExp_EnableTls13GreaseEch(PRFileDesc *fd, PRBool enabled)
         return SECFailure;
     }
     ss->opt.enableTls13GreaseEch = enabled;
+    return SECSuccess;
+}
+
+SECStatus
+SSLExp_SetTls13GreaseEchSize(PRFileDesc *fd, PRUint8 size)
+{
+    sslSocket *ss = ssl_FindSocket(fd);
+    if (!ss || size == 0) {
+        return SECFailure;
+    }
+    ssl_Get1stHandshakeLock(ss);
+    ssl_GetSSL3HandshakeLock(ss);
+
+    ss->ssl3.hs.greaseEchSize = size;
+
+    ssl_ReleaseSSL3HandshakeLock(ss);
+    ssl_Release1stHandshakeLock(ss);
+
     return SECSuccess;
 }
 

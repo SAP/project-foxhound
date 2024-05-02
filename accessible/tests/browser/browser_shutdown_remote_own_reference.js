@@ -4,10 +4,7 @@
 
 "use strict";
 
-add_task(async function() {
-  // Making sure that the e10s is enabled on Windows for testing.
-  await setE10sPrefs();
-
+add_task(async function () {
   await BrowserTestUtils.withNewTab(
     {
       gBrowser,
@@ -20,22 +17,22 @@ add_task(async function() {
         <body></body>
       </html>`,
     },
-    async function(browser) {
+    async function (browser) {
       info(
         "Creating a service in parent and waiting for service to be created " +
           "in content"
       );
-      await loadContentScripts(browser, "Common.jsm");
+      await loadContentScripts(browser, {
+        script: "Common.sys.mjs",
+        symbol: "CommonUtils",
+      });
       // Create a11y service in the main process. This will trigger creating of
       // the a11y service in parent as well.
       const [parentA11yInitObserver, parentA11yInit] = initAccService();
-      const [contentA11yInitObserver, contentA11yInit] = initAccService(
-        browser
-      );
-      let [
-        contentConsumersChangedObserver,
-        contentConsumersChanged,
-      ] = accConsumersChanged(browser);
+      const [contentA11yInitObserver, contentA11yInit] =
+        initAccService(browser);
+      let [contentConsumersChangedObserver, contentConsumersChanged] =
+        accConsumersChanged(browser);
 
       await Promise.all([
         parentA11yInitObserver,
@@ -64,10 +61,8 @@ add_task(async function() {
         "Adding additional reference to accessibility service in content " +
           "process"
       );
-      [
-        contentConsumersChangedObserver,
-        contentConsumersChanged,
-      ] = accConsumersChanged(browser);
+      [contentConsumersChangedObserver, contentConsumersChanged] =
+        accConsumersChanged(browser);
       await contentConsumersChangedObserver;
       // Add a new reference to the a11y service inside the content process.
       await SpecialPowers.spawn(browser, [], () => {
@@ -103,21 +98,15 @@ add_task(async function() {
           "content stays alive"
       );
       let contentCanShutdown = false;
-      const [
-        parentA11yShutdownObserver,
-        parentA11yShutdown,
-      ] = shutdownAccService();
-      [
-        contentConsumersChangedObserver,
-        contentConsumersChanged,
-      ] = accConsumersChanged(browser);
+      const [parentA11yShutdownObserver, parentA11yShutdown] =
+        shutdownAccService();
+      [contentConsumersChangedObserver, contentConsumersChanged] =
+        accConsumersChanged(browser);
       // This promise will resolve only if contentCanShutdown flag is set to true.
       // If 'a11y-init-or-shutdown' event with '0' flag (in content) comes before
       // it can be shut down, the promise will reject.
-      const [
-        contentA11yShutdownObserver,
-        contentA11yShutdownPromise,
-      ] = shutdownAccService(browser);
+      const [contentA11yShutdownObserver, contentA11yShutdownPromise] =
+        shutdownAccService(browser);
       const contentA11yShutdown = new Promise((resolve, reject) =>
         contentA11yShutdownPromise.then(flag =>
           contentCanShutdown
@@ -161,10 +150,8 @@ add_task(async function() {
       info("Removing a service in content");
       // Now allow a11y service to shutdown in content.
       contentCanShutdown = true;
-      [
-        contentConsumersChangedObserver,
-        contentConsumersChanged,
-      ] = accConsumersChanged(browser);
+      [contentConsumersChangedObserver, contentConsumersChanged] =
+        accConsumersChanged(browser);
       await contentConsumersChangedObserver;
       // Remove last reference to a11y service in content and force garbage
       // collection that should trigger shutdown.
@@ -183,9 +170,6 @@ add_task(async function() {
           "Accessibility service consumers in content are correct."
         )
       );
-
-      // Unsetting e10s related preferences.
-      await unsetE10sPrefs();
     }
   );
 });

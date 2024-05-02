@@ -18,23 +18,21 @@ const LEARN_MORE_URI =
   "https://developer.mozilla.org/docs/Web/HTML/Quirks_Mode_and_Standards_Mode" +
   DOCS_GA_PARAMS;
 
-add_task(async function() {
+add_task(async function () {
   info("Navigate to page with quirky doctype");
   const hud = await openNewTabAndConsole(TEST_URI_QUIRKY_DOCTYPE);
 
   const quirkyDocTypeMessage = await waitFor(() =>
-    findMessage(
+    findWarningMessage(
       hud,
-      `This page is in Quirks Mode. Page layout may be impacted. For Standards Mode use “<!DOCTYPE html>”`,
-      ".message.warn"
+      `This page is in Quirks Mode. Page layout may be impacted. For Standards Mode use “<!DOCTYPE html>”`
     )
   );
   ok(!!quirkyDocTypeMessage, "Quirky doctype warning message is visible");
 
   info("Clicking on the Learn More link");
-  const quirkyDocTypeMessageLearnMoreLink = quirkyDocTypeMessage.querySelector(
-    ".learn-more-link"
-  );
+  const quirkyDocTypeMessageLearnMoreLink =
+    quirkyDocTypeMessage.querySelector(".learn-more-link");
   let linkSimulation = await simulateLinkClick(
     quirkyDocTypeMessageLearnMoreLink
   );
@@ -50,10 +48,9 @@ add_task(async function() {
   await navigateTo(TEST_URI_ALMOST_STANDARD_DOCTYPE);
 
   const almostStandardDocTypeMessage = await waitFor(() =>
-    findMessage(
+    findWarningMessage(
       hud,
-      `This page is in Almost Standards Mode. Page layout may be impacted. For Standards Mode use “<!DOCTYPE html>”`,
-      ".message.warn"
+      `This page is in Almost Standards Mode. Page layout may be impacted. For Standards Mode use “<!DOCTYPE html>”`
     )
   );
   ok(
@@ -62,9 +59,8 @@ add_task(async function() {
   );
 
   info("Clicking on the Learn More link");
-  const almostStandardDocTypeMessageLearnMoreLink = almostStandardDocTypeMessage.querySelector(
-    ".learn-more-link"
-  );
+  const almostStandardDocTypeMessageLearnMoreLink =
+    almostStandardDocTypeMessage.querySelector(".learn-more-link");
   linkSimulation = await simulateLinkClick(
     almostStandardDocTypeMessageLearnMoreLink
   );
@@ -80,18 +76,16 @@ add_task(async function() {
   await navigateTo(TEST_URI_NO_DOCTYPE);
 
   const noDocTypeMessage = await waitFor(() =>
-    findMessage(
+    findWarningMessage(
       hud,
-      `This page is in Quirks Mode. Page layout may be impacted. For Standards Mode use “<!DOCTYPE html>”`,
-      ".message.warn"
+      `This page is in Quirks Mode. Page layout may be impacted. For Standards Mode use “<!DOCTYPE html>”`
     )
   );
   ok(!!noDocTypeMessage, "No doctype warning message is visible");
 
   info("Clicking on the Learn More link");
-  const noDocTypeMessageLearnMoreLink = noDocTypeMessage.querySelector(
-    ".learn-more-link"
-  );
+  const noDocTypeMessageLearnMoreLink =
+    noDocTypeMessage.querySelector(".learn-more-link");
   linkSimulation = await simulateLinkClick(noDocTypeMessageLearnMoreLink);
 
   is(
@@ -106,8 +100,26 @@ add_task(async function() {
   info("Wait for a bit to make sure there is no doctype messages");
   await wait(1000);
   ok(
-    !findMessage(hud, `doctype`, ".message.warn"),
+    !findWarningMessage(hud, `doctype`),
     "There is no doctype warning message"
+  );
+
+  info("Navigate to a about:blank");
+  await navigateTo("about:blank");
+  info("Wait for a bit to make sure there is no doctype messages");
+  await wait(1000);
+  ok(
+    !findWarningMessage(hud, `doctype`),
+    "There is no doctype warning message for about:blank"
+  );
+
+  info("Navigate to a view-source uri");
+  await navigateTo(`view-source:${TEST_URI_NO_DOCTYPE}`);
+  info("Wait for a bit to make sure there is no doctype messages");
+  await wait(1000);
+  ok(
+    !findWarningMessage(hud, `doctype`),
+    "There is no doctype warning message for view-source"
   );
 
   await closeConsole();

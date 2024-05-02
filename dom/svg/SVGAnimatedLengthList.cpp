@@ -11,6 +11,7 @@
 #include "DOMSVGAnimatedLengthList.h"
 #include "SVGLengthListSMILType.h"
 #include "mozilla/SMILValue.h"
+#include "mozilla/Try.h"
 #include "mozilla/dom/SVGElement.h"
 #include "mozilla/dom/SVGLengthBinding.h"
 
@@ -20,10 +21,7 @@ using namespace dom;
 
 nsresult SVGAnimatedLengthList::SetBaseValueString(const nsAString& aValue) {
   SVGLengthList newBaseValue;
-  nsresult rv = newBaseValue.SetValueFromString(aValue);
-  if (NS_FAILED(rv)) {
-    return rv;
-  }
+  MOZ_TRY(newBaseValue.SetValueFromString(aValue));
 
   DOMSVGAnimatedLengthList* domWrapper =
       DOMSVGAnimatedLengthList::GetDOMWrapperIfExists(this);
@@ -39,14 +37,8 @@ nsresult SVGAnimatedLengthList::SetBaseValueString(const nsAString& aValue) {
   // We don't need to call DidChange* here - we're only called by
   // SVGElement::ParseAttribute under Element::SetAttr,
   // which takes care of notifying.
-
-  rv = mBaseVal.CopyFrom(newBaseValue);
-  if (NS_FAILED(rv) && domWrapper) {
-    // Attempting to increase mBaseVal's length failed - reduce domWrapper
-    // back to the same length:
-    domWrapper->InternalBaseValListWillChangeTo(mBaseVal);
-  }
-  return rv;
+  mBaseVal.SwapWith(newBaseValue);
+  return NS_OK;
 }
 
 void SVGAnimatedLengthList::ClearBaseValue(uint32_t aAttrEnum) {
@@ -146,12 +138,9 @@ nsresult SVGAnimatedLengthList::SMILAnimatedLengthList::ValueFromString(
     // sandwich layer, causing the animation sandwich to be recalculated every
     // single sample.
 
-    aPreventCachingOfSandwich = false;
     for (uint32_t i = 0; i < llai->Length(); ++i) {
       uint8_t unit = (*llai)[i].GetUnit();
-      if (unit == SVGLength_Binding::SVG_LENGTHTYPE_PERCENTAGE ||
-          unit == SVGLength_Binding::SVG_LENGTHTYPE_EMS ||
-          unit == SVGLength_Binding::SVG_LENGTHTYPE_EXS) {
+      if (!SVGLength::IsAbsoluteUnit(unit)) {
         aPreventCachingOfSandwich = true;
         break;
       }

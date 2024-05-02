@@ -10,16 +10,30 @@
 # See Cargo.toml.orig for the original contents.
 
 [package]
-edition = "2018"
+edition = "2021"
+rust-version = "1.63"
 name = "glean"
-version = "43.0.2"
-authors = ["Jan-Erik Rediger <jrediger@mozilla.com>", "The Glean Team <glean-team@mozilla.com>"]
-include = ["/README.md", "/LICENSE", "/src", "/tests", "/Cargo.toml"]
+version = "55.0.0"
+authors = [
+    "Jan-Erik Rediger <jrediger@mozilla.com>",
+    "The Glean Team <glean-team@mozilla.com>",
+]
+include = [
+    "/README.md",
+    "/LICENSE",
+    "/src",
+    "/tests",
+    "/Cargo.toml",
+]
 description = "Glean SDK Rust language bindings"
 readme = "README.md"
-keywords = ["telemetry", "glean"]
+keywords = [
+    "telemetry",
+    "glean",
+]
 license = "MPL-2.0"
 repository = "https://github.com/mozilla/glean"
+
 [dependencies.chrono]
 version = "0.4.10"
 features = ["serde"]
@@ -28,16 +42,16 @@ features = ["serde"]
 version = "0.5"
 
 [dependencies.glean-core]
-version = "43.0.2"
+version = "55.0.0"
 
 [dependencies.inherent]
-version = "0.1.4"
+version = "1"
 
 [dependencies.log]
 version = "0.4.8"
 
 [dependencies.once_cell]
-version = "1.2.0"
+version = "1.18.0"
 
 [dependencies.serde]
 version = "1.0.104"
@@ -53,27 +67,32 @@ version = "1.0.4"
 version = "0.1.40"
 
 [dependencies.uuid]
-version = "0.8.1"
+version = "1.0"
 features = ["v4"]
 
 [dependencies.whatsys]
-version = "0.1.2"
+version = "0.3.0"
+
 [dev-dependencies.env_logger]
-version = "0.8.0"
-features = ["termcolor", "atty", "humantime"]
+version = "0.10.0"
+features = ["humantime"]
 default-features = false
 
 [dev-dependencies.flate2]
 version = "1.0.19"
 
 [dev-dependencies.jsonschema-valid]
-version = "0.4.0"
+version = "0.5.0"
+
+[dev-dependencies.libc]
+version = "0.2"
 
 [dev-dependencies.tempfile]
 version = "3.1.0"
 
 [features]
-rkv-safe-mode = ["glean-core/rkv-safe-mode"]
+preinit_million_queue = ["glean-core/preinit_million_queue"]
+
 [badges.circle-ci]
 branch = "main"
 repository = "mozilla/glean"

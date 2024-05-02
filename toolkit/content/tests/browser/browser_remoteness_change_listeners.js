@@ -8,7 +8,7 @@
  * when switching the remoteness of that browser.
  */
 add_task(async function test_remoteness_switch_listeners() {
-  await BrowserTestUtils.withNewTab("about:support", async function(browser) {
+  await BrowserTestUtils.withNewTab("about:support", async function (browser) {
     let wpl;
     let navigated = new Promise(resolve => {
       wpl = {
@@ -32,7 +32,7 @@ add_task(async function test_remoteness_switch_listeners() {
       null,
       "https://example.com/"
     );
-    BrowserTestUtils.loadURI(browser, "https://example.com/");
+    BrowserTestUtils.startLoadingURIString(browser, "https://example.com/");
     await Promise.all([loaded, navigated]);
     browser.removeProgressListener(wpl);
   });

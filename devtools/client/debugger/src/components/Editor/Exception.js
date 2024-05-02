@@ -3,14 +3,24 @@
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
 import { PureComponent } from "react";
+import PropTypes from "prop-types";
 
-import { toEditorPosition, getTokenEnd } from "../../utils/editor";
+import { toEditorPosition, getTokenEnd, hasDocument } from "../../utils/editor";
 
 import { getIndentation } from "../../utils/indentation";
+import { createLocation } from "../../utils/location";
 
 export default class Exception extends PureComponent {
   exceptionLine;
   markText;
+
+  static get propTypes() {
+    return {
+      exception: PropTypes.object.isRequired,
+      doc: PropTypes.object.isRequired,
+      selectedSource: PropTypes.string.isRequired,
+    };
+  }
 
   componentDidMount() {
     this.addEditorExceptionLine();
@@ -26,7 +36,7 @@ export default class Exception extends PureComponent {
   }
 
   setEditorExceptionLine(doc, line, column, lineText) {
-    doc.addLineClass(line, "wrapClass", "line-exception");
+    doc.addLineClass(line, "wrap", "line-exception");
 
     column = Math.max(column, getIndentation(lineText));
     const columnEnd = doc.cm ? getTokenEnd(doc.cm, line, column) : null;
@@ -42,14 +52,20 @@ export default class Exception extends PureComponent {
   }
 
   addEditorExceptionLine() {
-    const { exception, doc, selectedSourceId } = this.props;
+    const { exception, doc, selectedSource } = this.props;
     const { columnNumber, lineNumber } = exception;
 
-    const location = {
-      column: columnNumber - 1,
+    if (!hasDocument(selectedSource.id)) {
+      return;
+    }
+
+    const location = createLocation({
+      source: selectedSource,
       line: lineNumber,
-      sourceId: selectedSourceId,
-    };
+      // Exceptions are reported with column being 1-based
+      // while the frontend uses 0-based column.
+      column: columnNumber - 1,
+    });
 
     const { line, column } = toEditorPosition(location);
     const lineText = doc.getLine(line);
@@ -59,11 +75,17 @@ export default class Exception extends PureComponent {
 
   clearEditorExceptionLine() {
     if (this.markText) {
-      const { doc } = this.props;
+      const { selectedSource } = this.props;
 
       this.markText.clear();
-      doc.removeLineClass(this.exceptionLine, "wrapClass", "line-exception");
 
+      if (hasDocument(selectedSource.id)) {
+        this.props.doc.removeLineClass(
+          this.exceptionLine,
+          "wrap",
+          "line-exception"
+        );
+      }
       this.exceptionLine = null;
       this.markText = null;
     }

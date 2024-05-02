@@ -14,11 +14,13 @@ const TEST_URI = `data:text/html,<!DOCTYPE html>Test expanding longString getter
     console.dir("Test message", document.querySelector("svg image").href);
   </script>`;
 
-add_task(async function() {
+add_task(async function () {
   const hud = await openNewTabAndConsole(TEST_URI);
 
   // Retrieve the logged message.
-  const message = await waitFor(() => findMessage(hud, "Test message"));
+  const message = await waitFor(() =>
+    findConsoleAPIMessage(hud, "Test message")
+  );
 
   // Wait until the SVGAnimatedString is expanded.
   await waitFor(() => message.querySelectorAll(".arrow").length > 1);
@@ -28,7 +30,7 @@ add_task(async function() {
 
   info("wait for long string expansion");
   const onLongStringFullTextDisplayed = waitFor(() =>
-    findMessage(hud, LONGSTRING)
+    findConsoleAPIMessage(hud, LONGSTRING)
   );
   arrow.click();
   await onLongStringFullTextDisplayed;
@@ -36,7 +38,9 @@ add_task(async function() {
   ok(true, "The full text of the longString is displayed");
 
   info("wait for long string collapse");
-  const onLongStringCollapsed = waitFor(() => !findMessage(hud, LONGSTRING));
+  const onLongStringCollapsed = waitFor(
+    () => !findConsoleAPIMessage(hud, LONGSTRING)
+  );
   arrow.click();
   await onLongStringCollapsed;
 

@@ -9,15 +9,14 @@
 #include "prthread.h"
 
 #include "nsCOMPtr.h"
-#include "nsICrashReporter.h"
-#include "nsMemory.h"
-#include "nsServiceManagerUtils.h"
 #include "nsTArray.h"
 
 #include "mozilla/CondVar.h"
 #include "mozilla/RecursiveMutex.h"
 #include "mozilla/ReentrantMonitor.h"
 #include "mozilla/Mutex.h"
+
+#include "mozilla/gtest/MozHelpers.h"
 
 #include "gtest/gtest.h"
 
@@ -39,40 +38,28 @@ static PRThread* spawn(void (*run)(void*), void* arg) {
                          PR_GLOBAL_THREAD, PR_JOINABLE_THREAD, 0);
 }
 
-// This global variable is defined in toolkit/xre/nsSigHandlers.cpp.
-extern unsigned int _gdb_sleep_duration;
-
 /**
  * Simple test fixture that makes sure the gdb sleep setup in the
  * ah crap handler is bypassed during the death tests.
  */
 class TESTNAME(DeadlockDetectorTest) : public ::testing::Test {
  protected:
-  void SetUp() final {
-    mOldSleepDuration = ::_gdb_sleep_duration;
-    ::_gdb_sleep_duration = 0;
-  }
+  void SetUp() final { SAVE_GDB_SLEEP_GLOBAL(mOldSleepDuration); }
 
-  void TearDown() final { ::_gdb_sleep_duration = mOldSleepDuration; }
+  void TearDown() final { RESTORE_GDB_SLEEP_GLOBAL(mOldSleepDuration); }
 
  private:
+#if defined(HAS_GDB_SLEEP_DURATION)
   unsigned int mOldSleepDuration;
+#endif  // defined(HAS_GDB_SLEEP_DURATION)
 };
-
-static void DisableCrashReporter() {
-  nsCOMPtr<nsICrashReporter> crashreporter =
-      do_GetService("@mozilla.org/toolkit/crash-reporter;1");
-  if (crashreporter) {
-    crashreporter->SetEnabled(false);
-  }
-}
 
 //-----------------------------------------------------------------------------
 // Single-threaded sanity tests
 
 // Stupidest possible deadlock.
-static int Sanity_Child() {
-  DisableCrashReporter();
+static int Sanity_Child() MOZ_NO_THREAD_SAFETY_ANALYSIS {
+  mozilla::gtest::DisableCrashReporter();
 
   MUTEX m1("dd.sanity.m1");
   m1.Lock();
@@ -92,8 +79,8 @@ TEST_F(TESTNAME(DeadlockDetectorTest), TESTNAME(SanityDeathTest)) {
 }
 
 // Slightly less stupid deadlock.
-static int Sanity2_Child() {
-  DisableCrashReporter();
+static int Sanity2_Child() MOZ_NO_THREAD_SAFETY_ANALYSIS {
+  mozilla::gtest::DisableCrashReporter();
 
   MUTEX m1("dd.sanity2.m1");
   MUTEX m2("dd.sanity2.m2");
@@ -118,9 +105,9 @@ TEST_F(TESTNAME(DeadlockDetectorTest), TESTNAME(Sanity2DeathTest)) {
 #if 0
 // Temporarily disabled, see bug 1370644.
 int
-Sanity3_Child()
+Sanity3_Child() MOZ_NO_THREAD_SAFETY_ANALYSIS
 {
-    DisableCrashReporter();
+    mozilla::gtest::DisableCrashReporter();
 
     MUTEX m1("dd.sanity3.m1");
     MUTEX m2("dd.sanity3.m2");
@@ -156,10 +143,10 @@ TEST_F(TESTNAME(DeadlockDetectorTest), TESTNAME(Sanity3DeathTest))
 }
 #endif
 
-static int Sanity4_Child() {
-  DisableCrashReporter();
+static int Sanity4_Child() MOZ_NO_THREAD_SAFETY_ANALYSIS {
+  mozilla::gtest::DisableCrashReporter();
 
-  mozilla::ReentrantMonitor m1("dd.sanity4.m1");
+  mozilla::ReentrantMonitor m1 MOZ_UNANNOTATED("dd.sanity4.m1");
   MUTEX m2("dd.sanity4.m2");
   m1.Enter();
   m2.Lock();
@@ -179,10 +166,10 @@ TEST_F(TESTNAME(DeadlockDetectorTest), TESTNAME(Sanity4DeathTest)) {
   ASSERT_DEATH_IF_SUPPORTED(Sanity4_Child(), regex);
 }
 
-static int Sanity5_Child() {
-  DisableCrashReporter();
+static int Sanity5_Child() MOZ_NO_THREAD_SAFETY_ANALYSIS {
+  mozilla::gtest::DisableCrashReporter();
 
-  mozilla::RecursiveMutex m1("dd.sanity4.m1");
+  mozilla::RecursiveMutex m1 MOZ_UNANNOTATED("dd.sanity4.m1");
   MUTEX m2("dd.sanity4.m2");
   m1.Lock();
   m2.Lock();
@@ -225,7 +212,7 @@ struct ThreadState {
 #if 0
 // Temporarily disabled, see bug 1370644.
 static void
-TwoThreads_thread(void* arg)
+TwoThreads_thread(void* arg) MOZ_NO_THREAD_SAFETY_ANALYSIS
 {
     ThreadState* state = static_cast<ThreadState*>(arg);
 
@@ -247,9 +234,9 @@ TwoThreads_thread(void* arg)
 }
 
 int
-TwoThreads_Child()
+TwoThreads_Child() MOZ_NO_THREAD_SAFETY_ANALYSIS
 {
-    DisableCrashReporter();
+    mozilla::gtest::DisableCrashReporter();
 
     nsTArray<MUTEX*> locks = {
       new MUTEX("dd.twothreads.m1"),
@@ -284,7 +271,8 @@ TEST_F(TESTNAME(DeadlockDetectorTest), TESTNAME(TwoThreadsDeathTest))
 }
 #endif
 
-static void ContentionNoDeadlock_thread(void* arg) {
+static void ContentionNoDeadlock_thread(void* arg)
+    MOZ_NO_THREAD_SAFETY_ANALYSIS {
   const uint32_t K = 100000;
 
   ThreadState* state = static_cast<ThreadState*>(arg);
@@ -300,7 +288,7 @@ static void ContentionNoDeadlock_thread(void* arg) {
   }
 }
 
-static int ContentionNoDeadlock_Child() {
+static int ContentionNoDeadlock_Child() MOZ_NO_THREAD_SAFETY_ANALYSIS {
   const size_t kMutexCount = 4;
 
   PRThread* threads[3];

@@ -81,70 +81,43 @@ namespace detail {
  * shutdown to prevent any IO shutdown hangs.
  * Mainly designed for using Win32 CancelSynchronousIo function.
  */
-class BlockingIOWatcher {
+class NativeThreadHandle {
 #ifdef XP_WIN
   // The native handle to the thread
   HANDLE mThread;
-  // Event signaling back to the main thread, see NotifyOperationDone.
-  HANDLE mEvent;
 #endif
 
  public:
   // Created and destroyed on the main thread only
-  BlockingIOWatcher();
-  ~BlockingIOWatcher();
+  NativeThreadHandle();
+  ~NativeThreadHandle();
 
   // Called on the IO thread to grab the platform specific
   // reference to it.
   void InitThread();
   // If there is a blocking operation being handled on the IO
   // thread, this is called on the main thread during shutdown.
-  // Waits for notification from the IO thread for up to two seconds.
-  // If that times out, it attempts to cancel the IO operation.
-  void WatchAndCancel(Monitor& aMonitor);
-  // Called by the IO thread after each operation has been
-  // finished (after each Run() call).  This wakes the main
-  // thread up and makes WatchAndCancel() early exit and become
-  // a no-op.
-  void NotifyOperationDone();
+  void CancelBlockingIO(Monitor& aMonitor);
 };
 
 #ifdef XP_WIN
 
-BlockingIOWatcher::BlockingIOWatcher() : mThread(NULL), mEvent(NULL) {
-  HMODULE kernel32_dll = GetModuleHandleW(L"kernel32.dll");
-  if (!kernel32_dll) {
-    return;
-  }
+NativeThreadHandle::NativeThreadHandle() : mThread(NULL) {}
 
-  mEvent = ::CreateEventW(NULL, TRUE, FALSE, NULL);
-}
-
-BlockingIOWatcher::~BlockingIOWatcher() {
-  if (mEvent) {
-    CloseHandle(mEvent);
-  }
+NativeThreadHandle::~NativeThreadHandle() {
   if (mThread) {
     CloseHandle(mThread);
   }
 }
 
-void BlockingIOWatcher::InitThread() {
+void NativeThreadHandle::InitThread() {
   // GetCurrentThread() only returns a pseudo handle, hence DuplicateHandle
   ::DuplicateHandle(GetCurrentProcess(), GetCurrentThread(),
                     GetCurrentProcess(), &mThread, 0, FALSE,
                     DUPLICATE_SAME_ACCESS);
 }
 
-void BlockingIOWatcher::WatchAndCancel(Monitor& aMonitor) {
-  if (!mEvent) {
-    return;
-  }
-
-  // Reset before we enter the monitor to raise the chance we catch
-  // the currently pending IO op completion.
-  ::ResetEvent(mEvent);
-
+void NativeThreadHandle::CancelBlockingIO(Monitor& aMonitor) {
   HANDLE thread;
   {
     MonitorAutoLock lock(aMonitor);
@@ -155,31 +128,13 @@ void BlockingIOWatcher::WatchAndCancel(Monitor& aMonitor) {
     }
   }
 
-  LOG(("Blocking IO operation pending on IO thread, waiting..."));
-
-  // It seems wise to use the I/O lag time as a maximum time to wait
-  // for an operation to finish.  When that times out and cancelation
-  // succeeds, there will be no other IO operation permitted.  By default
-  // this is two seconds.
-  uint32_t maxLag =
-      std::min<uint32_t>(5, CacheObserver::MaxShutdownIOLag()) * 1000;
-
-  DWORD result = ::WaitForSingleObject(mEvent, maxLag);
-  if (result == WAIT_TIMEOUT) {
-    LOG(("CacheIOThread: Attempting to cancel a long blocking IO operation"));
-    BOOL result = ::CancelSynchronousIo(thread);
-    if (result) {
-      LOG(("  cancelation signal succeeded"));
-    } else {
-      DWORD error = GetLastError();
-      LOG(("  cancelation signal failed with GetLastError=%u", error));
-    }
-  }
-}
-
-void BlockingIOWatcher::NotifyOperationDone() {
-  if (mEvent) {
-    ::SetEvent(mEvent);
+  LOG(("CacheIOThread: Attempting to cancel a long blocking IO operation"));
+  BOOL result = ::CancelSynchronousIo(thread);
+  if (result) {
+    LOG(("  cancelation signal succeeded"));
+  } else {
+    DWORD error = GetLastError();
+    LOG(("  cancelation signal failed with GetLastError=%lu", error));
   }
 }
 
@@ -187,11 +142,10 @@ void BlockingIOWatcher::NotifyOperationDone() {
 
 // Stub code only (we don't implement IO cancelation for this platform)
 
-BlockingIOWatcher::BlockingIOWatcher() = default;
-BlockingIOWatcher::~BlockingIOWatcher() = default;
-void BlockingIOWatcher::InitThread() {}
-void BlockingIOWatcher::WatchAndCancel(Monitor&) {}
-void BlockingIOWatcher::NotifyOperationDone() {}
+NativeThreadHandle::NativeThreadHandle() = default;
+NativeThreadHandle::~NativeThreadHandle() = default;
+void NativeThreadHandle::InitThread() {}
+void NativeThreadHandle::CancelBlockingIO(Monitor&) {}
 
 #endif
 
@@ -210,6 +164,11 @@ CacheIOThread::CacheIOThread() {
 }
 
 CacheIOThread::~CacheIOThread() {
+  {
+    MonitorAutoLock lock(mMonitor);
+    MOZ_RELEASE_ASSERT(mShutdown);
+  }
+
   if (mXPCOMThread) {
     nsIThread* thread = mXPCOMThread;
     thread->Release();
@@ -228,7 +187,7 @@ nsresult CacheIOThread::Init() {
     MonitorAutoLock lock(mMonitor);
     // Yeah, there is not a thread yet, but we want to make sure
     // the sequencing is correct.
-    mBlockingIOWatcher = MakeUnique<detail::BlockingIOWatcher>();
+    mNativeThreadHandle = MakeUnique<detail::NativeThreadHandle>();
   }
 
   // Increase the reference count while spawning a new thread.
@@ -239,6 +198,9 @@ nsresult CacheIOThread::Init() {
       PR_CreateThread(PR_USER_THREAD, ThreadFunc, this, PR_PRIORITY_NORMAL,
                       PR_GLOBAL_THREAD, PR_JOINABLE_THREAD, 128 * 1024);
   if (!mThread) {
+    // Treat this thread as already shutdown.
+    MonitorAutoLock lock(mMonitor);
+    mShutdown = true;
     return NS_ERROR_FAILURE;
   }
 
@@ -363,7 +325,7 @@ void CacheIOThread::Shutdown() {
 void CacheIOThread::CancelBlockingIO() {
   // This is an attempt to cancel any blocking I/O operation taking
   // too long time.
-  if (!mBlockingIOWatcher) {
+  if (!mNativeThreadHandle) {
     return;
   }
 
@@ -374,7 +336,7 @@ void CacheIOThread::CancelBlockingIO() {
 
   // OK, when we are here, we are processing an IO on the thread that
   // can be cancelled.
-  mBlockingIOWatcher->WatchAndCancel(mMonitor);
+  mNativeThreadHandle->CancelBlockingIO(mMonitor);
 }
 
 already_AddRefed<nsIEventTarget> CacheIOThread::Target() {
@@ -413,8 +375,8 @@ void CacheIOThread::ThreadFunc() {
   {
     MonitorAutoLock lock(mMonitor);
 
-    MOZ_ASSERT(mBlockingIOWatcher);
-    mBlockingIOWatcher->InitThread();
+    MOZ_ASSERT(mNativeThreadHandle);
+    mNativeThreadHandle->InitThread();
 
     auto queue =
         MakeRefPtr<ThreadEventQueue>(MakeUnique<mozilla::EventQueue>());
@@ -426,6 +388,7 @@ void CacheIOThread::ThreadFunc() {
     if (threadInternal) threadInternal->SetObserver(this);
 
     mXPCOMThread = xpcomThread.forget().take();
+    nsCOMPtr<nsIThread> thread = NS_GetCurrentThread();
 
     lock.NotifyAll();
 
@@ -446,12 +409,10 @@ void CacheIOThread::ThreadFunc() {
         bool processedEvent;
         nsresult rv;
         do {
-          nsIThread* thread = mXPCOMThread;
           rv = thread->ProcessNextEvent(false, &processedEvent);
 
           ++mEventCounter;
-          MOZ_ASSERT(mBlockingIOWatcher);
-          mBlockingIOWatcher->NotifyOperationDone();
+          MOZ_ASSERT(mNativeThreadHandle);
         } while (NS_SUCCEEDED(rv) && processedEvent);
       }
 
@@ -493,6 +454,7 @@ void CacheIOThread::ThreadFunc() {
 }
 
 void CacheIOThread::LoopOneLevel(uint32_t aLevel) {
+  mMonitor.AssertCurrentThreadOwns();
   EventQueue events = std::move(mEventQueue[aLevel]);
   EventQueue::size_type length = events.Length();
 
@@ -526,8 +488,7 @@ void CacheIOThread::LoopOneLevel(uint32_t aLevel) {
 
       events[index]->Run();
 
-      MOZ_ASSERT(mBlockingIOWatcher);
-      mBlockingIOWatcher->NotifyOperationDone();
+      MOZ_ASSERT(mNativeThreadHandle);
 
       if (mRerunCurrentEvent) {
         // The event handler yields to higher priority events and wants to

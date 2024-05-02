@@ -24,13 +24,11 @@ class nsIDocShell;
 class nsICachingChannel;
 class nsILoadGroup;
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 template <typename T>
 struct Nullable;
 class WindowProxyHolder;
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 class nsHTMLDocument : public mozilla::dom::Document {
  protected:
@@ -44,7 +42,8 @@ class nsHTMLDocument : public mozilla::dom::Document {
   using Document::SetDocumentURI;
 
   nsHTMLDocument();
-  virtual nsresult Init() override;
+  virtual nsresult Init(nsIPrincipal* aPrincipal,
+                        nsIPrincipal* aPartitionedPrincipal) override;
 
   // Document
   virtual void Reset(nsIChannel* aChannel, nsILoadGroup* aLoadGroup) override;
@@ -91,7 +90,7 @@ class nsHTMLDocument : public mozilla::dom::Document {
    */
   // XXXbz is this still needed now that we can flush just content,
   // not the rest?
-  int32_t GetNumFormsSynchronous();
+  int32_t GetNumFormsSynchronous() const;
   void SetIsXHTML(bool aXHTML) { mType = (aXHTML ? eXHTML : eHTML); }
 
   virtual nsresult Clone(mozilla::dom::NodeInfo*,
@@ -196,8 +195,7 @@ class nsHTMLDocument : public mozilla::dom::Document {
   bool mViewSource;
 };
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 inline nsHTMLDocument* Document::AsHTMLDocument() {
   MOZ_ASSERT(IsHTMLOrXHTML());
@@ -209,7 +207,6 @@ inline const nsHTMLDocument* Document::AsHTMLDocument() const {
   return static_cast<const nsHTMLDocument*>(this);
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif /* nsHTMLDocument_h___ */

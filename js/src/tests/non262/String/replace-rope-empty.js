@@ -11,20 +11,25 @@ print(BUGNUMBER + ": " + summary);
 // String#replace on a rope.
 //
 // Please rewrite this testcase when the following assertion fails.
-assertEq(isRope("a".repeat(24)), false);
-assertEq(isRope("a".repeat(25)), true);
+//
+// As Foxhound adjusts the internal string structure, the norope/rope boundary is now 32
+//
+var norope = 32
+var rope = norope + 1
+assertEq(isRope("a".repeat(norope)), false);
+assertEq(isRope("a".repeat(rope)), true);
 
 // Not a rope.
-assertEq("a".repeat(24).replace("", "foo"),
-         "foo" + "a".repeat(24));
-assertEq("a".repeat(24).replace("", ""),
-         "a".repeat(24));
+assertEq("a".repeat(norope).replace("", "foo"),
+         "foo" + "a".repeat(norope));
+assertEq("a".repeat(norope).replace("", ""),
+         "a".repeat(norope));
 
 // A rope.
-assertEq("a".repeat(25).replace("", "foo"),
-         "foo" + "a".repeat(25));
-assertEq("a".repeat(25).replace("", ""),
-         "a".repeat(25));
+assertEq("a".repeat(rope).replace("", "foo"),
+         "foo" + "a".repeat(rope));
+assertEq("a".repeat(rope).replace("", ""),
+         "a".repeat(rope));
 
 if (typeof reportCompare === "function")
     reportCompare(true, true);

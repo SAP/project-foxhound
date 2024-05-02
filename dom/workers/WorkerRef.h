@@ -7,13 +7,12 @@
 #ifndef mozilla_dom_workers_WorkerRef_h
 #define mozilla_dom_workers_WorkerRef_h
 
-#include <functional>
 #include "mozilla/dom/WorkerStatus.h"
+#include "mozilla/MoveOnlyFunction.h"
 #include "mozilla/RefPtr.h"
 #include "nsISupports.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 /*
  * If you want to play with a DOM Worker, you must know that it can go away
@@ -124,7 +123,7 @@ class WorkerRef {
 
   WorkerPrivate* mWorkerPrivate;
 
-  std::function<void()> mCallback;
+  MoveOnlyFunction<void()> mCallback;
   const char* const mName;
   const bool mIsPreventingShutdown;
 
@@ -136,7 +135,7 @@ class WeakWorkerRef final : public WorkerRef {
  public:
   static already_AddRefed<WeakWorkerRef> Create(
       WorkerPrivate* aWorkerPrivate,
-      std::function<void()>&& aCallback = nullptr);
+      MoveOnlyFunction<void()>&& aCallback = nullptr);
 
   WorkerPrivate* GetPrivate() const;
 
@@ -155,7 +154,7 @@ class StrongWorkerRef final : public WorkerRef {
  public:
   static already_AddRefed<StrongWorkerRef> Create(
       WorkerPrivate* aWorkerPrivate, const char* aName,
-      std::function<void()>&& aCallback = nullptr);
+      MoveOnlyFunction<void()>&& aCallback = nullptr);
 
   // This function creates a StrongWorkerRef even when in the Canceling state of
   // the worker's lifecycle. It's intended to be used by system code, e.g. code
@@ -206,13 +205,18 @@ class IPCWorkerRef final : public WorkerRef {
  public:
   static already_AddRefed<IPCWorkerRef> Create(
       WorkerPrivate* aWorkerPrivate, const char* aName,
-      std::function<void()>&& aCallback = nullptr);
+      MoveOnlyFunction<void()>&& aCallback = nullptr);
 
   WorkerPrivate* Private() const;
+
+  void SetActorCount(uint32_t aCount);
 
  private:
   IPCWorkerRef(WorkerPrivate* aWorkerPrivate, const char* aName);
   ~IPCWorkerRef();
+
+  // The count of background actors which binding with this IPCWorkerRef.
+  uint32_t mActorCount;
 };
 
 // Template class to keep an Actor pointer, as a raw pointer, in a ref-counted
@@ -233,7 +237,6 @@ class IPCWorkerRefHelper final {
   ActorPtr* mActor;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif /* mozilla_dom_workers_WorkerRef_h */

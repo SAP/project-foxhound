@@ -27,7 +27,7 @@ function parseQuery(request, key) {
     if (p.indexOf(key + "=") === 0) {
       return p.substring(key.length + 1);
     }
-    if (p.indexOf("=") < 0 && key === "") {
+    if (!p.includes("=") && key === "") {
       return p;
     }
   }
@@ -48,31 +48,35 @@ function handleRequest(request, response) {
         range == "bytes=25514-32767") ||
       (name == "dash-webm-video-428x240.webm" && range == "bytes=228-35852")
     ) {
-      throw "Should not request " + name + " with byte-range " + range;
+      throw new Error(
+        "Should not request " + name + " with byte-range " + range
+      );
     } else {
       var rangeSplit = range.split("=");
       if (rangeSplit.length != 2) {
-        throw "DASH-SJS: ERROR: invalid number of tokens (" +
-          rangeSplit.length +
-          ") delimited by '=' in 'Range' header.";
+        throw new Error(
+          "DASH-SJS: ERROR: invalid number of tokens (" +
+            rangeSplit.length +
+            ") delimited by '=' in 'Range' header."
+        );
       }
       var offsets = rangeSplit[1].split("-");
       if (offsets.length != 2) {
-        throw "DASH-SJS: ERROR: invalid number of tokens (" +
-          offsets.length +
-          ") delimited by '-' in 'Range' header.";
+        throw new Error(
+          "DASH-SJS: ERROR: invalid number of tokens (" +
+            offsets.length +
+            ") delimited by '-' in 'Range' header."
+        );
       }
       var startOffset = parseInt(offsets[0]);
       var endOffset = parseInt(offsets[1]);
-      var file = Components.classes["@mozilla.org/file/directory_service;1"]
-        .getService(Components.interfaces.nsIProperties)
-        .get("CurWorkD", Components.interfaces.nsIFile);
-      var fis = Components.classes[
-        "@mozilla.org/network/file-input-stream;1"
-      ].createInstance(Components.interfaces.nsIFileInputStream);
-      var bis = Components.classes[
-        "@mozilla.org/binaryinputstream;1"
-      ].createInstance(Components.interfaces.nsIBinaryInputStream);
+      var file = Services.dirsvc.get("CurWorkD", Ci.nsIFile);
+      var fis = Cc["@mozilla.org/network/file-input-stream;1"].createInstance(
+        Ci.nsIFileInputStream
+      );
+      var bis = Cc["@mozilla.org/binaryinputstream;1"].createInstance(
+        Ci.nsIBinaryInputStream
+      );
 
       var paths = "tests/dom/media/test/" + name;
       var split = paths.split("/");
@@ -83,11 +87,13 @@ function handleRequest(request, response) {
       fis.init(file, -1, -1, false);
       // Exception: start offset should be within file bounds.
       if (startOffset > file.fileSize) {
-        throw "Starting offset [" +
-          startOffset +
-          "] is after end of file [" +
-          file.fileSize +
-          "].";
+        throw new Error(
+          "Starting offset [" +
+            startOffset +
+            "] is after end of file [" +
+            file.fileSize +
+            "]."
+        );
       }
       // End offset may be too large in the MPD. Real world HTTP servers just
       // return what data they can; do the same here - reduce the end offset.
@@ -103,10 +109,7 @@ function handleRequest(request, response) {
         }
         endOffset = file.fileSize - 1;
       }
-      fis.seek(
-        Components.interfaces.nsISeekableStream.NS_SEEK_SET,
-        startOffset
-      );
+      fis.seek(Ci.nsISeekableStream.NS_SEEK_SET, startOffset);
       bis.setInputStream(fis);
 
       var byteLengthToRead = endOffset + 1 - startOffset;

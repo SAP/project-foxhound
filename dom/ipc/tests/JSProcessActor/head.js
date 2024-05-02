@@ -8,19 +8,27 @@
 const URL = "about:blank";
 const TEST_URL = "http://test2.example.org/";
 let processActorOptions = {
-  parent: {
-    moduleURI: "resource://testing-common/TestProcessActorParent.jsm",
+  jsm: {
+    parent: {
+      moduleURI: "resource://testing-common/TestProcessActorParent.jsm",
+    },
+    child: {
+      moduleURI: "resource://testing-common/TestProcessActorChild.jsm",
+      observers: ["test-js-content-actor-child-observer"],
+    },
   },
-  child: {
-    moduleURI: "resource://testing-common/TestProcessActorChild.jsm",
-    observers: ["test-js-content-actor-child-observer"],
+  "sys.mjs": {
+    parent: {
+      esModuleURI: "resource://testing-common/TestProcessActorParent.sys.mjs",
+    },
+    child: {
+      esModuleURI: "resource://testing-common/TestProcessActorChild.sys.mjs",
+      observers: ["test-js-content-actor-child-observer"],
+    },
   },
 };
 
 function promiseNotification(aNotification) {
-  const { Services } = ChromeUtils.import(
-    "resource://gre/modules/Services.jsm"
-  );
   let notificationResolve;
   let notificationObserver = function observer() {
     notificationResolve();
@@ -33,13 +41,18 @@ function promiseNotification(aNotification) {
 }
 
 function declTest(name, cfg) {
+  declTestWithOptions(name, cfg, "jsm");
+  declTestWithOptions(name, cfg, "sys.mjs");
+}
+
+function declTestWithOptions(name, cfg, fileExt) {
   let { url = "about:blank", includeParent = false, remoteTypes, test } = cfg;
 
   // Build the actor options object which will be used to register & unregister
   // our process actor.
   let actorOptions = {
-    parent: Object.assign({}, processActorOptions.parent),
-    child: Object.assign({}, processActorOptions.child),
+    parent: Object.assign({}, processActorOptions[fileExt].parent),
+    child: Object.assign({}, processActorOptions[fileExt].child),
   };
   actorOptions.includeParent = includeParent;
   if (remoteTypes !== undefined) {
@@ -47,7 +60,7 @@ function declTest(name, cfg) {
   }
 
   // Add a new task for the actor test declared here.
-  add_task(async function() {
+  add_task(async function () {
     info("Entering test: " + name);
 
     // Register our actor, and load a new tab with the provided URL
@@ -55,7 +68,7 @@ function declTest(name, cfg) {
     try {
       await BrowserTestUtils.withNewTab(url, async browser => {
         info("browser ready");
-        await Promise.resolve(test(browser, window));
+        await Promise.resolve(test(browser, window, fileExt));
       });
     } finally {
       // Unregister the actor after the test is complete.

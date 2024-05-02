@@ -41,9 +41,10 @@ impl<St: TryStream> TryChunks<St> {
     delegate_access_inner!(stream, St, (. .));
 }
 
+type TryChunksStreamError<St> = TryChunksError<<St as TryStream>::Ok, <St as TryStream>::Error>;
+
 impl<St: TryStream> Stream for TryChunks<St> {
-    #[allow(clippy::type_complexity)]
-    type Item = Result<Vec<St::Ok>, TryChunksError<St::Ok, St::Error>>;
+    type Item = Result<Vec<St::Ok>, TryChunksStreamError<St>>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let mut this = self.as_mut().project();
@@ -70,7 +71,7 @@ impl<St: TryStream> Stream for TryChunks<St> {
                     let last = if this.items.is_empty() {
                         None
                     } else {
-                        let full_buf = mem::replace(this.items, Vec::new());
+                        let full_buf = mem::take(this.items);
                         Some(full_buf)
                     };
 
@@ -81,9 +82,9 @@ impl<St: TryStream> Stream for TryChunks<St> {
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
-        let chunk_len = if self.items.is_empty() { 0 } else { 1 };
+        let chunk_len = usize::from(!self.items.is_empty());
         let (lower, upper) = self.stream.size_hint();
-        let lower = lower.saturating_add(chunk_len);
+        let lower = (lower / self.cap).saturating_add(chunk_len);
         let upper = match upper {
             Some(x) => x.checked_add(chunk_len),
             None => None,

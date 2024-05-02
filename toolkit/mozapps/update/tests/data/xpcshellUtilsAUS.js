@@ -19,9 +19,6 @@
  * error are due to not having a profile when running some of the xpcshell
  * tests. Since most xpcshell tests also log these errors these tests don't
  * call do_get_profile unless necessary for the test.
- * The "This method is lossy. Use GetCanonicalPath !" warning on Windows in
- * nsLocalFileWin.cpp is from the call to GetNSSProfilePath in
- * nsNSSComponent.cpp due to it using GetNativeCanonicalPath.
  * "!mMainThread" in nsThreadManager.cpp are due to using timers and it might be
  * possible to fix some or all of these in the test itself.
  * "NS_FAILED(rv)" in nsThreadUtils.cpp are due to using timers and it might be
@@ -30,25 +27,17 @@
 
 "use strict";
 
-const { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { TestUtils } = ChromeUtils.import(
-  "resource://testing-common/TestUtils.jsm"
-);
-
-ChromeUtils.defineModuleGetter(
-  this,
-  "MockRegistrar",
-  "resource://testing-common/MockRegistrar.jsm"
+const { TestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/TestUtils.sys.mjs"
 );
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "updateAppInfo",
-  "resource://testing-common/AppInfo.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  MockRegistrar: "resource://testing-common/MockRegistrar.sys.mjs",
+  updateAppInfo: "resource://testing-common/AppInfo.sys.mjs",
+});
 
 const Cm = Components.manager;
 
@@ -72,11 +61,6 @@ const LOG_COMPLETE_SUCCESS = "complete_log_success" + COMPARE_LOG_SUFFIX;
 const LOG_PARTIAL_SUCCESS = "partial_log_success" + COMPARE_LOG_SUFFIX;
 const LOG_PARTIAL_FAILURE = "partial_log_failure" + COMPARE_LOG_SUFFIX;
 const LOG_REPLACE_SUCCESS = "replace_log_success";
-
-// xpcshell tests need this preference set to true for Cu.isInAutomation to be
-// true.
-const PREF_IS_IN_AUTOMATION =
-  "security.turn_off_all_security_so_that_viruses_can_take_over_this_computer";
 
 const USE_EXECV = AppConstants.platform == "linux";
 
@@ -113,6 +97,8 @@ const ERR_BGTASK_EXCLUSIVE =
   "failed to exclusively open executable file from background task: ";
 
 const LOG_SVC_SUCCESSFUL_LAUNCH = "Process was started... waiting on result.";
+const LOG_SVC_UNSUCCESSFUL_LAUNCH =
+  "The install directory path is not valid for this application.";
 
 // Typical end of a message when calling assert
 const MSG_SHOULD_EQUAL = " should equal the expected value";
@@ -140,6 +126,7 @@ var gTestID;
 // This default value will be overridden when using the http server.
 var gURLData = URL_HOST + "/";
 var gTestserver;
+var gUpdateCheckCount = 0;
 
 var gIncrementalDownloadErrorType;
 
@@ -167,6 +154,7 @@ var gShouldResetEnv = undefined;
 var gAddedEnvXRENoWindowsCrashDialog = false;
 var gEnvXPCOMDebugBreak;
 var gEnvXPCOMMemLeakLog;
+var gEnvForceServiceFallback = false;
 
 const URL_HTTP_UPDATE_SJS = "http://test_details/";
 const DATA_URI_SPEC = Services.io.newFileURI(do_get_file("", false)).spec;
@@ -855,11 +843,7 @@ function setupTestCommon(aAppUpdateAutoEnabled = false, aAllowBits = false) {
   );
 
   let caller = Components.stack.caller;
-  gTestID = caller.filename
-    .toString()
-    .split("/")
-    .pop()
-    .split(".")[0];
+  gTestID = caller.filename.toString().split("/").pop().split(".")[0];
 
   if (gDebugTestLog && !gIsServiceTest) {
     if (!gTestsToLog.length || gTestsToLog.includes(gTestID)) {
@@ -1178,7 +1162,6 @@ function doTestFinish() {
  * Sets the most commonly used preferences used by tests
  */
 function setDefaultPrefs() {
-  Services.prefs.setBoolPref(PREF_IS_IN_AUTOMATION, true);
   Services.prefs.setBoolPref(PREF_APP_UPDATE_DISABLEDFORTESTING, false);
   if (gDebugTest) {
     // Enable Update logging
@@ -1213,11 +1196,11 @@ function setTestFilesAndDirsForFailure() {
  * directory files from being created.
  */
 function preventDistributionFiles() {
-  gTestFiles = gTestFiles.filter(function(aTestFile) {
+  gTestFiles = gTestFiles.filter(function (aTestFile) {
     return !aTestFile.relPathDir.includes("distribution/");
   });
 
-  gTestDirs = gTestDirs.filter(function(aTestDir) {
+  gTestDirs = gTestDirs.filter(function (aTestDir) {
     return !aTestDir.relPathDir.includes("distribution/");
   });
 }
@@ -1652,61 +1635,65 @@ function getSpecialFolderDir(aCSIDL) {
   return dir;
 }
 
-XPCOMUtils.defineLazyGetter(this, "gInstallDirPathHash", function test_gIDPH() {
-  if (AppConstants.platform != "win") {
-    do_throw("Windows only function called by a different platform!");
-  }
+ChromeUtils.defineLazyGetter(
+  this,
+  "gInstallDirPathHash",
+  function test_gIDPH() {
+    if (AppConstants.platform != "win") {
+      do_throw("Windows only function called by a different platform!");
+    }
 
-  if (!MOZ_APP_BASENAME) {
+    if (!MOZ_APP_BASENAME) {
+      return null;
+    }
+
+    let vendor = MOZ_APP_VENDOR ? MOZ_APP_VENDOR : "Mozilla";
+    let appDir = getApplyDirFile();
+
+    const REG_PATH =
+      "SOFTWARE\\" + vendor + "\\" + MOZ_APP_BASENAME + "\\TaskBarIDs";
+    let regKey = Cc["@mozilla.org/windows-registry-key;1"].createInstance(
+      Ci.nsIWindowsRegKey
+    );
+    try {
+      regKey.open(
+        Ci.nsIWindowsRegKey.ROOT_KEY_LOCAL_MACHINE,
+        REG_PATH,
+        Ci.nsIWindowsRegKey.ACCESS_ALL
+      );
+      regKey.writeStringValue(appDir.path, gTestID);
+      return gTestID;
+    } catch (e) {}
+
+    try {
+      regKey.create(
+        Ci.nsIWindowsRegKey.ROOT_KEY_CURRENT_USER,
+        REG_PATH,
+        Ci.nsIWindowsRegKey.ACCESS_ALL
+      );
+      regKey.writeStringValue(appDir.path, gTestID);
+      return gTestID;
+    } catch (e) {
+      logTestInfo(
+        "failed to create registry value. Registry Path: " +
+          REG_PATH +
+          ", Value Name: " +
+          appDir.path +
+          ", Value Data: " +
+          gTestID +
+          ", Exception " +
+          e
+      );
+      do_throw(
+        "Unable to write HKLM or HKCU TaskBarIDs registry value, key path: " +
+          REG_PATH
+      );
+    }
     return null;
   }
+);
 
-  let vendor = MOZ_APP_VENDOR ? MOZ_APP_VENDOR : "Mozilla";
-  let appDir = getApplyDirFile();
-
-  const REG_PATH =
-    "SOFTWARE\\" + vendor + "\\" + MOZ_APP_BASENAME + "\\TaskBarIDs";
-  let regKey = Cc["@mozilla.org/windows-registry-key;1"].createInstance(
-    Ci.nsIWindowsRegKey
-  );
-  try {
-    regKey.open(
-      Ci.nsIWindowsRegKey.ROOT_KEY_LOCAL_MACHINE,
-      REG_PATH,
-      Ci.nsIWindowsRegKey.ACCESS_ALL
-    );
-    regKey.writeStringValue(appDir.path, gTestID);
-    return gTestID;
-  } catch (e) {}
-
-  try {
-    regKey.create(
-      Ci.nsIWindowsRegKey.ROOT_KEY_CURRENT_USER,
-      REG_PATH,
-      Ci.nsIWindowsRegKey.ACCESS_ALL
-    );
-    regKey.writeStringValue(appDir.path, gTestID);
-    return gTestID;
-  } catch (e) {
-    logTestInfo(
-      "failed to create registry value. Registry Path: " +
-        REG_PATH +
-        ", Value Name: " +
-        appDir.path +
-        ", Value Data: " +
-        gTestID +
-        ", Exception " +
-        e
-    );
-    do_throw(
-      "Unable to write HKLM or HKCU TaskBarIDs registry value, key path: " +
-        REG_PATH
-    );
-  }
-  return null;
-});
-
-XPCOMUtils.defineLazyGetter(this, "gLocalAppDataDir", function test_gLADD() {
+ChromeUtils.defineLazyGetter(this, "gLocalAppDataDir", function test_gLADD() {
   if (AppConstants.platform != "win") {
     do_throw("Windows only function called by a different platform!");
   }
@@ -1715,7 +1702,7 @@ XPCOMUtils.defineLazyGetter(this, "gLocalAppDataDir", function test_gLADD() {
   return getSpecialFolderDir(CSIDL_LOCAL_APPDATA);
 });
 
-XPCOMUtils.defineLazyGetter(this, "gCommonAppDataDir", function test_gCDD() {
+ChromeUtils.defineLazyGetter(this, "gCommonAppDataDir", function test_gCDD() {
   if (AppConstants.platform != "win") {
     do_throw("Windows only function called by a different platform!");
   }
@@ -1724,7 +1711,7 @@ XPCOMUtils.defineLazyGetter(this, "gCommonAppDataDir", function test_gCDD() {
   return getSpecialFolderDir(CSIDL_COMMON_APPDATA);
 });
 
-XPCOMUtils.defineLazyGetter(this, "gProgFilesDir", function test_gPFD() {
+ChromeUtils.defineLazyGetter(this, "gProgFilesDir", function test_gPFD() {
   if (AppConstants.platform != "win") {
     do_throw("Windows only function called by a different platform!");
   }
@@ -1785,14 +1772,16 @@ function getMockUpdRootDWin(aGetOldLocation) {
 function createWorldWritableAppUpdateDir() {
   // This function is only necessary in Windows
   if (AppConstants.platform == "win") {
-    let installDir = Services.dirsvc.get(XRE_EXECUTABLE_FILE, Ci.nsIFile)
-      .parent;
+    let installDir = Services.dirsvc.get(
+      XRE_EXECUTABLE_FILE,
+      Ci.nsIFile
+    ).parent;
     let exitValue = runTestHelperSync(["create-update-dir", installDir.path]);
     Assert.equal(exitValue, 0, "The helper process exit value should be 0");
   }
 }
 
-XPCOMUtils.defineLazyGetter(this, "gUpdatesRootDir", function test_gURD() {
+ChromeUtils.defineLazyGetter(this, "gUpdatesRootDir", function test_gURD() {
   if (AppConstants.platform != "macosx") {
     do_throw("Mac OS X only function called by a different platform!");
   }
@@ -1908,6 +1897,7 @@ function logUpdateLog(aLogLeafName) {
   if (updateLog.exists()) {
     // xpcshell tests won't display the entire contents so log each line.
     let updateLogContents = readFileBytes(updateLog).replace(/\r\n/g, "\n");
+    updateLogContents = removeTimeStamps(updateLogContents);
     updateLogContents = replaceLogPaths(updateLogContents);
     let aryLogContents = updateLogContents.split("\n");
     logTestInfo("contents of " + updateLog.path + ":");
@@ -1926,6 +1916,7 @@ function logUpdateLog(aLogLeafName) {
     if (updateLog.exists()) {
       // xpcshell tests won't display the entire contents so log each line.
       let updateLogContents = readFileBytes(updateLog).replace(/\r\n/g, "\n");
+      updateLogContents = removeTimeStamps(updateLogContents);
       updateLogContents = replaceLogPaths(updateLogContents);
       let aryLogContents = updateLogContents.split("\n");
       logTestInfo("contents of " + updateLog.path + ":");
@@ -2023,7 +2014,7 @@ function runUpdate(
   let pid = 0;
   if (gPIDPersistProcess) {
     pid = gPIDPersistProcess.pid;
-    gEnv.set("MOZ_TEST_SHORTER_WAIT_PID", "1");
+    Services.env.set("MOZ_TEST_SHORTER_WAIT_PID", "1");
   }
 
   let updateBin = copyTestUpdaterToBinDir();
@@ -2079,7 +2070,7 @@ function runUpdate(
   resetEnvironment();
 
   if (gPIDPersistProcess) {
-    gEnv.set("MOZ_TEST_SHORTER_WAIT_PID", "");
+    Services.env.set("MOZ_TEST_SHORTER_WAIT_PID", "");
   }
 
   let status = readStatusFile();
@@ -2139,7 +2130,15 @@ function runUpdate(
       "the contents of the maintenanceservice.log should not " +
         "be the same as the original contents"
     );
-    if (!isInvalidArgTest) {
+    if (gEnvForceServiceFallback) {
+      // If we are forcing the service to fail and fall back to update without
+      // the service, the service log should reflect that we failed in that way.
+      Assert.ok(
+        contents.includes(LOG_SVC_UNSUCCESSFUL_LAUNCH),
+        "the contents of the maintenanceservice.log should " +
+          "contain the unsuccessful launch string"
+      );
+    } else if (!isInvalidArgTest) {
       Assert.notEqual(
         contents.indexOf(LOG_SVC_SUCCESSFUL_LAUNCH),
         -1,
@@ -2465,8 +2464,12 @@ function isBinarySigned(aBinPath) {
  * Helper function for setting up the application files required to launch the
  * application for the updater tests by either copying or creating symlinks to
  * the files.
+ *
+ * @param options.requiresOmnijar when true, copy or symlink omnijars as well.
+ * This may be required to launch the updated application and have non-trivial
+ * functionality available.
  */
-function setupAppFiles() {
+function setupAppFiles({ requiresOmnijar = false } = {}) {
   debugDump(
     "start - copying or creating symlinks to application files " +
       "for the test"
@@ -2494,6 +2497,18 @@ function setupAppFiles() {
     { relPath: FILE_APPLICATION_INI, inGreDir: true },
     { relPath: "dependentlibs.list", inGreDir: true },
   ];
+
+  if (requiresOmnijar) {
+    appFiles.push({ relPath: AppConstants.OMNIJAR_NAME, inGreDir: true });
+
+    if (AppConstants.MOZ_BUILD_APP == "browser") {
+      // Only Firefox uses an app-specific omnijar.
+      appFiles.push({
+        relPath: "browser/" + AppConstants.OMNIJAR_NAME,
+        inGreDir: true,
+      });
+    }
+  }
 
   // On Linux the updater.png must also be copied and libsoftokn3.so must be
   // symlinked or copied.
@@ -3080,12 +3095,18 @@ async function waitForHelperExit() {
  *          passed to createUpdaterINI.
  * @param   aSetupActiveUpdate
  *          Whether to setup the active update.
+ *
+ * @param   options.requiresOmnijar
+ *          When true, copy or symlink omnijars as well.  This may be required
+ *          to launch the updated application and have non-trivial functionality
+ *          available.
  */
 async function setupUpdaterTest(
   aMarFile,
   aPostUpdateAsync,
   aPostUpdateExeRelPathPrefix = "",
-  aSetupActiveUpdate = true
+  aSetupActiveUpdate = true,
+  { requiresOmnijar = false } = {}
 ) {
   debugDump("start - updater test setup");
   let updatesPatchDir = getUpdateDirFile(DIR_PATCH);
@@ -3200,7 +3221,7 @@ async function setupUpdaterTest(
 
   await TestUtils.waitForCondition(() => {
     try {
-      setupAppFiles();
+      setupAppFiles({ requiresOmnijar });
       return true;
     } catch (e) {
       logTestInfo("exception when calling setupAppFiles, Exception: " + e);
@@ -3317,8 +3338,53 @@ function replaceLogPaths(aLogContents) {
 }
 
 /**
+ * Helper function that removes the timestamps in the update log
+ *
+ * @param   aLogContents
+ *          The update log file's contents.
+ * @return  the log contents without timestamps
+ */
+function removeTimeStamps(aLogContents) {
+  return aLogContents.replace(
+    /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}[+-]\d{4}: /gm,
+    ""
+  );
+}
+
+/**
+ * Helper function that gets the contents of the last update log.
+ *
+ * It used to be that we only kept one copy of the updater log. This would be
+ * the copy created by the elevated updater, if it was run. If it wasn't run,
+ * then then it would be the only copy (created by the unelevated updater).
+ * Now we keep both of these files. These tests were written assuming that
+ * this unelevated updater log would be overwritten if the updater ran
+ * elevated. Since that is no longer true, we can get the correct log intended
+ * by these tests by always just trying for the elevated version first and, if
+ * that doesn't exist, getting the unelevated version.
+ * This works better than checking `gIsServiceTest` because some service tests
+ * intentionally run bits of the test without elevation.
+ */
+function getLogFileContents() {
+  let updateLog = getUpdateDirFile(FILE_LAST_UPDATE_ELEVATED_LOG);
+  let updateLogContents;
+  try {
+    updateLogContents = readFileBytes(updateLog);
+  } catch (ex) {
+    if (ex.result != Cr.NS_ERROR_FILE_NOT_FOUND) {
+      throw ex;
+    }
+    updateLog = getUpdateDirFile(FILE_LAST_UPDATE_LOG);
+    updateLogContents = readFileBytes(updateLog);
+  }
+  return updateLogContents;
+}
+
+/**
  * Helper function for updater binary tests for verifying the contents of the
  * update log after a successful update.
+ * Requires that the compare file have all the correct log lines in the correct
+ * order, but it is not an error for extra lines to be present in the test file.
  *
  * @param   aCompareLogFile
  *          The log file to compare the update log with.
@@ -3342,8 +3408,10 @@ function checkUpdateLogContents(
     return;
   }
 
-  let updateLog = getUpdateDirFile(FILE_LAST_UPDATE_LOG);
-  let updateLogContents = readFileBytes(updateLog);
+  let updateLogContents = getLogFileContents();
+
+  // Remove leading timestamps
+  updateLogContents = removeTimeStamps(updateLogContents);
 
   // The channel-prefs.js is defined in gTestFilesCommon which will always be
   // located to the end of gTestFiles when it is present.
@@ -3447,6 +3515,9 @@ function checkUpdateLogContents(
     compareLogContents = PERFORMING_STAGED_UPDATE + "\n" + compareLogContents;
   }
 
+  // Remove leading timestamps
+  compareLogContents = removeTimeStamps(compareLogContents);
+
   // The channel-prefs.js is defined in gTestFilesCommon which will always be
   // located to the end of gTestFiles.
   if (
@@ -3477,39 +3548,27 @@ function checkUpdateLogContents(
   // Remove leading and trailing newlines
   compareLogContents = compareLogContents.replace(/^\n|\n$/g, "");
 
+  // Compare line by line, skipping non-matching lines that may be in the update
+  // log so that these tests don't start failing just because we add a new log
+  // message to the updater.
+  let compareLogContentsArray = compareLogContents.split("\n");
+  let updateLogContentsArray = updateLogContents.split("\n");
+  while (updateLogContentsArray.length && compareLogContentsArray.length) {
+    if (updateLogContentsArray[0] == compareLogContentsArray[0]) {
+      compareLogContentsArray.shift();
+    }
+    updateLogContentsArray.shift();
+  }
+
   // Don't write the contents of the file to the log to reduce log spam
   // unless there is a failure.
-  if (compareLogContents == updateLogContents) {
+  if (!compareLogContentsArray.length) {
     Assert.ok(true, "the update log contents" + MSG_SHOULD_EQUAL);
   } else {
-    logTestInfo("the update log contents are not correct");
-    logUpdateLog(FILE_LAST_UPDATE_LOG);
-    let aryLog = updateLogContents.split("\n");
-    let aryCompare = compareLogContents.split("\n");
-    // Pushing an empty string to both arrays makes it so either array's length
-    // can be used in the for loop below without going out of bounds.
-    aryLog.push("");
-    aryCompare.push("");
-    // xpcshell tests won't display the entire contents so log the first
-    // incorrect line.
-    for (let i = 0; i < aryLog.length; ++i) {
-      if (aryLog[i] != aryCompare[i]) {
-        logTestInfo(
-          "the first incorrect line is line #" +
-            i +
-            " and the " +
-            "value is: " +
-            aryLog[i]
-        );
-        Assert.equal(
-          aryLog[i],
-          aryCompare[i],
-          "the update log contents" + MSG_SHOULD_EQUAL
-        );
-      }
-    }
-    // This should never happen!
-    do_throw("Unable to find incorrect update log contents!");
+    Assert.ok(
+      false,
+      `the update log is missing the line: '${compareLogContentsArray[0]}'`
+    );
   }
 }
 
@@ -3520,14 +3579,47 @@ function checkUpdateLogContents(
  *          The string to check if the update log contains.
  */
 function checkUpdateLogContains(aCheckString) {
-  let updateLog = getUpdateDirFile(FILE_LAST_UPDATE_LOG);
-  let updateLogContents = readFileBytes(updateLog).replace(/\r\n/g, "\n");
+  let updateLogContents = getLogFileContents();
+  updateLogContents = updateLogContents.replace(/\r\n/g, "\n");
+  updateLogContents = removeTimeStamps(updateLogContents);
   updateLogContents = replaceLogPaths(updateLogContents);
-  Assert.notEqual(
-    updateLogContents.indexOf(aCheckString),
-    -1,
-    "the update log contents should contain value: " + aCheckString
-  );
+
+  // Compare line by line, skipping non-matching lines that may be in the update
+  // log so that these tests don't start failing just because we add a new log
+  // message to the updater.
+  let isFirstCompareLine = true;
+  let compareLogContentsArray = aCheckString.split("\n");
+  let updateLogContentsArray = updateLogContents.split("\n");
+  while (updateLogContentsArray.length && compareLogContentsArray.length) {
+    let isLastCompareLine = compareLogContentsArray.length == 1;
+    if (isFirstCompareLine && isLastCompareLine) {
+      if (updateLogContentsArray[0].includes(compareLogContentsArray[0])) {
+        compareLogContentsArray.shift();
+        isFirstCompareLine = false;
+      }
+    } else if (isFirstCompareLine) {
+      if (updateLogContentsArray[0].endsWith(compareLogContentsArray[0])) {
+        compareLogContentsArray.shift();
+        isFirstCompareLine = false;
+      }
+    } else if (isLastCompareLine) {
+      if (updateLogContentsArray[0].startsWith(compareLogContentsArray[0])) {
+        compareLogContentsArray.shift();
+      }
+    } else if (updateLogContentsArray[0] == compareLogContentsArray[0]) {
+      compareLogContentsArray.shift();
+    }
+    updateLogContentsArray.shift();
+  }
+
+  if (!compareLogContentsArray.length) {
+    Assert.ok(true, "the update log contents" + MSG_SHOULD_EQUAL);
+  } else {
+    Assert.ok(
+      false,
+      `the update log is missing the line: '${compareLogContentsArray[0]}'`
+    );
+  }
 }
 
 /**
@@ -3568,8 +3660,8 @@ function checkFilesAfterUpdateSuccess(
       if (AppConstants.platform != "win" && aTestFile.comparePerms) {
         // Check if the permssions as set in the complete mar file are correct.
         Assert.equal(
-          testFile.permissions & 0xfff,
-          aTestFile.comparePerms & 0xfff,
+          "0o" + (testFile.permissions & 0xfff).toString(8),
+          "0o" + (aTestFile.comparePerms & 0xfff).toString(8),
           "the file permissions" + MSG_SHOULD_EQUAL
         );
       }
@@ -4056,50 +4148,42 @@ function checkFilesInDirRecursive(aDir, aCallback) {
 }
 
 /**
- * Waits for an update check request to complete.
+ * Waits for an update check request to complete and asserts that the results
+ * are as-expected.
  *
  * @param   aSuccess
  *          Whether the update check succeeds or not. If aSuccess is true then
- *          onCheckComplete should be called and if aSuccess is false then
- *          onError should be called.
+ *          the check should succeed and if aSuccess is false then the check
+ *          should fail.
  * @param   aExpectedValues
  *          An object with common values to check.
- * @return  A promise which will resolve the first time either the update check
- *          onCheckComplete or onError occurs and returns the arguments from
- *          onCheckComplete or onError.
+ * @return  A promise which will resolve with the nsIUpdateCheckResult object
+ *          once the update check is complete.
  */
-function waitForUpdateCheck(aSuccess, aExpectedValues = {}) {
-  return new Promise(resolve =>
-    gUpdateChecker.checkForUpdates(
-      {
-        onProgress: (aRequest, aPosition, aTotalSize) => {},
-        onCheckComplete: async (request, updates) => {
-          Assert.ok(aSuccess, "the update check should succeed");
-          if (aExpectedValues.updateCount) {
-            Assert.equal(
-              aExpectedValues.updateCount,
-              updates.length,
-              "the update count" + MSG_SHOULD_EQUAL
-            );
-          }
-          resolve({ request, updates });
-        },
-        onError: async (request, update) => {
-          Assert.ok(!aSuccess, "the update check should error");
-          if (aExpectedValues.url) {
-            Assert.equal(
-              aExpectedValues.url,
-              request.channel.originalURI.spec,
-              "the url" + MSG_SHOULD_EQUAL
-            );
-          }
-          resolve({ request, update });
-        },
-        QueryInterface: ChromeUtils.generateQI(["nsIUpdateCheckListener"]),
-      },
-      true
-    )
+async function waitForUpdateCheck(aSuccess, aExpectedValues = {}) {
+  let check = gUpdateChecker.checkForUpdates(gUpdateChecker.FOREGROUND_CHECK);
+  let result = await check.result;
+  Assert.ok(result.checksAllowed, "We should be able to check for updates");
+  Assert.equal(
+    result.succeeded,
+    aSuccess,
+    "the update check should " + (aSuccess ? "succeed" : "error")
   );
+  if (aExpectedValues.updateCount) {
+    Assert.equal(
+      aExpectedValues.updateCount,
+      result.updates.length,
+      "the update count" + MSG_SHOULD_EQUAL
+    );
+  }
+  if (aExpectedValues.url) {
+    Assert.equal(
+      aExpectedValues.url,
+      result.request.channel.originalURI.spec,
+      "the url" + MSG_SHOULD_EQUAL
+    );
+  }
+  return result;
 }
 
 /**
@@ -4114,9 +4198,9 @@ function waitForUpdateCheck(aSuccess, aExpectedValues = {}) {
  * @return  A promise which will resolve the first time the update download
  *          onStopRequest occurs and returns the arguments from onStopRequest.
  */
-function waitForUpdateDownload(aUpdates, aExpectedStatus) {
+async function waitForUpdateDownload(aUpdates, aExpectedStatus) {
   let bestUpdate = gAUS.selectUpdate(aUpdates);
-  let success = gAUS.downloadUpdate(bestUpdate, false);
+  let success = await gAUS.downloadUpdate(bestUpdate, false);
   if (!success) {
     do_throw("nsIApplicationUpdateService:downloadUpdate returned " + success);
   }
@@ -4157,7 +4241,9 @@ function start_httpserver() {
     );
   }
 
-  let { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
+  let { HttpServer } = ChromeUtils.importESModule(
+    "resource://testing-common/httpd.sys.mjs"
+  );
   gTestserver = new HttpServer();
   gTestserver.registerDirectory("/", dir);
   gTestserver.registerPathHandler("/" + gHTTPHandlerPath, pathHandler);
@@ -4177,6 +4263,7 @@ function start_httpserver() {
  *          The http response for the request.
  */
 function pathHandler(aMetadata, aResponse) {
+  gUpdateCheckCount += 1;
   aResponse.setHeader("Content-Type", "text/xml", false);
   aResponse.setStatusLine(aMetadata.httpVersion, 200, "OK");
   aResponse.bodyOutputStream.write(gResponseBody, gResponseBody.length);
@@ -4581,7 +4668,7 @@ IncrementalDownload.prototype = {
           status = Cr.NS_ERROR_OFFLINE;
           // After we report offline, we want to eventually show offline
           // status being changed to online.
-          Services.tm.dispatchToMainThread(function() {
+          Services.tm.dispatchToMainThread(function () {
             Services.obs.notifyObservers(
               gAUS,
               "network:offline-status-changed",
@@ -4662,7 +4749,7 @@ function setEnvironment() {
     // set an environment variable and have the test updater set the current
     // working directory than it is to set the current working directory in the
     // test itself.
-    gEnv.set("CURWORKDIRPATH", getApplyDirFile().path);
+    Services.env.set("CURWORKDIRPATH", getApplyDirFile().path);
   }
 
   // Prevent setting the environment more than once.
@@ -4674,28 +4761,28 @@ function setEnvironment() {
 
   if (
     AppConstants.platform == "win" &&
-    !gEnv.exists("XRE_NO_WINDOWS_CRASH_DIALOG")
+    !Services.env.exists("XRE_NO_WINDOWS_CRASH_DIALOG")
   ) {
     gAddedEnvXRENoWindowsCrashDialog = true;
     debugDump(
       "setting the XRE_NO_WINDOWS_CRASH_DIALOG environment " +
         "variable to 1... previously it didn't exist"
     );
-    gEnv.set("XRE_NO_WINDOWS_CRASH_DIALOG", "1");
+    Services.env.set("XRE_NO_WINDOWS_CRASH_DIALOG", "1");
   }
 
-  if (gEnv.exists("XPCOM_MEM_LEAK_LOG")) {
-    gEnvXPCOMMemLeakLog = gEnv.get("XPCOM_MEM_LEAK_LOG");
+  if (Services.env.exists("XPCOM_MEM_LEAK_LOG")) {
+    gEnvXPCOMMemLeakLog = Services.env.get("XPCOM_MEM_LEAK_LOG");
     debugDump(
       "removing the XPCOM_MEM_LEAK_LOG environment variable... " +
         "previous value " +
         gEnvXPCOMMemLeakLog
     );
-    gEnv.set("XPCOM_MEM_LEAK_LOG", "");
+    Services.env.set("XPCOM_MEM_LEAK_LOG", "");
   }
 
-  if (gEnv.exists("XPCOM_DEBUG_BREAK")) {
-    gEnvXPCOMDebugBreak = gEnv.get("XPCOM_DEBUG_BREAK");
+  if (Services.env.exists("XPCOM_DEBUG_BREAK")) {
+    gEnvXPCOMDebugBreak = Services.env.get("XPCOM_DEBUG_BREAK");
     debugDump(
       "setting the XPCOM_DEBUG_BREAK environment variable to " +
         "warn... previous value " +
@@ -4708,11 +4795,16 @@ function setEnvironment() {
     );
   }
 
-  gEnv.set("XPCOM_DEBUG_BREAK", "warn");
+  Services.env.set("XPCOM_DEBUG_BREAK", "warn");
 
-  if (gIsServiceTest) {
+  if (gEnvForceServiceFallback) {
+    // This env variable forces the updater to use the service in an invalid
+    // way, so that it has to fall back to updating without the service.
+    debugDump("setting MOZ_FORCE_SERVICE_FALLBACK environment variable to 1");
+    Services.env.set("MOZ_FORCE_SERVICE_FALLBACK", "1");
+  } else if (gIsServiceTest) {
     debugDump("setting MOZ_NO_SERVICE_FALLBACK environment variable to 1");
-    gEnv.set("MOZ_NO_SERVICE_FALLBACK", "1");
+    Services.env.set("MOZ_NO_SERVICE_FALLBACK", "1");
   }
 }
 
@@ -4733,7 +4825,7 @@ function resetEnvironment() {
       "setting the XPCOM_MEM_LEAK_LOG environment variable back to " +
         gEnvXPCOMMemLeakLog
     );
-    gEnv.set("XPCOM_MEM_LEAK_LOG", gEnvXPCOMMemLeakLog);
+    Services.env.set("XPCOM_MEM_LEAK_LOG", gEnvXPCOMMemLeakLog);
   }
 
   if (gEnvXPCOMDebugBreak) {
@@ -4741,19 +4833,22 @@ function resetEnvironment() {
       "setting the XPCOM_DEBUG_BREAK environment variable back to " +
         gEnvXPCOMDebugBreak
     );
-    gEnv.set("XPCOM_DEBUG_BREAK", gEnvXPCOMDebugBreak);
-  } else if (gEnv.exists("XPCOM_DEBUG_BREAK")) {
+    Services.env.set("XPCOM_DEBUG_BREAK", gEnvXPCOMDebugBreak);
+  } else if (Services.env.exists("XPCOM_DEBUG_BREAK")) {
     debugDump("clearing the XPCOM_DEBUG_BREAK environment variable");
-    gEnv.set("XPCOM_DEBUG_BREAK", "");
+    Services.env.set("XPCOM_DEBUG_BREAK", "");
   }
 
   if (AppConstants.platform == "win" && gAddedEnvXRENoWindowsCrashDialog) {
     debugDump("removing the XRE_NO_WINDOWS_CRASH_DIALOG environment variable");
-    gEnv.set("XRE_NO_WINDOWS_CRASH_DIALOG", "");
+    Services.env.set("XRE_NO_WINDOWS_CRASH_DIALOG", "");
   }
 
-  if (gIsServiceTest) {
+  if (gEnvForceServiceFallback) {
+    debugDump("removing MOZ_FORCE_SERVICE_FALLBACK environment variable");
+    Services.env.set("MOZ_FORCE_SERVICE_FALLBACK", "");
+  } else if (gIsServiceTest) {
     debugDump("removing MOZ_NO_SERVICE_FALLBACK environment variable");
-    gEnv.set("MOZ_NO_SERVICE_FALLBACK", "");
+    Services.env.set("MOZ_NO_SERVICE_FALLBACK", "");
   }
 }

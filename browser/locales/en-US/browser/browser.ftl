@@ -4,46 +4,55 @@
 
 ## The main browser window's title
 
-# These are the default window titles everywhere except macOS. The first two
-# attributes are used when the web content opened has no title:
+# These are the default window titles everywhere except macOS.
+# .data-title-default and .data-title-private are used when the web content
+# opened has no title:
 #
 # default - "Mozilla Firefox"
 # private - "Mozilla Firefox (Private Browsing)"
 #
-# The last two are for use when there *is* a content title.
+# .data-content-title-default and .data-content-title-private are for use when
+# there *is* a content title.
 # Variables:
 #  $content-title (String): the title of the web content.
-browser-main-window =
+browser-main-window-window-titles =
   .data-title-default = { -brand-full-name }
-  .data-title-private = { -brand-full-name } (Private Browsing)
+  .data-title-private = { -brand-full-name } Private Browsing
   .data-content-title-default = { $content-title } — { -brand-full-name }
-  .data-content-title-private = { $content-title } — { -brand-full-name } (Private Browsing)
+  .data-content-title-private = { $content-title } — { -brand-full-name } Private Browsing
 
-# These are the default window titles on macOS. The first two are for use when
-# there is no content title:
+# These are the default window titles on macOS.
+# .data-title-default and .data-title-private are used when the web content
+# opened has no title:
+#
 #
 # "default" - "Mozilla Firefox"
 # "private" - "Mozilla Firefox — (Private Browsing)"
 #
-# The last two are for use when there *is* a content title.
-# Do not use the brand name in the last two attributes, as we do on non-macOS.
+# .data-content-title-default and .data-content-title-private are for use when
+# there *is* a content title.
+# Do not use the brand name in these, as we do on non-macOS.
 #
 # Also note the other subtle difference here: we use a `-` to separate the
 # brand name from `(Private Browsing)`, which does not happen on other OSes.
 #
 # Variables:
 #  $content-title (String): the title of the web content.
-browser-main-window-mac =
+browser-main-window-mac-window-titles =
   .data-title-default = { -brand-full-name }
-  .data-title-private = { -brand-full-name } — (Private Browsing)
+  .data-title-private = { -brand-full-name } — Private Browsing
   .data-content-title-default = { $content-title }
-  .data-content-title-private = { $content-title } — (Private Browsing)
+  .data-content-title-private = { $content-title } — Private Browsing
 
 # This gets set as the initial title, and is overridden as soon as we start
 # updating the titlebar based on loaded tabs or private browsing state.
 # This should match the `data-title-default` attribute in both
 # `browser-main-window` and `browser-main-window-mac`.
 browser-main-window-title = { -brand-full-name }
+
+# The non-variable portion of this MUST match the translation of
+# "PRIVATE_BROWSING_SHORTCUT_TITLE" in custom.properties
+private-browsing-shortcut-text-2 = { -brand-shortcut-name } Private Browsing
 
 ##
 
@@ -74,18 +83,12 @@ urlbar-xr-notification-anchor =
     .tooltiptext = Open virtual reality permission panel
 urlbar-storage-access-anchor =
     .tooltiptext = Open browsing activity permission panel
-urlbar-translate-notification-anchor =
-    .tooltiptext = Translate this page
 urlbar-web-rtc-share-screen-notification-anchor =
     .tooltiptext = Manage sharing your windows or screen with the site
 urlbar-indexed-db-notification-anchor =
     .tooltiptext = Open offline storage message panel
 urlbar-password-notification-anchor =
     .tooltiptext = Open save password message panel
-urlbar-translated-notification-anchor =
-    .tooltiptext = Manage page translation
-urlbar-plugins-notification-anchor =
-    .tooltiptext = Manage plug-in use
 urlbar-web-rtc-share-devices-notification-anchor =
     .tooltiptext = Manage sharing your camera and/or microphone with the site
 # "Speakers" is used in a general sense that might include headphones or
@@ -98,14 +101,27 @@ urlbar-persistent-storage-notification-anchor =
     .tooltiptext = Store data in Persistent Storage
 urlbar-addons-notification-anchor =
     .tooltiptext = Open add-on installation message panel
-urlbar-tip-help-icon =
-    .title = Get help
 urlbar-search-tips-confirm = Okay, Got It
+urlbar-search-tips-confirm-short = Got it
 # Read out before Urlbar Tip text content so screenreader users know the
 # subsequent text is a tip offered by the browser. It should end in a colon or
 # localized equivalent.
 urlbar-tip-icon-description =
     .alt = Tip:
+
+urlbar-result-menu-button =
+    .title = Open menu
+urlbar-result-menu-button-feedback = Feedback
+    .title = Open menu
+urlbar-result-menu-learn-more =
+    .label = Learn more
+    .accesskey = L
+urlbar-result-menu-remove-from-history =
+    .label = Remove from history
+    .accesskey = R
+urlbar-result-menu-tip-get-help =
+    .label = Get help
+    .accesskey = h
 
 ## Prompts users to use the Urlbar when they open a new tab or visit the
 ## homepage of their default search engine.
@@ -114,6 +130,9 @@ urlbar-tip-icon-description =
 
 urlbar-search-tips-onboard = Type less, find more: Search { $engineName } right from your address bar.
 urlbar-search-tips-redirect-2 = Start your search in the address bar to see suggestions from { $engineName } and your browsing history.
+
+# Make sure to match the name of the Search panel in settings.
+urlbar-search-tips-persist = Searching just got simpler. Try making your search more specific here in the address bar. To show the URL instead, visit Search, in settings.
 
 # Prompts users to use the Urlbar when they are typing in the domain of a
 # search engine, e.g. google.com or amazon.com.
@@ -124,6 +143,7 @@ urlbar-tabtosearch-onboard = Select this shortcut to find what you need faster.
 urlbar-search-mode-bookmarks = Bookmarks
 urlbar-search-mode-tabs = Tabs
 urlbar-search-mode-history = History
+urlbar-search-mode-actions = Actions
 
 ##
 
@@ -164,10 +184,12 @@ urlbar-star-add-bookmark =
 
 ## Page Action Context Menu
 
-page-action-manage-extension =
+page-action-manage-extension2 =
     .label = Manage Extension…
-page-action-remove-extension =
+    .accesskey = E
+page-action-remove-extension2 =
     .label = Remove Extension
+    .accesskey = v
 
 ## Auto-hide Context Menu
 
@@ -230,6 +252,84 @@ search-one-offs-tabs =
     .tooltiptext = Tabs ({ $restrict })
 search-one-offs-history =
     .tooltiptext = History ({ $restrict })
+search-one-offs-actions =
+    .tooltiptext = Actions ({ $restrict })
+
+## QuickActions are shown in the urlbar as the user types a matching string
+## The -cmd- strings are comma separated list of keywords that will match
+## the action.
+
+# Opens the about:addons page in the home / recommendations section
+quickactions-addons = View Add-ons
+quickactions-cmd-addons2 = add-ons
+
+# Opens the bookmarks library window
+quickactions-bookmarks2 = Manage bookmarks
+quickactions-cmd-bookmarks = bookmarks
+
+# Opens a SUMO article explaining how to clear history
+quickactions-clearhistory = Clear History
+quickactions-cmd-clearhistory = clear history
+
+# Opens about:downloads page
+quickactions-downloads2 = View downloads
+quickactions-cmd-downloads = downloads
+
+# Opens about:addons page in the extensions section
+quickactions-extensions = Manage extensions
+quickactions-cmd-extensions = extensions
+
+# Opens the devtools web inspector
+quickactions-inspector2 = Open Developer Tools
+quickactions-cmd-inspector = inspector, devtools
+
+# Opens about:logins
+quickactions-logins2 = Manage passwords
+quickactions-cmd-logins = logins, passwords
+
+# Opens about:addons page in the plugins section
+quickactions-plugins = Manage plugins
+quickactions-cmd-plugins = plugins
+
+# Opens the print dialog
+quickactions-print2 = Print page
+quickactions-cmd-print = print
+
+# Opens a new private browsing window
+quickactions-private2 = Open private window
+quickactions-cmd-private = private browsing
+
+# Opens a SUMO article explaining how to refresh
+quickactions-refresh = Refresh { -brand-short-name }
+quickactions-cmd-refresh = refresh
+
+# Restarts the browser
+quickactions-restart = Restart { -brand-short-name }
+quickactions-cmd-restart = restart
+
+# Opens the screenshot tool
+quickactions-screenshot3 = Take a screenshot
+quickactions-cmd-screenshot = screenshot
+
+# Opens about:preferences
+quickactions-settings2 = Manage settings
+quickactions-cmd-settings = settings, preferences, options
+
+# Opens about:addons page in the themes section
+quickactions-themes = Manage themes
+quickactions-cmd-themes = themes
+
+# Opens a SUMO article explaining how to update the browser
+quickactions-update = Update { -brand-short-name }
+quickactions-cmd-update = update
+
+# Opens the view-source UI with current pages source
+quickactions-viewsource2 = View Page Source
+quickactions-cmd-viewsource = view source, source
+
+# Tooltip text for the help button shown in the result.
+quickactions-learn-more =
+    .title = Learn more about Quick actions
 
 ## Bookmark Panel
 
@@ -282,15 +382,15 @@ identity-weak-encryption = This page uses weak encryption.
 identity-insecure-login-forms = Logins entered on this page could be compromised.
 
 identity-https-only-connection-upgraded = (upgraded to HTTPS)
-identity-https-only-label = HTTPS-Only Mode
+identity-https-only-label2 = Automatically upgrade this site to a secure connection
 identity-https-only-dropdown-on =
     .label = On
 identity-https-only-dropdown-off =
     .label = Off
 identity-https-only-dropdown-off-temporarily =
     .label = Off temporarily
-identity-https-only-info-turn-on2 = Turn on HTTPS-Only Mode for this site if you want { -brand-short-name } to upgrade the connection when possible.
-identity-https-only-info-turn-off2 = If the page seems broken, you may want to turn off HTTPS-Only Mode for this site to reload using insecure HTTP.
+identity-https-only-info-turn-on3 = Turn on HTTPS upgrades for this site if you want { -brand-short-name } to upgrade the connection when possible.
+identity-https-only-info-turn-off3 = If the page seems broken, you may want to turn off HTTPS upgrades for this site to reload using insecure HTTP.
 identity-https-only-info-no-upgrade = Unable to upgrade connection from HTTP.
 
 identity-permissions-storage-access-header = Cross-site cookies
@@ -303,7 +403,7 @@ identity-clear-site-data =
 identity-connection-not-secure-security-view = You are not securely connected to this site.
 identity-connection-verified = You are securely connected to this site.
 identity-ev-owner-label = Certificate issued to:
-identity-description-custom-root = Mozilla does not recognize this certificate issuer. It may have been added from your operating system or by an administrator. <label data-l10n-name="link">Learn More</label>
+identity-description-custom-root2 = Mozilla does not recognize this certificate issuer. It may have been added from your operating system or by an administrator.
 identity-remove-cert-exception =
     .label = Remove Exception
     .accesskey = R
@@ -311,14 +411,12 @@ identity-description-insecure = Your connection to this site is not private. Inf
 identity-description-insecure-login-forms = The login information you enter on this page is not secure and could be compromised.
 identity-description-weak-cipher-intro = Your connection to this website uses weak encryption and is not private.
 identity-description-weak-cipher-risk = Other people can view your information or modify the website’s behavior.
-identity-description-active-blocked = { -brand-short-name } has blocked parts of this page that are not secure. <label data-l10n-name="link">Learn More</label>
+identity-description-active-blocked2 = { -brand-short-name } has blocked parts of this page that are not secure.
 identity-description-passive-loaded = Your connection is not private and information you share with the site could be viewed by others.
-identity-description-passive-loaded-insecure = This website contains content that is not secure (such as images). <label data-l10n-name="link">Learn More</label>
-identity-description-passive-loaded-mixed = Although { -brand-short-name } has blocked some content, there is still content on the page that is not secure (such as images). <label data-l10n-name="link">Learn More</label>
+identity-description-passive-loaded-insecure2 = This website contains content that is not secure (such as images).
+identity-description-passive-loaded-mixed2 = Although { -brand-short-name } has blocked some content, there is still content on the page that is not secure (such as images).
 identity-description-active-loaded = This website contains content that is not secure (such as scripts) and your connection to it is not private.
 identity-description-active-loaded-insecure = Information you share with this site could be viewed by others (like passwords, messages, credit cards, etc.).
-identity-learn-more =
-    .value = Learn More
 identity-disable-mixed-content-blocking =
     .label = Disable protection for now
     .accesskey = D
@@ -394,17 +492,10 @@ popup-select-microphone-icon =
     .tooltiptext = Microphone
 popup-select-speaker-icon =
     .tooltiptext = Speakers
+popup-select-window-or-screen =
+    .label = Window or screen:
+    .accesskey = W
 popup-all-windows-shared = All visible windows on your screen will be shared.
-
-popup-screen-sharing-block =
-  .label = Block
-  .accesskey = B
-
-popup-screen-sharing-always-block =
-  .label = Always block
-  .accesskey = w
-
-popup-mute-notifications-checkbox = Mute website notifications while sharing
 
 ## WebRTC window or screen share tab switch warning
 
@@ -414,10 +505,6 @@ sharing-warning-proceed-to-tab =
   .label = Proceed to Tab
 sharing-warning-disable-for-session =
   .label = Disable sharing protection for this session
-
-## DevTools F12 popup
-
-enable-devtools-popup-description = To use the F12 shortcut, first open DevTools via the Web Developer menu.
 
 ## URL Bar
 
@@ -458,6 +545,11 @@ urlbar-placeholder-search-mode-other-history =
 urlbar-placeholder-search-mode-other-tabs =
   .placeholder = Enter search terms
   .aria-label = Search tabs
+
+# This placeholder is used when searching quick actions.
+urlbar-placeholder-search-mode-other-actions =
+  .placeholder = Enter search terms
+  .aria-label = Search actions
 
 # Variables
 #  $name (String): the name of the user's default search engine
@@ -502,6 +594,8 @@ urlbar-result-action-search-w-engine = Search with { $engine }
 urlbar-result-action-sponsored = Sponsored
 urlbar-result-action-switch-tab = Switch to Tab
 urlbar-result-action-visit = Visit
+# Allows the user to visit a URL that was previously copied to the clipboard.
+urlbar-result-action-visit-from-clipboard = Visit from clipboard
 # Directs a user to press the Tab key to perform a search with the specified
 # engine.
 # Variables
@@ -537,6 +631,7 @@ urlbar-result-action-calculator-result = = { $result }
 urlbar-result-action-search-bookmarks = Search Bookmarks
 urlbar-result-action-search-history = Search History
 urlbar-result-action-search-tabs = Search Tabs
+urlbar-result-action-search-actions = Search Actions
 
 ## Labels shown above groups of urlbar results
 
@@ -551,6 +646,41 @@ urlbar-group-firefox-suggest =
 #  $engine (String): the name of the search engine providing the suggestions
 urlbar-group-search-suggestions =
   .label = { $engine } suggestions
+
+# A label shown above Quick Actions in the urlbar results.
+urlbar-group-quickactions =
+  .label = Quick Actions
+
+# A label shown above the recent searches group in the urlbar results.
+# Variables
+#  $engine (String): the name of the search engine used to search.
+urlbar-group-recent-searches =
+  .label = Recent Searches
+
+## Reader View toolbar buttons
+
+# This should match menu-view-enter-readerview in menubar.ftl
+reader-view-enter-button =
+    .aria-label = Enter Reader View
+# This should match menu-view-close-readerview in menubar.ftl
+reader-view-close-button =
+    .aria-label = Close Reader View
+
+## Picture-in-Picture urlbar button
+## Variables:
+##   $shortcut (String) - Keyboard shortcut to execute the command.
+
+picture-in-picture-urlbar-button-open =
+ .tooltiptext = Open Picture-in-Picture ({ $shortcut })
+
+picture-in-picture-urlbar-button-close =
+ .tooltiptext = Close Picture-in-Picture ({ $shortcut })
+
+picture-in-picture-panel-header = Picture-in-Picture
+picture-in-picture-panel-headline = This website does not recommend Picture-in-Picture
+picture-in-picture-panel-body = Videos might not display as the developer intended while Picture-in-Picture is enabled.
+picture-in-picture-enable-toggle =
+  .label = Enable anyway
 
 ## Full Screen and Pointer Lock UI
 
@@ -571,20 +701,6 @@ fullscreen-exit-mac-button = Exit Full Screen (esc)
 pointerlock-warning-domain = <span data-l10n-name="domain">{ $domain }</span> has control of your pointer. Press Esc to take back control.
 pointerlock-warning-no-domain = This document has control of your pointer. Press Esc to take back control.
 
-## Subframe crash notification
-
-crashed-subframe-message = <strong>Part of this page crashed.</strong> To let { -brand-product-name } know about this issue and get it fixed faster, please submit a report.
-
-# The string for crashed-subframe-title.title should match crashed-subframe-message,
-# but without any markup.
-crashed-subframe-title =
-  .title = Part of this page crashed. To let { -brand-product-name } know about this issue and get it fixed faster, please submit a report.
-crashed-subframe-learnmore-link =
-  .value = Learn more
-crashed-subframe-submit =
-  .label = Submit report
-  .accesskey = S
-
 ## Bookmarks panels, menus and toolbar
 
 bookmarks-manage-bookmarks =
@@ -600,6 +716,11 @@ bookmarks-other-bookmarks-menu =
   .label = Other bookmarks
 bookmarks-mobile-bookmarks-menu =
   .label = Mobile bookmarks
+
+## Variables:
+##   $isVisible (boolean): if the specific element (e.g. bookmarks sidebar,
+##                         bookmarks toolbar, etc.) is visible or not.
+
 bookmarks-tools-sidebar-visibility =
   .label = { $isVisible ->
      [true] Hide bookmarks sidebar
@@ -620,12 +741,15 @@ bookmarks-tools-menu-button-visibility =
      [true] Remove bookmarks menu from toolbar
     *[other] Add bookmarks menu to toolbar
   }
+
+##
+
 bookmarks-search =
   .label = Search bookmarks
 bookmarks-tools =
   .label = Bookmarking Tools
-bookmarks-bookmark-edit-panel =
-  .label = Edit this bookmark
+bookmarks-subview-edit-bookmark =
+  .label = Edit this bookmark…
 
 # The aria-label is a spoken label that should not include the word "toolbar" or
 # such, because screen readers already know that this container is a toolbar.
@@ -642,8 +766,8 @@ bookmarks-toolbar-placeholder-button =
   .label = Bookmarks toolbar items
 
 # "Bookmark" is a verb, as in "Add current tab to bookmarks".
-bookmarks-current-tab =
-  .label = Bookmark current tab
+bookmarks-subview-bookmark-tab =
+  .label = Bookmark current tab…
 
 ## Library Panel items
 
@@ -667,12 +791,6 @@ repair-text-encoding-button =
 ## Customize Toolbar Buttons
 
 # Variables:
-#  $shortcut (String): keyboard shortcut to open the add-ons manager
-toolbar-addons-themes-button =
-  .label = Add-ons and themes
-  .tooltiptext = Manage your add-ons and themes ({ $shortcut })
-
-# Variables:
 #  $shortcut (String): keyboard shortcut to open settings (only on macOS)
 toolbar-settings-button =
   .label = Settings
@@ -688,6 +806,10 @@ toolbar-overflow-customize-button =
 toolbar-button-email-link =
   .label = Email link
   .tooltiptext = Email a link to this page
+
+toolbar-button-logins =
+  .label = Passwords
+  .tooltiptext = View and manage your saved passwords
 
 # Variables:
 #  $shortcut (String): keyboard shortcut to save a copy of the page
@@ -723,13 +845,6 @@ eme-notifications-drm-content-playing-dismiss-accesskey = D
 
 panel-save-update-username = Username
 panel-save-update-password = Password
-
-## Add-on removal warning
-
-# Variables:
-#  $name (String): The name of the addon that will be removed.
-addon-removal-title = Remove { $name }?
-addon-removal-abuse-report-checkbox = Report this extension to { -vendor-short-name }
 
 ##
 
@@ -808,9 +923,6 @@ navbar-library =
 navbar-search =
     .title = Search
 
-navbar-accessibility-indicator =
-    .tooltiptext = Accessibility Features Enabled
-
 # Name for the tabs toolbar as spoken by screen readers. The word
 # "toolbar" is appended automatically and should not be included in
 # in the string
@@ -829,3 +941,113 @@ tabs-toolbar-list-all-tabs =
 # <img data-l10n-name="icon"/> will be replaced by the application menu icon
 restore-session-startup-suggestion-message = <strong>Open previous tabs?</strong> You can restore your previous session from the { -brand-short-name } application menu <img data-l10n-name="icon"/>, under History.
 restore-session-startup-suggestion-button = Show me how
+
+## Mozilla data reporting notification (Telemetry, Firefox Health Report, etc)
+
+data-reporting-notification-message = { -brand-short-name } automatically sends some data to { -vendor-short-name } so that we can improve your experience.
+data-reporting-notification-button =
+    .label = Choose What I Share
+    .accesskey = C
+
+# Label for the indicator shown in the private browsing window titlebar.
+private-browsing-indicator-label = Private browsing
+
+## Unified extensions (toolbar) button
+
+unified-extensions-button =
+    .label = Extensions
+    .tooltiptext = Extensions
+
+## Unified extensions button when permission(s) are needed.
+## Note that the new line is intentionally part of the tooltip.
+
+unified-extensions-button-permissions-needed =
+    .label = Extensions
+    .tooltiptext =
+        Extensions
+        Permissions needed
+
+## Unified extensions button when some extensions are quarantined.
+## Note that the new line is intentionally part of the tooltip.
+
+unified-extensions-button-quarantined =
+    .label = Extensions
+    .tooltiptext =
+        Extensions
+        Some extensions are not allowed
+
+## Private browsing reset button
+
+reset-pbm-toolbar-button =
+    .label = End Private Session
+    .tooltiptext = End Private Session
+reset-pbm-panel-heading = End your private session?
+reset-pbm-panel-description = Close all private tabs and delete history, cookies, and all other site data.
+reset-pbm-panel-always-ask-checkbox =
+     .label = Always ask me
+     .accesskey = A
+reset-pbm-panel-cancel-button =
+    .label = Cancel
+    .accesskey = C
+reset-pbm-panel-confirm-button =
+    .label = Delete session data
+    .accesskey = D
+reset-pbm-panel-complete = Private session data deleted
+
+## Autorefresh blocker
+
+refresh-blocked-refresh-label = { -brand-short-name } prevented this page from automatically reloading.
+refresh-blocked-redirect-label = { -brand-short-name } prevented this page from automatically redirecting to another page.
+
+refresh-blocked-allow =
+    .label = Allow
+    .accesskey = A
+
+## Firefox Relay integration
+
+firefox-relay-offer-why-to-use-relay = Our secure, easy-to-use masks protect your identity and prevent spam by hiding your email address.
+
+# Variables:
+#  $useremail (String): user email that will receive messages
+firefox-relay-offer-what-relay-provides = All emails sent to your email masks will be forwarded to <strong>{ $useremail }</strong> (unless you decide to block them).
+
+firefox-relay-offer-legal-notice = By clicking “Use email mask”, you agree to the <label data-l10n-name="tos-url">Terms of Service</label> and <label data-l10n-name="privacy-url">Privacy Notice</label>.
+
+## Add-on Pop-up Notifications
+
+popup-notification-addon-install-unsigned =
+    .value = (Unverified)
+popup-notification-xpinstall-prompt-learn-more = Learn more about installing add-ons safely
+
+## Pop-up warning
+
+# Variables:
+#   $popupCount (Number): the number of pop-ups blocked.
+popup-warning-message =
+    { $popupCount ->
+        [1] { -brand-short-name } prevented this site from opening a pop-up window.
+       *[other] { -brand-short-name } prevented this site from opening { $popupCount } pop-up windows.
+    }
+# The singular form is left out for English, since the number of blocked pop-ups is always greater than 1.
+# Variables:
+#   $popupCount (Number): the number of pop-ups blocked.
+popup-warning-exceeded-message =
+    { $popupCount ->
+       *[other] { -brand-short-name } prevented this site from opening more than { $popupCount } pop-up windows.
+    }
+popup-warning-button =
+    .label =
+        { PLATFORM() ->
+            [windows] Options
+           *[other] Preferences
+        }
+    .accesskey =
+        { PLATFORM() ->
+            [windows] O
+           *[other] P
+        }
+
+# Variables:
+#   $popupURI (String): the URI for the pop-up window
+popup-show-popup-menuitem =
+    .label = Show “{ $popupURI }”

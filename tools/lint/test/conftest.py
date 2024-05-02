@@ -1,18 +1,16 @@
-from __future__ import absolute_import, print_function
-
 import logging
 import os
+import pathlib
 import sys
 from collections import defaultdict
 
+import pytest
 from mozbuild.base import MozbuildObject
-from mozlint.pathutils import findobject
 from mozlint.parser import Parser
+from mozlint.pathutils import findobject
 from mozlint.result import ResultSummary
 from mozlog.structuredlog import StructuredLogger
 from mozpack import path
-
-import pytest
 
 here = path.abspath(path.dirname(__file__))
 build = MozbuildObject.from_environment(cwd=here, virtualenv_name="python-test")
@@ -93,6 +91,11 @@ def run_setup(config):
     if "setup" not in config:
         return
 
+    if config["name"] == "clang-format":
+        # Skip the setup for the clang-format linter, as it requires a Mach context
+        # (which we may not have if pytest is invoked directly).
+        return
+
     log = logging.LoggerAdapter(
         logger, {"lintname": config.get("name"), "pid": os.getpid()}
     )
@@ -114,6 +117,10 @@ def lint(config, root, request):
     This will automatically pass in the 'config' and 'root' arguments if not
     specified.
     """
+
+    if hasattr(request.module, "fixed"):
+        request.module.fixed = 0
+
     try:
         func = findobject(config["payload"])
     except (ImportError, ValueError):
@@ -195,6 +202,43 @@ def structuredlog_lint(config, root, logger=None):
 
 
 @pytest.fixture
+def global_lint(config, root, request):
+    try:
+        func = findobject(config["payload"])
+    except (ImportError, ValueError):
+        pytest.fail(
+            "could not resolve a lint function from '{}'".format(config["payload"])
+        )
+
+    ResultSummary.root = root
+
+    def wrapper(config=config, root=root, collapse_results=False, **lintargs):
+        logger.setLevel(logging.DEBUG)
+        lintargs["log"] = logging.LoggerAdapter(
+            logger, {"lintname": config.get("name"), "pid": os.getpid()}
+        )
+        results = func(config, root=root, **lintargs)
+        if hasattr(request.module, "fixed") and isinstance(results, dict):
+            request.module.fixed += results["fixed"]
+
+        if isinstance(results, dict):
+            results = results["results"]
+
+        if isinstance(results, (list, tuple)):
+            results = sorted(results)
+
+        if not collapse_results:
+            return results
+
+        ret = defaultdict(list)
+        for r in results:
+            ret[r.relpath].append(r)
+        return ret
+
+    return wrapper
+
+
+@pytest.fixture
 def create_temp_file(tmpdir):
     def inner(contents, name=None):
         name = name or "temp.py"
@@ -213,25 +257,26 @@ def structured_logger():
 @pytest.fixture
 def perfdocs_sample():
     from test_perfdocs import (
-        SAMPLE_TEST,
-        SAMPLE_CONFIG,
         DYNAMIC_SAMPLE_CONFIG,
+        SAMPLE_CONFIG,
         SAMPLE_INI,
+        SAMPLE_TEST,
         temp_dir,
         temp_file,
     )
 
     with temp_dir() as tmpdir:
-        suite_dir = os.path.join(tmpdir, "suite")
-        raptor_dir = os.path.join(tmpdir, "raptor")
-        raptor_suitedir = os.path.join(tmpdir, "raptor", "suite")
-        raptor_another_suitedir = os.path.join(tmpdir, "raptor", "another_suite")
-        perfdocs_dir = os.path.join(tmpdir, "perfdocs")
-        os.mkdir(perfdocs_dir)
-        os.mkdir(suite_dir)
-        os.mkdir(raptor_dir)
-        os.mkdir(raptor_suitedir)
-        os.mkdir(raptor_another_suitedir)
+        suite_dir = pathlib.Path(tmpdir, "suite")
+        raptor_dir = pathlib.Path(tmpdir, "raptor")
+        raptor_suitedir = pathlib.Path(tmpdir, "raptor", "suite")
+        raptor_another_suitedir = pathlib.Path(tmpdir, "raptor", "another_suite")
+        perfdocs_dir = pathlib.Path(tmpdir, "perfdocs")
+
+        perfdocs_dir.mkdir(parents=True, exist_ok=True)
+        suite_dir.mkdir(parents=True, exist_ok=True)
+        raptor_dir.mkdir(parents=True, exist_ok=True)
+        raptor_suitedir.mkdir(parents=True, exist_ok=True)
+        raptor_another_suitedir.mkdir(parents=True, exist_ok=True)
 
         with temp_file(
             "perftest.ini", tempdir=suite_dir, content="[perftest_sample.js]"
@@ -249,8 +294,8 @@ def perfdocs_sample():
             "index.rst", tempdir=perfdocs_dir, content="{documentation}"
         ) as tmpindex:
             yield {
-                "top_dir": tmpdir.replace("\\", "\\\\"),
-                "manifest": tmpmanifest,
+                "top_dir": tmpdir,
+                "manifest": {"path": tmpmanifest},
                 "example1_manifest": tmpexample1manifest,
                 "example2_manifest": tmpexample2manifest,
                 "test": tmptest,

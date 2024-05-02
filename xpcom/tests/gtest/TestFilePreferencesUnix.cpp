@@ -151,20 +151,39 @@ TEST(TestFilePreferencesUnix, Simple)
   rv = NS_GetSpecialDirectory(NS_OS_TEMP_DIR, getter_AddRefs(newPath));
   ASSERT_EQ(rv, NS_OK);
   rv = newPath->AppendRelativeNativePath("allowed/../forbidden_dir/file"_ns);
-  ASSERT_EQ(rv, NS_OK);
-  rv = newPath->Exists(&exists);
-  ASSERT_EQ(rv, NS_ERROR_FILE_ACCESS_DENIED);
+  ASSERT_EQ(rv, NS_ERROR_FILE_UNRECOGNIZED_PATH);
 
   rv = NS_GetSpecialDirectory(NS_OS_TEMP_DIR, getter_AddRefs(newPath));
   ASSERT_EQ(rv, NS_OK);
   rv = newPath->AppendNative("allowed"_ns);
   ASSERT_EQ(rv, NS_OK);
   rv = newPath->AppendNative(".."_ns);
-  ASSERT_EQ(rv, NS_OK);
-  rv = newPath->AppendNative("forbidden_dir"_ns);
-  ASSERT_EQ(rv, NS_OK);
-  rv = newPath->Exists(&exists);
-  ASSERT_EQ(rv, NS_ERROR_FILE_ACCESS_DENIED);
+  ASSERT_EQ(rv, NS_ERROR_FILE_UNRECOGNIZED_PATH);
+
+#if defined(XP_UNIX) && !defined(ANDROID)
+  nsAutoCString homePath;
+  NS_GetSpecialDirectory(NS_OS_HOME_DIR, getter_AddRefs(newPath));
+  newPath->GetNativePath(homePath);
+
+  newPath->InitWithNativePath("~"_ns);
+  ASSERT_TRUE(newPath->NativePath().Equals(homePath));
+
+  newPath->InitWithNativePath("~/foo"_ns);
+  ASSERT_TRUE(newPath->NativePath().Equals(homePath + "/foo"_ns));
+
+  nsLiteralCString homeBase =
+#  ifdef XP_MACOSX
+      "/Users"_ns;
+#  else
+      "/home"_ns;
+#  endif
+
+  newPath->InitWithNativePath("~foo"_ns);
+  ASSERT_TRUE(newPath->NativePath().Equals(homeBase + "/foo"_ns));
+
+  newPath->InitWithNativePath("~foo/bar"_ns);
+  ASSERT_TRUE(newPath->NativePath().Equals(homeBase + "/foo/bar"_ns));
+#endif
 
   nsAutoCString trickyPath(tempPath);
   trickyPath.AppendLiteral("/allowed/../forbidden_dir/file");

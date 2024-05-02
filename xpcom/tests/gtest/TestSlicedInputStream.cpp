@@ -1,5 +1,6 @@
 #include "gtest/gtest.h"
 
+#include "mozilla/gtest/MozAssertions.h"
 #include "mozilla/SlicedInputStream.h"
 #include "mozilla/SpinEventLoopUntil.h"
 #include "nsCOMPtr.h"
@@ -56,6 +57,9 @@ class NonSeekableStringStream final : public nsIAsyncInputStream {
 
   NS_IMETHOD
   Available(uint64_t* aLength) override { return mStream->Available(aLength); }
+
+  NS_IMETHOD
+  StreamStatus() override { return mStream->StreamStatus(); }
 
   NS_IMETHOD
   Read(char* aBuffer, uint32_t aCount, uint32_t* aReadCount) override {
@@ -466,10 +470,9 @@ TEST(TestSlicedInputStream, AsyncInputStream)
   const uint32_t segmentSize = 1024;
   const uint32_t numSegments = 1;
 
-  nsresult rv = NS_NewPipe2(getter_AddRefs(reader), getter_AddRefs(writer),
-                            true, true,  // non-blocking - reader, writer
-                            segmentSize, numSegments);
-  ASSERT_TRUE(NS_SUCCEEDED(rv));
+  NS_NewPipe2(getter_AddRefs(reader), getter_AddRefs(writer), true,
+              true,  // non-blocking - reader, writer
+              segmentSize, numSegments);
 
   nsTArray<char> inputData;
   testing::CreateData(segmentSize, inputData);
@@ -489,14 +492,14 @@ TEST(TestSlicedInputStream, AsyncInputStream)
 
   RefPtr<testing::InputStreamCallback> cb = new testing::InputStreamCallback();
 
-  rv = async->AsyncWait(cb, 0, 0, nullptr);
-  ASSERT_TRUE(NS_SUCCEEDED(rv));
+  nsresult rv = async->AsyncWait(cb, 0, 0, nullptr);
+  ASSERT_NS_SUCCEEDED(rv);
 
   ASSERT_FALSE(cb->Called());
 
   uint32_t numWritten = 0;
   rv = writer->Write(inputData.Elements(), inputData.Length(), &numWritten);
-  ASSERT_TRUE(NS_SUCCEEDED(rv));
+  ASSERT_NS_SUCCEEDED(rv);
 
   ASSERT_TRUE(cb->Called());
 

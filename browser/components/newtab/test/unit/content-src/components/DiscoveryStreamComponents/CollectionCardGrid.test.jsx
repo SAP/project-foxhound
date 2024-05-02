@@ -48,42 +48,27 @@ describe("<CollectionCardGrid>", () => {
   it("should render a CardGrid", () => {
     assert.lengthOf(wrapper.find(".ds-collection-card-grid").children(), 1);
     assert.equal(
-      wrapper
-        .find(".ds-collection-card-grid")
-        .children()
-        .at(0)
-        .type(),
+      wrapper.find(".ds-collection-card-grid").children().at(0).type(),
       CardGrid
     );
   });
 
   it("should inject spocs in every CardGrid rec position", () => {
     assert.lengthOf(
-      wrapper
-        .find(".ds-collection-card-grid")
-        .children()
-        .at(0)
-        .props().data.recommendations,
+      wrapper.find(".ds-collection-card-grid").children().at(0).props().data
+        .recommendations,
       3
     );
   });
 
   it("should pass along title and context to CardGrid", () => {
     assert.equal(
-      wrapper
-        .find(".ds-collection-card-grid")
-        .children()
-        .at(0)
-        .props().title,
+      wrapper.find(".ds-collection-card-grid").children().at(0).props().title,
       "title"
     );
 
     assert.equal(
-      wrapper
-        .find(".ds-collection-card-grid")
-        .children()
-        .at(0)
-        .props().context,
+      wrapper.find(".ds-collection-card-grid").children().at(0).props().context,
       "context"
     );
   });
@@ -122,13 +107,17 @@ describe("<CollectionCardGrid>", () => {
     const thirdCall = dispatchStub.getCall(2);
 
     assert.equal(firstCall.args[0].type, "BLOCK_URL");
-    assert.deepEqual(firstCall.args[0].data, [
-      { url: "123", pocket_id: undefined, isSponsoredTopSite: undefined },
-      { url: "456", pocket_id: undefined, isSponsoredTopSite: undefined },
-      { url: "789", pocket_id: undefined, isSponsoredTopSite: undefined },
-    ]);
+    let expected = ["123", "456", "789"].map(url => ({
+      url,
+      pocket_id: undefined,
+      isSponsoredTopSite: undefined,
+      position: 0,
+      is_pocket_card: false,
+    }));
 
-    assert.equal(secondCall.args[0].type, "TELEMETRY_USER_EVENT");
+    assert.deepEqual(firstCall.args[0].data, expected);
+
+    assert.equal(secondCall.args[0].type, "DISCOVERY_STREAM_USER_EVENT");
     assert.deepEqual(secondCall.args[0].data, {
       event: "BLOCK",
       source: "COLLECTIONCARDGRID",

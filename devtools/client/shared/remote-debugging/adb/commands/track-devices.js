@@ -6,14 +6,16 @@
 
 "use strict";
 
-const EventEmitter = require("devtools/shared/event-emitter");
-const { dumpn } = require("devtools/shared/DevToolsUtils");
-const { setTimeout } = require("resource://gre/modules/Timer.jsm");
+const EventEmitter = require("resource://devtools/shared/event-emitter.js");
+const { dumpn } = require("resource://devtools/shared/DevToolsUtils.js");
+const { setTimeout } = ChromeUtils.importESModule(
+  "resource://gre/modules/Timer.sys.mjs"
+);
 
 const {
   adbProcess,
-} = require("devtools/client/shared/remote-debugging/adb/adb-process");
-const client = require("devtools/client/shared/remote-debugging/adb/adb-client");
+} = require("resource://devtools/client/shared/remote-debugging/adb/adb-process.js");
+const client = require("resource://devtools/client/shared/remote-debugging/adb/adb-client.js");
 
 const ADB_STATUS_OFFLINE = "offline";
 const OKAY = 0x59414b4f;
@@ -102,8 +104,8 @@ class TrackDevicesCommand extends EventEmitter {
       // One line per device, each line being $DEVICE\t(offline|device)
       const lines = packet.data.split("\n");
       const newDevices = new Map();
-      lines.forEach(function(line) {
-        if (line.length == 0) {
+      lines.forEach(function (line) {
+        if (!line.length) {
           return;
         }
 

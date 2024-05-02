@@ -11,15 +11,19 @@
 
 #include "mozilla/Attributes.h"
 #include "mozilla/EventForwards.h"
-#include "nsMappedAttributeElement.h"
 #include "nsNameSpaceManager.h"  // for kNameSpaceID_None
 #include "nsIFormControl.h"
 #include "nsGkAtoms.h"
 #include "nsContentCreatorFunctions.h"
+#include "nsStyledElement.h"
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/DOMRect.h"
 #include "mozilla/dom/ValidityState.h"
+#include "mozilla/dom/PopoverData.h"
+#include "mozilla/dom/ToggleEvent.h"
+
+#include <cstdint>
 
 class nsDOMTokenList;
 class nsIFormControlFrame;
@@ -28,6 +32,8 @@ class nsILayoutHistoryState;
 class nsIURI;
 struct nsSize;
 
+enum nsCSSPropertyID : int32_t;
+
 namespace mozilla {
 class EditorBase;
 class ErrorResult;
@@ -35,16 +41,15 @@ class EventChainPostVisitor;
 class EventChainPreVisitor;
 class EventChainVisitor;
 class EventListenerManager;
-class EventStates;
 class PresState;
 namespace dom {
 class ElementInternals;
 class HTMLFormElement;
-class HTMLMenuElement;
+enum class FetchPriority : uint8_t;
 }  // namespace dom
 }  // namespace mozilla
 
-using nsGenericHTMLElementBase = nsMappedAttributeElement;
+using nsGenericHTMLElementBase = nsStyledElement;
 
 /**
  * A common superclass for HTML elements
@@ -58,8 +63,7 @@ class nsGenericHTMLElement : public nsGenericHTMLElementBase {
       : nsGenericHTMLElementBase(std::move(aNodeInfo)) {
     NS_ASSERTION(mNodeInfo->NamespaceID() == kNameSpaceID_XHTML,
                  "Unexpected namespace");
-    AddStatesSilently(NS_EVENT_STATE_LTR);
-    SetFlags(NODE_HAS_DIRECTION_LTR);
+    AddStatesSilently(mozilla::dom::ElementState::LTR);
   }
 
   NS_INLINE_DECL_REFCOUNTING_INHERITED(nsGenericHTMLElement,
@@ -80,9 +84,18 @@ class nsGenericHTMLElement : public nsGenericHTMLElementBase {
     GetHTMLAttr(nsGkAtoms::lang, aLang);
   }
   void SetLang(const nsAString& aLang) { SetHTMLAttr(nsGkAtoms::lang, aLang); }
+  bool Translate() const override;
+  void SetTranslate(bool aTranslate, mozilla::ErrorResult& aError) {
+    SetHTMLAttr(nsGkAtoms::translate, aTranslate ? u"yes"_ns : u"no"_ns,
+                aError);
+  }
   void GetDir(nsAString& aDir) { GetHTMLEnumAttr(nsGkAtoms::dir, aDir); }
   void SetDir(const nsAString& aDir, mozilla::ErrorResult& aError) {
     SetHTMLAttr(nsGkAtoms::dir, aDir, aError);
+  }
+  void GetPopover(nsString& aPopover) const;
+  void SetPopover(const nsAString& aPopover, mozilla::ErrorResult& aError) {
+    SetOrRemoveNullableStringAttr(nsGkAtoms::popover, aPopover, aError);
   }
   bool Hidden() const { return GetBoolAttr(nsGkAtoms::hidden); }
   void SetHidden(bool aHidden, mozilla::ErrorResult& aError) {
@@ -143,9 +156,42 @@ class nsGenericHTMLElement : public nsGenericHTMLElementBase {
     return false;
   }
 
+  mozilla::dom::PopoverAttributeState GetPopoverAttributeState() const;
+  void PopoverPseudoStateUpdate(bool aOpen, bool aNotify);
+  bool PopoverOpen() const;
+  bool CheckPopoverValidity(mozilla::dom::PopoverVisibilityState aExpectedState,
+                            Document* aExpectedDocument, ErrorResult& aRv);
+  already_AddRefed<mozilla::dom::ToggleEvent> CreateToggleEvent(
+      const nsAString& aEventType, const nsAString& aOldState,
+      const nsAString& aNewState, mozilla::Cancelable);
+  /** Returns true if the event has been cancelled. */
+  MOZ_CAN_RUN_SCRIPT bool FireToggleEvent(
+      mozilla::dom::PopoverVisibilityState aOldState,
+      mozilla::dom::PopoverVisibilityState aNewState, const nsAString& aType);
+  MOZ_CAN_RUN_SCRIPT void QueuePopoverEventTask(
+      mozilla::dom::PopoverVisibilityState aOldState);
+  MOZ_CAN_RUN_SCRIPT void RunPopoverToggleEventTask(
+      mozilla::dom::PopoverToggleEventTask* aTask,
+      mozilla::dom::PopoverVisibilityState aOldState);
+  MOZ_CAN_RUN_SCRIPT void ShowPopover(ErrorResult& aRv);
+  MOZ_CAN_RUN_SCRIPT void ShowPopoverInternal(Element* aInvoker,
+                                              ErrorResult& aRv);
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY void HidePopoverWithoutRunningScript();
+  MOZ_CAN_RUN_SCRIPT void HidePopoverInternal(bool aFocusPreviousElement,
+                                              bool aFireEvents,
+                                              ErrorResult& aRv);
+  MOZ_CAN_RUN_SCRIPT void HidePopover(ErrorResult& aRv);
+  MOZ_CAN_RUN_SCRIPT bool TogglePopover(
+      const mozilla::dom::Optional<bool>& aForce, ErrorResult& aRv);
+  MOZ_CAN_RUN_SCRIPT void FocusPopover();
+  void ForgetPreviouslyFocusedElementAfterHidingPopover();
+  MOZ_CAN_RUN_SCRIPT void FocusPreviousElementAfterHidingPopover();
+
+  MOZ_CAN_RUN_SCRIPT void FocusCandidate(Element*, bool aClearUpFocus);
+
   void SetNonce(const nsAString& aNonce) {
     SetProperty(nsGkAtoms::nonce, new nsString(aNonce),
-                nsINode::DeleteProperty<nsString>);
+                nsINode::DeleteProperty<nsString>, /* aTransfer = */ true);
   }
   void RemoveNonce() { RemoveProperty(nsGkAtoms::nonce); }
   void GetNonce(nsAString& aNonce) const {
@@ -164,7 +210,6 @@ class nsGenericHTMLElement : public nsGenericHTMLElementBase {
    */
   uint32_t EditableInclusiveDescendantCount();
 
-  mozilla::dom::HTMLMenuElement* GetContextMenu() const;
   bool Spellcheck();
   void SetSpellcheck(bool aSpellcheck, mozilla::ErrorResult& aError) {
     SetHTMLAttr(nsGkAtoms::spellcheck, aSpellcheck ? u"true"_ns : u"false"_ns,
@@ -204,7 +249,7 @@ class nsGenericHTMLElement : public nsGenericHTMLElementBase {
    * @param aName the attribute
    * @return whether the name is an event handler name
    */
-  virtual bool IsEventAttributeNameInternal(nsAtom* aName) override;
+  bool IsEventAttributeNameInternal(nsAtom* aName) override;
 
 #define EVENT(name_, id_, type_, struct_) /* nothing; handled by nsINode */
 // The using nsINode::Get/SetOn* are to avoid warnings about shadowing the XPCOM
@@ -279,16 +324,20 @@ class nsGenericHTMLElement : public nsGenericHTMLElementBase {
     return false;
   }
 
+  bool Autofocus() const { return GetBoolAttr(nsGkAtoms::autofocus); }
+  void SetAutofocus(bool aVal, ErrorResult& aRv) {
+    SetHTMLBoolAttr(nsGkAtoms::autofocus, aVal, aRv);
+  }
+
  protected:
   virtual ~nsGenericHTMLElement() = default;
 
  public:
   // Implementation for nsIContent
-  virtual nsresult BindToTree(BindContext&, nsINode& aParent) override;
-  virtual void UnbindFromTree(bool aNullParent = true) override;
+  nsresult BindToTree(BindContext&, nsINode& aParent) override;
+  void UnbindFromTree(bool aNullParent = true) override;
 
-  virtual bool IsFocusableInternal(int32_t* aTabIndex,
-                                   bool aWithMouse) override {
+  bool IsFocusableInternal(int32_t* aTabIndex, bool aWithMouse) override {
     bool isFocusable = false;
     IsHTMLFocusable(aWithMouse, &isFocusable, aTabIndex);
     return isFocusable;
@@ -300,7 +349,7 @@ class nsGenericHTMLElement : public nsGenericHTMLElementBase {
   virtual bool IsHTMLFocusable(bool aWithMouse, bool* aIsFocusable,
                                int32_t* aTabIndex);
   MOZ_CAN_RUN_SCRIPT
-  virtual mozilla::Result<bool, nsresult> PerformAccesskey(
+  mozilla::Result<bool, nsresult> PerformAccesskey(
       bool aKeyCausesActivation, bool aIsTrustedEvent) override;
 
   /**
@@ -317,27 +366,18 @@ class nsGenericHTMLElement : public nsGenericHTMLElementBase {
   // HTML element methods
   void Compact() { mAttrs.Compact(); }
 
-  virtual void UpdateEditableState(bool aNotify) override;
+  void UpdateEditableState(bool aNotify) override;
 
-  virtual mozilla::EventStates IntrinsicState() const override;
-
-  // Helper for setting our editable flag and notifying
-  void DoSetEditableFlag(bool aEditable, bool aNotify) {
-    SetEditableFlag(aEditable);
-    UpdateState(aNotify);
-  }
-
-  virtual bool ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
-                              const nsAString& aValue,
-                              nsIPrincipal* aMaybeScriptedPrincipal,
-                              nsAttrValue& aResult) override;
+  bool ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
+                      const nsAString& aValue,
+                      nsIPrincipal* aMaybeScriptedPrincipal,
+                      nsAttrValue& aResult) override;
 
   bool ParseBackgroundAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
                                 const nsAString& aValue, nsAttrValue& aResult);
 
   NS_IMETHOD_(bool) IsAttributeMapped(const nsAtom* aAttribute) const override;
-  virtual nsMapRuleToAttributesFunc GetAttributeMappingFunction()
-      const override;
+  nsMapRuleToAttributesFunc GetAttributeMappingFunction() const override;
 
   /**
    * Get the base target for any links within this piece
@@ -457,17 +497,13 @@ class nsGenericHTMLElement : public nsGenericHTMLElementBase {
    * @param aData the returned rule data [INOUT]
    * @see GetAttributeMappingFunction
    */
-  static void MapCommonAttributesInto(const nsMappedAttributes* aAttributes,
-                                      mozilla::MappedDeclarations&);
+  static void MapCommonAttributesInto(mozilla::MappedDeclarationsBuilder&);
   /**
    * Same as MapCommonAttributesInto except that it does not handle hidden.
-   *
-   * @param aAttributes the list of attributes to map
-   * @param aData the returned rule data [INOUT]
    * @see GetAttributeMappingFunction
    */
   static void MapCommonAttributesIntoExceptHidden(
-      const nsMappedAttributes* aAttributes, mozilla::MappedDeclarations&);
+      mozilla::MappedDeclarationsBuilder&);
 
   static const MappedAttributeEntry sCommonAttributeMap[];
   static const MappedAttributeEntry sImageMarginSizeAttributeMap[];
@@ -478,46 +514,28 @@ class nsGenericHTMLElement : public nsGenericHTMLElementBase {
   static const MappedAttributeEntry sBackgroundColorAttributeMap[];
 
   /**
-   * Helper to map the align attribute into a style struct.
-   *
-   * @param aAttributes the list of attributes to map
-   * @param aData the returned rule data [INOUT]
+   * Helper to map the align attribute.
    * @see GetAttributeMappingFunction
    */
-  static void MapImageAlignAttributeInto(const nsMappedAttributes* aAttributes,
-                                         mozilla::MappedDeclarations&);
+  static void MapImageAlignAttributeInto(mozilla::MappedDeclarationsBuilder&);
 
   /**
-   * Helper to map the align attribute into a style struct for things
-   * like <div>, <h1>, etc.
-   *
-   * @param aAttributes the list of attributes to map
-   * @param aData the returned rule data [INOUT]
+   * Helper to map the align attribute for things like <div>, <h1>, etc.
    * @see GetAttributeMappingFunction
    */
-  static void MapDivAlignAttributeInto(const nsMappedAttributes* aAttributes,
-                                       mozilla::MappedDeclarations&);
+  static void MapDivAlignAttributeInto(mozilla::MappedDeclarationsBuilder&);
 
   /**
-   * Helper to map the valign attribute into a style struct for things
-   * like <col>, <tr>, <section>, etc.
-   *
-   * @param aAttributes the list of attributes to map
-   * @param aData the returned rule data [INOUT]
+   * Helper to map the valign attribute for things like <col>, <tr>, <section>.
    * @see GetAttributeMappingFunction
    */
-  static void MapVAlignAttributeInto(const nsMappedAttributes* aAttributes,
-                                     mozilla::MappedDeclarations&);
+  static void MapVAlignAttributeInto(mozilla::MappedDeclarationsBuilder&);
 
   /**
-   * Helper to map the image border attribute into a style struct.
-   *
-   * @param aAttributes the list of attributes to map
-   * @param aData the returned rule data [INOUT]
+   * Helper to map the image border attribute.
    * @see GetAttributeMappingFunction
    */
-  static void MapImageBorderAttributeInto(const nsMappedAttributes* aAttributes,
-                                          mozilla::MappedDeclarations&);
+  static void MapImageBorderAttributeInto(mozilla::MappedDeclarationsBuilder&);
   /**
    * Helper to map the image margin attribute into a style struct.
    *
@@ -525,8 +543,21 @@ class nsGenericHTMLElement : public nsGenericHTMLElementBase {
    * @param aData the returned rule data [INOUT]
    * @see GetAttributeMappingFunction
    */
-  static void MapImageMarginAttributeInto(const nsMappedAttributes* aAttributes,
-                                          mozilla::MappedDeclarations&);
+  static void MapImageMarginAttributeInto(mozilla::MappedDeclarationsBuilder&);
+
+  /**
+   * Helper to map a given dimension (width/height) into the declaration
+   * block, handling percentages and numbers.
+   */
+  static void MapDimensionAttributeInto(mozilla::MappedDeclarationsBuilder&,
+                                        nsCSSPropertyID, const nsAttrValue&);
+
+  /**
+   * Maps the aspect ratio given width and height attributes.
+   */
+  static void DoMapAspectRatio(const nsAttrValue& aWidth,
+                               const nsAttrValue& aHeight,
+                               mozilla::MappedDeclarationsBuilder&);
 
   // Whether to map the width and height attributes to aspect-ratio.
   enum class MapAspectRatio { No, Yes };
@@ -534,9 +565,9 @@ class nsGenericHTMLElement : public nsGenericHTMLElementBase {
   /**
    * Helper to map the image position attribute into a style struct.
    */
-  static void MapImageSizeAttributesInto(const nsMappedAttributes*,
-                                         mozilla::MappedDeclarations&,
+  static void MapImageSizeAttributesInto(mozilla::MappedDeclarationsBuilder&,
                                          MapAspectRatio = MapAspectRatio::No);
+
   /**
    * Helper to map the width and height attributes into the aspect-ratio
    * property.
@@ -546,8 +577,7 @@ class nsGenericHTMLElement : public nsGenericHTMLElementBase {
    * MapImageSizeAttributesInto instead, passing MapAspectRatio::Yes instead, as
    * that'd be faster.
    */
-  static void MapAspectRatioInto(const nsMappedAttributes*,
-                                 mozilla::MappedDeclarations&);
+  static void MapAspectRatioInto(mozilla::MappedDeclarationsBuilder&);
 
   /**
    * Helper to map `width` attribute into a style struct.
@@ -556,57 +586,33 @@ class nsGenericHTMLElement : public nsGenericHTMLElementBase {
    * @param aData the returned rule data [INOUT]
    * @see GetAttributeMappingFunction
    */
-  static void MapWidthAttributeInto(const nsMappedAttributes* aAttributes,
-                                    mozilla::MappedDeclarations&);
+  static void MapWidthAttributeInto(mozilla::MappedDeclarationsBuilder&);
+
   /**
-   * Helper to map `height` attribute into a style struct.
-   *
-   * @param aAttributes the list of attributes to map
-   * @param aData the returned rule data [INOUT]
+   * Helper to map `height` attribute.
    * @see GetAttributeMappingFunction
    */
-  static void MapHeightAttributeInto(const nsMappedAttributes* aAttributes,
-                                     mozilla::MappedDeclarations&);
+  static void MapHeightAttributeInto(mozilla::MappedDeclarationsBuilder&);
   /**
    * Helper to map the background attribute
-   * into a style struct.
-   *
-   * @param aAttributes the list of attributes to map
-   * @param aData the returned rule data [INOUT]
    * @see GetAttributeMappingFunction
    */
-  static void MapBackgroundInto(const nsMappedAttributes* aAttributes,
-                                mozilla::MappedDeclarations&);
+  static void MapBackgroundInto(mozilla::MappedDeclarationsBuilder&);
   /**
    * Helper to map the bgcolor attribute
-   * into a style struct.
-   *
-   * @param aAttributes the list of attributes to map
-   * @param aData the returned rule data [INOUT]
    * @see GetAttributeMappingFunction
    */
-  static void MapBGColorInto(const nsMappedAttributes* aAttributes,
-                             mozilla::MappedDeclarations&);
+  static void MapBGColorInto(mozilla::MappedDeclarationsBuilder&);
   /**
    * Helper to map the background attributes (currently background and bgcolor)
-   * into a style struct.
-   *
-   * @param aAttributes the list of attributes to map
-   * @param aData the returned rule data [INOUT]
    * @see GetAttributeMappingFunction
    */
-  static void MapBackgroundAttributesInto(const nsMappedAttributes* aAttributes,
-                                          mozilla::MappedDeclarations&);
+  static void MapBackgroundAttributesInto(mozilla::MappedDeclarationsBuilder&);
   /**
-   * Helper to map the scrolling attribute on FRAME and IFRAME
-   * into a style struct.
-   *
-   * @param aAttributes the list of attributes to map
-   * @param aData the returned rule data [INOUT]
+   * Helper to map the scrolling attribute on FRAME and IFRAME.
    * @see GetAttributeMappingFunction
    */
-  static void MapScrollingAttributeInto(const nsMappedAttributes* aAttributes,
-                                        mozilla::MappedDeclarations&);
+  static void MapScrollingAttributeInto(mozilla::MappedDeclarationsBuilder&);
 
   // Form Helper Routines
   /**
@@ -647,11 +653,9 @@ class nsGenericHTMLElement : public nsGenericHTMLElementBase {
    */
   bool GetURIAttr(nsAtom* aAttr, nsAtom* aBaseAttr, nsIURI** aURI) const;
 
-  bool IsHidden() const {
-    return HasAttr(kNameSpaceID_None, nsGkAtoms::hidden);
-  }
+  bool IsHidden() const { return HasAttr(nsGkAtoms::hidden); }
 
-  virtual bool IsLabelable() const override;
+  bool IsLabelable() const override;
 
   static bool MatchLabelsElement(Element* aElement, int32_t aNamespaceID,
                                  nsAtom* aAtom, void* aData);
@@ -680,10 +684,22 @@ class nsGenericHTMLElement : public nsGenericHTMLElementBase {
   }
 
   virtual inline void ResultForDialogSubmit(nsAString& aResult) {
-    GetAttr(kNameSpaceID_None, nsGkAtoms::value, aResult);
+    GetAttr(nsGkAtoms::value, aResult);
+  }
+
+  // <https://html.spec.whatwg.org/#fetch-priority-attribute>.
+  static mozilla::dom::FetchPriority ToFetchPriority(const nsAString& aValue);
+
+  void GetFetchPriority(nsAString& aFetchPriority) const;
+
+  void SetFetchPriority(const nsAString& aFetchPriority) {
+    SetHTMLAttr(nsGkAtoms::fetchpriority, aFetchPriority);
   }
 
  protected:
+  static void ParseFetchPriority(const nsAString& aValue, nsAttrValue& aResult);
+
+ private:
   /**
    * Add/remove this element to the documents name cache
    */
@@ -703,19 +719,22 @@ class nsGenericHTMLElement : public nsGenericHTMLElementBase {
   }
 
  protected:
-  virtual nsresult CheckTaintSinkSetAttr(int32_t aNamespaceID, nsAtom* aName,
+
+  nsresult CheckTaintSinkSetAttr(int32_t aNamespaceID, nsAtom* aName,
                                          const nsAString& aValue) override;
 
-  virtual nsresult BeforeSetAttr(int32_t aNamespaceID, nsAtom* aName,
-                                 const nsAttrValueOrString* aValue,
-                                 bool aNotify) override;
-  virtual nsresult AfterSetAttr(int32_t aNamespaceID, nsAtom* aName,
-                                const nsAttrValue* aValue,
-                                const nsAttrValue* aOldValue,
-                                nsIPrincipal* aMaybeScriptedPrincipal,
-                                bool aNotify) override;
+  void BeforeSetAttr(int32_t aNamespaceID, nsAtom* aName,
+                     const nsAttrValue* aValue, bool aNotify) override;
+  // TODO: Convert AfterSetAttr to MOZ_CAN_RUN_SCRIPT and get rid of
+  // kungFuDeathGrip in it.
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY void AfterSetAttr(
+      int32_t aNamespaceID, nsAtom* aName, const nsAttrValue* aValue,
+      const nsAttrValue* aOldValue, nsIPrincipal* aMaybeScriptedPrincipal,
+      bool aNotify) override;
 
-  virtual mozilla::EventListenerManager* GetEventListenerManagerForAttr(
+  MOZ_CAN_RUN_SCRIPT void AfterSetPopoverAttr();
+
+  mozilla::EventListenerManager* GetEventListenerManagerForAttr(
       nsAtom* aAttrName, bool* aDefer) override;
 
   /**
@@ -741,7 +760,7 @@ class nsGenericHTMLElement : public nsGenericHTMLElementBase {
     GetAttr(aName, aResult);
   }
   void GetHTMLAttr(nsAtom* aName, mozilla::dom::DOMString& aResult) const {
-    GetAttr(kNameSpaceID_None, aName, aResult);
+    GetAttr(aName, aResult);
   }
   void GetHTMLEnumAttr(nsAtom* aName, nsAString& aResult) const {
     GetEnumAttr(aName, nullptr, aResult);
@@ -922,11 +941,9 @@ class nsGenericHTMLElement : public nsGenericHTMLElementBase {
   void ChangeEditableState(int32_t aChange);
 };
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 class HTMLFieldSetElement;
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #define HTML_ELEMENT_FLAG_BIT(n_) \
   NODE_FLAG_BIT(ELEMENT_TYPE_SPECIFIC_BITS_OFFSET + (n_))
@@ -935,10 +952,14 @@ class HTMLFieldSetElement;
 enum {
   // Used to handle keyboard activation.
   HTML_ELEMENT_ACTIVE_FOR_KEYBOARD = HTML_ELEMENT_FLAG_BIT(0),
+  // Similar to HTMLInputElement's mInhibitRestoration, used to prevent
+  // form-associated custom elements not created by a network parser from
+  // being restored.
+  HTML_ELEMENT_INHIBIT_RESTORATION = HTML_ELEMENT_FLAG_BIT(1),
 
   // Remaining bits are type specific.
   HTML_ELEMENT_TYPE_SPECIFIC_BITS_OFFSET =
-      ELEMENT_TYPE_SPECIFIC_BITS_OFFSET + 1,
+      ELEMENT_TYPE_SPECIFIC_BITS_OFFSET + 2,
 };
 
 ASSERT_NODE_FLAGS_SPACE(HTML_ELEMENT_TYPE_SPECIFIC_BITS_OFFSET);
@@ -982,8 +1003,9 @@ class nsGenericHTMLFormElement : public nsGenericHTMLElement {
       already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
 
   // nsIContent
-  virtual nsresult BindToTree(BindContext&, nsINode& aParent) override;
-  virtual void UnbindFromTree(bool aNullParent = true) override;
+  void SaveSubtreeState() override;
+  nsresult BindToTree(BindContext&, nsINode& aParent) override;
+  void UnbindFromTree(bool aNullParent = true) override;
 
   /**
    * This callback is called by a fieldest on all its elements whenever its
@@ -1009,23 +1031,36 @@ class nsGenericHTMLFormElement : public nsGenericHTMLElement {
 
   void ClearForm(bool aRemoveFromForm, bool aUnbindOrDelete);
 
+  /**
+   * Get the layout history object for a particular piece of content.
+   *
+   * @param aRead if true, won't return a layout history state if the
+   *              layout history state is empty.
+   * @return the history state object
+   */
+  already_AddRefed<nsILayoutHistoryState> GetLayoutHistory(bool aRead);
+
+  // Form changes (in particular whether our current form has been submitted
+  // invalidly) affect the user-valid/user-invalid pseudo-classes. Sub-classes
+  // can override this to react to it.
+  virtual void UpdateValidityElementStates(bool aNotify) {}
+
  protected:
   virtual ~nsGenericHTMLFormElement() = default;
 
-  virtual nsresult CheckTaintSinkSetAttr(int32_t aNamespaceID, nsAtom* aName,
+  nsresult CheckTaintSinkSetAttr(int32_t aNamespaceID, nsAtom* aName,
                                          const nsAString& aValue) override;
-  
-  virtual nsresult BeforeSetAttr(int32_t aNameSpaceID, nsAtom* aName,
-                                 const nsAttrValueOrString* aValue,
-                                 bool aNotify) override;
 
-  virtual nsresult AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
-                                const nsAttrValue* aValue,
-                                const nsAttrValue* aOldValue,
-                                nsIPrincipal* aMaybeScriptedPrincipal,
-                                bool aNotify) override;
+  void BeforeSetAttr(int32_t aNamespaceID, nsAtom* aName,
+                     const nsAttrValue* aValue, bool aNotify) override;
 
-  virtual void BeforeSetForm(bool aBindToTree) {}
+  void AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
+                    const nsAttrValue* aValue, const nsAttrValue* aOldValue,
+                    nsIPrincipal* aMaybeScriptedPrincipal,
+                    bool aNotify) override;
+
+  virtual void BeforeSetForm(mozilla::dom::HTMLFormElement* aForm,
+                             bool aBindToTree) {}
 
   virtual void AfterClearForm(bool aUnbindOrDelete) {}
 
@@ -1034,6 +1069,7 @@ class nsGenericHTMLFormElement : public nsGenericHTMLElement {
    * state to decide whether our disabled flag should be toggled.
    */
   virtual void UpdateDisabledState(bool aNotify);
+  bool IsReadOnlyInternal() const final;
 
   virtual void SetFormInternal(mozilla::dom::HTMLFormElement* aForm,
                                bool aBindToTree) {}
@@ -1107,6 +1143,13 @@ class nsGenericHTMLFormElement : public nsGenericHTMLElement {
    *  See https://html.spec.whatwg.org/#form-associated-element.
    */
   virtual bool IsFormAssociatedElement() const { return false; }
+
+  /**
+   * Save to presentation state.  The form element will determine whether it
+   * has anything to save and if so, create an entry in the layout history for
+   * its pres context.
+   */
+  virtual void SaveState() {}
 };
 
 class nsGenericHTMLFormControlElement : public nsGenericHTMLFormElement,
@@ -1118,44 +1161,36 @@ class nsGenericHTMLFormControlElement : public nsGenericHTMLFormElement,
   NS_DECL_ISUPPORTS_INHERITED
 
   NS_IMPL_FROMNODE_HELPER(nsGenericHTMLFormControlElement,
-                          IsNodeOfType(nsINode::eHTML_FORM_CONTROL))
+                          IsHTMLFormControlElement())
 
   // nsINode
   nsINode* GetScopeChainParent() const override;
-  virtual bool IsNodeOfType(uint32_t aFlags) const override;
+  bool IsHTMLFormControlElement() const final { return true; }
 
   // nsIContent
-  virtual void SaveSubtreeState() override;
-  virtual IMEState GetDesiredIMEState() override;
-  virtual nsresult BindToTree(BindContext&, nsINode& aParent) override;
-  virtual void UnbindFromTree(bool aNullParent = true) override;
+  IMEState GetDesiredIMEState() override;
 
   // nsGenericHTMLElement
   // autocapitalize attribute support
-  virtual void GetAutocapitalize(nsAString& aValue) const override;
-  virtual bool IsHTMLFocusable(bool aWithMouse, bool* aIsFocusable,
-                               int32_t* aTabIndex) override;
+  void GetAutocapitalize(nsAString& aValue) const override;
+  bool IsHTMLFocusable(bool aWithMouse, bool* aIsFocusable,
+                       int32_t* aTabIndex) override;
 
   // EventTarget
   void GetEventTargetParent(mozilla::EventChainPreVisitor& aVisitor) override;
-  virtual nsresult PreHandleEvent(
-      mozilla::EventChainVisitor& aVisitor) override;
+  nsresult PreHandleEvent(mozilla::EventChainVisitor& aVisitor) override;
 
   // nsIFormControl
-  virtual mozilla::dom::HTMLFieldSetElement* GetFieldSet() override;
-  virtual mozilla::dom::HTMLFormElement* GetForm() const override {
-    return mForm;
-  }
-  virtual void SetForm(mozilla::dom::HTMLFormElement* aForm) override;
-  virtual void ClearForm(bool aRemoveFromForm, bool aUnbindOrDelete) override;
-  virtual bool AllowDrop() override { return true; }
+  mozilla::dom::HTMLFieldSetElement* GetFieldSet() override;
+  mozilla::dom::HTMLFormElement* GetForm() const override { return mForm; }
+  void SetForm(mozilla::dom::HTMLFormElement* aForm) override;
+  void ClearForm(bool aRemoveFromForm, bool aUnbindOrDelete) override;
 
  protected:
   virtual ~nsGenericHTMLFormControlElement();
 
   // Element
-  virtual mozilla::EventStates IntrinsicState() const override;
-  virtual bool IsLabelable() const override;
+  bool IsLabelable() const override;
 
   // nsGenericHTMLFormElement
   bool CanBeDisabled() const override;
@@ -1175,24 +1210,19 @@ class nsGenericHTMLFormControlElement : public nsGenericHTMLFormElement,
 
   bool IsAutocapitalizeInheriting() const;
 
-  /**
-   * Returns whether this is a auto-focusable form control.
-   * @return whether this is a auto-focusable form control.
-   */
-  inline bool IsAutofocusable() const;
-
-  /**
-   * Save to presentation state.  The form control will determine whether it
-   * has anything to save and if so, create an entry in the layout history for
-   * its pres context.
-   */
-  virtual void SaveState() {}
+  nsresult SubmitDirnameDir(mozilla::dom::FormData* aFormData);
 
   /** The form that contains this control */
   mozilla::dom::HTMLFormElement* mForm;
 
   /* This is a pointer to our closest fieldset parent if any */
   mozilla::dom::HTMLFieldSetElement* mFieldSet;
+};
+
+enum class PopoverTargetAction : uint8_t {
+  Toggle,
+  Show,
+  Hide,
 };
 
 class nsGenericHTMLFormControlElementWithState
@@ -1202,6 +1232,42 @@ class nsGenericHTMLFormControlElementWithState
       already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo,
       mozilla::dom::FromParser aFromParser, FormControlType);
 
+  bool IsGenericHTMLFormControlElementWithState() const final { return true; }
+  NS_IMPL_FROMNODE_HELPER(nsGenericHTMLFormControlElementWithState,
+                          IsGenericHTMLFormControlElementWithState())
+
+  // Element
+  bool ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
+                      const nsAString& aValue,
+                      nsIPrincipal* aMaybeScriptedPrincipal,
+                      nsAttrValue& aResult) override;
+
+  // PopoverInvokerElement
+  mozilla::dom::Element* GetPopoverTargetElement() const;
+  void SetPopoverTargetElement(mozilla::dom::Element*);
+  void GetPopoverTargetAction(nsAString& aValue) const {
+    GetHTMLEnumAttr(nsGkAtoms::popovertargetaction, aValue);
+  }
+  void SetPopoverTargetAction(const nsAString& aValue) {
+    SetHTMLAttr(nsGkAtoms::popovertargetaction, aValue);
+  }
+
+  // InvokerElement
+  mozilla::dom::Element* GetInvokeTargetElement() const;
+  void SetInvokeTargetElement(mozilla::dom::Element*);
+  void GetInvokeAction(nsAString& aValue) const;
+  nsAtom* GetInvokeAction() const;
+  void SetInvokeAction(const nsAString& aValue) {
+    SetHTMLAttr(nsGkAtoms::invokeaction, aValue);
+  }
+
+  /**
+   * https://html.spec.whatwg.org/#popover-target-attribute-activation-behavior
+   */
+  MOZ_CAN_RUN_SCRIPT void HandlePopoverTargetAction();
+
+  MOZ_CAN_RUN_SCRIPT void HandleInvokeTargetAction();
+
   /**
    * Get the presentation state for a piece of content, or create it if it does
    * not exist.  Generally used by SaveState().
@@ -1209,19 +1275,10 @@ class nsGenericHTMLFormControlElementWithState
   mozilla::PresState* GetPrimaryPresState();
 
   /**
-   * Get the layout history object for a particular piece of content.
-   *
-   * @param aRead if true, won't return a layout history state if the
-   *              layout history state is empty.
-   * @return the history state object
-   */
-  already_AddRefed<nsILayoutHistoryState> GetLayoutHistory(bool aRead);
-
-  /**
    * Called when we have been cloned and adopted, and the information of the
    * node has been changed.
    */
-  virtual void NodeInfoChanged(Document* aOldDoc) override;
+  void NodeInfoChanged(Document* aOldDoc) override;
 
   void GetFormAction(nsString& aValue);
 
@@ -1270,15 +1327,13 @@ class nsGenericHTMLFormControlElementWithState
   NS_INTERFACE_MAP_ENTRY_CONDITIONAL(_interface,        \
                                      mNodeInfo->Equals(nsGkAtoms::_tag))
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 using HTMLContentCreatorFunction =
     nsGenericHTMLElement* (*)(already_AddRefed<mozilla::dom::NodeInfo>&&,
                               mozilla::dom::FromParser);
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 /**
  * A macro to declare the NS_NewHTMLXXXElement() functions.
@@ -1374,7 +1429,6 @@ NS_DECLARE_NS_NEW_HTML_ELEMENT(Link)
 NS_DECLARE_NS_NEW_HTML_ELEMENT(Marquee)
 NS_DECLARE_NS_NEW_HTML_ELEMENT(Map)
 NS_DECLARE_NS_NEW_HTML_ELEMENT(Menu)
-NS_DECLARE_NS_NEW_HTML_ELEMENT(MenuItem)
 NS_DECLARE_NS_NEW_HTML_ELEMENT(Meta)
 NS_DECLARE_NS_NEW_HTML_ELEMENT(Meter)
 NS_DECLARE_NS_NEW_HTML_ELEMENT(Object)

@@ -1,6 +1,5 @@
 /**
- * @fileoverview Reject use of Cu.import and XPCOMUtils.defineLazyModuleGetter
- *               in favor of ChromeUtils.
+ * @fileoverview Reject use of Cu.import in favor of ChromeUtils.
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -8,10 +7,6 @@
  */
 
 "use strict";
-
-// -----------------------------------------------------------------------------
-// Rule Definition
-// -----------------------------------------------------------------------------
 
 function isIdentifier(node, id) {
   return node && node.type === "Identifier" && node.name === id;
@@ -27,18 +22,16 @@ function isMemberExpression(node, object, member) {
 
 module.exports = {
   meta: {
-    schema: [
-      {
-        type: "object",
-        properties: {
-          allowCu: {
-            type: "boolean",
-          },
-        },
-        additionalProperties: false,
-      },
-    ],
+    docs: {
+      url: "https://firefox-source-docs.mozilla.org/code-quality/lint/linters/eslint-plugin-mozilla/rules/use-chromeutils-import.html",
+    },
     fixable: "code",
+    messages: {
+      useChromeUtilsImport:
+        "Please use ChromeUtils.import instead of Cu.import",
+    },
+    schema: [],
+    type: "suggestion",
   },
 
   create(context) {
@@ -48,38 +41,19 @@ module.exports = {
           return;
         }
 
-        let { allowCu } = context.options[0] || {};
         let { callee } = node;
 
         // Is the expression starting with `Cu` or `Components.utils`?
         if (
-          ((!allowCu && isIdentifier(callee.object, "Cu")) ||
+          (isIdentifier(callee.object, "Cu") ||
             isMemberExpression(callee.object, "Components", "utils")) &&
           isIdentifier(callee.property, "import")
         ) {
           context.report({
             node,
-            message: "Please use ChromeUtils.import instead of Cu.import",
+            messageId: "useChromeUtilsImport",
             fix(fixer) {
               return fixer.replaceText(callee, "ChromeUtils.import");
-            },
-          });
-        }
-
-        if (
-          isMemberExpression(callee, "XPCOMUtils", "defineLazyModuleGetter") &&
-          node.arguments.length < 4
-        ) {
-          context.report({
-            node,
-            message:
-              "Please use ChromeUtils.defineModuleGetter instead of " +
-              "XPCOMUtils.defineLazyModuleGetter",
-            fix(fixer) {
-              return fixer.replaceText(
-                callee,
-                "ChromeUtils.defineModuleGetter"
-              );
             },
           });
         }

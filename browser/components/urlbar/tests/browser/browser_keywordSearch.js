@@ -1,7 +1,7 @@
 /**
  * Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/
- **/
+ */
 
 var gTests = [
   {
@@ -16,18 +16,14 @@ var gTests = [
   },
 ];
 
-add_task(async function setup() {
-  let engine = await SearchTestUtils.promiseNewSearchEngine(
-    getRootDirectory(gTestPath) + "searchSuggestionEngine.xml"
-  );
-  let oldDefaultEngine = await Services.search.getDefault();
-  await Services.search.setDefault(engine);
-  registerCleanupFunction(async function() {
-    await Services.search.setDefault(oldDefaultEngine);
+add_setup(async function () {
+  await SearchTestUtils.promiseNewSearchEngine({
+    url: getRootDirectory(gTestPath) + "searchSuggestionEngine.xml",
+    setAsDefault: true,
   });
 });
 
-add_task(async function() {
+add_task(async function () {
   // Test both directly setting a value and pressing enter, or setting the
   // value through input events, like the user would do.
   const setValueFns = [

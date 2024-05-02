@@ -1,4 +1,6 @@
-const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
+const { HttpServer } = ChromeUtils.importESModule(
+  "resource://testing-common/httpd.sys.mjs"
+);
 
 /*
  * Test that when doing HTTP requests, the nsIHttpChannel is detected in
@@ -38,7 +40,7 @@ let expectedChildMessages = [];
 let maybeFinishWaitForParentChannels;
 let parentChannelsDone = new Promise(resolve => {
   maybeFinishWaitForParentChannels = () => {
-    if (expectedParentChannels.length == 0) {
+    if (!expectedParentChannels.length) {
       dump("All expected parent channels were detected\n");
       resolve();
     }

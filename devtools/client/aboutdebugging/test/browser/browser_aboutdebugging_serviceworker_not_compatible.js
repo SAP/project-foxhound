@@ -36,11 +36,8 @@ const TEST_DATA = [
  */
 add_task(async function testLocalRuntime() {
   for (const testData of TEST_DATA) {
-    const {
-      serviceWorkersEnabled,
-      privateBrowsingEnabled,
-      expectedMessage,
-    } = testData;
+    const { serviceWorkersEnabled, privateBrowsingEnabled, expectedMessage } =
+      testData;
 
     info(
       `Test warning message on this-firefox ` +
@@ -70,7 +67,7 @@ add_task(async function testLocalRuntime() {
 add_task(async function testRemoteRuntime() {
   const {
     remoteClientManager,
-  } = require("devtools/client/shared/remote-debugging/remote-client-manager");
+  } = require("resource://devtools/client/shared/remote-debugging/remote-client-manager.js");
 
   // enable USB devices mocks
   const mocks = new Mocks();
@@ -80,11 +77,8 @@ add_task(async function testRemoteRuntime() {
   });
 
   for (const testData of TEST_DATA) {
-    const {
-      serviceWorkersEnabled,
-      privateBrowsingEnabled,
-      expectedMessage,
-    } = testData;
+    const { serviceWorkersEnabled, privateBrowsingEnabled, expectedMessage } =
+      testData;
 
     info(
       `Test warning message on mocked USB runtime ` +

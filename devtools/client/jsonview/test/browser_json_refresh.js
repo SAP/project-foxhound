@@ -5,7 +5,7 @@
 
 const TEST_JSON_FILE = "simple_json.json";
 
-add_task(async function() {
+add_task(async function () {
   info("Test JSON refresh started");
 
   // generate file:// URI for JSON file and load in new tab
@@ -20,7 +20,7 @@ add_task(async function() {
     tab.linkedBrowser,
     [{ TEST_JSON_FILE }],
     // eslint-disable-next-line no-shadow
-    async function({ TEST_JSON_FILE }) {
+    async function ({ TEST_JSON_FILE }) {
       const channel = content.docShell.currentDocumentChannel;
       const channelURI = channel.URI.spec;
       ok(
@@ -42,12 +42,10 @@ add_task(async function() {
         "sanity: correct triggeringPrincipal"
       );
       const principalToInherit = channel.loadInfo.principalToInherit;
-      ok(
-        principalToInherit.isNullPrincipal,
-        "sanity: correct principalToInherit"
-      );
-      ok(
-        content.document.nodePrincipal.isNullPrincipal,
+      ok(!principalToInherit, "sanity: no principalToInherit");
+      is(
+        content.document.nodePrincipal.origin,
+        "resource://devtools",
         "sanity: correct doc.nodePrincipal"
       );
     }
@@ -61,7 +59,7 @@ add_task(async function() {
     tab.linkedBrowser,
     [{ TEST_JSON_FILE }],
     // eslint-disable-next-line no-shadow
-    async function({ TEST_JSON_FILE }) {
+    async function ({ TEST_JSON_FILE }) {
       // eslint-disable-line
       const channel = content.docShell.currentDocumentChannel;
       const channelURI = channel.URI.spec;
@@ -84,12 +82,10 @@ add_task(async function() {
         "reloaded: correct triggeringPrincipal"
       );
       const principalToInherit = channel.loadInfo.principalToInherit;
-      ok(
-        principalToInherit.isNullPrincipal,
-        "reloaded: correct principalToInherit"
-      );
-      ok(
-        content.document.nodePrincipal.isNullPrincipal,
+      ok(!principalToInherit, "reloaded: no principalToInherit");
+      is(
+        content.document.nodePrincipal.origin,
+        "resource://devtools",
         "reloaded: correct doc.nodePrincipal"
       );
     }

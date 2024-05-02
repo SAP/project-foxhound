@@ -4,8 +4,10 @@
 
 "use strict";
 
-const AutocompletePopup = require("devtools/client/shared/autocomplete-popup");
-const { InplaceEditor } = require("devtools/client/shared/inplace-editor");
+const AutocompletePopup = require("resource://devtools/client/shared/autocomplete-popup.js");
+const {
+  InplaceEditor,
+} = require("resource://devtools/client/shared/inplace-editor.js");
 loadHelperScript("helper_inplace_editor.js");
 
 // Test the inplace-editor autocomplete popup for CSS values suggestions.
@@ -29,14 +31,14 @@ const testData = [
   ["VK_LEFT", "inline", -1, 0],
 ];
 
-const mockGetCSSValuesForPropertyName = function(propertyName) {
+const mockGetCSSValuesForPropertyName = function (propertyName) {
   const values = {
     display: ["block", "flex", "inline", "inline-block", "none"],
   };
   return values[propertyName] || [];
 };
 
-add_task(async function() {
+add_task(async function () {
   await addTab(
     "data:text/html;charset=utf-8," + "inplace editor CSS value autocomplete"
   );
@@ -54,7 +56,7 @@ add_task(async function() {
           name: "display",
         },
         done: resolve,
-        popup: popup,
+        popup,
       },
       doc
     );
@@ -65,7 +67,7 @@ add_task(async function() {
   gBrowser.removeCurrentTab();
 });
 
-const runAutocompletionTest = async function(editor) {
+const runAutocompletionTest = async function (editor) {
   info("Starting to test for css property completion");
   editor._getCSSValuesForPropertyName = mockGetCSSValuesForPropertyName;
 

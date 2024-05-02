@@ -10,7 +10,7 @@ def WebIDLTest(parser, harness):
 
       [Exposed=(Foo,Bar1)]
       interface Iface {
-        void method1();
+        undefined method1();
 
         [Exposed=Bar1]
         readonly attribute any attr;
@@ -18,7 +18,7 @@ def WebIDLTest(parser, harness):
 
       [Exposed=Foo]
       partial interface Iface {
-        void method2();
+        undefined method2();
       };
     """
     )
@@ -76,7 +76,7 @@ def WebIDLTest(parser, harness):
 
       [Exposed=Foo]
       interface Iface2 {
-        void method3();
+        undefined method3();
       };
     """
     )
@@ -114,12 +114,12 @@ def WebIDLTest(parser, harness):
 
       [Exposed=Foo]
       interface Iface3 {
-        void method4();
+        undefined method4();
       };
 
       [Exposed=(Foo,Bar1)]
       interface mixin Mixin {
-        void method5();
+        undefined method5();
       };
 
       Iface3 includes Mixin;
@@ -162,7 +162,7 @@ def WebIDLTest(parser, harness):
         )
 
         results = parser.finish()
-    except Exception as x:
+    except Exception:
         threw = True
 
     harness.ok(threw, "Should have thrown on invalid Exposed value on interface.")
@@ -180,7 +180,7 @@ def WebIDLTest(parser, harness):
         )
 
         results = parser.finish()
-    except Exception as x:
+    except Exception:
         threw = True
 
     harness.ok(threw, "Should have thrown on invalid Exposed value on attribute.")
@@ -192,13 +192,13 @@ def WebIDLTest(parser, harness):
             """
             interface Bar {
               [Exposed=Foo]
-              void operation();
+              undefined operation();
             };
         """
         )
 
         results = parser.finish()
-    except Exception as x:
+    except Exception:
         threw = True
 
     harness.ok(threw, "Should have thrown on invalid Exposed value on operation.")
@@ -216,7 +216,7 @@ def WebIDLTest(parser, harness):
         )
 
         results = parser.finish()
-    except Exception as x:
+    except Exception:
         threw = True
 
     harness.ok(threw, "Should have thrown on invalid Exposed value on constant.")
@@ -232,13 +232,13 @@ def WebIDLTest(parser, harness):
             [Exposed=Foo]
             interface Baz {
               [Exposed=Bar]
-              void method();
+              undefined method();
             };
         """
         )
 
         results = parser.finish()
-    except Exception as x:
+    except Exception:
         threw = True
 
     harness.ok(
@@ -253,12 +253,12 @@ def WebIDLTest(parser, harness):
 
         [Exposed=Foo]
         interface Baz {
-          void method();
+          undefined method();
         };
 
         [Exposed=Bar]
         interface mixin Mixin {
-          void otherMethod();
+          undefined otherMethod();
         };
 
         Baz includes Mixin;
@@ -290,3 +290,94 @@ def WebIDLTest(parser, harness):
         members[1]._exposureGlobalNames == set(["Bar"]),
         "otherMethod should have the right exposure global names",
     )
+
+    parser = parser.reset()
+    parser.parse(
+        """
+        [Global, Exposed=Foo] interface Foo {};
+        [Global, Exposed=Bar] interface Bar {};
+
+        [Exposed=*]
+        interface Baz {
+          undefined methodWild();
+        };
+
+        [Exposed=Bar]
+        interface mixin Mixin {
+          undefined methodNotWild();
+        };
+
+        Baz includes Mixin;
+    """
+    )
+
+    results = parser.finish()
+
+    harness.check(len(results), 5, "Should know about five things")
+    iface = results[2]
+    harness.ok(isinstance(iface, WebIDL.IDLInterface), "Should have an interface here")
+    members = iface.members
+    harness.check(len(members), 2, "Should have two members")
+
+    harness.ok(
+        members[0].exposureSet == set(["Foo", "Bar"]),
+        "methodWild should have the right exposure set",
+    )
+    harness.ok(
+        members[0]._exposureGlobalNames == set(["Foo", "Bar"]),
+        "methodWild should have the right exposure global names",
+    )
+
+    harness.ok(
+        members[1].exposureSet == set(["Bar"]),
+        "methodNotWild should have the right exposure set",
+    )
+    harness.ok(
+        members[1]._exposureGlobalNames == set(["Bar"]),
+        "methodNotWild should have the right exposure global names",
+    )
+
+    parser = parser.reset()
+    threw = False
+    try:
+        parser.parse(
+            """
+            [Global, Exposed=Foo] interface Foo {};
+            [Global, Exposed=Bar] interface Bar {};
+
+            [Exposed=Foo]
+            interface Baz {
+              [Exposed=*]
+              undefined method();
+            };
+        """
+        )
+
+        results = parser.finish()
+    except Exception:
+        threw = True
+
+    harness.ok(
+        threw, "Should have thrown on member exposed where its interface is not."
+    )
+
+    parser = parser.reset()
+    threw = False
+    try:
+        parser.parse(
+            """
+            [Global, Exposed=Foo] interface Foo {};
+            [Global, Exposed=Bar] interface Bar {};
+
+            [Exposed=(Foo,*)]
+            interface Baz {
+              undefined method();
+            };
+        """
+        )
+
+        results = parser.finish()
+    except Exception:
+        threw = True
+
+    harness.ok(threw, "Should have thrown on a wildcard in an identifier list.")

@@ -42,7 +42,7 @@ endif # RUN_FIND_DUPES
 ifndef MOZ_IS_COMM_TOPDIR
 ifdef RUN_MOZHARNESS_ZIP
 	# Package mozharness
-	$(call py_action,test_archive, \
+	$(call py_action,test_archive $(MOZHARNESS_PACKAGE), \
 		mozharness \
 		$(ABS_DIST)/$(PKG_PATH)$(MOZHARNESS_PACKAGE))
 endif # RUN_MOZHARNESS_ZIP
@@ -60,7 +60,7 @@ ifdef MOZ_ARTIFACT_BUILD_SYMBOLS
 	cd $(DIST)/crashreporter-symbols && \
           zip -r5D '../$(PKG_PATH)$(SYMBOL_ARCHIVE_BASENAME).zip' . -i '*.sym' -i '*.txt'
 ifeq ($(MOZ_ARTIFACT_BUILD_SYMBOLS),full)
-	$(call py_action,symbols_archive,'$(DIST)/$(PKG_PATH)$(SYMBOL_FULL_ARCHIVE_BASENAME).tar.zst' \
+	$(call py_action,symbols_archive $(SYMBOL_FULL_ARCHIVE_BASENAME).tar.zst,'$(DIST)/$(PKG_PATH)$(SYMBOL_FULL_ARCHIVE_BASENAME).tar.zst' \
                                      $(abspath $(DIST)/crashreporter-symbols) \
                                      --full-archive)
 endif
@@ -79,33 +79,46 @@ ifdef ENABLE_MOZSEARCH_PLUGIN
 	$(RM) $(MOZSEARCH_ARCHIVE_BASENAME).zip
 	cd $(topobjdir)/mozsearch_index && \
           zip -r5D '$(ABS_DIST)/$(PKG_PATH)$(MOZSEARCH_ARCHIVE_BASENAME).zip' .
-	@echo 'Generating mozsearch rust-analysis tarball...'
-	$(RM) $(MOZSEARCH_RUST_ANALYSIS_BASENAME).zip
-	cd $(topobjdir)/ && \
-          find . -type d -name save-analysis | xargs zip -r5D '$(ABS_DIST)/$(PKG_PATH)$(MOZSEARCH_RUST_ANALYSIS_BASENAME).zip'
-	@echo 'Generating mozsearch rust stdlib analysis tarball ($(RUST_TARGET))...'
-	$(RM) $(MOZSEARCH_RUST_STDLIB_BASENAME).zip
-	cd $(MOZ_FETCHES_DIR)/rustc/lib && \
-          zip -r5D '$(ABS_DIST)/$(PKG_PATH)$(MOZSEARCH_RUST_STDLIB_BASENAME).zip' \
-          rustlib/$(RUST_TARGET)/analysis/ rustlib/src/
 	@echo 'Generating mozsearch distinclude map...'
 	cd $(topobjdir)/ && cp _build_manifests/install/dist_include '$(ABS_DIST)/$(PKG_PATH)$(MOZSEARCH_INCLUDEMAP_BASENAME).map'
+	@echo 'Generating mozsearch scip index...'
+	$(RM) $(MOZSEARCH_SCIP_INDEX_BASENAME).zip
+	cp $(topsrcdir)/.cargo/config.in $(topsrcdir)/.cargo/config
+	cd $(topsrcdir)/ && \
+          CARGO=$(MOZ_FETCHES_DIR)/rustc/bin/cargo \
+          RUSTC=$(MOZ_FETCHES_DIR)/rustc/bin/rustc \
+          $(MOZ_FETCHES_DIR)/rustc/bin/rust-analyzer scip . && \
+          zip -r5D '$(ABS_DIST)/$(PKG_PATH)$(MOZSEARCH_SCIP_INDEX_BASENAME).zip' \
+          index.scip
+	rm $(topsrcdir)/.cargo/config
+ifeq ($(MOZ_BUILD_APP),mobile/android)
+	@echo 'Generating mozsearch java/kotlin semanticdb tarball...'
+	$(RM) $(MOZSEARCH_JAVA_INDEX_BASENAME).zip
+	cd $(topsrcdir)/ && \
+          $(PYTHON3) $(topsrcdir)/mach android compile-all && \
+          cd $(topobjdir)/mozsearch_java_index && \
+          zip -r5D '$(ABS_DIST)/$(PKG_PATH)$(MOZSEARCH_JAVA_INDEX_BASENAME).zip' .
+endif # MOZ_BUILD_APP == mobile/android
 endif
 ifeq (Darwin, $(OS_ARCH))
-	@echo 'Generating macOS codesigning bundle ($(MACOS_CODESIGN_ARCHIVE_BASENAME).zip)'
-	cd $(topsrcdir)/security/mac && \
-	  zip -rD '$(ABS_DIST)/$(PKG_PATH)$(MACOS_CODESIGN_ARCHIVE_BASENAME).zip' hardenedruntime
 ifneq (,$(MOZ_ASAN)$(LIBFUZZER)$(MOZ_UBSAN))
 	@echo "Rewriting sanitizer runtime dylib paths for all binaries in $(DIST)/$(MOZ_PKG_DIR)/$(_BINPATH) ..."
 	$(PYTHON3) $(MOZILLA_DIR)/build/unix/rewrite_sanitizer_dylib.py '$(DIST)/$(MOZ_PKG_DIR)/$(_BINPATH)'
 endif # MOZ_ASAN || LIBFUZZER || MOZ_UBSAN
 endif # Darwin
+ifndef MOZ_ARTIFACT_BUILDS
+	@echo 'Generating XPT artifacts archive ($(XPT_ARTIFACTS_ARCHIVE_BASENAME).zip)'
+	$(call py_action,zip $(XPT_ARTIFACTS_ARCHIVE_BASENAME).zip,-C $(topobjdir)/config/makefiles/xpidl '$(ABS_DIST)/$(PKG_PATH)$(XPT_ARTIFACTS_ARCHIVE_BASENAME).zip' '*.xpt')
+else
+	@echo 'Packaging existing XPT artifacts from artifact build into archive ($(XPT_ARTIFACTS_ARCHIVE_BASENAME).zip)'
+	$(call py_action,zip $(XPT_ARTIFACTS_ARCHIVE_BASENAME).zip,-C $(ABS_DIST)/xpt_artifacts '$(ABS_DIST)/$(PKG_PATH)$(XPT_ARTIFACTS_ARCHIVE_BASENAME).zip' '*.xpt')
+endif # MOZ_ARTIFACT_BUILDS
 
 prepare-package: stage-package
 
 make-package-internal: prepare-package make-sourcestamp-file
 	@echo 'Compressing...'
-	cd $(DIST) && $(MAKE_PACKAGE)
+	$(call MAKE_PACKAGE,$(DIST))
 
 make-package: FORCE
 	$(MAKE) make-package-internal
@@ -123,14 +136,6 @@ ifdef MOZ_AUTOMATION
 		--package=$(DIST)/$(PACKAGE) --installer=$(INSTALLER_PACKAGE), \
 		--no-download \
 	  )
-endif
-ifdef MOZ_NORMANDY
-ifndef CROSS_COMPILE
-	# Generate a file that describes the local Normandy client.
-	env LD_LIBRARY_PATH="$(LD_LIBRARY_PATH):$(DIST)/$(PKG_PATH)/bin" \
-		$(DIST)/$(PKG_PATH)/bin/xpcshell \
-		$(MOZILLA_DIR)/toolkit/components/normandy/metadata-script.js $(MOZ_NORMANDY_JSON)
-endif
 endif
 	$(TOUCH) $@
 
@@ -208,14 +213,14 @@ endif
 # and places it in dist/bin/res - it should be used when packaging a build.
 multilocale.txt: LOCALES?=$(MOZ_CHROME_MULTILOCALE)
 multilocale.txt:
-	$(call py_action,file_generate,$(MOZILLA_DIR)/toolkit/locales/gen_multilocale.py main '$(MULTILOCALE_DIR)/multilocale.txt' $(MDDEPDIR)/multilocale.txt.pp '$(MULTILOCALE_DIR)/multilocale.txt' $(ALL_LOCALES))
+	$(call py_action,file_generate $@,$(MOZILLA_DIR)/toolkit/locales/gen_multilocale.py main '$(MULTILOCALE_DIR)/multilocale.txt' $(MDDEPDIR)/multilocale.txt.pp '$(MULTILOCALE_DIR)/multilocale.txt' $(ALL_LOCALES))
 
 # This version of the target uses AB_CD to build multilocale.txt and places it
 # in the $(XPI_NAME)/res dir - it should be used when repackaging a build.
 multilocale.txt-%: LOCALES?=$(AB_CD)
 multilocale.txt-%: MULTILOCALE_DIR=$(DIST)/xpi-stage/$(XPI_NAME)/res
 multilocale.txt-%:
-	$(call py_action,file_generate,$(MOZILLA_DIR)/toolkit/locales/gen_multilocale.py main '$(MULTILOCALE_DIR)/multilocale.txt' $(MDDEPDIR)/multilocale.txt.pp '$(MULTILOCALE_DIR)/multilocale.txt' $(ALL_LOCALES))
+	$(call py_action,file_generate multilocale.txt,$(MOZILLA_DIR)/toolkit/locales/gen_multilocale.py main '$(MULTILOCALE_DIR)/multilocale.txt' $(MDDEPDIR)/multilocale.txt.pp '$(MULTILOCALE_DIR)/multilocale.txt' $(ALL_LOCALES))
 
 locale-manifest.in: LOCALES?=$(MOZ_CHROME_MULTILOCALE)
 locale-manifest.in: $(GLOBAL_DEPS) FORCE

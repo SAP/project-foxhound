@@ -5,8 +5,9 @@
 
 /* import-globals-from /toolkit/content/preferencesBindings.js */
 
-var { Sanitizer } = ChromeUtils.import("resource:///modules/Sanitizer.jsm");
-var { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+var { Sanitizer } = ChromeUtils.importESModule(
+  "resource:///modules/Sanitizer.sys.mjs"
+);
 
 Preferences.addAll([
   { id: "privacy.cpd.history", type: "bool" },
@@ -50,7 +51,7 @@ var gSanitizePromptDialog = {
     let OKButton = this._dialog.getButton("accept");
     document.l10n.setAttributes(OKButton, "sanitize-button-ok");
 
-    document.addEventListener("dialogaccept", function(e) {
+    document.addEventListener("dialogaccept", function (e) {
       gSanitizePromptDialog.sanitize(e);
     });
 
@@ -61,7 +62,7 @@ var gSanitizePromptDialog = {
       this.warningBox.hidden = false;
       document.l10n.setAttributes(
         document.documentElement,
-        "dialog-title-everything"
+        "sanitize-dialog-title-everything"
       );
       let warningDesc = document.getElementById("sanitizeEverythingWarning");
       // Ensure we've translated and sized the warning.
@@ -94,7 +95,7 @@ var gSanitizePromptDialog = {
       }
       document.l10n.setAttributes(
         document.documentElement,
-        "dialog-title-everything"
+        "sanitize-dialog-title-everything"
       );
       return;
     }
@@ -107,7 +108,10 @@ var gSanitizePromptDialog = {
       window.resizeBy(0, -diff);
       warningBox.hidden = true;
     }
-    document.l10n.setAttributes(document.documentElement, "dialog-title");
+    document.l10n.setAttributes(
+      document.documentElement,
+      "sanitize-dialog-title"
+    );
   },
 
   sanitize(event) {
@@ -130,12 +134,12 @@ var gSanitizePromptDialog = {
         range,
       };
       Sanitizer.sanitize(null, options)
-        .catch(Cu.reportError)
+        .catch(console.error)
         .then(() => window.close())
-        .catch(Cu.reportError);
+        .catch(console.error);
       event.preventDefault();
     } catch (er) {
-      Cu.reportError("Exception during sanitize: " + er);
+      console.error("Exception during sanitize: ", er);
     }
   },
 
@@ -157,12 +161,12 @@ var gSanitizePromptDialog = {
   },
 
   /**
-   * Return the boolean prefs that enable/disable clearing of various kinds
-   * of history.  The only pref this excludes is privacy.sanitize.timeSpan.
+   * Return the boolean prefs that correspond to the checkboxes on the dialog.
    */
   _getItemPrefs() {
     return Preferences.getAll().filter(
-      p => p.id !== "privacy.sanitize.timeSpan"
+      p =>
+        p.id !== "privacy.sanitize.timeSpan" && p.id !== "privacy.cpd.downloads"
     );
   },
 
@@ -172,7 +176,9 @@ var gSanitizePromptDialog = {
    */
   onReadGeneric() {
     // Find any other pref that's checked and enabled (except for
-    // privacy.sanitize.timeSpan, which doesn't affect the button's status).
+    // privacy.sanitize.timeSpan, which doesn't affect the button's status
+    // and privacy.cpd.downloads which is not controlled directly by a
+    // checkbox).
     var found = this._getItemPrefs().some(
       pref => !!pref.value && !pref.disabled
     );
@@ -198,9 +204,9 @@ var gSanitizePromptDialog = {
     Services.prefs.setIntPref(Sanitizer.PREF_TIMESPAN, this.selectedTimespan);
 
     // Keep the pref for the download history in sync with the history pref.
-    Preferences.get("privacy.cpd.downloads").value = Preferences.get(
-      "privacy.cpd.history"
-    ).value;
+    let historyValue = Preferences.get("privacy.cpd.history").value;
+    Preferences.get("privacy.cpd.downloads").value = historyValue;
+    Services.prefs.setBoolPref("privacy.cpd.downloads", historyValue);
 
     // Now manually set the prefs from their corresponding preference
     // elements.
@@ -262,7 +268,7 @@ var gSanitizePromptDialog = {
 document.mozSubdialogReady = new Promise(resolve => {
   window.addEventListener(
     "load",
-    function() {
+    function () {
       gSanitizePromptDialog.init().then(resolve);
     },
     {

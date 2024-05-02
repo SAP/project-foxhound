@@ -12,10 +12,6 @@ function run_test() {
   test_generator.next();
 }
 
-function continue_test() {
-  do_run_generator(test_generator);
-}
-
 function* do_run_test() {
   let pm = Services.perms;
   let now = Number(Date.now());
@@ -30,7 +26,7 @@ function* do_run_test() {
   // Add a permission, to test the 'add' notification. Note that we use
   // do_execute_soon() so that we can use our generator to continue the test
   // where we left off.
-  executeSoon(function() {
+  executeSoon(function () {
     pm.addFromPrincipal(
       principal,
       permType,
@@ -42,7 +38,7 @@ function* do_run_test() {
   yield;
 
   // Alter a permission, to test the 'changed' notification.
-  executeSoon(function() {
+  executeSoon(function () {
     pm.addFromPrincipal(
       principal,
       permType,
@@ -54,13 +50,13 @@ function* do_run_test() {
   yield;
 
   // Remove a permission, to test the 'deleted' notification.
-  executeSoon(function() {
+  executeSoon(function () {
     pm.removeFromPrincipal(principal, permType);
   });
   yield;
 
   // Clear permissions, to test the 'cleared' notification.
-  executeSoon(function() {
+  executeSoon(function () {
     pm.removeAll();
   });
   yield;

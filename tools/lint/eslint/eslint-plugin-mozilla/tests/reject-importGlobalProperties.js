@@ -10,7 +10,7 @@
 var rule = require("../lib/rules/reject-importGlobalProperties");
 var RuleTester = require("eslint").RuleTester;
 
-const ruleTester = new RuleTester({ parserOptions: { ecmaVersion: 8 } });
+const ruleTester = new RuleTester({ parserOptions: { ecmaVersion: "latest" } });
 
 // ------------------------------------------------------------------------------
 // Tests
@@ -23,7 +23,11 @@ ruleTester.run("reject-importGlobalProperties", rule, {
     },
     {
       options: ["allownonwebidl"],
-      code: "Cu.importGlobalProperties(['fetch'])",
+      code: "Cu.importGlobalProperties(['caches'])",
+    },
+    {
+      options: ["allownonwebidl"],
+      code: "XPCOMUtils.defineLazyGlobalGetters(this, ['caches'])",
     },
   ],
   invalid: [
@@ -33,14 +37,53 @@ ruleTester.run("reject-importGlobalProperties", rule, {
       errors: [{ messageId: "unexpectedCall" }],
     },
     {
+      code: "XPCOMUtils.defineLazyGlobalGetters(this, ['fetch'])",
+      options: ["everything"],
+      errors: [{ messageId: "unexpectedCall" }],
+    },
+    {
       code: "Cu.importGlobalProperties(['TextEncoder'])",
+      options: ["everything"],
+      errors: [{ messageId: "unexpectedCall" }],
+    },
+    {
+      options: ["everything"],
+      code: "XPCOMUtils.defineLazyGlobalGetters(this, ['TextEncoder'])",
+      errors: [{ messageId: "unexpectedCallSjs" }],
+      filename: "foo.sjs",
+    },
+    {
+      code: "XPCOMUtils.defineLazyGlobalGetters(this, ['TextEncoder'])",
       options: ["everything"],
       errors: [{ messageId: "unexpectedCall" }],
     },
     {
       code: "Cu.importGlobalProperties(['TextEncoder'])",
       options: ["allownonwebidl"],
-      errors: [{ messageId: "unexpectedCallWebIdl" }],
+      errors: [{ messageId: "unexpectedCallCuWebIdl" }],
+    },
+    {
+      code: "XPCOMUtils.defineLazyGlobalGetters(this, ['TextEncoder'])",
+      options: ["allownonwebidl"],
+      errors: [{ messageId: "unexpectedCallXPCOMWebIdl" }],
+    },
+    {
+      options: ["allownonwebidl"],
+      code: "Cu.importGlobalProperties(['TextEncoder'])",
+      errors: [{ messageId: "unexpectedCallCuWebIdl" }],
+      filename: "foo.js",
+    },
+    {
+      options: ["allownonwebidl"],
+      code: "XPCOMUtils.defineLazyGlobalGetters(this, ['TextEncoder'])",
+      errors: [{ messageId: "unexpectedCallXPCOMWebIdl" }],
+      filename: "foo.js",
+    },
+    {
+      options: ["allownonwebidl"],
+      code: "Cu.importGlobalProperties(['TextEncoder'])",
+      errors: [{ messageId: "unexpectedCallCuWebIdl" }],
+      filename: "foo.sjs",
     },
   ],
 });

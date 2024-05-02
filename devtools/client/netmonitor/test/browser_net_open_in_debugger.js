@@ -7,12 +7,11 @@
  * Test the 'Open in debugger' feature
  */
 
-add_task(async function() {
-  const {
-    tab,
-    monitor,
-    toolbox,
-  } = await initNetMonitor(CONTENT_TYPE_WITHOUT_CACHE_URL, { requestCount: 1 });
+add_task(async function () {
+  const { tab, monitor, toolbox } = await initNetMonitor(
+    CONTENT_TYPE_WITHOUT_CACHE_URL,
+    { requestCount: 1 }
+  );
   info("Starting test... ");
 
   const { document, store, windowRequire } = monitor.panelWin;
@@ -31,12 +30,8 @@ add_task(async function() {
     { type: "contextmenu" },
     document.querySelectorAll(".request-list-item")[2]
   );
-  await waitUntil(() =>
-    getContextMenuItem(monitor, "request-list-context-open-in-debugger")
-  );
-
   const onDebuggerReady = toolbox.once("jsdebugger-ready");
-  getContextMenuItem(monitor, "request-list-context-open-in-debugger").click();
+  await selectContextMenuItem(monitor, "request-list-context-open-in-debugger");
   await onDebuggerReady;
 
   ok(true, "Debugger has been open");

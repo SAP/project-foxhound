@@ -7,11 +7,9 @@
 #define mozilla_dom_HTMLUnknownElement_h
 
 #include "mozilla/Attributes.h"
-#include "mozilla/EventStates.h"
 #include "nsGenericHTMLElement.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 #define NS_HTMLUNKNOWNELEMENT_IID                    \
   {                                                  \
@@ -40,7 +38,6 @@ class HTMLUnknownElement final : public nsGenericHTMLElement {
 
 NS_DEFINE_STATIC_IID_ACCESSOR(HTMLUnknownElement, NS_HTMLUNKNOWNELEMENT_IID)
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif /* mozilla_dom_HTMLUnknownElement_h */

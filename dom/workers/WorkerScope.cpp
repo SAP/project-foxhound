@@ -12,7 +12,6 @@
 #include "Crypto.h"
 #include "GeckoProfiler.h"
 #include "MainThreadUtils.h"
-#include "Principal.h"
 #include "ScriptLoader.h"
 #include "js/CompilationAndEvaluation.h"
 #include "js/CompileOptions.h"
@@ -37,7 +36,6 @@
 #include "mozilla/Result.h"
 #include "mozilla/StaticAnalysisFunctions.h"
 #include "mozilla/StorageAccess.h"
-#include "mozilla/TaskCategory.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/Unused.h"
 #include "mozilla/dom/AutoEntryScript.h"
@@ -57,14 +55,17 @@
 #include "mozilla/dom/DedicatedWorkerGlobalScopeBinding.h"
 #include "mozilla/dom/DOMString.h"
 #include "mozilla/dom/Fetch.h"
+#include "mozilla/dom/FontFaceSet.h"
 #include "mozilla/dom/IDBFactory.h"
 #include "mozilla/dom/ImageBitmap.h"
 #include "mozilla/dom/ImageBitmapSource.h"
 #include "mozilla/dom/MessagePortBinding.h"
 #include "mozilla/ipc/PBackgroundChild.h"
+#include "mozilla/ipc/PBackgroundSharedTypes.h"
 #include "mozilla/dom/Performance.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/PromiseWorkerProxy.h"
+#include "mozilla/dom/WebTaskSchedulerWorker.h"
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/dom/SerializedStackHolder.h"
 #include "mozilla/dom/ServiceWorkerDescriptor.h"
@@ -129,8 +130,14 @@ using mozilla::ipc::BackgroundChild;
 using mozilla::ipc::PBackgroundChild;
 using mozilla::ipc::PrincipalInfo;
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
+
+static mozilla::LazyLogModule sWorkerScopeLog("WorkerScope");
+
+#ifdef LOG
+#  undef LOG
+#endif
+#define LOG(args) MOZ_LOG(sWorkerScopeLog, LogLevel::Debug, args);
 
 class WorkerScriptTimeoutHandler final : public ScriptTimeoutHandler {
  public:
@@ -189,25 +196,38 @@ NS_IMPL_CYCLE_COLLECTION_CLASS(WorkerGlobalScopeBase)
 
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(WorkerGlobalScopeBase,
                                                   DOMEventTargetHelper)
-  tmp->mWorkerPrivate->AssertIsOnWorkerThread();
+  tmp->AssertIsOnWorkerThread();
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mConsole)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mModuleLoader)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mSerialEventTarget)
   tmp->TraverseObjectsInGlobal(cb);
-  tmp->mWorkerPrivate->TraverseTimeouts(cb);
+  // If we already exited WorkerThreadPrimaryRunnable, we will find it
+  // nullptr and there is nothing left to do here on the WorkerPrivate,
+  // in particular the timeouts have already been canceled and unlinked.
+  if (tmp->mWorkerPrivate) {
+    tmp->mWorkerPrivate->TraverseTimeouts(cb);
+  }
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(WorkerGlobalScopeBase,
                                                 DOMEventTargetHelper)
-  tmp->mWorkerPrivate->AssertIsOnWorkerThread();
+  tmp->AssertIsOnWorkerThread();
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mConsole)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mModuleLoader)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mSerialEventTarget)
   tmp->UnlinkObjectsInGlobal();
-  tmp->mWorkerPrivate->UnlinkTimeouts();
+  // If we already exited WorkerThreadPrimaryRunnable, we will find it
+  // nullptr and there is nothing left to do here on the WorkerPrivate,
+  // in particular the timeouts have already been canceled and unlinked.
+  if (tmp->mWorkerPrivate) {
+    tmp->mWorkerPrivate->UnlinkTimeouts();
+  }
+  NS_IMPL_CYCLE_COLLECTION_UNLINK_WEAK_REFERENCE
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN_INHERITED(WorkerGlobalScopeBase,
                                                DOMEventTargetHelper)
-  tmp->mWorkerPrivate->AssertIsOnWorkerThread();
+  tmp->AssertIsOnWorkerThread();
 NS_IMPL_CYCLE_COLLECTION_TRACE_END
 
 NS_IMPL_ADDREF_INHERITED(WorkerGlobalScopeBase, DOMEventTargetHelper)
@@ -215,6 +235,7 @@ NS_IMPL_RELEASE_INHERITED(WorkerGlobalScopeBase, DOMEventTargetHelper)
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(WorkerGlobalScopeBase)
   NS_INTERFACE_MAP_ENTRY(nsIGlobalObject)
+  NS_INTERFACE_MAP_ENTRY(nsISupportsWeakReference)
 NS_INTERFACE_MAP_END_INHERITING(DOMEventTargetHelper)
 
 WorkerGlobalScopeBase::WorkerGlobalScopeBase(
@@ -222,7 +243,12 @@ WorkerGlobalScopeBase::WorkerGlobalScopeBase(
     : mWorkerPrivate(aWorkerPrivate),
       mClientSource(std::move(aClientSource)),
       mSerialEventTarget(aWorkerPrivate->HybridEventTarget()) {
+  LOG(("WorkerGlobalScopeBase::WorkerGlobalScopeBase [%p]", this));
+  MOZ_ASSERT(mWorkerPrivate);
+#ifdef DEBUG
   mWorkerPrivate->AssertIsOnWorkerThread();
+  mWorkerThreadUsedOnlyForAssert = PR_GetCurrentThread();
+#endif
   MOZ_ASSERT(mClientSource);
 
   MOZ_DIAGNOSTIC_ASSERT(
@@ -237,32 +263,33 @@ WorkerGlobalScopeBase::WorkerGlobalScopeBase(
 WorkerGlobalScopeBase::~WorkerGlobalScopeBase() = default;
 
 JSObject* WorkerGlobalScopeBase::GetGlobalJSObject() {
-  mWorkerPrivate->AssertIsOnWorkerThread();
+  AssertIsOnWorkerThread();
   return GetWrapper();
 }
 
 JSObject* WorkerGlobalScopeBase::GetGlobalJSObjectPreserveColor() const {
-  mWorkerPrivate->AssertIsOnWorkerThread();
+  AssertIsOnWorkerThread();
   return GetWrapperPreserveColor();
 }
 
 bool WorkerGlobalScopeBase::IsSharedMemoryAllowed() const {
-  mWorkerPrivate->AssertIsOnWorkerThread();
+  AssertIsOnWorkerThread();
   return mWorkerPrivate->IsSharedMemoryAllowed();
 }
 
-bool WorkerGlobalScopeBase::ShouldResistFingerprinting() const {
-  mWorkerPrivate->AssertIsOnWorkerThread();
-  return mWorkerPrivate->ShouldResistFingerprinting();
+bool WorkerGlobalScopeBase::ShouldResistFingerprinting(
+    RFPTarget aTarget) const {
+  AssertIsOnWorkerThread();
+  return mWorkerPrivate->ShouldResistFingerprinting(aTarget);
 }
 
-uint32_t WorkerGlobalScopeBase::GetPrincipalHashValue() const {
-  mWorkerPrivate->AssertIsOnWorkerThread();
-  return mWorkerPrivate->GetPrincipalHashValue();
+OriginTrials WorkerGlobalScopeBase::Trials() const {
+  AssertIsOnWorkerThread();
+  return mWorkerPrivate->Trials();
 }
 
 StorageAccess WorkerGlobalScopeBase::GetStorageAccess() {
-  mWorkerPrivate->AssertIsOnWorkerThread();
+  AssertIsOnWorkerThread();
   return mWorkerPrivate->StorageAccess();
 }
 
@@ -274,9 +301,27 @@ Maybe<ServiceWorkerDescriptor> WorkerGlobalScopeBase::GetController() const {
   return mClientSource->GetController();
 }
 
+mozilla::Result<mozilla::ipc::PrincipalInfo, nsresult>
+WorkerGlobalScopeBase::GetStorageKey() {
+  AssertIsOnWorkerThread();
+
+  const mozilla::ipc::PrincipalInfo& principalInfo =
+      mWorkerPrivate->GetEffectiveStoragePrincipalInfo();
+
+  // Block expanded and null principals, let content and system through.
+  if (principalInfo.type() !=
+          mozilla::ipc::PrincipalInfo::TContentPrincipalInfo &&
+      principalInfo.type() !=
+          mozilla::ipc::PrincipalInfo::TSystemPrincipalInfo) {
+    return Err(NS_ERROR_DOM_SECURITY_ERR);
+  }
+
+  return principalInfo;
+}
+
 void WorkerGlobalScopeBase::Control(
     const ServiceWorkerDescriptor& aServiceWorker) {
-  mWorkerPrivate->AssertIsOnWorkerThread();
+  AssertIsOnWorkerThread();
   MOZ_DIAGNOSTIC_ASSERT(!mWorkerPrivate->IsChromeWorker());
   MOZ_DIAGNOSTIC_ASSERT(mWorkerPrivate->Kind() != WorkerKindService);
 
@@ -292,14 +337,13 @@ void WorkerGlobalScopeBase::Control(
 }
 
 nsresult WorkerGlobalScopeBase::Dispatch(
-    TaskCategory aCategory, already_AddRefed<nsIRunnable>&& aRunnable) {
-  return EventTargetFor(aCategory)->Dispatch(std::move(aRunnable),
-                                             NS_DISPATCH_NORMAL);
+    already_AddRefed<nsIRunnable>&& aRunnable) const {
+  return SerialEventTarget()->Dispatch(std::move(aRunnable),
+                                       NS_DISPATCH_NORMAL);
 }
 
-nsISerialEventTarget* WorkerGlobalScopeBase::EventTargetFor(
-    TaskCategory) const {
-  mWorkerPrivate->AssertIsOnWorkerThread();
+nsISerialEventTarget* WorkerGlobalScopeBase::SerialEventTarget() const {
+  AssertIsOnWorkerThread();
   return mSerialEventTarget;
 }
 
@@ -325,18 +369,18 @@ void WorkerGlobalScopeBase::ReportError(JSContext* aCx,
 
 void WorkerGlobalScopeBase::Atob(const nsAString& aAtob, nsAString& aOut,
                                  ErrorResult& aRv) const {
-  mWorkerPrivate->AssertIsOnWorkerThread();
+  AssertIsOnWorkerThread();
   aRv = nsContentUtils::Atob(aAtob, aOut);
 }
 
 void WorkerGlobalScopeBase::Btoa(const nsAString& aBtoa, nsAString& aOut,
                                  ErrorResult& aRv) const {
-  mWorkerPrivate->AssertIsOnWorkerThread();
+  AssertIsOnWorkerThread();
   aRv = nsContentUtils::Btoa(aBtoa, aOut);
 }
 
 already_AddRefed<Console> WorkerGlobalScopeBase::GetConsole(ErrorResult& aRv) {
-  mWorkerPrivate->AssertIsOnWorkerThread();
+  AssertIsOnWorkerThread();
 
   if (!mConsole) {
     mConsole = Console::Create(mWorkerPrivate->GetJSContext(), nullptr, aRv);
@@ -359,8 +403,10 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(WorkerGlobalScope,
                                                   WorkerGlobalScopeBase)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mCrypto)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mPerformance)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mWebTaskScheduler)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mLocation)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mNavigator)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mFontFaceSet)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mIndexedDB)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mCacheStorage)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mDebuggerNotificationManager)
@@ -370,22 +416,44 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(WorkerGlobalScope,
                                                 WorkerGlobalScopeBase)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mCrypto)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mPerformance)
+  if (tmp->mWebTaskScheduler) {
+    tmp->mWebTaskScheduler->Disconnect();
+    NS_IMPL_CYCLE_COLLECTION_UNLINK(mWebTaskScheduler)
+  }
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mLocation)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mNavigator)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mFontFaceSet)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mIndexedDB)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mCacheStorage)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mDebuggerNotificationManager)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK_WEAK_REFERENCE
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
-NS_IMPL_ISUPPORTS_CYCLE_COLLECTION_INHERITED(WorkerGlobalScope,
-                                             WorkerGlobalScopeBase,
-                                             nsISupportsWeakReference)
+NS_IMPL_ISUPPORTS_CYCLE_COLLECTION_INHERITED_0(WorkerGlobalScope,
+                                               WorkerGlobalScopeBase)
 
 WorkerGlobalScope::~WorkerGlobalScope() = default;
 
+void WorkerGlobalScope::NoteTerminating() {
+  LOG(("WorkerGlobalScope::NoteTerminating [%p]", this));
+  if (IsDying()) {
+    return;
+  }
+
+  StartDying();
+}
+
+void WorkerGlobalScope::NoteShuttingDown() {
+  MOZ_ASSERT(IsDying());
+  LOG(("WorkerGlobalScope::NoteShuttingDown [%p]", this));
+
+  if (mNavigator) {
+    mNavigator->Invalidate();
+    mNavigator = nullptr;
+  }
+}
+
 Crypto* WorkerGlobalScope::GetCrypto(ErrorResult& aError) {
-  mWorkerPrivate->AssertIsOnWorkerThread();
+  AssertIsOnWorkerThread();
 
   if (!mCrypto) {
     mCrypto = new Crypto(this);
@@ -412,7 +480,7 @@ bool WorkerGlobalScope::IsSecureContext() const {
 }
 
 already_AddRefed<WorkerLocation> WorkerGlobalScope::Location() {
-  mWorkerPrivate->AssertIsOnWorkerThread();
+  AssertIsOnWorkerThread();
 
   if (!mLocation) {
     mLocation = WorkerLocation::Create(mWorkerPrivate->GetLocationInfo());
@@ -424,7 +492,7 @@ already_AddRefed<WorkerLocation> WorkerGlobalScope::Location() {
 }
 
 already_AddRefed<WorkerNavigator> WorkerGlobalScope::Navigator() {
-  mWorkerPrivate->AssertIsOnWorkerThread();
+  AssertIsOnWorkerThread();
 
   if (!mNavigator) {
     mNavigator = WorkerNavigator::Create(mWorkerPrivate->OnLine());
@@ -437,21 +505,35 @@ already_AddRefed<WorkerNavigator> WorkerGlobalScope::Navigator() {
 
 already_AddRefed<WorkerNavigator> WorkerGlobalScope::GetExistingNavigator()
     const {
-  mWorkerPrivate->AssertIsOnWorkerThread();
+  AssertIsOnWorkerThread();
 
   RefPtr<WorkerNavigator> navigator = mNavigator;
   return navigator.forget();
 }
 
+FontFaceSet* WorkerGlobalScope::GetFonts(ErrorResult& aRv) {
+  AssertIsOnWorkerThread();
+
+  if (!mFontFaceSet) {
+    mFontFaceSet = FontFaceSet::CreateForWorker(this, mWorkerPrivate);
+    if (MOZ_UNLIKELY(!mFontFaceSet)) {
+      aRv.ThrowInvalidStateError("Couldn't acquire worker reference");
+      return nullptr;
+    }
+  }
+
+  return mFontFaceSet;
+}
+
 OnErrorEventHandlerNonNull* WorkerGlobalScope::GetOnerror() {
-  mWorkerPrivate->AssertIsOnWorkerThread();
+  AssertIsOnWorkerThread();
 
   EventListenerManager* elm = GetExistingListenerManager();
   return elm ? elm->GetOnErrorEventHandler() : nullptr;
 }
 
 void WorkerGlobalScope::SetOnerror(OnErrorEventHandlerNonNull* aHandler) {
-  mWorkerPrivate->AssertIsOnWorkerThread();
+  AssertIsOnWorkerThread();
 
   EventListenerManager* elm = GetOrCreateListenerManager();
   if (elm) {
@@ -462,7 +544,7 @@ void WorkerGlobalScope::SetOnerror(OnErrorEventHandlerNonNull* aHandler) {
 void WorkerGlobalScope::ImportScripts(JSContext* aCx,
                                       const Sequence<nsString>& aScriptURLs,
                                       ErrorResult& aRv) {
-  mWorkerPrivate->AssertIsOnWorkerThread();
+  AssertIsOnWorkerThread();
 
   UniquePtr<SerializedStackHolder> stack;
   if (mWorkerPrivate->IsWatchedByDevTools()) {
@@ -475,7 +557,11 @@ void WorkerGlobalScope::ImportScripts(JSContext* aCx,
         profiler_thread_is_being_profiled_for_markers()
             ? StringJoin(","_ns, aScriptURLs,
                          [](nsACString& dest, const auto& scriptUrl) {
-                           AppendUTF16toUTF8(scriptUrl, dest);
+                           AppendUTF16toUTF8(
+                               Substring(
+                                   scriptUrl, 0,
+                                   std::min(size_t(128), scriptUrl.Length())),
+                               dest);
                          })
             : nsAutoCString{});
     workerinternals::Load(mWorkerPrivate, std::move(stack), aScriptURLs,
@@ -498,11 +584,11 @@ int32_t WorkerGlobalScope::SetTimeout(JSContext* aCx, const nsAString& aHandler,
 }
 
 void WorkerGlobalScope::ClearTimeout(int32_t aHandle) {
-  mWorkerPrivate->AssertIsOnWorkerThread();
+  AssertIsOnWorkerThread();
 
   DebuggerNotificationDispatch(this, DebuggerNotificationType::ClearTimeout);
 
-  mWorkerPrivate->ClearTimeout(aHandle);
+  mWorkerPrivate->ClearTimeout(aHandle, Timeout::Reason::eTimeoutOrInterval);
 }
 
 int32_t WorkerGlobalScope::SetInterval(JSContext* aCx, Function& aHandler,
@@ -521,17 +607,17 @@ int32_t WorkerGlobalScope::SetInterval(JSContext* aCx,
 }
 
 void WorkerGlobalScope::ClearInterval(int32_t aHandle) {
-  mWorkerPrivate->AssertIsOnWorkerThread();
+  AssertIsOnWorkerThread();
 
   DebuggerNotificationDispatch(this, DebuggerNotificationType::ClearInterval);
 
-  mWorkerPrivate->ClearTimeout(aHandle);
+  mWorkerPrivate->ClearTimeout(aHandle, Timeout::Reason::eTimeoutOrInterval);
 }
 
 int32_t WorkerGlobalScope::SetTimeoutOrInterval(
     JSContext* aCx, Function& aHandler, const int32_t aTimeout,
     const Sequence<JS::Value>& aArguments, bool aIsInterval, ErrorResult& aRv) {
-  mWorkerPrivate->AssertIsOnWorkerThread();
+  AssertIsOnWorkerThread();
 
   DebuggerNotificationDispatch(
       this, aIsInterval ? DebuggerNotificationType::SetInterval
@@ -546,7 +632,8 @@ int32_t WorkerGlobalScope::SetTimeoutOrInterval(
   RefPtr<TimeoutHandler> handler =
       new CallbackTimeoutHandler(aCx, this, &aHandler, std::move(args));
 
-  return mWorkerPrivate->SetTimeout(aCx, handler, aTimeout, aIsInterval, aRv);
+  return mWorkerPrivate->SetTimeout(aCx, handler, aTimeout, aIsInterval,
+                                    Timeout::Reason::eTimeoutOrInterval, aRv);
 }
 
 int32_t WorkerGlobalScope::SetTimeoutOrInterval(JSContext* aCx,
@@ -554,7 +641,7 @@ int32_t WorkerGlobalScope::SetTimeoutOrInterval(JSContext* aCx,
                                                 const int32_t aTimeout,
                                                 bool aIsInterval,
                                                 ErrorResult& aRv) {
-  mWorkerPrivate->AssertIsOnWorkerThread();
+  AssertIsOnWorkerThread();
 
   DebuggerNotificationDispatch(
       this, aIsInterval ? DebuggerNotificationType::SetInterval
@@ -570,12 +657,14 @@ int32_t WorkerGlobalScope::SetTimeoutOrInterval(JSContext* aCx,
   RefPtr<TimeoutHandler> handler =
       new WorkerScriptTimeoutHandler(aCx, this, aHandler);
 
-  return mWorkerPrivate->SetTimeout(aCx, handler, aTimeout, aIsInterval, aRv);
+  return mWorkerPrivate->SetTimeout(aCx, handler, aTimeout, aIsInterval,
+                                    Timeout::Reason::eTimeoutOrInterval, aRv);
 }
 
 void WorkerGlobalScope::GetOrigin(nsAString& aOrigin) const {
-  mWorkerPrivate->AssertIsOnWorkerThread();
-  aOrigin = mWorkerPrivate->OriginNoSuffix();
+  AssertIsOnWorkerThread();
+  nsContentUtils::GetWebExposedOriginSerialization(
+      mWorkerPrivate->GetPrincipal(), aOrigin);
 }
 
 bool WorkerGlobalScope::CrossOriginIsolated() const {
@@ -583,7 +672,7 @@ bool WorkerGlobalScope::CrossOriginIsolated() const {
 }
 
 void WorkerGlobalScope::Dump(const Optional<nsAString>& aString) const {
-  mWorkerPrivate->AssertIsOnWorkerThread();
+  AssertIsOnWorkerThread();
 
   if (!aString.WasPassed()) {
     return;
@@ -605,10 +694,10 @@ void WorkerGlobalScope::Dump(const Optional<nsAString>& aString) const {
 }
 
 Performance* WorkerGlobalScope::GetPerformance() {
-  mWorkerPrivate->AssertIsOnWorkerThread();
+  AssertIsOnWorkerThread();
 
   if (!mPerformance) {
-    mPerformance = Performance::CreateForWorker(mWorkerPrivate);
+    mPerformance = Performance::CreateForWorker(this);
   }
 
   return mPerformance;
@@ -636,8 +725,8 @@ already_AddRefed<Promise> WorkerGlobalScope::Fetch(
 }
 
 already_AddRefed<IDBFactory> WorkerGlobalScope::GetIndexedDB(
-    ErrorResult& aErrorResult) {
-  mWorkerPrivate->AssertIsOnWorkerThread();
+    JSContext* aCx, ErrorResult& aErrorResult) {
+  AssertIsOnWorkerThread();
 
   RefPtr<IDBFactory> indexedDB = mIndexedDB;
 
@@ -673,6 +762,21 @@ already_AddRefed<IDBFactory> WorkerGlobalScope::GetIndexedDB(
   }
 
   return indexedDB.forget();
+}
+
+WebTaskScheduler* WorkerGlobalScope::Scheduler() {
+  mWorkerPrivate->AssertIsOnWorkerThread();
+
+  if (!mWebTaskScheduler) {
+    mWebTaskScheduler = WebTaskScheduler::CreateForWorker(mWorkerPrivate);
+  }
+
+  MOZ_ASSERT(mWebTaskScheduler);
+  return mWebTaskScheduler;
+}
+
+WebTaskScheduler* WorkerGlobalScope::GetExistingScheduler() const {
+  return mWebTaskScheduler;
 }
 
 already_AddRefed<Promise> WorkerGlobalScope::CreateImageBitmap(
@@ -718,24 +822,25 @@ WorkerGlobalScope::GetDebuggerNotificationType() const {
 RefPtr<ServiceWorkerRegistration>
 WorkerGlobalScope::GetServiceWorkerRegistration(
     const ServiceWorkerRegistrationDescriptor& aDescriptor) const {
-  mWorkerPrivate->AssertIsOnWorkerThread();
+  AssertIsOnWorkerThread();
   RefPtr<ServiceWorkerRegistration> ref;
-  ForEachEventTargetObject([&](DOMEventTargetHelper* aTarget, bool* aDoneOut) {
-    RefPtr<ServiceWorkerRegistration> swr = do_QueryObject(aTarget);
-    if (!swr || !swr->MatchesDescriptor(aDescriptor)) {
-      return;
-    }
+  ForEachGlobalTeardownObserver(
+      [&](GlobalTeardownObserver* aObserver, bool* aDoneOut) {
+        RefPtr<ServiceWorkerRegistration> swr = do_QueryObject(aObserver);
+        if (!swr || !swr->MatchesDescriptor(aDescriptor)) {
+          return;
+        }
 
-    ref = std::move(swr);
-    *aDoneOut = true;
-  });
+        ref = std::move(swr);
+        *aDoneOut = true;
+      });
   return ref;
 }
 
 RefPtr<ServiceWorkerRegistration>
 WorkerGlobalScope::GetOrCreateServiceWorkerRegistration(
     const ServiceWorkerRegistrationDescriptor& aDescriptor) {
-  mWorkerPrivate->AssertIsOnWorkerThread();
+  AssertIsOnWorkerThread();
   RefPtr<ServiceWorkerRegistration> ref =
       GetServiceWorkerRegistration(aDescriptor);
   if (!ref) {
@@ -745,6 +850,16 @@ WorkerGlobalScope::GetOrCreateServiceWorkerRegistration(
   return ref;
 }
 
+mozilla::dom::StorageManager* WorkerGlobalScope::GetStorageManager() {
+  return RefPtr(Navigator())->Storage();
+}
+
+// https://html.spec.whatwg.org/multipage/web-messaging.html#eligible-for-messaging
+// * a WorkerGlobalScope object whose closing flag is false and whose worker
+//   is not a suspendable worker.
+bool WorkerGlobalScope::IsEligibleForMessaging() {
+  return mIsEligibleForMessaging;
+}
 void WorkerGlobalScope::StorageAccessPermissionGranted() {
   // Reset the IndexedDB factory.
   mIndexedDB = nullptr;
@@ -754,17 +869,17 @@ void WorkerGlobalScope::StorageAccessPermissionGranted() {
 }
 
 bool WorkerGlobalScope::WindowInteractionAllowed() const {
-  mWorkerPrivate->AssertIsOnWorkerThread();
+  AssertIsOnWorkerThread();
   return mWindowInteractionsAllowed > 0;
 }
 
 void WorkerGlobalScope::AllowWindowInteraction() {
-  mWorkerPrivate->AssertIsOnWorkerThread();
+  AssertIsOnWorkerThread();
   mWindowInteractionsAllowed++;
 }
 
 void WorkerGlobalScope::ConsumeWindowInteraction() {
-  mWorkerPrivate->AssertIsOnWorkerThread();
+  AssertIsOnWorkerThread();
   MOZ_ASSERT(mWindowInteractionsAllowed);
   mWindowInteractionsAllowed--;
 }
@@ -787,53 +902,41 @@ DedicatedWorkerGlobalScope::DedicatedWorkerGlobalScope(
 
 bool DedicatedWorkerGlobalScope::WrapGlobalObject(
     JSContext* aCx, JS::MutableHandle<JSObject*> aReflector) {
-  mWorkerPrivate->AssertIsOnWorkerThread();
+  AssertIsOnWorkerThread();
   MOZ_ASSERT(!mWorkerPrivate->IsSharedWorker());
 
   JS::RealmOptions options;
   mWorkerPrivate->CopyJSRealmOptions(options);
 
-  const bool usesSystemPrincipal = mWorkerPrivate->UsesSystemPrincipal();
-
-  // Note that xpc::ShouldDiscardSystemSource() reads a prefs that is cached
-  // on the main thread. This is benignly racey.
-  const bool discardSource =
-      usesSystemPrincipal && xpc::ShouldDiscardSystemSource();
-
-  JS::RealmBehaviors& behaviors = options.behaviors();
-  behaviors.setDiscardSource(discardSource);
-
   xpc::SetPrefableRealmOptions(options);
 
   return DedicatedWorkerGlobalScope_Binding::Wrap(
       aCx, this, this, options,
-      new WorkerPrincipal(usesSystemPrincipal ||
-                          mWorkerPrivate->UsesAddonOrExpandedAddonPrincipal()),
-      true, aReflector);
+      nsJSPrincipals::get(mWorkerPrivate->GetPrincipal()), true, aReflector);
 }
 
 void DedicatedWorkerGlobalScope::PostMessage(
     JSContext* aCx, JS::Handle<JS::Value> aMessage,
     const Sequence<JSObject*>& aTransferable, ErrorResult& aRv) {
-  mWorkerPrivate->AssertIsOnWorkerThread();
+  AssertIsOnWorkerThread();
   mWorkerPrivate->PostMessageToParent(aCx, aMessage, aTransferable, aRv);
 }
 
 void DedicatedWorkerGlobalScope::PostMessage(
     JSContext* aCx, JS::Handle<JS::Value> aMessage,
     const StructuredSerializeOptions& aOptions, ErrorResult& aRv) {
-  mWorkerPrivate->AssertIsOnWorkerThread();
+  AssertIsOnWorkerThread();
   mWorkerPrivate->PostMessageToParent(aCx, aMessage, aOptions.mTransfer, aRv);
 }
 
 void DedicatedWorkerGlobalScope::Close() {
-  mWorkerPrivate->AssertIsOnWorkerThread();
+  AssertIsOnWorkerThread();
   mWorkerPrivate->CloseInternal();
 }
 
 int32_t DedicatedWorkerGlobalScope::RequestAnimationFrame(
     FrameRequestCallback& aCallback, ErrorResult& aError) {
-  mWorkerPrivate->AssertIsOnWorkerThread();
+  AssertIsOnWorkerThread();
 
   DebuggerNotificationDispatch(this,
                                DebuggerNotificationType::RequestAnimationFrame);
@@ -877,7 +980,7 @@ int32_t DedicatedWorkerGlobalScope::RequestAnimationFrame(
 
 void DedicatedWorkerGlobalScope::CancelAnimationFrame(int32_t aHandle,
                                                       ErrorResult& aError) {
-  mWorkerPrivate->AssertIsOnWorkerThread();
+  AssertIsOnWorkerThread();
 
   DebuggerNotificationDispatch(this,
                                DebuggerNotificationType::CancelAnimationFrame);
@@ -895,7 +998,7 @@ void DedicatedWorkerGlobalScope::CancelAnimationFrame(int32_t aHandle,
 }
 
 void DedicatedWorkerGlobalScope::OnDocumentVisible(bool aVisible) {
-  mWorkerPrivate->AssertIsOnWorkerThread();
+  AssertIsOnWorkerThread();
 
   mDocumentVisible = aVisible;
 
@@ -907,7 +1010,7 @@ void DedicatedWorkerGlobalScope::OnDocumentVisible(bool aVisible) {
 }
 
 void DedicatedWorkerGlobalScope::OnVsync(const VsyncEvent& aVsync) {
-  mWorkerPrivate->AssertIsOnWorkerThread();
+  AssertIsOnWorkerThread();
 
   if (mFrameRequestManager.IsEmpty() || !mDocumentVisible) {
     // If we ever receive a vsync event, and there are still no callbacks to
@@ -937,7 +1040,8 @@ void DedicatedWorkerGlobalScope::OnVsync(const VsyncEvent& aVsync) {
     // needs to have it's Time Reduction Logic refactored, so it's currently
     // only clamping for RFP mode. RFP mode gives a much lower time precision,
     // so we accept the security leak here for now.
-    timeStamp = nsRFPService::ReduceTimePrecisionAsMSecsRFPOnly(timeStamp, 0);
+    timeStamp = nsRFPService::ReduceTimePrecisionAsMSecsRFPOnly(
+        timeStamp, 0, this->GetRTPCallerType());
   }
 
   for (auto& callback : callbacks) {
@@ -961,7 +1065,7 @@ SharedWorkerGlobalScope::SharedWorkerGlobalScope(
 
 bool SharedWorkerGlobalScope::WrapGlobalObject(
     JSContext* aCx, JS::MutableHandle<JSObject*> aReflector) {
-  mWorkerPrivate->AssertIsOnWorkerThread();
+  AssertIsOnWorkerThread();
   MOZ_ASSERT(mWorkerPrivate->IsSharedWorker());
 
   JS::RealmOptions options;
@@ -969,13 +1073,11 @@ bool SharedWorkerGlobalScope::WrapGlobalObject(
 
   return SharedWorkerGlobalScope_Binding::Wrap(
       aCx, this, this, options,
-      new WorkerPrincipal(mWorkerPrivate->UsesSystemPrincipal() ||
-                          mWorkerPrivate->UsesAddonOrExpandedAddonPrincipal()),
-      true, aReflector);
+      nsJSPrincipals::get(mWorkerPrivate->GetPrincipal()), true, aReflector);
 }
 
 void SharedWorkerGlobalScope::Close() {
-  mWorkerPrivate->AssertIsOnWorkerThread();
+  AssertIsOnWorkerThread();
   mWorkerPrivate->CloseInternal();
 }
 
@@ -1004,7 +1106,7 @@ ServiceWorkerGlobalScope::~ServiceWorkerGlobalScope() = default;
 
 bool ServiceWorkerGlobalScope::WrapGlobalObject(
     JSContext* aCx, JS::MutableHandle<JSObject*> aReflector) {
-  mWorkerPrivate->AssertIsOnWorkerThread();
+  AssertIsOnWorkerThread();
   MOZ_ASSERT(mWorkerPrivate->IsServiceWorker());
 
   JS::RealmOptions options;
@@ -1012,9 +1114,7 @@ bool ServiceWorkerGlobalScope::WrapGlobalObject(
 
   return ServiceWorkerGlobalScope_Binding::Wrap(
       aCx, this, this, options,
-      new WorkerPrincipal(mWorkerPrivate->UsesSystemPrincipal() ||
-                          mWorkerPrivate->UsesAddonOrExpandedAddonPrincipal()),
-      true, aReflector);
+      nsJSPrincipals::get(mWorkerPrivate->GetPrincipal()), true, aReflector);
 }
 
 already_AddRefed<Clients> ServiceWorkerGlobalScope::GetClients() {
@@ -1031,7 +1131,7 @@ ServiceWorkerRegistration* ServiceWorkerGlobalScope::Registration() {
 }
 
 EventHandlerNonNull* ServiceWorkerGlobalScope::GetOnfetch() {
-  mWorkerPrivate->AssertIsOnWorkerThread();
+  AssertIsOnWorkerThread();
 
   return GetEventHandler(nsGkAtoms::onfetch);
 }
@@ -1080,7 +1180,7 @@ void ServiceWorkerGlobalScope::NoteFetchHandlerWasAdded() const {
 
 void ServiceWorkerGlobalScope::SetOnfetch(
     mozilla::dom::EventHandlerNonNull* aCallback) {
-  mWorkerPrivate->AssertIsOnWorkerThread();
+  AssertIsOnWorkerThread();
 
   if (aCallback) {
     NoteFetchHandlerWasAdded();
@@ -1089,7 +1189,7 @@ void ServiceWorkerGlobalScope::SetOnfetch(
 }
 
 void ServiceWorkerGlobalScope::EventListenerAdded(nsAtom* aType) {
-  mWorkerPrivate->AssertIsOnWorkerThread();
+  AssertIsOnWorkerThread();
 
   if (aType == nsGkAtoms::onfetch) {
     NoteFetchHandlerWasAdded();
@@ -1098,7 +1198,7 @@ void ServiceWorkerGlobalScope::EventListenerAdded(nsAtom* aType) {
 
 already_AddRefed<Promise> ServiceWorkerGlobalScope::SkipWaiting(
     ErrorResult& aRv) {
-  mWorkerPrivate->AssertIsOnWorkerThread();
+  AssertIsOnWorkerThread();
   MOZ_ASSERT(mWorkerPrivate->IsServiceWorker());
 
   RefPtr<Promise> promise = Promise::Create(this, aRv);
@@ -1132,16 +1232,14 @@ ServiceWorkerGlobalScope::AcquireExtensionBrowser() {
 
 bool WorkerDebuggerGlobalScope::WrapGlobalObject(
     JSContext* aCx, JS::MutableHandle<JSObject*> aReflector) {
-  mWorkerPrivate->AssertIsOnWorkerThread();
+  AssertIsOnWorkerThread();
 
   JS::RealmOptions options;
   mWorkerPrivate->CopyJSRealmOptions(options);
 
   return WorkerDebuggerGlobalScope_Binding::Wrap(
       aCx, this, this, options,
-      new WorkerPrincipal(mWorkerPrivate->UsesSystemPrincipal() ||
-                          mWorkerPrivate->UsesAddonOrExpandedAddonPrincipal()),
-      true, aReflector);
+      nsJSPrincipals::get(mWorkerPrivate->GetPrincipal()), true, aReflector);
 }
 
 void WorkerDebuggerGlobalScope::GetGlobal(JSContext* aCx,
@@ -1159,7 +1257,7 @@ void WorkerDebuggerGlobalScope::GetGlobal(JSContext* aCx,
 void WorkerDebuggerGlobalScope::CreateSandbox(
     JSContext* aCx, const nsAString& aName, JS::Handle<JSObject*> aPrototype,
     JS::MutableHandle<JSObject*> aResult, ErrorResult& aRv) {
-  mWorkerPrivate->AssertIsOnWorkerThread();
+  AssertIsOnWorkerThread();
 
   aResult.set(nullptr);
 
@@ -1186,7 +1284,7 @@ void WorkerDebuggerGlobalScope::CreateSandbox(
 void WorkerDebuggerGlobalScope::LoadSubScript(
     JSContext* aCx, const nsAString& aURL,
     const Optional<JS::Handle<JSObject*>>& aSandbox, ErrorResult& aRv) {
-  mWorkerPrivate->AssertIsOnWorkerThread();
+  AssertIsOnWorkerThread();
 
   Maybe<JSAutoRealm> ar;
   if (aSandbox.WasPassed()) {
@@ -1253,6 +1351,20 @@ void WorkerDebuggerGlobalScope::RetrieveConsoleEvents(
   console->RetrieveConsoleEvents(aCx, aEvents, aRv);
 }
 
+void WorkerDebuggerGlobalScope::ClearConsoleEvents(JSContext* aCx,
+                                                   ErrorResult& aRv) {
+  WorkerGlobalScope* scope = mWorkerPrivate->GetOrCreateGlobalScope(aCx);
+  if (!scope) {
+    aRv.Throw(NS_ERROR_FAILURE);
+    return;
+  }
+
+  RefPtr<Console> console = scope->GetConsoleIfExists();
+  if (console) {
+    console->ClearStorage();
+  }
+}
+
 void WorkerDebuggerGlobalScope::SetConsoleEventHandler(JSContext* aCx,
                                                        AnyCallback* aHandler,
                                                        ErrorResult& aRv) {
@@ -1291,5 +1403,4 @@ bool IsWorkerDebuggerSandbox(JSObject* object) {
          SimpleGlobalObject::GlobalType::WorkerDebuggerSandbox;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

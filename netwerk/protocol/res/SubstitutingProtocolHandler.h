@@ -28,9 +28,8 @@ namespace net {
 // to properly invoke CollectSubstitutions at the right time.
 class SubstitutingProtocolHandler {
  public:
-  SubstitutingProtocolHandler(const char* aScheme, uint32_t aFlags,
-                              bool aEnforceFileOrJar = true);
-  explicit SubstitutingProtocolHandler(const char* aScheme);
+  explicit SubstitutingProtocolHandler(const char* aScheme,
+                                       bool aEnforceFileOrJar = true);
 
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(SubstitutingProtocolHandler);
   NS_DECL_NON_VIRTUAL_NSIPROTOCOLHANDLER;
@@ -101,10 +100,10 @@ class SubstitutingProtocolHandler {
   void NotifyObservers(const nsACString& aRoot, nsIURI* aBaseURI);
 
   nsCString mScheme;
-  Maybe<uint32_t> mFlags;
 
   RWLock mSubstitutionsLock;
-  nsTHashMap<nsCStringHashKey, SubstitutionEntry> mSubstitutions;
+  nsTHashMap<nsCStringHashKey, SubstitutionEntry> mSubstitutions
+      MOZ_GUARDED_BY(mSubstitutionsLock);
   nsCOMPtr<nsIIOService> mIOService;
 
   // Returns a SubstitutingJARURI if |aUrl| maps to a |jar:| URI,

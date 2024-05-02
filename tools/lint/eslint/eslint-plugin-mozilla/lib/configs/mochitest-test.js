@@ -10,7 +10,6 @@ module.exports = {
   globals: {
     // SpecialPowers is injected into the window object via SimpleTest.js
     SpecialPowers: false,
-    XPCNativeWrapper: false,
   },
 
   overrides: [
@@ -24,16 +23,44 @@ module.exports = {
       files: ["*.js"],
     },
   ],
-
-  plugins: ["mozilla"],
+  plugins: ["mozilla", "@microsoft/sdl"],
 
   rules: {
+    // No using of insecure url, so no http urls
+    "@microsoft/sdl/no-insecure-url": [
+      "error",
+      {
+        exceptions: [
+          "^http:\\/\\/mochi\\.test?.*",
+          "^http:\\/\\/mochi\\.xorigin-test?.*",
+          "^http:\\/\\/localhost?.*",
+          "^http:\\/\\/127\\.0\\.0\\.1?.*",
+          // Exempt xmlns urls
+          "^http:\\/\\/www\\.w3\\.org?.*",
+          "^http:\\/\\/www\\.mozilla\\.org\\/keymaster\\/gatekeeper?.*",
+          // Exempt urls that start with ftp or ws.
+          "^ws:?.*",
+          "^ftp:?.*",
+        ],
+        varExceptions: ["insecure?.*"],
+      },
+    ],
     "mozilla/import-content-task-globals": "error",
     "mozilla/import-headjs-globals": "error",
     "mozilla/mark-test-function-used": "error",
     // Turn off no-define-cc-etc for mochitests as these don't have Cc etc defined in the
     // global scope.
     "mozilla/no-define-cc-etc": "off",
+    // We mis-predict globals for HTML test files in directories shared
+    // with browser tests, so don't try to "fix" imports that are needed.
+    "mozilla/no-redeclare-with-import-autofix": "off",
+    // Turn off use-chromeutils-generateqi as these tests don't have ChromeUtils
+    // available.
+    "mozilla/use-chromeutils-generateqi": "off",
     "no-shadow": "error",
+    // Turn off no-unsanitized for tests, as we do want to be able to use
+    // these for testing.
+    "no-unsanitized/method": "off",
+    "no-unsanitized/property": "off",
   },
 };

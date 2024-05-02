@@ -39,10 +39,8 @@ interface SVGMarkerElement : SVGElement {
   [Constant]
   readonly attribute SVGAnimatedAngle orientAngle;
 
-  void setOrientToAuto();
-  [Throws]
-  void setOrientToAngle(SVGAngle angle);
+  undefined setOrientToAuto();
+  undefined setOrientToAngle(SVGAngle angle);
 };
 
 SVGMarkerElement includes SVGFitToViewBox;
-

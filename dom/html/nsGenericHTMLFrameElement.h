@@ -46,7 +46,6 @@ class nsGenericHTMLFrameElement : public nsGenericHTMLElement,
       already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo,
       mozilla::dom::FromParser aFromParser)
       : nsGenericHTMLElement(std::move(aNodeInfo)),
-        nsBrowserElement(),
         mSrcLoadHappened(false),
         mNetworkCreated(aFromParser == mozilla::dom::FROM_PARSER_NETWORK),
         mBrowserFrameListenersRegistered(false),
@@ -110,14 +109,14 @@ class nsGenericHTMLFrameElement : public nsGenericHTMLElement,
   Document* GetContentDocument(nsIPrincipal& aSubjectPrincipal);
   mozilla::dom::Nullable<mozilla::dom::WindowProxyHolder> GetContentWindow();
 
-  virtual nsresult AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
-                                const nsAttrValue* aValue,
-                                const nsAttrValue* aOldValue,
-                                nsIPrincipal* aSubjectPrincipal,
-                                bool aNotify) override;
-  virtual nsresult OnAttrSetButNotChanged(int32_t aNamespaceID, nsAtom* aName,
-                                          const nsAttrValueOrString& aValue,
-                                          bool aNotify) override;
+  virtual void AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
+                            const nsAttrValue* aValue,
+                            const nsAttrValue* aOldValue,
+                            nsIPrincipal* aSubjectPrincipal,
+                            bool aNotify) override;
+  virtual void OnAttrSetButNotChanged(int32_t aNamespaceID, nsAtom* aName,
+                                      const nsAttrValueOrString& aValue,
+                                      bool aNotify) override;
 
   nsCOMPtr<nsIPrincipal> mSrcTriggeringPrincipal;
 
@@ -140,6 +139,13 @@ class nsGenericHTMLFrameElement : public nsGenericHTMLElement,
   // FullscreenFlag() for details. It is placed here so that we
   // do not bloat any struct.
   bool mFullscreenFlag = false;
+
+  /**
+   * Represents the iframe is deferred loading until this element gets visible.
+   * We just do not load if set and leave specific elements to set it (see
+   * HTMLIFrameElement).
+   */
+  bool mLazyLoading = false;
 
  private:
   void GetManifestURL(nsAString& aOut);

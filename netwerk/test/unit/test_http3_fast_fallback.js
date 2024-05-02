@@ -4,67 +4,67 @@
 
 "use strict";
 
-ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
-var { setTimeout } = ChromeUtils.import("resource://gre/modules/Timer.jsm");
+var { setTimeout } = ChromeUtils.importESModule(
+  "resource://gre/modules/Timer.sys.mjs"
+);
 
-let prefs;
 let h2Port;
 let h3Port;
-let listen;
 let trrServer;
 
-const dns = Cc["@mozilla.org/network/dns-service;1"].getService(
-  Ci.nsIDNSService
+const { TestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/TestUtils.sys.mjs"
 );
 const certOverrideService = Cc[
   "@mozilla.org/security/certoverride;1"
 ].getService(Ci.nsICertOverrideService);
 
-const defaultOriginAttributes = {};
-
-function setup() {
-  let env = Cc["@mozilla.org/process/environment;1"].getService(
-    Ci.nsIEnvironment
-  );
-  h2Port = env.get("MOZHTTP2_PORT");
+add_setup(async function setup() {
+  h2Port = Services.env.get("MOZHTTP2_PORT");
   Assert.notEqual(h2Port, null);
   Assert.notEqual(h2Port, "");
 
-  h3Port = env.get("MOZHTTP3_PORT_NO_RESPONSE");
+  h3Port = Services.env.get("MOZHTTP3_PORT_NO_RESPONSE");
   Assert.notEqual(h3Port, null);
   Assert.notEqual(h3Port, "");
 
   trr_test_setup();
 
+  if (mozinfo.socketprocess_networking) {
+    Services.dns; // Needed to trigger socket process.
+    await TestUtils.waitForCondition(() => Services.io.socketProcessLaunched);
+  }
+
   Services.prefs.setIntPref("network.trr.mode", 2); // TRR first
   Services.prefs.setBoolPref("network.http.http3.enable", true);
   Services.prefs.setIntPref("network.http.speculative-parallel-limit", 6);
-}
 
-setup();
-registerCleanupFunction(async () => {
-  trr_clear_prefs();
-  Services.prefs.clearUserPref("network.dns.upgrade_with_https_rr");
-  Services.prefs.clearUserPref("network.dns.use_https_rr_as_altsvc");
-  Services.prefs.clearUserPref("network.dns.echconfig.enabled");
-  Services.prefs.clearUserPref("network.dns.http3_echconfig.enabled");
-  Services.prefs.clearUserPref("network.dns.echconfig.fallback_to_origin");
-  Services.prefs.clearUserPref("network.dns.httpssvc.reset_exclustion_list");
-  Services.prefs.clearUserPref("network.http.http3.enable");
-  Services.prefs.clearUserPref(
-    "network.dns.httpssvc.http3_fast_fallback_timeout"
-  );
-  Services.prefs.clearUserPref(
-    "network.http.http3.alt-svc-mapping-for-testing"
-  );
-  Services.prefs.clearUserPref("network.http.http3.backup_timer_delay");
-  Services.prefs.clearUserPref("network.http.speculative-parallel-limit");
-  Services.prefs.clearUserPref(
-    "network.http.http3.parallel_fallback_conn_limit"
-  );
-  if (trrServer) {
-    await trrServer.stop();
-  }
+  registerCleanupFunction(async () => {
+    trr_clear_prefs();
+    Services.prefs.clearUserPref("network.dns.upgrade_with_https_rr");
+    Services.prefs.clearUserPref("network.dns.use_https_rr_as_altsvc");
+    Services.prefs.clearUserPref("network.dns.echconfig.enabled");
+    Services.prefs.clearUserPref("network.dns.http3_echconfig.enabled");
+    Services.prefs.clearUserPref(
+      "network.dns.echconfig.fallback_to_origin_when_all_failed"
+    );
+    Services.prefs.clearUserPref("network.dns.httpssvc.reset_exclustion_list");
+    Services.prefs.clearUserPref("network.http.http3.enable");
+    Services.prefs.clearUserPref(
+      "network.dns.httpssvc.http3_fast_fallback_timeout"
+    );
+    Services.prefs.clearUserPref(
+      "network.http.http3.alt-svc-mapping-for-testing"
+    );
+    Services.prefs.clearUserPref("network.http.http3.backup_timer_delay");
+    Services.prefs.clearUserPref("network.http.speculative-parallel-limit");
+    Services.prefs.clearUserPref(
+      "network.http.http3.parallel_fallback_conn_limit"
+    );
+    if (trrServer) {
+      await trrServer.stop();
+    }
+  });
 });
 
 function makeChan(url) {
@@ -92,13 +92,14 @@ function channelOpenPromise(chan, flags, delay) {
       true
     );
     if (delay) {
+      // eslint-disable-next-line mozilla/no-arbitrary-setTimeout
       await new Promise(r => setTimeout(r, delay));
     }
     chan.asyncOpen(new ChannelListener(finish, null, flags));
   });
 }
 
-let CheckOnlyHttp2Listener = function() {};
+let CheckOnlyHttp2Listener = function () {};
 
 CheckOnlyHttp2Listener.prototype = {
   onStartRequest: function testOnStartRequest(request) {},
@@ -165,6 +166,7 @@ add_task(async function test_fast_fallback_with_speculative_connection() {
 add_task(async function test_fast_fallback_without_speculative_connection() {
   // Make sure the h3 connection created by the previous test is cleared.
   Services.obs.notifyObservers(null, "net:cancel-all-connections");
+  // eslint-disable-next-line mozilla/no-arbitrary-setTimeout
   await new Promise(resolve => setTimeout(resolve, 1000));
   // Clear the h3 excluded list, otherwise the Alt-Svc mapping will not be used.
   Services.obs.notifyObservers(null, "network:reset-http3-excluded-list");
@@ -190,7 +192,7 @@ add_task(async function testFastfallback() {
   Services.prefs.setIntPref("network.trr.mode", 3);
   Services.prefs.setCharPref(
     "network.trr.uri",
-    `https://foo.example.com:${trrServer.port}/dns-query`
+    `https://foo.example.com:${trrServer.port()}/dns-query`
   );
   Services.prefs.setBoolPref("network.http.http3.enable", true);
 
@@ -279,7 +281,7 @@ add_task(async function testFastfallback1() {
   Services.prefs.setIntPref("network.trr.mode", 3);
   Services.prefs.setCharPref(
     "network.trr.uri",
-    `https://foo.example.com:${trrServer.port}/dns-query`
+    `https://foo.example.com:${trrServer.port()}/dns-query`
   );
   Services.prefs.setBoolPref("network.http.http3.enable", true);
 
@@ -369,7 +371,7 @@ add_task(async function testFastfallbackWithEchConfig() {
   Services.prefs.setIntPref("network.trr.mode", 3);
   Services.prefs.setCharPref(
     "network.trr.uri",
-    `https://foo.example.com:${trrServer.port}/dns-query`
+    `https://foo.example.com:${trrServer.port()}/dns-query`
   );
   Services.prefs.setBoolPref("network.http.http3.enable", true);
 
@@ -474,7 +476,7 @@ add_task(async function testFastfallbackWithpartialEchConfig() {
   Services.prefs.setIntPref("network.trr.mode", 3);
   Services.prefs.setCharPref(
     "network.trr.uri",
-    `https://foo.example.com:${trrServer.port}/dns-query`
+    `https://foo.example.com:${trrServer.port()}/dns-query`
   );
   Services.prefs.setBoolPref("network.http.http3.enable", true);
 
@@ -556,7 +558,7 @@ add_task(async function testFastfallbackWithoutEchConfig() {
   Services.prefs.setIntPref("network.trr.mode", 3);
   Services.prefs.setCharPref(
     "network.trr.uri",
-    `https://foo.example.com:${trrServer.port}/dns-query`
+    `https://foo.example.com:${trrServer.port()}/dns-query`
   );
   Services.prefs.setBoolPref("network.http.http3.enable", true);
 
@@ -627,7 +629,7 @@ add_task(async function testH3FallbackWithMultipleTransactions() {
   Services.prefs.setIntPref("network.trr.mode", 3);
   Services.prefs.setCharPref(
     "network.trr.uri",
-    `https://foo.example.com:${trrServer.port}/dns-query`
+    `https://foo.example.com:${trrServer.port()}/dns-query`
   );
   Services.prefs.setBoolPref("network.http.http3.enable", true);
 
@@ -678,7 +680,7 @@ add_task(async function testH3FallbackWithMultipleTransactions() {
   }
 
   let res = await Promise.all(promises);
-  res.forEach(function(e) {
+  res.forEach(function (e) {
     let [req] = e;
     Assert.equal(req.protocolVersion, "h2");
     let internal = req.QueryInterface(Ci.nsIHttpChannelInternal);
@@ -698,7 +700,7 @@ add_task(async function testTwoFastFallbackTimers() {
   Services.prefs.setIntPref("network.trr.mode", 3);
   Services.prefs.setCharPref(
     "network.trr.uri",
-    `https://foo.example.com:${trrServer.port}/dns-query`
+    `https://foo.example.com:${trrServer.port()}/dns-query`
   );
   Services.prefs.setBoolPref("network.http.http3.enable", true);
 
@@ -769,7 +771,7 @@ add_task(async function testTwoFastFallbackTimers() {
 
   Services.obs.notifyObservers(null, "net:prune-all-connections");
   Services.obs.notifyObservers(null, "network:reset-http3-excluded-list");
-  dns.clearCache(true);
+  Services.dns.clearCache(true);
 
   // Do the same test again, but with a different configuration.
   Services.prefs.setIntPref(
@@ -793,7 +795,7 @@ add_task(async function testH3FastFallbackWithMultipleTransactions() {
   Services.prefs.setIntPref("network.trr.mode", 3);
   Services.prefs.setCharPref(
     "network.trr.uri",
-    `https://foo.example.com:${trrServer.port}/dns-query`
+    `https://foo.example.com:${trrServer.port()}/dns-query`
   );
   Services.prefs.setBoolPref("network.http.http3.enable", true);
 
@@ -834,7 +836,7 @@ add_task(async function testH3FastFallbackWithMultipleTransactions() {
   }
 
   let res = await Promise.all(promises);
-  res.forEach(function(e) {
+  res.forEach(function (e) {
     let [req] = e;
     Assert.equal(req.protocolVersion, "h2");
     let internal = req.QueryInterface(Ci.nsIHttpChannelInternal);
@@ -855,7 +857,7 @@ add_task(async function testFastfallbackToTheSameRecord() {
   Services.prefs.setIntPref("network.trr.mode", 3);
   Services.prefs.setCharPref(
     "network.trr.uri",
-    `https://foo.example.com:${trrServer.port}/dns-query`
+    `https://foo.example.com:${trrServer.port()}/dns-query`
   );
   Services.prefs.setBoolPref("network.http.http3.enable", true);
 

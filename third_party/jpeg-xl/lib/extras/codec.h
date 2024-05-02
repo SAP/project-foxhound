@@ -26,38 +26,37 @@
 
 namespace jxl {
 
+struct SizeConstraints;
+
 // Decodes "bytes" and sets io->metadata.m.
 // color_space_hint may specify the color space, otherwise, defaults to sRGB.
 Status SetFromBytes(Span<const uint8_t> bytes,
                     const extras::ColorHints& color_hints, CodecInOut* io,
                     ThreadPool* pool = nullptr,
+                    const SizeConstraints* constraints = nullptr,
                     extras::Codec* orig_codec = nullptr);
 // Helper function to use no color_space_hint.
 JXL_INLINE Status SetFromBytes(const Span<const uint8_t> bytes, CodecInOut* io,
                                ThreadPool* pool = nullptr,
+                               const SizeConstraints* constraints = nullptr,
                                extras::Codec* orig_codec = nullptr) {
-  return SetFromBytes(bytes, extras::ColorHints(), io, pool, orig_codec);
+  return SetFromBytes(bytes, extras::ColorHints(), io, pool, constraints,
+                      orig_codec);
 }
-
-// Reads from file and calls SetFromBytes.
-Status SetFromFile(const std::string& pathname,
-                   const extras::ColorHints& color_hints, CodecInOut* io,
-                   ThreadPool* pool = nullptr,
-                   extras::Codec* orig_codec = nullptr);
 
 // Replaces "bytes" with an encoding of pixels transformed from c_current
 // color space to c_desired.
 Status Encode(const CodecInOut& io, extras::Codec codec,
               const ColorEncoding& c_desired, size_t bits_per_sample,
-              PaddedBytes* bytes, ThreadPool* pool = nullptr);
+              std::vector<uint8_t>* bytes, ThreadPool* pool = nullptr);
 
 // Deduces codec, calls Encode and writes to file.
-Status EncodeToFile(const CodecInOut& io, const ColorEncoding& c_desired,
-                    size_t bits_per_sample, const std::string& pathname,
-                    ThreadPool* pool = nullptr);
+Status Encode(const CodecInOut& io, const ColorEncoding& c_desired,
+              size_t bits_per_sample, const std::string& pathname,
+              std::vector<uint8_t>* bytes, ThreadPool* pool = nullptr);
 // Same, but defaults to metadata.original color_encoding and bits_per_sample.
-Status EncodeToFile(const CodecInOut& io, const std::string& pathname,
-                    ThreadPool* pool = nullptr);
+Status Encode(const CodecInOut& io, const std::string& pathname,
+              std::vector<uint8_t>* bytes, ThreadPool* pool = nullptr);
 
 }  // namespace jxl
 

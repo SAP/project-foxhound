@@ -56,15 +56,14 @@ add_task(function makeResultGroups_true() {
             { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_ENGINE_ALIAS },
             { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_BOOKMARK_KEYWORD },
             { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_AUTOFILL },
-            { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_PRELOADED },
             { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_TOKEN_ALIAS_ENGINE },
+            { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_HISTORY_URL },
             { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_FALLBACK },
           ],
         },
         // extensions using the omnibox API
         {
           group: UrlbarUtils.RESULT_GROUP.OMNIBOX,
-          availableSpan: UrlbarUtils.MAX_OMNIBOX_RESULT_COUNT - 1,
         },
         // main group
         {
@@ -80,6 +79,10 @@ add_task(function makeResultGroups_true() {
                     {
                       flex: 2,
                       group: UrlbarUtils.RESULT_GROUP.FORM_HISTORY,
+                    },
+                    {
+                      flex: 2,
+                      group: UrlbarUtils.RESULT_GROUP.RECENT_SEARCH,
                     },
                     {
                       flex: 4,
@@ -115,10 +118,6 @@ add_task(function makeResultGroups_true() {
                     {
                       flex: 2,
                       group: UrlbarUtils.RESULT_GROUP.ABOUT_PAGES,
-                    },
-                    {
-                      flex: 1,
-                      group: UrlbarUtils.RESULT_GROUP.PRELOADED,
                     },
                   ],
                 },
@@ -152,15 +151,14 @@ add_task(function makeResultGroups_false() {
             { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_ENGINE_ALIAS },
             { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_BOOKMARK_KEYWORD },
             { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_AUTOFILL },
-            { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_PRELOADED },
             { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_TOKEN_ALIAS_ENGINE },
+            { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_HISTORY_URL },
             { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_FALLBACK },
           ],
         },
         // extensions using the omnibox API
         {
           group: UrlbarUtils.RESULT_GROUP.OMNIBOX,
-          availableSpan: UrlbarUtils.MAX_OMNIBOX_RESULT_COUNT - 1,
         },
         // main group
         {
@@ -190,10 +188,6 @@ add_task(function makeResultGroups_false() {
                       flex: 2,
                       group: UrlbarUtils.RESULT_GROUP.ABOUT_PAGES,
                     },
-                    {
-                      flex: 1,
-                      group: UrlbarUtils.RESULT_GROUP.PRELOADED,
-                    },
                   ],
                 },
                 {
@@ -211,6 +205,10 @@ add_task(function makeResultGroups_false() {
                     {
                       flex: 2,
                       group: UrlbarUtils.RESULT_GROUP.FORM_HISTORY,
+                    },
+                    {
+                      flex: 2,
+                      group: UrlbarUtils.RESULT_GROUP.RECENT_SEARCH,
                     },
                     {
                       flex: 4,
@@ -238,20 +236,16 @@ add_task(function showSearchSuggestionsFirst_resultGroups() {
     true,
     "showSearchSuggestionsFirst is true initially"
   );
-  Assert.equal(
-    Services.prefs.getCharPref("browser.urlbar.resultGroups", ""),
-    "",
-    "resultGroups is empty initially"
+  Assert.deepEqual(
+    UrlbarPrefs.resultGroups,
+    UrlbarPrefs.makeResultGroups({ showSearchSuggestionsFirst: true }),
+    "resultGroups is the same as the groups for which howSearchSuggestionsFirst is true"
   );
 
   // Set showSearchSuggestionsFirst = false.
   UrlbarPrefs.set("showSearchSuggestionsFirst", false);
-  Assert.ok(
-    Services.prefs.getCharPref("browser.urlbar.resultGroups", ""),
-    "resultGroups should exist after setting showSearchSuggestionsFirst"
-  );
   Assert.deepEqual(
-    JSON.parse(Services.prefs.getCharPref("browser.urlbar.resultGroups")),
+    UrlbarPrefs.resultGroups,
     UrlbarPrefs.makeResultGroups({ showSearchSuggestionsFirst: false }),
     "resultGroups is updated after setting showSearchSuggestionsFirst = false"
   );
@@ -259,7 +253,7 @@ add_task(function showSearchSuggestionsFirst_resultGroups() {
   // Set showSearchSuggestionsFirst = true.
   UrlbarPrefs.set("showSearchSuggestionsFirst", true);
   Assert.deepEqual(
-    JSON.parse(Services.prefs.getCharPref("browser.urlbar.resultGroups")),
+    UrlbarPrefs.resultGroups,
     UrlbarPrefs.makeResultGroups({ showSearchSuggestionsFirst: true }),
     "resultGroups is updated after setting showSearchSuggestionsFirst = true"
   );
@@ -267,7 +261,7 @@ add_task(function showSearchSuggestionsFirst_resultGroups() {
   // Set showSearchSuggestionsFirst = false again so we can clear it next.
   UrlbarPrefs.set("showSearchSuggestionsFirst", false);
   Assert.deepEqual(
-    JSON.parse(Services.prefs.getCharPref("browser.urlbar.resultGroups")),
+    UrlbarPrefs.resultGroups,
     UrlbarPrefs.makeResultGroups({ showSearchSuggestionsFirst: false }),
     "resultGroups is updated after setting showSearchSuggestionsFirst = false"
   );
@@ -275,7 +269,7 @@ add_task(function showSearchSuggestionsFirst_resultGroups() {
   // Clear showSearchSuggestionsFirst.
   Services.prefs.clearUserPref("browser.urlbar.showSearchSuggestionsFirst");
   Assert.deepEqual(
-    JSON.parse(Services.prefs.getCharPref("browser.urlbar.resultGroups")),
+    UrlbarPrefs.resultGroups,
     UrlbarPrefs.makeResultGroups({ showSearchSuggestionsFirst: true }),
     "resultGroups is updated immediately after clearing showSearchSuggestionsFirst"
   );
@@ -285,7 +279,7 @@ add_task(function showSearchSuggestionsFirst_resultGroups() {
     "showSearchSuggestionsFirst defaults to true after clearing it"
   );
   Assert.deepEqual(
-    JSON.parse(Services.prefs.getCharPref("browser.urlbar.resultGroups")),
+    UrlbarPrefs.resultGroups,
     UrlbarPrefs.makeResultGroups({ showSearchSuggestionsFirst: true }),
     "resultGroups remains correct after getting showSearchSuggestionsFirst"
   );
@@ -348,7 +342,7 @@ add_task(function initializeShowSearchSuggestionsFirstPref() {
       "showSearchSuggestionsFirst has the expected value"
     );
     Assert.deepEqual(
-      JSON.parse(Services.prefs.getCharPref("browser.urlbar.resultGroups")),
+      UrlbarPrefs.resultGroups,
       UrlbarPrefs.makeResultGroups({
         showSearchSuggestionsFirst: expectedValue,
       }),
@@ -357,4 +351,97 @@ add_task(function initializeShowSearchSuggestionsFirstPref() {
   }
 
   Services.prefs.clearUserPref("browser.urlbar.matchGroups");
+});
+
+// Tests whether observer.onNimbusChanged works.
+add_task(async function onNimbusChanged() {
+  Services.prefs.setBoolPref(
+    "browser.urlbar.autoFill.adaptiveHistory.enabled",
+    false
+  );
+
+  // Add an observer that throws an Error and an observer that does not define
+  // anything to check whether the other observers can get notifications.
+  UrlbarPrefs.addObserver({
+    onPrefChanged(pref) {
+      throw new Error("From onPrefChanged");
+    },
+    onNimbusChanged(pref) {
+      throw new Error("From onNimbusChanged");
+    },
+  });
+  UrlbarPrefs.addObserver({});
+
+  const observer = {
+    onPrefChanged(pref) {
+      this.prefChangedList.push(pref);
+    },
+    onNimbusChanged(pref) {
+      this.nimbusChangedList.push(pref);
+    },
+  };
+  observer.prefChangedList = [];
+  observer.nimbusChangedList = [];
+  UrlbarPrefs.addObserver(observer);
+
+  const doCleanup = await UrlbarTestUtils.initNimbusFeature({
+    autoFillAdaptiveHistoryEnabled: true,
+  });
+  Assert.equal(observer.prefChangedList.length, 0);
+  Assert.ok(
+    observer.nimbusChangedList.includes("autoFillAdaptiveHistoryEnabled")
+  );
+  doCleanup();
+});
+
+// Tests whether observer.onPrefChanged works.
+add_task(async function onPrefChanged() {
+  const doCleanup = await UrlbarTestUtils.initNimbusFeature({
+    autoFillAdaptiveHistoryEnabled: false,
+  });
+  Services.prefs.setBoolPref(
+    "browser.urlbar.autoFill.adaptiveHistory.enabled",
+    false
+  );
+
+  // Add an observer that throws an Error and an observer that does not define
+  // anything to check whether the other observers can get notifications.
+  UrlbarPrefs.addObserver({
+    onPrefChanged(pref) {
+      throw new Error("From onPrefChanged");
+    },
+    onNimbusChanged(pref) {
+      throw new Error("From onNimbusChanged");
+    },
+  });
+  UrlbarPrefs.addObserver({});
+
+  const deferred = PromiseUtils.defer();
+  const observer = {
+    onPrefChanged(pref) {
+      this.prefChangedList.push(pref);
+      deferred.resolve();
+    },
+    onNimbusChanged(pref) {
+      this.nimbusChangedList.push(pref);
+      deferred.resolve();
+    },
+  };
+  observer.prefChangedList = [];
+  observer.nimbusChangedList = [];
+  UrlbarPrefs.addObserver(observer);
+
+  Services.prefs.setBoolPref(
+    "browser.urlbar.autoFill.adaptiveHistory.enabled",
+    true
+  );
+  await deferred.promise;
+  Assert.equal(observer.prefChangedList.length, 1);
+  Assert.equal(observer.prefChangedList[0], "autoFill.adaptiveHistory.enabled");
+  Assert.equal(observer.nimbusChangedList.length, 0);
+
+  Services.prefs.clearUserPref(
+    "browser.urlbar.autoFill.adaptiveHistory.enabled"
+  );
+  doCleanup();
 });

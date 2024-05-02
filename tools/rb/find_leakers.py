@@ -9,8 +9,6 @@
 # sees if they `Release' or `Dtor'. If not, it reports them as leaks.
 # Please see README file in the same directory.
 
-from __future__ import absolute_import, print_function
-
 import sys
 
 import six
@@ -52,7 +50,13 @@ def process_log(log_lines):
         if not log_line.startswith("<"):
             continue
 
-        (class_name, obj, ignore, operation, count,) = log_line.strip("\r\n").split(
+        (
+            class_name,
+            obj,
+            ignore,
+            operation,
+            count,
+        ) = log_line.strip("\r\n").split(
             " "
         )[:5]
 

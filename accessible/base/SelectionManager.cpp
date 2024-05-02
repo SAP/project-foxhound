@@ -8,14 +8,13 @@
 #include "DocAccessible-inl.h"
 #include "HyperTextAccessible.h"
 #include "HyperTextAccessible-inl.h"
-#include "nsAccessibilityService.h"
 #include "nsAccUtils.h"
 #include "nsCoreUtils.h"
 #include "nsEventShell.h"
 #include "nsFrameSelection.h"
+#include "TextLeafRange.h"
 
 #include "mozilla/PresShell.h"
-#include "mozilla/dom/Document.h"
 #include "mozilla/dom/Selection.h"
 #include "mozilla/dom/Element.h"
 
@@ -24,10 +23,12 @@ using namespace mozilla::a11y;
 using mozilla::dom::Selection;
 
 struct mozilla::a11y::SelData final {
-  SelData(Selection* aSel, int32_t aReason) : mSel(aSel), mReason(aReason) {}
+  SelData(Selection* aSel, int32_t aReason, int32_t aGranularity)
+      : mSel(aSel), mReason(aReason), mGranularity(aGranularity) {}
 
   RefPtr<Selection> mSel;
   int16_t mReason;
+  int32_t mGranularity;
 
   NS_INLINE_DECL_REFCOUNTING(SelData)
 
@@ -123,9 +124,17 @@ void SelectionManager::RemoveDocSelectionListener(PresShell* aPresShell) {
 
 void SelectionManager::ProcessTextSelChangeEvent(AccEvent* aEvent) {
   // Fire selection change event if it's not pure caret-move selection change,
-  // i.e. the accessible has or had not collapsed selection.
+  // i.e. the accessible has or had not collapsed selection. Also, it must not
+  // be a collapsed selection on the container of a focused text field, since
+  // the text field has an independent selection and will thus fire its own
+  // selection events.
   AccTextSelChangeEvent* event = downcast_accEvent(aEvent);
-  if (!event->IsCaretMoveOnly()) nsEventShell::FireEvent(aEvent);
+  if (!event->IsCaretMoveOnly() &&
+      !(event->mSel->IsCollapsed() && event->mSel != mCurrCtrlNormalSel &&
+        FocusMgr() && FocusMgr()->FocusedLocalAccessible() &&
+        FocusMgr()->FocusedLocalAccessible()->IsTextField())) {
+    nsEventShell::FireEvent(aEvent);
+  }
 
   // Fire caret move event if there's a caret in the selection.
   nsINode* caretCntrNode = nsCoreUtils::GetDOMNodeFromDOMPoint(
@@ -148,17 +157,18 @@ void SelectionManager::ProcessTextSelChangeEvent(AccEvent* aEvent) {
                                              selection->FocusOffset());
   mAccWithCaret = caretCntr;
   if (mCaretOffset != -1) {
-    RefPtr<AccCaretMoveEvent> caretMoveEvent = new AccCaretMoveEvent(
-        caretCntr, mCaretOffset, selection->IsCollapsed(),
-        caretCntr->IsCaretAtEndOfLine(), aEvent->FromUserInput());
+    RefPtr<AccCaretMoveEvent> caretMoveEvent =
+        new AccCaretMoveEvent(caretCntr, mCaretOffset, selection->IsCollapsed(),
+                              caretCntr->IsCaretAtEndOfLine(),
+                              event->GetGranularity(), aEvent->FromUserInput());
     nsEventShell::FireEvent(caretMoveEvent);
   }
 }
 
 NS_IMETHODIMP
 SelectionManager::NotifySelectionChanged(dom::Document* aDocument,
-                                         Selection* aSelection,
-                                         int16_t aReason) {
+                                         Selection* aSelection, int16_t aReason,
+                                         int32_t aAmount) {
   if (NS_WARN_IF(!aDocument) || NS_WARN_IF(!aSelection)) {
     return NS_ERROR_INVALID_ARG;
   }
@@ -175,7 +185,7 @@ SelectionManager::NotifySelectionChanged(dom::Document* aDocument,
     // Selection manager has longer lifetime than any document accessible,
     // so that we are guaranteed that the notification is processed before
     // the selection manager is destroyed.
-    RefPtr<SelData> selData = new SelData(aSelection, aReason);
+    RefPtr<SelData> selData = new SelData(aSelection, aReason, aAmount);
     document->HandleNotification<SelectionManager, SelData>(
         this, &SelectionManager::ProcessSelectionChanged, selData);
   }
@@ -211,8 +221,8 @@ void SelectionManager::ProcessSelectionChanged(SelData* aSelData) {
   }
 
   if (selection->GetType() == SelectionType::eNormal) {
-    RefPtr<AccEvent> event =
-        new AccTextSelChangeEvent(text, selection, aSelData->mReason);
+    RefPtr<AccEvent> event = new AccTextSelChangeEvent(
+        text, selection, aSelData->mReason, aSelData->mGranularity);
     text->Document()->FireDelayedEvent(event);
 
   } else if (selection->GetType() == SelectionType::eSpellCheck) {
@@ -220,6 +230,16 @@ void SelectionManager::ProcessSelectionChanged(SelData* aSelData) {
     // of the spelcheck selection.
     text->Document()->FireDelayedEvent(
         nsIAccessibleEvent::EVENT_TEXT_ATTRIBUTE_CHANGED, text);
+  }
+}
+
+void SelectionManager::SpellCheckRangeChanged(const nsRange& aRange) {
+  // Events are fired in SelectionManager::NotifySelectionChanged. This is only
+  // used to push cache updates.
+  if (IPCAccessibilityActive()) {
+    dom::Document* doc = aRange.GetStartContainer()->OwnerDoc();
+    MOZ_ASSERT(doc);
+    TextLeafPoint::UpdateCachedSpellingError(doc, aRange);
   }
 }
 

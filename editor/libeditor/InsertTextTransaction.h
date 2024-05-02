@@ -6,9 +6,11 @@
 #ifndef InsertTextTransaction_h
 #define InsertTextTransaction_h
 
-#include "mozilla/EditTransactionBase.h"  // base class
+#include "EditTransactionBase.h"  // base class
 
-#include "mozilla/EditorDOMPoint.h"        // EditorDOMPointInText
+#include "EditorDOMPoint.h"
+#include "EditorForwards.h"
+
 #include "nsCycleCollectionParticipant.h"  // various macros
 #include "nsID.h"                          // NS_DECLARE_STATIC_IID_ACCESSOR
 #include "nsISupportsImpl.h"               // NS_DECL_ISUPPORTS_INHERITED
@@ -16,9 +18,6 @@
 #include "nscore.h"                        // NS_IMETHOD, nsAString
 
 namespace mozilla {
-
-class EditorBase;
-
 namespace dom {
 class Text;
 }  // namespace dom
@@ -57,7 +56,15 @@ class InsertTextTransaction final : public EditTransactionBase {
   /**
    * Return the string data associated with this transaction.
    */
-  void GetData(nsString& aResult);
+  const nsString& GetData() const { return mStringToInsert; }
+
+  template <typename EditorDOMPointType>
+  EditorDOMPointType SuggestPointToPutCaret() const {
+    if (NS_WARN_IF(!mTextNode)) {
+      return EditorDOMPointType();
+    }
+    return EditorDOMPointType(mTextNode, mOffset + mStringToInsert.Length());
+  }
 
   friend std::ostream& operator<<(std::ostream& aStream,
                                   const InsertTextTransaction& aTransaction);
@@ -66,7 +73,7 @@ class InsertTextTransaction final : public EditTransactionBase {
   virtual ~InsertTextTransaction() = default;
 
   // Return true if aOtherTransaction immediately follows this transaction.
-  bool IsSequentialInsert(InsertTextTransaction& aOtherTrasaction);
+  bool IsSequentialInsert(InsertTextTransaction& aOtherTransaction) const;
 
   // The Text node to operate upon.
   RefPtr<dom::Text> mTextNode;

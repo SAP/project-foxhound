@@ -41,7 +41,6 @@ class WebRenderUserData;
 class WebRenderCommandBuilder final {
   typedef nsTHashSet<RefPtr<WebRenderUserData>> WebRenderUserDataRefTable;
   typedef nsTHashSet<RefPtr<WebRenderCanvasData>> CanvasDataSet;
-  typedef nsTHashSet<RefPtr<WebRenderLocalCanvasData>> LocalCanvasDataSet;
 
  public:
   explicit WebRenderCommandBuilder(WebRenderLayerManager* aManager);
@@ -173,9 +172,6 @@ class WebRenderCommandBuilder final {
       case WebRenderUserData::UserDataType::eCanvas:
         mLastCanvasDatas.Insert(data->AsCanvasData());
         break;
-      case WebRenderUserData::UserDataType::eLocalCanvas:
-        mLastLocalCanvasDatas.Insert(data->AsLocalCanvasData());
-        break;
       default:
         break;
     }
@@ -212,14 +208,15 @@ class WebRenderCommandBuilder final {
   // need this so that WebRenderLayerScrollData items that deeper in the
   // tree don't duplicate scroll metadata that their ancestors already have.
   std::vector<const ActiveScrolledRoot*> mAsrStack;
+  // A similar stack to track the deferred transform that we decided to emit
+  // most recently.
+  std::vector<nsDisplayTransform*> mDeferredTransformStack;
   const ActiveScrolledRoot* mLastAsr;
 
   WebRenderUserDataRefTable mWebRenderUserDatas;
 
   // Store of WebRenderCanvasData objects for use in empty transactions
   CanvasDataSet mLastCanvasDatas;
-  // Store of WebRenderLocalCanvasData objects for use in empty transactions
-  LocalCanvasDataSet mLastLocalCanvasDatas;
 
   wr::usize mBuilderDumpIndex;
   wr::usize mDumpIndent;

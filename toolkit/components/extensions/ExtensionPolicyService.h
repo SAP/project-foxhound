@@ -21,6 +21,7 @@
 #include "nsPointerHashKeys.h"
 #include "nsRefPtrHashtable.h"
 #include "nsTHashSet.h"
+#include "nsAtomHashKeys.h"
 
 class nsIChannel;
 class nsIObserverService;
@@ -56,11 +57,25 @@ class ExtensionPolicyService final : public nsIAddonPolicyService,
 
   static ExtensionPolicyService& GetSingleton();
 
+  // Helper for fetching an AtomSet of restricted domains as configured by the
+  // extensions.webextensions.restrictedDomains pref. Safe to call from any
+  // thread.
+  static RefPtr<extensions::AtomSet> RestrictedDomains();
+
+  // Thread-safe AtomSet from extensions.quarantinedDomains.list.
+  static RefPtr<extensions::AtomSet> QuarantinedDomains();
+
   static already_AddRefed<ExtensionPolicyService> GetInstance() {
     return do_AddRef(&GetSingleton());
   }
 
-  WebExtensionPolicy* GetByID(const nsAtom* aAddonId) {
+  // Unlike the other methods on the ExtensionPolicyService, this method is
+  // threadsafe, and can look up a WebExtensionPolicyCore by hostname on any
+  // thread.
+  static RefPtr<extensions::WebExtensionPolicyCore> GetCoreByHost(
+      const nsACString& aHost);
+
+  WebExtensionPolicy* GetByID(nsAtom* aAddonId) {
     return mExtensions.GetWeak(aAddonId);
   }
 
@@ -71,9 +86,7 @@ class ExtensionPolicyService final : public nsIAddonPolicyService,
 
   WebExtensionPolicy* GetByURL(const extensions::URLInfo& aURL);
 
-  WebExtensionPolicy* GetByHost(const nsACString& aHost) const {
-    return mExtensionHosts.GetWeak(aHost);
-  }
+  WebExtensionPolicy* GetByHost(const nsACString& aHost) const;
 
   void GetAll(nsTArray<RefPtr<WebExtensionPolicy>>& aResult);
 
@@ -85,6 +98,7 @@ class ExtensionPolicyService final : public nsIAddonPolicyService,
 
   bool UseRemoteExtensions() const;
   bool IsExtensionProcess() const;
+  bool GetQuarantinedDomainsEnabled() const;
 
   nsresult InjectContentScripts(WebExtensionPolicy* aExtension);
 
@@ -110,8 +124,11 @@ class ExtensionPolicyService final : public nsIAddonPolicyService,
       JSContext* aCx, nsPIDOMWindowInner* aWindow,
       const nsTArray<RefPtr<extensions::WebExtensionContentScript>>& aScripts);
 
-  nsRefPtrHashtable<nsPtrHashKey<const nsAtom>, WebExtensionPolicy> mExtensions;
-  nsRefPtrHashtable<nsCStringHashKey, WebExtensionPolicy> mExtensionHosts;
+  void UpdateRestrictedDomains();
+  void UpdateQuarantinedDomains();
+
+  // The WebExtensionPolicy object keeps the key alive.
+  nsRefPtrHashtable<nsWeakAtomHashKey, WebExtensionPolicy> mExtensions;
 
   nsRefPtrHashtable<nsPtrHashKey<const extensions::DocumentObserver>,
                     extensions::DocumentObserver>
@@ -120,6 +137,7 @@ class ExtensionPolicyService final : public nsIAddonPolicyService,
   nsCOMPtr<nsIObserverService> mObs;
 
   nsString mDefaultCSP;
+  nsString mDefaultCSPV3;
 };
 
 }  // namespace mozilla

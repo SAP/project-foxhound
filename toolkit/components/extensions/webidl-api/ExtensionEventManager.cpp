@@ -5,6 +5,8 @@
 
 #include "ExtensionEventManager.h"
 
+#include "ExtensionAPIAddRemoveListener.h"
+
 #include "mozilla/dom/ExtensionEventManagerBinding.h"
 #include "nsIGlobalObject.h"
 #include "ExtensionEventListener.h"
@@ -53,7 +55,6 @@ ExtensionEventManager::ExtensionEventManager(
   MOZ_DIAGNOSTIC_ASSERT(mGlobal);
   MOZ_DIAGNOSTIC_ASSERT(mExtensionBrowser);
 
-  RefPtr<ExtensionEventManager> self = this;
   mozilla::HoldJSObjects(this);
 }
 

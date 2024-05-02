@@ -123,13 +123,6 @@ var sts;
 var serv;
 
 /**
- * Connections have 5 seconds to be made, or a timeout function fails this
- * test.  This prevents the test from hanging and bringing down the entire
- * xpcshell test chain.
- */
-var connectTimeout = 5 * 1000;
-
-/**
  * A place for individual tests to place Objects of importance for access
  * throughout asynchronous testing.  Particularly important for any output or
  * input streams opened, as cleanup of those objects (by the garbage collector)
@@ -146,9 +139,9 @@ function testIpv4() {
     ouput: null,
   };
 
-  serv.acceptCallback = function() {
+  serv.acceptCallback = function () {
     // disable the timeoutCallback
-    serv.timeoutCallback = function() {};
+    serv.timeoutCallback = function () {};
 
     var selfAddr = testDataStore.transport.getScriptableSelfAddr();
     var peerAddr = testDataStore.transport.getScriptablePeerAddr();
@@ -211,7 +204,7 @@ function run_test() {
   );
   serv = new TestServer();
 
-  registerCleanupFunction(function() {
+  registerCleanupFunction(function () {
     serv.stop();
   });
 

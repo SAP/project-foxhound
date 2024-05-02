@@ -1,9 +1,3 @@
-#![warn(rust_2018_idioms)]
-
-use std::env;
-
-include!("no_atomic.rs");
-
 // The rustc-cfg listed below are considered public API, but it is *unstable*
 // and outside of the normal semver guarantees:
 //
@@ -25,13 +19,19 @@ include!("no_atomic.rs");
 //      need to enable it manually when building for custom targets or using
 //      non-cargo build systems that don't run the build script.
 //
-// With the exceptions mentioned above, the rustc-cfg strings below are
-// *not* public API. Please let us know by opening a GitHub issue if your build
-// environment requires some way to enable these cfgs other than by executing
-// our build script.
+// With the exceptions mentioned above, the rustc-cfg emitted by the build
+// script are *not* public API.
+
+#![warn(rust_2018_idioms)]
+
+use std::env;
+
+include!("no_atomic.rs");
+include!("build-common.rs");
+
 fn main() {
     let target = match env::var("TARGET") {
-        Ok(target) => target,
+        Ok(target) => convert_custom_linux_target(target),
         Err(e) => {
             println!(
                 "cargo:warning={}: unable to get TARGET environment variable: {}",
@@ -42,10 +42,9 @@ fn main() {
         }
     };
 
-    // Note that this is `no_*`, not `has_*`. This allows treating
-    // `cfg(target_has_atomic = "ptr")` as true when the build script doesn't
-    // run. This is needed for compatibility with non-cargo build systems that
-    // don't run the build script.
+    // Note that this is `no_`*, not `has_*`. This allows treating as the latest
+    // stable rustc is used when the build script doesn't run. This is useful
+    // for non-cargo build systems that don't run the build script.
     if NO_ATOMIC_CAS.contains(&&*target) {
         println!("cargo:rustc-cfg=crossbeam_no_atomic_cas");
     }
@@ -55,7 +54,7 @@ fn main() {
     } else if NO_ATOMIC_64.contains(&&*target) {
         println!("cargo:rustc-cfg=crossbeam_no_atomic_64");
     } else {
-        // Otherwise, assuming `"max-atomic-width" == 64`.
+        // Otherwise, assuming `"max-atomic-width" == 64` or `"max-atomic-width" == 128`.
     }
 
     println!("cargo:rerun-if-changed=no_atomic.rs");

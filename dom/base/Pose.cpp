@@ -12,35 +12,10 @@
 
 namespace mozilla::dom {
 
-NS_IMPL_CYCLE_COLLECTION_CLASS(Pose)
-
-NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(Pose)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK(mParent)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK_PRESERVED_WRAPPER
-  tmp->mPosition = nullptr;
-  tmp->mLinearVelocity = nullptr;
-  tmp->mLinearAcceleration = nullptr;
-  tmp->mOrientation = nullptr;
-  tmp->mAngularVelocity = nullptr;
-  tmp->mAngularAcceleration = nullptr;
-NS_IMPL_CYCLE_COLLECTION_UNLINK_END
-
-NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(Pose)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mParent)
-NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
-
-NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN(Pose)
-  NS_IMPL_CYCLE_COLLECTION_TRACE_PRESERVED_WRAPPER
-  NS_IMPL_CYCLE_COLLECTION_TRACE_JS_MEMBER_CALLBACK(mPosition)
-  NS_IMPL_CYCLE_COLLECTION_TRACE_JS_MEMBER_CALLBACK(mLinearVelocity)
-  NS_IMPL_CYCLE_COLLECTION_TRACE_JS_MEMBER_CALLBACK(mLinearAcceleration)
-  NS_IMPL_CYCLE_COLLECTION_TRACE_JS_MEMBER_CALLBACK(mOrientation)
-  NS_IMPL_CYCLE_COLLECTION_TRACE_JS_MEMBER_CALLBACK(mAngularVelocity)
-  NS_IMPL_CYCLE_COLLECTION_TRACE_JS_MEMBER_CALLBACK(mAngularAcceleration)
-NS_IMPL_CYCLE_COLLECTION_TRACE_END
-
-NS_IMPL_CYCLE_COLLECTION_ROOT_NATIVE(Pose, AddRef)
-NS_IMPL_CYCLE_COLLECTION_UNROOT_NATIVE(Pose, Release)
+NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE_WITH_JS_MEMBERS(
+    Pose, (mParent),
+    (mPosition, mLinearVelocity, mLinearAcceleration, mOrientation,
+     mAngularVelocity, mAngularAcceleration))
 
 Pose::Pose(nsISupports* aParent)
     : mParent(aParent),
@@ -67,15 +42,15 @@ void Pose::SetFloat32Array(JSContext* aJSContext, nsWrapperCache* creator,
   }
 
   if (!aObj) {
-    aObj = Float32Array::Create(aJSContext, creator, aValLength, aVal);
-    if (!aObj) {
-      aRv.NoteJSContextException(aJSContext);
+    aObj =
+        Float32Array::Create(aJSContext, creator, Span(aVal, aValLength), aRv);
+    if (aRv.Failed()) {
       return;
     }
   } else {
     JS::AutoCheckCannotGC nogc;
     bool isShared = false;
-    JS::RootedObject obj(aJSContext, aObj.get());
+    JS::Rooted<JSObject*> obj(aJSContext, aObj.get());
     float* data = JS_GetFloat32ArrayData(obj, &isShared, nogc);
     if (data) {
       memcpy(data, aVal, aValLength * sizeof(float));

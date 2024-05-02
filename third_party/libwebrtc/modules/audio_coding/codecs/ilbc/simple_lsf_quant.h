@@ -19,7 +19,7 @@
 #ifndef MODULES_AUDIO_CODING_CODECS_ILBC_MAIN_SOURCE_SIMPLE_LSF_QUANT_H_
 #define MODULES_AUDIO_CODING_CODECS_ILBC_MAIN_SOURCE_SIMPLE_LSF_QUANT_H_
 
-#include "modules/audio_coding/codecs/ilbc/defines.h"
+#include <stdint.h>
 
 /*----------------------------------------------------------------*
  *  lsf quantizer (subrutine to LPCencode)
@@ -32,6 +32,6 @@ void WebRtcIlbcfix_SimpleLsfQ(
     int16_t* lsf,    /* (i) the lsf coefficient vector to be
                               quantized (dimension FILTERORDER) Q13 */
     int16_t lpc_n    /* (i) number of lsf sets to quantize */
-    );
+);
 
 #endif

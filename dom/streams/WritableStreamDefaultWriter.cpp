@@ -12,8 +12,8 @@
 #include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/CycleCollectedJSContext.h"
-#include "mozilla/FloatingPoint.h"
 #include "mozilla/HoldDropJSObjects.h"
+#include "mozilla/dom/WritableStream.h"
 #include "mozilla/dom/WritableStreamDefaultWriterBinding.h"
 #include "nsCOMPtr.h"
 
@@ -22,6 +22,8 @@
 #include "nsISupports.h"
 
 namespace mozilla::dom {
+
+using namespace streams_abstract;
 
 NS_IMPL_CYCLE_COLLECTION_CLASS(WritableStreamDefaultWriter)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(WritableStreamDefaultWriter)
@@ -96,9 +98,10 @@ already_AddRefed<Promise> WritableStreamDefaultWriter::Ready() {
   return readyPromise.forget();
 }
 
+namespace streams_abstract {
 // https://streams.spec.whatwg.org/#writable-stream-default-writer-get-desired-size
-static Nullable<double> WritableStreamDefaultWriterGetDesiredSize(
-    WritableStreamDefaultWriter* aWriter, ErrorResult& aRv) {
+Nullable<double> WritableStreamDefaultWriterGetDesiredSize(
+    WritableStreamDefaultWriter* aWriter) {
   // Step 1. Let stream be writer.[[stream]].
   RefPtr<WritableStream> stream = aWriter->GetStream();
 
@@ -120,6 +123,7 @@ static Nullable<double> WritableStreamDefaultWriterGetDesiredSize(
   // ! WritableStreamDefaultControllerGetDesiredSize(stream.[[controller]]).
   return stream->Controller()->GetDesiredSize();
 }
+}  // namespace streams_abstract
 
 // https://streams.spec.whatwg.org/#default-writer-desired-size
 Nullable<double> WritableStreamDefaultWriter::GetDesiredSize(ErrorResult& aRv) {
@@ -131,7 +135,7 @@ Nullable<double> WritableStreamDefaultWriter::GetDesiredSize(ErrorResult& aRv) {
 
   // Step 2. Return ! WritableStreamDefaultWriterGetDesiredSize(this).
   RefPtr<WritableStreamDefaultWriter> thisRefPtr = this;
-  return WritableStreamDefaultWriterGetDesiredSize(thisRefPtr, aRv);
+  return WritableStreamDefaultWriterGetDesiredSize(thisRefPtr);
 }
 
 // https://streams.spec.whatwg.org/#writable-stream-default-writer-abort
@@ -203,10 +207,10 @@ already_AddRefed<Promise> WritableStreamDefaultWriter::Close(JSContext* aCx,
   return WritableStreamDefaultWriterClose(aCx, thisRefPtr, aRv);
 }
 
+namespace streams_abstract {
 // https://streams.spec.whatwg.org/#writable-stream-default-writer-release
 void WritableStreamDefaultWriterRelease(JSContext* aCx,
-                                        WritableStreamDefaultWriter* aWriter,
-                                        ErrorResult& aRv) {
+                                        WritableStreamDefaultWriter* aWriter) {
   // Step 1. Let stream be writer.[[stream]].
   RefPtr<WritableStream> stream = aWriter->GetStream();
 
@@ -228,20 +232,13 @@ void WritableStreamDefaultWriterRelease(JSContext* aCx,
   // Step 5. Perform !
   // WritableStreamDefaultWriterEnsureReadyPromiseRejected(writer,
   // releasedError).
-  WritableStreamDefaultWriterEnsureReadyPromiseRejected(aWriter, releasedError,
-                                                        aRv);
-  if (aRv.Failed()) {
-    return;
-  }
+  WritableStreamDefaultWriterEnsureReadyPromiseRejected(aWriter, releasedError);
 
   // Step 6. Perform !
   // WritableStreamDefaultWriterEnsureClosedPromiseRejected(writer,
   // releasedError).
-  WritableStreamDefaultWriterEnsureClosedPromiseRejected(aWriter, releasedError,
-                                                         aRv);
-  if (aRv.Failed()) {
-    return;
-  }
+  WritableStreamDefaultWriterEnsureClosedPromiseRejected(aWriter,
+                                                         releasedError);
 
   // Step 7. Set stream.[[writer]] to undefined.
   stream->SetWriter(nullptr);
@@ -249,10 +246,10 @@ void WritableStreamDefaultWriterRelease(JSContext* aCx,
   // Step 8. Set writer.[[stream]] to undefined.
   aWriter->SetStream(nullptr);
 }
+}  // namespace streams_abstract
 
 // https://streams.spec.whatwg.org/#default-writer-release-lock
-void WritableStreamDefaultWriter::ReleaseLock(JSContext* aCx,
-                                              ErrorResult& aRv) {
+void WritableStreamDefaultWriter::ReleaseLock(JSContext* aCx) {
   // Step 1. Let stream be this.[[stream]].
   RefPtr<WritableStream> stream = mStream;
 
@@ -266,15 +263,14 @@ void WritableStreamDefaultWriter::ReleaseLock(JSContext* aCx,
 
   // Step 4. Perform ! WritableStreamDefaultWriterRelease(this).
   RefPtr<WritableStreamDefaultWriter> thisRefPtr = this;
-  return WritableStreamDefaultWriterRelease(aCx, thisRefPtr, aRv);
+  return WritableStreamDefaultWriterRelease(aCx, thisRefPtr);
 }
 
+namespace streams_abstract {
 // https://streams.spec.whatwg.org/#writable-stream-default-writer-write
-MOZ_CAN_RUN_SCRIPT static already_AddRefed<Promise>
-WritableStreamDefaultWriterWrite(JSContext* aCx,
-                                 WritableStreamDefaultWriter* aWriter,
-                                 JS::Handle<JS::Value> aChunk,
-                                 ErrorResult& aRv) {
+already_AddRefed<Promise> WritableStreamDefaultWriterWrite(
+    JSContext* aCx, WritableStreamDefaultWriter* aWriter,
+    JS::Handle<JS::Value> aChunk, ErrorResult& aRv) {
   // Step 1. Let stream be writer.[[stream]].
   RefPtr<WritableStream> stream = aWriter->GetStream();
 
@@ -306,13 +302,8 @@ WritableStreamDefaultWriterWrite(JSContext* aCx,
   // Step 7. If state is "errored", return a promise rejected with
   // stream.[[storedError]].
   if (state == WritableStream::WriterState::Errored) {
-    RefPtr<Promise> promise = Promise::Create(aWriter->GetParentObject(), aRv);
-    if (aRv.Failed()) {
-      return nullptr;
-    }
     JS::Rooted<JS::Value> error(aCx, stream->StoredError());
-    promise->MaybeReject(error);
-    return promise.forget();
+    return Promise::CreateRejected(aWriter->GetParentObject(), error, aRv);
   }
 
   // Step 8. If ! WritableStreamCloseQueuedOrInFlight(stream) is true or state
@@ -320,34 +311,22 @@ WritableStreamDefaultWriterWrite(JSContext* aCx,
   // indicating that the stream is closing or closed.
   if (stream->CloseQueuedOrInFlight() ||
       state == WritableStream::WriterState::Closed) {
-    RefPtr<Promise> promise = Promise::Create(aWriter->GetParentObject(), aRv);
-    if (aRv.Failed()) {
-      return nullptr;
-    }
-    promise->MaybeRejectWithTypeError("Stream is closed or closing");
-    return promise.forget();
+    return Promise::CreateRejectedWithTypeError(
+        aWriter->GetParentObject(), "Stream is closed or closing"_ns, aRv);
   }
 
   // Step 9. If state is "erroring", return a promise rejected with
   // stream.[[storedError]].
   if (state == WritableStream::WriterState::Erroring) {
-    RefPtr<Promise> promise = Promise::Create(aWriter->GetParentObject(), aRv);
-    if (aRv.Failed()) {
-      return nullptr;
-    }
     JS::Rooted<JS::Value> error(aCx, stream->StoredError());
-    promise->MaybeReject(error);
-    return promise.forget();
+    return Promise::CreateRejected(aWriter->GetParentObject(), error, aRv);
   }
 
   // Step 10. Assert: state is "writable".
   MOZ_ASSERT(state == WritableStream::WriterState::Writable);
 
   // Step 11. Let promise be ! WritableStreamAddWriteRequest(stream).
-  RefPtr<Promise> promise = WritableStreamAddWriteRequest(stream, aRv);
-  if (aRv.Failed()) {
-    return nullptr;
-  }
+  RefPtr<Promise> promise = WritableStreamAddWriteRequest(stream);
 
   // Step 12. Perform ! WritableStreamDefaultControllerWrite(controller, chunk,
   // chunkSize).
@@ -359,6 +338,7 @@ WritableStreamDefaultWriterWrite(JSContext* aCx,
   // Step 13. Return promise.
   return promise.forget();
 }
+}  // namespace streams_abstract
 
 // https://streams.spec.whatwg.org/#default-writer-write
 already_AddRefed<Promise> WritableStreamDefaultWriter::Write(
@@ -373,6 +353,8 @@ already_AddRefed<Promise> WritableStreamDefaultWriter::Write(
   // Step 2. Return ! WritableStreamDefaultWriterWrite(this, chunk).
   return WritableStreamDefaultWriterWrite(aCx, this, aChunk, aRv);
 }
+
+namespace streams_abstract {
 
 // https://streams.spec.whatwg.org/#set-up-writable-stream-default-writer
 void SetUpWritableStreamDefaultWriter(WritableStreamDefaultWriter* aWriter,
@@ -397,10 +379,7 @@ void SetUpWritableStreamDefaultWriter(WritableStreamDefaultWriter* aWriter,
   // Step 5. If state is "writable",
   if (state == WritableStream::WriterState::Writable) {
     RefPtr<Promise> readyPromise =
-        Promise::Create(aWriter->GetParentObject(), aRv);
-    if (aRv.Failed()) {
-      return;
-    }
+        Promise::CreateInfallible(aWriter->GetParentObject());
 
     // Step 5.1 If ! WritableStreamCloseQueuedOrInFlight(stream) is false and
     // stream.[[backpressure]] is true, set writer.[[readyPromise]] to a new
@@ -416,10 +395,7 @@ void SetUpWritableStreamDefaultWriter(WritableStreamDefaultWriter* aWriter,
 
     // Step 5.3. Set writer.[[closedPromise]] to a new promise.
     RefPtr<Promise> closedPromise =
-        Promise::Create(aWriter->GetParentObject(), aRv);
-    if (aRv.Failed()) {
-      return;
-    }
+        Promise::CreateInfallible(aWriter->GetParentObject());
     aWriter->SetClosedPromise(closedPromise);
   } else if (state == WritableStream::WriterState::Erroring) {
     // Step 6. Otherwise, if state is "erroring",
@@ -428,10 +404,7 @@ void SetUpWritableStreamDefaultWriter(WritableStreamDefaultWriter* aWriter,
     // stream.[[storedError]].
     JS::Rooted<JS::Value> storedError(RootingCx(), aStream->StoredError());
     RefPtr<Promise> readyPromise =
-        Promise::Create(aWriter->GetParentObject(), aRv);
-    if (aRv.Failed()) {
-      return;
-    }
+        Promise::CreateInfallible(aWriter->GetParentObject());
     readyPromise->MaybeReject(storedError);
     aWriter->SetReadyPromise(readyPromise);
 
@@ -440,10 +413,7 @@ void SetUpWritableStreamDefaultWriter(WritableStreamDefaultWriter* aWriter,
 
     // Step 6.3. Set writer.[[closedPromise]] to a new promise.
     RefPtr<Promise> closedPromise =
-        Promise::Create(aWriter->GetParentObject(), aRv);
-    if (aRv.Failed()) {
-      return;
-    }
+        Promise::CreateInfallible(aWriter->GetParentObject());
     aWriter->SetClosedPromise(closedPromise);
   } else if (state == WritableStream::WriterState::Closed) {
     // Step 7. Otherwise, if state is "closed",
@@ -475,10 +445,7 @@ void SetUpWritableStreamDefaultWriter(WritableStreamDefaultWriter* aWriter,
     // Step 8.3. Set writer.[[readyPromise]] to a promise rejected with
     // storedError.
     RefPtr<Promise> readyPromise =
-        Promise::Create(aWriter->GetParentObject(), aRv);
-    if (aRv.Failed()) {
-      return;
-    }
+        Promise::CreateInfallible(aWriter->GetParentObject());
     readyPromise->MaybeReject(storedError);
     aWriter->SetReadyPromise(readyPromise);
 
@@ -488,10 +455,7 @@ void SetUpWritableStreamDefaultWriter(WritableStreamDefaultWriter* aWriter,
     // Step 8.5. Set writer.[[closedPromise]] to a promise rejected with
     // storedError.
     RefPtr<Promise> closedPromise =
-        Promise::Create(aWriter->GetParentObject(), aRv);
-    if (aRv.Failed()) {
-      return;
-    }
+        Promise::CreateInfallible(aWriter->GetParentObject());
     closedPromise->MaybeReject(storedError);
     aWriter->SetClosedPromise(closedPromise);
 
@@ -502,8 +466,7 @@ void SetUpWritableStreamDefaultWriter(WritableStreamDefaultWriter* aWriter,
 
 // https://streams.spec.whatwg.org/#writable-stream-default-writer-ensure-closed-promise-rejected
 void WritableStreamDefaultWriterEnsureClosedPromiseRejected(
-    WritableStreamDefaultWriter* aWriter, JS::Handle<JS::Value> aError,
-    ErrorResult& aRv) {
+    WritableStreamDefaultWriter* aWriter, JS::Handle<JS::Value> aError) {
   RefPtr<Promise> closedPromise = aWriter->ClosedPromise();
   // Step 1. If writer.[[closedPromise]].[[PromiseState]] is "pending", reject
   // writer.[[closedPromise]] with error.
@@ -512,10 +475,7 @@ void WritableStreamDefaultWriterEnsureClosedPromiseRejected(
   } else {
     // Step 2. Otherwise, set writer.[[closedPromise]] to a promise rejected
     // with error.
-    closedPromise = Promise::Create(aWriter->GetParentObject(), aRv);
-    if (aRv.Failed()) {
-      return;
-    }
+    closedPromise = Promise::CreateInfallible(aWriter->GetParentObject());
     closedPromise->MaybeReject(aError);
     aWriter->SetClosedPromise(closedPromise);
   }
@@ -526,8 +486,7 @@ void WritableStreamDefaultWriterEnsureClosedPromiseRejected(
 
 // https://streams.spec.whatwg.org/#writable-stream-default-writer-ensure-ready-promise-rejected
 void WritableStreamDefaultWriterEnsureReadyPromiseRejected(
-    WritableStreamDefaultWriter* aWriter, JS::Handle<JS::Value> aError,
-    ErrorResult& aRv) {
+    WritableStreamDefaultWriter* aWriter, JS::Handle<JS::Value> aError) {
   RefPtr<Promise> readyPromise = aWriter->ReadyPromise();
   // Step 1. If writer.[[readyPromise]].[[PromiseState]] is "pending", reject
   // writer.[[readyPromise]] with error.
@@ -536,10 +495,7 @@ void WritableStreamDefaultWriterEnsureReadyPromiseRejected(
   } else {
     // Step 2. Otherwise, set writer.[[readyPromise]] to a promise rejected with
     // error.
-    readyPromise = Promise::Create(aWriter->GetParentObject(), aRv);
-    if (aRv.Failed()) {
-      return;
-    }
+    readyPromise = Promise::CreateInfallible(aWriter->GetParentObject());
     readyPromise->MaybeReject(aError);
     aWriter->SetReadyPromise(readyPromise);
   }
@@ -547,5 +503,42 @@ void WritableStreamDefaultWriterEnsureReadyPromiseRejected(
   // Step 3. Set writer.[[readyPromise]].[[PromiseIsHandled]] to true.
   readyPromise->SetSettledPromiseIsHandled();
 }
+
+// https://streams.spec.whatwg.org/#writable-stream-default-writer-close-with-error-propagation
+already_AddRefed<Promise> WritableStreamDefaultWriterCloseWithErrorPropagation(
+    JSContext* aCx, WritableStreamDefaultWriter* aWriter, ErrorResult& aRv) {
+  // Step 1. Let stream be writer.[[stream]].
+  RefPtr<WritableStream> stream = aWriter->GetStream();
+
+  // Step 2. Assert: stream is not undefined.
+  MOZ_ASSERT(stream);
+
+  // Step 3. Let state be stream.[[state]].
+  WritableStream::WriterState state = stream->State();
+
+  // Step 4. If ! WritableStreamCloseQueuedOrInFlight(stream) is true
+  // or state is "closed", return a promise resolved with undefined.
+  if (stream->CloseQueuedOrInFlight() ||
+      state == WritableStream::WriterState::Closed) {
+    return Promise::CreateResolvedWithUndefined(aWriter->GetParentObject(),
+                                                aRv);
+  }
+
+  // Step 5. If state is "errored",
+  // return a promise rejected with stream.[[storedError]].
+  if (state == WritableStream::WriterState::Errored) {
+    JS::Rooted<JS::Value> error(aCx, stream->StoredError());
+    return Promise::CreateRejected(aWriter->GetParentObject(), error, aRv);
+  }
+
+  // Step 6. Assert: state is "writable" or "erroring".
+  MOZ_ASSERT(state == WritableStream::WriterState::Writable ||
+             state == WritableStream::WriterState::Erroring);
+
+  // Step 7. Return ! WritableStreamDefaultWriterClose(writer).
+  return WritableStreamDefaultWriterClose(aCx, aWriter, aRv);
+}
+
+}  // namespace streams_abstract
 
 }  // namespace mozilla::dom

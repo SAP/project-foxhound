@@ -10,11 +10,14 @@
  * "urlclassifier-before-block-channel" event.
  */
 
+requestLongerTimeout(2);
+
 // Choose origin so that all tracking origins used are third-parties.
 const TRACKING_PAGE =
+  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
   "http://example.net/browser/browser/base/content/test/protectionsUI/trackingPage.html";
 
-add_task(async function setup() {
+add_setup(async function () {
   await SpecialPowers.pushPrefEnv({
     set: [
       ["privacy.trackingprotection.enabled", true],
@@ -187,6 +190,7 @@ async function runTestForCategoryAndState(category, action) {
       elementId: "socialblock",
     },
     cryptomining: {
+      // eslint-disable-next-line @microsoft/sdl/no-insecure-url
       origin: "http://cryptomining.example.com",
       elementId: "cryptominers",
     },
@@ -225,11 +229,13 @@ async function runTestForCategoryAndState(category, action) {
     );
   }
   // Load the test tracker matching the category.
-  await SpecialPowers.spawn(tab.linkedBrowser, [{ apiMessage }], function(
-    args
-  ) {
-    content.postMessage(args.apiMessage, "*");
-  });
+  await SpecialPowers.spawn(
+    tab.linkedBrowser,
+    [{ apiMessage }],
+    function (args) {
+      content.postMessage(args.apiMessage, "*");
+    }
+  );
   await beforeBlockChannelPromise;
 
   // Next, test if the UI state is correct for the given category and action.
@@ -272,7 +278,7 @@ async function runTestMixed({ block, allow, replace }) {
       ],
     });
     let blockEventPromise = waitForContentBlockingEvent();
-    await SpecialPowers.spawn(tab.linkedBrowser, [], function() {
+    await SpecialPowers.spawn(tab.linkedBrowser, [], function () {
       content.postMessage("tracking", "*");
     });
     await blockEventPromise;
@@ -286,7 +292,7 @@ async function runTestMixed({ block, allow, replace }) {
       action: "allow",
     });
 
-    await SpecialPowers.spawn(tab.linkedBrowser, [], function() {
+    await SpecialPowers.spawn(tab.linkedBrowser, [], function () {
       content.postMessage("more-tracking", "*");
     });
 
@@ -300,7 +306,7 @@ async function runTestMixed({ block, allow, replace }) {
       action: "replace",
     });
 
-    await SpecialPowers.spawn(tab.linkedBrowser, [], function() {
+    await SpecialPowers.spawn(tab.linkedBrowser, [], function () {
       content.postMessage("more-tracking-2", "*");
     });
 

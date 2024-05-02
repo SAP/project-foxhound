@@ -10,19 +10,19 @@ const { shallow } = require("enzyme");
 const {
   REPS,
   getRep,
-} = require("devtools/client/shared/components/reps/reps/rep");
+} = require("resource://devtools/client/shared/components/reps/reps/rep.js");
 const {
   MODE,
-} = require("devtools/client/shared/components/reps/reps/constants");
+} = require("resource://devtools/client/shared/components/reps/reps/constants.js");
 const { TextNode } = REPS;
 
-const stubs = require("devtools/client/shared/components/test/node/stubs/reps/text-node");
+const stubs = require("resource://devtools/client/shared/components/test/node/stubs/reps/text-node.js");
 const {
   expectActorAttribute,
-} = require("devtools/client/shared/components/test/node/components/reps/test-helpers");
+} = require("resource://devtools/client/shared/components/test/node/components/reps/test-helpers.js");
 const {
   ELLIPSIS,
-} = require("devtools/client/shared/components/reps/reps/rep-utils");
+} = require("resource://devtools/client/shared/components/reps/reps/rep-utils.js");
 
 function quoteNewlines(text) {
   return text.split("\n").join("\\n");
@@ -30,11 +30,11 @@ function quoteNewlines(text) {
 
 describe("TextNode", () => {
   it("selects TextNode Rep as expected", () => {
-    expect(getRep(stubs.get("testRendering"))).toBe(TextNode.rep);
+    expect(getRep(stubs.get("testRendering")._grip)).toBe(TextNode.rep);
   });
 
   it("renders as expected", () => {
-    const object = stubs.get("testRendering");
+    const object = stubs.get("testRendering")._grip;
     const renderRep = props => shallow(TextNode.rep({ object, ...props }));
 
     const defaultOutput = '#text "hello world"';
@@ -45,6 +45,11 @@ describe("TextNode", () => {
     expectActorAttribute(component, object.actor);
 
     component = renderRep({ shouldRenderTooltip: true, mode: MODE.TINY });
+    expect(component.text()).toBe("#text");
+    expect(component.prop("title")).toBe(defaultOutput);
+    expectActorAttribute(component, object.actor);
+
+    component = renderRep({ shouldRenderTooltip: true, mode: MODE.HEADER });
     expect(component.text()).toBe("#text");
     expect(component.prop("title")).toBe(defaultOutput);
     expectActorAttribute(component, object.actor);
@@ -61,7 +66,7 @@ describe("TextNode", () => {
   });
 
   it("renders as expected with EOL", () => {
-    const object = stubs.get("testRenderingWithEOL");
+    const object = stubs.get("testRenderingWithEOL")._grip;
     const renderRep = props => shallow(TextNode.rep({ object, ...props }));
 
     const defaultOutput = quoteNewlines('#text "hello\nworld"');
@@ -75,6 +80,10 @@ describe("TextNode", () => {
     expect(component.text()).toBe("#text");
     expect(component.prop("title")).toBe(defaultTooltip);
 
+    component = renderRep({ shouldRenderTooltip: true, mode: MODE.HEADER });
+    expect(component.text()).toBe("#text");
+    expect(component.prop("title")).toBe(defaultTooltip);
+
     component = renderRep({ shouldRenderTooltip: true, mode: MODE.SHORT });
     expect(component.text()).toBe(defaultOutput);
     expect(component.prop("title")).toBe(defaultTooltip);
@@ -85,10 +94,10 @@ describe("TextNode", () => {
   });
 
   it("renders as expected with double quote", () => {
-    const object = stubs.get("testRenderingWithDoubleQuote");
+    const object = stubs.get("testRenderingWithDoubleQuote")._grip;
     const renderRep = props => shallow(TextNode.rep({ object, ...props }));
 
-    const defaultOutput = '#text "hello\\"world"';
+    const defaultOutput = "#text 'hello\"world'";
     const defaultTooltip = '#text "hello"world"';
 
     let component = renderRep({ shouldRenderTooltip: true, mode: undefined });
@@ -96,6 +105,10 @@ describe("TextNode", () => {
     expect(component.prop("title")).toBe(defaultTooltip);
 
     component = renderRep({ shouldRenderTooltip: true, mode: MODE.TINY });
+    expect(component.text()).toBe("#text");
+    expect(component.prop("title")).toBe(defaultTooltip);
+
+    component = renderRep({ shouldRenderTooltip: true, mode: MODE.HEADER });
     expect(component.text()).toBe("#text");
     expect(component.prop("title")).toBe(defaultTooltip);
 
@@ -109,7 +122,7 @@ describe("TextNode", () => {
   });
 
   it("renders as expected with long string", () => {
-    const object = stubs.get("testRenderingWithLongString");
+    const object = stubs.get("testRenderingWithLongString")._grip;
     const renderRep = props => shallow(TextNode.rep({ object, ...props }));
     const initialString = object.preview.textContent.initial;
 
@@ -124,6 +137,10 @@ describe("TextNode", () => {
     expect(component.text()).toBe("#text");
     expect(component.prop("title")).toBe(defaultTooltip);
 
+    component = renderRep({ shouldRenderTooltip: true, mode: MODE.HEADER });
+    expect(component.text()).toBe("#text");
+    expect(component.prop("title")).toBe(defaultTooltip);
+
     component = renderRep({ shouldRenderTooltip: true, mode: MODE.SHORT });
     expect(component.text()).toBe(defaultOutput);
     expect(component.prop("title")).toBe(defaultTooltip);
@@ -134,7 +151,7 @@ describe("TextNode", () => {
   });
 
   it("calls the expected function on mouseover", () => {
-    const object = stubs.get("testRendering");
+    const object = stubs.get("testRendering")._grip;
     const onDOMNodeMouseOver = jest.fn();
     const wrapper = shallow(TextNode.rep({ object, onDOMNodeMouseOver }));
 
@@ -145,7 +162,7 @@ describe("TextNode", () => {
   });
 
   it("calls the expected function on mouseout", () => {
-    const object = stubs.get("testRendering");
+    const object = stubs.get("testRendering")._grip;
     const onDOMNodeMouseOut = jest.fn();
     const wrapper = shallow(TextNode.rep({ object, onDOMNodeMouseOut }));
 
@@ -156,7 +173,7 @@ describe("TextNode", () => {
   });
 
   it("displays a button when the node is connected", () => {
-    const object = stubs.get("testRendering");
+    const object = stubs.get("testRendering")._grip;
 
     const onInspectIconClick = jest.fn();
     const wrapper = shallow(TextNode.rep({ object, onInspectIconClick }));
@@ -177,7 +194,7 @@ describe("TextNode", () => {
   });
 
   it("does not display a button when the node is connected", () => {
-    const object = stubs.get("testRenderingDisconnected");
+    const object = stubs.get("testRenderingDisconnected")._grip;
 
     const onInspectIconClick = jest.fn();
     const wrapper = shallow(TextNode.rep({ object, onInspectIconClick }));

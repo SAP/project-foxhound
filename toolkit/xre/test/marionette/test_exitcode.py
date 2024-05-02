@@ -8,13 +8,12 @@ class TestFissionAutostart(MarionetteTestCase):
         def call_quit():
             self.marionette.execute_script(
                 """
-                const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
                 Services.startup.quit(Ci.nsIAppStartup.eAttemptQuit);
                 """,
                 sandbox="system",
             )
 
-        self.marionette.quit(in_app=True, callback=call_quit)
+        self.marionette.quit(callback=call_quit)
         self.assertEqual(self.marionette.instance.runner.returncode, 0)
 
     def test_exit_code(self):
@@ -23,11 +22,10 @@ class TestFissionAutostart(MarionetteTestCase):
         def call_quit():
             self.marionette.execute_script(
                 """
-                const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
                 Services.startup.quit(Ci.nsIAppStartup.eAttemptQuit, 5);
                 """,
                 sandbox="system",
             )
 
-        self.marionette.quit(in_app=True, callback=call_quit)
+        self.marionette.quit(callback=call_quit)
         self.assertEqual(self.marionette.instance.runner.returncode, 5)

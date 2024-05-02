@@ -4,8 +4,8 @@
 
 "use strict";
 
-const { AddonTestUtils } = ChromeUtils.import(
-  "resource://testing-common/AddonTestUtils.jsm"
+const { AddonTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/AddonTestUtils.sys.mjs"
 );
 
 AddonTestUtils.initMochitest(this);
@@ -28,7 +28,12 @@ function test() {
   waitForExplicitFinish();
   SpecialPowers.pushPrefEnv(
     {
-      set: [["security.data_uri.block_toplevel_data_uri_navigations", false]],
+      set: [
+        ["network.allow_redirect_to_data", true],
+        ["security.data_uri.block_toplevel_data_uri_navigations", false],
+        // Relax the user input requirements while running this test.
+        ["xpinstall.userActivation.required", false],
+      ],
     },
     runTest
   );

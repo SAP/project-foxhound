@@ -162,7 +162,8 @@ void nsMathMLFrame::GetRuleThickness(DrawTarget* aDrawTarget,
 void nsMathMLFrame::GetAxisHeight(DrawTarget* aDrawTarget,
                                   nsFontMetrics* aFontMetrics,
                                   nscoord& aAxisHeight) {
-  gfxFont* mathFont = aFontMetrics->GetThebesFontGroup()->GetFirstMathFont();
+  RefPtr<gfxFont> mathFont =
+      aFontMetrics->GetThebesFontGroup()->GetFirstMathFont();
   if (mathFont) {
     aAxisHeight = mathFont->MathTable()->Constant(
         gfxMathTable::AxisHeight, aFontMetrics->AppUnitsPerDevPixel());
@@ -199,7 +200,6 @@ nscoord nsMathMLFrame::CalcLength(nsPresContext* aPresContext,
   }
 
   if (eCSSUnit_XHeight == unit) {
-    aPresContext->SetUsesFontMetricDependentFontUnits(true);
     RefPtr<nsFontMetrics> fm = nsLayoutUtils::GetFontMetricsForComputedStyle(
         aComputedStyle, aPresContext, aFontSizeInflation);
     nscoord xHeight = fm->XHeight();
@@ -345,7 +345,8 @@ void nsMathMLFrame::GetRadicalParameters(nsFontMetrics* aFontMetrics,
                                          nscoord& aRadicalExtraAscender,
                                          nscoord& aRadicalVerticalGap) {
   nscoord oneDevPixel = aFontMetrics->AppUnitsPerDevPixel();
-  gfxFont* mathFont = aFontMetrics->GetThebesFontGroup()->GetFirstMathFont();
+  RefPtr<gfxFont> mathFont =
+      aFontMetrics->GetThebesFontGroup()->GetFirstMathFont();
 
   // get the radical rulethickness
   if (mathFont) {

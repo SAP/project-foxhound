@@ -7,12 +7,16 @@ taskcluster/ci/upload-symbols/job-template.yml into an actual task description.
 """
 
 
-from gecko_taskgraph.transforms.base import TransformSequence
-from gecko_taskgraph.util.attributes import RELEASE_PROJECTS
-from gecko_taskgraph.util.treeherder import join_symbol, inherit_treeherder_from_dep
-from gecko_taskgraph.util.attributes import copy_attributes_from_dependent_job
-
 import logging
+
+from taskgraph.transforms.base import TransformSequence
+from taskgraph.util.dependencies import get_primary_dependency
+from taskgraph.util.treeherder import inherit_treeherder_from_dep, join_symbol
+
+from gecko_taskgraph.util.attributes import (
+    RELEASE_PROJECTS,
+    copy_attributes_from_dependent_job,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +31,9 @@ def check_nightlies(config, tasks):
     Putting this check here (instead of the transforms for the build kind) lets us
     leverage the any not-for-build-platforms set in the update-symbols kind."""
     for task in tasks:
-        dep = task["primary-dependency"]
+        dep = get_primary_dependency(config, task)
+        assert dep
+
         if (
             config.params["project"] in RELEASE_PROJECTS
             and dep.attributes.get("shippable")
@@ -44,8 +50,8 @@ def check_nightlies(config, tasks):
 @transforms.add
 def fill_template(config, tasks):
     for task in tasks:
-        dep = task["primary-dependency"]
-        task.pop("dependent-tasks", None)
+        dep = get_primary_dependency(config, task)
+        assert dep
 
         # Fill out the dynamic fields in the task description
         task["label"] = dep.label + "-upload-symbols"
@@ -57,7 +63,6 @@ def fill_template(config, tasks):
             logger.debug("Skipping upload symbols task for %s", task["label"])
             continue
 
-        task["dependencies"] = {"build": dep.label}
         task["worker"]["env"]["GECKO_HEAD_REPOSITORY"] = config.params[
             "head_repository"
         ]
@@ -84,9 +89,6 @@ def fill_template(config, tasks):
         # XXX Better to run this on promote phase instead?
         task["run-on-projects"] = dep.attributes.get("run_on_projects")
         task["optimization"] = {"upload-symbols": None}
-        task["if-dependencies"] = ["build"]
-
-        # clear out the stuff that's not part of a task description
-        del task["primary-dependency"]
+        task["if-dependencies"] = [task["attributes"]["primary-kind-dependency"]]
 
         yield task

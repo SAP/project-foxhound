@@ -82,17 +82,13 @@ function shouldConsoleTryUpgradeAndError() {
 // 4. Successfully completes download
 add_task(async function test_with_downloads_pref_enabled() {
   await SpecialPowers.pushPrefEnv({
-    set: [
-      ["dom.security.https_first", true],
-      // ensure that download panel gets opened - Bug 1746434
-      ["browser.download.improvements_to_download_panel", true],
-    ],
+    set: [["dom.security.https_first", true]],
   });
   let checkPromise = shouldConsoleTryUpgradeAndError();
   let downloadsPanelPromise = promisePanelOpened();
   let downloadsPromise = Downloads.getList(Downloads.PUBLIC);
 
-  BrowserTestUtils.loadURI(gBrowser, insecureTestURI);
+  BrowserTestUtils.startLoadingURIString(gBrowser, insecureTestURI);
   // wait for downloadsPanel to open before continuing with test
   await downloadsPanelPromise;
   let downloadList = await downloadsPromise;

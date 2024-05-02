@@ -5,14 +5,14 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-/* exported LIBC, Win, createPipe, libc */
+/* exported createPipe, libc, win32 */
 
-// This file is loaded into the same scope as subprocess_win.jsm
-/* import-globals-from subprocess_win.jsm */
+// ctypes is either already available in the chrome worker scope, or defined
+// in scope via loadSubScript.
+/* global ctypes */
 
-const LIBC = OS.Constants.libc;
-
-const Win = OS.Constants.Win;
+// This file is loaded into the same scope as subprocess_shared.js.
+/* import-globals-from subprocess_shared.js */
 
 const LIBC_CHOICES = ["kernel32.dll"];
 
@@ -88,7 +88,12 @@ Object.assign(win32, {
   ERROR_BROKEN_PIPE: 109,
   ERROR_INSUFFICIENT_BUFFER: 122,
 
+  FILE_ATTRIBUTE_NORMAL: 0x00000080,
   FILE_FLAG_OVERLAPPED: 0x40000000,
+
+  GENERIC_WRITE: 0x40000000,
+
+  OPEN_EXISTING: 0x00000003,
 
   PIPE_TYPE_BYTE: 0x00,
 
@@ -433,13 +438,13 @@ var libc = new Library("libc", LIBC_CHOICES, {
 
 let nextNamedPipeId = 0;
 
-win32.Handle = function(handle) {
+win32.Handle = function (handle) {
   return ctypes.CDataFinalizer(win32.HANDLE(handle), libc.CloseHandle);
 };
 
-win32.createPipe = function(secAttr, readFlags = 0, writeFlags = 0, size = 0) {
+win32.createPipe = function (secAttr, readFlags = 0, writeFlags = 0, size = 0) {
   readFlags |= win32.PIPE_ACCESS_INBOUND;
-  writeFlags |= Win.FILE_ATTRIBUTE_NORMAL;
+  writeFlags |= win32.FILE_ATTRIBUTE_NORMAL;
 
   if (size == 0) {
     size = 4096;
@@ -460,7 +465,7 @@ win32.createPipe = function(secAttr, readFlags = 0, writeFlags = 0, size = 0) {
   );
 
   let isInvalid = handle =>
-    String(handle) == String(win32.HANDLE(Win.INVALID_HANDLE_VALUE));
+    String(handle) == String(win32.INVALID_HANDLE_VALUE);
 
   if (isInvalid(readHandle)) {
     return [];
@@ -468,10 +473,10 @@ win32.createPipe = function(secAttr, readFlags = 0, writeFlags = 0, size = 0) {
 
   let writeHandle = libc.CreateFileW(
     pipeName,
-    Win.GENERIC_WRITE,
+    win32.GENERIC_WRITE,
     0,
     secAttr.address(),
-    Win.OPEN_EXISTING,
+    win32.OPEN_EXISTING,
     writeFlags,
     null
   );
@@ -484,7 +489,7 @@ win32.createPipe = function(secAttr, readFlags = 0, writeFlags = 0, size = 0) {
   return [win32.Handle(readHandle), win32.Handle(writeHandle)];
 };
 
-win32.createThreadAttributeList = function(handles) {
+win32.createThreadAttributeList = function (handles) {
   try {
     void libc.InitializeProcThreadAttributeList;
     void libc.DeleteProcThreadAttributeList;

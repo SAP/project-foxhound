@@ -18,7 +18,7 @@ type Data = [usize; DATA_WORDS];
 /// This is a handy way of keeping an unsized `FnOnce()` within a sized structure.
 pub(crate) struct Deferred {
     call: unsafe fn(*mut u8),
-    data: Data,
+    data: MaybeUninit<Data>,
     _marker: PhantomData<*mut ()>, // !Send + !Sync
 }
 
@@ -29,6 +29,15 @@ impl fmt::Debug for Deferred {
 }
 
 impl Deferred {
+    pub(crate) const NO_OP: Self = {
+        fn no_op_call(_raw: *mut u8) {}
+        Self {
+            call: no_op_call,
+            data: MaybeUninit::uninit(),
+            _marker: PhantomData,
+        }
+    };
+
     /// Constructs a new `Deferred` from a `FnOnce()`.
     pub(crate) fn new<F: FnOnce()>(f: F) -> Self {
         let size = mem::size_of::<F>();
@@ -37,34 +46,33 @@ impl Deferred {
         unsafe {
             if size <= mem::size_of::<Data>() && align <= mem::align_of::<Data>() {
                 let mut data = MaybeUninit::<Data>::uninit();
-                ptr::write(data.as_mut_ptr() as *mut F, f);
+                ptr::write(data.as_mut_ptr().cast::<F>(), f);
 
                 unsafe fn call<F: FnOnce()>(raw: *mut u8) {
-                    let f: F = ptr::read(raw as *mut F);
+                    let f: F = ptr::read(raw.cast::<F>());
                     f();
                 }
 
                 Deferred {
                     call: call::<F>,
-                    data: data.assume_init(),
+                    data,
                     _marker: PhantomData,
                 }
             } else {
                 let b: Box<F> = Box::new(f);
                 let mut data = MaybeUninit::<Data>::uninit();
-                ptr::write(data.as_mut_ptr() as *mut Box<F>, b);
+                ptr::write(data.as_mut_ptr().cast::<Box<F>>(), b);
 
                 unsafe fn call<F: FnOnce()>(raw: *mut u8) {
                     // It's safe to cast `raw` from `*mut u8` to `*mut Box<F>`, because `raw` is
                     // originally derived from `*mut Box<F>`.
-                    #[allow(clippy::cast_ptr_alignment)]
-                    let b: Box<F> = ptr::read(raw as *mut Box<F>);
+                    let b: Box<F> = ptr::read(raw.cast::<Box<F>>());
                     (*b)();
                 }
 
                 Deferred {
                     call: call::<F>,
-                    data: data.assume_init(),
+                    data,
                     _marker: PhantomData,
                 }
             }
@@ -75,7 +83,7 @@ impl Deferred {
     #[inline]
     pub(crate) fn call(mut self) {
         let call = self.call;
-        unsafe { call(&mut self.data as *mut Data as *mut u8) };
+        unsafe { call(self.data.as_mut_ptr().cast::<u8>()) };
     }
 }
 

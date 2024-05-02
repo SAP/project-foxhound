@@ -34,10 +34,10 @@ async function setupIndexedDB(browser) {
   await SpecialPowers.spawn(
     browser,
     [{ input: "TestForgetAPIs" }],
-    async function(arg) {
+    async function (arg) {
       let request = content.indexedDB.open("idb", 1);
 
-      request.onerror = function() {
+      request.onerror = function () {
         throw new Error("error opening db connection");
       };
 
@@ -81,7 +81,7 @@ async function setupIndexedDB(browser) {
 
 // Check whether the indexedDB has been cleared.
 async function checkIndexedDB(browser) {
-  await SpecialPowers.spawn(browser, [], async function() {
+  await SpecialPowers.spawn(browser, [], async function () {
     let request = content.indexedDB.open("idb", 1);
 
     let db = await new Promise(done => {
@@ -107,7 +107,7 @@ async function checkIndexedDB(browser) {
 // Test functions.
 //
 
-add_task(async function setup() {
+add_setup(async function () {
   // Make sure userContext is enabled.
   await SpecialPowers.pushPrefEnv({
     set: [["privacy.userContext.enabled", true]],
@@ -142,12 +142,7 @@ add_task(async function test_quota_clearStoragesForPrincipal() {
     httpURI,
     {}
   );
-  let clearRequest = Services.qms.clearStoragesForPrincipal(
-    httpPrincipal,
-    null,
-    null,
-    true
-  );
+  let clearRequest = Services.qms.clearStoragesForOriginPrefix(httpPrincipal);
   await new Promise(resolve => {
     clearRequest.callback = () => {
       resolve();

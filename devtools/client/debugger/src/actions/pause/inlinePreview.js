@@ -9,7 +9,7 @@ import {
   getSelectedLocation,
 } from "../../selectors";
 import { features } from "../../utils/prefs";
-import { validateThreadContext } from "../../utils/context";
+import { validateSelectedFrame } from "../../utils/context";
 
 // We need to display all variables in the current functional scope so
 // include all data for block scopes until the first functional scope
@@ -24,49 +24,49 @@ function getLocalScopeLevels(originalAstScopes) {
   return levels;
 }
 
-export function generateInlinePreview(cx, frame) {
-  return async function({ dispatch, getState, parser, client }) {
-    if (!frame || !features.inlinePreview) {
-      return;
+export function generateInlinePreview(selectedFrame) {
+  return async function ({ dispatch, getState, parserWorker, client }) {
+    if (!features.inlinePreview) {
+      return null;
     }
 
-    const { thread } = cx;
-
     // Avoid regenerating inline previews when we already have preview data
-    if (getInlinePreviews(getState(), thread, frame.id)) {
-      return;
+    if (getInlinePreviews(getState(), selectedFrame.thread, selectedFrame.id)) {
+      return null;
     }
 
     const originalFrameScopes = getOriginalFrameScope(
       getState(),
-      thread,
-      frame.location.sourceId,
-      frame.id
+      selectedFrame
     );
 
     const generatedFrameScopes = getGeneratedFrameScope(
       getState(),
-      thread,
-      frame.id
+      selectedFrame
     );
 
     let scopes = originalFrameScopes?.scope || generatedFrameScopes?.scope;
 
     if (!scopes || !scopes.bindings) {
-      return;
+      return null;
     }
 
     // It's important to use selectedLocation, because we don't know
     // if we'll be viewing the original or generated frame location
     const selectedLocation = getSelectedLocation(getState());
     if (!selectedLocation) {
-      return;
+      return null;
     }
 
-    const originalAstScopes = await parser.getScopes(selectedLocation);
-    validateThreadContext(getState(), cx);
+    if (!parserWorker.isLocationSupported(selectedLocation)) {
+      return null;
+    }
+
+    const originalAstScopes = await parserWorker.getScopes(selectedLocation);
+    validateSelectedFrame(getState(), selectedFrame);
+
     if (!originalAstScopes) {
-      return;
+      return null;
     }
 
     const allPreviews = [];
@@ -97,7 +97,7 @@ export function generateInlinePreview(cx, frame) {
               path: name,
               contents: { value: objectGrip },
             },
-            cx.thread
+            selectedFrame.thread
           );
         }
 
@@ -140,8 +140,7 @@ export function generateInlinePreview(cx, frame) {
 
     return dispatch({
       type: "ADD_INLINE_PREVIEW",
-      thread,
-      frame,
+      selectedFrame,
       previews,
     });
   };

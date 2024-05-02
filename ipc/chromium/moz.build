@@ -24,11 +24,11 @@ UNIFIED_SOURCES += [
     "src/base/time.cc",
     "src/base/timer.cc",
     "src/chrome/common/child_process.cc",
-    "src/chrome/common/child_process_host.cc",
     "src/chrome/common/child_thread.cc",
     "src/chrome/common/chrome_switches.cc",
     "src/chrome/common/ipc_channel_utils.cc",
     "src/chrome/common/ipc_message.cc",
+    "src/chrome/common/ipc_message_utils.cc",
     "src/mojo/core/ports/event.cc",
     "src/mojo/core/ports/message_queue.cc",
     "src/mojo/core/ports/name.cc",
@@ -102,6 +102,7 @@ if os_bsd:
 if os_linux:
     SOURCES += [
         "src/base/process_util_linux.cc",
+        "src/base/set_process_title_linux.cc",
         "src/base/time_posix.cc",
     ]
     if CONFIG["OS_TARGET"] == "Android":
@@ -133,5 +134,3 @@ TEST_DIRS += [
 include("/ipc/chromium/chromium-config.mozbuild")
 
 FINAL_LIBRARY = "xul"
-
-REQUIRES_UNIFIED_BUILD = True

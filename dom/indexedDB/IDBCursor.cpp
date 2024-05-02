@@ -60,6 +60,9 @@ IDBTypedCursor<CursorType>::~IDBTypedCursor() {
     (*mBackgroundActor)->SendDeleteMeInternal();
     MOZ_ASSERT(!mBackgroundActor, "SendDeleteMeInternal should have cleared!");
   }
+
+  // Let's explicitly not leave any dangling CheckedUnsafePtr.
+  mTransaction = nullptr;
 }
 
 // static
@@ -827,8 +830,8 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_END
   NS_IMPL_ADDREF_INHERITED(_subclassName, IDBCursor)                          \
   NS_IMPL_RELEASE_INHERITED(_subclassName, IDBCursor)
 
-#define NS_IMPL_CYCLE_COLLECTION_IDBCURSOR_SUBCLASS(_subclassName)  \
-  NS_IMPL_CYCLE_COLLECTION_MULTI_ZONE_JSHOLDER_CLASS(_subclassName) \
+#define NS_IMPL_CYCLE_COLLECTION_IDBCURSOR_SUBCLASS(_subclassName) \
+  NS_IMPL_CYCLE_COLLECTION_CLASS(_subclassName)                    \
   NS_IMPL_CYCLE_COLLECTION_IDBCURSOR_SUBCLASS_METHODS(_subclassName)
 
 NS_IMPL_CYCLE_COLLECTION_IDBCURSOR_SUBCLASS(IDBObjectStoreCursor)

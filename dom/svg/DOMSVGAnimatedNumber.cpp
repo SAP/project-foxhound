@@ -8,19 +8,14 @@
 
 #include "mozilla/dom/SVGAnimatedNumberBinding.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 NS_SVG_VAL_IMPL_CYCLE_COLLECTION_WRAPPERCACHED(DOMSVGAnimatedNumber,
                                                mSVGElement)
-
-NS_IMPL_CYCLE_COLLECTION_ROOT_NATIVE(DOMSVGAnimatedNumber, AddRef)
-NS_IMPL_CYCLE_COLLECTION_UNROOT_NATIVE(DOMSVGAnimatedNumber, Release)
 
 JSObject* DOMSVGAnimatedNumber::WrapObject(JSContext* aCx,
                                            JS::Handle<JSObject*> aGivenProto) {
   return SVGAnimatedNumber_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

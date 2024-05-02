@@ -2,8 +2,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, print_function, unicode_literals
-
 import argparse
 import functools
 import logging
@@ -49,6 +47,9 @@ def run_marionette(tests, binary=None, topsrcdir=None, **kwargs):
         setattr(args, k, v)
 
     parser.verify_usage(args)
+
+    # Causes Firefox to crash when using non-local connections.
+    os.environ["MOZ_DISABLE_NONLOCAL_CONNECTIONS"] = "1"
 
     if not args.logger:
         args.logger = commandline.setup_logging(

@@ -7,6 +7,7 @@
 
 #if defined(MOZ_WIDGET_ANDROID)
 #  include "apz/src/APZCTreeManager.h"
+#  include "mozilla/widget/AndroidCompositorWidget.h"
 #endif
 #include <utility>
 
@@ -64,26 +65,33 @@ mozilla::ipc::IPCResult UiCompositorControllerParent::RecvPause() {
   return IPC_OK();
 }
 
-mozilla::ipc::IPCResult UiCompositorControllerParent::RecvResume() {
+mozilla::ipc::IPCResult UiCompositorControllerParent::RecvResume(
+    bool* aOutResumed) {
+  *aOutResumed = false;
   CompositorBridgeParent* parent =
       CompositorBridgeParent::GetCompositorBridgeParentFromLayersId(
           mRootLayerTreeId);
   if (parent) {
-    parent->ResumeComposition();
+    *aOutResumed = parent->ResumeComposition();
   }
   return IPC_OK();
 }
 
 mozilla::ipc::IPCResult UiCompositorControllerParent::RecvResumeAndResize(
     const int32_t& aX, const int32_t& aY, const int32_t& aWidth,
-    const int32_t& aHeight) {
+    const int32_t& aHeight, bool* aOutResumed) {
+  *aOutResumed = false;
   CompositorBridgeParent* parent =
       CompositorBridgeParent::GetCompositorBridgeParentFromLayersId(
           mRootLayerTreeId);
   if (parent) {
     // Front-end expects a first paint callback upon resume/resize.
     parent->ForceIsFirstPaint();
-    parent->ResumeCompositionAndResize(aX, aY, aWidth, aHeight);
+#if defined(MOZ_WIDGET_ANDROID)
+    parent->GetWidget()->AsAndroid()->NotifyClientSizeChanged(
+        LayoutDeviceIntSize(aWidth, aHeight));
+#endif
+    *aOutResumed = parent->ResumeCompositionAndResize(aX, aY, aWidth, aHeight);
   }
   return IPC_OK();
 }
@@ -94,7 +102,6 @@ UiCompositorControllerParent::RecvInvalidateAndRender() {
       CompositorBridgeParent::GetCompositorBridgeParentFromLayersId(
           mRootLayerTreeId);
   if (parent) {
-    parent->Invalidate();
     parent->ScheduleComposition(wr::RenderReasons::OTHER);
   }
   return IPC_OK();
@@ -159,12 +166,9 @@ UiCompositorControllerParent::RecvEnableLayerUpdateNotifications(
   return IPC_OK();
 }
 
-void UiCompositorControllerParent::ActorDestroy(ActorDestroyReason aWhy) {}
-
-void UiCompositorControllerParent::ActorDealloc() {
+void UiCompositorControllerParent::ActorDestroy(ActorDestroyReason aWhy) {
   MOZ_ASSERT(CompositorThreadHolder::IsInCompositorThread());
   Shutdown();
-  Release();  // For AddRef in Initialize()
 }
 
 void UiCompositorControllerParent::ToolbarAnimatorMessageFromCompositor(
@@ -186,7 +190,7 @@ void UiCompositorControllerParent::ToolbarAnimatorMessageFromCompositor(
 bool UiCompositorControllerParent::AllocPixelBuffer(const int32_t aSize,
                                                     ipc::Shmem* aMem) {
   MOZ_ASSERT(aSize > 0);
-  return AllocShmem(aSize, ipc::SharedMemory::TYPE_BASIC, aMem);
+  return AllocShmem(aSize, aMem);
 }
 
 void UiCompositorControllerParent::NotifyLayersUpdated() {
@@ -259,7 +263,6 @@ void UiCompositorControllerParent::InitializeForOutOfProcess() {
 
 void UiCompositorControllerParent::Initialize() {
   MOZ_ASSERT(CompositorThreadHolder::IsInCompositorThread());
-  AddRef();
   LayerTreeState* state =
       CompositorBridgeParent::GetIndirectShadowTree(mRootLayerTreeId);
   MOZ_ASSERT(state);

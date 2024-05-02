@@ -21,20 +21,18 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from __future__ import absolute_import
-
 import argparse
 import concurrent.futures
 import logging
 import os
 import re
-import requests
 import shutil
 import subprocess
 import tempfile
-import urlparse
 
-from PackageSymbolDumper import process_packages, find_packages
+import requests
+import urlparse
+from PackageSymbolDumper import find_packages, process_packages
 
 OSX_RE = re.compile(r"10\.[0-9]+\.[0-9]+")
 
@@ -43,7 +41,7 @@ def extract_dmg(dmg_path, dest):
     logging.info("extract_dmg({}, {})".format(dmg_path, dest))
     with tempfile.NamedTemporaryFile() as f:
         subprocess.check_call(
-            ["dmg", "extract", dmg_path, f.name], stdout=open(os.devnull, "wb")
+            ["dmg", "extract", dmg_path, f.name], stdout=subprocess.DEVNULL
         )
         subprocess.check_call(["hfsplus", f.name, "extractall"], cwd=dest)
 

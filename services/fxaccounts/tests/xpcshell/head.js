@@ -6,13 +6,14 @@
 
 "use strict";
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-const { sinon } = ChromeUtils.import("resource://testing-common/Sinon.jsm");
-const { SCOPE_OLD_SYNC, LEGACY_SCOPE_WEBEXT_SYNC } = ChromeUtils.import(
-  "resource://gre/modules/FxAccountsCommon.js"
+const { sinon } = ChromeUtils.importESModule(
+  "resource://testing-common/Sinon.sys.mjs"
+);
+const { SCOPE_OLD_SYNC } = ChromeUtils.importESModule(
+  "resource://gre/modules/FxAccountsCommon.sys.mjs"
 );
 
 // Some mock key data, in both scoped-key and legacy field formats.
@@ -20,34 +21,18 @@ const MOCK_ACCOUNT_KEYS = {
   scopedKeys: {
     [SCOPE_OLD_SYNC]: {
       kid: "1234567890123-u7u7u7u7u7u7u7u7u7u7uw",
-      k:
-        "qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqg",
-      kty: "oct",
-    },
-    [LEGACY_SCOPE_WEBEXT_SYNC]: {
-      kid: "1234567890123-3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d0",
-      k:
-        "zMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzA",
+      k: "qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqg",
       kty: "oct",
     },
   },
-  kSync:
-    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-  kXCS: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-  kExtSync:
-    "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-  kExtKbHash:
-    "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd ",
 };
 
 (function initFxAccountsTestingInfrastructure() {
   do_get_profile();
 
-  let ns = {};
-  ChromeUtils.import(
-    "resource://testing-common/services/common/logging.js",
-    ns
+  let { initTestLogging } = ChromeUtils.importESModule(
+    "resource://testing-common/services/common/logging.sys.mjs"
   );
 
-  ns.initTestLogging("Trace");
-}.call(this));
+  initTestLogging("Trace");
+}).call(this);

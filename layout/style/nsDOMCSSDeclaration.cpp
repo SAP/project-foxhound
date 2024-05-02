@@ -19,7 +19,6 @@
 #include "mozAutoDocUpdate.h"
 #include "mozilla/dom/BindingUtils.h"
 #include "nsQueryObject.h"
-#include "mozilla/layers/ScrollLinkedEffectDetector.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -34,8 +33,8 @@ JSObject* nsDOMCSSDeclaration::WrapObject(JSContext* aCx,
 
 NS_IMPL_QUERY_INTERFACE(nsDOMCSSDeclaration, nsICSSDeclaration)
 
-nsresult nsDOMCSSDeclaration::GetPropertyValue(const nsCSSPropertyID aPropID,
-                                               nsACString& aValue) {
+void nsDOMCSSDeclaration::GetPropertyValue(const nsCSSPropertyID aPropID,
+                                           nsACString& aValue) {
   MOZ_ASSERT(aPropID != eCSSProperty_UNKNOWN,
              "Should never pass eCSSProperty_UNKNOWN around");
   MOZ_ASSERT(aValue.IsEmpty());
@@ -44,7 +43,6 @@ nsresult nsDOMCSSDeclaration::GetPropertyValue(const nsCSSPropertyID aPropID,
           GetOrCreateCSSDeclaration(Operation::Read, nullptr)) {
     decl->GetPropertyValueByID(aPropID, aValue);
   }
-  return NS_OK;
 }
 
 void nsDOMCSSDeclaration::SetPropertyValue(const nsCSSPropertyID aPropID,
@@ -53,33 +51,6 @@ void nsDOMCSSDeclaration::SetPropertyValue(const nsCSSPropertyID aPropID,
                                            ErrorResult& aRv) {
   if (IsReadOnly()) {
     return;
-  }
-
-  switch (aPropID) {
-    case eCSSProperty_background_position:
-    case eCSSProperty_background_position_x:
-    case eCSSProperty_background_position_y:
-    case eCSSProperty_transform:
-    case eCSSProperty_translate:
-    case eCSSProperty_rotate:
-    case eCSSProperty_scale:
-    case eCSSProperty_top:
-    case eCSSProperty_left:
-    case eCSSProperty_bottom:
-    case eCSSProperty_right:
-    case eCSSProperty_margin:
-    case eCSSProperty_margin_top:
-    case eCSSProperty_margin_left:
-    case eCSSProperty_margin_bottom:
-    case eCSSProperty_margin_right:
-    case eCSSProperty_margin_inline_start:
-    case eCSSProperty_margin_inline_end:
-    case eCSSProperty_margin_block_start:
-    case eCSSProperty_margin_block_end:
-      mozilla::layers::ScrollLinkedEffectDetector::PositioningPropertyMutated();
-      break;
-    default:
-      break;
   }
 
   if (aValue.IsEmpty()) {
@@ -136,7 +107,7 @@ void nsDOMCSSDeclaration::SetCssText(const nsACString& aCssText,
   // doesn't modify any existing declaration and that is why the callback isn't
   // called implicitly.
   if (closure.function && !closureData.mWasCalled) {
-    closure.function(&closureData);
+    closure.function(&closureData, eCSSProperty_UNKNOWN);
   }
 
   RefPtr<DeclarationBlock> newdecl = DeclarationBlock::FromCssText(
@@ -162,14 +133,12 @@ void nsDOMCSSDeclaration::IndexedGetter(uint32_t aIndex, bool& aFound,
   aFound = decl && decl->GetNthProperty(aIndex, aPropName);
 }
 
-NS_IMETHODIMP
-nsDOMCSSDeclaration::GetPropertyValue(const nsACString& aPropertyName,
-                                      nsACString& aReturn) {
+void nsDOMCSSDeclaration::GetPropertyValue(const nsACString& aPropertyName,
+                                           nsACString& aReturn) {
   MOZ_ASSERT(aReturn.IsEmpty());
   if (auto* decl = GetOrCreateCSSDeclaration(Operation::Read, nullptr)) {
     decl->GetPropertyValue(aPropertyName, aReturn);
   }
-  return NS_OK;
 }
 
 void nsDOMCSSDeclaration::GetPropertyPriority(const nsACString& aPropertyName,
@@ -227,12 +196,7 @@ void nsDOMCSSDeclaration::RemoveProperty(const nsACString& aPropertyName,
   if (IsReadOnly()) {
     return;
   }
-
-  nsresult rv = GetPropertyValue(aPropertyName, aReturn);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    aRv.Throw(rv);
-    return;
-  }
+  GetPropertyValue(aPropertyName, aReturn);
   RemovePropertyInternal(aPropertyName, aRv);
 }
 
@@ -305,7 +269,7 @@ nsresult nsDOMCSSDeclaration::ModifyDeclaration(
 nsresult nsDOMCSSDeclaration::ParsePropertyValue(
     const nsCSSPropertyID aPropID, const nsACString& aPropValue,
     bool aIsImportant, nsIPrincipal* aSubjectPrincipal) {
-  AUTO_PROFILER_LABEL_CATEGORY_PAIR(LAYOUT_CSSParsing);
+  AUTO_PROFILER_LABEL_CATEGORY_PAIR_RELEVANT_FOR_JS(LAYOUT_CSSParsing);
 
   if (IsReadOnly()) {
     return NS_OK;
@@ -320,8 +284,8 @@ nsresult nsDOMCSSDeclaration::ParsePropertyValue(
       [&](DeclarationBlock* decl, ParsingEnvironment& env) {
         return Servo_DeclarationBlock_SetPropertyById(
             decl->Raw(), aPropID, &aPropValue, aIsImportant, env.mUrlExtraData,
-            ParsingMode::Default, env.mCompatMode, env.mLoader, env.mRuleType,
-            closure);
+            StyleParsingMode::DEFAULT, env.mCompatMode, env.mLoader,
+            env.mRuleType, closure);
       });
 }
 
@@ -343,7 +307,7 @@ nsresult nsDOMCSSDeclaration::ParseCustomPropertyValue(
       [&](DeclarationBlock* decl, ParsingEnvironment& env) {
         return Servo_DeclarationBlock_SetProperty(
             decl->Raw(), &aPropertyName, &aPropValue, aIsImportant,
-            env.mUrlExtraData, ParsingMode::Default, env.mCompatMode,
+            env.mUrlExtraData, StyleParsingMode::DEFAULT, env.mCompatMode,
             env.mLoader, env.mRuleType, closure);
       });
 }

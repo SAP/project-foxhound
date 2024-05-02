@@ -1,21 +1,23 @@
-const { FormHistory } = ChromeUtils.import(
-  "resource://gre/modules/FormHistory.jsm"
+const { FormHistory } = ChromeUtils.importESModule(
+  "resource://gre/modules/FormHistory.sys.mjs"
 );
-const { Service } = ChromeUtils.import("resource://services-sync/service.js");
-const { Bookmark, BookmarkFolder, BookmarkQuery } = ChromeUtils.import(
-  "resource://services-sync/engines/bookmarks.js"
+const { Service } = ChromeUtils.importESModule(
+  "resource://services-sync/service.sys.mjs"
 );
-const { HistoryRec } = ChromeUtils.import(
-  "resource://services-sync/engines/history.js"
+const { Bookmark, BookmarkFolder, BookmarkQuery } = ChromeUtils.importESModule(
+  "resource://services-sync/engines/bookmarks.sys.mjs"
 );
-const { FormRec } = ChromeUtils.import(
-  "resource://services-sync/engines/forms.js"
+const { HistoryRec } = ChromeUtils.importESModule(
+  "resource://services-sync/engines/history.sys.mjs"
 );
-const { LoginRec } = ChromeUtils.import(
-  "resource://services-sync/engines/passwords.js"
+const { FormRec } = ChromeUtils.importESModule(
+  "resource://services-sync/engines/forms.sys.mjs"
 );
-const { PrefRec } = ChromeUtils.import(
-  "resource://services-sync/engines/prefs.js"
+const { LoginRec } = ChromeUtils.importESModule(
+  "resource://services-sync/engines/passwords.sys.mjs"
+);
+const { PrefRec } = ChromeUtils.importESModule(
+  "resource://services-sync/engines/prefs.sys.mjs"
 );
 
 const LoginInfo = Components.Constructor(
@@ -41,7 +43,9 @@ async function assertChildGuids(folderGuid, expectedChildGuids, message) {
 async function cleanup(engine, server) {
   await engine._tracker.stop();
   await engine._store.wipe();
-  Svc.Prefs.resetBranch("");
+  for (const pref of Svc.PrefBranch.getChildList("")) {
+    Svc.PrefBranch.clearUserPref(pref);
+  }
   Service.recordManager.clearCache();
   await promiseStopServer(server);
 }
@@ -59,7 +63,7 @@ add_task(async function test_history_change_during_sync() {
   // Override `uploadOutgoing` to insert a record while we're applying
   // changes. The tracker should ignore this change.
   let uploadOutgoing = engine._uploadOutgoing;
-  engine._uploadOutgoing = async function() {
+  engine._uploadOutgoing = async function () {
     engine._uploadOutgoing = uploadOutgoing;
     try {
       await uploadOutgoing.call(this);
@@ -126,7 +130,7 @@ add_task(async function test_passwords_change_during_sync() {
   let collection = server.user("foo").collection("passwords");
 
   let uploadOutgoing = engine._uploadOutgoing;
-  engine._uploadOutgoing = async function() {
+  engine._uploadOutgoing = async function () {
     engine._uploadOutgoing = uploadOutgoing;
     try {
       await uploadOutgoing.call(this);
@@ -141,7 +145,7 @@ add_task(async function test_passwords_change_during_sync() {
         "",
         ""
       );
-      Services.logins.addLogin(login);
+      await Services.logins.addLoginAsync(login);
       await engine._tracker.asyncObserver.promiseObserversComplete();
     }
   };
@@ -208,7 +212,7 @@ add_task(async function test_prefs_change_during_sync() {
   let collection = server.user("foo").collection("prefs");
 
   let uploadOutgoing = engine._uploadOutgoing;
-  engine._uploadOutgoing = async function() {
+  engine._uploadOutgoing = async function () {
     engine._uploadOutgoing = uploadOutgoing;
     try {
       await uploadOutgoing.call(this);
@@ -286,26 +290,19 @@ add_task(async function test_forms_change_during_sync() {
   let collection = server.user("foo").collection("forms");
 
   let uploadOutgoing = engine._uploadOutgoing;
-  engine._uploadOutgoing = async function() {
+  engine._uploadOutgoing = async function () {
     engine._uploadOutgoing = uploadOutgoing;
     try {
       await uploadOutgoing.call(this);
     } finally {
       _("Inserting local form history entry");
-      await new Promise(resolve => {
-        FormHistory.update(
-          [
-            {
-              op: "add",
-              fieldname: "favoriteDrink",
-              value: "cocoa",
-            },
-          ],
-          {
-            handleCompletion: resolve,
-          }
-        );
-      });
+      await FormHistory.update([
+        {
+          op: "add",
+          fieldname: "favoriteDrink",
+          value: "cocoa",
+        },
+      ]);
       await engine._tracker.asyncObserver.promiseObserversComplete();
     }
   };
@@ -389,7 +386,7 @@ add_task(async function test_bookmark_change_during_sync() {
   let bmk3; // New child of Folder 1, created locally during sync.
 
   let uploadOutgoing = engine._uploadOutgoing;
-  engine._uploadOutgoing = async function() {
+  engine._uploadOutgoing = async function () {
     engine._uploadOutgoing = uploadOutgoing;
     try {
       await uploadOutgoing.call(this);

@@ -4,69 +4,49 @@
 
 "use strict";
 
-const { CC, Cu } = require("chrome");
-
-const idlPureAllowlist = require("devtools/server/actors/webconsole/webidl-pure-allowlist");
-
-// TODO: Bug 1616013 - Move more of these to be part of the pure list.
-const customEagerFunctions = {
-  Document: [
-    ["prototype", "getSelection"],
-    ["prototype", "hasStorageAccess"],
-  ],
-  Range: [
-    ["prototype", "isPointInRange"],
-    ["prototype", "comparePoint"],
-    ["prototype", "intersectsNode"],
-
-    // These two functions aren't pure because they do trigger layout when
-    // they are called, but in the context of eager evaluation, that should be
-    // a totally fine thing to do.
-    ["prototype", "getClientRects"],
-    ["prototype", "getBoundingClientRect"],
-  ],
-  Selection: [
-    ["prototype", "getRangeAt"],
-    ["prototype", "containsNode"],
-  ],
-};
-
-const mergedFunctions = {};
-for (const [key, values] of Object.entries(idlPureAllowlist)) {
-  mergedFunctions[key] = [...values];
-}
-for (const [key, values] of Object.entries(customEagerFunctions)) {
-  if (!mergedFunctions[key]) {
-    mergedFunctions[key] = [];
-  }
-  mergedFunctions[key].push(...values);
-}
+const idlPureAllowlist = require("resource://devtools/server/actors/webconsole/webidl-pure-allowlist.js");
 
 const natives = [];
-if (CC && Cu) {
+if (Components.Constructor && Cu) {
   const sandbox = Cu.Sandbox(
-    CC("@mozilla.org/systemprincipal;1", "nsIPrincipal")(),
+    Components.Constructor("@mozilla.org/systemprincipal;1", "nsIPrincipal")(),
     {
       invisibleToDebugger: true,
-      wantGlobalProperties: Object.keys(mergedFunctions),
+      wantGlobalProperties: Object.keys(idlPureAllowlist),
     }
   );
 
-  for (const iface of Object.keys(mergedFunctions)) {
-    for (const path of mergedFunctions[iface]) {
-      let value = sandbox;
-      for (const part of [iface, ...path]) {
-        value = value[part];
-        if (!value) {
-          break;
-        }
+  function maybePush(maybeFunc) {
+    if (maybeFunc) {
+      natives.push(maybeFunc);
+    }
+  }
+
+  function collectMethods(obj, methods) {
+    for (const name of methods) {
+      maybePush(obj[name]);
+    }
+  }
+
+  for (const [iface, ifaceData] of Object.entries(idlPureAllowlist)) {
+    const ctor = sandbox[iface];
+    if (!ctor) {
+      continue;
+    }
+
+    if ("static" in ifaceData) {
+      collectMethods(ctor, ifaceData.static);
+    }
+
+    if ("prototype" in ifaceData) {
+      const proto = ctor.prototype;
+      if (!proto) {
+        continue;
       }
 
-      if (value) {
-        natives.push(value);
-      }
+      collectMethods(proto, ifaceData.prototype);
     }
   }
 }
 
-module.exports = natives;
+module.exports = { natives };

@@ -4,24 +4,24 @@
 
 "use strict";
 
-const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
+const PropTypes = require("resource://devtools/client/shared/vendor/react-prop-types.js");
 const {
   createFactory,
   PureComponent,
-} = require("devtools/client/shared/vendor/react");
+} = require("resource://devtools/client/shared/vendor/react.js");
 const {
   img,
   li,
   span,
-} = require("devtools/client/shared/vendor/react-dom-factories");
+} = require("resource://devtools/client/shared/vendor/react-dom-factories.js");
 
-const FluentReact = require("devtools/client/shared/vendor/fluent-react");
+const FluentReact = require("resource://devtools/client/shared/vendor/fluent-react.js");
 const Localized = createFactory(FluentReact.Localized);
 
 const {
   MANIFEST_ISSUE_LEVELS,
-} = require("devtools/client/application/src/constants");
-const Types = require("devtools/client/application/src/types/index");
+} = require("resource://devtools/client/application/src/constants.js");
+const Types = require("resource://devtools/client/application/src/types/index.js");
 
 /**
  * A Manifest validation issue (warning, error)
@@ -44,7 +44,7 @@ class ManifestIssue extends PureComponent {
       case MANIFEST_ISSUE_LEVELS.ERROR:
       default:
         return {
-          src: "chrome://devtools/skin/images/error-small.svg",
+          src: "resource://devtools-shared-images/error-small.svg",
           localizationId: "icon-error",
         };
     }

@@ -162,12 +162,12 @@ If the referent is an error created with an engine internal message template
 this is a string which is the name of the template; `undefined` otherwise.
 
 ### `errorLineNumber`
-If the referent is an Error object, this is the line number at which the
-referent was created; `undefined`  otherwise.
+If the referent is an Error object, this is the 1-origin line number at which
+the referent was created; `undefined`  otherwise.
 
 ### `errorColumnNumber`
-If the referent is an Error object, this is the column number at which the
-referent was created; `undefined`  otherwise.
+If the referent is an Error object, this is the 1-origin column number in
+UTF-16 code units at which the referent was created; `undefined`  otherwise.
 
 ### `isBoundFunction`
 If the referent is a debuggee function, returns `true` if the referent is a
@@ -380,6 +380,9 @@ if <code>Object.getOwnPropertyNames(<i>referent</i>)</code> had been
 called in the debuggee, and the result copied in the scope of the
 debugger's global object.
 
+### `getOwnPropertyNamesLength()`
+Return the number of the referent's own properties.
+
 ### `getOwnPropertySymbols()`
 Return an array of strings naming all the referent's own symbols, as
 if <code>Object.getOwnPropertySymbols(<i>referent</i>)</code> had been
@@ -462,16 +465,12 @@ referent as viewed from a particular compartment. Given a
 `Debugger.Object` instance that presents <i>o</i> as it would be seen
 by code in <i>d</i>'s compartment.
 
-### `makeDebuggeeNativeFunction(value)`
-If <i>value</i> is a native function in the debugger's compartment, create
-an equivalent function for the same native in the debuggee's realm, and
-return a `Debugger.Object` instance for the new function.  The new function
-can be accessed by code in the debuggee without going through a cross
-compartment wrapper.
-
 ### `isSameNative(value)`
 If <i>value</i> is a native function in the debugger's compartment, return
 whether the referent is a native function for the same C++ native.
+
+### `isNativeGetterWithJitInfo()`
+Return whether the referent is a native getter function with JSJitInfo.
 
 ### `decompile([pretty])`
 If the referent is a function that is debuggee code, return the
@@ -492,6 +491,10 @@ handler methods, breakpoints, and so on remain active
 during the call. If the referent is not callable, throw a `TypeError`.
 This function follows the [invocation function conventions][inv fr].
 
+Note: If this method is called on an object whose owner
+[Debugger object][debugger-object] has an onNativeCall handler, only hooks
+on objects associated with that debugger will be called during the evaluation.
+
 ### `apply(this, arguments)`
 If the referent is callable, call it with the given <i>this</i> value
 and the argument values in <i>arguments</i>, and return a
@@ -504,6 +507,10 @@ which are treated as an empty array. All extant handler methods,
 breakpoints, and so on remain active during the call. If
 the referent is not callable, throw a `TypeError`. This function
 follows the [invocation function conventions][inv fr].
+
+Note: If this method is called on an object whose owner
+[Debugger object][debugger-object] has an onNativeCall handler, only hooks
+on objects associated with that debugger will be called during the evaluation.
 
 ### `executeInGlobal(code, [options])`
 If the referent is a global object, evaluate <i>code</i> in that global
@@ -530,13 +537,28 @@ on objects associated with that debugger will be called during the evaluation.
 ### `executeInGlobalWithBindings(code, bindings, [options])`
 Like `executeInGlobal`, but evaluate <i>code</i> using the referent as the
 variable object, but with a lexical environment extended with bindings
-from the object <i>bindings</i>. For each own enumerable property of
-<i>bindings</i> named <i>name</i> whose value is <i>value</i>, include a
-variable in the lexical environment in which <i>code</i> is evaluated
-named <i>name</i>, whose value is <i>value</i>. Each <i>value</i> must
-be a debuggee value. (This is not like a `with` statement: <i>code</i>
-may access, assign to, and delete the introduced bindings without having
-any effect on the <i>bindings</i> object.)
+from the object <i>bindings</i>.
+
+An extra environment is created with bindings specified by <i>bindings</i>.
+The environment contains bindings corresponding to each own enumerable property
+of <i>bindings</i>, where the property name <i>name</i> as binding name,
+and the property value <i>value</i> as binding's initial value.
+
+If `options.useInnerBindings` is not specified or is specified as `false`,
+it emulates where the bindings environment is placed outside of global,
+which means, if the binding conflicts with any global variable declared in
+the <i>code</i>, or any existing global variable, the binding is ignored.
+
+If `options.useInnerBindings` is speified as `true`, it directly performs as
+the bindings environment is placed inside the global, and the provided bindings
+shadow the global variables.
+
+Each <i>value</i> must be a debuggee value.
+
+This is not like a `with` statement: <i>code</i> may access, assign to, and
+delete the introduced bindings without having any effect on the passed
+<i>bindings</i> object, because the properties are copied to a new object for
+each invocation.
 
 This method allows debugger code to introduce temporary bindings that
 are visible to the given debuggee code and which refer to debugger-held
@@ -564,6 +586,7 @@ exception.  The `options` object can have the following properties:
   * `text`: String contents of the JavaScript in the source.
   * `url`: URL the resulting source should be associated with.
   * `startLine`: Starting line of the source.
+  * `startColumn`: Starting column of the source.
   * `sourceMapURL`: Optional URL specifying the source's source map URL.
     If not specified, the source map URL can be filled in if specified by
     the source's text.
@@ -654,8 +677,8 @@ promise. There are several different sorts of reaction records:
 [promise]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise
 [saved-frame]: ../SavedFrame/index
 
-[tracking-allocs]: Debugger.Memory.html#trackingallocationsites
-[inv fr]: Debugger.Frame.html#invocation-functions-and-debugger-frames
-[wouldrun]: Conventions.html#the-debugger-debuggeewouldrun-exception
-[cv]: Conventions.html#completion-values
-[fr eval]: Debugger.Frame.html#eval-code-options
+[tracking-allocs]: Debugger.Memory.md#trackingallocationsites
+[inv fr]: Debugger.Frame.md#invocation-functions-and-debugger-frames
+[wouldrun]: Conventions.md#the-debugger-debuggeewouldrun-exception
+[cv]: Conventions.md#completion-values
+[fr eval]: Debugger.Frame.md#eval-code-options

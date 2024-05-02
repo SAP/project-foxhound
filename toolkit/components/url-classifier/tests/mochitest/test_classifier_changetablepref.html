@@ -25,8 +25,9 @@ const UPDATE_URL = "http://mochi.test:8888/tests/toolkit/components/url-classifi
 var Cc = SpecialPowers.Cc;
 var Ci = SpecialPowers.Ci;
 
-const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const {TestUtils} = ChromeUtils.import("resource://testing-common/TestUtils.jsm");
+const {TestUtils} = ChromeUtils.importESModule(
+  "resource://testing-common/TestUtils.sys.mjs"
+);
 
 var timer = Cc["@mozilla.org/timer;1"]
             .createInstance(Ci.nsITimer);
@@ -55,7 +56,7 @@ function testOnWindow() {
                               subject => subject == win).then(() => {
         win.addEventListener("DOMContentLoaded", function onInnerLoad() {
           if (win.content.location.href != contentPage) {
-            win.gBrowser.loadURI(contentPage, {
+            win.gBrowser.loadURI(Services.io.newURI(contentPage), {
               triggeringPrincipal: Services.scriptSecurityManager.createNullPrincipal({}),
             });
             return;
@@ -70,7 +71,7 @@ function testOnWindow() {
           }, false, true);
         }, true);
         SimpleTest.executeSoon(function() {
-          win.gBrowser.loadURI(contentPage, {
+          win.gBrowser.loadURI(Services.io.newURI(contentPage), {
             triggeringPrincipal: Services.scriptSecurityManager.createNullPrincipal({}),
           });
         });

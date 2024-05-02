@@ -59,7 +59,7 @@ add_task(async function testSoundIndicatorShouldDisappearAfterTabNavigation() {
 
   info(`sound indicator should disappear after navigating tab to blank page`);
   await Promise.all([
-    BrowserTestUtils.loadURI(tab.linkedBrowser, "about:blank"),
+    BrowserTestUtils.startLoadingURIString(tab.linkedBrowser, "about:blank"),
     waitForTabSoundIndicatorDisappears(tab),
   ]);
 
@@ -108,6 +108,7 @@ add_task(async function testNoSoundIndicatorWhenSimplyCreateAudioContext() {
  * Following are helper functions
  */
 function initWebAudioDocument(tab, { duration } = {}) {
+  // eslint-disable-next-line no-shadow
   return SpecialPowers.spawn(tab.linkedBrowser, [duration], async duration => {
     content.ac = new content.AudioContext();
     const ac = content.ac;

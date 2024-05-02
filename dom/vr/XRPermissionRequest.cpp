@@ -10,8 +10,7 @@
 #include "mozilla/Preferences.h"
 #include "nsContentUtils.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 //-------------------------------------------------
 // XR Permission Requests
@@ -46,7 +45,7 @@ XRPermissionRequest::Cancel() {
 }
 
 NS_IMETHODIMP
-XRPermissionRequest::Allow(JS::HandleValue aChoices) {
+XRPermissionRequest::Allow(JS::Handle<JS::Value> aChoices) {
   MOZ_ASSERT(aChoices.isUndefined());
   nsGlobalWindowInner* window =
       nsGlobalWindowInner::GetInnerWindowWithId(mWindowId);
@@ -73,5 +72,4 @@ nsresult XRPermissionRequest::Start() {
   return nsContentPermissionUtils::AskPermission(this, mWindow);
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

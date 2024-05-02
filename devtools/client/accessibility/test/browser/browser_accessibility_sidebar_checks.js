@@ -5,7 +5,7 @@
 
 const {
   accessibility: { SCORES },
-} = require("devtools/shared/constants");
+} = require("resource://devtools/shared/constants.js");
 
 const TEST_URI = `<html>
   <head>
@@ -31,6 +31,9 @@ const TEST_URI = `<html>
 const tests = [
   {
     desc: "Test the initial accessibility audit state.",
+    setup: async ({ doc }) => {
+      await selectRow(doc, 0);
+    },
     expected: {
       audit: { CONTRAST: null },
     },

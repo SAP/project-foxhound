@@ -21,8 +21,6 @@
 
 using namespace mozilla::ipc;
 
-static NS_DEFINE_CID(kJARURICID, NS_JARURI_CID);
-
 ////////////////////////////////////////////////////////////////////////////////
 
 NS_IMPL_CLASSINFO(nsJARURI, nullptr, nsIClassInfo::THREADSAFE, NS_JARURI_CID)
@@ -171,6 +169,14 @@ nsJARURI::GetDisplayHost(nsACString& aUnicodeHost) {
 
 NS_IMETHODIMP
 nsJARURI::GetHasRef(bool* result) { return mJAREntry->GetHasRef(result); }
+
+NS_IMETHODIMP
+nsJARURI::GetHasUserPass(bool* result) {
+  return mJAREntry->GetHasUserPass(result);
+}
+
+NS_IMETHODIMP
+nsJARURI::GetHasQuery(bool* result) { return mJAREntry->GetHasQuery(result); }
 
 nsresult nsJARURI::SetSpecInternal(const nsACString& aSpec) {
   return SetSpecWithBase(aSpec, nullptr);
@@ -488,7 +494,7 @@ nsresult nsJARURI::SetQuery(const nsACString& query) {
 }
 
 nsresult nsJARURI::SetQueryWithEncoding(const nsACString& query,
-                                        const Encoding* encoding) {
+                                        const mozilla::Encoding* encoding) {
   return NS_MutateURI(mJAREntry)
       .SetQueryWithEncoding(query, encoding)
       .Finalize(mJAREntry);

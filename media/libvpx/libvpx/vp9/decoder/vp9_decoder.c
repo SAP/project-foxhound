@@ -66,7 +66,7 @@ void vp9_dec_alloc_row_mt_mem(RowMTWorkerData *row_mt_worker_data,
   {
     int i;
     CHECK_MEM_ERROR(
-        cm, row_mt_worker_data->recon_sync_mutex,
+        &cm->error, row_mt_worker_data->recon_sync_mutex,
         vpx_malloc(sizeof(*row_mt_worker_data->recon_sync_mutex) * num_jobs));
     if (row_mt_worker_data->recon_sync_mutex) {
       for (i = 0; i < num_jobs; ++i) {
@@ -75,7 +75,7 @@ void vp9_dec_alloc_row_mt_mem(RowMTWorkerData *row_mt_worker_data,
     }
 
     CHECK_MEM_ERROR(
-        cm, row_mt_worker_data->recon_sync_cond,
+        &cm->error, row_mt_worker_data->recon_sync_cond,
         vpx_malloc(sizeof(*row_mt_worker_data->recon_sync_cond) * num_jobs));
     if (row_mt_worker_data->recon_sync_cond) {
       for (i = 0; i < num_jobs; ++i) {
@@ -86,24 +86,24 @@ void vp9_dec_alloc_row_mt_mem(RowMTWorkerData *row_mt_worker_data,
 #endif
   row_mt_worker_data->num_sbs = num_sbs;
   for (plane = 0; plane < 3; ++plane) {
-    CHECK_MEM_ERROR(cm, row_mt_worker_data->dqcoeff[plane],
-                    vpx_memalign(16, dqcoeff_size));
+    CHECK_MEM_ERROR(&cm->error, row_mt_worker_data->dqcoeff[plane],
+                    vpx_memalign(32, dqcoeff_size));
     memset(row_mt_worker_data->dqcoeff[plane], 0, dqcoeff_size);
-    CHECK_MEM_ERROR(cm, row_mt_worker_data->eob[plane],
+    CHECK_MEM_ERROR(&cm->error, row_mt_worker_data->eob[plane],
                     vpx_calloc(num_sbs << EOBS_PER_SB_LOG2,
                                sizeof(*row_mt_worker_data->eob[plane])));
   }
-  CHECK_MEM_ERROR(cm, row_mt_worker_data->partition,
+  CHECK_MEM_ERROR(&cm->error, row_mt_worker_data->partition,
                   vpx_calloc(num_sbs * PARTITIONS_PER_SB,
                              sizeof(*row_mt_worker_data->partition)));
-  CHECK_MEM_ERROR(cm, row_mt_worker_data->recon_map,
+  CHECK_MEM_ERROR(&cm->error, row_mt_worker_data->recon_map,
                   vpx_calloc(num_sbs, sizeof(*row_mt_worker_data->recon_map)));
 
   // allocate memory for thread_data
   if (row_mt_worker_data->thread_data == NULL) {
     const size_t thread_size =
         max_threads * sizeof(*row_mt_worker_data->thread_data);
-    CHECK_MEM_ERROR(cm, row_mt_worker_data->thread_data,
+    CHECK_MEM_ERROR(&cm->error, row_mt_worker_data->thread_data,
                     vpx_memalign(32, thread_size));
   }
 }
@@ -153,6 +153,11 @@ static int vp9_dec_alloc_mi(VP9_COMMON *cm, int mi_size) {
 }
 
 static void vp9_dec_free_mi(VP9_COMMON *cm) {
+#if CONFIG_VP9_POSTPROC
+  // MFQE allocates an additional mip and swaps it with cm->mip.
+  vpx_free(cm->postproc_state.prev_mip);
+  cm->postproc_state.prev_mip = NULL;
+#endif
   vpx_free(cm->mip);
   cm->mip = NULL;
   vpx_free(cm->mi_grid_base);
@@ -176,9 +181,10 @@ VP9Decoder *vp9_decoder_create(BufferPool *const pool) {
 
   cm->error.setjmp = 1;
 
-  CHECK_MEM_ERROR(cm, cm->fc, (FRAME_CONTEXT *)vpx_calloc(1, sizeof(*cm->fc)));
+  CHECK_MEM_ERROR(&cm->error, cm->fc,
+                  (FRAME_CONTEXT *)vpx_calloc(1, sizeof(*cm->fc)));
   CHECK_MEM_ERROR(
-      cm, cm->frame_contexts,
+      &cm->error, cm->frame_contexts,
       (FRAME_CONTEXT *)vpx_calloc(FRAME_CONTEXTS, sizeof(*cm->frame_contexts)));
 
   pbi->need_resync = 1;
@@ -188,7 +194,7 @@ VP9Decoder *vp9_decoder_create(BufferPool *const pool) {
   memset(&cm->ref_frame_map, -1, sizeof(cm->ref_frame_map));
   memset(&cm->next_ref_frame_map, -1, sizeof(cm->next_ref_frame_map));
 
-  cm->current_video_frame = 0;
+  init_frame_indexes(cm);
   pbi->ready_for_new_data = 1;
   pbi->common.buffer_pool = pool;
 

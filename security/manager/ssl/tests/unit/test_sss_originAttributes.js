@@ -19,24 +19,17 @@ let uri = Services.io.newURI("https://" + host);
 
 // Check if originAttributes1 and originAttributes2 are isolated with respect
 // to HSTS storage.
-function doTest(secInfo, originAttributes1, originAttributes2, shouldShare) {
+function doTest(originAttributes1, originAttributes2, shouldShare) {
   sss.clearAll();
   let header = GOOD_MAX_AGE;
   // Set HSTS for originAttributes1.
-  sss.processHeader(
-    uri,
-    header,
-    secInfo,
-    0,
-    Ci.nsISiteSecurityService.SOURCE_ORGANIC_REQUEST,
-    originAttributes1
-  );
+  sss.processHeader(uri, header, originAttributes1);
   ok(
-    sss.isSecureURI(uri, 0, originAttributes1),
+    sss.isSecureURI(uri, originAttributes1),
     "URI should be secure given original origin attributes"
   );
   equal(
-    sss.isSecureURI(uri, 0, originAttributes2),
+    sss.isSecureURI(uri, originAttributes2),
     shouldShare,
     "URI should be secure given different origin attributes if and " +
       "only if shouldShare is true"
@@ -44,38 +37,30 @@ function doTest(secInfo, originAttributes1, originAttributes2, shouldShare) {
 
   if (!shouldShare) {
     // Remove originAttributes2 from the storage.
-    sss.resetState(uri, 0, originAttributes2);
+    sss.resetState(uri, originAttributes2);
     ok(
-      sss.isSecureURI(uri, 0, originAttributes1),
+      sss.isSecureURI(uri, originAttributes1),
       "URI should still be secure given original origin attributes"
     );
   }
 
   // Remove originAttributes1 from the storage.
-  sss.resetState(uri, 0, originAttributes1);
+  sss.resetState(uri, originAttributes1);
   ok(
-    !sss.isSecureURI(uri, 0, originAttributes1),
+    !sss.isSecureURI(uri, originAttributes1),
     "URI should not be secure after removeState"
   );
 
   sss.clearAll();
 }
 
-function testInvalidOriginAttributes(secInfo, originAttributes) {
+function testInvalidOriginAttributes(originAttributes) {
   let header = GOOD_MAX_AGE;
 
   let callbacks = [
-    () =>
-      sss.processHeader(
-        uri,
-        header,
-        secInfo,
-        0,
-        Ci.nsISiteSecurityService.SOURCE_ORGANIC_REQUEST,
-        originAttributes
-      ),
-    () => sss.isSecureURI(uri, 0, originAttributes),
-    () => sss.resetState(uri, 0, originAttributes),
+    () => sss.processHeader(uri, header, originAttributes),
+    () => sss.isSecureURI(uri, originAttributes),
+    () => sss.resetState(uri, originAttributes),
   ];
 
   for (let callback of callbacks) {
@@ -87,49 +72,34 @@ function testInvalidOriginAttributes(secInfo, originAttributes) {
   }
 }
 
-function add_tests() {
+function run_test() {
   sss.clearAll();
 
-  let secInfo = null;
-  add_connection_test(
-    "a.pinning.example.com",
-    PRErrorCodeSuccess,
-    undefined,
-    aSecInfo => {
-      secInfo = aSecInfo;
+  let originAttributesList = [];
+  for (let userContextId of [0, 1, 2]) {
+    for (let firstPartyDomain of ["", "foo.com", "bar.com"]) {
+      originAttributesList.push({ userContextId, firstPartyDomain });
     }
+  }
+  for (let attrs1 of originAttributesList) {
+    for (let attrs2 of originAttributesList) {
+      // SSS storage is not isolated by userContext
+      doTest(
+        attrs1,
+        attrs2,
+        attrs1.firstPartyDomain == attrs2.firstPartyDomain
+      );
+    }
+  }
+
+  doTest(
+    { partitionKey: "(http,example.com,8443)" },
+    { partitionKey: "(https,example.com)" },
+    true
   );
 
-  add_task(function() {
-    let originAttributesList = [];
-    for (let userContextId of [0, 1, 2]) {
-      for (let firstPartyDomain of ["", "foo.com", "bar.com"]) {
-        originAttributesList.push({ userContextId, firstPartyDomain });
-      }
-    }
-    for (let attrs1 of originAttributesList) {
-      for (let attrs2 of originAttributesList) {
-        // SSS storage is not isolated by userContext
-        doTest(
-          secInfo,
-          attrs1,
-          attrs2,
-          attrs1.firstPartyDomain == attrs2.firstPartyDomain
-        );
-      }
-    }
-
-    testInvalidOriginAttributes(secInfo, undefined);
-    testInvalidOriginAttributes(secInfo, null);
-    testInvalidOriginAttributes(secInfo, 1);
-    testInvalidOriginAttributes(secInfo, "foo");
-  });
-}
-
-function run_test() {
-  add_tls_server_setup("BadCertAndPinningServer", "bad_certs");
-
-  add_tests();
-
-  run_next_test();
+  testInvalidOriginAttributes(undefined);
+  testInvalidOriginAttributes(null);
+  testInvalidOriginAttributes(1);
+  testInvalidOriginAttributes("foo");
 }

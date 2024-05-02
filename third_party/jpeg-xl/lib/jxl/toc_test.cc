@@ -5,12 +5,12 @@
 
 #include "lib/jxl/toc.h"
 
-#include "gtest/gtest.h"
-#include "lib/jxl/aux_out_fwd.h"
+#include "lib/jxl/base/common.h"
 #include "lib/jxl/base/random.h"
 #include "lib/jxl/base/span.h"
-#include "lib/jxl/common.h"
+#include "lib/jxl/enc_aux_out.h"
 #include "lib/jxl/enc_toc.h"
+#include "lib/jxl/testing.h"
 
 namespace jxl {
 namespace {
@@ -45,7 +45,7 @@ void Roundtrip(size_t num_entries, bool permute, Rng* rng) {
     }
     writer.ZeroPadToByte();
     AuxOut aux_out;
-    ReclaimAndCharge(&writer, &allotment, 0, &aux_out);
+    allotment.ReclaimAndCharge(&writer, 0, &aux_out);
   }
 
   BitWriter writer;
@@ -81,7 +81,7 @@ void Roundtrip(size_t num_entries, bool permute, Rng* rng) {
 
 TEST(TocTest, Test) {
   Rng rng(0);
-  for (size_t num_entries = 0; num_entries < 10; ++num_entries) {
+  for (size_t num_entries = 1; num_entries < 10; ++num_entries) {
     for (bool permute : std::vector<bool>{false, true}) {
       Roundtrip(num_entries, permute, &rng);
     }

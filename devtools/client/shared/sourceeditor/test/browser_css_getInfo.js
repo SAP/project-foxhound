@@ -3,7 +3,7 @@
 
 "use strict";
 
-const CSSCompleter = require("devtools/client/shared/sourceeditor/css-autocompleter");
+const CSSCompleter = require("resource://devtools/client/shared/sourceeditor/css-autocompleter.js");
 
 const source = [
   ".devtools-toolbar {",
@@ -15,7 +15,7 @@ const source = [
   "#devtools-menu.devtools-menulist,",
   ".devtools-toolbarbutton#devtools-menu {",
   "  -moz-appearance: none;",
-  "  -moz-box-align: center;",
+  "  align-items: center;",
   "  min-width: 78px;",
   "  min-height: 22px;",
   "  text-shadow: 0 -1px 0 hsla(210,8%,5%,.45);",
@@ -28,7 +28,7 @@ const source = [
   "}",
   "",
   ".devtools-toolbarbutton > hbox.toolbarbutton-menubutton-button {",
-  "  -moz-box-orient: horizontal;",
+  "  flex-direction: row;",
   "}",
   "",
   ".devtools-menulist:active,",
@@ -209,15 +209,16 @@ add_task(async function test() {
   for (const expected of tests) {
     ++i;
     const caret = expected.splice(0, 1)[0];
-    await SpecialPowers.spawn(browser, [[i, tests.length]], function([
-      idx,
-      len,
-    ]) {
-      const progress = content.document.getElementById("progress");
-      const progressDiv = content.document.querySelector("#progress > div");
-      progress.dataset.progress = idx;
-      progressDiv.style.width = (100 * idx) / len + "%";
-    });
+    await SpecialPowers.spawn(
+      browser,
+      [[i, tests.length]],
+      function ([idx, len]) {
+        const progress = content.document.getElementById("progress");
+        const progressDiv = content.document.querySelector("#progress > div");
+        progress.dataset.progress = idx;
+        progressDiv.style.width = (100 * idx) / len + "%";
+      }
+    );
     const actual = completer.getInfoAt(source, caret);
     if (checkState(expected, actual)) {
       ok(true, "Test " + i + " passed. ");
@@ -239,7 +240,7 @@ add_task(async function test() {
           actual.value +
           "]."
       );
-      await SpecialPowers.spawn(browser, [], function() {
+      await SpecialPowers.spawn(browser, [], function () {
         const progress = content.document.getElementById("progress");
         progress.classList.add("failed");
       });

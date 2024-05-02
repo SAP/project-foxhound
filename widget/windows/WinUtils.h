@@ -11,6 +11,8 @@
 #include <shobjidl.h>
 #include <uxtheme.h>
 #include <dwmapi.h>
+#include <unordered_map>
+#include <utility>
 
 // Undo the windows.h damage
 #undef GetMessage
@@ -35,6 +37,9 @@
 
 #include "mozilla/Attributes.h"
 #include "mozilla/EventForwards.h"
+#include "mozilla/HalScreenConfiguration.h"
+#include "mozilla/HashTable.h"
+#include "mozilla/LazyIdleThread.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/Vector.h"
 #include "mozilla/WindowsDpiAwareness.h"
@@ -78,7 +83,6 @@
  public:
 
 class nsWindow;
-class nsWindowBase;
 struct KeyPair;
 
 namespace mozilla {
@@ -89,14 +93,37 @@ class LocalAccessible;
 }  // namespace a11y
 #endif  // defined(ACCESSIBILITY)
 
-namespace widget {
+// Helper function: enumerate all the toplevel HWNDs attached to the current
+// thread via ::EnumThreadWindows().
+//
+// Note that this use of ::EnumThreadWindows() is, unfortunately, not an
+// abstract implementation detail.
+template <typename F>
+void EnumerateThreadWindows(F&& f)
+// requires requires(F f, HWND h) { f(h); }
+{
+  class Impl {
+   public:
+    F f;
+    explicit Impl(F&& f) : f(std::forward<F>(f)) {}
 
-// Windows message debugging data
-typedef struct {
-  const char* mStr;
-  UINT mId;
-} EventMsgInfo;
-extern EventMsgInfo gAllEvents[];
+    void invoke() {
+      WNDENUMPROC proc = &Impl::Callback;
+      ::EnumThreadWindows(::GetCurrentThreadId(), proc,
+                          reinterpret_cast<LPARAM>(&f));
+    }
+
+   private:
+    static BOOL CALLBACK Callback(HWND hwnd, LPARAM lp) {
+      (*reinterpret_cast<F*>(lp))(hwnd);
+      return TRUE;
+    }
+  };
+
+  Impl(std::forward<F>(f)).invoke();
+}
+
+namespace widget {
 
 // More complete QS definitions for MsgWaitForMultipleObjects() and
 // GetQueueStatus() that include newer win8 specific defines.
@@ -210,6 +237,13 @@ class WinUtils {
   static int GetSystemMetricsForDpi(int nIndex, UINT dpi);
 
   /**
+   * @param msg Windows event message
+   * @return User-friendly event name, or nullptr if no
+   *         match is found.
+   */
+  static const char* WinEventToEventName(UINT msg);
+
+  /**
    * @param aHdc HDC for printer
    * @return unwritable margins for currently set page on aHdc or empty margins
    *         if aHdc is null
@@ -314,20 +348,19 @@ class WinUtils {
                               bool aStopIfNotPopup = true);
 
   /**
-   * SetNSWindowBasePtr() associates an nsWindowBase to aWnd.  If aWidget is
-   * nullptr, it dissociate any nsBaseWidget pointer from aWnd.
-   * GetNSWindowBasePtr() returns an nsWindowBase pointer which was associated
-   * by SetNSWindowBasePtr(). GetNSWindowPtr() is a legacy api for win32
-   * nsWindow and should be avoided outside of nsWindow src.
+   * SetNSWindowPtr() associates aWindow with aWnd. If aWidget is nullptr, it
+   * instead dissociates any nsWindow from aWnd.
+   *
+   * No AddRef is performed. May not be used off of the main thread.
    */
-  static bool SetNSWindowBasePtr(HWND aWnd, nsWindowBase* aWidget);
-  static nsWindowBase* GetNSWindowBasePtr(HWND aWnd);
-  static nsWindow* GetNSWindowPtr(HWND aWnd);
-
+  static void SetNSWindowPtr(HWND aWnd, nsWindow* aWindow);
   /**
-   * GetMonitorCount() returns count of monitors on the environment.
+   * GetNSWindowPtr() returns a pointer to the associated nsWindow pointer, if
+   * one exists, or nullptr, if not.
+   *
+   * No AddRef is performed. May not be used off of the main thread.
    */
-  static int32_t GetMonitorCount();
+  static nsWindow* GetNSWindowPtr(HWND aWnd);
 
   /**
    * IsOurProcessWindow() returns TRUE if aWnd belongs our process.
@@ -405,16 +438,6 @@ class WinUtils {
   static bool GetIsMouseFromTouch(EventMessage aEventType);
 
   /**
-   * GetShellItemPath return the file or directory path of a shell item.
-   * Internally calls IShellItem's GetDisplayName.
-   *
-   * aItem  the shell item containing the path.
-   * aResultString  the resulting string path.
-   * returns  true if a path was retreived.
-   */
-  static bool GetShellItemPath(IShellItem* aItem, nsString& aResultString);
-
-  /**
    * ConvertHRGNToRegion converts a Windows HRGN to an LayoutDeviceIntRegion.
    *
    * aRgn the HRGN to convert.
@@ -429,13 +452,6 @@ class WinUtils {
    * returns the LayoutDeviceIntRect.
    */
   static LayoutDeviceIntRect ToIntRect(const RECT& aRect);
-
-  /**
-   * Helper used in invalidating flash plugin windows owned
-   * by low rights flash containers.
-   */
-  static void InvalidatePluginAsWorkaround(nsIWidget* aWidget,
-                                           const LayoutDeviceIntRect& aRect);
 
   /**
    * Returns true if the context or IME state is enabled.  Otherwise, false.
@@ -473,6 +489,9 @@ class WinUtils {
   static PointerCapabilities GetPrimaryPointerCapabilities();
   // For any-pointer and any-hover media queries features.
   static PointerCapabilities GetAllPointerCapabilities();
+  // Returns a string containing a comma-separated list of Fluent IDs
+  // representing the currently active pointing devices
+  static void GetPointerExplanation(nsAString* aExplanation);
 
   /**
    * Fully resolves a path to its final path name. So if path contains
@@ -564,6 +583,17 @@ class WinUtils {
 
   static void EnableWindowOcclusion(const bool aEnable);
 
+  static bool GetTimezoneName(wchar_t* aBuffer);
+
+#ifdef DEBUG
+  static nsresult SetHiDPIMode(bool aHiDPI);
+  static nsresult RestoreHiDPIMode();
+#endif
+
+  static bool GetAutoRotationState(AR_STATE* aRotationState);
+
+  static void GetClipboardFormatAsString(UINT aFormat, nsAString& aOutput);
+
  private:
   static WhitelistVec BuildWhitelist();
 
@@ -579,7 +609,7 @@ class AsyncFaviconDataReady final : public nsIFaviconDataCallback {
   NS_DECL_ISUPPORTS
   NS_DECL_NSIFAVICONDATACALLBACK
 
-  AsyncFaviconDataReady(nsIURI* aNewURI, nsCOMPtr<nsIThread>& aIOThread,
+  AsyncFaviconDataReady(nsIURI* aNewURI, RefPtr<LazyIdleThread>& aIOThread,
                         const bool aURLShortcut,
                         already_AddRefed<nsIRunnable> aRunnable);
   nsresult OnFaviconDataNotAvailable(void);
@@ -588,7 +618,7 @@ class AsyncFaviconDataReady final : public nsIFaviconDataCallback {
   ~AsyncFaviconDataReady() {}
 
   nsCOMPtr<nsIURI> mNewURI;
-  nsCOMPtr<nsIThread> mIOThread;
+  RefPtr<LazyIdleThread> mIOThread;
   nsCOMPtr<nsIRunnable> mRunnable;
   const bool mURLShortcut;
 };
@@ -641,7 +671,7 @@ class FaviconHelper {
   static const char kShortcutCacheDir[];
   static nsresult ObtainCachedIconFile(
       nsCOMPtr<nsIURI> aFaviconPageURI, nsString& aICOFilePath,
-      nsCOMPtr<nsIThread>& aIOThread, bool aURLShortcut,
+      RefPtr<LazyIdleThread>& aIOThread, bool aURLShortcut,
       already_AddRefed<nsIRunnable> aRunnable = nullptr);
 
   static nsresult HashURI(nsCOMPtr<nsICryptoHash>& aCryptoHash, nsIURI* aUri,
@@ -653,13 +683,29 @@ class FaviconHelper {
 
   static nsresult CacheIconFileFromFaviconURIAsync(
       nsCOMPtr<nsIURI> aFaviconPageURI, nsCOMPtr<nsIFile> aICOFile,
-      nsCOMPtr<nsIThread>& aIOThread, bool aURLShortcut,
+      RefPtr<LazyIdleThread>& aIOThread, bool aURLShortcut,
       already_AddRefed<nsIRunnable> aRunnable);
 
   static int32_t GetICOCacheSecondsTimeout();
 };
 
 MOZ_MAKE_ENUM_CLASS_BITWISE_OPERATORS(WinUtils::PathTransformFlags);
+
+// RTL shim windows are temporary child windows of our nsWindows created to
+// address RTL issues in picker dialogs. (See bug 588735.)
+class MOZ_STACK_CLASS ScopedRtlShimWindow {
+ public:
+  explicit ScopedRtlShimWindow(nsIWidget* aParent);
+  ~ScopedRtlShimWindow();
+
+  ScopedRtlShimWindow(const ScopedRtlShimWindow&) = delete;
+  ScopedRtlShimWindow(ScopedRtlShimWindow&&) = delete;
+
+  HWND get() const { return mWnd; }
+
+ private:
+  HWND mWnd;
+};
 
 }  // namespace widget
 }  // namespace mozilla

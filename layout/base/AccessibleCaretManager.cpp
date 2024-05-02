@@ -468,9 +468,10 @@ void AccessibleCaretManager::UpdateCaretsForAlwaysTilt(
 
 void AccessibleCaretManager::ProvideHapticFeedback() {
   if (StaticPrefs::layout_accessiblecaret_hapticfeedback()) {
-    nsCOMPtr<nsIHapticFeedback> haptic =
-        do_GetService("@mozilla.org/widget/hapticfeedback;1");
-    haptic->PerformSimpleAction(haptic->LongPress);
+    if (nsCOMPtr<nsIHapticFeedback> haptic =
+            do_GetService("@mozilla.org/widget/hapticfeedback;1")) {
+      haptic->PerformSimpleAction(haptic->LongPress);
+    }
   }
 }
 
@@ -497,7 +498,7 @@ nsresult AccessibleCaretManager::PressCaret(const nsPoint& aPoint,
     mOffsetYToCaretLogicalPosition =
         mActiveCaret->LogicalPosition().y - aPoint.y;
     SetSelectionDragState(true);
-    DispatchCaretStateChangedEvent(CaretChangedReason::Presscaret);
+    DispatchCaretStateChangedEvent(CaretChangedReason::Presscaret, &aPoint);
     rv = NS_OK;
   }
 
@@ -518,6 +519,10 @@ nsresult AccessibleCaretManager::DragCaret(const nsPoint& aPoint) {
   // We want to scroll the page even if we failed to drag the caret.
   StartSelectionAutoScrollTimer(aPoint);
   UpdateCarets();
+
+  if (StaticPrefs::layout_accessiblecaret_magnifier_enabled()) {
+    DispatchCaretStateChangedEvent(CaretChangedReason::Dragcaret, &aPoint);
+  }
   return NS_OK;
 }
 
@@ -537,7 +542,7 @@ nsresult AccessibleCaretManager::TapCaret(const nsPoint& aPoint) {
   nsresult rv = NS_ERROR_FAILURE;
 
   if (GetCaretMode() == CaretMode::Cursor) {
-    DispatchCaretStateChangedEvent(CaretChangedReason::Taponcaret);
+    DispatchCaretStateChangedEvent(CaretChangedReason::Taponcaret, &aPoint);
     rv = NS_OK;
   }
 
@@ -689,6 +694,7 @@ nsresult AccessibleCaretManager::SelectWordOrShortcut(const nsPoint& aPoint) {
 void AccessibleCaretManager::OnScrollStart() {
   AC_LOG("%s", __FUNCTION__);
 
+  nsAutoScriptBlocker scriptBlocker;
   AutoRestore<bool> saveAllowFlushingLayout(mLayoutFlusher.mAllowFlushing);
   mLayoutFlusher.mAllowFlushing = false;
 
@@ -707,6 +713,7 @@ void AccessibleCaretManager::OnScrollStart() {
 }
 
 void AccessibleCaretManager::OnScrollEnd() {
+  nsAutoScriptBlocker scriptBlocker;
   AutoRestore<bool> saveAllowFlushingLayout(mLayoutFlusher.mAllowFlushing);
   mLayoutFlusher.mAllowFlushing = false;
 
@@ -725,9 +732,10 @@ void AccessibleCaretManager::OnScrollEnd() {
     }
   }
 
-  // For mouse input we don't want to show the carets.
+  // For mouse and keyboard input, we don't want to show the carets.
   if (StaticPrefs::layout_accessiblecaret_hide_carets_for_mouse_input() &&
-      mLastInputSource == MouseEvent_Binding::MOZ_SOURCE_MOUSE) {
+      (mLastInputSource == MouseEvent_Binding::MOZ_SOURCE_MOUSE ||
+       mLastInputSource == MouseEvent_Binding::MOZ_SOURCE_KEYBOARD)) {
     AC_LOG("%s: HideCaretsAndDispatchCaretStateChangedEvent()", __FUNCTION__);
     HideCaretsAndDispatchCaretStateChangedEvent();
     return;
@@ -738,6 +746,7 @@ void AccessibleCaretManager::OnScrollEnd() {
 }
 
 void AccessibleCaretManager::OnScrollPositionChanged() {
+  nsAutoScriptBlocker scriptBlocker;
   AutoRestore<bool> saveAllowFlushingLayout(mLayoutFlusher.mAllowFlushing);
   mLayoutFlusher.mAllowFlushing = false;
 
@@ -762,6 +771,7 @@ void AccessibleCaretManager::OnScrollPositionChanged() {
 }
 
 void AccessibleCaretManager::OnReflow() {
+  nsAutoScriptBlocker scriptBlocker;
   AutoRestore<bool> saveAllowFlushingLayout(mLayoutFlusher.mAllowFlushing);
   mLayoutFlusher.mAllowFlushing = false;
 
@@ -788,11 +798,6 @@ void AccessibleCaretManager::OnKeyboardEvent() {
   }
 }
 
-void AccessibleCaretManager::OnFrameReconstruction() {
-  mCarets.GetFirst()->EnsureApzAware();
-  mCarets.GetSecond()->EnsureApzAware();
-}
-
 void AccessibleCaretManager::SetLastInputSource(uint16_t aInputSource) {
   mLastInputSource = aInputSource;
 }
@@ -816,23 +821,9 @@ already_AddRefed<nsFrameSelection> AccessibleCaretManager::GetFrameSelection()
     return nullptr;
   }
 
-  nsFocusManager* fm = nsFocusManager::GetFocusManager();
-  MOZ_ASSERT(fm);
-
-  nsIContent* focusedContent = fm->GetFocusedElement();
-  if (!focusedContent) {
-    // For non-editable content
-    return mPresShell->FrameSelection();
-  }
-
-  nsIFrame* focusFrame = focusedContent->GetPrimaryFrame();
-  if (!focusFrame) {
-    return nullptr;
-  }
-
   // Prevent us from touching the nsFrameSelection associated with other
   // PresShell.
-  RefPtr<nsFrameSelection> fs = focusFrame->GetFrameSelection();
+  RefPtr<nsFrameSelection> fs = mPresShell->GetLastFocusedFrameSelection();
   if (!fs || fs->GetPresShell() != mPresShell) {
     return nullptr;
   }
@@ -914,12 +905,10 @@ void AccessibleCaretManager::ChangeFocusToOrClearOldFocus(
     MOZ_ASSERT(focusableContent, "Focusable frame must have content!");
     RefPtr<Element> focusableElement = Element::FromNode(focusableContent);
     fm->SetFocus(focusableElement, nsIFocusManager::FLAG_BYLONGPRESS);
-  } else {
-    nsPIDOMWindowOuter* win = mPresShell->GetDocument()->GetWindow();
-    if (win) {
-      fm->ClearFocus(win);
-      fm->SetFocusedWindow(win);
-    }
+  } else if (nsCOMPtr<nsPIDOMWindowOuter> win =
+                 mPresShell->GetDocument()->GetWindow()) {
+    fm->ClearFocus(win);
+    fm->SetFocusedWindow(win);
   }
 }
 
@@ -950,17 +939,16 @@ void AccessibleCaretManager::SetSelectionDragState(bool aState) const {
   }
 }
 
-bool AccessibleCaretManager::IsPhoneNumber(nsAString& aCandidate) const {
+bool AccessibleCaretManager::IsPhoneNumber(const nsAString& aCandidate) const {
   RefPtr<Document> doc = mPresShell->GetDocument();
-  nsAutoString phoneNumberRegex(u"(^\\+)?[0-9 ,\\-.()*#pw]{1,30}$"_ns);
-  return nsContentUtils::IsPatternMatching(aCandidate, phoneNumberRegex, doc)
+  nsAutoString phoneNumberRegex(u"(^\\+)?[0-9 ,\\-.\\(\\)*#pw]{1,30}$"_ns);
+  return nsContentUtils::IsPatternMatching(aCandidate,
+                                           std::move(phoneNumberRegex), doc)
       .valueOr(false);
 }
 
 void AccessibleCaretManager::SelectMoreIfPhoneNumber() const {
-  nsAutoString selectedText = StringifiedSelection();
-
-  if (IsPhoneNumber(selectedText)) {
+  if (IsPhoneNumber(StringifiedSelection())) {
     SetSelectionDirection(eDirNext);
     ExtendPhoneNumberSelection(u"forward"_ns);
 
@@ -1167,8 +1155,9 @@ bool AccessibleCaretManager::RestrictCaretDraggingOffsets(
 
   // Move one character (in the direction of dir) from the inactive caret's
   // position. This is the limit for the active caret's new position.
-  nsPeekOffsetStruct limit(eSelectCluster, dir, offset, nsPoint(0, 0), true,
-                           true, false, false, false);
+  PeekOffsetStruct limit(
+      eSelectCluster, dir, offset, nsPoint(0, 0),
+      {PeekOffsetOption::JumpLines, PeekOffsetOption::ScrollViewStop});
   nsresult rv = frame->PeekOffset(&limit);
   if (NS_FAILED(rv)) {
     limit.mResultContent = content;
@@ -1427,7 +1416,7 @@ void AccessibleCaretManager::StopSelectionAutoScrollTimer() const {
 }
 
 void AccessibleCaretManager::DispatchCaretStateChangedEvent(
-    CaretChangedReason aReason) {
+    CaretChangedReason aReason, const nsPoint* aPoint) {
   if (MaybeFlushLayout() == Terminated::Yes) {
     return;
   }
@@ -1488,17 +1477,22 @@ void AccessibleCaretManager::DispatchCaretStateChangedEvent(
   init.mCaretVisuallyVisible = mCarets.HasVisuallyVisibleCaret();
   init.mSelectedTextContent = StringifiedSelection();
 
+  if (aPoint) {
+    CSSIntPoint pt = CSSPixel::FromAppUnitsRounded(*aPoint);
+    init.mClientX = pt.x;
+    init.mClientY = pt.y;
+  }
+
   RefPtr<CaretStateChangedEvent> event = CaretStateChangedEvent::Constructor(
       doc, u"mozcaretstatechanged"_ns, init);
-
   event->SetTrusted(true);
-  event->WidgetEventPtr()->mFlags.mOnlyChromeDispatch = true;
 
   AC_LOG("%s: reason %" PRIu32 ", collapsed %d, caretVisible %" PRIu32,
          __FUNCTION__, static_cast<uint32_t>(init.mReason), init.mCollapsed,
          static_cast<uint32_t>(init.mCaretVisible));
 
-  (new AsyncEventDispatcher(doc, event))->PostDOMEvent();
+  (new AsyncEventDispatcher(doc, event.forget(), ChromeOnlyDispatch::eYes))
+      ->PostDOMEvent();
 }
 
 AccessibleCaretManager::Carets::Carets(UniquePtr<AccessibleCaret> aFirst,

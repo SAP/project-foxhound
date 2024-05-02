@@ -21,8 +21,10 @@
 namespace webrtc {
 
 RtpPacketReceived::RtpPacketReceived() = default;
-RtpPacketReceived::RtpPacketReceived(const ExtensionManager* extensions)
-    : RtpPacket(extensions) {}
+RtpPacketReceived::RtpPacketReceived(
+    const ExtensionManager* extensions,
+    webrtc::Timestamp arrival_time /*= webrtc::Timestamp::MinusInfinity()*/)
+    : RtpPacket(extensions), arrival_time_(arrival_time) {}
 RtpPacketReceived::RtpPacketReceived(const RtpPacketReceived& packet) = default;
 RtpPacketReceived::RtpPacketReceived(RtpPacketReceived&& packet) = default;
 
@@ -46,7 +48,6 @@ void RtpPacketReceived::GetHeader(RTPHeader* header) const {
   }
   header->paddingLength = padding_size();
   header->headerLength = headers_size();
-  header->payload_type_frequency = payload_type_frequency();
   header->extension.hasTransmissionTimeOffset =
       GetExtension<TransmissionOffset>(
           &header->extension.transmissionTimeOffset);

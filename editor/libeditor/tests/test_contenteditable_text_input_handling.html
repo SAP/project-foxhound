@@ -21,11 +21,12 @@
 
 SimpleTest.waitForExplicitFinish();
 SimpleTest.waitForFocus(runTests);
-
-const kLF = !navigator.platform.indexOf("Win") ? "\r\n" : "\n";
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
+);
+const kLF = !navigator.platform.indexOf("Win") && !AppConstants.EARLY_BETA_OR_EARLIER ? "\r\n" : "\n";
 
 function runTests() {
-  const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
   var fm = Services.focus;
 
   var listener = {

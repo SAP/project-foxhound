@@ -8,8 +8,6 @@
 
 "use strict";
 
-const LEGACY_ACTORS_PREF = "devtools.storage.test.forceLegacyActors";
-
 /**
  * This generator function opens the given url in a new tab, then sets up the
  * page by waiting for all cookies, indexedDB items etc. to be created.
@@ -19,17 +17,13 @@ const LEGACY_ACTORS_PREF = "devtools.storage.test.forceLegacyActors";
  * @return {Promise} A promise that resolves after storage inspector is ready
  */
 async function openTabAndSetupStorage(url) {
-  // Enable testing prefs
-  SpecialPowers.pushPrefEnv({
-    set: [[LEGACY_ACTORS_PREF, true]],
-  });
-
-  const content = await addTab(url);
+  await addTab(url);
 
   // Setup the async storages in main window and for all its iframes
-  const browsingContexts = gBrowser.selectedBrowser.browsingContext.getAllBrowsingContextsInSubtree();
+  const browsingContexts =
+    gBrowser.selectedBrowser.browsingContext.getAllBrowsingContextsInSubtree();
   for (const browsingContext of browsingContexts) {
-    await SpecialPowers.spawn(browsingContext, [], async function() {
+    await SpecialPowers.spawn(browsingContext, [], async function () {
       if (content.wrappedJSObject.setup) {
         await content.wrappedJSObject.setup();
       }
@@ -40,14 +34,14 @@ async function openTabAndSetupStorage(url) {
   const commands = await CommandsFactory.forTab(gBrowser.selectedTab);
   await commands.targetCommand.startListening();
   const target = commands.targetCommand.targetFront;
-  const front = await target.getFront("storage");
-  return { commands, target, front };
+  return { commands, target };
 }
 
 async function clearStorage() {
-  const browsingContexts = gBrowser.selectedBrowser.browsingContext.getAllBrowsingContextsInSubtree();
+  const browsingContexts =
+    gBrowser.selectedBrowser.browsingContext.getAllBrowsingContextsInSubtree();
   for (const browsingContext of browsingContexts) {
-    await SpecialPowers.spawn(browsingContext, [], async function() {
+    await SpecialPowers.spawn(browsingContext, [], async function () {
       if (content.wrappedJSObject.clear) {
         await content.wrappedJSObject.clear();
       }

@@ -3,7 +3,7 @@
 
 "use strict";
 
-const CSSCompleter = require("devtools/client/shared/sourceeditor/css-autocompleter");
+const CSSCompleter = require("resource://devtools/client/shared/sourceeditor/css-autocompleter.js");
 
 const CSS_URI =
   "http://mochi.test:8888/browser/devtools/client/shared/sourceeditor" +
@@ -100,15 +100,16 @@ add_task(async function test() {
   let i = 0;
   for (const testcase of tests) {
     ++i;
-    await SpecialPowers.spawn(browser, [[i, tests.length]], function([
-      idx,
-      len,
-    ]) {
-      const progress = content.document.getElementById("progress");
-      const progressDiv = content.document.querySelector("#progress > div");
-      progress.dataset.progress = idx;
-      progressDiv.style.width = (100 * idx) / len + "%";
-    });
+    await SpecialPowers.spawn(
+      browser,
+      [[i, tests.length]],
+      function ([idx, len]) {
+        const progress = content.document.getElementById("progress");
+        const progressDiv = content.document.querySelector("#progress > div");
+        progress.dataset.progress = idx;
+        progressDiv.style.width = (100 * idx) / len + "%";
+      }
+    );
     completer.resolveState(limit(source, testcase[0]), {
       line: testcase[0][0],
       ch: testcase[0][1],
@@ -133,7 +134,7 @@ add_task(async function test() {
           (completer.propertyName || completer.selector) +
           "]."
       );
-      await SpecialPowers.spawn(browser, [], function() {
+      await SpecialPowers.spawn(browser, [], function () {
         const progress = content.document.getElementById("progress");
         progress.classList.add("failed");
       });

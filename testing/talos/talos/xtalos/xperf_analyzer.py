@@ -4,14 +4,14 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, print_function
-from abc import ABCMeta, abstractmethod
-from collections import deque
 import csv
 import os
 import re
 import subprocess
+from abc import ABCMeta, abstractmethod
+from collections import deque
 from uuid import UUID
+
 import six
 
 # This constant must match the event declared in
@@ -306,7 +306,7 @@ class XPerfCounter(XPerfAttribute):
     def accumulate(self, evt):
         data = evt.get_whiteboard()
 
-        for (key, comp) in six.iteritems(self.filters):
+        for key, comp in six.iteritems(self.filters):
             try:
                 testdata = data[key]
             except KeyError:
@@ -335,7 +335,7 @@ class XPerfCounter(XPerfAttribute):
         )
         if self.values:
             msg += " with accumulated"
-            for (k, v) in six.iteritems(self.values):
+            for k, v in six.iteritems(self.values):
                 msg += " [[{!s}] == {!s}]".format((k), (v))
         return msg
 

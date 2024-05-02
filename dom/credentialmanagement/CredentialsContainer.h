@@ -9,19 +9,20 @@
 
 #include "mozilla/dom/CredentialManagementBinding.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class WebAuthnManager;
 
 class CredentialsContainer final : public nsISupports, public nsWrapperCache {
  public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(CredentialsContainer)
+  NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(CredentialsContainer)
 
   explicit CredentialsContainer(nsPIDOMWindowInner* aParent);
 
   nsPIDOMWindowInner* GetParentObject() const { return mParent; }
+
+  already_AddRefed<WebAuthnManager> GetWebAuthnManager();
 
   virtual JSObject* WrapObject(JSContext* aCx,
                                JS::Handle<JSObject*> aGivenProto) override;
@@ -44,9 +45,9 @@ class CredentialsContainer final : public nsISupports, public nsWrapperCache {
 
   nsCOMPtr<nsPIDOMWindowInner> mParent;
   RefPtr<WebAuthnManager> mManager;
+  bool mActiveIdentityRequest;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_CredentialsContainer_h

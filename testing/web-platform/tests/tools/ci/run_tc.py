@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# mypy: allow-untyped-defs
 
 """Wrapper script for running jobs in Taskcluster
 
@@ -45,8 +46,8 @@ import tarfile
 import tempfile
 import zipfile
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from wpt.utils import get_download_to_descriptor  # type: ignore
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
+from tools.wpt.utils import get_download_to_descriptor
 
 root = os.path.abspath(
     os.path.join(os.path.dirname(__file__),
@@ -137,6 +138,13 @@ def install_certificates():
     run(["sudo", "cp", "tools/certs/cacert.pem",
          "/usr/local/share/ca-certificates/cacert.crt"])
     run(["sudo", "update-ca-certificates"])
+
+
+def start_dbus():
+    run(["sudo", "service", "dbus", "start"])
+    # Enable dbus autolaunch for Chrome
+    # https://source.chromium.org/chromium/chromium/src/+/main:content/app/content_main.cc;l=220;drc=0bcc023b8cdbc073aa5c48db373810db3f765c87.
+    os.environ["DBUS_SESSION_BUS_ADDRESS"] = "autolaunch:"
 
 
 def install_chrome(channel):
@@ -255,10 +263,9 @@ def setup_environment(args):
 
     if "chrome" in args.browser:
         assert args.channel is not None
-        # Chrome Nightly will be installed via `wpt run --install-browser`
-        # later in taskcluster-run.py.
-        if args.channel != "nightly":
-            install_chrome(args.channel)
+        install_chrome(args.channel)
+        # Chrome is using dbus for various features.
+        start_dbus()
 
     if args.xvfb:
         start_xvfb()

@@ -2,13 +2,13 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, print_function, unicode_literals
-
 import re
-import six
-from distutils.version import LooseVersion
-from mozpack.errors import errors
 from collections import OrderedDict
+
+import six
+from packaging.version import Version
+
+from mozpack.errors import errors
 
 
 class Flag(object):
@@ -160,14 +160,14 @@ class VersionFlag(object):
         assert definition.startswith(self.name)
         value = definition[len(self.name) :]
         if value.startswith("="):
-            self.values.append(("==", LooseVersion(value[1:])))
+            self.values.append(("==", Version(value[1:])))
         elif len(value) > 1 and value[0] in ["<", ">"]:
             if value[1] == "=":
                 if len(value) < 3:
                     return errors.fatal("Malformed flag: %s" % definition)
-                self.values.append((value[0:2], LooseVersion(value[2:])))
+                self.values.append((value[0:2], Version(value[2:])))
             else:
-                self.values.append((value[0], LooseVersion(value[1:])))
+                self.values.append((value[0], Version(value[1:])))
         else:
             return errors.fatal("Malformed flag: %s" % definition)
 
@@ -189,7 +189,7 @@ class VersionFlag(object):
             flag.matches('1.0') returns True
             flag.matches('0.6') returns False
         """
-        value = LooseVersion(value)
+        value = Version(value)
         if not self.values:
             return True
         for comparison, val in self.values:

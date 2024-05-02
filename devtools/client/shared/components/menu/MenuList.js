@@ -13,11 +13,13 @@
 const {
   Children,
   PureComponent,
-} = require("devtools/client/shared/vendor/react");
-const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
-const dom = require("devtools/client/shared/vendor/react-dom-factories");
+} = require("resource://devtools/client/shared/vendor/react.js");
+const PropTypes = require("resource://devtools/client/shared/vendor/react-prop-types.js");
+const dom = require("resource://devtools/client/shared/vendor/react-dom-factories.js");
 const { div } = dom;
-const { focusableSelector } = require("devtools/client/shared/focus");
+const {
+  focusableSelector,
+} = require("resource://devtools/client/shared/focus.js");
 
 class MenuList extends PureComponent {
   static get propTypes() {
@@ -41,9 +43,8 @@ class MenuList extends PureComponent {
     this.onKeyDown = this.onKeyDown.bind(this);
     this.onMouseOverOrFocus = this.onMouseOverOrFocus.bind(this);
     this.onMouseOutOrBlur = this.onMouseOutOrBlur.bind(this);
-    this.notifyHighlightedChildChange = this.notifyHighlightedChildChange.bind(
-      this
-    );
+    this.notifyHighlightedChildChange =
+      this.notifyHighlightedChildChange.bind(this);
 
     this.setWrapperRef = element => {
       this.wrapperRef = element;
@@ -142,8 +143,13 @@ class MenuList extends PureComponent {
 
     // Add padding for checkbox image if necessary.
     let hasCheckbox = false;
-    Children.forEach(this.props.children, child => {
-      if (typeof child.props.checked !== "undefined") {
+    Children.forEach(this.props.children, (child, i) => {
+      if (child == null || typeof child == "undefined") {
+        console.warn("MenuList children at index", i, "is", child);
+        return;
+      }
+
+      if (typeof child?.props?.checked !== "undefined") {
         hasCheckbox = true;
       }
     });

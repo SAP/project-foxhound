@@ -7,11 +7,11 @@
 #ifndef mozilla_layers_HitTestingTreeNode_h
 #define mozilla_layers_HitTestingTreeNode_h
 
-#include "Layers.h"
 #include "mozilla/gfx/CompositorHitTestInfo.h"
 #include "mozilla/gfx/Matrix.h"                  // for Matrix4x4
 #include "mozilla/layers/LayersTypes.h"          // for EventRegions
 #include "mozilla/layers/ScrollableLayerGuid.h"  // for ScrollableLayerGuid
+#include "mozilla/layers/ScrollbarData.h"        // for ScrollbarData
 #include "mozilla/Maybe.h"                       // for Maybe
 #include "mozilla/RecursiveMutex.h"              // for RecursiveMutexAutoLock
 #include "mozilla/RefPtr.h"                      // for nsRefPtr
@@ -148,14 +148,17 @@ class HitTestingTreeNode {
   const CSSTransformMatrix& GetTransform() const;
   /* This is similar to APZCTreeManager::GetApzcToGeckoTransform but without
    * the async bits. It's used on the main-thread for transforming coordinates
-   * across a BrowserParent/BrowserChild interface.*/
-  LayerToScreenMatrix4x4 GetTransformToGecko() const;
+   * across a BrowserParent/BrowserChild interface.
+   * |aRemoteLayersId| is the LayersId of the remote subtree for which this
+   * transform will be used. */
+  LayerToScreenMatrix4x4 GetTransformToGecko(LayersId aRemoteLayersId) const;
   const LayerIntRegion& GetVisibleRegion() const;
 
   /* Returns the screen coordinate rectangle of remote iframe corresponding to
    * this node. The rectangle is the result of clipped by ancestor async
    * scrolling. */
-  ScreenRect GetRemoteDocumentScreenRect() const;
+  ScreenRect GetRemoteDocumentScreenRect(
+      LayersId aRemoteDocumentLayersId) const;
 
   Maybe<ScrollableLayerGuid::ViewID> GetAsyncZoomContainerId() const;
 

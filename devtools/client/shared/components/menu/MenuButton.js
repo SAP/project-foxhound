@@ -7,14 +7,13 @@
 
 // A button that toggles a doorhanger menu.
 
-const Services = require("Services");
-const flags = require("devtools/shared/flags");
+const flags = require("resource://devtools/shared/flags.js");
 const {
   createRef,
   PureComponent,
-} = require("devtools/client/shared/vendor/react");
-const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
-const dom = require("devtools/client/shared/vendor/react-dom-factories");
+} = require("resource://devtools/client/shared/vendor/react.js");
+const PropTypes = require("resource://devtools/client/shared/vendor/react-prop-types.js");
+const dom = require("resource://devtools/client/shared/vendor/react-dom-factories.js");
 const { button } = dom;
 
 const isMacOS = Services.appinfo.OS === "Darwin";
@@ -22,21 +21,21 @@ const isMacOS = Services.appinfo.OS === "Darwin";
 loader.lazyRequireGetter(
   this,
   "HTMLTooltip",
-  "devtools/client/shared/widgets/tooltip/HTMLTooltip",
+  "resource://devtools/client/shared/widgets/tooltip/HTMLTooltip.js",
   true
 );
 
 loader.lazyRequireGetter(
   this,
   "focusableSelector",
-  "devtools/client/shared/focus",
+  "resource://devtools/client/shared/focus.js",
   true
 );
 
 loader.lazyRequireGetter(
   this,
   "createPortal",
-  "devtools/client/shared/vendor/react-dom",
+  "resource://devtools/client/shared/vendor/react-dom.js",
   true
 );
 
@@ -132,7 +131,8 @@ class MenuButton extends PureComponent {
     }
   }
 
-  componentWillReceiveProps(nextProps) {
+  // FIXME: https://bugzilla.mozilla.org/show_bug.cgi?id=1774507
+  UNSAFE_componentWillReceiveProps(nextProps) {
     // If the window changes, we need to regenerate the HTMLTooltip or else the
     // XUL wrapper element will appear above (in terms of z-index) the old
     // window, and not the new.

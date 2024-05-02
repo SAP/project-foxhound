@@ -8,22 +8,20 @@
 const TEST_URI =
   "data:text/html;charset=utf8,<!DOCTYPE html><p>test inspect() command";
 
-add_task(async function() {
+add_task(async function () {
   const hud = await openNewTabAndConsole(TEST_URI);
 
   info("Test `inspect(window)`");
   // Add a global value so we can check it later.
-  await executeAndWaitForMessage(
+  await executeAndWaitForResultMessage(
     hud,
     "testProp = 'testValue'",
-    "testValue",
-    ".result"
+    "testValue"
   );
-  const { node: inspectWindowNode } = await executeAndWaitForMessage(
+  const { node: inspectWindowNode } = await executeAndWaitForResultMessage(
     hud,
     "inspect(window)",
-    "Window",
-    ".result"
+    "Window"
   );
 
   const objectInspectors = [...inspectWindowNode.querySelectorAll(".tree")];

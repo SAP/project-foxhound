@@ -41,7 +41,7 @@ async function showChangePasswordDoorhanger(
   let windowGlobal = browser.browsingContext.currentWindowGlobal;
   let loginManagerActor = windowGlobal.getActor("LoginManager");
   let prompter = loginManagerActor._getPrompter(browser, null);
-  ok(
+  Assert.ok(
     !PopupNotifications.isPanelOpen,
     "Check the doorhanger isn't already open"
   );
@@ -62,7 +62,7 @@ async function showChangePasswordDoorhanger(
   await promiseShown;
 
   let notif = getCaptureDoorhanger(notificationType);
-  ok(notif, `${notificationType} notification exists`);
+  Assert.ok(notif, `${notificationType} notification exists`);
 
   let { panel } = PopupNotifications;
   let notificationElement = panel.childNodes[0];
@@ -85,7 +85,7 @@ async function setupLogins(...logins) {
     let loginName = availLoginsByValue.get(login);
     let savedLogin = await LoginTestUtils.addLogin(login);
     // we rely on sorting by timeCreated so ensure none are identical
-    ok(
+    Assert.ok(
       !timesCreated.has(savedLogin.timeCreated),
       "Each login has a different timeCreated"
     );
@@ -95,11 +95,11 @@ async function setupLogins(...logins) {
   return savedLogins;
 }
 
-add_task(async function setup() {
+add_setup(async function () {
   await SpecialPowers.pushPrefEnv({
     set: [["signon.autofillForms", false]],
   });
-  ok(!PopupNotifications.isPanelOpen, "No notifications panel open");
+  Assert.ok(!PopupNotifications.isPanelOpen, "No notifications panel open");
 });
 
 async function promptToChangePasswordTest(testData) {
@@ -127,7 +127,7 @@ async function promptToChangePasswordTest(testData) {
       gBrowser,
       TEST_ORIGIN,
     },
-    async function(browser) {
+    async function (browser) {
       await SimpleTest.promiseFocus(browser.ownerGlobal);
       let notif = await showChangePasswordDoorhanger(
         browser,
@@ -139,7 +139,7 @@ async function promptToChangePasswordTest(testData) {
       await updateDoorhangerInputValues(testData.promptTextboxValues);
 
       let mainActionButton = getDoorhangerButton(notif, CHANGE_BUTTON);
-      is(
+      Assert.equal(
         mainActionButton.label,
         testData.expectedButtonLabel,
         "Check button label"
@@ -165,7 +165,7 @@ async function promptToChangePasswordTest(testData) {
       info(testData.resultDescription);
 
       finalLoginsByGuid.clear();
-      finalLogins = Services.logins.getAllLogins();
+      finalLogins = await Services.logins.getAllLogins();
       finalLogins.sort((a, b) => a.timeCreated > b.timeCreated);
 
       for (let l of finalLogins) {
@@ -173,7 +173,7 @@ async function promptToChangePasswordTest(testData) {
         finalLoginsByGuid.set(l.guid, l);
       }
       info("verifyLogins next");
-      verifyLogins(testData.expectedResultLogins);
+      await verifyLogins(testData.expectedResultLogins);
       if (testData.resultCheck) {
         testData.resultCheck();
       }
@@ -203,7 +203,11 @@ let tests = [
       },
     ],
     resultCheck() {
-      is(finalLogins[0].guid, savedLoginsByName.emptyXYZ.guid, "Check guid");
+      Assert.equal(
+        finalLogins[0].guid,
+        savedLoginsByName.emptyXYZ.guid,
+        "Check guid"
+      );
     },
   },
   {
@@ -227,7 +231,11 @@ let tests = [
       },
     ],
     resultCheck() {
-      is(finalLogins[0].guid, savedLoginsByName.bobXYZ.guid, "Check guid");
+      Assert.equal(
+        finalLogins[0].guid,
+        savedLoginsByName.bobXYZ.guid,
+        "Check guid"
+      );
     },
   },
   {
@@ -251,7 +259,11 @@ let tests = [
       },
     ],
     resultCheck() {
-      is(finalLogins[0].guid, savedLoginsByName.emptyXYZ.guid, "Check guid");
+      Assert.equal(
+        finalLogins[0].guid,
+        savedLoginsByName.emptyXYZ.guid,
+        "Check guid"
+      );
     },
   },
   {
@@ -279,16 +291,19 @@ let tests = [
       },
     ],
     resultCheck() {
-      is(finalLogins[0].guid, savedLoginsByName.emptyXYZ.guid, "Check guid");
-      ok(
+      Assert.equal(
+        finalLogins[0].guid,
+        savedLoginsByName.emptyXYZ.guid,
+        "Check guid"
+      );
+      Assert.ok(
         finalLogins[0].timeLastUsed > savedLoginsByName.emptyXYZ.timeLastUsed,
         "Check timeLastUsed of 0th login"
       );
     },
   },
   {
-    name:
-      "Add username to autosaved login to match an existing usernamed login",
+    name: "Add username to autosaved login to match an existing usernamed login",
     initialSavedLogins: [availLogins.emptyXYZ, availLogins.bobABC],
     autoSavedLoginName: "emptyXYZ",
     promptArgs: {
@@ -310,16 +325,19 @@ let tests = [
       },
     ],
     resultCheck() {
-      is(finalLogins[0].guid, savedLoginsByName.bobABC.guid, "Check guid");
-      ok(
+      Assert.equal(
+        finalLogins[0].guid,
+        savedLoginsByName.bobABC.guid,
+        "Check guid"
+      );
+      Assert.ok(
         finalLogins[0].timeLastUsed > savedLoginsByName.bobABC.timeLastUsed,
         "Check timeLastUsed changed"
       );
     },
   },
   {
-    name:
-      "Add username to non-autosaved login to match an existing usernamed login",
+    name: "Add username to non-autosaved login to match an existing usernamed login",
     initialSavedLogins: [availLogins.emptyXYZ, availLogins.bobABC],
     autoSavedLoginName: "",
     promptArgs: {
@@ -347,24 +365,32 @@ let tests = [
       },
     ],
     resultCheck() {
-      is(finalLogins[0].guid, savedLoginsByName.emptyXYZ.guid, "Check guid");
-      is(
+      Assert.equal(
+        finalLogins[0].guid,
+        savedLoginsByName.emptyXYZ.guid,
+        "Check guid"
+      );
+      Assert.equal(
         finalLogins[0].timeLastUsed,
         savedLoginsByName.emptyXYZ.timeLastUsed,
         "Check timeLastUsed didn't change"
       );
-      is(
+      Assert.equal(
         finalLogins[0].timePasswordChanged,
         savedLoginsByName.emptyXYZ.timePasswordChanged,
         "Check timePasswordChanged didn't change"
       );
 
-      is(finalLogins[1].guid, savedLoginsByName.bobABC.guid, "Check guid");
-      ok(
+      Assert.equal(
+        finalLogins[1].guid,
+        savedLoginsByName.bobABC.guid,
+        "Check guid"
+      );
+      Assert.ok(
         finalLogins[1].timeLastUsed > savedLoginsByName.bobABC.timeLastUsed,
         "Check timeLastUsed did change"
       );
-      ok(
+      Assert.ok(
         finalLogins[1].timePasswordChanged >
           savedLoginsByName.bobABC.timePasswordChanged,
         "Check timePasswordChanged did change"
@@ -372,8 +398,7 @@ let tests = [
     },
   },
   {
-    name:
-      "Username & password changes to an auto-saved login apply to matching usernamed-login",
+    name: "Username & password changes to an auto-saved login apply to matching usernamed-login",
     // when we update an auto-saved login - changing both username & password, is
     // the matching login updated and empty-username login removed?
     initialSavedLogins: [availLogins.emptyXYZ, availLogins.bobABC],
@@ -400,16 +425,19 @@ let tests = [
       },
     ],
     resultCheck() {
-      is(finalLogins[0].guid, savedLoginsByName.bobABC.guid, "Check guid");
-      ok(
+      Assert.equal(
+        finalLogins[0].guid,
+        savedLoginsByName.bobABC.guid,
+        "Check guid"
+      );
+      Assert.ok(
         finalLogins[0].timeLastUsed > savedLoginsByName.bobABC.timeLastUsed,
         "Check timeLastUsed did change"
       );
     },
   },
   {
-    name:
-      "Username & password changes to a non-auto-saved login matching usernamed-login",
+    name: "Username & password changes to a non-auto-saved login matching usernamed-login",
     // when we update a non-auto-saved login - changing both username & password, is
     // the matching login updated and empty-username login unchanged?
     initialSavedLogins: [availLogins.emptyXYZ, availLogins.bobABC],
@@ -440,23 +468,31 @@ let tests = [
       },
     ],
     resultCheck() {
-      is(finalLogins[0].guid, savedLoginsByName.emptyXYZ.guid, "Check guid");
-      is(
+      Assert.equal(
+        finalLogins[0].guid,
+        savedLoginsByName.emptyXYZ.guid,
+        "Check guid"
+      );
+      Assert.equal(
         finalLogins[0].timeLastUsed,
         savedLoginsByName.emptyXYZ.timeLastUsed,
         "Check timeLastUsed didn't change"
       );
-      is(
+      Assert.equal(
         finalLogins[0].timePasswordChanged,
         savedLoginsByName.emptyXYZ.timePasswordChanged,
         "Check timePasswordChanged didn't change"
       );
-      is(finalLogins[1].guid, savedLoginsByName.bobABC.guid, "Check guid");
-      ok(
+      Assert.equal(
+        finalLogins[1].guid,
+        savedLoginsByName.bobABC.guid,
+        "Check guid"
+      );
+      Assert.ok(
         finalLogins[1].timeLastUsed > savedLoginsByName.bobABC.timeLastUsed,
         "Check timeLastUsed did change"
       );
-      ok(
+      Assert.ok(
         finalLogins[1].timePasswordChanged >
           savedLoginsByName.bobABC.timePasswordChanged,
         "Check timePasswordChanged did change"
@@ -488,12 +524,16 @@ let tests = [
       },
     ],
     resultCheck() {
-      is(finalLogins[0].guid, savedLoginsByName.bobABC.guid, "Check guid");
-      ok(
+      Assert.equal(
+        finalLogins[0].guid,
+        savedLoginsByName.bobABC.guid,
+        "Check guid"
+      );
+      Assert.ok(
         finalLogins[0].timeLastUsed > savedLoginsByName.bobABC.timeLastUsed,
         "Check timeLastUsed did change"
       );
-      ok(
+      Assert.ok(
         finalLogins[0].timePasswordChanged >
           savedLoginsByName.bobABC.timePasswordChanged,
         "Check timePasswordChanged did change"
@@ -529,13 +569,17 @@ let tests = [
       },
     ],
     resultCheck() {
-      is(finalLogins[0].guid, savedLoginsByName.bobABC.guid, "Check guid");
-      is(
+      Assert.equal(
+        finalLogins[0].guid,
+        savedLoginsByName.bobABC.guid,
+        "Check guid"
+      );
+      Assert.equal(
         finalLogins[0].timeLastUsed,
         savedLoginsByName.bobABC.timeLastUsed,
         "Check timeLastUsed didn't change"
       );
-      is(
+      Assert.equal(
         finalLogins[0].timePasswordChanged,
         savedLoginsByName.bobABC.timePasswordChanged,
         "Check timePasswordChanged didn't change"
@@ -567,8 +611,12 @@ let tests = [
       },
     ],
     resultCheck() {
-      is(finalLogins[0].guid, savedLoginsByName.bobABC.guid, "Check guid");
-      ok(
+      Assert.equal(
+        finalLogins[0].guid,
+        savedLoginsByName.bobABC.guid,
+        "Check guid"
+      );
+      Assert.ok(
         finalLogins[0].timeLastUsed > savedLoginsByName.bobABC.timeLastUsed,
         "Check timeLastUsed did change"
       );
@@ -608,13 +656,17 @@ let tests = [
       },
     ],
     resultCheck() {
-      is(finalLogins[0].guid, savedLoginsByName.bobABC.guid, "Check guid");
-      is(
+      Assert.equal(
+        finalLogins[0].guid,
+        savedLoginsByName.bobABC.guid,
+        "Check guid"
+      );
+      Assert.equal(
         finalLogins[0].timeLastUsed,
         savedLoginsByName.bobABC.timeLastUsed,
         "Check timeLastUsed didn't change"
       );
-      is(
+      Assert.equal(
         finalLogins[0].timePasswordChanged,
         savedLoginsByName.bobABC.timePasswordChanged,
         "Check timePasswordChanged didn't change"

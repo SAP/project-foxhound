@@ -3,7 +3,7 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-const { assert } = require("devtools/shared/DevToolsUtils");
+const { assert } = require("resource://devtools/shared/DevToolsUtils.js");
 
 /**
  * The `TaskCache` allows for re-using active tasks when spawning a second task
@@ -62,11 +62,11 @@ const TaskCache = (module.exports = class TaskCache {
  *
  * @returns Cacheable, Action-Creating Task
  */
-TaskCache.declareCacheableTask = function({ getCacheKey, task }) {
+TaskCache.declareCacheableTask = function ({ getCacheKey, task }) {
   const cache = new TaskCache();
 
-  return function(...args) {
-    return async function({ dispatch, getState }) {
+  return function (...args) {
+    return async function ({ dispatch, getState }) {
       const key = getCacheKey(...args);
 
       const extantResult = cache.get(key);
@@ -85,7 +85,7 @@ TaskCache.declareCacheableTask = function({ getCacheKey, task }) {
       );
 
       resolve(
-        dispatch(async function() {
+        dispatch(async function () {
           try {
             args.push(() => cache.remove(key), dispatch, getState);
             return await task(...args);

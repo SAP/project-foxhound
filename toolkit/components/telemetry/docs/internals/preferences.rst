@@ -106,7 +106,7 @@ Preferences
 
 ``toolkit.telemetry.log.level``
 
-  This sets the Telemetry logging verbosity per ``Log.jsm``. The available levels, in descending order of verbosity, are ``Trace``, ``Debug``, ``Config``, ``Info``, ``Warn``, ``Error`` and ``Fatal`` with the default being ``Warn``.
+  This sets the Telemetry logging verbosity per ``Log.sys.mjs``. The available levels, in descending order of verbosity, are ``Trace``, ``Debug``, ``Config``, ``Info``, ``Warn``, ``Error`` and ``Fatal`` with the default being ``Warn``.
 
   By default logging goes only the console service.
 
@@ -163,16 +163,6 @@ Preferences
 
   If a user has opted into the Pioneer program, this will contain their Pioneer ID.
 
-``toolkit.telemetry.prioping.enabled``
-
-  Whether the :doc:`../data/prio-ping` is enabled.
-  Defaults to true. Change requires restart.
-
-``toolkit.telemetry.prioping.dataLimit``
-
-  The number of encoded prio payloads which triggers an immediate :doc:`../data/prio-ping` with reason "max".
-  Default is 10 payloads.
-
 Data-choices notification
 -------------------------
 
@@ -202,7 +192,7 @@ Data-choices notification
 
 ``datareporting.policy.currentPolicyVersion``
 
-  Stores the current policy version, overrides the default value defined in TelemetryReportingPolicy.jsm.
+  Stores the current policy version, overrides the default value defined in TelemetryReportingPolicy.sys.mjs.
 
 ``datareporting.policy.minimumPolicyVersion``
 

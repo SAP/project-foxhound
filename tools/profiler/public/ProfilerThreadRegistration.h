@@ -214,14 +214,14 @@ class ThreadRegistration {
       DataLock mDataLock;
     };
 
-    [[nodiscard]] RWOnThreadWithLock LockedRWOnThread() {
+    [[nodiscard]] RWOnThreadWithLock GetLockedRWOnThread() {
       return RWOnThreadWithLock{mThreadRegistration->mData,
                                 mThreadRegistration->mDataMutex};
     }
 
     template <typename F>
     auto WithLockedRWOnThread(F&& aF) {
-      RWOnThreadWithLock lockedData = LockedRWOnThread();
+      RWOnThreadWithLock lockedData = GetLockedRWOnThread();
       return std::forward<F>(aF)(lockedData.DataRef());
     }
 
@@ -346,11 +346,16 @@ class ThreadRegistration {
   // is on the stack.
   bool mIsOnHeap = false;
 
+  // Only accessed by ThreadRegistry on this thread.
+  bool mIsRegistryLockedSharedOnThisThread = false;
+
   static MOZ_THREAD_LOCAL(ThreadRegistration*) tlsThreadRegistration;
 
   [[nodiscard]] static decltype(tlsThreadRegistration)* GetTLS() {
-    static const bool initialized = tlsThreadRegistration.init();
-    return initialized ? &tlsThreadRegistration : nullptr;
+    if (tlsThreadRegistration.init())
+      return &tlsThreadRegistration;
+    else
+      return nullptr;
   }
 
   [[nodiscard]] static ThreadRegistration* GetFromTLS() {

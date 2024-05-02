@@ -3,7 +3,9 @@
 
 "use strict";
 
-const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
+const { HttpServer } = ChromeUtils.importESModule(
+  "resource://testing-common/httpd.sys.mjs"
+);
 
 // Turn off the authentication dialog blocking for this test.
 var prefs = Services.prefs;
@@ -16,7 +18,7 @@ function URL(domain, path = "") {
   return `http://${domain}:${httpserv.identity.primaryPort}/${path}`;
 }
 
-XPCOMUtils.defineLazyGetter(this, "PORT", function() {
+ChromeUtils.defineLazyGetter(this, "PORT", function () {
   return httpserv.identity.primaryPort;
 });
 
@@ -258,7 +260,7 @@ function basic_auth(metadata, response) {
 // Digest functions
 //
 function bytesFromString(str) {
-  const encoder = new TextEncoder("utf-8");
+  const encoder = new TextEncoder();
   return encoder.encode(str);
 }
 
@@ -362,7 +364,7 @@ function auth_handler(metadata, response) {
 }
 
 let httpserv;
-function setup() {
+add_setup(() => {
   Services.prefs.setBoolPref("network.auth.force-generic-ntlm", true);
   Services.prefs.setBoolPref("network.auth.force-generic-ntlm-v1", true);
   Services.prefs.setBoolPref("network.dns.native-is-localhost", true);
@@ -380,8 +382,7 @@ function setup() {
 
     await httpserv.stop();
   });
-}
-setup();
+});
 
 add_task(async function test_ntlm_first() {
   Services.prefs.setBoolPref(
@@ -395,7 +396,7 @@ add_task(async function test_ntlm_first() {
   chan.notificationCallbacks = new Requestor(FLAG_RETURN_FALSE, 2);
   let [req, buf] = await new Promise(resolve => {
     chan.asyncOpen(
-      new ChannelListener((req, buf) => resolve([req, buf]), null)
+      new ChannelListener((request, buffer) => resolve([request, buffer]), null)
     );
   });
   Assert.equal(buf, "OK");
@@ -414,7 +415,7 @@ add_task(async function test_basic_first() {
   chan.notificationCallbacks = new Requestor(FLAG_RETURN_FALSE, 2);
   let [req, buf] = await new Promise(resolve => {
     chan.asyncOpen(
-      new ChannelListener((req, buf) => resolve([req, buf]), null)
+      new ChannelListener((request, buffer) => resolve([request, buffer]), null)
     );
   });
   Assert.equal(buf, "success");
@@ -433,7 +434,7 @@ add_task(async function test_digest_first() {
   chan.notificationCallbacks = new Requestor(FLAG_RETURN_FALSE, 2);
   let [req, buf] = await new Promise(resolve => {
     chan.asyncOpen(
-      new ChannelListener((req, buf) => resolve([req, buf]), null)
+      new ChannelListener((request, buffer) => resolve([request, buffer]), null)
     );
   });
   Assert.equal(req.QueryInterface(Ci.nsIHttpChannel).responseStatus, 200);
@@ -455,7 +456,7 @@ add_task(async function test_choose_most_secure() {
   chan.notificationCallbacks = new Requestor(FLAG_RETURN_FALSE, 2);
   let [req, buf] = await new Promise(resolve => {
     chan.asyncOpen(
-      new ChannelListener((req, buf) => resolve([req, buf]), null)
+      new ChannelListener((request, buffer) => resolve([request, buffer]), null)
     );
   });
   Assert.equal(req.QueryInterface(Ci.nsIHttpChannel).responseStatus, 200);

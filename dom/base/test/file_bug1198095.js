@@ -1,3 +1,6 @@
+/* eslint-env mozilla/chrome-script */
+
+// eslint-disable-next-line mozilla/reject-importGlobalProperties
 Cu.importGlobalProperties(["File"]);
 
 function createFileWithData(message) {
@@ -23,14 +26,14 @@ function createFileWithData(message) {
   return File.createFromNsIFile(testFile);
 }
 
-addMessageListener("file.open", function(message) {
-  createFileWithData(message).then(function(file) {
+addMessageListener("file.open", function (message) {
+  createFileWithData(message).then(function (file) {
     sendAsyncMessage("file.opened", file);
   });
 });
 
-addMessageListener("file.modify", function(message) {
-  createFileWithData(message).then(function(file) {
+addMessageListener("file.modify", function (message) {
+  createFileWithData(message).then(function (file) {
     sendAsyncMessage("file.modified", file);
   });
 });

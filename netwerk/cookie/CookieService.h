@@ -84,7 +84,9 @@ class CookieService final : public nsICookieService,
                         bool aIsThirdPartySocialTrackingResource,
                         bool aStorageAccessPermissionGranted,
                         uint32_t aRejectedReason, bool aIsSafeTopLevelNav,
-                        bool aIsSameSiteForeign, bool aHttpBound,
+                        bool aIsSameSiteForeign, bool aHadCrossSiteRedirects,
+                        bool aHttpBound,
+                        bool aAllowSecureCookiesToInsecureOrigin,
                         const OriginAttributes& aOriginAttrs,
                         nsTArray<Cookie*>& aCookieList);
 
@@ -97,8 +99,8 @@ class CookieService final : public nsICookieService,
 
   bool SetCookiesFromIPC(const nsACString& aBaseDomain,
                          const OriginAttributes& aAttrs, nsIURI* aHostURI,
-                         bool aFromHttp,
-                         const nsTArray<CookieStruct>& aCookies);
+                         bool aFromHttp, const nsTArray<CookieStruct>& aCookies,
+                         dom::BrowsingContext* aBrowsingContext);
 
  protected:
   virtual ~CookieService();
@@ -108,7 +110,6 @@ class CookieService final : public nsICookieService,
   void InitCookieStorages();
   void CloseCookieStorages();
 
-  void EnsureReadComplete(bool aInitDBConn);
   nsresult NormalizeHost(nsCString& aHost);
   static bool GetTokenValue(nsACString::const_char_iterator& aIter,
                             nsACString::const_char_iterator& aEndIter,
@@ -122,6 +123,7 @@ class CookieService final : public nsICookieService,
   static bool CheckDomain(CookieStruct& aCookieData, nsIURI* aHostURI,
                           const nsACString& aBaseDomain,
                           bool aRequireHostMatch);
+  static bool CheckHiddenPrefix(CookieStruct& aCookieData);
   static bool CheckPath(CookieStruct& aCookieData,
                         nsIConsoleReportCollector* aCRC, nsIURI* aHostURI);
   static bool CheckPrefixes(CookieStruct& aCookieData, bool aSecureRequest);
@@ -150,8 +152,8 @@ class CookieService final : public nsICookieService,
 
   // we have two separate Cookie Storages: one for normal browsing and one for
   // private browsing.
-  RefPtr<CookiePersistentStorage> mPersistentStorage;
-  RefPtr<CookiePrivateStorage> mPrivateStorage;
+  RefPtr<CookieStorage> mPersistentStorage;
+  RefPtr<CookieStorage> mPrivateStorage;
 };
 
 }  // namespace net

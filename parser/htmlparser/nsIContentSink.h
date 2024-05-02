@@ -86,10 +86,14 @@ class nsIContentSink : public nsISupports {
   /**
    * This method gets called when the parser i/o gets unblocked,
    * and we're about to start dumping content again to the sink.
-   *
-   * @update 5/7/98 gess
    */
-  NS_IMETHOD WillResume(void) = 0;
+  virtual void WillResume() = 0;
+
+  /**
+   * This method returns nullptr unless `this` can
+   * be cast as nsHtml5TreeOpExecutor.
+   */
+  virtual nsIContentSink* AsExecutor() { return nullptr; }
 
   /**
    * This method gets called by the parser so that the content

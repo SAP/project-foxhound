@@ -404,13 +404,12 @@ nsresult nsPropertiesParser::ParseBuffer(const char16_t* aBuffer,
 
 nsPersistentProperties::nsPersistentProperties()
     : mIn(nullptr),
-      mTable(&property_HashTableOps, sizeof(PropertyTableEntry), 16),
-      mArena() {}
+      mTable(&property_HashTableOps, sizeof(PropertyTableEntry), 16) {}
 
 nsPersistentProperties::~nsPersistentProperties() = default;
 
 size_t nsPersistentProperties::SizeOfIncludingThis(
-    mozilla::MallocSizeOf aMallocSizeOf) const {
+    mozilla::MallocSizeOf aMallocSizeOf) {
   // The memory used by mTable is accounted for in mArena.
   size_t n = 0;
   n += mArena.SizeOfExcludingThis(aMallocSizeOf);
@@ -550,11 +549,7 @@ nsPersistentProperties::GetKeys(nsTArray<nsCString>& aKeys) {
 // PropertyElement
 ////////////////////////////////////////////////////////////////////////////////
 
-nsresult nsPropertyElement::Create(nsISupports* aOuter, REFNSIID aIID,
-                                   void** aResult) {
-  if (aOuter) {
-    return NS_ERROR_NO_AGGREGATION;
-  }
+nsresult nsPropertyElement::Create(REFNSIID aIID, void** aResult) {
   RefPtr<nsPropertyElement> propElem = new nsPropertyElement();
   return propElem->QueryInterface(aIID, aResult);
 }

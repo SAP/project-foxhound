@@ -18,17 +18,17 @@ const platformPromise = browser.runtime.getPlatformInfo().then(info => {
   return info.os === "android" ? "android" : "desktop";
 });
 
-let debug = async function() {
+let debug = async function () {
   if ((await releaseBranchPromise) !== "release_or_beta") {
     console.debug.apply(this, arguments);
   }
 };
-let error = async function() {
+let error = async function () {
   if ((await releaseBranchPromise) !== "release_or_beta") {
     console.error.apply(this, arguments);
   }
 };
-let warn = async function() {
+let warn = async function () {
   if ((await releaseBranchPromise) !== "release_or_beta") {
     console.warn.apply(this, arguments);
   }
@@ -53,11 +53,20 @@ class Shim {
     this.notHosts = opts.notHosts;
     this.onlyIfBlockedByETP = opts.onlyIfBlockedByETP;
     this.onlyIfDFPIActive = opts.onlyIfDFPIActive;
+    this.onlyIfPrivateBrowsing = opts.onlyIfPrivateBrowsing;
     this._options = opts.options || {};
     this.needsShimHelpers = opts.needsShimHelpers;
     this.platform = opts.platform || "all";
+    this.runFirst = opts.runFirst;
     this.unblocksOnOptIn = unblocksOnOptIn;
     this.requestStorageAccessForRedirect = opts.requestStorageAccessForRedirect;
+    this.shouldUseScriptingAPI =
+      browser.aboutConfigPrefs.getBoolPrefSync("useScriptingAPI");
+    debug(
+      `WebCompat Shim ${this.id} will be injected using ${
+        this.shouldUseScriptingAPI ? "scripting" : "contentScripts"
+      } API`
+    );
 
     this._hostOptIns = new Set();
 
@@ -74,14 +83,26 @@ class Shim {
 
     this.redirectsRequests = !!this.file && matches?.length;
 
+    // NOTE: _contentScriptRegistrations is an array of string ids when
+    // shouldUseScriptingAPI is true and an array of script handles returned
+    // by contentScripts.register otherwise.
     this._contentScriptRegistrations = [];
+
     this.contentScripts = contentScripts || [];
     for (const script of this.contentScripts) {
       if (typeof script.css === "string") {
-        script.css = [{ file: `/shims/${script.css}` }];
+        script.css = [
+          this.shouldUseScriptingAPI
+            ? `/shims/${script.css}`
+            : { file: `/shims/${script.css}` },
+        ];
       }
       if (typeof script.js === "string") {
-        script.js = [{ file: `/shims/${script.js}` }];
+        script.js = [
+          this.shouldUseScriptingAPI
+            ? `/shims/${script.js}`
+            : { file: `/shims/${script.js}` },
+        ];
       }
     }
 
@@ -114,10 +135,8 @@ class Shim {
 
       this._disabledByReleaseBranch = false;
       for (const supportedBranchAndPlatform of this.branches || []) {
-        const [
-          supportedBranch,
-          supportedPlatform,
-        ] = supportedBranchAndPlatform.split(":");
+        const [supportedBranch, supportedPlatform] =
+          supportedBranchAndPlatform.split(":");
         if (
           (!supportedPlatform || supportedPlatform == platform) &&
           supportedBranch != branch
@@ -244,10 +263,52 @@ class Shim {
       !this._contentScriptRegistrations.length
     ) {
       const matches = [];
+      let idx = 0;
       for (const options of this.contentScripts) {
         matches.push(options.matches);
-        const reg = await browser.contentScripts.register(options);
-        this._contentScriptRegistrations.push(reg);
+        if (this.shouldUseScriptingAPI) {
+          // Some shims includes more than one script (e.g. Blogger one contains
+          // a content script to be run on document_start and one to be run
+          // on document_end.
+          options.id = `shim-${this.id}-${idx++}`;
+          options.persistAcrossSessions = false;
+          // Having to call getRegisteredContentScripts each time we are going to
+          // register a Shim content script is suboptimal, but avoiding that
+          // may require a bit more changes (e.g. rework both Injections, Shim and Shims
+          // classes to more easily register all content scripts with a single
+          // call to the scripting API methods when the background script page is loading
+          // and one per injection or shim being enabled from the AboutCompatBroker).
+          // In the short term we call getRegisteredContentScripts and restrict it to
+          // the script id we are about to register.
+          let isAlreadyRegistered = false;
+          try {
+            const registeredScripts =
+              await browser.scripting.getRegisteredContentScripts({
+                ids: [options.id],
+              });
+            isAlreadyRegistered = !!registeredScripts.length;
+          } catch (ex) {
+            console.error(
+              "Retrieve WebCompat GoFaster registered content scripts failed: ",
+              ex
+            );
+          }
+          try {
+            if (!isAlreadyRegistered) {
+              await browser.scripting.registerContentScripts([options]);
+            }
+            this._contentScriptRegistrations.push(options.id);
+          } catch (ex) {
+            console.error(
+              "Registering WebCompat Shim content scripts failed: ",
+              options,
+              ex
+            );
+          }
+        } else {
+          const reg = await browser.contentScripts.register(options);
+          this._contentScriptRegistrations.push(reg);
+        }
       }
       const urls = Array.from(new Set(matches.flat()));
       debug("Enabling content scripts for these URLs:", urls);
@@ -255,8 +316,13 @@ class Shim {
   }
 
   async _unregisterContentScripts() {
-    for (const registration of this._contentScriptRegistrations) {
-      registration.unregister();
+    if (this.shouldUseScriptingAPI) {
+      const ids = this._contentScriptRegistrations;
+      await browser.scripting.unregisterContentScripts({ ids });
+    } else {
+      for (const registration of this._contentScriptRegistrations) {
+        registration.unregister();
+      }
     }
     this._contentScriptRegistrations = [];
   }
@@ -519,7 +585,7 @@ class Shims {
           if (shim.isGoogleTrendsDFPIFix) {
             addTypePatterns(type, patterns, allHeaderChangingMatchTypePatterns);
           }
-          if (target || shim.file) {
+          if (target || shim.file || shim.runFirst) {
             addTypePatterns(type, patterns, allMatchTypePatterns);
           }
         }
@@ -909,13 +975,19 @@ class Shims {
     for (const shim of this.shims.values()) {
       await shim.ready;
 
-      if (!shim.enabled || !shim.redirectsRequests) {
+      if (!shim.enabled || (!shim.redirectsRequests && !shim.runFirst)) {
         continue;
       }
 
-      if (shim.onlyIfDFPIActive) {
+      if (shim.onlyIfDFPIActive || shim.onlyIfPrivateBrowsing) {
         const isPB = (await browser.tabs.get(details.tabId)).incognito;
-        if (!(await browser.trackingProtection.isDFPIActive(isPB))) {
+        if (!isPB && shim.onlyIfPrivateBrowsing) {
+          continue;
+        }
+        if (
+          shim.onlyIfDFPIActive &&
+          !(await browser.trackingProtection.isDFPIActive(isPB))
+        ) {
           continue;
         }
       }
@@ -933,6 +1005,10 @@ class Shims {
       // If this URL and content type isn't meant for this shim, don't apply it.
       match = shim.isTriggeredByURLAndType(url, type);
       if (match) {
+        if (!unblocked && match.onlyIfBlockedByETP) {
+          continue;
+        }
+
         // If the user has already opted in for this shim, all requests it covers
         // should be allowed; no need for a shim anymore.
         if (shim.hasUserOptedInAlready(topHost)) {
@@ -947,6 +1023,8 @@ class Shims {
       }
     }
 
+    let runFirst = false;
+
     if (shimToApply) {
       // Note that sites may request the same shim twice, but because the requests
       // may differ enough for some to fail (CSP/CORS/etc), we always let the request
@@ -954,18 +1032,33 @@ class Shims {
 
       const { target } = match;
       const { bug, file, id, name, needsShimHelpers } = shimToApply;
+      runFirst = shimToApply.runFirst;
 
       const redirect = target || file;
 
       warn(
-        `Shimming tracking ${type} ${url} on tab ${tabId} frame ${frameId} with ${redirect}`
+        `Shimming tracking ${type} ${url} on tab ${tabId} frame ${frameId} with ${
+          redirect || runFirst
+        }`
       );
 
       const warning = `${name} is being shimmed by Firefox. See https://bugzilla.mozilla.org/show_bug.cgi?id=${bug} for details.`;
 
-      try {
-        // For scripts, we also set up any needed shim helpers.
-        if (type === "script" && needsShimHelpers?.length) {
+      let needConsoleMessage = true;
+
+      if (runFirst) {
+        try {
+          await browser.tabs.executeScript(tabId, {
+            file: `/shims/${runFirst}`,
+            frameId,
+            runAt: "document_start",
+          });
+        } catch (_) {}
+      }
+
+      // For scripts, we also set up any needed shim helpers.
+      if (type === "script" && needsShimHelpers?.length) {
+        try {
           await browser.tabs.executeScript(tabId, {
             file: "/lib/shim_messaging_helper.js",
             frameId,
@@ -977,14 +1070,23 @@ class Shims {
             { origin, shimId: id, needsShimHelpers, warning },
             { frameId }
           );
+          needConsoleMessage = false;
           shimToApply.setActiveOnTab(tabId);
-        } else {
+        } catch (_) {}
+      }
+
+      if (needConsoleMessage) {
+        try {
           await browser.tabs.executeScript(tabId, {
             code: `console.warn(${JSON.stringify(warning)})`,
             runAt: "document_start",
           });
-        }
-      } catch (_) {}
+        } catch (_) {}
+      }
+
+      if (!redirect.indexOf("http://") || !redirect.indexOf("https://")) {
+        return { redirectUrl: redirect };
+      }
 
       // If any shims matched the request to replace it, then redirect to the local
       // file bundled with SmartBlock, so the request never hits the network.
@@ -998,7 +1100,9 @@ class Shims {
       return { cancel: true };
     }
 
-    debug(`ignoring ${url} on tab ${tabId} frame ${frameId}`);
+    if (!runFirst) {
+      debug(`ignoring ${url} on tab ${tabId} frame ${frameId}`);
+    }
     return undefined;
   }
 }

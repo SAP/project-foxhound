@@ -16,7 +16,8 @@
 #  include "jsapi.h"
 #  include "jsmath.h"
 
-#  include "js/ScalarType.h"  // js::Scalar::Type
+#  include "js/ColumnNumber.h"  // JS::LimitedColumnNumberOneOrigin
+#  include "js/ScalarType.h"    // js::Scalar::Type
 #  include "util/GetPidProvider.h"
 #  include "util/Text.h"
 #  include "vm/JSFunction.h"
@@ -110,6 +111,9 @@ class MOZ_RAII CacheIROpsJitSpewer {
   }
   void spewAllocKindImm(const char* name, gc::AllocKind kind) {
     out_.printf("%s AllocKind(%u)", name, unsigned(kind));
+  }
+  void spewCompletionKindImm(const char* name, CompletionKind kind) {
+    out_.printf("%s CompletionKind(%u)", name, unsigned(kind));
   }
 
  public:
@@ -249,6 +253,9 @@ class MOZ_RAII CacheIROpsJSONSpewer {
   void spewAllocKindImm(const char* name, gc::AllocKind kind) {
     spewArgImpl(name, "Imm", unsigned(kind));
   }
+  void spewCompletionKindImm(const char* name, CompletionKind kind) {
+    spewArgImpl(name, "Imm", unsigned(kind));
+  }
 
  public:
   explicit CacheIROpsJSONSpewer(JSONPrinter& j) : j_(j) {}
@@ -334,9 +341,9 @@ void CacheIRSpewer::beginCache(const IRGenerator& gen) {
   j.property("file", filename ? filename : "null");
   j.property("mode", int(gen.mode_));
   if (jsbytecode* pc = gen.pc_) {
-    unsigned column;
+    JS::LimitedColumnNumberOneOrigin column;
     j.property("line", PCToLineNumber(gen.script_, pc, &column));
-    j.property("column", column);
+    j.property("column", column.zeroOriginValue());
     j.formatProperty("pc", "%p", pc);
   }
 }
@@ -367,7 +374,7 @@ void CacheIRSpewer::valueProperty(const char* name, const Value& v) {
     j.formatProperty("value", "%p (shape: %p)", &object, object.shape());
 
     if (object.is<JSFunction>()) {
-      if (JSAtom* name = object.as<JSFunction>().displayAtom()) {
+      if (JSAtom* name = object.as<JSFunction>().maybePartialDisplayAtom()) {
         j.property("funName", name);
       }
     }

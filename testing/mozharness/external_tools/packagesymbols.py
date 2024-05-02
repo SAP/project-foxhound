@@ -4,8 +4,6 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 
-from __future__ import absolute_import, print_function
-
 import argparse
 import os
 import subprocess
@@ -20,7 +18,9 @@ class ProcError(Exception):
 
 
 def check_output(command):
-    proc = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    proc = subprocess.Popen(
+        command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True
+    )
     stdout, stderr = proc.communicate()
     if proc.returncode != 0:
         raise ProcError(proc.returncode, stderr)

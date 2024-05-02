@@ -5,10 +5,9 @@
 const C = Cc;
 const I = Ci;
 
-const { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 const ToolkitProfileService = "@mozilla.org/toolkit/profile-service;1";
 
@@ -142,9 +141,8 @@ function chooseProfileFolder() {
 
     // Disable the "Default Folder..." button when the default profile folder
     // was selected manually in the File Picker.
-    document.getElementById(
-      "useDefault"
-    ).disabled = newProfileRoot.parent.equals(gDefaultProfileParent);
+    document.getElementById("useDefault").disabled =
+      newProfileRoot.parent.equals(gDefaultProfileParent);
 
     gProfileRoot = newProfileRoot;
     updateProfileDisplay();
@@ -167,9 +165,8 @@ function checkCurrentInput(currentInput) {
         "profileFinishTextMac"
       );
     } else {
-      finishText.firstChild.data = gProfileManagerBundle.getString(
-        "profileFinishText"
-      );
+      finishText.firstChild.data =
+        gProfileManagerBundle.getString("profileFinishText");
     }
     canAdvance = true;
   } else {

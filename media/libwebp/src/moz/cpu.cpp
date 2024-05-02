@@ -11,6 +11,11 @@
 #include "mozilla/arm.h"
 #include "mozilla/SSE.h"
 
+extern "C" {
+extern VP8CPUInfo VP8GetCPUInfo;
+extern VP8CPUInfo SharpYuvGetCPUInfo;
+}
+
 static int MozCPUInfo(CPUFeature feature)
 {
   switch (feature) {
@@ -38,3 +43,4 @@ static int MozCPUInfo(CPUFeature feature)
 }
 
 VP8CPUInfo VP8GetCPUInfo = MozCPUInfo;
+VP8CPUInfo SharpYuvGetCPUInfo = MozCPUInfo;

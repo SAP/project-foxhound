@@ -1,15 +1,14 @@
 /* eslint-disable mozilla/no-arbitrary-setTimeout */
-const { AddonManagerPrivate } = ChromeUtils.import(
-  "resource://gre/modules/AddonManager.jsm"
+const { AddonManagerPrivate } = ChromeUtils.importESModule(
+  "resource://gre/modules/AddonManager.sys.mjs"
 );
 
-const { AddonTestUtils } = ChromeUtils.import(
-  "resource://testing-common/AddonTestUtils.jsm"
+const { AddonTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/AddonTestUtils.sys.mjs"
 );
 
 AddonTestUtils.initMochitest(this);
 
-hookExtensionsTelemetry();
 AddonTestUtils.hookAMTelemetryEvents();
 
 const kSideloaded = true;
@@ -17,7 +16,7 @@ const kSideloaded = true;
 async function createWebExtension(details) {
   let options = {
     manifest: {
-      applications: { gecko: { id: details.id } },
+      browser_specific_settings: { gecko: { id: details.id } },
 
       name: details.name,
 
@@ -26,7 +25,7 @@ async function createWebExtension(details) {
   };
 
   if (details.iconURL) {
-    options.manifest.icons = { "64": details.iconURL };
+    options.manifest.icons = { 64: details.iconURL };
   }
 
   let xpi = AddonTestUtils.createTempWebExtensionFile(options);
@@ -48,15 +47,14 @@ function getAddonElement(managerWindow, addonId) {
   );
 }
 
-function assertSideloadedAddonElementState(addonElement, checked) {
+function assertSideloadedAddonElementState(addonElement, pressed) {
   const enableBtn = addonElement.querySelector('[action="toggle-disabled"]');
   is(
-    enableBtn.checked,
-    checked,
-    `The enable button is ${!checked ? " not " : ""} checked`
+    enableBtn.pressed,
+    pressed,
+    `The enable button is ${!pressed ? " not " : ""} pressed`
   );
-  is(enableBtn.localName, "input", "The enable button is an input");
-  is(enableBtn.type, "checkbox", "It's a checkbox");
+  is(enableBtn.localName, "moz-toggle", "The enable button is a toggle");
 }
 
 function clickEnableExtension(addonElement) {
@@ -74,6 +72,8 @@ add_task(async function test_sideloading() {
       ["extensions.ui.ignoreUnsigned", true],
     ],
   });
+
+  Services.fog.testResetFOG();
 
   const ID1 = "addon1@tests.mozilla.org";
   await createWebExtension({
@@ -98,7 +98,7 @@ add_task(async function test_sideloading() {
     permissions: ["<all_urls>"],
   });
 
-  testCleanup = async function() {
+  testCleanup = async function () {
     // clear out ExtensionsUI state about sideloaded extensions so
     // subsequent tests don't get confused.
     ExtensionsUI.sideloaded.clear();
@@ -107,12 +107,18 @@ add_task(async function test_sideloading() {
 
   // Navigate away from the starting page to force about:addons to load
   // in a new tab during the tests below.
-  BrowserTestUtils.loadURI(gBrowser.selectedBrowser, "about:robots");
+  BrowserTestUtils.startLoadingURIString(
+    gBrowser.selectedBrowser,
+    "about:robots"
+  );
   await BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser);
 
-  registerCleanupFunction(async function() {
+  registerCleanupFunction(async function () {
     // Return to about:blank when we're done
-    BrowserTestUtils.loadURI(gBrowser.selectedBrowser, "about:blank");
+    BrowserTestUtils.startLoadingURIString(
+      gBrowser.selectedBrowser,
+      "about:blank"
+    );
     await BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser);
   });
 
@@ -181,8 +187,8 @@ add_task(async function test_sideloading() {
     panel,
     /\/foo-icon\.png$/,
     [
-      ["webextPerms.hostDescription.allUrls"],
-      ["webextPerms.description.history"],
+      ["webext-perms-host-description-all-urls"],
+      ["webext-perms-description-history"],
     ],
     kSideloaded
   );
@@ -231,16 +237,15 @@ add_task(async function test_sideloading() {
   checkNotification(
     panel,
     DEFAULT_ICON_URL,
-    [["webextPerms.hostDescription.allUrls"]],
+    [["webext-perms-host-description-all-urls"]],
     kSideloaded
   );
 
   // Test incognito checkbox in post install notification
   function setupPostInstallNotificationTest() {
-    let promiseNotificationShown = promiseAppMenuNotificationShown(
-      "addon-installed"
-    );
-    return async function(addon) {
+    let promiseNotificationShown =
+      promiseAppMenuNotificationShown("addon-installed");
+    return async function (addon) {
       info(`Expect post install notification for "${addon.name}"`);
       let postInstallPanel = await promiseNotificationShown;
       let incognitoCheckbox = postInstallPanel.querySelector(
@@ -299,7 +304,7 @@ add_task(async function test_sideloading() {
   checkNotification(
     panel,
     DEFAULT_ICON_URL,
-    [["webextPerms.hostDescription.allUrls"]],
+    [["webext-perms-host-description-all-urls"]],
     kSideloaded
   );
 
@@ -315,9 +320,6 @@ add_task(async function test_sideloading() {
 
   // Test post install notification on addon 3.
   await testPostInstallIncognitoCheckbox(addon3);
-
-  // We should have recorded 1 cancelled followed by 2 accepted sideloads.
-  expectTelemetry(["sideloadRejected", "sideloadAccepted", "sideloadAccepted"]);
 
   isnot(
     menuButton.getAttribute("badge-status"),
@@ -350,6 +352,29 @@ add_task(async function test_sideloading() {
   info("Test telemetry events collected for addon1");
 
   const baseEventAddon1 = createBaseEventAddon(1);
+
+  Assert.deepEqual(
+    AddonTestUtils.getAMGleanEvents("manage", { addon_id: ID1 }),
+    [
+      {
+        addon_id: ID1,
+        method: "sideload_prompt",
+        addon_type: "extension",
+        source: "app-profile",
+        source_method: "sideload",
+        num_strings: "2",
+      },
+      {
+        addon_id: ID1,
+        method: "uninstall",
+        addon_type: "extension",
+        source: "app-profile",
+        source_method: "sideload",
+      },
+    ],
+    "Got the expected Glean events for addon1."
+  );
+
   const collectedEventsAddon1 = getEventsForAddonId(
     amEvents,
     baseEventAddon1.value
@@ -406,5 +431,34 @@ add_task(async function test_sideloading() {
     collectedEventsAddon2.length,
     expectedEventsAddon2.length,
     "Got the expected number of telemetry events for addon2"
+  );
+
+  Assert.deepEqual(
+    AddonTestUtils.getAMGleanEvents("manage", { addon_id: ID2 }),
+    [
+      {
+        addon_id: ID2,
+        method: "sideload_prompt",
+        addon_type: "extension",
+        source: "app-profile",
+        source_method: "sideload",
+        num_strings: "1",
+      },
+      {
+        addon_id: ID2,
+        method: "enable",
+        addon_type: "extension",
+        source: "app-profile",
+        source_method: "sideload",
+      },
+      {
+        addon_id: ID2,
+        method: "uninstall",
+        addon_type: "extension",
+        source: "app-profile",
+        source_method: "sideload",
+      },
+    ],
+    "Got the expected Glean events for addon2."
   );
 });

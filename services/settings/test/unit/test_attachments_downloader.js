@@ -1,19 +1,17 @@
 /* import-globals-from ../../../common/tests/unit/head_helpers.js */
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { RemoteSettings } = ChromeUtils.import(
-  "resource://services-settings/remote-settings.js"
+const { RemoteSettings } = ChromeUtils.importESModule(
+  "resource://services-settings/remote-settings.sys.mjs"
 );
-const { UptakeTelemetry } = ChromeUtils.import(
-  "resource://services-common/uptake-telemetry.js"
+const { UptakeTelemetry } = ChromeUtils.importESModule(
+  "resource://services-common/uptake-telemetry.sys.mjs"
 );
-const { Downloader } = ChromeUtils.import(
-  "resource://services-settings/Attachments.jsm"
+const { Downloader } = ChromeUtils.importESModule(
+  "resource://services-settings/Attachments.sys.mjs"
 );
-const { TelemetryTestUtils } = ChromeUtils.import(
-  "resource://testing-common/TelemetryTestUtils.jsm"
+const { TelemetryTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/TelemetryTestUtils.sys.mjs"
 );
-const { OS } = ChromeUtils.import("resource://gre/modules/osfile.jsm");
 
 const RECORD = {
   id: "1f3a0802-648d-11ea-bd79-876a8b69c377",
@@ -47,9 +45,7 @@ function pathFromURL(url) {
   return file.path;
 }
 
-const PROFILE_URL =
-  "file://" +
-  OS.Path.split(OS.Constants.Path.localProfileDir).components.join("/");
+const PROFILE_URL = PathUtils.toFileURI(PathUtils.localProfileDir);
 
 function run_test() {
   server = new HttpServer();
@@ -60,6 +56,30 @@ function run_test() {
     "/cdn/main-workspace/some-collection/",
     do_get_file("test_attachments_downloader")
   );
+
+  run_next_test();
+}
+
+async function clear_state() {
+  Services.prefs.setCharPref(
+    "services.settings.server",
+    `http://localhost:${server.identity.primaryPort}/v1`
+  );
+
+  downloader = new Downloader("main", "some-collection");
+  const dummyCacheImpl = {
+    get: async attachmentId => {},
+    set: async (attachmentId, attachment) => {},
+    delete: async attachmentId => {},
+  };
+  // The download() method requires a cacheImpl, but the Downloader
+  // class does not have one. Define a dummy no-op one.
+  Object.defineProperty(downloader, "cacheImpl", {
+    value: dummyCacheImpl,
+    // Writable to allow specific tests to override cacheImpl.
+    writable: true,
+  });
+  await downloader.deleteDownloaded(RECORD);
 
   server.registerPathHandler("/v1/", (request, response) => {
     response.write(
@@ -74,32 +94,69 @@ function run_test() {
     response.setHeader("Content-Type", "application/json; charset=UTF-8");
     response.setStatusLine(null, 200, "OK");
   });
-
-  Services.prefs.setCharPref(
-    "services.settings.server",
-    `http://localhost:${server.identity.primaryPort}/v1`
-  );
-
-  run_next_test();
-}
-
-async function clear_state() {
-  downloader = new Downloader("main", "some-collection");
-  await downloader.delete(RECORD);
 }
 
 add_task(clear_state);
 
+add_task(async function test_base_attachment_url_depends_on_server() {
+  const before = await downloader._baseAttachmentsURL();
+
+  Services.prefs.setCharPref(
+    "services.settings.server",
+    `http://localhost:${server.identity.primaryPort}/v2`
+  );
+
+  server.registerPathHandler("/v2/", (request, response) => {
+    response.write(
+      JSON.stringify({
+        capabilities: {
+          attachments: {
+            base_url: "http://some-cdn-url.org",
+          },
+        },
+      })
+    );
+    response.setHeader("Content-Type", "application/json; charset=UTF-8");
+    response.setStatusLine(null, 200, "OK");
+  });
+
+  const after = await downloader._baseAttachmentsURL();
+
+  Assert.notEqual(before, after, "base URL was changed");
+  Assert.equal(after, "http://some-cdn-url.org/", "A trailing slash is added");
+});
+add_task(clear_state);
+
+add_task(
+  async function test_download_throws_server_info_error_if_invalid_response() {
+    server.registerPathHandler("/v1/", (request, response) => {
+      response.write("{bad json content");
+      response.setHeader("Content-Type", "application/json; charset=UTF-8");
+      response.setStatusLine(null, 200, "OK");
+    });
+
+    let error;
+    try {
+      await downloader.download(RECORD);
+    } catch (e) {
+      error = e;
+    }
+
+    Assert.ok(error instanceof Downloader.ServerInfoError);
+  }
+);
+add_task(clear_state);
+
 add_task(async function test_download_writes_file_in_profile() {
-  const fileURL = await downloader.download(RECORD);
+  const fileURL = await downloader.downloadToDisk(RECORD);
   const localFilePath = pathFromURL(fileURL);
 
   Assert.equal(
     fileURL,
     PROFILE_URL + "/settings/main/some-collection/test_file.pem"
   );
-  Assert.ok(await OS.File.exists(localFilePath));
-  const stat = await OS.File.stat(localFilePath);
+  Assert.ok(await IOUtils.exists(localFilePath));
+  const stat = await IOUtils.stat(localFilePath);
   Assert.equal(stat.size, 1597);
 });
 add_task(clear_state);
@@ -113,39 +170,38 @@ add_task(async function test_download_as_bytes() {
 add_task(clear_state);
 
 add_task(async function test_file_is_redownloaded_if_size_does_not_match() {
-  const fileURL = await downloader.download(RECORD);
+  const fileURL = await downloader.downloadToDisk(RECORD);
   const localFilePath = pathFromURL(fileURL);
-  await OS.File.writeAtomic(localFilePath, "bad-content", {
-    encoding: "utf-8",
-  });
-  let stat = await OS.File.stat(localFilePath);
+  await IOUtils.writeUTF8(localFilePath, "bad-content");
+  let stat = await IOUtils.stat(localFilePath);
   Assert.notEqual(stat.size, 1597);
 
-  await downloader.download(RECORD);
+  await downloader.downloadToDisk(RECORD);
 
-  stat = await OS.File.stat(localFilePath);
+  stat = await IOUtils.stat(localFilePath);
   Assert.equal(stat.size, 1597);
 });
 add_task(clear_state);
 
 add_task(async function test_file_is_redownloaded_if_corrupted() {
-  const fileURL = await downloader.download(RECORD);
+  const fileURL = await downloader.downloadToDisk(RECORD);
   const localFilePath = pathFromURL(fileURL);
-  const byteArray = await OS.File.read(localFilePath);
+  const byteArray = await IOUtils.read(localFilePath);
   byteArray[0] = 42;
-  await OS.File.writeAtomic(localFilePath, byteArray);
-  let content = await OS.File.read(localFilePath, { encoding: "utf-8" });
+  await IOUtils.write(localFilePath, byteArray);
+  let content = await IOUtils.readUTF8(localFilePath);
   Assert.notEqual(content.slice(0, 5), "-----");
 
-  await downloader.download(RECORD);
+  await downloader.downloadToDisk(RECORD);
 
-  content = await OS.File.read(localFilePath, { encoding: "utf-8" });
+  content = await IOUtils.readUTF8(localFilePath);
   Assert.equal(content.slice(0, 5), "-----");
 });
 add_task(clear_state);
 
 add_task(async function test_download_is_retried_3_times_if_download_fails() {
   const record = {
+    id: "abc",
     attachment: {
       ...RECORD.attachment,
       location: "404-error.pem",
@@ -173,6 +229,7 @@ add_task(clear_state);
 
 add_task(async function test_download_is_retried_3_times_if_content_fails() {
   const record = {
+    id: "abc",
     attachment: {
       ...RECORD.attachment,
       hash: "always-wrong",
@@ -197,38 +254,41 @@ add_task(async function test_download_is_retried_3_times_if_content_fails() {
 add_task(clear_state);
 
 add_task(async function test_delete_removes_local_file() {
-  const fileURL = await downloader.download(RECORD);
+  const fileURL = await downloader.downloadToDisk(RECORD);
   const localFilePath = pathFromURL(fileURL);
-  Assert.ok(await OS.File.exists(localFilePath));
+  Assert.ok(await IOUtils.exists(localFilePath));
 
-  downloader.delete(RECORD);
+  await downloader.deleteFromDisk(RECORD);
 
-  Assert.ok(!(await OS.File.exists(localFilePath)));
-  Assert.ok(
-    !(await OS.File.exists(
-      OS.Path.join(OS.Constants.Path.localProfileDir, ...downloader.folders)
-    ))
+  Assert.ok(!(await IOUtils.exists(localFilePath)));
+  // And removes parent folders.
+  const parentFolder = PathUtils.join(
+    PathUtils.localProfileDir,
+    ...downloader.folders
   );
+  Assert.ok(!(await IOUtils.exists(parentFolder)));
 });
 add_task(clear_state);
 
 add_task(async function test_delete_all() {
   const client = RemoteSettings("some-collection");
   await client.db.create(RECORD);
-  const fileURL = await downloader.download(RECORD);
+  await downloader.download(RECORD);
+  const fileURL = await downloader.downloadToDisk(RECORD);
   const localFilePath = pathFromURL(fileURL);
-  Assert.ok(await OS.File.exists(localFilePath));
+  Assert.ok(await IOUtils.exists(localFilePath));
 
   await client.attachments.deleteAll();
 
-  Assert.ok(!(await OS.File.exists(localFilePath)));
+  Assert.ok(!(await IOUtils.exists(localFilePath)));
+  Assert.ok(!(await client.attachments.cacheImpl.get(RECORD.id)));
 });
 add_task(clear_state);
 
 add_task(async function test_downloader_is_accessible_via_client() {
   const client = RemoteSettings("some-collection");
 
-  const fileURL = await client.attachments.download(RECORD);
+  const fileURL = await client.attachments.downloadToDisk(RECORD);
 
   Assert.equal(
     fileURL,
@@ -332,9 +392,7 @@ async function doTestDownloadCacheImpl({ simulateCorruption }) {
   };
   Object.defineProperty(downloader, "cacheImpl", { value: cacheImpl });
 
-  let downloadResult = await downloader.download(RECORD, {
-    useCache: true,
-  });
+  let downloadResult = await downloader.download(RECORD);
   Assert.equal(downloadResult._source, "remote_match", "expected source");
   Assert.equal(downloadResult.buffer.byteLength, 1597, "expected result");
   Assert.equal(readCount, 1, "expected cache read attempts");
@@ -430,7 +488,7 @@ add_task(async function test_download_cached() {
   checkInfo(info5, "cache_fallback", "fallbackToCache ignores bad record");
 
   // Bye bye cache.
-  await client.attachments.deleteCached(attachmentId);
+  await client.attachments.deleteDownloaded({ id: attachmentId });
   await Assert.rejects(
     downloadWithCache(null, { attachmentId, fallbackToCache: true }),
     /DownloadError: Could not download dummy filename/,
@@ -473,7 +531,6 @@ add_task(async function test_download_from_dump() {
   // If record matches, should happen before network request.
   const dump1 = await client.attachments.download(RECORD_OF_DUMP, {
     // Note: attachmentId not set, so should fall back to record.id.
-    useCache: true,
     fallbackToDump: true,
   });
   checkInfo(dump1, "dump_match");
@@ -481,7 +538,6 @@ add_task(async function test_download_from_dump() {
   // If no record given, should try network first, but then fall back to dump.
   const dump2 = await client.attachments.download(null, {
     attachmentId: RECORD_OF_DUMP.id,
-    useCache: true,
     fallbackToDump: true,
   });
   checkInfo(dump2, "dump_fallback");
@@ -493,7 +549,6 @@ add_task(async function test_download_from_dump() {
   });
   // The dump should take precedence over the cache.
   const dump3 = await client.attachments.download(RECORD_OF_DUMP, {
-    useCache: true,
     fallbackToCache: true,
     fallbackToDump: true,
   });
@@ -503,7 +558,6 @@ add_task(async function test_download_from_dump() {
   // as a fallback (when the cache and dump are identical).
   const dump4 = await client.attachments.download(null, {
     attachmentId: RECORD_OF_DUMP.id,
-    useCache: true,
     fallbackToCache: true,
     fallbackToDump: true,
   });
@@ -522,7 +576,6 @@ add_task(async function test_download_from_dump() {
   // When the record is not given, use the cache if it has a more recent record.
   const dump5 = await client.attachments.download(null, {
     attachmentId: RECORD_OF_DUMP.id,
-    useCache: true,
     fallbackToCache: true,
     fallbackToDump: true,
   });
@@ -530,24 +583,21 @@ add_task(async function test_download_from_dump() {
 
   // When a record is given, use whichever that has the matching last_modified.
   const dump6 = await client.attachments.download(RECORD_OF_DUMP, {
-    useCache: true,
     fallbackToCache: true,
     fallbackToDump: true,
   });
   checkInfo(dump6, "dump_match");
   const dump7 = await client.attachments.download(RECORD_NEWER_THAN_DUMP, {
-    useCache: true,
     fallbackToCache: true,
     fallbackToDump: true,
   });
   checkInfo(dump7, "cache_match", RECORD_NEWER_THAN_DUMP);
 
-  await client.attachments.deleteCached(RECORD_OF_DUMP.id);
+  await client.attachments.deleteDownloaded(RECORD_OF_DUMP);
 
   await Assert.rejects(
     client.attachments.download(null, {
       attachmentId: "filename-without-meta.txt",
-      useCache: true,
       fallbackToDump: true,
     }),
     /DownloadError: Could not download filename-without-meta.txt/,
@@ -557,7 +607,6 @@ add_task(async function test_download_from_dump() {
   await Assert.rejects(
     client.attachments.download(null, {
       attachmentId: "filename-without-content.txt",
-      useCache: true,
       fallbackToDump: true,
     }),
     /Could not download resource:\/\/rs-downloader-test\/settings\/dump-bucket\/dump-collection\/filename-without-content\.txt(?!\.meta\.json)/,
@@ -570,4 +619,85 @@ add_task(async function test_download_from_dump() {
 });
 // Not really needed because the last test doesn't modify the main collection,
 // but added for consistency with other tests tasks around here.
+add_task(clear_state);
+
+add_task(async function test_obsolete_attachments_are_pruned() {
+  const RECORD2 = {
+    ...RECORD,
+    id: "another-id",
+  };
+  const client = RemoteSettings("some-collection");
+  // Store records and related attachments directly in the cache.
+  await client.db.importChanges({}, 42, [RECORD, RECORD2], { clear: true });
+  await client.db.saveAttachment(RECORD.id, {
+    record: RECORD,
+    blob: new Blob(["123"]),
+  });
+  await client.db.saveAttachment("custom-id", {
+    record: RECORD2,
+    blob: new Blob(["456"]),
+  });
+  // Store an extraneous cached attachment.
+  await client.db.saveAttachment("bar", {
+    record: { id: "bar" },
+    blob: new Blob(["789"]),
+  });
+
+  const recordAttachment = await client.attachments.cacheImpl.get(RECORD.id);
+  Assert.equal(
+    await recordAttachment.blob.text(),
+    "123",
+    "Record has a cached attachment"
+  );
+  const record2Attachment = await client.attachments.cacheImpl.get("custom-id");
+  Assert.equal(
+    await record2Attachment.blob.text(),
+    "456",
+    "Record 2 has a cached attachment"
+  );
+  const { blob: cachedExtra } = await client.attachments.cacheImpl.get("bar");
+  Assert.equal(await cachedExtra.text(), "789", "There is an extra attachment");
+
+  await client.attachments.prune([]);
+
+  Assert.ok(
+    await client.attachments.cacheImpl.get(RECORD.id),
+    "Record attachment was kept"
+  );
+  Assert.ok(
+    await client.attachments.cacheImpl.get("custom-id"),
+    "Record 2 attachment was kept"
+  );
+  Assert.ok(
+    !(await client.attachments.cacheImpl.get("bar")),
+    "Extra was deleted"
+  );
+});
+add_task(clear_state);
+
+add_task(
+  async function test_obsolete_attachments_listed_as_excluded_are_not_pruned() {
+    const client = RemoteSettings("some-collection");
+    // Store records and related attachments directly in the cache.
+    await client.db.importChanges({}, 42, [], { clear: true });
+    await client.db.saveAttachment(RECORD.id, {
+      record: RECORD,
+      blob: new Blob(["123"]),
+    });
+
+    const recordAttachment = await client.attachments.cacheImpl.get(RECORD.id);
+    Assert.equal(
+      await recordAttachment.blob.text(),
+      "123",
+      "Record has a cached attachment"
+    );
+
+    await client.attachments.prune([RECORD.id]);
+
+    Assert.ok(
+      await client.attachments.cacheImpl.get(RECORD.id),
+      "Record attachment was kept"
+    );
+  }
+);
 add_task(clear_state);

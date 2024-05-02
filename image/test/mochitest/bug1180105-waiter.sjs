@@ -2,8 +2,8 @@
  * http://creativecommons.org/publicdomain/zero/1.0/
  */
 
-var timer = Components.classes["@mozilla.org/timer;1"];
-var waitTimer = timer.createInstance(Components.interfaces.nsITimer);
+var timer = Cc["@mozilla.org/timer;1"];
+var waitTimer = timer.createInstance(Ci.nsITimer);
 
 function handleRequest(request, response) {
   response.setHeader("Content-Type", "text/html", false);
@@ -19,11 +19,11 @@ function waitForFinish(response) {
     response.finish();
   } else {
     waitTimer.initWithCallback(
-      function() {
+      function () {
         waitForFinish(response);
       },
       10,
-      Components.interfaces.nsITimer.TYPE_ONE_SHOT
+      Ci.nsITimer.TYPE_ONE_SHOT
     );
   }
 }

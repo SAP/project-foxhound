@@ -10,7 +10,7 @@ NSS 3.39 release notes
 
    The NSS team has released Network Security Services (NSS) 3.39, which is a minor release.
 
-.. _distribution_information:
+
 
 `Distribution Information <#distribution_information>`__
 --------------------------------------------------------
@@ -29,8 +29,6 @@ NSS 3.39 release notes
 `New in NSS 3.39 <#new_in_nss_3.39>`__
 --------------------------------------
 
-.. container::
-
 .. _new_functionality:
 
 `New Functionality <#new_functionality>`__
@@ -41,7 +39,7 @@ NSS 3.39 release notes
    -  The ``tstclnt`` and ``selfserv`` utilities added support for configuring the enabled TLS
       signature schemes using the ``-J`` parameter.
 
-   -  NSS will use RSA-PSS keys to authenticate in TLS.  Support for these keys is disabled by
+   -  NSS will use RSA-PSS keys to authenticate in TLS.  Support for these keys is disabled by
       default but can be enabled using ``SSL_SignatureSchemePrefSet()``.
 
    -  ``certutil`` added the ability to delete an orphan private key from an NSS key database.

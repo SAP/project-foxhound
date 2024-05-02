@@ -32,7 +32,7 @@ class DOMSVGAnimatedEnumeration;
 
 using SVGMarkerElementBase = SVGElement;
 
-class SVGMarkerElement : public SVGMarkerElementBase {
+class SVGMarkerElement final : public SVGMarkerElementBase {
   friend class mozilla::SVGMarkerFrame;
 
  protected:
@@ -41,22 +41,18 @@ class SVGMarkerElement : public SVGMarkerElementBase {
       already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo));
   explicit SVGMarkerElement(
       already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
-  virtual JSObject* WrapNode(JSContext* cx,
-                             JS::Handle<JSObject*> aGivenProto) override;
+  JSObject* WrapNode(JSContext* cx, JS::Handle<JSObject*> aGivenProto) override;
 
  public:
-  // nsIContent interface
-  NS_IMETHOD_(bool) IsAttributeMapped(const nsAtom* name) const override;
-
   // SVGSVGElement methods:
-  virtual bool HasValidDimensions() const override;
+  bool HasValidDimensions() const override;
 
   // public helpers
   gfx::Matrix GetMarkerTransform(float aStrokeWidth, const SVGMark& aMark);
   SVGViewBox GetViewBox();
   gfx::Matrix GetViewBoxTransform();
 
-  virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
+  nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 
   // WebIDL
   already_AddRefed<SVGAnimatedRect> ViewBox();
@@ -69,17 +65,16 @@ class SVGMarkerElement : public SVGMarkerElementBase {
   already_AddRefed<DOMSVGAnimatedEnumeration> OrientType();
   already_AddRefed<DOMSVGAnimatedAngle> OrientAngle();
   void SetOrientToAuto();
-  void SetOrientToAngle(DOMSVGAngle& angle, ErrorResult& rv);
+  void SetOrientToAngle(DOMSVGAngle& aAngle);
 
  protected:
   void SetParentCoordCtxProvider(SVGViewportElement* aContext);
 
-  virtual LengthAttributesInfo GetLengthInfo() override;
-  virtual EnumAttributesInfo GetEnumInfo() override;
-  virtual SVGAnimatedOrient* GetAnimatedOrient() override;
-  virtual SVGAnimatedPreserveAspectRatio* GetAnimatedPreserveAspectRatio()
-      override;
-  virtual SVGAnimatedViewBox* GetAnimatedViewBox() override;
+  LengthAttributesInfo GetLengthInfo() override;
+  EnumAttributesInfo GetEnumInfo() override;
+  SVGAnimatedOrient* GetAnimatedOrient() override;
+  SVGAnimatedPreserveAspectRatio* GetAnimatedPreserveAspectRatio() override;
+  SVGAnimatedViewBox* GetAnimatedViewBox() override;
 
   enum { REFX, REFY, MARKERWIDTH, MARKERHEIGHT };
   SVGAnimatedLength mLengthAttributes[4];

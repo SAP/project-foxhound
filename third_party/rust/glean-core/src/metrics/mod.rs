@@ -5,6 +5,7 @@
 //! The different metric types supported by the Glean SDK to handle data.
 
 use std::collections::HashMap;
+use std::sync::atomic::Ordering;
 
 use chrono::{DateTime, FixedOffset};
 use serde::{Deserialize, Serialize};
@@ -17,26 +18,29 @@ mod datetime;
 mod denominator;
 mod event;
 mod experiment;
-mod jwe;
 pub(crate) mod labeled;
 mod memory_distribution;
 mod memory_unit;
+mod metrics_enabled_config;
+mod numerator;
 mod ping;
 mod quantity;
 mod rate;
+mod recorded_experiment;
 mod string;
 mod string_list;
+mod text;
 mod time_unit;
 mod timespan;
 mod timing_distribution;
 mod url;
 mod uuid;
 
+use crate::common_metric_data::CommonMetricDataInternal;
 pub use crate::event_database::RecordedEvent;
 use crate::histogram::{Functional, Histogram, PrecomputedExponential, PrecomputedLinear};
 pub use crate::metrics::datetime::Datetime;
 use crate::util::get_iso_time_string;
-use crate::CommonMetricData;
 use crate::Glean;
 
 pub use self::boolean::BooleanMetric;
@@ -46,37 +50,45 @@ pub use self::datetime::DatetimeMetric;
 pub use self::denominator::DenominatorMetric;
 pub use self::event::EventMetric;
 pub(crate) use self::experiment::ExperimentMetric;
-pub use crate::histogram::HistogramType;
-// Note: only expose RecordedExperimentData to tests in
-// the next line, so that glean-core\src\lib.rs won't fail to build.
-#[cfg(test)]
-pub(crate) use self::experiment::RecordedExperimentData;
-pub use self::jwe::JweMetric;
-pub use self::labeled::LabeledMetric;
+pub use self::labeled::{LabeledBoolean, LabeledCounter, LabeledMetric, LabeledString};
 pub use self::memory_distribution::MemoryDistributionMetric;
 pub use self::memory_unit::MemoryUnit;
+pub use self::numerator::NumeratorMetric;
 pub use self::ping::PingType;
 pub use self::quantity::QuantityMetric;
-pub use self::rate::RateMetric;
+pub use self::rate::{Rate, RateMetric};
 pub use self::string::StringMetric;
 pub use self::string_list::StringListMetric;
+pub use self::text::TextMetric;
 pub use self::time_unit::TimeUnit;
 pub use self::timespan::TimespanMetric;
 pub use self::timing_distribution::TimerId;
 pub use self::timing_distribution::TimingDistributionMetric;
 pub use self::url::UrlMetric;
 pub use self::uuid::UuidMetric;
+pub use crate::histogram::HistogramType;
+pub use recorded_experiment::RecordedExperiment;
+
+pub use self::metrics_enabled_config::MetricsEnabledConfig;
 
 /// A snapshot of all buckets and the accumulated sum of a distribution.
+//
+// Note: Be careful when changing this structure.
+// The serialized form ends up in the ping payload.
+// New fields might require to be skipped on serialization.
 #[derive(Debug, Serialize)]
 pub struct DistributionData {
     /// A map containig the bucket index mapped to the accumulated count.
     ///
     /// This can contain buckets with a count of `0`.
-    pub values: HashMap<u64, u64>,
+    pub values: HashMap<i64, i64>,
 
     /// The accumulated sum of all the samples in the distribution.
-    pub sum: u64,
+    pub sum: i64,
+
+    /// The total number of entries in the distribution.
+    #[serde(skip)]
+    pub count: i64,
 }
 
 /// The available metrics.
@@ -104,7 +116,7 @@ pub enum Metric {
     /// A datetime metric. See [`DatetimeMetric`] for more information.
     Datetime(DateTime<FixedOffset>, TimeUnit),
     /// An experiment metric. See `ExperimentMetric` for more information.
-    Experiment(experiment::RecordedExperimentData),
+    Experiment(recorded_experiment::RecordedExperiment),
     /// A quantity metric. See [`QuantityMetric`] for more information.
     Quantity(i64),
     /// A string metric. See [`StringMetric`] for more information.
@@ -119,28 +131,98 @@ pub enum Metric {
     TimingDistribution(Histogram<Functional>),
     /// A memory distribution. See [`MemoryDistributionMetric`] for more information.
     MemoryDistribution(Histogram<Functional>),
-    /// A JWE metric. See [`JweMetric`] for more information.
+    /// **DEPRECATED**: A JWE metric..
+    /// Note: This variant MUST NOT be removed to avoid backwards-incompatible changes to the
+    /// serialization. This type has no underlying implementation anymore.
     Jwe(String),
     /// A rate metric. See [`RateMetric`] for more information.
     Rate(i32, i32),
     /// A URL metric. See [`UrlMetric`] for more information.
     Url(String),
+    /// A Text metric. See [`TextMetric`] for more information.
+    Text(String),
 }
 
 /// A [`MetricType`] describes common behavior across all metrics.
 pub trait MetricType {
     /// Access the stored metadata
-    fn meta(&self) -> &CommonMetricData;
+    fn meta(&self) -> &CommonMetricDataInternal;
 
-    /// Access the stored metadata mutable
-    fn meta_mut(&mut self) -> &mut CommonMetricData;
+    /// Create a new metric from this with a new name.
+    fn with_name(&self, _name: String) -> Self
+    where
+        Self: Sized,
+    {
+        unimplemented!()
+    }
+
+    /// Create a new metric from this with a specific label.
+    fn with_dynamic_label(&self, _label: String) -> Self
+    where
+        Self: Sized,
+    {
+        unimplemented!()
+    }
 
     /// Whether this metric should currently be recorded
     ///
     /// This depends on the metrics own state, as determined by its metadata,
     /// and whether upload is enabled on the Glean object.
     fn should_record(&self, glean: &Glean) -> bool {
-        glean.is_upload_enabled() && self.meta().should_record()
+        if !glean.is_upload_enabled() {
+            return false;
+        }
+
+        // Technically nothing prevents multiple calls to should_record() to run in parallel,
+        // meaning both are reading self.meta().disabled and later writing it. In between it can
+        // also read remote_settings_metrics_config, which also could be modified in between those 2 reads.
+        // This means we could write the wrong remote_settings_epoch | current_disabled value. All in all
+        // at worst we would see that metric enabled/disabled wrongly once.
+        // But since everything is tunneled through the dispatcher, this should never ever happen.
+
+        // Get the current disabled field from the metric metadata, including
+        // the encoded remote_settings epoch
+        let disabled_field = self.meta().disabled.load(Ordering::Relaxed);
+        // Grab the epoch from the upper nibble
+        let epoch = disabled_field >> 4;
+        // Get the disabled flag from the lower nibble
+        let disabled = disabled_field & 0xF;
+        // Get the current remote_settings epoch to see if we need to bother with the
+        // more expensive HashMap lookup
+        let remote_settings_epoch = glean.remote_settings_epoch.load(Ordering::Acquire);
+        if epoch == remote_settings_epoch {
+            return disabled == 0;
+        }
+        // The epoch's didn't match so we need to look up the disabled flag
+        // by the base_identifier from the in-memory HashMap
+        let metrics_enabled = &glean
+            .remote_settings_metrics_config
+            .lock()
+            .unwrap()
+            .metrics_enabled;
+        // Get the value from the remote configuration if it is there, otherwise return the default value.
+        let current_disabled = {
+            let base_id = self.meta().base_identifier();
+            let identifier = base_id
+                .split_once('/')
+                .map(|split| split.0)
+                .unwrap_or(&base_id);
+            // NOTE: The `!` preceding the `*is_enabled` is important for inverting the logic since the
+            // underlying property in the metrics.yaml is `disabled` and the outward API is treating it as
+            // if it were `enabled` to make it easier to understand.
+            if let Some(is_enabled) = metrics_enabled.get(identifier) {
+                u8::from(!*is_enabled)
+            } else {
+                u8::from(self.meta().inner.disabled)
+            }
+        };
+
+        // Re-encode the epoch and enabled status and update the metadata
+        let new_disabled = (remote_settings_epoch << 4) | (current_disabled & 0xF);
+        self.meta().disabled.store(new_disabled, Ordering::Relaxed);
+
+        // Return a boolean indicating whether or not the metric should be recorded
+        current_disabled == 0
     }
 }
 
@@ -168,6 +250,7 @@ impl Metric {
             Metric::Uuid(_) => "uuid",
             Metric::MemoryDistribution(_) => "memory_distribution",
             Metric::Jwe(_) => "jwe",
+            Metric::Text(_) => "text",
         }
     }
 
@@ -196,6 +279,7 @@ impl Metric {
             Metric::Uuid(s) => json!(s),
             Metric::MemoryDistribution(hist) => json!(memory_distribution::snapshot(hist)),
             Metric::Jwe(s) => json!(s),
+            Metric::Text(s) => json!(s),
         }
     }
 }

@@ -7,10 +7,11 @@
 
 let formFillChromeScript;
 let defaultTextColor;
+let defaultDisabledTextColor;
 let expectingPopup = null;
 
-const { FormAutofillUtils } = SpecialPowers.Cu.import(
-  "resource://autofill/FormAutofillUtils.jsm"
+const { FormAutofillUtils } = SpecialPowers.ChromeUtils.importESModule(
+  "resource://gre/modules/shared/FormAutofillUtils.sys.mjs"
 );
 
 async function sleep(ms = 500, reason = "Intentionally wait for UI ready") {
@@ -112,8 +113,12 @@ async function checkFieldPreview(elem, expectedValue) {
   let isTextColorApplied;
   await SimpleTest.promiseWaitForCondition(function checkPreview() {
     const computedStyle = window.getComputedStyle(elem);
-    isTextColorApplied =
-      computedStyle.getPropertyValue("color") !== defaultTextColor;
+    const actualColor = computedStyle.getPropertyValue("color");
+    if (elem.disabled) {
+      isTextColorApplied = actualColor !== defaultDisabledTextColor;
+    } else {
+      isTextColorApplied = actualColor !== defaultTextColor;
+    }
     return isTextColorApplied === !!expectedValue;
   }, `Checking #${elem.id} preview style`);
 
@@ -124,9 +129,19 @@ async function checkFormFieldsStyle(profile, isPreviewing = true) {
   const elems = document.querySelectorAll("input, select");
 
   for (const elem of elems) {
-    const fillableValue = profile && profile[elem.id];
-    const previewValue = (isPreviewing && fillableValue) || "";
-
+    let fillableValue;
+    let previewValue;
+    let isElementEligible =
+      FormAutofillUtils.isCreditCardOrAddressFieldType(elem) &&
+      FormAutofillUtils.isFieldAutofillable(elem);
+    if (!isElementEligible) {
+      fillableValue = "";
+      previewValue = "";
+    } else {
+      fillableValue = profile && profile[elem.id];
+      previewValue =
+        (isPreviewing && fillableValue?.toString().replaceAll("*", "•")) || "";
+    }
     await checkFieldHighlighted(elem, !!fillableValue);
     await checkFieldPreview(elem, previewValue);
   }
@@ -357,13 +372,12 @@ async function waitForOSKeyStoreLogin(login = false) {
 }
 
 function patchRecordCCNumber(record) {
-  const number = record["cc-number"];
-  const ccNumberFmt = {
-    affix: "****",
-    label: number.substr(-4),
-  };
+  const ccNumberFmt = "****" + record.cc["cc-number"].substr(-4);
 
-  return Object.assign({}, record, { ccNumberFmt });
+  return {
+    cc: Object.assign({}, record.cc, { ccNumberFmt }),
+    expected: record.expected,
+  };
 }
 
 // Utils for registerPopupShownListener(in satchel_common.js) that handles dropdown popup
@@ -421,7 +435,7 @@ function formAutoFillCommonSetup() {
     }
   });
 
-  add_task(async function setup() {
+  add_setup(async () => {
     info(`expecting the storage setup`);
     await formFillChromeScript.sendQuery("setup");
   });
@@ -436,10 +450,18 @@ function formAutoFillCommonSetup() {
 
   document.addEventListener(
     "DOMContentLoaded",
-    function() {
+    function () {
       defaultTextColor = window
         .getComputedStyle(document.querySelector("input"))
         .getPropertyValue("color");
+
+      // This is needed for test_formautofill_preview_highlight.html to work properly
+      let disabledInput = document.querySelector(`input[disabled]`);
+      if (disabledInput) {
+        defaultDisabledTextColor = window
+          .getComputedStyle(disabledInput)
+          .getPropertyValue("color");
+      }
     },
     { once: true }
   );

@@ -3,11 +3,6 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 include protocol PBackgroundIDBDatabaseFile;
-include protocol PBackgroundMutableFile;
-include protocol PChildToParentStream; // FIXME: bug 792908
-include protocol PFileDescriptorSet; // FIXME: bug 792908
-include protocol PParentToChildStream; // FIXME: bug 792908
-include protocol PRemoteLazyInputStream; // FIXME: bug 792908
 
 include DOMTypes;
 include IPCBlob;
@@ -51,16 +46,15 @@ struct SerializedKeyRange
   bool isOnly;
 };
 
-union BlobOrMutableFile
+union NullableBlob
 {
   null_t;
   IPCBlob;
-  PBackgroundMutableFile;
 };
 
 struct SerializedStructuredCloneFile
 {
-  BlobOrMutableFile file;
+  NullableBlob file;
   FileType type;
 };
 
@@ -167,15 +161,9 @@ union OpenCursorParams
   IndexOpenKeyCursorParams;
 };
 
-union DatabaseOrMutableFile
-{
-  PBackgroundIDBDatabaseFile;
-  PBackgroundMutableFile;
-};
-
 struct FileAddInfo
 {
-  DatabaseOrMutableFile file;
+  PBackgroundIDBDatabaseFile file;
   FileType type;
 };
 

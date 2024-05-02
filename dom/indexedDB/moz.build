@@ -9,12 +9,13 @@ with Files("**"):
 
 MOCHITEST_MANIFESTS += [
     "test/mochitest-intl-api.ini",
-    "test/mochitest.ini",
+    "test/mochitest-private.ini",
+    "test/mochitest-regular.ini",
 ]
 
-BROWSER_CHROME_MANIFESTS += ["test/browser.ini"]
+BROWSER_CHROME_MANIFESTS += ["test/browser.toml"]
 
-MOCHITEST_CHROME_MANIFESTS += ["test/chrome.ini"]
+MOCHITEST_CHROME_MANIFESTS += ["test/chrome.toml"]
 
 XPCSHELL_TESTS_MANIFESTS += [
     "test/unit/xpcshell-child-process.ini",
@@ -31,11 +32,8 @@ EXPORTS.mozilla.dom += [
     "IDBDatabase.h",
     "IDBEvents.h",
     "IDBFactory.h",
-    "IDBFileHandle.h",
-    "IDBFileRequest.h",
     "IDBIndex.h",
     "IDBKeyRange.h",
-    "IDBMutableFile.h",
     "IDBObjectStore.h",
     "IDBRequest.h",
     "IDBTransaction.h",
@@ -50,7 +48,6 @@ EXPORTS.mozilla.dom.indexedDB += [
     "IDBResult.h",
     "Key.h",
     "KeyPath.h",
-    "PermissionRequestBase.h",
     "SerializationHelpers.h",
     "ThreadLocal.h",
 ]
@@ -65,11 +62,8 @@ UNIFIED_SOURCES += [
     "IDBDatabase.cpp",
     "IDBEvents.cpp",
     "IDBFactory.cpp",
-    "IDBFileHandle.cpp",
-    "IDBFileRequest.cpp",
     "IDBIndex.cpp",
     "IDBKeyRange.cpp",
-    "IDBMutableFile.cpp",
     "IDBObjectStore.cpp",
     "IDBRequest.cpp",
     "IDBTransaction.cpp",
@@ -77,7 +71,6 @@ UNIFIED_SOURCES += [
     "IndexedDatabaseManager.cpp",
     "IndexedDBCommon.cpp",
     "KeyPath.cpp",
-    "PermissionRequestBase.cpp",
     "ProfilerHelpers.cpp",
     "ReportInternalError.cpp",
     "SchemaUpgrades.cpp",
@@ -93,7 +86,6 @@ IPDL_SOURCES += [
     "PBackgroundIDBCursor.ipdl",
     "PBackgroundIDBDatabase.ipdl",
     "PBackgroundIDBDatabaseFile.ipdl",
-    "PBackgroundIDBDatabaseRequest.ipdl",
     "PBackgroundIDBFactory.ipdl",
     "PBackgroundIDBFactoryRequest.ipdl",
     "PBackgroundIDBRequest.ipdl",

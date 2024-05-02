@@ -1,5 +1,4 @@
 function handleRequest(request, response) {
-  Components.utils.importGlobalProperties(["URLSearchParams"]);
   let query = new URLSearchParams(request.queryString);
 
   response.setStatusLine(request.httpVersion, 200, "OK");

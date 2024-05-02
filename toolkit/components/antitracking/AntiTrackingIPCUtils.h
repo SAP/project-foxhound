@@ -10,7 +10,7 @@
 #include "ipc/EnumSerializer.h"
 
 #include "mozilla/ContentBlockingNotifier.h"
-#include "mozilla/ContentBlocking.h"
+#include "mozilla/StorageAccessAPIHelper.h"
 
 #include "nsILoadInfo.h"
 
@@ -38,13 +38,13 @@ struct ParamTraits<mozilla::ContentBlockingNotifier::BlockingDecision>
           mozilla::ContentBlockingNotifier::BlockingDecision::eBlock,
           mozilla::ContentBlockingNotifier::BlockingDecision::eAllow> {};
 
-// ContentBlocking::StorageAccessPromptChoices over IPC.
+// StorageAccessAPIHelper::StorageAccessPromptChoices over IPC.
 template <>
-struct ParamTraits<mozilla::ContentBlocking::StorageAccessPromptChoices>
+struct ParamTraits<mozilla::StorageAccessAPIHelper::StorageAccessPromptChoices>
     : public ContiguousEnumSerializerInclusive<
-          mozilla::ContentBlocking::StorageAccessPromptChoices,
-          mozilla::ContentBlocking::StorageAccessPromptChoices::eAllow,
-          mozilla::ContentBlocking::StorageAccessPromptChoices::
+          mozilla::StorageAccessAPIHelper::StorageAccessPromptChoices,
+          mozilla::StorageAccessAPIHelper::StorageAccessPromptChoices::eAllow,
+          mozilla::StorageAccessAPIHelper::StorageAccessPromptChoices::
               eAllowAutoGrant> {};
 
 // nsILoadInfo::StoragePermissionState over IPC.
@@ -54,6 +54,14 @@ struct ParamTraits<nsILoadInfo::StoragePermissionState>
           nsILoadInfo::StoragePermissionState,
           nsILoadInfo::StoragePermissionState::NoStoragePermission,
           nsILoadInfo::StoragePermissionState::StoragePermissionAllowListed> {};
+
+// ContentBlockingNotifier::CanvasFingerprinter over IPC.
+template <>
+struct ParamTraits<mozilla::ContentBlockingNotifier::CanvasFingerprinter>
+    : public ContiguousEnumSerializerInclusive<
+          mozilla::ContentBlockingNotifier::CanvasFingerprinter,
+          mozilla::ContentBlockingNotifier::CanvasFingerprinter::eFingerprintJS,
+          mozilla::ContentBlockingNotifier::CanvasFingerprinter::eMaybe> {};
 }  // namespace IPC
 
 #endif  // mozilla_antitrackingipcutils_h

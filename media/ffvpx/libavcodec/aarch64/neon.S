@@ -1,6 +1,8 @@
 /*
  * This file is part of FFmpeg.
  *
+ * Copyright (c) 2023 J. Dekker <jdek@itanimul.li>
+ *
  * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
@@ -15,6 +17,15 @@
  * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
+
+.macro clip min, max, regs:vararg
+.irp x, \regs
+        smax            \x, \x, \min
+.endr
+.irp x, \regs
+        smin            \x, \x, \max
+.endr
+.endm
 
 .macro  transpose_8x8B  r0, r1, r2, r3, r4, r5, r6, r7, r8, r9
         trn1            \r8\().8B,  \r0\().8B,  \r1\().8B
@@ -109,10 +120,23 @@
         trn2            \r5\().4H,  \r0\().4H,  \r1\().4H
         trn1            \r6\().4H,  \r2\().4H,  \r3\().4H
         trn2            \r7\().4H,  \r2\().4H,  \r3\().4H
+
         trn1            \r0\().2S,  \r4\().2S,  \r6\().2S
         trn2            \r2\().2S,  \r4\().2S,  \r6\().2S
         trn1            \r1\().2S,  \r5\().2S,  \r7\().2S
         trn2            \r3\().2S,  \r5\().2S,  \r7\().2S
+.endm
+
+.macro transpose_4x8H r0, r1, r2, r3, t4, t5, t6, t7
+        trn1            \t4\().8H,  \r0\().8H,  \r1\().8H
+        trn2            \t5\().8H,  \r0\().8H,  \r1\().8H
+        trn1            \t6\().8H,  \r2\().8H,  \r3\().8H
+        trn2            \t7\().8H,  \r2\().8H,  \r3\().8H
+
+        trn1            \r0\().4S,  \t4\().4S,  \t6\().4S
+        trn2            \r2\().4S,  \t4\().4S,  \t6\().4S
+        trn1            \r1\().4S,  \t5\().4S,  \t7\().4S
+        trn2            \r3\().4S,  \t5\().4S,  \t7\().4S
 .endm
 
 .macro  transpose_8x8H  r0, r1, r2, r3, r4, r5, r6, r7, r8, r9

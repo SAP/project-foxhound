@@ -28,6 +28,17 @@ about-private-browsing-get-privacy = Get privacy protections everywhere you brow
 about-private-browsing-hide-activity-1 = Hide browsing activity and location with { -mozilla-vpn-brand-name }. One click creates a secure connection, even on public Wi-Fi.
 about-private-browsing-prominent-cta = Stay private with { -mozilla-vpn-brand-name }
 
+about-private-browsing-focus-promo-cta = Download { -focus-brand-name }
+about-private-browsing-focus-promo-header = { -focus-brand-name }: Private browsing on-the-go
+about-private-browsing-focus-promo-text = Our dedicated private browsing mobile app clears your history and cookies every time.
+
+## The following strings will be used for experiments in Fx99 and Fx100
+
+about-private-browsing-focus-promo-header-b = Take private browsing to your phone
+about-private-browsing-focus-promo-text-b = Use { -focus-brand-name } for those private searches you don’t want your main mobile browser to see.
+about-private-browsing-focus-promo-header-c = Next-level privacy on mobile
+about-private-browsing-focus-promo-text-c = { -focus-brand-name } clears your history every time while blocking ads and trackers.
+
 # This string is the title for the banner for search engine selection
 # in a private window.
 # Variables:
@@ -41,5 +52,27 @@ about-private-browsing-search-banner-description = {
 about-private-browsing-search-banner-close-button =
     .aria-label = Close
 
-about-private-browsing-dismiss-button =
-  .title = Dismiss
+about-private-browsing-promo-close-button =
+  .title = Close
+
+## Strings used in a “pin promotion” message, which prompts users to pin a private window
+
+about-private-browsing-pin-promo-header = Private browsing freedom in one click
+about-private-browsing-pin-promo-link-text = { PLATFORM() ->
+    [macos] Keep in Dock
+   *[other] Pin to taskbar
+}
+about-private-browsing-pin-promo-title = No saved cookies or history, right from your desktop. Browse like no one’s watching.
+
+## Strings used in a promotion message for cookie banner reduction
+
+# Simplified version of the headline if the original text doesn't work
+# in your language: `{ -brand-short-name } will show fewer cookie requests`
+about-private-browsing-cookie-banners-promo-heading = { -brand-short-name } takes care of cookie banners for you
+about-private-browsing-cookie-banners-promo-body = We now automatically refuse many cookie banners so you can get tracked less and go back to distraction-free browsing.
+
+## Strings for Felt Privacy v1 experiments in 119
+
+about-private-browsing-felt-privacy-v1-info-header = Leave no traces on this device
+about-private-browsing-felt-privacy-v1-info-body = { -brand-short-name} deletes your cookies, history, and site data when you close all your private windows.
+about-private-browsing-felt-privacy-v1-info-link = Who might be able to see my activity?

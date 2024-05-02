@@ -15,10 +15,10 @@ function render(overrides = {}) {
     setActiveSearch: jest.fn(),
     openQuickOpen: jest.fn(),
     toggleShortcutsModal: jest.fn(),
+    setPrimaryPaneTab: jest.fn(),
     ...overrides,
   };
-  const component = shallow(<WelcomeBox {...props} />);
-
+  const component = shallow(React.createElement(WelcomeBox, props));
   return { component, props };
 }
 

@@ -11,132 +11,19 @@
 
 #include "mozilla/Attributes.h"
 #include "mozilla/Likely.h"
-
 #include "nsILineIterator.h"
 #include "nsIFrame.h"
+#include "nsStyleConsts.h"
 #include "nsTHashSet.h"
 
 #include <algorithm>
 
 class nsLineBox;
-class nsFloatCache;
-class nsFloatCacheList;
-class nsFloatCacheFreeList;
 class nsWindowSizes;
 
 namespace mozilla {
 class PresShell;
 }  // namespace mozilla
-
-// State cached after reflowing a float. This state is used during
-// incremental reflow when we avoid reflowing a float.
-class nsFloatCache {
- public:
-  nsFloatCache();
-#ifdef NS_BUILD_REFCNT_LOGGING
-  ~nsFloatCache();
-#else
-  ~nsFloatCache() = default;
-#endif
-
-  nsFloatCache* Next() const { return mNext; }
-
-  nsIFrame* mFloat;  // floating frame
-
- protected:
-  nsFloatCache* mNext;
-
-  friend class nsFloatCacheList;
-  friend class nsFloatCacheFreeList;
-};
-
-//----------------------------------------
-
-class nsFloatCacheList {
- public:
-#ifdef NS_BUILD_REFCNT_LOGGING
-  nsFloatCacheList();
-#else
-  nsFloatCacheList() : mHead(nullptr) {}
-#endif
-  ~nsFloatCacheList();
-
-  bool IsEmpty() const { return nullptr == mHead; }
-
-  bool NotEmpty() const { return nullptr != mHead; }
-
-  nsFloatCache* Head() const { return mHead; }
-
-  nsFloatCache* Tail() const;
-
-  void DeleteAll();
-
-  nsFloatCache* Find(nsIFrame* aOutOfFlowFrame);
-
-  // Remove a nsFloatCache from this list.  Deleting this nsFloatCache
-  // becomes the caller's responsibility.
-  void Remove(nsFloatCache* aElement) { RemoveAndReturnPrev(aElement); }
-
-  // Steal away aList's nsFloatCache objects and put them in this
-  // list.  aList must not be empty.
-  void Append(nsFloatCacheFreeList& aList);
-
- protected:
-  nsFloatCache* mHead;
-
-  // Remove a nsFloatCache from this list.  Deleting this nsFloatCache
-  // becomes the caller's responsibility. Returns the nsFloatCache that was
-  // before aElement, or nullptr if aElement was the first.
-  nsFloatCache* RemoveAndReturnPrev(nsFloatCache* aElement);
-
-  friend class nsFloatCacheFreeList;
-};
-
-//---------------------------------------
-// Like nsFloatCacheList, but with fast access to the tail
-
-class nsFloatCacheFreeList : private nsFloatCacheList {
- public:
-#ifdef NS_BUILD_REFCNT_LOGGING
-  nsFloatCacheFreeList();
-  ~nsFloatCacheFreeList();
-#else
-  nsFloatCacheFreeList() : mTail(nullptr) {}
-  ~nsFloatCacheFreeList() = default;
-#endif
-
-  // Reimplement trivial functions
-  bool IsEmpty() const { return nullptr == mHead; }
-
-  nsFloatCache* Head() const { return mHead; }
-
-  nsFloatCache* Tail() const { return mTail; }
-
-  bool NotEmpty() const { return nullptr != mHead; }
-
-  void DeleteAll();
-
-  // Steal away aList's nsFloatCache objects and put them on this
-  // free-list.  aList must not be empty.
-  void Append(nsFloatCacheList& aList);
-
-  void Append(nsFloatCache* aFloatCache);
-
-  void Remove(nsFloatCache* aElement);
-
-  // Remove an nsFloatCache object from this list and return it, or create
-  // a new one if this one is empty; Set its mFloat to aFloat.
-  nsFloatCache* Alloc(nsIFrame* aFloat);
-
- protected:
-  nsFloatCache* mTail;
-
-  friend class nsFloatCacheList;
-};
-
-//----------------------------------------------------------------------
-
-#define LINE_MAX_CHILD_COUNT INT32_MAX
 
 /**
  * Function to create a line box and initialize it with a single frame.
@@ -351,40 +238,42 @@ class nsLineBox final : public nsLineLink {
     }
   }
 
-  // mBreakType value
+  // mHasForcedLineBreak bit & mFloatClearType value
   // Break information is applied *before* the line if the line is a block,
-  // or *after* the line if the line is an inline. Confusing, I know, but
-  // using different names should help.
-  using StyleClear = mozilla::StyleClear;
-  bool HasBreakBefore() const {
-    return IsBlock() && StyleClear::None != BreakType();
-  }
-  void SetBreakTypeBefore(StyleClear aBreakType) {
-    MOZ_ASSERT(IsBlock(), "Only blocks have break-before");
-    MOZ_ASSERT(
-        aBreakType == StyleClear::None || aBreakType == StyleClear::Left ||
-            aBreakType == StyleClear::Right || aBreakType == StyleClear::Both,
-        "Only float break types are allowed before a line");
-    mFlags.mBreakType = aBreakType;
-  }
-  StyleClear GetBreakTypeBefore() const {
-    return IsBlock() ? BreakType() : StyleClear::None;
+  // or *after* the line if the line is an inline.
+  bool HasForcedLineBreak() const { return mFlags.mHasForcedLineBreak; }
+  void ClearForcedLineBreak() {
+    mFlags.mHasForcedLineBreak = false;
+    mFlags.mFloatClearType = mozilla::StyleClear::None;
   }
 
-  bool HasBreakAfter() const {
-    return !IsBlock() && StyleClear::None != BreakType();
+  bool HasForcedLineBreakBefore() const {
+    return IsBlock() && HasForcedLineBreak();
   }
-  void SetBreakTypeAfter(StyleClear aBreakType) {
-    MOZ_ASSERT(!IsBlock(), "Only inlines have break-after");
-    mFlags.mBreakType = aBreakType;
+  void SetForcedLineBreakBefore(mozilla::StyleClear aClearType) {
+    MOZ_ASSERT(IsBlock(), "Only blocks have break-before");
+    MOZ_ASSERT(aClearType != mozilla::StyleClear::None,
+               "Only StyleClear:Left/Right/Both are allowed before a line");
+    mFlags.mHasForcedLineBreak = true;
+    mFlags.mFloatClearType = aClearType;
   }
-  bool HasFloatBreakAfter() const {
-    return !IsBlock() && (StyleClear::Left == BreakType() ||
-                          StyleClear::Right == BreakType() ||
-                          StyleClear::Both == BreakType());
+  mozilla::StyleClear FloatClearTypeBefore() const {
+    return IsBlock() ? FloatClearType() : mozilla::StyleClear::None;
   }
-  StyleClear GetBreakTypeAfter() const {
-    return !IsBlock() ? BreakType() : StyleClear::None;
+
+  bool HasForcedLineBreakAfter() const {
+    return IsInline() && HasForcedLineBreak();
+  }
+  void SetForcedLineBreakAfter(mozilla::StyleClear aClearType) {
+    MOZ_ASSERT(IsInline(), "Only inlines have break-after");
+    mFlags.mHasForcedLineBreak = true;
+    mFlags.mFloatClearType = aClearType;
+  }
+  bool HasFloatClearTypeAfter() const {
+    return IsInline() && FloatClearType() != mozilla::StyleClear::None;
+  }
+  mozilla::StyleClear FloatClearTypeAfter() const {
+    return IsInline() ? FloatClearType() : mozilla::StyleClear::None;
   }
 
   // mCarriedOutBEndMargin value
@@ -394,11 +283,15 @@ class nsLineBox final : public nsLineLink {
 
   // mFloats
   bool HasFloats() const {
-    return (IsInline() && mInlineData) && mInlineData->mFloats.NotEmpty();
+    return (IsInline() && mInlineData) && !mInlineData->mFloats.IsEmpty();
   }
-  nsFloatCache* GetFirstFloat();
-  void FreeFloats(nsFloatCacheFreeList& aFreeList);
-  void AppendFloats(nsFloatCacheFreeList& aFreeList);
+  const nsTArray<nsIFrame*>& Floats() const {
+    MOZ_ASSERT(HasFloats());
+    return mInlineData->mFloats;
+  }
+  // Append aFloats to mFloat. aFloats will be empty.
+  void AppendFloats(nsTArray<nsIFrame*>&& aFloats);
+  void ClearFloats();
   bool RemoveFloat(nsIFrame* aFrame);
 
   // The ink overflow area should never be used for things that affect layout.
@@ -503,10 +396,9 @@ class nsLineBox final : public nsLineLink {
     mBounds.BSize(mWritingMode) = 0;
   }
 
-  using PostDestroyData = nsIFrame::PostDestroyData;
+  using DestroyContext = nsIFrame::DestroyContext;
   static void DeleteLineList(nsPresContext* aPresContext, nsLineList& aLines,
-                             nsIFrame* aDestructRoot, nsFrameList* aFrames,
-                             PostDestroyData& aPostDestroyData);
+                             nsFrameList* aFrames, DestroyContext&);
 
   // search from end to beginning of [aBegin, aEnd)
   // Returns true if it found the line and false if not.
@@ -521,8 +413,7 @@ class nsLineBox final : public nsLineLink {
                                   int32_t* aFrameIndexInLine);
 
 #ifdef DEBUG_FRAME_DUMP
-  static const char* BreakTypeToString(StyleClear aBreakType);
-  char* StateToString(char* aBuf, int32_t aBufSize) const;
+  static const char* StyleClearToString(mozilla::StyleClear aClearType);
 
   void List(FILE* out, int32_t aIndent,
             nsIFrame::ListFlags aFlags = nsIFrame::ListFlags()) const;
@@ -629,7 +520,12 @@ class nsLineBox final : public nsLineLink {
     // Has this line moved to a different fragment of the block since
     // the last time it was reflowed?
     bool mMovedFragments : 1;
-    StyleClear mBreakType;
+    // mHasForcedLineBreak indicates that this line has either a break-before or
+    // a break-after.
+    bool mHasForcedLineBreak : 1;
+    // mFloatClearType indicates that there's a float clearance before or after
+    // this line.
+    mozilla::StyleClear mFloatClearType;
   };
 
   struct ExtraData {
@@ -639,8 +535,7 @@ class nsLineBox final : public nsLineLink {
   };
 
   struct ExtraBlockData : public ExtraData {
-    explicit ExtraBlockData(const nsRect& aBounds)
-        : ExtraData(aBounds), mCarriedOutBEndMargin() {}
+    explicit ExtraBlockData(const nsRect& aBounds) : ExtraData(aBounds) {}
     nsCollapsingMargin mCarriedOutBEndMargin;
   };
 
@@ -651,7 +546,7 @@ class nsLineBox final : public nsLineLink {
           mFloatEdgeIEnd(nscoord_MIN) {}
     nscoord mFloatEdgeIStart;
     nscoord mFloatEdgeIEnd;
-    nsFloatCacheList mFloats;
+    nsTArray<nsIFrame*> mFloats;
   };
 
   bool GetFloatEdges(nscoord* aStart, nscoord* aEnd) const {
@@ -675,7 +570,7 @@ class nsLineBox final : public nsLineLink {
     FlagBits mFlags;
   };
 
-  StyleClear BreakType() const { return mFlags.mBreakType; };
+  mozilla::StyleClear FloatClearType() const { return mFlags.mFloatClearType; };
 
   union {
     ExtraData* mData;
@@ -813,27 +708,13 @@ class nsLineList_iterator {
     return --copy;
   }
 
-  // Passing by value rather than by reference and reference to const
-  // to keep AIX happy.
-  bool operator==(const iterator_self_type aOther) const {
+  bool operator==(const iterator_self_type& aOther) const {
     MOZ_ASSERT(mListLink);
     MOZ_ASSERT(mListLink == aOther.mListLink,
                "comparing iterators over different lists");
     return mCurrent == aOther.mCurrent;
   }
-  bool operator!=(const iterator_self_type aOther) const {
-    MOZ_ASSERT(mListLink);
-    MOZ_ASSERT(mListLink == aOther.mListLink,
-               "comparing iterators over different lists");
-    return mCurrent != aOther.mCurrent;
-  }
-  bool operator==(const iterator_self_type aOther) {
-    MOZ_ASSERT(mListLink);
-    MOZ_ASSERT(mListLink == aOther.mListLink,
-               "comparing iterators over different lists");
-    return mCurrent == aOther.mCurrent;
-  }
-  bool operator!=(const iterator_self_type aOther) {
+  bool operator!=(const iterator_self_type& aOther) const {
     MOZ_ASSERT(mListLink);
     MOZ_ASSERT(mListLink == aOther.mListLink,
                "comparing iterators over different lists");
@@ -841,7 +722,7 @@ class nsLineList_iterator {
   }
 
 #ifdef DEBUG
-  bool IsInSameList(const iterator_self_type aOther) const {
+  bool IsInSameList(const iterator_self_type& aOther) const {
     return mListLink == aOther.mListLink;
   }
 #endif
@@ -952,27 +833,13 @@ class nsLineList_reverse_iterator {
   }
 #endif /* !__MWERKS__ */
 
-  // Passing by value rather than by reference and reference to const
-  // to keep AIX happy.
-  bool operator==(const iterator_self_type aOther) const {
+  bool operator==(const iterator_self_type& aOther) const {
     MOZ_ASSERT(mListLink);
     NS_ASSERTION(mListLink == aOther.mListLink,
                  "comparing iterators over different lists");
     return mCurrent == aOther.mCurrent;
   }
-  bool operator!=(const iterator_self_type aOther) const {
-    MOZ_ASSERT(mListLink);
-    NS_ASSERTION(mListLink == aOther.mListLink,
-                 "comparing iterators over different lists");
-    return mCurrent != aOther.mCurrent;
-  }
-  bool operator==(const iterator_self_type aOther) {
-    MOZ_ASSERT(mListLink);
-    NS_ASSERTION(mListLink == aOther.mListLink,
-                 "comparing iterators over different lists");
-    return mCurrent == aOther.mCurrent;
-  }
-  bool operator!=(const iterator_self_type aOther) {
+  bool operator!=(const iterator_self_type& aOther) const {
     MOZ_ASSERT(mListLink);
     NS_ASSERTION(mListLink == aOther.mListLink,
                  "comparing iterators over different lists");
@@ -980,7 +847,7 @@ class nsLineList_reverse_iterator {
   }
 
 #ifdef DEBUG
-  bool IsInSameList(const iterator_self_type aOther) const {
+  bool IsInSameList(const iterator_self_type& aOther) const {
     return mListLink == aOther.mListLink;
   }
 #endif
@@ -1088,27 +955,13 @@ class nsLineList_const_iterator {
     return --copy;
   }
 
-  // Passing by value rather than by reference and reference to const
-  // to keep AIX happy.
-  bool operator==(const iterator_self_type aOther) const {
+  bool operator==(const iterator_self_type& aOther) const {
     MOZ_ASSERT(mListLink);
     NS_ASSERTION(mListLink == aOther.mListLink,
                  "comparing iterators over different lists");
     return mCurrent == aOther.mCurrent;
   }
-  bool operator!=(const iterator_self_type aOther) const {
-    MOZ_ASSERT(mListLink);
-    NS_ASSERTION(mListLink == aOther.mListLink,
-                 "comparing iterators over different lists");
-    return mCurrent != aOther.mCurrent;
-  }
-  bool operator==(const iterator_self_type aOther) {
-    MOZ_ASSERT(mListLink);
-    NS_ASSERTION(mListLink == aOther.mListLink,
-                 "comparing iterators over different lists");
-    return mCurrent == aOther.mCurrent;
-  }
-  bool operator!=(const iterator_self_type aOther) {
+  bool operator!=(const iterator_self_type& aOther) const {
     MOZ_ASSERT(mListLink);
     NS_ASSERTION(mListLink == aOther.mListLink,
                  "comparing iterators over different lists");
@@ -1116,7 +969,7 @@ class nsLineList_const_iterator {
   }
 
 #ifdef DEBUG
-  bool IsInSameList(const iterator_self_type aOther) const {
+  bool IsInSameList(const iterator_self_type& aOther) const {
     return mListLink == aOther.mListLink;
   }
 #endif
@@ -1214,27 +1067,13 @@ class nsLineList_const_reverse_iterator {
   }
 #endif /* !__MWERKS__ */
 
-  // Passing by value rather than by reference and reference to const
-  // to keep AIX happy.
-  bool operator==(const iterator_self_type aOther) const {
+  bool operator==(const iterator_self_type& aOther) const {
     MOZ_ASSERT(mListLink);
     NS_ASSERTION(mListLink == aOther.mListLink,
                  "comparing iterators over different lists");
     return mCurrent == aOther.mCurrent;
   }
-  bool operator!=(const iterator_self_type aOther) const {
-    MOZ_ASSERT(mListLink);
-    NS_ASSERTION(mListLink == aOther.mListLink,
-                 "comparing iterators over different lists");
-    return mCurrent != aOther.mCurrent;
-  }
-  bool operator==(const iterator_self_type aOther) {
-    MOZ_ASSERT(mListLink);
-    NS_ASSERTION(mListLink == aOther.mListLink,
-                 "comparing iterators over different lists");
-    return mCurrent == aOther.mCurrent;
-  }
-  bool operator!=(const iterator_self_type aOther) {
+  bool operator!=(const iterator_self_type& aOther) const {
     MOZ_ASSERT(mListLink);
     NS_ASSERTION(mListLink == aOther.mListLink,
                  "comparing iterators over different lists");
@@ -1242,7 +1081,7 @@ class nsLineList_const_reverse_iterator {
   }
 
 #ifdef DEBUG
-  bool IsInSameList(const iterator_self_type aOther) const {
+  bool IsInSameList(const iterator_self_type& aOther) const {
     return mListLink == aOther.mListLink;
   }
 #endif
@@ -1641,9 +1480,6 @@ class nsLineIterator final : public nsILineIterator {
       mIndex = 0;
     }
   }
-  ~nsLineIterator() { MOZ_DIAGNOSTIC_ASSERT(!mMutationGuard.Mutated(0)); };
-
-  void DisposeLineIterator() final { delete this; }
 
   int32_t GetNumLines() const final {
     if (mNumLines < 0) {
@@ -1652,7 +1488,7 @@ class nsLineIterator final : public nsILineIterator {
     return mNumLines;
   }
 
-  bool GetDirection() final { return mRightToLeft; }
+  bool IsLineIteratorFlowRTL() final { return mRightToLeft; }
 
   // Note that this updates the iterator's current position!
   mozilla::Result<LineInfo, nsresult> GetLine(int32_t aLineNumber) final;
@@ -1675,13 +1511,32 @@ class nsLineIterator final : public nsILineIterator {
     MOZ_ASSERT(mIter != mLines.end(), "Already at end!");
     ++mIndex;
     ++mIter;
-    return mIter == mLines.end() ? nullptr : mIter.get();
+    if (mIter == mLines.end()) {
+      MOZ_ASSERT(mNumLines < 0 || mNumLines == mIndex);
+      mNumLines = mIndex;
+      return nullptr;
+    }
+    return mIter.get();
   }
 
-  // Note that this may update the iterator's current position!
+  // Note that this updates the iterator's current position to the given line.
   const nsLineBox* GetLineAt(int32_t aIndex) {
+    MOZ_ASSERT(mIndex >= 0);
     if (aIndex < 0 || (mNumLines >= 0 && aIndex >= mNumLines)) {
       return nullptr;
+    }
+    // Check if we should start counting lines from mIndex, or reset to the
+    // start or end of the list and count from there (if the requested index is
+    // closer to an end than to the current position).
+    if (aIndex < mIndex / 2) {
+      // Reset to the beginning and search from there.
+      mIter = mLines.begin();
+      mIndex = 0;
+    } else if (mNumLines > 0 && aIndex > (mNumLines + mIndex) / 2) {
+      // Jump to the end and search back from there.
+      mIter = mLines.end();
+      --mIter;
+      mIndex = mNumLines - 1;
     }
     while (mIndex > aIndex) {
       // This cannot run past the start of the list, because we checked that
@@ -1694,6 +1549,8 @@ class nsLineIterator final : public nsILineIterator {
       // range (if mNumLines was not initialized, so we couldn't range-check
       // aIndex on entry).
       if (mIter == mLines.end()) {
+        MOZ_ASSERT(mNumLines < 0 || mNumLines == mIndex);
+        mNumLines = mIndex;
         return nullptr;
       }
       ++mIter;
@@ -1707,9 +1564,6 @@ class nsLineIterator final : public nsILineIterator {
   int32_t mIndex = -1;
   mutable int32_t mNumLines = -1;
   const bool mRightToLeft;
-#ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
-  nsMutationGuard mMutationGuard;
-#endif
 };
 
 #endif /* nsLineBox_h___ */

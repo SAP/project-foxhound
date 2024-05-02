@@ -3,6 +3,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "WebGLTextureUpload.h"
 #include "WebGLTexture.h"
 
 #include <algorithm>
@@ -37,7 +38,16 @@
 namespace mozilla {
 namespace webgl {
 
-Maybe<TexUnpackBlobDesc> FromImageBitmap(const GLenum target, uvec3 size,
+// The canvas spec says that drawImage should draw the first frame of
+// animated images. The webgl spec doesn't mention the issue, so we do the
+// same as drawImage.
+static constexpr uint32_t kDefaultSurfaceFromElementFlags =
+    nsLayoutUtils::SFE_WANT_FIRST_FRAME_IF_IMAGE |
+    nsLayoutUtils::SFE_USE_ELEMENT_SIZE_IF_VECTOR |
+    nsLayoutUtils::SFE_EXACT_SIZE_SURFACE |
+    nsLayoutUtils::SFE_ALLOW_NON_PREMULT;
+
+Maybe<TexUnpackBlobDesc> FromImageBitmap(const GLenum target, Maybe<uvec3> size,
                                          const dom::ImageBitmap& imageBitmap,
                                          ErrorResult* const out_rv) {
   if (imageBitmap.IsWriteOnly()) {
@@ -52,67 +62,24 @@ Maybe<TexUnpackBlobDesc> FromImageBitmap(const GLenum target, uvec3 size,
 
   const RefPtr<gfx::DataSourceSurface> surf = cloneData->mSurface;
   const auto imageSize = *uvec2::FromSize(surf->GetSize());
-
-  if (!size.x) {
-    size.x = imageSize.x;
-  }
-
-  if (!size.y) {
-    size.y = imageSize.y;
+  if (!size) {
+    size.emplace(imageSize.x, imageSize.y, 1);
   }
 
   // WhatWG "HTML Living Standard" (30 October 2015):
   // "The getImageData(sx, sy, sw, sh) method [...] Pixels must be returned as
   // non-premultiplied alpha values."
   return Some(TexUnpackBlobDesc{target,
-                                size,
+                                size.value(),
                                 cloneData->mAlphaType,
                                 {},
                                 {},
-                                imageSize,
+                                Some(imageSize),
                                 nullptr,
                                 {},
                                 surf,
                                 {},
                                 false});
-}
-
-TexUnpackBlobDesc FromImageData(const GLenum target, uvec3 size,
-                                const dom::ImageData& imageData,
-                                dom::Uint8ClampedArray* const scopedArr) {
-  MOZ_RELEASE_ASSERT(scopedArr->Init(imageData.GetDataObject()));
-  scopedArr->ComputeState();
-  const size_t dataSize = scopedArr->Length();
-  const auto data = reinterpret_cast<uint8_t*>(scopedArr->Data());
-
-  const gfx::IntSize imageISize(imageData.Width(), imageData.Height());
-  const auto imageUSize = *uvec2::FromSize(imageISize);
-  const size_t stride = imageUSize.x * 4;
-  const gfx::SurfaceFormat surfFormat = gfx::SurfaceFormat::R8G8B8A8;
-  MOZ_ALWAYS_TRUE(dataSize == stride * imageUSize.y);
-
-  const RefPtr<gfx::DataSourceSurface> surf =
-      gfx::Factory::CreateWrappingDataSourceSurface(data, stride, imageISize,
-                                                    surfFormat);
-  MOZ_ASSERT(surf);
-
-  ////
-
-  if (!size.x) {
-    size.x = imageUSize.x;
-  }
-
-  if (!size.y) {
-    size.y = imageUSize.y;
-  }
-
-  ////
-
-  // WhatWG "HTML Living Standard" (30 October 2015):
-  // "The getImageData(sx, sy, sw, sh) method [...] Pixels must be returned as
-  // non-premultiplied alpha values."
-  return {target, size, gfxAlphaType::NonPremult, {}, {}, imageUSize, nullptr,
-          {},     surf};
 }
 
 static layers::SurfaceDescriptor Flatten(const layers::SurfaceDescriptor& sd) {
@@ -144,12 +111,15 @@ static layers::SurfaceDescriptor Flatten(const layers::SurfaceDescriptor& sd) {
     case layers::RemoteDecoderVideoSubDescriptor::
         TSurfaceDescriptorMacIOSurface:
       return subdesc.get_SurfaceDescriptorMacIOSurface();
+    case layers::RemoteDecoderVideoSubDescriptor::
+        TSurfaceDescriptorDcompSurface:
+      return subdesc.get_SurfaceDescriptorDcompSurface();
   }
   MOZ_CRASH("unreachable");
 }
 
 Maybe<webgl::TexUnpackBlobDesc> FromOffscreenCanvas(
-    const ClientWebGLContext& webgl, const GLenum target, uvec3 size,
+    const ClientWebGLContext& webgl, const GLenum target, Maybe<uvec3> size,
     const dom::OffscreenCanvas& canvas, ErrorResult* const out_error) {
   if (canvas.IsWriteOnly()) {
     webgl.EnqueueWarning(
@@ -159,40 +129,24 @@ Maybe<webgl::TexUnpackBlobDesc> FromOffscreenCanvas(
     return {};
   }
 
-  // The canvas spec says that drawImage should draw the first frame of
-  // animated images. The webgl spec doesn't mention the issue, so we do the
-  // same as drawImage.
-  uint32_t flags = nsLayoutUtils::SFE_WANT_FIRST_FRAME_IF_IMAGE;
   auto sfer = nsLayoutUtils::SurfaceFromOffscreenCanvas(
-      const_cast<dom::OffscreenCanvas*>(&canvas), flags);
+      const_cast<dom::OffscreenCanvas*>(&canvas),
+      kDefaultSurfaceFromElementFlags);
+  return FromSurfaceFromElementResult(webgl, target, size, sfer, out_error);
+}
 
-  RefPtr<gfx::DataSourceSurface> dataSurf;
-  if (sfer.GetSourceSurface()) {
-    dataSurf = sfer.GetSourceSurface()->GetDataSurface();
-  }
-
-  if (!dataSurf) {
-    webgl.EnqueueWarning("Resource has no data (yet?). Uploading zeros.");
-    return Some(TexUnpackBlobDesc{target, size, gfxAlphaType::NonPremult});
-  }
-
-  // We checked this above before we requested the surface.
-  MOZ_RELEASE_ASSERT(!sfer.mIsWriteOnly);
-
-  uvec2 canvasSize = *uvec2::FromSize(dataSurf->GetSize());
-  if (!size.x) {
-    size.x = canvasSize.x;
-  }
-  if (!size.y) {
-    size.y = canvasSize.y;
-  }
-
-  return Some(TexUnpackBlobDesc{
-      target, size, sfer.mAlphaType, {}, {}, canvasSize, {}, {}, dataSurf});
+Maybe<webgl::TexUnpackBlobDesc> FromVideoFrame(
+    const ClientWebGLContext& webgl, const GLenum target, Maybe<uvec3> size,
+    const dom::VideoFrame& videoFrame, ErrorResult* const out_error) {
+  auto sfer = nsLayoutUtils::SurfaceFromVideoFrame(
+      const_cast<dom::VideoFrame*>(&videoFrame),
+      kDefaultSurfaceFromElementFlags);
+  return FromSurfaceFromElementResult(webgl, target, size, sfer, out_error);
 }
 
 Maybe<webgl::TexUnpackBlobDesc> FromDomElem(const ClientWebGLContext& webgl,
-                                            const GLenum target, uvec3 size,
+                                            const GLenum target,
+                                            Maybe<uvec3> size,
                                             const dom::Element& elem,
                                             ErrorResult* const out_error) {
   if (elem.IsHTMLElement(nsGkAtoms::canvas)) {
@@ -204,24 +158,21 @@ Maybe<webgl::TexUnpackBlobDesc> FromDomElem(const ClientWebGLContext& webgl,
     }
   }
 
-  // The canvas spec says that drawImage should draw the first frame of
-  // animated images. The webgl spec doesn't mention the issue, so we do the
-  // same as drawImage.
-  uint32_t flags = nsLayoutUtils::SFE_WANT_FIRST_FRAME_IF_IMAGE |
-                   nsLayoutUtils::SFE_USE_ELEMENT_SIZE_IF_VECTOR |
-                   nsLayoutUtils::SFE_EXACT_SIZE_SURFACE |
-                   nsLayoutUtils::SFE_ALLOW_NON_PREMULT;
+  uint32_t flags = kDefaultSurfaceFromElementFlags;
   const auto& unpacking = webgl.State().mPixelUnpackState;
-  if (unpacking.mColorspaceConversion == LOCAL_GL_NONE) {
+  if (unpacking.colorspaceConversion == LOCAL_GL_NONE) {
     flags |= nsLayoutUtils::SFE_NO_COLORSPACE_CONVERSION;
   }
 
   RefPtr<gfx::DrawTarget> idealDrawTarget = nullptr;  // Don't care for now.
   auto sfer = nsLayoutUtils::SurfaceFromElement(
       const_cast<dom::Element*>(&elem), flags, idealDrawTarget);
+  return FromSurfaceFromElementResult(webgl, target, size, sfer, out_error);
+}
 
-  //////
-
+Maybe<webgl::TexUnpackBlobDesc> FromSurfaceFromElementResult(
+    const ClientWebGLContext& webgl, const GLenum target, Maybe<uvec3> size,
+    SurfaceFromElementResult& sfer, ErrorResult* const out_error) {
   uvec2 elemSize;
 
   const auto& layersImage = sfer.mLayersImage;
@@ -249,19 +200,19 @@ Maybe<webgl::TexUnpackBlobDesc> FromDomElem(const ClientWebGLContext& webgl,
 
   //////
 
-  if (!size.x) {
-    size.x = elemSize.x;
-  }
-
-  if (!size.y) {
-    size.y = elemSize.y;
+  if (!size) {
+    size.emplace(elemSize.x, elemSize.y, 1);
   }
 
   ////
 
   if (!sd && !dataSurf) {
     webgl.EnqueueWarning("Resource has no data (yet?). Uploading zeros.");
-    return Some(TexUnpackBlobDesc{target, size, gfxAlphaType::NonPremult});
+    if (!size) {
+      size.emplace(0, 0, 1);
+    }
+    return Some(
+        TexUnpackBlobDesc{target, size.value(), gfxAlphaType::NonPremult});
   }
 
   //////
@@ -293,11 +244,11 @@ Maybe<webgl::TexUnpackBlobDesc> FromDomElem(const ClientWebGLContext& webgl,
   // Ok, we're good!
 
   return Some(TexUnpackBlobDesc{target,
-                                size,
+                                size.value(),
                                 sfer.mAlphaType,
                                 {},
                                 {},
-                                elemSize,
+                                Some(elemSize),
                                 layersImage,
                                 sd,
                                 dataSurf});
@@ -798,9 +749,27 @@ static bool ValidateCompressedTexImageRestrictions(
   return true;
 }
 
-static bool ValidateTargetForFormat(const WebGLContext* webgl,
-                                    TexImageTarget target,
-                                    const webgl::FormatInfo* format) {
+static bool ValidateFormatAndSize(const WebGLContext* webgl,
+                                  TexImageTarget target,
+                                  const webgl::FormatInfo* format,
+                                  const uvec3& size) {
+  // Check if texture size will likely be rejected by the driver and give a more
+  // meaningful error message.
+  auto baseImageSize = CheckedInt<uint64_t>(format->estimatedBytesPerPixel) *
+                       (uint32_t)size.x * (uint32_t)size.y * (uint32_t)size.z;
+  if (target == LOCAL_GL_TEXTURE_CUBE_MAP) {
+    baseImageSize *= 6;
+  }
+  if (!baseImageSize.isValid() ||
+      baseImageSize.value() >
+          (uint64_t)StaticPrefs::webgl_max_size_per_texture_mib() *
+              (1024 * 1024)) {
+    webgl->ErrorOutOfMemory(
+        "Texture size too large; base image mebibytes > "
+        "webgl.max-size-per-texture-mib");
+    return false;
+  }
+
   // GLES 3.0.4 p127:
   // "Textures with a base internal format of DEPTH_COMPONENT or DEPTH_STENCIL
   // are supported by texture image specification commands only if `target` is
@@ -868,7 +837,7 @@ void WebGLTexture::TexStorage(TexTarget target, uint32_t levels,
   }
   auto dstFormat = dstUsage->format;
 
-  if (!ValidateTargetForFormat(mContext, testTarget, dstFormat)) return;
+  if (!ValidateFormatAndSize(mContext, testTarget, dstFormat, size)) return;
 
   if (dstFormat->compression) {
     if (!ValidateCompressedTexImageRestrictions(mContext, testTarget, 0,
@@ -966,7 +935,7 @@ void WebGLTexture::TexImage(uint32_t level, GLenum respecFormat,
                                                     src.srcAlphaType,
                                                     std::move(cpuDataView),
                                                     src.pboOffset,
-                                                    src.imageSize,
+                                                    src.structuredSrcSize,
                                                     src.image,
                                                     src.sd,
                                                     src.dataSurf,
@@ -1041,7 +1010,7 @@ void WebGLTexture::TexImage(uint32_t level, GLenum respecFormat,
     }
 
     const auto& dstFormat = dstUsage->format;
-    if (!ValidateTargetForFormat(mContext, imageTarget, dstFormat)) return;
+    if (!ValidateFormatAndSize(mContext, imageTarget, dstFormat, size)) return;
 
     if (!mContext->IsWebGL2() && dstFormat->d) {
       if (imageTarget != LOCAL_GL_TEXTURE_2D || blob->HasData() || level != 0) {
@@ -1115,12 +1084,13 @@ void WebGLTexture::TexImage(uint32_t level, GLenum respecFormat,
     }
   }
 
-  WebGLPixelStore::AssertDefault(*mContext->gl, mContext->IsWebGL2());
+  webgl::PixelPackingState{}.AssertCurrentUnpack(*mContext->gl,
+                                                 mContext->IsWebGL2());
 
-  blob->mDesc.unpacking.Apply(*mContext->gl, mContext->IsWebGL2(), size);
+  blob->mDesc.unpacking.ApplyUnpack(*mContext->gl, mContext->IsWebGL2(), size);
   const auto revertUnpacking = MakeScopeExit([&]() {
-    const WebGLPixelStore defaultUnpacking;
-    defaultUnpacking.Apply(*mContext->gl, mContext->IsWebGL2(), size);
+    webgl::PixelPackingState{}.ApplyUnpack(*mContext->gl, mContext->IsWebGL2(),
+                                           size);
   });
 
   const bool isSubImage = !respecFormat;
@@ -1233,7 +1203,8 @@ void WebGLTexture::CompressedTexImage(bool sub, GLenum imageTarget,
     }
     MOZ_ASSERT(imageInfo);
 
-    if (!ValidateTargetForFormat(mContext, imageTarget, usage->format)) return;
+    if (!ValidateFormatAndSize(mContext, imageTarget, usage->format, size))
+      return;
     if (!ValidateCompressedTexImageRestrictions(mContext, imageTarget, level,
                                                 usage->format, size)) {
       return;
@@ -1760,7 +1731,7 @@ static bool DoCopyTexOrSubImage(WebGLContext* webgl, bool isSubImage,
     }
 
     if (!isSubImage || zeros) {
-      WebGLPixelStore::AssertDefault(*gl, webgl->IsWebGL2());
+      webgl::PixelPackingState{}.AssertCurrentUnpack(*gl, webgl->IsWebGL2());
 
       gl->fPixelStorei(LOCAL_GL_UNPACK_ALIGNMENT, 1);
       const auto revert = MakeScopeExit(
@@ -1869,7 +1840,7 @@ void WebGLTexture::CopyTexImage(GLenum imageTarget, uint32_t level,
     dstUsage = ValidateCopyDestUsage(mContext, srcFormat, respecFormat);
     if (!dstUsage) return;
 
-    if (!ValidateTargetForFormat(mContext, imageTarget, dstUsage->format))
+    if (!ValidateFormatAndSize(mContext, imageTarget, dstUsage->format, size))
       return;
   } else {
     if (!ValidateTexImageSelection(imageTarget, level, dstOffset, size,
@@ -1911,6 +1882,7 @@ void WebGLTexture::CopyTexImage(GLenum imageTarget, uint32_t level,
                            level, srcOffset.x, srcOffset.y, srcTotalWidth,
                            srcTotalHeight, srcUsage, dstOffset.x, dstOffset.y,
                            dstOffset.z, size.x, size.y, dstUsage)) {
+    Truncate();
     return;
   }
 

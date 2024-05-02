@@ -11,7 +11,7 @@ Utilities for nss samples
 .. container::
 
    These utility functions are adapted from those found in the sectool library used by the NSS
-   security tools and other NSS test applications. 
+   security tools and other NSS test applications. 
 
    It shows the following:
 
@@ -28,7 +28,7 @@ Utilities for nss samples
 
 .. container::
 
-   .. code:: brush:
+   .. code:: c
 
       /* This Source Code Form is subject to the terms of the Mozilla Public
       * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -179,7 +179,7 @@ Utilities for nss samples
 
 .. container::
 
-   .. code:: brush:
+   .. code:: c
 
       /* This Source Code Form is subject to the terms of the Mozilla Public
        * License, v. 2.0. If a copy of the MPL was not distributed with this

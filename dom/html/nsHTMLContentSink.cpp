@@ -108,12 +108,13 @@ class HTMLContentSink : public nsContentSink, public nsIHTMLContentSink {
   NS_IMETHOD WillBuildModel(nsDTDMode aDTDMode) override;
   NS_IMETHOD DidBuildModel(bool aTerminated) override;
   NS_IMETHOD WillInterrupt(void) override;
-  NS_IMETHOD WillResume(void) override;
+  void WillResume() override;
   NS_IMETHOD SetParser(nsParserBase* aParser) override;
   virtual void FlushPendingNotifications(FlushType aType) override;
   virtual void SetDocumentCharset(NotNull<const Encoding*> aEncoding) override;
   virtual nsISupports* GetTarget() override;
   virtual bool IsScriptExecuting() override;
+  virtual bool WaitForPendingSheets() override;
   virtual void ContinueInterruptedParsingAsync() override;
 
   // nsIHTMLContentSink
@@ -177,7 +178,7 @@ class SinkContext {
   nsresult GrowStack();
   nsresult FlushTags();
 
-  bool IsCurrentContainer(nsHTMLTag mType);
+  bool IsCurrentContainer(nsHTMLTag aTag) const;
 
   void DidAddContent(nsIContent* aContent);
   void UpdateChildCounts();
@@ -278,12 +279,8 @@ nsresult SinkContext::Begin(nsHTMLTag aNodeType, nsGenericHTMLElement* aRoot,
   return NS_OK;
 }
 
-bool SinkContext::IsCurrentContainer(nsHTMLTag aTag) {
-  if (aTag == mStack[mStackPos - 1].mType) {
-    return true;
-  }
-
-  return false;
+bool SinkContext::IsCurrentContainer(nsHTMLTag aTag) const {
+  return aTag == mStack[mStackPos - 1].mType;
 }
 
 void SinkContext::DidAddContent(nsIContent* aContent) {
@@ -648,18 +645,9 @@ NS_IMETHODIMP
 HTMLContentSink::WillBuildModel(nsDTDMode aDTDMode) {
   WillBuildModelImpl();
 
-  nsCompatibility mode = eCompatibility_NavQuirks;
-  switch (aDTDMode) {
-    case eDTDMode_full_standards:
-      mode = eCompatibility_FullStandards;
-      break;
-    case eDTDMode_almost_standards:
-      mode = eCompatibility_AlmostStandards;
-      break;
-    default:
-      break;
-  }
-  mDocument->SetCompatibilityMode(mode);
+  mDocument->SetCompatibilityMode(aDTDMode == eDTDMode_full_standards
+                                      ? eCompatibility_FullStandards
+                                      : eCompatibility_NavQuirks);
 
   // Notify document that the load is beginning
   mDocument->BeginLoad();
@@ -830,8 +818,7 @@ HTMLContentSink::CloseContainer(const ElementType aTag) {
 NS_IMETHODIMP
 HTMLContentSink::WillInterrupt() { return WillInterruptImpl(); }
 
-NS_IMETHODIMP
-HTMLContentSink::WillResume() { return WillResumeImpl(); }
+void HTMLContentSink::WillResume() { WillResumeImpl(); }
 
 void HTMLContentSink::CloseHeadContext() {
   if (mCurrentContext) {
@@ -938,11 +925,13 @@ void HTMLContentSink::ContinueInterruptedParsingIfEnabled() {
   }
 }
 
+bool HTMLContentSink::WaitForPendingSheets() {
+  return nsContentSink::WaitForPendingSheets();
+}
+
 void HTMLContentSink::ContinueInterruptedParsingAsync() {
   nsCOMPtr<nsIRunnable> ev = NewRunnableMethod(
       "HTMLContentSink::ContinueInterruptedParsingIfEnabled", this,
       &HTMLContentSink::ContinueInterruptedParsingIfEnabled);
-
-  RefPtr<Document> doc = mHTMLDocument;
-  doc->Dispatch(mozilla::TaskCategory::Other, ev.forget());
+  mHTMLDocument->Dispatch(ev.forget());
 }

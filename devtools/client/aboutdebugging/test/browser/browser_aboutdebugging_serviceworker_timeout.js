@@ -13,15 +13,15 @@ Services.scriptloader.loadSubScript(
   this
 );
 
-const SW_TAB_URL = URL_ROOT + "resources/service-workers/empty-sw.html";
-const SW_URL = URL_ROOT + "resources/service-workers/empty-sw.js";
+const SW_TAB_URL = URL_ROOT_SSL + "resources/service-workers/empty-sw.html";
+const SW_URL = URL_ROOT_SSL + "resources/service-workers/empty-sw.js";
 const SW_TIMEOUT = 4000;
 
 /**
  * Test that service workers will _not_ timeout and be stopped when a toolbox is attached
  * to them. Feature implemented in Bug 1228382.
  */
-add_task(async function() {
+add_task(async function () {
   await enableServiceWorkerDebugging();
 
   // Setting a low idle_timeout and idle_extended_timeout will allow the service worker

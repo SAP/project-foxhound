@@ -10,104 +10,21 @@
 #include "mozilla/widget/ScreenManager.h"
 
 #include "gdk/gdk.h"
-#ifdef MOZ_X11
-#  include <X11/Xlib.h>
-#  include "X11UndefineNone.h"
-#endif
 
 class nsWindow;
 
-namespace mozilla {
-namespace widget {
-
-class ScreenGetter {
- public:
-  ScreenGetter() = default;
-  virtual ~ScreenGetter(){};
-
-  virtual void Init(){};
-
-  virtual void RefreshScreens(){};
-  virtual RefPtr<nsIScreen> GetScreenForWindow(nsWindow* aWindow) {
-    return nullptr;
-  }
-};
-
-class ScreenGetterGtk : public ScreenGetter {
- public:
-  ScreenGetterGtk();
-  ~ScreenGetterGtk();
-
-  void Init();
-
-#ifdef MOZ_X11
-  Atom NetWorkareaAtom() { return mNetWorkareaAtom; }
-#endif
-
-  // For internal use from signal callback functions
-  void RefreshScreens();
-
- private:
-  GdkWindow* mRootWindow;
-#ifdef MOZ_X11
-  Atom mNetWorkareaAtom;
-#endif
-};
-
-class ScreenGetterWayland;
-
-struct MonitorConfig {
-  int id = 0;
-  int x = 0;
-  int y = 0;
-  int width_mm = 0;
-  int height_mm = 0;
-  int width = 0;
-  int height = 0;
-  int scale = 0;
-
- public:
-  explicit MonitorConfig(int aId) : id(aId){};
-};
-
-#ifdef MOZ_WAYLAND
-class ScreenGetterWayland : public ScreenGetter {
- public:
-  ScreenGetterWayland() : mRegistry(){};
-  ~ScreenGetterWayland();
-
-  void Init();
-
-  MonitorConfig* AddMonitorConfig(int aId);
-  bool RemoveMonitorConfig(int aId);
-  already_AddRefed<Screen> MakeScreenWayland(gint aMonitor);
-
-  RefPtr<nsIScreen> GetScreenForWindow(nsWindow* aWindow);
-
-  // For internal use from signal callback functions
-  void RefreshScreens();
-
- private:
-  int GetMonitorForWindow(nsWindow* aWindow);
-  bool MonitorUsesNonIntegerScale(int aMonitor);
-
- private:
-  void* mRegistry;
-  AutoTArray<MonitorConfig, 4> mMonitors;
-  AutoTArray<RefPtr<Screen>, 4> mScreenList;
-};
-#endif
+namespace mozilla::widget {
 
 class ScreenHelperGTK final : public ScreenManager::Helper {
  public:
   ScreenHelperGTK();
   ~ScreenHelperGTK();
 
+  static int GetMonitorCount();
   static gint GetGTKMonitorScaleFactor(gint aMonitorNum = 0);
-  static RefPtr<nsIScreen> GetScreenForWindow(nsWindow* aWindow);
+  static RefPtr<widget::Screen> GetScreenForWindow(nsWindow* aWindow);
 };
 
-}  // namespace widget
-}  // namespace mozilla
+}  // namespace mozilla::widget
 
 #endif  // mozilla_widget_gtk_ScreenHelperGTK_h

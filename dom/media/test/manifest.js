@@ -1,6 +1,5 @@
-const { AppConstants } = SpecialPowers.Cu.import(
-  "resource://gre/modules/AppConstants.jsm",
-  {}
+const { AppConstants } = SpecialPowers.ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
 
 // In each list of tests below, test file types that are not supported should
@@ -176,7 +175,7 @@ var gPlayedTests = [
 
 if (
   manifestNavigator().userAgent.includes("Windows") &&
-  manifestVideo().canPlayType('video/mp4; codecs="avc1.42E01E"')
+  manifestVideo().canPlayType('video/mp4; codecs="avc1.64000c"')
 ) {
   gPlayedTests = gPlayedTests.concat(
     { name: "red-46x48.mp4", type: "video/mp4", duration: 1.0 },
@@ -528,6 +527,17 @@ var gPlayTests = [
   // and report that the stream is not MP3. However, it does not count ID3 tags
   // in that offset. This test case makes sure that ID3 exclusion holds.
   { name: "huge-id3.mp3", type: "audio/mpeg", duration: 1.0 },
+  // Half a second file of a sine with a large ID3v2 tag, followed by an ID3v1
+  // tag. The ID3v1 tags should be at the end of the file, but software usually
+  // play it anyway.
+  { name: "id3v1afterlongid3v2.mp3", type: "audio/mpeg", duration: 0.5 },
+  // An VBR file with a padding value that is greater than an mp3 packet, and
+  // also subsequent packets after the theoretical EOF computed from metadata,
+  // to test padding trimming edge cases.
+  {
+    name: "padding-spanning-multiple-packets.mp3",
+    type: "audio/mpeg",
+  },
   // A truncated VBR MP3 with just enough frames to keep most decoders happy.
   // The Xing header reports the length of the file to be around 10 seconds, but
   // there is really only one second worth of data. We want MP3FrameParser to
@@ -919,17 +929,15 @@ var gErrorTests = [
   { name: "448636.ogv", type: "video/ogg" },
   { name: "bug504843.ogv", type: "video/ogg" },
   { name: "bug501279.ogg", type: "audio/ogg" },
-  { name: "bug603918.webm", type: "video/webm" },
   { name: "bug604067.webm", type: "video/webm" },
+  { name: "bug1535980.webm", type: "video/webm" },
+  { name: "bug1799787.webm", type: "video/webm" },
   { name: "bogus.duh", type: "bogus/duh" },
 ];
 
-// These files would get error after receiving "loadedmetadata", we would like
-// to check duration in "onerror" and make sure the duration is still available.
-var gDurationTests = [
-  { name: "bug603918.webm", duration: 6.076 },
-  { name: "bug604067.webm", duration: 6.076 },
-];
+// Playing this file errors out after receiving "loadedmetadata", we still want
+// to check the duration in "onerror" and make sure it is still available.
+var gDurationTests = [{ name: "bug604067.webm", duration: 6.076 }];
 
 // These are files that have nontrivial duration and are useful for seeking within.
 var gSeekTests = [
@@ -943,6 +951,11 @@ var gSeekTests = [
   { name: "split.webm", type: "video/webm", duration: 1.967 },
   { name: "detodos.opus", type: "audio/ogg; codecs=opus", duration: 2.9135 },
   { name: "gizmo.mp4", type: "video/mp4", duration: 5.56 },
+  {
+    name: "/tests/dom/media/webaudio/test/half-a-second-1ch-44100-aac-afconvert.mp4",
+    type: 'audio/mp4; codecs="mp4a.40.2"',
+    duration: 0.5,
+  },
   { name: "owl.mp3", type: "audio/mpeg", duration: 3.343 },
   { name: "bogus.duh", type: "bogus/duh", duration: 123 },
 
@@ -993,6 +1006,7 @@ function getAndroidVersion() {
 
 // These are files suitable for using with a "new Audio" constructor.
 var gAudioTests = [
+  { name: "adts.aac", type: "audio/mp4", duration: 1.37 },
   { name: "r11025_s16_c1.wav", type: "audio/x-wav", duration: 1.0 },
   { name: "sound.ogg", type: "audio/ogg" },
   { name: "owl.mp3", type: "audio/mpeg", duration: 3.343 },
@@ -1226,7 +1240,7 @@ var gEMETests = [
     tracks: [
       {
         name: "video",
-        type: 'video/mp4; codecs="avc1.64000d"',
+        type: 'video/mp4; codecs="avc1.4d4015"',
         fragments: [
           "bipbop-cenc-videoinit.mp4",
           "bipbop-cenc-video1.m4s",
@@ -1248,7 +1262,7 @@ var gEMETests = [
     tracks: [
       {
         name: "video",
-        type: 'video/mp4; codecs="avc1.64000d"',
+        type: 'video/mp4; codecs="avc1.4d4015"',
         fragments: [
           "bipbop-cenc-videoinit.mp4",
           "bipbop-cenc-video1.m4s",
@@ -1281,7 +1295,7 @@ var gEMETests = [
       },
       {
         name: "video",
-        type: 'video/mp4; codecs="avc1.64000d"',
+        type: 'video/mp4; codecs="avc1.4d4015"',
         fragments: [
           "bipbop-cenc-videoinit.mp4",
           "bipbop-cenc-video1.m4s",
@@ -1313,7 +1327,7 @@ var gEMETests = [
       },
       {
         name: "video",
-        type: 'video/mp4; codecs="avc1.64000d"',
+        type: 'video/mp4; codecs="avc1.4d4015"',
         fragments: [
           "bipbop-cenc-videoinit.mp4",
           "bipbop-cenc-video1.m4s",
@@ -1347,7 +1361,7 @@ var gEMETests = [
       },
       {
         name: "video",
-        type: 'video/mp4; codecs="avc1.64000d"',
+        type: 'video/mp4; codecs="avc1.4d4015"',
         fragments: [
           "bipbop_300_215kbps-cenc-video-key1-init.mp4",
           "bipbop_300_215kbps-cenc-video-key1-1.m4s",
@@ -1380,7 +1394,7 @@ var gEMETests = [
       },
       {
         name: "video",
-        type: 'video/mp4; codecs="avc1.64000d"',
+        type: 'video/mp4; codecs="avc1.4d401e"',
         fragments: [
           "bipbop_480_624kbps-cenc-video-key1-init.mp4",
           "bipbop_480_624kbps-cenc-video-key1-1.m4s",
@@ -1413,7 +1427,7 @@ var gEMETests = [
       },
       {
         name: "video",
-        type: 'video/mp4; codecs="avc1.64000d"',
+        type: 'video/mp4; codecs="avc1.4d401e"',
         fragments: [
           "bipbop_480_959kbps-cenc-video-key1-init.mp4",
           "bipbop_480_959kbps-cenc-video-key1-1.m4s",
@@ -1446,7 +1460,7 @@ var gEMETests = [
       },
       {
         name: "video",
-        type: 'video/mp4; codecs="avc1.64000d"',
+        type: 'video/mp4; codecs="avc1.4d401e,avc1.4d4015"',
         fragments: [
           "bipbop_480_624kbps-cenc-video-key1-init.mp4",
           "bipbop_480_624kbps-cenc-video-key1-1.m4s",
@@ -1480,7 +1494,7 @@ var gEMETests = [
       },
       {
         name: "video",
-        type: 'video/mp4; codecs="avc1.64000d"',
+        type: 'video/mp4; codecs="avc1.4d401e,avc1.4d4015"',
         fragments: [
           "bipbop_480_624kbps-cenc-video-key2-init.mp4",
           "bipbop_480_624kbps-cenc-video-key2-1.m4s",
@@ -1514,7 +1528,7 @@ var gEMETests = [
       },
       {
         name: "video",
-        type: 'video/mp4; codecs="avc1.64000d"',
+        type: 'video/mp4; codecs="avc1.4d401e,avc1.4d4015"',
         fragments: [
           "bipbop_480_624kbps-cenc-video-key1-init.mp4",
           "bipbop_480_624kbps-cenc-video-key1-1.m4s",
@@ -1549,7 +1563,7 @@ var gEMETests = [
       },
       {
         name: "video",
-        type: 'video/mp4; codecs="avc1.64000d"',
+        type: 'video/mp4; codecs="avc1.4d4015,avc1.4d401e"',
         fragments: [
           "bipbop_300_215kbps-cenc-video-key1-init.mp4",
           "bipbop_300_215kbps-cenc-video-key1-1.m4s",
@@ -1584,7 +1598,7 @@ var gEMETests = [
       },
       {
         name: "video",
-        type: 'video/mp4; codecs="avc1.64000d"',
+        type: 'video/mp4; codecs="avc1.4d401e"',
         fragments: [
           "bipbop_480_959kbps-cenc-video-key1-init.mp4",
           "bipbop_480_959kbps-cenc-video-key1-1.m4s",
@@ -1619,7 +1633,7 @@ var gEMETests = [
       },
       {
         name: "video",
-        type: 'video/mp4; codecs="avc1.64000d"',
+        type: 'video/mp4; codecs="avc1.4d401e"',
         fragments: [
           "bipbop_480_624kbps-cenc-video-key1-init.mp4",
           "bipbop_480_624kbps-cenc-video-key1-1.m4s",
@@ -1654,7 +1668,7 @@ var gEMETests = [
       },
       {
         name: "video",
-        type: 'video/mp4; codecs="avc1.64000d"',
+        type: 'video/mp4; codecs="avc1.4d4015"',
         fragments: [
           "bipbop_300wp_227kbps-cenc-video-key1-init.mp4",
           "bipbop_300wp_227kbps-cenc-video-key1-1.m4s",
@@ -1687,7 +1701,7 @@ var gEMETests = [
       },
       {
         name: "video",
-        type: 'video/mp4; codecs="avc1.64000d"',
+        type: 'video/mp4; codecs="avc1.4d4015"',
         fragments: [
           "bipbop_300_215kbps-cenc-video-key1-init.mp4",
           "bipbop_300_215kbps-cenc-video-key1-1.m4s",
@@ -1753,7 +1767,7 @@ var gEMETests = [
       },
       {
         name: "video",
-        type: 'video/mp4; codecs="avc1.64000d"',
+        type: 'video/mp4; codecs="avc1.64001e"',
         fragments: [
           "bipbop_360w_253kbps-cenc-video-key1-init.mp4",
           "bipbop_360w_253kbps-cenc-video-key1-1.m4s",
@@ -1785,7 +1799,7 @@ var gEMETests = [
       },
       {
         name: "video",
-        type: 'video/mp4; codecs="avc1.64000d"',
+        type: 'video/mp4; codecs="avc1.64000d,avc1.64001e"',
         fragments: [
           "bipbop_225w_175kbps-cenc-video-key1-init.mp4",
           "bipbop_225w_175kbps-cenc-video-key1-1.m4s",
@@ -1820,7 +1834,7 @@ var gEMETests = [
       },
       {
         name: "video",
-        type: 'video/mp4; codecs="avc1.64000d"',
+        type: 'video/mp4; codecs="avc1.64001e,avc1.4d401e"',
         fragments: [
           "bipbop_360w_253kbps-cenc-video-key1-init.mp4",
           "bipbop_360w_253kbps-cenc-video-key1-1.m4s",
@@ -2124,6 +2138,19 @@ var gEMENonMSEFailTests = [
   },
 ];
 
+// Test files that are supposed to loop seamlessly when played back.
+var gSeamlessLoopingTests = [
+  // MP4 files dont't loop seamlessly yet, the seeking logic seeks to 0, not the
+  // actual first packet, resulting in incorrect decoding.
+  // See bug 1817989
+  // { name: "sin-441-1s-44100-fdk_aac.mp4", type: "audio/mp4" },
+  // { name: "sin-441-1s-44100-afconvert.mp4", type: "audio/mp4" },
+  // { name: "sin-441-1s-44100.ogg", type: "audio/vorbis" },
+  // { name: "sin-441-1s-44100.opus", type: "audio/opus" },
+  { name: "sin-441-1s-44100-lame.mp3", type: "audio/mpeg" },
+  { name: "sin-441-1s-44100.flac", type: "audio/flac" },
+];
+
 // These are files that are used for video decode suspend in
 // background tabs tests.
 var gDecodeSuspendTests = [
@@ -2135,6 +2162,14 @@ var gDecodeSuspendTests = [
     type: 'video/webm; codecs="vp9"',
     duration: 5.56,
   },
+];
+
+// These are video files with hardware-decodable formats and longer
+// durations that are looped while we check telemetry for macOS video
+// low power mode.
+var gVideoLowPowerTests = [
+  { name: "seek.ogv", type: "video/ogg", duration: 3.966 },
+  { name: "gizmo.mp4", type: "video/mp4", duration: 5.56 },
 ];
 
 function checkMetadata(msg, e, test) {
@@ -2161,7 +2196,7 @@ function checkMetadata(msg, e, test) {
 // installed video backends.
 function getPlayableVideo(candidates) {
   var resources = getPlayableVideos(candidates);
-  if (resources.length > 0) {
+  if (resources.length) {
     return resources[0];
   }
   return null;
@@ -2169,17 +2204,17 @@ function getPlayableVideo(candidates) {
 
 function getPlayableVideos(candidates) {
   var v = manifestVideo();
-  return candidates.filter(function(x) {
+  return candidates.filter(function (x) {
     return /^video/.test(x.type) && v.canPlayType(x.type);
   });
 }
 
 function getPlayableAudio(candidates) {
   var v = manifestVideo();
-  var resources = candidates.filter(function(x) {
+  var resources = candidates.filter(function (x) {
     return /^audio/.test(x.type) && v.canPlayType(x.type);
   });
-  if (resources.length > 0) {
+  if (resources.length) {
     return resources[0];
   }
   return null;
@@ -2206,10 +2241,10 @@ function removeNodeAndSource(n) {
 }
 
 function once(target, name, cb) {
-  var p = new Promise(function(resolve, reject) {
+  var p = new Promise(function (resolve, reject) {
     target.addEventListener(
       name,
-      function() {
+      function () {
         resolve();
       },
       { once: true }
@@ -2227,8 +2262,8 @@ function once(target, name, cb) {
  * @returns {Promise} A promise that is resolved when event happens.
  */
 function nextEvent(video, eventName) {
-  return new Promise(function(resolve, reject) {
-    let f = function(event) {
+  return new Promise(function (resolve, reject) {
+    let f = function (event) {
       video.removeEventListener(eventName, f);
       resolve(event);
     };
@@ -2263,6 +2298,13 @@ function Log(token, msg) {
 
 // Number of tests to run in parallel.
 var PARALLEL_TESTS = 2;
+
+// Disable parallel test for media engine tests, see more info in bug 1840914.
+if (
+  SpecialPowers.Services.prefs.getIntPref("media.wmf.media-engine.enabled", 0)
+) {
+  PARALLEL_TESTS = 1;
+}
 
 // Prefs to set before running tests.  Use this to improve coverage of
 // conditions that might not otherwise be encountered on the test data.
@@ -2309,7 +2351,7 @@ function MediaTestManager() {
   // and MediaTestManager.finished(token) when the test finishes. You don't have
   // to start every test, but if you call started() you *must* call finish()
   // else you'll timeout.
-  this.runTests = function(tests, startTest) {
+  this.runTests = function (tests, startTest) {
     this.startTime = new Date();
     SimpleTest.info(
       "Started " +
@@ -2334,7 +2376,7 @@ function MediaTestManager() {
     });
 
     SimpleTest.registerCleanupFunction(() => {
-      if (this.tokens.length > 0) {
+      if (this.tokens.length) {
         info("Test timed out. Remaining tests=" + this.tokens);
       }
       for (var token of this.tokens) {
@@ -2348,7 +2390,7 @@ function MediaTestManager() {
 
   // Registers that the test corresponding to 'token' has been started.
   // Don't call more than once per token.
-  this.started = function(token, handler) {
+  this.started = function (token, handler) {
     this.tokens.push(token);
     this.numTestsRunning++;
     this.handlers[token] = handler;
@@ -2382,7 +2424,7 @@ function MediaTestManager() {
   // you've finished your test. If all tests are complete this will finish the
   // run, otherwise it may start up the next run. It's ok to call multiple times
   // per token.
-  this.finished = function(token) {
+  this.finished = function (token) {
     var i = this.tokens.indexOf(token);
     if (i != -1) {
       // Remove the element from the list of running tests.
@@ -2413,7 +2455,7 @@ function MediaTestManager() {
 
   // Starts the next batch of tests, or finishes if they're all done.
   // Don't call this directly, call finished(token) when you're done.
-  this.nextTest = function() {
+  this.nextTest = function () {
     while (
       this.testNum < this.tests.length &&
       this.tokens.length < PARALLEL_TESTS
@@ -2441,7 +2483,7 @@ function MediaTestManager() {
     if (
       this.testNum == this.tests.length &&
       !DEBUG_TEST_LOOP_FOREVER &&
-      this.tokens.length == 0 &&
+      !this.tokens.length &&
       !this.isShutdown
     ) {
       this.isShutdown = true;
@@ -2499,7 +2541,7 @@ if ("SimpleTest" in window) {
   SimpleTest.requestFlakyTimeout("untriaged");
 
   // Register timeout function to dump debugging logs.
-  SimpleTest.registerTimeoutFunction(async function() {
+  SimpleTest.registerTimeoutFunction(async function () {
     for (const v of document.getElementsByTagName("video")) {
       SimpleTest.info(
         JSON.stringify(await SpecialPowers.wrap(v).mozRequestDebugInfo())

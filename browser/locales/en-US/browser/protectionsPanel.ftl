@@ -26,6 +26,20 @@ protections-panel-etp-more-info =
 protections-panel-etp-on-header = Enhanced Tracking Protection is ON for this site
 protections-panel-etp-off-header = Enhanced Tracking Protection is OFF for this site
 
+## Text for the toggles shown when ETP is enabled/disabled for a given site.
+## .description is transferred into a separate paragraph by the moz-toggle
+## custom element code.
+##   $host (String): the hostname of the site that is being displayed.
+
+protections-panel-etp-toggle-on =
+  .label = Enhanced Tracking Protection
+  .description = On for this site
+  .aria-label = Enhanced Tracking Protection: On for { $host }
+protections-panel-etp-toggle-off =
+  .label = Enhanced Tracking Protection
+  .description = Off for this site
+  .aria-label = Enhanced Tracking Protection: Off for { $host }
+
 # The link to be clicked to open the sub-panel view
 protections-panel-site-not-working = Site not working?
 
@@ -37,8 +51,10 @@ protections-panel-site-not-working-view =
 ## a tooltip explaining why these items were not blocked in the page.
 
 protections-panel-not-blocking-why-label = Why?
-protections-panel-not-blocking-why-etp-on-tooltip = Blocking these could break elements of some websites. Without trackers, some buttons, forms, and login fields might not work.
-protections-panel-not-blocking-why-etp-off-tooltip = All trackers on this site have been loaded because protections are turned off.
+protections-panel-not-blocking-why-etp-on-tooltip-label =
+  .label = Blocking these could break elements of some websites. Without trackers, some buttons, forms, and login fields might not work.
+protections-panel-not-blocking-why-etp-off-tooltip-label =
+  .label = All trackers on this site have been loaded because protections are turned off.
 
 ##
 
@@ -77,6 +93,7 @@ protections-panel-site-not-working-view-issue-list-forms = Forms
 protections-panel-site-not-working-view-issue-list-payments = Payments
 protections-panel-site-not-working-view-issue-list-comments = Comments
 protections-panel-site-not-working-view-issue-list-videos = Videos
+protections-panel-site-not-working-view-issue-list-fonts = Fonts
 
 protections-panel-site-not-working-view-send-report = Send a report
 
@@ -99,7 +116,7 @@ protections-panel-content-blocking-manage-settings =
 
 protections-panel-content-blocking-breakage-report-view =
   .title = Report a Broken Site
-protections-panel-content-blocking-breakage-report-view-description = Blocking certain trackers can cause problems with some websites. Reporting these problems helps make { -brand-short-name } better for everyone. Sending this report will send a URL and information about your browser settings to Mozilla. <label data-l10n-name="learn-more">Learn more</label>
+protections-panel-content-blocking-breakage-report-view-description2 = Blocking certain trackers can cause problems with some websites. Reporting these problems helps make { -brand-short-name } better for everyone. Sending this report will send a URL and information about your browser settings to { -vendor-short-name }.
 protections-panel-content-blocking-breakage-report-view-collection-url = URL
 protections-panel-content-blocking-breakage-report-view-collection-url-label =
   .aria-label = URL
@@ -110,3 +127,29 @@ protections-panel-content-blocking-breakage-report-view-cancel =
   .label = Cancel
 protections-panel-content-blocking-breakage-report-view-send-report =
   .label = Send Report
+
+# Cookie Banner Handling
+
+protections-panel-cookie-banner-blocker-header = Cookie Banner Blocker
+protections-panel-cookie-banner-handling-enabled = On for this site
+protections-panel-cookie-banner-handling-disabled = Off for this site
+protections-panel-cookie-banner-handling-undetected = Site currently not supported
+
+protections-panel-cookie-banner-blocker-view-title =
+  .title = Cookie Banner Blocker
+# Variables
+#  $host (String): the hostname of the site that is being displayed.
+protections-panel-cookie-banner-blocker-view-turn-off-for-site = Turn off Cookie Banner Blocker for { $host }?
+protections-panel-cookie-banner-blocker-view-turn-on-for-site = Turn on Cookie Banner Blocker for this site?
+protections-panel-cookie-banner-view-cookie-clear-warning = { -brand-short-name } will clear this site’s cookies and refresh the page. Clearing all cookies may sign you out or empty shopping carts.
+protections-panel-cookie-banner-blocker-view-turn-on-description = Turn on and { -brand-short-name } will try to automatically refuse cookie banners on this site.
+protections-panel-cookie-banner-view-cancel-label =
+  .label = Cancel
+protections-panel-cookie-banner-view-turn-off-label =
+  .label = Turn Off
+protections-panel-cookie-banner-view-turn-on-label =
+  .label = Turn On
+
+protections-panel-report-broken-site =
+  .label = Report broken site
+  .title = Report broken site

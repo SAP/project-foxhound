@@ -1,8 +1,6 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
-from __future__ import absolute_import, print_function
-
 import re
 import subprocess
 
@@ -84,7 +82,6 @@ def GetPrivateBytes(pids):
     for pid in pids:
         mapfile = "/proc/%s/maps" % pid
         with open(mapfile) as maps:
-
             private = 0
 
             for line in maps:
@@ -115,7 +112,6 @@ def GetResidentSize(pids):
         file = "/proc/%s/status" % pid
 
         with open(file) as status:
-
             for line in status:
                 if line.find("VmRSS") >= 0:
                     RSS += int(line.split()[1]) * 1024

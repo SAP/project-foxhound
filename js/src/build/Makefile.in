@@ -31,6 +31,9 @@ install:: $(LIBRARY_NAME).pc
 install:: ../js-config.h
 	$(SYSINSTALL) $^ $(DESTDIR)$(includedir)/$(JS_LIBRARY_NAME)
 
+install:: ../../../mozglue/baseprofiler/public/ProfilingCategoryList.h
+	$(SYSINSTALL) $^ $(DESTDIR)$(includedir)/$(JS_LIBRARY_NAME)/js
+
 ######################################################
 # BEGIN SpiderMonkey header installation
 #
@@ -77,7 +80,7 @@ endif
 ifneq (,$(SHARED_LIBRARY))
 	$(SYSINSTALL) $(SHARED_LIBRARY) $(DESTDIR)$(libdir)
 ifeq ($(OS_ARCH),Darwin)
-	install_name_tool -id $(abspath $(libdir)/$(SHARED_LIBRARY)) $(DESTDIR)$(libdir)/$(SHARED_LIBRARY)
+	$(INSTALL_NAME_TOOL) -id $(abspath $(libdir)/$(SHARED_LIBRARY)) $(DESTDIR)$(libdir)/$(SHARED_LIBRARY)
 endif
 endif
 ifneq (,$(IMPORT_LIBRARY))

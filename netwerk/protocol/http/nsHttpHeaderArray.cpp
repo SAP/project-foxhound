@@ -46,13 +46,10 @@ nsresult nsHttpHeaderArray::SetHeader(
       "Net original headers can only be set using SetHeader_internal().");
 
   nsEntry* entry = nullptr;
-  int32_t index;
+  int32_t index = LookupEntry(header, &entry);
 
-  index = LookupEntry(header, &entry);
-
-  // If an empty value is passed in, then delete the header entry...
-  // unless we are merging, in which case this function becomes a NOP.
-  if (value.IsEmpty()) {
+  // If an empty value is received and we aren't merging headers discard it
+  if (value.IsEmpty() && header != nsHttp::X_Frame_Options) {
     if (!merge && entry) {
       if (entry->variety == eVarietyResponseNetOriginalAndResponse) {
         MOZ_ASSERT(variety == eVarietyResponse);
@@ -166,7 +163,24 @@ nsresult nsHttpHeaderArray::SetHeaderFromNet(
   if (!IsIgnoreMultipleHeader(header)) {
     // Multiple instances of non-mergeable header received from network
     // - ignore if same value
-    if (!entry->value.Equals(value)) {
+    if (header == nsHttp::Content_Length) {
+      // Content length header needs special handling.
+      // For e.g. for CL all the below headers evaluates to value of X
+      // Content-Length: X
+      // Content-Length: X, X, X
+      // Content-Length: X \n\r Content-Length: X
+      // remove duplicate values from the header-values for comparison
+
+      nsAutoCString headerValue;
+      RemoveDuplicateHeaderValues(value, headerValue);
+
+      nsAutoCString entryValue;
+      RemoveDuplicateHeaderValues(entry->value, entryValue);
+      if (entryValue != headerValue) {
+        // reply may be corrupt/hacked (ex: CLRF injection attacks)
+        return NS_ERROR_CORRUPTED_CONTENT;
+      }
+    } else if (!entry->value.Equals(value)) {  // compare remaining headers
       if (IsSuspectDuplicateHeader(header)) {
         // reply may be corrupt/hacked (ex: CLRF injection attacks)
         return NS_ERROR_CORRUPTED_CONTENT;
@@ -174,6 +188,7 @@ nsresult nsHttpHeaderArray::SetHeaderFromNet(
       LOG(("Header %s silently dropped as non mergeable header\n",
            header.get()));
     }
+
     if (response) {
       return SetHeader_internal(header, headerNameOriginal, value,
                                 eVarietyResponseNetOriginal);
@@ -265,12 +280,9 @@ nsresult nsHttpHeaderArray::GetOriginalHeader(const nsHttpAtom& aHeader,
         continue;
       }
 
-      nsAutoCString hdr;
-      if (entry.headerNameOriginal.IsEmpty()) {
-        hdr = nsDependentCString(entry.header);
-      } else {
-        hdr = entry.headerNameOriginal;
-      }
+      const nsCString& hdr = entry.headerNameOriginal.IsEmpty()
+                                 ? entry.header.val()
+                                 : entry.headerNameOriginal;
 
       rv = NS_OK;
       if (NS_FAILED(aVisitor->VisitHeader(hdr, entry.value))) {
@@ -312,12 +324,9 @@ nsresult nsHttpHeaderArray::VisitHeaders(
       continue;
     }
 
-    nsAutoCString hdr;
-    if (entry.headerNameOriginal.IsEmpty()) {
-      hdr = nsDependentCString(entry.header);
-    } else {
-      hdr = entry.headerNameOriginal;
-    }
+    const nsCString& hdr = entry.headerNameOriginal.IsEmpty()
+                               ? entry.header.val()
+                               : entry.headerNameOriginal;
     rv = visitor->VisitHeader(hdr, entry.value);
     if (NS_FAILED(rv)) {
       return rv;
@@ -413,7 +422,7 @@ void nsHttpHeaderArray::Flatten(nsACString& buf, bool pruneProxyHeaders,
     }
 
     if (entry.headerNameOriginal.IsEmpty()) {
-      buf.Append(entry.header);
+      buf.Append(entry.header.val());
     } else {
       buf.Append(entry.headerNameOriginal);
     }
@@ -433,7 +442,7 @@ void nsHttpHeaderArray::FlattenOriginalHeader(nsACString& buf) {
     }
 
     if (entry.headerNameOriginal.IsEmpty()) {
-      buf.Append(entry.header);
+      buf.Append(entry.header.val());
     } else {
       buf.Append(entry.headerNameOriginal);
     }

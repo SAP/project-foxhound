@@ -55,13 +55,13 @@ public final class XPCOMEventTarget extends JNIObject implements IXPCOMEventTarg
   }
 
   public static void assertOnLauncherThread() {
-    if (BuildConfig.DEBUG && !launcherThread().isOnCurrentThread()) {
+    if (BuildConfig.DEBUG_BUILD && !launcherThread().isOnCurrentThread()) {
       throw new AssertionError("Expected to be running on XPCOM launcher thread");
     }
   }
 
   public static void assertNotOnLauncherThread() {
-    if (BuildConfig.DEBUG && launcherThread().isOnCurrentThread()) {
+    if (BuildConfig.DEBUG_BUILD && launcherThread().isOnCurrentThread()) {
       throw new AssertionError("Expected to not be running on XPCOM launcher thread");
     }
   }
@@ -136,7 +136,7 @@ public final class XPCOMEventTarget extends JNIObject implements IXPCOMEventTarg
     public void execute(final Runnable runnable) {
       final IXPCOMEventTarget target = XPCOMEventTarget.getTarget(mTargetName);
 
-      if (target != null && target instanceof XPCOMEventTarget) {
+      if (target instanceof XPCOMEventTarget) {
         target.execute(runnable);
         return;
       }
@@ -158,7 +158,7 @@ public final class XPCOMEventTarget extends JNIObject implements IXPCOMEventTarg
       // If target is not yet a XPCOMEventTarget then JNI is not
       // initialized yet. If JNI is not initialized yet, then we cannot
       // possibly be running on a target with an XPCOMEventTarget.
-      if (target == null || !(target instanceof XPCOMEventTarget)) {
+      if (!(target instanceof XPCOMEventTarget)) {
         return false;
       }
 

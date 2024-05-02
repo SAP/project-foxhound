@@ -29,10 +29,10 @@
 class nsIFile;
 class nsIFileURL;
 class nsIEventTarget;
+class nsISerialEventTarget;
 class nsIThread;
 
-namespace mozilla {
-namespace storage {
+namespace mozilla::storage {
 
 class Connection final : public mozIStorageConnection,
                          public nsIInterfaceRequestor {
@@ -70,6 +70,10 @@ class Connection final : public mozIStorageConnection,
    *        implement both the async (`mozIStorageAsyncConnection`) and sync
    *        (`mozIStorageConnection`) interfaces, but async connections may not
    *        call sync operations from the main thread.
+   * @param aInterruptible
+   *        If |true|, the pending operations can be interrupted by invokind the
+   *        Interrupt() method.
+   *        If |false|, method Interrupt() must not be used.
    * @param aIgnoreLockingMode
    *        If |true|, ignore locks in force on the file. Only usable with
    *        read-only connections. Defaults to false.
@@ -80,6 +84,7 @@ class Connection final : public mozIStorageConnection,
    */
   Connection(Service* aService, int aFlags,
              ConnectionOperation aSupportedOperations,
+             const nsCString& aTelemetryFilename, bool aInterruptible = false,
              bool aIgnoreLockingMode = false);
 
   /**
@@ -103,8 +108,7 @@ class Connection final : public mozIStorageConnection,
    *        The nsIFileURL of the location of the database to open, or create if
    * it does not exist.
    */
-  nsresult initialize(nsIFileURL* aFileURL,
-                      const nsACString& aTelemetryFilename);
+  nsresult initialize(nsIFileURL* aFileURL);
 
   /**
    * Same as initialize, but to be used on the async thread.
@@ -163,7 +167,7 @@ class Connection final : public mozIStorageConnection,
    *  - Connection.mConnectionClosed
    *  - AsyncExecuteStatements.mCancelRequested
    */
-  Mutex sharedAsyncExecutionMutex;
+  Mutex sharedAsyncExecutionMutex MOZ_UNANNOTATED;
 
   /**
    * Wraps the mutex that SQLite gives us from sqlite3_db_mutex.  This is public
@@ -174,15 +178,14 @@ class Connection final : public mozIStorageConnection,
   SQLiteMutex sharedDBMutex;
 
   /**
-   * References the thread this database was opened on.  This MUST be thread it
-   * is closed on.
+   * References the event target this database was opened on.
    */
-  const nsCOMPtr<nsIThread> threadOpenedOn;
+  const nsCOMPtr<nsISerialEventTarget> eventTargetOpenedOn;
 
   /**
    * Closes the SQLite database, and warns about any non-finalized statements.
    */
-  nsresult internalClose(sqlite3* aDBConn);
+  nsresult internalClose(sqlite3* aNativeconnection);
 
   /**
    * Shuts down the passed-in async thread.
@@ -313,6 +316,25 @@ class Connection final : public mozIStorageConnection,
    */
   void RecordQueryStatus(int srv);
 
+  /**
+   * Returns the number of pages in the free list that can be removed.
+   *
+   * A database may use chunked growth to reduce filesystem fragmentation, then
+   * Sqlite will allocate and release multiple pages in chunks. We want to
+   * preserve the chunked space to reduce the likelihood of fragmentation,
+   * releasing free pages only when there's a large amount of them. This can be
+   * used to decide if it's worth vacuuming the database and how many pages can
+   * be vacuumed in case of incremental vacuum.
+   * Note this returns 0, and asserts, in case of errors.
+   */
+  int32_t RemovablePagesInFreeList(const nsACString& aSchemaName);
+
+  /**
+   * Whether the statement currently running on the helper thread can be
+   * interrupted.
+   */
+  Atomic<bool> mIsStatementOnHelperThreadInterruptible;
+
  private:
   ~Connection();
   nsresult initializeInternal();
@@ -386,12 +408,6 @@ class Connection final : public mozIStorageConnection,
   nsCOMPtr<nsIFile> mDatabaseFile;
 
   /**
-   * The filename that will be reported to telemetry for this connection. By
-   * default this will be the leaf of the path to the database file.
-   */
-  nsCString mTelemetryFilename;
-
-  /**
    * Lazily created thread for asynchronous statement execution.  Consumers
    * should use getAsyncExecutionTarget rather than directly accessing this
    * field.
@@ -401,28 +417,10 @@ class Connection final : public mozIStorageConnection,
   nsCOMPtr<nsIThread> mAsyncExecutionThread;
 
   /**
-   * Set to true by Close() or AsyncClose() prior to shutdown.
-   *
-   * If false, we guarantee both that the underlying sqlite3 database
-   * connection is still open and that getAsyncExecutionTarget() can
-   * return a thread. Once true, either the sqlite3 database
-   * connection is being shutdown or it has been
-   * shutdown. Additionally, once true, getAsyncExecutionTarget()
-   * returns null.
-   *
-   * This variable should be accessed while holding the
-   * sharedAsyncExecutionMutex.
+   * The filename that will be reported to telemetry for this connection. By
+   * default this will be the leaf of the path to the database file.
    */
-  bool mAsyncExecutionThreadShuttingDown;
-
-  /**
-   * Set to true just prior to calling sqlite3_close on the
-   * connection.
-   *
-   * This variable should be accessed while holding the
-   * sharedAsyncExecutionMutex.
-   */
-  bool mConnectionClosed;
+  nsCString mTelemetryFilename;
 
   /**
    * Stores the default behavior for all transactions run on this connection.
@@ -451,29 +449,63 @@ class Connection final : public mozIStorageConnection,
    */
   nsCOMPtr<mozIStorageProgressHandler> mProgressHandler;
 
+  // This is here for two reasons: 1) It's used to make sure that the
+  // connections do not outlive the service.  2) Our custom collating functions
+  // call its localeCompareStrings() method.
+  RefPtr<Service> mStorageService;
+
+  nsresult synchronousClose();
+
   /**
    * Stores the flags we passed to sqlite3_open_v2.
    */
   const int mFlags;
 
-  /**
-   * Stores whether we should ask sqlite3_open_v2 to ignore locking.
-   */
-  const bool mIgnoreLockingMode;
-
-  // This is here for two reasons: 1) It's used to make sure that the
-  // connections do not outlive the service.  2) Our custom collating functions
-  // call its localeCompareStrings() method.
-  RefPtr<Service> mStorageService;
+  uint32_t mTransactionNestingLevel;
 
   /**
    * Indicates which operations are supported on this connection.
    */
   const ConnectionOperation mSupportedOperations;
 
-  nsresult synchronousClose();
+  /**
+   * Stores whether this connection is interruptible.
+   */
+  const bool mInterruptible;
 
-  uint32_t mTransactionNestingLevel;
+  /**
+   * Stores whether we should ask sqlite3_open_v2 to ignore locking.
+   */
+  const bool mIgnoreLockingMode;
+
+  /**
+   * Set to true by Close() or AsyncClose() prior to shutdown.
+   *
+   * If false, we guarantee both that the underlying sqlite3 database
+   * connection is still open and that getAsyncExecutionTarget() can
+   * return a thread. Once true, either the sqlite3 database
+   * connection is being shutdown or it has been
+   * shutdown. Additionally, once true, getAsyncExecutionTarget()
+   * returns null.
+   *
+   * This variable should be accessed while holding the
+   * sharedAsyncExecutionMutex.
+   */
+  bool mAsyncExecutionThreadShuttingDown;
+
+  /**
+   * Set to true just prior to calling sqlite3_close on the
+   * connection.
+   *
+   * This variable should be accessed while holding the
+   * sharedAsyncExecutionMutex.
+   */
+  bool mConnectionClosed;
+
+  /**
+   * Stores the growth increment chunk size, set through SetGrowthIncrement().
+   */
+  Atomic<int32_t> mGrowthChunkSize;
 };
 
 /**
@@ -514,8 +546,7 @@ class CallbackComplete final : public Runnable {
   RefPtr<mozIStorageCompletionCallback> mCallback;
 };
 
-}  // namespace storage
-}  // namespace mozilla
+}  // namespace mozilla::storage
 
 /**
  * Casting Connection to nsISupports is ambiguous.

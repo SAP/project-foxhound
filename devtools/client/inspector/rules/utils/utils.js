@@ -5,6 +5,8 @@
 "use strict";
 
 const {
+  VIEW_NODE_CSS_QUERY_CONTAINER,
+  VIEW_NODE_CSS_SELECTOR_WARNINGS,
   VIEW_NODE_FONT_TYPE,
   VIEW_NODE_IMAGE_URL_TYPE,
   VIEW_NODE_INACTIVE_CSS,
@@ -15,7 +17,7 @@ const {
   VIEW_NODE_SHAPE_SWATCH,
   VIEW_NODE_VALUE_TYPE,
   VIEW_NODE_VARIABLE_TYPE,
-} = require("devtools/client/inspector/shared/node-types");
+} = require("resource://devtools/client/inspector/shared/node-types.js");
 const INSET_POINT_TYPES = ["top", "right", "bottom", "left"];
 
 /**
@@ -104,10 +106,8 @@ function getNodeInfo(node, elementStyle) {
       textProperty: declaration,
     };
   } else if (declaration && classList.contains("ruleview-font-family")) {
-    const {
-      name: propertyName,
-      value: propertyValue,
-    } = getPropertyNameAndValue(node);
+    const { name: propertyName, value: propertyValue } =
+      getPropertyNameAndValue(node);
     type = VIEW_NODE_FONT_TYPE;
     value = {
       property: propertyName,
@@ -134,6 +134,16 @@ function getNodeInfo(node, elementStyle) {
   } else if (declaration && classList.contains("ruleview-unused-warning")) {
     type = VIEW_NODE_INACTIVE_CSS;
     value = declaration.isUsed();
+  } else if (node.closest(".container-query-declaration")) {
+    type = VIEW_NODE_CSS_QUERY_CONTAINER;
+    const containerQueryEl = node.closest(".container-query");
+    value = {
+      ancestorIndex: containerQueryEl.getAttribute("data-ancestor-index"),
+      rule,
+    };
+  } else if (node.classList.contains("ruleview-selector-warnings")) {
+    type = VIEW_NODE_CSS_SELECTOR_WARNINGS;
+    value = node.getAttribute("data-selector-warning-kind").split(",");
   } else if (declaration && classList.contains("ruleview-shapeswatch")) {
     type = VIEW_NODE_SHAPE_SWATCH;
     value = {
@@ -174,10 +184,9 @@ function getNodeInfo(node, elementStyle) {
       textProperty: declaration,
     };
   } else if (
-    classList.contains("ruleview-selector-unmatched") ||
-    classList.contains("ruleview-selector-matched") ||
-    classList.contains("ruleview-selectorcontainer") ||
+    classList.contains("ruleview-selectors-container") ||
     classList.contains("ruleview-selector") ||
+    classList.contains("ruleview-selector-element") ||
     classList.contains("ruleview-selector-attribute") ||
     classList.contains("ruleview-selector-pseudo-class") ||
     classList.contains("ruleview-selector-pseudo-class-lock")
@@ -189,7 +198,11 @@ function getNodeInfo(node, elementStyle) {
     classList.contains("ruleview-rule-source-label")
   ) {
     type = VIEW_NODE_LOCATION_TYPE;
-    value = rule.sheet?.href ? rule.sheet.href : rule.title;
+    const sourceLabelEl = classList.contains("ruleview-rule-source-label")
+      ? node
+      : node.querySelector(".ruleview-rule-source-label");
+    value =
+      sourceLabelEl.getAttribute("data-url") || rule.sheet?.href || rule.title;
   } else {
     return null;
   }
@@ -273,7 +286,7 @@ function getShapePoint(node) {
       insetClasses.push(className);
     }
   });
-  if (insetClasses.length > 0) {
+  if (insetClasses.length) {
     point = insetClasses.join(",");
   }
   return point;

@@ -10,16 +10,19 @@
 #include <unistd.h>
 
 #include "mozilla/Types.h"
+#include "AsyncDBus.h"
 #include "nsGtkUtils.h"
 #include "nsIFileURL.h"
 #include "nsIGIOService.h"
 #include "nsIURI.h"
 #include "nsIWidget.h"
 #include "nsIFile.h"
+#include "nsIStringBundle.h"
+#include "mozilla/Components.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/dom/Promise.h"
 
 #include "nsArrayEnumerator.h"
-#include "nsMemory.h"
 #include "nsEnumeratorUtils.h"
 #include "nsNetUtil.h"
 #include "nsReadableUtils.h"
@@ -40,6 +43,7 @@ extern mozilla::LazyLogModule gWidgetLog;
 #endif /* MOZ_LOGGING */
 
 using namespace mozilla;
+using mozilla::dom::Promise;
 
 #define MAX_PREVIEW_SIZE 180
 // bug 1184009
@@ -49,7 +53,7 @@ nsIFile* nsFilePicker::mPrevDisplayDirectory = nullptr;
 
 void nsFilePicker::Shutdown() { NS_IF_RELEASE(mPrevDisplayDirectory); }
 
-static GtkFileChooserAction GetGtkFileChooserAction(int16_t aMode) {
+static GtkFileChooserAction GetGtkFileChooserAction(nsIFilePicker::Mode aMode) {
   GtkFileChooserAction action;
 
   switch (aMode) {
@@ -232,6 +236,71 @@ void nsFilePicker::InitNative(nsIWidget* aParent, const nsAString& aTitle) {
 }
 
 NS_IMETHODIMP
+nsFilePicker::IsModeSupported(nsIFilePicker::Mode aMode, JSContext* aCx,
+                              Promise** aRetPromise) {
+#ifdef MOZ_ENABLE_DBUS
+  if (!widget::ShouldUsePortal(widget::PortalKind::FilePicker) ||
+      aMode != nsIFilePicker::modeGetFolder) {
+    return nsBaseFilePicker::IsModeSupported(aMode, aCx, aRetPromise);
+  }
+
+  const char kFreedesktopPortalName[] = "org.freedesktop.portal.Desktop";
+  const char kFreedesktopPortalPath[] = "/org/freedesktop/portal/desktop";
+  const char kFreedesktopPortalFileChooser[] =
+      "org.freedesktop.portal.FileChooser";
+
+  MOZ_ASSERT(aCx);
+  MOZ_ASSERT(aRetPromise);
+
+  nsIGlobalObject* globalObject = xpc::CurrentNativeGlobal(aCx);
+  if (NS_WARN_IF(!globalObject)) {
+    return NS_ERROR_FAILURE;
+  }
+
+  ErrorResult result;
+  RefPtr<Promise> retPromise = Promise::Create(globalObject, result);
+  if (NS_WARN_IF(result.Failed())) {
+    return result.StealNSResult();
+  }
+
+  widget::CreateDBusProxyForBus(
+      G_BUS_TYPE_SESSION,
+      GDBusProxyFlags(G_DBUS_PROXY_FLAGS_DO_NOT_CONNECT_SIGNALS),
+      /* aInterfaceInfo = */ nullptr, kFreedesktopPortalName,
+      kFreedesktopPortalPath, kFreedesktopPortalFileChooser)
+      ->Then(
+          GetCurrentSerialEventTarget(), __func__,
+          [retPromise](RefPtr<GDBusProxy>&& aProxy) {
+            const char kFreedesktopPortalVersionProperty[] = "version";
+            // Folder selection was added in version 3 of xdg-desktop-portal
+            const uint32_t kFreedesktopPortalMinimumVersion = 3;
+            uint32_t foundVersion = 0;
+
+            RefPtr<GVariant> property =
+                dont_AddRef(g_dbus_proxy_get_cached_property(
+                    aProxy, kFreedesktopPortalVersionProperty));
+
+            if (property) {
+              foundVersion = g_variant_get_uint32(property);
+              LOG(("Found portal version: %u", foundVersion));
+            }
+
+            retPromise->MaybeResolve(foundVersion >=
+                                     kFreedesktopPortalMinimumVersion);
+          },
+          [retPromise](GUniquePtr<GError>&& aError) {
+            g_printerr("Failed to create DBUS proxy: %s\n", aError->message);
+            retPromise->MaybeReject(NS_ERROR_FAILURE);
+          });
+
+  retPromise.forget(aRetPromise);
+  return NS_OK;
+#else
+  return nsBaseFilePicker::IsModeSupported(aMode, aCx, aRetPromise);
+#endif
+}
+
+NS_IMETHODIMP
 nsFilePicker::AppendFilters(int32_t aFilterMask) {
   mAllowURLs = !!(aFilterMask & filterAllowURLs);
   return nsBaseFilePicker::AppendFilters(aFilterMask);
@@ -332,7 +401,7 @@ nsFilePicker::GetFiles(nsISimpleEnumerator** aFiles) {
   return NS_ERROR_FAILURE;
 }
 
-nsresult nsFilePicker::Show(int16_t* aReturn) {
+nsresult nsFilePicker::Show(nsIFilePicker::ResultCode* aReturn) {
   NS_ENSURE_ARG_POINTER(aReturn);
 
   nsresult rv = Open(nullptr);
@@ -397,6 +466,10 @@ nsFilePicker::Open(nsIFilePickerShownCallback* aCallback) {
     case nsIFilePicker::modeSave:
       gtk_file_chooser_set_current_name(GTK_FILE_CHOOSER(file_chooser),
                                         defaultName.get());
+      break;
+
+    default:
+      /* no additional setup needed */
       break;
   }
 
@@ -512,10 +585,54 @@ void nsFilePicker::OnDestroy(GtkWidget* file_chooser, gpointer user_data) {
                                               GTK_RESPONSE_CANCEL);
 }
 
+bool nsFilePicker::WarnForNonReadableFile(void* file_chooser) {
+  nsCOMPtr<nsIFile> file;
+  GetFile(getter_AddRefs(file));
+  if (!file) {
+    return false;
+  }
+
+  bool isReadable = false;
+  file->IsReadable(&isReadable);
+  if (isReadable) {
+    return false;
+  }
+
+  nsCOMPtr<nsIStringBundleService> stringService =
+      mozilla::components::StringBundle::Service();
+  if (!stringService) {
+    return false;
+  }
+
+  nsCOMPtr<nsIStringBundle> filepickerBundle;
+  nsresult rv = stringService->CreateBundle(
+      "chrome://global/locale/filepicker.properties",
+      getter_AddRefs(filepickerBundle));
+  if (NS_FAILED(rv)) {
+    return false;
+  }
+
+  nsAutoString errorMessage;
+  rv = filepickerBundle->GetStringFromName("selectedFileNotReadableError",
+                                           errorMessage);
+  if (NS_FAILED(rv)) {
+    return false;
+  }
+
+  GtkDialogFlags flags = GTK_DIALOG_DESTROY_WITH_PARENT;
+  auto* cancel_dialog = gtk_message_dialog_new(
+      GTK_WINDOW(file_chooser), flags, GTK_MESSAGE_ERROR, GTK_BUTTONS_CLOSE,
+      "%s", NS_ConvertUTF16toUTF8(errorMessage).get());
+  gtk_dialog_run(GTK_DIALOG(cancel_dialog));
+  gtk_widget_destroy(cancel_dialog);
+
+  return true;
+}
+
 void nsFilePicker::Done(void* file_chooser, gint response) {
   mRunning = false;
 
-  int16_t result;
+  nsIFilePicker::ResultCode result;
   switch (response) {
     case GTK_RESPONSE_OK:
     case GTK_RESPONSE_ACCEPT:
@@ -528,6 +645,10 @@ void nsFilePicker::Done(void* file_chooser, gint response) {
           bool exists = false;
           file->Exists(&exists);
           if (exists) result = nsIFilePicker::returnReplace;
+        }
+      } else if (mMode == nsIFilePicker::modeOpen) {
+        if (WarnForNonReadableFile(file_chooser)) {
+          result = nsIFilePicker::returnCancel;
         }
       }
       break;
@@ -649,3 +770,5 @@ void nsFilePicker::GtkFileChooserSetModal(void* file_chooser,
     }
   }
 }
+
+#undef LOG

@@ -7,14 +7,16 @@
 #include "WebSocketLog.h"
 #include "WebSocketConnectionChild.h"
 
-#include "mozilla/ipc/BackgroundChild.h"
-#include "mozilla/ipc/PBackgroundChild.h"
-#include "nsISerializable.h"
-#include "nsSerializationHelper.h"
-#include "nsThreadUtils.h"
 #include "WebSocketConnection.h"
+#include "mozilla/ipc/Endpoint.h"
+#include "mozilla/net/SocketProcessBackgroundChild.h"
+#include "nsISerializable.h"
+#include "nsITLSSocketControl.h"
+#include "nsITransportSecurityInfo.h"
 #include "nsNetCID.h"
+#include "nsSerializationHelper.h"
 #include "nsSocketTransportService2.h"
+#include "nsThreadUtils.h"
 
 namespace mozilla {
 namespace net {
@@ -30,6 +32,8 @@ WebSocketConnectionChild::~WebSocketConnectionChild() {
 }
 
 void WebSocketConnectionChild::Init(uint32_t aListenerId) {
+  MOZ_ASSERT(NS_IsMainThread());
+
   nsresult rv;
   mSocketThread = do_GetService(NS_SOCKETTRANSPORTSERVICE_CONTRACTID, &rv);
   MOZ_ASSERT(NS_SUCCEEDED(rv));
@@ -37,17 +41,24 @@ void WebSocketConnectionChild::Init(uint32_t aListenerId) {
     return;
   }
 
-  RefPtr<WebSocketConnectionChild> self = this;
-  mSocketThread->Dispatch(NS_NewRunnableFunction(
-      "WebSocketConnectionChild::Init", [self, aListenerId]() {
-        mozilla::ipc::PBackgroundChild* actorChild = mozilla::ipc::
-            BackgroundChild::GetOrCreateForSocketParentBridgeForCurrentThread();
-        if (!actorChild) {
-          return;
-        }
+  ipc::Endpoint<PWebSocketConnectionParent> parentEndpoint;
+  ipc::Endpoint<PWebSocketConnectionChild> childEndpoint;
+  PWebSocketConnection::CreateEndpoints(&parentEndpoint, &childEndpoint);
 
-        Unused << actorChild->SendPWebSocketConnectionConstructor(self,
-                                                                  aListenerId);
+  if (NS_FAILED(SocketProcessBackgroundChild::WithActor(
+          "SendInitWebSocketConnection",
+          [aListenerId, endpoint = std::move(parentEndpoint)](
+              SocketProcessBackgroundChild* aActor) mutable {
+            Unused << aActor->SendInitWebSocketConnection(std::move(endpoint),
+                                                          aListenerId);
+          }))) {
+    return;
+  }
+
+  mSocketThread->Dispatch(NS_NewRunnableFunction(
+      "BindWebSocketConnectionChild",
+      [self = RefPtr{this}, endpoint = std::move(childEndpoint)]() mutable {
+        endpoint.Bind(self);
       }));
 }
 
@@ -80,15 +91,10 @@ WebSocketConnectionChild::OnTransportAvailable(
     return NS_ERROR_NOT_AVAILABLE;
   }
 
-  nsAutoCString serializedSecurityInfo;
-  nsCOMPtr<nsISupports> secInfoSupp;
-  aTransport->GetSecurityInfo(getter_AddRefs(secInfoSupp));
-  if (secInfoSupp) {
-    nsCOMPtr<nsISerializable> secInfoSer = do_QueryInterface(secInfoSupp);
-    if (secInfoSer) {
-      NS_SerializeToString(secInfoSer, serializedSecurityInfo);
-    }
-  }
+  nsCOMPtr<nsITLSSocketControl> tlsSocketControl;
+  aTransport->GetTlsSocketControl(getter_AddRefs(tlsSocketControl));
+  nsCOMPtr<nsITransportSecurityInfo> securityInfo(
+      do_QueryInterface(tlsSocketControl));
 
   RefPtr<WebSocketConnection> connection =
       new WebSocketConnection(aTransport, aSocketIn, aSocketOut);
@@ -100,7 +106,7 @@ WebSocketConnectionChild::OnTransportAvailable(
 
   mConnection = std::move(connection);
 
-  Unused << SendOnTransportAvailable(serializedSecurityInfo);
+  Unused << SendOnTransportAvailable(securityInfo);
   return NS_OK;
 }
 
@@ -116,6 +122,12 @@ WebSocketConnectionChild::OnUpgradeFailed(nsresult aReason) {
     Unused << SendOnUpgradeFailed(aReason);
   }
   return NS_OK;
+}
+
+NS_IMETHODIMP
+WebSocketConnectionChild::OnWebSocketConnectionAvailable(
+    WebSocketConnectionBase* aConnection) {
+  return NS_ERROR_NOT_IMPLEMENTED;
 }
 
 mozilla::ipc::IPCResult WebSocketConnectionChild::RecvWriteOutputData(

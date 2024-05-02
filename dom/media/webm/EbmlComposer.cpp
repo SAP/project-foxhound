@@ -100,8 +100,6 @@ nsresult EbmlComposer::WriteSimpleBlock(EncodedFrame* aFrame) {
 
   int64_t timeCode = aFrame->mTime.ToMicroseconds() / PR_USEC_PER_MSEC -
                      mCurrentClusterTimecode;
-  MOZ_RELEASE_ASSERT(timeCode >= SHRT_MIN);
-  MOZ_RELEASE_ASSERT(timeCode <= SHRT_MAX);
 
   const bool needClusterHeader =
       !mHasWrittenCluster ||
@@ -131,6 +129,13 @@ nsresult EbmlComposer::WriteSimpleBlock(EncodedFrame* aFrame) {
 
     // Can't under-/overflow now
     timeCode = 0;
+  }
+
+  if (MOZ_UNLIKELY(timeCode < SHRT_MIN || timeCode > SHRT_MAX)) {
+    MOZ_CRASH_UNSAFE_PRINTF(
+        "Invalid cluster timecode! audio=%d, video=%d, timeCode=%" PRId64
+        "ms, currentClusterTimecode=%" PRIu64 "ms",
+        mHasAudio, mHasVideo, timeCode, mCurrentClusterTimecode);
   }
 
   writeSimpleBlock(&ebml, isOpus ? 0x2 : 0x1, static_cast<short>(timeCode),

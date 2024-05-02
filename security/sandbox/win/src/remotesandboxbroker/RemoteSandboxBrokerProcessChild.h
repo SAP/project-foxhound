@@ -17,15 +17,15 @@ class RemoteSandboxBrokerProcessChild final
   typedef mozilla::ipc::ProcessChild ProcessChild;
 
  public:
-  explicit RemoteSandboxBrokerProcessChild(ProcessId aParentPid);
+  using ProcessChild::ProcessChild;
   ~RemoteSandboxBrokerProcessChild();
 
   bool Init(int aArgc, char* aArgv[]) override;
   void CleanUp() override;
 
  private:
-  RemoteSandboxBrokerChild mSandboxBrokerChild;
-  DISALLOW_COPY_AND_ASSIGN(RemoteSandboxBrokerProcessChild);
+  RefPtr<RemoteSandboxBrokerChild> mSandboxBrokerChild =
+      new RemoteSandboxBrokerChild;
 };
 
 }  // namespace mozilla

@@ -4,10 +4,7 @@
 
 "use strict";
 
-add_task(async function() {
-  // Making sure that the e10s is enabled on Windows for testing.
-  await setE10sPrefs();
-
+add_task(async function () {
   let docLoaded = waitForEvent(
     Ci.nsIAccessibleEvent.EVENT_DOCUMENT_LOAD_COMPLETE,
     "body"
@@ -33,7 +30,7 @@ add_task(async function() {
         <body id="body"></body>
       </html>`,
     },
-    async function(browser) {
+    async function (browser) {
       let docLoadedEvent = await docLoaded;
       let docAcc = docLoadedEvent.accessibleDocument;
       ok(docAcc, "Accessible document proxy is created");
@@ -72,7 +69,4 @@ add_task(async function() {
       await a11yShutdown;
     }
   );
-
-  // Unsetting e10s related preferences.
-  await unsetE10sPrefs();
 });

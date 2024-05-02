@@ -19,7 +19,7 @@ async function done() {
   ChromeUtils.unregisterWindowActor("ForceRefresh");
   let tab = gBrowser.selectedTab;
   let tabBrowser = gBrowser.getBrowserForTab(tab);
-  await ContentTask.spawn(tabBrowser, null, async function() {
+  await ContentTask.spawn(tabBrowser, null, async function () {
     const swr = await content.navigator.serviceWorker.getRegistration();
     await swr.unregister();
   });
@@ -36,15 +36,14 @@ function test() {
         ["dom.serviceWorkers.enabled", true],
         ["dom.serviceWorkers.exemptFromPerDomainMax", true],
         ["dom.serviceWorkers.testing.enabled", true],
-        ["dom.caches.enabled", true],
         ["browser.cache.disk.enable", false],
         ["browser.cache.memory.enable", false],
       ],
     },
-    async function() {
+    async function () {
       // create ForceRefreseh window actor
-      const { ForceRefreshParent } = ChromeUtils.import(
-        getRootDirectory(gTestPath) + "ForceRefreshParent.jsm"
+      const { ForceRefreshParent } = ChromeUtils.importESModule(
+        getRootDirectory(gTestPath) + "ForceRefreshParent.sys.mjs"
       );
 
       // setup helper functions for ForceRefreshParent
@@ -56,10 +55,12 @@ function test() {
       // setup window actor options
       let windowActorOptions = {
         parent: {
-          moduleURI: getRootDirectory(gTestPath) + "ForceRefreshParent.jsm",
+          esModuleURI:
+            getRootDirectory(gTestPath) + "ForceRefreshParent.sys.mjs",
         },
         child: {
-          moduleURI: getRootDirectory(gTestPath) + "ForceRefreshChild.jsm",
+          esModuleURI:
+            getRootDirectory(gTestPath) + "ForceRefreshChild.sys.mjs",
           events: {
             "base-register": { capture: true, wantUntrusted: true },
             "base-sw-ready": { capture: true, wantUntrusted: true },
@@ -79,7 +80,7 @@ function test() {
       var tab = BrowserTestUtils.addTab(gBrowser);
       var tabBrowser = gBrowser.getBrowserForTab(tab);
       gBrowser.selectedTab = tab;
-      BrowserTestUtils.loadURI(gBrowser, url);
+      BrowserTestUtils.startLoadingURIString(gBrowser, url);
     }
   );
 }

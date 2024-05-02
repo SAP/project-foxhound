@@ -51,21 +51,17 @@ function findInStatus(aStatus, aName) {
  * Make sure we report correctly when an add-on provider or AddonRepository block shutdown
  */
 add_task(async function blockRepoShutdown() {
-  // Reach into the AddonManager scope and inject our mock AddonRepository
   // the mock provider behaves enough like AddonRepository for the purpose of this test
   let mockRepo = mockAddonProvider("Mock repo");
-  // Trigger the lazy getter so that we can assign a new value to it:
-  void AMscope.AddonRepository;
-  AMscope.AddonRepository = mockRepo;
+  AddonManagerPrivate.overrideAddonRepository(mockRepo);
 
   let mockProvider = mockAddonProvider("Mock provider");
 
   await promiseStartupManager();
   AddonManagerPrivate.registerProvider(mockProvider);
 
-  let {
-    fetchState,
-  } = MockAsyncShutdown.profileBeforeChange.blockers[0].options;
+  let { fetchState } =
+    MockAsyncShutdown.profileBeforeChange.blockers[0].options;
 
   // Start shutting the manager down
   let managerDown = promiseShutdownManager();

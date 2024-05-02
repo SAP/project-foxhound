@@ -3,14 +3,13 @@
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
 import React, { Component } from "react";
+import { div, main, span } from "react-dom-factories";
 import PropTypes from "prop-types";
-import classnames from "classnames";
-
 import { connect } from "../utils/connect";
-import { prefs, features } from "../utils/prefs";
+import { prefs } from "../utils/prefs";
+import { primaryPaneTabs } from "../constants";
 import actions from "../actions";
-import A11yIntention from "./A11yIntention";
-import { ShortcutsModal } from "./ShortcutsModal";
+import AccessibleImage from "./shared/AccessibleImage";
 
 import {
   getSelectedSource,
@@ -18,18 +17,15 @@ import {
   getActiveSearch,
   getQuickOpenEnabled,
   getOrientation,
+  getIsCurrentThreadPaused,
+  isMapScopesEnabled,
 } from "../selectors";
-
 const KeyShortcuts = require("devtools/client/shared/key-shortcuts");
+
 const SplitBox = require("devtools/client/shared/components/splitter/SplitBox");
 const AppErrorBoundary = require("devtools/client/shared/components/AppErrorBoundary");
 
-import Services from "devtools-services";
 const shortcuts = new KeyShortcuts({ window });
-
-const { appinfo } = Services;
-
-const isMacOS = appinfo.OS === "Darwin";
 
 const horizontalLayoutBreakpoint = window.matchMedia("(min-width: 800px)");
 const verticalLayoutBreakpoint = window.matchMedia(
@@ -38,10 +34,9 @@ const verticalLayoutBreakpoint = window.matchMedia(
 
 import "./variables.css";
 import "./App.css";
-
 import "./shared/menu.css";
 
-import ProjectSearch from "./ProjectSearch";
+import { ShortcutsModal } from "./ShortcutsModal";
 import PrimaryPanes from "./PrimaryPanes";
 import Editor from "./Editor";
 import SecondaryPanes from "./SecondaryPanes";
@@ -57,6 +52,26 @@ class App extends Component {
       shortcutsModalEnabled: false,
       startPanelSize: 0,
       endPanelSize: 0,
+    };
+  }
+
+  static get propTypes() {
+    return {
+      activeSearch: PropTypes.oneOf(["file", "project"]),
+      closeActiveSearch: PropTypes.func.isRequired,
+      closeQuickOpen: PropTypes.func.isRequired,
+      endPanelCollapsed: PropTypes.bool.isRequired,
+      fluentBundles: PropTypes.array.isRequired,
+      openQuickOpen: PropTypes.func.isRequired,
+      orientation: PropTypes.oneOf(["horizontal", "vertical"]).isRequired,
+      quickOpenEnabled: PropTypes.bool.isRequired,
+      selectedSource: PropTypes.object,
+      setActiveSearch: PropTypes.func.isRequired,
+      setOrientation: PropTypes.func.isRequired,
+      setPrimaryPaneTab: PropTypes.func.isRequired,
+      startPanelCollapsed: PropTypes.bool.isRequired,
+      toolboxDoc: PropTypes.object.isRequired,
+      showOriginalVariableMappingWarning: PropTypes.bool,
     };
   }
 
@@ -78,14 +93,18 @@ class App extends Component {
       this.toggleQuickOpenModal(e, "@")
     );
 
-    const searchKeys = [
+    [
       L10N.getStr("sources.search.key2"),
       L10N.getStr("sources.search.alt.key"),
-    ];
-    searchKeys.forEach(key => shortcuts.on(key, this.toggleQuickOpenModal));
+    ].forEach(key => shortcuts.on(key, this.toggleQuickOpenModal));
 
     shortcuts.on(L10N.getStr("gotoLineModal.key3"), e =>
       this.toggleQuickOpenModal(e, ":")
+    );
+
+    shortcuts.on(
+      L10N.getStr("projectTextSearch.key"),
+      this.jumpToProjectSearch
     );
 
     shortcuts.on("Escape", this.onEscape);
@@ -100,17 +119,27 @@ class App extends Component {
       this.toggleQuickOpenModal
     );
 
-    const searchKeys = [
+    [
       L10N.getStr("sources.search.key2"),
       L10N.getStr("sources.search.alt.key"),
-    ];
-    searchKeys.forEach(key => shortcuts.off(key, this.toggleQuickOpenModal));
+    ].forEach(key => shortcuts.off(key, this.toggleQuickOpenModal));
 
     shortcuts.off(L10N.getStr("gotoLineModal.key3"), this.toggleQuickOpenModal);
+
+    shortcuts.off(
+      L10N.getStr("projectTextSearch.key"),
+      this.jumpToProjectSearch
+    );
 
     shortcuts.off("Escape", this.onEscape);
     shortcuts.off("CmdOrCtrl+/", this.onCommandSlash);
   }
+
+  jumpToProjectSearch = e => {
+    e.preventDefault();
+    this.props.setPrimaryPaneTab(primaryPaneTabs.PROJECT_SEARCH);
+    this.props.setActiveSearch(primaryPaneTabs.PROJECT_SEARCH);
+  };
 
   onEscape = e => {
     const {
@@ -178,30 +207,55 @@ class App extends Component {
     }
   }
 
+  renderEditorNotificationBar() {
+    if (this.props.showOriginalVariableMappingWarning) {
+      return div(
+        { className: "editor-notification-footer", "aria-role": "status" },
+        span(
+          { className: "info icon" },
+          React.createElement(AccessibleImage, { className: "sourcemap" })
+        ),
+        L10N.getFormatStr(
+          "editorNotificationFooter.noOriginalScopes",
+          L10N.getStr("scopes.showOriginalScopes")
+        )
+      );
+    }
+    return null;
+  }
+
   renderEditorPane = () => {
     const { startPanelCollapsed, endPanelCollapsed } = this.props;
     const { endPanelSize, startPanelSize } = this.state;
     const horizontal = this.isHorizontal();
-
-    return (
-      <div className="editor-pane">
-        <div className="editor-container">
-          <EditorTabs
-            startPanelCollapsed={startPanelCollapsed}
-            endPanelCollapsed={endPanelCollapsed}
-            horizontal={horizontal}
-          />
-          <Editor startPanelSize={startPanelSize} endPanelSize={endPanelSize} />
-          {!this.props.selectedSource ? (
-            <WelcomeBox
-              horizontal={horizontal}
-              toggleShortcutsModal={() => this.toggleShortcutsModal()}
-            />
-          ) : null}
-          <EditorFooter horizontal={horizontal} />
-          <ProjectSearch />
-        </div>
-      </div>
+    return main(
+      {
+        className: "editor-pane",
+      },
+      div(
+        {
+          className: "editor-container",
+        },
+        React.createElement(EditorTabs, {
+          startPanelCollapsed: startPanelCollapsed,
+          endPanelCollapsed: endPanelCollapsed,
+          horizontal: horizontal,
+        }),
+        React.createElement(Editor, {
+          startPanelSize: startPanelSize,
+          endPanelSize: endPanelSize,
+        }),
+        !this.props.selectedSource
+          ? React.createElement(WelcomeBox, {
+              horizontal,
+              toggleShortcutsModal: () => this.toggleShortcutsModal(),
+            })
+          : null,
+        this.renderEditorNotificationBar(),
+        React.createElement(EditorFooter, {
+          horizontal,
+        })
+      )
     );
   };
 
@@ -223,77 +277,68 @@ class App extends Component {
   renderLayout = () => {
     const { startPanelCollapsed, endPanelCollapsed } = this.props;
     const horizontal = this.isHorizontal();
-
-    return (
-      <SplitBox
-        style={{ width: "100vw" }}
-        initialSize={prefs.endPanelSize}
-        minSize={30}
-        maxSize="70%"
-        splitterSize={1}
-        vert={horizontal}
-        onResizeEnd={num => {
-          prefs.endPanelSize = num;
+    return React.createElement(SplitBox, {
+      style: {
+        width: "100vw",
+      },
+      initialSize: prefs.endPanelSize,
+      minSize: 30,
+      maxSize: "70%",
+      splitterSize: 1,
+      vert: horizontal,
+      onResizeEnd: num => {
+        prefs.endPanelSize = num;
+        this.triggerEditorPaneResize();
+      },
+      startPanel: React.createElement(SplitBox, {
+        style: {
+          width: "100vw",
+        },
+        initialSize: prefs.startPanelSize,
+        minSize: 30,
+        maxSize: "85%",
+        splitterSize: 1,
+        onResizeEnd: num => {
+          prefs.startPanelSize = num;
           this.triggerEditorPaneResize();
-        }}
-        startPanel={
-          <SplitBox
-            style={{ width: "100vw" }}
-            initialSize={prefs.startPanelSize}
-            minSize={30}
-            maxSize="85%"
-            splitterSize={1}
-            onResizeEnd={num => {
-              prefs.startPanelSize = num;
-            }}
-            startPanelCollapsed={startPanelCollapsed}
-            startPanel={<PrimaryPanes horizontal={horizontal} />}
-            endPanel={this.renderEditorPane()}
-          />
-        }
-        endPanelControl={true}
-        endPanel={<SecondaryPanes horizontal={horizontal} />}
-        endPanelCollapsed={endPanelCollapsed}
-      />
-    );
+        },
+        startPanelCollapsed: startPanelCollapsed,
+        startPanel: React.createElement(PrimaryPanes, {
+          horizontal,
+        }),
+        endPanel: this.renderEditorPane(),
+      }),
+      endPanelControl: true,
+      endPanel: React.createElement(SecondaryPanes, {
+        horizontal,
+      }),
+      endPanelCollapsed: endPanelCollapsed,
+    });
   };
-
-  renderShortcutsModal() {
-    const additionalClass = isMacOS ? "mac" : "";
-
-    if (!features.shortcuts) {
-      return;
-    }
-
-    return (
-      <ShortcutsModal
-        additionalClass={additionalClass}
-        enabled={this.state.shortcutsModalEnabled}
-        handleClose={() => this.toggleShortcutsModal()}
-      />
-    );
-  }
 
   render() {
     const { quickOpenEnabled } = this.props;
-    return (
-      <div className={classnames("debugger")}>
-        <AppErrorBoundary
-          componentName="Debugger"
-          panel={L10N.getStr("ToolboxDebugger.label")}
-        >
-          <A11yIntention>
-            {this.renderLayout()}
-            {quickOpenEnabled === true && (
-              <QuickOpenModal
-                shortcutsModalEnabled={this.state.shortcutsModalEnabled}
-                toggleShortcutsModal={() => this.toggleShortcutsModal()}
-              />
-            )}
-            {this.renderShortcutsModal()}
-          </A11yIntention>
-        </AppErrorBoundary>
-      </div>
+    return div(
+      {
+        className: "debugger",
+      },
+      React.createElement(
+        AppErrorBoundary,
+        {
+          componentName: "Debugger",
+          panel: L10N.getStr("ToolboxDebugger.label"),
+        },
+        this.renderLayout(),
+        quickOpenEnabled === true &&
+          React.createElement(QuickOpenModal, {
+            shortcutsModalEnabled: this.state.shortcutsModalEnabled,
+            toggleShortcutsModal: () => this.toggleShortcutsModal(),
+          }),
+        React.createElement(ShortcutsModal, {
+          enabled: this.state.shortcutsModalEnabled,
+          handleClose: () => this.toggleShortcutsModal(),
+        })
+      )
     );
   }
 }
@@ -305,20 +350,33 @@ App.childContextTypes = {
   fluentBundles: PropTypes.array,
 };
 
-const mapStateToProps = state => ({
-  selectedSource: getSelectedSource(state),
-  startPanelCollapsed: getPaneCollapse(state, "start"),
-  endPanelCollapsed: getPaneCollapse(state, "end"),
-  activeSearch: getActiveSearch(state),
-  quickOpenEnabled: getQuickOpenEnabled(state),
-  orientation: getOrientation(state),
-});
+const mapStateToProps = state => {
+  const selectedSource = getSelectedSource(state);
+  const mapScopeEnabled = isMapScopesEnabled(state);
+  const isPaused = getIsCurrentThreadPaused(state);
+
+  const showOriginalVariableMappingWarning =
+    isPaused &&
+    selectedSource?.isOriginal &&
+    !selectedSource.isPrettyPrinted &&
+    !mapScopeEnabled;
+
+  return {
+    showOriginalVariableMappingWarning,
+    selectedSource,
+    startPanelCollapsed: getPaneCollapse(state, "start"),
+    endPanelCollapsed: getPaneCollapse(state, "end"),
+    activeSearch: getActiveSearch(state),
+    quickOpenEnabled: getQuickOpenEnabled(state),
+    orientation: getOrientation(state),
+  };
+};
 
 export default connect(mapStateToProps, {
   setActiveSearch: actions.setActiveSearch,
   closeActiveSearch: actions.closeActiveSearch,
-  closeProjectSearch: actions.closeProjectSearch,
   openQuickOpen: actions.openQuickOpen,
   closeQuickOpen: actions.closeQuickOpen,
   setOrientation: actions.setOrientation,
+  setPrimaryPaneTab: actions.setPrimaryPaneTab,
 })(App);

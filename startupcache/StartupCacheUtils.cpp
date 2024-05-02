@@ -66,7 +66,8 @@ nsresult NewObjectOutputWrappedStorageStream(
 }
 
 nsresult NewBufferFromStorageStream(nsIStorageStream* storageStream,
-                                    UniquePtr<char[]>* buffer, uint32_t* len) {
+                                    UniqueFreePtr<char[]>* buffer,
+                                    uint32_t* len) {
   nsresult rv;
   nsCOMPtr<nsIInputStream> inputStream;
   rv = storageStream->NewInputStream(0, getter_AddRefs(inputStream));
@@ -78,7 +79,8 @@ nsresult NewBufferFromStorageStream(nsIStorageStream* storageStream,
   NS_ENSURE_TRUE(avail64 <= UINT32_MAX, NS_ERROR_FILE_TOO_BIG);
 
   uint32_t avail = (uint32_t)avail64;
-  auto temp = MakeUnique<char[]>(avail);
+  auto temp = UniqueFreePtr<char[]>(
+      reinterpret_cast<char*>(malloc(sizeof(char) * avail)));
   uint32_t read;
   rv = inputStream->Read(temp.get(), avail, &read);
   if (NS_SUCCEEDED(rv) && avail != read) rv = NS_ERROR_UNEXPECTED;
@@ -102,9 +104,8 @@ static inline bool canonicalizeBase(nsAutoCString& spec, nsACString& out) {
   rv = mozilla::Omnijar::GetURIString(mozilla::Omnijar::APP, appBase);
   if (NS_FAILED(rv)) return false;
 
-  bool underGre = !greBase.Compare(spec.get(), false, greBase.Length());
-  bool underApp =
-      appBase.Length() && !appBase.Compare(spec.get(), false, appBase.Length());
+  bool underGre = StringBeginsWith(spec, greBase);
+  bool underApp = appBase.Length() && StringBeginsWith(spec, appBase);
 
   if (!underGre && !underApp) return false;
 
@@ -166,32 +167,7 @@ nsresult ResolveURI(nsIURI* in, nsIURI** out) {
   return NS_OK;
 }
 
-/**
- * PathifyURI transforms uris into useful zip paths
- * to make it easier to manipulate startup cache entries
- * using standard zip tools.
- * Transformations applied:
- *  * resource:// URIs are resolved to their corresponding file/jar URI to
- *    canonicalize resources URIs other than gre and app.
- *  * Paths under GRE or APP directory have their base path replaced with
- *    resource/gre or resource/app to avoid depending on install location.
- *  * jar:file:///path/to/file.jar!/sub/path urls are replaced with
- *    /path/to/file.jar/sub/path
- *
- *  The result is appended to the string passed in. Adding a prefix before
- *  calling is recommended to avoid colliding with other cache users.
- *
- * For example, in the js loader (string is prefixed with jsloader by caller):
- *  resource://gre/modules/XPCOMUtils.jsm or
- *  file://$GRE_DIR/modules/XPCOMUtils.jsm or
- *  jar:file://$GRE_DIR/omni.jar!/modules/XPCOMUtils.jsm becomes
- *     jsloader/resource/gre/modules/XPCOMUtils.jsm
- *  file://$PROFILE_DIR/extensions/{uuid}/components/component.js becomes
- *     jsloader/$PROFILE_DIR/extensions/%7Buuid%7D/components/component.js
- *  jar:file://$PROFILE_DIR/extensions/some.xpi!/components/component.js becomes
- *     jsloader/$PROFILE_DIR/extensions/some.xpi/components/component.js
- */
-nsresult PathifyURI(nsIURI* in, nsACString& out) {
+static nsresult PathifyURIImpl(nsIURI* in, nsACString& out) {
   nsCOMPtr<nsIURI> uri;
   nsresult rv = ResolveURI(in, getter_AddRefs(uri));
   NS_ENSURE_SUCCESS(rv, rv);
@@ -219,7 +195,7 @@ nsresult PathifyURI(nsIURI* in, nsACString& out) {
       rv = jarURI->GetJARFile(getter_AddRefs(jarFileURI));
       NS_ENSURE_SUCCESS(rv, rv);
 
-      rv = PathifyURI(jarFileURI, out);
+      rv = PathifyURIImpl(jarFileURI, out);
       NS_ENSURE_SUCCESS(rv, rv);
 
       nsAutoCString path;
@@ -236,6 +212,13 @@ nsresult PathifyURI(nsIURI* in, nsACString& out) {
     }
   }
   return NS_OK;
+}
+
+nsresult PathifyURI(const char* loaderType, size_t loaderTypeLength, nsIURI* in,
+                    nsACString& out) {
+  out.AssignASCII(loaderType, loaderTypeLength);
+
+  return PathifyURIImpl(in, out);
 }
 
 }  // namespace scache

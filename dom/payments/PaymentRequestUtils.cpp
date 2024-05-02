@@ -12,30 +12,28 @@
 
 namespace mozilla::dom {
 
-nsresult SerializeFromJSObject(JSContext* aCx, JS::HandleObject aObject,
+nsresult SerializeFromJSObject(JSContext* aCx, JS::Handle<JSObject*> aObject,
                                nsAString& aSerializedObject) {
   MOZ_ASSERT(aCx);
-  JS::RootedValue value(aCx, JS::ObjectValue(*aObject));
+  JS::Rooted<JS::Value> value(aCx, JS::ObjectValue(*aObject));
   return SerializeFromJSVal(aCx, value, aSerializedObject);
 }
 
-nsresult SerializeFromJSVal(JSContext* aCx, JS::HandleValue aValue,
+nsresult SerializeFromJSVal(JSContext* aCx, JS::Handle<JS::Value> aValue,
                             nsAString& aSerializedValue) {
   aSerializedValue.Truncate();
-  nsAutoString serializedValue;
-  JS::RootedValue value(aCx, aValue.get());
-  NS_ENSURE_TRUE(nsContentUtils::StringifyJSON(aCx, &value, serializedValue),
+  NS_ENSURE_TRUE(nsContentUtils::StringifyJSON(aCx, aValue, aSerializedValue,
+                                               UndefinedIsNullStringLiteral),
                  NS_ERROR_XPC_BAD_CONVERT_JS);
-  NS_ENSURE_TRUE(!serializedValue.IsEmpty(), NS_ERROR_FAILURE);
-  aSerializedValue = serializedValue;
+  NS_ENSURE_TRUE(!aSerializedValue.IsEmpty(), NS_ERROR_FAILURE);
   return NS_OK;
 }
 
 nsresult DeserializeToJSObject(const nsAString& aSerializedObject,
                                JSContext* aCx,
-                               JS::MutableHandleObject aObject) {
+                               JS::MutableHandle<JSObject*> aObject) {
   MOZ_ASSERT(aCx);
-  JS::RootedValue value(aCx);
+  JS::Rooted<JS::Value> value(aCx);
   nsresult rv = DeserializeToJSValue(aSerializedObject, aCx, &value);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
@@ -49,7 +47,8 @@ nsresult DeserializeToJSObject(const nsAString& aSerializedObject,
 }
 
 nsresult DeserializeToJSValue(const nsAString& aSerializedObject,
-                              JSContext* aCx, JS::MutableHandleValue aValue) {
+                              JSContext* aCx,
+                              JS::MutableHandle<JS::Value> aValue) {
   MOZ_ASSERT(aCx);
   if (!JS_ParseJSON(aCx, aSerializedObject.BeginReading(),
                     aSerializedObject.Length(), aValue)) {

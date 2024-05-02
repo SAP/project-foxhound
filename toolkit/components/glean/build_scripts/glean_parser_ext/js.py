@@ -14,11 +14,10 @@ that uses this code to look up metrics by name.
 """
 
 import jinja2
+from glean_parser import util
 from perfecthash import PerfectHash
 from string_table import StringTable
-
 from util import generate_metric_ids, generate_ping_ids, get_metrics
-from glean_parser import util
 
 """
 We need to store several bits of information in the Perfect Hash Map Entry:
@@ -28,12 +27,16 @@ We need to store several bits of information in the Perfect Hash Map Entry:
    so we need to verify these ourselves.
 2. Type information to instantiate the correct C++ class
 3. The metric's actual ID to lookup the underlying instance.
+4. Whether the metric is a "submetric" (generated per-label for labeled_* metrics)
+5. Whether the metric was registered at runtime
 
 We have 64 bits to play with, so we dedicate:
 
 1. 32 bit to the string table offset. More than enough for a large string table (~60M metrics).
 2. 5 bit for the type. That allows for 32 metric types. We're not even close to that yet.
-3. 27 bit for the metric ID. That allows for 130 million metrics. Let's not go there.
+3. 25 bit for the metric ID. That allows for 33.5 million metrics. Let's not go there.
+4. 1 bit for signifying that this metric is a submetric
+5. 1 bit for signifying that this metric was registered at runtime
 
 These values are interpolated into the template as well, so changing them here
 ensures the generated C++ code follows.
@@ -43,9 +46,18 @@ and adjust the constants below.
 """
 ENTRY_WIDTH = 64
 INDEX_BITS = 32
-ID_BITS = 27
+ID_BITS = 27  # Includes ID_SIGNAL_BITS
+ID_SIGNAL_BITS = 2
+TYPE_BITS = 5
 
 PING_INDEX_BITS = 16
+
+# Size of the PHF intermediate table.
+# This ensures the algorithm finds empty slots in the buckets
+# with the number of metrics we now have in-tree.
+# toolkit/components/telemetry uses 1024, some others 512.
+# See https://bugzilla.mozilla.org/show_bug.cgi?id=1822477
+PHF_SIZE = 1024
 
 
 def ping_entry(ping_id, ping_string_index):
@@ -53,7 +65,7 @@ def ping_entry(ping_id, ping_string_index):
     The 2 pieces of information of a ping encoded into a single 32-bit integer.
     """
     assert ping_id < 2 ** (32 - PING_INDEX_BITS)
-    assert ping_string_index < 2 ** PING_INDEX_BITS
+    assert ping_string_index < 2**PING_INDEX_BITS
     return ping_id << PING_INDEX_BITS | ping_string_index
 
 
@@ -93,7 +105,7 @@ def subtype_name(obj):
     return ""
 
 
-def output_js(objs, output_fd, options={}):
+def output_js(objs, output_fd_h, output_fd_cpp, options={}):
     """
     Given a tree of objects, output code for the JS API to the file-like object `output_fd`.
 
@@ -119,12 +131,20 @@ def output_js(objs, output_fd, options={}):
     util.get_jinja2_template = get_local_template
 
     if "pings" in objs:
-        write_pings({"pings": objs["pings"]}, output_fd, "js_pings.jinja2")
+        write_pings(
+            {"pings": objs["pings"]},
+            output_fd_cpp,
+            "js_pings.jinja2",
+            output_fd_h,
+            "js_pings_h.jinja2",
+        )
     else:
-        write_metrics(get_metrics(objs), output_fd, "js.jinja2")
+        write_metrics(
+            get_metrics(objs), output_fd_cpp, "js.jinja2", output_fd_h, "js_h.jinja2"
+        )
 
 
-def write_metrics(objs, output_fd, template_filename):
+def write_metrics(objs, output_fd, template_filename, output_fd_h, template_filename_h):
     """
     Given a tree of objects `objs`, output metrics-only code for the JS API to the
     file-like object `output_fd` using template `template_filename`
@@ -135,8 +155,8 @@ def write_metrics(objs, output_fd, template_filename):
     )
 
     assert (
-        INDEX_BITS + ID_BITS < ENTRY_WIDTH
-    ), "INDEX_BITS or ID_BITS are larger than allowed"
+        INDEX_BITS + TYPE_BITS + ID_BITS <= ENTRY_WIDTH
+    ), "INDEX_BITS, TYPE_BITS, or ID_BITS are larger than allowed"
 
     get_metric_id = generate_metric_ids(objs)
     # Mapping from a metric's identifier to the entry (metric ID | type id | index)
@@ -149,12 +169,12 @@ def write_metrics(objs, output_fd, template_filename):
     metric_type_ids = {}
 
     for category_name, objs in get_metrics(objs).items():
-        category_name = util.camelize(category_name)
-        id = category_string_table.stringIndex(category_name)
-        categories.append((category_name, id))
+        category_camel = util.camelize(category_name)
+        id = category_string_table.stringIndex(category_camel)
+        categories.append((category_camel, id))
 
         for metric in objs.values():
-            identifier = metric_identifier(category_name, metric.name)
+            identifier = metric_identifier(category_camel, metric.name)
             metric_type_tuple = (type_name(metric), subtype_name(metric))
             if metric_type_tuple in metric_type_ids:
                 type_id, _ = metric_type_ids[metric_type_tuple]
@@ -170,7 +190,7 @@ def write_metrics(objs, output_fd, template_filename):
     # Create a lookup table for the metric categories only
     category_string_table = category_string_table.writeToString("gCategoryStringTable")
     category_map = [(bytearray(category, "ascii"), id) for (category, id) in categories]
-    name_phf = PerfectHash(category_map, 64)
+    name_phf = PerfectHash(category_map, PHF_SIZE)
     category_by_name_lookup = name_phf.cxx_codegen(
         name="CategoryByNameLookup",
         entry_type="category_entry_t",
@@ -178,7 +198,7 @@ def write_metrics(objs, output_fd, template_filename):
         key_type="const nsACString&",
         key_bytes="aKey.BeginReading()",
         key_length="aKey.Length()",
-        return_type="static Maybe<uint32_t>",
+        return_type="Maybe<uint32_t>",
         return_entry="return category_result_check(aKey, entry);",
     )
 
@@ -188,7 +208,7 @@ def write_metrics(objs, output_fd, template_filename):
         (bytearray(metric_name, "ascii"), metric_id)
         for (metric_name, metric_id) in metric_id_mapping.items()
     ]
-    metric_phf = PerfectHash(metric_map, 64)
+    metric_phf = PerfectHash(metric_map, PHF_SIZE)
     metric_by_name_lookup = metric_phf.cxx_codegen(
         name="MetricByNameLookup",
         entry_type="metric_entry_t",
@@ -196,7 +216,7 @@ def write_metrics(objs, output_fd, template_filename):
         key_type="const nsACString&",
         key_bytes="aKey.BeginReading()",
         key_length="aKey.Length()",
-        return_type="static Maybe<uint32_t>",
+        return_type="Maybe<uint32_t>",
         return_entry="return metric_result_check(aKey, entry);",
     )
 
@@ -208,6 +228,8 @@ def write_metrics(objs, output_fd, template_filename):
             entry_width=ENTRY_WIDTH,
             index_bits=INDEX_BITS,
             id_bits=ID_BITS,
+            type_bits=TYPE_BITS,
+            id_signal_bits=ID_SIGNAL_BITS,
             category_string_table=category_string_table,
             category_by_name_lookup=category_by_name_lookup,
             metric_string_table=metric_string_table,
@@ -216,8 +238,20 @@ def write_metrics(objs, output_fd, template_filename):
     )
     output_fd.write("\n")
 
+    output_fd_h.write(
+        util.get_jinja2_template(template_filename_h).render(
+            index_bits=INDEX_BITS,
+            id_bits=ID_BITS,
+            type_bits=TYPE_BITS,
+            id_signal_bits=ID_SIGNAL_BITS,
+            num_categories=len(categories),
+            num_metrics=len(metric_id_mapping.items()),
+        )
+    )
+    output_fd_h.write("\n")
 
-def write_pings(objs, output_fd, template_filename):
+
+def write_pings(objs, output_fd, template_filename, output_fd_h, template_filename_h):
     """
     Given a tree of objects `objs`, output pings-only code for the JS API to the
     file-like object `output_fd` using template `template_filename`
@@ -235,15 +269,17 @@ def write_pings(objs, output_fd, template_filename):
     pings = {}
     for ping_name in objs["pings"].keys():
         ping_id = get_ping_id(ping_name)
-        ping_name = util.camelize(ping_name)
-        pings[ping_name] = ping_entry(ping_id, ping_string_table.stringIndex(ping_name))
+        ping_camel = util.camelize(ping_name)
+        pings[ping_camel] = ping_entry(
+            ping_id, ping_string_table.stringIndex(ping_camel)
+        )
 
     ping_map = [
         (bytearray(ping_name, "ascii"), ping_entry)
         for (ping_name, ping_entry) in pings.items()
     ]
     ping_string_table = ping_string_table.writeToString("gPingStringTable")
-    ping_phf = PerfectHash(ping_map, 64)
+    ping_phf = PerfectHash(ping_map, PHF_SIZE)
     ping_by_name_lookup = ping_phf.cxx_codegen(
         name="PingByNameLookup",
         entry_type="ping_entry_t",
@@ -251,7 +287,7 @@ def write_pings(objs, output_fd, template_filename):
         key_type="const nsACString&",
         key_bytes="aKey.BeginReading()",
         key_length="aKey.Length()",
-        return_type="static Maybe<uint32_t>",
+        return_type="Maybe<uint32_t>",
         return_entry="return ping_result_check(aKey, entry);",
     )
 
@@ -263,3 +299,10 @@ def write_pings(objs, output_fd, template_filename):
         )
     )
     output_fd.write("\n")
+
+    output_fd_h.write(
+        util.get_jinja2_template(template_filename_h).render(
+            num_pings=len(pings.items()),
+        )
+    )
+    output_fd_h.write("\n")

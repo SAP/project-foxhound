@@ -2,13 +2,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-add_task(async function() {
+add_task(async function () {
   let testWindow = await BrowserTestUtils.openNewBrowserWindow();
   // The TabContextMenu initializes its strings only on a focus or mouseover event.
   // Calls focus event on the TabContextMenu early in the test.
   testWindow.gBrowser.selectedTab.focus();
 
-  BrowserTestUtils.loadURI(
+  BrowserTestUtils.startLoadingURIString(
     testWindow.gBrowser,
     "data:text/html,<h1>A Page</h1>"
   );

@@ -16,8 +16,7 @@
 
 NS_IMPL_NS_NEW_SVG_ELEMENT(Style)
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 JSObject* SVGStyleElement::WrapNode(JSContext* aCx,
                                     JS::Handle<JSObject*> aGivenProto) {
@@ -63,12 +62,7 @@ NS_IMPL_ELEMENT_CLONE_WITH_INIT(SVGStyleElement)
 nsresult SVGStyleElement::BindToTree(BindContext& aContext, nsINode& aParent) {
   nsresult rv = SVGStyleElementBase::BindToTree(aContext, aParent);
   NS_ENSURE_SUCCESS(rv, rv);
-
-  void (SVGStyleElement::*update)() =
-      &SVGStyleElement::UpdateStyleSheetInternal;
-  nsContentUtils::AddScriptRunner(
-      NewRunnableMethod("dom::SVGStyleElement::BindToTree", this, update));
-
+  LinkStyle::BindToTree();
   return rv;
 }
 
@@ -79,11 +73,11 @@ void SVGStyleElement::UnbindFromTree(bool aNullParent) {
   Unused << UpdateStyleSheetInternal(oldDoc, oldShadow);
 }
 
-nsresult SVGStyleElement::AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
-                                       const nsAttrValue* aValue,
-                                       const nsAttrValue* aOldValue,
-                                       nsIPrincipal* aMaybeScriptedPrincipal,
-                                       bool aNotify) {
+void SVGStyleElement::AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
+                                   const nsAttrValue* aValue,
+                                   const nsAttrValue* aOldValue,
+                                   nsIPrincipal* aMaybeScriptedPrincipal,
+                                   bool aNotify) {
   if (aNameSpaceID == kNameSpaceID_None) {
     if (aName == nsGkAtoms::title || aName == nsGkAtoms::media ||
         aName == nsGkAtoms::type) {
@@ -162,6 +156,17 @@ void SVGStyleElement::SetTitle(const nsAString& aTitle, ErrorResult& rv) {
   SetAttr(nsGkAtoms::title, aTitle, rv);
 }
 
+bool SVGStyleElement::Disabled() const {
+  StyleSheet* ss = GetSheet();
+  return ss && ss->Disabled();
+}
+
+void SVGStyleElement::SetDisabled(bool aDisabled) {
+  if (StyleSheet* ss = GetSheet()) {
+    ss->SetDisabled(aDisabled);
+  }
+}
+
 //----------------------------------------------------------------------
 // nsStyleLinkElement methods
 
@@ -197,5 +202,4 @@ Maybe<LinkStyle::SheetInfo> SVGStyleElement::GetStyleSheetInfo() {
   });
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

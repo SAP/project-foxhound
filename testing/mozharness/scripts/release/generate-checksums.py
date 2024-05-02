@@ -2,7 +2,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import
 import binascii
 import hashlib
 import os
@@ -48,7 +47,7 @@ class ChecksumsGenerator(BaseScript, VirtualenvMixin):
             ["--bucket-name"],
             {
                 "dest": "bucket_name",
-                "help": "Full bucket name e.g.: net-mozaws-prod-delivery-{firefox,archive}.",
+                "help": "Full bucket name e.g.: moz-fx-productdelivery-pr-38b5-productdelivery.",
             },
         ],
         [
@@ -153,7 +152,7 @@ class ChecksumsGenerator(BaseScript, VirtualenvMixin):
         from boto import connect_s3
 
         self.info("Connecting to S3")
-        conn = connect_s3(anon=True)
+        conn = connect_s3(anon=True, host="storage.googleapis.com")
         self.info("Connecting to bucket {}".format(self.config["bucket_name"]))
         self.bucket = conn.get_bucket(self.config["bucket_name"])
         return self.bucket

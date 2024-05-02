@@ -10,6 +10,7 @@
 #  include <initializer_list>
 #  include "mozilla/MathAlgorithms.h"
 #  include "nsTArray.h"
+#  include "cubeb/cubeb.h"
 
 namespace mozilla {
 
@@ -45,7 +46,7 @@ class AudioConfig {
     // The maximum number of channels a channel map can represent.
     static constexpr uint32_t MAX_CHANNELS = 32;
 
-    typedef uint32_t ChannelMap;
+    using ChannelMap = uint32_t;
 
     ChannelLayout() : mChannelMap(UNKNOWN_MAP), mValid(false) {}
     explicit ChannelLayout(uint32_t aChannels)
@@ -96,6 +97,8 @@ class AudioConfig {
 
     static ChannelLayout SMPTEDefault(const ChannelLayout& aChannelLayout);
     static ChannelLayout SMPTEDefault(ChannelMap aMap);
+    // Convert a channel map to a human readable string for debugging purposes.
+    static nsCString ChannelMapToString(const ChannelMap aChannelMap);
 
     static constexpr ChannelMap UNKNOWN_MAP = 0;
 
@@ -169,6 +172,30 @@ class AudioConfig {
     static ChannelLayout L7POINT1_SURROUND;
     static constexpr ChannelMap L7POINT1_SURROUND_MAP = L3F4_LFE_MAP;
 
+    // Statically check that we can static_cast a Gecko ChannelLayout to a
+    // cubeb_channel_layout.
+    static_assert(CUBEB_LAYOUT_UNDEFINED == UNKNOWN_MAP);
+    static_assert(CUBEB_LAYOUT_MONO == LMONO_MAP);
+    static_assert(CUBEB_LAYOUT_MONO_LFE == LMONO_LFE_MAP);
+    static_assert(CUBEB_LAYOUT_STEREO == LSTEREO_MAP);
+    static_assert(CUBEB_LAYOUT_STEREO_LFE == LSTEREO_LFE_MAP);
+    static_assert(CUBEB_LAYOUT_3F == L3F_MAP);
+    static_assert(CUBEB_LAYOUT_3F_LFE == L3F_LFE_MAP);
+    static_assert(CUBEB_LAYOUT_2F1 == L2F1_MAP);
+    static_assert(CUBEB_LAYOUT_2F1_LFE == L2F1_LFE_MAP);
+    static_assert(CUBEB_LAYOUT_3F1 == L3F1_MAP);
+    static_assert(CUBEB_LAYOUT_3F1_LFE == L3F1_LFE_MAP);
+    static_assert(CUBEB_LAYOUT_2F2 == L2F2_MAP);
+    static_assert(CUBEB_LAYOUT_3F2_LFE == L3F2_LFE_MAP);
+    static_assert(CUBEB_LAYOUT_QUAD == LQUAD_MAP);
+    static_assert(CUBEB_LAYOUT_QUAD_LFE == LQUAD_LFE_MAP);
+    static_assert(CUBEB_LAYOUT_3F2 == L3F2_MAP);
+    static_assert(CUBEB_LAYOUT_3F2_LFE == L3F2_LFE_MAP);
+    static_assert(CUBEB_LAYOUT_3F2_BACK == L3F2_BACK_MAP);
+    static_assert(CUBEB_LAYOUT_3F2_LFE_BACK == L3F2_BACK_LFE_MAP);
+    static_assert(CUBEB_LAYOUT_3F3R_LFE == L3F3R_LFE_MAP);
+    static_assert(CUBEB_LAYOUT_3F4_LFE == L3F4_LFE_MAP);
+
    private:
     void UpdateChannelMap();
     const Channel* DefaultLayoutForChannels(uint32_t aChannels) const;
@@ -185,13 +212,7 @@ class AudioConfig {
     FORMAT_S24,
     FORMAT_S32,
     FORMAT_FLT,
-#  if defined(MOZ_SAMPLE_TYPE_FLOAT32)
     FORMAT_DEFAULT = FORMAT_FLT
-#  elif defined(MOZ_SAMPLE_TYPE_S16)
-    FORMAT_DEFAULT = FORMAT_S16
-#  else
-#    error "Not supported audio type"
-#  endif
   };
 
   AudioConfig(const ChannelLayout& aChannelLayout, uint32_t aRate,

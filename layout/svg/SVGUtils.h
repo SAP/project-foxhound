@@ -23,7 +23,7 @@
 #include "nsCOMPtr.h"
 #include "nsID.h"
 #include "nsIFrame.h"
-#include "nsISupportsBase.h"
+#include "nsISupports.h"
 #include "nsMathUtils.h"
 #include "nsStyleStruct.h"
 #include <algorithm>
@@ -65,10 +65,7 @@ class GeneralPattern;
 
 #define SVG_HIT_TEST_FILL 0x01
 #define SVG_HIT_TEST_STROKE 0x02
-#define SVG_HIT_TEST_CHECK_MRECT 0x04
 
-bool NS_SVGDisplayListHitTestingEnabled();
-bool NS_SVGDisplayListPaintingEnabled();
 bool NS_SVGNewGetBBoxEnabled();
 
 namespace mozilla {
@@ -97,7 +94,6 @@ class SVGBBox final {
   bool IsFinite() const { return mBBox.IsFinite(); }
 
   void Scale(float aScale) { mBBox.Scale(aScale); }
-  void MoveBy(float x, float y) { mBBox.MoveBy(x, y); }
 
   void UnionEdges(const SVGBBox& aSVGBBox) {
     if (aSVGBBox.mIsEmpty) {
@@ -205,7 +201,7 @@ class SVGUtils final {
    * Returns true if the frame or any of its children need ReflowSVG
    * to be called on them.
    */
-  static bool NeedsReflowSVG(nsIFrame* aFrame);
+  static bool NeedsReflowSVG(const nsIFrame* aFrame);
 
   /**
    * Percentage lengths in SVG are resolved against the width/height of the
@@ -226,8 +222,6 @@ class SVGUtils final {
      Input: content - object to be used for determining user space
      Input: length - length to be converted
   */
-  static float UserSpace(SVGElement* aSVGElement,
-                         const SVGAnimatedLength* aLength);
   static float UserSpace(nsIFrame* aNonSVGContext,
                          const SVGAnimatedLength* aLength);
   static float UserSpace(const dom::UserSpaceMetrics& aMetrics,
@@ -244,24 +238,15 @@ class SVGUtils final {
   static nsIFrame* GetOuterSVGFrameAndCoveredRegion(nsIFrame* aFrame,
                                                     nsRect* aRect);
 
-  /* Paint SVG frame with SVG effects - aDirtyRect is the area being
-   * redrawn, in device pixel coordinates relative to the outer svg */
+  /* Paint SVG frame with SVG effects
+   */
   static void PaintFrameWithEffects(nsIFrame* aFrame, gfxContext& aContext,
                                     const gfxMatrix& aTransform,
-                                    imgDrawingParams& aImgParams,
-                                    const nsIntRect* aDirtyRect = nullptr);
+                                    imgDrawingParams& aImgParams);
 
   /* Hit testing - check if point hits the clipPath of indicated
    * frame.  Returns true if no clipPath set. */
   static bool HitTestClip(nsIFrame* aFrame, const gfxPoint& aPoint);
-
-  /**
-   * Hit testing - check if point hits any children of aFrame.  aPoint is
-   * expected to be in the coordinate space established by aFrame for its
-   * children (e.g. the space established by the 'viewBox' attribute on <svg>).
-   */
-  static nsIFrame* HitTestChildren(SVGDisplayContainerFrame* aFrame,
-                                   const gfxPoint& aPoint);
 
   /*
    * Returns the CanvasTM of the indicated frame, whether it's a
@@ -270,15 +255,18 @@ class SVGUtils final {
    */
   static gfxMatrix GetCanvasTM(nsIFrame* aFrame);
 
+  /*
+   * Returns whether the frame is transformed and what those transforms are.
+   */
+  static bool IsSVGTransformed(const nsIFrame* aFrame,
+                               gfx::Matrix* aOwnTransform,
+                               gfx::Matrix* aFromParentTransform);
+
   /**
    * Notify the descendants of aFrame of a change to one of their ancestors
    * that might affect them.
    */
   static void NotifyChildrenOfSVGChange(nsIFrame* aFrame, uint32_t aFlags);
-
-  static nsRect TransformFrameRectToOuterSVG(const nsRect& aRect,
-                                             const gfxMatrix& aMatrix,
-                                             nsPresContext* aPresContext);
 
   /*
    * Convert a surface size to an integer for use by thebes
@@ -305,18 +293,15 @@ class SVGUtils final {
    * The arguments for aX, aY, aWidth and aHeight should be the dimensions of
    * the viewport established by aFrame.
    */
-  static gfxRect GetClipRectForFrame(nsIFrame* aFrame, float aX, float aY,
+  static gfxRect GetClipRectForFrame(const nsIFrame* aFrame, float aX, float aY,
                                      float aWidth, float aHeight);
-
-  static void SetClipRect(gfxContext* aContext, const gfxMatrix& aCTM,
-                          const gfxRect& aRect);
 
   /* Using group opacity instead of fill or stroke opacity on a
    * geometry object seems to be a common authoring mistake.  If we're
    * not applying filters and not both stroking and filling, we can
    * generate the same result without going through the overhead of a
    * push/pop group. */
-  static bool CanOptimizeOpacity(nsIFrame* aFrame);
+  static bool CanOptimizeOpacity(const nsIFrame* aFrame);
 
   /**
    * Take the CTM to userspace for an element, and adjust it to a CTM to its
@@ -329,7 +314,7 @@ class SVGUtils final {
    * @param aFlags One or more of the BBoxFlags values defined below.
    */
   static gfxMatrix AdjustMatrixForUnits(const gfxMatrix& aMatrix,
-                                        SVGAnimatedEnumeration* aUnits,
+                                        const SVGAnimatedEnumeration* aUnits,
                                         nsIFrame* aFrame, uint32_t aFlags);
 
   enum BBoxFlags {
@@ -393,7 +378,7 @@ class SVGUtils final {
    * This function returns the offset one needs to add to something in frame
    * space in order to get its coordinates in user space.
    */
-  static gfxPoint FrameSpaceInCSSPxToUserSpaceOffset(nsIFrame* aFrame);
+  static gfxPoint FrameSpaceInCSSPxToUserSpaceOffset(const nsIFrame* aFrame);
 
   /**
    * Convert a userSpaceOnUse/objectBoundingBoxUnits rectangle that's specified
@@ -416,12 +401,6 @@ class SVGUtils final {
                                  const gfxRect& aBBox,
                                  const dom::UserSpaceMetrics& aMetrics);
 
-  /**
-   * Find the first frame, starting with aStartFrame and going up its
-   * parent chain, that is not an svgAFrame.
-   */
-  static nsIFrame* GetFirstNonAAncestorFrame(nsIFrame* aStartFrame);
-
   static bool OuterSVGIsCallingReflowSVG(nsIFrame* aFrame);
   static bool AnyOuterSVGIsCallingReflowSVG(nsIFrame* aFrame);
 
@@ -435,7 +414,7 @@ class SVGUtils final {
    * system in which the stroke is fixed).  If aUserToOuterSVG is set to a
    * non-identity matrix this function returns true, else it returns false.
    */
-  static bool GetNonScalingStrokeTransform(nsIFrame* aFrame,
+  static bool GetNonScalingStrokeTransform(const nsIFrame* aFrame,
                                            gfxMatrix* aUserToOuterSVG);
 
   /**
@@ -452,10 +431,10 @@ class SVGUtils final {
    * This should die once bug 478152 is fixed.
    */
   static gfxRect PathExtentsToMaxStrokeExtents(const gfxRect& aPathExtents,
-                                               nsTextFrame* aFrame,
+                                               const nsTextFrame* aFrame,
                                                const gfxMatrix& aMatrix);
   static gfxRect PathExtentsToMaxStrokeExtents(const gfxRect& aPathExtents,
-                                               SVGGeometryFrame* aFrame,
+                                               const SVGGeometryFrame* aFrame,
                                                const gfxMatrix& aMatrix);
 
   /**
@@ -467,8 +446,18 @@ class SVGUtils final {
         std::max(double(INT32_MIN), std::min(double(INT32_MAX), aVal)));
   }
 
+  /**
+   * Convert a floating-point value to a 64-bit integer value, clamping to
+   * the lowest and highest integers that can be safely compared to a double.
+   */
+  static int64_t ClampToInt64(double aVal) {
+    return static_cast<int64_t>(
+        std::clamp<double>(aVal, INT64_MIN, std::nexttoward(INT64_MAX, 0)));
+  }
+
   static nscolor GetFallbackOrPaintColor(
-      const ComputedStyle&, StyleSVGPaint nsStyleSVG::*aFillOrStroke);
+      const ComputedStyle&, StyleSVGPaint nsStyleSVG::*aFillOrStroke,
+      nscolor aDefaultContextFallbackColor);
 
   static void MakeFillPatternFor(nsIFrame* aFrame, gfxContext* aContext,
                                  GeneralPattern* aOutPattern,
@@ -480,16 +469,16 @@ class SVGUtils final {
                                    imgDrawingParams& aImgParams,
                                    SVGContextPaint* aContextPaint = nullptr);
 
-  static float GetOpacity(const StyleSVGOpacity&, SVGContextPaint*);
+  static float GetOpacity(const StyleSVGOpacity&, const SVGContextPaint*);
 
   /*
    * @return false if there is no stroke
    */
-  static bool HasStroke(nsIFrame* aFrame,
-                        SVGContextPaint* aContextPaint = nullptr);
+  static bool HasStroke(const nsIFrame* aFrame,
+                        const SVGContextPaint* aContextPaint = nullptr);
 
-  static float GetStrokeWidth(nsIFrame* aFrame,
-                              SVGContextPaint* aContextPaint = nullptr);
+  static float GetStrokeWidth(const nsIFrame* aFrame,
+                              const SVGContextPaint* aContextPaint = nullptr);
 
   /*
    * Set up a context for a stroked path (including any dashing that applies).
@@ -503,7 +492,7 @@ class SVGUtils final {
    * into account the type of element and the value of the 'pointer-events'
    * property on the element.
    */
-  static uint16_t GetGeometryHitTestFlags(nsIFrame* aFrame);
+  static uint16_t GetGeometryHitTestFlags(const nsIFrame* aFrame);
 
   static FillRule ToFillRule(StyleFillRule aFillRule) {
     return aFillRule == StyleFillRule::Evenodd ? FillRule::FILL_EVEN_ODD
@@ -532,7 +521,7 @@ class SVGUtils final {
    * @param aResult the result (valid when true is returned)
    * @return true if calculating the extents succeeded
    */
-  static bool GetSVGGlyphExtents(Element* aElement,
+  static bool GetSVGGlyphExtents(const Element* aElement,
                                  const gfxMatrix& aSVGToAppSpace,
                                  gfxRect* aResult);
 
@@ -545,31 +534,70 @@ class SVGUtils final {
                                const gfxMatrix& aToCanvas,
                                const nsPresContext* presContext);
 
-  struct MaskUsage {
-    bool shouldGenerateMaskLayer;
-    bool shouldGenerateClipMaskLayer;
-    bool shouldApplyClipPath;
-    bool shouldApplyBasicShapeOrPath;
-    float opacity;
+  struct MaskUsage;
+  static MaskUsage DetermineMaskUsage(const nsIFrame* aFrame,
+                                      bool aHandleOpacity);
 
-    MaskUsage()
-        : shouldGenerateMaskLayer(false),
-          shouldGenerateClipMaskLayer(false),
-          shouldApplyClipPath(false),
-          shouldApplyBasicShapeOrPath(false),
-          opacity(0.0) {}
+  struct MOZ_STACK_CLASS MaskUsage {
+    friend MaskUsage SVGUtils::DetermineMaskUsage(const nsIFrame* aFrame,
+                                                  bool aHandleOpacity);
 
-    bool shouldDoSomething() {
-      return shouldGenerateMaskLayer || shouldGenerateClipMaskLayer ||
-             shouldApplyClipPath || shouldApplyBasicShapeOrPath ||
-             opacity != 1.0;
+    bool ShouldGenerateMaskLayer() const { return mShouldGenerateMaskLayer; }
+
+    bool ShouldGenerateClipMaskLayer() const {
+      return mShouldGenerateClipMaskLayer;
     }
+
+    bool ShouldGenerateLayer() const {
+      return mShouldGenerateMaskLayer || mShouldGenerateClipMaskLayer;
+    }
+
+    bool ShouldGenerateMask() const {
+      return mShouldGenerateMaskLayer || mShouldGenerateClipMaskLayer ||
+             !IsOpaque();
+    }
+
+    bool ShouldApplyClipPath() const { return mShouldApplyClipPath; }
+
+    bool HasSVGClip() const {
+      return mShouldGenerateClipMaskLayer || mShouldApplyClipPath;
+    }
+
+    bool ShouldApplyBasicShapeOrPath() const {
+      return mShouldApplyBasicShapeOrPath;
+    }
+
+    bool IsSimpleClipShape() const { return mIsSimpleClipShape; }
+
+    bool IsOpaque() const { return mOpacity == 1.0f; }
+
+    bool IsTransparent() const { return mOpacity == 0.0f; }
+
+    float Opacity() const { return mOpacity; }
+
+    bool UsingMaskOrClipPath() const {
+      return mShouldGenerateMaskLayer || mShouldGenerateClipMaskLayer ||
+             mShouldApplyClipPath || mShouldApplyBasicShapeOrPath;
+    }
+
+    bool ShouldDoSomething() const {
+      return mShouldGenerateMaskLayer || mShouldGenerateClipMaskLayer ||
+             mShouldApplyClipPath || mShouldApplyBasicShapeOrPath ||
+             mOpacity != 1.0f;
+    }
+
+   private:
+    MaskUsage() = default;
+
+    float mOpacity = 0.0f;
+    bool mShouldGenerateMaskLayer = false;
+    bool mShouldGenerateClipMaskLayer = false;
+    bool mShouldApplyClipPath = false;
+    bool mShouldApplyBasicShapeOrPath = false;
+    bool mIsSimpleClipShape = false;
   };
 
-  static void DetermineMaskUsage(nsIFrame* aFrame, bool aHandleOpacity,
-                                 MaskUsage& aUsage);
-
-  static float ComputeOpacity(nsIFrame* aFrame, bool aHandleOpacity);
+  static float ComputeOpacity(const nsIFrame* aFrame, bool aHandleOpacity);
 
   /**
    * SVG frames expect to paint in SVG user units, which are equal to CSS px
@@ -577,12 +605,7 @@ class SVGUtils final {
    * gfxContext's current transform to convert the context's current units from
    * its usual dev pixels to SVG user units/CSS px to keep the SVG code happy.
    */
-  static gfxMatrix GetCSSPxToDevPxMatrix(nsIFrame* aNonSVGFrame);
-
-  static bool IsInSVGTextSubtree(const nsIFrame* aFrame) {
-    // Returns true if the frame is an SVGTextFrame or one of its descendants.
-    return aFrame->HasAnyStateBits(NS_FRAME_IS_SVG_TEXT);
-  }
+  static gfxMatrix GetCSSPxToDevPxMatrix(const nsIFrame* aNonSVGFrame);
 
   /**
    * It is a replacement of

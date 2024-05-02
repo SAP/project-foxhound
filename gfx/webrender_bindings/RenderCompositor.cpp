@@ -23,7 +23,7 @@
 #  include "mozilla/widget/WinCompositorWidget.h"
 #endif
 
-#if defined(MOZ_WIDGET_ANDROID) || defined(MOZ_WAYLAND) || defined(MOZ_X11)
+#if defined(MOZ_WIDGET_ANDROID) || defined(MOZ_WIDGET_GTK)
 #  include "mozilla/webrender/RenderCompositorEGL.h"
 #endif
 
@@ -70,6 +70,13 @@ void wr_compositor_create_external_surface(void* aCompositor,
                                            bool aIsOpaque) {
   RenderCompositor* compositor = static_cast<RenderCompositor*>(aCompositor);
   compositor->CreateExternalSurface(aId, aIsOpaque);
+}
+
+void wr_compositor_create_backdrop_surface(void* aCompositor,
+                                           wr::NativeSurfaceId aId,
+                                           wr::ColorF aColor) {
+  RenderCompositor* compositor = static_cast<RenderCompositor*>(aCompositor);
+  compositor->CreateBackdropSurface(aId, aColor);
 }
 
 void wr_compositor_create_tile(void* aCompositor, wr::NativeSurfaceId aId,
@@ -198,7 +205,7 @@ UniquePtr<RenderCompositor> RenderCompositor::Create(
   }
 #endif
 
-#if defined(MOZ_WIDGET_ANDROID) || defined(MOZ_WAYLAND) || defined(MOZ_X11)
+#if defined(MOZ_WIDGET_ANDROID) || defined(MOZ_WIDGET_GTK)
   UniquePtr<RenderCompositor> eglCompositor =
       RenderCompositorEGL::Create(aWidget, aError);
   if (eglCompositor) {

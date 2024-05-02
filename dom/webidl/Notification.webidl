@@ -20,11 +20,8 @@ interface Notification : EventTarget {
   [GetterThrows]
   static readonly attribute NotificationPermission permission;
 
-  [Throws, Func="mozilla::dom::Notification::RequestPermissionEnabledForScope"]
+  [NewObject, Func="mozilla::dom::Notification::RequestPermissionEnabledForScope"]
   static Promise<NotificationPermission> requestPermission(optional NotificationPermissionCallback permissionCallback);
-
-  [Throws, Func="mozilla::dom::Notification::IsGetEnabled"]
-  static Promise<sequence<Notification>> get(optional GetNotificationOptions filter = {});
 
   attribute EventHandler onclick;
 
@@ -64,7 +61,7 @@ interface Notification : EventTarget {
   [Constant]
   readonly attribute any data;
 
-  void close();
+  undefined close();
 };
 
 typedef (unsigned long or sequence<unsigned long>) VibratePattern;
@@ -101,7 +98,7 @@ enum NotificationPermission {
   "granted"
 };
 
-callback NotificationPermissionCallback = void (NotificationPermission permission);
+callback NotificationPermissionCallback = undefined (NotificationPermission permission);
 
 enum NotificationDirection {
   "auto",

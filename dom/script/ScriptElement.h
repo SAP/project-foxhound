@@ -12,8 +12,7 @@
 #include "nsIScriptElement.h"
 #include "nsStubMutationObserver.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 /**
  * Baseclass useful for script elements (such as <xhtml:script> and
@@ -37,6 +36,8 @@ class ScriptElement : public nsIScriptElement, public nsStubMutationObserver {
 
   virtual nsresult FireErrorEvent() override;
 
+  virtual bool GetScriptType(nsAString& aType) override;
+
  protected:
   // Internal methods
 
@@ -48,7 +49,6 @@ class ScriptElement : public nsIScriptElement, public nsStubMutationObserver {
   virtual bool MaybeProcessScript() override;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_ScriptElement_h

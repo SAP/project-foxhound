@@ -5,7 +5,7 @@
 
 // Ensure Cmd/Ctrl-clicking link opens a new tab
 
-const TAB_URL = "http://example.com/";
+const TAB_URL = "https://example.com/";
 const TEST_URL = `data:text/html,<a href="${TAB_URL}">Click me</a>`.replace(
   / /g,
   "%20"
@@ -13,7 +13,7 @@ const TEST_URL = `data:text/html,<a href="${TAB_URL}">Click me</a>`.replace(
 
 addRDMTask(
   TEST_URL,
-  async function({ ui }) {
+  async function ({ ui }) {
     // Cmd-click the link and wait for a new tab
     await waitForFrameLoad(ui, TEST_URL);
     const newTabPromise = BrowserTestUtils.waitForNewTab(gBrowser, TAB_URL);

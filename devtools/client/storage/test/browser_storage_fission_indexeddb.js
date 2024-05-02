@@ -2,11 +2,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/* import-globals-from head.js */
-
 "use strict";
 
-add_task(async function() {
+add_task(async function () {
   const URL = URL_ROOT_COM_SSL + "storage-indexeddb-iframe.html";
 
   // open tab
@@ -36,9 +34,9 @@ add_task(async function() {
   checkStorageData("lorem", JSON.stringify({ key: "lorem", value: "ipsum" }));
 
   info("Add new data to the iframe DB");
-  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], async function() {
+  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], async function () {
     const iframe = content.document.querySelector("iframe");
-    return SpecialPowers.spawn(iframe, [], async function() {
+    return SpecialPowers.spawn(iframe, [], async function () {
       return new Promise(resolve => {
         const request = content.window.indexedDB.open("db", 1);
         request.onsuccess = event => {

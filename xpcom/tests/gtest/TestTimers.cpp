@@ -15,6 +15,7 @@
 #include "prmon.h"
 #include "prthread.h"
 #include "mozilla/Attributes.h"
+#include "mozilla/gtest/MozAssertions.h"
 #include "mozilla/Services.h"
 
 #include "mozilla/Monitor.h"
@@ -162,18 +163,18 @@ class TimerHelper {
   }
 
   void Cancel() {
-    mTarget->Dispatch(NS_NewRunnableFunction("~TimerHelper timer cancel",
-                                             [this] {
-                                               MonitorAutoLock lock(mMonitor);
-                                               mTimer->Cancel();
-                                             }),
-                      NS_DISPATCH_SYNC);
+    NS_DispatchAndSpinEventLoopUntilComplete(
+        "~TimerHelper timer cancel"_ns, mTarget,
+        NS_NewRunnableFunction("~TimerHelper timer cancel", [this] {
+          MonitorAutoLock lock(mMonitor);
+          mTimer->Cancel();
+        }));
   }
 
  private:
   TimeStamp mStart;
   RefPtr<nsITimer> mTimer;
-  mutable Monitor mMonitor;
+  mutable Monitor mMonitor MOZ_UNANNOTATED;
   uint32_t mBlockTime = 0;
   Maybe<uint32_t> mLastDelay;
   RefPtr<nsIEventTarget> mTarget;
@@ -344,8 +345,12 @@ class FindExpirationTimeState final {
     } while (true);
 
     mBefore = TimeStamp::Now();
-    mMiddle = mBefore + TimeDuration::FromMilliseconds(
-                            kTimerOffset + kTimerInterval * kNumTimers / 2);
+    // To avoid getting exactly the same time for a timer and mMiddle, subtract
+    // 50 ms.
+    mMiddle = mBefore +
+              TimeDuration::FromMilliseconds(kTimerOffset +
+                                             kTimerInterval * kNumTimers / 2) -
+              TimeDuration::FromMilliseconds(50);
     for (uint32_t i = 0; i < kNumTimers; ++i) {
       nsCOMPtr<nsITimer> timer = NS_NewTimer();
       ASSERT_TRUE(timer);
@@ -883,7 +888,7 @@ TEST(Timers, ClosureCallback)
         mon.Notify();
       },
       50, nsITimer::TYPE_ONE_SHOT, "(test) Timers.ClosureCallback", testThread);
-  ASSERT_TRUE(NS_SUCCEEDED(rv));
+  ASSERT_NS_SUCCEEDED(rv);
 
   ReentrantMonitorAutoEnter mon(*newMon);
   while (!notifiedThread) {

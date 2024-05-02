@@ -10,6 +10,7 @@
 #include "mozilla/Assertions.h"       // MOZ_ASSERT
 #include "mozilla/Attributes.h"       // MOZ_STACK_CLASS
 #include "mozilla/MemoryReporting.h"  // MallocSizeOf
+#include "mozilla/Span.h"
 #include "mozilla/Vector.h"
 
 #include <stddef.h>  // size_t
@@ -46,8 +47,8 @@ class GCVector {
  public:
   using ElementType = T;
 
-  explicit GCVector(AllocPolicy alloc = AllocPolicy())
-      : vector(std::move(alloc)) {}
+  explicit GCVector(AllocPolicy alloc) : vector(std::move(alloc)) {}
+  GCVector() : GCVector(AllocPolicy()) {}
 
   GCVector(GCVector&& vec) : vector(std::move(vec.vector)) {}
 
@@ -71,6 +72,9 @@ class GCVector {
 
   T& back() { return vector.back(); }
   const T& back() const { return vector.back(); }
+
+  operator mozilla::Span<T>() { return vector; }
+  operator mozilla::Span<const T>() const { return vector; }
 
   bool initCapacity(size_t cap) { return vector.initCapacity(cap); }
   [[nodiscard]] bool reserve(size_t req) { return vector.reserve(req); }
@@ -165,10 +169,18 @@ class GCVector {
   }
 
   bool traceWeak(JSTracer* trc) {
+    mutableEraseIf(
+        [trc](T& elem) { return !GCPolicy<T>::traceWeak(trc, &elem); });
+    return !empty();
+  }
+
+  // Like eraseIf, but may mutate the contents of the vector.
+  template <typename Pred>
+  void mutableEraseIf(Pred pred) {
     T* src = begin();
     T* dst = begin();
     while (src != end()) {
-      if (GCPolicy<T>::traceWeak(trc, src)) {
+      if (!pred(*src)) {
         if (src != dst) {
           *dst = std::move(*src);
         }
@@ -179,7 +191,6 @@ class GCVector {
 
     MOZ_ASSERT(dst <= end());
     shrinkBy(end() - dst);
-    return !empty();
   }
 };
 

@@ -10,7 +10,7 @@
  * IPC message size limit would be exceeded, resulting in a crash.
  */
 
-async function testSteps() {
+add_task(async function testSteps() {
   const globalLimitKB = 5 * 1024;
 
   // 18 and more iterations would produce an IPC message with size greater than
@@ -84,5 +84,5 @@ async function testSteps() {
 
   await returnToEventLoop();
 
-  ok(!storage.hasActiveSnapshot, "Snapshot successfully finished");
-}
+  ok(!storage.hasSnapshot, "Snapshot successfully finished");
+});

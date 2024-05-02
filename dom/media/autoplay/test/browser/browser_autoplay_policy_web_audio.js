@@ -8,8 +8,8 @@
  */
 "use strict";
 
-const { PermissionTestUtils } = ChromeUtils.import(
-  "resource://testing-common/PermissionTestUtils.jsm"
+const { PermissionTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/PermissionTestUtils.sys.mjs"
 );
 
 const PAGE = GetTestWebBasedURL("file_empty.html");
@@ -19,7 +19,6 @@ function setup_test_preference() {
     set: [
       ["media.autoplay.default", SpecialPowers.Ci.nsIAutoplay.BLOCKED],
       ["media.autoplay.blocking_policy", 0],
-      ["media.autoplay.block-webaudio", true],
       ["media.autoplay.block-event.enabled", true],
     ],
   });
@@ -32,7 +31,7 @@ function createAudioContext() {
   ac.allowedToStart = new Promise(resolve => {
     ac.addEventListener(
       "statechange",
-      function() {
+      function () {
         if (ac.state === "running") {
           resolve();
         }
@@ -44,7 +43,7 @@ function createAudioContext() {
   ac.notAllowedToStart = new Promise(resolve => {
     ac.addEventListener(
       "blocked",
-      function() {
+      function () {
         resolve();
       },
       { once: true }
@@ -69,7 +68,7 @@ async function resumeAudioContext(isAllowedToStart) {
   const blockedPromise = new Promise(resolve => {
     ac.addEventListener(
       "blocked",
-      function() {
+      function () {
         resolve();
       },
       { once: true }
@@ -210,8 +209,7 @@ add_task(async function start_tests() {
   ];
   for (let method of startMethods) {
     await testAutoplayUnknownPermission({
-      name:
-        "Unknown permission and start AudioContext after granting user activation",
+      name: "Unknown permission and start AudioContext after granting user activation",
       method,
     });
   }

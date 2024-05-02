@@ -10,7 +10,6 @@
 #include "jstypes.h"            // for JS_PUBLIC_API
 #include "NamespaceImports.h"   // for Value, HandleObject, CallArgs
 #include "debugger/Debugger.h"  // for DebuggerScriptReferent
-#include "gc/Rooting.h"         // for HandleNativeObject
 #include "js/TypeDecls.h"       // for Handle
 #include "vm/NativeObject.h"    // for NativeObject
 
@@ -42,7 +41,7 @@ class DebuggerScript : public NativeObject {
                                  HandleObject debugCtor);
   static DebuggerScript* create(JSContext* cx, HandleObject proto,
                                 Handle<DebuggerScriptReferent> referent,
-                                HandleNativeObject debugger);
+                                Handle<NativeObject*> debugger);
 
   void trace(JSTracer* trc);
 
@@ -60,7 +59,6 @@ class DebuggerScript : public NativeObject {
 
   struct CallData;
 
-  bool isInstance() const;
   Debugger* owner() const;
 
  private:

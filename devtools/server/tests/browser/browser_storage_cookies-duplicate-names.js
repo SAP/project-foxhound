@@ -6,11 +6,13 @@
 // Test that the storage panel is able to display multiple cookies with the same
 // name (and different paths).
 
-/* import-globals-from storage-helpers.js */
 Services.scriptloader.loadSubScript(
   "chrome://mochitests/content/browser/devtools/server/tests/browser/storage-helpers.js",
   this
 );
+
+const l10n = new Localization(["devtools/client/storage.ftl"], true);
+const sessionString = l10n.formatValueSync("storage-expires-session");
 
 const TESTDATA = {
   "http://test1.example.org": [
@@ -44,7 +46,7 @@ const TESTDATA = {
   ],
 };
 
-add_task(async function() {
+add_task(async function () {
   const { commands } = await openTabAndSetupStorage(
     MAIN_DOMAIN + "storage-cookies-same-name.html"
   );
@@ -69,9 +71,8 @@ add_task(async function() {
             // For indexed DB, we have some values, the database names. Other are empty arrays.
             const hostValues = resource.hosts[host];
             data[resourceType].hosts[host].push(...hostValues);
-            data[resourceType].dataByHost[
-              host
-            ] = await resource.getStoreObjects(host);
+            data[resourceType].dataByHost[host] =
+              await resource.getStoreObjects(host, null, { sessionString });
           }
         }
       },
@@ -95,7 +96,7 @@ function testCookies({ hosts, dataByHost }) {
   return testCookiesObjects(0, hosts, dataByHost);
 }
 
-var testCookiesObjects = async function(index, hosts, dataByHost) {
+var testCookiesObjects = async function (index, hosts, dataByHost) {
   const host = Object.keys(hosts)[index];
   const data = dataByHost[host];
   is(

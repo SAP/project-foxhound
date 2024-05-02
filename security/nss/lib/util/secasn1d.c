@@ -149,7 +149,7 @@ static const char *const flag_names[] = {
 };
 
 static int /* bool */
-    formatKind(unsigned long kind, char *buf)
+formatKind(unsigned long kind, char *buf, int space_in_buffer)
 {
     int i;
     unsigned long k = kind & SEC_ASN1_TAGNUM_MASK;
@@ -158,30 +158,30 @@ static int /* bool */
 
     buf[0] = 0;
     if ((kind & SEC_ASN1_CLASS_MASK) != SEC_ASN1_UNIVERSAL) {
-        sprintf(buf, " %s", class_names[(kind & SEC_ASN1_CLASS_MASK) >> 6]);
+        space_in_buffer -= snprintf(buf, space_in_buffer, " %s", class_names[(kind & SEC_ASN1_CLASS_MASK) >> 6]);
         buf += strlen(buf);
     }
     if (kind & SEC_ASN1_METHOD_MASK) {
-        sprintf(buf, " %s", method_names[1]);
+        space_in_buffer -= snprintf(buf, space_in_buffer, " %s", method_names[1]);
         buf += strlen(buf);
     }
     if ((kind & SEC_ASN1_CLASS_MASK) == SEC_ASN1_UNIVERSAL) {
         if (k || !notag) {
-            sprintf(buf, " %s", type_names[k]);
+            space_in_buffer -= snprintf(buf, space_in_buffer, " %s", type_names[k]);
             if ((k == SEC_ASN1_SET || k == SEC_ASN1_SEQUENCE) &&
                 (kind & SEC_ASN1_GROUP)) {
                 buf += strlen(buf);
-                sprintf(buf, "_OF");
+                space_in_buffer -= snprintf(buf, space_in_buffer, "_OF");
             }
         }
     } else {
-        sprintf(buf, " [%lu]", k);
+        space_in_buffer -= snprintf(buf, space_in_buffer, " [%lu]", k);
     }
     buf += strlen(buf);
 
     for (k = kind >> 8, i = 0; k; k >>= 1, ++i) {
         if (k & 1) {
-            sprintf(buf, " %s", flag_names[i]);
+            space_in_buffer -= snprintf(buf, space_in_buffer, " %s", flag_names[i]);
             buf += strlen(buf);
         }
     }
@@ -248,7 +248,7 @@ typedef struct sec_asn1d_state_struct {
 
     PRPackedBool
         allocate,      /* when true, need to allocate the destination */
-        endofcontents, /* this state ended up parsing end-of-contents octets */
+        endofcontents, /* this state ended up parsing its parent's end-of-contents octets */
         explicit,      /* we are handling an explicit header */
         indefinite,    /* the current item has indefinite-length encoding */
         missing,       /* an optional field that was not present */
@@ -363,6 +363,11 @@ sec_asn1d_push_state(SEC_ASN1DecoderContext *cx,
     if (state != NULL) {
         PORT_Assert(state->our_mark == NULL);
         state->our_mark = PORT_ArenaMark(cx->our_pool);
+    }
+
+    if (theTemplate == NULL) {
+        PORT_SetError(SEC_ERROR_BAD_TEMPLATE);
+        goto loser;
     }
 
     new_state = (sec_asn1d_state *)sec_asn1d_zalloc(cx->our_pool,
@@ -746,8 +751,9 @@ sec_asn1d_parse_identifier(sec_asn1d_state *state,
     byte = (unsigned char)*buf;
 #ifdef DEBUG_ASN1D_STATES
     {
-        char kindBuf[256];
-        formatKind(byte, kindBuf);
+        int bufsize = 256;
+        char kindBuf[bufsize];
+        formatKind(byte, kindBuf, bufsize);
         printf("Found tag %02x %s\n", byte, kindBuf);
     }
 #endif
@@ -1114,7 +1120,7 @@ sec_asn1d_prepare_for_contents(sec_asn1d_state *state)
          * inspection, too) then move this code into the switch statement
          * below under cases SET_OF and SEQUENCE_OF; it will be cleaner.
          */
-        PORT_Assert(state->underlying_kind == SEC_ASN1_SET_OF || state->underlying_kind == SEC_ASN1_SEQUENCE_OF || state->underlying_kind == (SEC_ASN1_SEQUENCE_OF | SEC_ASN1_DYNAMIC) || state->underlying_kind == (SEC_ASN1_SEQUENCE_OF | SEC_ASN1_DYNAMIC));
+        PORT_Assert(state->underlying_kind == SEC_ASN1_SET_OF || state->underlying_kind == SEC_ASN1_SEQUENCE_OF || state->underlying_kind == (SEC_ASN1_SET_OF | SEC_ASN1_DYNAMIC) || state->underlying_kind == (SEC_ASN1_SEQUENCE_OF | SEC_ASN1_DYNAMIC));
         if (state->contents_length != 0 || state->indefinite) {
             const SEC_ASN1Template *subt;
 
@@ -2202,9 +2208,13 @@ sec_asn1d_next_in_sequence(sec_asn1d_state *state)
                  * In practice this does not happen, but for completeness
                  * sake it should probably be made to work at some point.
                  */
-                PORT_Assert(child_found_tag_number < SEC_ASN1_HIGH_TAG_NUMBER);
-                identifier = (unsigned char)(child_found_tag_modifiers | child_found_tag_number);
-                sec_asn1d_record_any_header(child, (char *)&identifier, 1);
+                if (child_found_tag_modifiers >= SEC_ASN1_HIGH_TAG_NUMBER) {
+                    PORT_SetError(SEC_ERROR_LIBRARY_FAILURE);
+                    state->top->status = decodeError;
+                } else {
+                    identifier = (unsigned char)(child_found_tag_modifiers | child_found_tag_number);
+                    sec_asn1d_record_any_header(child, (char *)&identifier, 1);
+                }
             }
         }
     }
@@ -2470,7 +2480,18 @@ sec_asn1d_parse_end_of_contents(sec_asn1d_state *state,
 
     if (state->pending == 0) {
         state->place = afterEndOfContents;
-        state->endofcontents = PR_TRUE;
+        /* These end-of-contents octets either terminate a SEQUENCE, a GROUP,
+         * or a constructed string. The SEQUENCE case is unique in that the
+         * state parses its own end-of-contents octets and therefore should not
+         * have its `endofcontents` flag set. We identify the SEQUENCE case by
+         * checking whether the child state's template is pointing at a
+         * template terminator (see `sec_asn1d_next_in_sequence`).
+         */
+        if (state->child && state->child->theTemplate->kind == 0) {
+            state->endofcontents = PR_FALSE;
+        } else {
+            state->endofcontents = PR_TRUE;
+        }
     }
 
     return len;
@@ -2711,7 +2732,8 @@ static void
 dump_states(SEC_ASN1DecoderContext *cx)
 {
     sec_asn1d_state *state;
-    char kindBuf[256];
+    int bufsize = 256;
+    char kindBuf[bufsize];
 
     for (state = cx->current; state->parent; state = state->parent) {
         ;
@@ -2723,7 +2745,7 @@ dump_states(SEC_ASN1DecoderContext *cx)
             printf("  ");
         }
 
-        i = formatKind(state->theTemplate->kind, kindBuf);
+        i = formatKind(state->theTemplate->kind, kindBuf, bufsize);
         printf("%s: tmpl kind %s",
                (state == cx->current) ? "STATE" : "State",
                kindBuf);
@@ -2750,7 +2772,6 @@ SEC_ASN1DecoderUpdate(SEC_ASN1DecoderContext *cx,
     sec_asn1d_state *state = NULL;
     unsigned long consumed;
     SEC_ASN1EncodingPart what;
-    sec_asn1d_state *stateEnd = cx->current;
 
     if (cx->status == needBytes)
         cx->status = keepGoing;
@@ -2939,7 +2960,7 @@ SEC_ASN1DecoderUpdate(SEC_ASN1DecoderContext *cx,
     }
 
     if (cx->status == decodeError) {
-        while (state != NULL && stateEnd->parent != state) {
+        while (state != NULL) {
             sec_asn1d_free_child(state, PR_TRUE);
             state = state->parent;
         }

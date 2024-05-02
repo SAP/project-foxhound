@@ -6,6 +6,10 @@
 
 XPCSHELL_TESTS_MANIFESTS += ["tests/unit/xpcshell.ini"]
 
+TESTING_JS_MODULES += [
+    "tests/LangPackMatcherTestUtils.sys.mjs",
+]
+
 toolkit = CONFIG["MOZ_WIDGET_TOOLKIT"]
 
 if toolkit == "windows":
@@ -47,7 +51,7 @@ UNIFIED_SOURCES += [
 ]
 
 EXTRA_JS_MODULES += [
-    "PluralForm.jsm",
+    "LangPackMatcher.sys.mjs",
 ]
 
 XPCOM_MANIFESTS += [
@@ -80,12 +84,14 @@ if CONFIG["COMPILE_ENVIRONMENT"]:
         inputs=["/intl/locale/rust/fluent-langneg-ffi"],
     )
     CbindgenHeader(
+        "oxilangtag_ffi_generated.h", inputs=["/intl/locale/rust/oxilangtag-ffi"]
+    )
+    CbindgenHeader(
         "unic_langid_ffi_generated.h", inputs=["/intl/locale/rust/unic-langid-ffi"]
     )
 
     EXPORTS.mozilla.intl += [
         "!fluent_langneg_ffi_generated.h",
+        "!oxilangtag_ffi_generated.h",
         "!unic_langid_ffi_generated.h",
     ]
-
-REQUIRES_UNIFIED_BUILD = True

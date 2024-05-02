@@ -1,4 +1,4 @@
-import { INITIAL_STATE, insertPinned, reducers } from "common/Reducers.jsm";
+import { INITIAL_STATE, insertPinned, reducers } from "common/Reducers.sys.mjs";
 const {
   TopSites,
   App,
@@ -12,7 +12,7 @@ const {
   Search,
   ASRouter,
 } = reducers;
-import { actionTypes as at } from "common/Actions.jsm";
+import { actionTypes as at } from "common/Actions.sys.mjs";
 
 describe("Reducers", () => {
   describe("App", () => {
@@ -261,6 +261,18 @@ describe("Reducers", () => {
       const oldState = { rows: [{ url: "foo.com" }, { url: "bar.com" }] };
       const nextState = TopSites(oldState, { type: at.SNIPPETS_PREVIEW_MODE });
       assert.lengthOf(nextState.rows, 0);
+    });
+    it("should set sov positions and state", () => {
+      const positions = [
+        { position: 0, assignedPartner: "amp" },
+        { position: 1, assignedPartner: "moz-sales" },
+      ];
+      const nextState = TopSites(undefined, {
+        type: at.SOV_UPDATED,
+        data: { ready: true, positions },
+      });
+      assert.equal(nextState.sov.ready, true);
+      assert.equal(nextState.sov.positions, positions);
     });
   });
   describe("Prefs", () => {
@@ -943,10 +955,9 @@ describe("Reducers", () => {
     it("should set layout data with DISCOVERY_STREAM_LAYOUT_UPDATE", () => {
       const state = DiscoveryStream(undefined, {
         type: at.DISCOVERY_STREAM_LAYOUT_UPDATE,
-        data: { layout: ["test"], lastUpdated: 123 },
+        data: { layout: ["test"] },
       });
       assert.equal(state.layout[0], "test");
-      assert.equal(state.lastUpdated, 123);
     });
     it("should reset layout data with DISCOVERY_STREAM_LAYOUT_RESET", () => {
       const layoutData = { layout: ["test"], lastUpdated: 123 };
@@ -981,6 +992,27 @@ describe("Reducers", () => {
         data: { enabled: true },
       });
       assert.deepEqual(state.config, { enabled: true });
+    });
+    it("should set recentSavesEnabled with DISCOVERY_STREAM_PREFS_SETUP", () => {
+      const state = DiscoveryStream(undefined, {
+        type: at.DISCOVERY_STREAM_PREFS_SETUP,
+        data: { recentSavesEnabled: true },
+      });
+      assert.isTrue(state.recentSavesEnabled);
+    });
+    it("should set recentSavesData with DISCOVERY_STREAM_RECENT_SAVES", () => {
+      const state = DiscoveryStream(undefined, {
+        type: at.DISCOVERY_STREAM_RECENT_SAVES,
+        data: { recentSaves: [1, 2, 3] },
+      });
+      assert.deepEqual(state.recentSavesData, [1, 2, 3]);
+    });
+    it("should set isUserLoggedIn with DISCOVERY_STREAM_POCKET_STATE_SET", () => {
+      const state = DiscoveryStream(undefined, {
+        type: at.DISCOVERY_STREAM_POCKET_STATE_SET,
+        data: { isUserLoggedIn: true },
+      });
+      assert.isTrue(state.isUserLoggedIn);
     });
     it("should set feeds as loaded with DISCOVERY_STREAM_FEEDS_UPDATE", () => {
       const state = DiscoveryStream(undefined, {

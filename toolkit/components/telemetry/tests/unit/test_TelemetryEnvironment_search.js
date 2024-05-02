@@ -1,14 +1,14 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
-const { TelemetryEnvironment } = ChromeUtils.import(
-  "resource://gre/modules/TelemetryEnvironment.jsm"
+const { TelemetryEnvironment } = ChromeUtils.importESModule(
+  "resource://gre/modules/TelemetryEnvironment.sys.mjs"
 );
-const { SearchTestUtils } = ChromeUtils.import(
-  "resource://testing-common/SearchTestUtils.jsm"
+const { SearchTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/SearchTestUtils.sys.mjs"
 );
-const { TelemetryEnvironmentTesting } = ChromeUtils.import(
-  "resource://testing-common/TelemetryEnvironmentTesting.jsm"
+const { TelemetryEnvironmentTesting } = ChromeUtils.importESModule(
+  "resource://testing-common/TelemetryEnvironmentTesting.sys.mjs"
 );
 
 SearchTestUtils.init(this);
@@ -33,7 +33,8 @@ add_task(async function setup() {
   Services.fog.initializeFOG();
 
   // The system add-on must be installed before AddonManager is started.
-  const distroDir = FileUtils.getDir("ProfD", ["sysfeatures", "app0"], true);
+  const distroDir = FileUtils.getDir("ProfD", ["sysfeatures", "app0"]);
+  distroDir.create(Ci.nsIFile.DIRECTORY_TYPE, FileUtils.PERMS_DIRECTORY);
   do_get_file("system.xpi").copyTo(
     distroDir,
     "tel-system-xpi@tests.mozilla.org.xpi"
@@ -54,9 +55,6 @@ add_task(async function setup() {
   await AddonTestUtils.overrideBuiltIns({ system: [] });
   AddonTestUtils.addonStartup.remove(true);
   await AddonTestUtils.promiseStartupManager();
-  // Override ExtensionXPCShellUtils.jsm's overriding of the pref as the
-  // search service needs it.
-  Services.prefs.clearUserPref("services.settings.default_bucket");
 
   // Setup a webserver to serve Addons, etc.
   gHttpServer = new HttpServer();
@@ -101,11 +99,14 @@ add_task(async function setup() {
 
 async function checkDefaultSearch(privateOn, reInitSearchService) {
   // Start off with separate default engine for private browsing turned off.
-  Preferences.set(
+  Services.prefs.setBoolPref(
     "browser.search.separatePrivateDefault.ui.enabled",
     privateOn
   );
-  Preferences.set("browser.search.separatePrivateDefault", privateOn);
+  Services.prefs.setBoolPref(
+    "browser.search.separatePrivateDefault",
+    privateOn
+  );
 
   let data;
   if (privateOn) {
@@ -137,8 +138,7 @@ async function checkDefaultSearch(privateOn, reInitSearchService) {
   Assert.equal(data.settings.defaultSearchEngine, "telemetrySearchIdentifier");
   let expectedSearchEngineData = {
     name: "telemetrySearchIdentifier",
-    loadPath:
-      "[other]addEngineWithDetails:telemetrySearchIdentifier@search.mozilla.org",
+    loadPath: "[addon]telemetrySearchIdentifier@search.mozilla.org",
     origin: "default",
     submissionURL:
       "https://ar.wikipedia.org/wiki/%D8%AE%D8%A7%D8%B5:%D8%A8%D8%AD%D8%AB?search=&sourceId=Mozilla-search",
@@ -195,13 +195,18 @@ async function checkDefaultSearch(privateOn, reInitSearchService) {
       "telemetrySearchIdentifier"
     );
     engine.hidden = false;
-    await Services.search.setDefault(engine);
+    await Services.search.setDefault(
+      engine,
+      Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+    );
     await Services.search.setDefaultPrivate(
-      Services.search.getEngineByName(SEARCH_ENGINE_ID)
+      Services.search.getEngineByName(SEARCH_ENGINE_ID),
+      Ci.nsISearchService.CHANGE_REASON_UNKNOWN
     );
   } else {
     await Services.search.setDefault(
-      Services.search.getEngineByName(SEARCH_ENGINE_ID)
+      Services.search.getEngineByName(SEARCH_ENGINE_ID),
+      Ci.nsISearchService.CHANGE_REASON_UNKNOWN
     );
   }
   await deferred.promise;
@@ -212,7 +217,7 @@ async function checkDefaultSearch(privateOn, reInitSearchService) {
   const EXPECTED_SEARCH_ENGINE = "other-" + SEARCH_ENGINE_ID;
   const EXPECTED_SEARCH_ENGINE_DATA = {
     name: SEARCH_ENGINE_ID,
-    loadPath: `[other]addEngineWithDetails:${SEARCH_ENGINE_ID}@test.engine`,
+    loadPath: `[addon]${SEARCH_ENGINE_ID}@test.engine`,
     origin: "verified",
   };
   if (privateOn) {
@@ -273,7 +278,10 @@ add_task(async function test_defaultSearchEngine() {
     }, "browser-search-engine-modified");
     Services.search.addOpenSearchEngine(gDataRoot + "/engine.xml", null);
   });
-  await Services.search.setDefault(engine);
+  await Services.search.setDefault(
+    engine,
+    Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+  );
   await promise;
   TelemetryEnvironment.unregisterChangeListener("testWatch_SearchDefault");
   let data = TelemetryEnvironment.currentEnvironment;
@@ -307,7 +315,8 @@ add_task(async function test_defaultSearchEngine() {
   const EXPECTED_SEARCH_ENGINE = "other-" + SEARCH_ENGINE_ID;
   // Work around bug 1165341: Intentionally set the default engine.
   await Services.search.setDefault(
-    Services.search.getEngineByName(SEARCH_ENGINE_ID)
+    Services.search.getEngineByName(SEARCH_ENGINE_ID),
+    Ci.nsISearchService.CHANGE_REASON_UNKNOWN
   );
 
   // Double-check the default for the next part of the test.
@@ -320,7 +329,7 @@ add_task(async function test_defaultSearchEngine() {
   const PREFS_TO_WATCH = new Map([
     [PREF_TEST, { what: TelemetryEnvironment.RECORD_PREF_STATE }],
   ]);
-  Preferences.reset(PREF_TEST);
+  Services.prefs.clearUserPref(PREF_TEST);
 
   // Watch the test preference.
   await TelemetryEnvironment.testWatchPreferences(PREFS_TO_WATCH);
@@ -330,7 +339,7 @@ add_task(async function test_defaultSearchEngine() {
     deferred.resolve
   );
   // Trigger an environment change.
-  Preferences.set(PREF_TEST, 1);
+  Services.prefs.setIntPref(PREF_TEST, 1);
   await deferred.promise;
   TelemetryEnvironment.unregisterChangeListener("testSearchEngine_pref");
 
@@ -350,7 +359,7 @@ add_task(async function test_defaultSearchEngine_paramsChanged() {
       name: "TestEngine",
       search_url: "https://www.google.com/fake1",
     },
-    true
+    { skipUnload: true }
   );
 
   let promise = new Promise(resolve => {
@@ -360,14 +369,17 @@ add_task(async function test_defaultSearchEngine_paramsChanged() {
     );
   });
   let engine = Services.search.getEngineByName("TestEngine");
-  await Services.search.setDefault(engine);
+  await Services.search.setDefault(
+    engine,
+    Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+  );
   await promise;
 
   let data = TelemetryEnvironment.currentEnvironment;
   TelemetryEnvironmentTesting.checkEnvironmentData(data);
   Assert.deepEqual(data.settings.defaultSearchEngineData, {
     name: "TestEngine",
-    loadPath: "[other]addEngineWithDetails:testengine@tests.mozilla.org",
+    loadPath: "[addon]testengine@tests.mozilla.org",
     origin: "verified",
     submissionURL: "https://www.google.com/fake1?q=",
   });
@@ -379,23 +391,23 @@ add_task(async function test_defaultSearchEngine_paramsChanged() {
     );
   });
 
-  engine.wrappedJSObject._updateFromManifest(
-    extension.id,
-    extension.baseURI,
-    SearchTestUtils.createEngineManifest({
-      name: "TestEngine",
-      version: "1.2",
-      search_url: "https://www.google.com/fake2",
-    })
-  );
-
+  let manifest = SearchTestUtils.createEngineManifest({
+    name: "TestEngine",
+    version: "1.2",
+    search_url: "https://www.google.com/fake2",
+  });
+  await extension.upgrade({
+    useAddonManager: "permanent",
+    manifest,
+  });
+  await AddonTestUtils.waitForSearchProviderStartup(extension);
   await promise;
 
   data = TelemetryEnvironment.currentEnvironment;
   TelemetryEnvironmentTesting.checkEnvironmentData(data);
   Assert.deepEqual(data.settings.defaultSearchEngineData, {
     name: "TestEngine",
-    loadPath: "[other]addEngineWithDetails:testengine@tests.mozilla.org",
+    loadPath: "[addon]testengine@tests.mozilla.org",
     origin: "verified",
     submissionURL: "https://www.google.com/fake2?q=",
   });

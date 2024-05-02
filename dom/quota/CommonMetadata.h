@@ -8,7 +8,9 @@
 #define DOM_QUOTA_COMMONMETADATA_H_
 
 #include <utility>
+
 #include "mozilla/dom/quota/Client.h"
+#include "mozilla/dom/quota/Constants.h"
 #include "mozilla/dom/quota/PersistenceType.h"
 #include "nsString.h"
 
@@ -18,16 +20,29 @@ struct PrincipalMetadata {
   nsCString mSuffix;
   nsCString mGroup;
   nsCString mOrigin;
+  nsCString mStorageOrigin;
+  bool mIsPrivate = false;
 
   // These explicit constructors exist to prevent accidental aggregate
   // initialization which could for example initialize mSuffix as group and
   // mGroup as origin (if only two string arguments are used).
   PrincipalMetadata() = default;
 
-  PrincipalMetadata(nsCString aSuffix, nsCString aGroup, nsCString aOrigin)
+  PrincipalMetadata(nsCString aSuffix, nsCString aGroup, nsCString aOrigin,
+                    nsCString aStorageOrigin, bool aIsPrivate)
       : mSuffix{std::move(aSuffix)},
         mGroup{std::move(aGroup)},
-        mOrigin{std::move(aOrigin)} {}
+        mOrigin{std::move(aOrigin)},
+        mStorageOrigin{std::move(aStorageOrigin)},
+        mIsPrivate{aIsPrivate} {
+    AssertInvariants();
+  }
+
+  void AssertInvariants() const {
+    MOZ_ASSERT(!StringBeginsWith(mOrigin, kUUIDOriginScheme));
+    MOZ_ASSERT_IF(!mIsPrivate, mOrigin == mStorageOrigin);
+    MOZ_ASSERT_IF(mIsPrivate, mOrigin != mStorageOrigin);
+  }
 };
 
 struct OriginMetadata : public PrincipalMetadata {
@@ -36,12 +51,14 @@ struct OriginMetadata : public PrincipalMetadata {
   OriginMetadata() = default;
 
   OriginMetadata(nsCString aSuffix, nsCString aGroup, nsCString aOrigin,
+                 nsCString aStorageOrigin, bool aIsPrivate,
                  PersistenceType aPersistenceType)
       : PrincipalMetadata(std::move(aSuffix), std::move(aGroup),
-                          std::move(aOrigin)),
+                          std::move(aOrigin), std::move(aStorageOrigin),
+                          aIsPrivate),
         mPersistenceType(aPersistenceType) {}
 
-  OriginMetadata(PrincipalMetadata&& aPrincipalMetadata,
+  OriginMetadata(PrincipalMetadata aPrincipalMetadata,
                  PersistenceType aPersistenceType)
       : PrincipalMetadata(std::move(aPrincipalMetadata)),
         mPersistenceType(aPersistenceType) {}
@@ -61,7 +78,9 @@ struct FullOriginMetadata : OriginMetadata {
 };
 
 struct ClientMetadata : OriginMetadata {
-  const Client::Type mClientType;
+  Client::Type mClientType;
+
+  ClientMetadata() = default;
 
   ClientMetadata(OriginMetadata aOriginMetadata, Client::Type aClientType)
       : OriginMetadata(std::move(aOriginMetadata)), mClientType(aClientType) {}

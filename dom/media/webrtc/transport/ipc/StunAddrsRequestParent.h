@@ -9,8 +9,7 @@
 
 struct MDNSService;
 
-namespace mozilla {
-namespace net {
+namespace mozilla::net {
 
 class StunAddrsRequestParent : public PStunAddrsRequestParent {
   friend class PStunAddrsRequestParent;
@@ -23,7 +22,7 @@ class StunAddrsRequestParent : public PStunAddrsRequestParent {
 
   mozilla::ipc::IPCResult Recv__delete__() override;
 
-  void OnQueryComplete(const nsCString& hostname,
+  void OnQueryComplete(const nsACString& hostname,
                        const Maybe<nsCString>& address);
 
  protected:
@@ -31,11 +30,11 @@ class StunAddrsRequestParent : public PStunAddrsRequestParent {
 
   virtual mozilla::ipc::IPCResult RecvGetStunAddrs() override;
   virtual mozilla::ipc::IPCResult RecvRegisterMDNSHostname(
-      const nsCString& hostname, const nsCString& address) override;
+      const nsACString& hostname, const nsACString& address) override;
   virtual mozilla::ipc::IPCResult RecvQueryMDNSHostname(
-      const nsCString& hostname) override;
+      const nsACString& hostname) override;
   virtual mozilla::ipc::IPCResult RecvUnregisterMDNSHostname(
-      const nsCString& hostname) override;
+      const nsACString& hostname) override;
   virtual void ActorDestroy(ActorDestroyReason why) override;
 
   nsCOMPtr<nsIThread> mMainThread;
@@ -44,7 +43,7 @@ class StunAddrsRequestParent : public PStunAddrsRequestParent {
   void GetStunAddrs_s();
   void SendStunAddrs_m(const NrIceStunAddrArray& addrs);
 
-  void OnQueryComplete_m(const nsCString& hostname,
+  void OnQueryComplete_m(const nsACString& hostname,
                          const Maybe<nsCString>& address);
 
   ThreadSafeAutoRefCnt mRefCnt;
@@ -78,7 +77,6 @@ class StunAddrsRequestParent : public PStunAddrsRequestParent {
   static StaticRefPtr<MDNSServiceWrapper> mSharedMDNSService;
 };
 
-}  // namespace net
-}  // namespace mozilla
+}  // namespace mozilla::net
 
 #endif  // mozilla_net_StunAddrsRequestParent_h

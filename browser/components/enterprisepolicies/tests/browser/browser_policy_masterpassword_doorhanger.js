@@ -3,8 +3,6 @@
  * the correct values in various password capture cases.
  */
 
-/* import-globals-from ../../../../../toolkit/components/passwordmgr/test/browser/head.js */
-
 Services.scriptloader.loadSubScript(
   "chrome://mochitests/content/browser/toolkit/components/passwordmgr/test/browser/head.js",
   this
@@ -27,7 +25,7 @@ add_task(async function test_policy_masterpassword_doorhanger() {
         "https://example.com/browser/toolkit/components/" +
         "passwordmgr/test/browser/form_basic.html",
     },
-    async function(browser) {
+    async function (browser) {
       await SimpleTest.promiseFocus(browser.ownerGlobal);
 
       // Update the form with credentials from the test case.
@@ -40,7 +38,7 @@ add_task(async function test_policy_masterpassword_doorhanger() {
       // Submit the form with the new credentials. This will cause the doorhanger
       // notification to be displayed.
       let formSubmittedPromise = listenForTestNotification("ShowDoorhanger");
-      await SpecialPowers.spawn(browser, [], async function() {
+      await SpecialPowers.spawn(browser, [], async function () {
         let doc = this.content.document;
         doc.getElementById("form-basic").submit();
       });
@@ -54,7 +52,7 @@ add_task(async function test_policy_masterpassword_doorhanger() {
       // Fake the subdialog
       let dialogURL = "";
       let originalOpenDialog = window.openDialog;
-      window.openDialog = function(aDialogURL, unused, unused2, aCallback) {
+      window.openDialog = function (aDialogURL, unused, unused2, aCallback) {
         dialogURL = aDialogURL;
         if (aCallback) {
           aCallback();

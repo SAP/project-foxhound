@@ -3,11 +3,9 @@
 
 add_test(function test_creation() {
   // Explicit callback for this one.
-  let server = new SyncServer({
-    __proto__: SyncServerCallback,
-  });
+  let server = new SyncServer(Object.create(SyncServerCallback));
   Assert.ok(!!server); // Just so we have a check.
-  server.start(null, function() {
+  server.start(null, function () {
     _("Started on " + server.port);
     server.stop(run_next_test);
   });
@@ -57,8 +55,8 @@ add_test(function test_url_parsing() {
   run_next_test();
 });
 
-const { RESTRequest } = ChromeUtils.import(
-  "resource://services-common/rest.js"
+const { RESTRequest } = ChromeUtils.importESModule(
+  "resource://services-common/rest.sys.mjs"
 );
 function localRequest(server, path) {
   _("localRequest: " + path);
@@ -83,9 +81,7 @@ add_task(async function test_basic_http() {
 });
 
 add_task(async function test_info_collections() {
-  let server = new SyncServer({
-    __proto__: SyncServerCallback,
-  });
+  let server = new SyncServer(Object.create(SyncServerCallback));
   function responseHasCorrectHeaders(r) {
     Assert.equal(r.status, 200);
     Assert.equal(r.headers["content-type"], "application/json");
@@ -164,7 +160,7 @@ add_task(async function test_storage_request() {
 
   async function deleteWBONotExists() {
     let req = localRequest(server, keysURL);
-    server.callback.onItemDeleted = function(username, collection, wboID) {
+    server.callback.onItemDeleted = function (username, collection, wboID) {
       do_throw("onItemDeleted should not have been called.");
     };
 
@@ -178,7 +174,7 @@ add_task(async function test_storage_request() {
 
   async function deleteWBOExists() {
     let req = localRequest(server, foosURL);
-    server.callback.onItemDeleted = function(username, collection, wboID) {
+    server.callback.onItemDeleted = function (username, collection, wboID) {
       _("onItemDeleted called for " + collection + "/" + wboID);
       delete server.callback.onItemDeleted;
       Assert.equal(username, "john");

@@ -9,6 +9,7 @@ loadScripts({ name: "role.js", dir: MOCHITESTS_DIR });
 
 const NESTED_IFRAME_DOC_BODY_ID = "nested-iframe-body";
 const NESTED_IFRAME_ID = "nested-iframe";
+// eslint-disable-next-line @microsoft/sdl/no-insecure-url
 const nestedURL = new URL(`http://example.com/document-builder.sjs`);
 nestedURL.searchParams.append(
   "html",
@@ -37,7 +38,7 @@ function getOsPid(browsingContext) {
 
 addAccessibleTask(
   `<iframe id="${NESTED_IFRAME_ID}" src="${nestedURL.href}"/>`,
-  async function(browser, iframeDocAcc, contentDocAcc) {
+  async function (browser, iframeDocAcc, contentDocAcc) {
     ok(iframeDocAcc, "IFRAME document accessible is present");
     let nestedDocAcc = findAccessibleChildByID(
       iframeDocAcc,

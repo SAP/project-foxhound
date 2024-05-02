@@ -15,7 +15,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1363508
 <div id="target1" style="width: 50px; height: 50px; background: black"></div>
 <script type="application/javascript">
 
-  /** Test for Bug 1363508 **/
+  /** Test for Bug 1363508 */
   SimpleTest.waitForExplicitFinish();
 
   var target0 = window.document.getElementById("target0");
@@ -86,8 +86,8 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1363508
     ];
 
     synthesizeTouch(target0, 5, 5, { type: "touchstart" });
-    synthesizeTouch(target0, 5, 5, { type: "touchmove" });
-    synthesizeTouch(target0, 5, 5, { type: "touchcancel" });
+    synthesizeTouch(target0, 6, 6, { type: "touchmove" });
+    synthesizeTouch(target0, 6, 6, { type: "touchcancel" });
 
     await Promise.all(eventPromises);
   }

@@ -1,11 +1,11 @@
 "use strict";
 
-// This is a test for PageActions.jsm, specifically the generalized parts that
+// This is a test for PageActions.sys.mjs, specifically the generalized parts that
 // add and remove page actions and toggle them in the urlbar.  This does not
 // test the built-in page actions; browser_page_action_menu.js does that.
 
 // Initialization.  Must run first.
-add_task(async function init() {
+add_setup(async function () {
   // The page action urlbar button, and therefore the panel, is only shown when
   // the current tab is actionable -- i.e., a normal web page.  about:blank is
   // not, so open a new tab first thing, and close it when this test is done.

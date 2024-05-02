@@ -65,7 +65,7 @@ android-arm/debug:
     treeherder:
         platform: android-5-0-armv7/debug
         symbol: B
-    worker-type: b-linux
+    worker-type: b-linux-gcp
     worker:
         env:
             TOOLTOOL_MANIFEST: "mobile/android/config/tooltool-manifests/android/releng.manifest"
@@ -81,30 +81,6 @@ android-arm/debug:
             - linux64-sccache
             - android-gradle-dependencies
 
-android-arm-lite/debug:
-    description: "Android 4.1 Arm Debug Lite"
-    index:
-        job-name: android-arm-lite-debug
-    attributes:
-        enable-full-crashsymbols: true
-    treeherder:
-        platform: android-4-1-armv7/debug
-        symbol: Bl
-    worker-type: b-linux
-    worker:
-        env:
-            TOOLTOOL_MANIFEST: "mobile/android/config/tooltool-manifests/android/releng.manifest"
-    run:
-        actions: [get-secrets, build]
-        config: ["builds/releng_base_android_64_builds.py"]
-        custom-build-variant-cfg: arm-lite-debug
-    use-sccache: true
-    fetches:
-        toolchain:
-            - linux64-clang
-            - linux64-sccache
-            - android-gradle-dependencies-lite
-
 android-x86/opt:
     description: "Android 5.0 x86 Opt"
     index:
@@ -115,7 +91,7 @@ android-x86/opt:
         platform: android-5-0-x86/opt
         symbol: B
     run-on-projects: ['integration']
-    worker-type: b-linux
+    worker-type: b-linux-gcp
     worker:
         env:
             TOOLTOOL_MANIFEST: "mobile/android/config/tooltool-manifests/android-x86/releng.manifest"
@@ -140,7 +116,7 @@ android-x86-lite/opt:
         platform: android-4-1-x86/opt
         symbol: Bl
     run-on-projects: ['integration']
-    worker-type: b-linux
+    worker-type: b-linux-gcp
     worker:
         env:
             TOOLTOOL_MANIFEST: "mobile/android/config/tooltool-manifests/android-x86/releng.manifest"
@@ -155,30 +131,6 @@ android-x86-lite/opt:
             - linux64-clang
             - linux64-sccache
             - android-gradle-dependencies-lite
-
-android-x86-fuzzing/debug:
-    description: "Android x86 Fuzzing Debug"
-    index:
-        job-name: android-x86-fuzzing-debug
-    treeherder:
-        platform: android-4-1-x86/debug
-        symbol: Bf
-    worker-type: b-linux
-    worker:
-        env:
-            TOOLTOOL_MANIFEST: "mobile/android/config/tooltool-manifests/android-x86/releng.manifest"
-    run:
-        actions: [get-secrets, build]
-        config: ["builds/releng_base_android_64_builds.py"]
-        custom-build-variant-cfg: x86-fuzzing-debug
-    use-sccache: true
-    fetches:
-        toolchain:
-            - linux64-clang
-            - linux64-sccache
-            - android-gradle-dependencies
-    optimization:
-        skip-unless-expanded: null
 
 android-x86-shippable/opt:
     description: "Android 5.0 x86 Shippable"
@@ -195,7 +147,7 @@ android-x86-shippable/opt:
         platform: android-5-0-x86-shippable/opt
         symbol: B
     run-on-projects: ['release']
-    worker-type: b-linux
+    worker-type: b-linux-gcp
     worker:
         env:
             TOOLTOOL_MANIFEST: "mobile/android/config/tooltool-manifests/android-x86/releng.manifest"
@@ -226,7 +178,7 @@ android-x86-shippable-lite/opt:
         platform: android-4-1-x86-shippable-lite/opt
         symbol: Bl
     run-on-projects: ['release']
-    worker-type: b-linux
+    worker-type: b-linux-gcp
     worker:
         env:
             TOOLTOOL_MANIFEST: "mobile/android/config/tooltool-manifests/android-x86/releng.manifest"
@@ -252,7 +204,7 @@ android-arm/opt:
         platform: android-5-0-armv7/opt
         symbol: B
     run-on-projects: ['integration']
-    worker-type: b-linux
+    worker-type: b-linux-gcp
     worker:
         env:
             TOOLTOOL_MANIFEST: "mobile/android/config/tooltool-manifests/android/releng.manifest"
@@ -278,7 +230,7 @@ android-arm-lite/opt:
         platform: android-4-1-armv7/opt
         symbol: Bl
     run-on-projects: ['integration']
-    worker-type: b-linux
+    worker-type: b-linux-gcp
     worker:
         env:
             TOOLTOOL_MANIFEST: "mobile/android/config/tooltool-manifests/android/releng.manifest"
@@ -308,7 +260,7 @@ android-arm-shippable/opt:
         platform: android-5-0-armv7-shippable/opt
         symbol: Bpgo(B)
     run-on-projects: ['release']
-    worker-type: b-linux
+    worker-type: b-linux-gcp
     worker:
         env:
             TOOLTOOL_MANIFEST: "mobile/android/config/tooltool-manifests/android/releng.manifest"
@@ -339,7 +291,7 @@ android-arm-shippable-lite/opt:
         platform: android-4-1-armv7-shippable-lite/opt
         symbol: Bpgo(Bl)
     run-on-projects: ['release']
-    worker-type: b-linux
+    worker-type: b-linux-gcp
     worker:
         env:
             TOOLTOOL_MANIFEST: "mobile/android/config/tooltool-manifests/android/releng.manifest"
@@ -365,7 +317,7 @@ android-aarch64/opt:
         platform: android-5-0-aarch64/opt
         symbol: B
     run-on-projects: ['integration']
-    worker-type: b-linux
+    worker-type: b-linux-gcp
     worker:
         env:
             TOOLTOOL_MANIFEST: "mobile/android/config/tooltool-manifests/android/releng.manifest"
@@ -391,7 +343,7 @@ android-aarch64-lite/opt:
         platform: android-5-0-aarch64/opt
         symbol: Bl
     run-on-projects: ['integration']
-    worker-type: b-linux
+    worker-type: b-linux-gcp
     worker:
         env:
             TOOLTOOL_MANIFEST: "mobile/android/config/tooltool-manifests/android/releng.manifest"
@@ -416,7 +368,7 @@ android-aarch64/debug:
     treeherder:
         platform: android-5-0-aarch64/debug
         symbol: B
-    worker-type: b-linux
+    worker-type: b-linux-gcp
     worker:
         env:
             TOOLTOOL_MANIFEST: "mobile/android/config/tooltool-manifests/android/releng.manifest"
@@ -431,31 +383,6 @@ android-aarch64/debug:
             - linux64-clang
             - linux64-sccache
             - android-gradle-dependencies
-
-android-aarch64-lite/debug:
-    description: "Android 5.0 AArch64 Debug Lite"
-    index:
-        job-name: android-aarch64-lite-debug
-    attributes:
-        enable-full-crashsymbols: true
-    treeherder:
-        platform: android-5-0-aarch64/debug
-        symbol: Bl
-    worker-type: b-linux
-    worker:
-        env:
-            TOOLTOOL_MANIFEST: "mobile/android/config/tooltool-manifests/android/releng.manifest"
-            PERFHERDER_EXTRA_OPTIONS: lite
-    run:
-        actions: [get-secrets, build]
-        config: ["builds/releng_base_android_64_builds.py"]
-        custom-build-variant-cfg: aarch64-lite-debug
-    use-sccache: true
-    fetches:
-        toolchain:
-            - linux64-clang
-            - linux64-sccache
-            - android-gradle-dependencies-lite
 
 android-aarch64-shippable/opt:
     description: "Android 5.0 AArch64 Shippable"
@@ -472,7 +399,7 @@ android-aarch64-shippable/opt:
         platform: android-5-0-aarch64-shippable/opt
         symbol: Bpgo(B)
     run-on-projects: ['release']
-    worker-type: b-linux
+    worker-type: b-linux-gcp
     worker:
         env:
             TOOLTOOL_MANIFEST: "mobile/android/config/tooltool-manifests/android/releng.manifest"
@@ -503,7 +430,7 @@ android-aarch64-shippable-lite/opt:
         platform: android-5-0-aarch64-shippable-lite/opt
         symbol: Bpgo(Bl)
     run-on-projects: ['release']
-    worker-type: b-linux
+    worker-type: b-linux-gcp
     worker:
         env:
             TOOLTOOL_MANIFEST: "mobile/android/config/tooltool-manifests/android/releng.manifest"
@@ -530,7 +457,7 @@ android-x86_64/opt:
         platform: android-5-0-x86_64/opt
         symbol: B
     run-on-projects: ['integration']
-    worker-type: b-linux
+    worker-type: b-linux-gcp
     worker:
         env:
             TOOLTOOL_MANIFEST: "mobile/android/config/tooltool-manifests/android-x86/releng.manifest"
@@ -556,7 +483,7 @@ android-x86_64-lite/opt:
         platform: android-5-0-x86_64/opt
         symbol: Bl
     run-on-projects: ['integration']
-    worker-type: b-linux
+    worker-type: b-linux-gcp
     worker:
         env:
             TOOLTOOL_MANIFEST: "mobile/android/config/tooltool-manifests/android-x86/releng.manifest"
@@ -573,6 +500,31 @@ android-x86_64-lite/opt:
             - linux64-sccache
             - android-gradle-dependencies-lite
 
+android-x86_64-fuzzing/debug:
+    description: "Android x86_64 Fuzzing Debug"
+    index:
+        job-name: android-x86_64-fuzzing-debug
+    treeherder:
+        platform: android-5-0-x86_64/debug
+        symbol: Bf
+    worker-type: b-linux-gcp
+    worker:
+        env:
+            TOOLTOOL_MANIFEST: "mobile/android/config/tooltool-manifests/android-x86/releng.manifest"
+            PERFHERDER_EXTRA_OPTIONS: fuzzing
+    run:
+        actions: [get-secrets, build]
+        config: ["builds/releng_base_android_64_builds.py"]
+        custom-build-variant-cfg: fuzzing-debug
+    use-sccache: true
+    fetches:
+        toolchain:
+            - linux64-clang
+            - linux64-sccache
+            - android-gradle-dependencies
+    optimization:
+        skip-unless-expanded: null
+
 android-x86_64-shippable/opt:
     description: "Android 5.0 x86-64 Shippable"
     use-pgo: true
@@ -588,7 +540,7 @@ android-x86_64-shippable/opt:
         platform: android-5-0-x86_64-shippable/opt
         symbol: B
     run-on-projects: ['release']
-    worker-type: b-linux
+    worker-type: b-linux-gcp
     worker:
         env:
             TOOLTOOL_MANIFEST: "mobile/android/config/tooltool-manifests/android-x86/releng.manifest"
@@ -619,7 +571,7 @@ android-x86_64-shippable-lite/opt:
         platform: android-5-0-x86_64-shippable-lite/opt
         symbol: Bl
     run-on-projects: ['release']
-    worker-type: b-linux
+    worker-type: b-linux-gcp
     worker:
         env:
             TOOLTOOL_MANIFEST: "mobile/android/config/tooltool-manifests/android-x86/releng.manifest"
@@ -645,7 +597,7 @@ android-x86_64/debug:
     treeherder:
         platform: android-5-0-x86_64/debug
         symbol: B
-    worker-type: b-linux
+    worker-type: b-linux-gcp
     worker:
         env:
             TOOLTOOL_MANIFEST: "mobile/android/config/tooltool-manifests/android-x86/releng.manifest"
@@ -661,32 +613,6 @@ android-x86_64/debug:
             - linux64-sccache
             - android-gradle-dependencies
 
-android-x86_64-lite/debug:
-    description: "Android 5.0 x86-64 Debug Lite"
-    index:
-        job-name: android-x86_64-lite-debug
-    attributes:
-        enable-full-crashsymbols: true
-    treeherder:
-        platform: android-5-0-x86_64/debug
-        symbol: Bl
-    worker-type: b-linux
-    worker:
-        env:
-            TOOLTOOL_MANIFEST: "mobile/android/config/tooltool-manifests/android-x86/releng.manifest"
-            MOZ_AUTOMATION_PACKAGE_TESTS: "1"
-            PERFHERDER_EXTRA_OPTIONS: lite
-    run:
-        actions: [get-secrets, build]
-        config: ["builds/releng_base_android_64_builds.py"]
-        custom-build-variant-cfg: x86_64-lite-debug
-    use-sccache: true
-    fetches:
-        toolchain:
-            - linux64-clang
-            - linux64-sccache
-            - android-gradle-dependencies-lite
-
 android-x86_64/debug-isolated-process:
     description: "Android 5.0 x86-64 Debug with Isolated Process"
     index:
@@ -696,7 +622,7 @@ android-x86_64/debug-isolated-process:
     treeherder:
         platform: android-5-0-x86_64/debug-isolated-process
         symbol: Bip
-    worker-type: b-linux
+    worker-type: b-linux-gcp
     worker:
         env:
             TOOLTOOL_MANIFEST: "mobile/android/config/tooltool-manifests/android-x86/releng.manifest"
@@ -712,198 +638,3 @@ android-x86_64/debug-isolated-process:
             - linux64-clang
             - linux64-sccache
             - android-gradle-dependencies
-
-android-arm-gcp/debug:
-    description: "Android 5.0 Arm Debug - built on GCP"
-    index:
-        job-name: android-arm-gcp-debug
-    attributes:
-        enable-full-crashsymbols: true
-    treeherder:
-        platform: android-5-0-armv7/debug
-        symbol: B-gcp
-        tier: 2
-    worker-type: b-linux-gcp
-    worker:
-        env:
-            TOOLTOOL_MANIFEST: "mobile/android/config/tooltool-manifests/android/releng.manifest"
-            PERFHERDER_EXTRA_OPTIONS: gcp
-    run:
-        actions: [get-secrets, build]
-        config: ["builds/releng_base_android_64_builds.py"]
-        custom-build-variant-cfg: arm-debug
-    use-sccache: true
-    fetches:
-        toolchain:
-            - linux64-clang
-            - linux64-sccache
-            - android-gradle-dependencies
-    optimization:
-        skip-unless-backstop: null
-
-
-android-x86-gcp/opt:
-    description: "Android 5.0 x86 Opt - built on GCP"
-    index:
-        job-name: android-x86-gcp-opt
-    attributes:
-        enable-full-crashsymbols: true
-    treeherder:
-        platform: android-5-0-x86/opt
-        symbol: B-gcp
-        tier: 2
-    worker-type: b-linux-gcp
-    worker:
-        env:
-            TOOLTOOL_MANIFEST: "mobile/android/config/tooltool-manifests/android-x86/releng.manifest"
-            PERFHERDER_EXTRA_OPTIONS: gcp
-    run:
-        actions: [get-secrets, build]
-        config: ["builds/releng_base_android_64_builds.py"]
-        custom-build-variant-cfg: x86
-    use-sccache: true
-    fetches:
-        toolchain:
-            - linux64-clang
-            - linux64-sccache
-            - android-gradle-dependencies
-    optimization:
-        skip-unless-backstop: null
-
-android-arm-gcp/opt:
-    description: "Android 5.0 Arm Opt - built on GCP"
-    index:
-        job-name: android-arm-gcp-opt
-    attributes:
-        enable-full-crashsymbols: true
-    treeherder:
-        platform: android-5-0-armv7/opt
-        symbol: B-gcp
-        tier: 2
-    worker-type: b-linux-gcp
-    worker:
-        env:
-            TOOLTOOL_MANIFEST: "mobile/android/config/tooltool-manifests/android/releng.manifest"
-            PERFHERDER_EXTRA_OPTIONS: gcp
-    run:
-        actions: [get-secrets, build]
-        config: ["builds/releng_base_android_64_builds.py"]
-        custom-build-variant-cfg: arm
-    use-sccache: true
-    fetches:
-        toolchain:
-            - linux64-clang
-            - linux64-sccache
-            - android-gradle-dependencies
-    optimization:
-        skip-unless-backstop: null
-
-android-aarch64-gcp/opt:
-    description: "Android 5.0 AArch64 Opt - built on GCP"
-    index:
-        job-name: android-aarch64-gcp-opt
-    attributes:
-        enable-full-crashsymbols: true
-    treeherder:
-        platform: android-5-0-aarch64/opt
-        symbol: B-gcp
-        tier: 2
-    worker-type: b-linux-gcp
-    worker:
-        env:
-            TOOLTOOL_MANIFEST: "mobile/android/config/tooltool-manifests/android/releng.manifest"
-            PERFHERDER_EXTRA_OPTIONS: gcp
-    run:
-        actions: [get-secrets, build]
-        config: ["builds/releng_base_android_64_builds.py"]
-        custom-build-variant-cfg: aarch64
-    use-sccache: true
-    fetches:
-        toolchain:
-            - linux64-clang
-            - linux64-sccache
-            - android-gradle-dependencies
-    optimization:
-        skip-unless-backstop: null
-
-android-aarch64-gcp/debug:
-    description: "Android 5.0 AArch64 Debug - built on GCP"
-    index:
-        job-name: android-aarch64-gcp-debug
-    attributes:
-        enable-full-crashsymbols: true
-    treeherder:
-        platform: android-5-0-aarch64/debug
-        symbol: B-gcp
-        tier: 2
-    worker-type: b-linux-gcp
-    worker:
-        env:
-            TOOLTOOL_MANIFEST: "mobile/android/config/tooltool-manifests/android/releng.manifest"
-            PERFHERDER_EXTRA_OPTIONS: gcp
-    run:
-        actions: [get-secrets, build]
-        config: ["builds/releng_base_android_64_builds.py"]
-        custom-build-variant-cfg: aarch64-debug
-    use-sccache: true
-    fetches:
-        toolchain:
-            - linux64-clang
-            - linux64-sccache
-            - android-gradle-dependencies
-    optimization:
-        skip-unless-backstop: null
-
-android-x86_64-gcp/opt:
-    description: "Android 5.0 x86-64 Opt - built on GCP"
-    index:
-        job-name: android-x86_64-gcp-opt
-    attributes:
-        enable-full-crashsymbols: true
-    treeherder:
-        platform: android-5-0-x86_64/opt
-        symbol: B-gcp
-        tier: 2
-    worker-type: b-linux-gcp
-    worker:
-        env:
-            TOOLTOOL_MANIFEST: "mobile/android/config/tooltool-manifests/android-x86/releng.manifest"
-            PERFHERDER_EXTRA_OPTIONS: gcp
-    run:
-        actions: [get-secrets, build]
-        config: ["builds/releng_base_android_64_builds.py"]
-        custom-build-variant-cfg: x86_64
-    use-sccache: true
-    fetches:
-        toolchain:
-            - linux64-clang
-            - linux64-sccache
-            - android-gradle-dependencies
-    optimization:
-        skip-unless-backstop: null
-
-android-x86_64-gcp/debug:
-    description: "Android 5.0 x86-64 Debug - built on GCP"
-    index:
-        job-name: android-x86_64-gcp-debug
-    attributes:
-        enable-full-crashsymbols: true
-    treeherder:
-        platform: android-5-0-x86_64/debug
-        symbol: B-gcp
-        tier: 2
-    worker-type: b-linux-gcp
-    worker:
-        env:
-            TOOLTOOL_MANIFEST: "mobile/android/config/tooltool-manifests/android-x86/releng.manifest"
-            PERFHERDER_EXTRA_OPTIONS: gcp
-    run:
-        actions: [get-secrets, build]
-        config: ["builds/releng_base_android_64_builds.py"]
-        custom-build-variant-cfg: x86_64-debug
-    fetches:
-        toolchain:
-            - linux64-clang
-            - android-gradle-dependencies
-    optimization:
-        skip-unless-backstop: null

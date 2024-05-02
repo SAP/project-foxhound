@@ -1,28 +1,37 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this file,
 # You can obtain one at http://mozilla.org/MPL/2.0/.
-from __future__ import absolute_import, print_function
-
-import six
 import argparse
 import os
-import platform
 
+import six
 from mozlog.commandline import add_logging_group
 
-(FIREFOX, CHROME, CHROMIUM) = DESKTOP_APPS = ["firefox", "chrome", "chromium"]
-(GECKOVIEW, REFBROW, FENIX, CHROME_ANDROID) = FIREFOX_ANDROID_APPS = [
+(FIREFOX, CHROME, CHROMIUM, SAFARI, CHROMIUM_RELEASE) = DESKTOP_APPS = [
+    "firefox",
+    "chrome",
+    "chromium",
+    "safari",
+    "custom-car",
+]
+(GECKOVIEW, REFBROW, FENIX) = FIREFOX_ANDROID_APPS = [
     "geckoview",
     "refbrow",
     "fenix",
-    "chrome-m",
 ]
+(CHROME_ANDROID, CHROMIUM_RELEASE_ANDROID) = CHROME_ANDROID_APPS = [
+    "chrome-m",
+    "cstm-car-m",
+]
+FIREFOX_APPS = FIREFOX_ANDROID_APPS + [FIREFOX]
 
 CHROMIUM_DISTROS = [CHROME, CHROMIUM]
 APPS = {
     FIREFOX: {"long_name": "Firefox Desktop"},
     CHROME: {"long_name": "Google Chrome Desktop"},
     CHROMIUM: {"long_name": "Google Chromium Desktop"},
+    SAFARI: {"long_name": "Safari Desktop"},
+    CHROMIUM_RELEASE: {"long_name": "Custom Chromium-as-Release desktop"},
     GECKOVIEW: {
         "long_name": "Firefox GeckoView on Android",
         "default_activity": "org.mozilla.geckoview_example.GeckoViewActivity",
@@ -43,8 +52,17 @@ APPS = {
         "default_activity": "com.android.chrome/com.google.android.apps.chrome.Main",
         "default_intent": "android.intent.action.VIEW",
     },
+    CHROMIUM_RELEASE_ANDROID: {
+        "long_name": "Custom Chromium-as-Release on Android",
+        "default_activity": "com.android.chrome/com.google.android.apps.chrome.Main",
+        "default_intent": "android.intent.action.VIEW",
+    },
 }
 INTEGRATED_APPS = list(APPS.keys())
+
+GECKO_PROFILER_APPS = (FIREFOX, GECKOVIEW, REFBROW, FENIX)
+
+TRACE_APPS = (CHROME, CHROMIUM, CHROMIUM_RELEASE)
 
 
 def print_all_activities():
@@ -115,26 +133,7 @@ def create_parser(mach_interface=False):
         "loaded from the environment variable HOST_IP.",
         default="127.0.0.1",
     )
-    add_arg(
-        "--power-test",
-        dest="power_test",
-        action="store_true",
-        help="Use Raptor to measure power usage on Android browsers (Geckoview Example, "
-        "Fenix, and Refbrow) as well as on Intel-based MacOS machines that have "
-        "Intel Power Gadget installed.",
-    )
-    add_arg(
-        "--memory-test",
-        dest="memory_test",
-        action="store_true",
-        help="Use Raptor to measure memory usage.",
-    )
-    add_arg(
-        "--cpu-test",
-        dest="cpu_test",
-        action="store_true",
-        help="Use Raptor to measure CPU usage. Currently supported for Android only.",
-    )
+
     add_arg(
         "--live-sites",
         dest="live_sites",
@@ -217,6 +216,13 @@ def create_parser(mach_interface=False):
         help="What features to enable in the profiler",
     )
     add_arg(
+        "--extra-profiler-run",
+        dest="extra_profiler_run",
+        action="store_true",
+        default=False,
+        help="Run the tests again with profiler enabled after the main run.",
+    )
+    add_arg(
         "--symbolsPath",
         dest="symbols_path",
         help="Path to the symbols for the build we are testing",
@@ -291,6 +297,14 @@ def create_parser(mach_interface=False):
         help="Disable Fission (site isolation) in Gecko.",
     )
     add_arg(
+        "--enable-fission-mobile",
+        dest="fission_mobile",
+        action="store_true",
+        default=False,
+        help="Temporary work-around to enable fission on mobile as it is enabled "
+        "by default for desktop now but not mobile.",
+    )
+    add_arg(
         "--setpref",
         dest="extra_prefs",
         action="append",
@@ -319,6 +333,12 @@ def create_parser(mach_interface=False):
             dest="obj_path",
             default=None,
             help="Browser-build obj_path (received when running in production)",
+        )
+        add_arg(
+            "--mozbuild-path",
+            dest="mozbuild_path",
+            default=None,
+            help="This contains the path to mozbuild.",
         )
     add_arg(
         "--noinstall",
@@ -349,6 +369,16 @@ def create_parser(mach_interface=False):
         help="Name of conditioned profile to use. Prefix with `artifact:` "
         "if we should obtain the profile from CI.",
     )
+    add_arg(
+        "--test-bytecode-cache",
+        dest="test_bytecode_cache",
+        default=False,
+        action="store_true",
+        help="If set, the pageload test will set the preference "
+        "`dom.script_loader.bytecode_cache.strategy=-1` and wait 20 seconds after "
+        "the first cold pageload to populate the bytecode cache before running "
+        "a warm pageload test. Only available if `--chimera` is also provided.",
+    )
 
     # for browsertime jobs, cold page load is determined by a '--cold' cmd line argument
     add_arg(
@@ -362,9 +392,18 @@ def create_parser(mach_interface=False):
     add_arg(
         "--browsertime",
         dest="browsertime",
-        default=False,
+        default=True,
         action="store_true",
         help="Whether to use browsertime to execute pageload tests",
+    )
+    add_arg(
+        "--browsertime-arg",
+        dest="browsertime_user_args",
+        action="append",
+        default=[],
+        metavar="OPTION=VALUE",
+        help="Add extra browsertime arguments to your test run using "
+        "this option e.g.: --browsertime-arg timeout.scripts=1000",
     )
     add_arg(
         "--browsertime-node", dest="browsertime_node", help="path to Node.js executable"
@@ -416,6 +455,12 @@ def create_parser(mach_interface=False):
         help="path to geckodriver executable",
     )
     add_arg(
+        "--browsertime-existing-results",
+        dest="browsertime_existing_results",
+        default=None,
+        help="load existing results instead of running tests",
+    )
+    add_arg(
         "--verbose",
         dest="verbose",
         action="store_true",
@@ -429,6 +474,52 @@ def create_parser(mach_interface=False):
         default=False,
         help="Enable marionette tracing",
     )
+    add_arg(
+        "--clean",
+        dest="clean",
+        action="store_true",
+        default=False,
+        help="Clean the python virtualenv (remove, and rebuild) for Raptor before running tests.",
+    )
+    add_arg(
+        "--collect-perfstats",
+        dest="collect_perfstats",
+        action="store_true",
+        default=False,
+        help="If set, the test will collect perfstats in addition to "
+        "the regular metrics it gathers.",
+    )
+    add_arg(
+        "--extra-summary-methods",
+        dest="extra_summary_methods",
+        action="append",
+        default=[],
+        metavar="OPTION",
+        help="Alternative methods for summarizing technical and visual pageload metrics. "
+        "Options: median.",
+    )
+    add_arg(
+        "--benchmark-repository",
+        dest="benchmark_repository",
+        default=None,
+        type=str,
+        help="Repository that should be used for a particular benchmark test. "
+        "e.g. https://github.com/mozilla-mobile/firefox-android",
+    )
+    add_arg(
+        "--benchmark-revision",
+        dest="benchmark_revision",
+        default=None,
+        type=str,
+        help="Repository revision that should be used for a particular benchmark test.",
+    )
+    add_arg(
+        "--benchmark-branch",
+        dest="benchmark_branch",
+        default=None,
+        type=str,
+        help="Repository branch that should be used for a particular benchmark test.",
+    )
 
     add_logging_group(parser)
     return parser
@@ -438,6 +529,10 @@ def verify_options(parser, args):
     ctx = vars(args)
     if args.binary is None and args.app != "chrome-m":
         parser.error("--binary is required!")
+
+    # Debug-mode is disabled in CI (check for attribute in case of mach_interface issues)
+    if hasattr(args, "run_local") and (not args.run_local and args.debug_mode):
+        parser.error("Cannot run debug mode in CI")
 
     # make sure that browsertime_video is set if visual metrics are requested
     if args.browsertime_visualmetrics and not args.browsertime_video:
@@ -463,6 +558,12 @@ def verify_options(parser, args):
         # Force cold pageloads with 2 page cycles
         args.cold = True
         args.page_cycles = 2
+        # Create bytecode cache at the first cold load, so that the next warm load uses it.
+        # This is applicable for chimera mode only
+        if args.test_bytecode_cache:
+            args.extra_prefs.append("dom.script_loader.bytecode_cache.strategy=-1")
+    elif args.test_bytecode_cache:
+        parser.error("--test-bytecode-cache can only be used in --chimera mode")
 
     # if running on a desktop browser make sure the binary exists
     if args.app in DESKTOP_APPS:
@@ -473,28 +574,12 @@ def verify_options(parser, args):
     if args.gecko_profile and args.app in CHROMIUM_DISTROS:
         parser.error("Gecko profiling is not supported on Chrome/Chromium!")
 
-    if args.power_test:
-        if args.app not in ["geckoview", "refbrow", "fenix"]:
-            if platform.system().lower() not in ("darwin",):
-                parser.error(
-                    "Power tests are only available on MacOS desktop machines or "
-                    "Firefox android browers. App requested: %s. Platform "
-                    "detected: %s." % (args.app, platform.system().lower())
-                )
-
-    if args.cpu_test:
-        if args.app not in ["geckoview", "refbrow", "fenix"]:
-            parser.error(
-                "CPU test is only supported when running Raptor on Firefox Android "
-                "browsers!"
-            )
-
-    if args.memory_test:
-        if args.app not in ["geckoview", "refbrow", "fenix"]:
-            parser.error(
-                "Memory test is only supported when running Raptor on Firefox Android "
-                "browsers!"
-            )
+    if args.fission:
+        print("Fission enabled through browser preferences")
+        args.extra_prefs.append("fission.autostart=true")
+    else:
+        print("Fission disabled through browser preferences")
+        args.extra_prefs.append("fission.autostart=false")
 
     # if running on geckoview/refbrow/fenix, we need an activity and intent
     if args.app in ["geckoview", "refbrow", "fenix"]:
@@ -512,6 +597,12 @@ def verify_options(parser, args):
             else:
                 # otherwise fail out
                 parser.error("--intent command-line argument is required!")
+
+    if args.benchmark_repository:
+        if not args.benchmark_revision:
+            parser.error(
+                "When a benchmark repository is provided, a revision is also required."
+            )
 
 
 def parse_args(argv=None):

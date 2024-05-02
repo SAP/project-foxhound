@@ -14,6 +14,8 @@
 #include "mozilla/dom/WorkerRunnable.h"
 #include "mozilla/dom/WorkerPrivate.h"
 
+#include "ExtensionBrowser.h"
+
 class nsIGlobalObject;
 
 namespace mozilla {
@@ -112,7 +114,7 @@ class ExtensionEventListener final : public mozIExtensionEventListener {
   // Used to make sure we are not going to release the
   // instance on the worker thread, while we are in the
   // process of forwarding a call from the main thread.
-  Mutex mMutex;
+  Mutex mMutex MOZ_UNANNOTATED;
 };
 
 // A WorkerRunnable subclass used to call an ExtensionEventListener
@@ -132,7 +134,7 @@ class ExtensionListenerCallWorkerRunnable : public dom::WorkerRunnable {
       ListenerCallOptions* aCallOptions,
       RefPtr<dom::Promise> aPromiseRetval = nullptr)
       : WorkerRunnable(aExtensionEventListener->GetWorkerPrivate(),
-                       WorkerThreadUnchangedBusyCount),
+                       WorkerThread),
         mListener(aExtensionEventListener),
         mArgsHolder(std::move(aArgsHolder)),
         mPromiseResult(std::move(aPromiseRetval)),

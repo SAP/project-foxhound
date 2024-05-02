@@ -4,11 +4,13 @@
 
 // Test that properties with the same value objec be expanded. See Bug 1617210.
 
+"use strict";
+
 const httpServer = createTestHTTPServer();
 httpServer.registerContentType("html", "text/html");
 httpServer.registerContentType("js", "application/javascript");
 
-httpServer.registerPathHandler(`/`, function(request, response) {
+httpServer.registerPathHandler(`/`, function (request, response) {
   response.setStatusLine(request.httpVersion, 200, "OK");
   response.write(`
       <html>
@@ -17,7 +19,7 @@ httpServer.registerPathHandler(`/`, function(request, response) {
       </html>`);
 });
 
-httpServer.registerPathHandler("/test.js", function(request, response) {
+httpServer.registerPathHandler("/test.js", function (request, response) {
   response.setHeader("Content-Type", "application/javascript");
   response.write(`
     document.addEventListener("click", function onClick(e) {
@@ -42,15 +44,15 @@ httpServer.registerPathHandler("/test.js", function(request, response) {
 const port = httpServer.identity.primaryPort;
 const TEST_URL = `http://localhost:${port}/`;
 
-add_task(async function() {
+add_task(async function () {
   const dbg = await initDebuggerWithAbsoluteURL(TEST_URL);
 
   const ready = Promise.all([
     waitForPaused(dbg),
-    waitForLoadedSource(dbg, "test"),
+    waitForLoadedSource(dbg, "test.js"),
   ]);
 
-  SpecialPowers.spawn(gBrowser.selectedBrowser, [], function() {
+  SpecialPowers.spawn(gBrowser.selectedBrowser, [], function () {
     content.document.querySelector("button.pause").click();
   });
 
@@ -187,8 +189,4 @@ function checkScopesLabels(dbg, expected, { startIndex = 0 } = {}) {
 
   const format = arr => `\n${arr.join("\n")}\n`;
   is(format(labels), format(lines), "got expected scope labels");
-}
-
-function getLabel(dbg, index) {
-  return findElement(dbg, "scopeNode", index).innerText;
 }

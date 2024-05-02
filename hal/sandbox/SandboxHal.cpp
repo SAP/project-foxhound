@@ -7,12 +7,13 @@
 #include "Hal.h"
 #include "HalLog.h"
 #include "mozilla/dom/ContentChild.h"
+#include "mozilla/dom/ContentParent.h"
 #include "mozilla/hal_sandbox/PHalChild.h"
 #include "mozilla/hal_sandbox/PHalParent.h"
 #include "mozilla/dom/BrowserParent.h"
 #include "mozilla/dom/BrowserChild.h"
-#include "mozilla/fallback/FallbackScreenConfiguration.h"
 #include "mozilla/EnumeratedRange.h"
+#include "mozilla/HalWakeLock.h"
 #include "mozilla/Observer.h"
 #include "mozilla/Unused.h"
 #include "WindowIdentifier.h"
@@ -41,8 +42,9 @@ void Vibrate(const nsTArray<uint32_t>& pattern, WindowIdentifier&& id) {
 
   WindowIdentifier newID(std::move(id));
   newID.AppendProcessID();
-  Hal()->SendVibrate(pattern, newID.AsArray(),
-                     BrowserChild::GetFrom(newID.GetWindow()));
+  if (BrowserChild* bc = BrowserChild::GetFrom(newID.GetWindow())) {
+    Hal()->SendVibrate(pattern, newID.AsArray(), WrapNotNull(bc));
+  }
 }
 
 void CancelVibrate(WindowIdentifier&& id) {
@@ -50,8 +52,9 @@ void CancelVibrate(WindowIdentifier&& id) {
 
   WindowIdentifier newID(std::move(id));
   newID.AppendProcessID();
-  Hal()->SendCancelVibrate(newID.AsArray(),
-                           BrowserChild::GetFrom(newID.GetWindow()));
+  if (BrowserChild* bc = BrowserChild::GetFrom(newID.GetWindow())) {
+    Hal()->SendCancelVibrate(newID.AsArray(), WrapNotNull(bc));
+  }
 }
 
 void EnableBatteryNotifications() { Hal()->SendEnableBatteryNotifications(); }
@@ -70,33 +73,24 @@ void GetCurrentNetworkInformation(NetworkInformation* aNetworkInfo) {
   Hal()->SendGetCurrentNetworkInformation(aNetworkInfo);
 }
 
-void EnableScreenConfigurationNotifications() {
-  Hal()->SendEnableScreenConfigurationNotifications();
-}
-
-void DisableScreenConfigurationNotifications() {
-  Hal()->SendDisableScreenConfigurationNotifications();
-}
-
-void GetCurrentScreenConfiguration(ScreenConfiguration* aScreenConfiguration) {
-  fallback::GetCurrentScreenConfiguration(aScreenConfiguration);
-}
-
-RefPtr<mozilla::MozPromise<bool, bool, false>> LockScreenOrientation(
+RefPtr<GenericNonExclusivePromise> LockScreenOrientation(
     const hal::ScreenOrientation& aOrientation) {
   return Hal()
       ->SendLockScreenOrientation(aOrientation)
-      ->Then(
-          GetCurrentSerialEventTarget(), __func__,
-          [=](const mozilla::MozPromise<bool, ipc::ResponseRejectReason,
-                                        true>::ResolveOrRejectValue& aValue) {
-            if (aValue.IsResolve() && aValue.ResolveValue()) {
-              return mozilla::MozPromise<bool, bool, false>::CreateAndResolve(
-                  true, __func__);
-            }
-            return mozilla::MozPromise<bool, bool, false>::CreateAndReject(
-                false, __func__);
-          });
+      ->Then(GetCurrentSerialEventTarget(), __func__,
+             [](const mozilla::MozPromise<nsresult, ipc::ResponseRejectReason,
+                                          true>::ResolveOrRejectValue& aValue) {
+               if (aValue.IsResolve()) {
+                 if (NS_SUCCEEDED(aValue.ResolveValue())) {
+                   return GenericNonExclusivePromise::CreateAndResolve(
+                       true, __func__);
+                 }
+                 return GenericNonExclusivePromise::CreateAndReject(
+                     aValue.ResolveValue(), __func__);
+               }
+               return GenericNonExclusivePromise::CreateAndReject(
+                   NS_ERROR_FAILURE, __func__);
+             });
 }
 
 void UnlockScreenOrientation() { Hal()->SendUnlockScreenOrientation(); }
@@ -116,15 +110,13 @@ void DisableWakeLockNotifications() {
 }
 
 void ModifyWakeLock(const nsAString& aTopic, WakeLockControl aLockAdjust,
-                    WakeLockControl aHiddenAdjust, uint64_t aProcessID) {
-  MOZ_ASSERT(aProcessID != CONTENT_PROCESS_ID_UNKNOWN);
-  Hal()->SendModifyWakeLock(nsString(aTopic), aLockAdjust, aHiddenAdjust,
-                            aProcessID);
+                    WakeLockControl aHiddenAdjust) {
+  Hal()->SendModifyWakeLock(aTopic, aLockAdjust, aHiddenAdjust);
 }
 
 void GetWakeLockInfo(const nsAString& aTopic,
                      WakeLockInformation* aWakeLockInfo) {
-  Hal()->SendGetWakeLockInfo(nsString(aTopic), aWakeLockInfo);
+  Hal()->SendGetWakeLockInfo(aTopic, aWakeLockInfo);
 }
 
 bool EnableAlarm() {
@@ -147,15 +139,13 @@ class HalParent : public PHalParent,
                   public BatteryObserver,
                   public NetworkObserver,
                   public ISensorObserver,
-                  public WakeLockObserver,
-                  public ScreenConfigurationObserver {
+                  public WakeLockObserver {
  public:
   virtual void ActorDestroy(ActorDestroyReason aWhy) override {
     // NB: you *must* unconditionally unregister your observer here,
     // if it *may* be registered below.
     hal::UnregisterBatteryObserver(this);
     hal::UnregisterNetworkObserver(this);
-    hal::UnregisterScreenConfigurationObserver(this);
     for (auto sensor : MakeEnumeratedRange(NUM_SENSOR_TYPE)) {
       hal::UnregisterSensorObserver(sensor, this);
     }
@@ -164,7 +154,7 @@ class HalParent : public PHalParent,
 
   virtual mozilla::ipc::IPCResult RecvVibrate(
       nsTArray<unsigned int>&& pattern, nsTArray<uint64_t>&& id,
-      PBrowserParent* browserParent) override {
+      NotNull<PBrowserParent*> browserParent) override {
     // We give all content vibration permission.
     //    BrowserParent *browserParent = BrowserParent::GetFrom(browserParent);
     /* xxxkhuey wtf
@@ -176,7 +166,8 @@ class HalParent : public PHalParent,
   }
 
   virtual mozilla::ipc::IPCResult RecvCancelVibrate(
-      nsTArray<uint64_t>&& id, PBrowserParent* browserParent) override {
+      nsTArray<uint64_t>&& id,
+      NotNull<PBrowserParent*> browserParent) override {
     // BrowserParent *browserParent = BrowserParent::GetFrom(browserParent);
     /* XXXkhuey wtf
     nsCOMPtr<nsIDOMWindow> window =
@@ -229,20 +220,6 @@ class HalParent : public PHalParent,
     Unused << SendNotifyNetworkChange(aNetworkInfo);
   }
 
-  virtual mozilla::ipc::IPCResult RecvEnableScreenConfigurationNotifications()
-      override {
-    // Screen configuration is used to implement CSS and DOM
-    // properties, so all content already has access to this.
-    hal::RegisterScreenConfigurationObserver(this);
-    return IPC_OK();
-  }
-
-  virtual mozilla::ipc::IPCResult RecvDisableScreenConfigurationNotifications()
-      override {
-    hal::UnregisterScreenConfigurationObserver(this);
-    return IPC_OK();
-  }
-
   virtual mozilla::ipc::IPCResult RecvLockScreenOrientation(
       const ScreenOrientation& aOrientation,
       LockScreenOrientationResolver&& aResolve) override {
@@ -252,25 +229,23 @@ class HalParent : public PHalParent,
     // fullscreen.  We don't have that information currently.
 
     hal::LockScreenOrientation(aOrientation)
-        ->Then(GetMainThreadSerialEventTarget(), __func__,
-               [aResolve](const mozilla::MozPromise<
-                          bool, bool, false>::ResolveOrRejectValue& aValue) {
-                 if (aValue.IsResolve()) {
-                   aResolve(aValue.ResolveValue());
-                 } else {
-                   aResolve(false);
-                 }
-               });
+        ->Then(
+            GetMainThreadSerialEventTarget(), __func__,
+            [aResolve](const GenericNonExclusivePromise::ResolveOrRejectValue&
+                           aValue) {
+              if (aValue.IsResolve()) {
+                MOZ_ASSERT(aValue.ResolveValue());
+                aResolve(NS_OK);
+                return;
+              }
+              aResolve(aValue.RejectValue());
+            });
     return IPC_OK();
   }
 
   virtual mozilla::ipc::IPCResult RecvUnlockScreenOrientation() override {
     hal::UnlockScreenOrientation();
     return IPC_OK();
-  }
-
-  void Notify(const ScreenConfiguration& aScreenConfiguration) override {
-    Unused << SendNotifyScreenConfigurationChange(aScreenConfiguration);
   }
 
   virtual mozilla::ipc::IPCResult RecvEnableSensorNotifications(
@@ -292,13 +267,11 @@ class HalParent : public PHalParent,
   }
 
   virtual mozilla::ipc::IPCResult RecvModifyWakeLock(
-      const nsString& aTopic, const WakeLockControl& aLockAdjust,
-      const WakeLockControl& aHiddenAdjust,
-      const uint64_t& aProcessID) override {
-    MOZ_ASSERT(aProcessID != CONTENT_PROCESS_ID_UNKNOWN);
-
+      const nsAString& aTopic, const WakeLockControl& aLockAdjust,
+      const WakeLockControl& aHiddenAdjust) override {
     // We allow arbitrary content to use wake locks.
-    hal::ModifyWakeLock(aTopic, aLockAdjust, aHiddenAdjust, aProcessID);
+    uint64_t id = static_cast<ContentParent*>(Manager())->ChildID();
+    hal_impl::ModifyWakeLockWithChildID(aTopic, aLockAdjust, aHiddenAdjust, id);
     return IPC_OK();
   }
 
@@ -314,7 +287,7 @@ class HalParent : public PHalParent,
   }
 
   virtual mozilla::ipc::IPCResult RecvGetWakeLockInfo(
-      const nsString& aTopic, WakeLockInformation* aWakeLockInfo) override {
+      const nsAString& aTopic, WakeLockInformation* aWakeLockInfo) override {
     hal::GetWakeLockInfo(aTopic, aWakeLockInfo);
     return IPC_OK();
   }
@@ -348,12 +321,6 @@ class HalChild : public PHalChild {
   virtual mozilla::ipc::IPCResult RecvNotifyWakeLockChange(
       const WakeLockInformation& aWakeLockInfo) override {
     hal::NotifyWakeLockChange(aWakeLockInfo);
-    return IPC_OK();
-  }
-
-  virtual mozilla::ipc::IPCResult RecvNotifyScreenConfigurationChange(
-      const ScreenConfiguration& aScreenConfiguration) override {
-    hal::NotifyScreenConfigurationChange(aScreenConfiguration);
     return IPC_OK();
   }
 };

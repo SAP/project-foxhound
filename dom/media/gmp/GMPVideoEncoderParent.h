@@ -16,8 +16,7 @@
 #include "GMPVideoEncoderProxy.h"
 #include "GMPCrashHelperHolder.h"
 
-namespace mozilla {
-namespace gmp {
+namespace mozilla::gmp {
 
 class GMPContentParent;
 
@@ -52,9 +51,8 @@ class GMPVideoEncoderParent : public GMPVideoEncoderProxy,
   uint32_t GetPluginId() const override { return mPluginId; }
 
   // GMPSharedMemManager
-  bool Alloc(size_t aSize, Shmem::SharedMemory::SharedMemoryType aType,
-             Shmem* aMem) override {
-    return AllocShmem(aSize, aType, aMem);
+  bool Alloc(size_t aSize, Shmem* aMem) override {
+    return AllocShmem(aSize, aMem);
   }
   void Dealloc(Shmem&& aMem) override { DeallocShmem(aMem); }
 
@@ -77,12 +75,11 @@ class GMPVideoEncoderParent : public GMPVideoEncoderProxy,
   bool mShuttingDown;
   bool mActorDestroyed;
   RefPtr<GMPContentParent> mPlugin;
-  GMPVideoEncoderCallbackProxy* mCallback;
+  RefPtr<GMPVideoEncoderCallbackProxy> mCallback;
   GMPVideoHostImpl mVideoHost;
   const uint32_t mPluginId;
 };
 
-}  // namespace gmp
-}  // namespace mozilla
+}  // namespace mozilla::gmp
 
 #endif  // GMPVideoEncoderParent_h_

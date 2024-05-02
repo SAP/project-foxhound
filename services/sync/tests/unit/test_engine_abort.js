@@ -1,10 +1,14 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
-const { WBORecord } = ChromeUtils.import("resource://services-sync/record.js");
-const { Service } = ChromeUtils.import("resource://services-sync/service.js");
-const { RotaryEngine } = ChromeUtils.import(
-  "resource://testing-common/services/sync/rotaryengine.js"
+const { WBORecord } = ChromeUtils.importESModule(
+  "resource://services-sync/record.sys.mjs"
+);
+const { Service } = ChromeUtils.importESModule(
+  "resource://services-sync/service.sys.mjs"
+);
+const { RotaryEngine } = ChromeUtils.importESModule(
+  "resource://testing-common/services/sync/rotaryengine.sys.mjs"
 );
 
 add_task(async function test_processIncoming_abort() {
@@ -33,7 +37,7 @@ add_task(async function test_processIncoming_abort() {
   );
   meta_global.payload.engines = { rotary: { version: engine.version, syncID } };
   _("Fake applyIncoming to abort.");
-  engine._store.applyIncoming = async function(record) {
+  engine._store.applyIncoming = async function (record) {
     let ex = {
       code: SyncEngine.prototype.eEngineAbortApplyIncoming,
       cause: "Nooo",
@@ -65,7 +69,9 @@ add_task(async function test_processIncoming_abort() {
   Assert.equal(err, undefined);
 
   await promiseStopServer(server);
-  Svc.Prefs.resetBranch("");
+  for (const pref of Svc.PrefBranch.getChildList("")) {
+    Svc.PrefBranch.clearUserPref(pref);
+  }
   Service.recordManager.clearCache();
 
   await engine._tracker.clearChangedIDs();

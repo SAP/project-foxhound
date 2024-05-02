@@ -3,15 +3,11 @@
 
 "use strict";
 
-const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
-
-const { PushDB, PushService, PushServiceHttp2 } = serviceExports;
+const { HttpServer } = ChromeUtils.importESModule(
+  "resource://testing-common/httpd.sys.mjs"
+);
 
 var httpServer = null;
-
-XPCOMUtils.defineLazyGetter(this, "serverPort", function() {
-  return httpServer.identity.primaryPort;
-});
 
 function listenHandler(metadata, response) {
   Assert.ok(true, "Start listening");

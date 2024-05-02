@@ -14,16 +14,18 @@ class MediaTransportChild;
 
 // Implementation of MediaTransportHandler that uses IPC (PMediaTransport) to
 // talk to mtransport on another process.
-class MediaTransportHandlerIPC : public MediaTransportHandler {
+class MediaTransportHandlerIPC final : public MediaTransportHandler {
  public:
   explicit MediaTransportHandlerIPC(nsISerialEventTarget* aCallbackThread);
+  void Initialize() override;
   RefPtr<IceLogPromise> GetIceLog(const nsCString& aPattern) override;
   void ClearIceLog() override;
   void EnterPrivateMode() override;
   void ExitPrivateMode() override;
 
-  nsresult CreateIceCtx(const std::string& aName,
-                        const nsTArray<dom::RTCIceServer>& aIceServers,
+  void CreateIceCtx(const std::string& aName) override;
+
+  nsresult SetIceConfig(const nsTArray<dom::RTCIceServer>& aIceServers,
                         dom::RTCIceTransportPolicy aIcePolicy) override;
 
   // We will probably be able to move the proxy lookup stuff into
@@ -76,9 +78,9 @@ class MediaTransportHandlerIPC : public MediaTransportHandler {
  private:
   friend class MediaTransportChild;
   void Destroy() override;
+  virtual ~MediaTransportHandlerIPC();
 
-  // We do not own this; it will tell us when it is going away.
-  dom::PMediaTransportChild* mChild = nullptr;
+  RefPtr<MediaTransportChild> mChild;
 
   // |mChild| can only be initted asynchronously, |mInitPromise| resolves
   // when that happens. The |Then| calls make it convenient to dispatch API

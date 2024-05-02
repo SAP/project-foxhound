@@ -6,268 +6,294 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-//! Interface to the random number generator of the operating system.
+//! Interface to the operating system's random number generator.
 //!
-//! # Platform sources
+//! # Supported targets
 //!
-//! | OS               | interface
-//! |------------------|---------------------------------------------------------
-//! | Linux, Android   | [`getrandom`][1] system call if available, otherwise [`/dev/urandom`][2] after successfully polling `/dev/random`
-//! | Windows          | [`RtlGenRandom`][3]
-//! | macOS            | [`getentropy()`][19] if available, otherwise [`/dev/random`][20] (identical to `/dev/urandom`)
-//! | iOS              | [`SecRandomCopyBytes`][4]
-//! | FreeBSD          | [`getrandom()`][21] if available, otherwise [`kern.arandom`][5]
-//! | OpenBSD          | [`getentropy`][6]
-//! | NetBSD           | [`kern.arandom`][7]
-//! | Dragonfly BSD    | [`/dev/random`][8]
-//! | Solaris, illumos | [`getrandom`][9] system call if available, otherwise [`/dev/random`][10]
-//! | Fuchsia OS       | [`cprng_draw`][11]
-//! | Redox            | [`rand:`][12]
-//! | CloudABI         | [`cloudabi_sys_random_get`][13]
-//! | Haiku            | `/dev/random` (identical to `/dev/urandom`)
-//! | L4RE, SGX, UEFI  | [RDRAND][18]
-//! | Hermit           | [RDRAND][18] as [`sys_rand`][22] is currently broken.
-//! | VxWorks          | `randABytes` after checking entropy pool initialization with `randSecure`
-//! | Web browsers     | [`Crypto.getRandomValues`][14] (see [Support for WebAssembly and asm.js][16])
-//! | Node.js          | [`crypto.randomBytes`][15] (see [Support for WebAssembly and asm.js][16])
-//! | WASI             | [`__wasi_random_get`][17]
+//! | Target            | Target Triple      | Implementation
+//! | ----------------- | ------------------ | --------------
+//! | Linux, Android    | `*‑linux‑*`        | [`getrandom`][1] system call if available, otherwise [`/dev/urandom`][2] after successfully polling `/dev/random`
+//! | Windows           | `*‑windows‑*`      | [`BCryptGenRandom`]
+//! | macOS             | `*‑apple‑darwin`   | [`getentropy`][3] if available, otherwise [`/dev/urandom`][4] (identical to `/dev/random`)
+//! | iOS, tvOS, watchOS | `*‑apple‑ios`, `*-apple-tvos`, `*-apple-watchos` | [`SecRandomCopyBytes`]
+//! | FreeBSD           | `*‑freebsd`        | [`getrandom`][5] if available, otherwise [`kern.arandom`][6]
+//! | OpenBSD           | `*‑openbsd`        | [`getentropy`][7]
+//! | NetBSD            | `*‑netbsd`         | [`getrandom`][16] if available, otherwise [`kern.arandom`][8]
+//! | Dragonfly BSD     | `*‑dragonfly`      | [`getrandom`][9] if available, otherwise [`/dev/urandom`][10] (identical to `/dev/random`)
+//! | Solaris, illumos  | `*‑solaris`, `*‑illumos` | [`getrandom`][11] if available, otherwise [`/dev/random`][12]
+//! | Fuchsia OS        | `*‑fuchsia`        | [`cprng_draw`]
+//! | Redox             | `*‑redox`          | `/dev/urandom`
+//! | Haiku             | `*‑haiku`          | `/dev/urandom` (identical to `/dev/random`)
+//! | Hermit            | `*-hermit`         | [`sys_read_entropy`]
+//! | Hurd              | `*-hurd-*`         | [`getrandom`][17]
+//! | SGX               | `x86_64‑*‑sgx`     | [`RDRAND`]
+//! | VxWorks           | `*‑wrs‑vxworks‑*`  | `randABytes` after checking entropy pool initialization with `randSecure`
+//! | ESP-IDF           | `*‑espidf`         | [`esp_fill_random`]
+//! | Emscripten        | `*‑emscripten`     | [`getentropy`][13]
+//! | WASI              | `wasm32‑wasi`      | [`random_get`]
+//! | Web Browser and Node.js | `wasm*‑*‑unknown` | [`Crypto.getRandomValues`] if available, then [`crypto.randomFillSync`] if on Node.js, see [WebAssembly support]
+//! | SOLID             | `*-kmc-solid_*`    | `SOLID_RNG_SampleRandomBytes`
+//! | Nintendo 3DS      | `armv6k-nintendo-3ds` | [`getrandom`][1]
+//! | PS Vita           | `armv7-sony-vita-newlibeabihf` | [`getentropy`][13]
+//! | QNX Neutrino      | `*‑nto-qnx*`          | [`/dev/urandom`][14] (identical to `/dev/random`)
+//! | AIX               | `*-ibm-aix`        | [`/dev/urandom`][15]
 //!
-//! Getrandom doesn't have a blanket implementation for all Unix-like operating
-//! systems that reads from `/dev/urandom`. This ensures all supported operating
-//! systems are using the recommended interface and respect maximum buffer
-//! sizes.
+//! There is no blanket implementation on `unix` targets that reads from
+//! `/dev/urandom`. This ensures all supported targets are using the recommended
+//! interface and respect maximum buffer sizes.
+//!
+//! Pull Requests that add support for new targets to `getrandom` are always welcome.
 //!
 //! ## Unsupported targets
 //!
-//! By default, compiling `getrandom` for an unsupported target will result in
-//! a compilation error. If you want to build an application which uses `getrandom`
-//! for such target, you can either:
-//! - Use [`[replace]`][replace] or [`[patch]`][patch] section in your `Cargo.toml`
-//! to switch to a custom implementation with a support of your target.
-//! - Enable the `dummy` feature to have getrandom use an implementation that always
-//! fails at run-time on unsupported targets.
+//! By default, `getrandom` will not compile on unsupported targets, but certain
+//! features allow a user to select a "fallback" implementation if no supported
+//! implementation exists.
 //!
-//! [replace]: https://doc.rust-lang.org/cargo/reference/manifest.html#the-replace-section
-//! [patch]: https://doc.rust-lang.org/cargo/reference/manifest.html#the-patch-section
+//! All of the below mechanisms only affect unsupported
+//! targets. Supported targets will _always_ use their supported implementations.
+//! This prevents a crate from overriding a secure source of randomness
+//! (either accidentally or intentionally).
 //!
-//! ## Support for WebAssembly and asm.js
+//! ### RDRAND on x86
 //!
-//! Getrandom supports all of Rust's current `wasm32` targets, and it works with
-//! both Node.js and web browsers. The three Emscripten targets
-//! `asmjs-unknown-emscripten`, `wasm32-unknown-emscripten`, and
-//! `wasm32-experimental-emscripten` use Emscripten's `/dev/random` emulation.
-//! The WASI target `wasm32-wasi` uses the [`__wasi_random_get`][17] function
-//! defined by the WASI standard.
+//! *If the `rdrand` Cargo feature is enabled*, `getrandom` will fallback to using
+//! the [`RDRAND`] instruction to get randomness on `no_std` `x86`/`x86_64`
+//! targets. This feature has no effect on other CPU architectures.
 //!
-//! Getrandom also supports `wasm32-unknown-unknown` by directly calling
-//! JavaScript methods. Rust currently has two ways to do this: [bindgen] and
-//! [stdweb]. Getrandom supports using either one by enabling the
-//! `wasm-bindgen` or `stdweb` crate features. Note that if both features are
-//! enabled, `wasm-bindgen` will be used. If neither feature is enabled, calls
-//! to `getrandom` will always fail at runtime.
+//! ### WebAssembly support
 //!
-//! [bindgen]: https://github.com/rust-lang/rust-bindgen
-//! [stdweb]: https://github.com/koute/stdweb
+//! This crate fully supports the
+//! [`wasm32-wasi`](https://github.com/CraneStation/wasi) and
+//! [`wasm32-unknown-emscripten`](https://www.hellorust.com/setup/emscripten/)
+//! targets. However, the `wasm32-unknown-unknown` target (i.e. the target used
+//! by `wasm-pack`) is not automatically
+//! supported since, from the target name alone, we cannot deduce which
+//! JavaScript interface is in use (or if JavaScript is available at all).
+//!
+//! Instead, *if the `js` Cargo feature is enabled*, this crate will assume
+//! that you are building for an environment containing JavaScript, and will
+//! call the appropriate methods. Both web browser (main window and Web Workers)
+//! and Node.js environments are supported, invoking the methods
+//! [described above](#supported-targets) using the [`wasm-bindgen`] toolchain.
+//!
+//! To enable the `js` Cargo feature, add the following to the `dependencies`
+//! section in your `Cargo.toml` file:
+//! ```toml
+//! [dependencies]
+//! getrandom = { version = "0.2", features = ["js"] }
+//! ```
+//!
+//! This can be done even if `getrandom` is not a direct dependency. Cargo
+//! allows crates to enable features for indirect dependencies.
+//!
+//! This feature should only be enabled for binary, test, or benchmark crates.
+//! Library crates should generally not enable this feature, leaving such a
+//! decision to *users* of their library. Also, libraries should not introduce
+//! their own `js` features *just* to enable `getrandom`'s `js` feature.
+//!
+//! This feature has no effect on targets other than `wasm32-unknown-unknown`.
+//!
+//! #### Node.js ES module support
+//!
+//! Node.js supports both [CommonJS modules] and [ES modules]. Due to
+//! limitations in wasm-bindgen's [`module`] support, we cannot directly
+//! support ES Modules running on Node.js. However, on Node v15 and later, the
+//! module author can add a simple shim to support the Web Cryptography API:
+//! ```js
+//! import { webcrypto } from 'node:crypto'
+//! globalThis.crypto = webcrypto
+//! ```
+//! This crate will then use the provided `webcrypto` implementation.
+//!
+//! ### Custom implementations
+//!
+//! The [`register_custom_getrandom!`] macro allows a user to mark their own
+//! function as the backing implementation for [`getrandom`]. See the macro's
+//! documentation for more information about writing and registering your own
+//! custom implementations.
+//!
+//! Note that registering a custom implementation only has an effect on targets
+//! that would otherwise not compile. Any supported targets (including those
+//! using `rdrand` and `js` Cargo features) continue using their normal
+//! implementations even if a function is registered.
 //!
 //! ## Early boot
 //!
-//! It is possible that early in the boot process the OS hasn't had enough time
-//! yet to collect entropy to securely seed its RNG, especially on virtual
-//! machines.
+//! Sometimes, early in the boot process, the OS has not collected enough
+//! entropy to securely seed its RNG. This is especially common on virtual
+//! machines, where standard "random" events are hard to come by.
 //!
-//! Some operating systems always block the thread until the RNG is securely
+//! Some operating system interfaces always block until the RNG is securely
 //! seeded. This can take anywhere from a few seconds to more than a minute.
-//! Others make a best effort to use a seed from before the shutdown and don't
-//! document much.
+//! A few (Linux, NetBSD and Solaris) offer a choice between blocking and
+//! getting an error; in these cases, we always choose to block.
 //!
-//! A few, Linux, NetBSD and Solaris, offer a choice between blocking and
-//! getting an error; in these cases we always choose to block.
-//!
-//! On Linux (when the `getrandom` system call is not available) and on NetBSD
-//! reading from `/dev/urandom` never blocks, even when the OS hasn't collected
-//! enough entropy yet. To avoid returning low-entropy bytes, we first read from
+//! On Linux (when the `getrandom` system call is not available), reading from
+//! `/dev/urandom` never blocks, even when the OS hasn't collected enough
+//! entropy yet. To avoid returning low-entropy bytes, we first poll
 //! `/dev/random` and only switch to `/dev/urandom` once this has succeeded.
 //!
-//! # Error handling
+//! On OpenBSD, this kind of entropy accounting isn't available, and on
+//! NetBSD, blocking on it is discouraged. On these platforms, nonblocking
+//! interfaces are used, even when reliable entropy may not be available.
+//! On the platforms where it is used, the reliability of entropy accounting
+//! itself isn't free from controversy. This library provides randomness
+//! sourced according to the platform's best practices, but each platform has
+//! its own limits on the grade of randomness it can promise in environments
+//! with few sources of entropy.
 //!
-//! We always choose failure over returning insecure "random" bytes. In general,
-//! on supported platforms, failure is highly unlikely, though not impossible.
-//! If an error does occur, then it is likely that it will occur on every call to
-//! `getrandom`, hence after the first successful call one can be reasonably
-//! confident that no errors will occur.
+//! ## Error handling
 //!
-//! On unsupported platforms, `getrandom` always fails. See the [`Error`] type
-//! for more information on what data is returned on failure.
+//! We always choose failure over returning known insecure "random" bytes. In
+//! general, on supported platforms, failure is highly unlikely, though not
+//! impossible. If an error does occur, then it is likely that it will occur
+//! on every call to `getrandom`, hence after the first successful call one
+//! can be reasonably confident that no errors will occur.
 //!
 //! [1]: http://man7.org/linux/man-pages/man2/getrandom.2.html
 //! [2]: http://man7.org/linux/man-pages/man4/urandom.4.html
-//! [3]: https://docs.microsoft.com/en-us/windows/desktop/api/ntsecapi/nf-ntsecapi-rtlgenrandom
-//! [4]: https://developer.apple.com/documentation/security/1399291-secrandomcopybytes?language=objc
-//! [5]: https://www.freebsd.org/cgi/man.cgi?query=random&sektion=4
-//! [6]: https://man.openbsd.org/getentropy.2
-//! [7]: https://netbsd.gw.com/cgi-bin/man-cgi?sysctl+7+NetBSD-8.0
-//! [8]: https://leaf.dragonflybsd.org/cgi/web-man?command=random&section=4
-//! [9]: https://docs.oracle.com/cd/E88353_01/html/E37841/getrandom-2.html
-//! [10]: https://docs.oracle.com/cd/E86824_01/html/E54777/random-7d.html
-//! [11]: https://fuchsia.dev/fuchsia-src/zircon/syscalls/cprng_draw
-//! [12]: https://github.com/redox-os/randd/blob/master/src/main.rs
-//! [13]: https://github.com/nuxinl/cloudabi#random_get
-//! [14]: https://www.w3.org/TR/WebCryptoAPI/#Crypto-method-getRandomValues
-//! [15]: https://nodejs.org/api/crypto.html#crypto_crypto_randombytes_size_callback
-//! [16]: #support-for-webassembly-and-asmjs
-//! [17]: https://github.com/WebAssembly/WASI/blob/master/design/WASI-core.md#__wasi_random_get
-//! [18]: https://software.intel.com/en-us/articles/intel-digital-random-number-generator-drng-software-implementation-guide
-//! [19]: https://www.unix.com/man-page/mojave/2/getentropy/
-//! [20]: https://www.unix.com/man-page/mojave/4/random/
-//! [21]: https://www.freebsd.org/cgi/man.cgi?query=getrandom&manpath=FreeBSD+12.0-stable
-//! [22]: https://github.com/hermitcore/libhermit-rs/blob/09c38b0371cee6f56a541400ba453e319e43db53/src/syscalls/random.rs#L21
+//! [3]: https://www.unix.com/man-page/mojave/2/getentropy/
+//! [4]: https://www.unix.com/man-page/mojave/4/urandom/
+//! [5]: https://www.freebsd.org/cgi/man.cgi?query=getrandom&manpath=FreeBSD+12.0-stable
+//! [6]: https://www.freebsd.org/cgi/man.cgi?query=random&sektion=4
+//! [7]: https://man.openbsd.org/getentropy.2
+//! [8]: https://man.netbsd.org/sysctl.7
+//! [9]: https://leaf.dragonflybsd.org/cgi/web-man?command=getrandom
+//! [10]: https://leaf.dragonflybsd.org/cgi/web-man?command=random&section=4
+//! [11]: https://docs.oracle.com/cd/E88353_01/html/E37841/getrandom-2.html
+//! [12]: https://docs.oracle.com/cd/E86824_01/html/E54777/random-7d.html
+//! [13]: https://github.com/emscripten-core/emscripten/pull/12240
+//! [14]: https://www.qnx.com/developers/docs/7.1/index.html#com.qnx.doc.neutrino.utilities/topic/r/random.html
+//! [15]: https://www.ibm.com/docs/en/aix/7.3?topic=files-random-urandom-devices
+//! [16]: https://man.netbsd.org/getrandom.2
+//! [17]: https://www.gnu.org/software/libc/manual/html_mono/libc.html#index-getrandom
+//!
+//! [`BCryptGenRandom`]: https://docs.microsoft.com/en-us/windows/win32/api/bcrypt/nf-bcrypt-bcryptgenrandom
+//! [`Crypto.getRandomValues`]: https://www.w3.org/TR/WebCryptoAPI/#Crypto-method-getRandomValues
+//! [`RDRAND`]: https://software.intel.com/en-us/articles/intel-digital-random-number-generator-drng-software-implementation-guide
+//! [`SecRandomCopyBytes`]: https://developer.apple.com/documentation/security/1399291-secrandomcopybytes?language=objc
+//! [`cprng_draw`]: https://fuchsia.dev/fuchsia-src/zircon/syscalls/cprng_draw
+//! [`crypto.randomFillSync`]: https://nodejs.org/api/crypto.html#cryptorandomfillsyncbuffer-offset-size
+//! [`esp_fill_random`]: https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-reference/system/random.html#_CPPv415esp_fill_randomPv6size_t
+//! [`random_get`]: https://github.com/WebAssembly/WASI/blob/main/phases/snapshot/docs.md#-random_getbuf-pointeru8-buf_len-size---errno
+//! [WebAssembly support]: #webassembly-support
+//! [`wasm-bindgen`]: https://github.com/rustwasm/wasm-bindgen
+//! [`module`]: https://rustwasm.github.io/wasm-bindgen/reference/attributes/on-js-imports/module.html
+//! [CommonJS modules]: https://nodejs.org/api/modules.html
+//! [ES modules]: https://nodejs.org/api/esm.html
+//! [`sys_read_entropy`]: https://github.com/hermit-os/kernel/blob/315f58ff5efc81d9bf0618af85a59963ff55f8b1/src/syscalls/entropy.rs#L47-L55
 
 #![doc(
     html_logo_url = "https://www.rust-lang.org/logos/rust-logo-128x128-blk.png",
     html_favicon_url = "https://www.rust-lang.org/favicon.ico",
-    html_root_url = "https://rust-random.github.io/rand/"
+    html_root_url = "https://docs.rs/getrandom/0.2.11"
 )]
 #![no_std]
-#![cfg_attr(feature = "stdweb", recursion_limit = "128")]
 #![warn(rust_2018_idioms, unused_lifetimes, missing_docs)]
+#![cfg_attr(docsrs, feature(doc_cfg))]
 
 #[macro_use]
 extern crate cfg_if;
 
-cfg_if! {
-    if #[cfg(feature = "log")] {
-        #[allow(unused)]
-        #[macro_use]
-        extern crate log;
-    } else {
-        #[allow(unused)]
-        macro_rules! error {
-            ($($x:tt)*) => {};
-        }
-        #[allow(unused)]
-        macro_rules! warn {
-            ($($x:tt)*) => {};
-        }
-        #[allow(unused)]
-        macro_rules! info {
-            ($($x:tt)*) => {};
-        }
-    }
-}
+use crate::util::{slice_as_uninit_mut, slice_assume_init_mut};
+use core::mem::MaybeUninit;
 
 mod error;
-pub use crate::error::Error;
-
 mod util;
-
-// For backwards compatibility, we provide the std-only trait implementations
-// for some platforms, even if they don't enable the "std" feature.
-#[cfg(any(
-    feature = "std",
-    all(windows, not(getrandom_uwp)),
-    target_os = "android",
-    target_os = "dragonfly",
-    target_os = "emscripten",
-    target_os = "freebsd",
-    target_os = "fuchsia",
-    target_os = "haiku",
-    target_os = "illumos",
-    target_os = "ios",
-    target_os = "linux",
-    target_os = "macos",
-    target_os = "netbsd",
-    target_os = "openbsd",
-    target_os = "redox",
-    target_os = "solaris",
-))]
+// To prevent a breaking change when targets are added, we always export the
+// register_custom_getrandom macro, so old Custom RNG crates continue to build.
+#[cfg(feature = "custom")]
+mod custom;
+#[cfg(feature = "std")]
 mod error_impls;
+
+pub use crate::error::Error;
 
 // System-specific implementations.
 //
-// These should all provide getrandom_inner with the same signature as getrandom.
+// These should all provide getrandom_inner with the signature
+// `fn getrandom_inner(dest: &mut [MaybeUninit<u8>]) -> Result<(), Error>`.
+// The function MUST fully initialize `dest` when `Ok(())` is returned.
+// The function MUST NOT ever write uninitialized bytes into `dest`,
+// regardless of what value it returns.
 cfg_if! {
-    if #[cfg(target_os = "android")] {
+    if #[cfg(any(target_os = "haiku", target_os = "redox", target_os = "nto", target_os = "aix"))] {
+        mod util_libc;
+        #[path = "use_file.rs"] mod imp;
+    } else if #[cfg(any(target_os = "android", target_os = "linux"))] {
         mod util_libc;
         mod use_file;
         #[path = "linux_android.rs"] mod imp;
-    } else if #[cfg(target_os = "cloudabi")] {
-        #[path = "cloudabi.rs"] mod imp;
-    } else if #[cfg(target_os = "dragonfly")] {
-        mod util_libc;
-        #[path = "use_file.rs"] mod imp;
-    } else if #[cfg(target_os = "emscripten")] {
-        mod util_libc;
-        #[path = "use_file.rs"] mod imp;
-    } else if #[cfg(target_os = "freebsd")] {
-        mod util_libc;
-        #[path = "bsd_arandom.rs"] mod imp;
-    } else if #[cfg(target_os = "fuchsia")] {
-        #[path = "fuchsia.rs"] mod imp;
-    } else if #[cfg(target_os = "haiku")] {
-        mod util_libc;
-        #[path = "use_file.rs"] mod imp;
-    } else if #[cfg(target_os = "illumos")] {
+    } else if #[cfg(any(target_os = "illumos", target_os = "solaris"))] {
         mod util_libc;
         mod use_file;
         #[path = "solaris_illumos.rs"] mod imp;
-    } else if #[cfg(target_os = "ios")] {
-        #[path = "ios.rs"] mod imp;
-    } else if #[cfg(target_os = "linux")] {
+    } else if #[cfg(any(target_os = "freebsd", target_os = "netbsd"))] {
+        mod util_libc;
+        #[path = "bsd_arandom.rs"] mod imp;
+    } else if #[cfg(target_os = "dragonfly")] {
         mod util_libc;
         mod use_file;
-        #[path = "linux_android.rs"] mod imp;
+        #[path = "dragonfly.rs"] mod imp;
+    } else if #[cfg(target_os = "fuchsia")] {
+        #[path = "fuchsia.rs"] mod imp;
+    } else if #[cfg(any(target_os = "ios", target_os = "watchos", target_os = "tvos"))] {
+        #[path = "apple-other.rs"] mod imp;
     } else if #[cfg(target_os = "macos")] {
         mod util_libc;
         mod use_file;
         #[path = "macos.rs"] mod imp;
-    } else if #[cfg(target_os = "netbsd")] {
-        mod util_libc;
-        #[path = "bsd_arandom.rs"] mod imp;
     } else if #[cfg(target_os = "openbsd")] {
         mod util_libc;
         #[path = "openbsd.rs"] mod imp;
-    } else if #[cfg(target_os = "redox")] {
-        mod util_libc;
-        #[path = "use_file.rs"] mod imp;
-    } else if #[cfg(target_os = "solaris")] {
-        mod util_libc;
-        mod use_file;
-        #[path = "solaris_illumos.rs"] mod imp;
-    } else if #[cfg(target_os = "wasi")] {
+    } else if #[cfg(all(target_arch = "wasm32", target_os = "wasi"))] {
         #[path = "wasi.rs"] mod imp;
+    } else if #[cfg(target_os = "hermit")] {
+        #[path = "hermit.rs"] mod imp;
     } else if #[cfg(target_os = "vxworks")] {
         mod util_libc;
         #[path = "vxworks.rs"] mod imp;
-    } else if #[cfg(all(windows, getrandom_uwp))] {
-        #[path = "windows_uwp.rs"] mod imp;
+    } else if #[cfg(target_os = "solid_asp3")] {
+        #[path = "solid.rs"] mod imp;
+    } else if #[cfg(target_os = "espidf")] {
+        #[path = "espidf.rs"] mod imp;
     } else if #[cfg(windows)] {
         #[path = "windows.rs"] mod imp;
-    } else if #[cfg(all(target_arch = "x86_64", any(
-                  target_os = "hermit",
-                  target_os = "l4re",
-                  target_os = "uefi",
-                  target_env = "sgx",
-              )))] {
+    } else if #[cfg(all(target_os = "horizon", target_arch = "arm"))] {
+        // We check for target_arch = "arm" because the Nintendo Switch also
+        // uses Horizon OS (it is aarch64).
+        mod util_libc;
+        #[path = "3ds.rs"] mod imp;
+    } else if #[cfg(target_os = "vita")] {
+        mod util_libc;
+        #[path = "vita.rs"] mod imp;
+    } else if #[cfg(target_os = "emscripten")] {
+        mod util_libc;
+        #[path = "emscripten.rs"] mod imp;
+    } else if #[cfg(all(target_arch = "x86_64", target_env = "sgx"))] {
         #[path = "rdrand.rs"] mod imp;
-    } else if #[cfg(all(target_arch = "wasm32", target_os = "unknown"))] {
-        cfg_if! {
-            if #[cfg(feature = "wasm-bindgen")] {
-                #[path = "wasm32_bindgen.rs"] mod imp;
-            } else if #[cfg(feature = "stdweb")] {
-                #[path = "wasm32_stdweb.rs"] mod imp;
-            } else {
-                // Always have an implementation for wasm32-unknown-unknown.
-                // See https://github.com/rust-random/getrandom/issues/87
-                #[path = "dummy.rs"] mod imp;
-            }
-        }
-    } else if #[cfg(feature = "dummy")] {
-        #[path = "dummy.rs"] mod imp;
+    } else if #[cfg(all(feature = "rdrand",
+                        any(target_arch = "x86_64", target_arch = "x86")))] {
+        #[path = "rdrand.rs"] mod imp;
+    } else if #[cfg(all(feature = "js",
+                        any(target_arch = "wasm32", target_arch = "wasm64"),
+                        target_os = "unknown"))] {
+        #[path = "js.rs"] mod imp;
+    } else if #[cfg(target_os = "hurd")] {
+        mod util_libc;
+        #[path = "hurd.rs"] mod imp;
+    } else if #[cfg(feature = "custom")] {
+        use custom as imp;
+    } else if #[cfg(all(any(target_arch = "wasm32", target_arch = "wasm64"),
+                        target_os = "unknown"))] {
+        compile_error!("the wasm*-unknown-unknown targets are not supported by \
+                        default, you may need to enable the \"js\" feature. \
+                        For more information see: \
+                        https://docs.rs/getrandom/#webassembly-support");
     } else {
-        compile_error!("\
-            target is not supported, for more information see: \
-            https://docs.rs/getrandom/#unsupported-targets\
-        ");
+        compile_error!("target is not supported, for more information see: \
+                        https://docs.rs/getrandom/#unsupported-targets");
     }
 }
 
@@ -284,9 +310,42 @@ cfg_if! {
 /// In general, `getrandom` will be fast enough for interactive usage, though
 /// significantly slower than a user-space CSPRNG; for the latter consider
 /// [`rand::thread_rng`](https://docs.rs/rand/*/rand/fn.thread_rng.html).
-pub fn getrandom(dest: &mut [u8]) -> Result<(), error::Error> {
-    if dest.is_empty() {
-        return Ok(());
+#[inline]
+pub fn getrandom(dest: &mut [u8]) -> Result<(), Error> {
+    // SAFETY: The `&mut MaybeUninit<_>` reference doesn't escape, and
+    // `getrandom_uninit` guarantees it will never de-initialize any part of
+    // `dest`.
+    getrandom_uninit(unsafe { slice_as_uninit_mut(dest) })?;
+    Ok(())
+}
+
+/// Version of the `getrandom` function which fills `dest` with random bytes
+/// returns a mutable reference to those bytes.
+///
+/// On successful completion this function is guaranteed to return a slice
+/// which points to the same memory as `dest` and has the same length.
+/// In other words, it's safe to assume that `dest` is initialized after
+/// this function has returned `Ok`.
+///
+/// No part of `dest` will ever be de-initialized at any point, regardless
+/// of what is returned.
+///
+/// # Examples
+///
+/// ```ignore
+/// # // We ignore this test since `uninit_array` is unstable.
+/// #![feature(maybe_uninit_uninit_array)]
+/// # fn main() -> Result<(), getrandom::Error> {
+/// let mut buf = core::mem::MaybeUninit::uninit_array::<1024>();
+/// let buf: &mut [u8] = getrandom::getrandom_uninit(&mut buf)?;
+/// # Ok(()) }
+/// ```
+#[inline]
+pub fn getrandom_uninit(dest: &mut [MaybeUninit<u8>]) -> Result<&mut [u8], Error> {
+    if !dest.is_empty() {
+        imp::getrandom_inner(dest)?;
     }
-    imp::getrandom_inner(dest)
+    // SAFETY: `dest` has been fully initialized by `imp::getrandom_inner`
+    // since it returned `Ok`.
+    Ok(unsafe { slice_assume_init_mut(dest) })
 }

@@ -15,7 +15,7 @@ add_task(async function test_profile_feature_jsallocations() {
     "The profiler is not currently active"
   );
 
-  startProfiler({ features: ["js", "jsallocations"] });
+  await startProfiler({ features: ["js", "jsallocations"] });
 
   const url = BASE_URL + "do_work_500ms.html";
   await BrowserTestUtils.withNewTab(url, async contentBrowser => {
@@ -30,10 +30,8 @@ add_task(async function test_profile_feature_jsallocations() {
 
     // Check that we can get some allocations when the feature is turned on.
     {
-      const {
-        parentThread,
-        contentThread,
-      } = await stopProfilerNowAndGetThreads(contentPid);
+      const { parentThread, contentThread } =
+        await waitSamplingAndStopProfilerAndGetThreads(contentPid);
       Assert.greater(
         getPayloadsOfType(parentThread, "JS allocation").length,
         0,
@@ -48,7 +46,7 @@ add_task(async function test_profile_feature_jsallocations() {
       );
     }
 
-    startProfiler({ features: ["js"] });
+    await startProfiler({ features: ["js"] });
     // Now reload the tab with a clean run.
     gBrowser.reload();
     await wait(500);
@@ -56,10 +54,8 @@ add_task(async function test_profile_feature_jsallocations() {
     // Check that no allocations were recorded, and allocation tracking was correctly
     // turned off.
     {
-      const {
-        parentThread,
-        contentThread,
-      } = await stopProfilerNowAndGetThreads(contentPid);
+      const { parentThread, contentThread } =
+        await waitSamplingAndStopProfilerAndGetThreads(contentPid);
       Assert.equal(
         getPayloadsOfType(parentThread, "JS allocation").length,
         0,

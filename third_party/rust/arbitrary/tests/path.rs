@@ -1,4 +1,7 @@
 #![cfg(feature = "derive")]
+// Various structs/fields that we are deriving `Arbitrary` for aren't actually
+// used except to show off the derive.
+#![allow(dead_code)]
 
 // Regression test for ensuring the derives work without Arbitrary being imported
 
